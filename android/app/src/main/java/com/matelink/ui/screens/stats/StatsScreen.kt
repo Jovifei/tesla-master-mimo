@@ -1,0 +1,1741 @@
+package com.matelink.ui.screens.stats
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Thermostat
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.lazy.LazyColumn as LogLazyColumn
+import androidx.compose.foundation.lazy.items as logItems
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import com.matelink.BuildConfig
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.matelink.R
+import com.matelink.data.api.models.Units
+import com.matelink.data.local.entity.DriveSummary
+import com.matelink.data.repository.GeocodeProgressInfo
+import com.matelink.domain.model.CarStats
+import com.matelink.domain.model.DeepStats
+import com.matelink.domain.model.MaxDistanceBetweenChargesRecord
+import com.matelink.domain.model.QuickStats
+import com.matelink.domain.model.SyncPhase
+import com.matelink.domain.model.UnitFormatter
+import com.matelink.domain.model.YearFilter
+import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.icons.CustomIcons
+import com.matelink.ui.theme.CarColorPalette
+import com.matelink.ui.theme.CarColorPalettes
+
+// TODO(parity): iOS StatisticsView has full Year→Month→Day→Detail drilldown hierarchy.
+//  Android only shows a flat view with year filter chips.
+//  Ref: app_mimo/ios/MateLink/Features/Statistics/StatisticsView.swift
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun StatsScreen(
+    carId: Int,
+    exteriorColor: String? = null,
+    onNavigateBack: () -> Unit,
+    onNavigateToDriveDetail: (Int) -> Unit = {},
+    onNavigateToChargeDetail: (Int) -> Unit = {},
+    onNavigateToDayDetail: (String) -> Unit = {},
+    onNavigateToCountriesVisited: (Int?) -> Unit = {}, // year (null for all time)
+    viewModel: StatsViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val syncLogs by viewModel.syncLogs.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val isDarkTheme = isSystemInDarkTheme()
+    val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
+    var showSyncLogsDialog by remember { mutableStateOf(false) }
+
+    // State for Records pager - remember across filter changes
+    var recordsSelectedCategory by rememberSaveable { mutableStateOf("") }
+
+    // State for range record dialog
+    var rangeRecordToShow by remember { mutableStateOf<MaxDistanceBetweenChargesRecord?>(null) }
+    var rangeRecordDrives by remember { mutableStateOf<List<DriveSummary>>(emptyList()) }
+    var isLoadingRangeRecordDrives by remember { mutableStateOf(false) }
+
+    // State for gap record dialog
+    data class GapRecordInfo(val gapDays: Double, val fromDate: String, val toDate: String, val title: String)
+    var gapRecordToShow by remember { mutableStateOf<GapRecordInfo?>(null) }
+
+    // Load drives when range record dialog is opened
+    LaunchedEffect(rangeRecordToShow) {
+        rangeRecordToShow?.let { record ->
+            isLoadingRangeRecordDrives = true
+            rangeRecordDrives = viewModel.getDrivesForRangeRecord(record.fromDate, record.toDate)
+            isLoadingRangeRecordDrives = false
+        }
+    }
+
+    LaunchedEffect(carId) {
+        viewModel.setCarId(carId)
+    }
+
+    // Periodic sync every 60 seconds while the screen is visible
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(60_000L) // Wait 60 seconds
+            viewModel.triggerSync()
+        }
+    }
+
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let { error ->
+            snackbarHostState.showSnackbar(error)
+            viewModel.clearError()
+        }
+    }
+
+    // Debug sync logs dialog
+    if (showSyncLogsDialog && BuildConfig.DEBUG) {
+        SyncLogsDialog(
+            logs = syncLogs,
+            onDismiss = { showSyncLogsDialog = false }
+        )
+    }
+
+    // Range record details dialog
+    rangeRecordToShow?.let { record ->
+        RangeRecordDialog(
+            record = record,
+            drives = rangeRecordDrives,
+            isLoading = isLoadingRangeRecordDrives,
+            palette = palette,
+            units = uiState.units,
+            onDriveClick = { driveId ->
+                rangeRecordToShow = null
+                onNavigateToDriveDetail(driveId)
+            },
+            onDismiss = { rangeRecordToShow = null }
+        )
+    }
+
+    // Gap record details dialog
+    gapRecordToShow?.let { gap ->
+        GapRecordDialog(
+            gapDays = gap.gapDays,
+            fromDate = gap.fromDate,
+            toDate = gap.toDate,
+            title = gap.title,
+            palette = palette,
+            onDismiss = { gapRecordToShow = null }
+        )
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.stats_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.back)
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        PullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = { viewModel.refresh() },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            if (uiState.isLoading) {
+                MateLinkLoadingPlaceholder(color = palette.accent)
+            } else if (uiState.carStats == null) {
+                val emptyMessage = if (uiState.isSyncing) {
+                    stringResource(R.string.stats_syncing)
+                } else {
+                    stringResource(R.string.stats_empty)
+                }
+                EmptyState(
+                    message = emptyMessage,
+                    syncProgress = uiState.deepSyncProgress,
+                    syncPhase = uiState.syncProgress?.phase,
+                    isSyncing = uiState.isSyncing
+                )
+            } else {
+                StatsContent(
+                    stats = uiState.carStats!!,
+                    availableYears = uiState.availableYears,
+                    selectedYearFilter = uiState.selectedYearFilter,
+                    deepSyncProgress = uiState.deepSyncProgress,
+                    isSyncing = uiState.isSyncing,
+                    isUpdating = uiState.isUpdating,
+                    geocodeProgress = uiState.geocodeProgress,
+                    isGeocoding = uiState.isGeocoding,
+                    palette = palette,
+                    currencySymbol = uiState.currencySymbol,
+                    units = uiState.units,
+                    recordsSelectedCategory = recordsSelectedCategory,
+                    onRecordsCategoryChanged = { recordsSelectedCategory = it },
+                    onYearFilterSelected = { viewModel.setYearFilter(it) },
+                    onNavigateToDriveDetail = onNavigateToDriveDetail,
+                    onNavigateToChargeDetail = onNavigateToChargeDetail,
+                    onNavigateToDayDetail = onNavigateToDayDetail,
+                    onNavigateToCountriesVisited = onNavigateToCountriesVisited,
+                    onRangeRecordClick = { rangeRecordToShow = it },
+                    onGapRecordClick = { gapDays, fromDate, toDate, title ->
+                        gapRecordToShow = GapRecordInfo(gapDays, fromDate, toDate, title)
+                    },
+                    onSyncProgressClick = if (BuildConfig.DEBUG) {
+                        { showSyncLogsDialog = true }
+                    } else null
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyState(
+    message: String,
+    syncProgress: Float,
+    syncPhase: SyncPhase? = null,
+    isSyncing: Boolean = false
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            if (isSyncing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(64.dp)
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Analytics,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            // Show sync phase info
+            if (isSyncing && syncPhase != null) {
+                val phaseText = when (syncPhase) {
+                    SyncPhase.SYNCING_SUMMARIES -> stringResource(R.string.sync_phase_summaries)
+                    SyncPhase.SYNCING_DRIVE_DETAILS -> stringResource(R.string.sync_phase_drives)
+                    SyncPhase.SYNCING_CHARGE_DETAILS -> stringResource(R.string.sync_phase_charges)
+                    else -> ""
+                }
+                if (phaseText.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = phaseText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            // Show progress bar if we have progress
+            if (syncProgress > 0 || isSyncing) {
+                Spacer(modifier = Modifier.height(16.dp))
+                if (syncProgress > 0) {
+                    LinearProgressIndicator(
+                        progress = { syncProgress },
+                        modifier = Modifier.fillMaxWidth(0.6f)
+                    )
+                    Text(
+                        text = stringResource(R.string.stats_sync_percent, (syncProgress * 100).toInt()),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    // Indeterminate progress when syncing but no percentage yet
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(0.6f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StatsContent(
+    stats: CarStats,
+    availableYears: List<Int>,
+    selectedYearFilter: YearFilter,
+    deepSyncProgress: Float,
+    isSyncing: Boolean,
+    isUpdating: Boolean,
+    geocodeProgress: GeocodeProgressInfo?,
+    isGeocoding: Boolean,
+    palette: CarColorPalette,
+    currencySymbol: String,
+    units: Units?,
+    recordsSelectedCategory: String,
+    onRecordsCategoryChanged: (String) -> Unit,
+    onYearFilterSelected: (YearFilter) -> Unit,
+    onNavigateToDriveDetail: (Int) -> Unit,
+    onNavigateToChargeDetail: (Int) -> Unit,
+    onNavigateToDayDetail: (String) -> Unit,
+    onNavigateToCountriesVisited: (Int?) -> Unit, // year (null for all time)
+    onRangeRecordClick: (MaxDistanceBetweenChargesRecord) -> Unit,
+    onGapRecordClick: (Double, String, String, String) -> Unit,
+    onSyncProgressClick: (() -> Unit)? = null
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Year filter chips — pinned above the scrollable content
+        YearFilterChips(
+            availableYears = availableYears,
+            selectedFilter = selectedYearFilter,
+            palette = palette,
+            onFilterSelected = onYearFilterSelected,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+        HorizontalDivider(color = palette.onSurface.copy(alpha = 0.08f))
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            // Sync progress indicator if deep sync is actively running
+            if (isSyncing && deepSyncProgress < 1f && deepSyncProgress > 0f) {
+                item {
+                    SyncProgressCard(
+                        progress = deepSyncProgress,
+                        palette = palette,
+                        onClick = onSyncProgressClick
+                    )
+                }
+            }
+
+            // Geocode progress indicator if location identification is ongoing
+            if (isGeocoding && geocodeProgress != null) {
+                item {
+                    GeocodeProgressCard(
+                        progress = geocodeProgress,
+                        palette = palette,
+                        onClick = onSyncProgressClick
+                    )
+                }
+            }
+
+            // Records (at the top)
+            item {
+                RecordsCard(
+                    quickStats = stats.quickStats,
+                    deepStats = stats.deepStats,
+                    palette = palette,
+                    currencySymbol = currencySymbol,
+                    units = units,
+                    selectedCategory = recordsSelectedCategory,
+                    onCategoryChanged = onRecordsCategoryChanged,
+                    onDriveClick = onNavigateToDriveDetail,
+                    onChargeClick = onNavigateToChargeDetail,
+                    onDayClick = onNavigateToDayDetail,
+                    onCountriesVisitedClick = {
+                        val year = (selectedYearFilter as? YearFilter.Year)?.year
+                        onNavigateToCountriesVisited(year)
+                    },
+                    onRangeRecordClick = onRangeRecordClick,
+                    onGapRecordClick = onGapRecordClick
+                )
+            }
+
+            // Quick Stats - Drives Overview
+            item {
+                QuickStatsDrivesCard(
+                    quickStats = stats.quickStats,
+                    palette = palette,
+                    currencySymbol = currencySymbol,
+                    units = units
+                )
+            }
+
+            // Quick Stats - Charges Overview
+            item {
+                QuickStatsChargesCard(
+                    quickStats = stats.quickStats,
+                    palette = palette,
+                    currencySymbol = currencySymbol
+                )
+            }
+
+            // AC/DC Ratio (moved here, near charges)
+            stats.deepStats?.let { deepStats ->
+                item {
+                    AcDcRatioCard(deepStats = deepStats, palette = palette)
+                }
+            }
+
+            // Deep Stats - only if available
+            stats.deepStats?.let { deepStats ->
+                // Temperature Stats
+                item {
+                    TemperatureStatsCard(deepStats = deepStats, palette = palette, units = units)
+                }
+            }
+        }
+        // Progress indicator overlay at the top of the scrollable area
+        if (isUpdating) {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .align(Alignment.TopCenter),
+                color = palette.accent
+            )
+        }
+        } // end Box (scrollable area)
+    } // end Column
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun YearFilterChips(
+    availableYears: List<Int>,
+    selectedFilter: YearFilter,
+    palette: CarColorPalette,
+    onFilterSelected: (YearFilter) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // All Time option
+        item {
+            FilterChip(
+                selected = selectedFilter is YearFilter.AllTime,
+                onClick = { onFilterSelected(YearFilter.AllTime) },
+                label = { Text(stringResource(R.string.filter_all_time)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = palette.surface,
+                    selectedLabelColor = palette.onSurface
+                )
+            )
+        }
+
+        // Year options
+        items(availableYears) { year ->
+            FilterChip(
+                selected = selectedFilter is YearFilter.Year && selectedFilter.year == year,
+                onClick = { onFilterSelected(YearFilter.Year(year)) },
+                label = { Text(year.toString()) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = palette.surface,
+                    selectedLabelColor = palette.onSurface
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun SyncProgressCard(
+    progress: Float,
+    palette: CarColorPalette,
+    onClick: (() -> Unit)? = null
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable { onClick() }
+                } else {
+                    Modifier
+                }
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Sync,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.stats_deep_sync_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = stringResource(R.string.stats_sync_complete, (progress * 100).toInt()),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GeocodeProgressCard(
+    progress: GeocodeProgressInfo,
+    palette: CarColorPalette,
+    onClick: (() -> Unit)? = null
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable { onClick() }
+                } else {
+                    Modifier
+                }
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Place,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.geocode_progress_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    progress = { progress.percentage },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = stringResource(R.string.geocode_progress_status, progress.processed, progress.total),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            }
+        }
+    }
+}
+
+// ======== Quick Stats Cards ========
+
+@Composable
+private fun QuickStatsDrivesCard(quickStats: QuickStats, palette: CarColorPalette, currencySymbol: String, units: Units?) {
+    // Calculate cost per 100 km: (totalCost / totalDistanceKm) * 100
+    val costPer100Km = if (quickStats.totalCost != null && quickStats.totalCost > 0 && quickStats.totalDistanceKm > 0) {
+        (quickStats.totalCost / quickStats.totalDistanceKm) * 100
+    } else {
+        null
+    }
+
+    StatsCard(
+        title = stringResource(R.string.stats_drives_overview),
+        icon = Icons.Default.DirectionsCar,
+        palette = palette
+    ) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            StatItem(
+                label = stringResource(R.string.stats_total_drives),
+                value = "%,d".format(quickStats.totalDrives),
+                modifier = Modifier.weight(1f)
+            )
+            StatItem(
+                label = stringResource(R.string.stats_driving_days),
+                value = quickStats.totalDrivingDays?.let { "%,d".format(it) } ?: "-",
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
+            StatItem(
+                label = stringResource(R.string.total_distance),
+                value = UnitFormatter.formatDistance(quickStats.totalDistanceKm, units, 0),
+                modifier = Modifier.weight(1f)
+            )
+            StatItem(
+                label = stringResource(R.string.stats_energy_used),
+                value = formatEnergy(quickStats.totalEnergyConsumedKwh),
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
+            StatItem(
+                label = stringResource(R.string.stats_avg_efficiency),
+                value = UnitFormatter.formatEfficiency(quickStats.avgEfficiencyWhKm, units, 0),
+                modifier = Modifier.weight(1f)
+            )
+            StatItem(
+                label = stringResource(R.string.stats_cost_per_distance, UnitFormatter.getDistanceUnit(units)),
+                value = costPer100Km?.let { "%.2f %s".format(it, currencySymbol) } ?: "N/A",
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickStatsChargesCard(quickStats: QuickStats, palette: CarColorPalette, currencySymbol: String) {
+    StatsCard(
+        title = stringResource(R.string.stats_charges_overview),
+        icon = Icons.Default.BatteryChargingFull,
+        palette = palette
+    ) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            StatItem(
+                label = stringResource(R.string.stats_total_charges),
+                value = "%,d".format(quickStats.totalCharges),
+                modifier = Modifier.weight(1f)
+            )
+            StatItem(
+                label = stringResource(R.string.energy_added),
+                value = formatEnergy(quickStats.totalEnergyAddedKwh),
+                modifier = Modifier.weight(1f)
+            )
+        }
+        if (quickStats.totalCost != null && quickStats.totalCost > 0) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                StatItem(
+                    label = stringResource(R.string.total_cost),
+                    value = "%.2f %s".format(quickStats.totalCost, currencySymbol),
+                    modifier = Modifier.weight(1f)
+                )
+                StatItem(
+                    label = stringResource(R.string.stats_avg_cost_kwh),
+                    value = quickStats.avgCostPerKwh?.let { "%.3f %s".format(it, currencySymbol) } ?: "N/A",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+/** Data class for a single record item */
+private data class RecordData(
+    val emoji: String,
+    val label: String,
+    val value: String,
+    val subtext: String,
+    val onClick: (() -> Unit)?
+)
+
+/**
+ * HARD CONSTRAINT: Each page displays exactly 6 record slots (3 rows × 2 columns).
+ * If a category has more than 6 records, it MUST be split into multiple pages.
+ * This ensures consistent page height and smooth swiping experience.
+ */
+private const val RECORDS_PER_PAGE = 6
+
+/** A page of records to display in the pager */
+private data class RecordPage(
+    val categoryTitle: String,
+    val categoryEmoji: String,
+    val records: List<RecordData>, // Max RECORDS_PER_PAGE items
+    val pageIndex: Int, // 0-based index within the category (for multi-page categories)
+    val totalPagesInCategory: Int // Total pages for this category
+)
+
+@Composable
+private fun RecordsCard(
+    quickStats: QuickStats,
+    deepStats: DeepStats?,
+    palette: CarColorPalette,
+    currencySymbol: String,
+    units: Units?,
+    selectedCategory: String,
+    onCategoryChanged: (String) -> Unit,
+    onDriveClick: (Int) -> Unit,
+    onChargeClick: (Int) -> Unit,
+    onDayClick: (String) -> Unit,
+    onCountriesVisitedClick: () -> Unit,
+    onRangeRecordClick: (MaxDistanceBetweenChargesRecord) -> Unit,
+    onGapRecordClick: (Double, String, String, String) -> Unit // gapDays, fromDate, toDate, title
+) {
+    // Pre-compute localized strings for use in lambdas
+    val labelLongestDrive = stringResource(R.string.record_longest_drive)
+    val labelTopSpeed = stringResource(R.string.record_top_speed)
+    val labelMostEfficient = stringResource(R.string.record_most_efficient)
+    val labelLongestStreak = stringResource(R.string.record_longest_streak)
+    val labelBusiestDay = stringResource(R.string.record_busiest_day)
+    val labelCountriesVisited = stringResource(R.string.record_countries_visited)
+    val labelBiggestGain = stringResource(R.string.record_biggest_gain)
+    val labelBiggestDrain = stringResource(R.string.record_biggest_drain)
+    val labelBiggestCharge = stringResource(R.string.record_biggest_charge)
+    val labelPeakPower = stringResource(R.string.record_peak_power)
+    val labelMostExpensive = stringResource(R.string.record_most_expensive)
+    val labelPriciestKwh = stringResource(R.string.record_priciest_kwh)
+    val labelHighestPoint = stringResource(R.string.record_highest_point)
+    val labelMostClimbing = stringResource(R.string.record_most_climbing)
+    val labelHottestDrive = stringResource(R.string.record_hottest_drive)
+    val labelColdestDrive = stringResource(R.string.record_coldest_drive)
+    val labelHottestCharge = stringResource(R.string.record_hottest_charge)
+    val labelColdestCharge = stringResource(R.string.record_coldest_charge)
+    val labelLongestRange = stringResource(R.string.record_longest_range)
+    val labelNoCharging = stringResource(R.string.record_longest_no_charging)
+    val labelNoDriving = stringResource(R.string.record_longest_no_driving)
+    val labelMostDistanceDay = stringResource(R.string.record_most_distance_day)
+    val categoryDrives = stringResource(R.string.stats_category_drives)
+    val categoryBattery = stringResource(R.string.stats_category_battery)
+    val categoryWeather = stringResource(R.string.stats_category_weather)
+    val categoryMisc = stringResource(R.string.stats_category_misc)
+    val gapTypeCharging = stringResource(R.string.gap_type_charging)
+    val gapTypeDriving = stringResource(R.string.gap_type_driving)
+
+    // Category 1: Drives
+    val driveRecords = mutableListOf<RecordData>()
+    quickStats.longestDrive?.let { drive ->
+        driveRecords.add(RecordData("📏", labelLongestDrive, UnitFormatter.formatDistance(drive.distance, units), drive.startDate.take(10)) { onDriveClick(drive.driveId) })
+    }
+    quickStats.fastestDrive?.let { drive ->
+        driveRecords.add(RecordData("🏎️", labelTopSpeed, UnitFormatter.formatSpeed(drive.speedMax.toDouble(), units), drive.startDate.take(10)) { onDriveClick(drive.driveId) })
+    }
+    quickStats.mostEfficientDrive?.let { drive ->
+        driveRecords.add(RecordData("🌱", labelMostEfficient, UnitFormatter.formatEfficiency(drive.efficiency ?: 0.0, units, 0), drive.startDate.take(10)) { onDriveClick(drive.driveId) })
+    }
+    quickStats.longestDrivingStreak?.let { streak ->
+        driveRecords.add(RecordData("🔥", labelLongestStreak, stringResource(R.string.format_days_count, streak.streakDays), "${streak.startDate} → ${streak.endDate}", null))
+    }
+    quickStats.busiestDay?.let { day ->
+        driveRecords.add(RecordData("📅", labelBusiestDay, stringResource(R.string.format_drives_count, day.count), day.day) { onDayClick(day.day) })
+    }
+    deepStats?.countriesVisitedCount?.let { count ->
+        driveRecords.add(RecordData("🌍", labelCountriesVisited, pluralStringResource(R.plurals.format_countries_count, count, count), "") { onCountriesVisitedClick() })
+    }
+
+    // Category 2: Battery
+    val batteryRecords = mutableListOf<RecordData>()
+    quickStats.biggestBatteryGainCharge?.let { record ->
+        batteryRecords.add(RecordData("🔋", labelBiggestGain, "+${record.percentChange}%", "${record.startLevel}% → ${record.endLevel}%") { onChargeClick(record.recordId) })
+    }
+    quickStats.biggestBatteryDrainDrive?.let { record ->
+        batteryRecords.add(RecordData("📉", labelBiggestDrain, "-${record.percentChange}%", "${record.startLevel}% → ${record.endLevel}%") { onDriveClick(record.recordId) })
+    }
+    quickStats.biggestCharge?.let { charge ->
+        batteryRecords.add(RecordData("⚡", labelBiggestCharge, "%.0f kWh".format(charge.energyAdded), charge.startDate.take(10)) { onChargeClick(charge.chargeId) })
+    }
+    deepStats?.chargeWithMaxPower?.let { record ->
+        batteryRecords.add(RecordData("⚡", labelPeakPower, "${record.powerKw} kW", record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
+    }
+    quickStats.mostExpensiveCharge?.let { charge ->
+        charge.cost?.let { cost ->
+            batteryRecords.add(RecordData("💸", labelMostExpensive, "%.2f %s".format(cost, currencySymbol), charge.startDate.take(10)) { onChargeClick(charge.chargeId) })
+        }
+    }
+    quickStats.mostExpensivePerKwhCharge?.let { charge ->
+        charge.cost?.let { cost ->
+            if (charge.energyAdded > 0) {
+                batteryRecords.add(RecordData("📈", labelPriciestKwh, "%.3f %s".format(cost / charge.energyAdded, currencySymbol), charge.startDate.take(10)) { onChargeClick(charge.chargeId) })
+            }
+        }
+    }
+
+    // Category 3: Weather & Altitude
+    val weatherRecords = mutableListOf<RecordData>()
+    deepStats?.driveWithMaxElevation?.let { record ->
+        weatherRecords.add(RecordData("🏔️", labelHighestPoint, UnitFormatter.formatElevation(record.elevationM, units), record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
+    }
+    deepStats?.driveWithMostClimbing?.let { record ->
+        weatherRecords.add(RecordData("⛰️", labelMostClimbing, record.elevationGainM?.let { "+" + UnitFormatter.formatElevation(it, units) } ?: "N/A", record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
+    }
+    deepStats?.hottestDrive?.let { record ->
+        weatherRecords.add(RecordData("🌡️", labelHottestDrive, UnitFormatter.formatTemperature(record.tempC, units, 1), record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
+    }
+    deepStats?.coldestDrive?.let { record ->
+        weatherRecords.add(RecordData("🧊", labelColdestDrive, UnitFormatter.formatTemperature(record.tempC, units, 1), record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
+    }
+    deepStats?.hottestCharge?.let { record ->
+        weatherRecords.add(RecordData("☀️", labelHottestCharge, UnitFormatter.formatTemperature(record.tempC, units, 1), record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
+    }
+    deepStats?.coldestCharge?.let { record ->
+        weatherRecords.add(RecordData("❄️", labelColdestCharge, UnitFormatter.formatTemperature(record.tempC, units, 1), record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
+    }
+
+    // Category 4: Miscelaneous
+    val miscRecords = mutableListOf<RecordData>()
+    quickStats.maxDistanceBetweenCharges?.let { record ->
+        miscRecords.add(RecordData("🔋", labelLongestRange, UnitFormatter.formatDistance(record.distance, units), "${record.fromDate.take(10)} → ${record.toDate.take(10)}") { onRangeRecordClick(record) })
+    }
+    quickStats.longestGapWithoutCharging?.let { gap ->
+        miscRecords.add(RecordData("⏰", labelNoCharging, stringResource(R.string.format_days, gap.gapDays), "${gap.fromDate.take(10)} → ${gap.toDate.take(10)}") { onGapRecordClick(gap.gapDays, gap.fromDate, gap.toDate, gapTypeCharging) })
+    }
+    quickStats.longestGapWithoutDriving?.let { gap ->
+        miscRecords.add(RecordData("🅿️", labelNoDriving, stringResource(R.string.format_days, gap.gapDays), "${gap.fromDate.take(10)} → ${gap.toDate.take(10)}") { onGapRecordClick(gap.gapDays, gap.fromDate, gap.toDate, gapTypeDriving) })
+    }
+    quickStats.mostDistanceDay?.let { day ->
+        miscRecords.add(RecordData("🛣️", labelMostDistanceDay, UnitFormatter.formatDistance(day.totalDistance, units), day.day) { onDayClick(day.day) })
+    }
+
+    // Build list of all categories with their records
+    data class CategoryData(val title: String, val emoji: String, val records: List<RecordData>)
+    val allCategories = mutableListOf<CategoryData>()
+    if (driveRecords.isNotEmpty()) allCategories.add(CategoryData(categoryDrives, "🚗", driveRecords))
+    if (batteryRecords.isNotEmpty()) allCategories.add(CategoryData(categoryBattery, "🔋", batteryRecords))
+    if (weatherRecords.isNotEmpty()) allCategories.add(CategoryData(categoryWeather, "🌡️", weatherRecords))
+    if (miscRecords.isNotEmpty()) allCategories.add(CategoryData(categoryMisc, "📍", miscRecords))
+
+    // Don't render anything if no categories
+    if (allCategories.isEmpty()) return
+
+    // Split categories into pages of max RECORDS_PER_PAGE records each
+    val pages = mutableListOf<RecordPage>()
+    allCategories.forEach { category ->
+        val chunks = category.records.chunked(RECORDS_PER_PAGE)
+        chunks.forEachIndexed { index, chunk ->
+            pages.add(RecordPage(
+                categoryTitle = category.title,
+                categoryEmoji = category.emoji,
+                records = chunk,
+                pageIndex = index,
+                totalPagesInCategory = chunks.size
+            ))
+        }
+    }
+
+// Find the first page of the selected category, or default to 0
+    val initialPage = if (selectedCategory.isNotEmpty()) {
+        pages.indexOfFirst { it.categoryTitle == selectedCategory }.takeIf { it >= 0 } ?: 0
+    } else {
+        0
+    }
+
+    val pagerState = rememberPagerState(
+        initialPage = initialPage,
+        pageCount = { pages.size }
+    )
+
+// Update selected category when page changes
+    LaunchedEffect(pagerState.currentPage) {
+        snapshotFlow { pagerState.currentPage }
+            .collect { page ->
+                if (page < pages.size) {
+                    onCategoryChanged(pages[page].categoryTitle)
+                }
+            }
+    }
+
+    Column {
+        // Section header
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
+        ) {
+            Icon(
+                imageVector = CustomIcons.Trophy,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = palette.accent
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = stringResource(R.string.stats_records),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = palette.onSurface
+            )
+        }
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = palette.surface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Pager with pages (fixed height for 6 records = 3 rows)
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxWidth()
+                ) { pageIndex ->
+                    val page = pages[pageIndex]
+                    RecordCategoryPage(
+                        page = page,
+                        palette = palette
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Page indicators - group by category with sub-dots for multi-page categories
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    var pageOffset = 0
+                    allCategories.forEach { category ->
+                        val categoryPageCount = (category.records.size + RECORDS_PER_PAGE - 1) / RECORDS_PER_PAGE
+                        val isCurrentCategory = pagerState.currentPage >= pageOffset &&
+                                pagerState.currentPage < pageOffset + categoryPageCount
+                        val currentPageInCategory = if (isCurrentCategory) pagerState.currentPage - pageOffset else -1
+
+                        Row(
+                            modifier = Modifier
+                                .padding(horizontal = 6.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (isCurrentCategory) palette.accent.copy(alpha = 0.2f)
+                                    else Color.Transparent
+                                )
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = category.emoji,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            if (isCurrentCategory) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = category.title,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = palette.accent,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                // Show page dots for multi-page categories
+                                if (categoryPageCount > 1) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    repeat(categoryPageCount) { dotIndex ->
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(horizontal = 2.dp)
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (dotIndex == currentPageInCategory) palette.accent
+                                                    else palette.accent.copy(alpha = 0.3f)
+                                                )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        pageOffset += categoryPageCount
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Base height for each record card row.
+ * Scales with system font size to prevent vertical text clipping.
+ */
+private const val RECORD_CARD_HEIGHT_BASE = 72
+
+/**
+ * A single page showing records for one category.
+ * HARD CONSTRAINT: Always renders exactly 3 rows (space for 6 records) to maintain fixed height.
+ */
+@Composable
+private fun RecordCategoryPage(
+    page: RecordPage,
+    palette: CarColorPalette
+) {
+    // Pad records to exactly RECORDS_PER_PAGE (6) slots for consistent height
+    val paddedRecords = page.records + List(RECORDS_PER_PAGE - page.records.size) { null }
+    val rows = paddedRecords.chunked(2) // Always 3 rows of 2
+
+    // Scale card height with system font size to prevent vertical text clipping
+    val fontScale = LocalDensity.current.fontScale
+    val scaledCardHeight = (RECORD_CARD_HEIGHT_BASE * fontScale).dp
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Records in 2-column grid - always 3 rows for fixed height
+        // Note: Category title removed - the swipe indicator at the bottom shows current category
+        rows.forEach { rowRecords ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(scaledCardHeight),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                rowRecords.forEach { record ->
+                    if (record != null) {
+                        RecordCard(
+                            emoji = record.emoji,
+                            label = record.label,
+                            value = record.value,
+                            subtext = record.subtext,
+                            palette = palette,
+                            onClick = record.onClick,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        )
+                    } else {
+                        // Empty placeholder to maintain grid layout - same size as RecordCard
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight())
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ======== Deep Stats Cards ========
+
+// Note: ElevationStatsCard removed - highest point now shown in Records section
+
+@Composable
+private fun TemperatureStatsCard(deepStats: DeepStats, palette: CarColorPalette, units: Units?) {
+    if (deepStats.maxOutsideTempDrivingC == null && deepStats.minOutsideTempDrivingC == null) {
+        return // No temperature data
+    }
+
+    StatsCard(
+        title = stringResource(R.string.stats_temperature_extremes),
+        icon = Icons.Default.Thermostat,
+        palette = palette
+    ) {
+        Text(
+            text = stringResource(R.string.stats_while_driving),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = palette.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
+            StatItem(
+                label = stringResource(R.string.stats_hottest),
+                value = deepStats.maxOutsideTempDrivingC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A",
+                modifier = Modifier.weight(1f)
+            )
+            StatItem(
+                label = stringResource(R.string.stats_coldest),
+                value = deepStats.minOutsideTempDrivingC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A",
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        if (deepStats.maxCabinTempC != null || deepStats.minCabinTempC != null) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = stringResource(R.string.stats_cabin_temperature),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = palette.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                StatItem(
+                    label = stringResource(R.string.stats_hottest),
+                    value = deepStats.maxCabinTempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A",
+                    modifier = Modifier.weight(1f)
+                )
+                StatItem(
+                    label = stringResource(R.string.stats_coldest),
+                    value = deepStats.minCabinTempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+private fun formatEnergy(kwh: Double): String {
+    return if (kwh >= 1000) {
+        "%.1f MWh".format(kwh / 1000)
+    } else {
+        "%.0f kWh".format(kwh)
+    }
+}
+
+@Composable
+private fun AcDcRatioCard(deepStats: DeepStats, palette: CarColorPalette) {
+    val totalEnergy = deepStats.acChargeEnergyKwh + deepStats.dcChargeEnergyKwh
+    if (totalEnergy <= 0) {
+        return // No charge data
+    }
+
+    val acRatio = (deepStats.acChargeEnergyKwh / totalEnergy).toFloat()
+    val acColor = palette.acColor
+    val dcColor = palette.dcColor
+
+    StatsCard(
+        title = stringResource(R.string.stats_ac_dc_ratio),
+        icon = Icons.Default.BatteryChargingFull,
+        palette = palette
+    ) {
+        // Energy stats row
+        Row(modifier = Modifier.fillMaxWidth()) {
+            StatItem(
+                label = stringResource(R.string.stats_ac_energy),
+                value = formatEnergy(deepStats.acChargeEnergyKwh),
+                modifier = Modifier.weight(1f)
+            )
+            StatItem(
+                label = stringResource(R.string.stats_dc_energy),
+                value = formatEnergy(deepStats.dcChargeEnergyKwh),
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Custom ratio bar with percentage labels
+        val acPercent = (acRatio * 100).toInt()
+        val dcPercent = 100 - acPercent
+        // Only show percentage if segment is wide enough (>= 15%)
+        val showAcPercent = acPercent >= 15
+        val showDcPercent = dcPercent >= 15
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(20.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(dcColor)
+        ) {
+            // AC portion (green)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(acRatio)
+                    .background(acColor),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                if (showAcPercent) {
+                    Text(
+                        text = "$acPercent%",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = dcColor,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+            }
+            // DC percentage label (positioned at the end)
+            if (showDcPercent) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    Text(
+                        text = "$dcPercent%",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = acColor,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Labels with counts below
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text(
+                    text = stringResource(R.string.charging_ac),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = acColor
+                )
+                Text(
+                    text = stringResource(R.string.format_charges_count, deepStats.acChargeCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.onSurfaceVariant
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = stringResource(R.string.charging_dc),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = dcColor
+                )
+                Text(
+                    text = stringResource(R.string.format_charges_count, deepStats.dcChargeCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+// ======== Reusable Components ========
+
+@Composable
+private fun StatsCard(
+    title: String,
+    icon: ImageVector,
+    palette: CarColorPalette,
+    content: @Composable () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = palette.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = palette.accent
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.onSurface
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            content()
+        }
+    }
+}
+
+@Composable
+private fun StatItem(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun RecordCard(
+    emoji: String,
+    label: String,
+    value: String,
+    subtext: String,
+    palette: CarColorPalette,
+    onClick: (() -> Unit)?,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable { onClick() }
+                } else {
+                    Modifier
+                }
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = palette.surface
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = emoji,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (subtext.isNotEmpty()) {
+                    Text(
+                        text = subtext,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            if (onClick != null) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = stringResource(R.string.view_details),
+                    modifier = Modifier.size(18.dp),
+                    tint = palette.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Debug-only dialog showing sync logs like adb logcat.
+ */
+@Composable
+private fun SyncLogsDialog(
+    logs: List<String>,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(stringResource(R.string.stats_sync_logs_title))
+        },
+        text = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(400.dp)
+            ) {
+                LogLazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    reverseLayout = true // Show newest logs at the bottom
+                ) {
+                    logItems(logs.reversed()) { log ->
+                        Text(
+                            text = log,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
+            }
+        }
+    )
+}
+
+/**
+ * Dialog showing details of a gap record (longest period without charging/driving).
+ */
+@Composable
+private fun GapRecordDialog(
+    gapDays: Double,
+    fromDate: String,
+    toDate: String,
+    title: String,
+    palette: CarColorPalette,
+    onDismiss: () -> Unit
+) {
+    // title is now the gap type (Charging/Driving), used for determining emoji
+    val isCharging = title == stringResource(R.string.gap_type_charging)
+    val emoji = if (isCharging) "⏰" else "🅿️"
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(emoji, style = MaterialTheme.typography.titleLarge)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.stats_gap_dialog_title, title))
+            }
+        },
+        text = {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = palette.surface
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Duration
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.format_days, gapDays),
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = palette.accent
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Date range
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = stringResource(R.string.started),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.onSurfaceVariant
+                            )
+                            Text(
+                                text = fromDate.take(10),
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = palette.onSurface
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = stringResource(R.string.ended),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.onSurfaceVariant
+                            )
+                            Text(
+                                text = toDate.take(10),
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = palette.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
+            }
+        }
+    )
+}
+
+/**
+ * Dialog showing details of a "longest range" record with scrollable list of drives.
+ */
+@Composable
+private fun RangeRecordDialog(
+    record: MaxDistanceBetweenChargesRecord,
+    drives: List<DriveSummary>,
+    isLoading: Boolean,
+    palette: CarColorPalette,
+    units: Units?,
+    onDriveClick: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("🔋", style = MaterialTheme.typography.titleLarge)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.stats_range_record_title))
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Summary info
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = palette.surface
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = stringResource(R.string.total_distance),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = palette.onSurfaceVariant
+                            )
+                            Text(
+                                text = UnitFormatter.formatDistance(record.distance, units),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.onSurface
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(
+                                    text = stringResource(R.string.from),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = palette.onSurfaceVariant
+                                )
+                                Text(
+                                    text = record.fromDate.take(10),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = palette.onSurface
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = stringResource(R.string.to),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = palette.onSurfaceVariant
+                                )
+                                Text(
+                                    text = record.toDate.take(10),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = palette.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Drives header
+                Text(
+                    text = stringResource(R.string.stats_drives_count, drives.size),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Scrollable list of drives
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(250.dp)
+                ) {
+                    if (isLoading) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                        }
+                    } else if (drives.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = stringResource(R.string.stats_no_drives_found),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = palette.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(drives) { drive ->
+                                DriveListItem(
+                                    drive = drive,
+                                    palette = palette,
+                                    units = units,
+                                    onClick = { onDriveClick(drive.driveId) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
+            }
+        }
+    )
+}
+
+/**
+ * Single drive item in the range record dialog.
+ */
+@Composable
+private fun DriveListItem(
+    drive: DriveSummary,
+    palette: CarColorPalette,
+    units: Units?,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(
+            containerColor = palette.surface.copy(alpha = 0.7f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = drive.startDate.take(10),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.onSurfaceVariant
+                )
+                Text(
+                    text = "${drive.startAddress.take(25)}${if (drive.startAddress.length > 25) "..." else ""}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.onSurface,
+                    maxLines = 1
+                )
+                Text(
+                    text = "→ ${drive.endAddress.take(25)}${if (drive.endAddress.length > 25) "..." else ""}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = UnitFormatter.formatDistance(drive.distance, units),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.onSurface
+                )
+                Text(
+                    text = "${drive.durationMin} min",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = stringResource(R.string.view_drive),
+                modifier = Modifier.size(18.dp),
+                tint = palette.onSurfaceVariant
+            )
+        }
+    }
+}

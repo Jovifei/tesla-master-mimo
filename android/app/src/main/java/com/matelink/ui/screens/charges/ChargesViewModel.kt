@@ -1,0 +1,625 @@
+package com.matelink.ui.screens.charges
+
+import androidx.annotation.StringRes
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.matelink.data.api.models.ChargeData
+import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.dao.AggregateDao
+import com.matelink.data.model.Currency
+import com.matelink.data.repository.ApiResult
+import com.matelink.data.repository.TeslamateRepository
+import com.matelink.domain.LocalDayBoundaries
+import android.content.Context
+import com.matelink.R
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.YearMonth
+import com.matelink.util.formatMonthYear
+import com.matelink.util.formatShortNoYear
+import com.matelink.util.formatWeekLabel
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import java.time.temporal.ChronoUnit
+import java.time.temporal.WeekFields
+import javax.inject.Inject
+
+enum class ChartGranularity {
+    DAILY, WEEKLY, MONTHLY
+}
+
+enum class DateFilter(@get:StringRes val labelRes: Int, val days: Long?) {
+    TODAY(R.string.filter_today, 0),
+    LAST_7_DAYS(R.string.filter_last_7_days, 7),
+    LAST_30_DAYS(R.string.filter_last_30_days, 30),
+    LAST_90_DAYS(R.string.filter_last_90_days, 90),
+    LAST_YEAR(R.string.filter_last_year, 365),
+    ALL_TIME(R.string.filter_all_time, null),
+    CUSTOM(R.string.filter_custom, -1)
+}
+
+enum class ChargeTypeFilter(val label: String) {
+    ALL("All"),
+    AC("AC"),
+    DC("DC")
+}
+
+enum class CostFilter(@get:StringRes val labelRes: Int) {
+    ALL(R.string.cost_filter_all),
+    HAS_COST(R.string.cost_filter_has_cost),
+    NO_COST(R.string.cost_filter_no_cost)
+}
+
+data class LocationFilter(val name: String) // null name = All locations
+
+data class ChargeChartData(
+    val label: String,
+    val count: Int,
+    val totalEnergy: Double,
+    val energyAc: Double,
+    val energyDc: Double,
+    val costAc: Double,
+    val costDc: Double,
+    val countAc: Int,
+    val countDc: Int,
+    val totalCost: Double,
+    val sortKey: Long // For sorting (epoch day, week number, or year-month)
+)
+
+data class ChargesUiState(
+    val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
+    // Set while a filter-driven reload is in flight. Distinct from `isLoading`,
+    // which intentionally stays false on filter change to avoid the full-screen
+    // flash. Drives a centered overlay spinner that lets the existing list show
+    // through.
+    val isFilterLoading: Boolean = false,
+    val charges: List<ChargeData> = emptyList(),
+    val dcChargeIds: Set<Int> = emptySet(),
+    val availableLocations: List<String> = emptyList(),
+    val selectedLocations: Set<String> = emptySet(),  // null = All locations
+    val processedChargeIds: Set<Int> = emptySet(),  // Charges that have aggregate data
+    val chartData: List<ChargeChartData> = emptyList(),
+    val chartGranularity: ChartGranularity = ChartGranularity.MONTHLY,
+    val error: String? = null,
+    val startDate: LocalDate? = null,
+    val endDate: LocalDate? = null,
+    val selectedFilter: DateFilter = DateFilter.LAST_7_DAYS,  // Preserve filter in ViewModel
+    val chargeTypeFilter: ChargeTypeFilter = ChargeTypeFilter.ALL,
+    val costFilter: CostFilter = CostFilter.ALL,
+    val customStartDate: LocalDate? = null,
+    val customEndDate: LocalDate? = null,
+    val scrollPosition: Int = 0,  // First visible item index
+    val scrollOffset: Int = 0,    // Scroll offset within first item
+    val summary: ChargesSummary = ChargesSummary(),
+    val currencySymbol: String = "€",
+    val teslamateBaseUrl: String = "",
+    val freeSupercharging: Boolean = false
+)
+
+data class ChargesSummary(
+    val totalCharges: Int = 0,
+    val totalEnergyAdded: Double = 0.0,
+    val totalCost: Double = 0.0,
+    val avgEnergyPerCharge: Double = 0.0,
+    val avgCostPerCharge: Double = 0.0
+)
+
+@HiltViewModel
+class ChargesViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
+    private val repository: TeslamateRepository,
+    private val settingsDataStore: SettingsDataStore,
+    private val aggregateDao: AggregateDao,
+    private val savedStateHandle: SavedStateHandle
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(restoreInitialState(savedStateHandle))
+    val uiState: StateFlow<ChargesUiState> = _uiState.asStateFlow()
+
+    private var carId: Int? = null
+    private var showShortDrivesCharges: Boolean = false
+    private var allCharges: List<ChargeData> = emptyList()
+
+    companion object {
+        private const val MIN_ENERGY_KWH = 0.1
+
+        private const val KEY_DATE_FILTER = "filter_date"
+        private const val KEY_CHARGE_TYPE_FILTER = "filter_charge_type"
+        private const val KEY_COST_FILTER = "filter_cost"
+        private const val KEY_LOCATIONS = "filter_locations"
+        private const val KEY_CUSTOM_START = "filter_custom_start"
+        private const val KEY_CUSTOM_END = "filter_custom_end"
+
+        private fun restoreInitialState(handle: SavedStateHandle): ChargesUiState {
+            val dateFilter = handle.get<String>(KEY_DATE_FILTER)
+                ?.let { runCatching { DateFilter.valueOf(it) }.getOrNull() }
+                ?: DateFilter.LAST_7_DAYS
+            val chargeTypeFilter = handle.get<String>(KEY_CHARGE_TYPE_FILTER)
+                ?.let { runCatching { ChargeTypeFilter.valueOf(it) }.getOrNull() }
+                ?: ChargeTypeFilter.ALL
+            val costFilter = handle.get<String>(KEY_COST_FILTER)
+                ?.let { runCatching { CostFilter.valueOf(it) }.getOrNull() }
+                ?: CostFilter.ALL
+            val locations = handle.get<ArrayList<String>>(KEY_LOCATIONS)?.toSet() ?: emptySet()
+            val customStart = handle.get<String>(KEY_CUSTOM_START)
+                ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            val customEnd = handle.get<String>(KEY_CUSTOM_END)
+                ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            return ChargesUiState(
+                selectedFilter = dateFilter,
+                chargeTypeFilter = chargeTypeFilter,
+                costFilter = costFilter,
+                selectedLocations = locations,
+                customStartDate = customStart,
+                customEndDate = customEnd
+            )
+        }
+    }
+
+    init {
+        observeSettings()
+    }
+
+    private fun observeSettings() {
+        viewModelScope.launch {
+            settingsDataStore.settings.collect { settings ->
+                val currency = Currency.findByCode(settings.currencyCode)
+                _uiState.update {
+                    it.copy(
+                        currencySymbol = currency.symbol,
+                        teslamateBaseUrl = settings.teslamateBaseUrl
+                    )
+                }
+            }
+        }
+    }
+
+    fun setCarId(id: Int) {
+        if (carId != id) {
+            carId = id
+            loadCarSettings(id)
+            // Apply restored (or default) filter on first load. CUSTOM needs the
+            // explicit date pair — setDateFilter is a no-op for CUSTOM.
+            val state = _uiState.value
+            val customStart = state.customStartDate
+            val customEnd = state.customEndDate
+            if (state.selectedFilter == DateFilter.CUSTOM && customStart != null && customEnd != null) {
+                setCustomDateRange(customStart, customEnd)
+            } else {
+                setDateFilter(state.selectedFilter)
+            }
+        }
+    }
+
+    private fun loadCarSettings(id: Int) {
+        viewModelScope.launch {
+            when (val result = repository.getCar(id)) {
+                is ApiResult.Success -> {
+                    val free = result.data.carSettings?.freeSupercharging ?: false
+                    _uiState.update { it.copy(freeSupercharging = free) }
+                }
+                is ApiResult.Error -> {
+                    // Non-fatal — the hint is a nice-to-have, not load-critical
+                }
+            }
+        }
+    }
+
+    fun setDateFilter(filter: DateFilter) {
+        if (filter == DateFilter.CUSTOM) return
+        val endDate = LocalDate.now()
+        val startDate = filter.days?.let { days ->
+            if (days > 0) endDate.minusDays(days - 1) else endDate
+        }
+        _uiState.update { it.copy(
+            selectedFilter = filter,
+            startDate = startDate,
+            endDate = if (filter.days != null) endDate else null,
+            customStartDate = null,
+            customEndDate = null
+        )}
+        savedStateHandle[KEY_DATE_FILTER] = filter.name
+        savedStateHandle[KEY_CUSTOM_START] = null
+        savedStateHandle[KEY_CUSTOM_END] = null
+        loadCharges(startDate, if (filter.days != null) endDate else null)
+    }
+
+    fun setCustomDateRange(start: LocalDate, end: LocalDate) {
+        _uiState.update { it.copy(
+            selectedFilter = DateFilter.CUSTOM,
+            startDate = start,
+            endDate = end,
+            customStartDate = start,
+            customEndDate = end
+        )}
+        savedStateHandle[KEY_DATE_FILTER] = DateFilter.CUSTOM.name
+        savedStateHandle[KEY_CUSTOM_START] = start.toString()
+        savedStateHandle[KEY_CUSTOM_END] = end.toString()
+        loadCharges(start, end)
+    }
+
+    fun refresh() {
+        carId?.let {
+            _uiState.update { it.copy(isRefreshing = true) }
+            val state = _uiState.value
+            loadCharges(state.startDate, state.endDate)
+        }
+    }
+
+    fun setCostFilter(filter: CostFilter) {
+        _uiState.update { it.copy(costFilter = filter) }
+        savedStateHandle[KEY_COST_FILTER] = filter.name
+        applyFiltersAndUpdateState()
+    }
+
+    fun setChargeTypeFilter(filter: ChargeTypeFilter) {
+        val currentFilter = _uiState.value.chargeTypeFilter
+        // Toggle: if same filter is selected, reset to ALL
+        val newFilter = if (filter == currentFilter && filter != ChargeTypeFilter.ALL) {
+            ChargeTypeFilter.ALL
+        } else {
+            filter
+        }
+        _uiState.update { it.copy(chargeTypeFilter = newFilter) }
+        savedStateHandle[KEY_CHARGE_TYPE_FILTER] = newFilter.name
+        applyFiltersAndUpdateState()
+    }
+
+    fun setLocationFilter(location: String) {
+        val current = _uiState.value.selectedLocations
+        val updated = if (location in current) current - location else current + location
+        _uiState.update { it.copy(selectedLocations = updated) }
+        savedStateHandle[KEY_LOCATIONS] = ArrayList(updated)
+        applyFiltersAndUpdateState()
+    }
+
+    fun clearLocationFilter() {
+        _uiState.update { it.copy(selectedLocations = emptySet()) }
+        savedStateHandle[KEY_LOCATIONS] = ArrayList<String>()
+        applyFiltersAndUpdateState()
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
+    }
+
+    fun saveScrollPosition(firstVisibleIndex: Int, offset: Int) {
+        _uiState.update { it.copy(scrollPosition = firstVisibleIndex, scrollOffset = offset) }
+    }
+
+    private fun loadCharges(startDate: LocalDate? = null, endDate: LocalDate? = null) {
+        val id = carId ?: return
+
+        viewModelScope.launch {
+            val state = _uiState.value
+            // Only show the full-screen spinner on the true initial load — i.e. when
+            // we've never successfully fetched any data yet. Using state.charges (the
+            // filtered view) would trip the spinner whenever the active AC/DC or
+            // location filter happened to zero out the list, flashing the whole
+            // screen on every date-range change.
+            val isInitial = !state.isRefreshing && allCharges.isEmpty()
+            _uiState.update {
+                it.copy(
+                    isLoading = if (isInitial) true else it.isLoading,
+                    // Filter-driven reloads (when we already have data and aren't
+                    // pull-to-refresh-ing) get a non-blocking overlay spinner
+                    // instead. Set here, cleared in the success/error tail.
+                    isFilterLoading = !isInitial && !state.isRefreshing,
+                )
+            }
+
+            // Load the display setting
+            showShortDrivesCharges = settingsDataStore.showShortDrivesCharges.first()
+
+            // Local-day RFC3339 boundaries (see LocalDayBoundaries for why not UTC).
+            val startDateStr = startDate?.let { LocalDayBoundaries.startOfDay(it) }
+            val endDateStr = endDate?.let { LocalDayBoundaries.endOfDay(it) }
+
+            // Fetch charge IDs from local database aggregates
+            val dcChargeIds = try {
+                aggregateDao.getDcChargeIds(id).toSet()
+            } catch (e: Exception) {
+                emptySet()
+            }
+            val processedChargeIds = try {
+                aggregateDao.getAllProcessedChargeIds(id).toSet()
+            } catch (e: Exception) {
+                emptySet()
+            }
+
+            when (val result = repository.getCharges(id, startDateStr, endDateStr)) {
+                is ApiResult.Success -> {
+                    allCharges = result.data
+                    val granularity = determineGranularity(startDate, endDate)
+
+                    _uiState.update {
+                        it.copy(
+                            dcChargeIds = dcChargeIds,
+                            processedChargeIds = processedChargeIds,
+                            chartGranularity = granularity,
+                            error = null
+                        )
+                    }
+
+                    applyFiltersAndUpdateState()
+                }
+                is ApiResult.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            isRefreshing = false,
+                            isFilterLoading = false,
+                            error = result.message
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun applyFiltersAndUpdateState() {
+        val state = _uiState.value
+        val chargeTypeFilter = state.chargeTypeFilter
+        val costFilter = state.costFilter
+        val dcChargeIds = state.dcChargeIds
+        val granularity = state.chartGranularity
+
+        // First apply short charges filter
+        var filteredCharges = if (showShortDrivesCharges) {
+            allCharges
+        } else {
+            allCharges.filter { charge ->
+                (charge.chargeEnergyAdded ?: 0.0) > MIN_ENERGY_KWH
+            }
+        }
+
+        // Apply charge type filter (AC/DC) for list display
+        val displayCharges = when (chargeTypeFilter) {
+            ChargeTypeFilter.ALL -> filteredCharges
+            ChargeTypeFilter.DC -> filteredCharges.filter { it.chargeId in dcChargeIds }
+            ChargeTypeFilter.AC -> filteredCharges.filter { it.chargeId !in dcChargeIds }
+        }
+
+        // Apply charge type filter to all charges for summary/charts (include short charges)
+        val chargesForStats = when (chargeTypeFilter) {
+            ChargeTypeFilter.ALL -> allCharges
+            ChargeTypeFilter.DC -> allCharges.filter { it.chargeId in dcChargeIds }
+            ChargeTypeFilter.AC -> allCharges.filter { it.chargeId !in dcChargeIds }
+        }
+
+        // Extract unique locations from the complete set
+        val locations = allCharges.mapNotNull { it.address }.distinct().sorted()
+        // Apply location filter to displayCharges
+        val locationFilter = state.selectedLocations
+        val displayChargesLocFiltered = if (locationFilter.isNotEmpty())
+            displayCharges.filter {  it.address in locationFilter }
+        else displayCharges
+        // Apply location filter to Stats
+        val chargesForStatsLocFiltered = if (locationFilter.isNotEmpty())
+            chargesForStats.filter { it.address in locationFilter }
+        else chargesForStats
+
+        // Apply cost filter. TeslaMate returns cost=0 (not null) for unset values,
+        // so "No cost" means "0 or null" and "Has cost" means strictly > 0. This
+        // mixes free-SuC sessions in with not-yet-filled-in ones — which is fine
+        // for the primary use case (find DC sessions to edit) since free-SuC cars
+        // surface a contextual hint and other cars rarely have legitimate 0-cost
+        // DC charges.
+        val displayChargesFiltered = when (costFilter) {
+            CostFilter.ALL -> displayChargesLocFiltered
+            CostFilter.HAS_COST -> displayChargesLocFiltered.filter { (it.cost ?: 0.0) > 0.0 }
+            CostFilter.NO_COST -> displayChargesLocFiltered.filter { (it.cost ?: 0.0) == 0.0 }
+        }
+        val chargesForStatsFiltered = when (costFilter) {
+            CostFilter.ALL -> chargesForStatsLocFiltered
+            CostFilter.HAS_COST -> chargesForStatsLocFiltered.filter { (it.cost ?: 0.0) > 0.0 }
+            CostFilter.NO_COST -> chargesForStatsLocFiltered.filter { (it.cost ?: 0.0) == 0.0 }
+        }
+
+        // Calculate summary and chart data from filtered charges
+        val summary = calculateSummary(chargesForStatsFiltered)
+        val chartData = calculateChartData(chargesForStatsFiltered, granularity, state.startDate)
+
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                isRefreshing = false,
+                isFilterLoading = false,
+                charges = displayChargesFiltered,
+                availableLocations = locations,
+                summary = summary,
+                chartData = chartData
+            )
+        }
+    }
+
+    private fun determineGranularity(startDate: LocalDate?, endDate: LocalDate?): ChartGranularity {
+        if (startDate == null || endDate == null) return ChartGranularity.MONTHLY
+        val days = ChronoUnit.DAYS.between(startDate, endDate)
+        return when {
+            days <= 30 -> ChartGranularity.DAILY
+            days <= 90 -> ChartGranularity.WEEKLY
+            else -> ChartGranularity.MONTHLY
+        }
+    }
+
+    private fun calculateChartData(charges: List<ChargeData>, granularity: ChartGranularity, startDate: LocalDate?): List<ChargeChartData> {
+        if (charges.isEmpty()) return emptyList()
+
+        val formatter = DateTimeFormatter.ISO_DATE_TIME
+        val weekFields = WeekFields.of(Locale.getDefault())
+
+        // Group the charges by day
+        val chargesByDay = charges.mapNotNull { charge ->
+            charge.startDate?.let {
+                try {
+                    // Use of localdatetime to support the full ISO format
+                    val date = LocalDateTime.parse(it, formatter).toLocalDate()
+                    date.toEpochDay() to charge
+                } catch (e: Exception) { null }
+            }
+        }.groupBy({ it.first }, { it.second })
+
+        return when (granularity) {
+            ChartGranularity.DAILY -> {
+                // DAILY ranges (today, last 7 and last 30 days)
+                // If not startDate (All Time), get the first trip, or today
+                val start = startDate ?: (chargesByDay.keys.minOrNull()?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now())
+                val end = LocalDate.now()
+                val result = mutableListOf<ChargeChartData>()
+                var current = start
+                while (!current.isAfter(end)) {
+                    val key = current.toEpochDay()
+                    val itemsInDay = chargesByDay[key] ?: emptyList()
+                    result.add(
+                        createChargeChartPoint(
+                            label = current.formatShortNoYear(Locale.getDefault()),
+                            sortKey = key,
+                            charges = itemsInDay,
+                            dcChargeIds = _uiState.value.dcChargeIds
+                        )
+                    )
+                    current = current.plusDays(1)
+                }
+                result
+            }
+            ChartGranularity.WEEKLY -> {
+                // WEEKLY range (last 90 days = ~13 weeks)
+                val start = startDate ?: (chargesByDay.keys.minOrNull()?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now())
+                val end = LocalDate.now()
+
+                // Get first day of the week for start date
+                var weekStart = start.with(weekFields.dayOfWeek(), 1)
+                // If weekStart is before start, advance to the next week
+                if (weekStart.isBefore(start)) {
+                    weekStart = weekStart.plusWeeks(1)
+                }
+
+                // Group charges by week
+                val chargesByWeek = charges.mapNotNull { charge ->
+                    charge.startDate?.let { dateStr ->
+                        try {
+                            val date = LocalDateTime.parse(dateStr, formatter).toLocalDate()
+                            val firstDayOfWeek = date.with(weekFields.dayOfWeek(), 1)
+                            firstDayOfWeek.toEpochDay() to charge
+                        } catch (e: Exception) { null }
+                    }
+                }.groupBy({ it.first }, { it.second })
+
+                // Generate all weeks in range
+                val result = mutableListOf<ChargeChartData>()
+                var currentWeek = weekStart
+                while (!currentWeek.isAfter(end)) {
+                    val key = currentWeek.toEpochDay()
+                    val chargesInWeek = chargesByWeek[key] ?: emptyList()
+                    val weekOfYear = currentWeek.get(weekFields.weekOfYear())
+                    result.add(
+                        createChargeChartPoint(
+                            label = formatWeekLabel(appContext.resources, weekOfYear),
+                            sortKey = key,
+                            charges = chargesInWeek,
+                            dcChargeIds = _uiState.value.dcChargeIds
+                        )
+                    )
+                    currentWeek = currentWeek.plusWeeks(1)
+                }
+                result
+            }
+
+            ChartGranularity.MONTHLY -> {
+                // MONTHLY range (last year = 12 months)
+                val start = startDate ?: (chargesByDay.keys.minOrNull()?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now())
+                val end = LocalDate.now()
+
+                // Get first day of month for start date
+                val monthStart = YearMonth.from(start).atDay(1)
+                val monthEnd = YearMonth.from(end)
+
+                // Group charges by month
+                val chargesByMonth = charges.mapNotNull { charge ->
+                    charge.startDate?.let { dateStr ->
+                        try {
+                            val date = LocalDateTime.parse(dateStr, formatter).toLocalDate()
+                            val firstDayOfMonth = YearMonth.from(date).atDay(1)
+                            firstDayOfMonth.toEpochDay() to charge
+                        } catch (e: Exception) { null }
+                    }
+                }.groupBy({ it.first }, { it.second })
+
+                // Generate all months in range
+                val result = mutableListOf<ChargeChartData>()
+                var currentMonth = YearMonth.from(monthStart)
+                while (!currentMonth.isAfter(monthEnd)) {
+                    val firstDay = currentMonth.atDay(1)
+                    val key = firstDay.toEpochDay()
+                    val chargesInMonth = chargesByMonth[key] ?: emptyList()
+                    result.add(
+                        createChargeChartPoint(
+                            label = firstDay.formatMonthYear(Locale.getDefault()),
+                            sortKey = key,
+                            charges = chargesInMonth,
+                            dcChargeIds = _uiState.value.dcChargeIds
+                        )
+                    )
+                    currentMonth = currentMonth.plusMonths(1)
+                }
+                result
+            }
+        }
+    }
+
+    // Helper function to centralize chart data creation
+    private fun createChargeChartPoint(
+        label: String,
+        sortKey: Long,
+        charges: List<ChargeData>,
+        dcChargeIds: Set<Int>
+    ): ChargeChartData {
+        val dcCharges = charges.filter { it.chargeId in dcChargeIds }
+        val energyDc = dcCharges.sumOf { it.chargeEnergyAdded ?: 0.0 }
+        val energyTotal = charges.sumOf { it.chargeEnergyAdded ?: 0.0 }
+        val costDc = dcCharges.sumOf { it.cost ?: 0.0 }
+        val costTotal = charges.sumOf { it.cost ?: 0.0 }
+        val countDc = dcCharges.size
+        val countTotal = charges.size
+        return ChargeChartData(
+            label = label,
+            totalEnergy = energyTotal,
+            totalCost = costTotal,
+            count = countTotal,
+            sortKey = sortKey,
+            energyDc = energyDc,
+            energyAc = energyTotal - energyDc,
+            costDc = costDc,
+            costAc = costTotal - costDc,
+            countDc = countDc,
+            countAc = countTotal - countDc
+        )
+    }
+
+    private fun calculateSummary(charges: List<ChargeData>): ChargesSummary {
+        if (charges.isEmpty()) return ChargesSummary()
+
+        val totalEnergy = charges.sumOf { it.chargeEnergyAdded ?: 0.0 }
+        val totalCost = charges.sumOf { it.cost ?: 0.0 }
+        val count = charges.size
+
+        return ChargesSummary(
+            totalCharges = count,
+            totalEnergyAdded = totalEnergy,
+            totalCost = totalCost,
+            avgEnergyPerCharge = if (count > 0) totalEnergy / count else 0.0,
+            avgCostPerCharge = if (count > 0) totalCost / count else 0.0
+        )
+    }
+}

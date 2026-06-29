@@ -1,0 +1,82 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "drives": "Drives",
+    "charges": "Charges",
+    "battery": "Battery",
+    "mileage": "Mileage",
+    "statistics": "Statistics",
+    "heatmap": "Heatmap",
+    "destinations": "Destinations",
+    "efficiency": "Efficiency",
+    "countries": "Countries",
+    "sentry": "Sentry",
+    "trips": "Trips",
+    "updates": "Updates",
+    "settings": "Settings"
+  },
+  "dashboard": {
+    "loading": "Loading Dashboard...",
+    "battery": "Battery",
+    "odometer": "Odometer",
+    "location": "Location",
+    "inside_temp": "Inside",
+    "outside_temp": "Outside",
+    "lock_locked": "Locked",
+    "lock_unlocked": "Unlocked",
+    "plug_plugged": "Plugged",
+    "plug_unplugged": "Unplugged",
+    "climate_on": "Climate ON",
+    "climate_off": "Climate OFF",
+    "sentry_armed": "Sentry ARMED",
+    "sentry_off": "Sentry OFF",
+    "high_soc_warning": "High charge level - consider reducing to 80-90% for daily use",
+    "tire_pressure": "Tire Pressure",
+    "battery_trend": "7-Day Battery Trend"
+  },
+  "status": {
+    "online": "Online",
+    "driving": "Driving",
+    "charging": "Charging",
+    "asleep": "Asleep",
+    "offline": "Offline"
+  },
+  "charges": {
+    "title": "Charge History",
+    "detail": "Charge Detail",
+    "in_progress": "Charging in Progress",
+    "power": "Power",
+    "added": "Added",
+    "remaining": "Remaining"
+  },
+  "drives": {
+    "title": "Drive History",
+    "detail": "Drive Detail"
+  },
+  "battery_health": {
+    "title": "Battery Health",
+    "health": "Health",
+    "original_capacity": "Original Capacity",
+    "current_capacity": "Current Capacity",
+    "degradation": "Degradation"
+  },
+  "settings": {
+    "title": "Settings",
+    "connection": "Connection",
+    "server_url": "Server URL",
+    "api_token": "API Token",
+    "test_connection": "Test Connection",
+    "preferences": "Preferences",
+    "units": "Units",
+    "temperature": "Temperature",
+    "theme": "Theme",
+    "mock_mode": "Mock Mode",
+    "about": "About"
+  },
+  "common": {
+    "back": "Back",
+    "loading": "Loading...",
+    "no_data": "No data available",
+    "offline": "Offline - showing cached data"
+  }
+}

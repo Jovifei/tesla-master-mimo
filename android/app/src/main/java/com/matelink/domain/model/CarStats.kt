@@ -1,0 +1,268 @@
+package com.matelink.domain.model
+
+import com.matelink.data.local.dao.BusiestDayResult
+import com.matelink.data.local.dao.MostDistanceDayResult
+import com.matelink.data.local.entity.ChargeSummary
+import com.matelink.data.local.entity.DriveSummary
+
+/**
+ * Complete stats for a car, containing both Quick Stats and Deep Stats.
+ */
+data class CarStats(
+    val carId: Int,
+    val yearFilter: YearFilter,
+    val quickStats: QuickStats,
+    val deepStats: DeepStats?,
+    val syncProgress: SyncProgress?
+)
+
+/**
+ * Year filter options for stats.
+ */
+sealed class YearFilter {
+    data object AllTime : YearFilter()
+    data class Year(val year: Int) : YearFilter()
+
+    fun toDisplayString(): String = when (this) {
+        is AllTime -> "All Time"
+        is Year -> year.toString()
+    }
+}
+
+/**
+ * Quick stats from summary data (instant, no detail sync needed).
+ */
+data class QuickStats(
+    // === Drives Overview ===
+    val totalDrives: Int,
+    val totalDistanceKm: Double,
+    val totalEnergyConsumedKwh: Double,
+    val avgEfficiencyWhKm: Double,
+    val maxSpeedKmh: Int?,
+    val avgDriveMinutes: Double?,
+    val totalDrivingDays: Int?,
+
+    // === Charges Overview ===
+    val totalCharges: Int,
+    val totalEnergyAddedKwh: Double,
+    val totalCost: Double?,
+    val avgCostPerKwh: Double?,
+    val avgChargeMinutes: Double?,
+
+    // === Records (with full drive/charge info) ===
+    val longestDrive: DriveSummary?,
+    val fastestDrive: DriveSummary?,
+    val mostEfficientDrive: DriveSummary?,
+    val leastEfficientDrive: DriveSummary?,
+    val biggestCharge: ChargeSummary?,
+    val mostExpensiveCharge: ChargeSummary?,
+    val mostExpensivePerKwhCharge: ChargeSummary?,
+
+    // === Time Stats ===
+    val firstDriveDate: String?,
+    val firstChargeDate: String?,
+    val busiestDay: BusiestDayResult?,
+    val mostDistanceDay: MostDistanceDayResult?,
+
+    // === Range Records ===
+    val maxDistanceBetweenCharges: MaxDistanceBetweenChargesRecord?,
+
+    // === Gap Records ===
+    val longestGapWithoutCharging: GapRecord?,
+    val longestGapWithoutDriving: GapRecord?,
+
+    // === Streak Records ===
+    val longestDrivingStreak: StreakRecord?,
+
+    // === Battery Records ===
+    val biggestBatteryGainCharge: BatteryChangeRecord?,
+    val biggestBatteryDrainDrive: BatteryChangeRecord?
+)
+
+/**
+ * Deep stats from detail aggregates (requires detail sync).
+ * Null fields mean data not yet available.
+ */
+data class DeepStats(
+    // === Elevation ===
+    val maxElevationM: Int?,
+    val minElevationM: Int?,
+    val driveWithMaxElevation: DriveElevationRecord?,
+    val driveWithMinElevation: DriveElevationRecord?,
+    val driveWithMostClimbing: DriveElevationRecord?,
+
+    // === Temperature (Driving) ===
+    val maxOutsideTempDrivingC: Double?,
+    val minOutsideTempDrivingC: Double?,
+    val maxCabinTempC: Double?,
+    val minCabinTempC: Double?,
+    val hottestDrive: DriveTempRecord?,
+    val coldestDrive: DriveTempRecord?,
+
+    // === Temperature (Charging) ===
+    val maxOutsideTempChargingC: Double?,
+    val minOutsideTempChargingC: Double?,
+    val hottestCharge: ChargeTempRecord?,
+    val coldestCharge: ChargeTempRecord?,
+
+    // === Charging Power ===
+    val maxChargerPowerKw: Int?,
+    val chargeWithMaxPower: ChargePowerRecord?,
+
+    // === AC/DC Ratio ===
+    val acChargeCount: Int,
+    val dcChargeCount: Int,
+    val acChargeEnergyKwh: Double,
+    val dcChargeEnergyKwh: Double,
+
+    // === Countries Visited ===
+    val countriesVisitedCount: Int?,
+
+    // === Sync Progress ===
+    val driveDetailsProcessed: Int,
+    val chargeDetailsProcessed: Int
+) {
+    val acDcRatio: String
+        get() {
+            val total = acChargeCount + dcChargeCount
+            return if (total > 0) {
+                val acPercent = (acChargeCount * 100) / total
+                val dcPercent = (dcChargeCount * 100) / total
+                "$acPercent% AC / $dcPercent% DC"
+            } else {
+                "N/A"
+            }
+        }
+}
+
+/**
+ * Record for elevation-related drives.
+ */
+data class DriveElevationRecord(
+    val driveId: Int,
+    val elevationM: Int,
+    val elevationGainM: Int?,
+    val date: String?
+)
+
+/**
+ * Record for temperature-related drives.
+ */
+data class DriveTempRecord(
+    val driveId: Int,
+    val tempC: Double,
+    val date: String?
+)
+
+/**
+ * Record for temperature-related charges.
+ */
+data class ChargeTempRecord(
+    val chargeId: Int,
+    val tempC: Double,
+    val date: String?
+)
+
+/**
+ * Record for power-related charges.
+ */
+data class ChargePowerRecord(
+    val chargeId: Int,
+    val powerKw: Int,
+    val date: String?
+)
+
+/**
+ * Record for maximum distance traveled between two consecutive charges.
+ */
+data class MaxDistanceBetweenChargesRecord(
+    val distance: Double,           // km
+    val fromChargeId: Int,
+    val toChargeId: Int,
+    val fromDate: String,
+    val toDate: String
+)
+
+/**
+ * Record for a gap (time without driving or charging).
+ */
+data class GapRecord(
+    val gapDays: Double,
+    val fromDate: String,
+    val toDate: String
+)
+
+/**
+ * Record for a driving streak (consecutive days with driving).
+ */
+data class StreakRecord(
+    val streakDays: Int,
+    val startDate: String,
+    val endDate: String
+)
+
+/**
+ * Record for battery change (gain from charging or drain from driving).
+ */
+data class BatteryChangeRecord(
+    val percentChange: Int,         // % gained or drained
+    val startLevel: Int,            // starting battery %
+    val endLevel: Int,              // ending battery %
+    val recordId: Int,              // chargeId or driveId
+    val date: String,
+    val isCharge: Boolean           // true for charge, false for drive
+)
+
+/**
+ * Record for a country visited.
+ */
+data class CountryRecord(
+    val countryCode: String,        // ISO 3166-1 alpha-2 (e.g., "IT", "US")
+    val countryName: String,        // Full name (e.g., "Italy", "United States")
+    val flagEmoji: String,          // Flag emoji (e.g., "🇮🇹", "🇺🇸")
+    val firstVisitDate: String,     // ISO date of first drive
+    val lastVisitDate: String,      // ISO date of most recent drive
+    val driveCount: Int,            // Number of drives in this country
+    val totalDistanceKm: Double,    // Total km driven (approx, from drives starting in this country)
+    val totalChargeEnergyKwh: Double, // Total kWh charged in this country
+    val chargeCount: Int            // Number of charges in this country
+)
+
+/**
+ * Record for a region/state visited within a country.
+ */
+data class RegionRecord(
+    val regionName: String,         // Region/state name (e.g., "Lazio", "California")
+    val countryCode: String,        // Parent country ISO code
+    val firstVisitDate: String,     // ISO date of first drive
+    val lastVisitDate: String,      // ISO date of most recent drive
+    val driveCount: Int,            // Number of drives in this region
+    val totalDistanceKm: Double,    // Total km driven in this region
+    val totalChargeEnergyKwh: Double, // Total kWh charged in this region
+    val chargeCount: Int            // Number of charges in this region
+)
+
+/**
+ * A charge location for map display with relevant metadata.
+ */
+data class ChargeLocation(
+    val chargeId: Int,
+    val latitude: Double,
+    val longitude: Double,
+    val energyAddedKwh: Double,     // Energy added in this charge
+    val date: String,               // ISO date of the charge
+    val isDcCharge: Boolean,        // DC (fast) or AC (slow) charge
+    val address: String             // Location address
+)
+
+/**
+ * A drive start location for map display.
+ */
+data class DriveLocation(
+    val driveId: Int,
+    val latitude: Double,
+    val longitude: Double,
+    val distanceKm: Double,         // Total distance of this drive
+    val date: String,               // ISO date of the drive
+    val address: String             // Start address
+)

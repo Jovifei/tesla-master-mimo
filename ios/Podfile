@@ -1,0 +1,19 @@
+platform :ios, '16.0'
+
+target 'MateLink' do
+  use_frameworks!
+
+  # AMap (高德地图) SDK
+  pod 'AMap3DMap', '~> 9.6'
+  pod 'AMapFoundation', '~> 1.8'
+  pod 'AMapLocation', '~> 2.10'
+  pod 'AMapSearch', '~> 9.7'
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+    end
+  end
+end

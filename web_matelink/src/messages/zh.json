@@ -1,0 +1,82 @@
+{
+  "nav": {
+    "dashboard": "仪表盘",
+    "drives": "行程",
+    "charges": "充电",
+    "battery": "电池",
+    "mileage": "里程",
+    "statistics": "统计",
+    "heatmap": "热力图",
+    "destinations": "目的地",
+    "efficiency": "效率",
+    "countries": "到访地区",
+    "sentry": "哨兵",
+    "trips": "旅行",
+    "updates": "更新",
+    "settings": "设置"
+  },
+  "dashboard": {
+    "loading": "加载中...",
+    "battery": "电量",
+    "odometer": "里程",
+    "location": "位置",
+    "inside_temp": "车内温度",
+    "outside_temp": "车外温度",
+    "lock_locked": "已锁",
+    "lock_unlocked": "未锁",
+    "plug_plugged": "已插枪",
+    "plug_unplugged": "未插枪",
+    "climate_on": "空调开启",
+    "climate_off": "空调关闭",
+    "sentry_armed": "哨兵已开启",
+    "sentry_off": "哨兵关闭",
+    "high_soc_warning": "电量过高 - 日常使用建议充至 80-90%",
+    "tire_pressure": "胎压",
+    "battery_trend": "7天电量趋势"
+  },
+  "status": {
+    "online": "在线",
+    "driving": "行驶中",
+    "charging": "充电中",
+    "asleep": "休眠",
+    "offline": "离线"
+  },
+  "charges": {
+    "title": "充电历史",
+    "detail": "充电详情",
+    "in_progress": "正在充电",
+    "power": "功率",
+    "added": "已充入",
+    "remaining": "剩余时间"
+  },
+  "drives": {
+    "title": "行程记录",
+    "detail": "行程详情"
+  },
+  "battery_health": {
+    "title": "电池健康",
+    "health": "健康度",
+    "original_capacity": "出厂容量",
+    "current_capacity": "当前容量",
+    "degradation": "衰减"
+  },
+  "settings": {
+    "title": "设置",
+    "connection": "连接",
+    "server_url": "服务器地址",
+    "api_token": "API 令牌",
+    "test_connection": "测试连接",
+    "preferences": "偏好设置",
+    "units": "单位",
+    "temperature": "温度",
+    "theme": "主题",
+    "mock_mode": "模拟模式",
+    "about": "关于"
+  },
+  "common": {
+    "back": "返回",
+    "loading": "加载中...",
+    "no_data": "暂无数据",
+    "offline": "离线 - 显示缓存数据"
+  }
+}

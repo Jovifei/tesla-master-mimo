@@ -1,0 +1,70 @@
+// Navigation
+"nav.dashboard" = "仪表盘";
+"nav.drives" = "行程";
+"nav.charges" = "充电";
+"nav.more" = "更多";
+
+// Dashboard
+"dashboard.loading" = "加载中...";
+"battery" = "电量";
+"odometer" = "里程";
+"location" = "位置";
+"inside_temp" = "车内";
+"outside_temp" = "车外";
+"lock.locked" = "已锁";
+"lock.unlocked" = "未锁";
+"plug.plugged" = "已插枪";
+"plug.unplugged" = "未插枪";
+"climate.on" = "空调开启";
+"climate.off" = "空调关闭";
+"sentry.armed" = "哨兵已开启";
+"sentry.off" = "哨兵关闭";
+"high_soc_warning" = "电量过高 - 日常使用建议充至 80-90%";
+"tire_pressure" = "胎压";
+"battery_trend" = "7天电量趋势";
+
+// Status
+"state.online" = "在线";
+"state.driving" = "行驶中";
+"state.charging" = "充电中";
+"state.asleep" = "休眠";
+"state.offline" = "离线";
+
+// Charging
+"charges.title" = "充电历史";
+"charge.detail" = "充电详情";
+"charging.in_progress" = "正在充电";
+"charge.power" = "功率";
+"charge.added" = "已充入";
+"charge.remaining" = "剩余时间";
+
+// Drives
+"drives.title" = "行程记录";
+"drive.detail" = "行程详情";
+
+// Battery Health
+"battery_health.title" = "电池健康";
+"battery_health.health" = "健康度";
+"battery_health.original" = "出厂容量";
+"battery_health.current" = "当前容量";
+"battery_health.degradation" = "衰减";
+
+// Settings
+"settings.title" = "设置";
+"connection" = "连接";
+"server_url" = "服务器地址";
+"api_token" = "API 令牌";
+"test_connection" = "测试连接";
+"preferences" = "偏好设置";
+"units" = "单位";
+"temperature" = "温度";
+"theme" = "主题";
+"mock_mode" = "模拟模式";
+"about" = "关于";
+"version" = "版本";
+
+// Common
+"back" = "返回";
+"loading" = "加载中...";
+"no_data" = "暂无数据";
+"offline" = "离线 - 显示缓存数据";

@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MateLink</string>
+
+    <!-- Navigation -->
+    <string name="nav_dashboard">仪表盘</string>
+    <string name="nav_drives">行程</string>
+    <string name="nav_charges">充电</string>
+    <string name="nav_more">更多</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_loading">加载中...</string>
+    <string name="battery">电量</string>
+    <string name="odometer">里程</string>
+    <string name="location">位置</string>
+    <string name="inside_temp">车内</string>
+    <string name="outside_temp">车外</string>
+    <string name="lock_locked">已锁</string>
+    <string name="lock_unlocked">未锁</string>
+    <string name="plug_plugged">已插枪</string>
+    <string name="plug_unplugged">未插枪</string>
+    <string name="climate_on">空调开启</string>
+    <string name="climate_off">空调关闭</string>
+    <string name="sentry_armed">哨兵已开启</string>
+    <string name="sentry_off">哨兵关闭</string>
+    <string name="high_soc_warning">电量过高 - 日常使用建议充至 80-90%</string>
+    <string name="tire_pressure">胎压</string>
+    <string name="battery_trend">7天电量趋势</string>
+    <string name="km_range">%d km 续航</string>
+
+    <!-- Status -->
+    <string name="state_online">在线</string>
+    <string name="state_driving">行驶中</string>
+    <string name="state_charging">充电中</string>
+    <string name="state_asleep">休眠</string>
+    <string name="state_offline">离线</string>
+
+    <!-- Charging -->
+    <string name="charges_title">充电历史</string>
+    <string name="charge_detail">充电详情</string>
+    <string name="charging_in_progress">正在充电</string>
+    <string name="charge_power">功率</string>
+    <string name="charge_added">已充入</string>
+    <string name="charge_remaining">剩余时间</string>
+
+    <!-- Drives -->
+    <string name="drives_title">行程记录</string>
+    <string name="drive_detail">行程详情</string>
+
+    <!-- Battery Health -->
+    <string name="battery_health_title">电池健康</string>
+    <string name="battery_health">健康度</string>
+    <string name="original_capacity">出厂容量</string>
+    <string name="current_capacity">当前容量</string>
+    <string name="degradation">衰减</string>
+
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="connection">连接</string>
+    <string name="server_url">服务器地址</string>
+    <string name="api_token">API 令牌</string>
+    <string name="test_connection">测试连接</string>
+    <string name="preferences">偏好设置</string>
+    <string name="units">单位</string>
+    <string name="temperature">温度</string>
+    <string name="theme">主题</string>
+    <string name="mock_mode">模拟模式</string>
+    <string name="about">关于</string>
+    <string name="version">版本</string>
+
+    <!-- Common -->
+    <string name="back">返回</string>
+    <string name="loading">加载中...</string>
+    <string name="no_data">暂无数据</string>
+    <string name="offline">离线 - 显示缓存数据</string>
+</resources>

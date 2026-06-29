@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MateLink</string>
+
+    <!-- Navigation -->
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_drives">Drives</string>
+    <string name="nav_charges">Charges</string>
+    <string name="nav_more">More</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_loading">Loading Dashboard...</string>
+    <string name="battery">Battery</string>
+    <string name="odometer">Odometer</string>
+    <string name="location">Location</string>
+    <string name="inside_temp">Inside</string>
+    <string name="outside_temp">Outside</string>
+    <string name="lock_locked">Locked</string>
+    <string name="lock_unlocked">Unlocked</string>
+    <string name="plug_plugged">Plugged</string>
+    <string name="plug_unplugged">Unplugged</string>
+    <string name="climate_on">Climate ON</string>
+    <string name="climate_off">Climate OFF</string>
+    <string name="sentry_armed">Sentry ARMED</string>
+    <string name="sentry_off">Sentry OFF</string>
+    <string name="high_soc_warning">High charge level - consider reducing to 80-90% for daily use</string>
+    <string name="tire_pressure">Tire Pressure</string>
+    <string name="battery_trend">7-Day Battery Trend</string>
+    <string name="km_range">%d km range</string>
+
+    <!-- Status -->
+    <string name="state_online">Online</string>
+    <string name="state_driving">Driving</string>
+    <string name="state_charging">Charging</string>
+    <string name="state_asleep">Asleep</string>
+    <string name="state_offline">Offline</string>
+
+    <!-- Charging -->
+    <string name="charges_title">Charge History</string>
+    <string name="charge_detail">Charge Detail</string>
+    <string name="charging_in_progress">Charging in Progress</string>
+    <string name="charge_power">Power</string>
+    <string name="charge_added">Added</string>
+    <string name="charge_remaining">Remaining</string>
+
+    <!-- Drives -->
+    <string name="drives_title">Drive History</string>
+    <string name="drive_detail">Drive Detail</string>
+
+    <!-- Battery Health -->
+    <string name="battery_health_title">Battery Health</string>
+    <string name="battery_health">Health</string>
+    <string name="original_capacity">Original Capacity</string>
+    <string name="current_capacity">Current Capacity</string>
+    <string name="degradation">Degradation</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="connection">Connection</string>
+    <string name="server_url">Server URL</string>
+    <string name="api_token">API Token</string>
+    <string name="test_connection">Test Connection</string>
+    <string name="preferences">Preferences</string>
+    <string name="units">Units</string>
+    <string name="temperature">Temperature</string>
+    <string name="theme">Theme</string>
+    <string name="mock_mode">Mock Mode</string>
+    <string name="about">About</string>
+    <string name="version">Version</string>
+
+    <!-- Common -->
+    <string name="back">Back</string>
+    <string name="loading">Loading...</string>
+    <string name="no_data">No data available</string>
+    <string name="offline">Offline - showing cached data</string>
+</resources>

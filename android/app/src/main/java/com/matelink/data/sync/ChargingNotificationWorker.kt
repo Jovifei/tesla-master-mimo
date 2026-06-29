@@ -1,0 +1,272 @@
+package com.matelink.data.sync
+
+import android.content.Context
+import android.util.Log
+import androidx.hilt.work.HiltWorker
+import androidx.work.Constraints
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import com.matelink.data.local.ChargeSessionStateDataStore
+import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.repository.ApiResult
+import com.matelink.data.repository.SentryEvent
+import com.matelink.data.repository.SentryStateRepository
+import com.matelink.data.repository.TeslamateRepository
+import com.matelink.notification.ChargingNotificationManager
+import com.matelink.notification.SentryNotificationManager
+import com.matelink.service.ChargingMonitorService
+import com.matelink.widget.CarWidgetUpdateWorker
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
+import kotlinx.coroutines.flow.first
+import java.util.concurrent.TimeUnit
+
+/**
+ * Periodic background worker for monitoring charging sessions and sentry events.
+ *
+ * Runs every 30 seconds to check charging and sentry state for all cars,
+ * and shows/updates/cancels notifications accordingly.
+ */
+@HiltWorker
+class ChargingNotificationWorker @AssistedInject constructor(
+    @Assisted private val appContext: Context,
+    @Assisted workerParams: WorkerParameters,
+    private val teslamateRepository: TeslamateRepository,
+    private val settingsDataStore: SettingsDataStore,
+    private val chargingNotificationManager: ChargingNotificationManager,
+    private val sentryStateRepository: SentryStateRepository,
+    private val sentryNotificationManager: SentryNotificationManager,
+    private val chargeSessionStateDataStore: ChargeSessionStateDataStore
+) : CoroutineWorker(appContext, workerParams) {
+
+    companion object {
+        const val TAG = "ChargingNotificationWorker"
+        const val WORK_NAME = "charging_notification_work"
+        const val PERIODIC_WORK_NAME = "charging_notification_periodic"
+
+        private const val INTERVAL_SECONDS = 30L
+
+        /**
+         * Schedule charging/sentry notification monitoring.
+         *
+         * Uses two strategies:
+         * 1. Self-rescheduling OneTimeWorkRequest for frequent checks (30s)
+         * 2. PeriodicWorkRequest (15min) as reliable fallback when app is killed
+         */
+        fun schedulePeriodicWork(context: Context) {
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
+
+            // Strategy 1: OneTimeWorkRequest with delay for frequent checks
+            val oneTimeRequest = OneTimeWorkRequestBuilder<ChargingNotificationWorker>()
+                .setConstraints(constraints)
+                .setInitialDelay(INTERVAL_SECONDS, TimeUnit.SECONDS)
+                .addTag(TAG)
+                .build()
+
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                WORK_NAME,
+                ExistingWorkPolicy.REPLACE,
+                oneTimeRequest
+            )
+
+            // Strategy 2: PeriodicWorkRequest as reliable backup (survives app death)
+            // This ensures notification is cancelled within 15 minutes even if app is killed
+            val periodicRequest = PeriodicWorkRequestBuilder<ChargingNotificationWorker>(
+                15, TimeUnit.MINUTES
+            )
+                .setConstraints(constraints)
+                .addTag("$TAG-periodic")
+                .build()
+
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                PERIODIC_WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,  // Don't reset if already scheduled
+                periodicRequest
+            )
+
+            Log.d(TAG, "Scheduled notification check (${INTERVAL_SECONDS}s + 15min backup)")
+        }
+
+        /**
+         * Cancel all charging notification monitoring.
+         */
+        fun cancelPeriodicWork(context: Context) {
+            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+            WorkManager.getInstance(context).cancelUniqueWork(PERIODIC_WORK_NAME)
+            Log.d(TAG, "Cancelled charging notification work")
+        }
+
+        /**
+         * Run charging check immediately (for app startup or debugging).
+         */
+        fun runNow(context: Context) {
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
+
+            val request = OneTimeWorkRequestBuilder<ChargingNotificationWorker>()
+                .setConstraints(constraints)
+                .addTag("$TAG-immediate")
+                .build()
+
+            WorkManager.getInstance(context).enqueue(request)
+            Log.d(TAG, "Triggered immediate charging check")
+        }
+    }
+
+    override suspend fun doWork(): Result {
+        Log.d(TAG, "Starting notification check")
+
+        // Check if server is configured
+        val settings = settingsDataStore.settings.first()
+        if (!settings.isConfigured) {
+            Log.d(TAG, "Server not configured, skipping check")
+            scheduleNextCheck()
+            return Result.success()
+        }
+
+        try {
+            // Get list of cars
+            val carsResult = teslamateRepository.getCars()
+            val cars = when (carsResult) {
+                is ApiResult.Success -> carsResult.data
+                is ApiResult.Error -> {
+                    Log.e(TAG, "Failed to fetch cars: ${carsResult.message}")
+                    scheduleNextCheck()
+                    return Result.retry()
+                }
+            }
+
+            if (cars.isEmpty()) {
+                Log.d(TAG, "No cars found")
+                scheduleNextCheck()
+                return Result.success()
+            }
+
+            Log.d(TAG, "Checking status for ${cars.size} cars")
+
+            // Check each car
+            for (car in cars) {
+                try {
+                    checkCarStatus(car.carId)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error checking car ${car.carId}", e)
+                }
+            }
+
+            Log.d(TAG, "Check complete")
+            scheduleNextCheck()
+            return Result.success()
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Unexpected error in worker", e)
+            scheduleNextCheck()
+            return Result.retry()
+        }
+    }
+
+    private suspend fun checkCarStatus(carId: Int) {
+        // Get car info and status
+        val carsResult = teslamateRepository.getCars()
+        val car = when (carsResult) {
+            is ApiResult.Success -> carsResult.data.find { it.carId == carId }
+            is ApiResult.Error -> {
+                Log.e(TAG, "Failed to fetch car info: ${carsResult.message}")
+                return
+            }
+        }
+
+        if (car == null) {
+            Log.e(TAG, "Car $carId not found")
+            return
+        }
+
+        val statusResult = teslamateRepository.getCarStatus(carId)
+        val statusData = when (statusResult) {
+            is ApiResult.Success -> statusResult.data
+            is ApiResult.Error -> {
+                Log.e(TAG, "Failed to fetch status for car $carId: ${statusResult.message}")
+                return
+            }
+        }
+
+        val status = statusData.status
+
+        // Persist whether the active session is DC; this is the only moment we can
+        // tell (post-completion `charger_phases` is null regardless of charge type).
+        if (status.isCharging && status.isDcCharging) {
+            chargeSessionStateDataStore.setLastSessionDc(carId, true)
+        } else if (status.pluggedIn == false) {
+            chargeSessionStateDataStore.clear(carId)
+        }
+
+        val dcFinishedPluggedIn = status.isChargeCompletePluggedIn &&
+            chargeSessionStateDataStore.wasLastSessionDc(carId)
+
+        // --- Charging ---
+        if (status.isCharging) {
+            Log.d(TAG, "Car $carId is charging at ${status.batteryLevel}%")
+            try {
+                ChargingMonitorService.start(appContext)
+            } catch (e: Exception) {
+                // On Android 12+, can't start foreground service from background
+                // Fall back to showing notification directly (won't update in real-time)
+                Log.w(TAG, "Cannot start foreground service, showing notification directly: ${e.message}")
+                val liveChargeAvailable = teslamateRepository.isCurrentChargeAvailable(carId)
+                chargingNotificationManager.showChargingNotification(
+                    car, status, liveChargeAvailable,
+                    chronometerBaseMs = status.stateSinceEpochMs
+                )
+            }
+        } else if (dcFinishedPluggedIn) {
+            // DC charge finished but cable still plugged — keep service alive
+            Log.d(TAG, "Car $carId DC charge finished but still plugged in")
+            try {
+                ChargingMonitorService.start(appContext)
+            } catch (e: Exception) {
+                Log.w(TAG, "Cannot start foreground service for DC-finished state: ${e.message}")
+            }
+        } else {
+            Log.d(TAG, "Car $carId is not charging, stopping monitor service")
+            ChargingMonitorService.stop(appContext)
+            chargingNotificationManager.cancelNotification(carId)
+        }
+
+        // --- Sentry ---
+        val sentryMode = status.sentryMode ?: false
+        val isSentryAlerted = status.isSentryAlerted
+
+        when (val event = sentryStateRepository.processStatus(carId, sentryMode, isSentryAlerted, status.latitude, status.longitude, status.geofence)) {
+            is SentryEvent.AlertDetected -> {
+                Log.d(TAG, "Sentry alert #${event.count} for car $carId (notify=${event.shouldNotify})")
+                sentryNotificationManager.showSentryAlert(
+                    carName = car.displayName,
+                    carId = carId,
+                    eventCount = event.count,
+                    shouldAlert = event.shouldNotify
+                )
+                CarWidgetUpdateWorker.scheduleImmediateUpdate(appContext)
+            }
+            is SentryEvent.SessionEnded -> {
+                Log.d(TAG, "Sentry session ended for car $carId")
+                sentryNotificationManager.cancelNotification(carId)
+            }
+            null -> { /* no event */ }
+        }
+    }
+
+    /**
+     * Schedule the next check using self-rescheduling pattern.
+     */
+    private fun scheduleNextCheck() {
+        schedulePeriodicWork(appContext)
+    }
+}

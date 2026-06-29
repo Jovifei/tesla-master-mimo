@@ -1,0 +1,582 @@
+package com.matelink.ui.screens.wherewasi
+
+import android.content.Intent
+import android.net.Uri
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.EvStation
+import androidx.compose.material.icons.filled.LocalParking
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.matelink.R
+import com.matelink.data.repository.WeatherCondition
+import com.matelink.data.repository.countryCodeToFlag
+import com.matelink.domain.model.UnitFormatter
+import com.matelink.ui.icons.CustomIcons
+import com.matelink.util.formatDuration
+import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.AmapPointView
+import com.matelink.ui.theme.CarColorPalettes
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WhereWasIScreen(
+    carId: Int,
+    targetTimestamp: String,
+    exteriorColor: String? = null,
+    onNavigateBack: () -> Unit,
+    onNavigateToDriveDetail: (driveId: Int) -> Unit,
+    onNavigateToChargeDetail: (chargeId: Int) -> Unit,
+    onNavigateToCountriesVisited: () -> Unit,
+    viewModel: WhereWasIViewModel = hiltViewModel()
+) {
+    val isDarkTheme = isSystemInDarkTheme()
+    val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
+    val state by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(carId, targetTimestamp) {
+        viewModel.load(carId, targetTimestamp)
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.where_was_i_screen_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        }
+    ) { paddingValues ->
+        when {
+            state.isLoading -> {
+                MateLinkLoadingPlaceholder(
+                    color = palette.accent,
+                    modifier = Modifier.padding(paddingValues)
+                )
+            }
+            state.error == "no_data" -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Default.Schedule,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = stringResource(R.string.where_was_i_no_data),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        state.targetDateTime?.let { dt ->
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = dt,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+            }
+            state.error != null -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = state.error ?: "",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            else -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // DateTime header
+                    state.targetDateTime?.let { dt ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = palette.surface)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Schedule,
+                                    contentDescription = null,
+                                    tint = palette.accent
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = dt,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = palette.onSurface
+                                )
+                            }
+                        }
+                    }
+
+                    // Map
+                    val lat = state.latitude
+                    val lon = state.longitude
+                    if (lat != null && lon != null) {
+                        val context = LocalContext.current
+                        val youWereHere = stringResource(R.string.you_were_here)
+                        val openInMapsLabel = stringResource(R.string.where_was_i_open_in_maps)
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = palette.surface)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(250.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                            ) {
+                                AmapPointView(
+                                    modifier = Modifier.fillMaxSize(),
+                                    latitude = lat,
+                                    longitude = lon,
+                                    title = youWereHere,
+                                    zoom = 15f
+                                )
+                                FilledIconButton(
+                                    onClick = {
+                                        val geoUri = Uri.parse("geo:$lat,$lon?q=$lat,$lon")
+                                        try {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, geoUri))
+                                        } catch (_: android.content.ActivityNotFoundException) {
+                                            // No maps app installed — silently ignore
+                                        }
+                                    },
+                                    colors = IconButtonDefaults.filledIconButtonColors(
+                                        containerColor = palette.surface,
+                                        contentColor = palette.accent
+                                    ),
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.OpenInNew,
+                                        contentDescription = openInMapsLabel
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Combined "what + where" card: state-aware sentence + breadcrumb + stats
+                    state.carState?.let { carState ->
+                        val hasLinkedActivity = when (carState) {
+                            CarActivityState.DRIVING -> state.driveId != null
+                            CarActivityState.CHARGING -> state.chargeId != null
+                            CarActivityState.PARKED -> state.lastActivityDriveId != null || state.lastActivityChargeId != null
+                        }
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = palette.surface),
+                            modifier = if (hasLinkedActivity) {
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        when (carState) {
+                                            CarActivityState.DRIVING -> state.driveId?.let { onNavigateToDriveDetail(it) }
+                                            CarActivityState.CHARGING -> state.chargeId?.let { onNavigateToChargeDetail(it) }
+                                            CarActivityState.PARKED -> {
+                                                state.lastActivityDriveId?.let { onNavigateToDriveDetail(it) }
+                                                    ?: state.lastActivityChargeId?.let { onNavigateToChargeDetail(it) }
+                                            }
+                                        }
+                                    }
+                            } else Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                // Top row: state icon + state-aware sentence + chevron
+                                val placeName = state.geofenceName
+                                    ?: state.location?.address
+                                val titleSentence = stateSentence(carState, placeName)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    // Top-align so the state icon and chevron stay anchored to the
+                                    // first line when a long place name wraps to two lines.
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Icon(
+                                        imageVector = stateIcon(carState),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(32.dp),
+                                        tint = palette.accent
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = titleSentence,
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = palette.onSurface,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (hasLinkedActivity) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                            contentDescription = null,
+                                            tint = palette.onSurfaceVariant,
+                                            modifier = Modifier.size(32.dp)
+                                        )
+                                    }
+                                }
+
+                                // Breadcrumb: flag Country > Region > City
+                                state.location?.let { loc ->
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        loc.countryCode?.let { code ->
+                                            val flag = countryCodeToFlag(code)
+                                            Text(text = flag, fontSize = 16.sp)
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                        }
+                                        val localizedCountryName = loc.countryCode?.let { code ->
+                                            java.util.Locale.Builder().setRegion(code).build().getDisplayCountry(java.util.Locale.getDefault())
+                                                .takeIf { it.isNotBlank() && it != code }
+                                        } ?: loc.countryName ?: loc.countryCode
+                                        val breadcrumbParts = listOfNotNull(
+                                            localizedCountryName,
+                                            loc.regionName,
+                                            loc.city
+                                        )
+                                        breadcrumbParts.forEachIndexed { index, part ->
+                                            if (index == 0 && loc.countryCode != null) {
+                                                Text(
+                                                    text = part,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = palette.accent,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.clickable { onNavigateToCountriesVisited() }
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = part,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = palette.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            if (index < breadcrumbParts.lastIndex) {
+                                                Text(
+                                                    text = " > ",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = palette.onSurfaceVariant.copy(alpha = 0.5f)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 12.dp),
+                                    color = palette.onSurfaceVariant.copy(alpha = 0.2f)
+                                )
+
+                                // Row 1: Odometer | Outside Temp
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    InfoItem(
+                                        label = stringResource(R.string.mileage_title),
+                                        value = state.odometer?.let {
+                                            UnitFormatter.formatDistance(it, state.units)
+                                        } ?: "—",
+                                        palette = palette,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    InfoItem(
+                                        label = stringResource(R.string.outside_temp),
+                                        value = state.outsideTemp?.let {
+                                            UnitFormatter.formatTemperature(it, state.units)
+                                        } ?: "—",
+                                        palette = palette,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Row 2: state-specific
+                                when (carState) {
+                                    CarActivityState.DRIVING -> {
+                                        Row(modifier = Modifier.fillMaxWidth()) {
+                                            InfoItem(
+                                                label = stringResource(R.string.speed_profile).split(" ").first(),
+                                                value = state.speed?.let { "$it ${UnitFormatter.getSpeedUnit(state.units)}" } ?: "—",
+                                                palette = palette,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            InfoItem(
+                                                label = stringResource(R.string.distance),
+                                                value = state.driveDistance?.let {
+                                                    UnitFormatter.formatDistance(it, state.units)
+                                                } ?: "—",
+                                                palette = palette,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                    CarActivityState.CHARGING -> {
+                                        Row(modifier = Modifier.fillMaxWidth()) {
+                                            InfoItem(
+                                                label = stringResource(R.string.battery_level),
+                                                value = state.batteryLevel?.let { "$it%" } ?: "—",
+                                                palette = palette,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            InfoItem(
+                                                label = stringResource(R.string.power_profile).split(" ").first(),
+                                                value = state.chargerPower?.let { "$it kW" } ?: "—",
+                                                palette = palette,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                    CarActivityState.PARKED -> {
+                                        state.parkedDurationMinutes?.takeIf { it > 0 }?.let { totalMin ->
+                                            val durationStr = formatDuration(LocalContext.current.resources, totalMin.toInt())
+                                            val parkedForPrefix = stringResource(R.string.parked_for, "").trimEnd()
+                                            val sinceStr = state.parkedSince
+                                            val sincePrefix = sinceStr?.let { stringResource(R.string.parked_since, "").trimEnd() }
+
+                                            Column {
+                                                Text(
+                                                    text = buildAnnotatedString {
+                                                        append("$parkedForPrefix ")
+                                                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                                            append(durationStr)
+                                                        }
+                                                    },
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    color = palette.onSurface
+                                                )
+                                                if (sinceStr != null && sincePrefix != null) {
+                                                    Text(
+                                                        text = buildAnnotatedString {
+                                                            append("$sincePrefix ")
+                                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                                                append(sinceStr)
+                                                            }
+                                                        },
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = palette.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Weather card
+                    if (state.weatherCondition != null && state.weatherTemperature != null) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = palette.surface)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = weatherIcon(state.weatherCondition!!),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(32.dp),
+                                    tint = weatherIconColor(state.weatherCondition!!)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "%.1f\u00B0C".format(state.weatherTemperature),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = palette.onSurface
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = weatherDescription(state.weatherCondition!!),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = palette.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoItem(
+    label: String,
+    value: String,
+    palette: com.matelink.ui.theme.CarColorPalette,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Bold,
+            color = palette.onSurface
+        )
+    }
+}
+
+@Composable
+private fun stateLabel(state: CarActivityState): String = when (state) {
+    CarActivityState.DRIVING -> stringResource(R.string.where_was_i_driving)
+    CarActivityState.CHARGING -> stringResource(R.string.where_was_i_charging)
+    CarActivityState.PARKED -> stringResource(R.string.where_was_i_parked)
+}
+
+/**
+ * Builds the state-aware sentence for the merged "what + where" card.
+ *
+ * If the place name is known, returns "Heading to X" / "Charging at X" / "Parked at X" so the
+ * relationship between the activity and the named location is unambiguous (especially for
+ * driving, where the geofence is the destination, not the current position). Falls back to the
+ * bare state label when no place name is available.
+ */
+@Composable
+private fun stateSentence(state: CarActivityState, placeName: String?): String {
+    if (placeName.isNullOrBlank()) return stateLabel(state)
+    val resId = when (state) {
+        CarActivityState.DRIVING -> R.string.where_was_i_heading_to
+        CarActivityState.CHARGING -> R.string.where_was_i_charging_at
+        CarActivityState.PARKED -> R.string.where_was_i_parked_at
+    }
+    return stringResource(resId, placeName)
+}
+
+private fun stateIcon(state: CarActivityState): ImageVector = when (state) {
+    CarActivityState.DRIVING -> Icons.Default.DirectionsCar
+    CarActivityState.CHARGING -> Icons.Default.EvStation
+    CarActivityState.PARKED -> Icons.Default.LocalParking
+}
+
+private fun weatherIcon(condition: WeatherCondition): ImageVector = when (condition) {
+    WeatherCondition.CLEAR -> CustomIcons.WeatherSunny
+    WeatherCondition.PARTLY_CLOUDY -> CustomIcons.WeatherPartlyCloudy
+    WeatherCondition.FOG -> CustomIcons.WeatherFog
+    WeatherCondition.DRIZZLE -> CustomIcons.WeatherDrizzle
+    WeatherCondition.RAIN -> CustomIcons.WeatherRain
+    WeatherCondition.SNOW -> CustomIcons.WeatherSnow
+    WeatherCondition.THUNDERSTORM -> CustomIcons.WeatherThunderstorm
+}
+
+private fun weatherIconColor(condition: WeatherCondition): Color = when (condition) {
+    WeatherCondition.CLEAR -> Color(0xFFFFC107)
+    WeatherCondition.PARTLY_CLOUDY -> Color(0xFF78909C)
+    WeatherCondition.FOG -> Color(0xFF90A4AE)
+    WeatherCondition.DRIZZLE -> Color(0xFF64B5F6)
+    WeatherCondition.RAIN -> Color(0xFF1E88E5)
+    WeatherCondition.SNOW -> Color(0xFF42A5F5)
+    WeatherCondition.THUNDERSTORM -> Color(0xFF7E57C2)
+}
+
+@Composable
+private fun weatherDescription(condition: WeatherCondition): String = when (condition) {
+    WeatherCondition.CLEAR -> stringResource(R.string.weather_clear)
+    WeatherCondition.PARTLY_CLOUDY -> stringResource(R.string.weather_partly_cloudy)
+    WeatherCondition.FOG -> stringResource(R.string.weather_fog)
+    WeatherCondition.DRIZZLE -> stringResource(R.string.weather_drizzle)
+    WeatherCondition.RAIN -> stringResource(R.string.weather_rain)
+    WeatherCondition.SNOW -> stringResource(R.string.weather_snow)
+    WeatherCondition.THUNDERSTORM -> stringResource(R.string.weather_thunderstorm)
+}

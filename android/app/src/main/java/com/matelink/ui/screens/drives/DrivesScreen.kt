@@ -1,0 +1,733 @@
+package com.matelink.ui.screens.drives
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.DirectionsCar
+import com.matelink.ui.icons.CustomIcons
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.matelink.R
+import com.matelink.data.api.models.DriveData
+import com.matelink.data.api.models.Units
+import com.matelink.domain.model.UnitFormatter
+import com.matelink.ui.components.BarChartData
+import com.matelink.ui.components.DateRangePickerDialog
+import com.matelink.ui.components.EditorialListItem
+import com.matelink.ui.components.EditorialPill
+import com.matelink.ui.components.InteractiveBarChart
+import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.MateLinkPulseSpinner
+import com.matelink.ui.components.MonthScrollIndicator
+import com.matelink.ui.components.rememberDebouncedLoading
+import com.matelink.ui.components.formatEditorialDate
+import com.matelink.ui.components.formatShortDate
+import com.matelink.ui.components.parseListItemDate
+import com.matelink.util.formatDuration
+import com.matelink.util.formatDurationCompact
+import com.matelink.ui.theme.CarColorPalette
+import com.matelink.ui.theme.CarColorPalettes
+import java.time.LocalDate
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DrivesScreen(
+    carId: Int,
+    exteriorColor: String? = null,
+    onNavigateBack: () -> Unit,
+    onNavigateToDriveDetail: (driveId: Int) -> Unit,
+    viewModel: DrivesViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val isDarkTheme = isSystemInDarkTheme()
+    val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
+
+    // Remember scroll state and restore from ViewModel
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = uiState.scrollPosition,
+        initialFirstVisibleItemScrollOffset = uiState.scrollOffset
+    )
+
+    // Initialize ViewModel with carId (only loads data on first call)
+    LaunchedEffect(carId) {
+        viewModel.setCarId(carId)
+    }
+
+    // Save scroll position when it changes
+    LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
+        viewModel.saveScrollPosition(
+            listState.firstVisibleItemIndex,
+            listState.firstVisibleItemScrollOffset
+        )
+    }
+
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let { error ->
+            snackbarHostState.showSnackbar(error)
+            viewModel.clearError()
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.drives_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.back)
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        PullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = { viewModel.refresh() },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            if (uiState.isLoading && !uiState.isRefreshing) {
+                MateLinkLoadingPlaceholder(color = palette.accent)
+            } else {
+                DrivesContent(
+                    drives = uiState.drives,
+                    chartData = uiState.chartData,
+                    chartGranularity = uiState.chartGranularity,
+                    summary = uiState.summary,
+                    selectedDateFilter = uiState.dateFilter,
+                    selectedDistanceFilter = uiState.distanceFilter,
+                    customStartDate = uiState.customStartDate,
+                    customEndDate = uiState.customEndDate,
+                    units = uiState.units,
+                    palette = palette,
+                    listState = listState,
+                    isFilterLoading = uiState.isFilterLoading,
+                    onDateFilterSelected = { viewModel.setDateFilter(it) },
+                    onCustomRangeSelected = { start, end -> viewModel.setCustomDateRange(start, end) },
+                    onDistanceFilterSelected = { viewModel.setDistanceFilter(it) },
+                    onDriveClick = onNavigateToDriveDetail
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DrivesContent(
+    drives: List<DriveData>,
+    chartData: List<DriveChartData>,
+    chartGranularity: DriveChartGranularity,
+    summary: DrivesSummary,
+    selectedDateFilter: DriveDateFilter,
+    selectedDistanceFilter: DriveDistanceFilter,
+    customStartDate: LocalDate?,
+    customEndDate: LocalDate?,
+    units: Units?,
+    palette: CarColorPalette,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    isFilterLoading: Boolean,
+    onDateFilterSelected: (DriveDateFilter) -> Unit,
+    onCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
+    onDistanceFilterSelected: (DriveDistanceFilter) -> Unit,
+    onDriveClick: (driveId: Int) -> Unit
+) {
+    // Header items in this LazyColumn, in render order: date chips, distance chips,
+    // summary, charts (conditional), history header. Adjust if items are added.
+    val headerCount = 4 + (if (chartData.isNotEmpty()) 1 else 0)
+
+    Box(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item {
+            DateFilterChips(
+                selectedFilter = selectedDateFilter,
+                customStartDate = customStartDate,
+                customEndDate = customEndDate,
+                palette = palette,
+                onFilterSelected = onDateFilterSelected,
+                onCustomRangeSelected = onCustomRangeSelected
+            )
+        }
+
+        item {
+            DistanceFilterChips(
+                selectedFilter = selectedDistanceFilter,
+                units = units,
+                palette = palette,
+                onFilterSelected = onDistanceFilterSelected
+            )
+        }
+
+        item {
+            SummaryCard(summary = summary, units = units, palette = palette)
+        }
+
+        // Drives charts (daily/weekly/monthly based on date range) - swipeable
+        if (chartData.isNotEmpty()) {
+            item {
+                DrivesChartsPager(
+                    chartData = chartData,
+                    granularity = chartGranularity,
+                    units = units,
+                    palette = palette
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.drive_history),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        if (drives.isEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.no_drives_found),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        } else {
+            items(drives, key = { it.id }) { drive ->
+                DriveItem(
+                    drive = drive,
+                    units = units,
+                    palette = palette,
+                    onClick = { onDriveClick(drive.id) }
+                )
+            }
+        }
+    }
+
+    MonthScrollIndicator(
+        state = listState,
+        dateAt = { index ->
+            if (index < headerCount) null
+            else drives.getOrNull(index - headerCount)?.startDate.parseListItemDate()
+        },
+        accent = palette.accent,
+        modifier = Modifier.align(Alignment.CenterEnd),
+    )
+
+    // Sub-100ms loads never see a spinner — only sustained ones cross the
+    // perceptual threshold worth giving feedback for.
+    val showSpinner = rememberDebouncedLoading(isFilterLoading)
+    if (showSpinner) {
+        // Full-bleed dim scrim that sits above everything (chart cards inside the
+        // LazyColumn have shadow elevation, which puts them in their own graphics
+        // layer; without the explicit zIndex the spinner could end up rendered
+        // behind them). The list shows through at ~55% alpha.
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .zIndex(10f)
+                .background(Color.Black.copy(alpha = 0.45f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            MateLinkPulseSpinner(color = palette.accent)
+        }
+    }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DateFilterChips(
+    selectedFilter: DriveDateFilter,
+    customStartDate: LocalDate?,
+    customEndDate: LocalDate?,
+    palette: CarColorPalette,
+    onFilterSelected: (DriveDateFilter) -> Unit,
+    onCustomRangeSelected: (LocalDate, LocalDate) -> Unit
+) {
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(DriveDateFilter.entries.filter { it != DriveDateFilter.CUSTOM }) { filter ->
+            FilterChip(
+                selected = filter == selectedFilter,
+                onClick = { onFilterSelected(filter) },
+                label = { Text(stringResource(filter.labelRes)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = palette.surface,
+                    selectedLabelColor = palette.onSurface
+                )
+            )
+        }
+        item {
+            val label = if (selectedFilter == DriveDateFilter.CUSTOM && customStartDate != null && customEndDate != null) {
+                "${formatShortDate(customStartDate)} – ${formatShortDate(customEndDate)}"
+            } else {
+                stringResource(R.string.filter_custom)
+            }
+            FilterChip(
+                selected = selectedFilter == DriveDateFilter.CUSTOM,
+                onClick = { showDatePicker = true },
+                label = { Text(label) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = palette.surface,
+                    selectedLabelColor = palette.onSurface
+                )
+            )
+        }
+    }
+
+    if (showDatePicker) {
+        DateRangePickerDialog(
+            onDismiss = { showDatePicker = false },
+            onRangeSelected = { start, end ->
+                showDatePicker = false
+                onCustomRangeSelected(start, end)
+            },
+            initialStart = customStartDate,
+            initialEnd = customEndDate
+        )
+    }
+}
+
+@Composable
+private fun getDistanceFilterLabel(filter: DriveDistanceFilter, units: Units?): String {
+    val isImperial = units?.isImperial == true
+    return when (filter) {
+        DriveDistanceFilter.ALL -> stringResource(R.string.filter_all)
+        DriveDistanceFilter.COMMUTE -> stringResource(if (isImperial) R.string.filter_commute_mi else R.string.filter_commute_km)
+        DriveDistanceFilter.DAY_TRIP -> stringResource(if (isImperial) R.string.filter_day_trip_mi else R.string.filter_day_trip_km)
+        DriveDistanceFilter.ROAD_TRIP -> stringResource(if (isImperial) R.string.filter_road_trip_mi else R.string.filter_road_trip_km)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DistanceFilterChips(
+    selectedFilter: DriveDistanceFilter,
+    units: Units?,
+    palette: CarColorPalette,
+    onFilterSelected: (DriveDistanceFilter) -> Unit
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(DriveDistanceFilter.entries.toList()) { filter ->
+            FilterChip(
+                selected = filter == selectedFilter,
+                onClick = { onFilterSelected(filter) },
+                label = { Text(getDistanceFilterLabel(filter, units)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = palette.surface,
+                    selectedLabelColor = palette.onSurface
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColorPalette) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = palette.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.summary),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = palette.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                SummaryItem(
+                    icon = Icons.Default.DirectionsCar,
+                    label = stringResource(R.string.total_trips),
+                    value = "%,d".format(summary.totalDrives),
+                    palette = palette,
+                    modifier = Modifier.weight(1.2f)
+                )
+                SummaryItem(
+                    icon = CustomIcons.SteeringWheel,
+                    label = stringResource(R.string.total_distance),
+                    value = UnitFormatter.formatDistance(summary.totalDistanceKm, units),
+                    palette = palette,
+                    modifier = Modifier.weight(0.8f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                SummaryItem(
+                    icon = Icons.Default.Timer,
+                    label = stringResource(R.string.total_time),
+                    value = formatDuration(LocalContext.current.resources, summary.totalDurationMin),
+                    palette = palette,
+                    modifier = Modifier.weight(1.2f)
+                )
+                SummaryItem(
+                    icon = Icons.Default.Speed,
+                    label = stringResource(R.string.max_speed),
+                    value = UnitFormatter.formatSpeed(summary.maxSpeedKmh.toDouble(), units),
+                    palette = palette,
+                    modifier = Modifier.weight(0.8f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryItem(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    palette: CarColorPalette,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.padding(4.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = palette.accent
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.onSurfaceVariant
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = palette.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+private fun DriveItem(
+    drive: DriveData,
+    units: Units?,
+    palette: CarColorPalette,
+    onClick: () -> Unit
+) {
+    val context = LocalContext.current
+    val unknown = stringResource(R.string.unknown)
+    val startCity = drive.startAddress ?: unknown
+    val endCity = drive.endAddress ?: unknown
+
+    val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
+    EditorialListItem(
+        accent = palette.accent,
+        dateline = formatEditorialDate(drive.startDate, is24Hour),
+        title = "$startCity → $endCity",
+        heroValue = "%.0f".format(UnitFormatter.formatDistanceValue(drive.distance ?: 0.0, units)),
+        heroUnit = UnitFormatter.getDistanceUnit(units).uppercase(java.util.Locale.getDefault()),
+        onClick = onClick,
+    ) {
+        EditorialPill(formatDuration(context.resources, drive.durationMin ?: 0))
+        EditorialPill("${drive.speedMax ?: 0} ${UnitFormatter.getSpeedUnit(units)}")
+        // D8 parity: iOS DriveListView shows efficiency (Wh/km)
+        drive.efficiency?.let { EditorialPill("%.0f Wh/km".format(it)) }
+        val start = drive.startBatteryLevel
+        val end = drive.endBatteryLevel
+        if (start != null && end != null) {
+            EditorialPill(
+                text = "$start→$end%",
+                background = palette.accent.copy(alpha = 0.12f),
+                color = palette.accent,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+/**
+ * Chart type enum for the swipeable pager
+ */
+private enum class DrivesChartType {
+    COUNT, TIME, DISTANCE, TOP_SPEED
+}
+
+/**
+ * Swipeable pager containing Count, Time, and Distance charts with page indicator dots
+ */
+@Composable
+private fun DrivesChartsPager(
+    chartData: List<DriveChartData>,
+    granularity: DriveChartGranularity,
+    units: Units?,
+    palette: CarColorPalette
+) {
+    val pagerState = rememberPagerState(pageCount = { DrivesChartType.entries.size })
+
+    Column {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = palette.surface
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxWidth()
+                ) { page ->
+                    val chartType = DrivesChartType.entries[page]
+                    DrivesChartPage(
+                        chartData = chartData,
+                        granularity = granularity,
+                        chartType = chartType,
+                        units = units,
+                        palette = palette
+                    )
+                }
+            }
+        }
+
+        // Page indicator dots
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            repeat(DrivesChartType.entries.size) { index ->
+                val isSelected = pagerState.currentPage == index
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 4.dp)
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isSelected) palette.accent
+                            else palette.onSurfaceVariant.copy(alpha = 0.3f)
+                        )
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Individual chart page showing Count, Time, or Distance data
+ */
+@Composable
+private fun DrivesChartPage(
+    chartData: List<DriveChartData>,
+    granularity: DriveChartGranularity,
+    chartType: DrivesChartType,
+    units: Units?,
+    palette: CarColorPalette
+) {
+    val isImperial = units?.isImperial == true
+    val distanceUnit = if (isImperial) "mi" else "km"
+    val speedUnit = if (isImperial) "mph" else "km/h"
+
+    val (title, icon) = when (chartType) {
+        DrivesChartType.COUNT -> when (granularity) {
+            DriveChartGranularity.DAILY -> stringResource(R.string.chart_drives_per_day)
+            DriveChartGranularity.WEEKLY -> stringResource(R.string.chart_drives_per_week)
+            DriveChartGranularity.MONTHLY -> stringResource(R.string.chart_drives_per_month)
+        } to Icons.Default.DirectionsCar
+        DrivesChartType.TIME -> when (granularity) {
+            DriveChartGranularity.DAILY -> stringResource(R.string.chart_time_per_day)
+            DriveChartGranularity.WEEKLY -> stringResource(R.string.chart_time_per_week)
+            DriveChartGranularity.MONTHLY -> stringResource(R.string.chart_time_per_month)
+        } to Icons.Default.Timer
+        DrivesChartType.DISTANCE -> when (granularity) {
+            DriveChartGranularity.DAILY -> stringResource(R.string.chart_distance_per_day)
+            DriveChartGranularity.WEEKLY -> stringResource(R.string.chart_distance_per_week)
+            DriveChartGranularity.MONTHLY -> stringResource(R.string.chart_distance_per_month)
+        } to CustomIcons.SteeringWheel
+        DrivesChartType.TOP_SPEED -> when (granularity) {
+            DriveChartGranularity.DAILY -> stringResource(R.string.chart_speed_per_day)
+            DriveChartGranularity.WEEKLY -> stringResource(R.string.chart_speed_per_week)
+            DriveChartGranularity.MONTHLY -> stringResource(R.string.chart_speed_per_month)
+        } to Icons.Default.Speed
+    }
+
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = palette.accent
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = palette.onSurface
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        val barData = when (chartType) {
+            DrivesChartType.COUNT -> chartData.map { data ->
+                BarChartData(
+                    label = data.label,
+                    value = data.count.toDouble(),
+                    displayValue = data.count.toString()
+                )
+            }
+            DrivesChartType.TIME -> chartData.map { data ->
+                BarChartData(
+                    label = data.label,
+                    value = data.totalDurationMin.toDouble(),
+                    displayValue = formatDurationCompact(data.totalDurationMin)
+                )
+            }
+            DrivesChartType.DISTANCE -> chartData.map { data ->
+                val distance = data.totalDistance
+                BarChartData(
+                    label = data.label,
+                    value = distance,
+                    displayValue = "%.1f $distanceUnit".format(distance)
+                )
+            }
+            DrivesChartType.TOP_SPEED -> chartData.map { data ->
+                val speed = data.maxSpeed
+                BarChartData(
+                    label = data.label,
+                    value = speed.toDouble(),
+                    displayValue = "$speed $speedUnit"
+                )
+            }
+        }
+
+        val valueFormatter: (Double) -> String = when (chartType) {
+            DrivesChartType.COUNT -> { v -> v.toInt().toString() }
+            DrivesChartType.TIME -> { v -> formatDurationCompact(v.toInt()) }
+            DrivesChartType.DISTANCE -> { v -> "%.1f $distanceUnit".format(v) }
+            DrivesChartType.TOP_SPEED -> { v -> "${v.toInt()} $speedUnit" }
+        }
+
+        // Set number of labels to display
+        val labelInterval = when {
+            barData.size <= 7 -> 1  // Show all for Today and last 7 days
+            barData.size <= 30 -> 3 // Show 1 label every 3 bars for lsat 30 days
+            else -> ((barData.size + 5) / 6).coerceAtLeast(1)
+        }
+        val yAxisFormatter: (Double) -> String = when (chartType) {
+            DrivesChartType.TIME -> { v -> formatDurationCompact(v.toInt()) }
+            else -> { v -> if (v >= 1000) "%.0fk".format(v / 1000) else "%.0f".format(v) }
+        }
+
+        InteractiveBarChart(
+            data = barData,
+            modifier = Modifier.fillMaxWidth(),
+            barColor = palette.accent,
+            labelColor = palette.onSurfaceVariant,
+            showEveryNthLabel = labelInterval,
+            valueFormatter = valueFormatter,
+            yAxisFormatter = yAxisFormatter
+        )
+    }
+}
