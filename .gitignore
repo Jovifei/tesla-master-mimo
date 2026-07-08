@@ -1,0 +1,7 @@
+# Android local state and build outputs
+android/.gradle/
+android/**/build/
+android/local.properties
+
+# IDE-local project metadata
+android/.idea/
