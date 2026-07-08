@@ -35,6 +35,7 @@ struct EfficiencyView: View {
     @State private var points: [EfficiencyPoint] = []
     @State private var zones: [SpeedZone] = []
     @State private var selected: EfficiencyPoint?
+    @State private var loadError: String?
 
     var body: some View {
         NavigationStack {
@@ -46,6 +47,11 @@ struct EfficiencyView: View {
                         Text("Speed vs Efficiency — colored by outside temperature")
                             .font(.caption).foregroundColor(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal)
+
+                    if let loadError {
+                        EmptyStateView("Efficiency Data Unavailable", systemImage: "exclamationmark.triangle", message: loadError)
+                            .padding(.top, 24)
+                    }
 
                     // Scatter Chart
                     VStack {
@@ -116,17 +122,26 @@ struct EfficiencyView: View {
     }
 
     func loadData() async {
-        let drives: [Drive] = await {
+        loadError = nil
+        let drives: [Drive]
+        do {
             if state.isMockMode {
-                return await state.mock.getDrives(state.currentCarId)
+                drives = await state.mock.getDrives(state.currentCarId)
             } else if let api = state.real {
-                return (try? await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")) ?? []
+                drives = try await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")
+            } else {
+                throw URLError(.notConnectedToInternet)
             }
-            return []
-        }().filter { $0.distanceKm > 1 }
-        points = drives.map { d in
+        } catch {
+            points = []
+            zones = []
+            loadError = "Unable to load real drive data: \(error.localizedDescription)"
+            return
+        }
+        let filteredDrives = drives.filter { $0.distanceKm > 1 }
+        points = filteredDrives.map { d in
             let speed = max(0, Int((d.distanceKm / Double(max(d.durationMin, 1))) * 60.0))
-            return EfficiencyPoint(speed: speed, efficiency: d.efficiency, temp: d.outsideTempAvg, date: String(d.startDate.prefix(10)))
+            return EfficiencyPoint(speed: speed, efficiency: Int(d.efficiency.rounded()), temp: d.outsideTempAvg, date: String(d.startDate.prefix(10)))
         }
 
         let zoneDefs: [(String, Int, Int)] = [

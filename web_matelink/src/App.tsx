@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
+import { useStore } from './store';
 import mockData from './mock_data.json';
 
 // Pages
@@ -41,10 +42,15 @@ const navItems = [
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [currentCarId, setCurrentCarId] = useState(1);
-  const [mockMode, setMockMode] = useState(true);
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  const currentCarId = useStore(s => s.currentCarId);
+  const setCarId = useStore(s => s.setCarId);
+  const mockMode = useStore(s => s.mockMode);
+  const setMockMode = useStore(s => s.setMockMode);
+  const theme = useStore(s => s.theme);
+  const setTheme = useStore(s => s.setTheme);
+  const cars = useStore(s => s.cars);
 
   // Online/offline detection
   useEffect(() => {
@@ -58,15 +64,7 @@ function App() {
     };
   }, []);
 
-  // Theme management
-  useEffect(() => {
-    const root = document.documentElement;
-    if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
-  }, [theme]);
+  // Theme management handled by store's setTheme
 
   const currentCar = mockData.cars.find(c => c.car_id === currentCarId);
   const currentStatus = mockData.statuses[String(currentCarId) as keyof typeof mockData.statuses];
@@ -89,12 +87,12 @@ function App() {
             <div className="p-4 border-b border-gray-200 dark:border-gray-700">
               <select
                 value={currentCarId}
-                onChange={e => setCurrentCarId(Number(e.target.value))}
+                onChange={e => setCarId(Number(e.target.value))}
                 className="w-full p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
               >
-                {mockData.cars.map(car => (
-                  <option key={car.car_id} value={car.car_id}>
-                    {car.name} ({car.car_details.model})
+                {cars.map(car => (
+                  <option key={car.id} value={car.id}>
+                    {car.name} ({car.model})
                   </option>
                 ))}
               </select>

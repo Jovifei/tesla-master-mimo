@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MateLink</string>
+
+    <!-- Navigation -->
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_drives">Fahrten</string>
+    <string name="nav_charges">Ladevorgänge</string>
+    <string name="nav_more">Mehr</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_loading">Dashboard wird geladen...</string>
+    <string name="battery">Batterie</string>
+    <string name="odometer">Kilometerstand</string>
+    <string name="location">Standort</string>
+    <string name="inside_temp">Innen</string>
+    <string name="outside_temp">Außen</string>
+    <string name="lock_locked">Verriegelt</string>
+    <string name="lock_unlocked">Entsperrt</string>
+    <string name="plug_plugged">Verbunden</string>
+    <string name="plug_unplugged">Getrennt</string>
+    <string name="climate_on">Klima AN</string>
+    <string name="climate_off">Klima AUS</string>
+    <string name="sentry_armed">Sentry AKTIV</string>
+    <string name="sentry_off">Sentry AUS</string>
+    <string name="high_soc_warning">Hoher Ladestand - für den täglichen Gebrauch auf 80-90% begrenzen empfohlen</string>
+    <string name="tire_pressure">Reifendruck</string>
+    <string name="battery_trend">7-Tage Batterieverlauf</string>
+    <string name="km_range">%d km Reichweite</string>
+
+    <!-- Status -->
+    <string name="state_online">Online</string>
+    <string name="state_driving">Fahrt</string>
+    <string name="state_charging">Laden</string>
+    <string name="state_asleep">Schlafend</string>
+    <string name="state_offline">Offline</string>
+
+    <!-- Charging -->
+    <string name="charges_title">Ladeverlauf</string>
+    <string name="charge_detail">Ladedetails</string>
+    <string name="charging_in_progress">Wird geladen</string>
+    <string name="charge_power">Leistung</string>
+    <string name="charge_added">Geladen</string>
+    <string name="charge_remaining">Verbleibend</string>
+
+    <!-- Drives -->
+    <string name="drives_title">Fahrverlauf</string>
+    <string name="drive_detail">Fahrtdetails</string>
+
+    <!-- Battery Health -->
+    <string name="battery_health_title">Batteriezustand</string>
+    <string name="battery_health">Zustand</string>
+    <string name="original_capacity">Originale Kapazität</string>
+    <string name="current_capacity">Aktuelle Kapazität</string>
+    <string name="degradation">Verschleiß</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Einstellungen</string>
+    <string name="connection">Verbindung</string>
+    <string name="server_url">Server-URL</string>
+    <string name="api_token">API-Token</string>
+    <string name="test_connection">Verbindung testen</string>
+    <string name="preferences">Einstellungen</string>
+    <string name="units">Einheiten</string>
+    <string name="temperature">Temperatur</string>
+    <string name="theme">Design</string>
+    <string name="mock_mode">Mock-Modus</string>
+    <string name="about">Über</string>
+    <string name="version">Version</string>
+
+    <!-- Common -->
+    <string name="back">Zurück</string>
+    <string name="loading">Wird geladen...</string>
+    <string name="no_data">Keine Daten verfügbar</string>
+    <string name="offline">Offline - zeige zwischengespeicherte Daten</string>
+
+    <!-- Range Analysis -->
+    <string name="range_analysis_title">Reichweitenanalyse</string>
+    <string name="range_accuracy_title">Reichweitenprognose Genauigkeit</string>
+    <string name="range_trip_count">Fahrten</string>
+    <string name="range_total_distance">Gesamtstrecke</string>
+    <string name="range_trip_list_title">Letzte Fahrten (%d)</string>
+    <string name="range_estimated">Geschätzt</string>
+    <string name="range_actual">Tatsächlich</string>
+</resources>

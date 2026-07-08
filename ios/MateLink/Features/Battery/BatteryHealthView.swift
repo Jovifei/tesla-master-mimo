@@ -2,12 +2,16 @@ import SwiftUI
 import Charts
 
 struct BatteryHealthView: View {
-    @EnvironmentObject var state: AppState; @State private var data: BatteryHealth?; @State private var loading = true
+    @EnvironmentObject var state: AppState; @State private var data: BatteryHealth?; @State private var loading = true; @State private var loadError: String?
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 if loading { ProgressView("Loading...").padding(40) }
+                else if let loadError {
+                    EmptyStateView("Battery Health Unavailable", systemImage: "exclamationmark.triangle", message: loadError)
+                        .padding(40)
+                }
                 else if let d = data {
                     VStack(spacing: 20) {
                         // Health gauge
@@ -44,10 +48,18 @@ struct BatteryHealthView: View {
 
     func load() async {
         loading = true
+        loadError = nil
+        data = nil
         if state.isMockMode {
             data = await state.mock.getBatteryHealth(state.currentCarId)
         } else if let api = state.real {
-            data = try? await api.fetch("/api/v1/cars/\(state.currentCarId)/battery-health")
+            do {
+                data = try await api.fetch("/api/v1/cars/\(state.currentCarId)/battery-health")
+            } catch {
+                loadError = "Unable to load real battery health: \(error.localizedDescription)"
+            }
+        } else {
+            loadError = "No TeslaMate instance is configured."
         }
         loading = false
     }

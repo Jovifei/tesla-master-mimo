@@ -7,8 +7,11 @@ struct MoreView: View {
         NavigationStack {
             List {
                 Section("Vehicle") {
+                    NavigationLink { CurrentChargeView() } label: {
+                        Label("Current Charge", systemImage: "bolt.circle")
+                    }
                     NavigationLink { BatteryHealthView() } label: {
-                        Label("Battery Health", systemImage: "battery.100.bolt")
+                        Label(L10n.string("battery_health.title"), systemImage: "battery.100.bolt")
                     }
                     NavigationLink { StatisticsView() } label: {
                         Label("Statistics", systemImage: "chart.bar")
@@ -19,6 +22,9 @@ struct MoreView: View {
                 }
 
                 Section("Analytics") {
+                    NavigationLink { MileageView() } label: {
+                        Label("Mileage", systemImage: "map")
+                    }
                     NavigationLink { HeatmapView() } label: {
                         Label("Activity Heatmap", systemImage: "calendar")
                     }
@@ -40,6 +46,9 @@ struct MoreView: View {
                     NavigationLink { ExportView() } label: {
                         Label("Export Data", systemImage: "square.and.arrow.up")
                     }
+                    NavigationLink { Vehicle3DView() } label: {
+                        Label("3D Vehicle Preview", systemImage: "car.2")
+                    }
                 }
 
                 Section("History") {
@@ -52,15 +61,21 @@ struct MoreView: View {
                     NavigationLink { CostView() } label: {
                         Label("Charging Cost", systemImage: "dollarsign.circle")
                     }
+                    NavigationLink { SentryHistoryView() } label: {
+                        Label("Sentry History", systemImage: "shield.lefthalf.filled")
+                    }
                 }
 
-                Section {
+                Section("System") {
                     NavigationLink { SettingsView() } label: {
-                        Label("Settings", systemImage: "gear")
+                        Label(L10n.string("settings.title"), systemImage: "gear")
+                    }
+                    NavigationLink { AboutView() } label: {
+                        Label(L10n.string("about"), systemImage: "info.circle")
                     }
                 }
             }
-            .navigationTitle("More")
+            .navigationTitle(L10n.string("nav.more"))
         }
     }
 }

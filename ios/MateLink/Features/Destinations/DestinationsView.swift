@@ -18,6 +18,7 @@ struct DestinationsView: View {
     @EnvironmentObject var state: AppState
     @State private var destinations: [Destination] = []
     @State private var sort: DestSort = .count
+    @State private var loadError: String?
 
     var sorted: [Destination] {
         switch sort {
@@ -45,11 +46,16 @@ struct DestinationsView: View {
                     }
                     .padding(.horizontal)
 
+                    if let loadError {
+                        EmptyStateView("Destinations Unavailable", systemImage: "exclamationmark.triangle", message: loadError)
+                            .padding(.top, 24)
+                    }
+
                     // Destination List
                     if sorted.isEmpty {
-                        ContentUnavailableView("No Destinations",
+                        EmptyStateView("No Destinations",
                             systemImage: "mappin.slash",
-                            description: Text("Complete drives to build your destination history."))
+                            message: "Complete drives to build your destination history.")
                             .padding(.top, 60)
                     } else {
                         VStack(spacing: 0) {
@@ -103,14 +109,21 @@ struct DestinationsView: View {
     }
 
     func loadData() async {
-        let drives: [Drive] = await {
+        loadError = nil
+        let drives: [Drive]
+        do {
             if state.isMockMode {
-                return await state.mock.getDrives(state.currentCarId)
+                drives = await state.mock.getDrives(state.currentCarId)
             } else if let api = state.real {
-                return (try? await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")) ?? []
+                drives = try await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")
+            } else {
+                throw URLError(.notConnectedToInternet)
             }
-            return []
-        }()
+        } catch {
+            destinations = []
+            loadError = "Unable to load real drive data: \(error.localizedDescription)"
+            return
+        }
         var map: [String: (count: Int, totalKm: Double, effSum: Int)] = [:]
 
         for d in drives {

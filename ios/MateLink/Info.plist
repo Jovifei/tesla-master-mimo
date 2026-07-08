@@ -20,6 +20,17 @@
     <string>1</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Allow MateLink to connect to your TeslaMate server on the local network.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Used to display your vehicle location and trip route.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>Used when the app needs to keep vehicle location data current.</string>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
@@ -31,9 +42,14 @@
     <array>
         <string>UIInterfaceOrientationPortrait</string>
     </array>
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>用于显示车辆位置和行驶路线</string>
-    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>用于后台更新车辆位置</string>
+    <key>UIAppFonts</key>
+    <array>
+        <string>Inter-Regular.ttf</string>
+        <string>Inter-Medium.ttf</string>
+        <string>Inter-SemiBold.ttf</string>
+        <string>Inter-Bold.ttf</string>
+        <string>JetBrainsMono-Regular.ttf</string>
+        <string>JetBrainsMono-Medium.ttf</string>
+    </array>
 </dict>
 </plist>

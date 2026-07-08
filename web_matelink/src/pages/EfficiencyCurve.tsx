@@ -1,11 +1,30 @@
+import { useEffect, useState } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { api } from '../api/client';
+import { useStore } from '../store';
+import type { Drive } from '../api/types';
 
-const data = Array.from({ length: 50 }, () => ({
-  temp: -5 + Math.random() * 45,
-  efficiency: 120 + Math.random() * 80 - Math.abs(22 - (-5 + Math.random() * 45)) * 2,
-}));
+interface ScatterPoint {
+  temp: number;
+  efficiency: number;
+}
 
 export default function EfficiencyCurve({ carId }: { carId: number }) {
+  const { currentCarId } = useStore();
+  const [data, setData] = useState<ScatterPoint[]>([]);
+
+  useEffect(() => {
+    api.getDrives(currentCarId).then((drives: Drive[]) => {
+      const points: ScatterPoint[] = drives
+        .filter(d => d.outside_temp_avg != null && d.efficiency != null)
+        .map(d => ({
+          temp: Math.round(d.outside_temp_avg * 10) / 10,
+          efficiency: d.efficiency,
+        }));
+      setData(points);
+    });
+  }, [currentCarId]);
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Efficiency Curve</h1>

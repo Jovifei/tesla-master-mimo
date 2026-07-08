@@ -128,7 +128,7 @@ struct DriveDetailView: View {
         let avgSpeed: Int = drive.durationMin > 0
             ? Int((drive.distanceKm / Double(drive.durationMin)) * 60)
             : 0
-        let maxSpeed: Int = Int(Double(avgSpeed) * 1.5)
+        let maxSpeed: Int = Int(drive.speedMax)
 
         let stats: [(label: String, value: String, icon: String, color: Color)] = [
             ("Distance", String(format: "%.1f km", drive.distanceKm), "road.lanes", .blue),
@@ -272,6 +272,11 @@ struct DriveDetailView: View {
 
             // Brush / Zoom controls
             brushControls
+
+            // Disclaimer
+            Text("Simulated data — based on trip summary")
+                .font(.caption2)
+                .foregroundColor(.secondary)
         }
         .padding()
         .background(.regularMaterial)
@@ -484,26 +489,61 @@ struct DriveDetailView: View {
         let avgSpeed = drive.durationMin > 0
             ? drive.distanceKm / Double(drive.durationMin) * 60
             : 0
+        // Use real max speed if available, otherwise estimate from avg
+        let peakSpeed = max(drive.speedMax, avgSpeed * 1.3)
+        // Average power draw (kW) from consumption and duration
+        let avgPower = drive.durationMin > 0
+            ? drive.consumptionKwh / (Double(drive.durationMin) / 60.0)
+            : 0
+        // Elevation profile: climb in first half, descend in second half
+        let totalElevRange = drive.elevationGain + drive.elevationLoss
+        let startElev = totalElevRange > 0 ? drive.elevationGain / max(totalElevRange, 1) * totalElevRange : 0
 
         return (0..<n).map { i in
             let t = Double(i) * Double(drive.durationMin) / Double(n)
+            let fraction = Double(i) / Double(n - 1)
 
-            // Realistic curves using sin/cos with different phases
-            let speed = max(0, avgSpeed + sin(Double(i) * 0.5) * avgSpeed * 0.4)
-            let power = max(5, 20 + sin(Double(i) * 0.3) * 60 + cos(Double(i) * 0.7) * 20)
-            let altitude = 50 + sin(Double(i) * 0.2) * 30 + cos(Double(i) * 0.15) * 20
-            let insideTemp = 22 + sin(Double(i) * 0.1) * 3
-            let outsideTemp = drive.outsideTempAvg + sin(Double(i) * 0.05) * 0.5
-            let fl = 2.4 + sin(Double(i) * 0.3) * 0.05 + Double.random(in: 0...0.02)
-            let fr = 2.5 + sin(Double(i) * 0.3 + 1) * 0.05 + Double.random(in: 0...0.02)
-            let rl = 2.4 + sin(Double(i) * 0.3 + 2) * 0.05 + Double.random(in: 0...0.02)
-            let rr = 2.5 + sin(Double(i) * 0.3 + 3) * 0.05 + Double.random(in: 0...0.02)
+            // Speed: ramp up, cruise with variation, slow down at end
+            // Early ramp-up, middle cruise with realistic variation, end deceleration
+            let rampUp = min(1.0, fraction * 5)       // first 20% ramp
+            let rampDown = min(1.0, (1 - fraction) * 5) // last 20% decelerate
+            let envelope = rampUp * rampDown
+            let variation = sin(Double(i) * 0.7) * 0.25 + cos(Double(i) * 1.3) * 0.15
+            let speed = max(0, min(peakSpeed, avgSpeed * envelope + avgSpeed * variation * envelope))
+
+            // Power: positive = consumption, negative = regen braking
+            // Higher during acceleration, slight regen during deceleration
+            let accelFactor = sin(Double(i) * 0.6) * 0.4
+            let power = avgPower + avgPower * accelFactor * envelope + cos(Double(i) * 1.1) * avgPower * 0.15
+
+            // Altitude: gradual climb then descent based on real elevation gain/loss
+            let climbFrac = drive.elevationGain / max(totalElevRange, 1)
+            let elevation: Double
+            if fraction < climbFrac {
+                // Climbing phase
+                elevation = startElev + drive.elevationGain * (fraction / max(climbFrac, 0.01))
+            } else {
+                // Descending phase
+                let descendFrac = (fraction - climbFrac) / max(1 - climbFrac, 0.01)
+                elevation = startElev + drive.elevationGain - drive.elevationLoss * descendFrac
+            }
+
+            // Temperature: inside warms slightly during drive, outside drifts gently
+            let insideTemp = 21.5 + fraction * 1.5 + sin(Double(i) * 0.15) * 0.5
+            let outsideTemp = drive.outsideTempAvg + sin(Double(i) * 0.08) * 1.5 + cos(Double(i) * 0.12) * 0.5
+
+            // Tire pressure: starts at baseline, rises slightly with driving (heat)
+            let pressureRise = fraction * 0.03  // ~0.03 bar increase over drive
+            let fl = 2.45 + pressureRise + sin(Double(i) * 0.4) * 0.02
+            let fr = 2.48 + pressureRise + sin(Double(i) * 0.4 + 1.0) * 0.02
+            let rl = 2.43 + pressureRise + sin(Double(i) * 0.4 + 2.0) * 0.02
+            let rr = 2.46 + pressureRise + sin(Double(i) * 0.4 + 3.0) * 0.02
 
             return DriveDataPoint(
                 minute: t,
                 speed: speed,
                 power: power,
-                altitude: altitude,
+                altitude: elevation,
                 insideTemp: insideTemp,
                 outsideTemp: outsideTemp,
                 tireFL: fl,
@@ -545,14 +585,25 @@ struct DriveDetailView: View {
             id: 1, carId: 1,
             startDate: "2025-06-22T10:30:00.000Z",
             endDate: "2025-06-22T11:15:00.000Z",
-            startAddress: "Home",
-            endAddress: "Office",
             distanceKm: 35.2,
             durationMin: 45,
             efficiency: 185,
+            startAddress: "Home",
+            endAddress: "Office",
+            startLatitude: 31.2304,
+            startLongitude: 121.4737,
+            endLatitude: 31.2211,
+            endLongitude: 121.4555,
             startBatteryLevel: 85,
             endBatteryLevel: 72,
-            outsideTempAvg: 22.5
+            startIdealRangeKm: 420,
+            endIdealRangeKm: 368,
+            outsideTempAvg: 22.5,
+            speedMax: 118,
+            powerMax: 64,
+            powerMin: -22,
+            elevationGain: 55,
+            elevationLoss: 41
         )
     )
 }

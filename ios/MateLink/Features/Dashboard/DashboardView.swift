@@ -5,7 +5,7 @@ struct DashboardView: View {
     @State private var status: CarStatus?
     @State private var showCarSwitcher = false
     @State private var isRefreshing = false
-    let timer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
+    @State private var loadError: String?
 
     var body: some View {
         NavigationStack {
@@ -35,9 +35,14 @@ struct DashboardView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("📍 Location").font(.caption).foregroundColor(.secondary)
                         if let s = status {
-                            AmapView(latitude: s.latitude, longitude: s.longitude, title: "Current Location")
-                                .frame(height: 150)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            NavigationLink {
+                                LocationDetailView(status: s)
+                            } label: {
+                                AmapView(latitude: s.latitude, longitude: s.longitude, title: "Current Location")
+                                    .frame(height: 150)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                            .buttonStyle(.plain)
                             Text("Elevation: \(Int(s.elevation))m").font(.caption2).foregroundColor(.secondary)
                         } else {
                             Text("Loading map...").font(.caption).foregroundColor(.secondary)
@@ -45,29 +50,46 @@ struct DashboardView: View {
                         }
                     }
                     .padding()
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .background(StitchColors.surface)
+                    .stitchCard()
                     .padding(.horizontal)
 
                     // Battery + Range
                     if let s = status {
                         HStack(spacing: 12) {
-                            StatCard(title: "Battery", value: "\(Int(s.batteryLevel))%", subtitle: "\(s.usableBatteryRangeKm) km range", color: .blue)
-                            StatCard(title: "Odometer", value: "\(s.odometer.formatted()) km", subtitle: "Total mileage", color: .secondary)
+                            NavigationLink {
+                                BatteryHealthView()
+                            } label: {
+                                StatCard(title: "Battery", value: "\(Int(s.batteryLevel))%", subtitle: "\(s.usableBatteryRangeKm) km range", color: StitchColors.primary)
+                            }
+                            .buttonStyle(.plain)
+
+                            NavigationLink {
+                                MileageView()
+                            } label: {
+                                StatCard(title: "Odometer", value: "\(s.odometer.formatted()) km", subtitle: "Total mileage", color: .secondary)
+                            }
+                            .buttonStyle(.plain)
                         }.padding(.horizontal)
 
                         // High SOC Warning
                         if s.chargeLimitSoc > 90 {
                             HStack {
-                                Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                                Image(systemName: "exclamationmark.triangle.fill").foregroundColor(StitchColors.warning)
                                 Text("High charge level - consider reducing to 80-90% for daily use")
-                                    .font(.caption).foregroundColor(.orange)
+                                    .font(.caption).foregroundColor(StitchColors.warning)
                             }.padding(.horizontal)
                         }
 
                         // Charging card
                         if s.state == .charging {
-                            ChargingCard(status: s).padding(.horizontal)
+                            NavigationLink {
+                                CurrentChargeView()
+                            } label: {
+                                ChargingCard(status: s)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal)
                         }
 
                         // Climate + Sentry + Lock + Plug
@@ -87,7 +109,19 @@ struct DashboardView: View {
                         }.padding(.horizontal)
 
                         // 7-Day Battery Trend
-                        BatteryTrendCard()
+                        NavigationLink {
+                            StatisticsView()
+                        } label: {
+                            BatteryTrendCard()
+                        }
+                        .buttonStyle(.plain)
+                    } else if let loadError {
+                        EmptyStateView(
+                            "Dashboard Unavailable",
+                            systemImage: "exclamationmark.triangle",
+                            message: loadError
+                        )
+                        .padding(40)
                     } else {
                         ProgressView("Loading...").padding(40)
                     }
@@ -95,7 +129,9 @@ struct DashboardView: View {
             }
             .navigationBarHidden(true)
             .refreshable { await refresh() }
-            .onReceive(timer) { _ in Task { await refresh() } }
+            .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+                Task { await refresh() }
+            }
             .task { await refresh() }
             .sheet(isPresented: $showCarSwitcher) { CarSwitcherView() }
         }
@@ -105,15 +141,24 @@ struct DashboardView: View {
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
+        loadError = nil
         if state.isMockMode {
             status = await state.mock.mockStatus(state.currentCarId)
         } else if let api = state.real {
-            status = try? await api.fetch("/api/v1/cars/\(state.currentCarId)/status")
+            do {
+                status = try await api.fetch("/api/v1/cars/\(state.currentCarId)/status")
+            } catch {
+                status = nil
+                loadError = "Unable to load real vehicle status: \(error.localizedDescription)"
+            }
+        } else {
+            status = nil
+            loadError = "No TeslaMate instance is configured."
         }
         // Write widget data to AppGroup UserDefaults
         if let s = status, let defaults = UserDefaults(suiteName: "group.com.matelink") {
             defaults.set(Int(s.batteryLevel), forKey: "widget_battery")
-            defaults.set(s.usableBatteryRangeKm, forKey: "widget_range")
+            defaults.set(Int(s.usableBatteryRangeKm), forKey: "widget_range")
             defaults.set(s.state.rawValue, forKey: "widget_state")
         }
     }
@@ -125,15 +170,15 @@ struct DashboardView: View {
             if let s = status {
                 AmapView(latitude: s.latitude, longitude: s.longitude, title: "Current Location")
                     .frame(height: 150)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
             } else {
                 Text("Loading map...").font(.caption).foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 150)
             }
         }
         .padding()
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .background(StitchColors.surface)
+        .stitchCard()
     }
 }
 
@@ -142,9 +187,9 @@ struct StatCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.caption).foregroundColor(.secondary)
-            Text(value).font(.largeTitle).bold().foregroundColor(.primary)
+            Text(value).font(.largeTitle).bold().foregroundColor(.primary).monospacedDigit()
             Text(subtitle).font(.caption2).foregroundColor(.secondary)
-        }.frame(maxWidth: .infinity, alignment: .leading).padding().background(.regularMaterial).clipShape(RoundedRectangle(cornerRadius: 16))
+        }.frame(maxWidth: .infinity, alignment: .leading).padding().background(StitchColors.surface).stitchCard()
     }
 }
 
@@ -152,11 +197,11 @@ struct MiniCard: View {
     let icon: String; let label: String; let value: String; var active: Bool = false
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: icon).font(.title3).foregroundColor(active ? .green : .secondary)
+            Image(systemName: icon).font(.title3).foregroundColor(active ? StitchColors.online : .secondary)
             Text(label).font(.caption2).foregroundColor(.secondary)
-            Text(value).font(.caption).bold()
-        }.frame(maxWidth: .infinity).padding(.vertical, 12).background(.regularMaterial).clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(active ? RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.4), lineWidth: 1) : nil)
+            Text(value).font(.caption).bold().monospacedDigit()
+        }.frame(maxWidth: .infinity).padding(.vertical, 12).background(StitchColors.surface).stitchCard()
+            .overlay(active ? RoundedRectangle(cornerRadius: 8).stroke(StitchColors.online.opacity(0.4), lineWidth: 1) : nil)
     }
 }
 
@@ -164,15 +209,15 @@ struct ChargingCard: View {
     let status: CarStatus
     var body: some View {
         VStack(spacing: 10) {
-            Label("Charging in Progress", systemImage: "bolt.fill").font(.headline).foregroundColor(.orange)
+            Label("Charging in Progress", systemImage: "bolt.fill").font(.headline).foregroundColor(StitchColors.warning)
             HStack {
-                VStack { Text("Power").font(.caption2).foregroundColor(.secondary); Text("\(String(format:"%.1f",status.chargerPower)) kW").font(.title3).bold() }
+                VStack { Text("Power").font(.caption2).foregroundColor(.secondary); Text("\(String(format:"%.1f",status.chargerPower)) kW").font(.title3).bold().monospacedDigit() }
                 Spacer()
-                VStack { Text("Added").font(.caption2).foregroundColor(.secondary); Text("\(String(format:"%.1f",status.chargeEnergyAdded)) kWh").font(.title3).bold() }
+                VStack { Text("Added").font(.caption2).foregroundColor(.secondary); Text("\(String(format:"%.1f",status.chargeEnergyAdded)) kWh").font(.title3).bold().monospacedDigit() }
                 Spacer()
-                VStack { Text("Remaining").font(.caption2).foregroundColor(.secondary); Text("\(Int(status.timeToFullCharge*60)) min").font(.title3).bold() }
+                VStack { Text("Remaining").font(.caption2).foregroundColor(.secondary); Text("\(Int(status.timeToFullCharge*60)) min").font(.title3).bold().monospacedDigit() }
             }
-        }.padding().background(.orange.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 16))
+        }.padding().background(StitchColors.warning.opacity(0.1)).stitchCard()
     }
 }
 
@@ -188,18 +233,25 @@ struct CarImageView: View { // F‑004
     }
 }
 
+// MARK: - Demo Data (hardcoded battery trend for UI preview)
 struct BatteryTrendCard: View {
-    let data: [Int] = [75, 72, 68, 70, 73, 76, 78]
+    let data: [Int] = [75, 72, 68, 70, 73, 76, 78] // Demo data — not live
     let labels: [String] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("7-Day Battery Trend").font(.caption).foregroundColor(.secondary)
+            HStack {
+                Text("7-Day Battery Trend").font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Text("Demo").font(.system(size: 8, weight: .semibold)).foregroundColor(StitchColors.warning)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(StitchColors.warning.opacity(0.1)).clipShape(Capsule())
+            }
             HStack(alignment: .bottom, spacing: 8) {
                 ForEach(Array(data.enumerated()), id: \.offset) { index, value in
                     VStack(spacing: 4) {
                         Rectangle()
-                            .fill(Color.blue.opacity(0.6))
+                            .fill(StitchColors.accent.opacity(0.6))
                             .frame(width: 24, height: CGFloat(value - 60) * 2)
                             .cornerRadius(4)
                         Text(labels[index]).font(.system(size: 8)).foregroundColor(.secondary)
@@ -209,8 +261,8 @@ struct BatteryTrendCard: View {
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .padding()
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .background(StitchColors.surface)
+        .stitchCard()
         .padding(.horizontal)
     }
 }
@@ -224,10 +276,18 @@ struct CarSwitcherView: View {
                     HStack {
                         VStack(alignment: .leading) { Text(car.name).font(.headline); Text("\(car.model) · \(car.totalDrives) drives").font(.caption).foregroundColor(.secondary) }
                         Spacer()
-                        if car.id == state.currentCarId { Image(systemName: "checkmark").foregroundColor(.blue) }
+                        if car.id == state.currentCarId { Image(systemName: "checkmark").foregroundColor(StitchColors.primary) }
                     }
                 }
             }.navigationTitle("Select Vehicle").navigationBarTitleDisplayMode(.inline)
         }
+    }
+}
+
+extension View {
+    func stitchCard() -> some View {
+        self
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(StitchColors.outline, lineWidth: 1))
     }
 }

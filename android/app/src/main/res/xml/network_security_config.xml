@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 允许明文流量以支持自托管 TeslaMate 的局域网 HTTP 访问。
+         公网 HTTP 主机由运行时 UrlSecurity 拦截（ApiClient.createApi），
+         防止 Bearer token 在公网上明文传输。
+         user CA 信任：自托管用户可能使用自签证书安装到设备上。 -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -704,8 +704,8 @@ private fun computeLongestStreak(sortedDays: List<String>): StreakRecord? {
     var currentStreakStart = sortedDays.first()
 
     for (i in 1 until sortedDays.size) {
-        val prevDate = java.time.LocalDate.parse(sortedDays[i - 1])
-        val currDate = java.time.LocalDate.parse(sortedDays[i])
+        val prevDate = runCatching { java.time.LocalDate.parse(sortedDays[i - 1]) }.getOrNull() ?: continue
+        val currDate = runCatching { java.time.LocalDate.parse(sortedDays[i]) }.getOrNull() ?: continue
 
         if (currDate == prevDate.plusDays(1)) {
             // Consecutive day

@@ -15,10 +15,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.matelink.R
 import com.matelink.data.local.dao.MonthlyChargeAggregation
 import com.matelink.data.local.dao.MonthlyDriveAggregation
 import com.matelink.domain.model.CarStats
@@ -57,7 +59,7 @@ fun AnnualReportPDFScreen(
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                context.startActivity(Intent.createChooser(shareIntent, "Share Annual Report"))
+                context.startActivity(Intent.createChooser(shareIntent, context.getString(R.string.pdf_report_share_title)))
             } catch (e: Exception) {
                 android.util.Log.e("AnnualReportPDF", "Failed to share PDF", e)
             }
@@ -67,10 +69,10 @@ fun AnnualReportPDFScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("PDF Report ${uiState.year}") },
+                title = { Text(stringResource(R.string.pdf_report_title, uiState.year)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
                     }
                 }
             )
@@ -115,13 +117,13 @@ fun AnnualReportPDFScreen(
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Annual Report ${uiState.year}",
+                        text = stringResource(R.string.annual_report_title, uiState.year),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Generate a PDF summary of your driving and charging data for ${uiState.year}.",
+                        text = stringResource(R.string.pdf_report_description, uiState.year),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -129,11 +131,11 @@ fun AnnualReportPDFScreen(
 
                     uiState.carStats?.let { stats ->
                         val qs = stats.quickStats
-                        Text("Total Distance: ${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km")
-                        Text("Total Drives: ${qs.totalDrives}")
-                        Text("Energy Used: ${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh")
-                        Text("Charges: ${qs.totalCharges}")
-                        Text("Avg Efficiency: ${String.format(java.util.Locale.US, "%.0f", qs.avgEfficiencyWhKm)} Wh/km")
+                        Text("${stringResource(R.string.pdf_report_total_distance)} ${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km")
+                        Text("${stringResource(R.string.pdf_report_total_drives)} ${qs.totalDrives}")
+                        Text("${stringResource(R.string.pdf_report_energy_used)} ${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh")
+                        Text("${stringResource(R.string.pdf_report_charges_label)} ${qs.totalCharges}")
+                        Text("${stringResource(R.string.pdf_report_avg_efficiency)} ${String.format(java.util.Locale.US, "%.0f", qs.avgEfficiencyWhKm)} Wh/km")
                     }
                 }
             }
@@ -152,7 +154,7 @@ fun AnnualReportPDFScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                 }
-                Text("Generate & Share PDF")
+                Text(stringResource(R.string.pdf_report_generate_share))
             }
 
             uiState.error?.let { error ->
@@ -179,7 +181,8 @@ private class PdfBuilder(private val context: Context) {
     private val doc = PdfDocument()
     private var pageNum = 0
     private var y = MARGIN
-    private lateinit var canvas: Canvas
+    private lateinit var currentPage: PdfDocument.Page
+    private val canvas: Canvas get() = currentPage.canvas
 
     private val titlePaint = Paint().apply {
         textSize = 28f; isFakeBoldText = true; isAntiAlias = true
@@ -204,10 +207,10 @@ private class PdfBuilder(private val context: Context) {
     }
 
     private fun newPage() {
-        if (pageNum > 0) doc.finishPage(canvas)
+        if (pageNum > 0) doc.finishPage(currentPage)
         pageNum++
         val info = PdfDocument.PageInfo.Builder(PAGE_W, PAGE_H, pageNum).create()
-        canvas = doc.startPage(info).canvas
+        currentPage = doc.startPage(info)
         y = MARGIN
     }
 
@@ -267,52 +270,52 @@ private class PdfBuilder(private val context: Context) {
         newPage()
 
         // Title
-        text("Annual Report $year", titlePaint, 36f)
-        text("MateLink Vehicle Summary", smallPaint, 18f)
+        text(context.getString(R.string.annual_report_title, year), titlePaint, 36f)
+        text(context.getString(R.string.pdf_report_vehicle_summary), smallPaint, 18f)
         divider(20f)
 
         // Summary
-        text("Annual Summary", h2Paint, 28f)
-        text("Total Distance: ${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km", bodyPaint)
-        text("Total Drives: ${qs.totalDrives}", bodyPaint)
-        text("Energy Used: ${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh", bodyPaint)
-        text("Avg Efficiency: ${String.format(java.util.Locale.US, "%.0f", qs.avgEfficiencyWhKm)} Wh/km", bodyPaint)
-        text("Charges: ${qs.totalCharges}", bodyPaint)
-        text("Energy Added: ${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyAddedKwh)} kWh", bodyPaint)
+        text(context.getString(R.string.annual_report_summary), h2Paint, 28f)
+        text("${context.getString(R.string.pdf_report_total_distance)} ${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km", bodyPaint)
+        text("${context.getString(R.string.pdf_report_total_drives)} ${qs.totalDrives}", bodyPaint)
+        text("${context.getString(R.string.pdf_report_energy_used)} ${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh", bodyPaint)
+        text("${context.getString(R.string.pdf_report_avg_efficiency)} ${String.format(java.util.Locale.US, "%.0f", qs.avgEfficiencyWhKm)} Wh/km", bodyPaint)
+        text("${context.getString(R.string.pdf_report_charges_label)} ${qs.totalCharges}", bodyPaint)
+        text("${context.getString(R.string.pdf_report_energy_added_label)} ${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyAddedKwh)} kWh", bodyPaint)
         if (qs.totalCost != null && qs.totalCost > 0) {
-            text("Total Cost: ${String.format(java.util.Locale.US, "%.2f", qs.totalCost)}", bodyPaint)
+            text("${context.getString(R.string.pdf_report_total_cost_label)} ${String.format(java.util.Locale.US, "%.2f", qs.totalCost)}", bodyPaint)
         }
         spacer(8f)
 
         // Records
         if (qs.longestDrive != null || qs.fastestDrive != null || qs.mostEfficientDrive != null) {
             divider(16f)
-            text("Records", h2Paint, 28f)
+            text(context.getString(R.string.stats_records), h2Paint, 28f)
             qs.longestDrive?.let {
-                text("Longest Drive: ${String.format(java.util.Locale.US, "%.1f", it.distance)} km (${it.startDate})", bodyPaint)
+                text("${context.getString(R.string.pdf_report_longest_drive)} ${String.format(java.util.Locale.US, "%.1f", it.distance)} km (${it.startDate})", bodyPaint)
             }
             qs.fastestDrive?.let {
-                text("Fastest Drive: ${it.speedMax} km/h (${it.startDate})", bodyPaint)
+                text("${context.getString(R.string.pdf_report_fastest_drive)} ${it.speedMax} km/h (${it.startDate})", bodyPaint)
             }
             qs.mostEfficientDrive?.let {
-                text("Most Efficient: ${String.format(java.util.Locale.US, "%.0f", it.efficiency)} Wh/km (${it.startDate})", bodyPaint)
+                text("${context.getString(R.string.pdf_report_most_efficient)} ${String.format(java.util.Locale.US, "%.0f", it.efficiency)} Wh/km (${it.startDate})", bodyPaint)
             }
         }
 
         // Monthly trends
         divider(16f)
-        text("Monthly Trends", h2Paint, 28f)
+        text(context.getString(R.string.annual_report_monthly_trends), h2Paint, 28f)
 
-        val months = listOf("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")
+        val months = java.text.DateFormatSymbols().shortMonths.toList()
 
         if (monthlyDrives.isNotEmpty()) {
-            text("Distance by Month (km)", h3Paint, 22f)
+            text(context.getString(R.string.pdf_report_distance_by_month), h3Paint, 22f)
             val distanceByMonth = FloatArray(12)
             monthlyDrives.forEach { if (it.month in 1..12) distanceByMonth[it.month - 1] = it.totalDistance.toFloat() }
             barChart(distanceByMonth.toList(), months, 100f)
             spacer(8f)
 
-            text("Energy Consumed by Month (kWh)", h3Paint, 22f)
+            text(context.getString(R.string.pdf_report_energy_consumed_by_month), h3Paint, 22f)
             val energyByMonth = FloatArray(12)
             monthlyDrives.forEach { if (it.month in 1..12) energyByMonth[it.month - 1] = it.totalEnergy.toFloat() }
             barChart(energyByMonth.toList(), months, 100f)
@@ -320,38 +323,38 @@ private class PdfBuilder(private val context: Context) {
         }
 
         if (monthlyCharges.isNotEmpty()) {
-            text("Energy Added by Month (kWh)", h3Paint, 22f)
+            text(context.getString(R.string.pdf_report_energy_added_by_month), h3Paint, 22f)
             val chargeEnergyByMonth = FloatArray(12)
             monthlyCharges.forEach { if (it.month in 1..12) chargeEnergyByMonth[it.month - 1] = it.totalEnergy.toFloat() }
             barChart(chargeEnergyByMonth.toList(), months, 100f)
         }
 
         if (monthlyDrives.isEmpty() && monthlyCharges.isEmpty()) {
-            text("No monthly data available.", bodyPaint)
+            text(context.getString(R.string.pdf_report_no_monthly_data), bodyPaint)
         }
 
         // Driving habits
         divider(16f)
-        text("Driving Habits", h2Paint, 28f)
-        qs.avgDriveMinutes?.let { text("Avg Drive Duration: ${String.format(java.util.Locale.US, "%.0f", it)} min", bodyPaint) }
-        qs.totalDrivingDays?.let { text("Driving Days: $it", bodyPaint) }
-        qs.maxSpeedKmh?.let { text("Top Speed: $it km/h", bodyPaint) }
+        text(context.getString(R.string.annual_report_driving_habits), h2Paint, 28f)
+        qs.avgDriveMinutes?.let { text("${context.getString(R.string.pdf_report_avg_drive_duration)} ${String.format(java.util.Locale.US, "%.0f", it)} min", bodyPaint) }
+        qs.totalDrivingDays?.let { text("${context.getString(R.string.pdf_report_driving_days)} $it", bodyPaint) }
+        qs.maxSpeedKmh?.let { text("${context.getString(R.string.pdf_report_top_speed_label)} $it km/h", bodyPaint) }
         if (qs.avgEfficiencyWhKm > 0) {
             val rating = when {
-                qs.avgEfficiencyWhKm < 150 -> "Excellent"
-                qs.avgEfficiencyWhKm < 180 -> "Good"
-                qs.avgEfficiencyWhKm < 220 -> "Average"
-                else -> "High"
+                qs.avgEfficiencyWhKm < 150 -> context.getString(R.string.annual_report_excellent)
+                qs.avgEfficiencyWhKm < 180 -> context.getString(R.string.annual_report_good)
+                qs.avgEfficiencyWhKm < 220 -> context.getString(R.string.annual_report_average)
+                else -> context.getString(R.string.annual_report_high)
             }
-            text("Efficiency Rating: $rating", bodyPaint)
+            text("${context.getString(R.string.pdf_report_efficiency_rating_label)} $rating", bodyPaint)
         }
 
         // Footer
         spacer(24f)
         divider(12f)
-        text("Generated by MateLink", smallPaint, 14f)
+        text(context.getString(R.string.pdf_report_generated_by), smallPaint, 14f)
 
-        doc.finishPage(canvas)
+        doc.finishPage(currentPage)
 
         // Save (clean up previous version first)
         val fileName = "matelink_annual_report_${year}.pdf"

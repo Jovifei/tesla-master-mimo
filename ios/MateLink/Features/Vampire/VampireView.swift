@@ -14,6 +14,7 @@ struct VampireView: View {
     @State private var drains: [VampireDrain] = []
     @State private var totalKWh: Double = 0
     @State private var totalKm: Int = 0
+    @State private var loadError: String?
 
     private let batteryCapacity: Double = 75
     private let idealRange: Double = 520
@@ -28,6 +29,11 @@ struct VampireView: View {
                         Text("Estimated battery loss during parking periods")
                             .font(.caption).foregroundColor(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal)
+
+                    if let loadError {
+                        EmptyStateView("Drain Data Unavailable", systemImage: "exclamationmark.triangle", message: loadError)
+                            .padding(.top, 24)
+                    }
 
                     // Summary Cards
                     HStack(spacing: 12) {
@@ -59,9 +65,9 @@ struct VampireView: View {
                     }
 
                     if drains.isEmpty {
-                        ContentUnavailableView("No Drain Data",
+                        EmptyStateView("No Drain Data",
                             systemImage: "bolt.slash",
-                            description: Text("No parking periods with significant drain found."))
+                            message: "No parking periods with significant drain found.")
                             .padding(.top, 40)
                     }
                 }
@@ -73,21 +79,36 @@ struct VampireView: View {
     }
 
     func loadData() async {
-        let drives: [Drive] = await {
+        loadError = nil
+        let drives: [Drive]
+        do {
             if state.isMockMode {
-                return await state.mock.getDrives(state.currentCarId)
+                drives = await state.mock.getDrives(state.currentCarId)
             } else if let api = state.real {
-                return (try? await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")) ?? []
+                drives = try await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")
+            } else {
+                throw URLError(.notConnectedToInternet)
             }
-            return []
-        }().sorted { $0.startDate < $1.startDate }
-        guard drives.count > 1 else { return }
+        } catch {
+            drains = []
+            totalKWh = 0
+            totalKm = 0
+            loadError = "Unable to load real drive data: \(error.localizedDescription)"
+            return
+        }
+        let sortedDrives = drives.sorted { $0.startDate < $1.startDate }
+        guard sortedDrives.count > 1 else {
+            drains = []
+            totalKWh = 0
+            totalKm = 0
+            return
+        }
 
         var calculated: [VampireDrain] = []
         var totalKwh: Double = 0
 
-        for i in 1..<drives.count {
-            let prev = drives[i - 1], cur = drives[i]
+        for i in 1..<sortedDrives.count {
+            let prev = sortedDrives[i - 1], cur = sortedDrives[i]
 
             let fmt = ISO8601DateFormatter()
             fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

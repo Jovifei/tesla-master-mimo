@@ -1,30 +1,76 @@
+import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { api } from '../api/client';
+import { useStore } from '../store';
+import type { Drive } from '../api/types';
 
-const yearData = [
-  { month: 'Jan', km: 1200 }, { month: 'Feb', km: 980 }, { month: 'Mar', km: 1450 },
-  { month: 'Apr', km: 1100 }, { month: 'May', km: 1350 }, { month: 'Jun', km: 850 },
-];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+interface MonthData {
+  month: string;
+  km: number;
+}
 
 export default function Mileage({ carId }: { carId: number }) {
+  const { currentCarId } = useStore();
+  const [yearData, setYearData] = useState<MonthData[]>([]);
+  const [totalKm, setTotalKm] = useState(0);
+  const [totalEnergy, setTotalEnergy] = useState(0);
+  const [avgEfficiency, setAvgEfficiency] = useState(0);
+
+  useEffect(() => {
+    Promise.all([api.getDrives(currentCarId), api.getCharges(currentCarId)]).then(([drives, charges]) => {
+      const now = new Date();
+      const thisYear = now.getFullYear();
+
+      // Monthly km from drives
+      const monthlyKm = new Array(12).fill(0);
+      drives.forEach(d => {
+        const date = new Date(d.start_date);
+        if (date.getFullYear() === thisYear) {
+          monthlyKm[date.getMonth()] += d.distance_km;
+        }
+      });
+
+      const yearData: MonthData[] = MONTHS.map((month, i) => ({
+        month,
+        km: Math.round(monthlyKm[i]),
+      }));
+
+      // Total km and energy for this year
+      const yearDrives = drives.filter(d => new Date(d.start_date).getFullYear() === thisYear);
+      const totalKm = Math.round(yearDrives.reduce((sum, d) => sum + d.distance_km, 0));
+      const totalEnergy = Math.round(charges.reduce((sum, c) => sum + c.charge_energy_added, 0));
+      const avgEfficiency = yearDrives.length > 0
+        ? Math.round(yearDrives.reduce((sum, d) => sum + d.efficiency, 0) / yearDrives.length)
+        : 0;
+
+      setYearData(yearData);
+      setTotalKm(totalKm);
+      setTotalEnergy(totalEnergy);
+      setAvgEfficiency(avgEfficiency);
+    });
+  }, [currentCarId]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <span className="text-blue-600 font-medium">2026</span>
+        <span className="text-blue-600 font-medium">{new Date().getFullYear()}</span>
       </div>
       <h1 className="text-2xl font-bold">Mileage</h1>
 
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
         <div className="grid grid-cols-3 gap-4 mb-6 text-center">
           <div>
-            <div className="text-3xl font-bold text-blue-600">6,930</div>
+            <div className="text-3xl font-bold text-blue-600">{totalKm.toLocaleString()}</div>
             <div className="text-xs text-gray-500">Total km</div>
           </div>
           <div>
-            <div className="text-3xl font-bold">985</div>
+            <div className="text-3xl font-bold">{totalEnergy.toLocaleString()}</div>
             <div className="text-xs text-gray-500">kWh used</div>
           </div>
           <div>
-            <div className="text-3xl font-bold">142</div>
+            <div className="text-3xl font-bold">{avgEfficiency}</div>
             <div className="text-xs text-gray-500">Wh/km avg</div>
           </div>
         </div>

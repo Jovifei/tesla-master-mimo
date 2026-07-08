@@ -14,6 +14,7 @@ import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.WeatherCondition
 import com.matelink.domain.LocalDayBoundaries
 import android.content.Context
+import com.matelink.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
@@ -84,7 +85,7 @@ class WhereWasIViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val targetTime = parseDateTime(timestamp) ?: run {
-                    _uiState.value = WhereWasIUiState(isLoading = false, error = "Invalid date")
+                    _uiState.value = WhereWasIUiState(isLoading = false, error = appContext.getString(R.string.error_invalid_date))
                     return@launch
                 }
 

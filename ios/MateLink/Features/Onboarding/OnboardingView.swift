@@ -40,7 +40,10 @@ struct OnboardingView: View {
             }
 
             Spacer()
-            Button("Skip — Use Mock Mode") { state.onboardingDone = true }.font(.caption).foregroundColor(.secondary)
+            Button("Skip — Use Mock Mode") {
+                state.isMockMode = true
+                state.onboardingDone = true
+            }.font(.caption).foregroundColor(.secondary)
             Spacer()
         }
     }
@@ -53,11 +56,11 @@ struct OnboardingView: View {
 
                 // Step 1: ping — server reachable?
                 currentStep = steps[0]
-                try await api.checkStatus("api/ping")
+                try await api.checkStatus("/api/ping")
 
                 // Step 2: readyz — backend services healthy?
                 currentStep = steps[1]
-                try await api.checkStatus("api/readyz")
+                try await api.checkStatus("/api/readyz")
 
                 // Step 3: cars — token valid & data accessible
                 currentStep = steps[2]
@@ -67,9 +70,7 @@ struct OnboardingView: View {
                 }
 
                 // Save and navigate
-                state.real = api; state.serverURL = url; state.apiToken = token
-                state.cars = resp.data.cars.map(Car.init(from:))
-                state.onboardingDone = true
+                try await state.connect(url: url, token: token)
                 currentStep = nil; loading = false
             } catch let e as ApiError {
                 error = e.localizedDescription; currentStep = nil; loading = false

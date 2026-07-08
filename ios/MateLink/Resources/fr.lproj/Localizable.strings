@@ -1,0 +1,70 @@
+// Navigation
+"nav.dashboard" = "Tableau de bord";
+"nav.drives" = "Trajets";
+"nav.charges" = "Charges";
+"nav.more" = "Plus";
+
+// Dashboard
+"dashboard.loading" = "Chargement du tableau de bord...";
+"battery" = "Batterie";
+"odometer" = "Odomètre";
+"location" = "Localisation";
+"inside_temp" = "Intérieur";
+"outside_temp" = "Extérieur";
+"lock.locked" = "Verrouillé";
+"lock.unlocked" = "Déverrouillé";
+"plug.plugged" = "Connecté";
+"plug.unplugged" = "Déconnecté";
+"climate.on" = "Clim ON";
+"climate.off" = "Clim OFF";
+"sentry.armed" = "Sentinelle ACTIVE";
+"sentry.off" = "Sentinelle OFF";
+"high_soc_warning" = "Niveau de charge élevé - limiter à 80-90% pour un usage quotidien recommandé";
+"tire_pressure" = "Pression des pneus";
+"battery_trend" = "Tendance batterie 7 jours";
+
+// Status
+"state.online" = "En ligne";
+"state.driving" = "En conduite";
+"state.charging" = "En charge";
+"state.asleep" = "En veille";
+"state.offline" = "Hors ligne";
+
+// Charging
+"charges.title" = "Historique de charge";
+"charge.detail" = "Détail de charge";
+"charging.in_progress" = "Charge en cours";
+"charge.power" = "Puissance";
+"charge.added" = "Énergie ajoutée";
+"charge.remaining" = "Temps restant";
+
+// Drives
+"drives.title" = "Historique des trajets";
+"drive.detail" = "Détail du trajet";
+
+// Battery Health
+"battery_health.title" = "Santé de la batterie";
+"battery_health.health" = "Santé";
+"battery_health.original" = "Capacité d'origine";
+"battery_health.current" = "Capacité actuelle";
+"battery_health.degradation" = "Dégradation";
+
+// Settings
+"settings.title" = "Paramètres";
+"connection" = "Connexion";
+"server_url" = "URL du serveur";
+"api_token" = "Jeton API";
+"test_connection" = "Tester la connexion";
+"preferences" = "Préférences";
+"units" = "Unités";
+"temperature" = "Température";
+"theme" = "Thème";
+"mock_mode" = "Mode simulation";
+"about" = "À propos";
+"version" = "Version";
+
+// Common
+"back" = "Retour";
+"loading" = "Chargement...";
+"no_data" = "Aucune donnée disponible";
+"offline" = "Hors ligne - affichage des données en cache";

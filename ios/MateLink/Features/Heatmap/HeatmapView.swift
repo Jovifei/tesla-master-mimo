@@ -12,6 +12,7 @@ struct HeatmapView: View {
     @State private var grid: [[Double]] = []
     @State private var maxValue: Double = 1
     @State private var selectedInfo: String?
+    @State private var loadError: String?
 
     private static let dayCount = 15
 
@@ -26,6 +27,9 @@ struct HeatmapView: View {
             Group {
                 if loading {
                     ProgressView("Loading heatmap...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let loadError {
+                    EmptyStateView("Heatmap Unavailable", systemImage: "exclamationmark.triangle", message: loadError)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     content
@@ -191,10 +195,25 @@ struct HeatmapView: View {
 
     private func load() async {
         loading = true
+        loadError = nil
         if state.isMockMode {
             drives = await state.mock.getDrives(state.currentCarId)
         } else if let api = state.real {
-            drives = (try? await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")) ?? []
+            do {
+                drives = try await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")
+            } catch {
+                drives = []
+                grid = []
+                loadError = "Unable to load real drive data: \(error.localizedDescription)"
+                loading = false
+                return
+            }
+        } else {
+            drives = []
+            grid = []
+            loadError = "No TeslaMate instance is configured."
+            loading = false
+            return
         }
         buildGrid()
         loading = false

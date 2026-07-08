@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -20,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.matelink.R
 import com.matelink.data.local.dao.MonthlyChargeAggregation
 import com.matelink.data.local.dao.MonthlyDriveAggregation
 import com.matelink.domain.model.CarStats
@@ -42,10 +44,10 @@ fun AnnualReportScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Annual Report ${uiState.year}") },
+                title = { Text(stringResource(R.string.annual_report_title, uiState.year)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
                     }
                 }
             )
@@ -67,7 +69,7 @@ fun AnnualReportScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                Text("No data available for ${uiState.year}")
+                Text(stringResource(R.string.annual_report_no_data, uiState.year))
             }
             return@Scaffold
         }
@@ -105,7 +107,7 @@ fun AnnualReportScreen(
                 onClick = onNavigateToPDF,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Generate PDF Report")
+                Text(stringResource(R.string.annual_report_generate_pdf))
             }
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -144,7 +146,7 @@ private fun AnnualSummarySection(stats: CarStats) {
     val qs = stats.quickStats
 
     Text(
-        text = "Annual Summary",
+        text = stringResource(R.string.annual_report_summary),
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold
     )
@@ -155,12 +157,12 @@ private fun AnnualSummarySection(stats: CarStats) {
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         SummaryCard(
-            title = "Total Distance",
+            title = stringResource(R.string.total_distance),
             value = String.format("%,.0f km", qs.totalDistanceKm),
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
-            title = "Total Drives",
+            title = stringResource(R.string.stats_total_drives),
             value = "${qs.totalDrives}",
             modifier = Modifier.weight(1f)
         )
@@ -171,12 +173,12 @@ private fun AnnualSummarySection(stats: CarStats) {
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         SummaryCard(
-            title = "Energy Used",
+            title = stringResource(R.string.stats_energy_used),
             value = String.format("%,.1f kWh", qs.totalEnergyConsumedKwh),
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
-            title = "Avg Efficiency",
+            title = stringResource(R.string.stats_avg_efficiency),
             value = String.format("%.0f Wh/km", qs.avgEfficiencyWhKm),
             modifier = Modifier.weight(1f)
         )
@@ -187,12 +189,12 @@ private fun AnnualSummarySection(stats: CarStats) {
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         SummaryCard(
-            title = "Charges",
+            title = stringResource(R.string.label_charges),
             value = "${qs.totalCharges}",
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
-            title = "Energy Added",
+            title = stringResource(R.string.energy_added),
             value = String.format("%,.1f kWh", qs.totalEnergyAddedKwh),
             modifier = Modifier.weight(1f)
         )
@@ -204,13 +206,13 @@ private fun AnnualSummarySection(stats: CarStats) {
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             SummaryCard(
-                title = "Total Cost",
+                title = stringResource(R.string.total_cost),
                 value = String.format("€%.2f", qs.totalCost),
                 modifier = Modifier.weight(1f)
             )
             SummaryCard(
-                title = "Avg Cost/kWh",
-                value = if (qs.avgCostPerKwh != null) String.format("€%.3f", qs.avgCostPerKwh) else "N/A",
+                title = stringResource(R.string.stats_avg_cost_kwh),
+                value = if (qs.avgCostPerKwh != null) String.format("€%.3f", qs.avgCostPerKwh) else stringResource(R.string.annual_report_na),
                 modifier = Modifier.weight(1f)
             )
         }
@@ -219,20 +221,20 @@ private fun AnnualSummarySection(stats: CarStats) {
     // Records
     if (qs.longestDrive != null || qs.fastestDrive != null) {
         Text(
-            text = "Records",
+            text = stringResource(R.string.stats_records),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(top = 8.dp)
         )
 
         qs.longestDrive?.let {
-            RecordRow("Longest Drive", String.format("%.1f km", it.distance), it.startDate)
+            RecordRow(stringResource(R.string.record_longest_drive), String.format("%.1f km", it.distance), it.startDate)
         }
         qs.fastestDrive?.let {
-            RecordRow("Fastest Drive", "${it.speedMax} km/h", it.startDate)
+            RecordRow(stringResource(R.string.record_fastest_drive), "${it.speedMax} km/h", it.startDate)
         }
         qs.mostEfficientDrive?.let {
-            RecordRow("Most Efficient", String.format("%.0f Wh/km", it.efficiency), it.startDate)
+            RecordRow(stringResource(R.string.record_most_efficient), String.format("%.0f Wh/km", it.efficiency), it.startDate)
         }
     }
 }
@@ -290,14 +292,14 @@ private fun MonthlyTrendsSection(
     if (monthlyDrives.isEmpty() && monthlyCharges.isEmpty()) return
 
     Text(
-        text = "Monthly Trends",
+        text = stringResource(R.string.annual_report_monthly_trends),
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold
     )
 
     // Distance chart
     if (monthlyDrives.isNotEmpty()) {
-        Text("Distance (km)", style = MaterialTheme.typography.labelMedium)
+        Text(stringResource(R.string.annual_report_distance_km), style = MaterialTheme.typography.labelMedium)
         BarChart(
             data = monthlyDrives.map { it.totalDistance.toFloat() },
             labels = monthlyDrives.map { monthLabel(it.month) },
@@ -308,7 +310,7 @@ private fun MonthlyTrendsSection(
         Spacer(modifier = Modifier.height(12.dp))
 
         // Drive count line chart
-        Text("Drives per Month", style = MaterialTheme.typography.labelMedium)
+        Text(stringResource(R.string.annual_report_drives_per_month), style = MaterialTheme.typography.labelMedium)
         LineChart(
             data = monthlyDrives.map { it.driveCount.toFloat() },
             labels = monthlyDrives.map { monthLabel(it.month) },
@@ -320,7 +322,7 @@ private fun MonthlyTrendsSection(
     // Charging energy chart
     if (monthlyCharges.isNotEmpty()) {
         Spacer(modifier = Modifier.height(12.dp))
-        Text("Energy Added (kWh)", style = MaterialTheme.typography.labelMedium)
+        Text(stringResource(R.string.annual_report_energy_added_kwh), style = MaterialTheme.typography.labelMedium)
         BarChart(
             data = monthlyCharges.map { it.totalEnergy.toFloat() },
             labels = monthlyCharges.map { monthLabel(it.month) },
@@ -420,12 +422,8 @@ private fun LineChart(
 }
 
 private fun monthLabel(month: Int): String {
-    return when (month) {
-        1 -> "Jan"; 2 -> "Feb"; 3 -> "Mar"; 4 -> "Apr"
-        5 -> "May"; 6 -> "Jun"; 7 -> "Jul"; 8 -> "Aug"
-        9 -> "Sep"; 10 -> "Oct"; 11 -> "Nov"; 12 -> "Dec"
-        else -> "$month"
-    }
+    val shortMonths = java.text.DateFormatSymbols().shortMonths
+    return shortMonths.getOrElse(month - 1) { "$month" }
 }
 
 // ==================== T-103: Driving Habits ====================
@@ -435,7 +433,7 @@ private fun DrivingHabitsSection(stats: CarStats) {
     val qs = stats.quickStats
 
     Text(
-        text = "Driving Habits",
+        text = stringResource(R.string.annual_report_driving_habits),
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold
     )
@@ -444,41 +442,41 @@ private fun DrivingHabitsSection(stats: CarStats) {
         Column(modifier = Modifier.padding(16.dp)) {
             // Average drive duration
             qs.avgDriveMinutes?.let { mins ->
-                HabitRow("Average Drive Duration", String.format("%.0f min", mins))
+                HabitRow(stringResource(R.string.annual_report_avg_drive_duration), String.format("%.0f min", mins))
             }
 
             // Driving days
             qs.totalDrivingDays?.let { days ->
-                HabitRow("Unique Driving Days", "$days days")
+                HabitRow(stringResource(R.string.annual_report_unique_driving_days), "$days days")
                 if (qs.totalDrives > 0 && days > 0) {
-                    HabitRow("Drives per Day", String.format("%.1f", qs.totalDrives.toFloat() / days))
+                    HabitRow(stringResource(R.string.annual_report_drives_per_day), String.format("%.1f", qs.totalDrives.toFloat() / days))
                 }
             }
 
             // Efficiency rating
             if (qs.avgEfficiencyWhKm > 0) {
                 val rating = when {
-                    qs.avgEfficiencyWhKm < 150 -> "Excellent"
-                    qs.avgEfficiencyWhKm < 180 -> "Good"
-                    qs.avgEfficiencyWhKm < 220 -> "Average"
-                    else -> "High"
+                    qs.avgEfficiencyWhKm < 150 -> stringResource(R.string.annual_report_excellent)
+                    qs.avgEfficiencyWhKm < 180 -> stringResource(R.string.annual_report_good)
+                    qs.avgEfficiencyWhKm < 220 -> stringResource(R.string.annual_report_average)
+                    else -> stringResource(R.string.annual_report_high)
                 }
-                HabitRow("Efficiency Rating", rating)
+                HabitRow(stringResource(R.string.annual_report_efficiency_rating), rating)
             }
 
             // Max speed
             qs.maxSpeedKmh?.let {
-                HabitRow("Top Speed", "$it km/h")
+                HabitRow(stringResource(R.string.annual_report_top_speed), "$it km/h")
             }
 
             // Busiest day
             qs.busiestDay?.let {
-                HabitRow("Busiest Day", "${it.day} (${it.count} drives)")
+                HabitRow(stringResource(R.string.annual_report_busiest_day), "${it.day} (${it.count} drives)")
             }
 
             // Most distance day
             qs.mostDistanceDay?.let {
-                HabitRow("Most Distance in a Day", String.format("%.1f km (%s)", it.totalDistance, it.day))
+                HabitRow(stringResource(R.string.annual_report_most_distance_day), String.format("%.1f km (%s)", it.totalDistance, it.day))
             }
         }
     }

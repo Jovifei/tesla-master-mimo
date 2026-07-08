@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useStore } from '../store';
 
 export default function Settings() {
   const [serverUrl, setServerUrl] = useState('https://teslamate.example.com/api/v1');
@@ -6,9 +7,12 @@ export default function Settings() {
   const [testResult, setTestResult] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [units, setUnits] = useState('km');
   const [tempUnit, setTempUnit] = useState('C');
-  const [theme, setTheme] = useState('system');
-  const [mockMode, setMockMode] = useState(true);
   const [tariffEnabled, setTariffEnabled] = useState(false);
+
+  const theme = useStore(s => s.theme);
+  const setTheme = useStore(s => s.setTheme);
+  const mockMode = useStore(s => s.mockMode);
+  const setMockMode = useStore(s => s.setMockMode);
 
   const testConnection = () => {
     setTestResult('testing');
@@ -79,7 +83,7 @@ export default function Settings() {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm">Theme</span>
-            <select value={theme} onChange={e => setTheme(e.target.value)}
+            <select value={theme} onChange={e => setTheme(e.target.value as 'light' | 'dark' | 'system')}
               className="p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm">
               <option value="system">System</option>
               <option value="light">Light</option>

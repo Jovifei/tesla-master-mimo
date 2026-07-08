@@ -2,6 +2,7 @@ package com.matelink.ui.screens.stats
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
+import com.matelink.R
 import androidx.lifecycle.viewModelScope
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -273,7 +274,7 @@ class StatsViewModel @Inject constructor(
         } catch (e: Exception) {
             _uiState.update {
                 it.copy(
-                    error = e.message ?: "Failed to load stats"
+                    error = e.message ?: context.getString(R.string.error_load_stats)
                 )
             }
         }

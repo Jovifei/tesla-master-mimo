@@ -2,6 +2,7 @@ package com.matelink.ui.screens.reports
 
 import android.content.Context
 import android.net.Uri
+import com.matelink.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.export.DataExporter
@@ -56,7 +57,7 @@ class ExportViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(availableYears = years)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                _uiState.value = _uiState.value.copy(error = "Failed to load years: ${e.message}")
+                _uiState.value = _uiState.value.copy(error = context.getString(R.string.error_load_years, e.message ?: ""))
             }
         }
     }
@@ -107,7 +108,7 @@ class ExportViewModel @Inject constructor(
                 )
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                _uiState.value = _uiState.value.copy(error = "Failed to load counts: ${e.message}")
+                _uiState.value = _uiState.value.copy(error = context.getString(R.string.error_load_counts, e.message ?: ""))
             }
         }
     }
@@ -149,7 +150,7 @@ class ExportViewModel @Inject constructor(
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 _uiState.value = _uiState.value.copy(
                     isExporting = false,
-                    error = e.message ?: "Export failed"
+                    error = e.message ?: context.getString(R.string.error_export)
                 )
             }
         }

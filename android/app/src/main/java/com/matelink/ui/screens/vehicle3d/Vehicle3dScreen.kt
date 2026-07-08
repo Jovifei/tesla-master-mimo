@@ -17,7 +17,9 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.matelink.R
 
 /**
  * 3D Vehicle Viewer screen.
@@ -45,10 +47,10 @@ fun Vehicle3dScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("3D Vehicle") },
+                title = { Text(stringResource(R.string.vehicle_3d_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
                     }
                 }
             )
@@ -99,7 +101,7 @@ fun Vehicle3dScreen(
                 // Gesture hint (epsilon comparison for float imprecision)
                 if (kotlin.math.abs(offsetX) < 0.5f && kotlin.math.abs(offsetY) < 0.5f && kotlin.math.abs(scale - 1f) < 0.01f) {
                     Text(
-                        text = "Pinch to zoom · Drag to rotate",
+                        text = stringResource(R.string.vehicle_3d_gesture_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
@@ -115,7 +117,7 @@ fun Vehicle3dScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Vehicle Controls",
+                        text = stringResource(R.string.vehicle_3d_controls),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
@@ -126,19 +128,19 @@ fun Vehicle3dScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         ControlButton(
-                            label = if (doorsOpen) "Close Doors" else "Open Doors",
+                            label = if (doorsOpen) stringResource(R.string.vehicle_3d_close_doors) else stringResource(R.string.vehicle_3d_open_doors),
                             isActive = doorsOpen,
                             onClick = { doorsOpen = !doorsOpen },
                             modifier = Modifier.weight(1f)
                         )
                         ControlButton(
-                            label = if (chargePortOpen) "Close Port" else "Open Port",
+                            label = if (chargePortOpen) stringResource(R.string.vehicle_3d_close_port) else stringResource(R.string.vehicle_3d_open_port),
                             isActive = chargePortOpen,
                             onClick = { chargePortOpen = !chargePortOpen },
                             modifier = Modifier.weight(1f)
                         )
                         ControlButton(
-                            label = if (frunkOpen) "Close Frunk" else "Open Frunk",
+                            label = if (frunkOpen) stringResource(R.string.vehicle_3d_close_frunk) else stringResource(R.string.vehicle_3d_open_frunk),
                             isActive = frunkOpen,
                             onClick = { frunkOpen = !frunkOpen },
                             modifier = Modifier.weight(1f)
@@ -157,7 +159,7 @@ fun Vehicle3dScreen(
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Reset View")
+                        Text(stringResource(R.string.vehicle_3d_reset_view))
                     }
                 }
             }

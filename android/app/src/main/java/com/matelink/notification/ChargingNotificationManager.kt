@@ -224,27 +224,11 @@ class ChargingNotificationManager @Inject constructor(
 
         Log.d(TAG, "ProgressStyle: soc=$soc, limit=$limit (segments: $soc, ${limit - soc}, ${100 - limit})")
 
-        // 3 segments: charged (accent, bright) | charging-to-limit (accent, dimmed) | beyond limit (gray, dimmed)
-        val segments = listOfNotNull(
-            if (soc > 0) Notification.ProgressStyle.Segment(soc).setColor(accentArgb) else null,
-            if (limit - soc > 0) Notification.ProgressStyle.Segment(limit - soc).setColor(accentArgb) else null,
-            if (100 - limit > 0) Notification.ProgressStyle.Segment(100 - limit).setColor(grayArgb) else null,
-        )
-
-        val progressStyle = Notification.ProgressStyle()
-            .setProgress(soc)
-            .setStyledByProgress(true)
-            .setProgressTrackerIcon(
-                android.graphics.drawable.Icon.createWithResource(context, R.drawable.ic_bolt)
-            )
-            .setProgressSegments(segments)
-
         val builder = Notification.Builder(context, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(contentText)
             .setSmallIcon(smallIconRes)
             .setProgress(100, soc, false)
-            .setStyle(progressStyle)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)

@@ -27,9 +27,9 @@ class ApiClient @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // Cached values - updated via Flow collection, no runBlocking needed
-    private var cachedToken: String = ""
-    private var cachedBaseUrl: String = ""
-    private var cachedApi: TeslamateApi? = null
+    @Volatile private var cachedToken: String = ""
+    @Volatile private var cachedBaseUrl: String = ""
+    @Volatile private var cachedApi: TeslamateApi? = null
 
     private val _isConfigured = MutableStateFlow(false)
     val isConfigured: StateFlow<Boolean> = _isConfigured.asStateFlow()
@@ -42,7 +42,7 @@ class ApiClient @Inject constructor(
                 .distinctUntilChanged()
                 .collect { url ->
                     cachedBaseUrl = url
-                    cachedApi = null // Force recreate
+                    synchronized(this@ApiClient) { cachedApi = null } // Force recreate
                     _isConfigured.value = url.isNotBlank()
                 }
         }
@@ -57,11 +57,11 @@ class ApiClient @Inject constructor(
     }
 
     val api: TeslamateApi
-        get() {
+        get() = synchronized(this) {
             if (cachedApi == null) {
                 cachedApi = createApi(cachedBaseUrl)
             }
-            return cachedApi!!
+            cachedApi!!
         }
 
     private fun createApi(baseUrl: String): TeslamateApi {
@@ -98,6 +98,14 @@ class ApiClient @Inject constructor(
             .build()
 
         val url = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
+
+        // 安全校验：非空 baseUrl 必须安全（HTTPS 或 LAN/localhost），否则拒绝创建会泄露 token 的客户端
+        if (baseUrl.isNotBlank() && !UrlSecurity.isSafe(baseUrl)) {
+            throw IllegalArgumentException(
+                "Refusing to create API client: baseUrl uses cleartext HTTP to a public host " +
+                "(token would be exposed). Use HTTPS or a local/private address. baseUrl=$baseUrl"
+            )
+        }
 
         return Retrofit.Builder()
             .baseUrl(url.ifBlank { "http://localhost/" }) // Fallback for initial creation

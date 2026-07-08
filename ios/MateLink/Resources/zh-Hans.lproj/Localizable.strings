@@ -68,3 +68,41 @@
 "loading" = "加载中...";
 "no_data" = "暂无数据";
 "offline" = "离线 - 显示缓存数据";
+
+/* Page titles */
+"title.drive_detail" = "行程详情";
+"title.charge_detail" = "充电详情";
+"title.current_charge" = "当前充电";
+"title.statistics" = "统计";
+"title.battery_health" = "电池健康";
+"title.efficiency" = "效率分析";
+"title.cost" = "成本分析";
+"title.range" = "续航分析";
+"title.vampire" = "待机耗电";
+"title.timeline" = "时间线";
+"title.mileage" = "里程钻取";
+"title.updates" = "固件版本";
+"title.sentry" = "哨兵历史";
+"title.settings" = "设置";
+"title.about" = "关于";
+
+/* Status (alternate keys) */
+"status.online" = "在线";
+"status.offline" = "离线";
+"status.charging" = "充电中";
+"status.driving" = "驾驶中";
+"status.asleep" = "休眠";
+"status.locked" = "已锁车";
+"status.unlocked" = "未锁车";
+
+/* Common (alternate keys) */
+"common.loading" = "加载中...";
+"common.no_data" = "暂无数据";
+"common.distance" = "距离";
+"common.duration" = "时长";
+"common.energy" = "能耗";
+"common.cost" = "费用";
+"common.free" = "免费";
+"common.battery" = "电池";
+"common.efficiency" = "效率";
+"common.version" = "版本";

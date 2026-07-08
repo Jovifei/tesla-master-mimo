@@ -3,6 +3,7 @@ package com.matelink.ui.screens.reports
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.matelink.R
 import com.matelink.data.local.dao.MonthlyChargeAggregation
 import com.matelink.data.local.dao.MonthlyDriveAggregation
 import com.matelink.data.repository.StatsRepository
@@ -74,7 +75,7 @@ class AnnualReportPDFViewModel @Inject constructor(
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = e.message ?: "Failed to load report"
+                    error = e.message ?: context.getString(R.string.error_load_report)
                 )
             }
         }

@@ -1,11 +1,43 @@
+import { useEffect, useState } from 'react';
+import { api } from '../api/client';
+import { useStore } from '../store';
+import type { Drive } from '../api/types';
+
+interface Destination {
+  name: string;
+  visits: number;
+  km: number;
+  lat: number;
+  lng: number;
+}
+
 export default function TopDestinations({ carId }: { carId: number }) {
-  const destinations = [
-    { name: '家 - 上海市浦东新区张江镇', visits: 350, km: 0, lat: 31.2304, lng: 121.4737 },
-    { name: '公司 - 上海市浦东新区陆家嘴', visits: 320, km: 7450, lat: 31.2398, lng: 121.4998 },
-    { name: '特斯拉超级充电站 - 浦东嘉里城', visits: 45, km: 675, lat: 31.2200, lng: 121.5600 },
-    { name: '苏州市姑苏区观前街', visits: 8, km: 960, lat: 31.3100, lng: 120.6200 },
-    { name: '杭州市西湖区', visits: 5, km: 600, lat: 30.2741, lng: 120.1551 },
-  ];
+  const { currentCarId } = useStore();
+  const [destinations, setDestinations] = useState<Destination[]>([]);
+
+  useEffect(() => {
+    api.getDrives(currentCarId).then((drives: Drive[]) => {
+      const destMap = new Map<string, Destination>();
+      drives.forEach(d => {
+        const key = d.end_address;
+        if (destMap.has(key)) {
+          const existing = destMap.get(key)!;
+          existing.visits += 1;
+          existing.km += Math.round(d.distance_km * 100);
+        } else {
+          destMap.set(key, {
+            name: d.end_address,
+            visits: 1,
+            km: Math.round(d.distance_km * 100),
+            lat: d.end_latitude,
+            lng: d.end_longitude,
+          });
+        }
+      });
+      const sorted = [...destMap.values()].sort((a, b) => b.visits - a.visits);
+      setDestinations(sorted);
+    });
+  }, [currentCarId]);
 
   return (
     <div className="space-y-6">

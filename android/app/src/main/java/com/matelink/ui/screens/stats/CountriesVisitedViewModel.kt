@@ -1,7 +1,10 @@
 package com.matelink.ui.screens.stats
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.matelink.R
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.matelink.data.api.models.Units
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.StatsRepository
@@ -38,6 +41,7 @@ data class CountriesVisitedUiState(
 
 @HiltViewModel
 class CountriesVisitedViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val statsRepository: StatsRepository,
     private val teslamateRepository: TeslamateRepository
 ) : ViewModel() {
@@ -73,7 +77,7 @@ class CountriesVisitedViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        error = e.message ?: "Failed to load countries"
+                        error = e.message ?: context.getString(R.string.error_load_countries)
                     )
                 }
             }

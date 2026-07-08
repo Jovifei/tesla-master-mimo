@@ -16,14 +16,6 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideSettingsDataStore(
-        @ApplicationContext context: Context
-    ): SettingsDataStore {
-        return SettingsDataStore(context)
-    }
-
-    @Provides
-    @Singleton
     fun provideChargingNotificationManager(
         @ApplicationContext context: Context
     ): ChargingNotificationManager {

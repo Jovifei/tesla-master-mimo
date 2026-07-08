@@ -11,9 +11,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.matelink.R
 import com.matelink.data.export.DataExporter
 import com.matelink.data.export.ExportDataType
 import com.matelink.data.export.ExportFormat
@@ -35,10 +37,10 @@ fun ExportScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Export Data") },
+                title = { Text(stringResource(R.string.export_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
                     }
                 }
             )
@@ -54,7 +56,7 @@ fun ExportScreen(
         ) {
             // T-201: Format Selection
             Text(
-                text = "Export Format",
+                text = stringResource(R.string.export_format_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -75,7 +77,7 @@ fun ExportScreen(
 
             // Data Type Selection
             Text(
-                text = "Data to Export",
+                text = stringResource(R.string.export_data_to_export),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -90,9 +92,9 @@ fun ExportScreen(
                         onClick = { viewModel.setDataType(type) },
                         label = {
                             Text(when (type) {
-                                ExportDataType.DRIVES -> "Drives"
-                                ExportDataType.CHARGES -> "Charges"
-                                ExportDataType.BOTH -> "Both"
+                                ExportDataType.DRIVES -> stringResource(R.string.export_drives)
+                                ExportDataType.CHARGES -> stringResource(R.string.export_charges)
+                                ExportDataType.BOTH -> stringResource(R.string.export_both)
                             })
                         },
                         modifier = Modifier.weight(1f)
@@ -102,7 +104,7 @@ fun ExportScreen(
 
             // T-202: Date Range Selection
             Text(
-                text = "Date Range",
+                text = stringResource(R.string.export_date_range),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -116,7 +118,7 @@ fun ExportScreen(
                     FilterChip(
                         selected = uiState.selectedYear == null,
                         onClick = { viewModel.setYear(null) },
-                        label = { Text("All Time") }
+                        label = { Text(stringResource(R.string.filter_all_time)) }
                     )
                     uiState.availableYears.take(5).forEach { year ->
                         FilterChip(
@@ -134,20 +136,20 @@ fun ExportScreen(
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Export Summary",
+                        text = stringResource(R.string.export_summary),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Format: ${uiState.format.name}")
-                    Text("Data: ${when (uiState.dataType) {
-                        ExportDataType.DRIVES -> "Drives"
-                        ExportDataType.CHARGES -> "Charges"
-                        ExportDataType.BOTH -> "Drives + Charges"
+                    Text("${stringResource(R.string.export_format_label)} ${uiState.format.name}")
+                    Text("${stringResource(R.string.export_data_label)} ${when (uiState.dataType) {
+                        ExportDataType.DRIVES -> stringResource(R.string.export_drives)
+                        ExportDataType.CHARGES -> stringResource(R.string.export_charges)
+                        ExportDataType.BOTH -> stringResource(R.string.export_drives_charges)
                     }}")
-                    Text("Range: ${uiState.selectedYear?.toString() ?: "All Time"}")
-                    Text("Drives: ${uiState.driveCount}")
-                    Text("Charges: ${uiState.chargeCount}")
+                    Text("${stringResource(R.string.export_range_label)} ${uiState.selectedYear?.toString() ?: stringResource(R.string.filter_all_time)}")
+                    Text("${stringResource(R.string.export_drives_label)} ${uiState.driveCount}")
+                    Text("${stringResource(R.string.export_charges_label)} ${uiState.chargeCount}")
                 }
             }
 
@@ -165,7 +167,7 @@ fun ExportScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                 }
-                Text("Export & Share")
+                Text(stringResource(R.string.export_share))
             }
 
             // Share intent launcher
@@ -174,7 +176,7 @@ fun ExportScreen(
                     viewModel.clearShareUri() // clear first to prevent re-trigger
                     try {
                         val shareIntent = DataExporter.createShareIntent(uri, uiState.format)
-                        context.startActivity(Intent.createChooser(shareIntent, "Share Export"))
+                        context.startActivity(Intent.createChooser(shareIntent, context.getString(R.string.export_share_title)))
                     } catch (_: Exception) {
                         // No activity to handle share intent
                     }

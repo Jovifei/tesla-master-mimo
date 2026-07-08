@@ -46,19 +46,32 @@ struct ChargeDetailView: View {
         self.charge = charge
         let duration = ChargeDetailView.computeDurationMinutes(charge: charge) ?? 45
         let isDC = charge.chargeType == "DC"
+        // Derive average power from real summary data
+        let avgPower = duration > 0 ? charge.chargeEnergyAdded / (Double(duration) / 60.0) : 0.0
         var result: [ChargeSample] = []
         for i in 0..<30 {
             let minute = Int(round(Double(duration) * Double(i) / 29.0))
+            let fraction = Double(i) / 29.0  // 0.0 to 1.0 through charge session
             let power: Double
             let voltage: Double
             if isDC {
-                power = 50 + sin(Double(i) * 0.4) * 80 + Double.random(in: -7...7)
-                voltage = 380 + sin(Double(i) * 0.2) * 20 + Double.random(in: -5...5)
+                // DC fast charging: high power taper as SOC increases
+                // Tapers from ~120% avg to ~40% avg in a realistic CC-CV curve
+                let taperFactor = 1.2 - 0.8 * fraction * fraction
+                let variation = sin(Double(i) * 0.5) * 0.08
+                power = max(0, avgPower * taperFactor * (1 + variation))
+                // Voltage rises as battery SOC increases (CC phase then CV)
+                voltage = 370 + 30 * fraction + sin(Double(i) * 0.3) * 5
             } else {
-                power = 8 + sin(Double(i) * 0.5) * 3 + Double.random(in: -1...1)
-                voltage = 230 + sin(Double(i) * 0.3) * 5 + Double.random(in: -1.5...1.5)
+                // AC charging: nearly constant power
+                let variation = sin(Double(i) * 0.4) * 0.05
+                power = avgPower * (1 + variation)
+                voltage = 230 + sin(Double(i) * 0.2) * 3
             }
-            let temp = 32 + sin(Double(i) * 0.3) * 5 + Double.random(in: -1.5...1.5)
+            // Temperature rises during charging, especially DC
+            let baseTemp = charge.outsideTempAvg
+            let tempRise = isDC ? 8.0 : 3.0
+            let temp = baseTemp + tempRise * (1 - exp(-3 * fraction)) + sin(Double(i) * 0.25) * 0.8
             result.append(ChargeSample(minute: minute, power: power, voltage: voltage, temperature: temp))
         }
         self.samples = result
@@ -86,8 +99,9 @@ struct ChargeDetailView: View {
         return nil
     }
 
-    private var efficiency: Double {
-        guard charge.chargeEnergyUsed > 0 else { return 100 }
+    private var efficiency: Double? {
+        // chargeEnergyUsed is 0 (unknown) until the iOS API exposes the real field.
+        guard charge.chargeEnergyUsed > 0 else { return nil }
         return (charge.chargeEnergyAdded / charge.chargeEnergyUsed) * 100
     }
 
@@ -128,7 +142,7 @@ struct ChargeDetailView: View {
                     .font(.title3)
                     .foregroundColor(isDC ? .orange : .blue)
 
-                Text(charge.address)
+                Text(charge.address ?? "Unknown")
                     .font(.headline)
                     .fontWeight(.bold)
                     .lineLimit(2)
@@ -179,8 +193,8 @@ struct ChargeDetailView: View {
             GridItem(.flexible(), spacing: 8)
         ], spacing: 8) {
             StatCardView(title: "Energy Added", value: "\(charge.chargeEnergyAdded, specifier: "%.1f") kWh")
-            StatCardView(title: "Cost", value: charge.cost > 0 ? "¥\(charge.cost, specifier: "%.2f")" : "Free")
-            StatCardView(title: "Efficiency", value: "\(efficiency, specifier: "%.1f")%")
+            StatCardView(title: "Cost", value: (charge.cost ?? 0) > 0 ? "¥\(charge.cost ?? 0, specifier: "%.2f")" : "Free")
+            StatCardView(title: "Efficiency", value: efficiency.map { "\($0, specifier: "%.1f")%" } ?? "—")
             StatCardView(title: "Battery", value: "\(charge.startBatteryLevel)% → \(charge.endBatteryLevel.map(String.init) ?? "?")%")
         }
     }
@@ -240,6 +254,10 @@ struct ChargeDetailView: View {
                 .tint(selectedTab.color)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
+
+            Text("Simulated data — based on charge summary")
+                .font(.caption2)
+                .foregroundColor(.secondary)
         }
         .padding()
         .background(.regularMaterial)
@@ -393,16 +411,21 @@ struct StatCardView: View {
         startDate: "2025-06-22T14:30:00.000Z",
         endDate: "2025-06-22T15:15:00.000Z",
         chargeEnergyAdded: 32.5,
-        chargeEnergyUsed: 36.2,
         startBatteryLevel: 15,
         endBatteryLevel: 72,
         startIdealRangeKm: 45,
         endIdealRangeKm: 215,
+        startRatedRangeKm: 40,
+        endRatedRangeKm: 200,
+        durationMin: 45,
         cost: 48.50,
-        chargeType: "DC",
         address: "Tesla Supercharger, Shanghai",
-        fastChargerBrand: "Tesla",
-        fastChargerType: "V3"
+        latitude: 31.2304,
+        longitude: 121.4737,
+        chargingType: "DC",
+        powerMax: 120,
+        powerMin: 30,
+        outsideTempAvg: 28.0
     )
     let appState = AppState()
     NavigationStack {

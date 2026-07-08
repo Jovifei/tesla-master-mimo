@@ -203,7 +203,7 @@ fun TripDetailScreen(
                         .fillMaxSize()
                         .padding(padding),
                     contentAlignment = Alignment.Center
-                ) { Text("Trip not found") }
+                ) { Text(stringResource(R.string.trip_not_found)) }
             }
             else -> {
                 val trip = uiState.trip!!
@@ -962,7 +962,7 @@ private fun HorizontalEnergyFlow(
                     color = accent
                 )
                 Text(
-                    text = "kWh charged",
+                    text = stringResource(R.string.kwh_charged),
                     style = MaterialTheme.typography.labelSmall,
                     color = accent.copy(alpha = 0.78f)
                 )

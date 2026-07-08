@@ -30,10 +30,10 @@ private let iso8601NoFraction: ISO8601DateFormatter = {
     return f
 }()
 
-private func parseDate(_ raw: String) -> Date {
+private func parseDate(_ raw: String) -> Date? {
     if let d = iso8601Full.date(from: raw) { return d }
     if let d = iso8601NoFraction.date(from: raw) { return d }
-    return Date(timeIntervalSince1970: 0)
+    return nil
 }
 
 private let timeFormatter: DateFormatter = {
@@ -55,18 +55,37 @@ private let dateTimeFormatter: DateFormatter = {
 final class TimelineViewModel: ObservableObject {
     @Published var events: [TimelineEvent] = []
     @Published var isLoading = true
+    @Published var errorMessage: String? = nil
 
-    func load(mock: MockAPI, carId: Int) async {
+    func load(state: AppState) async {
         isLoading = true
+        errorMessage = nil
         defer { isLoading = false }
 
-        let drives = await mock.getDrives(carId)
-        let charges = await mock.getCharges(carId)
+        let carId = state.currentCarId
+        let drives: [Drive]
+        let charges: [Charge]
+
+        if state.isMockMode {
+            drives = await state.mock.getDrives(carId)
+            charges = await state.mock.getCharges(carId)
+        } else if let api = state.real {
+            do {
+                drives = try await api.fetch("/api/v1/cars/\(carId)/drives")
+                charges = try await api.fetch("/api/v1/cars/\(carId)/charges")
+            } catch {
+                errorMessage = error.localizedDescription
+                return
+            }
+        } else {
+            errorMessage = "No API connection configured. Please set up your TeslaMate server in Settings."
+            return
+        }
 
         var merged: [TimelineEvent] = []
 
         for d in drives {
-            let start = parseDate(d.startDate)
+            guard let start = parseDate(d.startDate) else { continue }
             let end = parseDate(d.endDate)
             merged.append(TimelineEvent(
                 id: "drive_\(d.id)",
@@ -80,10 +99,10 @@ final class TimelineViewModel: ObservableObject {
         }
 
         for c in charges {
-            let start = parseDate(c.startDate)
-            let end = c.endDate.map(parseDate)
+            guard let start = parseDate(c.startDate) else { continue }
+            let end = c.endDate.flatMap(parseDate)
             let typeLabel = c.chargeType.isEmpty ? "Charging" : "\(c.chargeType) Charging"
-            let addr = c.address.isEmpty ? "Unknown" : shortAddress(c.address)
+            let addr = (c.address ?? "").isEmpty ? "Unknown" : shortAddress(c.address ?? "Unknown")
             merged.append(TimelineEvent(
                 id: "charge_\(c.id)",
                 type: "charge",
@@ -91,17 +110,44 @@ final class TimelineViewModel: ObservableObject {
                 end: end,
                 label: typeLabel,
                 detail: "\(addr) \u{00b7} \(String(format: "%.1f", c.chargeEnergyAdded)) kWh added",
-                metrics: "+\(String(format: "%.1f", c.chargeEnergyAdded)) kWh \u{00b7} $\(String(format: "%.2f", c.cost))"
+                metrics: "+\(String(format: "%.1f", c.chargeEnergyAdded)) kWh \u{00b7} $\(String(format: "%.2f", c.cost ?? 0))"
             ))
         }
 
         merged.sort { $0.start > $1.start }
 
-        if !merged.isEmpty {
-            merged[merged.count - 1].isLast = true
+        // Insert rest events for gaps > 30 minutes
+        var withRests: [TimelineEvent] = []
+        for i in 0..<merged.count {
+            withRests.append(merged[i])
+            guard i + 1 < merged.count else { continue }
+            let curEnd = merged[i].end ?? merged[i].start
+            let nextStart = merged[i + 1].start
+            let gapMin = nextStart.timeIntervalSince(curEnd) / 60
+            if gapMin > 30 {
+                let restStart = curEnd
+                let restEnd = nextStart
+                let duration = Int(gapMin)
+                let hrs = duration / 60
+                let mins = duration % 60
+                let durStr = hrs > 0 ? "\(hrs)h \(mins)m" : "\(mins)m"
+                withRests.append(TimelineEvent(
+                    id: "rest_\(Int(restStart.timeIntervalSince1970))",
+                    type: "rest",
+                    start: restStart,
+                    end: restEnd,
+                    label: "Parked",
+                    detail: "Car was idle \u{00b7} \(durStr)",
+                    metrics: durStr
+                ))
+            }
         }
 
-        self.events = merged
+        if !withRests.isEmpty {
+            withRests[withRests.count - 1].isLast = true
+        }
+
+        self.events = withRests
     }
 }
 
@@ -122,11 +168,17 @@ struct TimelineView: View {
             if vm.isLoading {
                 ProgressView("Loading timeline\u{2026}")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = vm.errorMessage {
+                EmptyStateView(
+                    "Unable to Load Timeline",
+                    systemImage: "exclamationmark.triangle",
+                    message: error
+                )
             } else if vm.events.isEmpty {
-                ContentUnavailableView(
+                EmptyStateView(
                     "No Events",
                     systemImage: "clock.badge.questionmark",
-                    description: Text("Drive and charge events will appear here.")
+                    message: "Drive and charge events will appear here."
                 )
             } else {
                 timelineContent
@@ -134,7 +186,7 @@ struct TimelineView: View {
         }
         .navigationTitle("Timeline")
         .navigationBarTitleDisplayMode(.large)
-        .task { await vm.load(mock: state.mock, carId: state.currentCarId) }
+        .task { await vm.load(state: state) }
     }
 
     // MARK: - Timeline Content
@@ -158,11 +210,19 @@ struct TimelineEventRow: View {
     let event: TimelineEvent
 
     private var dotColor: Color {
-        event.type == "drive" ? Color(red: 0.23, green: 0.51, blue: 0.96) : Color(red: 0.96, green: 0.62, blue: 0.04)
+        switch event.type {
+        case "drive": return Color(red: 0.18, green: 0.68, blue: 0.38)
+        case "rest": return Color(.systemGray3)
+        default: return Color(red: 0.96, green: 0.62, blue: 0.04) // charge
+        }
     }
 
     private var iconName: String {
-        event.type == "drive" ? "car.fill" : "bolt.fill"
+        switch event.type {
+        case "drive": return "car.fill"
+        case "rest": return "moon.fill"
+        default: return "bolt.fill" // charge
+        }
     }
 
     var body: some View {

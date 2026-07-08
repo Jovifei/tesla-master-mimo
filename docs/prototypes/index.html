@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MateLink App Prototypes</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; font-family: -apple-system, 'Segoe UI', sans-serif; padding: 40px; }
+h1 { color: #fff; text-align: center; margin-bottom: 10px; font-size: 28px; }
+.subtitle { color: #888; text-align: center; margin-bottom: 40px; font-size: 14px; }
+.platform { margin-bottom: 60px; }
+.platform h2 { color: #4fc3f7; margin-bottom: 20px; padding-left: 20px; font-size: 20px; }
+.screens { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; }
+.screen { background: #fff; border-radius: 24px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+.screen-label { background: #333; color: #aaa; text-align: center; padding: 8px; font-size: 12px; letter-spacing: 1px; }
+.phone { width: 320px; height: 600px; overflow-y: auto; position: relative; }
+.web-frame { width: 900px; height: 520px; overflow-y: auto; }
+
+/* Status bar */
+.status-bar { background: #f5f5f5; padding: 6px 16px; display: flex; justify-content: space-between; font-size: 11px; color: #666; }
+
+/* Android Material 3 */
+.md3 { background: #fafafa; }
+.md3 .top-bar { background: #1976D2; color: #fff; padding: 14px 16px; font-size: 18px; font-weight: 500; }
+.md3 .card { background: #fff; border-radius: 16px; margin: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.md3 .card-title { font-size: 13px; color: #888; margin-bottom: 8px; }
+.md3 .card-value { font-size: 28px; font-weight: 700; color: #1a1a2e; }
+.md3 .card-unit { font-size: 12px; color: #888; }
+.md3 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 12px; }
+.md3 .mini-card { background: #fff; border-radius: 12px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); text-align: center; }
+.md3 .mini-icon { font-size: 20px; margin-bottom: 4px; }
+.md3 .mini-label { font-size: 11px; color: #888; }
+.md3 .mini-value { font-size: 14px; font-weight: 600; }
+.md3 .status-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; color: #fff; }
+.md3 .nav-bar { display: flex; background: #fff; border-top: 1px solid #eee; padding: 8px 0; }
+.md3 .nav-item { flex: 1; text-align: center; font-size: 10px; color: #888; }
+.md3 .nav-item.active { color: #1976D2; font-weight: 600; }
+.md3 .nav-icon { font-size: 20px; display: block; margin-bottom: 2px; }
+
+/* iOS */
+.ios { background: #f2f2f7; }
+.ios .nav-bar { background: rgba(255,255,255,0.9); backdrop-filter: blur(20px); padding: 12px 16px; font-size: 17px; font-weight: 600; border-bottom: 0.5px solid #ddd; position: sticky; top: 0; z-index: 10; }
+.ios .card { background: #fff; border-radius: 14px; margin: 10px 14px; padding: 14px; }
+.ios .stat-row { display: flex; gap: 10px; padding: 0 14px; margin: 10px 0; }
+.ios .stat-box { flex: 1; background: #fff; border-radius: 14px; padding: 14px; text-align: center; }
+.ios .stat-value { font-size: 24px; font-weight: 700; }
+.ios .stat-label { font-size: 11px; color: #888; margin-top: 4px; }
+.ios .list-item { background: #fff; padding: 12px 16px; border-bottom: 0.5px solid #eee; display: flex; align-items: center; gap: 12px; }
+.ios .list-item .icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; }
+.ios .list-item .text { flex: 1; }
+.ios .list-item .title { font-size: 15px; }
+.ios .list-item .subtitle { font-size: 12px; color: #888; }
+
+/* Web */
+.web { background: #f8fafc; font-size: 13px; }
+.web .sidebar { width: 200px; background: #1e293b; color: #94a3b8; position: fixed; height: 100%; padding: 20px 0; }
+.web .sidebar .logo { color: #fff; font-size: 16px; font-weight: 700; padding: 0 16px; margin-bottom: 24px; }
+.web .sidebar .menu-item { padding: 8px 16px; cursor: pointer; font-size: 13px; }
+.web .sidebar .menu-item:hover, .web .sidebar .menu-item.active { background: #334155; color: #fff; }
+.web .main { margin-left: 200px; padding: 20px; }
+.web .page-title { font-size: 22px; font-weight: 700; margin-bottom: 20px; }
+.web .chart-card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.web .chart-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+
+/* Chart bars */
+.bar-chart { display: flex; align-items: flex-end; gap: 4px; height: 80px; }
+.bar { background: #1976D2; border-radius: 4px 4px 0 0; flex: 1; min-height: 4px; }
+.bar.green { background: #4CAF50; }
+.bar.orange { background: #FF9800; }
+.bar.red { background: #f44336; }
+
+/* Progress ring */
+.ring { width: 60px; height: 60px; border-radius: 50%; background: conic-gradient(#4CAF50 0% 78%, #e0e0e0 78% 100%); display: flex; align-items: center; justify-content: center; }
+.ring-inner { width: 44px; height: 44px; border-radius: 50%; background: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; }
+
+/* Battery */
+.battery-icon { width: 40px; height: 20px; border: 2px solid #333; border-radius: 4px; position: relative; display: inline-block; }
+.battery-icon::after { content: ''; position: absolute; right: -6px; top: 4px; width: 4px; height: 10px; background: #333; border-radius: 0 2px 2px 0; }
+.battery-fill { height: 100%; border-radius: 2px; }
+</style>
+</head>
+<body>
+<h1>🚗 MateLink App Prototypes</h1>
+<p class="subtitle">Android (Material 3) · iOS (SwiftUI) · Web (React + Tailwind)</p>
+
+<!-- ==================== ANDROID ==================== -->
+<div class="platform">
+<h2>📱 Android — Material 3 Design</h2>
+<div class="screens">
+
+<!-- Dashboard -->
+<div class="screen">
+<div class="screen-label">DASHBOARD</div>
+<div class="phone md3">
+<div class="status-bar"><span>9:41</span><span>📶 🔋 87%</span></div>
+<div class="top-bar">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <span>🚗 Tesla Model 3</span>
+    <span style="font-size:12px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:8px">Online</span>
+  </div>
+</div>
+
+<div style="padding:12px">
+  <div class="card">
+    <div class="card-title">BATTERY</div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="ring"><div class="ring-inner">78%</div></div>
+      <div>
+        <div class="card-value">312 <span class="card-unit">km</span></div>
+        <div class="card-unit">Estimated range</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="mini-card">
+    <div class="mini-icon">📍</div>
+    <div class="mini-value">31.2 km</div>
+    <div class="mini-label">Last Drive</div>
+  </div>
+  <div class="mini-card">
+    <div class="mini-icon">⚡</div>
+    <div class="mini-value">42 kWh</div>
+    <div class="mini-label">Last Charge</div>
+  </div>
+  <div class="mini-card">
+    <div class="mini-icon">🌡️</div>
+    <div class="mini-value">24°C</div>
+    <div class="mini-label">Inside Temp</div>
+  </div>
+  <div class="mini-card">
+    <div class="mini-icon">🔒</div>
+    <div class="mini-value">Locked</div>
+    <div class="mini-label">Doors</div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:10px">
+  <div class="card-title">7-DAY BATTERY TREND</div>
+  <div class="bar-chart">
+    <div class="bar" style="height:85%"></div>
+    <div class="bar" style="height:78%"></div>
+    <div class="bar" style="height:65%"></div>
+    <div class="bar" style="height:70%"></div>
+    <div class="bar" style="height:82%"></div>
+    <div class="bar" style="height:90%"></div>
+    <div class="bar green" style="height:78%"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;font-size:10px;color:#888;margin-top:6px">
+    <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span style="color:#1976D2;font-weight:600">Sun</span>
+  </div>
+</div>
+</div>
+
+<div class="nav-bar">
+  <div class="nav-item active"><span class="nav-icon">📊</span>Dashboard</div>
+  <div class="nav-item"><span class="nav-icon">🚗</span>Drives</div>
+  <div class="nav-item"><span class="nav-icon">⚡</span>Charges</div>
+  <div class="nav-item"><span class="nav-icon">⚙️</span>More</div>
+</div>
+</div>
+</div>
+
+<!-- Settings -->
+<div class="screen">
+<div class="screen-label">SETTINGS</div>
+<div class="phone md3">
+<div class="status-bar"><span>9:41</span><span>📶 🔋 87%</span></div>
+<div class="top-bar">
+  <div style="display:flex;align-items:center;gap:8px">← <span>Settings</span></div>
+</div>
+<div style="padding:12px">
+  <div class="card">
+    <div class="card-title">INSTANCES</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f0f0">
+      <div><div style="font-size:14px;font-weight:500">Home TeslaMate</div><div style="font-size:11px;color:#888">192.168.1.100:4000</div></div>
+      <span style="color:#1976D2">✓ Active</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0">
+      <div><div style="font-size:14px;font-weight:500">Office Server</div><div style="font-size:11px;color:#888">10.0.0.50:4000</div></div>
+      <span style="color:#1976D2;font-size:12px">Switch</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">CONNECTION</div>
+    <div style="background:#f5f5f5;border-radius:8px;padding:10px;margin-bottom:8px">
+      <div style="font-size:11px;color:#888">Server URL</div>
+      <div style="font-size:13px">https://teslamate.example.com</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <div style="flex:1;background:#f5f5f5;border-radius:8px;padding:10px">
+        <div style="font-size:11px;color:#888">API Token</div>
+        <div style="font-size:13px">••••••••••</div>
+      </div>
+    </div>
+    <div style="margin-top:10px;background:#1976D2;color:#fff;text-align:center;padding:10px;border-radius:8px;font-size:13px;font-weight:500">Test Connection</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">DISPLAY</div>
+    <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f0f0">
+      <span style="font-size:14px">Language</span>
+      <span style="font-size:13px;color:#888">中文</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f0f0">
+      <span style="font-size:14px">Theme</span>
+      <span style="font-size:13px;color:#888">System</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;padding:8px 0">
+      <span style="font-size:14px">Mock Mode</span>
+      <div style="width:40px;height:22px;background:#1976D2;border-radius:11px;position:relative">
+        <div style="width:18px;height:18px;background:#fff;border-radius:50%;position:absolute;right:2px;top:2px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- Charges List -->
+<div class="screen">
+<div class="screen-label">CHARGES</div>
+<div class="phone md3">
+<div class="status-bar"><span>9:41</span><span>📶 🔋 87%</span></div>
+<div class="top-bar">⚡ Charge History</div>
+
+<div style="padding:12px">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:start">
+      <div>
+        <div style="font-size:14px;font-weight:600">Home Charging</div>
+        <div style="font-size:12px;color:#888;margin-top:2px">Jun 29, 2025 · 2h 15min</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:18px;font-weight:700;color:#4CAF50">+38.5 kWh</div>
+        <div style="font-size:12px;color:#888">65% → 100%</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:12px;padding-top:10px;border-top:1px solid #f0f0f0">
+      <div style="text-align:center;flex:1"><div style="font-size:16px;font-weight:600">AC</div><div style="font-size:10px;color:#888">Type</div></div>
+      <div style="text-align:center;flex:1"><div style="font-size:16px;font-weight:600">7.4 kW</div><div style="font-size:10px;color:#888">Power</div></div>
+      <div style="text-align:center;flex:1"><div style="font-size:16px;font-weight:600">¥18.50</div><div style="font-size:10px;color:#888">Cost</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:start">
+      <div>
+        <div style="font-size:14px;font-weight:600">Supercharger</div>
+        <div style="font-size:12px;color:#888;margin-top:2px">Jun 27, 2025 · 35min</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:18px;font-weight:700;color:#4CAF50">+52.3 kWh</div>
+        <div style="font-size:12px;color:#888">20% → 85%</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:12px;padding-top:10px;border-top:1px solid #f0f0f0">
+      <div style="text-align:center;flex:1"><div style="font-size:16px;font-weight:600">DC</div><div style="font-size:10px;color:#888">Type</div></div>
+      <div style="text-align:center;flex:1"><div style="font-size:16px;font-weight:600">120 kW</div><div style="font-size:10px;color:#888">Power</div></div>
+      <div style="text-align:center;flex:1"><div style="font-size:16px;font-weight:600">¥42.80</div><div style="font-size:10px;color:#888">Cost</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:start">
+      <div>
+        <div style="font-size:14px;font-weight:600">Home Charging</div>
+        <div style="font-size:12px;color:#888;margin-top:2px">Jun 25, 2025 · 4h 30min</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:18px;font-weight:700;color:#4CAF50">+45.2 kWh</div>
+        <div style="font-size:12px;color:#888">45% → 100%</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="nav-bar">
+  <div class="nav-item"><span class="nav-icon">📊</span>Dashboard</div>
+  <div class="nav-item"><span class="nav-icon">🚗</span>Drives</div>
+  <div class="nav-item active"><span class="nav-icon">⚡</span>Charges</div>
+  <div class="nav-item"><span class="nav-icon">⚙️</span>More</div>
+</div>
+</div>
+</div>
+
+</div><!-- end Android screens -->
+</div><!-- end platform -->
+
+<!-- ==================== iOS ==================== -->
+<div class="platform">
+<h2>📱 iOS — SwiftUI Design</h2>
+<div class="screens">
+
+<!-- Dashboard -->
+<div class="screen">
+<div class="screen-label">DASHBOARD</div>
+<div class="phone ios">
+<div class="nav-bar">Tesla Model 3</div>
+
+<div class="stat-row">
+  <div class="stat-box" style="background:linear-gradient(135deg,#2196F3,#1565C0);color:#fff">
+    <div class="stat-value" style="color:#fff">78%</div>
+    <div class="stat-label" style="color:rgba(255,255,255,0.8)">Battery</div>
+  </div>
+  <div class="stat-box" style="background:linear-gradient(135deg,#4CAF50,#2E7D32);color:#fff">
+    <div class="stat-value" style="color:#fff">312 km</div>
+    <div class="stat-label" style="color:rgba(255,255,255,0.8)">Range</div>
+  </div>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <div style="font-size:12px;color:#888">Status</div>
+      <div style="font-size:15px;font-weight:600;color:#4CAF50">● Online</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:12px;color:#888">Odometer</div>
+      <div style="font-size:15px;font-weight:600">42,350 km</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div style="font-size:13px;font-weight:600;margin-bottom:10px">Vehicle Status</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+    <div style="text-align:center;padding:8px;background:#f5f5f5;border-radius:10px">
+      <div style="font-size:18px">🔒</div>
+      <div style="font-size:11px;color:#666">Locked</div>
+    </div>
+    <div style="text-align:center;padding:8px;background:#f5f5f5;border-radius:10px">
+      <div style="font-size:18px">🛡️</div>
+      <div style="font-size:11px;color:#666">Sentry OFF</div>
+    </div>
+    <div style="text-align:center;padding:8px;background:#f5f5f5;border-radius:10px">
+      <div style="font-size:18px">❄️</div>
+      <div style="font-size:11px;color:#666">Climate OFF</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+    <div style="font-size:13px;font-weight:600">Temperature</div>
+  </div>
+  <div style="display:flex;gap:20px">
+    <div><span style="font-size:20px;font-weight:600">24°</span><span style="font-size:12px;color:#888"> Inside</span></div>
+    <div><span style="font-size:20px;font-weight:600">28°</span><span style="font-size:12px;color:#888"> Outside</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <div style="font-size:13px;font-weight:600;margin-bottom:8px">Tire Pressure</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+    <div style="display:flex;justify-content:space-between;padding:6px 10px;background:#f5f5f5;border-radius:8px">
+      <span style="font-size:12px;color:#888">FL</span><span style="font-size:13px;font-weight:600">2.5 bar</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;padding:6px 10px;background:#f5f5f5;border-radius:8px">
+      <span style="font-size:12px;color:#888">FR</span><span style="font-size:13px;font-weight:600">2.5 bar</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;padding:6px 10px;background:#f5f5f5;border-radius:8px">
+      <span style="font-size:12px;color:#888">RL</span><span style="font-size:13px;font-weight:600">2.4 bar</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;padding:6px 10px;background:#f5f5f5;border-radius:8px">
+      <span style="font-size:12px;color:#888">RR</span><span style="font-size:13px;font-weight:600">2.4 bar</span>
+    </div>
+  </div>
+</div>
+
+<div style="height:20px"></div>
+</div>
+</div>
+
+<!-- Annual Report -->
+<div class="screen">
+<div class="screen-label">ANNUAL REPORT</div>
+<div class="phone ios">
+<div class="nav-bar">← Annual Report 2025</div>
+
+<div style="padding:14px">
+  <div class="card" style="background:linear-gradient(135deg,#1a237e,#283593);color:#fff">
+    <div style="font-size:13px;opacity:0.8">Annual Summary 2025</div>
+    <div style="font-size:32px;font-weight:700;margin:8px 0">12,450 km</div>
+    <div style="font-size:12px;opacity:0.7">Total Distance Driven</div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px">
+    <div class="card" style="text-align:center;padding:12px">
+      <div style="font-size:20px;font-weight:700;color:#1976D2">186</div>
+      <div style="font-size:10px;color:#888">Drives</div>
+    </div>
+    <div class="card" style="text-align:center;padding:12px">
+      <div style="font-size:20px;font-weight:700;color:#4CAF50">2,840 kWh</div>
+      <div style="font-size:10px;color:#888">Energy</div>
+    </div>
+    <div class="card" style="text-align:center;padding:12px">
+      <div style="font-size:20px;font-weight:700;color:#FF9800">¥1,280</div>
+      <div style="font-size:10px;color:#888">Cost</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <div style="font-size:13px;font-weight:600;margin-bottom:12px">Monthly Distance (km)</div>
+    <div class="bar-chart" style="height:100px">
+      <div class="bar" style="height:40%"></div>
+      <div class="bar" style="height:55%"></div>
+      <div class="bar" style="height:70%"></div>
+      <div class="bar" style="height:85%"></div>
+      <div class="bar" style="height:60%"></div>
+      <div class="bar" style="height:90%"></div>
+      <div class="bar" style="height:75%"></div>
+      <div class="bar" style="height:65%"></div>
+      <div class="bar" style="height:80%"></div>
+      <div class="bar" style="height:95%"></div>
+      <div class="bar" style="height:50%"></div>
+      <div class="bar green" style="height:45%"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:9px;color:#888;margin-top:4px">
+      <span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span>
+    </div>
+  </div>
+
+  <div style="margin-top:16px;background:#1976D2;color:#fff;text-align:center;padding:14px;border-radius:12px;font-weight:600;font-size:15px">
+    📄 Generate & Share PDF
+  </div>
+</div>
+</div>
+</div>
+
+</div><!-- end iOS screens -->
+</div><!-- end platform -->
+
+<!-- ==================== WEB ==================== -->
+<div class="platform">
+<h2>🌐 Web — React + Tailwind</h2>
+<div class="screens">
+
+<!-- Web Dashboard -->
+<div class="screen" style="border-radius:12px">
+<div class="screen-label">WEB DASHBOARD</div>
+<div class="phone web-frame" style="width:900px">
+<div style="display:flex;height:100%">
+  <div style="width:180px;background:#1e293b;color:#94a3b8;padding:20px 0;flex-shrink:0">
+    <div style="color:#fff;font-size:16px;font-weight:700;padding:0 16px;margin-bottom:24px">🚗 MateLink</div>
+    <div style="padding:8px 16px;background:#334155;color:#fff;font-size:13px;border-radius:6px;margin:0 8px">Dashboard</div>
+    <div style="padding:8px 16px;font-size:13px;margin:0 8px">Drives</div>
+    <div style="padding:8px 16px;font-size:13px;margin:0 8px">Charges</div>
+    <div style="padding:8px 16px;font-size:13px;margin:0 8px">Statistics</div>
+    <div style="padding:8px 16px;font-size:13px;margin:0 8px">Trips</div>
+    <div style="padding:8px 16px;font-size:13px;margin:0 8px">Settings</div>
+  </div>
+  <div style="flex:1;padding:24px;overflow-y:auto">
+    <div style="font-size:24px;font-weight:700;margin-bottom:20px">Dashboard</div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px">
+      <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
+        <div style="font-size:12px;color:#888">Battery</div>
+        <div style="font-size:28px;font-weight:700;color:#1976D2">78%</div>
+        <div style="font-size:11px;color:#888">312 km range</div>
+      </div>
+      <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
+        <div style="font-size:12px;color:#888">Today</div>
+        <div style="font-size:28px;font-weight:700;color:#4CAF50">45 km</div>
+        <div style="font-size:11px;color:#888">2 drives</div>
+      </div>
+      <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
+        <div style="font-size:12px;color:#888">Charged</div>
+        <div style="font-size:28px;font-weight:700;color:#FF9800">38.5 kWh</div>
+        <div style="font-size:11px;color:#888">1 charge</div>
+      </div>
+      <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
+        <div style="font-size:12px;color:#888">Efficiency</div>
+        <div style="font-size:28px;font-weight:700">152</div>
+        <div style="font-size:11px;color:#888">Wh/km</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">Weekly Distance (km)</div>
+        <div class="bar-chart" style="height:100px">
+          <div class="bar" style="height:60%"></div>
+          <div class="bar" style="height:80%"></div>
+          <div class="bar" style="height:45%"></div>
+          <div class="bar" style="height:90%"></div>
+          <div class="bar" style="height:70%"></div>
+          <div class="bar" style="height:85%"></div>
+          <div class="bar green" style="height:55%"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:#888;margin-top:4px">
+          <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+        </div>
+      </div>
+
+      <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">Recent Activity</div>
+        <div style="font-size:13px;padding:8px 0;border-bottom:1px solid #f0f0f0">
+          <span style="color:#4CAF50">●</span> Drive to Office · 12.5 km · 22 min
+        </div>
+        <div style="font-size:13px;padding:8px 0;border-bottom:1px solid #f0f0f0">
+          <span style="color:#FF9800">●</span> Supercharger · +52 kWh · 35 min
+        </div>
+        <div style="font-size:13px;padding:8px 0;border-bottom:1px solid #f0f0f0">
+          <span style="color:#4CAF50">●</span> Drive Home · 12.5 km · 20 min
+        </div>
+        <div style="font-size:13px;padding:8px 0">
+          <span style="color:#2196F3">●</span> Home Charge · +38 kWh · 2h 15min
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+</div><!-- end Web screens -->
+</div><!-- end platform -->
+
+</body>
+</html>

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -506,6 +507,7 @@ private fun SummaryItem(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DriveItem(
     drive: DriveData,
@@ -530,7 +532,7 @@ private fun DriveItem(
         EditorialPill(formatDuration(context.resources, drive.durationMin ?: 0))
         EditorialPill("${drive.speedMax ?: 0} ${UnitFormatter.getSpeedUnit(units)}")
         // D8 parity: iOS DriveListView shows efficiency (Wh/km)
-        drive.efficiency?.let { EditorialPill("%.0f Wh/km".format(it)) }
+        drive.efficiencyWhKm?.let { EditorialPill("%.0f Wh/km".format(it)) }
         val start = drive.startBatteryLevel
         val end = drive.endBatteryLevel
         if (start != null && end != null) {

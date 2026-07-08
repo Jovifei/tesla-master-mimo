@@ -30,7 +30,7 @@ class SettingsRepository @Inject constructor(
     val currentCarId: Flow<Int> = context.dataStore.data.map { it[Keys.CURRENT_CAR_ID] ?: 1 }
     val theme: Flow<String> = context.dataStore.data.map { it[Keys.THEME] ?: "system" }
     val units: Flow<String> = context.dataStore.data.map { it[Keys.UNITS] ?: "km" }
-    val mockMode: Flow<Boolean> = context.dataStore.data.map { it[Keys.MOCK_MODE] ?: true }
+    val mockMode: Flow<Boolean> = context.dataStore.data.map { it[Keys.MOCK_MODE] ?: false }
 
     suspend fun setServer(url: String, token: String) {
         context.dataStore.edit {

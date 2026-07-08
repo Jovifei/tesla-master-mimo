@@ -256,7 +256,7 @@ class WeatherRepository @Inject constructor(
     ): WeatherPoint? {
         val lat = position.latitude ?: return null
         val lng = position.longitude ?: return null
-        val dateTime = parseDateTime(position.date ?: return null)
+        val dateTime = parseDateTime(position.date ?: return null) ?: return null
         val dateStr = dateTime.format(DateTimeFormatter.ISO_LOCAL_DATE)
         val hour = dateTime.hour
 

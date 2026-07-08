@@ -63,7 +63,7 @@ class ChargingMonitorService : Service() {
     private var consecutiveFailures = 0
     private val maxConsecutiveFailures = 3
     private var isMonitoring = false
-    private val activeNotificationCarIds = mutableSetOf<Int>()
+    private val activeNotificationCarIds = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
 
     override fun onCreate() {
         super.onCreate()

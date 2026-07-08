@@ -22,6 +22,7 @@ struct CostView: View {
     @EnvironmentObject var state: AppState
     @State private var monthlyData: [MonthlyCostItem] = []
     @State private var ranking: [LocationCost] = []
+    @State private var loadError: String?
 
     var totalCost: Double { monthlyData.map(\.total).reduce(0, +) }
     var acTotal: Double { monthlyData.map(\.acCost).reduce(0, +) }
@@ -35,6 +36,11 @@ struct CostView: View {
                     Text("Charging Cost")
                         .font(.title2).bold()
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal)
+
+                    if let loadError {
+                        EmptyStateView("Cost Data Unavailable", systemImage: "exclamationmark.triangle", message: loadError)
+                            .padding(.top, 24)
+                    }
 
                     // Summary Cards
                     HStack(spacing: 12) {
@@ -97,21 +103,30 @@ struct CostView: View {
     }
 
     func loadData() async {
-        let charges: [Charge] = await {
+        loadError = nil
+        let charges: [Charge]
+        do {
             if state.isMockMode {
-                return await state.mock.getCharges(state.currentCarId)
+                charges = await state.mock.getCharges(state.currentCarId)
             } else if let api = state.real {
-                return (try? await api.fetch("/api/v1/cars/\(state.currentCarId)/charges")) ?? []
+                charges = try await api.fetch("/api/v1/cars/\(state.currentCarId)/charges")
+            } else {
+                throw URLError(.notConnectedToInternet)
             }
-            return []
-        }().filter { $0.endDate != nil }
+        } catch {
+            monthlyData = []
+            ranking = []
+            loadError = "Unable to load real charge data: \(error.localizedDescription)"
+            return
+        }
+        let completedCharges = charges.filter { $0.endDate != nil }
 
         // Monthly aggregation
         var monthMap: [String: (ac: Double, dc: Double)] = [:]
-        for c in charges {
+        for c in completedCharges {
             let month = String(c.startDate.prefix(7))
             var entry = monthMap[month] ?? (0, 0)
-            if c.chargeType == "DC" { entry.dc += c.cost } else { entry.ac += c.cost }
+            if c.chargeType == "DC" { entry.dc += c.cost ?? 0 } else { entry.ac += c.cost ?? 0 }
             monthMap[month] = entry
         }
         monthlyData = monthMap.sorted { $0.key < $1.key }.map {
@@ -120,12 +135,13 @@ struct CostView: View {
 
         // Location ranking
         var locMap: [String: (cost: Double, kWh: Double, count: Int)] = [:]
-        for c in charges {
-            var entry = locMap[c.address] ?? (0, 0, 0)
-            entry.cost += c.cost
+        for c in completedCharges {
+            let addr = c.address ?? "Unknown"
+            var entry = locMap[addr] ?? (0, 0, 0)
+            entry.cost += c.cost ?? 0
             entry.kWh += c.chargeEnergyAdded
             entry.count += 1
-            locMap[c.address] = entry
+            locMap[addr] = entry
         }
         ranking = locMap.map { addr, v in
             LocationCost(address: addr, cost: v.cost, kWh: v.kWh,

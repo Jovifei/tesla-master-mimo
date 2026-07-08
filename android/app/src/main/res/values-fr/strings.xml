@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MateLink</string>
+
+    <!-- Navigation -->
+    <string name="nav_dashboard">Tableau de bord</string>
+    <string name="nav_drives">Trajets</string>
+    <string name="nav_charges">Charges</string>
+    <string name="nav_more">Plus</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_loading">Chargement du tableau de bord...</string>
+    <string name="battery">Batterie</string>
+    <string name="odometer">Odomètre</string>
+    <string name="location">Localisation</string>
+    <string name="inside_temp">Intérieur</string>
+    <string name="outside_temp">Extérieur</string>
+    <string name="lock_locked">Verrouillé</string>
+    <string name="lock_unlocked">Déverrouillé</string>
+    <string name="plug_plugged">Connecté</string>
+    <string name="plug_unplugged">Déconnecté</string>
+    <string name="climate_on">Clim ON</string>
+    <string name="climate_off">Clim OFF</string>
+    <string name="sentry_armed">Sentinelle ACTIVE</string>
+    <string name="sentry_off">Sentinelle OFF</string>
+    <string name="high_soc_warning">Niveau de charge élevé - limiter à 80-90% pour un usage quotidien recommandé</string>
+    <string name="tire_pressure">Pression des pneus</string>
+    <string name="battery_trend">Tendance batterie 7 jours</string>
+    <string name="km_range">%d km d\'autonomie</string>
+    <string name="charge_limit">Limite : %s</string>
+    <string name="vehicle">Véhicule</string>
+    <string name="lock">Verrouillage</string>
+    <string name="plug">Prise</string>
+    <string name="refresh">Actualiser</string>
+    <string name="elevation_label">Altitude : %1$s%2$s</string>
+
+    <!-- Status -->
+    <string name="state_online">En ligne</string>
+    <string name="state_driving">En conduite</string>
+    <string name="state_charging">En charge</string>
+    <string name="state_asleep">En veille</string>
+    <string name="state_offline">Hors ligne</string>
+
+    <!-- Charging -->
+    <string name="charges_title">Historique de charge</string>
+    <string name="charge_detail">Détail de charge</string>
+    <string name="charging_in_progress">Charge en cours</string>
+    <string name="charge_power">Puissance</string>
+    <string name="charge_added">Énergie ajoutée</string>
+    <string name="charge_remaining">Temps restant</string>
+
+    <!-- Drives -->
+    <string name="drives_title">Historique des trajets</string>
+    <string name="drive_detail">Détail du trajet</string>
+
+    <!-- Battery Health -->
+    <string name="battery_health_title">Santé de la batterie</string>
+    <string name="battery_health">Santé</string>
+    <string name="original_capacity">Capacité d\'origine</string>
+    <string name="current_capacity">Capacité actuelle</string>
+    <string name="degradation">Dégradation</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Paramètres</string>
+    <string name="connection">Connexion</string>
+    <string name="server_url">URL du serveur</string>
+    <string name="api_token">Jeton API</string>
+    <string name="test_connection">Tester la connexion</string>
+    <string name="preferences">Préférences</string>
+    <string name="units">Unités</string>
+    <string name="temperature">Température</string>
+    <string name="theme">Thème</string>
+    <string name="mock_mode">Mode simulation</string>
+    <string name="about">À propos</string>
+    <string name="version">Version</string>
+
+    <!-- Common -->
+    <string name="back">Retour</string>
+    <string name="loading">Chargement...</string>
+    <string name="no_data">Aucune donnée disponible</string>
+    <string name="offline">Hors ligne - affichage des données en cache</string>
+
+    <!-- Range Analysis -->
+    <string name="range_analysis_title">Analyse d\'autonomie</string>
+    <string name="range_accuracy_title">Précision de la prédiction</string>
+    <string name="range_trip_count">Trajets</string>
+    <string name="range_total_distance">Distance totale</string>
+    <string name="range_trip_list_title">Trajets récents (%d)</string>
+    <string name="range_estimated">Estimé</string>
+    <string name="range_actual">Réel</string>
+</resources>

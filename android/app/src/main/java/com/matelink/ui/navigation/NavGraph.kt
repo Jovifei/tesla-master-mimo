@@ -5,7 +5,10 @@ import android.content.Intent
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -13,6 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
@@ -20,20 +24,27 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.matelink.R
+import com.matelink.ui.screens.about.AboutScreen
 import com.matelink.ui.screens.battery.BatteryScreen
 import com.matelink.ui.screens.charges.ChargeDetailScreen
 import com.matelink.ui.screens.charges.ChargesScreen
 import com.matelink.ui.screens.charges.CurrentChargeScreen
 import com.matelink.ui.screens.dashboard.DashboardScreen
-import com.matelink.ui.screens.demo.PalettePreviewScreen
 import com.matelink.ui.screens.drives.DriveDetailScreen
 import com.matelink.ui.screens.drives.DrivesScreen
 import com.matelink.ui.screens.mileage.MileageScreen
+import com.matelink.ui.screens.more.MoreScreen
 import com.matelink.ui.screens.settings.SettingsScreen
+import com.matelink.ui.screens.settings.TariffConfigScreen
 import com.matelink.ui.screens.reports.AnnualReportPDFScreen
 import com.matelink.ui.screens.reports.AnnualReportScreen
 import com.matelink.ui.screens.reports.ExportScreen
 import com.matelink.ui.screens.vehicle3d.Vehicle3dScreen
+import com.matelink.ui.screens.efficiency.EfficiencyScreen
+import com.matelink.ui.screens.cost.CostScreen
+import com.matelink.ui.screens.range.RangeScreen
+import com.matelink.ui.screens.vampire.VampireScreen
+import com.matelink.ui.screens.timeline.TimelineScreen
 import com.matelink.ui.screens.stats.CountriesVisitedScreen
 import com.matelink.ui.screens.stats.RegionsVisitedScreen
 import com.matelink.ui.screens.stats.StatsScreen
@@ -44,6 +55,8 @@ import com.matelink.ui.screens.trips.TripsScreen
 import com.matelink.ui.screens.updates.SoftwareVersionsScreen
 import com.matelink.ui.screens.wherewasi.WhereWasIScreen
 import com.matelink.domain.model.YearFilter
+import com.matelink.ui.theme.CarColorPalettes
+import androidx.compose.foundation.isSystemInDarkTheme
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
@@ -60,10 +73,21 @@ sealed interface Screen {
     data object Settings : Screen
 
     @Serializable
-    data object Dashboard : Screen
+    data object TariffConfig : Screen
 
     @Serializable
-    data object PalettePreview : Screen
+    data object Dashboard : Screen
+
+    /**
+     * L1 "More" hub — fourth bottom-nav tab. Hosted by [com.matelink.ui.screens.more.MoreScreen].
+     * Carries [carId] so it can route into the analysis pages that require it.
+     */
+    @Serializable
+    data class More(val carId: Int, val exteriorColor: String? = null) : Screen
+
+    /** L2 "About" page reached from More. */
+    @Serializable
+    data object About : Screen
 
     @Serializable
     data class Charges(val carId: Int, val exteriorColor: String? = null) : Screen
@@ -130,6 +154,38 @@ sealed interface Screen {
 
     @Serializable
     data class Vehicle3d(val carId: Int) : Screen
+
+    /** L2 analysis pages — reachable from More. */
+    @Serializable
+    data class Efficiency(val carId: Int, val exteriorColor: String? = null) : Screen
+
+    @Serializable
+    data class Cost(val carId: Int, val exteriorColor: String? = null) : Screen
+
+    @Serializable
+    data class Range(val carId: Int, val exteriorColor: String? = null) : Screen
+
+    @Serializable
+    data class Vampire(val carId: Int, val exteriorColor: String? = null) : Screen
+
+    @Serializable
+    data class Timeline(val carId: Int, val exteriorColor: String? = null) : Screen
+}
+
+/**
+ * Resolves a human-readable country name for [countryCode] without throwing on
+ * malformed or empty input. `Locale.Builder().setRegion()` rejects anything
+ * that is not a valid 2/3-letter region code with [IllformedLocaleException],
+ * so blanks, codes coming from inconsistent data, or empty strings fall back
+ * to the raw input instead of crashing the navigation call site.
+ */
+private fun safeDisplayCountry(countryCode: String): String {
+    if (countryCode.isBlank()) return countryCode
+    return try {
+        java.util.Locale.Builder().setRegion(countryCode).build().displayCountry
+    } catch (e: java.util.IllformedLocaleException) {
+        countryCode
+    }
 }
 
 @Composable
@@ -139,8 +195,14 @@ fun NavGraph(
 ) {
     val navController = rememberNavController()
     val startDestination by startViewModel.startDestination.collectAsState()
+    val currentCarId by startViewModel.currentCarId.collectAsState()
     val notificationPermissionAsked by startViewModel.notificationPermissionAsked.collectAsState()
     val coroutineScope = rememberCoroutineScope()
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        coroutineScope.launch { startViewModel.markNotificationPermissionAsked() }
+    }
 
     if (startDestination == null) {
         return // Wait for determination
@@ -151,12 +213,6 @@ fun NavGraph(
         !notificationPermissionAsked &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     ) {
-        val permissionLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) {
-            coroutineScope.launch { startViewModel.markNotificationPermissionAsked() }
-        }
-
         AlertDialog(
             onDismissRequest = {
                 coroutineScope.launch { startViewModel.markNotificationPermissionAsked() }
@@ -201,10 +257,14 @@ fun NavGraph(
         }
     }
 
-    NavHost(
-        navController = navController,
-        startDestination = startDestination ?: Screen.Dashboard
-    ) {
+    Scaffold(
+        bottomBar = { MateLinkBottomBar(navController, currentCarId) }
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = startDestination ?: Screen.Dashboard,
+            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)
+        ) {
         composable<Screen.Settings> {
             SettingsScreen(
                 onNavigateToDashboard = {
@@ -212,9 +272,15 @@ fun NavGraph(
                         popUpTo<Screen.Settings> { inclusive = true }
                     }
                 },
-                onNavigateToPalettePreview = {
-                    navController.navigate(Screen.PalettePreview)
+                onNavigateToTariffConfig = {
+                    navController.navigate(Screen.TariffConfig)
                 }
+            )
+        }
+
+        composable<Screen.TariffConfig> {
+            TariffConfigScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 
@@ -348,12 +414,6 @@ fun NavGraph(
             )
         }
 
-        composable<Screen.PalettePreview> {
-            PalettePreviewScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
         composable<Screen.Stats> { backStackEntry ->
             val route = backStackEntry.toRoute<Screen.Stats>()
             StatsScreen(
@@ -471,7 +531,7 @@ fun NavGraph(
                     navController.navigate(Screen.ChargeDetail(route.carId, chargeId, route.exteriorColor))
                 },
                 onNavigateToCountryStats = { countryCode ->
-                    val countryName = java.util.Locale.Builder().setRegion(countryCode).build().displayCountry
+                    val countryName = safeDisplayCountry(countryCode)
                     navController.navigate(
                         Screen.RegionsVisited(route.carId, countryCode, countryName, route.exteriorColor)
                     )
@@ -523,6 +583,76 @@ fun NavGraph(
                 carId = route.carId,
                 onBack = { navController.popBackStack() }
             )
+        }
+
+        composable<Screen.Efficiency> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.Efficiency>()
+            EfficiencyScreen(
+                carId = route.carId,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable<Screen.Cost> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.Cost>()
+            CostScreen(
+                carId = route.carId,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable<Screen.Range> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.Range>()
+            RangeScreen(
+                carId = route.carId,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable<Screen.Vampire> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.Vampire>()
+            VampireScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable<Screen.Timeline> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.Timeline>()
+            val isDarkTheme = isSystemInDarkTheme()
+            val palette = CarColorPalettes.forExteriorColor(route.exteriorColor, isDarkTheme)
+            TimelineScreen(
+                onNavigateBack = { navController.popBackStack() },
+                palette = palette
+            )
+        }
+
+        composable<Screen.More> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.More>()
+            MoreScreen(
+                carId = route.carId,
+                onNavigateToStats = { navController.navigate(Screen.Stats(it, route.exteriorColor)) },
+                onNavigateToBattery = { navController.navigate(Screen.Battery(it, 0f, route.exteriorColor)) },
+                onNavigateToMileage = { navController.navigate(Screen.Mileage(it, route.exteriorColor)) },
+                onNavigateToTrips = { navController.navigate(Screen.Trips(it, route.exteriorColor)) },
+                onNavigateToUpdates = { navController.navigate(Screen.Updates(it, route.exteriorColor)) },
+                onNavigateToSentryHistory = { navController.navigate(Screen.SentryHistory(it, route.exteriorColor)) },
+                onNavigateToSettings = { navController.navigate(Screen.Settings) },
+                onNavigateToAbout = { navController.navigate(Screen.About) },
+                onNavigateToEfficiency = { navController.navigate(Screen.Efficiency(it, route.exteriorColor)) },
+                onNavigateToCost = { navController.navigate(Screen.Cost(it, route.exteriorColor)) },
+                onNavigateToRange = { navController.navigate(Screen.Range(it, route.exteriorColor)) },
+                onNavigateToVampire = { navController.navigate(Screen.Vampire(it, route.exteriorColor)) },
+                onNavigateToTimeline = { navController.navigate(Screen.Timeline(it, route.exteriorColor)) },
+                onNavigateToAnnualReport = { navController.navigate(Screen.AnnualReport(it)) },
+                onNavigateToExport = { navController.navigate(Screen.Export(it)) },
+                onNavigateToVehicle3d = { navController.navigate(Screen.Vehicle3d(it)) },
+                onNavigateToCurrentCharge = { navController.navigate(Screen.CurrentCharge(it, route.exteriorColor)) }
+            )
+        }
+
+        composable<Screen.About> {
+            AboutScreen(onNavigateBack = { navController.popBackStack() })
+        }
         }
     }
 }

@@ -1,0 +1,70 @@
+// Navigation
+"nav.dashboard" = "Dashboard";
+"nav.drives" = "Fahrten";
+"nav.charges" = "Ladevorgänge";
+"nav.more" = "Mehr";
+
+// Dashboard
+"dashboard.loading" = "Dashboard wird geladen...";
+"battery" = "Batterie";
+"odometer" = "Kilometerstand";
+"location" = "Standort";
+"inside_temp" = "Innen";
+"outside_temp" = "Außen";
+"lock.locked" = "Verriegelt";
+"lock.unlocked" = "Entsperrt";
+"plug.plugged" = "Verbunden";
+"plug.unplugged" = "Getrennt";
+"climate.on" = "Klima AN";
+"climate.off" = "Klima AUS";
+"sentry.armed" = "Sentry AKTIV";
+"sentry.off" = "Sentry AUS";
+"high_soc_warning" = "Hoher Ladestand - für den täglichen Gebrauch auf 80-90% begrenzen empfohlen";
+"tire_pressure" = "Reifendruck";
+"battery_trend" = "7-Tage Batterieverlauf";
+
+// Status
+"state.online" = "Online";
+"state.driving" = "Fahrt";
+"state.charging" = "Laden";
+"state.asleep" = "Schlafend";
+"state.offline" = "Offline";
+
+// Charging
+"charges.title" = "Ladeverlauf";
+"charge.detail" = "Ladedetails";
+"charging.in_progress" = "Wird geladen";
+"charge.power" = "Leistung";
+"charge.added" = "Geladen";
+"charge.remaining" = "Verbleibend";
+
+// Drives
+"drives.title" = "Fahrverlauf";
+"drive.detail" = "Fahrtdetails";
+
+// Battery Health
+"battery_health.title" = "Batteriezustand";
+"battery_health.health" = "Zustand";
+"battery_health.original" = "Originale Kapazität";
+"battery_health.current" = "Aktuelle Kapazität";
+"battery_health.degradation" = "Verschleiß";
+
+// Settings
+"settings.title" = "Einstellungen";
+"connection" = "Verbindung";
+"server_url" = "Server-URL";
+"api_token" = "API-Token";
+"test_connection" = "Verbindung testen";
+"preferences" = "Einstellungen";
+"units" = "Einheiten";
+"temperature" = "Temperatur";
+"theme" = "Design";
+"mock_mode" = "Mock-Modus";
+"about" = "Über";
+"version" = "Version";
+
+// Common
+"back" = "Zurück";
+"loading" = "Wird geladen...";
+"no_data" = "Keine Daten verfügbar";
+"offline" = "Offline - zeige zwischengespeicherte Daten";

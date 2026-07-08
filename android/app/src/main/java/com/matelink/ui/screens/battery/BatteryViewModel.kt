@@ -162,7 +162,7 @@ class BatteryViewModel @Inject constructor(
         val idealRange = status?.idealBatteryRangeKm ?: 0.0
 
         // Estimate range at 100%
-        val rangeAt100 = if (batteryLevel > 0 && ratedRange > 0) {
+        val rangeAt100 = if (batteryLevel >= 10 && ratedRange > 0) {
             (ratedRange / batteryLevel) * 100
         } else {
             maxRangeNow

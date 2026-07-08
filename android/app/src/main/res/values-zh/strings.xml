@@ -27,6 +27,12 @@
     <string name="tire_pressure">胎压</string>
     <string name="battery_trend">7天电量趋势</string>
     <string name="km_range">%d km 续航</string>
+    <string name="charge_limit">限制: %s</string>
+    <string name="vehicle">车辆</string>
+    <string name="lock">锁</string>
+    <string name="plug">充电枪</string>
+    <string name="refresh">刷新</string>
+    <string name="elevation_label">海拔: %1$s%2$s</string>
 
     <!-- Status -->
     <string name="state_online">在线</string>
@@ -42,6 +48,18 @@
     <string name="charge_power">功率</string>
     <string name="charge_added">已充入</string>
     <string name="charge_remaining">剩余时间</string>
+
+    <!-- Timeline -->
+    <string name="timeline_title">时间线</string>
+    <string name="timeline_empty">暂无事件</string>
+    <string name="timeline_drive">行驶</string>
+    <string name="timeline_charge">充电</string>
+    <string name="timeline_distance_value">%.1f km</string>
+    <string name="timeline_battery_end">%d%%</string>
+    <string name="timeline_energy_added">%.1f kWh</string>
+    <string name="timeline_cost_value">¥%.2f</string>
+    <string name="timeline_unknown_route">未知路线</string>
+    <string name="timeline_unknown_location">未知地点</string>
 
     <!-- Drives -->
     <string name="drives_title">行程记录</string>
@@ -67,10 +85,836 @@
     <string name="mock_mode">模拟模式</string>
     <string name="about">关于</string>
     <string name="version">版本</string>
+    <string name="more_section_analysis">数据分析</string>
+    <string name="more_section_system">系统</string>
+    <string name="more_status_title">验证状态</string>
+    <string name="more_status_body">部分功能仍使用预览、模拟或缓存数据，连接 TeslaMate 后将显示实时数据。</string>
+    <string name="more_item_statistics">统计概览</string>
+    <string name="more_item_battery_health">电池健康</string>
+    <string name="more_item_mileage">里程统计</string>
+    <string name="more_item_trips">行程记录</string>
+    <string name="more_item_software_updates">软件更新</string>
+    <string name="more_item_sentry_history">哨兵历史</string>
+    <string name="more_item_efficiency">能耗效率</string>
+    <string name="more_item_cost">费用分析</string>
+    <string name="more_item_range">续航分析</string>
+    <string name="more_item_vampire">待机能耗</string>
+    <string name="more_item_timeline">时间线</string>
+    <string name="about_tagline">你的 Tesla 数据伴侣</string>
+    <string name="about_tech_stack">技术栈</string>
+    <string name="about_tech_android">Android - Kotlin - Jetpack Compose - Hilt - Room</string>
+    <string name="about_tech_ios">iOS - Swift - SwiftUI</string>
+    <string name="about_tech_web">Web - TypeScript - React - Vite</string>
+    <string name="about_data_source">数据来源</string>
+    <string name="about_data_source_self_hosted">自托管 TeslaMate + TeslaMateApi</string>
+    <string name="about_data_source_no_tesla">不连接官方 Tesla API</string>
+    <string name="about_data_source_no_collection">不收集用户数据</string>
+    <string name="about_links">相关链接</string>
+    <string name="about_link_github">GitHub: Jovifei/Tesla_MateLink</string>
+    <string name="about_link_license">许可协议: MIT</string>
+    <string name="about_footer">版权所有 2026 JoviF - 为 Tesla 车主打造</string>
+    <string name="notification_permission_title">通知权限</string>
+    <string name="notification_permission_message">允许通知以获取充电、哨兵、胎压和软件更新提醒。</string>
+    <string name="notification_permission_grant">允许</string>
 
     <!-- Common -->
     <string name="back">返回</string>
     <string name="loading">加载中...</string>
     <string name="no_data">暂无数据</string>
     <string name="offline">离线 - 显示缓存数据</string>
+    <string name="ok">确定</string>
+    <string name="cancel">取消</string>
+
+    <!-- Tariff Config -->
+    <string name="tariff_title">分时电价配置</string>
+    <string name="tariff_enable_label">分时电价</string>
+    <string name="tariff_enable_hint">启用峰、平、谷三时段计费，鼓励错峰充电</string>
+    <string name="tariff_peak">峰</string>
+    <string name="tariff_flat">平</string>
+    <string name="tariff_valley">谷</string>
+    <string name="tariff_price_label">单价</string>
+    <string name="tariff_add_range">添加时段</string>
+    <string name="tariff_delete_range">删除时段</string>
+    <string name="tariff_add_range_title">添加时段</string>
+    <string name="tariff_start_hour">开始时间</string>
+    <string name="tariff_end_hour">结束时间</string>
+    <string name="tariff_reset">重置为上海默认值</string>
+    <string name="tariff_preview_title">月费用预览</string>
+    <string name="tariff_saves">节省</string>
+    <string name="tariff_costs">费用</string>
+    <string name="tariff_assume_monthly">假设月充电 %d kWh</string>
+
+    <!-- Efficiency Analysis -->
+    <string name="efficiency_title">效率分析</string>
+    <string name="efficiency_avg_label">平均效率</string>
+    <string name="efficiency_drive_count">行程数</string>
+    <string name="efficiency_total_distance">总里程</string>
+    <string name="efficiency_by_speed_title">分速效率</string>
+    <string name="efficiency_by_speed_subtitle">不同速度区间的能耗 (Wh/km)</string>
+
+    <!-- Cost Analysis -->
+    <string name="cost_title">费用分析</string>
+    <string name="cost_total">总费用</string>
+    <string name="cost_energy_added">已充电量</string>
+    <string name="cost_charges_count">%d 次充电</string>
+    <string name="cost_monthly_breakdown">月度明细</string>
+    <string name="cost_ac">交流充电</string>
+    <string name="cost_dc">直流充电</string>
+    <string name="cost_top_locations">热门充电地点</string>
+    <string name="cost_location_count">%d 次充电</string>
+
+    <!-- Range Analysis -->
+    <string name="range_analysis_title">续航分析</string>
+    <string name="range_accuracy_title">续航预测准确度</string>
+    <string name="range_trip_count">行程数</string>
+    <string name="range_total_distance">总里程</string>
+    <string name="range_trip_list_title">最近行程 (%d)</string>
+    <string name="range_estimated">预估</string>
+    <string name="range_actual">实际</string>
+
+    <!-- Vampire Drain (Standby Power Consumption) -->
+    <string name="vampire_title">待机能耗</string>
+    <string name="vampire_total_drain_label">总待机能耗</string>
+    <string name="vampire_total_drain_subtitle">所有检测到的待机耗电时段总和</string>
+    <string name="vampire_avg_power">平均功率</string>
+    <string name="vampire_idle_periods">待机时段</string>
+    <string name="vampire_daily_title">每日待机能耗</string>
+    <string name="vampire_daily_subtitle">停放期间（无行驶）的电池损耗百分比</string>
+    <string name="vampire_recent_title">近期待机时段</string>
+    <string name="vampire_tips_title">优化建议</string>
+    <string name="vampire_tip_sentry_title">哨兵模式</string>
+    <string name="vampire_tip_sentry_desc">哨兵模式功耗约 250-300W。在安全地点停放时关闭可显著降低待机能耗。</string>
+    <string name="vampire_tip_cabin_overheat_title">车内过热保护</string>
+    <string name="vampire_tip_cabin_overheat_desc">该功能会运行空调以保持车内温度低于阈值。如无需此功能，可在炎热天气设为「关闭」或「仅通风」。</string>
+    <string name="vampire_tip_climate_title">远程空调</string>
+    <string name="vampire_tip_climate_desc">预热/预冷功耗约 3-5 kW。长时间停放时避免反复开启远程空调。</string>
+    <string name="vampire_tip_updates_title">软件更新</string>
+    <string name="vampire_tip_updates_desc">OTA 更新和定期检查会导致短暂唤醒。建议在插枪充电期间安排更新。</string>
+    <string name="vampire_how_title">工作原理</string>
+    <string name="vampire_how_desc">待机能耗通过分析充电间隔来计算。当电池电量下降但期间无行驶记录时，能量损失归因于待机功耗。估算的平均功率基于 75 kWh 电池容量。</string>
+    <string name="widget_description">Tesla 车辆状态小组件</string>
+
+    <!-- Duration formatting -->
+    <string name="chart_week_label">第 %1$d 周</string>
+    <string name="duration_months_weeks">%1$dm %2$dw</string>
+    <string name="duration_months">%1$dm</string>
+    <string name="duration_weeks_days">%1$dw %2$dd</string>
+    <string name="duration_weeks">%1$dw</string>
+    <string name="duration_days_hours">%1$dd %2$dh</string>
+    <string name="duration_days">%1$dd</string>
+    <string name="duration_hours_minutes">%1$dh %2$dm</string>
+    <string name="duration_hours">%1$dh</string>
+    <string name="duration_minutes">%1$dm</string>
+
+    <!-- Widget -->
+    <string name="widget_error_configure">加载小组件出错</string>
+    <string name="widget_loading">加载中...</string>
+    <string name="no_vehicles_found">未找到车辆</string>
+    <string name="error_loading_data">加载数据出错</string>
+    <string name="widget_select_car_title">选择车辆</string>
+
+    <!-- Where Was I -->
+    <string name="you_were_here">你曾在这里</string>
+    <string name="where_was_i_open_in_maps">在地图中打开</string>
+    <string name="mileage_title">里程</string>
+    <string name="speed_profile">速度曲线</string>
+    <string name="distance">距离</string>
+    <string name="battery_level">电量</string>
+    <string name="power_profile">功率曲线</string>
+    <string name="parked_for">已停放 %1$s</string>
+    <string name="parked_since">自 %1$s 起停放</string>
+    <string name="where_was_i_driving">行驶中</string>
+    <string name="where_was_i_charging">充电中</string>
+    <string name="where_was_i_parked">停放中</string>
+    <string name="where_was_i_heading_to">前往 %1$s</string>
+    <string name="where_was_i_charging_at">在 %1$s 充电</string>
+    <string name="where_was_i_parked_at">停放在 %1$s</string>
+
+    <!-- Weather conditions -->
+    <string name="weather_clear">晴</string>
+    <string name="weather_partly_cloudy">多云</string>
+    <string name="weather_fog">雾</string>
+    <string name="weather_drizzle">小雨</string>
+    <string name="weather_rain">雨</string>
+    <string name="weather_snow">雪</string>
+    <string name="weather_thunderstorm">雷暴</string>
+
+    <!-- Software Versions -->
+    <string name="software_avg_interval">平均间隔</string>
+    <string name="format_interval_days">%1$.1f 天</string>
+    <string name="software_newest">最新</string>
+    <string name="software_oldest">最早</string>
+    <string name="format_updates_count">%1$d 次更新</string>
+    <string name="format_updates_decimal">%.1f</string>
+    <string name="software_updates_per_month">次更新/月</string>
+    <string name="unknown">未知</string>
+    <string name="software_view_release_notes">查看更新日志</string>
+    <string name="software_current_version">当前版本</string>
+    <string name="software_longest_installed">最长安装时间</string>
+    <string name="software_longest">最长</string>
+    <string name="software_installed">已安装</string>
+    <string name="software_days">%1$d 天</string>
+    <string name="software_duration">持续时间</string>
+
+    <!-- Where Was I extra -->
+    <string name="where_was_i_screen_title">我曾在哪里</string>
+    <string name="where_was_i_no_data">暂无位置数据</string>
+
+    <!-- Trips -->
+    <string name="trip_summary">行程摘要</string>
+    <string name="trips_title">行程</string>
+    <string name="total_distance">总距离</string>
+    <string name="trip_driving_time">行驶时间</string>
+    <string name="trip_energy_charged">充电能量</string>
+    <string name="trip_no_stops">无停靠</string>
+    <string name="trip_one_stop">1 次停靠</string>
+    <string name="trip_n_stops">%1$d 次停靠</string>
+    <string name="filter_all_time">全部时间</string>
+    <string name="filter_custom">自定义</string>
+
+    <!-- Software extra -->
+    <string name="filter_last_6_months">近 6 个月</string>
+    <string name="filter_last_year">去年</string>
+    <string name="software_title">软件</string>
+    <string name="software_update_history">更新历史</string>
+    <string name="software_no_updates">暂无更新记录</string>
+    <string name="software_overview">概览</string>
+    <string name="software_total_updates">总更新次数</string>
+
+    <!-- Trip detail -->
+    <string name="trip_legs">行程段</string>
+    <string name="trip_charge_cost">充电费用</string>
+
+    <!-- Trip edit -->
+    <string name="trip_edit_merge_confirm_title">合并行程</string>
+    <string name="trip_edit_merge_confirm_body">确定要合并这些行程吗？</string>
+    <string name="trip_edit_merge_confirm">合并</string>
+    <string name="trip_rename_dialog_title">重命名行程</string>
+    <string name="trip_rename_field_label">行程名称</string>
+    <string name="trip_rename_field_hint">输入行程名称</string>
+    <string name="save">保存</string>
+    <string name="language">语言</string>
+    <string name="mock_mode_hint">使用模拟数据而非真实服务器</string>
+    <string name="server_url_label">服务器地址</string>
+    <string name="api_token_label">API 令牌</string>
+    <string name="switch_instance">切换</string>
+    <string name="add_instance">添加实例</string>
+    <string name="instance_name">实例名称</string>
+    <string name="car_id">车辆 ID</string>
+    <string name="edit">编辑</string>
+    <string name="trip_edit_delete_confirm_title">删除行程</string>
+    <string name="trip_edit_delete_confirm_body">确定要删除这个行程吗？</string>
+    <string name="delete">删除</string>
+    <string name="trip_create_cd">创建行程</string>
+    <string name="trips_empty_title">暂无行程</string>
+    <string name="trips_empty_intro">创建你的第一个行程，开始记录旅程。</string>
+    <string name="trips_empty_rule_drives">使用 Tesla 记录行驶</string>
+    <string name="trips_empty_rule_charge">在不同地点充电</string>
+    <string name="trips_empty_rule_distance">随时间积累里程</string>
+    <string name="trips_empty_create_hint">点击 + 按钮创建行程</string>
+
+    <!-- Currency -->
+    <string name="currency_format">%1$s %2$.2f</string>
+
+    <!-- Stats -->
+    <string name="stats_no_drives_found">未找到行程</string>
+    <string name="close">关闭</string>
+    <string name="view_drive">查看行程</string>
+
+    <!-- Trip edit extra -->
+    <string name="trip_edit_add_leg_empty">无可用行程段</string>
+    <string name="trip_edit_selected_count">已选择 %1$d 个</string>
+    <string name="add">添加</string>
+    <string name="trip_edit_add_leg_title">添加行程段</string>
+    <string name="trip_edit_select_multiple">多选</string>
+
+    <!-- Create trip -->
+    <string name="trip_create_title">创建行程</string>
+    <string name="trip_create_save">保存行程</string>
+    <string name="trip_create_name_hint">行程名称</string>
+    <string name="trip_create_add_legs">添加行程段</string>
+    <string name="trip_create_empty">尚未添加行程段</string>
+    <string name="trip_create_remove">移除</string>
+    <string name="trip_create_pick_day">选择日期</string>
+
+    <!-- Merge trip -->
+    <string name="trip_edit_merge_title">合并行程</string>
+    <string name="trip_edit_merge_empty">无可合并的行程</string>
+
+    <!-- Trip detail extra -->
+    <string name="trip_detail_title">行程详情</string>
+    <string name="trip_rename_action">重命名</string>
+    <string name="trip_edit_delete">删除</string>
+
+    <!-- Stats extra -->
+    <string name="stats_coldest">最冷</string>
+    <string name="stats_cabin_temperature">车内温度</string>
+    <string name="stats_hottest">最热</string>
+    <string name="stats_ac_dc_ratio">交流/直流比例</string>
+    <string name="stats_ac_energy">交流电能</string>
+    <string name="stats_dc_energy">直流电能</string>
+    <string name="charging_ac">交流</string>
+    <string name="format_charges_count">%1$d 次充电</string>
+    <string name="charging_dc">直流</string>
+    <string name="view_details">查看详情</string>
+    <string name="stats_sync_logs_title">同步日志</string>
+    <string name="gap_type_charging">充电</string>
+    <string name="stats_gap_dialog_title">间隔详情</string>
+    <string name="format_days">%1$.1f 天</string>
+    <string name="started">开始</string>
+    <string name="ended">结束</string>
+    <string name="stats_range_record_title">续航记录</string>
+    <string name="from">从</string>
+    <string name="to">到</string>
+    <string name="stats_drives_count">%1$d 次行程</string>
+
+    <!-- TPMS -->
+    <string name="tpms_notification_title">胎压警告</string>
+    <string name="tpms_notification_body">请检查胎压</string>
+    <string name="tpms_notification_cleared">胎压正常</string>
+    <string name="tire_fl_full">左前轮</string>
+    <string name="tire_fr_full">右前轮</string>
+    <string name="tire_rl_full">左后轮</string>
+    <string name="tire_rr_full">右后轮</string>
+    <string name="tpms_channel_name">胎压监测</string>
+    <string name="tpms_channel_description">胎压监测提醒</string>
+
+    <!-- Charging notifications -->
+    <string name="charging_notification_title">充电</string>
+    <string name="charging_notification_loading">加载充电数据中...</string>
+    <string name="charging_notification_dc_finished_title">直流充电完成</string>
+    <string name="charging_notification_dc_finished_content">你的 Tesla 已完成直流充电。</string>
+    <string name="charging_channel_name">充电</string>
+    <string name="charging_channel_description">充电状态通知</string>
+
+    <!-- Sentry notifications -->
+    <string name="sentry_notification_title">哨兵模式警报</string>
+    <string name="sentry_action_open_tesla">打开 Tesla</string>
+    <string name="sentry_channel_name">哨兵模式</string>
+    <string name="sentry_channel_description">哨兵模式警报通知</string>
+
+    <!-- Plurals -->
+    <plurals name="sentry_event_count">
+        <item quantity="other">%1$d 个事件</item>
+    </plurals>
+
+    <!-- Sentry extra -->
+    <plurals name="sentry_notification_body">
+        <item quantity="other">哨兵模式在你的 Tesla 附近检测到 %1$d 个事件。</item>
+    </plurals>
+
+    <!-- Car picker -->
+    <string name="car_picker_title">选择车辆</string>
+    <string name="car_picker_model_variant">车型变体</string>
+    <string name="car_picker_wheel_style">轮毂样式</string>
+    <string name="car_picker_reset_default">恢复默认</string>
+    <string name="car_picker_tap_to_confirm">点击确认</string>
+    <string name="car_picker_tap_to_select">点击选择</string>
+    <string name="car_variant_my_legacy">Model Y 经典版</string>
+    <string name="car_variant_my_standard">Model Y 标准版</string>
+    <string name="car_variant_my_premium">Model Y 豪华版</string>
+    <string name="car_variant_my_performance">Model Y 性能版</string>
+    <string name="car_variant_m3_legacy">Model 3 经典版</string>
+    <string name="car_variant_m3_highland">Model 3 高地版</string>
+    <string name="car_variant_m3_highland_perf">Model 3 高地性能版</string>
+
+    <!-- Date filter -->
+    <string name="filter_custom_from">从</string>
+    <string name="filter_custom_to">到</string>
+
+    <!-- Fullscreen chart -->
+    <string name="fullscreen">全屏</string>
+    <string name="exit_fullscreen">退出全屏</string>
+
+    <!-- Month scroll -->
+    <string name="scrollbar_drag_handle_description">拖动滚动</string>
+
+    <!-- Part of trip -->
+    <string name="part_of_trip">行程的一部分</string>
+    <string name="part_of_trip_remove">移除</string>
+    <string name="part_of_trip_remove_confirm_title">从行程中移除</string>
+    <string name="part_of_trip_remove_confirm_body">确定要从行程中移除此项吗？</string>
+
+    <!-- Trip edit actions -->
+    <string name="trip_edit_add_leg">添加行程段</string>
+    <string name="trip_edit_merge_trip">合并行程</string>
+
+    <!-- Trip timeline -->
+    <string name="trip_timeline_title">时间线</string>
+    <string name="trip_timeline_driving">行驶中</string>
+    <string name="trip_leg_drive">行驶</string>
+    <string name="trip_timeline_charging_dc">直流充电</string>
+    <string name="trip_timeline_charging_ac">交流充电</string>
+    <string name="trip_timeline_parked">停放</string>
+    <string name="trip_timeline_weather">天气</string>
+    <string name="trip_leg_charge">充电</string>
+    <string name="weather_during_trip">行程期间天气</string>
+
+    <!-- Battery -->
+    <string name="no_battery_data">暂无电池数据</string>
+    <string name="battery_capacity_title">电池容量</string>
+    <string name="battery_capacity_message">你的电池容量信息。</string>
+    <string name="capacity">容量</string>
+    <string name="usable_new">可用（新）</string>
+    <string name="usable_now">可用（当前）</string>
+    <string name="rated">额定</string>
+    <string name="info">信息</string>
+    <string name="got_it">知道了</string>
+    <string name="estimated_degradation_title">预估衰减</string>
+    <string name="estimated_degradation_message">基于你的驾驶习惯。</string>
+    <string name="estimated_degradation">预估衰减</string>
+    <string name="loss_kwh">损失 (kWh)</string>
+    <string name="loss_percent">损失 (%)</string>
+
+    <!-- Battery extra -->
+    <string name="range">续航</string>
+    <string name="max_range_new">最大续航（新）</string>
+    <string name="max_range_now">最大续航（当前）</string>
+    <string name="range_loss">续航损失</string>
+    <string name="battery_detail_title">电池详情</string>
+    <string name="current_charge_title">当前充电</string>
+    <string name="current_charge_message">当前充电信息。</string>
+    <string name="current_charge">当前充电</string>
+    <string name="usable_percent">可用 (%)</string>
+    <string name="range_information_title">续航信息</string>
+    <string name="range_information_message">你的 Tesla 续航详情。</string>
+    <string name="range_information">续航信息</string>
+    <string name="estimated_range">预估续航</string>
+    <string name="estimated_range_subtitle">基于近期驾驶</string>
+    <string name="rated_range">额定续航</string>
+    <string name="rated_range_subtitle">EPA 额定续航</string>
+    <string name="ideal_range">理想续航</string>
+    <string name="ideal_range_subtitle">WLTP 理想续航</string>
+    <string name="estimated_total_capacity_title">预估总容量</string>
+    <string name="estimated_total_capacity_message">基于充电数据分析。</string>
+    <string name="estimated_total_capacity">预估总容量</string>
+    <string name="capacity_kwh">容量 (kWh)</string>
+    <string name="capacity_percent">容量 (%)</string>
+
+    <!-- All missing strings batch -->
+    <string name="all_years">全部年份</string>
+    <string name="average">平均</string>
+    <string name="avg_cost_per_session">平均每次费用</string>
+    <string name="avg_distance">平均距离</string>
+    <string name="charge_details_title">充电详情</string>
+    <string name="charge_free">免费</string>
+    <string name="charge_history">充电历史</string>
+    <string name="charge_location">位置</string>
+    <string name="charger">充电桩</string>
+    <plurals name="charges_count">
+        <item quantity="other">%1$d 次充电</item>
+    </plurals>
+    <string name="charges_free_supercharging_hint">含免费超级充电</string>
+    <string name="chart_charges_per_day">充电次数/天</string>
+    <string name="chart_charges_per_month">充电次数/月</string>
+    <string name="chart_charges_per_week">充电次数/周</string>
+    <string name="chart_cost_per_day">费用/天</string>
+    <string name="chart_cost_per_month">费用/月</string>
+    <string name="chart_cost_per_week">费用/周</string>
+    <string name="chart_distance_per_day">距离/天</string>
+    <string name="chart_distance_per_month">距离/月</string>
+    <string name="chart_distance_per_week">距离/周</string>
+    <string name="chart_drives_per_day">行程数/天</string>
+    <string name="chart_drives_per_month">行程数/月</string>
+    <string name="chart_drives_per_week">行程数/周</string>
+    <string name="chart_energy_per_day">能量/天</string>
+    <string name="chart_energy_per_month">能量/月</string>
+    <string name="chart_energy_per_week">能量/周</string>
+    <string name="chart_speed_per_day">速度/天</string>
+    <string name="chart_speed_per_month">速度/月</string>
+    <string name="chart_speed_per_week">速度/周</string>
+    <string name="chart_time_per_day">时间/天</string>
+    <string name="chart_time_per_month">时间/月</string>
+    <string name="chart_time_per_week">时间/周</string>
+    <string name="collapse">收起</string>
+    <string name="cost">费用</string>
+    <string name="cost_filter_all">全部</string>
+    <string name="cost_filter_has_cost">有费用</string>
+    <string name="cost_filter_no_cost">无费用</string>
+    <string name="countries_visited_title">已到访国家</string>
+    <string name="country_first_visit">首次到访</string>
+    <string name="country_last_visit">最近到访</string>
+    <string name="current_avg">当前平均</string>
+    <string name="current_charge_elapsed">已用时间</string>
+    <string name="current_charge_estimated_end">预估结束</string>
+    <string name="current_charge_live">实时</string>
+    <string name="current_charge_not_charging">未充电</string>
+    <string name="current_charge_starting">启动中...</string>
+    <string name="current_charge_unsupported">不支持</string>
+    <string name="current_max">当前最大</string>
+    <string name="current_min">当前最小</string>
+    <string name="current_profile">当前配置</string>
+    <string name="dc_unplug_warning_message">请拔下直流充电枪。</string>
+    <string name="dc_unplug_warning_title">直流拔枪警告</string>
+    <string name="debug_sentry_simulate_event">模拟哨兵事件</string>
+    <string name="debug_tpms_clear_state">清除胎压状态</string>
+    <string name="debug_tpms_run_now">立即运行胎压检测</string>
+    <string name="debug_tpms_simulate_warning">模拟胎压警告</string>
+    <string name="deselect_all">取消全选</string>
+    <string name="drive_details_title">行程详情</string>
+    <string name="drive_history">行程历史</string>
+    <string name="drive_start_legend">起点</string>
+    <plurals name="drives_count">
+        <item quantity="other">%1$d 次行程</item>
+    </plurals>
+    <string name="duration">时长</string>
+    <string name="duration_label">时长</string>
+    <string name="efficiency">效率</string>
+    <string name="elevation">海拔</string>
+    <string name="elevation_profile">海拔曲线</string>
+    <string name="end">结束</string>
+    <string name="energy">能量</string>
+    <string name="energy_added">已充能量</string>
+    <string name="energy_added_header">已充能量</string>
+    <string name="estimated_range_description">基于近期驾驶习惯</string>
+    <string name="expand">展开</string>
+    <string name="filter_all">全部</string>
+    <string name="filter_commute_km">通勤 (&lt; 50km)</string>
+    <string name="filter_commute_mi">通勤 (&lt; 30mi)</string>
+    <string name="filter_day_trip_km">短途 (50-200km)</string>
+    <string name="filter_day_trip_mi">短途 (30-125mi)</string>
+    <string name="filter_last_30_days">近 30 天</string>
+    <string name="filter_last_7_days">近 7 天</string>
+    <string name="filter_last_90_days">近 90 天</string>
+    <string name="filter_location">位置</string>
+    <string name="filter_road_trip_km">长途 (200km+)</string>
+    <string name="filter_road_trip_mi">长途 (125mi+)</string>
+    <string name="filter_today">今天</string>
+    <plurals name="format_charges_on_map">
+        <item quantity="other">%1$d 个在地图上</item>
+    </plurals>
+    <plurals name="format_countries_count">
+        <item quantity="other">%1$d 个国家</item>
+    </plurals>
+    <string name="format_days_count">%1$d 天</string>
+    <string name="format_drives_count">%1$d 次行程</string>
+    <plurals name="format_drives_on_map">
+        <item quantity="other">%1$d 个在地图上</item>
+    </plurals>
+    <string name="gain">增益</string>
+    <string name="gap_type_driving">行驶</string>
+    <string name="geocode_progress_status">%1$d/%2$d</string>
+    <string name="geocode_progress_title">地理编码</string>
+    <string name="hide_password">隐藏密码</string>
+    <string name="hide_token">隐藏令牌</string>
+    <string name="info_about_calculation">关于此计算</string>
+    <string name="inside">车内</string>
+    <string name="loss">损失</string>
+    <string name="map_mode_charges">充电</string>
+    <string name="map_mode_drives">行程</string>
+    <string name="max_accel">最大加速度</string>
+    <string name="max_speed">最高速度</string>
+    <string name="maximum">最大值</string>
+    <string name="mileage_avg_month">平均/月</string>
+    <string name="mileage_avg_year">平均/年</string>
+    <string name="mileage_avg_year_message">年平均行驶距离</string>
+    <string name="mileage_avg_year_title">年平均</string>
+    <string name="mileage_by_day">按天</string>
+    <string name="mileage_by_month">按月</string>
+    <string name="mileage_by_year">按年</string>
+    <string name="mileage_drive_count">行程数</string>
+    <string name="mileage_drives">行程</string>
+    <string name="mileage_no_data">暂无数据</string>
+    <string name="mileage_no_data_year">本年无数据</string>
+    <string name="mileage_recent_trips">最近行程</string>
+    <string name="mileage_total">总计</string>
+    <string name="min_regen">最小动能回收</string>
+    <string name="minimum">最小值</string>
+    <string name="more_information">更多信息</string>
+    <string name="name">名称</string>
+    <string name="no_charges_found">未找到充电记录</string>
+    <string name="no_countries_found">未找到国家</string>
+    <string name="no_drives_found">未找到行程</string>
+    <string name="no_regions_found">未找到地区</string>
+    <string name="outside">车外</string>
+    <string name="per_kwh">/kWh</string>
+    <string name="power">功率</string>
+    <string name="range_at_100">100%% 时续航</string>
+    <string name="record_biggest_charge">最大充电量</string>
+    <string name="record_biggest_drain">最大消耗</string>
+    <string name="record_biggest_gain">最大增益</string>
+    <string name="record_busiest_day">最忙的一天</string>
+    <string name="record_coldest_charge">最冷充电</string>
+    <string name="record_coldest_drive">最冷行程</string>
+    <string name="record_countries_visited">到访国家数</string>
+    <string name="record_highest_point">最高点</string>
+    <string name="record_hottest_charge">最热充电</string>
+    <string name="record_hottest_drive">最热行程</string>
+    <string name="record_longest_drive">最长行程</string>
+    <string name="record_longest_no_charging">最长未充电</string>
+    <string name="record_longest_no_driving">最长未行驶</string>
+    <string name="record_longest_range">最长续航</string>
+    <string name="record_longest_streak">最长连续</string>
+    <string name="record_most_climbing">最多爬坡</string>
+    <string name="record_most_distance_day">单日最远</string>
+    <string name="record_most_efficient">最高效</string>
+    <string name="record_most_expensive">最贵</string>
+    <string name="record_peak_power">峰值功率</string>
+    <string name="record_priciest_kwh">最贵 kWh</string>
+    <string name="record_top_speed">最高速度</string>
+    <string name="regions_visited_title">已到访地区</string>
+    <string name="route_map">路线地图</string>
+    <string name="search">搜索</string>
+    <string name="select_all">全选</string>
+    <string name="sentry_alert_detected">检测到警报</string>
+    <string name="sentry_history_current_session">当前会话</string>
+    <string name="sentry_history_empty">暂无历史</string>
+    <string name="sentry_history_no_alerts">无警报</string>
+    <string name="sentry_history_past">历史</string>
+    <string name="sentry_history_title">哨兵历史</string>
+    <string name="sentry_history_today">今天</string>
+    <string name="sentry_history_yesterday">昨天</string>
+    <string name="settings_accept_invalid_certs">接受无效证书</string>
+    <string name="settings_accept_invalid_certs_hint">允许自签名证书</string>
+    <string name="settings_accept_invalid_certs_warning">警告：这会降低安全性</string>
+    <string name="settings_advanced_network">高级网络</string>
+    <string name="settings_api_token_hint">输入你的 API 令牌</string>
+    <string name="settings_api_token_label">API 令牌</string>
+    <string name="settings_api_token_placeholder">输入令牌</string>
+    <string name="settings_connect_description">连接到你的 TeslaMate 实例</string>
+    <string name="settings_connect_title">连接</string>
+    <string name="settings_connected">已连接</string>
+    <string name="settings_currency_label">货币</string>
+    <string name="settings_currency_select">选择货币</string>
+    <string name="settings_display_title">显示</string>
+    <string name="settings_extra">其他</string>
+    <string name="settings_http_basic_auth_hint">HTTP 基本认证</string>
+    <string name="settings_http_basic_auth_password_label">密码</string>
+    <string name="settings_http_basic_auth_password_placeholder">输入密码</string>
+    <string name="settings_http_basic_auth_username_label">用户名</string>
+    <string name="settings_http_basic_auth_username_placeholder">输入用户名</string>
+    <string name="settings_palette_preview">调色板预览</string>
+    <string name="settings_primary_server">主服务器</string>
+    <string name="settings_report_issue">报告问题</string>
+    <string name="settings_resync_button">重新同步</string>
+    <string name="settings_resync_confirm">确认重新同步</string>
+    <string name="settings_resync_dialog_text_delete">这将删除所有本地数据。</string>
+    <string name="settings_resync_dialog_text_prefix">重新同步将</string>
+    <string name="settings_resync_dialog_text_suffix">并从服务器重新下载。</string>
+    <string name="settings_resync_dialog_title">重新同步数据</string>
+    <string name="settings_resync_hint">强制全量数据重新同步</string>
+    <string name="settings_resyncing">重新同步中...</string>
+    <string name="settings_save">保存</string>
+    <string name="settings_secondary_server">备用服务器</string>
+    <string name="settings_secondary_url_hint">备用服务器地址</string>
+    <string name="settings_secondary_url_label">备用地址</string>
+    <string name="settings_secondary_url_placeholder">https://secondary.example.com</string>
+    <string name="settings_server_url_label">服务器地址</string>
+    <string name="settings_server_url_placeholder">https://example.com</string>
+    <string name="settings_short_dialog_text">确定吗？</string>
+    <string name="settings_short_dialog_title">确认</string>
+    <string name="settings_show_short_hint">显示缩写值</string>
+    <string name="settings_show_short_label">简短值</string>
+    <string name="settings_test_connection">测试连接</string>
+    <string name="show_password">显示密码</string>
+    <string name="show_token">显示令牌</string>
+    <string name="soc_energy_added">已充能量</string>
+    <string name="soc_instant_power">即时功率</string>
+    <string name="soc_now">当前电量</string>
+    <string name="soc_start">起始电量</string>
+    <string name="soc_target">目标电量</string>
+    <string name="sort">排序</string>
+    <string name="sort_alphabetically">按字母排序</string>
+    <string name="sort_by_charges">按充电次数</string>
+    <string name="sort_by_distance">按距离</string>
+    <string name="sort_by_drive_count">按行程数</string>
+    <string name="sort_by_energy">按能量</string>
+    <string name="sort_by_first_visit">按首次到访</string>
+    <string name="speed">速度</string>
+    <string name="start">开始</string>
+    <string name="stats_avg_cost_kwh">平均费用/kWh</string>
+    <string name="stats_avg_efficiency">平均效率</string>
+    <string name="stats_category_battery">电池</string>
+    <string name="stats_category_drives">行程</string>
+    <string name="stats_category_misc">其他</string>
+    <string name="stats_category_weather">天气</string>
+    <string name="stats_charges_overview">充电概览</string>
+    <string name="stats_cost_per_distance">费用/距离</string>
+    <string name="stats_deep_sync_title">深度同步</string>
+    <string name="stats_drives_overview">行程概览</string>
+    <string name="stats_driving_days">行驶天数</string>
+    <string name="stats_empty">暂无统计数据</string>
+    <string name="stats_energy_used">已用能量</string>
+    <string name="stats_records">记录</string>
+    <string name="stats_sync_complete">同步完成</string>
+    <string name="stats_sync_percent">%%</string>
+    <string name="stats_syncing">同步中...</string>
+    <string name="stats_temperature_extremes">极端温度</string>
+    <string name="stats_title">统计</string>
+    <string name="stats_total_charges">总充电次数</string>
+    <string name="stats_total_drives">总行程数</string>
+    <string name="stats_while_driving">行驶中</string>
+    <string name="summary">摘要</string>
+    <string name="symbol">符号</string>
+    <string name="sync_phase_charges">充电</string>
+    <string name="sync_phase_drives">行程</string>
+    <string name="sync_phase_summaries">摘要</string>
+    <string name="total">总计</string>
+    <string name="total_cost">总费用</string>
+    <string name="total_energy">总能量</string>
+    <string name="total_sessions">总会话数</string>
+    <string name="total_time">总时间</string>
+    <string name="total_trips">总行程数</string>
+    <string name="trip">行程</string>
+    <string name="unknown_location">未知位置</string>
+    <string name="used">已用</string>
+    <string name="voltage_and_current_profile">电压 &amp; 电流</string>
+    <string name="voltage_avg">平均电压</string>
+    <string name="voltage_max">最大电压</string>
+    <string name="voltage_min">最小电压</string>
+    <string name="voltage_profile">电压曲线</string>
+    <string name="weather_card_title">天气</string>
+    <string name="weather_distance">距离</string>
+    <string name="weather_end">结束</string>
+    <string name="weather_loading">加载天气中...</string>
+    <string name="weather_start">开始</string>
+    <string name="weather_time">时间</string>
+    <string name="weather_unavailable">天气数据不可用</string>
+    <string name="weather_weather">天气</string>
+
+    <!-- Settings additional (legacy keys) -->
+    <string name="connect">连接</string>
+    <string name="connect_description">连接到你的 TeslaMate 实例</string>
+    <string name="server_url_placeholder">https://example.com</string>
+    <string name="api_token_placeholder">输入令牌</string>
+    <string name="advanced_network">高级网络</string>
+    <string name="accept_invalid_certs">接受无效证书</string>
+    <string name="accept_invalid_certs_hint">允许自签名证书</string>
+    <string name="accept_invalid_certs_warning">警告：这会降低安全性</string>
+    <string name="display">显示</string>
+    <string name="currency">货币</string>
+    <string name="select_currency">选择货币</string>
+    <string name="tariff_configuration">分时电价配置</string>
+    <string name="tariff_configuration_hint">启用峰/平/谷电价计算充电费用</string>
+    <string name="extra">其他</string>
+    <string name="palette_preview">调色板预览</string>
+    <string name="secondary_server">备用服务器</string>
+    <string name="secondary_url_label">备用地址</string>
+    <string name="secondary_url_placeholder">https://secondary.example.com</string>
+    <string name="secondary_url_hint">备用服务器地址</string>
+    <string name="http_basic_auth">HTTP 基本认证</string>
+    <string name="http_basic_auth_hint">HTTP 基本认证</string>
+    <string name="http_basic_auth_username_label">用户名</string>
+    <string name="http_basic_auth_username_placeholder">输入用户名</string>
+    <string name="http_basic_auth_password_label">密码</string>
+    <string name="http_basic_auth_password_placeholder">输入密码</string>
+    <string name="show_short_hint">显示缩写值</string>
+    <string name="show_short_label">简短值</string>
+    <string name="resync">重新同步</string>
+    <string name="resync_hint">强制全量数据重新同步</string>
+    <string name="resync_confirm">确认重新同步</string>
+    <string name="resync_dialog_title">重新同步数据</string>
+    <string name="resync_dialog_text_prefix">重新同步将</string>
+    <string name="resync_dialog_text_suffix">并从服务器重新下载。</string>
+    <string name="resync_dialog_text_delete">这将删除所有本地数据。</string>
+    <string name="resyncing">重新同步中…</string>
+    <string name="report_issue">报告问题</string>
+    <string name="connected">已连接</string>
+    <string name="short_dialog_title">确认</string>
+    <string name="short_dialog_text">确定吗？</string>
+
+    <!-- Settings extra -->
+    <string name="instances">实例</string>
+    <string name="select_language">选择语言</string>
+    <string name="edit_instance">编辑实例</string>
+
+    <!-- 3D Vehicle -->
+    <string name="vehicle_3d_title">3D 车辆</string>
+    <string name="vehicle_3d_gesture_hint">捏合缩放 · 拖动旋转</string>
+    <string name="vehicle_3d_controls">车辆控制</string>
+    <string name="vehicle_3d_open_doors">打开车门</string>
+    <string name="vehicle_3d_close_doors">关闭车门</string>
+    <string name="vehicle_3d_open_port">打开充电口</string>
+    <string name="vehicle_3d_close_port">关闭充电口</string>
+    <string name="vehicle_3d_open_frunk">打开前备箱</string>
+    <string name="vehicle_3d_close_frunk">关闭前备箱</string>
+    <string name="vehicle_3d_reset_view">重置视角</string>
+
+    <!-- Trip detail extra -->
+    <string name="trip_not_found">未找到行程</string>
+    <string name="kwh_charged">kWh 已充入</string>
+
+    <!-- ViewModel errors -->
+    <string name="error_save_settings">保存设置失败</string>
+    <string name="resync_started">全量重新同步已开始。所有缓存数据已清除。请在统计页面查看进度。</string>
+    <string name="error_resync">启动重新同步失败：%1$s</string>
+    <string name="debug_tpms_simulated">已模拟 %1$s 胎压警告</string>
+    <string name="debug_sentry_simulated">已模拟哨兵事件 #%1$d</string>
+    <string name="error_load_years">加载年份失败：%1$s</string>
+    <string name="error_load_counts">加载计数失败：%1$s</string>
+    <string name="error_export">导出失败</string>
+    <string name="error_load_report">加载报告失败</string>
+    <string name="error_load_stats">加载统计数据失败</string>
+    <string name="error_load_regions">加载地区失败</string>
+    <string name="error_load_countries">加载国家失败</string>
+    <string name="error_invalid_date">无效日期</string>
+
+    <!-- Annual Report -->
+    <string name="annual_report_title">年度报告 %d</string>
+    <string name="annual_report_no_data">%d 年暂无数据</string>
+    <string name="annual_report_generate_pdf">生成 PDF 报告</string>
+    <string name="annual_report_summary">年度摘要</string>
+    <string name="annual_report_monthly_trends">月度趋势</string>
+    <string name="annual_report_distance_km">距离 (km)</string>
+    <string name="annual_report_drives_per_month">每月行程数</string>
+    <string name="annual_report_energy_added_kwh">已充电量 (kWh)</string>
+    <string name="annual_report_driving_habits">驾驶习惯</string>
+    <string name="annual_report_avg_drive_duration">平均行程时长</string>
+    <string name="annual_report_unique_driving_days">行驶天数</string>
+    <string name="annual_report_drives_per_day">每日行程数</string>
+    <string name="annual_report_excellent">优秀</string>
+    <string name="annual_report_good">良好</string>
+    <string name="annual_report_average">一般</string>
+    <string name="annual_report_high">偏高</string>
+    <string name="annual_report_efficiency_rating">效率评级</string>
+    <string name="annual_report_top_speed">最高速度</string>
+    <string name="annual_report_busiest_day">最忙的一天</string>
+    <string name="annual_report_most_distance_day">单日最远</string>
+    <string name="annual_report_na">无数据</string>
+    <string name="label_charges">充电</string>
+    <string name="record_fastest_drive">最快行程</string>
+
+    <!-- PDF Report -->
+    <string name="pdf_report_title">PDF 报告 %d</string>
+    <string name="pdf_report_share_title">分享年度报告</string>
+    <string name="pdf_report_description">生成 %d 年度驾驶和充电数据的 PDF 摘要。</string>
+    <string name="pdf_report_vehicle_summary">MateLink 车辆摘要</string>
+    <string name="pdf_report_total_distance">总距离：</string>
+    <string name="pdf_report_total_drives">总行程数：</string>
+    <string name="pdf_report_energy_used">已用能量：</string>
+    <string name="pdf_report_charges_label">充电次数：</string>
+    <string name="pdf_report_avg_efficiency">平均效率：</string>
+    <string name="pdf_report_generate_share">生成并分享 PDF</string>
+    <string name="pdf_report_energy_added_label">已充电量：</string>
+    <string name="pdf_report_total_cost_label">总费用：</string>
+    <string name="pdf_report_longest_drive">最长行程：</string>
+    <string name="pdf_report_fastest_drive">最快行程：</string>
+    <string name="pdf_report_most_efficient">最高效：</string>
+    <string name="pdf_report_distance_by_month">月度距离 (km)</string>
+    <string name="pdf_report_energy_consumed_by_month">月度消耗能量 (kWh)</string>
+    <string name="pdf_report_energy_added_by_month">月度已充电量 (kWh)</string>
+    <string name="pdf_report_no_monthly_data">暂无月度数据。</string>
+    <string name="pdf_report_avg_drive_duration">平均行程时长：</string>
+    <string name="pdf_report_driving_days">行驶天数：</string>
+    <string name="pdf_report_top_speed_label">最高速度：</string>
+    <string name="pdf_report_efficiency_rating_label">效率评级：</string>
+    <string name="pdf_report_generated_by">由 MateLink 生成</string>
+
+    <!-- Export -->
+    <string name="export_title">导出数据</string>
+    <string name="export_format_title">导出格式</string>
+    <string name="export_data_to_export">导出数据</string>
+    <string name="export_date_range">日期范围</string>
+    <string name="export_drives">行程</string>
+    <string name="export_charges">充电</string>
+    <string name="export_both">全部</string>
+    <string name="export_format_label">格式：</string>
+    <string name="export_data_label">数据：</string>
+    <string name="export_range_label">范围：</string>
+    <string name="export_drives_label">行程数：</string>
+    <string name="export_charges_label">充电次数：</string>
+    <string name="export_drives_charges">行程 + 充电</string>
+    <string name="export_summary">导出摘要</string>
+    <string name="export_share">导出并分享</string>
+    <string name="export_share_title">分享导出</string>
 </resources>

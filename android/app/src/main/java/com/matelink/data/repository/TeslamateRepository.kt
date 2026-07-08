@@ -16,6 +16,7 @@ import com.matelink.data.local.AppSettings
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.di.TeslamateApiFactory
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import com.squareup.moshi.JsonDataException
 import com.squareup.moshi.JsonEncodingException
 import java.net.ConnectException
@@ -74,11 +75,15 @@ private fun Throwable.isJsonParsingError(): Boolean {
 @Singleton
 class TeslamateRepository @Inject constructor(
     private val apiFactory: TeslamateApiFactory,
-    private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore,
+    private val settingsRepository: SettingsRepository
 ) {
     companion object {
         private const val TAG = "TeslamateRepository"
     }
+
+    private suspend fun isMockMode(): Boolean =
+        settingsRepository.mockMode.firstOrNull() == true
 
     // Cache: true = endpoint exists (API 1.24+), false = 404 (older API)
     private val currentChargeApiAvailable = mutableMapOf<Int, Boolean>()
@@ -90,6 +95,7 @@ class TeslamateRepository @Inject constructor(
      * Result is cached for the app session since the API version doesn't change at runtime.
      */
     suspend fun isCurrentChargeAvailable(carId: Int): Boolean {
+        if (isMockMode()) { currentChargeApiAvailable[carId] = true; return true }
         currentChargeApiAvailable[carId]?.let { return it }
         val result = executeWithFallback { api ->
             val response = api.getCurrentCharge(carId)
@@ -199,6 +205,7 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun testConnection(serverUrl: String, acceptInvalidCerts: Boolean = false): ApiResult<Unit> {
+        if (isMockMode()) return ApiResult.Success(Unit)
         return try {
             val api = apiFactory.create(serverUrl, acceptInvalidCerts)
             val response = api.ping()
@@ -215,6 +222,7 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getCars(): ApiResult<List<CarData>> {
+        if (isMockMode()) return ApiResult.Success(MockDataProvider.getCars())
         return executeWithFallback { api ->
             try {
                 val response = api.getCars()
@@ -231,6 +239,11 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getCar(carId: Int): ApiResult<CarData> {
+        if (isMockMode()) {
+            val car = MockDataProvider.getCars().firstOrNull { it.carId == carId }
+                ?: return ApiResult.Error("No car data returned")
+            return ApiResult.Success(car)
+        }
         return executeWithFallback { api ->
             try {
                 val response = api.getCar(carId)
@@ -251,6 +264,7 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getCarStatus(carId: Int): ApiResult<CarStatusWithUnits> {
+        if (isMockMode()) return ApiResult.Success(CarStatusWithUnits(MockDataProvider.getCarStatus(), MockDataProvider.getUnits()))
         return executeWithFallback { api ->
             try {
                 val response = api.getCarStatus(carId)
@@ -279,6 +293,7 @@ class TeslamateRepository @Inject constructor(
         page: Int = 1,
         show: Int = 50000
     ): ApiResult<List<ChargeData>> {
+        if (isMockMode()) return ApiResult.Success(MockDataProvider.getCharges())
         return executeWithFallback { api ->
             try {
                 val response = api.getCharges(carId, startDate, endDate, page = page, show = show)
@@ -295,6 +310,7 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getCurrentCharge(carId: Int): ApiResult<CurrentChargeOutcome> {
+        if (isMockMode()) return ApiResult.Success(CurrentChargeOutcome.NoActiveCharge)
         return executeWithFallback { api ->
             try {
                 val response = api.getCurrentCharge(carId)
@@ -320,6 +336,7 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getChargeDetail(carId: Int, chargeId: Int): ApiResult<ChargeDetail> {
+        if (isMockMode()) return ApiResult.Success(MockDataProvider.getChargeDetail(chargeId))
         return executeWithFallback { api ->
             try {
                 val response = api.getChargeDetail(carId, chargeId)
@@ -346,6 +363,7 @@ class TeslamateRepository @Inject constructor(
         page: Int = 1,
         show: Int = 50000
     ): ApiResult<List<DriveData>> {
+        if (isMockMode()) return ApiResult.Success(MockDataProvider.getDrives())
         return executeWithFallback { api ->
             try {
                 val response = api.getDrives(carId, startDate, endDate, page = page, show = show)
@@ -362,6 +380,7 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getDriveDetail(carId: Int, driveId: Int): ApiResult<DriveDetail> {
+        if (isMockMode()) return ApiResult.Success(MockDataProvider.getDriveDetail(driveId))
         return executeWithFallback { api ->
             try {
                 val response = api.getDriveDetail(carId, driveId)
@@ -382,6 +401,7 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getBatteryHealth(carId: Int): ApiResult<BatteryHealth> {
+        if (isMockMode()) return ApiResult.Success(MockDataProvider.getBatteryHealth())
         return executeWithFallback { api ->
             try {
                 val response = api.getBatteryHealth(carId)
@@ -402,6 +422,7 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getUpdates(carId: Int): ApiResult<List<UpdateData>> {
+        if (isMockMode()) return ApiResult.Success(MockDataProvider.getUpdates())
         return executeWithFallback { api ->
             try {
                 val response = api.getUpdates(carId, page = 1, show = 50000)
@@ -418,6 +439,7 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getGlobalSettings(): ApiResult<GlobalSettingsData> {
+        if (isMockMode()) return ApiResult.Success(MockDataProvider.getGlobalSettings())
         return executeWithFallback { api ->
             try {
                 val response = api.getGlobalSettings()

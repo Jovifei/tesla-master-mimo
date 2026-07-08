@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
@@ -59,6 +60,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.SpanStyle
@@ -85,7 +87,7 @@ import com.matelink.ui.theme.StatusSuccess
 @Composable
 fun SettingsScreen(
     onNavigateToDashboard: () -> Unit,
-    onNavigateToPalettePreview: () -> Unit = {},
+    onNavigateToTariffConfig: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
     instanceViewModel: InstanceViewModel = hiltViewModel()
 ) {
@@ -104,6 +106,15 @@ fun SettingsScreen(
         uiState.successMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.clearSuccessMessage()
+        }
+    }
+
+    // Handle locale change - recreate activity
+    val activity = LocalContext.current as? android.app.Activity
+    LaunchedEffect(uiState.needsRecreate) {
+        if (uiState.needsRecreate) {
+            viewModel.clearNeedsRecreate()
+            activity?.recreate()
         }
     }
 
@@ -128,13 +139,15 @@ fun SettingsScreen(
                 onHttpBasicAuthUsernameChange = viewModel::updateHttpBasicAuthUsername,
                 onHttpBasicAuthPasswordChange = viewModel::updateHttpBasicAuthPassword,
                 onAcceptInvalidCertsChange = viewModel::updateAcceptInvalidCerts,
+                onLanguageChange = viewModel::updateLanguage,
                 onCurrencyChange = viewModel::updateCurrency,
                 onShowShortDrivesChargesChange = viewModel::updateShowShortDrivesCharges,
+                onMockModeChange = viewModel::updateMockMode,
                 onTestConnection = viewModel::testConnection,
                 onSave = {
                     viewModel.saveSettings(onNavigateToDashboard)
                 },
-                onPalettePreview = onNavigateToPalettePreview,
+                onNavigateToTariffConfig = onNavigateToTariffConfig,
                 onForceResync = viewModel::forceResync,
                 onSimulateTpmsWarning = viewModel::simulateTpmsWarning,
                 onClearTpmsWarning = viewModel::clearTpmsWarning,
@@ -212,11 +225,13 @@ private fun SettingsContent(
     onHttpBasicAuthUsernameChange: (String) -> Unit,
     onHttpBasicAuthPasswordChange: (String) -> Unit,
     onAcceptInvalidCertsChange: (Boolean) -> Unit,
+    onLanguageChange: (String) -> Unit = {},
     onCurrencyChange: (String) -> Unit,
     onShowShortDrivesChargesChange: (Boolean) -> Unit,
+    onMockModeChange: (Boolean) -> Unit = {},
     onTestConnection: () -> Unit,
     onSave: () -> Unit,
-    onPalettePreview: () -> Unit = {},
+    onNavigateToTariffConfig: () -> Unit = {},
     onForceResync: () -> Unit = {},
     onSimulateTpmsWarning: (TirePosition) -> Unit = {},
     onClearTpmsWarning: () -> Unit = {},
@@ -235,6 +250,7 @@ private fun SettingsContent(
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
     var basicAuthPasswordVisible by remember { mutableStateOf(false) }
+    var languageDropdownExpanded by remember { mutableStateOf(false) }
     var currencyDropdownExpanded by remember { mutableStateOf(false) }
     var showShortDrivesChargesInfoDialog by remember { mutableStateOf(false) }
     var showResyncConfirmDialog by remember { mutableStateOf(false) }
@@ -250,7 +266,7 @@ private fun SettingsContent(
         // === Instances Section ===
         if (instanceUiState.instances.isNotEmpty()) {
             Text(
-                text = "Instances",
+                text = stringResource(R.string.instances),
                 style = MaterialTheme.typography.titleMedium
             )
 
@@ -291,13 +307,13 @@ private fun SettingsContent(
                         Row {
                             if (!isActive) {
                                 TextButton(onClick = { onInstanceSwitch(instance.id) }) {
-                                    Text("Switch")
+                                    Text(stringResource(R.string.switch_instance))
                                 }
                             }
                             IconButton(onClick = { onInstanceEdit(instance) }) {
                                 Icon(
                                     imageVector = Icons.Filled.Info,
-                                    contentDescription = "Edit",
+                                    contentDescription = stringResource(R.string.edit),
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -312,7 +328,7 @@ private fun SettingsContent(
                 onClick = onInstanceAdd,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Add Instance")
+                Text(stringResource(R.string.add_instance))
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -545,6 +561,47 @@ private fun SettingsContent(
         //  Android currently follows system theme only.
         //  Ref: app_mimo/ios/MateLink/Features/Settings/SettingsView.swift
 
+        // Language selection
+        val languageOptions = com.matelink.locale.LocaleHelper.SUPPORTED_LOCALES
+        val currentLanguageName = languageOptions.firstOrNull { it.first == uiState.languageCode }?.second
+            ?: languageOptions.first().second
+
+        Box {
+            OutlinedTextField(
+                value = currentLanguageName,
+                onValueChange = {},
+                label = { Text(stringResource(R.string.language)) },
+                modifier = Modifier.fillMaxWidth(),
+                readOnly = true,
+                trailingIcon = {
+                    IconButton(onClick = { languageDropdownExpanded = true }) {
+                        Icon(
+                            imageVector = Icons.Filled.ArrowDropDown,
+                            contentDescription = stringResource(R.string.select_language)
+                        )
+                    }
+                }
+            )
+
+            DropdownMenu(
+                expanded = languageDropdownExpanded,
+                onDismissRequest = { languageDropdownExpanded = false },
+                modifier = Modifier.fillMaxWidth(0.9f)
+            ) {
+                languageOptions.forEach { (code, name) ->
+                    DropdownMenuItem(
+                        text = { Text(name) },
+                        onClick = {
+                            onLanguageChange(code)
+                            languageDropdownExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // Currency selection
         val selectedCurrency = Currency.findByCode(uiState.currencyCode)
 
@@ -570,10 +627,10 @@ private fun SettingsContent(
                 onDismissRequest = { currencyDropdownExpanded = false },
                 modifier = Modifier.fillMaxWidth(0.9f)
             ) {
-                Currency.ALL.forEach { currency ->
+                com.matelink.data.model.Currency.entries.forEach { currency ->
                     DropdownMenuItem(
                         text = {
-                            Text("${currency.symbol} ${currency.code} - ${currency.name}")
+                            Text("${currency.symbol} ${currency.code}")
                         },
                         onClick = {
                             onCurrencyChange(currency.code)
@@ -586,9 +643,69 @@ private fun SettingsContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // TODO(parity): iOS SettingsView has a mock mode toggle (isMockMode) for development/testing.
-        //  Android has no equivalent toggle; mock mode is controlled only via build config.
-        //  Ref: app_mimo/ios/MateLink/Features/Settings/SettingsView.swift
+        // === Tariff Config Entry ===
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onNavigateToTariffConfig() },
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.tariff_title),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = stringResource(R.string.tariff_enable_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Mock mode toggle
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.mock_mode),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = stringResource(R.string.mock_mode_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = uiState.mockMode,
+                onCheckedChange = onMockModeChange
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         // === Extra Settings (Collapsed by default) ===
         HorizontalDivider()
@@ -770,19 +887,10 @@ private fun SettingsContent(
             }
         }
 
-        // Debug: Palette Preview button (only visible in debug builds)
         if (com.matelink.BuildConfig.DEBUG) {
             var tpmsDropdownExpanded by remember { mutableStateOf(false) }
 
             Spacer(modifier = Modifier.height(32.dp))
-            OutlinedButton(
-                onClick = onPalettePreview,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.settings_palette_preview))
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
 
             // TPMS Debug: Simulate Warning with tire selection
             Box {
@@ -880,14 +988,14 @@ private fun SettingsContent(
         AlertDialog(
             onDismissRequest = onInstanceEditorClose,
             title = {
-                Text(if (editor.id == null) "Add Instance" else "Edit Instance")
+                Text(if (editor.id == null) stringResource(R.string.add_instance) else stringResource(R.string.edit_instance))
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = editor.name,
                         onValueChange = onInstanceEditorNameChange,
-                        label = { Text("Instance Name") },
+                        label = { Text(stringResource(R.string.instance_name)) },
                         placeholder = { Text("e.g., My Model 3") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -895,7 +1003,7 @@ private fun SettingsContent(
                     OutlinedTextField(
                         value = editor.serverUrl,
                         onValueChange = onInstanceEditorUrlChange,
-                        label = { Text("Server URL") },
+                        label = { Text(stringResource(R.string.server_url_label)) },
                         placeholder = { Text("https://teslamate.local") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
@@ -904,7 +1012,7 @@ private fun SettingsContent(
                     OutlinedTextField(
                         value = editor.apiToken,
                         onValueChange = onInstanceEditorTokenChange,
-                        label = { Text("API Token") },
+                        label = { Text(stringResource(R.string.api_token_label)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -913,7 +1021,7 @@ private fun SettingsContent(
                         onValueChange = { v ->
                             v.toIntOrNull()?.let { onInstanceEditorCarIdChange(it) }
                         },
-                        label = { Text("Car ID") },
+                        label = { Text(stringResource(R.string.car_id)) },
                         placeholder = { Text("1") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -926,7 +1034,7 @@ private fun SettingsContent(
                     onClick = onInstanceEditorSave,
                     enabled = editor.serverUrl.isNotBlank() && editor.apiToken.isNotBlank()
                 ) {
-                    Text("Save")
+                    Text(stringResource(R.string.save))
                 }
             },
             dismissButton = {

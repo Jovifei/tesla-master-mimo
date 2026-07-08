@@ -2,6 +2,9 @@ package com.matelink.ui.screens.reports
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.content.Context
+import com.matelink.R
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.matelink.data.local.dao.MonthlyChargeAggregation
 import com.matelink.data.local.dao.MonthlyDriveAggregation
 import com.matelink.data.repository.StatsRepository
@@ -26,6 +29,7 @@ data class AnnualReportUiState(
 
 @HiltViewModel
 class AnnualReportViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val statsRepository: StatsRepository
 ) : ViewModel() {
 
@@ -49,7 +53,7 @@ class AnnualReportViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(availableYears = years)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                _uiState.value = _uiState.value.copy(error = "Failed to load years: ${e.message}")
+                _uiState.value = _uiState.value.copy(error = context.getString(R.string.error_load_years, e.message ?: ""))
             }
         }
     }
@@ -79,7 +83,7 @@ class AnnualReportViewModel @Inject constructor(
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = e.message ?: "Failed to load report"
+                    error = e.message ?: context.getString(R.string.error_load_report)
                 )
             }
         }

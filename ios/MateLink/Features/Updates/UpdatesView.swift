@@ -4,14 +4,25 @@ struct UpdatesView: View {
     @EnvironmentObject var state: AppState
     @State private var updates: [UpdateItem] = []
     @State private var loading = true
+    @State private var endpointUnavailable = false
 
     var body: some View {
         NavigationStack {
             Group {
                 if loading {
                     ProgressView("Loading...").padding()
+                } else if endpointUnavailable {
+                    UpdatesEmptyStateView(
+                        title: "Updates Endpoint Unavailable",
+                        systemImage: "desktopcomputer.trianglebadge.exclamationmark",
+                        message: "Firmware history is not available from the current server connection."
+                    )
                 } else if updates.isEmpty {
-                    ContentUnavailableView("No Updates", systemImage: "desktopcomputer", description: Text("No firmware updates recorded"))
+                    UpdatesEmptyStateView(
+                        title: "No Updates",
+                        systemImage: "desktopcomputer",
+                        message: "No firmware updates recorded"
+                    )
                 } else {
                     List {
                         Section("Version History") {
@@ -38,8 +49,44 @@ struct UpdatesView: View {
 
     func load() async {
         loading = true
-        updates = state.isMockMode ? await state.mock.getUpdates(state.currentCarId) : []
+        endpointUnavailable = false
+        if state.isMockMode {
+            updates = await state.mock.getUpdates(state.currentCarId)
+        } else if let api = state.real {
+            do {
+                let remote: [UpdateItem] = try await api.fetch("/api/v1/cars/\(state.currentCarId)/updates")
+                updates = remote
+            } catch {
+                updates = []
+                endpointUnavailable = true
+            }
+        } else {
+            updates = []
+            endpointUnavailable = true
+        }
         loading = false
+    }
+}
+
+private struct UpdatesEmptyStateView: View {
+    let title: String
+    let systemImage: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 36))
+                .foregroundColor(.secondary)
+            Text(title)
+                .font(.headline)
+            Text(message)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
     }
 }
 

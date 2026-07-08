@@ -128,12 +128,26 @@ struct ExportView: View {
 
     private func loadData() async {
         let carId = state.currentCarId
+        showError = false
+        errorMessage = ""
         if state.isMockMode {
             drives = await state.mock.getDrives(carId)
             charges = await state.mock.getCharges(carId)
         } else if let api = state.real {
-            drives = (try? await api.fetch("/api/v1/cars/\(carId)/drives")) ?? []
-            charges = (try? await api.fetch("/api/v1/cars/\(carId)/charges")) ?? []
+            do {
+                drives = try await api.fetch("/api/v1/cars/\(carId)/drives")
+                charges = try await api.fetch("/api/v1/cars/\(carId)/charges")
+            } catch {
+                drives = []
+                charges = []
+                errorMessage = "Unable to load real export data: \(error.localizedDescription)"
+                showError = true
+            }
+        } else {
+            drives = []
+            charges = []
+            errorMessage = "No TeslaMate instance is configured."
+            showError = true
         }
 
         var years = Set<Int>()

@@ -13,6 +13,12 @@ import SwiftUI
 import MapKit
 import CoreLocation
 
+private struct AmapAnnotationItem: Identifiable {
+    let id = UUID()
+    let coordinate: CLLocationCoordinate2D
+    let title: String
+}
+
 // MARK: - AmapView
 /// A SwiftUI map view that displays a single annotated location.
 ///
@@ -45,11 +51,11 @@ struct AmapView: View {
             center: coordinate,
             span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
         )
+        let annotations = [AmapAnnotationItem(coordinate: coordinate, title: title)]
 
-        Map(initialPosition: .region(region)) {
-            Marker(title, coordinate: coordinate)
+        Map(coordinateRegion: .constant(region), annotationItems: annotations) { item in
+            MapMarker(coordinate: item.coordinate, tint: .red)
         }
-        .mapStyle(.standard)
     }
 
     // MARK: - Coordinate Conversion
@@ -62,8 +68,7 @@ struct AmapView: View {
             return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
         }
         return GCJ02Converter.wgs84ToGcj02(
-            lat: latitude,
-            lng: longitude
+            coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
         )
     }
 

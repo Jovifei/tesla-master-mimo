@@ -26,7 +26,14 @@
     <string name="high_soc_warning">High charge level - consider reducing to 80-90% for daily use</string>
     <string name="tire_pressure">Tire Pressure</string>
     <string name="battery_trend">7-Day Battery Trend</string>
+    <string name="battery_trend_estimated_note">Estimated demo trend based on the current battery level until history data is connected.</string>
     <string name="km_range">%d km range</string>
+    <string name="charge_limit">Limit: %s</string>
+    <string name="vehicle">Vehicle</string>
+    <string name="lock">Lock</string>
+    <string name="plug">Plug</string>
+    <string name="refresh">Refresh</string>
+    <string name="elevation_label">Elevation: %1$s%2$s</string>
 
     <!-- Status -->
     <string name="state_online">Online</string>
@@ -42,6 +49,18 @@
     <string name="charge_power">Power</string>
     <string name="charge_added">Added</string>
     <string name="charge_remaining">Remaining</string>
+
+    <!-- Timeline -->
+    <string name="timeline_title">Timeline</string>
+    <string name="timeline_empty">暂无事件</string>
+    <string name="timeline_drive">行驶</string>
+    <string name="timeline_charge">充电</string>
+    <string name="timeline_distance_value">%.1f km</string>
+    <string name="timeline_battery_end">%d%%</string>
+    <string name="timeline_energy_added">%.1f kWh</string>
+    <string name="timeline_cost_value">¥%.2f</string>
+    <string name="timeline_unknown_route">未知路线</string>
+    <string name="timeline_unknown_location">未知地点</string>
 
     <!-- Drives -->
     <string name="drives_title">Drive History</string>
@@ -67,10 +86,806 @@
     <string name="mock_mode">Mock Mode</string>
     <string name="about">About</string>
     <string name="version">Version</string>
+    <string name="more_section_analysis">Data Analysis</string>
+    <string name="more_section_reports">Reports</string>
+    <string name="more_section_system">System</string>
+    <string name="more_status_title">Verification Status</string>
+    <string name="more_status_body">Some destinations still rely on preview, mock, or cached data until a TeslaMate connection is verified.</string>
+    <string name="more_item_statistics">Statistics</string>
+    <string name="more_item_battery_health">Battery Health</string>
+    <string name="more_item_mileage">Mileage</string>
+    <string name="more_item_trips">Trips</string>
+    <string name="more_item_software_updates">Software Updates</string>
+    <string name="more_item_sentry_history">Sentry History</string>
+    <string name="more_item_efficiency">Efficiency</string>
+    <string name="more_item_cost">Cost Analysis</string>
+    <string name="more_item_range">Range</string>
+    <string name="more_item_vampire">Standby Drain</string>
+    <string name="more_item_timeline">Timeline</string>
+    <string name="more_item_annual_report">Annual Report</string>
+    <string name="more_item_export_data">Export Data</string>
+    <string name="more_item_vehicle_3d_preview">3D Vehicle Preview</string>
+    <string name="about_tagline">Your Tesla data companion</string>
+    <string name="about_tech_stack">Tech Stack</string>
+    <string name="about_tech_android">Android - Kotlin - Jetpack Compose - Hilt - Room</string>
+    <string name="about_tech_ios">iOS - Swift - SwiftUI</string>
+    <string name="about_tech_web">Web - TypeScript - React - Vite</string>
+    <string name="about_data_source">Data Source</string>
+    <string name="about_data_source_self_hosted">Self-hosted TeslaMate + TeslaMateApi</string>
+    <string name="about_data_source_no_tesla">Does not connect to the official Tesla API.</string>
+    <string name="about_data_source_no_collection">Does not collect user data.</string>
+    <string name="about_links">Links</string>
+    <string name="about_link_github">GitHub: Jovifei/Tesla_MateLink</string>
+    <string name="about_link_license">License: MIT</string>
+    <string name="about_footer">Copyright 2026 JoviF - Made for Tesla owners</string>
+    <string name="notification_permission_title">Notification Permission</string>
+    <string name="notification_permission_message">Allow notifications for charging, sentry, TPMS, and software update alerts.</string>
+    <string name="notification_permission_grant">Allow</string>
 
     <!-- Common -->
     <string name="back">Back</string>
     <string name="loading">Loading...</string>
     <string name="no_data">No data available</string>
     <string name="offline">Offline - showing cached data</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- Tariff Config -->
+    <string name="tariff_title">Tariff Configuration</string>
+    <string name="tariff_enable_label">Time-of-Use Tariff</string>
+    <string name="tariff_enable_hint">Enable peak/flat/valley pricing for charging cost calculation</string>
+    <string name="tariff_peak">Peak</string>
+    <string name="tariff_flat">Flat</string>
+    <string name="tariff_valley">Valley</string>
+    <string name="tariff_price_label">Unit Price</string>
+    <string name="tariff_add_range">Add Time Range</string>
+    <string name="tariff_delete_range">Delete range</string>
+    <string name="tariff_add_range_title">Add Time Range</string>
+    <string name="tariff_start_hour">Start Hour</string>
+    <string name="tariff_end_hour">End Hour</string>
+    <string name="tariff_reset">Reset to Shanghai Defaults</string>
+    <string name="tariff_preview_title">Monthly Cost Preview</string>
+    <string name="tariff_saves">Saves</string>
+    <string name="tariff_costs">Costs</string>
+    <string name="tariff_assume_monthly">Assuming %d kWh monthly charging</string>
+
+    <!-- Efficiency Analysis -->
+    <string name="efficiency_title">Efficiency Analysis</string>
+    <string name="efficiency_avg_label">Average Efficiency</string>
+    <string name="efficiency_drive_count">Drives</string>
+    <string name="efficiency_total_distance">Total Distance</string>
+    <string name="efficiency_by_speed_title">Efficiency by Speed</string>
+    <string name="efficiency_by_speed_subtitle">Wh/km at different speed ranges</string>
+
+    <!-- Cost Analysis -->
+    <string name="cost_title">Cost Analysis</string>
+    <string name="cost_total">Total Cost</string>
+    <string name="cost_energy_added">Energy Added</string>
+    <string name="cost_charges_count">%d charges</string>
+    <string name="cost_monthly_breakdown">Monthly Breakdown</string>
+    <string name="cost_ac">AC Charging</string>
+    <string name="cost_dc">DC Charging</string>
+    <string name="cost_top_locations">Top Locations</string>
+    <string name="cost_location_count">%d charges</string>
+
+    <!-- Range Analysis -->
+    <string name="range_analysis_title">Range Analysis</string>
+    <string name="range_accuracy_title">Range Prediction Accuracy</string>
+    <string name="range_trip_count">Trips</string>
+    <string name="range_total_distance">Total Distance</string>
+    <string name="range_trip_list_title">Recent Trips (%d)</string>
+    <string name="range_estimated">Estimated</string>
+    <string name="range_actual">Actual</string>
+
+    <!-- Vampire Drain (Standby Power Consumption) -->
+    <string name="vampire_title">Standby Power Drain</string>
+    <string name="vampire_total_drain_label">Total Idle Drain</string>
+    <string name="vampire_total_drain_subtitle">Sum of all detected idle drain periods</string>
+    <string name="vampire_avg_power">Avg Power</string>
+    <string name="vampire_idle_periods">Idle Periods</string>
+    <string name="vampire_daily_title">Daily Drain</string>
+    <string name="vampire_daily_subtitle">Battery % lost while parked (no driving)</string>
+    <string name="vampire_recent_title">Recent Idle Periods</string>
+    <string name="vampire_tips_title">Optimization Tips</string>
+    <string name="vampire_tip_sentry_title">Sentry Mode</string>
+    <string name="vampire_tip_sentry_desc">Sentry mode consumes 250-300W. Disable when parked in safe locations to reduce standby drain significantly.</string>
+    <string name="vampire_tip_cabin_overheat_title">Cabin Overheat Protection</string>
+    <string name="vampire_tip_cabin_overheat_desc">This feature runs the AC to keep cabin temperature below threshold. Set to \"Off\" or \"No A/C\" in hot weather if not needed.</string>
+    <string name="vampire_tip_climate_title">Remote Climate</string>
+    <string name="vampire_tip_climate_desc">Preconditioning draws ~3-5 kW. Avoid repeated remote climate activations when the car is parked for extended periods.</string>
+    <string name="vampire_tip_updates_title">Software Updates</string>
+    <string name="vampire_tip_updates_desc">OTA updates and periodic check-ins cause brief wake-ups. Schedule updates during periods when the car will be plugged in.</string>
+    <string name="vampire_how_title">How This Works</string>
+    <string name="vampire_how_desc">Vampire drain is calculated by analyzing gaps between charge sessions. When the battery level drops without any recorded drive in between, the energy loss is attributed to standby power consumption. The estimated average power draw assumes a 75 kWh battery capacity.</string>
+    <string name="widget_description">Tesla vehicle status widget</string>
+
+    <!-- Duration formatting -->
+    <string name="chart_week_label">Week %1$d</string>
+    <string name="duration_months_weeks">%1$dm %2$dw</string>
+    <string name="duration_months">%1$dm</string>
+    <string name="duration_weeks_days">%1$dw %2$dd</string>
+    <string name="duration_weeks">%1$dw</string>
+    <string name="duration_days_hours">%1$dd %2$dh</string>
+    <string name="duration_days">%1$dd</string>
+    <string name="duration_hours_minutes">%1$dh %2$dm</string>
+    <string name="duration_hours">%1$dh</string>
+    <string name="duration_minutes">%1$dm</string>
+
+    <!-- Widget -->
+    <string name="widget_error_configure">Error loading widget</string>
+    <string name="widget_loading">Loading...</string>
+    <string name="no_vehicles_found">No vehicles found</string>
+    <string name="error_loading_data">Error loading data</string>
+    <string name="widget_select_car_title">Select Car</string>
+
+    <!-- Where Was I -->
+    <string name="you_were_here">You were here</string>
+    <string name="where_was_i_open_in_maps">Open in Maps</string>
+    <string name="mileage_title">Mileage</string>
+    <string name="speed_profile">Speed Profile</string>
+    <string name="distance">Distance</string>
+    <string name="battery_level">Battery Level</string>
+    <string name="power_profile">Power Profile</string>
+    <string name="parked_for">Parked for %1$s</string>
+    <string name="parked_since">Parked since %1$s</string>
+    <string name="where_was_i_driving">Driving</string>
+    <string name="where_was_i_charging">Charging</string>
+    <string name="where_was_i_parked">Parked</string>
+    <string name="where_was_i_heading_to">Heading to %1$s</string>
+    <string name="where_was_i_charging_at">Charging at %1$s</string>
+    <string name="where_was_i_parked_at">Parked at %1$s</string>
+
+    <!-- Weather conditions -->
+    <string name="weather_clear">Clear</string>
+    <string name="weather_partly_cloudy">Partly Cloudy</string>
+    <string name="weather_fog">Fog</string>
+    <string name="weather_drizzle">Drizzle</string>
+    <string name="weather_rain">Rain</string>
+    <string name="weather_snow">Snow</string>
+    <string name="weather_thunderstorm">Thunderstorm</string>
+
+    <!-- Software Versions -->
+    <string name="software_avg_interval">Avg Interval</string>
+    <string name="format_interval_days">%1$.1f days</string>
+    <string name="software_newest">Newest</string>
+    <string name="software_oldest">Oldest</string>
+    <string name="format_updates_count">%1$d updates</string>
+    <string name="format_updates_decimal">%.1f</string>
+    <string name="software_updates_per_month">updates/month</string>
+    <string name="unknown">Unknown</string>
+    <string name="software_view_release_notes">View Release Notes</string>
+    <string name="software_current_version">Current Version</string>
+    <string name="software_longest_installed">Longest Installed</string>
+    <string name="software_longest">Longest</string>
+    <string name="software_installed">Installed</string>
+    <string name="software_days">%1$d days</string>
+    <string name="software_duration">Duration</string>
+
+    <!-- Where Was I extra -->
+    <string name="where_was_i_screen_title">Where Was I</string>
+    <string name="where_was_i_no_data">No location data available</string>
+
+    <!-- Trips -->
+    <string name="trip_summary">Trip Summary</string>
+    <string name="trips_title">Trips</string>
+    <string name="total_distance">Total Distance</string>
+    <string name="trip_driving_time">Driving Time</string>
+    <string name="trip_energy_charged">Energy Charged</string>
+    <string name="trip_no_stops">No stops</string>
+    <string name="trip_one_stop">1 stop</string>
+    <string name="trip_n_stops">%1$d stops</string>
+    <string name="filter_all_time">All Time</string>
+    <string name="filter_custom">Custom</string>
+
+    <!-- Software extra -->
+    <string name="filter_last_6_months">Last 6 Months</string>
+    <string name="filter_last_year">Last Year</string>
+    <string name="software_title">Software</string>
+    <string name="software_update_history">Update History</string>
+    <string name="software_no_updates">No updates recorded</string>
+    <string name="software_overview">Overview</string>
+    <string name="software_total_updates">Total Updates</string>
+
+    <!-- Trip detail -->
+    <string name="trip_legs">Legs</string>
+    <string name="trip_charge_cost">Charge Cost</string>
+
+    <!-- Trip edit -->
+    <string name="trip_edit_merge_confirm_title">Merge Trips</string>
+    <string name="trip_edit_merge_confirm_body">Are you sure you want to merge these trips?</string>
+    <string name="trip_edit_merge_confirm">Merge</string>
+    <string name="trip_rename_dialog_title">Rename Trip</string>
+    <string name="trip_rename_field_label">Trip Name</string>
+    <string name="trip_rename_field_hint">Enter trip name</string>
+    <string name="save">Save</string>
+    <string name="language">Language</string>
+    <string name="mock_mode_hint">Use mock data instead of live server</string>
+    <string name="server_url_label">Server URL</string>
+    <string name="api_token_label">API Token</string>
+    <string name="switch_instance">Switch</string>
+    <string name="add_instance">Add Instance</string>
+    <string name="instance_name">Instance Name</string>
+    <string name="car_id">Car ID</string>
+    <string name="edit">Edit</string>
+    <string name="trip_edit_delete_confirm_title">Delete Trip</string>
+    <string name="trip_edit_delete_confirm_body">Are you sure you want to delete this trip?</string>
+    <string name="delete">Delete</string>
+    <string name="trip_create_cd">Create Trip</string>
+    <string name="trips_empty_title">No Trips Yet</string>
+    <string name="trips_empty_intro">Create your first trip to start tracking your journeys.</string>
+    <string name="trips_empty_rule_drives">Record drives with your Tesla</string>
+    <string name="trips_empty_rule_charge">Charge at different locations</string>
+    <string name="trips_empty_rule_distance">Build up distance over time</string>
+    <string name="trips_empty_create_hint">Tap the + button to create a trip</string>
+
+    <!-- Currency -->
+    <string name="currency_format">%1$s %2$.2f</string>
+
+    <!-- Stats -->
+    <string name="stats_no_drives_found">No drives found</string>
+    <string name="close">Close</string>
+    <string name="view_drive">View Drive</string>
+
+    <!-- Trip edit extra -->
+    <string name="trip_edit_add_leg_empty">No available legs</string>
+    <string name="trip_edit_selected_count">%1$d selected</string>
+    <string name="add">Add</string>
+    <string name="trip_edit_add_leg_title">Add Leg</string>
+    <string name="trip_edit_select_multiple">Select multiple</string>
+
+    <!-- Create trip -->
+    <string name="trip_create_title">Create Trip</string>
+    <string name="trip_create_save">Save Trip</string>
+    <string name="trip_create_name_hint">Trip name</string>
+    <string name="trip_create_add_legs">Add Legs</string>
+    <string name="trip_create_empty">No legs added yet</string>
+    <string name="trip_create_remove">Remove</string>
+    <string name="trip_create_pick_day">Pick a day</string>
+
+    <!-- Merge trip -->
+    <string name="trip_edit_merge_title">Merge Trip</string>
+    <string name="trip_edit_merge_empty">No trips to merge</string>
+
+    <!-- Trip detail extra -->
+    <string name="trip_detail_title">Trip Detail</string>
+    <string name="trip_rename_action">Rename</string>
+    <string name="trip_edit_delete">Delete</string>
+
+    <!-- Stats extra -->
+    <string name="stats_coldest">Coldest</string>
+    <string name="stats_cabin_temperature">Cabin Temperature</string>
+    <string name="stats_hottest">Hottest</string>
+    <string name="stats_ac_dc_ratio">AC/DC Ratio</string>
+    <string name="stats_ac_energy">AC Energy</string>
+    <string name="stats_dc_energy">DC Energy</string>
+    <string name="charging_ac">AC</string>
+    <string name="format_charges_count">%1$d charges</string>
+    <string name="charging_dc">DC</string>
+    <string name="view_details">View Details</string>
+    <string name="stats_sync_logs_title">Sync Logs</string>
+    <string name="gap_type_charging">Charging</string>
+    <string name="stats_gap_dialog_title">Gap Details</string>
+    <string name="format_days">%1$.1f days</string>
+    <string name="started">Started</string>
+    <string name="ended">Ended</string>
+    <string name="stats_range_record_title">Range Record</string>
+    <string name="from">From</string>
+    <string name="to">To</string>
+    <string name="stats_drives_count">%1$d drives</string>
+
+    <!-- TPMS -->
+    <string name="tpms_notification_title">Tire Pressure Warning</string>
+    <string name="tpms_notification_body">Check tire pressure</string>
+    <string name="tpms_notification_cleared">Tire pressure OK</string>
+    <string name="tire_fl_full">Front Left</string>
+    <string name="tire_fr_full">Front Right</string>
+    <string name="tire_rl_full">Rear Left</string>
+    <string name="tire_rr_full">Rear Right</string>
+    <string name="tpms_channel_name">Tire Pressure</string>
+    <string name="tpms_channel_description">Tire pressure monitoring alerts</string>
+
+    <!-- Charging notifications -->
+    <string name="charging_notification_title">Charging</string>
+    <string name="charging_notification_loading">Loading charging data...</string>
+    <string name="charging_notification_dc_finished_title">DC Charging Complete</string>
+    <string name="charging_notification_dc_finished_content">Your Tesla has finished DC charging.</string>
+    <string name="charging_channel_name">Charging</string>
+    <string name="charging_channel_description">Charging status notifications</string>
+
+    <!-- Sentry notifications -->
+    <string name="sentry_notification_title">Sentry Mode Alert</string>
+    <string name="sentry_action_open_tesla">Open Tesla</string>
+    <string name="sentry_channel_name">Sentry Mode</string>
+    <string name="sentry_channel_description">Sentry mode alert notifications</string>
+
+    <!-- Plurals -->
+    <plurals name="sentry_event_count">
+        <item quantity="one">%1$d event</item>
+        <item quantity="other">%1$d events</item>
+    </plurals>
+
+    <!-- Sentry extra -->
+    <plurals name="sentry_notification_body">
+        <item quantity="one">Sentry mode detected %1$d event near your Tesla.</item>
+        <item quantity="other">Sentry mode detected %1$d events near your Tesla.</item>
+    </plurals>
+
+    <!-- Car picker -->
+    <string name="car_picker_title">Select Car</string>
+    <string name="car_picker_model_variant">Model Variant</string>
+    <string name="car_picker_wheel_style">Wheel Style</string>
+    <string name="car_picker_reset_default">Reset to Default</string>
+    <string name="car_picker_tap_to_confirm">Tap to confirm</string>
+    <string name="car_picker_tap_to_select">Tap to select</string>
+    <string name="car_variant_my_legacy">Model Y Legacy</string>
+    <string name="car_variant_my_standard">Model Y Standard</string>
+    <string name="car_variant_my_premium">Model Y Premium</string>
+    <string name="car_variant_my_performance">Model Y Performance</string>
+    <string name="car_variant_m3_legacy">Model 3 Legacy</string>
+    <string name="car_variant_m3_highland">Model 3 Highland</string>
+    <string name="car_variant_m3_highland_perf">Model 3 Highland Performance</string>
+
+    <!-- Date filter -->
+    <string name="filter_custom_from">From</string>
+    <string name="filter_custom_to">To</string>
+
+    <!-- Fullscreen chart -->
+    <string name="fullscreen">Fullscreen</string>
+    <string name="exit_fullscreen">Exit Fullscreen</string>
+
+    <!-- Month scroll -->
+    <string name="scrollbar_drag_handle_description">Drag to scroll</string>
+
+    <!-- Part of trip -->
+    <string name="part_of_trip">Part of Trip</string>
+    <string name="part_of_trip_remove">Remove</string>
+    <string name="part_of_trip_remove_confirm_title">Remove from Trip</string>
+    <string name="part_of_trip_remove_confirm_body">Are you sure you want to remove this from the trip?</string>
+
+    <!-- Trip edit actions -->
+    <string name="trip_edit_add_leg">Add Leg</string>
+    <string name="trip_edit_merge_trip">Merge Trip</string>
+
+    <!-- Trip timeline -->
+    <string name="trip_timeline_title">Timeline</string>
+    <string name="trip_timeline_driving">Driving</string>
+    <string name="trip_leg_drive">Drive</string>
+    <string name="trip_timeline_charging_dc">DC Charging</string>
+    <string name="trip_timeline_charging_ac">AC Charging</string>
+    <string name="trip_timeline_parked">Parked</string>
+    <string name="trip_timeline_weather">Weather</string>
+    <string name="trip_leg_charge">Charge</string>
+    <string name="weather_during_trip">Weather During Trip</string>
+
+    <!-- Battery -->
+    <string name="no_battery_data">No battery data available</string>
+    <string name="battery_capacity_title">Battery Capacity</string>
+    <string name="battery_capacity_message">Your battery capacity information.</string>
+    <string name="capacity">Capacity</string>
+    <string name="usable_new">Usable (New)</string>
+    <string name="usable_now">Usable (Now)</string>
+    <string name="rated">Rated</string>
+    <string name="info">Info</string>
+    <string name="got_it">Got It</string>
+    <string name="estimated_degradation_title">Estimated Degradation</string>
+    <string name="estimated_degradation_message">Based on your driving patterns.</string>
+    <string name="estimated_degradation">Estimated Degradation</string>
+    <string name="loss_kwh">Loss (kWh)</string>
+    <string name="loss_percent">Loss (%)</string>
+
+    <!-- Battery extra -->
+    <string name="range">Range</string>
+    <string name="max_range_new">Max Range (New)</string>
+    <string name="max_range_now">Max Range (Now)</string>
+    <string name="range_loss">Range Loss</string>
+    <string name="battery_detail_title">Battery Detail</string>
+    <string name="current_charge_title">Current Charge</string>
+    <string name="current_charge_message">Current charging information.</string>
+    <string name="current_charge">Current Charge</string>
+    <string name="usable_percent">Usable (%)</string>
+    <string name="range_information_title">Range Information</string>
+    <string name="range_information_message">Range details for your Tesla.</string>
+    <string name="range_information">Range Information</string>
+    <string name="estimated_range">Estimated Range</string>
+    <string name="estimated_range_subtitle">Based on recent driving</string>
+    <string name="rated_range">Rated Range</string>
+    <string name="rated_range_subtitle">EPA rated range</string>
+    <string name="ideal_range">Ideal Range</string>
+    <string name="ideal_range_subtitle">WLTP ideal range</string>
+    <string name="estimated_total_capacity_title">Estimated Total Capacity</string>
+    <string name="estimated_total_capacity_message">Based on charging data analysis.</string>
+    <string name="estimated_total_capacity">Estimated Total Capacity</string>
+    <string name="capacity_kwh">Capacity (kWh)</string>
+    <string name="capacity_percent">Capacity (%)</string>
+
+    <!-- All missing strings batch -->
+    <string name="all_years">All Years</string>
+    <string name="average">Average</string>
+    <string name="avg_cost_per_session">Avg Cost/Session</string>
+    <string name="avg_distance">Avg Distance</string>
+    <string name="charge_details_title">Charge Details</string>
+    <string name="charge_free">Free</string>
+    <string name="charge_history">Charge History</string>
+    <string name="charge_location">Location</string>
+    <string name="charger">Charger</string>
+    <plurals name="charges_count">
+        <item quantity="one">%1$d charge</item>
+        <item quantity="other">%1$d charges</item>
+    </plurals>
+    <string name="charges_free_supercharging_hint">Free Supercharging included</string>
+    <string name="chart_charges_per_day">Charges/Day</string>
+    <string name="chart_charges_per_month">Charges/Month</string>
+    <string name="chart_charges_per_week">Charges/Week</string>
+    <string name="chart_cost_per_day">Cost/Day</string>
+    <string name="chart_cost_per_month">Cost/Month</string>
+    <string name="chart_cost_per_week">Cost/Week</string>
+    <string name="chart_distance_per_day">Distance/Day</string>
+    <string name="chart_distance_per_month">Distance/Month</string>
+    <string name="chart_distance_per_week">Distance/Week</string>
+    <string name="chart_drives_per_day">Drives/Day</string>
+    <string name="chart_drives_per_month">Drives/Month</string>
+    <string name="chart_drives_per_week">Drives/Week</string>
+    <string name="chart_energy_per_day">Energy/Day</string>
+    <string name="chart_energy_per_month">Energy/Month</string>
+    <string name="chart_energy_per_week">Energy/Week</string>
+    <string name="chart_speed_per_day">Speed/Day</string>
+    <string name="chart_speed_per_month">Speed/Month</string>
+    <string name="chart_speed_per_week">Speed/Week</string>
+    <string name="chart_time_per_day">Time/Day</string>
+    <string name="chart_time_per_month">Time/Month</string>
+    <string name="chart_time_per_week">Time/Week</string>
+    <string name="collapse">Collapse</string>
+    <string name="cost">Cost</string>
+    <string name="cost_filter_all">All</string>
+    <string name="cost_filter_has_cost">Has Cost</string>
+    <string name="cost_filter_no_cost">No Cost</string>
+    <string name="countries_visited_title">Countries Visited</string>
+    <string name="country_first_visit">First Visit</string>
+    <string name="country_last_visit">Last Visit</string>
+    <string name="current_avg">Current Avg</string>
+    <string name="current_charge_elapsed">Elapsed</string>
+    <string name="current_charge_estimated_end">Estimated End</string>
+    <string name="current_charge_live">Live</string>
+    <string name="current_charge_not_charging">Not Charging</string>
+    <string name="current_charge_starting">Starting...</string>
+    <string name="current_charge_unsupported">Unsupported</string>
+    <string name="current_max">Current Max</string>
+    <string name="current_min">Current Min</string>
+    <string name="current_profile">Current Profile</string>
+    <string name="dc_unplug_warning_message">Please unplug the DC charger.</string>
+    <string name="dc_unplug_warning_title">DC Unplug Warning</string>
+    <string name="debug_sentry_simulate_event">Simulate Sentry Event</string>
+    <string name="debug_tpms_clear_state">Clear TPMS State</string>
+    <string name="debug_tpms_run_now">Run TPMS Now</string>
+    <string name="debug_tpms_simulate_warning">Simulate TPMS Warning</string>
+    <string name="deselect_all">Deselect All</string>
+    <string name="drive_details_title">Drive Details</string>
+    <string name="drive_history">Drive History</string>
+    <string name="drive_start_legend">Start</string>
+    <plurals name="drives_count">
+        <item quantity="one">%1$d drive</item>
+        <item quantity="other">%1$d drives</item>
+    </plurals>
+    <string name="duration">Duration</string>
+    <string name="duration_label">Duration</string>
+    <string name="efficiency">Efficiency</string>
+    <string name="elevation">Elevation</string>
+    <string name="elevation_profile">Elevation Profile</string>
+    <string name="end">End</string>
+    <string name="energy">Energy</string>
+    <string name="energy_added">Energy Added</string>
+    <string name="energy_added_header">Energy Added</string>
+    <string name="estimated_range_description">Based on recent driving patterns</string>
+    <string name="expand">Expand</string>
+    <string name="filter_all">All</string>
+    <string name="filter_commute_km">Commute (&lt; 50km)</string>
+    <string name="filter_commute_mi">Commute (&lt; 30mi)</string>
+    <string name="filter_day_trip_km">Day Trip (50-200km)</string>
+    <string name="filter_day_trip_mi">Day Trip (30-125mi)</string>
+    <string name="filter_last_30_days">Last 30 Days</string>
+    <string name="filter_last_7_days">Last 7 Days</string>
+    <string name="filter_last_90_days">Last 90 Days</string>
+    <string name="filter_location">Location</string>
+    <string name="filter_road_trip_km">Road Trip (200km+)</string>
+    <string name="filter_road_trip_mi">Road Trip (125mi+)</string>
+    <string name="filter_today">Today</string>
+    <plurals name="format_charges_on_map">
+        <item quantity="one">%1$d on map</item>
+        <item quantity="other">%1$d on map</item>
+    </plurals>
+    <plurals name="format_countries_count">
+        <item quantity="one">%1$d country</item>
+        <item quantity="other">%1$d countries</item>
+    </plurals>
+    <string name="format_days_count">%1$d days</string>
+    <string name="format_drives_count">%1$d drives</string>
+    <plurals name="format_drives_on_map">
+        <item quantity="one">%1$d on map</item>
+        <item quantity="other">%1$d on map</item>
+    </plurals>
+    <string name="gain">Gain</string>
+    <string name="gap_type_driving">Driving</string>
+    <string name="geocode_progress_status">%1$d/%2$d</string>
+    <string name="geocode_progress_title">Geocoding</string>
+    <string name="hide_password">Hide Password</string>
+    <string name="hide_token">Hide Token</string>
+    <string name="info_about_calculation">About this calculation</string>
+    <string name="inside">Inside</string>
+    <string name="loss">Loss</string>
+    <string name="map_mode_charges">Charges</string>
+    <string name="map_mode_drives">Drives</string>
+    <string name="max_accel">Max Accel</string>
+    <string name="max_speed">Max Speed</string>
+    <string name="maximum">Maximum</string>
+    <string name="mileage_avg_month">Avg/Month</string>
+    <string name="mileage_avg_year">Avg/Year</string>
+    <string name="mileage_avg_year_message">Average distance per year</string>
+    <string name="mileage_avg_year_title">Average Per Year</string>
+    <string name="mileage_by_day">By Day</string>
+    <string name="mileage_by_month">By Month</string>
+    <string name="mileage_by_year">By Year</string>
+    <string name="mileage_drive_count">Drive Count</string>
+    <string name="mileage_drives">Drives</string>
+    <string name="mileage_no_data">No data available</string>
+    <string name="mileage_no_data_year">No data for this year</string>
+    <string name="mileage_recent_trips">Recent Trips</string>
+    <string name="mileage_total">Total</string>
+    <string name="min_regen">Min Regen</string>
+    <string name="minimum">Minimum</string>
+    <string name="more_information">More Information</string>
+    <string name="name">Name</string>
+    <string name="no_charges_found">No charges found</string>
+    <string name="no_countries_found">No countries found</string>
+    <string name="no_drives_found">No drives found</string>
+    <string name="no_regions_found">No regions found</string>
+    <string name="outside">Outside</string>
+    <string name="per_kwh">/kWh</string>
+    <string name="power">Power</string>
+    <string name="range_at_100">Range at 100%%</string>
+    <string name="record_biggest_charge">Biggest Charge</string>
+    <string name="record_biggest_drain">Biggest Drain</string>
+    <string name="record_biggest_gain">Biggest Gain</string>
+    <string name="record_busiest_day">Busiest Day</string>
+    <string name="record_coldest_charge">Coldest Charge</string>
+    <string name="record_coldest_drive">Coldest Drive</string>
+    <string name="record_countries_visited">Countries Visited</string>
+    <string name="record_highest_point">Highest Point</string>
+    <string name="record_hottest_charge">Hottest Charge</string>
+    <string name="record_hottest_drive">Hottest Drive</string>
+    <string name="record_longest_drive">Longest Drive</string>
+    <string name="record_longest_no_charging">Longest No Charging</string>
+    <string name="record_longest_no_driving">Longest No Driving</string>
+    <string name="record_longest_range">Longest Range</string>
+    <string name="record_longest_streak">Longest Streak</string>
+    <string name="record_most_climbing">Most Climbing</string>
+    <string name="record_most_distance_day">Most Distance Day</string>
+    <string name="record_most_efficient">Most Efficient</string>
+    <string name="record_most_expensive">Most Expensive</string>
+    <string name="record_peak_power">Peak Power</string>
+    <string name="record_priciest_kwh">Priciest kWh</string>
+    <string name="record_top_speed">Top Speed</string>
+    <string name="regions_visited_title">Regions Visited</string>
+    <string name="route_map">Route Map</string>
+    <string name="search">Search</string>
+    <string name="select_all">Select All</string>
+    <string name="sentry_alert_detected">Alert Detected</string>
+    <string name="sentry_history_current_session">Current Session</string>
+    <string name="sentry_history_empty">No history</string>
+    <string name="sentry_history_no_alerts">No alerts</string>
+    <string name="sentry_history_past">Past</string>
+    <string name="sentry_history_title">Sentry History</string>
+    <string name="sentry_history_today">Today</string>
+    <string name="sentry_history_yesterday">Yesterday</string>
+    <string name="settings_accept_invalid_certs">Accept Invalid Certs</string>
+    <string name="settings_accept_invalid_certs_hint">Allow self-signed certificates</string>
+    <string name="settings_accept_invalid_certs_warning">Warning: This reduces security</string>
+    <string name="settings_advanced_network">Advanced Network</string>
+    <string name="settings_api_token_hint">Enter your API token</string>
+    <string name="settings_api_token_label">API Token</string>
+    <string name="settings_api_token_placeholder">Enter token</string>
+    <string name="settings_connect_description">Connect to your TeslaMate instance</string>
+    <string name="settings_connect_title">Connect</string>
+    <string name="settings_connected">Connected</string>
+    <string name="settings_currency_label">Currency</string>
+    <string name="settings_currency_select">Select Currency</string>
+    <string name="settings_display_title">Display</string>
+    <string name="settings_extra">Extra</string>
+    <string name="settings_http_basic_auth_hint">HTTP Basic Authentication</string>
+    <string name="settings_http_basic_auth_password_label">Password</string>
+    <string name="settings_http_basic_auth_password_placeholder">Enter password</string>
+    <string name="settings_http_basic_auth_username_label">Username</string>
+    <string name="settings_http_basic_auth_username_placeholder">Enter username</string>
+    <string name="settings_palette_preview">Palette Preview</string>
+    <string name="settings_primary_server">Primary Server</string>
+    <string name="settings_report_issue">Report Issue</string>
+    <string name="settings_resync_button">Resync</string>
+    <string name="settings_resync_confirm">Confirm Resync</string>
+    <string name="settings_resync_dialog_text_delete">This will delete all local data.</string>
+    <string name="settings_resync_dialog_text_prefix">Resync will</string>
+    <string name="settings_resync_dialog_text_suffix">and re-download from server.</string>
+    <string name="settings_resync_dialog_title">Resync Data</string>
+    <string name="settings_resync_hint">Force full data resync</string>
+    <string name="settings_resyncing">Resyncing...</string>
+    <string name="settings_save">Save</string>
+    <string name="settings_secondary_server">Secondary Server</string>
+    <string name="settings_secondary_url_hint">Fallback server URL</string>
+    <string name="settings_secondary_url_label">Secondary URL</string>
+    <string name="settings_secondary_url_placeholder">https://secondary.example.com</string>
+    <string name="settings_server_url_label">Server URL</string>
+    <string name="settings_server_url_placeholder">https://example.com</string>
+    <string name="settings_short_dialog_text">Are you sure?</string>
+    <string name="settings_short_dialog_title">Confirm</string>
+    <string name="settings_show_short_hint">Show abbreviated values</string>
+    <string name="settings_show_short_label">Short Values</string>
+    <string name="settings_test_connection">Test Connection</string>
+    <string name="show_password">Show Password</string>
+    <string name="show_token">Show Token</string>
+    <string name="soc_energy_added">Energy Added</string>
+    <string name="soc_instant_power">Instant Power</string>
+    <string name="soc_now">SOC Now</string>
+    <string name="soc_start">SOC Start</string>
+    <string name="soc_target">SOC Target</string>
+    <string name="sort">Sort</string>
+    <string name="sort_alphabetically">Alphabetically</string>
+    <string name="sort_by_charges">By Charges</string>
+    <string name="sort_by_distance">By Distance</string>
+    <string name="sort_by_drive_count">By Drive Count</string>
+    <string name="sort_by_energy">By Energy</string>
+    <string name="sort_by_first_visit">By First Visit</string>
+    <string name="speed">Speed</string>
+    <string name="start">Start</string>
+    <string name="stats_avg_cost_kwh">Avg Cost/kWh</string>
+    <string name="stats_avg_efficiency">Avg Efficiency</string>
+    <string name="stats_category_battery">Battery</string>
+    <string name="stats_category_drives">Drives</string>
+    <string name="stats_category_misc">Misc</string>
+    <string name="stats_category_weather">Weather</string>
+    <string name="stats_charges_overview">Charges Overview</string>
+    <string name="stats_cost_per_distance">Cost/Distance</string>
+    <string name="stats_deep_sync_title">Deep Sync</string>
+    <string name="stats_drives_overview">Drives Overview</string>
+    <string name="stats_driving_days">Driving Days</string>
+    <string name="stats_empty">No stats available</string>
+    <string name="stats_energy_used">Energy Used</string>
+    <string name="stats_records">Records</string>
+    <string name="stats_sync_complete">Sync Complete</string>
+    <string name="stats_sync_percent">%%</string>
+    <string name="stats_syncing">Syncing...</string>
+    <string name="stats_temperature_extremes">Temperature Extremes</string>
+    <string name="stats_title">Stats</string>
+    <string name="stats_total_charges">Total Charges</string>
+    <string name="stats_total_drives">Total Drives</string>
+    <string name="stats_while_driving">While Driving</string>
+    <string name="summary">Summary</string>
+    <string name="symbol">Symbol</string>
+    <string name="sync_phase_charges">Charges</string>
+    <string name="sync_phase_drives">Drives</string>
+    <string name="sync_phase_summaries">Summaries</string>
+    <string name="total">Total</string>
+    <string name="total_cost">Total Cost</string>
+    <string name="total_energy">Total Energy</string>
+    <string name="total_sessions">Total Sessions</string>
+    <string name="total_time">Total Time</string>
+    <string name="total_trips">Total Trips</string>
+    <string name="trip">Trip</string>
+    <string name="unknown_location">Unknown Location</string>
+    <string name="used">Used</string>
+    <string name="voltage_and_current_profile">Voltage &amp; Current</string>
+    <string name="voltage_avg">Voltage Avg</string>
+    <string name="voltage_max">Voltage Max</string>
+    <string name="voltage_min">Voltage Min</string>
+    <string name="voltage_profile">Voltage Profile</string>
+    <string name="weather_card_title">Weather</string>
+    <string name="weather_distance">Distance</string>
+    <string name="weather_end">End</string>
+    <string name="weather_loading">Loading weather...</string>
+    <string name="weather_start">Start</string>
+    <string name="weather_time">Time</string>
+    <string name="weather_unavailable">Weather unavailable</string>
+    <string name="weather_weather">Weather</string>
+
+    <!-- Annual Report -->
+    <string name="annual_report_title">Annual Report %d</string>
+    <string name="annual_report_no_data">No data available for %d</string>
+    <string name="annual_report_generate_pdf">Generate PDF Report</string>
+    <string name="annual_report_summary">Annual Summary</string>
+    <string name="annual_report_monthly_trends">Monthly Trends</string>
+    <string name="annual_report_distance_km">Distance (km)</string>
+    <string name="annual_report_drives_per_month">Drives per Month</string>
+    <string name="annual_report_energy_added_kwh">Energy Added (kWh)</string>
+    <string name="annual_report_driving_habits">Driving Habits</string>
+    <string name="annual_report_avg_drive_duration">Average Drive Duration</string>
+    <string name="annual_report_unique_driving_days">Unique Driving Days</string>
+    <string name="annual_report_drives_per_day">Drives per Day</string>
+    <string name="annual_report_excellent">Excellent</string>
+    <string name="annual_report_good">Good</string>
+    <string name="annual_report_average">Average</string>
+    <string name="annual_report_high">High</string>
+    <string name="annual_report_efficiency_rating">Efficiency Rating</string>
+    <string name="annual_report_top_speed">Top Speed</string>
+    <string name="annual_report_busiest_day">Busiest Day</string>
+    <string name="annual_report_most_distance_day">Most Distance in a Day</string>
+    <string name="annual_report_na">N/A</string>
+    <string name="label_charges">Charges</string>
+    <string name="record_fastest_drive">Fastest Drive</string>
+
+    <!-- PDF Report -->
+    <string name="pdf_report_title">PDF Report %d</string>
+    <string name="pdf_report_share_title">Share Annual Report</string>
+    <string name="pdf_report_description">Generate a PDF summary of your driving and charging data for %d.</string>
+    <string name="pdf_report_vehicle_summary">MateLink Vehicle Summary</string>
+    <string name="pdf_report_total_distance">Total Distance:</string>
+    <string name="pdf_report_total_drives">Total Drives:</string>
+    <string name="pdf_report_energy_used">Energy Used:</string>
+    <string name="pdf_report_charges_label">Charges:</string>
+    <string name="pdf_report_avg_efficiency">Avg Efficiency:</string>
+    <string name="pdf_report_generate_share">Generate &amp; Share PDF</string>
+    <string name="pdf_report_energy_added_label">Energy Added:</string>
+    <string name="pdf_report_total_cost_label">Total Cost:</string>
+    <string name="pdf_report_longest_drive">Longest Drive:</string>
+    <string name="pdf_report_fastest_drive">Fastest Drive:</string>
+    <string name="pdf_report_most_efficient">Most Efficient:</string>
+    <string name="pdf_report_distance_by_month">Distance by Month (km)</string>
+    <string name="pdf_report_energy_consumed_by_month">Energy Consumed by Month (kWh)</string>
+    <string name="pdf_report_energy_added_by_month">Energy Added by Month (kWh)</string>
+    <string name="pdf_report_no_monthly_data">No monthly data available.</string>
+    <string name="pdf_report_avg_drive_duration">Avg Drive Duration:</string>
+    <string name="pdf_report_driving_days">Driving Days:</string>
+    <string name="pdf_report_top_speed_label">Top Speed:</string>
+    <string name="pdf_report_efficiency_rating_label">Efficiency Rating:</string>
+    <string name="pdf_report_generated_by">Generated by MateLink</string>
+
+    <!-- Export -->
+    <string name="export_title">Export Data</string>
+    <string name="export_format_title">Export Format</string>
+    <string name="export_data_to_export">Data to Export</string>
+    <string name="export_date_range">Date Range</string>
+    <string name="export_drives">Drives</string>
+    <string name="export_charges">Charges</string>
+    <string name="export_both">Both</string>
+    <string name="export_format_label">Format:</string>
+    <string name="export_data_label">Data:</string>
+    <string name="export_range_label">Range:</string>
+    <string name="export_drives_label">Drives:</string>
+    <string name="export_charges_label">Charges:</string>
+    <string name="export_drives_charges">Drives + Charges</string>
+    <string name="export_summary">Export Summary</string>
+    <string name="export_share">Export &amp; Share</string>
+    <string name="export_share_title">Share Export</string>
+
+    <!-- Settings extra -->
+    <string name="instances">Instances</string>
+    <string name="select_language">Select language</string>
+    <string name="edit_instance">Edit Instance</string>
+
+    <!-- 3D Vehicle -->
+    <string name="vehicle_3d_title">3D Vehicle</string>
+    <string name="vehicle_3d_gesture_hint">Pinch to zoom · Drag to rotate</string>
+    <string name="vehicle_3d_controls">Vehicle Controls</string>
+    <string name="vehicle_3d_open_doors">Open Doors</string>
+    <string name="vehicle_3d_close_doors">Close Doors</string>
+    <string name="vehicle_3d_open_port">Open Port</string>
+    <string name="vehicle_3d_close_port">Close Port</string>
+    <string name="vehicle_3d_open_frunk">Open Frunk</string>
+    <string name="vehicle_3d_close_frunk">Close Frunk</string>
+    <string name="vehicle_3d_reset_view">Reset View</string>
+
+    <!-- Trip detail extra -->
+    <string name="trip_not_found">Trip not found</string>
+    <string name="kwh_charged">kWh charged</string>
+
+    <!-- ViewModel errors -->
+    <string name="error_save_settings">Failed to save settings</string>
+    <string name="resync_started">Full resync started. All cached data cleared. Check the Stats screen for progress.</string>
+    <string name="error_resync">Failed to start resync: %1$s</string>
+    <string name="debug_tpms_simulated">Simulated TPMS warning for %1$s</string>
+    <string name="debug_sentry_simulated">Simulated sentry event #%1$d</string>
+    <string name="error_load_years">Failed to load years: %1$s</string>
+    <string name="error_load_counts">Failed to load counts: %1$s</string>
+    <string name="error_export">Export failed</string>
+    <string name="error_load_report">Failed to load report</string>
+    <string name="error_load_stats">Failed to load stats</string>
+    <string name="error_load_regions">Failed to load regions</string>
+    <string name="error_load_countries">Failed to load countries</string>
+    <string name="error_invalid_date">Invalid date</string>
 </resources>

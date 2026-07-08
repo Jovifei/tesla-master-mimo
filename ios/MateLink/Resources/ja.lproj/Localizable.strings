@@ -1,0 +1,70 @@
+// Navigation
+"nav.dashboard" = "ダッシュボード";
+"nav.drives" = "走行履歴";
+"nav.charges" = "充電履歴";
+"nav.more" = "その他";
+
+// Dashboard
+"dashboard.loading" = "ダッシュボードを読み込み中...";
+"battery" = "バッテリー";
+"odometer" = "走行距離";
+"location" = "位置情報";
+"inside_temp" = "車内";
+"outside_temp" = "車外";
+"lock.locked" = "ロック中";
+"lock.unlocked" = "アンロック";
+"plug.plugged" = "接続中";
+"plug.unplugged" = "未接続";
+"climate.on" = "エアコン ON";
+"climate.off" = "エアコン OFF";
+"sentry.armed" = "セントリーモード ON";
+"sentry.off" = "セントリーモード OFF";
+"high_soc_warning" = "充電レベルが高いです - 日常使用では80-90%に抑えることをお勧めします";
+"tire_pressure" = "タイヤ空気圧";
+"battery_trend" = "7日間のバッテリー推移";
+
+// Status
+"state.online" = "オンライン";
+"state.driving" = "走行中";
+"state.charging" = "充電中";
+"state.asleep" = "スリープ";
+"state.offline" = "オフライン";
+
+// Charging
+"charges.title" = "充電履歴";
+"charge.detail" = "充電詳細";
+"charging.in_progress" = "充電中";
+"charge.power" = "電力";
+"charge.added" = "充電量";
+"charge.remaining" = "残り時間";
+
+// Drives
+"drives.title" = "走行履歴";
+"drive.detail" = "走行詳細";
+
+// Battery Health
+"battery_health.title" = "バッテリー劣化";
+"battery_health.health" = "劣化率";
+"battery_health.original" = "初期容量";
+"battery_health.current" = "現在容量";
+"battery_health.degradation" = "劣化";
+
+// Settings
+"settings.title" = "設定";
+"connection" = "接続";
+"server_url" = "サーバーURL";
+"api_token" = "APIトークン";
+"test_connection" = "接続テスト";
+"preferences" = "環境設定";
+"units" = "単位";
+"temperature" = "温度";
+"theme" = "テーマ";
+"mock_mode" = "モックモード";
+"about" = "アプリについて";
+"version" = "バージョン";
+
+// Common
+"back" = "戻る";
+"loading" = "読み込み中...";
+"no_data" = "データがありません";
+"offline" = "オフライン - キャッシュデータを表示中";

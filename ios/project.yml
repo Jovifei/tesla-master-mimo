@@ -1,0 +1,33 @@
+name: MateLink
+options:
+  bundleIdPrefix: com.jovif
+  deploymentTarget:
+    iOS: "16.0"
+  developmentRegion: en
+  knownRegions:
+    - en
+    - zh-Hans
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""
+targets:
+  MateLink:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: MateLink/App
+      - path: MateLink/Core
+      - path: MateLink/Features
+    resources:
+      - path: MateLink/Resources
+        includes:
+          - "**/*.json"
+          - "**/*.strings"
+          - "**/*.ttf"
+    info:
+      path: MateLink/Info.plist
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.jovif.matelink
+      INFOPLIST_FILE: MateLink/Info.plist

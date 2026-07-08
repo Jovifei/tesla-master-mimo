@@ -1,7 +1,15 @@
-import mockData from '../mock_data.json';
+import { useEffect, useState } from 'react';
+import { api } from '../api/client';
+import { useStore } from '../store';
+import type { SentryEvent } from '../api/types';
 
 export default function SentryEvents({ carId }: { carId: number }) {
-  const events = mockData.sentry_events;
+  const { currentCarId } = useStore();
+  const [events, setEvents] = useState<SentryEvent[]>([]);
+
+  useEffect(() => {
+    api.getSentryEvents(currentCarId).then((data: SentryEvent[]) => setEvents(data));
+  }, [currentCarId]);
 
   return (
     <div className="space-y-4">

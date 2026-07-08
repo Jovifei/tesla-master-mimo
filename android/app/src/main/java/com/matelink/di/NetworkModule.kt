@@ -173,12 +173,11 @@ class TeslamateApiFactory(
             .addInterceptor { chain ->
                 val requestBuilder = chain.request().newBuilder()
                     .header("User-Agent", "MateLink/${BuildConfig.VERSION_NAME}")
-                if (basicAuthUsername.isNotBlank() && basicAuthPassword.isNotBlank()) {
-                    requestBuilder.addHeader("Authorization",
-                        okhttp3.Credentials.basic(basicAuthUsername, basicAuthPassword))
-                }
                 if (apiToken.isNotBlank()) {
                     requestBuilder.addHeader("Authorization", "Bearer $apiToken")
+                } else if (basicAuthUsername.isNotBlank() && basicAuthPassword.isNotBlank()) {
+                    requestBuilder.addHeader("Authorization",
+                        okhttp3.Credentials.basic(basicAuthUsername, basicAuthPassword))
                 }
                 chain.proceed(requestBuilder.build())
             }

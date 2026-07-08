@@ -1,4 +1,5 @@
 platform :ios, '16.0'
+project 'MateLink.xcodeproj'
 
 target 'MateLink' do
   use_frameworks!

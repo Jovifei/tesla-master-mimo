@@ -1,102 +1,60 @@
 # Tesla MateLink MIMO
 
-> 🚗 多平台 Tesla 车辆控制客户端 - MIMO 版本
+`app_mimo/` contains the current MateLink implementation family for Android, iOS, and web.
 
-## 项目简介
+## Repository Layout
 
-这是一个 **全栈跨平台** Tesla MateLink 项目，提供 Android、iOS 和 Web 三个客户端实现，用于远程控制和监控 Tesla 车辆。
-
-本仓库专注于 **MIMO (Multiple Input Multiple Output)** 架构版本，提供更好的多设备协同体验。
-
-## 项目结构
-
-```
+```text
 app_mimo/
-├── android/          # Android 客户端 (Kotlin + Jetpack Compose)
-├── ios/              # iOS 客户端 (Swift)
-├── shared/           # 共享类型定义
-└── web_matelink/     # Web 客户端 (React 19 + TypeScript + Vite)
+|- android/        Android app
+|- ios/            Native SwiftUI app plus XcodeGen/CocoaPods entry
+|- shared/         Shared API/model definitions
+`- web_matelink/   Web client
 ```
 
-## 技术栈
+## Current Platform Snapshot
 
-### Android
-- **Kotlin** 1.9+ with **Jetpack Compose**
-- **Hilt** 依赖注入
-- **Room** 本地数据库
-- **Retrofit** + **OkHttp** 网络通信
-- **Moshi** JSON 解析
-- **WorkManager** 后台任务
-- **AndroidX DataStore** 数据存储
-- **MPAndroidChart** 数据可视化
-- **AMap** 高德地图集成
+| Platform | Current state |
+| --- | --- |
+| Android | Broadest implementation surface. Native app shell, features, and Android widget sources exist. |
+| iOS | Native SwiftUI sources exist and the project is prepared for Mac-side generation through `project.yml` + CocoaPods, but native build proof is still Mac-only. |
+| Web | Separate web client exists under `web_matelink/`. |
 
-### iOS
-- **Swift** with iOS 16.0+ deployment target
-- **AMap3DMap** 高德地图 SDK
-- **CocoaPods** 依赖管理
+## iOS Build Entry
 
-### Web
-- **React 19** + **TypeScript 6**
-- **Vite 8** 构建工具
-- **Tailwind CSS 4.3**
-- **React Router DOM 7**
-- **Zustand** 状态管理
-- **Recharts** 图表
-- **Leaflet** + **React Leaflet** 地图
-- **Oxlint** 代码检查
+The current iOS build path is:
 
-## 功能特性
-
-✅ 车辆状态监控  
-✅ 电池健康数据分析  
-✅ 胎压监测  
-✅ 能耗统计  
-✅ 地图定位与导航  
-✅ 远程控制  
-✅ 多平台数据同步  
-
-## 构建指南
-
-### Android
 ```bash
-cd android
-./gradlew assembleDebug
-# or open in Android Studio
-```
-
-### iOS
-```bash
-cd ios
+cd app_mimo/ios
+brew install xcodegen cocoapods
+xcodegen generate
 pod install
 open MateLink.xcworkspace
 ```
 
-### Web
-```bash
-cd web_matelink
-npm install
-npm run dev
-# npm run build for production
-```
+Use the generated `.xcworkspace`, not a bare `.xcodeproj`, after CocoaPods integration.
 
-##  Requirements
+## iOS Windows-Prep Status
 
-- Android: compileSdk 35, minSdk 26, Java 17
-- iOS: 16.0+
-- Node.js: 18+ for Web version
+The repo already contains the Windows-prep inputs needed before Mac verification:
 
-## 相关项目
+- `app_mimo/ios/project.yml` defines the app target source roots.
+- `app_mimo/ios/Podfile` defines the CocoaPods dependencies expected after project generation.
+- `app_mimo/ios/MateLink/Info.plist` already includes App Transport Security local-networking allowance plus `NSLocalNetworkUsageDescription`.
 
-该项目是 [tesla-master](https://github.com/Jovifei/tesla-master) 项目的 MIMO 版本分离。
+This is enough for source review and project-generation prep on Windows, but not enough to claim a successful iOS build. Mac plus Xcode are still required for `xcodegen`, `pod install`, simulator build, and signing checks.
 
-- [tesla-master-mimo](https://github.com/Jovifei/tesla-master-mimo) - 当前仓库 (MIMO 版本)
-- [tesla-master-glm](https://github.com/Jovifei/tesla-master-glm) - GLM 版本
+## Widget Status
 
-## 许可证
+iOS Widget support is not considered wired in this round.
 
-MIT License
+Status: `deferred / source exists but target not wired`
 
-## 作者
+Current evidence:
 
-JoviF
+- `app_mimo/ios/MateLink/Widget/MateLinkWidget.swift` exists.
+- `app_mimo/ios/project.yml` currently defines only the `MateLink` application target.
+- No widget `.entitlements` file is present under `app_mimo/ios/`.
+- No App Group wiring proof is present in project metadata, even though source files reference `group.com.matelink`.
+
+Treat the widget code as source inventory only until a later pass adds a real target, entitlements, and App Group proof.
