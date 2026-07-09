@@ -120,11 +120,15 @@ class TeslamateApiFactory(
      * @param acceptInvalidCerts Override for accepting invalid certificates. If null, uses the setting from DataStore.
      * @return A TeslamateApi instance configured for the given URL
      */
-    suspend fun create(baseUrl: String, acceptInvalidCerts: Boolean? = null): TeslamateApi {
+    suspend fun create(
+        baseUrl: String,
+        acceptInvalidCerts: Boolean? = null,
+        apiTokenOverride: String? = null
+    ): TeslamateApi {
         val normalizedUrl = baseUrl.trimEnd('/') + "/"
         val settings = settingsDataStore.settings.first()
         val useInsecure = acceptInvalidCerts ?: settings.acceptInvalidCerts
-        val apiToken = settings.apiToken
+        val apiToken = apiTokenOverride ?: settings.apiToken
         val basicAuthUsername = settings.httpBasicAuthUsername
         val basicAuthPassword = settings.httpBasicAuthPassword
 

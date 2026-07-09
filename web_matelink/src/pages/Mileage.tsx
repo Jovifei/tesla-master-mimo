@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { api } from '../api/client';
-import { useStore } from '../store';
-import type { Drive } from '../api/types';
+import { api, getApiErrorMessage } from '../api/client';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -12,14 +10,15 @@ interface MonthData {
 }
 
 export default function Mileage({ carId }: { carId: number }) {
-  const { currentCarId } = useStore();
   const [yearData, setYearData] = useState<MonthData[]>([]);
   const [totalKm, setTotalKm] = useState(0);
   const [totalEnergy, setTotalEnergy] = useState(0);
   const [avgEfficiency, setAvgEfficiency] = useState(0);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    Promise.all([api.getDrives(currentCarId), api.getCharges(currentCarId)]).then(([drives, charges]) => {
+    setError('');
+    Promise.all([api.getDrives(carId), api.getCharges(carId)]).then(([drives, charges]) => {
       const now = new Date();
       const thisYear = now.getFullYear();
 
@@ -49,8 +48,10 @@ export default function Mileage({ carId }: { carId: number }) {
       setTotalKm(totalKm);
       setTotalEnergy(totalEnergy);
       setAvgEfficiency(avgEfficiency);
-    });
-  }, [currentCarId]);
+    }).catch(err => setError(getApiErrorMessage(err)));
+  }, [carId]);
+
+  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate mileage data unavailable: {error}</div>;
 
   return (
     <div className="space-y-6">

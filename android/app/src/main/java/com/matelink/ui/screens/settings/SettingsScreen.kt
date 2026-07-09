@@ -159,6 +159,7 @@ fun SettingsScreen(
                 onInstanceDelete = instanceViewModel::deleteInstance,
                 onInstanceEditorClose = instanceViewModel::closeEditor,
                 onInstanceEditorSave = instanceViewModel::saveEditor,
+                onInstanceEditorTest = instanceViewModel::testEditorConnection,
                 onInstanceEditorNameChange = instanceViewModel::updateEditorName,
                 onInstanceEditorUrlChange = instanceViewModel::updateEditorServerUrl,
                 onInstanceEditorTokenChange = instanceViewModel::updateEditorToken,
@@ -243,6 +244,7 @@ private fun SettingsContent(
     onInstanceDelete: (String) -> Unit = {},
     onInstanceEditorClose: () -> Unit = {},
     onInstanceEditorSave: () -> Unit = {},
+    onInstanceEditorTest: () -> Unit = {},
     onInstanceEditorNameChange: (String) -> Unit = {},
     onInstanceEditorUrlChange: (String) -> Unit = {},
     onInstanceEditorTokenChange: (String) -> Unit = {},
@@ -263,6 +265,35 @@ private fun SettingsContent(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
+        if (uiState.isFirstRunSetup) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_first_run_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_first_run_body),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         // === Instances Section ===
         if (instanceUiState.instances.isNotEmpty()) {
             Text(
@@ -361,6 +392,13 @@ private fun SettingsContent(
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
             enabled = !uiState.isTesting && !uiState.isSaving
+        )
+
+        Text(
+            text = stringResource(R.string.settings_root_url_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp)
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -855,7 +893,7 @@ private fun SettingsContent(
         ) {
             OutlinedButton(
                 onClick = onTestConnection,
-                enabled = uiState.serverUrl.isNotBlank() && !uiState.isTesting && !uiState.isSaving,
+                enabled = uiState.serverUrl.isNotBlank() && !uiState.mockMode && !uiState.isTesting && !uiState.isSaving,
                 modifier = Modifier.weight(1f)
             ) {
                 if (uiState.isTesting) {
@@ -870,7 +908,7 @@ private fun SettingsContent(
 
             Button(
                 onClick = onSave,
-                enabled = uiState.serverUrl.isNotBlank() && !uiState.isTesting && !uiState.isSaving,
+                enabled = (uiState.serverUrl.isNotBlank() || uiState.mockMode) && !uiState.isTesting && !uiState.isSaving,
                 modifier = Modifier
                     .weight(1f)
                     .testTag("saveButton")
@@ -1027,12 +1065,32 @@ private fun SettingsContent(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()
                     )
+                    editor.testResult?.let { result ->
+                        ServerTestResultRow(
+                            label = stringResource(R.string.settings_connection_test),
+                            result = result
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = onInstanceEditorTest,
+                        enabled = editor.serverUrl.isNotBlank() && !editor.isTestingConnection,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (editor.isTestingConnection) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text(stringResource(R.string.settings_test_connection))
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = onInstanceEditorSave,
-                    enabled = editor.serverUrl.isNotBlank() && editor.apiToken.isNotBlank()
+                    enabled = editor.serverUrl.isNotBlank() && !editor.isTestingConnection
                 ) {
                     Text(stringResource(R.string.save))
                 }
@@ -1088,7 +1146,7 @@ private fun ServerTestResultRow(
         is ServerTestResult.Success -> Triple(
             Icons.Filled.CheckCircle,
             StatusSuccess,
-            connectedText
+            result.summaryText(connectedText)
         )
         is ServerTestResult.Failure -> Triple(
             Icons.Filled.Error,
@@ -1119,7 +1177,32 @@ private fun ServerTestResultRow(
                 style = MaterialTheme.typography.bodyMedium,
                 color = color
             )
+            when (result) {
+                is ServerTestResult.Success -> result.warning?.let { warning ->
+                    Text(
+                        text = warning,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = StatusWarning
+                    )
+                }
+                is ServerTestResult.Failure -> result.hint?.let { hint ->
+                    Text(
+                        text = hint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
+    }
+}
+
+private fun ServerTestResult.Success.summaryText(defaultText: String): String {
+    return when {
+        carCount == 1 && !firstCarName.isNullOrBlank() -> "$defaultText: $firstCarName"
+        carCount == 1 -> "$defaultText: 1 car"
+        carCount > 1 -> "$defaultText: $carCount cars"
+        else -> defaultText
     }
 }
 
@@ -1152,7 +1235,7 @@ private fun SettingsScreenWithResultPreview() {
                 isLoading = false,
                 serverUrl = "https://teslamate.example.com",
                 testResult = TestResult(
-                    primaryResult = ServerTestResult.Success
+                    primaryResult = ServerTestResult.Success()
                 )
             ),
             onServerUrlChange = {},
@@ -1180,7 +1263,7 @@ private fun SettingsScreenWithBothResultsPreview() {
                 secondaryServerUrl = "https://teslamate.local",
                 testResult = TestResult(
                     primaryResult = ServerTestResult.Failure("Connection timed out"),
-                    secondaryResult = ServerTestResult.Success
+                    secondaryResult = ServerTestResult.Success()
                 )
             ),
             onServerUrlChange = {},

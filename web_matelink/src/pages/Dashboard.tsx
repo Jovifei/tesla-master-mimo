@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api/client';
+import { api, getApiErrorMessage } from '../api/client';
 import { useStore } from '../store';
 import type { CarStatus } from '../api/types';
 
@@ -17,31 +17,32 @@ const stateLabels: Record<string, string> = {
   asleep: 'Asleep',
   offline: 'Offline',
 };
-const carColorMap: Record<string, string> = {
-  DeepBlue: '#1E3A8A',
-  RedMultiCoat: '#B91C1C',
-  PearlWhite: '#E5E7EB',
-  MidnightSilver: '#4B5563',
-  SolidBlack: '#18181B',
-};
-
 export default function Dashboard() {
   const { currentCarId, cars, setCarId } = useStore();
   const [status, setStatus] = useState<CarStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [showSwitcher, setShowSwitcher] = useState(false);
   const car = cars.find(c => c.id === currentCarId)!;
 
   useEffect(() => {
     let active = true;
     const f = async () => {
-      const s = await api.getCarStatus(currentCarId);
-      if (active) { setStatus(s); setLoading(false); }
+      try {
+        const s = await api.getCarStatus(currentCarId);
+        if (active) { setStatus(s); setError(''); setLoading(false); }
+      } catch (err) {
+        if (active) { setError(getApiErrorMessage(err)); setLoading(false); }
+      }
     };
     f();
     const i = setInterval(f, 5000);
     return () => { active = false; clearInterval(i); };
   }, [currentCarId]);
+
+  if (error) {
+    return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate data unavailable: {error}</div>;
+  }
 
   if (loading || !status) {
     return <div className="flex items-center justify-center h-64 text-gray-400 animate-pulse">Loading Dashboard...</div>;
@@ -127,14 +128,14 @@ export default function Dashboard() {
       </div>
 
       {/* Tires */}
-      {status.tire_pressure && (
+      {status.tire_pressure_front_left != null && (
         <div>
           <h3 className="text-sm font-medium text-gray-500 mb-3">🛞 Tire Pressure</h3>
           <div className="grid grid-cols-4 gap-4">
-            <MiniCard label="Front Left" value={`${status.tire_pressure.front_left} bar`} icon="🛞" />
-            <MiniCard label="Front Right" value={`${status.tire_pressure.front_right} bar`} icon="🛞" />
-            <MiniCard label="Rear Left" value={`${status.tire_pressure.rear_left} bar`} icon="🛞" />
-            <MiniCard label="Rear Right" value={`${status.tire_pressure.rear_right} bar`} icon="🛞" />
+            <MiniCard label="Front Left" value={`${status.tire_pressure_front_left} bar`} icon="🛞" />
+            <MiniCard label="Front Right" value={`${status.tire_pressure_front_right} bar`} icon="🛞" />
+            <MiniCard label="Rear Left" value={`${status.tire_pressure_rear_left} bar`} icon="🛞" />
+            <MiniCard label="Rear Right" value={`${status.tire_pressure_rear_right} bar`} icon="🛞" />
           </div>
         </div>
       )}

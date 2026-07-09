@@ -1,5 +1,18 @@
 # MateLink Stitch 1:1 — Baseline Page Mapping
 
+## 2026-07-09 data setup reconciliation
+
+- Fixed: Android Settings connection test now validates root URL input and probes `/api/ping`, `/api/readyz` (warning-only if unsupported), and `/api/v1/cars` before reporting success.
+- Fixed: Android Settings first-run state now shows a focused "Connect TeslaMate" guide instead of presenting the connection fields as ordinary settings only.
+- Fixed: Android Settings and instance editor now require a successful connection test or an explicit warning-backed save override before persisting unverified real-data configuration.
+- Fixed: Android instance editor can test the entered instance URL/token before saving, while preserving existing switch behavior: cancel sync, clear cached tables, update legacy settings, trigger sync/widget update.
+- Fixed: Web `Settings` and `Onboarding` now call the store `setServer(url, token)`, persist configuration through Zustand `persist`, and route first launch to onboarding unless a server or mock mode is configured.
+- Fixed: Web API client now uses native-compatible `/api/v1` endpoint paths and no longer silently falls back to mock data in real mode.
+- Fixed: Web real-mode fetch failures now surface as API errors/unavailable states on key data pages; mock data is only returned when Mock Mode is enabled.
+- Fixed: iOS Settings now exposes a multi-instance list with active marker, switch, edit, delete, and add flows; AppState stores per-instance metadata and tokens separately.
+- Still gated: Android native verification requires Java/Gradle; iOS native verification requires Mac/Xcode/XcodeGen/CocoaPods.
+- Still deferred: Widget product acceptance remains blocked until Android device validation and iOS target/entitlements/App Group/timeline wiring are verified.
+
 ## 2026-07-08 repair reconciliation
 
 - Fixed: Android Settings no longer exposes the removed Palette Preview debug route as a no-op button.

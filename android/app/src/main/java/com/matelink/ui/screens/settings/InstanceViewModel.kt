@@ -14,6 +14,9 @@ import com.matelink.data.local.InstanceDataStore
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.StatsDatabase
 import com.matelink.data.model.Instance
+import com.matelink.data.repository.ApiResult
+import com.matelink.data.repository.ConnectionTestOutcome
+import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.sync.DataSyncWorker
 import com.matelink.widget.CarWidgetUpdateWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -33,7 +36,10 @@ data class InstanceEditorState(
     val name: String = "",
     val serverUrl: String = "",
     val apiToken: String = "",
-    val carId: Int = 1
+    val carId: Int = 1,
+    val isTestingConnection: Boolean = false,
+    val testResult: ServerTestResult? = null,
+    val allowUntestedSave: Boolean = false
 )
 
 data class InstanceUiState(
@@ -48,7 +54,8 @@ class InstanceViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val instanceDataStore: InstanceDataStore,
     private val settingsDataStore: SettingsDataStore,
-    private val statsDatabase: StatsDatabase
+    private val statsDatabase: StatsDatabase,
+    private val teslamateRepository: TeslamateRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(InstanceUiState())
@@ -154,14 +161,22 @@ class InstanceViewModel @Inject constructor(
     /** Update the editor server URL field. */
     fun updateEditorServerUrl(url: String) {
         _uiState.value = _uiState.value.copy(
-            editorState = _uiState.value.editorState?.copy(serverUrl = url)
+            editorState = _uiState.value.editorState?.copy(
+                serverUrl = url,
+                testResult = null,
+                allowUntestedSave = false
+            )
         )
     }
 
     /** Update the editor API token field. */
     fun updateEditorToken(token: String) {
         _uiState.value = _uiState.value.copy(
-            editorState = _uiState.value.editorState?.copy(apiToken = token)
+            editorState = _uiState.value.editorState?.copy(
+                apiToken = token,
+                testResult = null,
+                allowUntestedSave = false
+            )
         )
     }
 
@@ -172,10 +187,57 @@ class InstanceViewModel @Inject constructor(
         )
     }
 
+    fun testEditorConnection() {
+        val editor = _uiState.value.editorState ?: return
+        if (editor.serverUrl.isBlank()) {
+            _uiState.value = _uiState.value.copy(
+                editorState = editor.copy(
+                    testResult = ServerTestResult.Failure("Server URL is required")
+                )
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                editorState = editor.copy(isTestingConnection = true, testResult = null)
+            )
+
+            val result = when (val probe = teslamateRepository.testConnection(
+                serverUrl = editor.serverUrl,
+                apiToken = editor.apiToken
+            )) {
+                is ApiResult.Success -> probe.data.toServerTestResult()
+                is ApiResult.Error -> ServerTestResult.Failure(probe.message, probe.details)
+            }
+
+            _uiState.value = _uiState.value.copy(
+                editorState = _uiState.value.editorState?.copy(
+                    isTestingConnection = false,
+                    testResult = result,
+                    allowUntestedSave = false
+                )
+            )
+        }
+    }
+
     /** Save the current editor state (add or update). */
     fun saveEditor() {
         val editor = _uiState.value.editorState ?: return
-        if (editor.name.isBlank() || editor.serverUrl.isBlank() || editor.apiToken.isBlank()) return
+        if (editor.serverUrl.isBlank()) return
+        val hasSuccessfulTest = editor.testResult is ServerTestResult.Success
+        if (!hasSuccessfulTest && !editor.allowUntestedSave) {
+            _uiState.value = _uiState.value.copy(
+                editorState = editor.copy(
+                    allowUntestedSave = true,
+                    testResult = ServerTestResult.Failure(
+                        message = "Test this instance before saving, or tap Save again to skip.",
+                        hint = "Skipping may leave this instance unable to sync."
+                    )
+                )
+            )
+            return
+        }
         viewModelScope.launch {
             if (editor.id == null) {
                 // Add new instance
@@ -201,6 +263,18 @@ class InstanceViewModel @Inject constructor(
                 }
             }
             _uiState.value = _uiState.value.copy(editorState = null)
+        }
+    }
+
+    private fun ConnectionTestOutcome.toServerTestResult(): ServerTestResult {
+        return if (isSuccessful) {
+            ServerTestResult.Success(
+                carCount = carCount,
+                firstCarName = firstCarName,
+                warning = readinessWarning
+            )
+        } else {
+            ServerTestResult.Failure(summary, failureHint)
         }
     }
 

@@ -2,7 +2,7 @@ import { useParams, Link } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import mockData from '../mock_data.json';
 
-export default function DriveDetail({ carId }: { carId: number }) {
+export default function DriveDetail() {
   const { id } = useParams();
   const drive = mockData.drives.find(d => d.id === Number(id));
 

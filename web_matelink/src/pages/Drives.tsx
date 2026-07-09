@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../api/client';
+import { api, getApiErrorMessage } from '../api/client';
 import { useStore } from '../store';
 import type { Drive } from '../api/types';
 
@@ -8,12 +8,18 @@ export default function Drives() {
   const { currentCarId } = useStore();
   const [drives, setDrives] = useState<Drive[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [dateRange, setDateRange] = useState<'all' | 'week' | 'month'>('all');
 
   useEffect(() => {
-    api.getDrives(currentCarId).then(d => { setDrives(d); setLoading(false); });
+    setLoading(true);
+    setError('');
+    api.getDrives(currentCarId)
+      .then(d => { setDrives(d); setLoading(false); })
+      .catch(err => { setError(getApiErrorMessage(err)); setLoading(false); });
   }, [currentCarId]);
 
+  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate drives unavailable: {error}</div>;
   if (loading) return <div className="animate-pulse text-gray-400">Loading...</div>;
 
   // Filter by date range

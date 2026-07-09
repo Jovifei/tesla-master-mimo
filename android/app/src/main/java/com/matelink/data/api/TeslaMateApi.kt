@@ -26,6 +26,9 @@ interface TeslamateApi {
     @GET("api/ping")
     suspend fun ping(): Response<PingResponse>
 
+    @GET("api/readyz")
+    suspend fun readyz(): Response<PingResponse>
+
     @GET("api/v1/cars")
     suspend fun getCars(): Response<CarsResponse>
 

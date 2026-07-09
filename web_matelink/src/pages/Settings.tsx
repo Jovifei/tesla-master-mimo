@@ -1,67 +1,75 @@
 import { useState } from 'react';
+import { getApiErrorMessage, testTeslaMateConnection } from '../api/client';
 import { useStore } from '../store';
 
 export default function Settings() {
-  const [serverUrl, setServerUrl] = useState('https://teslamate.example.com/api/v1');
-  const [token, setToken] = useState('');
-  const [testResult, setTestResult] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-  const [units, setUnits] = useState('km');
-  const [tempUnit, setTempUnit] = useState('C');
-  const [tariffEnabled, setTariffEnabled] = useState(false);
-
+  const savedServerUrl = useStore(s => s.serverUrl);
+  const savedToken = useStore(s => s.apiToken);
+  const setServer = useStore(s => s.setServer);
   const theme = useStore(s => s.theme);
   const setTheme = useStore(s => s.setTheme);
   const mockMode = useStore(s => s.mockMode);
   const setMockMode = useStore(s => s.setMockMode);
 
-  const testConnection = () => {
+  const [serverUrl, setServerUrl] = useState(savedServerUrl);
+  const [token, setToken] = useState(savedToken);
+  const [testResult, setTestResult] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  const [units, setUnits] = useState('km');
+  const [tempUnit, setTempUnit] = useState('C');
+  const [tariffEnabled, setTariffEnabled] = useState(false);
+
+  const testConnection = async () => {
     setTestResult('testing');
-    setTimeout(() => {
-      setTestResult(mockMode ? 'success' : 'error');
-    }, 1500);
+    setMessage('');
+    try {
+      const result = await testTeslaMateConnection(serverUrl, token);
+      setServer(serverUrl, token);
+      setMockMode(false);
+      setTestResult('success');
+      setMessage(`Connected. Found ${result.carCount} vehicle${result.carCount === 1 ? '' : 's'}${result.firstCarName ? `: ${result.firstCarName}` : ''}${result.warning ? ` (${result.warning})` : ''}`);
+    } catch (err) {
+      setTestResult('error');
+      setMessage(getApiErrorMessage(err));
+    }
   };
 
   return (
     <div className="space-y-6 max-w-2xl">
       <h1 className="text-2xl font-bold">Settings</h1>
 
-      {/* Connection */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
         <h2 className="font-semibold mb-4">Connection</h2>
         <div className="space-y-3">
           <div>
             <label className="block text-sm text-gray-500 mb-1">Server URL</label>
-            <input type="text" value={serverUrl} onChange={e => setServerUrl(e.target.value)}
+            <input type="text" value={serverUrl} onChange={e => { setServerUrl(e.target.value); setTestResult('idle'); }}
+              placeholder="https://teslamate.example.com"
               className="w-full p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm" />
+            <div className="text-xs text-gray-500 mt-1">Enter the TeslaMate root address. Do not add /api or /api/v1.</div>
           </div>
           <div>
-            <label className="block text-sm text-gray-500 mb-1">API Token</label>
-            <input type="password" value={token} onChange={e => setToken(e.target.value)}
+            <label className="block text-sm text-gray-500 mb-1">API Token (optional)</label>
+            <input type="password" value={token} onChange={e => { setToken(e.target.value); setTestResult('idle'); }}
               placeholder="Enter token..."
               className="w-full p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm" />
           </div>
-          <button onClick={testConnection}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-            {testResult === 'testing' ? 'Testing...' : 'Test Connection'}
-          </button>
-          {testResult === 'success' && <div className="text-green-600 text-sm">✓ Connected! Found 2 vehicles.</div>}
-          {testResult === 'error' && <div className="text-red-600 text-sm">✗ Cannot reach server.</div>}
-        </div>
-      </div>
-
-      {/* Advanced */}
-      <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
-        <h2 className="font-semibold mb-4">Advanced</h2>
-        <div className="space-y-3">
-          <div>
-            <label className="block text-sm text-gray-500 mb-1">Secondary Server URL (optional)</label>
-            <input type="text" placeholder="https://local-lan:8080"
-              className="w-full p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm" />
+          <div className="flex gap-3">
+            <button onClick={testConnection} disabled={testResult === 'testing' || mockMode}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+              {testResult === 'testing' ? 'Testing...' : 'Test and Save'}
+            </button>
+            <button onClick={() => setServer(serverUrl, token)} disabled={testResult !== 'success'}
+              className="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm disabled:opacity-50">
+              Save Verified Config
+            </button>
           </div>
+          {mockMode && <div className="text-purple-600 text-sm">Mock Mode is on. Turn it off to use real TeslaMate data.</div>}
+          {testResult === 'success' && <div className="text-green-600 text-sm">{message}</div>}
+          {testResult === 'error' && <div className="text-red-600 text-sm">{message}</div>}
         </div>
       </div>
 
-      {/* Preferences */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
         <h2 className="font-semibold mb-4">Preferences</h2>
         <div className="space-y-4">
@@ -77,8 +85,8 @@ export default function Settings() {
             <span className="text-sm">Temperature</span>
             <select value={tempUnit} onChange={e => setTempUnit(e.target.value)}
               className="p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm">
-              <option value="C">°C</option>
-              <option value="F">°F</option>
+              <option value="C">C</option>
+              <option value="F">F</option>
             </select>
           </div>
           <div className="flex items-center justify-between">
@@ -93,7 +101,6 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* China */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
         <h2 className="font-semibold mb-4">China Localization</h2>
         <div className="space-y-4">
@@ -107,15 +114,15 @@ export default function Settings() {
           {tariffEnabled && (
             <div className="grid grid-cols-3 gap-3 text-sm">
               <div>
-                <label className="text-gray-500">Peak ¥/kWh</label>
+                <label className="text-gray-500">Peak CNY/kWh</label>
                 <input type="number" defaultValue="1.0" className="w-full p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700" />
               </div>
               <div>
-                <label className="text-gray-500">Flat ¥/kWh</label>
+                <label className="text-gray-500">Flat CNY/kWh</label>
                 <input type="number" defaultValue="0.7" className="w-full p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700" />
               </div>
               <div>
-                <label className="text-gray-500">Valley ¥/kWh</label>
+                <label className="text-gray-500">Valley CNY/kWh</label>
                 <input type="number" defaultValue="0.3" className="w-full p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700" />
               </div>
             </div>
@@ -123,7 +130,6 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Development */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
         <h2 className="font-semibold mb-4">Development</h2>
         <div className="flex items-center justify-between">
@@ -135,13 +141,12 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* About */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
         <h2 className="font-semibold mb-4">About</h2>
         <div className="space-y-2 text-sm text-gray-500">
           <div>Version: 1.0.0</div>
           <div>Not affiliated with Tesla, Inc.</div>
-          <div>Requires self-hosted TeslaMate instance.</div>
+          <div>Requires a self-hosted TeslaMate instance.</div>
         </div>
       </div>
     </div>

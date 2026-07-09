@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useStore } from './store';
+import { api, getApiErrorMessage } from './api/client';
+import { flattenCar } from './api/types';
 import mockData from './mock_data.json';
 
 // Pages
@@ -43,11 +45,15 @@ const navItems = [
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [apiError, setApiError] = useState('');
 
   const currentCarId = useStore(s => s.currentCarId);
   const setCarId = useStore(s => s.setCarId);
+  const setCars = useStore(s => s.setCars);
   const mockMode = useStore(s => s.mockMode);
   const setMockMode = useStore(s => s.setMockMode);
+  const serverUrl = useStore(s => s.serverUrl);
+  const onboardingDone = useStore(s => s.onboardingDone);
   const theme = useStore(s => s.theme);
   const setTheme = useStore(s => s.setTheme);
   const cars = useStore(s => s.cars);
@@ -65,6 +71,20 @@ function App() {
   }, []);
 
   // Theme management handled by store's setTheme
+  useEffect(() => {
+    if (mockMode || !serverUrl) return;
+    let active = true;
+    api.getCars()
+      .then(items => {
+        if (!active) return;
+        setCars(items.map(flattenCar));
+        setApiError('');
+      })
+      .catch(err => {
+        if (active) setApiError(getApiErrorMessage(err));
+      });
+    return () => { active = false; };
+  }, [mockMode, serverUrl, setCars]);
 
   const currentCar = mockData.cars.find(c => c.car_id === currentCarId);
   const currentStatus = mockData.statuses[String(currentCarId) as keyof typeof mockData.statuses];
@@ -166,6 +186,12 @@ function App() {
             </div>
           )}
 
+          {apiError && !mockMode && (
+            <div className="bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 text-center py-1 text-sm">
+              TeslaMate unavailable - {apiError}
+            </div>
+          )}
+
           {/* Car Status Bar */}
           {currentStatus && (
             <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex items-center gap-6 text-sm">
@@ -189,12 +215,13 @@ function App() {
           {/* Page Content */}
           <div className="p-6">
             <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" />} />
-              <Route path="/dashboard" element={<Dashboard carId={currentCarId} />} />
-              <Route path="/drives" element={<Drives carId={currentCarId} />} />
-              <Route path="/drives/:id" element={<DriveDetail carId={currentCarId} />} />
+              <Route path="/" element={<Navigate to={onboardingDone ? '/dashboard' : '/onboarding'} />} />
+              {!onboardingDone && <Route path="*" element={<Navigate to="/onboarding" replace />} />}
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/drives" element={<Drives />} />
+              <Route path="/drives/:id" element={<DriveDetail />} />
               <Route path="/charges" element={<Charges carId={currentCarId} />} />
-              <Route path="/charges/:id" element={<ChargeDetail carId={currentCarId} />} />
+              <Route path="/charges/:id" element={<ChargeDetail />} />
               <Route path="/current-charge" element={<CurrentCharge carId={currentCarId} />} />
               <Route path="/battery" element={<BatteryHealth carId={currentCarId} />} />
               <Route path="/mileage" element={<Mileage carId={currentCarId} />} />
@@ -202,7 +229,7 @@ function App() {
               <Route path="/heatmap" element={<Heatmap carId={currentCarId} />} />
               <Route path="/top-destinations" element={<TopDestinations carId={currentCarId} />} />
               <Route path="/efficiency" element={<EfficiencyCurve carId={currentCarId} />} />
-              <Route path="/countries" element={<CountriesVisited carId={currentCarId} />} />
+              <Route path="/countries" element={<CountriesVisited />} />
               <Route path="/sentry" element={<SentryEvents carId={currentCarId} />} />
               <Route path="/trips" element={<Trips carId={currentCarId} />} />
               <Route path="/updates" element={<SoftwareVersions carId={currentCarId} />} />

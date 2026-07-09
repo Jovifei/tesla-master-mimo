@@ -20,3 +20,43 @@
 - `git status --short --ignored` shows only `.gitignore` and `tasks/` as untracked commit candidates.
 - `git check-ignore -v` confirms `android/.gradle/`, `android/.idea/`, `android/app/build/`, and `android/local.properties` are ignored by the new root `.gitignore`.
 - `git diff --cached --stat` shows only `.gitignore` and `tasks/todo.md` staged.
+
+# App Completion Handoff - 2026-07-09
+
+## Plan
+
+- [x] Read docx handling guidance and app_mimo memory boundaries.
+- [x] Inventory source documents from `docs/git_ref`, `docs/PLAN`, `docs/PRD`, the architecture doc, and the Word implementation plan.
+- [x] Inspect current Android, iOS, shared, and web implementation status.
+- [x] Assess feature completion, data configuration flow, and user guidance gaps.
+- [x] Write phase handoff documentation under `app_mimo/docs`.
+- [x] Verify generated docs and record remaining proof limits.
+
+## Review
+
+- Created `docs/PHASE-HANDOFF-2026-07-09.md`.
+- Captured reviewed document list, completed/unfinished scope, platform status, data configuration model, and recommended user onboarding flow.
+- Kept `E:/project/tesla_master/docs/git_ref/` read-only.
+- Native Android/iOS build proof remains gated by local toolchain availability; this pass is source/document inspection plus documentation output.
+
+# app_mimo Data Setup Implementation - 2026-07-09
+
+## Plan
+
+- [x] Create implementation branch.
+- [x] Save implementation plan under `docs/superpowers/plans`.
+- [x] Inspect Android/Web/iOS setup code and existing tests.
+- [x] Add failing/targeted tests where feasible before behavior changes.
+- [x] Implement Android stronger connection testing and first-run guidance.
+- [x] Implement Web persisted real-data configuration and `/api/v1` paths.
+- [x] Implement iOS source-level multi-instance management.
+- [x] Update docs/handoff for completed and remaining work.
+- [x] Run available verification and record proof limits.
+
+## Review
+
+- Branch: `codex/app-mimo-data-setup`.
+- `E:/project/tesla_master/docs/git_ref/` remains read-only.
+- Android unit test target was added for connection URL/outcome rules, but Gradle could not run because `JAVA_HOME`/`java` is unavailable.
+- Web `npm run build` and `npm run lint` pass after restoring local `node_modules` with `npm install`.
+- iOS multi-instance changes are source-level only on Windows; Xcode build/simulator proof remains required.

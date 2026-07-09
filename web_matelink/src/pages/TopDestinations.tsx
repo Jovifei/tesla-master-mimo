@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api/client';
-import { useStore } from '../store';
+import { api, getApiErrorMessage } from '../api/client';
 import type { Drive } from '../api/types';
 
 interface Destination {
@@ -12,11 +11,12 @@ interface Destination {
 }
 
 export default function TopDestinations({ carId }: { carId: number }) {
-  const { currentCarId } = useStore();
   const [destinations, setDestinations] = useState<Destination[]>([]);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    api.getDrives(currentCarId).then((drives: Drive[]) => {
+    setError('');
+    api.getDrives(carId).then((drives: Drive[]) => {
       const destMap = new Map<string, Destination>();
       drives.forEach(d => {
         const key = d.end_address;
@@ -36,8 +36,10 @@ export default function TopDestinations({ carId }: { carId: number }) {
       });
       const sorted = [...destMap.values()].sort((a, b) => b.visits - a.visits);
       setDestinations(sorted);
-    });
-  }, [currentCarId]);
+    }).catch(err => setError(getApiErrorMessage(err)));
+  }, [carId]);
+
+  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate destination data unavailable: {error}</div>;
 
   return (
     <div className="space-y-6">

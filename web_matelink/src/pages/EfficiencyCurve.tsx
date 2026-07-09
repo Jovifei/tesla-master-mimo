@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { api } from '../api/client';
-import { useStore } from '../store';
+import { api, getApiErrorMessage } from '../api/client';
 import type { Drive } from '../api/types';
 
 interface ScatterPoint {
@@ -10,11 +9,12 @@ interface ScatterPoint {
 }
 
 export default function EfficiencyCurve({ carId }: { carId: number }) {
-  const { currentCarId } = useStore();
   const [data, setData] = useState<ScatterPoint[]>([]);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    api.getDrives(currentCarId).then((drives: Drive[]) => {
+    setError('');
+    api.getDrives(carId).then((drives: Drive[]) => {
       const points: ScatterPoint[] = drives
         .filter(d => d.outside_temp_avg != null && d.efficiency != null)
         .map(d => ({
@@ -22,8 +22,10 @@ export default function EfficiencyCurve({ carId }: { carId: number }) {
           efficiency: d.efficiency,
         }));
       setData(points);
-    });
-  }, [currentCarId]);
+    }).catch(err => setError(getApiErrorMessage(err)));
+  }, [carId]);
+
+  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate efficiency data unavailable: {error}</div>;
 
   return (
     <div className="space-y-6">

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api/client';
-import { useStore } from '../store';
+import { api, getApiErrorMessage } from '../api/client';
 import type { Drive } from '../api/types';
 
 interface HeatCell {
@@ -13,11 +12,12 @@ const DAYS = 15;
 const HOURS = 24;
 
 export default function Heatmap({ carId }: { carId: number }) {
-  const { currentCarId } = useStore();
   const [data, setData] = useState<HeatCell[]>([]);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    api.getDrives(currentCarId).then((drives: Drive[]) => {
+    setError('');
+    api.getDrives(carId).then((drives: Drive[]) => {
       const now = new Date();
       const cellMap = new Map<string, number>();
 
@@ -51,8 +51,8 @@ export default function Heatmap({ carId }: { carId: number }) {
         cells.push({ day, hour, value: Math.round(value * 10) / 10 });
       });
       setData(cells);
-    });
-  }, [currentCarId]);
+    }).catch(err => setError(getApiErrorMessage(err)));
+  }, [carId]);
 
   const getColor = (value: number) => {
     if (value < 1) return 'bg-green-100';
@@ -63,6 +63,7 @@ export default function Heatmap({ carId }: { carId: number }) {
   };
 
   return (
+    error ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate heatmap data unavailable: {error}</div> :
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Activity Heatmap</h1>
 

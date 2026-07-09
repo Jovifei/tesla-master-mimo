@@ -1,6 +1,6 @@
 import mockData from '../mock_data.json';
 
-export default function CountriesVisited({ carId }: { carId: number }) {
+export default function CountriesVisited() {
   const regions = mockData.visited_regions;
 
   return (

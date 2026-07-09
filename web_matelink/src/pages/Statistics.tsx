@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { api } from '../api/client';
-import { useStore } from '../store';
-import type { Drive, Charge } from '../api/types';
+import { api, getApiErrorMessage } from '../api/client';
 
 interface Record {
   label: string;
@@ -17,13 +15,14 @@ interface AcDcEntry {
 }
 
 export default function Statistics({ carId }: { carId: number }) {
-  const { currentCarId } = useStore();
   const [records, setRecords] = useState<Record[]>([]);
   const [acDcData, setAcDcData] = useState<AcDcEntry[]>([]);
   const [tempStats, setTempStats] = useState({ avg: 0, max: 0, min: 0 });
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    Promise.all([api.getDrives(currentCarId), api.getCharges(currentCarId)]).then(([drives, charges]) => {
+    setError('');
+    Promise.all([api.getDrives(carId), api.getCharges(carId)]).then(([drives, charges]) => {
       // Records from drives
       if (drives.length > 0) {
         const longestDrive = drives.reduce((a, b) => a.distance_km > b.distance_km ? a : b);
@@ -58,10 +57,12 @@ export default function Statistics({ carId }: { carId: number }) {
           min: Math.round(Math.min(...temps) * 10) / 10,
         });
       }
-    });
-  }, [currentCarId]);
+    }).catch(err => setError(getApiErrorMessage(err)));
+  }, [carId]);
 
   const totalCharges = acDcData.reduce((s, d) => s + d.value, 0);
+
+  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate statistics unavailable: {error}</div>;
 
   return (
     <div className="space-y-6">

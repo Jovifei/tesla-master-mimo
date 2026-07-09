@@ -1,8 +1,24 @@
+import { useEffect, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import mockData from '../mock_data.json';
+import { api, getApiErrorMessage } from '../api/client';
+import type { BatteryHealth as BatteryHealthPoint } from '../api/types';
 
 export default function BatteryHealth({ carId }: { carId: number }) {
-  const healthData = mockData.battery_health.filter(h => h.car_id === carId);
+  const [healthData, setHealthData] = useState<BatteryHealthPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setLoading(true);
+    setError('');
+    api.getBatteryHealth(carId)
+      .then(data => { setHealthData(data); setLoading(false); })
+      .catch(err => { setError(getApiErrorMessage(err)); setLoading(false); });
+  }, [carId]);
+
+  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate battery health unavailable: {error}</div>;
+  if (loading) return <div className="animate-pulse text-gray-400">Loading battery health...</div>;
+
   const latest = healthData[healthData.length - 1];
   const original = healthData[0];
 

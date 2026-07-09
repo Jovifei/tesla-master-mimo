@@ -2,7 +2,7 @@ import { useParams, Link } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import mockData from '../mock_data.json';
 
-export default function ChargeDetail({ carId }: { carId: number }) {
+export default function ChargeDetail() {
   const { id } = useParams();
   const charge = mockData.charges.find(c => c.id === Number(id));
 

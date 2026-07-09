@@ -8,9 +8,49 @@ struct SettingsView: View {
     var body: some View {
         List {
             Section(L10n.string("connection")) {
+                if !state.instances.isEmpty {
+                    ForEach(state.instances) { instance in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(instance.name)
+                                Text(instance.serverURL)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            if instance.id == state.activeInstanceID {
+                                Label("Active", systemImage: "checkmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                            } else {
+                                Button("Switch") {
+                                    Task {
+                                        do {
+                                            try await state.switchInstance(instance.id)
+                                            connectionMessage = "Switched to \(instance.name)."
+                                        } catch {
+                                            connectionMessage = error.localizedDescription
+                                        }
+                                    }
+                                }
+                            }
+                            NavigationLink {
+                                AddInstanceView(instance: instance)
+                            } label: {
+                                Image(systemName: "pencil")
+                            }
+                        }
+                    }
+                    .onDelete { offsets in
+                        offsets.map { state.instances[$0].id }.forEach(state.deleteInstance)
+                    }
+                }
                 NavigationLink("Add Instance") {
                     AddInstanceView()
                 }
+                Text("Enter the TeslaMate root address. Do not add /api or /api/v1.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 TextField(L10n.string("server_url"), text: $state.serverURL)
                 SecureField(L10n.string("api_token"), text: $state.apiToken)
                 Button {

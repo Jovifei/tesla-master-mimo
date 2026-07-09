@@ -17,6 +17,7 @@ import com.matelink.R
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.TirePosition
 import com.matelink.data.repository.ApiResult
+import com.matelink.data.repository.ConnectionTestOutcome
 import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.SentryStateRepository
@@ -52,15 +53,21 @@ data class SettingsUiState(
     val testResult: TestResult? = null,
     val error: String? = null,
     val successMessage: String? = null,
-    val needsRecreate: Boolean = false
+    val needsRecreate: Boolean = false,
+    val isFirstRunSetup: Boolean = false,
+    val allowUntestedSave: Boolean = false
 )
 
 /**
  * Represents the result of testing a single server connection.
  */
 sealed class ServerTestResult {
-    data object Success : ServerTestResult()
-    data class Failure(val message: String) : ServerTestResult()
+    data class Success(
+        val carCount: Int = 0,
+        val firstCarName: String? = null,
+        val warning: String? = null
+    ) : ServerTestResult()
+    data class Failure(val message: String, val hint: String? = null) : ServerTestResult()
 }
 
 /**
@@ -113,6 +120,7 @@ class SettingsViewModel @Inject constructor(
                 showShortDrivesCharges = settings.showShortDrivesCharges,
                 languageCode = settings.languageCode,
                 mockMode = mockMode,
+                isFirstRunSetup = !settings.isConfigured && !mockMode,
                 isLoading = false
             )
         }
@@ -122,7 +130,8 @@ class SettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             serverUrl = url,
             testResult = null,
-            error = null
+            error = null,
+            allowUntestedSave = false
         )
     }
 
@@ -130,7 +139,8 @@ class SettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             secondaryServerUrl = url,
             testResult = null,
-            error = null
+            error = null,
+            allowUntestedSave = false
         )
     }
 
@@ -138,7 +148,8 @@ class SettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             apiToken = token,
             testResult = null,
-            error = null
+            error = null,
+            allowUntestedSave = false
         )
     }
 
@@ -146,7 +157,8 @@ class SettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             httpBasicAuthUsername = username,
             testResult = null,
-            error = null
+            error = null,
+            allowUntestedSave = false
         )
         // Save eagerly so testConnection() picks up the unsaved value
         viewModelScope.launch {
@@ -158,7 +170,8 @@ class SettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             httpBasicAuthPassword = password,
             testResult = null,
-            error = null
+            error = null,
+            allowUntestedSave = false
         )
         // Save eagerly so testConnection() picks up the unsaved value
         viewModelScope.launch {
@@ -170,7 +183,8 @@ class SettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             acceptInvalidCerts = accept,
             testResult = null,
-            error = null
+            error = null,
+            allowUntestedSave = false
         )
     }
 
@@ -206,7 +220,11 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun updateMockMode(enabled: Boolean) {
-        _uiState.value = _uiState.value.copy(mockMode = enabled)
+        _uiState.value = _uiState.value.copy(
+            mockMode = enabled,
+            isFirstRunSetup = _uiState.value.serverUrl.isBlank() && !enabled,
+            allowUntestedSave = false
+        )
         viewModelScope.launch {
             settingsRepository.setMockMode(enabled)
         }
@@ -254,24 +272,27 @@ class SettingsViewModel @Inject constructor(
             }
 
             // Test primary server
-            val primaryResult = when (val result = repository.testConnection(primaryUrl, _uiState.value.acceptInvalidCerts)) {
-                is ApiResult.Success -> ServerTestResult.Success
-                is ApiResult.Error -> ServerTestResult.Failure(result.message)
+            val primaryResult = when (val result = repository.testConnection(
+                serverUrl = primaryUrl,
+                acceptInvalidCerts = _uiState.value.acceptInvalidCerts,
+                apiToken = _uiState.value.apiToken
+            )) {
+                is ApiResult.Success -> result.data.toServerTestResult()
+                is ApiResult.Error -> ServerTestResult.Failure(result.message, result.details)
             }
 
             // Test secondary server if configured
             val secondaryResult = if (secondaryUrl.isNotBlank()) {
-                when (val result = repository.testConnection(secondaryUrl, _uiState.value.acceptInvalidCerts)) {
-                    is ApiResult.Success -> ServerTestResult.Success
-                    is ApiResult.Error -> ServerTestResult.Failure(result.message)
+                when (val result = repository.testConnection(
+                    serverUrl = secondaryUrl,
+                    acceptInvalidCerts = _uiState.value.acceptInvalidCerts,
+                    apiToken = _uiState.value.apiToken
+                )) {
+                    is ApiResult.Success -> result.data.toServerTestResult()
+                    is ApiResult.Error -> ServerTestResult.Failure(result.message, result.details)
                 }
             } else {
                 null
-            }
-
-            // If primary connection succeeded, fetch and cache global settings
-            if (primaryResult is ServerTestResult.Success) {
-                fetchAndCacheGlobalSettings()
             }
 
             _uiState.value = _uiState.value.copy(
@@ -279,7 +300,8 @@ class SettingsViewModel @Inject constructor(
                 testResult = TestResult(
                     primaryResult = primaryResult,
                     secondaryResult = secondaryResult
-                )
+                ),
+                allowUntestedSave = false
             )
         }
     }
@@ -308,10 +330,21 @@ class SettingsViewModel @Inject constructor(
 
             try {
                 val url = _uiState.value.serverUrl.trimEnd('/')
-                if (url.isBlank()) {
+                if (url.isBlank() && !_uiState.value.mockMode) {
                     _uiState.value = _uiState.value.copy(
                         isSaving = false,
                         error = "Server URL is required"
+                    )
+                    return@launch
+                }
+
+                val hasSuccessfulPrimaryTest = _uiState.value.mockMode ||
+                        _uiState.value.testResult?.primaryResult is ServerTestResult.Success
+                if (!hasSuccessfulPrimaryTest && !_uiState.value.allowUntestedSave) {
+                    _uiState.value = _uiState.value.copy(
+                        isSaving = false,
+                        allowUntestedSave = true,
+                        error = context.getString(R.string.settings_save_untested_warning)
                     )
                     return@launch
                 }
@@ -344,6 +377,18 @@ class SettingsViewModel @Inject constructor(
 
     fun clearTestResult() {
         _uiState.value = _uiState.value.copy(testResult = null)
+    }
+
+    private fun ConnectionTestOutcome.toServerTestResult(): ServerTestResult {
+        return if (isSuccessful) {
+            ServerTestResult.Success(
+                carCount = carCount,
+                firstCarName = firstCarName,
+                warning = readinessWarning
+            )
+        } else {
+            ServerTestResult.Failure(summary, failureHint)
+        }
     }
 
     fun clearError() {

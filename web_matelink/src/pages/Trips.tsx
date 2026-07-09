@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api/client';
-import { useStore } from '../store';
+import { api, getApiErrorMessage } from '../api/client';
 import type { Drive } from '../api/types';
 
 interface Trip {
@@ -35,14 +34,19 @@ function groupDrivesIntoTrips(drives: Drive[]): Trip[] {
 }
 
 export default function Trips({ carId }: { carId: number }) {
-  const { currentCarId } = useStore();
   const [drives, setDrives] = useState<Drive[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    api.getDrives(carId || currentCarId).then(d => { setDrives(d); setLoading(false); });
-  }, [carId, currentCarId]);
+    setLoading(true);
+    setError('');
+    api.getDrives(carId)
+      .then(d => { setDrives(d); setLoading(false); })
+      .catch(err => { setError(getApiErrorMessage(err)); setLoading(false); });
+  }, [carId]);
 
+  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate trips unavailable: {error}</div>;
   if (loading) return <div className="animate-pulse text-gray-400">Loading...</div>;
 
   const trips = groupDrivesIntoTrips(drives);

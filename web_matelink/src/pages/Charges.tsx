@@ -1,11 +1,22 @@
 import { Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import mockData from '../mock_data.json';
+import { api, getApiErrorMessage } from '../api/client';
+import type { Charge } from '../api/types';
 
 export default function Charges({ carId }: { carId: number }) {
-  const charges = mockData.charges;
+  const [charges, setCharges] = useState<Charge[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [typeFilter, setTypeFilter] = useState<'All' | 'AC' | 'DC'>('All');
+
+  useEffect(() => {
+    setLoading(true);
+    setError('');
+    api.getCharges(carId)
+      .then(data => { setCharges(data); setLoading(false); })
+      .catch(err => { setError(getApiErrorMessage(err)); setLoading(false); });
+  }, [carId]);
 
   const filteredCharges = charges.filter(c =>
     typeFilter === 'All' || c.charging_type === typeFilter
@@ -20,6 +31,9 @@ export default function Charges({ carId }: { carId: number }) {
     { month: 'May', charges: 19, energy: 550 },
     { month: 'Jun', charges: 12, energy: 340 },
   ];
+
+  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate charges unavailable: {error}</div>;
+  if (loading) return <div className="animate-pulse text-gray-400">Loading charges...</div>;
 
   return (
     <div className="space-y-4">

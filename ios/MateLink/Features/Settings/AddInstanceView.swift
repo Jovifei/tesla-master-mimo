@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AddInstanceView: View {
     @EnvironmentObject var state: AppState
+    let instance: TeslaMateInstance?
     @State private var name: String = ""
     @State private var serverURL: String = ""
     @State private var apiToken: String = ""
@@ -12,14 +13,23 @@ struct AddInstanceView: View {
     @State private var saveError: String?
     @Environment(\.dismiss) var dismiss
 
+    init(instance: TeslaMateInstance? = nil) {
+        self.instance = instance
+        _name = State(initialValue: instance?.name ?? "")
+        _serverURL = State(initialValue: instance?.serverURL ?? "")
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 Section("Server") {
                     TextField("Instance Name", text: $name)
-                    TextField("Server URL (e.g. http://192.168.1.100:3000)", text: $serverURL)
+                    TextField("Server URL (e.g. https://teslamate.example.com)", text: $serverURL)
                         .textContentType(.URL)
                         .autocapitalization(.none)
+                    Text("Enter the TeslaMate root address. Do not add /api or /api/v1.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                     SecureField("API Token (optional)", text: $apiToken)
                 }
 
@@ -61,7 +71,7 @@ struct AddInstanceView: View {
                     }
                 }
             }
-            .navigationTitle("Add Instance")
+            .navigationTitle(instance == nil ? "Add Instance" : "Edit Instance")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -79,7 +89,20 @@ struct AddInstanceView: View {
             do {
                 let api = TeslaMateAPI(baseURL: serverURL, token: apiToken.isEmpty ? nil : apiToken)
                 try await api.checkStatus("/api/ping")
-                testResult = "Connected successfully"
+                do {
+                    try await api.checkStatus("/api/readyz")
+                } catch {
+                    testResult = "Readiness check unavailable; continuing with vehicle check."
+                }
+                let resp: CarApiResponse = try await api.fetch("/api/v1/cars")
+                let count = resp.data.cars.count
+                guard count > 0 else {
+                    testResult = "No vehicles returned by TeslaMate."
+                    testSuccess = false
+                    testing = false
+                    return
+                }
+                testResult = "Connected successfully. Found \(count) vehicle\(count == 1 ? "" : "s")."
                 testSuccess = true
             } catch {
                 testResult = "Connection failed: \(error.localizedDescription)"
@@ -93,7 +116,7 @@ struct AddInstanceView: View {
         saving = true
         saveError = nil
         do {
-            try await state.connect(url: serverURL, token: apiToken)
+            try await state.saveInstance(id: instance?.id, name: name, url: serverURL, token: apiToken)
             saving = false
             dismiss()
         } catch {

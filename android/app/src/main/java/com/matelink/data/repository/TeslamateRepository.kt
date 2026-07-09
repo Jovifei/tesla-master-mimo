@@ -204,21 +204,113 @@ class TeslamateRepository @Inject constructor(
         return primaryResult ?: ApiResult.Error("Connection failed")
     }
 
-    suspend fun testConnection(serverUrl: String, acceptInvalidCerts: Boolean = false): ApiResult<Unit> {
-        if (isMockMode()) return ApiResult.Success(Unit)
-        return try {
-            val api = apiFactory.create(serverUrl, acceptInvalidCerts)
-            val response = api.ping()
-            if (response.isSuccessful) {
-                ApiResult.Success(Unit)
-            } else {
-                ApiResult.Error("Server returned ${response.code()}", response.code())
+    suspend fun testConnection(
+        serverUrl: String,
+        acceptInvalidCerts: Boolean = false,
+        apiToken: String? = null
+    ): ApiResult<ConnectionTestOutcome> {
+        when (val validation = validateConnectionUrl(serverUrl)) {
+            is ConnectionUrlValidation.Invalid -> return ApiResult.Error(validation.message)
+            is ConnectionUrlValidation.Valid -> {
+                if (isMockMode()) {
+                    val cars = MockDataProvider.getCars()
+                    return ApiResult.Success(
+                        ConnectionTestOutcome(
+                            ping = ConnectionStepResult.Success,
+                            readiness = ConnectionStepResult.Success,
+                            cars = ConnectionStepResult.Success,
+                            carCount = cars.size,
+                            firstCarName = cars.firstOrNull()?.displayName
+                        )
+                    )
+                }
+                return runConnectionProbe(validation.normalizedUrl, acceptInvalidCerts, apiToken)
             }
+        }
+    }
+
+    private suspend fun runConnectionProbe(
+        serverUrl: String,
+        acceptInvalidCerts: Boolean,
+        apiToken: String?
+    ): ApiResult<ConnectionTestOutcome> {
+        return try {
+            val api = apiFactory.create(serverUrl, acceptInvalidCerts, apiTokenOverride = apiToken)
+
+            val pingResponse = api.ping()
+            if (!pingResponse.isSuccessful) {
+                return ApiResult.Success(
+                    ConnectionTestOutcome(
+                        ping = httpFailure("Ping failed", pingResponse.code())
+                    )
+                )
+            }
+
+            val readinessResult = try {
+                val readinessResponse = api.readyz()
+                when {
+                    readinessResponse.isSuccessful -> ConnectionStepResult.Success
+                    readinessResponse.code() == 404 -> ConnectionStepResult.Warning(
+                        message = "Readiness endpoint is unavailable",
+                        hint = "Continuing with vehicle check"
+                    )
+                    else -> ConnectionStepResult.Warning(
+                        message = "Readiness check returned HTTP ${readinessResponse.code()}",
+                        hint = "Continuing with vehicle check"
+                    )
+                }
+            } catch (e: Exception) {
+                ConnectionStepResult.Warning(
+                    message = "Readiness check failed: ${e.message ?: "unknown error"}",
+                    hint = "Continuing with vehicle check"
+                )
+            }
+
+            val carsResponse = api.getCars()
+            val carsResult = if (carsResponse.isSuccessful) {
+                val cars = carsResponse.body()?.data?.cars ?: emptyList()
+                if (cars.isEmpty()) {
+                    ConnectionStepResult.Failure(
+                        message = "No cars returned by TeslaMate",
+                        hint = "Check TeslaMate API permissions and data availability"
+                    )
+                } else {
+                    ConnectionStepResult.Success
+                }
+            } else {
+                httpFailure("Vehicle check failed", carsResponse.code())
+            }
+
+            val cars = if (carsResult is ConnectionStepResult.Success) {
+                carsResponse.body()?.data?.cars ?: emptyList()
+            } else {
+                emptyList()
+            }
+
+            ApiResult.Success(
+                ConnectionTestOutcome(
+                    ping = ConnectionStepResult.Success,
+                    readiness = readinessResult,
+                    cars = carsResult,
+                    carCount = cars.size,
+                    firstCarName = cars.firstOrNull()?.displayName
+                )
+            )
         } catch (e: javax.net.ssl.SSLHandshakeException) {
             ApiResult.Error("SSL certificate error. Enable 'Accept invalid certificates' for self-signed certs.")
         } catch (e: Exception) {
             ApiResult.Error(e.message ?: "Connection failed")
         }
+    }
+
+    private fun httpFailure(prefix: String, code: Int): ConnectionStepResult.Failure {
+        val hint = when (code) {
+            401, 403 -> "Check your API token or HTTP Basic Auth credentials"
+            404 -> "Enter the TeslaMate root URL, without /api or /api/v1"
+            in 500..599 -> "TeslaMate API is reachable but returned a server error"
+            else -> "Check the TeslaMate URL and network access"
+        }
+        return ConnectionStepResult.Failure("$prefix: HTTP $code", hint)
     }
 
     suspend fun getCars(): ApiResult<List<CarData>> {

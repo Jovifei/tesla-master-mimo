@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api/client';
-import { useStore } from '../store';
+import { api, getApiErrorMessage } from '../api/client';
 import type { SentryEvent } from '../api/types';
 
 export default function SentryEvents({ carId }: { carId: number }) {
-  const { currentCarId } = useStore();
   const [events, setEvents] = useState<SentryEvent[]>([]);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    api.getSentryEvents(currentCarId).then((data: SentryEvent[]) => setEvents(data));
-  }, [currentCarId]);
+    setError('');
+    api.getSentryEvents(carId)
+      .then((data: SentryEvent[]) => setEvents(data))
+      .catch(err => setError(getApiErrorMessage(err)));
+  }, [carId]);
+
+  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate sentry events unavailable: {error}</div>;
 
   return (
     <div className="space-y-4">
