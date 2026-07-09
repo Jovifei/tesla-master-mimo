@@ -242,7 +242,7 @@ class SettingsViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     isTesting = false,
                     testResult = TestResult(
-                        primaryResult = ServerTestResult.Failure("Server URL is required")
+                        primaryResult = ServerTestResult.Failure("API root URL is required")
                     )
                 )
                 return@launch
@@ -333,7 +333,7 @@ class SettingsViewModel @Inject constructor(
                 if (url.isBlank() && !_uiState.value.mockMode) {
                     _uiState.value = _uiState.value.copy(
                         isSaving = false,
-                        error = "Server URL is required"
+                        error = "API root URL is required"
                     )
                     return@launch
                 }

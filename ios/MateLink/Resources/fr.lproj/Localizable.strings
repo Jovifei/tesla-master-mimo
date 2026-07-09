@@ -52,7 +52,7 @@
 // Settings
 "settings.title" = "Paramètres";
 "connection" = "Connexion";
-"server_url" = "URL du serveur";
+"server_url" = "API Root URL";
 "api_token" = "Jeton API";
 "test_connection" = "Tester la connexion";
 "preferences" = "Préférences";

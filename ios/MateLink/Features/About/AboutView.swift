@@ -29,7 +29,9 @@ struct AboutView: View {
                     title: "Data Source",
                     icon: "server.rack",
                     lines: [
-                        "Requires self-hosted TeslaMate + TeslaMateApi",
+                        "Requires self-hosted TeslaMate + TeslaMateApi-compatible API",
+                        "API root URL only; not Grafana or TeslaMate Web UI",
+                        "Do I need a server? Real data yes; Mock mode no.",
                         "Not affiliated with Tesla, Inc.",
                         "No telemetry collected by this app"
                     ]
@@ -44,7 +46,7 @@ struct AboutView: View {
                     ]
                 )
 
-                Text("MateLink is an open companion app for TeslaMate self-hosted users. All data stays between your TeslaMate instance and your device.")
+                Text("MateLink is an open companion app for self-hosted TeslaMate users with a TeslaMateApi-compatible API. All data stays between your API endpoint and your device.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.top, 8)

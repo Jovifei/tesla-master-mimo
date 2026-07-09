@@ -17,7 +17,7 @@ export default function Onboarding() {
 
   const testConnection = async () => {
     if (!serverUrl.trim()) {
-      setError('Please enter a TeslaMate root URL.');
+      setError('Please enter an API root URL.');
       return;
     }
 
@@ -50,10 +50,11 @@ export default function Onboarding() {
         <div className="text-center max-w-md">
           <div className="text-6xl mb-6">ML</div>
           <h1 className="text-3xl font-bold mb-2">MateLink</h1>
-          <p className="text-gray-500 mb-8">Connect your self-hosted TeslaMate data.</p>
+          <p className="text-gray-500 mb-3">Requires self-hosted TeslaMate + TeslaMateApi-compatible API.</p>
+          <p className="text-sm text-gray-500 mb-8">Do I need a server? Real data yes; Mock mode no.</p>
           <button onClick={() => setStep('config')}
             className="w-full px-6 py-3 bg-blue-600 text-white rounded-xl text-lg font-medium hover:bg-blue-700">
-            Connect TeslaMate
+            Connect API
           </button>
           <button onClick={useMockData}
             className="w-full mt-3 px-6 py-3 bg-gray-100 dark:bg-gray-700 rounded-xl text-sm">
@@ -68,14 +69,15 @@ export default function Onboarding() {
     return (
       <div className="min-h-[80vh] flex items-center justify-center">
         <div className="max-w-md w-full">
-          <h1 className="text-2xl font-bold mb-6 text-center">Connect TeslaMate</h1>
+          <h1 className="text-2xl font-bold mb-2 text-center">Connect API</h1>
+          <p className="text-sm text-gray-500 mb-6 text-center">Requires self-hosted TeslaMate + TeslaMateApi-compatible API.</p>
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm space-y-4">
             <div>
-              <label className="block text-sm text-gray-500 mb-1">Server URL</label>
+              <label className="block text-sm text-gray-500 mb-1">API Root URL</label>
               <input type="text" value={serverUrl} onChange={e => setServerUrl(e.target.value)}
-                placeholder="https://teslamate.example.com"
+                placeholder="https://teslamate-api.example.com"
                 className="w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700" />
-              <div className="text-xs text-gray-500 mt-1">Enter the TeslaMate root address. Do not add /api or /api/v1.</div>
+              <div className="text-xs text-gray-500 mt-1">Enter the API root URL for your TeslaMateApi-compatible API, not Grafana or TeslaMate Web UI. Do not add /api/v1.</div>
             </div>
             <div>
               <label className="block text-sm text-gray-500 mb-1">API Token (optional)</label>

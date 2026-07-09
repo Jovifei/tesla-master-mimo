@@ -192,7 +192,7 @@ class InstanceViewModel @Inject constructor(
         if (editor.serverUrl.isBlank()) {
             _uiState.value = _uiState.value.copy(
                 editorState = editor.copy(
-                    testResult = ServerTestResult.Failure("Server URL is required")
+                    testResult = ServerTestResult.Failure("API root URL is required")
                 )
             )
             return

@@ -63,7 +63,7 @@
   "settings": {
     "title": "Settings",
     "connection": "Connection",
-    "server_url": "Server URL",
+    "server_url": "API Root URL",
     "api_token": "API Token",
     "test_connection": "Test Connection",
     "preferences": "Preferences",

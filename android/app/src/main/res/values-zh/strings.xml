@@ -75,7 +75,7 @@
     <!-- Settings -->
     <string name="settings_title">设置</string>
     <string name="connection">连接</string>
-    <string name="server_url">服务器地址</string>
+    <string name="server_url">API 根地址</string>
     <string name="api_token">API 令牌</string>
     <string name="test_connection">测试连接</string>
     <string name="preferences">偏好设置</string>
@@ -106,7 +106,7 @@
     <string name="about_tech_ios">iOS - Swift - SwiftUI</string>
     <string name="about_tech_web">Web - TypeScript - React - Vite</string>
     <string name="about_data_source">数据来源</string>
-    <string name="about_data_source_self_hosted">自托管 TeslaMate + TeslaMateApi</string>
+    <string name="about_data_source_self_hosted">需要自托管 TeslaMate + 兼容 TeslaMateApi 的 API。</string>
     <string name="about_data_source_no_tesla">不连接官方 Tesla API</string>
     <string name="about_data_source_no_collection">不收集用户数据</string>
     <string name="about_links">相关链接</string>
@@ -294,8 +294,8 @@
     <string name="trip_rename_field_hint">输入行程名称</string>
     <string name="save">保存</string>
     <string name="language">语言</string>
-    <string name="mock_mode_hint">使用模拟数据而非真实服务器</string>
-    <string name="server_url_label">服务器地址</string>
+    <string name="mock_mode_hint">需要服务器吗？真实数据需要；模拟模式不需要。</string>
+    <string name="server_url_label">API 根地址</string>
     <string name="api_token_label">API 令牌</string>
     <string name="switch_instance">切换</string>
     <string name="add_instance">添加实例</string>
@@ -671,7 +671,8 @@
     <string name="settings_api_token_hint">输入你的 API 令牌</string>
     <string name="settings_api_token_label">API 令牌</string>
     <string name="settings_api_token_placeholder">输入令牌</string>
-    <string name="settings_connect_description">连接到你的 TeslaMate 实例</string>
+    <string name="settings_china_map_guidance">中国本地化/地图：AMap/高德 Web Service Key 归用户所有，需要单独申请；留空将继续使用当前备用地图/地理编码行为。</string>
+    <string name="settings_connect_description">需要自托管 TeslaMate + 兼容 TeslaMateApi 的 API。</string>
     <string name="settings_connect_title">连接</string>
     <string name="settings_connected">已连接</string>
     <string name="settings_currency_label">货币</string>
@@ -695,12 +696,15 @@
     <string name="settings_resync_hint">强制全量数据重新同步</string>
     <string name="settings_resyncing">重新同步中...</string>
     <string name="settings_save">保存</string>
-    <string name="settings_secondary_server">备用服务器</string>
-    <string name="settings_secondary_url_hint">备用服务器地址</string>
-    <string name="settings_secondary_url_label">备用地址</string>
-    <string name="settings_secondary_url_placeholder">https://secondary.example.com</string>
-    <string name="settings_server_url_label">服务器地址</string>
-    <string name="settings_server_url_placeholder">https://example.com</string>
+    <string name="settings_secondary_server">备用 API</string>
+    <string name="settings_secondary_url_hint">备用 API 根地址。不要添加 /api 或 /api/v1。</string>
+    <string name="settings_secondary_url_label">备用 API 地址</string>
+    <string name="settings_secondary_url_placeholder">https://teslamate-api-backup.example.com</string>
+    <string name="settings_server_url_label">API 根地址</string>
+    <string name="settings_first_run_body">真实数据需要自托管 TeslaMate + 兼容 TeslaMateApi 的 API；模拟模式不需要服务器。</string>
+    <string name="settings_first_run_title">连接 API</string>
+    <string name="settings_root_url_hint">使用 API 根地址，例如 https://teslamate-api.example.com。不要填写 Grafana 或 TeslaMate Web UI，也不要添加 /api/v1。</string>
+    <string name="settings_server_url_placeholder">https://teslamate-api.example.com</string>
     <string name="settings_short_dialog_text">确定吗？</string>
     <string name="settings_short_dialog_title">确认</string>
     <string name="settings_show_short_hint">显示缩写值</string>
@@ -775,7 +779,7 @@
     <!-- Settings additional (legacy keys) -->
     <string name="connect">连接</string>
     <string name="connect_description">连接到你的 TeslaMate 实例</string>
-    <string name="server_url_placeholder">https://example.com</string>
+    <string name="server_url_placeholder">https://teslamate-api.example.com</string>
     <string name="api_token_placeholder">输入令牌</string>
     <string name="advanced_network">高级网络</string>
     <string name="accept_invalid_certs">接受无效证书</string>
@@ -788,10 +792,10 @@
     <string name="tariff_configuration_hint">启用峰/平/谷电价计算充电费用</string>
     <string name="extra">其他</string>
     <string name="palette_preview">调色板预览</string>
-    <string name="secondary_server">备用服务器</string>
-    <string name="secondary_url_label">备用地址</string>
-    <string name="secondary_url_placeholder">https://secondary.example.com</string>
-    <string name="secondary_url_hint">备用服务器地址</string>
+    <string name="secondary_server">备用 API</string>
+    <string name="secondary_url_label">备用 API 地址</string>
+    <string name="secondary_url_placeholder">https://teslamate-api-backup.example.com</string>
+    <string name="secondary_url_hint">备用 API 根地址。不要添加 /api 或 /api/v1。</string>
     <string name="http_basic_auth">HTTP 基本认证</string>
     <string name="http_basic_auth_hint">HTTP 基本认证</string>
     <string name="http_basic_auth_username_label">用户名</string>

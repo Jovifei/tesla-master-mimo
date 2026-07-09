@@ -34,6 +34,7 @@ android {
         versionCode = 1
         versionName = "1.0.0"
         buildConfigField("String", "GIT_SHA", "\"${resolveGitSha()}\"")
+        manifestPlaceholders["amapApiKey"] = providers.gradleProperty("AMAP_API_KEY").orElse("").get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -50,7 +50,7 @@ data class ConnectionTestOutcome(
 fun validateConnectionUrl(input: String): ConnectionUrlValidation {
     val trimmed = input.trim().trimEnd('/')
     if (trimmed.isBlank()) {
-        return ConnectionUrlValidation.Invalid("Server URL is required")
+        return ConnectionUrlValidation.Invalid("API root URL is required")
     }
     if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
         return ConnectionUrlValidation.Invalid("URL must start with http:// or https://")

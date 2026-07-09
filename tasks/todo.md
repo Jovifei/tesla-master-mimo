@@ -60,3 +60,23 @@
 - Android unit test target was added for connection URL/outcome rules, but Gradle could not run because `JAVA_HOME`/`java` is unavailable.
 - Web `npm run build` and `npm run lint` pass after restoring local `node_modules` with `npm install`.
 - iOS multi-instance changes are source-level only on Windows; Xcode build/simulator proof remains required.
+
+# Self-hosted TeslaMate Guidance - 2026-07-09
+
+## Plan
+
+- [x] Inspect current README, Settings, Onboarding, About, and map/key copy.
+- [x] Update README with real-data deployment, server, security, TeslaMateApi, and AMap key guidance.
+- [x] Update Android Settings/About strings for self-hosted TeslaMateApi-compatible API and AMap key ownership.
+- [x] Update iOS Onboarding/Settings/About copy for API root address, server requirement, and AMap key ownership.
+- [x] Update Web Onboarding/Settings/About copy for API root address, server requirement, and AMap key ownership.
+- [x] Run available verification and record proof limits.
+- [x] Report candidate files for Jovi approval before any Git staging or commit.
+
+## Review
+
+- Git staging/commit is explicitly blocked until Jovi approves the candidate file list.
+- Implementation was delegated into bounded docs, Android, iOS, and Web slices, then integrated in the parent thread.
+- Verification passed: `npm run lint`, `npm run build`, XML resource parsing, Web message JSON parsing, sensitive token/key scan, and `git diff --check`.
+- Verification blocked: Android `testDebugUnitTest` cannot start because `JAVA_HOME` is unset and no `java` command is on PATH.
+- iOS verification remains source-level on Windows; Xcode build/simulator proof requires Mac/Xcode.

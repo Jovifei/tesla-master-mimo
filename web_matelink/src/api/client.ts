@@ -45,7 +45,7 @@ async function fetchJson<T>(path: string, fallback: T, pick?: (body: any) => T):
     const hint = res.status === 401 || res.status === 403
       ? ' Check the API token.'
       : res.status === 404
-        ? ' Check that the server URL is the TeslaMate root address, without /api/v1.'
+        ? ' Check that this is the TeslaMateApi-compatible API root URL, not Grafana or TeslaMate Web UI, and do not add /api/v1.'
         : '';
     throw new ApiModeError(`TeslaMate API returned HTTP ${res.status}.${hint}`, res.status);
   }
@@ -55,7 +55,7 @@ async function fetchJson<T>(path: string, fallback: T, pick?: (body: any) => T):
 
 export async function testTeslaMateConnection(serverUrl: string, token: string): Promise<{ carCount: number; firstCarName?: string; warning?: string }> {
   const base = serverUrl.trim().replace(/\/+$/, '').replace(/\/api\/v1$/, '').replace(/\/api$/, '');
-  if (!base) throw new ApiModeError('Please enter a TeslaMate root URL.');
+  if (!base) throw new ApiModeError('Please enter an API root URL.');
   if (!base.startsWith('http://') && !base.startsWith('https://')) {
     throw new ApiModeError('URL must start with http:// or https://.');
   }
@@ -84,7 +84,7 @@ export async function testTeslaMateConnection(serverUrl: string, token: string):
     const hint = carsResponse.status === 401 || carsResponse.status === 403
       ? ' Check the API token.'
       : carsResponse.status === 404
-        ? ' Enter the TeslaMate root URL, not /api/v1.'
+        ? ' Enter the TeslaMateApi-compatible API root URL, not /api/v1.'
         : '';
     throw new ApiModeError(`Vehicle check failed with HTTP ${carsResponse.status}.${hint}`, carsResponse.status);
   }

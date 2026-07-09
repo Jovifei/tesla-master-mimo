@@ -48,7 +48,10 @@ struct SettingsView: View {
                 NavigationLink("Add Instance") {
                     AddInstanceView()
                 }
-                Text("Enter the TeslaMate root address. Do not add /api or /api/v1.")
+                Text("Requires self-hosted TeslaMate + TeslaMateApi-compatible API.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text("Enter the API root URL, not Grafana or TeslaMate Web UI. Do not add /api or /api/v1.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                 TextField(L10n.string("server_url"), text: $state.serverURL)
@@ -84,6 +87,14 @@ struct SettingsView: View {
             }
             Section("Development") {
                 Toggle(L10n.string("mock_mode"), isOn: $state.isMockMode)
+                Text("Do I need a server? Real data yes; Mock mode no.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Section("China Localization / Map") {
+                Text("AMap/Gaode Web Service Key is user-owned and must be applied for separately. Leave it blank to keep the current fallback map and geocoding behavior.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
             Section {
                 Text(L10n.string("version") + " 0.1.0-alpha")

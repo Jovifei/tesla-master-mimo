@@ -22,12 +22,12 @@ struct AddInstanceView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Server") {
+                Section("API") {
                     TextField("Instance Name", text: $name)
-                    TextField("Server URL (e.g. https://teslamate.example.com)", text: $serverURL)
+                    TextField("API Root URL (e.g. https://teslamate-api.example.com)", text: $serverURL)
                         .textContentType(.URL)
                         .autocapitalization(.none)
-                    Text("Enter the TeslaMate root address. Do not add /api or /api/v1.")
+                    Text("Requires self-hosted TeslaMate + TeslaMateApi-compatible API. Enter the API root URL, not Grafana or TeslaMate Web UI. Do not add /api or /api/v1.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     SecureField("API Token (optional)", text: $apiToken)

@@ -413,7 +413,7 @@ private fun SettingsContent(
         ) {
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Secondary Server URL
+            // Secondary API root URL
             OutlinedTextField(
                 value = uiState.secondaryServerUrl,
                 onValueChange = onSecondaryServerUrlChange,
@@ -637,6 +637,14 @@ private fun SettingsContent(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = stringResource(R.string.settings_china_map_guidance),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -1042,7 +1050,7 @@ private fun SettingsContent(
                         value = editor.serverUrl,
                         onValueChange = onInstanceEditorUrlChange,
                         label = { Text(stringResource(R.string.server_url_label)) },
-                        placeholder = { Text("https://teslamate.local") },
+                        placeholder = { Text("https://teslamate-api.local") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                         modifier = Modifier.fillMaxWidth()
@@ -1124,7 +1132,7 @@ private fun TestResultCard(result: TestResult) {
                 result = result.primaryResult
             )
 
-            // Secondary server result (if tested)
+            // Secondary API result (if tested)
             result.secondaryResult?.let { secondaryResult ->
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                 ServerTestResultRow(
@@ -1233,7 +1241,7 @@ private fun SettingsScreenWithResultPreview() {
         SettingsContent(
             uiState = SettingsUiState(
                 isLoading = false,
-                serverUrl = "https://teslamate.example.com",
+                serverUrl = "https://teslamate-api.example.com",
                 testResult = TestResult(
                     primaryResult = ServerTestResult.Success()
                 )
@@ -1259,8 +1267,8 @@ private fun SettingsScreenWithBothResultsPreview() {
         SettingsContent(
             uiState = SettingsUiState(
                 isLoading = false,
-                serverUrl = "https://teslamate.example.com",
-                secondaryServerUrl = "https://teslamate.local",
+                serverUrl = "https://teslamate-api.example.com",
+                secondaryServerUrl = "https://teslamate-api.local",
                 testResult = TestResult(
                     primaryResult = ServerTestResult.Failure("Connection timed out"),
                     secondaryResult = ServerTestResult.Success()
@@ -1287,7 +1295,7 @@ private fun SettingsScreenWithWarningPreview() {
         SettingsContent(
             uiState = SettingsUiState(
                 isLoading = false,
-                serverUrl = "https://teslamate.example.com",
+                serverUrl = "https://teslamate-api.example.com",
                 acceptInvalidCerts = true
             ),
             onServerUrlChange = {},

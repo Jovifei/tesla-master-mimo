@@ -57,7 +57,7 @@
     <!-- Settings -->
     <string name="settings_title">Einstellungen</string>
     <string name="connection">Verbindung</string>
-    <string name="server_url">Server-URL</string>
+    <string name="server_url">API Root URL</string>
     <string name="api_token">API-Token</string>
     <string name="test_connection">Verbindung testen</string>
     <string name="preferences">Einstellungen</string>

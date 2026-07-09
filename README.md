@@ -53,6 +53,26 @@ app_mimo/
 - real mode：通过用户配置的 TeslaMate API 地址访问真实数据；失败时应显示明确的错误或 unavailable 状态，不应静默回退成 mock。
 - shared/mock 数据只用于开发占位，真实数据协议仍保留可替换 adapter 边界。
 
+### 真实数据、自托管服务器与地图 Key
+
+真实数据需要用户自己的自托管服务。MateLink 不直接登录 Tesla 账号，也不替代 TeslaMate；它只连接你已经部署好的 TeslaMateApi / MateLink-compatible API。
+
+推荐拓扑：
+
+```text
+MateLink App -> TeslaMateApi/MateLink-compatible API -> TeslaMate Postgres/MQTT -> TeslaMate
+```
+
+配置 MateLink 时填写 API root URL，例如 `https://teslamate-api.example.com`。不要在输入框里追加 `/api/v1`，因为 App 会自己拼接 `/api/v1/cars` 等接口路径。TeslaMate 本体仍负责采集 Tesla 数据、写入 Postgres、发布 MQTT；TeslaMateApi 或兼容 API 负责把这些数据以 MateLink 可读的 HTTP API 暴露出来。
+
+安全建议：
+
+- 优先通过 VPN、Tailscale、Cloudflare Tunnel 或 HTTPS reverse proxy 访问自托管 API。
+- 不要把裸 HTTP 服务直接暴露到公网；只在可信 LAN/VPN 内使用 `http://`。
+- 不要把 API token、Basic Auth 密码、AMap/Gaode Key 硬编码到源码或提交到仓库。App 应使用安全存储，Web/构建环境应使用本地环境变量或部署平台密钥。
+
+AMap/Gaode Key 由用户自行在高德开放平台申请：[创建应用和 Key](https://lbs.amap.com/api/webservice/create-project-and-key)。按目标端创建对应 Key；Android/iOS 需要绑定包名、签名或 Bundle ID，Web 服务 Key 需要限制可用域名或服务来源。
+
 ### Android 开发
 
 要求：
@@ -188,6 +208,26 @@ The app intentionally separates mock mode and real mode:
 - mock mode is for offline development, page reproduction, and demos. It should not call a real TeslaMate service.
 - real mode uses the configured TeslaMate API base URL. Failures should show explicit error or unavailable states, not silently fall back to mock.
 - shared mock data is only a development placeholder. The real data protocol remains behind replaceable adapter boundaries.
+
+### Real Data, Self-Hosted Server, and Map Keys
+
+Real data requires the user's own self-hosted server stack. MateLink does not log into Tesla directly and does not replace TeslaMate; it connects to an already deployed TeslaMateApi / MateLink-compatible API.
+
+Recommended topology:
+
+```text
+MateLink App -> TeslaMateApi/MateLink-compatible API -> TeslaMate Postgres/MQTT -> TeslaMate
+```
+
+Configure MateLink with the API root URL, for example `https://teslamate-api.example.com`. Do not append `/api/v1` in the app settings, because the app appends endpoint paths such as `/api/v1/cars` itself. TeslaMate remains responsible for collecting Tesla data, writing Postgres, and publishing MQTT; TeslaMateApi or a compatible API exposes that data through the HTTP API MateLink reads.
+
+Security guidance:
+
+- Prefer VPN, Tailscale, Cloudflare Tunnel, or an HTTPS reverse proxy for access to the self-hosted API.
+- Do not expose bare HTTP directly to the public internet; use `http://` only on trusted LAN/VPN paths.
+- Do not hardcode API tokens, Basic Auth passwords, or AMap/Gaode keys in source code or commits. Native apps should use secure storage; Web/build deployments should use local environment variables or platform secrets.
+
+Users must apply for their own AMap/Gaode key in the AMap Open Platform: [Create an app and key](https://lbs.amap.com/api/webservice/create-project-and-key). Create keys for the target platforms; Android/iOS keys should bind package/signature or Bundle ID, and Web Service keys should restrict allowed domains or service origins.
 
 ### Android Development
 

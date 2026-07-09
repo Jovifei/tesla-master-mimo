@@ -7,7 +7,7 @@
 | Architecture | `E:/project/tesla_master/docs/01-ARC-系统架构.md` | Defines TeslaMate as the self-hosted data source, mock/real split, native app + web architecture, and Network-First/cache/mock direction. |
 | Main PRD | `E:/project/tesla_master/docs/PRD/MateLink_PRD.md` | Defines first-run data setup, multi-instance management, connection testing, empty/error states, tariff configuration, Widget/watch scope, and acceptance expectations. |
 | Stitch Swiss PRD | `E:/project/tesla_master/docs/PRD/MateLink_Stitch_Swiss_PRD_2026-07-05.md` | Current product baseline for `app_mimo`: 4-tab mobile shell, More/Settings system area, mock honesty, and page-level completion scope. |
-| UI PRD | `E:/project/tesla_master/docs/PRD/MateLink_UI_PRD.md` | Defines what each page should display, how settings should expose Server URL/API Token/Test/Save/Mock, and the visual/data honesty rules. |
+| UI PRD | `E:/project/tesla_master/docs/PRD/MateLink_UI_PRD.md` | Defines what each page should display, how settings should expose API root URL/API Token/Test/Save/Mock, and the visual/data honesty rules. |
 | GLM implementation plans | `E:/project/tesla_master/docs/PLAN/glm/*.md` | Historical implementation plans and phase goals; useful as intent, not proof of current completion. |
 | MIMO interaction plan | `E:/project/tesla_master/docs/PLAN/mimo/mimo_交互规划.md` | Defines Web/onboarding/settings interactions and mock mode banner expectations. |
 | Word implementation plan | `E:/project/tesla_master/docs/Tesla_MateLink_Implement_Plan.docx` | Historical three-platform delivery plan; marks build phases as complete, but current handoff verifies against actual `app_mimo` source. |
@@ -25,7 +25,7 @@ Current phase status:
 |---|---|---|
 | Android app shell | Mostly complete | 4-tab shell, More hub, Settings, detail navigation, many analysis/report routes are wired. |
 | Android real data | Partially complete | `TeslamateRepository` supports cars/status/drives/charges/current charge/battery/updates/global settings with mock mode and secondary URL fallback. Runtime build and real server proof are still gated on Java/Gradle availability. |
-| Android data configuration | Mostly complete | Settings can collect Server URL, secondary URL, API Token, Basic Auth, invalid cert toggle, language, currency, tariff, mock mode, and multi-instance data. First-run currently lands on Settings, not a dedicated guided onboarding. |
+| Android data configuration | Mostly complete | Settings can collect API root URL, secondary URL, API Token, Basic Auth, invalid cert toggle, language, currency, tariff, mock mode, and multi-instance data. First-run currently lands on Settings, not a dedicated guided onboarding. |
 | iOS app shell | Mostly complete | SwiftUI 4-tab shell and More/Settings/onboarding flow exist. Widget remains source-only/deferred. |
 | iOS real data | Partially complete | Many pages use `state.real` in real mode and `state.mock` in mock mode. Native compile and simulator proof require Mac/Xcode. |
 | iOS data configuration | Good first-run flow | `OnboardingView` tests `/api/ping`, `/api/readyz`, and `/api/v1/cars`, then saves URL to UserDefaults and token to Keychain. Settings can reconnect. Multi-instance UX is closer to "Add Instance" than full multi-instance management. |
@@ -45,7 +45,7 @@ Current phase status:
 ### Android
 
 - Start destination checks configuration: if a server is configured or mock mode is enabled, start at Dashboard; otherwise start at Settings.
-- Settings supports primary Server URL, secondary Server URL, API Token, HTTP Basic Auth, self-signed cert toggle, currency, language, short-drive/charge display, mock mode, tariff entry, force resync, and debug tools.
+- Settings supports primary API root URL, secondary API root URL, API Token, HTTP Basic Auth, self-signed cert toggle, currency, language, short-drive/charge display, mock mode, tariff entry, force resync, and debug tools.
 - API token and Basic Auth password are stored through `EncryptedSharedPreferences`.
 - Multi-instance data is stored separately through `InstanceDataStore`, with per-instance token storage and active-instance switching.
 - Switching an active instance cancels sync, clears cached tables, updates legacy settings, and triggers a fresh sync/widget update.
@@ -82,39 +82,54 @@ Current phase status:
 
 ## 5. How Users Configure Display Data
 
-The user is configuring a self-hosted TeslaMate API, not a Tesla account.
+The user is configuring a self-hosted TeslaMate API, not a Tesla account. Real data requires the user's own self-hosted TeslaMate stack plus a TeslaMateApi / MateLink-compatible API. MateLink does not log into Tesla directly and does not replace TeslaMate.
+
+Required topology:
+
+```text
+MateLink App -> TeslaMateApi/MateLink-compatible API -> TeslaMate Postgres/MQTT -> TeslaMate
+```
+
+The app should receive the API root URL only, for example `https://teslamate-api.example.com`. Do not append `/api/v1`; app clients append endpoint paths such as `/api/v1/cars` themselves.
 
 Minimum configuration fields:
 
 | Field | Required | Notes |
 |---|---:|---|
-| TeslaMate server URL | Yes | Use the API root host, for example `http://192.168.1.100:4000` or `https://teslamate.example.com`. Do not append `/api/v1` for native apps because code appends API paths itself. |
+| TeslaMateApi / MateLink-compatible API root URL | Yes | Use the API root host, for example `https://teslamate-api.example.com` or trusted-LAN `http://192.168.1.100:4000`. Do not append `/api/v1` because app clients append API paths themselves. |
 | API Token | Optional / deployment-dependent | Required only if the user's TeslaMate API is protected by bearer token. Store securely. |
 | HTTP Basic Auth | Optional | Android supports username/password for reverse-proxy auth. iOS/Web do not yet match this fully. |
 | Secondary server URL | Optional | Android supports fallback for network-level primary failures. Useful for public domain + LAN address pairing. |
 | Accept invalid certificates | Optional / advanced | Android exposes this for self-signed local HTTPS. Keep collapsed and warn clearly. |
 | Mock mode | Optional | For demo/offline development. Must never be confused with real data. |
 | Tariff configuration | Optional but recommended | Needed for meaningful cost display. |
+| AMap/Gaode key | Optional / map-dependent | Users apply in the AMap Open Platform docs at `https://lbs.amap.com/api/webservice/create-project-and-key`. Bind Android/iOS keys to package/signature or Bundle ID; restrict Web Service keys by domain or service origin. |
 
 Native data flow:
 
-1. User enters TeslaMate root URL and optional credentials.
+1. User enters TeslaMateApi / MateLink-compatible API root URL and optional credentials.
 2. App tests connection.
 3. App fetches cars and selects `currentCarId`.
 4. Dashboard requests `/api/v1/cars`, `/api/v1/cars/{id}/status`.
 5. Other pages request drives, charges, battery health, updates, and derived analytics.
 6. If mock mode is enabled, all major display data uses bundled mock data and should label this honestly.
 
+Security guidance:
+
+- Prefer VPN, Tailscale, Cloudflare Tunnel, or an HTTPS reverse proxy.
+- Do not expose bare HTTP directly to the public internet; keep `http://` limited to trusted LAN/VPN paths.
+- Do not hardcode API tokens, Basic Auth passwords, or AMap/Gaode keys in source code, examples, or commits.
+
 ## 6. Recommended User Guidance Flow
 
 Recommended copy and flow for first-run:
 
 1. Welcome: "Connect your TeslaMate server"
-2. Explain: "MateLink connects directly to your own TeslaMate API. It does not use Tesla official login and does not send data to a third-party server."
+2. Explain: "MateLink connects to your own TeslaMateApi / MateLink-compatible API. It does not use Tesla official login, does not replace TeslaMate, and does not send data to a third-party server."
 3. Ask for URL:
-   - Label: "TeslaMate server URL"
-   - Placeholder: `https://teslamate.example.com` or `http://192.168.1.100:4000`
-   - Helper: "Use the server root. Do not add `/api/v1`."
+   - Label: "API root URL"
+   - Placeholder: `https://teslamate-api.example.com` or trusted-LAN `http://192.168.1.100:4000`
+   - Helper: "Use the API root URL. Do not use Grafana or TeslaMate Web UI, and do not add `/api/v1`."
 4. Ask for credentials:
    - API Token optional
    - Expand advanced options for Basic Auth, secondary URL, invalid certificate.
@@ -132,9 +147,11 @@ Recommended copy and flow for first-run:
      - Timeout: "Check network/VPN/LAN access"
      - 401: "Check API token"
      - JSON/HTML response: "Your URL may point to the web UI, not the API root"
-     - Public HTTP: "Use HTTPS or a local LAN address"
+     - Public HTTP: "Use VPN/Tailscale/Cloudflare Tunnel/HTTPS reverse proxy. Do not expose bare HTTP."
 8. Mock path:
    - "Use demo data" remains available, but show a persistent mock banner/chip until real mode is configured.
+9. Map key path:
+   - "Apply for an AMap/Gaode key at https://lbs.amap.com/api/webservice/create-project-and-key, then configure it through the platform's secure local setting or deployment secret. Do not commit it."
 
 ## 7. Next Phase Tasks
 

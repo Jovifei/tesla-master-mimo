@@ -2,6 +2,10 @@
 
 ## 2026-07-09 data setup reconciliation
 
+- Docs updated: README and phase handoff now explain that real data needs a self-hosted TeslaMate stack plus TeslaMateApi / MateLink-compatible API; MateLink does not log into Tesla directly and does not replace TeslaMate.
+- Docs updated: canonical topology is `MateLink App -> TeslaMateApi/MateLink-compatible API -> TeslaMate Postgres/MQTT -> TeslaMate`, with API root URL examples like `https://teslamate-api.example.com` and no `/api/v1` suffix in user settings.
+- Docs updated: AMap/Gaode key guidance points users to `https://lbs.amap.com/api/webservice/create-project-and-key`, with platform binding restrictions and no hardcoded token/key warning.
+- Docs updated: security guidance recommends VPN, Tailscale, Cloudflare Tunnel, or HTTPS reverse proxy and warns against exposing bare HTTP publicly.
 - Fixed: Android Settings connection test now validates root URL input and probes `/api/ping`, `/api/readyz` (warning-only if unsupported), and `/api/v1/cars` before reporting success.
 - Fixed: Android Settings first-run state now shows a focused "Connect TeslaMate" guide instead of presenting the connection fields as ordinary settings only.
 - Fixed: Android Settings and instance editor now require a successful connection test or an explicit warning-backed save override before persisting unverified real-data configuration.

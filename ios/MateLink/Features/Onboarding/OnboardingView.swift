@@ -5,22 +5,25 @@ struct OnboardingView: View {
     @State private var url = ""; @State private var token = ""; @State private var loading = false; @State private var error: String?
     @State private var currentStep: String?
 
-    private let steps = ["Pinging server...", "Checking server readiness...", "Fetching cars..."]
+    private let steps = ["Pinging API...", "Checking API readiness...", "Fetching cars..."]
 
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
             Image(systemName: "car.fill").font(.system(size: 60)).foregroundColor(.blue)
             Text("Tesla_MateLink").font(.largeTitle).bold()
-            Text("Connect to your TeslaMate instance").font(.subheadline).foregroundColor(.secondary)
+            Text("Requires self-hosted TeslaMate + TeslaMateApi-compatible API").font(.subheadline).foregroundColor(.secondary)
             Spacer().frame(height: 20)
 
             VStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    TextField("https://teslamate.example.com", text: $url).textFieldStyle(.roundedBorder).keyboardType(.URL).autocapitalization(.none).disableAutocorrection(true)
-                    Text("Enter your TeslaMate server URL (without /api/v1)").font(.caption).foregroundColor(.secondary)
+                    TextField("https://teslamate-api.example.com", text: $url).textFieldStyle(.roundedBorder).keyboardType(.URL).autocapitalization(.none).disableAutocorrection(true)
+                    Text("Enter the API root URL, not Grafana or TeslaMate Web UI. Do not add /api/v1.").font(.caption).foregroundColor(.secondary)
                 }
                 SecureField("API Token (optional)", text: $token).textFieldStyle(.roundedBorder)
+                Text("Do I need a server? Real data yes; Mock mode no.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }.padding(.horizontal, 40)
 
             Button(action: { testConnection() }) {

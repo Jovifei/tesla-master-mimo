@@ -52,7 +52,7 @@
 // Settings
 "settings.title" = "設定";
 "connection" = "接続";
-"server_url" = "サーバーURL";
+"server_url" = "API Root URL";
 "api_token" = "APIトークン";
 "test_connection" = "接続テスト";
 "preferences" = "環境設定";

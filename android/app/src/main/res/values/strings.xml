@@ -76,7 +76,7 @@
     <!-- Settings -->
     <string name="settings_title">Settings</string>
     <string name="connection">Connection</string>
-    <string name="server_url">Server URL</string>
+    <string name="server_url">API Root URL</string>
     <string name="api_token">API Token</string>
     <string name="test_connection">Test Connection</string>
     <string name="preferences">Preferences</string>
@@ -111,7 +111,7 @@
     <string name="about_tech_ios">iOS - Swift - SwiftUI</string>
     <string name="about_tech_web">Web - TypeScript - React - Vite</string>
     <string name="about_data_source">Data Source</string>
-    <string name="about_data_source_self_hosted">Self-hosted TeslaMate + TeslaMateApi</string>
+    <string name="about_data_source_self_hosted">Requires self-hosted TeslaMate + TeslaMateApi-compatible API.</string>
     <string name="about_data_source_no_tesla">Does not connect to the official Tesla API.</string>
     <string name="about_data_source_no_collection">Does not collect user data.</string>
     <string name="about_links">Links</string>
@@ -299,8 +299,8 @@
     <string name="trip_rename_field_hint">Enter trip name</string>
     <string name="save">Save</string>
     <string name="language">Language</string>
-    <string name="mock_mode_hint">Use mock data instead of live server</string>
-    <string name="server_url_label">Server URL</string>
+    <string name="mock_mode_hint">Do I need a server? Real data: yes. Mock mode: no.</string>
+    <string name="server_url_label">API Root URL</string>
     <string name="api_token_label">API Token</string>
     <string name="switch_instance">Switch</string>
     <string name="add_instance">Add Instance</string>
@@ -683,7 +683,8 @@
     <string name="settings_api_token_hint">Optional. Add this if your TeslaMate API requires a token.</string>
     <string name="settings_api_token_label">API Token</string>
     <string name="settings_api_token_placeholder">Enter token</string>
-    <string name="settings_connect_description">Enter the TeslaMate root address. Do not add /api or /api/v1.</string>
+    <string name="settings_china_map_guidance">China localization/maps: AMap/Gaode Web Service Key is user-owned and must be applied for separately. Leave it blank to use the current fallback map/geocoding behavior.</string>
+    <string name="settings_connect_description">Requires self-hosted TeslaMate + TeslaMateApi-compatible API.</string>
     <string name="settings_connect_title">Connect</string>
     <string name="settings_connected">Connected</string>
     <string name="settings_connection_test">Connection Test</string>
@@ -708,16 +709,16 @@
     <string name="settings_resync_hint">Force full data resync</string>
     <string name="settings_resyncing">Resyncing...</string>
     <string name="settings_save">Save</string>
-    <string name="settings_secondary_server">Secondary Server</string>
-    <string name="settings_secondary_url_hint">Fallback server URL</string>
-    <string name="settings_secondary_url_label">Secondary URL</string>
-    <string name="settings_secondary_url_placeholder">https://secondary.example.com</string>
-    <string name="settings_server_url_label">Server URL</string>
-    <string name="settings_first_run_body">Test the connection before saving so MateLink can confirm the API and vehicle list are available.</string>
-    <string name="settings_first_run_title">Connect TeslaMate</string>
-    <string name="settings_root_url_hint">Use the TeslaMate root URL, for example https://teslamate.example.com. MateLink adds /api paths automatically.</string>
+    <string name="settings_secondary_server">Secondary API</string>
+    <string name="settings_secondary_url_hint">Fallback API root URL. Do not add /api or /api/v1.</string>
+    <string name="settings_secondary_url_label">Secondary API URL</string>
+    <string name="settings_secondary_url_placeholder">https://teslamate-api-backup.example.com</string>
+    <string name="settings_server_url_label">API Root URL</string>
+    <string name="settings_first_run_body">Requires self-hosted TeslaMate + TeslaMateApi-compatible API for real data. Mock mode works without a server.</string>
+    <string name="settings_first_run_title">Connect API</string>
+    <string name="settings_root_url_hint">Use the API root URL, for example https://teslamate-api.example.com. Do not use Grafana or TeslaMate Web UI, and do not add /api/v1.</string>
     <string name="settings_save_untested_warning">Connection has not been verified. Tap Save again to save anyway, or test the connection first.</string>
-    <string name="settings_server_url_placeholder">https://teslamate.example.com</string>
+    <string name="settings_server_url_placeholder">https://teslamate-api.example.com</string>
     <string name="settings_short_dialog_text">Are you sure?</string>
     <string name="settings_short_dialog_title">Confirm</string>
     <string name="settings_show_short_hint">Show abbreviated values</string>

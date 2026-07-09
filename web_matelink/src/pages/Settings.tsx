@@ -41,12 +41,13 @@ export default function Settings() {
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
         <h2 className="font-semibold mb-4">Connection</h2>
         <div className="space-y-3">
+          <p className="text-sm text-gray-500">Requires self-hosted TeslaMate + TeslaMateApi-compatible API. Do I need a server? Real data yes; Mock mode no.</p>
           <div>
-            <label className="block text-sm text-gray-500 mb-1">Server URL</label>
+            <label className="block text-sm text-gray-500 mb-1">API Root URL</label>
             <input type="text" value={serverUrl} onChange={e => { setServerUrl(e.target.value); setTestResult('idle'); }}
-              placeholder="https://teslamate.example.com"
+              placeholder="https://teslamate-api.example.com"
               className="w-full p-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm" />
-            <div className="text-xs text-gray-500 mt-1">Enter the TeslaMate root address. Do not add /api or /api/v1.</div>
+            <div className="text-xs text-gray-500 mt-1">Enter the API root URL for your TeslaMateApi-compatible API, not Grafana or TeslaMate Web UI. Do not add /api/v1.</div>
           </div>
           <div>
             <label className="block text-sm text-gray-500 mb-1">API Token (optional)</label>
@@ -104,6 +105,9 @@ export default function Settings() {
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
         <h2 className="font-semibold mb-4">China Localization</h2>
         <div className="space-y-4">
+          <div className="text-sm text-gray-500">
+            Map guidance: AMap/Gaode Web Service Key is user-owned and must be applied for separately. Leave it blank to keep the current fallback map and geocoding behavior.
+          </div>
           <div className="flex items-center justify-between">
             <span className="text-sm">Time-of-Use Tariff</span>
             <label className="flex items-center gap-2">
@@ -146,7 +150,8 @@ export default function Settings() {
         <div className="space-y-2 text-sm text-gray-500">
           <div>Version: 1.0.0</div>
           <div>Not affiliated with Tesla, Inc.</div>
-          <div>Requires a self-hosted TeslaMate instance.</div>
+          <div>Requires self-hosted TeslaMate + TeslaMateApi-compatible API.</div>
+          <div>Do I need a server? Real data yes; Mock mode no.</div>
         </div>
       </div>
     </div>

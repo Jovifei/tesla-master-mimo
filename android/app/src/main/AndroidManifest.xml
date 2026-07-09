@@ -29,10 +29,10 @@
         android:networkSecurityConfig="@xml/network_security_config"
         tools:targetApi="35">
 
-        <!-- AMap API Key -->
+        <!-- AMap API Key is user-provided through local Gradle property AMAP_API_KEY. -->
         <meta-data
             android:name="com.amap.api.v2.apikey"
-            android:value="YOUR_AMAP_API_KEY" />
+            android:value="${amapApiKey}" />
 
         <!-- Disable WorkManager auto-initialize (Hilt requires manual init) -->
         <provider

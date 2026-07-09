@@ -306,7 +306,7 @@ class TeslamateRepository @Inject constructor(
     private fun httpFailure(prefix: String, code: Int): ConnectionStepResult.Failure {
         val hint = when (code) {
             401, 403 -> "Check your API token or HTTP Basic Auth credentials"
-            404 -> "Enter the TeslaMate root URL, without /api or /api/v1"
+            404 -> "Enter the TeslaMateApi-compatible API root URL, not Grafana or TeslaMate Web UI, and do not add /api or /api/v1"
             in 500..599 -> "TeslaMate API is reachable but returned a server error"
             else -> "Check the TeslaMate URL and network access"
         }
