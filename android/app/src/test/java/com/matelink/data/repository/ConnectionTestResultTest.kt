@@ -10,7 +10,7 @@ class ConnectionTestResultTest {
     @Test
     fun blankUrl_isInvalid() {
         assertEquals(
-            ConnectionUrlValidation.Invalid("Server URL is required"),
+            ConnectionUrlValidation.Invalid("API root URL is required"),
             validateConnectionUrl(" ")
         )
     }

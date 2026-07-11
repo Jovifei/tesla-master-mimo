@@ -5,8 +5,10 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.local.dao.ChargeSummaryDao
 import com.matelink.data.local.dao.DriveSummaryDao
+import com.matelink.data.local.dao.AggregateDao
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.ChargeSummary
+import com.matelink.domain.analytics.PaginationGuard
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.GeocodingRepository
 import com.matelink.data.repository.TeslamateRepository
@@ -21,6 +23,7 @@ class SyncRepository @Inject constructor(
     private val teslamateRepository: TeslamateRepository,
     private val driveSummaryDao: DriveSummaryDao,
     private val chargeSummaryDao: ChargeSummaryDao,
+    private val aggregateDao: AggregateDao,
     private val syncManager: SyncManager,
     private val geocodingRepository: GeocodingRepository
 ) {
@@ -61,6 +64,7 @@ class SyncRepository @Inject constructor(
         return try {
             var page = 1
             var hasMore = true
+            var seenIds = emptySet<Int>()
 
             while (hasMore) {
                 when (val result = teslamateRepository.getDrives(carId, page = page, show = 50)) {
@@ -71,7 +75,14 @@ class SyncRepository @Inject constructor(
                         } else {
                             val summaries = drives.mapNotNull { it.toSummary(carId) }
                             driveSummaryDao.upsertAll(summaries)
-                            page++
+                            val decision = PaginationGuard.evaluate(
+                                pageSize = 50,
+                                seenIds = seenIds,
+                                pageIds = drives.map { it.id }
+                            )
+                            seenIds = decision.seenIds
+                            hasMore = !decision.stop
+                            if (hasMore) page++
                         }
                     }
                     is ApiResult.Error -> {
@@ -91,6 +102,7 @@ class SyncRepository @Inject constructor(
         return try {
             var page = 1
             var hasMore = true
+            var seenIds = emptySet<Int>()
 
             while (hasMore) {
                 when (val result = teslamateRepository.getCharges(carId, page = page, show = 50)) {
@@ -101,7 +113,14 @@ class SyncRepository @Inject constructor(
                         } else {
                             val summaries = charges.mapNotNull { it.toSummary(carId) }
                             chargeSummaryDao.upsertAll(summaries)
-                            page++
+                            val decision = PaginationGuard.evaluate(
+                                pageSize = 50,
+                                seenIds = seenIds,
+                                pageIds = charges.map { it.chargeId }
+                            )
+                            seenIds = decision.seenIds
+                            hasMore = !decision.stop
+                            if (hasMore) page++
                         }
                     }
                     is ApiResult.Error -> {
@@ -136,6 +155,9 @@ class SyncRepository @Inject constructor(
                                 startBatteryLevel = detail.startBatteryLevel ?: summary.startBatteryLevel,
                                 endBatteryLevel = detail.endBatteryLevel ?: summary.endBatteryLevel
                             ))
+                            aggregateDao.upsertDriveAggregate(
+                                detail.toAggregate(carId = carId, computedAt = System.currentTimeMillis())
+                            )
                             syncManager.updateDriveDetailProgress(carId, summary.driveId)
                         }
                         is ApiResult.Error -> {
@@ -167,6 +189,9 @@ class SyncRepository @Inject constructor(
                                 startBatteryLevel = detail.startBatteryLevel ?: summary.startBatteryLevel,
                                 endBatteryLevel = detail.endBatteryLevel ?: summary.endBatteryLevel
                             ))
+                            aggregateDao.upsertChargeAggregate(
+                                detail.toAggregate(carId = carId, computedAt = System.currentTimeMillis())
+                            )
                             syncManager.updateChargeDetailProgress(carId, summary.chargeId)
                         }
                         is ApiResult.Error -> {

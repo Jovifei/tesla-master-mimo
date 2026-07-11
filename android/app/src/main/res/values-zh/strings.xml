@@ -10,6 +10,15 @@
 
     <!-- Dashboard -->
     <string name="dashboard_loading">加载中...</string>
+    <string name="dashboard_status_unavailable_title">车辆已连接，实时状态同步中</string>
+    <string name="dashboard_status_unavailable_body">TeslaMate 已检测到你的车辆，但实时状态快照还不可用。等待 TeslaMate 完成首次同步后再刷新。</string>
+    <string name="dashboard_partial_status_body">MateLink 已能从 TeslaMate 读取这辆车。电量、位置、锁车、空调和胎压卡片需要实时状态接口返回快照。</string>
+    <string name="dashboard_partial_status_detail">状态接口：%1$s</string>
+    <string name="dashboard_partial_model">车型</string>
+    <string name="dashboard_partial_exterior">外观</string>
+    <string name="dashboard_partial_source_label">数据来源</string>
+    <string name="dashboard_partial_source_value">真实 TeslaMate 车辆列表；实时状态同步中</string>
+    <string name="dashboard_partial_badge">同步中</string>
     <string name="battery">电量</string>
     <string name="odometer">里程</string>
     <string name="location">位置</string>
@@ -553,6 +562,7 @@
     <string name="deselect_all">取消全选</string>
     <string name="drive_details_title">行程详情</string>
     <string name="drive_history">行程历史</string>
+    <string name="drive_history_parked_at">驻车于 %1$s</string>
     <string name="drive_start_legend">起点</string>
     <plurals name="drives_count">
         <item quantity="other">%1$d 次行程</item>

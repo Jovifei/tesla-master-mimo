@@ -18,6 +18,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.res.stringResource
 import com.matelink.R
+import com.matelink.data.api.models.CarData
 import com.matelink.ui.components.AmapPointView
 import com.matelink.ui.theme.StatusSuccess
 import com.matelink.ui.theme.StatusWarning
@@ -54,9 +55,12 @@ fun DashboardScreen(
     val car = uiState.car
 
     if (status == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(stringResource(R.string.no_data))
-        }
+        PartialVehicleDashboard(
+            car = car,
+            error = uiState.error,
+            onRefresh = { viewModel.refresh() },
+            onNavigateToSettings = onNavigateToSettings
+        )
         return
     }
 
@@ -225,6 +229,116 @@ fun DashboardScreen(
                         Column { Text(stringResource(R.string.charge_remaining)); Text("${status.timeToFullCharge ?: 0.0}h", fontWeight = FontWeight.Bold) }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PartialVehicleDashboard(
+    car: CarData?,
+    error: String?,
+    onRefresh: () -> Unit,
+    onNavigateToSettings: () -> Unit
+) {
+    val details = car?.carDetails
+    val exterior = car?.carExterior
+    val stats = car?.teslamateStats
+    val modelText = listOfNotNull(
+        details?.model?.takeIf { it.isNotBlank() }?.let { "Model $it" },
+        details?.trimBadging?.takeIf { it.isNotBlank() }
+    ).joinToString(" ").ifBlank { "-" }
+    val exteriorText = listOfNotNull(
+        exterior?.exteriorColor?.takeIf { it.isNotBlank() },
+        exterior?.wheelType?.takeIf { it.isNotBlank() }
+    ).joinToString("\n").ifBlank { "-" }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = car?.displayName ?: stringResource(R.string.vehicle),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Surface(
+                color = StatusWarning,
+                shape = MaterialTheme.shapes.extraLarge
+            ) {
+                Text(
+                    text = stringResource(R.string.dashboard_partial_badge),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+        }
+
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.dashboard_status_unavailable_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = stringResource(R.string.dashboard_partial_status_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            InfoCard(
+                title = stringResource(R.string.dashboard_partial_model),
+                value = modelText,
+                modifier = Modifier.weight(1f)
+            )
+            InfoCard(
+                title = stringResource(R.string.dashboard_partial_exterior),
+                value = exteriorText,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            InfoCard(
+                title = stringResource(R.string.stats_total_drives),
+                value = stats?.totalDrives?.toString() ?: "-",
+                modifier = Modifier.weight(1f)
+            )
+            InfoCard(
+                title = stringResource(R.string.stats_total_charges),
+                value = stats?.totalCharges?.toString() ?: "-",
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        InfoCard(
+            title = stringResource(R.string.dashboard_partial_source_label),
+            value = stringResource(R.string.dashboard_partial_source_value),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(onClick = onRefresh, modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.refresh))
+            }
+            OutlinedButton(onClick = onNavigateToSettings, modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.settings_title))
             }
         }
     }

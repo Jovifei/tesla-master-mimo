@@ -22,8 +22,8 @@ data class BatteryUiState(
     val batteryHealth: BatteryHealth? = null,
     val carStatus: CarStatus? = null,
     val units: Units? = null,
-    val originalCapacity: Double = 82.0, // Default for Model 3 LR, could be fetched from car details
-    val ratedEfficiency: Double = 0.0,
+    val originalCapacity: Double? = null,
+    val ratedEfficiency: Double? = null,
     val showDetail: Boolean = false
 )
 
@@ -45,7 +45,16 @@ data class BatteryStats(
     val ratedRange: Double,
     val idealRange: Double,
     val rangeAt100: Double
-)
+) {
+    val hasCapacityEstimate: Boolean
+        get() = originalCapacity > 0.0 && currentCapacity > 0.0 && healthPercent in 0.0..100.0
+
+    val hasRangeEstimate: Boolean
+        get() = maxRangeNew > 0.0 || maxRangeNow > 0.0
+
+    val hasLiveStatus: Boolean
+        get() = batteryLevel > 0 || estimatedRange > 0.0 || ratedRange > 0.0 || idealRange > 0.0
+}
 
 @HiltViewModel
 class BatteryViewModel @Inject constructor(
@@ -95,41 +104,20 @@ class BatteryViewModel @Inject constructor(
                 _uiState.update { it.copy(isLoading = true) }
             }
 
-            // Fetch both battery health and car status in parallel
+            // Battery health and the live status have independent availability.
+            // Keep range history visible even when TeslaMateApi has no MQTT snapshot.
             val healthResult = repository.getBatteryHealth(id)
             val statusResult = repository.getCarStatus(id)
 
-            when {
-                healthResult is ApiResult.Success && statusResult is ApiResult.Success -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            isRefreshing = false,
-                            batteryHealth = healthResult.data,
-                            carStatus = statusResult.data.status,
-                            units = statusResult.data.units,
-                            error = null
-                        )
-                    }
-                }
-                healthResult is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            isRefreshing = false,
-                            error = healthResult.message
-                        )
-                    }
-                }
-                statusResult is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            isRefreshing = false,
-                            error = statusResult.message
-                        )
-                    }
-                }
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    isRefreshing = false,
+                    batteryHealth = (healthResult as? ApiResult.Success)?.data,
+                    carStatus = (statusResult as? ApiResult.Success)?.data?.status,
+                    units = (statusResult as? ApiResult.Success)?.data?.units,
+                    error = (healthResult as? ApiResult.Error)?.message
+                )
             }
         }
     }
@@ -140,10 +128,14 @@ class BatteryViewModel @Inject constructor(
         val status = state.carStatus
 
         // Use data from the battery health API
-        val healthPercent = health.batteryHealthPercentage ?: 100.0
-        val originalCapacity = health.maxCapacity ?: state.originalCapacity
-        val currentCapacity = health.currentCapacity ?: (originalCapacity * healthPercent / 100)
-        val lossKwh = originalCapacity - currentCapacity
+        val apiHealthPercent = health.batteryHealthPercentage?.takeIf { it in 0.0..100.0 }
+        val originalCapacity = health.maxCapacity?.takeIf { it > 0.0 } ?: state.originalCapacity
+        val currentCapacity = health.currentCapacity?.takeIf { it > 0.0 }
+        val healthPercent = apiHealthPercent ?: when {
+            originalCapacity != null && currentCapacity != null -> currentCapacity / originalCapacity * 100.0
+            else -> 0.0
+        }
+        val lossKwh = if (originalCapacity != null && currentCapacity != null) originalCapacity - currentCapacity else 0.0
         val lossPercent = 100 - healthPercent
 
         // Range from API
@@ -152,7 +144,7 @@ class BatteryViewModel @Inject constructor(
         val rangeLoss = maxRangeNew - maxRangeNow
 
         // Efficiency from API (Wh/km)
-        val ratedEfficiency = health.ratedEfficiency ?: state.ratedEfficiency.takeIf { it > 0 } ?: 150.0
+        val ratedEfficiency = health.ratedEfficiency?.takeIf { it > 0.0 } ?: state.ratedEfficiency ?: 0.0
 
         // Current status from CarStatus
         val batteryLevel = status?.batteryLevel ?: 0
@@ -169,8 +161,8 @@ class BatteryViewModel @Inject constructor(
         }
 
         return BatteryStats(
-            currentCapacity = currentCapacity,
-            originalCapacity = originalCapacity,
+            currentCapacity = currentCapacity ?: 0.0,
+            originalCapacity = originalCapacity ?: 0.0,
             healthPercent = healthPercent,
             lossKwh = lossKwh,
             lossPercent = lossPercent,

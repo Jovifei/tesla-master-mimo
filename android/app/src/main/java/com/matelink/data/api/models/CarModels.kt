@@ -57,7 +57,8 @@ data class CarDetails(
 
 @JsonClass(generateAdapter = true)
 data class CarStatusResponse(
-    @Json(name = "data") val data: CarStatusData? = null
+    @Json(name = "data") val data: CarStatusData? = null,
+    @Json(name = "error") val error: String? = null
 )
 
 @JsonClass(generateAdapter = true)

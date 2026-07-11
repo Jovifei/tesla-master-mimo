@@ -5,3 +5,6 @@ android/local.properties
 
 # IDE-local project metadata
 android/.idea/
+
+# Local deployment secrets
+deploy/**/.env

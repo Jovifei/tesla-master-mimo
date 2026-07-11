@@ -147,6 +147,9 @@ fun SettingsScreen(
                 onSave = {
                     viewModel.saveSettings(onNavigateToDashboard)
                 },
+                onEnterApp = {
+                    viewModel.saveSettings(onNavigateToDashboard)
+                },
                 onNavigateToTariffConfig = onNavigateToTariffConfig,
                 onForceResync = viewModel::forceResync,
                 onSimulateTpmsWarning = viewModel::simulateTpmsWarning,
@@ -232,6 +235,7 @@ private fun SettingsContent(
     onMockModeChange: (Boolean) -> Unit = {},
     onTestConnection: () -> Unit,
     onSave: () -> Unit,
+    onEnterApp: () -> Unit = onSave,
     onNavigateToTariffConfig: () -> Unit = {},
     onForceResync: () -> Unit = {},
     onSimulateTpmsWarning: (TirePosition) -> Unit = {},
@@ -891,6 +895,16 @@ private fun SettingsContent(
         // Test result card
         uiState.testResult?.let { result ->
             TestResultCard(result = result)
+            if (result.primaryResult is ServerTestResult.Success) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = onEnterApp,
+                    enabled = !uiState.isTesting && !uiState.isSaving,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.settings_enter_app))
+                }
+            }
             Spacer(modifier = Modifier.height(16.dp))
         }
 

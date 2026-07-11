@@ -133,7 +133,7 @@ fun BatteryScreen(
                     MateLinkLoadingPlaceholder(color = palette.accent)
                 } else {
                     val stats = viewModel.computeStats()
-                    if (stats != null) {
+                    if (stats != null && (stats.hasCapacityEstimate || stats.hasRangeEstimate || stats.hasLiveStatus)) {
                         BatteryHealthContent(
                             stats = stats,
                             units = uiState.units,
@@ -188,14 +188,13 @@ private fun BatteryHealthContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Capacity Section
-        CapacityCard(stats = stats, units = units, palette = palette, onClick = onCardClick)
-
-        // Degradation Section
-        DegradationCard(stats = stats, palette = palette, onClick = onCardClick)
-
-        // Range Section
-        RangeCard(stats = stats, units = units, palette = palette, onClick = onCardClick)
+        if (stats.hasCapacityEstimate) {
+            CapacityCard(stats = stats, units = units, palette = palette, onClick = onCardClick)
+            DegradationCard(stats = stats, palette = palette, onClick = onCardClick)
+        }
+        if (stats.hasRangeEstimate) {
+            RangeCard(stats = stats, units = units, palette = palette, onClick = onCardClick)
+        }
     }
 }
 

@@ -126,7 +126,7 @@ class DrivesViewModel @Inject constructor(
 
     companion object {
         private const val MIN_DURATION_MINUTES = 1
-        private const val MIN_DISTANCE_KM = 0.1
+        private const val MIN_ROUTE_DISTANCE_KM = 0.5
 
         private const val KEY_DATE_FILTER = "filter_date"
         private const val KEY_DISTANCE_FILTER = "filter_distance"
@@ -304,17 +304,15 @@ class DrivesViewModel @Inject constructor(
         val granularity = state.chartGranularity
 
         // First apply short drives filter
-        var filteredDrives = if (showShortDrivesCharges) {
-            allDrives
-        } else {
-            allDrives.filter { drive ->
-                (drive.durationMin ?: 0) >= MIN_DURATION_MINUTES &&
-                    (drive.distance ?: 0.0) >= MIN_DISTANCE_KM
-            }
+        // Tiny repositioning movements are part of the surrounding parking
+        // interval, not a user-visible route.
+        val routeDrives = allDrives.filter { drive ->
+            (drive.durationMin ?: 0) >= MIN_DURATION_MINUTES &&
+                (drive.distance ?: 0.0) >= MIN_ROUTE_DISTANCE_KM
         }
 
         // Apply distance filter for list display
-        val displayDrives = filteredDrives.filter { drive ->
+        val displayDrives = routeDrives.filter { drive ->
             val distance = drive.distance ?: 0.0
             val minOk = distanceFilter.minDistanceKm?.let { distance >= it } ?: true
             val maxOk = distanceFilter.maxDistanceKm?.let { distance < it } ?: true
@@ -322,7 +320,7 @@ class DrivesViewModel @Inject constructor(
         }
 
         // Apply distance filter to all drives for summary/charts (include short drives)
-        val drivesForStats = allDrives.filter { drive ->
+        val drivesForStats = routeDrives.filter { drive ->
             val distance = drive.distance ?: 0.0
             val minOk = distanceFilter.minDistanceKm?.let { distance >= it } ?: true
             val maxOk = distanceFilter.maxDistanceKm?.let { distance < it } ?: true

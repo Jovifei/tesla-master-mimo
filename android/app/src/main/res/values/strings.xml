@@ -10,6 +10,15 @@
 
     <!-- Dashboard -->
     <string name="dashboard_loading">Loading Dashboard...</string>
+    <string name="dashboard_status_unavailable_title">Vehicle connected, live status pending</string>
+    <string name="dashboard_status_unavailable_body">TeslaMate has detected your vehicle, but the live status snapshot is not available yet. Wait for TeslaMate to finish the first sync, then refresh.</string>
+    <string name="dashboard_partial_status_body">MateLink can read this vehicle from TeslaMate. Battery, location, lock, climate, and TPMS cards need the live status endpoint to return a snapshot.</string>
+    <string name="dashboard_partial_status_detail">Status endpoint: %1$s</string>
+    <string name="dashboard_partial_model">Model</string>
+    <string name="dashboard_partial_exterior">Exterior</string>
+    <string name="dashboard_partial_source_label">Data Source</string>
+    <string name="dashboard_partial_source_value">Real TeslaMate vehicle list; live status pending</string>
+    <string name="dashboard_partial_badge">Syncing</string>
     <string name="battery">Battery</string>
     <string name="odometer">Odometer</string>
     <string name="location">Location</string>
@@ -561,6 +570,7 @@
     <string name="deselect_all">Deselect All</string>
     <string name="drive_details_title">Drive Details</string>
     <string name="drive_history">Drive History</string>
+    <string name="drive_history_parked_at">Parked at %1$s</string>
     <string name="drive_start_legend">Start</string>
     <plurals name="drives_count">
         <item quantity="one">%1$d drive</item>
@@ -724,6 +734,7 @@
     <string name="settings_show_short_hint">Show abbreviated values</string>
     <string name="settings_show_short_label">Short Values</string>
     <string name="settings_test_connection">Test Connection</string>
+    <string name="settings_enter_app">Enter App</string>
     <string name="show_password">Show Password</string>
     <string name="show_token">Show Token</string>
     <string name="soc_energy_added">Energy Added</string>
@@ -863,6 +874,47 @@
     <string name="instances">Instances</string>
     <string name="select_language">Select language</string>
     <string name="edit_instance">Edit Instance</string>
+
+    <!-- Legacy settings aliases kept for localized resource compatibility -->
+    <string name="accept_invalid_certs">@string/settings_accept_invalid_certs</string>
+    <string name="accept_invalid_certs_hint">@string/settings_accept_invalid_certs_hint</string>
+    <string name="accept_invalid_certs_warning">@string/settings_accept_invalid_certs_warning</string>
+    <string name="advanced_network">@string/settings_advanced_network</string>
+    <string name="api_token_placeholder">@string/settings_api_token_placeholder</string>
+    <string name="connect">@string/settings_connect_title</string>
+    <string name="connect_description">@string/settings_connect_description</string>
+    <string name="connected">@string/settings_connected</string>
+    <string name="currency">@string/settings_currency_label</string>
+    <string name="display">@string/settings_display_title</string>
+    <string name="extra">@string/settings_extra</string>
+    <string name="http_basic_auth">@string/settings_http_basic_auth_hint</string>
+    <string name="http_basic_auth_hint">@string/settings_http_basic_auth_hint</string>
+    <string name="http_basic_auth_password_label">@string/settings_http_basic_auth_password_label</string>
+    <string name="http_basic_auth_password_placeholder">@string/settings_http_basic_auth_password_placeholder</string>
+    <string name="http_basic_auth_username_label">@string/settings_http_basic_auth_username_label</string>
+    <string name="http_basic_auth_username_placeholder">@string/settings_http_basic_auth_username_placeholder</string>
+    <string name="palette_preview">@string/settings_palette_preview</string>
+    <string name="report_issue">@string/settings_report_issue</string>
+    <string name="resync">@string/settings_resync_button</string>
+    <string name="resync_confirm">@string/settings_resync_confirm</string>
+    <string name="resync_dialog_text_delete">@string/settings_resync_dialog_text_delete</string>
+    <string name="resync_dialog_text_prefix">@string/settings_resync_dialog_text_prefix</string>
+    <string name="resync_dialog_text_suffix">@string/settings_resync_dialog_text_suffix</string>
+    <string name="resync_dialog_title">@string/settings_resync_dialog_title</string>
+    <string name="resync_hint">@string/settings_resync_hint</string>
+    <string name="resyncing">@string/settings_resyncing</string>
+    <string name="secondary_server">@string/settings_secondary_server</string>
+    <string name="secondary_url_hint">@string/settings_secondary_url_hint</string>
+    <string name="secondary_url_label">@string/settings_secondary_url_label</string>
+    <string name="secondary_url_placeholder">@string/settings_secondary_url_placeholder</string>
+    <string name="select_currency">@string/settings_currency_select</string>
+    <string name="server_url_placeholder">@string/settings_server_url_placeholder</string>
+    <string name="short_dialog_text">@string/settings_short_dialog_text</string>
+    <string name="short_dialog_title">@string/settings_short_dialog_title</string>
+    <string name="show_short_hint">@string/settings_show_short_hint</string>
+    <string name="show_short_label">@string/settings_show_short_label</string>
+    <string name="tariff_configuration">@string/tariff_title</string>
+    <string name="tariff_configuration_hint">@string/tariff_enable_hint</string>
 
     <!-- 3D Vehicle -->
     <string name="vehicle_3d_title">3D Vehicle</string>

@@ -1,5 +1,11 @@
 package com.matelink.ui.screens.dashboard
 
+import android.content.Context
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.CarData
@@ -7,7 +13,9 @@ import com.matelink.data.api.models.CarStatus
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.sync.DataSyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.*
@@ -23,6 +31,7 @@ data class DashboardUiState(
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repository: TeslamateRepository,
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
@@ -113,6 +122,24 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun refresh() {
+        triggerDataSync()
         loadDashboard()
+    }
+
+    private fun triggerDataSync() {
+        val request = OneTimeWorkRequestBuilder<DataSyncWorker>()
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .addTag(DataSyncWorker.TAG)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            DataSyncWorker.WORK_NAME,
+            ExistingWorkPolicy.KEEP,
+            request
+        )
     }
 }

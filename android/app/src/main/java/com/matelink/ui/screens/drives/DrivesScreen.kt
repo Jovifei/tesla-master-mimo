@@ -81,7 +81,9 @@ import com.matelink.util.formatDuration
 import com.matelink.util.formatDurationCompact
 import com.matelink.ui.theme.CarColorPalette
 import com.matelink.ui.theme.CarColorPalettes
+import java.time.Duration
 import java.time.LocalDate
+import java.time.OffsetDateTime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -195,6 +197,7 @@ private fun DrivesContent(
     onDistanceFilterSelected: (DriveDistanceFilter) -> Unit,
     onDriveClick: (driveId: Int) -> Unit
 ) {
+    val historyItems = remember(drives) { buildDriveHistoryItems(drives) }
     // Header items in this LazyColumn, in render order: date chips, distance chips,
     // summary, charts (conditional), history header. Adjust if items are added.
     val headerCount = 4 + (if (chartData.isNotEmpty()) 1 else 0)
@@ -274,13 +277,19 @@ private fun DrivesContent(
                 }
             }
         } else {
-            items(drives, key = { it.id }) { drive ->
-                DriveItem(
-                    drive = drive,
-                    units = units,
-                    palette = palette,
-                    onClick = { onDriveClick(drive.id) }
-                )
+            items(historyItems, key = { it.key }) { item ->
+                when (item) {
+                    is DriveHistoryItem.Drive -> DriveItem(
+                        drive = item.drive,
+                        units = units,
+                        palette = palette,
+                        onClick = { onDriveClick(item.drive.id) }
+                    )
+                    is DriveHistoryItem.Parked -> ParkedItem(
+                        item = item,
+                        palette = palette
+                    )
+                }
             }
         }
     }
@@ -289,7 +298,7 @@ private fun DrivesContent(
         state = listState,
         dateAt = { index ->
             if (index < headerCount) null
-            else drives.getOrNull(index - headerCount)?.startDate.parseListItemDate()
+            else historyItems.getOrNull(index - headerCount)?.dateForIndicator.parseListItemDate()
         },
         accent = palette.accent,
         modifier = Modifier.align(Alignment.CenterEnd),
@@ -315,6 +324,64 @@ private fun DrivesContent(
     }
     }
 }
+
+private sealed interface DriveHistoryItem {
+    val key: String
+    val dateForIndicator: String?
+
+    data class Drive(val drive: DriveData) : DriveHistoryItem {
+        override val key: String = "drive-${drive.id}"
+        override val dateForIndicator: String? = drive.startDate
+    }
+
+    data class Parked(
+        val olderDrive: DriveData,
+        val newerDrive: DriveData,
+        val startDate: String,
+        val endDate: String,
+        val durationMin: Long,
+        val location: String?
+    ) : DriveHistoryItem {
+        override val key: String = "parked-${olderDrive.id}-${newerDrive.id}"
+        override val dateForIndicator: String = startDate
+    }
+}
+
+private fun buildDriveHistoryItems(drives: List<DriveData>): List<DriveHistoryItem> {
+    val routeDrives = drives.filter { (it.distance ?: 0.0) >= 0.5 }
+    if (routeDrives.isEmpty()) return emptyList()
+    val items = mutableListOf<DriveHistoryItem>()
+    routeDrives.forEachIndexed { index, drive ->
+        items += DriveHistoryItem.Drive(drive)
+        val olderDrive = routeDrives.getOrNull(index + 1) ?: return@forEachIndexed
+        val parked = createParkedSegment(olderDrive, drive)
+        if (parked != null) items += parked
+    }
+    return items
+}
+
+private fun createParkedSegment(
+    olderDrive: DriveData,
+    newerDrive: DriveData
+): DriveHistoryItem.Parked? {
+    val startDate = olderDrive.endDate ?: return null
+    val endDate = newerDrive.startDate ?: return null
+    val start = parseOffsetDateTime(startDate) ?: return null
+    val end = parseOffsetDateTime(endDate) ?: return null
+    val durationMin = Duration.between(start, end).toMinutes()
+    if (durationMin <= 0) return null
+    return DriveHistoryItem.Parked(
+        olderDrive = olderDrive,
+        newerDrive = newerDrive,
+        startDate = startDate,
+        endDate = endDate,
+        durationMin = durationMin,
+        location = olderDrive.endAddress ?: newerDrive.startAddress
+    )
+}
+
+private fun parseOffsetDateTime(value: String): OffsetDateTime? =
+    runCatching { OffsetDateTime.parse(value) }.getOrNull()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -523,7 +590,7 @@ private fun DriveItem(
     val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
     EditorialListItem(
         accent = palette.accent,
-        dateline = formatEditorialDate(drive.startDate, is24Hour),
+        dateline = formatEditorialDate(drive.startDate, true),
         title = "$startCity → $endCity",
         heroValue = "%.0f".format(UnitFormatter.formatDistanceValue(drive.distance ?: 0.0, units)),
         heroUnit = UnitFormatter.getDistanceUnit(units).uppercase(java.util.Locale.getDefault()),
@@ -539,6 +606,41 @@ private fun DriveItem(
             EditorialPill(
                 text = "$start→$end%",
                 background = palette.accent.copy(alpha = 0.12f),
+                color = palette.accent,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ParkedItem(
+    item: DriveHistoryItem.Parked,
+    palette: CarColorPalette
+) {
+    val context = LocalContext.current
+    val unknown = stringResource(R.string.unknown)
+    val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
+    val durationText = formatDuration(
+        context.resources,
+        item.durationMin.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    )
+    EditorialListItem(
+        accent = MaterialTheme.colorScheme.outline,
+        dateline = formatEditorialDate(item.startDate, true),
+        title = stringResource(R.string.drive_history_parked_at, item.location ?: unknown),
+        heroValue = durationText,
+        heroUnit = stringResource(R.string.trip_timeline_parked).uppercase(java.util.Locale.getDefault()),
+        onClick = {},
+    ) {
+        EditorialPill(stringResource(R.string.parked_for, durationText))
+        val batteryStart = item.olderDrive.endBatteryLevel
+        val batteryEnd = item.newerDrive.startBatteryLevel
+        if (batteryStart != null && batteryEnd != null) {
+            EditorialPill(
+                text = "$batteryStart% -> $batteryEnd%",
+                background = palette.accent.copy(alpha = 0.10f),
                 color = palette.accent,
                 fontWeight = FontWeight.Bold
             )
