@@ -931,4 +931,10 @@
     <string name="export_summary">导出摘要</string>
     <string name="export_share">导出并分享</string>
     <string name="export_share_title">分享导出</string>
+    <string name="settings_local_http_warning">当前使用未加密的局域网 HTTP，请仅在可信网络中使用。</string>
+    <string name="settings_public_http_unsafe">当前公网 HTTP 不安全，请使用 HTTPS 或可信局域网地址。</string>
+    <string name="settings_api_key_invalid">API Key 无效或与服务器不一致。</string>
+    <string name="settings_connection_timeout">连接超时。</string>
+    <string name="settings_unrecognised_server_data">服务器返回了无法识别的数据。</string>
+    <string name="settings_server_unreachable">服务器暂时无法访问。</string>
 </resources>

@@ -5,7 +5,10 @@ import com.matelink.BuildConfig
 import com.matelink.data.api.NominatimApi
 import com.matelink.data.api.OpenMeteoApi
 import com.matelink.data.api.TeslamateApi
+import com.matelink.data.api.UrlSecurity
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.repository.ConnectionUrlValidation
+import com.matelink.data.repository.validateConnectionUrl
 import com.squareup.moshi.Moshi
 import dagger.Module
 import dagger.Provides
@@ -94,11 +97,10 @@ object NetworkModule {
  */
 private data class ApiCacheKey(
     val baseUrl: String,
-    val acceptInvalidCerts: Boolean,
-    val apiToken: String,
-    val httpBasicAuthUsername: String,
-    val httpBasicAuthPassword: String
+    val apiToken: String
 )
+
+internal fun normalizedApiToken(value: String): String = value.trim()
 
 /**
  * Factory for creating TeslamateApi instances with caching support.
@@ -122,23 +124,27 @@ class TeslamateApiFactory(
      */
     suspend fun create(
         baseUrl: String,
-        acceptInvalidCerts: Boolean? = null,
+        @Suppress("UNUSED_PARAMETER") acceptInvalidCerts: Boolean? = null,
         apiTokenOverride: String? = null
     ): TeslamateApi {
-        val normalizedUrl = baseUrl.trimEnd('/') + "/"
+        val validatedUrl = when (val validation = validateConnectionUrl(baseUrl)) {
+            is ConnectionUrlValidation.Valid -> validation.normalizedUrl
+            is ConnectionUrlValidation.Invalid -> throw IllegalArgumentException("Invalid API root URL")
+        }
+        if (UrlSecurity.classify(validatedUrl) == UrlSecurity.Verdict.Unsafe) {
+            throw IllegalArgumentException("Public HTTP is not secure")
+        }
+        val normalizedUrl = validatedUrl + "/"
         val settings = settingsDataStore.settings.first()
-        val useInsecure = acceptInvalidCerts ?: settings.acceptInvalidCerts
-        val apiToken = apiTokenOverride ?: settings.apiToken
-        val basicAuthUsername = settings.httpBasicAuthUsername
-        val basicAuthPassword = settings.httpBasicAuthPassword
+        val apiToken = normalizedApiToken(apiTokenOverride ?: settings.apiToken)
 
-        val cacheKey = ApiCacheKey(normalizedUrl, useInsecure, apiToken, basicAuthUsername, basicAuthPassword)
+        val cacheKey = ApiCacheKey(normalizedUrl, apiToken)
 
         // Return cached API if available
         apiCache[cacheKey]?.let { return it }
 
         // Create new API instance
-        val okHttpClient = createOkHttpClient(apiToken, useInsecure, basicAuthUsername, basicAuthPassword)
+        val okHttpClient = createOkHttpClient(apiToken)
 
         val api = Retrofit.Builder()
             .baseUrl(normalizedUrl)
@@ -168,10 +174,7 @@ class TeslamateApiFactory(
     }
 
     private fun createOkHttpClient(
-        apiToken: String,
-        acceptInvalidCerts: Boolean,
-        basicAuthUsername: String = "",
-        basicAuthPassword: String = ""
+        apiToken: String
     ): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .addInterceptor { chain ->
@@ -179,9 +182,6 @@ class TeslamateApiFactory(
                     .header("User-Agent", "MateLink/${BuildConfig.VERSION_NAME}")
                 if (apiToken.isNotBlank()) {
                     requestBuilder.addHeader("Authorization", "Bearer $apiToken")
-                } else if (basicAuthUsername.isNotBlank() && basicAuthPassword.isNotBlank()) {
-                    requestBuilder.addHeader("Authorization",
-                        okhttp3.Credentials.basic(basicAuthUsername, basicAuthPassword))
                 }
                 chain.proceed(requestBuilder.build())
             }
@@ -198,10 +198,6 @@ class TeslamateApiFactory(
                 redactHeader("Authorization")
             }
             builder.addInterceptor(loggingInterceptor)
-        }
-
-        if (acceptInvalidCerts) {
-            configureInsecureTls(builder)
         }
 
         return builder.build()

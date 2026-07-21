@@ -1,6 +1,6 @@
 package com.matelink.data.repository
 
-import android.util.Log
+import com.matelink.data.api.UrlSecurity
 import com.matelink.data.api.TeslamateApi
 import com.matelink.data.api.models.BatteryHealth
 import com.matelink.data.api.models.CarData
@@ -78,10 +78,6 @@ class TeslamateRepository @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val settingsRepository: SettingsRepository
 ) {
-    companion object {
-        private const val TAG = "TeslamateRepository"
-    }
-
     private suspend fun isMockMode(): Boolean =
         settingsRepository.mockMode.firstOrNull() == true
 
@@ -114,94 +110,21 @@ class TeslamateRepository @Inject constructor(
         return apiFactory.create(url)
     }
 
-    /**
-     * Executes an API call with automatic fallback to the secondary server if configured.
-     *
-     * The fallback is triggered only for network-level errors (timeout, connection refused,
-     * DNS failure, SSL errors). HTTP errors (4xx, 5xx) do NOT trigger fallback because
-     * they indicate the server is reachable but returned an error.
-     *
-     * @param apiCall The API call to execute, given a TeslamateApi instance
-     * @return The result of the API call
-     */
+    /** Executes requests only against the explicitly saved primary server. */
     private suspend fun <T> executeWithFallback(
         apiCall: suspend (TeslamateApi) -> ApiResult<T>
     ): ApiResult<T> {
         val settings = getSettings()
-
         if (settings.serverUrl.isBlank()) {
             return ApiResult.Error("Server not configured")
         }
-
-        // Try primary server first
         val primaryApi = getApiForUrl(settings.serverUrl)
             ?: return ApiResult.Error("Server not configured")
-
-        val primaryResult = try {
+        return try {
             apiCall(primaryApi)
         } catch (e: Exception) {
-            if (e.isNetworkError() && settings.hasSecondaryServer) {
-                Log.d(TAG, "Primary server failed with network error, trying secondary: ${e.message}")
-                null // Will try secondary
-            } else {
-                // Not a network error or no secondary server, return the error
-                return when {
-                    e is javax.net.ssl.SSLHandshakeException ->
-                        ApiResult.Error("SSL certificate error. Enable 'Accept invalid certificates' for self-signed certs.")
-                    e.isJsonParsingError() ->
-                        ApiResult.Error(
-                            message = "Invalid response from server",
-                            details = "The server returned an unexpected response that could not be parsed.\n\n" +
-                                    "This usually means:\n" +
-                                    "• The API URL might be incorrect\n" +
-                                    "• The server is returning an error page\n" +
-                                    "• TeslaMate API is not properly configured\n\n" +
-                                    "Technical details: ${e.message}"
-                        )
-                    else -> ApiResult.Error(e.message ?: "Connection failed")
-                }
-            }
+            ApiResult.Error(connectionErrorMessage(e))
         }
-
-        // If primary succeeded or returned an HTTP error, return it
-        if (primaryResult != null) {
-            // Only fallback on network errors, not on HTTP errors
-            if (primaryResult is ApiResult.Success) {
-                return primaryResult
-            }
-            // For HTTP errors, don't fallback - the server is reachable
-            if (primaryResult is ApiResult.Error && primaryResult.code != null) {
-                return primaryResult
-            }
-        }
-
-        // Try secondary server if available
-        if (settings.hasSecondaryServer) {
-            Log.d(TAG, "Trying secondary server: ${settings.secondaryServerUrl}")
-            val secondaryApi = getApiForUrl(settings.secondaryServerUrl)
-                ?: return primaryResult ?: ApiResult.Error("Secondary server not configured")
-
-            return try {
-                apiCall(secondaryApi)
-            } catch (e: Exception) {
-                Log.d(TAG, "Secondary server also failed: ${e.message}")
-                // Both servers failed, return a combined error message
-                when {
-                    e is javax.net.ssl.SSLHandshakeException ->
-                        ApiResult.Error("Both servers failed. SSL certificate error on secondary server.")
-                    e.isJsonParsingError() ->
-                        ApiResult.Error(
-                            message = "Invalid response from secondary server",
-                            details = "The secondary server returned an unexpected response.\n\n" +
-                                    "Technical details: ${e.message}"
-                        )
-                    else -> ApiResult.Error("Both servers unreachable: ${e.message}")
-                }
-            }
-        }
-
-        // No secondary server, return the primary error
-        return primaryResult ?: ApiResult.Error("Connection failed")
     }
 
     suspend fun testConnection(
@@ -212,6 +135,9 @@ class TeslamateRepository @Inject constructor(
         when (val validation = validateConnectionUrl(serverUrl)) {
             is ConnectionUrlValidation.Invalid -> return ApiResult.Error(validation.message)
             is ConnectionUrlValidation.Valid -> {
+                if (UrlSecurity.classify(validation.normalizedUrl) == UrlSecurity.Verdict.Unsafe) {
+                    return ApiResult.Error("Public HTTP is not secure")
+                }
                 if (isMockMode()) {
                     val cars = MockDataProvider.getCars()
                     return ApiResult.Success(
@@ -297,10 +223,18 @@ class TeslamateRepository @Inject constructor(
                 )
             )
         } catch (e: javax.net.ssl.SSLHandshakeException) {
-            ApiResult.Error("SSL certificate error. Enable 'Accept invalid certificates' for self-signed certs.")
+            ApiResult.Error("Server certificate cannot be verified")
         } catch (e: Exception) {
-            ApiResult.Error(e.message ?: "Connection failed")
+            ApiResult.Error(connectionErrorMessage(e))
         }
+    }
+
+    private fun connectionErrorMessage(error: Exception): String = when {
+        error is SocketTimeoutException -> "Connection timed out"
+        error is ConnectException || error is UnknownHostException -> "Server is temporarily unreachable"
+        error is javax.net.ssl.SSLHandshakeException -> "Server certificate cannot be verified"
+        error.isJsonParsingError() -> "Server returned unrecognised data"
+        else -> "Server is temporarily unreachable"
     }
 
     private fun httpFailure(prefix: String, code: Int): ConnectionStepResult.Failure {

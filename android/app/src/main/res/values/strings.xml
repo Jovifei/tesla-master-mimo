@@ -946,4 +946,10 @@
     <string name="error_load_regions">Failed to load regions</string>
     <string name="error_load_countries">Failed to load countries</string>
     <string name="error_invalid_date">Invalid date</string>
+    <string name="settings_local_http_warning">Using unencrypted local-network HTTP. Only use it on a trusted network.</string>
+    <string name="settings_public_http_unsafe">Public HTTP is not secure. Use HTTPS or a trusted local-network address.</string>
+    <string name="settings_api_key_invalid">API Key is invalid or does not match this server.</string>
+    <string name="settings_connection_timeout">Connection timed out.</string>
+    <string name="settings_unrecognised_server_data">Server returned unrecognised data.</string>
+    <string name="settings_server_unreachable">Server is temporarily unreachable.</string>
 </resources>

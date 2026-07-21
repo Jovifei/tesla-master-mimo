@@ -147,9 +147,6 @@ fun SettingsScreen(
                 onSave = {
                     viewModel.saveSettings(onNavigateToDashboard)
                 },
-                onEnterApp = {
-                    viewModel.saveSettings(onNavigateToDashboard)
-                },
                 onNavigateToTariffConfig = onNavigateToTariffConfig,
                 onForceResync = viewModel::forceResync,
                 onSimulateTpmsWarning = viewModel::simulateTpmsWarning,
@@ -235,7 +232,6 @@ private fun SettingsContent(
     onMockModeChange: (Boolean) -> Unit = {},
     onTestConnection: () -> Unit,
     onSave: () -> Unit,
-    onEnterApp: () -> Unit = onSave,
     onNavigateToTariffConfig: () -> Unit = {},
     onForceResync: () -> Unit = {},
     onSimulateTpmsWarning: (TirePosition) -> Unit = {},
@@ -298,6 +294,8 @@ private fun SettingsContent(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
+        // Historical multi-instance data is retained, but its editor is not part of P0.5.
+        if (false) {
         // === Instances Section ===
         if (instanceUiState.instances.isNotEmpty()) {
             Text(
@@ -369,6 +367,7 @@ private fun SettingsContent(
             Spacer(modifier = Modifier.height(24.dp))
         }
 
+        }
         // === Server Connection Section ===
         Text(
             text = stringResource(R.string.settings_connect_title),
@@ -407,7 +406,28 @@ private fun SettingsContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        OutlinedTextField(
+            value = uiState.apiToken,
+            onValueChange = onApiTokenChange,
+            label = { Text(stringResource(R.string.settings_api_token_label)) },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            enabled = !uiState.isTesting && !uiState.isSaving
+        )
+
+        uiState.connectionWarning?.let { warning ->
+            Text(
+                text = warning,
+                style = MaterialTheme.typography.bodySmall,
+                color = StatusWarning,
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // === Advanced Network Settings (Collapsed by default) ===
+        if (false) {
         HorizontalDivider()
 
         CollapsibleSection(
@@ -587,6 +607,7 @@ private fun SettingsContent(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
+        }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -895,16 +916,6 @@ private fun SettingsContent(
         // Test result card
         uiState.testResult?.let { result ->
             TestResultCard(result = result)
-            if (result.primaryResult is ServerTestResult.Success) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                    onClick = onEnterApp,
-                    enabled = !uiState.isTesting && !uiState.isSaving,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.settings_enter_app))
-                }
-            }
             Spacer(modifier = Modifier.height(16.dp))
         }
 

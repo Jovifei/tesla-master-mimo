@@ -1,5 +1,7 @@
 package com.matelink.data.repository
 
+import com.matelink.data.api.UrlSecurity
+
 sealed class ConnectionUrlValidation {
     data class Valid(val normalizedUrl: String) : ConnectionUrlValidation()
     data class Invalid(val message: String) : ConnectionUrlValidation()
@@ -18,48 +20,21 @@ data class ConnectionTestOutcome(
     val carCount: Int = 0,
     val firstCarName: String? = null
 ) {
-    val isSuccessful: Boolean
-        get() = ping is ConnectionStepResult.Success &&
-                readiness !is ConnectionStepResult.Failure &&
-                cars is ConnectionStepResult.Success
-
-    val readinessWarning: String?
-        get() = (readiness as? ConnectionStepResult.Warning)?.message
-
-    val summary: String
-        get() = when {
-            isSuccessful && carCount == 1 && !firstCarName.isNullOrBlank() ->
-                "Connected to 1 car: $firstCarName"
-            isSuccessful && carCount == 1 ->
-                "Connected to 1 car"
-            isSuccessful && carCount > 1 ->
-                "Connected to $carCount cars"
-            ping is ConnectionStepResult.Failure -> ping.message
-            cars is ConnectionStepResult.Failure -> cars.message
-            readiness is ConnectionStepResult.Failure -> readiness.message
-            else -> "Connection test did not complete"
-        }
-
-    val failureHint: String?
-        get() = listOf(ping, readiness, cars)
-            .filterIsInstance<ConnectionStepResult.Failure>()
-            .firstOrNull()
-            ?.hint
+    val isSuccessful get() = ping is ConnectionStepResult.Success && readiness !is ConnectionStepResult.Failure && cars is ConnectionStepResult.Success
+    val readinessWarning get() = (readiness as? ConnectionStepResult.Warning)?.message
+    val summary get() = when {
+        isSuccessful && carCount == 1 && !firstCarName.isNullOrBlank() -> "Connected to 1 car: $firstCarName"
+        isSuccessful && carCount == 1 -> "Connected to 1 car"
+        isSuccessful && carCount > 1 -> "Connected to $carCount cars"
+        ping is ConnectionStepResult.Failure -> ping.message
+        cars is ConnectionStepResult.Failure -> cars.message
+        readiness is ConnectionStepResult.Failure -> readiness.message
+        else -> "Connection test did not complete"
+    }
+    val failureHint get() = listOf(ping, readiness, cars).filterIsInstance<ConnectionStepResult.Failure>().firstOrNull()?.hint
 }
 
-fun validateConnectionUrl(input: String): ConnectionUrlValidation {
-    val trimmed = input.trim().trimEnd('/')
-    if (trimmed.isBlank()) {
-        return ConnectionUrlValidation.Invalid("API root URL is required")
-    }
-    if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-        return ConnectionUrlValidation.Invalid("URL must start with http:// or https://")
-    }
-
-    val withoutApiPath = trimmed
-        .removeSuffix("/api/v1")
-        .removeSuffix("/api")
-        .trimEnd('/')
-
-    return ConnectionUrlValidation.Valid(withoutApiPath)
+fun validateConnectionUrl(input: String): ConnectionUrlValidation = when (val result = UrlSecurity.normalizeAndValidate(input)) {
+    is UrlSecurity.Validation.Valid -> ConnectionUrlValidation.Valid(result.normalizedUrl)
+    is UrlSecurity.Validation.Invalid -> ConnectionUrlValidation.Invalid(result.message)
 }

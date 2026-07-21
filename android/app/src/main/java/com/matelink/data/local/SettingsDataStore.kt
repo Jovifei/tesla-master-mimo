@@ -194,6 +194,15 @@ class SettingsDataStore @Inject constructor(
         secureStore.setHttpBasicPassword(httpBasicAuthPassword)
     }
 
+    /** Saves the two user-facing connection values without rewriting legacy advanced settings. */
+    suspend fun saveConnectionSettings(serverUrl: String, apiToken: String, currencyCode: String) {
+        context.dataStore.edit { preferences ->
+            preferences[serverUrlKey] = serverUrl
+            preferences[currencyCodeKey] = currencyCode
+        }
+        secureStore.setApiToken(apiToken)
+    }
+
     suspend fun saveHttpBasicAuth(username: String, password: String) {
         secureStore.setHttpBasicUsername(username)
         secureStore.setHttpBasicPassword(password)

@@ -14,12 +14,15 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import com.matelink.R
+import com.matelink.data.api.UrlSecurity
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.TirePosition
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.ConnectionTestOutcome
 import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.repository.ConnectionUrlValidation
+import com.matelink.data.repository.validateConnectionUrl
 import com.matelink.data.repository.SentryStateRepository
 import com.matelink.data.repository.TpmsStateRepository
 import com.matelink.notification.SentryNotificationManager
@@ -37,8 +40,8 @@ import javax.inject.Inject
 
 data class SettingsUiState(
     val serverUrl: String = "",
-    val secondaryServerUrl: String = "",
     val apiToken: String = "",
+    val secondaryServerUrl: String = "",
     val httpBasicAuthUsername: String = "",
     val httpBasicAuthPassword: String = "",
     val acceptInvalidCerts: Boolean = false,
@@ -51,11 +54,11 @@ data class SettingsUiState(
     val isSaving: Boolean = false,
     val isResyncing: Boolean = false,
     val testResult: TestResult? = null,
+    val connectionWarning: String? = null,
     val error: String? = null,
     val successMessage: String? = null,
     val needsRecreate: Boolean = false,
-    val isFirstRunSetup: Boolean = false,
-    val allowUntestedSave: Boolean = false
+    val isFirstRunSetup: Boolean = false
 )
 
 /**
@@ -70,21 +73,12 @@ sealed class ServerTestResult {
     data class Failure(val message: String, val hint: String? = null) : ServerTestResult()
 }
 
-/**
- * Represents the combined results of testing primary and optionally secondary server connections.
- */
 data class TestResult(
     val primaryResult: ServerTestResult,
-    val secondaryResult: ServerTestResult? = null // null if no secondary URL configured
-) {
-    val isFullySuccessful: Boolean
-        get() = primaryResult is ServerTestResult.Success &&
-                (secondaryResult == null || secondaryResult is ServerTestResult.Success)
+    val secondaryResult: ServerTestResult? = null
+)
 
-    val hasAnySuccess: Boolean
-        get() = primaryResult is ServerTestResult.Success ||
-                secondaryResult is ServerTestResult.Success
-}
+internal fun serverUrlForDisplay(savedUrl: String): String = savedUrl.ifBlank { "https://" }
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -110,12 +104,9 @@ class SettingsViewModel @Inject constructor(
             val settings = settingsDataStore.settings.first()
             val mockMode = settingsRepository.mockMode.first()
             _uiState.value = _uiState.value.copy(
-                serverUrl = settings.serverUrl,
-                secondaryServerUrl = settings.secondaryServerUrl,
+                serverUrl = serverUrlForDisplay(settings.serverUrl),
                 apiToken = settings.apiToken,
-                httpBasicAuthUsername = settings.httpBasicAuthUsername,
-                httpBasicAuthPassword = settings.httpBasicAuthPassword,
-                acceptInvalidCerts = settings.acceptInvalidCerts,
+                connectionWarning = localHttpWarning(settings.serverUrl),
                 currencyCode = settings.currencyCode,
                 showShortDrivesCharges = settings.showShortDrivesCharges,
                 languageCode = settings.languageCode,
@@ -130,17 +121,8 @@ class SettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             serverUrl = url,
             testResult = null,
-            error = null,
-            allowUntestedSave = false
-        )
-    }
-
-    fun updateSecondaryServerUrl(url: String) {
-        _uiState.value = _uiState.value.copy(
-            secondaryServerUrl = url,
-            testResult = null,
-            error = null,
-            allowUntestedSave = false
+            connectionWarning = localHttpWarning(url),
+            error = null
         )
     }
 
@@ -148,44 +130,25 @@ class SettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             apiToken = token,
             testResult = null,
-            error = null,
-            allowUntestedSave = false
+            error = null
         )
+    }
+
+    // Retained only for compatibility with stored legacy settings; P0.5 no longer renders editors for them.
+    fun updateSecondaryServerUrl(url: String) {
+        _uiState.value = _uiState.value.copy(secondaryServerUrl = url, testResult = null, error = null)
     }
 
     fun updateHttpBasicAuthUsername(username: String) {
-        _uiState.value = _uiState.value.copy(
-            httpBasicAuthUsername = username,
-            testResult = null,
-            error = null,
-            allowUntestedSave = false
-        )
-        // Save eagerly so testConnection() picks up the unsaved value
-        viewModelScope.launch {
-            settingsDataStore.saveHttpBasicAuth(username, _uiState.value.httpBasicAuthPassword)
-        }
+        _uiState.value = _uiState.value.copy(httpBasicAuthUsername = username, testResult = null, error = null)
     }
 
     fun updateHttpBasicAuthPassword(password: String) {
-        _uiState.value = _uiState.value.copy(
-            httpBasicAuthPassword = password,
-            testResult = null,
-            error = null,
-            allowUntestedSave = false
-        )
-        // Save eagerly so testConnection() picks up the unsaved value
-        viewModelScope.launch {
-            settingsDataStore.saveHttpBasicAuth(_uiState.value.httpBasicAuthUsername, password)
-        }
+        _uiState.value = _uiState.value.copy(httpBasicAuthPassword = password, testResult = null, error = null)
     }
 
     fun updateAcceptInvalidCerts(accept: Boolean) {
-        _uiState.value = _uiState.value.copy(
-            acceptInvalidCerts = accept,
-            testResult = null,
-            error = null,
-            allowUntestedSave = false
-        )
+        _uiState.value = _uiState.value.copy(acceptInvalidCerts = accept, testResult = null, error = null)
     }
 
     fun updateCurrency(currencyCode: String) {
@@ -223,7 +186,6 @@ class SettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             mockMode = enabled,
             isFirstRunSetup = _uiState.value.serverUrl.isBlank() && !enabled,
-            allowUntestedSave = false
         )
         viewModelScope.launch {
             settingsRepository.setMockMode(enabled)
@@ -234,74 +196,34 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isTesting = true, testResult = null, error = null)
 
-            val primaryUrl = _uiState.value.serverUrl.trimEnd('/')
-            val secondaryUrl = _uiState.value.secondaryServerUrl.trimEnd('/')
-
-            // Validate primary URL
-            if (primaryUrl.isBlank()) {
+            val validation = validateConnectionUrl(_uiState.value.serverUrl)
+            if (validation is ConnectionUrlValidation.Invalid) {
                 _uiState.value = _uiState.value.copy(
                     isTesting = false,
-                    testResult = TestResult(
-                        primaryResult = ServerTestResult.Failure("API root URL is required")
-                    )
+                    testResult = TestResult(ServerTestResult.Failure(validation.message))
                 )
                 return@launch
             }
-
-            if (!primaryUrl.startsWith("http://") && !primaryUrl.startsWith("https://")) {
+            val url = (validation as ConnectionUrlValidation.Valid).normalizedUrl
+            if (UrlSecurity.classify(url) == UrlSecurity.Verdict.Unsafe) {
                 _uiState.value = _uiState.value.copy(
                     isTesting = false,
-                    testResult = TestResult(
-                        primaryResult = ServerTestResult.Failure("URL must start with http:// or https://")
-                    )
+                    testResult = TestResult(ServerTestResult.Failure("Public HTTP is not secure"))
                 )
                 return@launch
             }
-
-            // Validate secondary URL format if provided
-            if (secondaryUrl.isNotBlank() &&
-                !secondaryUrl.startsWith("http://") && !secondaryUrl.startsWith("https://")) {
-                _uiState.value = _uiState.value.copy(
-                    isTesting = false,
-                    testResult = TestResult(
-                        primaryResult = ServerTestResult.Failure("Primary URL not tested"),
-                        secondaryResult = ServerTestResult.Failure("Secondary URL must start with http:// or https://")
-                    )
-                )
-                return@launch
-            }
-
-            // Test primary server
             val primaryResult = when (val result = repository.testConnection(
-                serverUrl = primaryUrl,
-                acceptInvalidCerts = _uiState.value.acceptInvalidCerts,
+                serverUrl = url,
+                acceptInvalidCerts = false,
                 apiToken = _uiState.value.apiToken
             )) {
                 is ApiResult.Success -> result.data.toServerTestResult()
-                is ApiResult.Error -> ServerTestResult.Failure(result.message, result.details)
-            }
-
-            // Test secondary server if configured
-            val secondaryResult = if (secondaryUrl.isNotBlank()) {
-                when (val result = repository.testConnection(
-                    serverUrl = secondaryUrl,
-                    acceptInvalidCerts = _uiState.value.acceptInvalidCerts,
-                    apiToken = _uiState.value.apiToken
-                )) {
-                    is ApiResult.Success -> result.data.toServerTestResult()
-                    is ApiResult.Error -> ServerTestResult.Failure(result.message, result.details)
-                }
-            } else {
-                null
+                is ApiResult.Error -> ServerTestResult.Failure(controlledConnectionError(result))
             }
 
             _uiState.value = _uiState.value.copy(
                 isTesting = false,
-                testResult = TestResult(
-                    primaryResult = primaryResult,
-                    secondaryResult = secondaryResult
-                ),
-                allowUntestedSave = false
+                testResult = TestResult(primaryResult)
             )
         }
     }
@@ -329,35 +251,25 @@ class SettingsViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isSaving = true, error = null)
 
             try {
-                val url = _uiState.value.serverUrl.trimEnd('/')
-                if (url.isBlank() && !_uiState.value.mockMode) {
+                val validation = validateConnectionUrl(_uiState.value.serverUrl)
+                if (validation is ConnectionUrlValidation.Invalid && !_uiState.value.mockMode) {
                     _uiState.value = _uiState.value.copy(
                         isSaving = false,
-                        error = "API root URL is required"
+                        error = validation.message
                     )
                     return@launch
                 }
-
-                val hasSuccessfulPrimaryTest = _uiState.value.mockMode ||
-                        _uiState.value.testResult?.primaryResult is ServerTestResult.Success
-                if (!hasSuccessfulPrimaryTest && !_uiState.value.allowUntestedSave) {
+                val url = (validation as? ConnectionUrlValidation.Valid)?.normalizedUrl.orEmpty()
+                if (! _uiState.value.mockMode && UrlSecurity.classify(url) == UrlSecurity.Verdict.Unsafe) {
                     _uiState.value = _uiState.value.copy(
                         isSaving = false,
-                        allowUntestedSave = true,
-                        error = context.getString(R.string.settings_save_untested_warning)
+                        error = context.getString(R.string.settings_public_http_unsafe)
                     )
                     return@launch
                 }
-
-                val secondaryUrl = _uiState.value.secondaryServerUrl.trimEnd('/')
-
-                settingsDataStore.saveSettings(
+                settingsDataStore.saveConnectionSettings(
                     serverUrl = url,
-                    secondaryServerUrl = secondaryUrl,
                     apiToken = _uiState.value.apiToken,
-                    httpBasicAuthUsername = _uiState.value.httpBasicAuthUsername,
-                    httpBasicAuthPassword = _uiState.value.httpBasicAuthPassword,
-                    acceptInvalidCerts = _uiState.value.acceptInvalidCerts,
                     currencyCode = _uiState.value.currencyCode
                 )
 
@@ -369,7 +281,7 @@ class SettingsViewModel @Inject constructor(
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isSaving = false,
-                    error = e.message ?: context.getString(R.string.error_save_settings)
+                    error = context.getString(R.string.error_save_settings)
                 )
             }
         }
@@ -388,6 +300,23 @@ class SettingsViewModel @Inject constructor(
             )
         } else {
             ServerTestResult.Failure(summary, failureHint)
+        }
+    }
+
+    private fun localHttpWarning(url: String): String? = when (val validation = validateConnectionUrl(url)) {
+        is ConnectionUrlValidation.Valid -> if (UrlSecurity.classify(validation.normalizedUrl) == UrlSecurity.Verdict.LocalHttp) {
+            context.getString(R.string.settings_local_http_warning)
+        } else null
+        is ConnectionUrlValidation.Invalid -> null
+    }
+
+    private fun controlledConnectionError(result: ApiResult.Error): String = when (result.code) {
+        401, 403 -> context.getString(R.string.settings_api_key_invalid)
+        else -> when (result.message) {
+            "Public HTTP is not secure" -> context.getString(R.string.settings_public_http_unsafe)
+            "Connection timed out" -> context.getString(R.string.settings_connection_timeout)
+            "Server returned unrecognised data" -> context.getString(R.string.settings_unrecognised_server_data)
+            else -> context.getString(R.string.settings_server_unreachable)
         }
     }
 
