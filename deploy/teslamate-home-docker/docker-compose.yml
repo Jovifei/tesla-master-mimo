@@ -67,12 +67,26 @@ services:
       - TZ=${TZ}
       - API_TOKEN=${MATE_LINK_API_TOKEN}
       - API_TOKEN_HEADER=Authorization
+    depends_on:
+      - database
+      - mosquitto
+      - teslamate
+
+  matelink-adapter:
+    build:
+      context: ./adapter
+    restart: always
+    environment:
+      - DATABASE_URL=postgres://teslamate:${TESLAMATE_DB_PASSWORD}@database:5432/teslamate?sslmode=disable
+      - UPSTREAM_URL=http://teslamateapi:8080
+      - API_TOKEN=${MATE_LINK_API_TOKEN}
+      - TZ=${TZ}
     ports:
       - "8080:8080"
     depends_on:
       - database
       - mosquitto
-      - teslamate
+      - teslamateapi
 
 volumes:
   teslamate-db:
