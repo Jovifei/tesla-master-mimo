@@ -101,6 +101,15 @@ fun LocalDateTime.formatTime(
     return this.format(fmt)
 }
 
+/** Compact, fixed 24-hour range for detail headers. */
+fun formatCompactDateTimeRange(startDate: String?, endDate: String?): String {
+    val start = parseIsoDateTime(startDate) ?: return "--"
+    val end = parseIsoDateTime(endDate) ?: return start.format(DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm"))
+    val startText = start.format(DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm"))
+    val endPattern = if (start.year == end.year) "MM/dd HH:mm" else "yyyy/MM/dd HH:mm"
+    return "$startText \u2192 ${end.format(DateTimeFormatter.ofPattern(endPattern))}"
+}
+
 /**
  * Format a [LocalDate] as locale-aware medium date.
  *

@@ -10,6 +10,9 @@ import com.matelink.data.api.models.DrivesResponse
 import com.matelink.data.api.models.GlobalSettingsResponse
 import com.matelink.data.api.models.PingResponse
 import com.matelink.data.api.models.UpdatesResponse
+import com.matelink.data.api.models.AdapterCapabilitiesResponse
+import com.matelink.data.api.models.AdapterSnapshotResponse
+import com.matelink.data.api.models.ParkedDetailResponse
 import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.Path
@@ -22,6 +25,21 @@ import retrofit2.http.Query
 // iOS uses mixed leading "/" — ensure base URL ends with "/" for consistency.
 
 interface TeslamateApi {
+
+    @GET("api/matelink/v1/capabilities")
+    suspend fun getAdapterCapabilities(): Response<AdapterCapabilitiesResponse>
+
+    @GET("api/matelink/v1/cars/{carId}/snapshot")
+    suspend fun getAdapterSnapshot(
+        @Path("carId") carId: Int
+    ): Response<AdapterSnapshotResponse>
+
+    @GET("api/matelink/v1/cars/{carId}/parked/{olderDriveId}/{newerDriveId}")
+    suspend fun getParkedDetail(
+        @Path("carId") carId: Int,
+        @Path("olderDriveId") olderDriveId: Int,
+        @Path("newerDriveId") newerDriveId: Int
+    ): Response<ParkedDetailResponse>
 
     @GET("api/ping")
     suspend fun ping(): Response<PingResponse>

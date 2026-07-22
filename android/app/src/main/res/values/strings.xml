@@ -492,6 +492,7 @@
     <string name="current_charge_message">Current charging information.</string>
     <string name="current_charge">Current Charge</string>
     <string name="usable_percent">Usable (%)</string>
+    <string name="not_available">Not available</string>
     <string name="range_information_title">Range Information</string>
     <string name="range_information_message">Range details for your Tesla.</string>
     <string name="range_information">Range Information</string>

@@ -86,7 +86,7 @@ fun DashboardScreen(
                 fontWeight = FontWeight.Bold
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                StateBadge(status.state ?: "offline")
+                SnapshotBadge(uiState.snapshotSource)
                 Spacer(modifier = Modifier.width(8.dp))
                 IconButton(onClick = { viewModel.refresh() }) {
                     Icon(Icons.Default.Refresh, stringResource(R.string.refresh))
@@ -105,17 +105,27 @@ fun DashboardScreen(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(stringResource(R.string.battery), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
-                    "${status.batteryLevel ?: 0}%",
+                    status.batteryLevel?.let { "$it%" } ?: "--",
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
-                Text(stringResource(R.string.km_range, (status.ratedBatteryRangeKm ?: status.idealBatteryRangeKm ?: status.estBatteryRangeKm ?: 0.0).toInt()), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(modifier = Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = { (status.batteryLevel ?: 0) / 100f },
-                    modifier = Modifier.fillMaxWidth().height(8.dp),
+                val rangeKm = status.ratedBatteryRangeKm ?: status.idealBatteryRangeKm ?: status.estBatteryRangeKm
+                Text(
+                    rangeKm?.let { stringResource(R.string.km_range, it.toInt()) } ?: "--",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                status.batteryLevel?.let { batteryLevel ->
+                    LinearProgressIndicator(
+                        progress = { batteryLevel.coerceIn(0, 100) / 100f },
+                        modifier = Modifier.fillMaxWidth().height(8.dp),
+                    )
+                }
+                uiState.observedAt?.takeIf { it.isNotBlank() }?.let {
+                    Text("快照时间 $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 if ((status.chargeLimitSoc ?: 0) > 0) {
                     Text(stringResource(R.string.charge_limit, "${status.chargeLimitSoc ?: 0}%"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -134,43 +144,48 @@ fun DashboardScreen(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             InfoCard(
                 title = stringResource(R.string.odometer),
-                value = "${String.format("%,.0f", status.odometer ?: 0.0)} km",
+                value = status.odometer?.let { "${String.format("%,.0f", it)} km" } ?: "--",
                 modifier = Modifier.weight(1f),
                 onClick = { onNavigateToMileage(carId, exteriorColor) }
             )
             InfoCard(
                 title = stringResource(R.string.location),
-                value = "${String.format("%.4f", status.latitude ?: 0.0)}, ${String.format("%.4f", status.longitude ?: 0.0)}\n${stringResource(R.string.elevation_label, "${status.elevation ?: 0}", "m")}",
+                value = if (status.latitude != null && status.longitude != null) {
+                    "${String.format("%.4f", status.latitude)}, ${String.format("%.4f", status.longitude)}" +
+                        (status.elevation?.let { "\n${stringResource(R.string.elevation_label, "$it", "m")}" } ?: "")
+                } else "--",
                 modifier = Modifier.weight(1f),
                 onClick = { onNavigateToDrives(carId, exteriorColor) }
             )
         }
 
         // Location Map
-        ElevatedCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                    val ts = status.stateSince
-                    if (!ts.isNullOrBlank()) {
-                        onNavigateToWhereWasI(carId, ts, exteriorColor)
+        val latitude = status.latitude
+        val longitude = status.longitude
+        if (latitude != null && longitude != null) {
+            ElevatedCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        val ts = status.stateSince
+                        if (!ts.isNullOrBlank()) onNavigateToWhereWasI(carId, ts, exteriorColor)
                     }
-                }
-        ) {
-            AmapPointView(
-                modifier = Modifier.fillMaxWidth().height(200.dp),
-                latitude = status.latitude ?: 0.0,
-                longitude = status.longitude ?: 0.0,
-                title = car?.displayName ?: stringResource(R.string.vehicle)
-            )
+            ) {
+                AmapPointView(
+                    modifier = Modifier.fillMaxWidth().height(200.dp),
+                    latitude = latitude,
+                    longitude = longitude,
+                    title = car?.displayName ?: stringResource(R.string.vehicle)
+                )
+            }
         }
 
         // Temperature + Status cards
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            InfoCard(stringResource(R.string.inside_temp), "${status.insideTemp ?: 0.0}°C", Modifier.weight(1f))
-            InfoCard(stringResource(R.string.outside_temp), "${status.outsideTemp ?: 0.0}°C", Modifier.weight(1f))
-            InfoCard(stringResource(R.string.lock), if (status.locked == true) "🔒 ${stringResource(R.string.lock_locked)}" else "🔓 ${stringResource(R.string.lock_unlocked)}", Modifier.weight(1f))
-            InfoCard(stringResource(R.string.plug), if (status.pluggedIn == true) "⚡ ${stringResource(R.string.plug_plugged)}" else stringResource(R.string.plug_unplugged), Modifier.weight(1f))
+            InfoCard(stringResource(R.string.inside_temp), status.insideTemp?.let { "$it°C" } ?: "--", Modifier.weight(1f))
+            InfoCard(stringResource(R.string.outside_temp), status.outsideTemp?.let { "$it°C" } ?: "--", Modifier.weight(1f))
+            InfoCard(stringResource(R.string.lock), status.locked?.let { if (it) stringResource(R.string.lock_locked) else stringResource(R.string.lock_unlocked) } ?: "--", Modifier.weight(1f))
+            InfoCard(stringResource(R.string.plug), status.pluggedIn?.let { if (it) stringResource(R.string.plug_plugged) else stringResource(R.string.plug_unplugged) } ?: "--", Modifier.weight(1f))
         }
 
         // Status row
@@ -184,10 +199,10 @@ fun DashboardScreen(
         // Tire pressure
         Text(stringResource(R.string.tire_pressure), style = MaterialTheme.typography.titleSmall)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            InfoCard("FL", "${status.tpmsDetails?.pressureFl ?: 0.0} bar", Modifier.weight(1f))
-            InfoCard("FR", "${status.tpmsDetails?.pressureFr ?: 0.0} bar", Modifier.weight(1f))
-            InfoCard("RL", "${status.tpmsDetails?.pressureRl ?: 0.0} bar", Modifier.weight(1f))
-            InfoCard("RR", "${status.tpmsDetails?.pressureRr ?: 0.0} bar", Modifier.weight(1f))
+            InfoCard("FL", status.tpmsDetails?.pressureFl?.let { "$it bar" } ?: "--", Modifier.weight(1f))
+            InfoCard("FR", status.tpmsDetails?.pressureFr?.let { "$it bar" } ?: "--", Modifier.weight(1f))
+            InfoCard("RL", status.tpmsDetails?.pressureRl?.let { "$it bar" } ?: "--", Modifier.weight(1f))
+            InfoCard("RR", status.tpmsDetails?.pressureRr?.let { "$it bar" } ?: "--", Modifier.weight(1f))
         }
 
         // 7-Day Battery Trend
@@ -206,7 +221,7 @@ fun DashboardScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                BatteryTrendChart(currentBatteryLevel = status.batteryLevel ?: 0)
+                status.batteryLevel?.let { BatteryTrendChart(currentBatteryLevel = it) }
             }
         }
 
@@ -345,13 +360,11 @@ private fun PartialVehicleDashboard(
 }
 
 @Composable
-private fun StateBadge(state: String) {
-    val (color, label) = when (state) {
-        "online" -> StatusSuccess to stringResource(R.string.state_online)
-        "driving" -> SwissInk to stringResource(R.string.state_driving)
-        "charging" -> StatusWarning to stringResource(R.string.state_charging)
-        "asleep" -> SwissMuted to stringResource(R.string.state_asleep)
-        else -> SwissMuted to stringResource(R.string.state_offline)
+private fun SnapshotBadge(source: String?) {
+    val (color, label) = when (source) {
+        "live_mqtt", "teslamate_api" -> StatusSuccess to "实时数据"
+        "database_latest" -> StatusWarning to "历史快照"
+        else -> SwissMuted to "数据不可用"
     }
     Surface(
         color = color,

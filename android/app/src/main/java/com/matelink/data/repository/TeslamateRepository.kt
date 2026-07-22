@@ -11,6 +11,8 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.api.models.GlobalSettingsData
 import com.matelink.data.api.models.Units
+import com.matelink.data.api.models.AdapterSnapshot
+import com.matelink.data.api.models.ParkedDetailData
 import com.matelink.data.api.models.UpdateData
 import com.matelink.data.local.AppSettings
 import com.matelink.data.local.SettingsDataStore
@@ -309,6 +311,40 @@ class TeslamateRepository @Inject constructor(
                 }
             } catch (e: Exception) {
                 throw e
+            }
+        }
+    }
+
+    suspend fun getAdapterSnapshot(carId: Int): ApiResult<AdapterSnapshot> {
+        if (isMockMode()) return ApiResult.Error("Adapter is not used in mock mode")
+        return executeWithFallback { api ->
+            val response = api.getAdapterSnapshot(carId)
+            val snapshot = response.body()?.data
+            when {
+                response.isSuccessful && snapshot != null -> ApiResult.Success(snapshot)
+                else -> ApiResult.Error(
+                    response.body()?.error ?: "Adapter snapshot unavailable",
+                    response.code()
+                )
+            }
+        }
+    }
+
+    suspend fun getParkedDetail(
+        carId: Int,
+        olderDriveId: Int,
+        newerDriveId: Int
+    ): ApiResult<ParkedDetailData> {
+        if (isMockMode()) return ApiResult.Error("Parked details require real data")
+        return executeWithFallback { api ->
+            val response = api.getParkedDetail(carId, olderDriveId, newerDriveId)
+            val parked = response.body()?.data
+            when {
+                response.isSuccessful && parked != null -> ApiResult.Success(parked)
+                else -> ApiResult.Error(
+                    response.body()?.error ?: "Parked detail unavailable",
+                    response.code()
+                )
             }
         }
     }

@@ -26,7 +26,10 @@ data class DashboardUiState(
     val isLoading: Boolean = true,
     val car: CarData? = null,
     val status: CarStatus? = null,
-    val error: String? = null
+    val error: String? = null,
+    val snapshotSource: String? = null,
+    val observedAt: String? = null,
+    val fieldSources: Map<String, String> = emptyMap()
 )
 
 @HiltViewModel
@@ -59,15 +62,19 @@ class DashboardViewModel @Inject constructor(
                 }
 
                 val effectiveCarId = car?.carId ?: carId
-                val statusResult = repository.getCarStatus(effectiveCarId)
-                val status = when (statusResult) {
-                    is ApiResult.Success -> statusResult.data.status
-                    is ApiResult.Error -> null
+                val adapterResult = repository.getAdapterSnapshot(effectiveCarId)
+                val statusResult = if (adapterResult is ApiResult.Error) {
+                    repository.getCarStatus(effectiveCarId)
+                } else null
+                val status = when {
+                    adapterResult is ApiResult.Success -> adapterResult.data.status
+                    statusResult is ApiResult.Success -> statusResult.data.status
+                    else -> null
                 }
 
                 val errorMsg = when {
                     carsResult is ApiResult.Error -> carsResult.message
-                    statusResult is ApiResult.Error -> statusResult.message
+                    adapterResult is ApiResult.Error && statusResult is ApiResult.Error -> statusResult.message
                     else -> null
                 }
 
@@ -75,7 +82,11 @@ class DashboardViewModel @Inject constructor(
                     isLoading = false,
                     car = car,
                     status = status,
-                    error = errorMsg
+                    error = errorMsg,
+                    snapshotSource = (adapterResult as? ApiResult.Success)?.data?.source
+                        ?: if (statusResult is ApiResult.Success) "teslamate_api" else null,
+                    observedAt = (adapterResult as? ApiResult.Success)?.data?.observedAt,
+                    fieldSources = (adapterResult as? ApiResult.Success)?.data?.fieldSources.orEmpty()
                 )
             } catch (e: CancellationException) {
                 throw e
@@ -94,15 +105,25 @@ class DashboardViewModel @Inject constructor(
                 delay(5000)
                 try {
                     val carId = settingsRepository.currentCarId.first()
-                    when (val result = repository.getCarStatus(carId)) {
+                    when (val result = repository.getAdapterSnapshot(carId)) {
                         is ApiResult.Success -> {
                             _uiState.value = _uiState.value.copy(
                                 status = result.data.status,
-                                error = null
+                                error = null,
+                                snapshotSource = result.data.source,
+                                observedAt = result.data.observedAt,
+                                fieldSources = result.data.fieldSources
                             )
                         }
                         is ApiResult.Error -> {
-                            // Silently fail on polling errors
+                            when (val legacy = repository.getCarStatus(carId)) {
+                                is ApiResult.Success -> _uiState.value = _uiState.value.copy(
+                                    status = legacy.data.status,
+                                    error = null,
+                                    snapshotSource = "teslamate_api"
+                                )
+                                is ApiResult.Error -> Unit
+                            }
                         }
                     }
                 } catch (e: CancellationException) {

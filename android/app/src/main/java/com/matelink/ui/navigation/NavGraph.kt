@@ -31,6 +31,7 @@ import com.matelink.ui.screens.charges.ChargesScreen
 import com.matelink.ui.screens.charges.CurrentChargeScreen
 import com.matelink.ui.screens.dashboard.DashboardScreen
 import com.matelink.ui.screens.drives.DriveDetailScreen
+import com.matelink.ui.screens.drives.ParkedDetailScreen
 import com.matelink.ui.screens.drives.DrivesScreen
 import com.matelink.ui.screens.mileage.MileageScreen
 import com.matelink.ui.screens.more.MoreScreen
@@ -103,6 +104,14 @@ sealed interface Screen {
 
     @Serializable
     data class DriveDetail(val carId: Int, val driveId: Int, val exteriorColor: String? = null) : Screen
+
+    @Serializable
+    data class ParkedDetail(
+        val carId: Int,
+        val olderDriveId: Int,
+        val newerDriveId: Int,
+        val exteriorColor: String? = null
+    ) : Screen
 
     @Serializable
     data class Battery(val carId: Int, val efficiency: Float = 0f, val exteriorColor: String? = null) : Screen
@@ -365,7 +374,22 @@ fun NavGraph(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToDriveDetail = { driveId ->
                     navController.navigate(Screen.DriveDetail(route.carId, driveId, route.exteriorColor))
+                },
+                onNavigateToParkedDetail = { olderDriveId, newerDriveId ->
+                    navController.navigate(
+                        Screen.ParkedDetail(route.carId, olderDriveId, newerDriveId, route.exteriorColor)
+                    )
                 }
+            )
+        }
+
+        composable<Screen.ParkedDetail> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.ParkedDetail>()
+            ParkedDetailScreen(
+                carId = route.carId,
+                olderDriveId = route.olderDriveId,
+                newerDriveId = route.newerDriveId,
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 

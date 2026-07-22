@@ -92,6 +92,7 @@ fun DrivesScreen(
     exteriorColor: String? = null,
     onNavigateBack: () -> Unit,
     onNavigateToDriveDetail: (driveId: Int) -> Unit,
+    onNavigateToParkedDetail: (olderDriveId: Int, newerDriveId: Int) -> Unit = { _, _ -> },
     viewModel: DrivesViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -170,7 +171,8 @@ fun DrivesScreen(
                     onDateFilterSelected = { viewModel.setDateFilter(it) },
                     onCustomRangeSelected = { start, end -> viewModel.setCustomDateRange(start, end) },
                     onDistanceFilterSelected = { viewModel.setDistanceFilter(it) },
-                    onDriveClick = onNavigateToDriveDetail
+                    onDriveClick = onNavigateToDriveDetail,
+                    onParkedClick = onNavigateToParkedDetail
                 )
             }
         }
@@ -195,7 +197,8 @@ private fun DrivesContent(
     onDateFilterSelected: (DriveDateFilter) -> Unit,
     onCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
     onDistanceFilterSelected: (DriveDistanceFilter) -> Unit,
-    onDriveClick: (driveId: Int) -> Unit
+    onDriveClick: (driveId: Int) -> Unit,
+    onParkedClick: (olderDriveId: Int, newerDriveId: Int) -> Unit
 ) {
     val historyItems = remember(drives) { buildDriveHistoryItems(drives) }
     // Header items in this LazyColumn, in render order: date chips, distance chips,
@@ -287,7 +290,8 @@ private fun DrivesContent(
                     )
                     is DriveHistoryItem.Parked -> ParkedItem(
                         item = item,
-                        palette = palette
+                        palette = palette,
+                        onClick = { onParkedClick(item.olderDrive.id, item.newerDrive.id) }
                     )
                 }
             }
@@ -617,7 +621,8 @@ private fun DriveItem(
 @Composable
 private fun ParkedItem(
     item: DriveHistoryItem.Parked,
-    palette: CarColorPalette
+    palette: CarColorPalette,
+    onClick: () -> Unit
 ) {
     val context = LocalContext.current
     val unknown = stringResource(R.string.unknown)
@@ -632,7 +637,7 @@ private fun ParkedItem(
         title = stringResource(R.string.drive_history_parked_at, item.location ?: unknown),
         heroValue = durationText,
         heroUnit = stringResource(R.string.trip_timeline_parked).uppercase(java.util.Locale.getDefault()),
-        onClick = {},
+        onClick = onClick,
     ) {
         EditorialPill(stringResource(R.string.parked_for, durationText))
         val batteryStart = item.olderDrive.endBatteryLevel
