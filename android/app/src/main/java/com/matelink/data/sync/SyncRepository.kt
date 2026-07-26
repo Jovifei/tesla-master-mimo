@@ -9,6 +9,8 @@ import com.matelink.data.local.dao.AggregateDao
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.domain.analytics.PaginationGuard
+import com.matelink.domain.analytics.DriveEnergyResolver
+import com.matelink.domain.analytics.DrivePowerSample
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.GeocodingRepository
 import com.matelink.data.repository.TeslamateRepository
@@ -145,6 +147,19 @@ class SyncRepository @Inject constructor(
                     when (val result = teslamateRepository.getDriveDetail(carId, summary.driveId)) {
                         is ApiResult.Success -> {
                             val detail = result.data
+                            val energy = DriveEnergyResolver.resolve(
+                                apiEnergyKwh = detail.energyConsumedNet ?: summary.energyConsumed,
+                                distanceKm = detail.distance ?: summary.distance,
+                                samples = detail.positions.orEmpty().map {
+                                    DrivePowerSample(it.date, it.power?.toDouble())
+                                }
+                            )
+                            val coverageRatio = if ((detail.durationMin ?: summary.durationMin) > 0) {
+                                (energy.coverageSeconds.toDouble() /
+                                    ((detail.durationMin ?: summary.durationMin) * 60.0)).coerceIn(0.0, 1.0)
+                            } else {
+                                0.0
+                            }
                             driveSummaryDao.upsert(summary.copy(
                                 startAddress = detail.startAddress ?: summary.startAddress,
                                 endAddress = detail.endAddress ?: summary.endAddress,
@@ -153,7 +168,12 @@ class SyncRepository @Inject constructor(
                                 powerMax = detail.powerMax ?: summary.powerMax,
                                 powerMin = detail.powerMin ?: summary.powerMin,
                                 startBatteryLevel = detail.startBatteryLevel ?: summary.startBatteryLevel,
-                                endBatteryLevel = detail.endBatteryLevel ?: summary.endBatteryLevel
+                                endBatteryLevel = detail.endBatteryLevel ?: summary.endBatteryLevel,
+                                energyConsumed = energy.energyKwh ?: summary.energyConsumed,
+                                efficiency = energy.efficiencyWhKm ?: summary.efficiency,
+                                energySource = energy.source.name.lowercase(),
+                                energyCoverageSeconds = energy.coverageSeconds,
+                                energyCoverageRatio = coverageRatio
                             ))
                             aggregateDao.upsertDriveAggregate(
                                 detail.toAggregate(carId = carId, computedAt = System.currentTimeMillis())
@@ -241,7 +261,10 @@ class SyncRepository @Inject constructor(
             outsideTempAvg = outsideTempAvg,
             insideTempAvg = insideTempAvg,
             energyConsumed = energyConsumedNet,
-            efficiency = efficiencyWhKm
+            efficiency = efficiencyWhKm,
+            energySource = energyConsumedNet?.takeIf { it > 0.0 }?.let { "api" },
+            energyCoverageSeconds = 0,
+            energyCoverageRatio = 0.0
         )
     }
 

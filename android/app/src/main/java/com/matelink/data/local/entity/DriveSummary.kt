@@ -1,6 +1,7 @@
 package com.matelink.data.local.entity
 
 import androidx.compose.runtime.Immutable
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -52,5 +53,12 @@ data class DriveSummary(
     val energyConsumed: Double?,    // kWh
 
     // Computed efficiency (Wh/km)
-    val efficiency: Double?
+    val efficiency: Double?,
+
+    // Provenance for calculated/API energy shown in history.
+    val energySource: String? = null,
+    @ColumnInfo(defaultValue = "0")
+    val energyCoverageSeconds: Long = 0,
+    @ColumnInfo(defaultValue = "0")
+    val energyCoverageRatio: Double = 0.0
 )
