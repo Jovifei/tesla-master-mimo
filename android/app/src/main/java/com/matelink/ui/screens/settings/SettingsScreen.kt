@@ -78,6 +78,7 @@ import com.matelink.R
 import com.matelink.data.local.TirePosition
 import com.matelink.data.model.Currency
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.screens.map.AmapSettingsEntry
 import com.matelink.ui.theme.MateLinkTheme
 import com.matelink.ui.theme.StatusWarning
 import com.matelink.ui.theme.StatusError
@@ -88,6 +89,7 @@ import com.matelink.ui.theme.StatusSuccess
 fun SettingsScreen(
     onNavigateToDashboard: () -> Unit,
     onNavigateToTariffConfig: () -> Unit = {},
+    onNavigateToAmapSetup: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
     instanceViewModel: InstanceViewModel = hiltViewModel()
 ) {
@@ -148,6 +150,7 @@ fun SettingsScreen(
                     viewModel.saveSettings(onNavigateToDashboard)
                 },
                 onNavigateToTariffConfig = onNavigateToTariffConfig,
+                onNavigateToAmapSetup = onNavigateToAmapSetup,
                 onForceResync = viewModel::forceResync,
                 onSimulateTpmsWarning = viewModel::simulateTpmsWarning,
                 onClearTpmsWarning = viewModel::clearTpmsWarning,
@@ -233,6 +236,7 @@ private fun SettingsContent(
     onTestConnection: () -> Unit,
     onSave: () -> Unit,
     onNavigateToTariffConfig: () -> Unit = {},
+    onNavigateToAmapSetup: () -> Unit = {},
     onForceResync: () -> Unit = {},
     onSimulateTpmsWarning: (TirePosition) -> Unit = {},
     onClearTpmsWarning: () -> Unit = {},
@@ -711,6 +715,15 @@ private fun SettingsContent(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = stringResource(R.string.amap_settings_section),
+            style = MaterialTheme.typography.titleMedium
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        AmapSettingsEntry(onNavigateToAmapSetup)
 
         Spacer(modifier = Modifier.height(16.dp))
 

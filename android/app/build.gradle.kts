@@ -34,8 +34,6 @@ android {
         versionCode = 1
         versionName = "1.0.0"
         buildConfigField("String", "GIT_SHA", "\"${resolveGitSha()}\"")
-        manifestPlaceholders["amapApiKey"] = providers.gradleProperty("AMAP_API_KEY").orElse("").get()
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -125,13 +123,16 @@ dependencies {
     // Charts
     implementation(libs.mpandroidchart)
 
-    // Maps
-    // TODO: 高德 SDK 需从 https://lbs.amap.com 下载 AAR 后启用
-    // implementation(libs.amap3d)
-    // implementation(libs.amaplocation)
+    // Pinned to the latest exact version currently published on Maven Central.
+    // The official download package may be newer than the Maven artifact.
+    implementation("com.amap.api:3dmap-location-search:11.1.001_loc11.1.001_sea9.7.4")
 
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

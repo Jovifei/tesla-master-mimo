@@ -37,6 +37,9 @@ class SecureSettingsDataStore @Inject constructor(
     private val _httpBasicPasswordFlow = MutableStateFlow(getHttpBasicPassword())
     val httpBasicPasswordFlow: Flow<String> = _httpBasicPasswordFlow.asStateFlow()
 
+    private val _amapKeyFlow = MutableStateFlow(getAmapKey())
+    val amapKeyFlow: Flow<String> = _amapKeyFlow.asStateFlow()
+
     fun getApiToken(): String = securePrefs.getString(KEY_API_TOKEN, "") ?: ""
 
     fun setApiToken(token: String) {
@@ -57,10 +60,18 @@ class SecureSettingsDataStore @Inject constructor(
         _httpBasicPasswordFlow.value = password
     }
 
+    fun getAmapKey(): String = securePrefs.getString(KEY_AMAP_KEY, "") ?: ""
+
+    fun setAmapKey(key: String) {
+        securePrefs.edit().putString(KEY_AMAP_KEY, key).apply()
+        _amapKeyFlow.value = key
+    }
+
     fun clearAll() {
         securePrefs.edit().clear().apply()
         _apiTokenFlow.value = ""
         _httpBasicPasswordFlow.value = ""
+        _amapKeyFlow.value = ""
     }
 
     // ---- Per-instance token storage ----
@@ -83,5 +94,6 @@ class SecureSettingsDataStore @Inject constructor(
         private const val KEY_API_TOKEN = "api_token"
         private const val KEY_HTTP_BASIC_USERNAME = "http_basic_username"
         private const val KEY_HTTP_BASIC_PASSWORD = "http_basic_password"
+        private const val KEY_AMAP_KEY = "amap_android_sdk_key"
     }
 }
