@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.domain.LocalDayBoundaries
@@ -96,7 +97,15 @@ data class DrivesUiState(
     val customStartDate: LocalDate? = null,
     val customEndDate: LocalDate? = null,
     val scrollPosition: Int = 0,
-    val scrollOffset: Int = 0
+    val scrollOffset: Int = 0,
+    val driveMetrics: Map<Int, DriveHistoryMetrics> = emptyMap()
+)
+
+data class DriveHistoryMetrics(
+    val energyKwh: Double?,
+    val efficiencyWhKm: Double?,
+    val source: String?,
+    val coverageRatio: Double
 )
 
 data class DrivesSummary(
@@ -113,6 +122,7 @@ class DrivesViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val repository: TeslamateRepository,
     private val settingsDataStore: SettingsDataStore,
+    private val driveSummaryDao: DriveSummaryDao,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -273,12 +283,21 @@ class DrivesViewModel @Inject constructor(
             when (val result = repository.getDrives(id, startDateStr, endDateStr)) {
                 is ApiResult.Success -> {
                     allDrives = result.data
+                    val localMetrics = driveSummaryDao.getAllChronological(id).associate { summary ->
+                        summary.driveId to DriveHistoryMetrics(
+                            energyKwh = summary.energyConsumed,
+                            efficiencyWhKm = summary.efficiency,
+                            source = summary.energySource,
+                            coverageRatio = summary.energyCoverageRatio
+                        )
+                    }
                     val granularity = determineGranularity(startDate, endDate)
 
                     _uiState.update {
                         it.copy(
                             chartGranularity = granularity,
-                            error = null
+                            error = null,
+                            driveMetrics = localMetrics
                         )
                     }
 

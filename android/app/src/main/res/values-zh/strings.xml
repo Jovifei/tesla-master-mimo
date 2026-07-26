@@ -486,6 +486,7 @@
     <string name="current_charge">当前充电</string>
     <string name="usable_percent">可用 (%)</string>
     <string name="not_available">暂无数据</string>
+    <string name="charge_cost_estimated">按 1.10 元/度估算</string>
     <string name="range_information_title">续航信息</string>
     <string name="range_information_message">你的 Tesla 续航详情。</string>
     <string name="range_information">续航信息</string>

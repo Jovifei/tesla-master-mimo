@@ -77,6 +77,9 @@ private val RangeBlue = Color(0xFF42A5F5)
 private val RangeLossRed = Color(0xFFEF5350)
 private val DetailCyan = Color(0xFF00BCD4)
 
+private fun formatRange(value: Double?, units: com.matelink.data.api.models.Units?, unavailable: String): String =
+    value?.let { UnitFormatter.formatDistance(it, units) } ?: unavailable
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BatteryScreen(
@@ -519,6 +522,7 @@ private fun RangeCard(stats: BatteryStats, units: com.matelink.data.api.models.U
     val maxRangeNewLabel = stringResource(R.string.max_range_new)
     val maxRangeNowLabel = stringResource(R.string.max_range_now)
     val rangeLossLabel = stringResource(R.string.range_loss)
+    val unavailable = stringResource(R.string.not_available)
 
     Card(
         modifier = Modifier
@@ -547,13 +551,13 @@ private fun RangeCard(stats: BatteryStats, units: com.matelink.data.api.models.U
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 RangeValueCard(
-                    value = UnitFormatter.formatDistance(stats.maxRangeNew, units),
+                    value = formatRange(stats.maxRangeNew, units, unavailable),
                     label = maxRangeNewLabel,
                     iconColor = CapacityGreen,
                     modifier = Modifier.weight(1f)
                 )
                 RangeValueCard(
-                    value = UnitFormatter.formatDistance(stats.maxRangeNow, units),
+                    value = formatRange(stats.maxRangeNow, units, unavailable),
                     label = maxRangeNowLabel,
                     iconColor = CapacityYellow,
                     modifier = Modifier.weight(1f)
@@ -577,7 +581,7 @@ private fun RangeCard(stats: BatteryStats, units: com.matelink.data.api.models.U
                 Spacer(modifier = Modifier.width(8.dp))
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = UnitFormatter.formatDistance(stats.rangeLoss, units),
+                        text = formatRange(stats.rangeLoss, units, unavailable),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = palette.onSurface
@@ -920,6 +924,7 @@ private fun EstimatedCapacityCard(stats: BatteryStats, units: com.matelink.data.
     val estimatedCapacityMessage = stringResource(R.string.estimated_total_capacity_message, stats.batteryLevel)
     val estimatedCapacityLabel = stringResource(R.string.estimated_total_capacity)
     val rangeAt100Label = stringResource(R.string.range_at_100)
+    val unavailable = stringResource(R.string.not_available)
     val estimatedRangeDescription = stringResource(R.string.estimated_range_description, stats.batteryLevel, stats.ratedRange)
     val infoLabel = stringResource(R.string.info)
     val gotItLabel = stringResource(R.string.got_it)
@@ -991,7 +996,7 @@ private fun EstimatedCapacityCard(stats: BatteryStats, units: com.matelink.data.
                 }
 
                 Text(
-                    text = UnitFormatter.formatDistance(stats.rangeAt100, units),
+                    text = formatRange(stats.rangeAt100, units, unavailable),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = StatusSuccess

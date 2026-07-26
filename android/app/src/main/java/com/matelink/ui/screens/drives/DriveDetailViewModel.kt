@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.api.models.Units
+import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.local.entity.SavedTripLeg
 import com.matelink.data.repository.TeslamateRepository
@@ -45,8 +46,7 @@ data class DriveDetailStats(
     val batteryStart: Int,
     val batteryEnd: Int,
     val batteryUsed: Int,
-    val energyUsed: Double,
-    val efficiency: Double,
+    val energy: DriveDetailEnergyPresentation,
     val distance: Double,
     val durationMin: Int,
     val avgSpeedFromDistance: Double,
@@ -54,9 +54,49 @@ data class DriveDetailStats(
     val insideTempAvg: Double?
 )
 
+enum class DriveDetailEnergySource {
+    API,
+    POWER_SAMPLES
+}
+
+data class DriveDetailEnergyPresentation(
+    val energyKwh: Double?,
+    val efficiencyWhKm: Double?,
+    val source: DriveDetailEnergySource?,
+    val coverageSeconds: Long?,
+    val coverageRatio: Double?
+)
+
+internal fun presentDriveDetailEnergy(
+    energyKwh: Double?,
+    efficiencyWhKm: Double?,
+    energySource: String?,
+    coverageSeconds: Long?,
+    coverageRatio: Double?
+): DriveDetailEnergyPresentation {
+    val source = when (energySource) {
+        "api" -> DriveDetailEnergySource.API
+        "power_samples" -> DriveDetailEnergySource.POWER_SAMPLES
+        else -> null
+    }
+    val validEnergyKwh = energyKwh?.takeIf { it.isFinite() && it >= 0.0 }
+    if (source == null || validEnergyKwh == null) {
+        return DriveDetailEnergyPresentation(null, null, null, null, null)
+    }
+
+    return DriveDetailEnergyPresentation(
+        energyKwh = validEnergyKwh,
+        efficiencyWhKm = efficiencyWhKm?.takeIf { it.isFinite() && it >= 0.0 },
+        source = source,
+        coverageSeconds = coverageSeconds?.takeIf { it >= 0L },
+        coverageRatio = coverageRatio?.takeIf { it.isFinite() && it in 0.0..1.0 }
+    )
+}
+
 @HiltViewModel
 class DriveDetailViewModel @Inject constructor(
     private val repository: TeslamateRepository,
+    private val driveSummaryDao: DriveSummaryDao,
     private val weatherRepository: WeatherRepository,
     private val tripRepository: TripRepository
 ) : ViewModel() {
@@ -95,7 +135,17 @@ class DriveDetailViewModel @Inject constructor(
             when (detailResult) {
                 is ApiResult.Success -> {
                     val detail = detailResult.data
-                    val stats = calculateStats(detail)
+                    val persistedEnergy = driveSummaryDao.get(driveId)
+                    val stats = calculateStats(
+                        detail,
+                        presentDriveDetailEnergy(
+                            energyKwh = persistedEnergy?.energyConsumed,
+                            efficiencyWhKm = persistedEnergy?.efficiency,
+                            energySource = persistedEnergy?.energySource,
+                            coverageSeconds = persistedEnergy?.energyCoverageSeconds,
+                            coverageRatio = persistedEnergy?.energyCoverageRatio
+                        )
+                    )
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -169,7 +219,10 @@ class DriveDetailViewModel @Inject constructor(
         }
     }
 
-    private fun calculateStats(detail: DriveDetail): DriveDetailStats {
+    private fun calculateStats(
+        detail: DriveDetail,
+        energy: DriveDetailEnergyPresentation
+    ): DriveDetailStats {
         val positions = detail.positions ?: emptyList()
 
         // Speed stats from positions
@@ -196,10 +249,7 @@ class DriveDetailViewModel @Inject constructor(
         val batteryEnd = batteryLevels.lastOrNull() ?: detail.endBatteryLevel ?: 0
         val batteryUsed = batteryStart - batteryEnd
 
-        // Energy and efficiency
         val distance = detail.distance ?: 0.0
-        val energyUsed = detail.energyConsumedNet ?: 0.0
-        val efficiency = if (distance > 0) (energyUsed * 1000) / distance else 0.0
 
         // Duration and average speed from distance
         val durationMin = detail.durationMin ?: 0
@@ -219,8 +269,7 @@ class DriveDetailViewModel @Inject constructor(
             batteryStart = batteryStart,
             batteryEnd = batteryEnd,
             batteryUsed = batteryUsed,
-            energyUsed = energyUsed,
-            efficiency = efficiency,
+            energy = energy,
             distance = distance,
             durationMin = durationMin,
             avgSpeedFromDistance = avgSpeedFromDistance,

@@ -168,6 +168,7 @@ fun DrivesScreen(
                     palette = palette,
                     listState = listState,
                     isFilterLoading = uiState.isFilterLoading,
+                    driveMetrics = uiState.driveMetrics,
                     onDateFilterSelected = { viewModel.setDateFilter(it) },
                     onCustomRangeSelected = { start, end -> viewModel.setCustomDateRange(start, end) },
                     onDistanceFilterSelected = { viewModel.setDistanceFilter(it) },
@@ -194,6 +195,7 @@ private fun DrivesContent(
     palette: CarColorPalette,
     listState: androidx.compose.foundation.lazy.LazyListState,
     isFilterLoading: Boolean,
+    driveMetrics: Map<Int, DriveHistoryMetrics>,
     onDateFilterSelected: (DriveDateFilter) -> Unit,
     onCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
     onDistanceFilterSelected: (DriveDistanceFilter) -> Unit,
@@ -284,6 +286,7 @@ private fun DrivesContent(
                 when (item) {
                     is DriveHistoryItem.Drive -> DriveItem(
                         drive = item.drive,
+                        metrics = driveMetrics[item.drive.id],
                         units = units,
                         palette = palette,
                         onClick = { onDriveClick(item.drive.id) }
@@ -582,6 +585,7 @@ private fun SummaryItem(
 @Composable
 private fun DriveItem(
     drive: DriveData,
+    metrics: DriveHistoryMetrics?,
     units: Units?,
     palette: CarColorPalette,
     onClick: () -> Unit
@@ -603,7 +607,19 @@ private fun DriveItem(
         EditorialPill(formatDuration(context.resources, drive.durationMin ?: 0))
         EditorialPill("${drive.speedMax ?: 0} ${UnitFormatter.getSpeedUnit(units)}")
         // D8 parity: iOS DriveListView shows efficiency (Wh/km)
-        drive.efficiencyWhKm?.let { EditorialPill("%.0f Wh/km".format(it)) }
+        (metrics?.energyKwh ?: drive.energyConsumedNet)?.let {
+            EditorialPill("%.2f kWh".format(it))
+        }
+        (metrics?.efficiencyWhKm ?: drive.efficiencyWhKm)?.let {
+            EditorialPill("%.0f Wh/km".format(it))
+        }
+        metrics?.source?.takeIf { it.isNotBlank() }?.let { source ->
+            val label = if (source == "power_samples") "采样计算" else "API"
+            val coverage = if (source == "power_samples" && metrics.coverageRatio > 0.0) {
+                " ${"%.0f".format(metrics.coverageRatio * 100)}%"
+            } else ""
+            EditorialPill("$label$coverage")
+        }
         val start = drive.startBatteryLevel
         val end = drive.endBatteryLevel
         if (start != null && end != null) {

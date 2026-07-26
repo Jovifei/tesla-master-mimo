@@ -200,6 +200,10 @@ private fun DriveDetailContent(
 
         // Stats grid
         stats?.let { s ->
+            val notAvailableLabel = stringResource(R.string.not_available)
+            val energySourceLabel = stringResource(R.string.energy_source)
+            val energyCoverageLabel = stringResource(R.string.energy_coverage)
+
             // Speed section
             StatsSectionCard(
                 title = stringResource(R.string.speed),
@@ -218,7 +222,11 @@ private fun DriveDetailContent(
                 stats = listOf(
                     StatItem(stringResource(R.string.distance), UnitFormatter.formatDistance(s.distance, units)),
                     StatItem(stringResource(R.string.duration), formatDurationCompact(s.durationMin)),
-                    StatItem(stringResource(R.string.efficiency), UnitFormatter.formatEfficiency(s.efficiency, units))
+                    StatItem(
+                        stringResource(R.string.efficiency),
+                        s.energy.efficiencyWhKm?.let { UnitFormatter.formatEfficiency(it, units) }
+                            ?: notAvailableLabel
+                    )
                 )
             )
 
@@ -230,7 +238,25 @@ private fun DriveDetailContent(
                     StatItem(stringResource(R.string.start), "${s.batteryStart}%"),
                     StatItem(stringResource(R.string.end), "${s.batteryEnd}%"),
                     StatItem(stringResource(R.string.used), "${s.batteryUsed}%"),
-                    StatItem(stringResource(R.string.energy), "%.2f kWh".format(s.energyUsed))
+                    StatItem(
+                        stringResource(R.string.energy),
+                        s.energy.energyKwh?.let { "%.2f kWh".format(it) } ?: notAvailableLabel
+                    ),
+                    StatItem(
+                        energySourceLabel,
+                        when (s.energy.source) {
+                            DriveDetailEnergySource.API -> stringResource(R.string.range_actual)
+                            DriveDetailEnergySource.POWER_SAMPLES -> stringResource(R.string.range_estimated)
+                            null -> notAvailableLabel
+                        }
+                    ),
+                    StatItem(
+                        energyCoverageLabel,
+                        s.energy.coverageRatio?.let { ratio ->
+                            val seconds = s.energy.coverageSeconds?.let { "$it s" } ?: notAvailableLabel
+                            "%.0f%% · %s".format(ratio * 100, seconds)
+                        } ?: notAvailableLabel
+                    )
                 )
             )
 

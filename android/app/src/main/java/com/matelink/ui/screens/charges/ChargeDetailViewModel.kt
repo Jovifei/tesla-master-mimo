@@ -11,6 +11,9 @@ import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.domain.LegRef
 import com.matelink.domain.TripRepository
+import com.matelink.domain.analytics.ChargeCostSource
+import com.matelink.domain.analytics.EffectiveChargeCostInput
+import com.matelink.domain.analytics.EffectiveChargeCostResolver
 import com.matelink.domain.model.Trip
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +30,10 @@ data class ChargeDetailUiState(
     val chargeDetail: ChargeDetail? = null,
     val units: Units? = null,
     val stats: ChargeDetailStats? = null,
+    val costPresentation: ChargeDetailCostPresentation = ChargeDetailCostPresentation(
+        cost = null,
+        state = ChargeDetailCostState.UNAVAILABLE
+    ),
     val currencySymbol: String = "€",
     val isDcCharge: Boolean = false,
     val containingTrip: Pair<Long, Trip>? = null
@@ -54,6 +61,50 @@ data class ChargeDetailStats(
     val durationMin: Int,
     val cost: Double?
 )
+
+enum class ChargeDetailCostState {
+    ACTUAL,
+    MANUAL,
+    FREE,
+    ESTIMATED,
+    UNAVAILABLE
+}
+
+data class ChargeDetailCostPresentation(
+    val cost: Double?,
+    val state: ChargeDetailCostState
+)
+
+internal fun presentChargeDetailCost(
+    manualAmount: Double? = null,
+    manuallyFree: Boolean = false,
+    teslaMateCost: Double? = null,
+    energyKwh: Double? = null
+): ChargeDetailCostPresentation {
+    val effectiveCost = EffectiveChargeCostResolver.resolve(
+        EffectiveChargeCostInput(
+            manualAmount = manualAmount,
+            manuallyFree = manuallyFree,
+            teslaMateCost = teslaMateCost,
+            energyKwh = energyKwh?.takeIf { it.isFinite() && it >= 0.0 }
+        )
+    )
+    val state = when (effectiveCost.source) {
+        ChargeCostSource.MANUAL -> ChargeDetailCostState.MANUAL
+        ChargeCostSource.FREE -> ChargeDetailCostState.FREE
+        ChargeCostSource.TESLAMATE -> ChargeDetailCostState.ACTUAL
+        ChargeCostSource.ESTIMATE -> if (effectiveCost.cost != null) {
+            ChargeDetailCostState.ESTIMATED
+        } else {
+            ChargeDetailCostState.UNAVAILABLE
+        }
+    }
+
+    return ChargeDetailCostPresentation(
+        cost = if (state == ChargeDetailCostState.UNAVAILABLE) null else effectiveCost.cost,
+        state = state
+    )
+}
 
 @HiltViewModel
 class ChargeDetailViewModel @Inject constructor(
@@ -99,6 +150,7 @@ class ChargeDetailViewModel @Inject constructor(
             // Fetch charge detail and units in parallel
             val detailResult = repository.getChargeDetail(carId, chargeId)
             val statusResult = repository.getCarStatus(carId)
+            val carResult = repository.getCar(carId)
 
             val units = when (statusResult) {
                 is ApiResult.Success -> statusResult.data.units
@@ -110,12 +162,22 @@ class ChargeDetailViewModel @Inject constructor(
                     val detail = detailResult.data
                     val stats = ChargeStatsCalculator.calculateStats(detail)
                     val isDcCharge = ChargeStatsCalculator.detectDcCharge(detail)
+                    val isExplicitlyFree = when (carResult) {
+                        is ApiResult.Success -> carResult.data.carSettings?.freeSupercharging == true
+                        is ApiResult.Error -> false
+                    }
+                    val costPresentation = presentChargeDetailCost(
+                        manuallyFree = isExplicitlyFree,
+                        teslaMateCost = detail.cost,
+                        energyKwh = detail.chargeEnergyAdded
+                    )
                     _uiState.update {
                         it.copy(
                             isLoading = false,
                             chargeDetail = detail,
                             units = units,
                             stats = stats,
+                            costPresentation = costPresentation,
                             isDcCharge = isDcCharge,
                             error = null
                         )

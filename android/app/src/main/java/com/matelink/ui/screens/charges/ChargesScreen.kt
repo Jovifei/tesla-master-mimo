@@ -88,7 +88,17 @@ import com.matelink.ui.components.formatShortDate
 import com.matelink.ui.components.parseListItemDate
 import com.matelink.ui.theme.CarColorPalette
 import com.matelink.ui.theme.CarColorPalettes
+import com.matelink.domain.analytics.ChargeCostSource
+import com.matelink.domain.analytics.EffectiveChargeCostInput
+import com.matelink.domain.analytics.EffectiveChargeCostResolver
 import java.time.LocalDate
+
+data class ChargeEnergyPresentation(
+    val energyKwh: Double?
+)
+
+internal fun presentChargeEnergy(energyKwh: Double?): ChargeEnergyPresentation =
+    ChargeEnergyPresentation(energyKwh?.takeIf { it.isFinite() && it >= 0.0 })
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -673,14 +683,23 @@ private fun ChargeItem(
     val context = LocalContext.current
     val unknownLocation = stringResource(R.string.unknown_location)
     val freeLabel = stringResource(R.string.charge_free)
+    val notAvailableLabel = stringResource(R.string.not_available)
     val accent = if (isDcCharge) palette.dcColor else palette.acColor
+    val energy = presentChargeEnergy(charge.chargeEnergyAdded)
 
-    val cost = charge.cost ?: 0.0
-    // Existing behavior: a missing cost renders the same as an explicit zero. The user
-    // can tell the two apart only via the edit-cost trailing affordance, which still
-    // points at TeslaMate's cost editor.
-    val isFree = cost == 0.0
-    val costText = if (isFree) freeLabel else "$currencySymbol%.2f".format(cost)
+    val effectiveCost = EffectiveChargeCostResolver.resolve(
+        EffectiveChargeCostInput(
+            teslaMateCost = charge.cost,
+            energyKwh = energy.energyKwh
+        )
+    )
+    val isFree = effectiveCost.source == ChargeCostSource.FREE
+    val isEstimated = effectiveCost.source == ChargeCostSource.ESTIMATE
+    val costText = when {
+        isFree -> freeLabel
+        effectiveCost.cost != null -> "$currencySymbol%.2f".format(effectiveCost.cost)
+        else -> notAvailableLabel
+    }
     val costPillText = if (onEditCost != null) "$costText ↗" else costText
 
     val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
@@ -688,8 +707,8 @@ private fun ChargeItem(
         accent = accent,
         dateline = formatEditorialDate(charge.startDate, is24Hour),
         title = charge.address ?: unknownLocation,
-        heroValue = "%.1f".format(charge.chargeEnergyAdded ?: 0.0),
-        heroUnit = "kWh",
+        heroValue = energy.energyKwh?.let { "%.1f".format(it) } ?: notAvailableLabel,
+        heroUnit = if (energy.energyKwh != null) "kWh" else "",
         onClick = onClick,
         datelineTrailing = {
             ChargeTypeBadge(isDcCharge = isDcCharge, palette = palette)
@@ -708,6 +727,9 @@ private fun ChargeItem(
             color = costColor,
             fontWeight = costFontWeight
         )
+        if (isEstimated) {
+            EditorialPill(stringResource(R.string.charge_cost_estimated))
+        }
 
         val start = charge.startBatteryLevel
         val end = charge.endBatteryLevel

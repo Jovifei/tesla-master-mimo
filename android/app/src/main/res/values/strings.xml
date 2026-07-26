@@ -493,6 +493,10 @@
     <string name="current_charge">Current Charge</string>
     <string name="usable_percent">Usable (%)</string>
     <string name="not_available">Not available</string>
+    <string name="charge_cost_estimated">Estimated at 1.10/kWh</string>
+    <string name="charge_cost_actual">Actual record</string>
+    <string name="energy_source">Energy source</string>
+    <string name="energy_coverage">Energy coverage</string>
     <string name="range_information_title">Range Information</string>
     <string name="range_information_message">Range details for your Tesla.</string>
     <string name="range_information">Range Information</string>

@@ -131,6 +131,7 @@ fun ChargeDetailScreen(
                 ChargeDetailContent(
                     detail = detail,
                     stats = uiState.stats,
+                    costPresentation = uiState.costPresentation,
                     units = uiState.units,
                     currencySymbol = uiState.currencySymbol,
                     isDcCharge = uiState.isDcCharge,
@@ -148,6 +149,7 @@ fun ChargeDetailScreen(
 private fun ChargeDetailContent(
     detail: ChargeDetail,
     stats: ChargeDetailStats?,
+    costPresentation: ChargeDetailCostPresentation,
     units: Units?,
     currencySymbol: String,
     isDcCharge: Boolean,
@@ -157,6 +159,22 @@ private fun ChargeDetailContent(
     modifier: Modifier = Modifier
 ) {
     val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
+    val unavailableLabel = stringResource(R.string.not_available)
+    val freeLabel = stringResource(R.string.charge_free)
+    val actualLabel = stringResource(R.string.charge_cost_actual)
+    val estimatedLabel = stringResource(R.string.charge_cost_estimated)
+    val costText = when {
+        costPresentation.state == ChargeDetailCostState.FREE -> freeLabel
+        costPresentation.cost != null -> "$currencySymbol%.2f".format(costPresentation.cost)
+        else -> unavailableLabel
+    }
+    val costSourceText = when (costPresentation.state) {
+        ChargeDetailCostState.ACTUAL,
+        ChargeDetailCostState.MANUAL -> actualLabel
+        ChargeDetailCostState.FREE -> freeLabel
+        ChargeDetailCostState.ESTIMATED -> estimatedLabel
+        ChargeDetailCostState.UNAVAILABLE -> unavailableLabel
+    }
     val scrollState = rememberScrollState()
     var sharedXFraction by remember { mutableStateOf<Float?>(null) }
 
@@ -174,7 +192,12 @@ private fun ChargeDetailContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Location header card
-        LocationHeaderCard(detail = detail, currencySymbol = currencySymbol, isDcCharge = isDcCharge)
+        LocationHeaderCard(
+            detail = detail,
+            isDcCharge = isDcCharge,
+            costText = costText,
+            costSourceText = costSourceText
+        )
 
         // Part-of-trip banner
         if (containingTrip != null) {
@@ -285,18 +308,21 @@ private fun ChargeDetailContent(
             }
 
             // Cost section
-            s.cost?.let { cost ->
-                if (cost > 0) {
-                    StatsSectionCard(
-                        title = costLabel,
-                        icon = Icons.Default.Paid,
-                        stats = listOf(
-                            StatItem(totalLabel, "$currencySymbol%.2f".format(cost)),
-                            StatItem(perKwhLabel, "$currencySymbol%.3f".format(cost / s.energyAdded.coerceAtLeast(0.001)))
-                        )
-                    )
-                }
+            val validEnergyKwh = detail.chargeEnergyAdded?.takeIf { it.isFinite() && it > 0.0 }
+            val costPerKwh = if (costPresentation.cost != null && validEnergyKwh != null) {
+                "$currencySymbol%.3f".format(costPresentation.cost / validEnergyKwh)
+            } else {
+                unavailableLabel
             }
+            StatsSectionCard(
+                title = costLabel,
+                icon = Icons.Default.Paid,
+                stats = listOf(
+                    StatItem(totalLabel, costText),
+                    StatItem(costLabel, costSourceText),
+                    StatItem(perKwhLabel, costPerKwh)
+                )
+            )
 
             // Charts
             val chargePoints = detail.chargePoints
@@ -378,7 +404,12 @@ private fun ChargeDetailContent(
 }
 
 @Composable
-private fun LocationHeaderCard(detail: ChargeDetail, currencySymbol: String, isDcCharge: Boolean) {
+private fun LocationHeaderCard(
+    detail: ChargeDetail,
+    isDcCharge: Boolean,
+    costText: String,
+    costSourceText: String
+) {
     val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
     val locationLabel = stringResource(R.string.location)
     val unknownLocationLabel = stringResource(R.string.unknown_location)
@@ -520,32 +551,27 @@ private fun LocationHeaderCard(detail: ChargeDetail, currencySymbol: String, isD
                         }
                     }
 
-                    // Cost (right side)
-                    detail.cost?.let { cost ->
-                        if (cost > 0) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = costLabel,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                                    )
-                                    Text(
-                                        text = "$currencySymbol%.2f".format(cost),
-                                        style = MaterialTheme.typography.titleLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Icon(
-                                    imageVector = Icons.Default.Paid,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = costSourceText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = costText,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
                         }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Icon(
+                            imageVector = Icons.Default.Paid,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
                     }
                 }
             }

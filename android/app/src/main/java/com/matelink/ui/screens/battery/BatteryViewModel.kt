@@ -34,9 +34,9 @@ data class BatteryStats(
     val healthPercent: Double,
     val lossKwh: Double,
     val lossPercent: Double,
-    val maxRangeNew: Double,
-    val maxRangeNow: Double,
-    val rangeLoss: Double,
+    val maxRangeNew: Double?,
+    val maxRangeNow: Double?,
+    val rangeLoss: Double?,
     val ratedEfficiency: Double,
     // Current status
     val batteryLevel: Int,
@@ -44,13 +44,13 @@ data class BatteryStats(
     val estimatedRange: Double,
     val ratedRange: Double,
     val idealRange: Double,
-    val rangeAt100: Double
+    val rangeAt100: Double?
 ) {
     val hasCapacityEstimate: Boolean
         get() = originalCapacity > 0.0 && currentCapacity > 0.0 && healthPercent in 0.0..100.0
 
     val hasRangeEstimate: Boolean
-        get() = maxRangeNew > 0.0 || maxRangeNow > 0.0
+        get() = maxRangeNew != null || maxRangeNow != null
 
     val hasLiveStatus: Boolean
         get() = batteryLevel > 0 || estimatedRange > 0.0 || ratedRange > 0.0 || idealRange > 0.0
@@ -139,9 +139,10 @@ class BatteryViewModel @Inject constructor(
         val lossPercent = 100 - healthPercent
 
         // Range from API
-        val maxRangeNew = health.maxRange ?: 0.0
-        val maxRangeNow = health.currentRange ?: 0.0
-        val rangeLoss = maxRangeNew - maxRangeNow
+        val rangeMetrics = BatteryRangeMetrics.from(
+            maxRangeKm = health.maxRange,
+            currentRangeKm = health.currentRange
+        )
 
         // Efficiency from API (Wh/km)
         val ratedEfficiency = health.ratedEfficiency?.takeIf { it > 0.0 } ?: state.ratedEfficiency ?: 0.0
@@ -157,7 +158,7 @@ class BatteryViewModel @Inject constructor(
         val rangeAt100 = if (batteryLevel >= 10 && ratedRange > 0) {
             (ratedRange / batteryLevel) * 100
         } else {
-            maxRangeNow
+            rangeMetrics.currentRangeKm
         }
 
         return BatteryStats(
@@ -166,9 +167,9 @@ class BatteryViewModel @Inject constructor(
             healthPercent = healthPercent,
             lossKwh = lossKwh,
             lossPercent = lossPercent,
-            maxRangeNew = maxRangeNew,
-            maxRangeNow = maxRangeNow,
-            rangeLoss = rangeLoss,
+            maxRangeNew = rangeMetrics.maxRangeKm,
+            maxRangeNow = rangeMetrics.currentRangeKm,
+            rangeLoss = rangeMetrics.rangeLossKm,
             ratedEfficiency = ratedEfficiency,
             batteryLevel = batteryLevel,
             usableBatteryLevel = usableBatteryLevel,
