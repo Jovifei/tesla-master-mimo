@@ -247,3 +247,71 @@
 - Applied the 500 m route threshold to drive display, summaries, and charts; short repositioning is represented by the surrounding parked interval and parked timestamps render in 24-hour form.
 - Verified `:app:testDebugUnitTest` and `:app:assembleDebug`; installed the APK on device `6e4fa92f` and confirmed no WorkManager initialization/fatal startup log.
 - Still pending: adapter-backed parked power/temperature, charge-cost overrides and Chinese geocoding, sentry events/media, capability-aware Android API client, and final visual calibration.
+
+# P1.2 Device Room Recovery and AMap Runtime Test - 2026-07-26
+
+## Plan
+
+- [x] Audit the v13 identity mismatch and define a non-destructive v13-to-v14 migration.
+- [x] Add the v14 schema, migration coverage, and patch version metadata.
+- [x] Remove the remaining English AMap placeholder copy from user-visible screens.
+- [x] Run targeted and full Android build verification.
+- [x] Install the debug APK over the existing phone data and verify startup without clearing data.
+- [ ] Verify the live AMap preview after a Key is saved again; current app state is unconfigured and the Key was not read or changed.
+
+## Review
+
+- Root cause of the crash was the v13 Room identity/default mismatch. The app now moves to v14 through a non-destructive migration that preserves drive summaries and detail aggregates; the migration instrumentation suite passed 2/2.
+- Debug version is `versionCode 2` / `versionName 1.0.1`. JVM tests passed 116/116; the AMap setup content suite passed 4/4; `assembleDebug` and `assembleDebugAndroidTest` passed.
+- The APK was installed with `adb install -r`; no uninstall or data clear was used. The current MateLink process remained foreground with no Room-integrity or fatal-exception marker.
+- Setup now distinguishes `尚未保存 Key。` from `Key 已加密保存，内容已隐藏。`, and disables save for an empty input. It never shows the stored value.
+- Live AMap verification is intentionally incomplete: the installed app reports `尚未配置高德地图`, so no saved Key is available to the SDK. The Key was neither read nor modified.
+
+# P1.3 Navigation Recovery and AMap Key Verification Flow - 2026-07-26
+
+## Plan
+
+- [x] Remove the test-only runtime navigation handling that can trap the app on setup/preview pages.
+- [x] Restore normal Dashboard, Drives, Charges, and More navigation after an app restart.
+- [x] Replace direct Key save with a transient SDK test page: visible pending, pass, and failure states; persist only after pass.
+- [x] When a Key is verified, hide the input and provide an explicit change-Key action.
+- [x] Add focused tests, rebuild, preserve-data install, and exercise the repaired flows without reading a real Key.
+
+## Review
+
+- The app now starts at Dashboard and keeps all primary navigation destinations available.
+- AMap candidates remain pending until a real Search SDK request succeeds; a synthetic invalid Key failed on the isolated emulator and was not stored.
+- Existing verified Keys remain hidden and can only be replaced through the explicit change-and-test flow.
+
+# P1.4 Configuration Preservation, Foreground Sync Crash, and Key Test - 2026-07-26
+
+## Plan
+
+- [x] Capture the real-device crash signature without reading user configuration.
+- [x] Declare WorkManager's `dataSync` foreground service type in the merged manifest.
+- [x] Keep the app's initial destination on Dashboard; configuration remains reachable from More.
+- [x] Replace direct AMap Key storage with an isolated transient verification activity and explicit pass/fail UI states.
+- [x] Exercise a fresh isolated emulator: initial synthetic connection save, Dashboard return, and Key verification failure path.
+- [x] Build the final APK, then use only a preserve-data install and read-only crash check on Jovi's phone.
+
+## Review
+
+- The physical-phone foreground crash was `SystemForegroundService` rejecting the requested `dataSync` type because the app manifest had none. The fixed manifest declares `dataSync`.
+- A fresh emulator saved synthetic connection settings and returned directly to Dashboard; an invalid AMap Key produced an explicit failure and was not stored.
+- No stored Docker address, token, AMap Key, or database row was read or logged.
+
+# P1.5 Room v14 Identity Recovery - 2026-07-26
+
+## Plan
+
+- [x] Capture the device Room identity-hash failure without reading configuration values.
+- [x] Identify that a database already at user version 14 cannot re-run the v13-to-v14 migration.
+- [x] Add and isolate-test a no-schema-change v14-to-v15 recovery migration.
+- [x] Build v1.0.4 and perform a preserve-data installation plus read-only device crash check.
+
+## Review
+
+- The v15 migration performs no table or row mutation. It advances the database version so Room verifies the existing schema and replaces only its stale master-table identity metadata.
+- The isolated emulator passed all three migration tests. JVM tests passed 117/117, and both required Debug APK assemblies passed.
+- `adb install -r` updated the phone from v1.0.3 to v1.0.4 while preserving the original first-install time and the databases, DataStore, and shared-preferences directories.
+- After normal launch and a Drives-history navigation tap, the same application process remained alive for 25 seconds with no new fatal or Room-integrity log marker.

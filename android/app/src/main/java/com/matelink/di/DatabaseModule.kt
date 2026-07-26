@@ -36,7 +36,6 @@ object DatabaseModule {
             StatsDatabase.DATABASE_NAME
         )
             .addMigrations(*StatsDatabase.ALL_MIGRATIONS)
-            .fallbackToDestructiveMigration()  // Fallback for development
             .build()
     }
 

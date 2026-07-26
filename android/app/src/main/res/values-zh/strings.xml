@@ -1,5 +1,55 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="amap_settings_section">地图服务</string>
+    <string name="amap_settings_title">高德地图</string>
+    <string name="amap_preview_title">高德地图预览</string>
+    <string name="amap_back">返回</string>
+    <string name="amap_status_unconfigured">未配置</string>
+    <string name="amap_status_privacy_not_agreed">未同意地图隐私说明</string>
+    <string name="amap_status_ready">已保存，等待验证</string>
+    <string name="amap_status_loaded">地图已加载</string>
+    <string name="amap_status_verification_required">需要验证</string>
+    <string name="amap_status_restart_required">修改后需重启</string>
+    <string name="amap_setup_title">配置高德地图</string>
+    <string name="amap_identity_package">包名：%1$s</string>
+    <string name="amap_identity_build">构建类型：%1$s</string>
+    <string name="amap_identity_sha1">SHA1：%1$s</string>
+    <string name="amap_sha1_unavailable">不可用</string>
+    <string name="amap_copy_package">复制包名</string>
+    <string name="amap_copy_sha1">复制 SHA1</string>
+    <string name="amap_key_label">高德 Android SDK Key</string>
+    <string name="amap_key_storage_notice">Key 已加密保存在本设备，保存后不会再次显示。</string>
+    <string name="amap_key_saved">Key 已加密保存，内容已隐藏。</string>
+    <string name="amap_key_not_saved">尚未保存 Key。</string>
+    <string name="amap_key_invalid">请输入有效的高德 Android SDK Key。</string>
+    <string name="amap_key_verified">Key 已验证并加密保存。</string>
+    <string name="amap_key_saved_unverified">Key 已保存，尚未验证。</string>
+    <string name="amap_save_key">保存 Key</string>
+    <string name="amap_verify_and_save">测试并保存 Key</string>
+    <string name="amap_verify_saved_key">测试已保存的 Key</string>
+    <string name="amap_change_key">更改 Key</string>
+    <string name="amap_verification_title">验证高德地图 Key</string>
+    <string name="amap_verification_pending">正在测试地图连接…</string>
+    <string name="amap_verification_failed">验证失败，Key 未被启用。</string>
+    <string name="amap_change_verification_failed">新 Key 验证失败，当前 Key 未被修改。</string>
+    <string name="amap_verification_requires_privacy">请先同意地图隐私说明，再测试 Key。</string>
+    <string name="amap_cancel">取消</string>
+    <string name="amap_clear_key">清除 Key</string>
+    <string name="amap_privacy_agree">我已阅读并同意 MateLink 地图说明和高德隐私政策</string>
+    <string name="amap_preview">打开地图预览</string>
+    <string name="amap_setup_steps">1. 登录或注册高德开放平台。\n2. 创建应用。\n3. 创建凭据或添加 Key。\n4. 为凭据选择 Android 服务。\n5. 复制下方 MateLink 当前包名。\n6. 复制下方当前安装 APK 的 Debug SHA1。\n7. 发布时填写 Release SHA1。\n8. 在高德控制台填写包名、Debug SHA1 和 Release SHA1。\n9. 复制生成的 Android SDK Key。\n10. 返回 MateLink 并粘贴 Key。\n11. 同意地图隐私说明。\n12. 测试 Key；只有测试成功后才会加密保存。</string>
+    <string name="amap_setup_warning">仅可使用 Android SDK Key。不能使用 Web 服务 Key 或 JS API Key。Debug 和 Release SHA1 不同，请勿截图或公开分享 Key。</string>
+    <string name="amap_privacy_notice">MateLink 使用高德地图 SDK 加载基础地图并显示服务端车辆位置。当前版本不会获取手机位置。高德可能依据其政策处理必要的设备、应用和网络信息。</string>
+    <string name="amap_not_configured">尚未配置高德地图</string>
+    <string name="amap_not_agreed">尚未同意地图隐私说明</string>
+    <string name="amap_not_verified">已保存的高德地图 Key 尚未验证</string>
+    <string name="amap_go_setup">前往设置</string>
+    <string name="amap_loading">正在加载地图预览…</string>
+    <string name="amap_no_position">暂无可用车辆位置</string>
+    <string name="amap_failed">地图加载失败。请检查是否使用 Android SDK Key、包名和 SHA1 是否匹配、是否已同意隐私说明、Debug/Release 签名是否正确、网络是否可用，以及 Key 是否无效、过期或被删除。</string>
+    <string name="amap_restart_required">Key 已保存。请重启 App 后再创建地图预览。</string>
+    <string name="amap_vehicle_marker">车辆</string>
+    <string name="amap_legacy_preview_unavailable">此页面暂不提供地图预览。</string>
     <string name="app_name">MateLink</string>
 
     <!-- Navigation -->

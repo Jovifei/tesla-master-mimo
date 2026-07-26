@@ -24,6 +24,7 @@ data class AmapMapUiState(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val loading: Boolean = false,
+    val mapLoaded: Boolean = false,
     val failed: Boolean = false
 )
 
@@ -39,16 +40,21 @@ class AmapMapViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             store.settings.collectLatest { settings ->
-                val state = amapSetupState(settings.hasKey, settings.privacyAgreed, settings.restartRequired)
+                val state = amapSetupState(
+                    settings.hasKey,
+                    settings.privacyAgreed,
+                    settings.restartRequired,
+                    settings.mapLoaded
+                )
                 _uiState.value = _uiState.value.copy(setupState = state, key = if (state == AmapSetupState.READY_TO_PREVIEW) store.currentKey() else "")
                 if (state == AmapSetupState.READY_TO_PREVIEW) loadVehiclePosition()
             }
         }
     }
 
-    fun onMapLoading() { _uiState.value = _uiState.value.copy(loading = true, failed = false) }
-    fun onMapLoaded() { viewModelScope.launch { store.markMapLoaded() }; _uiState.value = _uiState.value.copy(loading = false, failed = false) }
-    fun onMapFailure() { _uiState.value = _uiState.value.copy(loading = false, failed = true) }
+    fun onMapLoading() { _uiState.value = _uiState.value.copy(loading = true, mapLoaded = false, failed = false) }
+    fun onMapLoaded() { viewModelScope.launch { store.markMapLoaded() }; _uiState.value = _uiState.value.copy(loading = false, mapLoaded = true, failed = false) }
+    fun onMapFailure() { _uiState.value = _uiState.value.copy(loading = false, mapLoaded = false, failed = true) }
 
     private fun loadVehiclePosition() = viewModelScope.launch {
         val carId = settingsRepository.currentCarId.first()

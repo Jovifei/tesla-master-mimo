@@ -19,6 +19,7 @@ class AmapConfigurationTest {
     @Test fun changedKeyRequiresRestart() = assertEquals(AmapSetupState.RESTART_REQUIRED, amapSetupState(true, true, true))
     @Test fun changedKeySetsRestartMutationAfterMapInitialization() = assertTrue(AmapConfiguration.prepareKeySave("next", "previous", true)?.restartRequired == true)
     @Test fun readyMapHasKeyAndConsent() = assertEquals(AmapSetupState.READY_TO_PREVIEW, amapSetupState(true, true))
+    @Test fun savedButUnverifiedKeyRequiresVerification() = assertEquals(AmapSetupState.VERIFICATION_REQUIRED, amapSetupState(true, true, keyVerified = false))
     @Test fun debugAndReleaseLabelsRemainDistinct() = assertFalse(InstalledAppIdentity("com.matelink", null, "Debug").buildType == InstalledAppIdentity("com.matelink", null, "Release").buildType)
     @Test fun validCoordinate_isAccepted() = assertTrue(AmapConfiguration.isUsableCoordinate(1.0, 1.0))
     @Test fun zeroZero_isRejected() = assertFalse(AmapConfiguration.isUsableCoordinate(0.0, 0.0))

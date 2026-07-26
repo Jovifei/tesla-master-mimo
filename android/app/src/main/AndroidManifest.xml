@@ -49,6 +49,19 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.screens.map.AmapKeyVerificationActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:process=":amap_verification"
+            android:theme="@style/Theme.MateLink" />
+
+        <!-- DataSyncWorker requests WorkManager foreground data-sync execution. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

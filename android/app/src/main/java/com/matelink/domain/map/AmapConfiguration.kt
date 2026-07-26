@@ -24,12 +24,18 @@ object AmapConfiguration {
 data class AmapKeyMutation(val key: String, val restartRequired: Boolean)
 
 enum class AmapSetupState {
-    UNCONFIGURED, PRIVACY_NOT_AGREED, READY_TO_PREVIEW, RESTART_REQUIRED, LOADING, LOADED, FAILED
+    UNCONFIGURED, PRIVACY_NOT_AGREED, VERIFICATION_REQUIRED, READY_TO_PREVIEW, RESTART_REQUIRED, LOADING, LOADED, FAILED
 }
 
-fun amapSetupState(hasKey: Boolean, privacyAgreed: Boolean, restartRequired: Boolean = false): AmapSetupState = when {
+fun amapSetupState(
+    hasKey: Boolean,
+    privacyAgreed: Boolean,
+    restartRequired: Boolean = false,
+    keyVerified: Boolean = true
+): AmapSetupState = when {
     !hasKey -> AmapSetupState.UNCONFIGURED
     !privacyAgreed -> AmapSetupState.PRIVACY_NOT_AGREED
     restartRequired -> AmapSetupState.RESTART_REQUIRED
+    !keyVerified -> AmapSetupState.VERIFICATION_REQUIRED
     else -> AmapSetupState.READY_TO_PREVIEW
 }

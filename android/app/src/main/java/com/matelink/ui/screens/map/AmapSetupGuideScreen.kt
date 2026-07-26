@@ -1,5 +1,9 @@
 package com.matelink.ui.screens.map
 
+import android.app.Activity
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -44,7 +48,10 @@ fun AmapSetupGuideScreen(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val identity = InstalledAppSignature.read(context, BuildConfig.DEBUG)
-    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.amap_setup_title)) }, navigationIcon = { TextButton(onClick = onNavigateBack) { Text("Back") } }) }) { padding ->
+    val verificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) viewModel.acceptVerifiedKey() else viewModel.rejectPendingKey()
+    }
+    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.amap_setup_title)) }, navigationIcon = { TextButton(onClick = onNavigateBack) { Text(stringResource(R.string.amap_back)) } }) }) { padding ->
         AmapSetupGuideContent(
             modifier = Modifier.padding(padding),
             identity = identity,
@@ -52,8 +59,17 @@ fun AmapSetupGuideScreen(
             onCopyPackage = { clipboard.setText(AnnotatedString(identity.packageName)) },
             onCopySha1 = { identity.sha1?.let { clipboard.setText(AnnotatedString(it)) } },
             onKeyChange = viewModel::updateKey,
-            onSaveKey = viewModel::saveKey,
-            onClearKey = viewModel::clearKey,
+            onVerifyDraftKey = {
+                viewModel.stageDraftKey {
+                    verificationLauncher.launch(Intent(context, AmapKeyVerificationActivity::class.java))
+                }
+            },
+            onVerifySavedKey = {
+                viewModel.stageSavedKey {
+                    verificationLauncher.launch(Intent(context, AmapKeyVerificationActivity::class.java))
+                }
+            },
+            onChangeKey = viewModel::startEditingKey,
             onPrivacyAgreedChange = viewModel::setPrivacyAgreed,
             onNavigateToPreview = onNavigateToPreview
         )
@@ -68,8 +84,9 @@ internal fun AmapSetupGuideContent(
     onCopyPackage: () -> Unit,
     onCopySha1: () -> Unit,
     onKeyChange: (String) -> Unit,
-    onSaveKey: () -> Unit,
-    onClearKey: () -> Unit,
+    onVerifyDraftKey: () -> Unit,
+    onVerifySavedKey: () -> Unit,
+    onChangeKey: () -> Unit,
     onPrivacyAgreedChange: (Boolean) -> Unit,
     onNavigateToPreview: () -> Unit
 ) {
@@ -79,33 +96,69 @@ internal fun AmapSetupGuideContent(
     ) {
         Text(stringResource(R.string.amap_setup_steps), style = MaterialTheme.typography.bodyMedium)
         Text(stringResource(R.string.amap_setup_warning), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-        Text("Package: ${identity.packageName}")
-        Text("Build: ${identity.buildType}")
-        Text("SHA1: ${identity.sha1 ?: "Unavailable"}")
-        OutlinedButton(onClick = onCopyPackage) { Text("Copy package name") }
-        OutlinedButton(onClick = onCopySha1, enabled = identity.sha1 != null) { Text("Copy SHA1") }
-        OutlinedTextField(
-            value = uiState.keyInput,
-            onValueChange = onKeyChange,
-            label = { Text(stringResource(R.string.amap_key_label)) },
-            visualTransformation = PasswordVisualTransformation(),
-            isError = uiState.keyError,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        Text("The key is encrypted on this device and is never shown after saving.", style = MaterialTheme.typography.bodySmall)
-        OutlinedButton(onClick = onSaveKey, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.amap_save_key)) }
-        if (uiState.hasKey) OutlinedButton(onClick = onClearKey, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.amap_clear_key)) }
+        Text(stringResource(R.string.amap_identity_package, identity.packageName))
+        Text(stringResource(R.string.amap_identity_build, identity.buildType))
+        Text(stringResource(R.string.amap_identity_sha1, identity.sha1 ?: stringResource(R.string.amap_sha1_unavailable)))
+        OutlinedButton(onClick = onCopyPackage) { Text(stringResource(R.string.amap_copy_package)) }
+        OutlinedButton(onClick = onCopySha1, enabled = identity.sha1 != null) { Text(stringResource(R.string.amap_copy_sha1)) }
         Text(stringResource(R.string.amap_privacy_notice), style = MaterialTheme.typography.bodySmall)
         androidx.compose.foundation.layout.Row {
             Checkbox(checked = uiState.privacyAgreed, onCheckedChange = onPrivacyAgreedChange)
             Text(stringResource(R.string.amap_privacy_agree), modifier = Modifier.padding(top = 12.dp))
         }
+        when {
+            uiState.hasVerifiedKey && !uiState.isEditingKey -> {
+                Text(stringResource(R.string.amap_key_verified), style = MaterialTheme.typography.bodySmall)
+                if (uiState.verificationFailed) {
+                    Text(stringResource(R.string.amap_change_verification_failed), color = MaterialTheme.colorScheme.error)
+                }
+                OutlinedButton(onClick = onChangeKey, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.amap_change_key))
+                }
+            }
+            uiState.hasKey && !uiState.isEditingKey -> {
+                Text(stringResource(R.string.amap_key_saved_unverified), style = MaterialTheme.typography.bodySmall)
+                if (uiState.verificationFailed) {
+                    Text(stringResource(R.string.amap_verification_failed), color = MaterialTheme.colorScheme.error)
+                }
+                OutlinedButton(
+                    onClick = onVerifySavedKey,
+                    enabled = uiState.privacyAgreed,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(stringResource(R.string.amap_verify_saved_key)) }
+                OutlinedButton(onClick = onChangeKey, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.amap_change_key))
+                }
+            }
+            else -> {
+                OutlinedTextField(
+                    value = uiState.keyInput,
+                    onValueChange = onKeyChange,
+                    label = { Text(stringResource(R.string.amap_key_label)) },
+                    visualTransformation = PasswordVisualTransformation(),
+                    isError = uiState.keyError,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Text(stringResource(R.string.amap_key_storage_notice), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.amap_key_not_saved), style = MaterialTheme.typography.bodySmall)
+                if (uiState.keyError) Text(stringResource(R.string.amap_key_invalid), color = MaterialTheme.colorScheme.error)
+                if (uiState.verificationFailed) Text(stringResource(R.string.amap_verification_failed), color = MaterialTheme.colorScheme.error)
+                OutlinedButton(
+                    onClick = onVerifyDraftKey,
+                    enabled = uiState.keyInput.isNotBlank() && uiState.privacyAgreed,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(stringResource(R.string.amap_verify_and_save)) }
+                if (uiState.keyInput.isNotBlank() && !uiState.privacyAgreed) {
+                    Text(stringResource(R.string.amap_verification_requires_privacy), color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
         if (uiState.restartRequired) Text(stringResource(R.string.amap_restart_required), color = MaterialTheme.colorScheme.error)
         Spacer(Modifier.height(4.dp))
         OutlinedButton(
             onClick = onNavigateToPreview,
-            enabled = uiState.hasKey && uiState.privacyAgreed && !uiState.restartRequired,
+            enabled = uiState.hasVerifiedKey && uiState.privacyAgreed && !uiState.restartRequired,
             modifier = Modifier.fillMaxWidth()
         ) { Text(stringResource(R.string.amap_preview)) }
     }

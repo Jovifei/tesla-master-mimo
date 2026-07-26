@@ -32,6 +32,7 @@ fun AmapMapView(
     apiKey: String,
     latitude: Double?,
     longitude: Double?,
+    markerTitle: String,
     onLoading: () -> Unit,
     onLoaded: () -> Unit,
     onFailure: () -> Unit
@@ -70,18 +71,18 @@ fun AmapMapView(
                     handle.map = map
                     map.uiSettings.isZoomControlsEnabled = true
                     map.setOnMapLoadedListener { onLoaded() }
-                    updateVehicleMarker(handle, latitude, longitude)
+                    updateVehicleMarker(handle, latitude, longitude, markerTitle)
                 }
             } catch (_: Exception) {
                 onFailure()
                 android.widget.FrameLayout(context)
             }
         },
-        update = { updateVehicleMarker(handle, latitude, longitude) }
+        update = { updateVehicleMarker(handle, latitude, longitude, markerTitle) }
     )
 }
 
-private fun updateVehicleMarker(handle: AmapMapHandle, latitude: Double?, longitude: Double?) {
+private fun updateVehicleMarker(handle: AmapMapHandle, latitude: Double?, longitude: Double?, markerTitle: String) {
     val map = handle.map ?: return
     if (latitude == null || longitude == null) {
         handle.marker?.remove()
@@ -89,7 +90,8 @@ private fun updateVehicleMarker(handle: AmapMapHandle, latitude: Double?, longit
         return
     }
     val point = LatLng(latitude, longitude)
-    val marker = handle.marker ?: map.addMarker(MarkerOptions().position(point).title("Vehicle")).also { handle.marker = it }
+    val marker = handle.marker ?: map.addMarker(MarkerOptions().position(point).title(markerTitle)).also { handle.marker = it }
+    marker.title = markerTitle
     marker.position = point
     map.moveCamera(CameraUpdateFactory.newLatLngZoom(point, 14f))
 }

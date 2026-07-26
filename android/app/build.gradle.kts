@@ -31,8 +31,8 @@ android {
         applicationId = "com.matelink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 5
+        versionName = "1.0.4"
         buildConfigField("String", "GIT_SHA", "\"${resolveGitSha()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -64,6 +64,10 @@ android {
 
     room {
         schemaDirectory("$projectDir/schemas")
+    }
+
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
     }
 }
 
@@ -132,7 +136,17 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.room.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+tasks.matching { it.name.startsWith("connected") && it.name.endsWith("AndroidTest") }.configureEach {
+    doFirst {
+        check(providers.gradleProperty("allowConnectedDeviceTests").orNull == "isolated-device") {
+            "Connected Android tests are blocked by default because they can uninstall the target app. " +
+                "Run them only on an isolated test device with -PallowConnectedDeviceTests=isolated-device."
+        }
+    }
 }

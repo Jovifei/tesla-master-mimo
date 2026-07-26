@@ -19,9 +19,12 @@ data class AmapSetupUiState(
     val privacyAgreed: Boolean = false,
     val restartRequired: Boolean = false,
     val mapLoaded: Boolean = false,
-    val keyError: Boolean = false
+    val keyError: Boolean = false,
+    val isEditingKey: Boolean = false,
+    val verificationFailed: Boolean = false
 ) {
-    val state: AmapSetupState get() = amapSetupState(hasKey, privacyAgreed, restartRequired)
+    val state: AmapSetupState get() = amapSetupState(hasKey, privacyAgreed, restartRequired, mapLoaded)
+    val hasVerifiedKey: Boolean get() = hasKey && mapLoaded
 }
 
 @HiltViewModel
@@ -44,16 +47,47 @@ class AmapSetupViewModel @Inject constructor(
         }
     }
 
-    fun updateKey(value: String) { _uiState.value = _uiState.value.copy(keyInput = value, keyError = false) }
+    fun updateKey(value: String) {
+        _uiState.value = _uiState.value.copy(keyInput = value, keyError = false, verificationFailed = false)
+    }
 
-    fun saveKey() {
+    fun startEditingKey() {
+        _uiState.value = _uiState.value.copy(isEditingKey = true, keyInput = "", keyError = false, verificationFailed = false)
+    }
+
+    fun stageDraftKey(onReady: () -> Unit) {
         viewModelScope.launch {
-            val saved = store.saveKey(_uiState.value.keyInput, AmapSdkGate.wasInitialized)
-            _uiState.value = _uiState.value.copy(keyInput = if (saved) "" else _uiState.value.keyInput, keyError = !saved)
+            val staged = store.stageKeyForVerification(_uiState.value.keyInput)
+            _uiState.value = _uiState.value.copy(keyError = !staged, verificationFailed = false)
+            if (staged) onReady()
         }
     }
 
-    fun clearKey() { viewModelScope.launch { store.clearKey(); _uiState.value = _uiState.value.copy(keyInput = "") } }
+    fun stageSavedKey(onReady: () -> Unit) {
+        viewModelScope.launch {
+            val staged = store.stageSavedKeyForVerification()
+            _uiState.value = _uiState.value.copy(keyError = !staged, verificationFailed = false)
+            if (staged) onReady()
+        }
+    }
+
+    fun acceptVerifiedKey() {
+        viewModelScope.launch {
+            val promoted = store.promoteVerifiedPendingKey()
+            _uiState.value = _uiState.value.copy(
+                keyInput = "",
+                isEditingKey = !promoted,
+                verificationFailed = !promoted,
+                keyError = !promoted
+            )
+        }
+    }
+
+    fun rejectPendingKey() {
+        store.discardPendingKey()
+        _uiState.value = _uiState.value.copy(verificationFailed = true, keyInput = "", isEditingKey = !_uiState.value.hasKey)
+    }
+
     fun setPrivacyAgreed(agreed: Boolean) { viewModelScope.launch { store.setPrivacyAgreed(agreed) } }
 }
 

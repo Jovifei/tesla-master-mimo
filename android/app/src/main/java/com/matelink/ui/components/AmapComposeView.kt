@@ -9,7 +9,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import com.matelink.R
 
 /**
  * Placeholder for AMap (高德地图) MapView.
@@ -32,7 +34,7 @@ fun AmapComposeView(
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = "Map requires Amap SDK.\nDownload from lbs.amap.com",
+            text = stringResource(R.string.amap_legacy_preview_unavailable),
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = Color.Gray

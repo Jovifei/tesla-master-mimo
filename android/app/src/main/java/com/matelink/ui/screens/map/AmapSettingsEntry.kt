@@ -62,5 +62,6 @@ private fun amapStatusText(state: AmapSetupUiState): Int = when (state.state) {
     AmapSetupState.UNCONFIGURED -> R.string.amap_status_unconfigured
     AmapSetupState.PRIVACY_NOT_AGREED -> R.string.amap_status_privacy_not_agreed
     AmapSetupState.RESTART_REQUIRED -> R.string.amap_status_restart_required
+    AmapSetupState.VERIFICATION_REQUIRED -> R.string.amap_status_verification_required
     else -> if (state.mapLoaded) R.string.amap_status_loaded else R.string.amap_status_ready
 }

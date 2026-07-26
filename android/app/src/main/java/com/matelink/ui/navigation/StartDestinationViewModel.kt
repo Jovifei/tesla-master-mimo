@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -37,13 +36,9 @@ class StartDestinationViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            val settings = settingsDataStore.settings.first()
-            val mockMode = settingsRepository.mockMode.first()
-            _startDestination.value = if (settings.isConfigured || mockMode) {
-                Screen.Dashboard
-            } else {
-                Screen.Settings
-            }
+            // Configuration is available from More. Starting there hid all
+            // primary screens whenever a connection was incomplete.
+            _startDestination.value = Screen.Dashboard
         }
         viewModelScope.launch {
             settingsDataStore.notificationPermissionAsked.collect {

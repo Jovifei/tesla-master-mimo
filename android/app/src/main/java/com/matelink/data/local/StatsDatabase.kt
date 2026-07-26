@@ -59,7 +59,7 @@ import com.matelink.data.local.entity.TripRouteCache
         SavedTripLeg::class,
         SavedTripConsumedFingerprint::class
     ],
-    version = 13,
+    version = 15,
     exportSchema = true
 )
 abstract class StatsDatabase : RoomDatabase() {
@@ -325,6 +325,185 @@ abstract class StatsDatabase : RoomDatabase() {
             }
         }
 
-        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+        /**
+         * Migration from V13 to V14: align persisted default-value metadata for drive energy
+         * provenance. Earlier V13 builds have the same user_version but a different Room
+         * identity hash, which otherwise prevents the database from opening.
+         */
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                rebuildDrivesSummaryWithEnergyDefaults(db)
+            }
+        }
+
+        /**
+         * Migration from V14 to V15: repair the Room master-table identity hash left by
+         * earlier V13/V14 builds. The schema is unchanged; advancing the user version makes
+         * Room validate the existing tables and write its current identity metadata.
+         */
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) = Unit
+        }
+
+        private fun rebuildDrivesSummaryWithEnergyDefaults(db: SupportSQLiteDatabase) {
+            val energySource = if (hasColumn(db, "drives_summary", "energySource")) "`energySource`" else "NULL"
+            val energyCoverageSeconds = if (hasColumn(db, "drives_summary", "energyCoverageSeconds")) {
+                "COALESCE(`energyCoverageSeconds`, 0)"
+            } else {
+                "0"
+            }
+            val energyCoverageRatio = if (hasColumn(db, "drives_summary", "energyCoverageRatio")) {
+                "COALESCE(`energyCoverageRatio`, 0)"
+            } else {
+                "0"
+            }
+
+            createDriveDetailAggregatesTable(db, "drive_detail_aggregates_v14", includeForeignKey = false)
+            copyDriveDetailAggregates(db, "drive_detail_aggregates", "drive_detail_aggregates_v14")
+            db.execSQL("DROP TABLE `drive_detail_aggregates`")
+
+            db.execSQL(
+                """
+                CREATE TABLE `drives_summary_v14` (
+                    `driveId` INTEGER NOT NULL,
+                    `carId` INTEGER NOT NULL,
+                    `startDate` TEXT NOT NULL,
+                    `endDate` TEXT NOT NULL,
+                    `durationMin` INTEGER NOT NULL,
+                    `startAddress` TEXT NOT NULL,
+                    `endAddress` TEXT NOT NULL,
+                    `distance` REAL NOT NULL,
+                    `speedMax` INTEGER NOT NULL,
+                    `speedAvg` INTEGER NOT NULL,
+                    `powerMax` INTEGER NOT NULL,
+                    `powerMin` INTEGER NOT NULL,
+                    `startBatteryLevel` INTEGER NOT NULL,
+                    `endBatteryLevel` INTEGER NOT NULL,
+                    `outsideTempAvg` REAL,
+                    `insideTempAvg` REAL,
+                    `energyConsumed` REAL,
+                    `efficiency` REAL,
+                    `energySource` TEXT,
+                    `energyCoverageSeconds` INTEGER NOT NULL DEFAULT 0,
+                    `energyCoverageRatio` REAL NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`driveId`)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT INTO `drives_summary_v14` (
+                    `driveId`, `carId`, `startDate`, `endDate`, `durationMin`, `startAddress`,
+                    `endAddress`, `distance`, `speedMax`, `speedAvg`, `powerMax`, `powerMin`,
+                    `startBatteryLevel`, `endBatteryLevel`, `outsideTempAvg`, `insideTempAvg`,
+                    `energyConsumed`, `efficiency`, `energySource`, `energyCoverageSeconds`,
+                    `energyCoverageRatio`
+                )
+                SELECT
+                    `driveId`, `carId`, `startDate`, `endDate`, `durationMin`, `startAddress`,
+                    `endAddress`, `distance`, `speedMax`, `speedAvg`, `powerMax`, `powerMin`,
+                    `startBatteryLevel`, `endBatteryLevel`, `outsideTempAvg`, `insideTempAvg`,
+                    `energyConsumed`, `efficiency`, $energySource, $energyCoverageSeconds,
+                    $energyCoverageRatio
+                FROM `drives_summary`
+                """.trimIndent()
+            )
+            db.execSQL("DROP TABLE `drives_summary`")
+            db.execSQL("ALTER TABLE `drives_summary_v14` RENAME TO `drives_summary`")
+            createDriveDetailAggregatesTable(db, "drive_detail_aggregates", includeForeignKey = true)
+            copyDriveDetailAggregates(db, "drive_detail_aggregates_v14", "drive_detail_aggregates")
+            db.execSQL("DROP TABLE `drive_detail_aggregates_v14`")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_drives_summary_carId` ON `drives_summary` (`carId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_drives_summary_carId_startDate` ON `drives_summary` (`carId`, `startDate`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_drive_detail_aggregates_carId` ON `drive_detail_aggregates` (`carId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_drive_detail_aggregates_driveId` ON `drive_detail_aggregates` (`driveId`)")
+        }
+
+        private fun createDriveDetailAggregatesTable(
+            db: SupportSQLiteDatabase,
+            tableName: String,
+            includeForeignKey: Boolean
+        ) {
+            val foreignKey = if (includeForeignKey) {
+                ", FOREIGN KEY(`driveId`) REFERENCES `drives_summary`(`driveId`) ON UPDATE NO ACTION ON DELETE CASCADE"
+            } else {
+                ""
+            }
+            db.execSQL(
+                """
+                CREATE TABLE `$tableName` (
+                    `driveId` INTEGER NOT NULL,
+                    `carId` INTEGER NOT NULL,
+                    `schemaVersion` INTEGER NOT NULL,
+                    `computedAt` INTEGER NOT NULL,
+                    `maxElevation` INTEGER,
+                    `minElevation` INTEGER,
+                    `startElevation` INTEGER,
+                    `endElevation` INTEGER,
+                    `elevationGain` INTEGER,
+                    `elevationLoss` INTEGER,
+                    `hasElevationData` INTEGER NOT NULL,
+                    `maxInsideTemp` REAL,
+                    `minInsideTemp` REAL,
+                    `maxOutsideTemp` REAL,
+                    `minOutsideTemp` REAL,
+                    `maxPower` INTEGER,
+                    `minPower` INTEGER,
+                    `climateOnPositions` INTEGER NOT NULL,
+                    `positionCount` INTEGER NOT NULL,
+                    `startLatitude` REAL,
+                    `startLongitude` REAL,
+                    `startCountryCode` TEXT,
+                    `startCountryName` TEXT,
+                    `startRegionName` TEXT,
+                    `startCity` TEXT,
+                    `endLatitude` REAL,
+                    `endLongitude` REAL,
+                    `extraJson` TEXT,
+                    PRIMARY KEY(`driveId`)$foreignKey
+                )
+                """.trimIndent()
+            )
+        }
+
+        private fun copyDriveDetailAggregates(
+            db: SupportSQLiteDatabase,
+            sourceTable: String,
+            destinationTable: String
+        ) {
+            db.execSQL(
+                """
+                INSERT INTO `$destinationTable` (
+                    `driveId`, `carId`, `schemaVersion`, `computedAt`, `maxElevation`, `minElevation`,
+                    `startElevation`, `endElevation`, `elevationGain`, `elevationLoss`, `hasElevationData`,
+                    `maxInsideTemp`, `minInsideTemp`, `maxOutsideTemp`, `minOutsideTemp`, `maxPower`,
+                    `minPower`, `climateOnPositions`, `positionCount`, `startLatitude`, `startLongitude`,
+                    `startCountryCode`, `startCountryName`, `startRegionName`, `startCity`, `endLatitude`,
+                    `endLongitude`, `extraJson`
+                )
+                SELECT
+                    `driveId`, `carId`, `schemaVersion`, `computedAt`, `maxElevation`, `minElevation`,
+                    `startElevation`, `endElevation`, `elevationGain`, `elevationLoss`, `hasElevationData`,
+                    `maxInsideTemp`, `minInsideTemp`, `maxOutsideTemp`, `minOutsideTemp`, `maxPower`,
+                    `minPower`, `climateOnPositions`, `positionCount`, `startLatitude`, `startLongitude`,
+                    `startCountryCode`, `startCountryName`, `startRegionName`, `startCity`, `endLatitude`,
+                    `endLongitude`, `extraJson`
+                FROM `$sourceTable`
+                """.trimIndent()
+            )
+        }
+
+        private fun hasColumn(db: SupportSQLiteDatabase, tableName: String, columnName: String): Boolean =
+            db.query("PRAGMA table_info(`$tableName`)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                generateSequence { if (cursor.moveToNext()) cursor.getString(nameIndex) else null }
+                    .any { it == columnName }
+            }
+
+        val ALL_MIGRATIONS = arrayOf(
+            MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
+            MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
+            MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15
+        )
     }
 }

@@ -67,6 +67,26 @@ class SecureSettingsDataStore @Inject constructor(
         _amapKeyFlow.value = key
     }
 
+    fun getPendingAmapKey(): String = securePrefs.getString(KEY_PENDING_AMAP_KEY, "") ?: ""
+
+    fun setPendingAmapKey(key: String) {
+        securePrefs.edit().putString(KEY_PENDING_AMAP_KEY, key).commit()
+    }
+
+    fun clearPendingAmapKey() {
+        securePrefs.edit().remove(KEY_PENDING_AMAP_KEY).commit()
+    }
+
+    fun promotePendingAmapKey(): String? {
+        val key = getPendingAmapKey().takeIf { it.isNotBlank() } ?: return null
+        securePrefs.edit()
+            .putString(KEY_AMAP_KEY, key)
+            .remove(KEY_PENDING_AMAP_KEY)
+            .commit()
+        _amapKeyFlow.value = key
+        return key
+    }
+
     fun clearAll() {
         securePrefs.edit().clear().apply()
         _apiTokenFlow.value = ""
@@ -95,5 +115,6 @@ class SecureSettingsDataStore @Inject constructor(
         private const val KEY_HTTP_BASIC_USERNAME = "http_basic_username"
         private const val KEY_HTTP_BASIC_PASSWORD = "http_basic_password"
         private const val KEY_AMAP_KEY = "amap_android_sdk_key"
+        private const val KEY_PENDING_AMAP_KEY = "pending_amap_android_sdk_key"
     }
 }

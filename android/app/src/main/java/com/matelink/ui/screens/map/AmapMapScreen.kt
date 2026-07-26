@@ -33,18 +33,33 @@ fun AmapMapScreen(
     viewModel: AmapMapViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val markerTitle = stringResource(R.string.amap_vehicle_marker)
     LaunchedEffect(uiState.loading) {
         if (uiState.loading) { delay(15_000); if (uiState.loading) viewModel.onMapFailure() }
     }
-    Scaffold(topBar = { TopAppBar(title = { Text("AMap preview") }, navigationIcon = { TextButton(onClick = onNavigateBack) { Text("Back") } }) }) { padding ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.amap_preview_title)) },
+                navigationIcon = { TextButton(onClick = onNavigateBack) { Text(stringResource(R.string.amap_back)) } }
+            )
+        }
+    ) { padding ->
         when {
             uiState.setupState == AmapSetupState.UNCONFIGURED -> AmapMessage(padding, R.string.amap_not_configured, onNavigateToSetup)
             uiState.setupState == AmapSetupState.PRIVACY_NOT_AGREED -> AmapMessage(padding, R.string.amap_not_agreed, onNavigateToSetup)
+            uiState.setupState == AmapSetupState.VERIFICATION_REQUIRED -> AmapMessage(padding, R.string.amap_not_verified, onNavigateToSetup)
             uiState.setupState == AmapSetupState.RESTART_REQUIRED -> AmapMessage(padding, R.string.amap_restart_required, onNavigateToSetup)
             uiState.failed -> AmapMessage(padding, R.string.amap_failed, onNavigateToSetup)
             else -> Box(Modifier.fillMaxSize().padding(padding)) {
-                AmapMapView(uiState.key, uiState.latitude, uiState.longitude, viewModel::onMapLoading, viewModel::onMapLoaded, viewModel::onMapFailure)
-                if (uiState.loading) CircularProgressIndicator(Modifier.align(Alignment.Center))
+                AmapMapView(uiState.key, uiState.latitude, uiState.longitude, markerTitle, viewModel::onMapLoading, viewModel::onMapLoaded, viewModel::onMapFailure)
+                if (uiState.loading) {
+                    Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Text(stringResource(R.string.amap_loading), modifier = Modifier.padding(top = 12.dp))
+                    }
+                }
+                if (uiState.mapLoaded) Text(stringResource(R.string.amap_status_loaded), Modifier.align(Alignment.TopCenter).padding(16.dp), color = MaterialTheme.colorScheme.primary)
                 if (uiState.latitude == null || uiState.longitude == null) Text(stringResource(R.string.amap_no_position), Modifier.align(Alignment.BottomCenter).padding(16.dp), color = MaterialTheme.colorScheme.onSurface)
             }
         }

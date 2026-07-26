@@ -41,6 +41,32 @@ class AmapSettingsStore @Inject constructor(
 
     fun currentKey(): String = secureStore.getAmapKey()
 
+    fun currentPendingKey(): String = secureStore.getPendingAmapKey()
+
+    suspend fun stageKeyForVerification(rawKey: String): Boolean {
+        val key = AmapConfiguration.sanitizeKey(rawKey) ?: return false
+        secureStore.setPendingAmapKey(key)
+        return true
+    }
+
+    suspend fun stageSavedKeyForVerification(): Boolean {
+        val key = secureStore.getAmapKey()
+        if (key.isBlank()) return false
+        secureStore.setPendingAmapKey(key)
+        return true
+    }
+
+    suspend fun promoteVerifiedPendingKey(): Boolean {
+        if (secureStore.promotePendingAmapKey() == null) return false
+        restartRequired.value = false
+        context.amapDataStore.edit { prefs ->
+            prefs[mapLoadedKey] = true
+        }
+        return true
+    }
+
+    fun discardPendingKey() = secureStore.clearPendingAmapKey()
+
     suspend fun saveKey(rawKey: String, sdkWasInitialized: Boolean): Boolean {
         val mutation = AmapConfiguration.prepareKeySave(rawKey, secureStore.getAmapKey(), sdkWasInitialized) ?: return false
         secureStore.setAmapKey(mutation.key)
@@ -53,6 +79,7 @@ class AmapSettingsStore @Inject constructor(
 
     suspend fun clearKey() {
         secureStore.setAmapKey(AmapConfiguration.clearKeyMutation().key)
+        secureStore.clearPendingAmapKey()
         restartRequired.value = false
         context.amapDataStore.edit { prefs ->
             prefs[mapLoadedKey] = false
