@@ -25,6 +25,11 @@
 - Pattern: New map configuration copy was added only to the default English resources, breaking consistency in the Chinese UI.
 - Prevention rule: Add user-facing map strings to `values-zh` with Chinese text, keep English in the default resource set, and eliminate hardcoded UI copy so the existing language setting controls both variants.
 
+## 2026-07-27 UI Localization Completeness
+
+- Pattern: A localized section heading can hide untranslated child action labels until the full scrollable screen is exercised.
+- Prevention rule: During UI polish, inspect every reachable screen state in the active locale, including content below the initial viewport, and verify each referenced string has a locale-specific value.
+
 ## 2026-07-26 Device Crash Verification
 
 - Pattern: A process that survives initial launch can still crash shortly afterward when an asynchronous Room query opens the database.
@@ -49,3 +54,13 @@
 
 - Pattern: A repaired Room schema can still crash if an installed database already reports the repaired version while retaining an older identity hash, because the earlier migration will not run again.
 - Prevention rule: When correcting Room identity metadata in a shipped version, add a subsequent no-schema-change migration and regression test from the already-shipped version so Room validates the tables and refreshes only its own master metadata without deleting user rows.
+
+## 2026-07-29 Android Resource Format Contracts
+
+- Pattern: Compose `stringResource` formats can crash at render time when a literal percent is not escaped or a placeholder type does not match its Kotlin argument.
+- Prevention rule: For every touched formatted resource, add a JVM format-contract test for each supported locale; before a release, enumerate formatted `stringResource` calls and verify literal `%` and numeric placeholder types against the call site.
+
+## 2026-07-30 Dense Telemetry and Metric Coupling
+
+- Pattern: Large two-column cards, year-heavy timestamps, separated metrics and charts, and inconsistent cost fallbacks make history screens sparse and harder to verify.
+- Prevention rule: Prefer adaptive three- or four-column metric strips while retaining touch targets; use Chinese-first compact addresses and no-year history timestamps; always render the real duration; place each metric group directly beside its corresponding curve; never fabricate an unavailable curve; resolve manual, free, backend, and estimated charge costs through one shared function across list, summary, chart, and detail.

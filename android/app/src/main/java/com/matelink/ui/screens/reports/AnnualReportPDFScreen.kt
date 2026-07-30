@@ -24,6 +24,7 @@ import com.matelink.R
 import com.matelink.data.local.dao.MonthlyChargeAggregation
 import com.matelink.data.local.dao.MonthlyDriveAggregation
 import com.matelink.domain.model.CarStats
+import com.matelink.ui.components.launchExternalIntentSafely
 import java.io.File
 import java.io.FileOutputStream
 
@@ -59,7 +60,9 @@ fun AnnualReportPDFScreen(
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                context.startActivity(Intent.createChooser(shareIntent, context.getString(R.string.pdf_report_share_title)))
+                context.launchExternalIntentSafely(
+                    Intent.createChooser(shareIntent, context.getString(R.string.pdf_report_share_title))
+                )
             } catch (e: Exception) {
                 android.util.Log.e("AnnualReportPDF", "Failed to share PDF", e)
             }

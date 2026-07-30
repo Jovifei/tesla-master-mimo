@@ -100,18 +100,6 @@ fun CurrentChargeScreen(
         }
     }
 
-    LaunchedEffect(uiState.isUnsupportedApi) {
-        if (uiState.isUnsupportedApi) {
-            onNavigateBack()
-        }
-    }
-
-    LaunchedEffect(uiState.isNotCharging, uiState.isDcFinishedPluggedIn) {
-        if (uiState.isNotCharging && !uiState.isDcFinishedPluggedIn) {
-            onNavigateBack()
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(

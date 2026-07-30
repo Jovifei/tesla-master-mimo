@@ -85,6 +85,7 @@ class SettingsDataStore @Inject constructor(
     private val teslamateBaseUrlKey = stringPreferencesKey("teslamate_base_url")
     private val lastSelectedCarIdKey = intPreferencesKey("last_selected_car_id")
     private val carImageOverridesKey = stringPreferencesKey("car_image_overrides")
+    private val chargePriceOverridesKey = stringPreferencesKey("charge_price_overrides")
     private val languageCodeKey = stringPreferencesKey("language_code")
     private val notificationPermissionAskedKey = booleanPreferencesKey("notification_permission_asked")
     private val tariffEnabledKey = booleanPreferencesKey("tariff_enabled")
@@ -142,6 +143,10 @@ class SettingsDataStore @Inject constructor(
         parseOverridesJson(jsonString)
     }
 
+    val chargePriceOverrides: Flow<Map<String, Double>> = context.dataStore.data.map { preferences ->
+        parseChargePriceOverrides(preferences[chargePriceOverridesKey] ?: "{}")
+    }
+
     private fun parseOverridesJson(jsonString: String): Map<Int, CarImageOverride> {
         return try {
             val result = mutableMapOf<Int, CarImageOverride>()
@@ -173,6 +178,26 @@ class SettingsDataStore @Inject constructor(
         }
         return obj.toString()
     }
+
+    private fun parseChargePriceOverrides(jsonString: String): Map<String, Double> {
+        return runCatching {
+            val obj = JSONObject(jsonString)
+            buildMap {
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    obj.optDouble(key, Double.NaN)
+                        .takeIf { it.isFinite() && it >= 0.0 }
+                        ?.let { put(key, it) }
+                }
+            }
+        }.getOrDefault(emptyMap())
+    }
+
+    private fun chargePriceOverridesToJson(overrides: Map<String, Double>): String =
+        JSONObject().apply {
+            overrides.forEach { (key, price) -> put(key, price) }
+        }.toString()
 
     suspend fun saveSettings(
         serverUrl: String,
@@ -264,6 +289,20 @@ class SettingsDataStore @Inject constructor(
             }
 
             preferences[carImageOverridesKey] = overridesToJson(currentMap)
+        }
+    }
+
+    suspend fun saveChargePriceOverride(key: String, pricePerKwh: Double?) {
+        context.dataStore.edit { preferences ->
+            val overrides = parseChargePriceOverrides(
+                preferences[chargePriceOverridesKey] ?: "{}"
+            ).toMutableMap()
+            if (pricePerKwh != null && pricePerKwh.isFinite() && pricePerKwh >= 0.0) {
+                overrides[key] = pricePerKwh
+            } else {
+                overrides.remove(key)
+            }
+            preferences[chargePriceOverridesKey] = chargePriceOverridesToJson(overrides)
         }
     }
 

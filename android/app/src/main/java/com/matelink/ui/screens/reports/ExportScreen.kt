@@ -19,6 +19,7 @@ import com.matelink.R
 import com.matelink.data.export.DataExporter
 import com.matelink.data.export.ExportDataType
 import com.matelink.data.export.ExportFormat
+import com.matelink.ui.components.launchExternalIntentSafely
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -176,7 +177,9 @@ fun ExportScreen(
                     viewModel.clearShareUri() // clear first to prevent re-trigger
                     try {
                         val shareIntent = DataExporter.createShareIntent(uri, uiState.format)
-                        context.startActivity(Intent.createChooser(shareIntent, context.getString(R.string.export_share_title)))
+                        context.launchExternalIntentSafely(
+                            Intent.createChooser(shareIntent, context.getString(R.string.export_share_title))
+                        )
                     } catch (_: Exception) {
                         // No activity to handle share intent
                     }

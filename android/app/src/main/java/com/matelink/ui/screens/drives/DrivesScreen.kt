@@ -1,10 +1,10 @@
 package com.matelink.ui.screens.drives
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,8 +22,10 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BatteryStd
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Eco
+import androidx.compose.material.icons.filled.LocalParking
 import com.matelink.ui.icons.CustomIcons
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
@@ -33,11 +35,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -55,7 +57,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -67,18 +68,21 @@ import com.matelink.data.api.models.Units
 import com.matelink.domain.model.UnitFormatter
 import com.matelink.ui.components.BarChartData
 import com.matelink.ui.components.DateRangePickerDialog
-import com.matelink.ui.components.EditorialListItem
-import com.matelink.ui.components.EditorialPill
 import com.matelink.ui.components.InteractiveBarChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.MateLinkPulseSpinner
 import com.matelink.ui.components.MonthScrollIndicator
+import com.matelink.ui.components.RouteIndicator
+import com.matelink.ui.components.TelemetryMetricSpec
+import com.matelink.ui.components.TelemetryMetricStrip
+import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.rememberDebouncedLoading
 import com.matelink.ui.components.formatEditorialDate
 import com.matelink.ui.components.formatShortDate
 import com.matelink.ui.components.parseListItemDate
 import com.matelink.util.formatDuration
 import com.matelink.util.formatDurationCompact
+import com.matelink.util.toChineseDisplayAddress
 import com.matelink.ui.theme.CarColorPalette
 import com.matelink.ui.theme.CarColorPalettes
 import java.time.Duration
@@ -90,7 +94,6 @@ import java.time.OffsetDateTime
 fun DrivesScreen(
     carId: Int,
     exteriorColor: String? = null,
-    onNavigateBack: () -> Unit,
     onNavigateToDriveDetail: (driveId: Int) -> Unit,
     onNavigateToParkedDetail: (olderDriveId: Int, newerDriveId: Int) -> Unit = { _, _ -> },
     viewModel: DrivesViewModel = hiltViewModel()
@@ -119,9 +122,12 @@ fun DrivesScreen(
         )
     }
 
+    val serverNotConfiguredMessage = stringResource(R.string.server_not_configured_message)
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(error)
+            snackbarHostState.showSnackbar(
+                if (error == "Server not configured") serverNotConfiguredMessage else error
+            )
             viewModel.clearError()
         }
     }
@@ -129,17 +135,14 @@ fun DrivesScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.drives_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.back)
-                        )
-                    }
+                title = {
+                    Text(
+                        text = stringResource(R.string.drives_title),
+                        fontWeight = FontWeight.SemiBold
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    containerColor = MaterialTheme.colorScheme.surface
                 )
             )
         },
@@ -211,8 +214,8 @@ private fun DrivesContent(
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         item {
             DateFilterChips(
@@ -492,7 +495,8 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
         )
     ) {
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
                 text = stringResource(R.string.summary),
@@ -501,87 +505,44 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                 color = palette.onSurface
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth()
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = MaterialTheme.shapes.medium
             ) {
-                SummaryItem(
-                    icon = Icons.Default.DirectionsCar,
-                    label = stringResource(R.string.total_trips),
-                    value = "%,d".format(summary.totalDrives),
-                    palette = palette,
-                    modifier = Modifier.weight(1.2f)
-                )
-                SummaryItem(
-                    icon = CustomIcons.SteeringWheel,
-                    label = stringResource(R.string.total_distance),
-                    value = UnitFormatter.formatDistance(summary.totalDistanceKm, units),
-                    palette = palette,
-                    modifier = Modifier.weight(0.8f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                SummaryItem(
-                    icon = Icons.Default.Timer,
-                    label = stringResource(R.string.total_time),
-                    value = formatDuration(LocalContext.current.resources, summary.totalDurationMin),
-                    palette = palette,
-                    modifier = Modifier.weight(1.2f)
-                )
-                SummaryItem(
-                    icon = Icons.Default.Speed,
-                    label = stringResource(R.string.max_speed),
-                    value = UnitFormatter.formatSpeed(summary.maxSpeedKmh.toDouble(), units),
-                    palette = palette,
-                    modifier = Modifier.weight(0.8f)
+                TelemetryMetricStrip(
+                    metrics = listOf(
+                        TelemetryMetricSpec(
+                            Icons.Default.DirectionsCar,
+                            stringResource(R.string.total_trips),
+                            "%,d".format(summary.totalDrives),
+                            palette.accent
+                        ),
+                        TelemetryMetricSpec(
+                            CustomIcons.SteeringWheel,
+                            stringResource(R.string.total_distance),
+                            UnitFormatter.formatDistance(summary.totalDistanceKm, units),
+                            palette.accent
+                        ),
+                        TelemetryMetricSpec(
+                            Icons.Default.Timer,
+                            stringResource(R.string.total_time),
+                            formatDuration(LocalContext.current.resources, summary.totalDurationMin),
+                            Color(0xFFF59E0B)
+                        ),
+                        TelemetryMetricSpec(
+                            Icons.Default.Speed,
+                            stringResource(R.string.max_speed),
+                            UnitFormatter.formatSpeed(summary.maxSpeedKmh.toDouble(), units),
+                            Color(0xFF22C55E)
+                        )
+                    ),
+                    modifier = Modifier.padding(vertical = 8.dp)
                 )
             }
         }
     }
 }
 
-@Composable
-private fun SummaryItem(
-    icon: ImageVector,
-    label: String,
-    value: String,
-    palette: CarColorPalette,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.padding(4.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = palette.accent
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Column {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = palette.onSurfaceVariant
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                color = palette.onSurface
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DriveItem(
     drive: DriveData,
@@ -592,48 +553,111 @@ private fun DriveItem(
 ) {
     val context = LocalContext.current
     val unknown = stringResource(R.string.unknown)
-    val startCity = drive.startAddress ?: unknown
-    val endCity = drive.endAddress ?: unknown
+    val startCity = drive.startAddress.toChineseDisplayAddress() ?: unknown
+    val endCity = drive.endAddress.toChineseDisplayAddress() ?: unknown
 
-    val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
-    EditorialListItem(
-        accent = palette.accent,
-        dateline = formatEditorialDate(drive.startDate, true),
-        title = "$startCity → $endCity",
-        heroValue = "%.0f".format(UnitFormatter.formatDistanceValue(drive.distance ?: 0.0, units)),
-        heroUnit = UnitFormatter.getDistanceUnit(units).uppercase(java.util.Locale.getDefault()),
-        onClick = onClick,
+    val efficiency = metrics?.efficiencyWhKm ?: drive.efficiencyWhKm
+    val start = drive.startBatteryLevel
+    val end = drive.endBatteryLevel
+
+    TelemetryPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        accent = palette.accent
     ) {
-        EditorialPill(formatDuration(context.resources, drive.durationMin ?: 0))
-        EditorialPill("${drive.speedMax ?: 0} ${UnitFormatter.getSpeedUnit(units)}")
-        // D8 parity: iOS DriveListView shows efficiency (Wh/km)
-        (metrics?.energyKwh ?: drive.energyConsumedNet)?.let {
-            EditorialPill("%.2f kWh".format(it))
-        }
-        (metrics?.efficiencyWhKm ?: drive.efficiencyWhKm)?.let {
-            EditorialPill("%.0f Wh/km".format(it))
-        }
-        metrics?.source?.takeIf { it.isNotBlank() }?.let { source ->
-            val label = if (source == "power_samples") "采样计算" else "API"
-            val coverage = if (source == "power_samples" && metrics.coverageRatio > 0.0) {
-                " ${"%.0f".format(metrics.coverageRatio * 100)}%"
-            } else ""
-            EditorialPill("$label$coverage")
-        }
-        val start = drive.startBatteryLevel
-        val end = drive.endBatteryLevel
-        if (start != null && end != null) {
-            EditorialPill(
-                text = "$start→$end%",
-                background = palette.accent.copy(alpha = 0.12f),
-                color = palette.accent,
-                fontWeight = FontWeight.Bold
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = formatEditorialDate(drive.startDate, true),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                metrics?.source?.takeIf { it.isNotBlank() }?.let { source ->
+                    val sourceLabel = if (source == "power_samples") {
+                        val coverage = if (metrics.coverageRatio > 0.0) {
+                            " ${"%.0f".format(metrics.coverageRatio * 100)}%"
+                        } else ""
+                        "${stringResource(R.string.range_estimated)}$coverage"
+                    } else {
+                        "API"
+                    }
+                    Surface(
+                        color = palette.accent.copy(alpha = 0.13f),
+                        shape = MaterialTheme.shapes.extraLarge
+                    ) {
+                        Text(
+                            text = sourceLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.accent,
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+
+            RouteIndicator(
+                start = startCity,
+                end = endCity,
+                accent = palette.accent
             )
+
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = MaterialTheme.shapes.medium
+            ) {
+                TelemetryMetricStrip(
+                    metrics = listOf(
+                        TelemetryMetricSpec(
+                            icon = Icons.Default.Timer,
+                            label = stringResource(R.string.duration),
+                            value = drive.durationMin?.let(::formatDurationCompact)
+                                ?: stringResource(R.string.not_available),
+                            tint = Color(0xFFF59E0B)
+                        ),
+                        TelemetryMetricSpec(
+                            icon = CustomIcons.SteeringWheel,
+                            label = stringResource(R.string.distance),
+                            value = drive.distance
+                                ?.takeIf { it.isFinite() && it >= 0.0 }
+                                ?.let { UnitFormatter.formatDistance(it, units) }
+                                ?: stringResource(R.string.not_available),
+                            tint = palette.accent
+                        ),
+                        TelemetryMetricSpec(
+                            icon = Icons.Default.Eco,
+                            label = stringResource(R.string.efficiency),
+                            value = efficiency
+                                ?.takeIf { it.isFinite() && it >= 0.0 }
+                                ?.let { UnitFormatter.formatEfficiency(it, units) }
+                                ?: stringResource(R.string.not_available),
+                            tint = Color(0xFF22C55E)
+                        ),
+                        TelemetryMetricSpec(
+                            icon = Icons.Default.BatteryStd,
+                            label = stringResource(R.string.battery),
+                            value = if (start != null && start in 0..100 && end != null && end in 0..100) {
+                                "$start→$end%"
+                            } else {
+                                stringResource(R.string.not_available)
+                            },
+                            tint = Color(0xFFF97316)
+                        )
+                    ),
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ParkedItem(
     item: DriveHistoryItem.Parked,
@@ -642,29 +666,64 @@ private fun ParkedItem(
 ) {
     val context = LocalContext.current
     val unknown = stringResource(R.string.unknown)
-    val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
     val durationText = formatDuration(
         context.resources,
         item.durationMin.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     )
-    EditorialListItem(
-        accent = MaterialTheme.colorScheme.outline,
-        dateline = formatEditorialDate(item.startDate, true),
-        title = stringResource(R.string.drive_history_parked_at, item.location ?: unknown),
-        heroValue = durationText,
-        heroUnit = stringResource(R.string.trip_timeline_parked).uppercase(java.util.Locale.getDefault()),
-        onClick = onClick,
+    val batteryStart = item.olderDrive.endBatteryLevel
+    val batteryEnd = item.newerDrive.startBatteryLevel
+
+    TelemetryPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        accent = MaterialTheme.colorScheme.outline
     ) {
-        EditorialPill(stringResource(R.string.parked_for, durationText))
-        val batteryStart = item.olderDrive.endBatteryLevel
-        val batteryEnd = item.newerDrive.startBatteryLevel
-        if (batteryStart != null && batteryEnd != null) {
-            EditorialPill(
-                text = "$batteryStart% -> $batteryEnd%",
-                background = palette.accent.copy(alpha = 0.10f),
-                color = palette.accent,
-                fontWeight = FontWeight.Bold
-            )
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                shape = CircleShape
+            ) {
+                Icon(
+                    imageVector = Icons.Default.LocalParking,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(10.dp).size(22.dp)
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.drive_history_parked_at, item.location ?: unknown),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = formatEditorialDate(item.startDate, true),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = durationText,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (batteryStart != null && batteryEnd != null) {
+                    Text(
+                        text = "$batteryStart→$batteryEnd%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.accent
+                    )
+                }
+            }
         }
     }
 }

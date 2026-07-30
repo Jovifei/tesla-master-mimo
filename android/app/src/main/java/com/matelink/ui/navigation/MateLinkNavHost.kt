@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.ElectricCar
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -110,11 +111,11 @@ fun MateLinkBottomBar(
                     icon = { Icon(dest.icon, contentDescription = label) },
                     label = { Text(label) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = palette.ink,
-                        selectedTextColor = palette.ink,
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
                         unselectedIconColor = palette.muted,
                         unselectedTextColor = palette.muted,
-                        indicatorColor = palette.subtle
+                        indicatorColor = MaterialTheme.colorScheme.primaryContainer
                     )
                 )
             }

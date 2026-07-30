@@ -48,12 +48,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
+import com.matelink.ui.components.launchExternalIntentSafely
 import com.matelink.ui.components.BarChartData
 import com.matelink.ui.components.InteractiveBarChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
@@ -427,7 +428,7 @@ private fun SoftwareVersionCard(
     palette: CarColorPalette
 ) {
     val locale = java.util.Locale.getDefault()
-    val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
     val releaseNotesUrl = "https://www.notateslaapp.com/software-updates/version/${update.version}/release-notes"
     val unknownLabel = stringResource(R.string.unknown)
 
@@ -472,7 +473,14 @@ private fun SoftwareVersionCard(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             IconButton(
-                                onClick = { uriHandler.openUri(releaseNotesUrl) },
+                                onClick = {
+                                    context.launchExternalIntentSafely(
+                                        android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse(releaseNotesUrl)
+                                        )
+                                    )
+                                },
                                 modifier = Modifier.size(24.dp)
                             ) {
                                 Icon(

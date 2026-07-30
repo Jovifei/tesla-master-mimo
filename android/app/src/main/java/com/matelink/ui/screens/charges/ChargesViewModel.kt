@@ -11,6 +11,8 @@ import com.matelink.data.model.Currency
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.domain.LocalDayBoundaries
+import com.matelink.domain.analytics.chargePriceOverrideKey
+import com.matelink.domain.analytics.resolveChargeCost
 import android.content.Context
 import com.matelink.R
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -103,7 +105,8 @@ data class ChargesUiState(
     val summary: ChargesSummary = ChargesSummary(),
     val currencySymbol: String = "€",
     val teslamateBaseUrl: String = "",
-    val freeSupercharging: Boolean = false
+    val freeSupercharging: Boolean = false,
+    val priceOverrides: Map<Int, Double> = emptyMap()
 )
 
 data class ChargesSummary(
@@ -129,6 +132,7 @@ class ChargesViewModel @Inject constructor(
     private var carId: Int? = null
     private var showShortDrivesCharges: Boolean = false
     private var allCharges: List<ChargeData> = emptyList()
+    private var allPriceOverrides: Map<String, Double> = emptyMap()
 
     companion object {
         private const val MIN_ENERGY_KWH = 0.1
@@ -168,6 +172,27 @@ class ChargesViewModel @Inject constructor(
 
     init {
         observeSettings()
+        observeChargePriceOverrides()
+    }
+
+    private fun observeChargePriceOverrides() {
+        viewModelScope.launch {
+            settingsDataStore.chargePriceOverrides.collect { overrides ->
+                allPriceOverrides = overrides
+                val id = carId
+                _uiState.update { state ->
+                    state.copy(
+                        priceOverrides = if (id == null) emptyMap() else {
+                            allCharges.mapNotNull { charge ->
+                                overrides[chargePriceOverrideKey(id, charge.chargeId)]
+                                    ?.let { charge.chargeId to it }
+                            }.toMap()
+                        }
+                    )
+                }
+                if (allCharges.isNotEmpty()) applyFiltersAndUpdateState()
+            }
+        }
     }
 
     private fun observeSettings() {
@@ -187,6 +212,14 @@ class ChargesViewModel @Inject constructor(
     fun setCarId(id: Int) {
         if (carId != id) {
             carId = id
+            _uiState.update { state ->
+                state.copy(
+                    priceOverrides = allCharges.mapNotNull { charge ->
+                        allPriceOverrides[chargePriceOverrideKey(id, charge.chargeId)]
+                            ?.let { charge.chargeId to it }
+                    }.toMap()
+                )
+            }
             loadCarSettings(id)
             // Apply restored (or default) filter on first load. CUSTOM needs the
             // explicit date pair — setDateFilter is a no-op for CUSTOM.
@@ -207,6 +240,7 @@ class ChargesViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     val free = result.data.carSettings?.freeSupercharging ?: false
                     _uiState.update { it.copy(freeSupercharging = free) }
+                    if (allCharges.isNotEmpty()) applyFiltersAndUpdateState()
                 }
                 is ApiResult.Error -> {
                     // Non-fatal — the hint is a nice-to-have, not load-critical
@@ -340,12 +374,17 @@ class ChargesViewModel @Inject constructor(
             when (val result = repository.getCharges(id, startDateStr, endDateStr)) {
                 is ApiResult.Success -> {
                     allCharges = result.data
+                    val priceOverrides = result.data.mapNotNull { charge ->
+                        allPriceOverrides[chargePriceOverrideKey(id, charge.chargeId)]
+                            ?.let { charge.chargeId to it }
+                    }.toMap()
                     val granularity = determineGranularity(startDate, endDate)
 
                     _uiState.update {
                         it.copy(
                             dcChargeIds = dcChargeIds,
                             processedChargeIds = processedChargeIds,
+                            priceOverrides = priceOverrides,
                             chartGranularity = granularity,
                             error = null
                         )
@@ -417,13 +456,21 @@ class ChargesViewModel @Inject constructor(
         // DC charges.
         val displayChargesFiltered = when (costFilter) {
             CostFilter.ALL -> displayChargesLocFiltered
-            CostFilter.HAS_COST -> displayChargesLocFiltered.filter { (it.cost ?: 0.0) > 0.0 }
-            CostFilter.NO_COST -> displayChargesLocFiltered.filter { (it.cost ?: 0.0) == 0.0 }
+            CostFilter.HAS_COST -> displayChargesLocFiltered.filter {
+                effectiveCost(it, state)?.let { cost -> cost > 0.0 } == true
+            }
+            CostFilter.NO_COST -> displayChargesLocFiltered.filter {
+                effectiveCost(it, state)?.let { cost -> cost == 0.0 } != false
+            }
         }
         val chargesForStatsFiltered = when (costFilter) {
             CostFilter.ALL -> chargesForStatsLocFiltered
-            CostFilter.HAS_COST -> chargesForStatsLocFiltered.filter { (it.cost ?: 0.0) > 0.0 }
-            CostFilter.NO_COST -> chargesForStatsLocFiltered.filter { (it.cost ?: 0.0) == 0.0 }
+            CostFilter.HAS_COST -> chargesForStatsLocFiltered.filter {
+                effectiveCost(it, state)?.let { cost -> cost > 0.0 } == true
+            }
+            CostFilter.NO_COST -> chargesForStatsLocFiltered.filter {
+                effectiveCost(it, state)?.let { cost -> cost == 0.0 } != false
+            }
         }
 
         // Calculate summary and chart data from filtered charges
@@ -588,8 +635,9 @@ class ChargesViewModel @Inject constructor(
         val dcCharges = charges.filter { it.chargeId in dcChargeIds }
         val energyDc = dcCharges.sumOf { it.chargeEnergyAdded ?: 0.0 }
         val energyTotal = charges.sumOf { it.chargeEnergyAdded ?: 0.0 }
-        val costDc = dcCharges.sumOf { it.cost ?: 0.0 }
-        val costTotal = charges.sumOf { it.cost ?: 0.0 }
+        val state = _uiState.value
+        val costDc = dcCharges.sumOf { effectiveCost(it, state) ?: 0.0 }
+        val costTotal = charges.sumOf { effectiveCost(it, state) ?: 0.0 }
         val countDc = dcCharges.size
         val countTotal = charges.size
         return ChargeChartData(
@@ -611,7 +659,8 @@ class ChargesViewModel @Inject constructor(
         if (charges.isEmpty()) return ChargesSummary()
 
         val totalEnergy = charges.sumOf { it.chargeEnergyAdded ?: 0.0 }
-        val totalCost = charges.sumOf { it.cost ?: 0.0 }
+        val state = _uiState.value
+        val totalCost = charges.sumOf { effectiveCost(it, state) ?: 0.0 }
         val count = charges.size
 
         return ChargesSummary(
@@ -621,5 +670,16 @@ class ChargesViewModel @Inject constructor(
             avgEnergyPerCharge = if (count > 0) totalEnergy / count else 0.0,
             avgCostPerCharge = if (count > 0) totalCost / count else 0.0
         )
+    }
+
+    private fun effectiveCost(charge: ChargeData, state: ChargesUiState): Double? {
+        val isDcCharge = charge.chargeId in state.dcChargeIds
+        return resolveChargeCost(
+            pricePerKwh = state.priceOverrides[charge.chargeId],
+            freeSupercharging = state.freeSupercharging,
+            isDcCharge = isDcCharge,
+            teslaMateCost = charge.cost,
+            energyKwh = charge.chargeEnergyAdded
+        ).cost
     }
 }

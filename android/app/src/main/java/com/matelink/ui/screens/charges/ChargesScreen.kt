@@ -1,13 +1,10 @@
 package com.matelink.ui.screens.charges
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,13 +23,15 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BatteryStd
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ElectricBolt
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Paid
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -41,13 +40,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -64,7 +63,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -76,12 +74,13 @@ import com.matelink.data.api.models.ChargeData
 import com.matelink.ui.components.BarChartData
 import com.matelink.ui.components.BarSegment
 import com.matelink.ui.components.DateRangePickerDialog
-import com.matelink.ui.components.EditorialListItem
-import com.matelink.ui.components.EditorialPill
 import com.matelink.ui.components.InteractiveBarChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.MateLinkPulseSpinner
 import com.matelink.ui.components.MonthScrollIndicator
+import com.matelink.ui.components.TelemetryMetricSpec
+import com.matelink.ui.components.TelemetryMetricStrip
+import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.rememberDebouncedLoading
 import com.matelink.ui.components.formatEditorialDate
 import com.matelink.ui.components.formatShortDate
@@ -89,8 +88,8 @@ import com.matelink.ui.components.parseListItemDate
 import com.matelink.ui.theme.CarColorPalette
 import com.matelink.ui.theme.CarColorPalettes
 import com.matelink.domain.analytics.ChargeCostSource
-import com.matelink.domain.analytics.EffectiveChargeCostInput
-import com.matelink.domain.analytics.EffectiveChargeCostResolver
+import com.matelink.domain.analytics.resolveChargeCost
+import com.matelink.util.toChineseDisplayAddress
 import java.time.LocalDate
 
 data class ChargeEnergyPresentation(
@@ -105,7 +104,6 @@ internal fun presentChargeEnergy(energyKwh: Double?): ChargeEnergyPresentation =
 fun ChargesScreen(
     carId: Int,
     exteriorColor: String? = null,
-    onNavigateBack: () -> Unit,
     onNavigateToChargeDetail: (Int) -> Unit = {},
     viewModel: ChargesViewModel = hiltViewModel()
 ) {
@@ -118,9 +116,12 @@ fun ChargesScreen(
         viewModel.setCarId(carId)
     }
 
+    val serverNotConfiguredMessage = stringResource(R.string.server_not_configured_message)
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(error)
+            snackbarHostState.showSnackbar(
+                if (error == "Server not configured") serverNotConfiguredMessage else error
+            )
             viewModel.clearError()
         }
     }
@@ -128,17 +129,14 @@ fun ChargesScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.charges_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.back)
-                        )
-                    }
+                title = {
+                    Text(
+                        text = stringResource(R.string.charges_title),
+                        fontWeight = FontWeight.SemiBold
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    containerColor = MaterialTheme.colorScheme.surface
                 )
             )
         },
@@ -157,15 +155,16 @@ fun ChargesScreen(
                 ChargesContent(
                     charges = uiState.charges,
                     dcChargeIds = uiState.dcChargeIds,
+                    processedChargeIds = uiState.processedChargeIds,
                     chartData = uiState.chartData,
                     chartGranularity = uiState.chartGranularity,
                     summary = uiState.summary,
                     currencySymbol = uiState.currencySymbol,
-                    teslamateBaseUrl = uiState.teslamateBaseUrl,
                     selectedDateFilter = uiState.selectedFilter,
                     selectedChargeTypeFilter = uiState.chargeTypeFilter,
                     selectedCostFilter = uiState.costFilter,
                     freeSupercharging = uiState.freeSupercharging,
+                    priceOverrides = uiState.priceOverrides,
                     customStartDate = uiState.customStartDate,
                     customEndDate = uiState.customEndDate,
                     initialScrollPosition = uiState.scrollPosition,
@@ -195,15 +194,16 @@ fun ChargesScreen(
 private fun ChargesContent(
     charges: List<ChargeData>,
     dcChargeIds: Set<Int>,
+    processedChargeIds: Set<Int>,
     chartData: List<ChargeChartData>,
     chartGranularity: ChartGranularity,
     summary: ChargesSummary,
     currencySymbol: String,
-    teslamateBaseUrl: String,
     selectedDateFilter: DateFilter,
     selectedChargeTypeFilter: ChargeTypeFilter,
     selectedCostFilter: CostFilter,
     freeSupercharging: Boolean,
+    priceOverrides: Map<Int, Double>,
     customStartDate: LocalDate?,
     customEndDate: LocalDate?,
     availableLocations: List<String>,
@@ -220,7 +220,6 @@ private fun ChargesContent(
     onCostFilterSelected: (CostFilter) -> Unit,
     onChargeClick: (chargeId: Int, scrollIndex: Int, scrollOffset: Int) -> Unit
 ) {
-    val context = LocalContext.current
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = initialScrollPosition,
         initialFirstVisibleItemScrollOffset = initialScrollOffset
@@ -237,8 +236,8 @@ private fun ChargesContent(
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         item {
             DateFilterChips(
@@ -252,28 +251,33 @@ private fun ChargesContent(
         }
 
         item {
-            Row(
+            LazyRow(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                ChargeTypeFilterDropdown(
-                    selectedFilter = selectedChargeTypeFilter,
-                    onFilterSelected = onChargeTypeFilterSelected,
-                    palette = palette
-                )
-                CostFilterDropdown(
-                    selectedFilter = selectedCostFilter,
-                    onFilterSelected = onCostFilterSelected,
-                    palette = palette
-                )
-                LocationFilterDropdown(
-                    availableLocations = availableLocations,
-                    selectedLocations = selectedLocations,
-                    onLocationToggled = onLocationFilterToggled,
-                    onClearAll = onLocationFilterCleared,
-                    palette = palette
-                )
+                item {
+                    ChargeTypeFilterDropdown(
+                        selectedFilter = selectedChargeTypeFilter,
+                        onFilterSelected = onChargeTypeFilterSelected,
+                        palette = palette
+                    )
+                }
+                item {
+                    CostFilterDropdown(
+                        selectedFilter = selectedCostFilter,
+                        onFilterSelected = onCostFilterSelected,
+                        palette = palette
+                    )
+                }
+                item {
+                    LocationFilterDropdown(
+                        availableLocations = availableLocations,
+                        selectedLocations = selectedLocations,
+                        onLocationToggled = onLocationFilterToggled,
+                        onClearAll = onLocationFilterCleared,
+                        palette = palette
+                    )
+                }
             }
         }
 
@@ -339,18 +343,22 @@ private fun ChargesContent(
             items(charges, key = { it.chargeId }) { charge ->
                 ChargeItem(
                     charge = charge,
-                    // Show DC badge if in dcChargeIds, AC otherwise
-                    // Will be correct once sync has processed charge details
-                    isDcCharge = charge.chargeId in dcChargeIds,
+                    isDcCharge = when {
+                        charge.chargeId in dcChargeIds -> true
+                        charge.chargeId in processedChargeIds -> false
+                        else -> null
+                    },
                     currencySymbol = currencySymbol,
+                    pricePerKwh = priceOverrides[charge.chargeId],
+                    freeSupercharging = freeSupercharging,
                     palette = palette,
-                    onEditCost = if (teslamateBaseUrl.isNotBlank()) {
-                        {
-                            val url = "$teslamateBaseUrl/charge-cost/${charge.chargeId}"
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                            context.startActivity(intent)
-                        }
-                    } else null,
+                    onEditCost = {
+                        onChargeClick(
+                            charge.chargeId,
+                            listState.firstVisibleItemIndex,
+                            listState.firstVisibleItemScrollOffset
+                        )
+                    },
                     onClick = {
                         onChargeClick(
                             charge.chargeId,
@@ -409,7 +417,14 @@ private fun DateFilterChips(
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(DateFilter.entries.filter { it != DateFilter.CUSTOM }) { filter ->
+        items(
+            listOf(
+                DateFilter.LAST_7_DAYS,
+                DateFilter.LAST_30_DAYS,
+                DateFilter.LAST_90_DAYS,
+                DateFilter.ALL_TIME
+            )
+        ) { filter ->
             FilterChip(
                 selected = filter == selectedFilter,
                 onClick = { onFilterSelected(filter) },
@@ -573,7 +588,8 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
         )
     ) {
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
                 text = stringResource(R.string.summary),
@@ -582,100 +598,59 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                 color = palette.onSurface
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth()
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = MaterialTheme.shapes.medium
             ) {
-                SummaryItem(
-                    icon = Icons.Default.ElectricBolt,
-                    label = stringResource(R.string.total_sessions),
-                    value = summary.totalCharges.toString(),
-                    palette = palette,
-                    modifier = Modifier.weight(1.2f)
-                )
-                SummaryItem(
-                    icon = Icons.Default.BatteryChargingFull,
-                    label = stringResource(R.string.total_energy),
-                    value = when {
-                        summary.totalEnergyAdded > 999 -> "%.2f MWh".format(summary.totalEnergyAdded / 1000)
-                        summary.totalEnergyAdded < 10 -> "%.1f kWh".format(summary.totalEnergyAdded)
-                        else -> "%.0f kWh".format(summary.totalEnergyAdded)
-                    },
-                    palette = palette,
-                    modifier = Modifier.weight(0.8f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                SummaryItem(
-                    icon = Icons.Default.Paid,
-                    label = stringResource(R.string.total_cost),
-                    value = when {
-                        summary.totalCost < 100 -> "$currencySymbol%.2f".format(summary.totalCost)
-                        summary.totalCost < 1000 -> "$currencySymbol%.1f".format(summary.totalCost)
-                        else -> "$currencySymbol%.0f".format(summary.totalCost)
-                    },
-                    palette = palette,
-                    modifier = Modifier.weight(1.2f)
-                )
-                SummaryItem(
-                    icon = Icons.Default.Paid,
-                    label = stringResource(R.string.avg_cost_per_session),
-                    value = "$currencySymbol%.2f".format(summary.avgCostPerCharge),
-                    palette = palette,
-                    modifier = Modifier.weight(0.8f)
+                TelemetryMetricStrip(
+                    metrics = listOf(
+                        TelemetryMetricSpec(
+                            Icons.Default.ElectricBolt,
+                            stringResource(R.string.total_sessions),
+                            summary.totalCharges.toString(),
+                            palette.accent
+                        ),
+                        TelemetryMetricSpec(
+                            Icons.Default.BatteryChargingFull,
+                            stringResource(R.string.total_energy),
+                            when {
+                                summary.totalEnergyAdded > 999 -> "%.2f MWh".format(summary.totalEnergyAdded / 1000)
+                                summary.totalEnergyAdded < 10 -> "%.1f kWh".format(summary.totalEnergyAdded)
+                                else -> "%.0f kWh".format(summary.totalEnergyAdded)
+                            },
+                            palette.acColor
+                        ),
+                        TelemetryMetricSpec(
+                            Icons.Default.Paid,
+                            stringResource(R.string.total_cost),
+                            when {
+                                summary.totalCost < 100 -> "$currencySymbol%.2f".format(summary.totalCost)
+                                summary.totalCost < 1000 -> "$currencySymbol%.1f".format(summary.totalCost)
+                                else -> "$currencySymbol%.0f".format(summary.totalCost)
+                            },
+                            Color(0xFF22C55E)
+                        ),
+                        TelemetryMetricSpec(
+                            Icons.Default.Paid,
+                            stringResource(R.string.avg_cost_per_session),
+                            "$currencySymbol%.2f".format(summary.avgCostPerCharge),
+                            palette.dcColor
+                        )
+                    ),
+                    modifier = Modifier.padding(vertical = 8.dp)
                 )
             }
         }
     }
 }
 
-@Composable
-private fun SummaryItem(
-    icon: ImageVector,
-    label: String,
-    value: String,
-    palette: CarColorPalette,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.padding(4.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = palette.accent
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Column {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = palette.onSurfaceVariant
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                color = palette.onSurface
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChargeItem(
     charge: ChargeData,
-    isDcCharge: Boolean,
+    isDcCharge: Boolean?,
     currencySymbol: String,
+    pricePerKwh: Double?,
+    freeSupercharging: Boolean,
     palette: CarColorPalette,
     onEditCost: (() -> Unit)? = null,
     onClick: () -> Unit
@@ -684,14 +659,19 @@ private fun ChargeItem(
     val unknownLocation = stringResource(R.string.unknown_location)
     val freeLabel = stringResource(R.string.charge_free)
     val notAvailableLabel = stringResource(R.string.not_available)
-    val accent = if (isDcCharge) palette.dcColor else palette.acColor
+    val accent = when (isDcCharge) {
+        true -> palette.dcColor
+        false -> palette.acColor
+        null -> MaterialTheme.colorScheme.primary
+    }
     val energy = presentChargeEnergy(charge.chargeEnergyAdded)
 
-    val effectiveCost = EffectiveChargeCostResolver.resolve(
-        EffectiveChargeCostInput(
-            teslaMateCost = charge.cost,
-            energyKwh = energy.energyKwh
-        )
+    val effectiveCost = resolveChargeCost(
+        pricePerKwh = pricePerKwh,
+        freeSupercharging = freeSupercharging,
+        isDcCharge = isDcCharge == true,
+        teslaMateCost = charge.cost,
+        energyKwh = energy.energyKwh
     )
     val isFree = effectiveCost.source == ChargeCostSource.FREE
     val isEstimated = effectiveCost.source == ChargeCostSource.ESTIMATE
@@ -700,54 +680,157 @@ private fun ChargeItem(
         effectiveCost.cost != null -> "$currencySymbol%.2f".format(effectiveCost.cost)
         else -> notAvailableLabel
     }
-    val costPillText = if (onEditCost != null) "$costText ↗" else costText
-
     val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
-    EditorialListItem(
-        accent = accent,
-        dateline = formatEditorialDate(charge.startDate, is24Hour),
-        title = charge.address ?: unknownLocation,
-        heroValue = energy.energyKwh?.let { "%.1f".format(it) } ?: notAvailableLabel,
-        heroUnit = if (energy.energyKwh != null) "kWh" else "",
-        onClick = onClick,
-        datelineTrailing = {
-            ChargeTypeBadge(isDcCharge = isDcCharge, palette = palette)
-        }
+    val start = charge.startBatteryLevel
+    val end = charge.endBatteryLevel
+
+    TelemetryPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        accent = accent
     ) {
-        EditorialPill(charge.durationStr ?: "${charge.durationMin ?: 0}m")
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        color = accent.copy(alpha = 0.14f),
+                        shape = CircleShape
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = accent,
+                            modifier = Modifier.padding(9.dp).size(20.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = charge.address.toChineseDisplayAddress() ?: unknownLocation,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = formatEditorialDate(charge.startDate, is24Hour),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                ChargeTypeBadge(isDcCharge = isDcCharge, palette = palette)
+            }
 
-        val costBg = if (isFree) palette.acColor.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.05f)
-        val costColor = if (isFree) palette.acColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
-        val costFontWeight = if (isFree) FontWeight.Bold else FontWeight.SemiBold
-        val costModifier = if (onEditCost != null) Modifier.clickable(onClick = onEditCost) else Modifier
-        EditorialPill(
-            text = costPillText,
-            modifier = costModifier,
-            background = costBg,
-            color = costColor,
-            fontWeight = costFontWeight
-        )
-        if (isEstimated) {
-            EditorialPill(stringResource(R.string.charge_cost_estimated))
-        }
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = MaterialTheme.shapes.medium
+            ) {
+                TelemetryMetricStrip(
+                    metrics = listOf(
+                        TelemetryMetricSpec(
+                            icon = Icons.Default.Timer,
+                            label = stringResource(R.string.duration),
+                            value = charge.durationStr?.takeIf { it.isNotBlank() }
+                                ?: charge.durationMin?.let { "${it}m" }
+                                ?: notAvailableLabel,
+                            tint = Color(0xFFF59E0B)
+                        ),
+                        TelemetryMetricSpec(
+                            icon = Icons.Default.ElectricBolt,
+                            label = stringResource(R.string.energy),
+                            value = energy.energyKwh?.let { "%.1f kWh".format(it) } ?: notAvailableLabel,
+                            tint = accent
+                        ),
+                        TelemetryMetricSpec(
+                            icon = Icons.Default.Paid,
+                            label = stringResource(R.string.trip_charge_cost),
+                            value = costText,
+                            tint = if (isFree) palette.acColor else Color(0xFF22C55E)
+                        ),
+                        TelemetryMetricSpec(
+                            icon = Icons.Default.BatteryStd,
+                            label = stringResource(R.string.battery),
+                            value = if (start != null && start in 0..100 && end != null && end in 0..100) {
+                                "$start→$end%"
+                            } else {
+                                notAvailableLabel
+                            },
+                            tint = Color(0xFFF97316)
+                        )
+                    ),
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
 
-        val start = charge.startBatteryLevel
-        val end = charge.endBatteryLevel
-        if (start != null && end != null) {
-            EditorialPill(
-                text = "$start→$end%",
-                background = accent.copy(alpha = 0.12f),
-                color = accent,
-                fontWeight = FontWeight.Bold
-            )
+            if (onEditCost != null || isEstimated) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isEstimated) {
+                        Text(
+                            text = stringResource(R.string.charge_cost_estimated),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Spacer(Modifier.width(1.dp))
+                    }
+                    onEditCost?.let { editCost ->
+                        Surface(
+                            modifier = Modifier.clickable(onClick = editCost),
+                            color = accent.copy(alpha = 0.12f),
+                            shape = MaterialTheme.shapes.extraLarge
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = null,
+                                    tint = accent,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = stringResource(R.string.edit_charge_cost),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = accent
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun ChargeTypeBadge(isDcCharge: Boolean, palette: CarColorPalette) {
-    val backgroundColor = if (isDcCharge) palette.dcColor else palette.acColor
-    val text = if (isDcCharge) stringResource(R.string.charging_dc) else stringResource(R.string.charging_ac)
+private fun ChargeTypeBadge(isDcCharge: Boolean?, palette: CarColorPalette) {
+    val backgroundColor = when (isDcCharge) {
+        true -> palette.dcColor
+        false -> palette.acColor
+        null -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val text = when (isDcCharge) {
+        true -> stringResource(R.string.charging_dc)
+        false -> stringResource(R.string.charging_ac)
+        null -> stringResource(R.string.status_unknown)
+    }
 
     Box(
         modifier = Modifier
@@ -965,9 +1048,10 @@ private fun LocationFilterDropdown(
             label = {
                 Text(
                     if (hasSelection && selectedLocations.size == 1)
-                        selectedLocations.first()
+                        selectedLocations.first().toChineseDisplayAddress()
+                            ?: stringResource(R.string.unknown_location)
                     else if (hasSelection)
-                        "${selectedLocations.size} ubicaciones"
+                        stringResource(R.string.selected_locations_count, selectedLocations.size)
                     else
                         stringResource(R.string.filter_location)
                 )

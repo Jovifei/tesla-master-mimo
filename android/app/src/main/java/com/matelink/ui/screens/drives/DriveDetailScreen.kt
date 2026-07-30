@@ -74,12 +74,17 @@ import com.matelink.domain.model.UnitFormatter
 import com.matelink.ui.components.AmapRouteView
 import com.matelink.ui.components.FullscreenLineChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.RouteIndicator
+import com.matelink.ui.components.TelemetryPanel
+import com.matelink.ui.components.TelemetrySectionHeader
+import com.matelink.ui.components.launchExternalIntentSafely
 import com.matelink.ui.screens.trips.displayName
 import com.matelink.ui.theme.CarColorPalettes
 import com.matelink.util.formatDurationCompact
-import com.matelink.util.formatMedium
+import com.matelink.util.formatMonthDayTime
 import com.matelink.util.formatTime
 import com.matelink.util.parseIsoDateTime
+import com.matelink.util.toChineseDisplayAddress
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -166,6 +171,26 @@ private fun DriveDetailContent(
     val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
     val scrollState = rememberScrollState()
     var sharedXFraction by remember { mutableStateOf<Float?>(null) }
+    val positions = detail.positions.orEmpty()
+    val hasChartData = positions.size > 2
+    val timeLabels = remember(positions, is24Hour) {
+        if (hasChartData) extractTimeLabels(positions, is24Hour) else emptyList()
+    }
+    val fractionToTimeLabel: (Float) -> String = remember(positions, is24Hour) {
+        { fraction: Float ->
+            if (positions.isEmpty()) {
+                ""
+            } else {
+                val index = (fraction * positions.lastIndex).roundToInt()
+                    .coerceIn(0, positions.lastIndex)
+                positions[index].date?.let { dateStr ->
+                    parseIsoDateTime(dateStr)
+                        ?.formatTime(java.util.Locale.getDefault(), is24Hour)
+                        ?: ""
+                } ?: ""
+            }
+        }
+    }
 
     LaunchedEffect(scrollState) {
         snapshotFlow { scrollState.isScrollInProgress }
@@ -177,8 +202,8 @@ private fun DriveDetailContent(
             .fillMaxSize()
             .verticalScroll(scrollState)
             .pointerInput(Unit) { detectTapGestures { sharedXFraction = null } }
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // Route header card
         RouteHeaderCard(detail = detail)
@@ -214,6 +239,16 @@ private fun DriveDetailContent(
                     StatItem(stringResource(R.string.avg_distance), UnitFormatter.formatSpeed(s.avgSpeedFromDistance, units))
                 )
             )
+            if (hasChartData) {
+                SpeedChartCard(
+                    positions = positions,
+                    units = units,
+                    timeLabels = timeLabels,
+                    externalSelectedFraction = sharedXFraction,
+                    onXSelected = { sharedXFraction = it },
+                    fractionToTimeLabel = fractionToTimeLabel
+                )
+            }
 
             // Distance & Duration section
             StatsSectionCard(
@@ -259,6 +294,15 @@ private fun DriveDetailContent(
                     )
                 )
             )
+            if (hasChartData) {
+                BatteryChartCard(
+                    positions = positions,
+                    timeLabels = timeLabels,
+                    externalSelectedFraction = sharedXFraction,
+                    onXSelected = { sharedXFraction = it },
+                    fractionToTimeLabel = fractionToTimeLabel
+                )
+            }
 
             // Power section
             StatsSectionCard(
@@ -270,6 +314,15 @@ private fun DriveDetailContent(
                     StatItem(stringResource(R.string.average), "%.1f kW".format(s.powerAvg))
                 )
             )
+            if (hasChartData) {
+                PowerChartCard(
+                    positions = positions,
+                    timeLabels = timeLabels,
+                    externalSelectedFraction = sharedXFraction,
+                    onXSelected = { sharedXFraction = it },
+                    fractionToTimeLabel = fractionToTimeLabel
+                )
+            }
 
             // Elevation section
             if (s.elevationMax > 0 || s.elevationMin > 0) {
@@ -283,6 +336,15 @@ private fun DriveDetailContent(
                         StatItem(stringResource(R.string.loss), "-%,d m".format(s.elevationLoss))
                     )
                 )
+                if (hasChartData) {
+                    ElevationChartCard(
+                        positions = positions,
+                        timeLabels = timeLabels,
+                        externalSelectedFraction = sharedXFraction,
+                        onXSelected = { sharedXFraction = it },
+                        fractionToTimeLabel = fractionToTimeLabel
+                    )
+                }
             }
 
             // Temperature section
@@ -297,53 +359,6 @@ private fun DriveDetailContent(
                 )
             }
 
-            // Charts
-            if (!detail.positions.isNullOrEmpty() && detail.positions.size > 2) {
-                val positions = detail.positions
-                // Remember expensive computations so they don't re-run on every
-                // recomposition during tooltip swipe interactions
-                val timeLabels = remember(positions) { extractTimeLabels(positions, is24Hour) }
-                val fractionToTimeLabel: (Float) -> String = remember(positions) {
-                    { fraction: Float ->
-                        val index = (fraction * positions.lastIndex).roundToInt().coerceIn(0, positions.lastIndex)
-                        positions[index].date?.let { dateStr ->
-                            parseIsoDateTime(dateStr)?.formatTime(java.util.Locale.getDefault(), is24Hour) ?: ""
-                        } ?: ""
-                    }
-                }
-
-                SpeedChartCard(
-                    positions = detail.positions,
-                    units = units,
-                    timeLabels = timeLabels,
-                    externalSelectedFraction = sharedXFraction,
-                    onXSelected = { sharedXFraction = it },
-                    fractionToTimeLabel = fractionToTimeLabel
-                )
-                PowerChartCard(
-                    positions = detail.positions,
-                    timeLabels = timeLabels,
-                    externalSelectedFraction = sharedXFraction,
-                    onXSelected = { sharedXFraction = it },
-                    fractionToTimeLabel = fractionToTimeLabel
-                )
-                BatteryChartCard(
-                    positions = detail.positions,
-                    timeLabels = timeLabels,
-                    externalSelectedFraction = sharedXFraction,
-                    onXSelected = { sharedXFraction = it },
-                    fractionToTimeLabel = fractionToTimeLabel
-                )
-                if (detail.positions.any { it.elevation != null && it.elevation != 0 }) {
-                    ElevationChartCard(
-                        positions = detail.positions,
-                        timeLabels = timeLabels,
-                        externalSelectedFraction = sharedXFraction,
-                        onXSelected = { sharedXFraction = it },
-                        fractionToTimeLabel = fractionToTimeLabel
-                    )
-                }
-            }
         }
 
         // Weather along the way - shown when loading or has data
@@ -362,133 +377,84 @@ private fun DriveDetailContent(
 @Composable
 private fun RouteHeaderCard(detail: DriveDetail) {
     val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
-    Card(
+    TelemetryPanel(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+        accent = MaterialTheme.colorScheme.primary
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Start location
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = stringResource(R.string.from),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = detail.startAddress ?: stringResource(R.string.unknown_location),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(start = 36.dp),
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
+            TelemetrySectionHeader(
+                icon = CustomIcons.SteeringWheel,
+                title = stringResource(R.string.trip)
             )
 
-            // End location
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.tertiary
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = stringResource(R.string.to),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = detail.endAddress ?: stringResource(R.string.unknown_location),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(start = 36.dp),
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
+            RouteIndicator(
+                start = detail.startAddress.toChineseDisplayAddress()
+                    ?: stringResource(R.string.unknown_location),
+                end = detail.endAddress.toChineseDisplayAddress()
+                    ?: stringResource(R.string.unknown_location)
             )
 
-            // Start time
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Schedule,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = stringResource(R.string.started),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = formatDateTime(detail.startDate, is24Hour),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+            )
 
-            // End time
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Schedule,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                DetailTimeValue(
+                    label = stringResource(R.string.started),
+                    value = formatDateTime(detail.startDate, is24Hour),
+                    modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = stringResource(R.string.ended),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = formatDateTime(detail.endDate, is24Hour),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    detail.durationStr?.let { duration ->
-                        Text(
-                            text = stringResource(R.string.duration_label, duration),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        )
-                    }
-                }
+                DetailTimeValue(
+                    label = stringResource(R.string.ended),
+                    value = formatDateTime(detail.endDate, is24Hour),
+                    modifier = Modifier.weight(1f)
+                )
+                DetailTimeValue(
+                    label = stringResource(R.string.duration),
+                    value = detail.durationMin?.let(::formatDurationCompact)
+                        ?: detail.durationStr?.takeIf { it.isNotBlank() }
+                        ?: stringResource(R.string.not_available),
+                    modifier = Modifier.weight(0.8f)
+                )
             }
         }
     }
 }
 
 @Composable
+private fun DetailTimeValue(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
 private fun DriveMapCard(positions: List<DrivePosition>, routeColor: Color) {
     val context = LocalContext.current
+    val startLabel = stringResource(R.string.start)
+    val endLabel = stringResource(R.string.end)
     val validPositions = positions.filter { it.latitude != null && it.longitude != null }
 
     if (validPositions.isEmpty()) return
@@ -506,7 +472,7 @@ private fun DriveMapCard(positions: List<DrivePosition>, routeColor: Color) {
                         "&travelmode=driving"
             )
             val intent = Intent(Intent.ACTION_VIEW, uri)
-            context.startActivity(intent)
+            context.launchExternalIntentSafely(intent)
         }
     }
 
@@ -519,13 +485,13 @@ private fun DriveMapCard(positions: List<DrivePosition>, routeColor: Color) {
         )
     ) {
         Column(
-            modifier = Modifier.padding(16.dp)
+                    modifier = Modifier.padding(12.dp)
         ) {
             Text(
                 text = stringResource(R.string.route_map),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 12.dp)
+                modifier = Modifier.padding(bottom = 8.dp)
             )
 
             Box(
@@ -543,8 +509,8 @@ private fun DriveMapCard(positions: List<DrivePosition>, routeColor: Color) {
                 AmapRouteView(
                     modifier = Modifier.fillMaxSize(),
                     routePoints = routePoints,
-                    startTitle = "Start",
-                    endTitle = "End"
+                    startTitle = startLabel,
+                    endTitle = endLabel
                 )
             }
         }
@@ -643,7 +609,7 @@ private fun StatItemView(
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Bold
         )
     }
@@ -782,11 +748,11 @@ private fun ChartCard(
         )
     ) {
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(12.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 12.dp)
+                modifier = Modifier.padding(bottom = 8.dp)
             ) {
                 Icon(
                     imageVector = icon,
@@ -842,8 +808,5 @@ private fun extractTimeLabels(positions: List<DrivePosition>, is24Hour: Boolean?
 }
 
 private fun formatDateTime(dateStr: String?, is24Hour: Boolean? = null): String {
-    if (dateStr.isNullOrBlank()) return "Unknown"
-    val dt = parseIsoDateTime(dateStr) ?: return dateStr
-    val locale = java.util.Locale.getDefault()
-    return "${dt.toLocalDate().formatMedium(locale)} ${dt.formatTime(locale, is24Hour)}"
+    return formatMonthDayTime(dateStr, is24Hour = is24Hour) ?: "—"
 }

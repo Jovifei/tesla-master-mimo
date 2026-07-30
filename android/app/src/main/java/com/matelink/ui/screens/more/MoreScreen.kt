@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -47,7 +48,12 @@ import androidx.compose.ui.unit.dp
 import com.matelink.R
 import com.matelink.ui.theme.MateLinkTheme
 import com.matelink.ui.theme.swissPalette
-import java.util.Locale
+
+private data class MoreAction(
+    val icon: ImageVector,
+    val title: String,
+    val onClick: () -> Unit
+)
 
 /**
  * L1 "More" hub — the fourth bottom-nav tab.
@@ -98,113 +104,101 @@ fun MoreScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                top = 8.dp,
+                end = 16.dp,
+                bottom = 24.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             item {
-                SectionCard {
-                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(18.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.VerifiedUser,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
                             text = stringResource(R.string.more_status_title),
-                            style = MaterialTheme.typography.titleSmall,
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = palette.ink
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Text(
                             text = stringResource(R.string.more_status_body),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = palette.muted,
-                            modifier = Modifier.padding(top = 6.dp)
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
                         )
+                        }
                     }
                 }
             }
             item { SectionHeader(stringResource(R.string.more_section_analysis)) }
             item {
-                SectionCard {
-                    MoreRow(
-                        icon = Icons.Default.Speed,
-                        title = stringResource(R.string.more_item_statistics),
-                        onClick = { onNavigateToStats(carId) }
+                MoreActionGrid(
+                    actions = listOf(
+                        MoreAction(Icons.Default.Speed, stringResource(R.string.more_item_statistics)) {
+                            onNavigateToStats(carId)
+                        },
+                        MoreAction(Icons.Default.BatteryStd, stringResource(R.string.more_item_battery_health)) {
+                            onNavigateToBattery(carId)
+                        },
+                        MoreAction(Icons.Default.Map, stringResource(R.string.more_item_mileage)) {
+                            onNavigateToMileage(carId)
+                        },
+                        MoreAction(Icons.Default.History, stringResource(R.string.more_item_trips)) {
+                            onNavigateToTrips(carId)
+                        },
+                        MoreAction(Icons.Default.Analytics, stringResource(R.string.more_item_efficiency)) {
+                            onNavigateToEfficiency(carId)
+                        },
+                        MoreAction(Icons.Default.AttachMoney, stringResource(R.string.more_item_cost)) {
+                            onNavigateToCost(carId)
+                        },
+                        MoreAction(Icons.Default.Route, stringResource(R.string.more_item_range)) {
+                            onNavigateToRange(carId)
+                        },
+                        MoreAction(Icons.Default.Bolt, stringResource(R.string.more_item_vampire)) {
+                            onNavigateToVampire(carId)
+                        },
+                        MoreAction(Icons.Default.Timeline, stringResource(R.string.more_item_timeline)) {
+                            onNavigateToTimeline(carId)
+                        }
                     )
-                    MoreDivider()
-                    MoreRow(
-                        icon = Icons.Default.BatteryStd,
-                        title = stringResource(R.string.more_item_battery_health),
-                        onClick = { onNavigateToBattery(carId) }
-                    )
-                    MoreDivider()
-                    MoreRow(
-                        icon = Icons.Default.Map,
-                        title = stringResource(R.string.more_item_mileage),
-                        onClick = { onNavigateToMileage(carId) }
-                    )
-                    MoreDivider()
-                    MoreRow(
-                        icon = Icons.Default.History,
-                        title = stringResource(R.string.more_item_trips),
-                        onClick = { onNavigateToTrips(carId) }
-                    )
-                    MoreDivider()
-                    MoreRow(
-                        icon = Icons.Default.Analytics,
-                        title = stringResource(R.string.more_item_efficiency),
-                        onClick = { onNavigateToEfficiency(carId) }
-                    )
-                    MoreDivider()
-                    MoreRow(
-                        icon = Icons.Default.AttachMoney,
-                        title = stringResource(R.string.more_item_cost),
-                        onClick = { onNavigateToCost(carId) }
-                    )
-                    MoreDivider()
-                    MoreRow(
-                        icon = Icons.Default.Route,
-                        title = stringResource(R.string.more_item_range),
-                        onClick = { onNavigateToRange(carId) }
-                    )
-                    MoreDivider()
-                    MoreRow(
-                        icon = Icons.Default.Bolt,
-                        title = stringResource(R.string.more_item_vampire),
-                        onClick = { onNavigateToVampire(carId) }
-                    )
-                    MoreDivider()
-                    MoreRow(
-                        icon = Icons.Default.Timeline,
-                        title = stringResource(R.string.more_item_timeline),
-                        onClick = { onNavigateToTimeline(carId) }
-                    )
-                }
+                )
             }
 
             item { SectionHeader(stringResource(R.string.more_section_reports)) }
             item {
-                SectionCard {
-                    MoreRow(
-                        icon = Icons.Default.Analytics,
-                        title = stringResource(R.string.more_item_annual_report),
-                        onClick = { onNavigateToAnnualReport(carId) }
+                MoreActionGrid(
+                    actions = listOf(
+                        MoreAction(Icons.Default.Analytics, stringResource(R.string.more_item_annual_report)) {
+                            onNavigateToAnnualReport(carId)
+                        },
+                        MoreAction(Icons.Default.Update, stringResource(R.string.more_item_export_data)) {
+                            onNavigateToExport(carId)
+                        },
+                        MoreAction(Icons.Default.VerifiedUser, stringResource(R.string.more_item_vehicle_3d_preview)) {
+                            onNavigateToVehicle3d(carId)
+                        },
+                        MoreAction(Icons.Default.Bolt, stringResource(R.string.current_charge)) {
+                            onNavigateToCurrentCharge(carId)
+                        }
                     )
-                    MoreDivider()
-                    MoreRow(
-                        icon = Icons.Default.Update,
-                        title = stringResource(R.string.more_item_export_data),
-                        onClick = { onNavigateToExport(carId) }
-                    )
-                    MoreDivider()
-                    MoreRow(
-                        icon = Icons.Default.VerifiedUser,
-                        title = stringResource(R.string.more_item_vehicle_3d_preview),
-                        onClick = { onNavigateToVehicle3d(carId) }
-                    )
-                    MoreDivider()
-                    MoreRow(
-                        icon = Icons.Default.Bolt,
-                        title = stringResource(R.string.current_charge),
-                        onClick = { onNavigateToCurrentCharge(carId) }
-                    )
-                }
+                )
             }
 
             item { SectionHeader(stringResource(R.string.more_section_system)) }
@@ -243,12 +237,72 @@ fun MoreScreen(
 private fun SectionHeader(label: String) {
     val palette = swissPalette()
     Text(
-        text = label.uppercase(Locale.ROOT),
-        style = MaterialTheme.typography.labelMedium,
-        color = palette.muted,
+        text = label,
+        style = MaterialTheme.typography.titleSmall,
+        color = palette.ink,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.padding(horizontal = 4.dp)
     )
+}
+
+@Composable
+private fun MoreActionGrid(actions: List<MoreAction>) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        actions.chunked(2).forEach { rowActions ->
+            if (rowActions.size == 1) {
+                MoreActionTile(
+                    action = rowActions.single(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowActions.forEach { action ->
+                        MoreActionTile(
+                            action = action,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoreActionTile(
+    action: MoreAction,
+    modifier: Modifier = Modifier
+) {
+    val palette = swissPalette()
+    Surface(
+        onClick = action.onClick,
+        color = palette.surface,
+        contentColor = palette.ink,
+        shape = MaterialTheme.shapes.large,
+        border = androidx.compose.foundation.BorderStroke(1.dp, palette.outline),
+        modifier = modifier.heightIn(min = 92.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = action.icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+            Text(
+                text = action.title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = palette.ink
+            )
+        }
+    }
 }
 
 @Composable
@@ -277,7 +331,7 @@ private fun MoreRow(icon: ImageVector, title: String, onClick: () -> Unit) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = palette.ink,
+            tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(22.dp)
         )
         Spacer(modifier = Modifier.size(16.dp))

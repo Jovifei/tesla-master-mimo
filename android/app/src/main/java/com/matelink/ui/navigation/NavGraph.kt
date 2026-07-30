@@ -289,6 +289,11 @@ fun NavGraph(
                         popUpTo<Screen.Settings> { inclusive = true }
                     }
                 },
+                onNavigateBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.Dashboard) { launchSingleTop = true }
+                    }
+                },
                 onNavigateToTariffConfig = {
                     navController.navigate(Screen.TariffConfig)
                 },
@@ -314,7 +319,11 @@ fun NavGraph(
         composable<Screen.AmapPreview> {
             AmapMapScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateToSetup = { navController.navigate(Screen.AmapSetup) }
+                onNavigateToSetup = {
+                    if (!navController.popBackStack<Screen.AmapSetup>(inclusive = false)) {
+                        navController.navigate(Screen.AmapSetup)
+                    }
+                }
             )
         }
 
@@ -362,7 +371,6 @@ fun NavGraph(
             ChargesScreen(
                 carId = route.carId,
                 exteriorColor = route.exteriorColor,
-                onNavigateBack = { navController.popBackStack() },
                 onNavigateToChargeDetail = { chargeId ->
                     navController.navigate(Screen.ChargeDetail(route.carId, chargeId, route.exteriorColor))
                 }
@@ -396,7 +404,6 @@ fun NavGraph(
             DrivesScreen(
                 carId = route.carId,
                 exteriorColor = route.exteriorColor,
-                onNavigateBack = { navController.popBackStack() },
                 onNavigateToDriveDetail = { driveId ->
                     navController.navigate(Screen.DriveDetail(route.carId, driveId, route.exteriorColor))
                 },

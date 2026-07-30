@@ -63,6 +63,9 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.TelemetryGauge
+import com.matelink.ui.components.TelemetryPanel
+import com.matelink.ui.components.TelemetrySectionHeader
 import com.matelink.ui.theme.CarColorPalette
 import com.matelink.ui.theme.CarColorPalettes
 import com.matelink.ui.theme.StatusSuccess
@@ -192,12 +195,91 @@ private fun BatteryHealthContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         if (stats.hasCapacityEstimate) {
+            val healthColor = when {
+                stats.healthPercent >= 90.0 -> StatusSuccess
+                stats.healthPercent >= 80.0 -> MaterialTheme.colorScheme.primary
+                else -> Color(0xFFF59E0B)
+            }
+            TelemetryPanel(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onCardClick),
+                accent = healthColor
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    TelemetrySectionHeader(
+                        icon = Icons.Default.BatteryChargingFull,
+                        title = stringResource(R.string.battery_health_title),
+                        accent = healthColor
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(18.dp)
+                    ) {
+                        TelemetryGauge(
+                            progress = (stats.healthPercent / 100.0).toFloat(),
+                            headline = "%.1f%%".format(stats.healthPercent),
+                            supporting = stringResource(R.string.battery_health),
+                            contentDescription = "${stringResource(R.string.battery_health)} ${"%.1f%%".format(stats.healthPercent)}",
+                            color = healthColor,
+                            modifier = Modifier.width(138.dp)
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            BatteryHeroValue(
+                                label = stringResource(R.string.current_capacity),
+                                value = "%.1f kWh".format(stats.currentCapacity),
+                                tint = healthColor
+                            )
+                            BatteryHeroValue(
+                                label = stringResource(R.string.original_capacity),
+                                value = "%.1f kWh".format(stats.originalCapacity),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                            stats.rangeAt100?.let { rangeAtFull ->
+                                BatteryHeroValue(
+                                    label = stringResource(R.string.range_at_100),
+                                    value = UnitFormatter.formatDistance(rangeAtFull, units),
+                                    tint = RangeBlue
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             CapacityCard(stats = stats, units = units, palette = palette, onClick = onCardClick)
             DegradationCard(stats = stats, palette = palette, onClick = onCardClick)
         }
         if (stats.hasRangeEstimate) {
             RangeCard(stats = stats, units = units, palette = palette, onClick = onCardClick)
         }
+    }
+}
+
+@Composable
+private fun BatteryHeroValue(
+    label: String,
+    value: String,
+    tint: Color
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = tint
+        )
     }
 }
 

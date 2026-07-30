@@ -14,6 +14,8 @@ import com.matelink.domain.TripRepository
 import com.matelink.domain.analytics.ChargeCostSource
 import com.matelink.domain.analytics.EffectiveChargeCostInput
 import com.matelink.domain.analytics.EffectiveChargeCostResolver
+import com.matelink.domain.analytics.chargePriceOverrideKey
+import com.matelink.domain.analytics.manualChargeAmount
 import com.matelink.domain.model.Trip
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +38,7 @@ data class ChargeDetailUiState(
     ),
     val currencySymbol: String = "€",
     val isDcCharge: Boolean = false,
+    val pricePerKwh: Double? = null,
     val containingTrip: Pair<Long, Trip>? = null
 )
 
@@ -166,8 +169,12 @@ class ChargeDetailViewModel @Inject constructor(
                         is ApiResult.Success -> carResult.data.carSettings?.freeSupercharging == true
                         is ApiResult.Error -> false
                     }
+                    val pricePerKwh = settingsDataStore.chargePriceOverrides.first()[
+                        chargePriceOverrideKey(carId, chargeId)
+                    ]
                     val costPresentation = presentChargeDetailCost(
-                        manuallyFree = isExplicitlyFree,
+                        manualAmount = manualChargeAmount(pricePerKwh, detail.chargeEnergyAdded),
+                        manuallyFree = isExplicitlyFree && isDcCharge,
                         teslaMateCost = detail.cost,
                         energyKwh = detail.chargeEnergyAdded
                     )
@@ -179,6 +186,7 @@ class ChargeDetailViewModel @Inject constructor(
                             stats = stats,
                             costPresentation = costPresentation,
                             isDcCharge = isDcCharge,
+                            pricePerKwh = pricePerKwh,
                             error = null
                         )
                     }
@@ -197,6 +205,32 @@ class ChargeDetailViewModel @Inject constructor(
 
     fun clearError() {
         _uiState.update { it.copy(error = null) }
+    }
+
+    fun savePricePerKwh(pricePerKwh: Double?) {
+        val currentCarId = carId ?: return
+        val currentChargeId = chargeId ?: return
+        val detail = _uiState.value.chargeDetail ?: return
+        if (pricePerKwh != null && (!pricePerKwh.isFinite() || pricePerKwh < 0.0)) return
+
+        viewModelScope.launch {
+            settingsDataStore.saveChargePriceOverride(
+                chargePriceOverrideKey(currentCarId, currentChargeId),
+                pricePerKwh
+            )
+            val state = _uiState.value
+            _uiState.update {
+                it.copy(
+                    pricePerKwh = pricePerKwh,
+                    costPresentation = presentChargeDetailCost(
+                        manualAmount = manualChargeAmount(pricePerKwh, detail.chargeEnergyAdded),
+                        manuallyFree = state.costPresentation.state == ChargeDetailCostState.FREE,
+                        teslaMateCost = detail.cost,
+                        energyKwh = detail.chargeEnergyAdded
+                    )
+                )
+            }
+        }
     }
 
     /** Detach this charge from its containing saved trip (auto-transitions the trip to USER_EDITED). */

@@ -91,7 +91,14 @@
     <string name="lock">锁</string>
     <string name="plug">充电枪</string>
     <string name="refresh">刷新</string>
+    <string name="server_not_configured_message">服务器尚未配置，请前往“设置”连接 TeslaMate。</string>
     <string name="elevation_label">海拔: %1$s%2$s</string>
+    <string name="dashboard_snapshot_time">快照时间 %1$s</string>
+    <string name="snapshot_source_live">实时数据</string>
+    <string name="snapshot_source_history">历史快照</string>
+    <string name="snapshot_source_unavailable">数据不可用</string>
+    <string name="status_unknown">暂无数据</string>
+    <string name="battery_history_navigation_note">查看已记录的电池历史与容量详情</string>
 
     <!-- Status -->
     <string name="state_online">在线</string>
@@ -145,6 +152,7 @@
     <string name="about">关于</string>
     <string name="version">版本</string>
     <string name="more_section_analysis">数据分析</string>
+    <string name="more_section_reports">报告与导出</string>
     <string name="more_section_system">系统</string>
     <string name="more_status_title">验证状态</string>
     <string name="more_status_body">部分功能仍使用预览、模拟或缓存数据，连接 TeslaMate 后将显示实时数据。</string>
@@ -154,11 +162,14 @@
     <string name="more_item_trips">行程记录</string>
     <string name="more_item_software_updates">软件更新</string>
     <string name="more_item_sentry_history">哨兵历史</string>
-    <string name="more_item_efficiency">能耗效率</string>
+    <string name="more_item_efficiency">能耗</string>
     <string name="more_item_cost">费用分析</string>
     <string name="more_item_range">续航分析</string>
     <string name="more_item_vampire">待机能耗</string>
     <string name="more_item_timeline">时间线</string>
+    <string name="more_item_annual_report">年度报告</string>
+    <string name="more_item_export_data">导出数据</string>
+    <string name="more_item_vehicle_3d_preview">3D 车辆预览</string>
     <string name="about_tagline">你的 Tesla 数据伴侣</string>
     <string name="about_tech_stack">技术栈</string>
     <string name="about_tech_android">Android - Kotlin - Jetpack Compose - Hilt - Room</string>
@@ -204,11 +215,11 @@
     <string name="tariff_assume_monthly">假设月充电 %d kWh</string>
 
     <!-- Efficiency Analysis -->
-    <string name="efficiency_title">效率分析</string>
-    <string name="efficiency_avg_label">平均效率</string>
+    <string name="efficiency_title">能耗分析</string>
+    <string name="efficiency_avg_label">平均能耗</string>
     <string name="efficiency_drive_count">行程数</string>
     <string name="efficiency_total_distance">总里程</string>
-    <string name="efficiency_by_speed_title">分速效率</string>
+    <string name="efficiency_by_speed_title">分速能耗</string>
     <string name="efficiency_by_speed_subtitle">不同速度区间的能耗 (Wh/km)</string>
 
     <!-- Cost Analysis -->
@@ -300,7 +311,7 @@
 
     <!-- Software Versions -->
     <string name="software_avg_interval">平均间隔</string>
-    <string name="format_interval_days">%1$.1f 天</string>
+    <string name="format_interval_days">%1$d 天</string>
     <string name="software_newest">最新</string>
     <string name="software_oldest">最早</string>
     <string name="format_updates_count">%1$d 次更新</string>
@@ -534,9 +545,22 @@
     <string name="current_charge_title">当前充电</string>
     <string name="current_charge_message">当前充电信息。</string>
     <string name="current_charge">当前充电</string>
-    <string name="usable_percent">可用 (%)</string>
+    <string name="usable_percent">可用（%1$d%%）</string>
     <string name="not_available">暂无数据</string>
-    <string name="charge_cost_estimated">按 1.10 元/度估算</string>
+    <string name="external_action_unavailable">没有可用应用打开此链接。</string>
+    <string name="charge_cost_estimated">系统估算</string>
+    <string name="charge_cost_actual">实际记录</string>
+    <string name="charge_cost_manual">人工单价</string>
+    <string name="edit_charge_cost">修改单价</string>
+    <string name="charge_unit_price">每度单价</string>
+    <string name="charge_unit_price_hint">输入该充电站每度电价格</string>
+    <string name="charge_price_invalid">请输入有效的非负价格</string>
+    <string name="charge_price_saved">单价已保存</string>
+    <string name="charge_price_clear">使用原始记录</string>
+    <string name="charge_price_dialog_title">修改充电单价</string>
+    <string name="selected_locations_count">已选 %1$d 个地点</string>
+    <string name="energy_source">能耗来源</string>
+    <string name="energy_coverage">能耗覆盖率</string>
     <string name="range_information_title">续航信息</string>
     <string name="range_information_message">你的 Tesla 续航详情。</string>
     <string name="range_information">续航信息</string>
@@ -566,21 +590,21 @@
         <item quantity="other">%1$d 次充电</item>
     </plurals>
     <string name="charges_free_supercharging_hint">含免费超级充电</string>
-    <string name="chart_charges_per_day">充电次数/天</string>
-    <string name="chart_charges_per_month">充电次数/月</string>
-    <string name="chart_charges_per_week">充电次数/周</string>
-    <string name="chart_cost_per_day">费用/天</string>
-    <string name="chart_cost_per_month">费用/月</string>
-    <string name="chart_cost_per_week">费用/周</string>
+    <string name="chart_charges_per_day">按日充电次数</string>
+    <string name="chart_charges_per_month">按月充电次数</string>
+    <string name="chart_charges_per_week">按周充电次数</string>
+    <string name="chart_cost_per_day">按日费用</string>
+    <string name="chart_cost_per_month">按月费用</string>
+    <string name="chart_cost_per_week">按周费用</string>
     <string name="chart_distance_per_day">距离/天</string>
     <string name="chart_distance_per_month">距离/月</string>
     <string name="chart_distance_per_week">距离/周</string>
     <string name="chart_drives_per_day">行程数/天</string>
     <string name="chart_drives_per_month">行程数/月</string>
     <string name="chart_drives_per_week">行程数/周</string>
-    <string name="chart_energy_per_day">能量/天</string>
-    <string name="chart_energy_per_month">能量/月</string>
-    <string name="chart_energy_per_week">能量/周</string>
+    <string name="chart_energy_per_day">按日充电量</string>
+    <string name="chart_energy_per_month">按月充电量</string>
+    <string name="chart_energy_per_week">按周充电量</string>
     <string name="chart_speed_per_day">速度/天</string>
     <string name="chart_speed_per_month">速度/月</string>
     <string name="chart_speed_per_week">速度/周</string>
@@ -620,8 +644,9 @@
         <item quantity="other">%1$d 次行程</item>
     </plurals>
     <string name="duration">时长</string>
-    <string name="duration_label">时长</string>
-    <string name="efficiency">效率</string>
+    <string name="duration_label">时长 %1$s</string>
+    <string name="efficiency">能耗</string>
+    <string name="charging_efficiency">充电效率</string>
     <string name="elevation">海拔</string>
     <string name="elevation_profile">海拔曲线</string>
     <string name="end">结束</string>
@@ -691,7 +716,7 @@
     <string name="outside">车外</string>
     <string name="per_kwh">/kWh</string>
     <string name="power">功率</string>
-    <string name="range_at_100">100%% 时续航</string>
+    <string name="range_at_100">100% 时续航</string>
     <string name="record_biggest_charge">最大充电量</string>
     <string name="record_biggest_drain">最大消耗</string>
     <string name="record_biggest_gain">最大增益</string>
@@ -789,7 +814,7 @@
     <string name="speed">速度</string>
     <string name="start">开始</string>
     <string name="stats_avg_cost_kwh">平均费用/kWh</string>
-    <string name="stats_avg_efficiency">平均效率</string>
+    <string name="stats_avg_efficiency">平均能耗</string>
     <string name="stats_category_battery">电池</string>
     <string name="stats_category_drives">行程</string>
     <string name="stats_category_misc">其他</string>
@@ -803,7 +828,7 @@
     <string name="stats_energy_used">已用能量</string>
     <string name="stats_records">记录</string>
     <string name="stats_sync_complete">同步完成</string>
-    <string name="stats_sync_percent">%%</string>
+    <string name="stats_sync_percent">%1$d%%</string>
     <string name="stats_syncing">同步中...</string>
     <string name="stats_temperature_extremes">极端温度</string>
     <string name="stats_title">统计</string>
@@ -817,8 +842,8 @@
     <string name="sync_phase_summaries">摘要</string>
     <string name="total">总计</string>
     <string name="total_cost">总费用</string>
-    <string name="total_energy">总能量</string>
-    <string name="total_sessions">总会话数</string>
+    <string name="total_energy">充电量</string>
+    <string name="total_sessions">充电次数</string>
     <string name="total_time">总时间</string>
     <string name="total_trips">总行程数</string>
     <string name="trip">行程</string>
@@ -932,7 +957,7 @@
     <string name="annual_report_good">良好</string>
     <string name="annual_report_average">一般</string>
     <string name="annual_report_high">偏高</string>
-    <string name="annual_report_efficiency_rating">效率评级</string>
+    <string name="annual_report_efficiency_rating">能耗评级</string>
     <string name="annual_report_top_speed">最高速度</string>
     <string name="annual_report_busiest_day">最忙的一天</string>
     <string name="annual_report_most_distance_day">单日最远</string>
@@ -949,7 +974,7 @@
     <string name="pdf_report_total_drives">总行程数：</string>
     <string name="pdf_report_energy_used">已用能量：</string>
     <string name="pdf_report_charges_label">充电次数：</string>
-    <string name="pdf_report_avg_efficiency">平均效率：</string>
+    <string name="pdf_report_avg_efficiency">平均能耗：</string>
     <string name="pdf_report_generate_share">生成并分享 PDF</string>
     <string name="pdf_report_energy_added_label">已充电量：</string>
     <string name="pdf_report_total_cost_label">总费用：</string>
@@ -963,7 +988,7 @@
     <string name="pdf_report_avg_drive_duration">平均行程时长：</string>
     <string name="pdf_report_driving_days">行驶天数：</string>
     <string name="pdf_report_top_speed_label">最高速度：</string>
-    <string name="pdf_report_efficiency_rating_label">效率评级：</string>
+    <string name="pdf_report_efficiency_rating_label">能耗评级：</string>
     <string name="pdf_report_generated_by">由 MateLink 生成</string>
 
     <!-- Export -->

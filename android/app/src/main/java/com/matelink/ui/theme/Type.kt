@@ -74,15 +74,14 @@ val Typography = Typography(
         letterSpacing = 0.sp
     ),
     titleMedium = TextStyle(
-        fontFamily = MetricMono,
+        fontFamily = SwissSans,
         fontWeight = FontWeight.Medium,
         fontSize = 16.sp,
         lineHeight = 24.sp,
-        letterSpacing = 0.sp,
-        fontFeatureSettings = "tnum"
+        letterSpacing = 0.sp
     ),
     titleSmall = TextStyle(
-        fontFamily = MetricMono,
+        fontFamily = SwissSans,
         fontWeight = FontWeight.Medium,
         fontSize = 14.sp,
         lineHeight = 20.sp,
@@ -117,15 +116,14 @@ val Typography = Typography(
         letterSpacing = 0.sp
     ),
     labelMedium = TextStyle(
-        fontFamily = MetricMono,
+        fontFamily = SwissSans,
         fontWeight = FontWeight.Medium,
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.sp,
-        fontFeatureSettings = "tnum"
+        letterSpacing = 0.sp
     ),
     labelSmall = TextStyle(
-        fontFamily = MetricMono,
+        fontFamily = SwissSans,
         fontWeight = FontWeight.Medium,
         fontSize = 11.sp,
         lineHeight = 16.sp,

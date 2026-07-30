@@ -5,13 +5,22 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AcUnit
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -20,6 +29,8 @@ import androidx.compose.ui.res.stringResource
 import com.matelink.R
 import com.matelink.data.api.models.CarData
 import com.matelink.ui.components.AmapPointView
+import com.matelink.ui.components.TelemetryPanel
+import com.matelink.ui.components.VehicleHeroGraphic
 import com.matelink.ui.theme.StatusSuccess
 import com.matelink.ui.theme.StatusWarning
 import com.matelink.ui.theme.SwissInk
@@ -94,37 +105,104 @@ fun DashboardScreen(
             }
         }
 
-        // Battery card
-        ElevatedCard(
+        // Vehicle hero and the most important live telemetry.
+        TelemetryPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable {
                     onNavigateToBattery(carId, car?.carDetails?.efficiency, exteriorColor)
-                }
+                },
+            accent = MaterialTheme.colorScheme.primary
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(stringResource(R.string.battery), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    status.batteryLevel?.let { "$it%" } ?: "--",
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
+            Column(
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DirectionsCar,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(R.string.vehicle),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    status.state?.takeIf { it.isNotBlank() }?.let { state ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                            shape = MaterialTheme.shapes.extraLarge
+                        ) {
+                            Text(
+                                text = vehicleStateLabel(state),
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                }
+
+                VehicleHeroGraphic(accent = MaterialTheme.colorScheme.primary)
+
                 val rangeKm = status.ratedBatteryRangeKm ?: status.idealBatteryRangeKm ?: status.estBatteryRangeKm
-                Text(
-                    rangeKm?.let { stringResource(R.string.km_range, it.toInt()) } ?: "--",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    Column {
+                        Text(
+                            text = status.batteryLevel?.let { "$it%" } ?: "--",
+                            style = MaterialTheme.typography.displayMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = stringResource(R.string.battery),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = rangeKm?.let { stringResource(R.string.km_range, it.toInt()) } ?: "--",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(R.string.range),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 status.batteryLevel?.let { batteryLevel ->
                     LinearProgressIndicator(
                         progress = { batteryLevel.coerceIn(0, 100) / 100f },
-                        modifier = Modifier.fillMaxWidth().height(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(7.dp),
+                        strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                     )
                 }
                 uiState.observedAt?.takeIf { it.isNotBlank() }?.let {
-                    Text("快照时间 $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        stringResource(R.string.dashboard_snapshot_time, it),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 if ((status.chargeLimitSoc ?: 0) > 0) {
                     Text(stringResource(R.string.charge_limit, "${status.chargeLimitSoc ?: 0}%"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -137,6 +215,52 @@ fun DashboardScreen(
                         color = Color(0xFFFB8C00)
                     )
                 }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    StatusChip(
+                        icon = if (status.locked == false) Icons.Default.LockOpen else Icons.Default.Lock,
+                        label = when (status.locked) {
+                            true -> stringResource(R.string.lock_locked)
+                            false -> stringResource(R.string.lock_unlocked)
+                            null -> stringResource(R.string.status_unknown)
+                        },
+                        active = status.locked,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatusChip(
+                        icon = Icons.Default.Bolt,
+                        label = when (status.pluggedIn) {
+                            true -> stringResource(R.string.plug_plugged)
+                            false -> stringResource(R.string.plug_unplugged)
+                            null -> stringResource(R.string.status_unknown)
+                        },
+                        active = status.pluggedIn,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatusChip(
+                        icon = Icons.Default.AcUnit,
+                        label = when (status.isClimateOn) {
+                            true -> stringResource(R.string.climate_on)
+                            false -> stringResource(R.string.climate_off)
+                            null -> stringResource(R.string.status_unknown)
+                        },
+                        active = status.isClimateOn,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatusChip(
+                        icon = Icons.Default.Security,
+                        label = when (status.sentryMode) {
+                            true -> stringResource(R.string.sentry_armed)
+                            false -> stringResource(R.string.sentry_off)
+                            null -> stringResource(R.string.status_unknown)
+                        },
+                        active = status.sentryMode,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
 
@@ -146,6 +270,7 @@ fun DashboardScreen(
                 title = stringResource(R.string.odometer),
                 value = status.odometer?.let { "${String.format("%,.0f", it)} km" } ?: "--",
                 modifier = Modifier.weight(1f),
+                icon = Icons.Default.Speed,
                 onClick = { onNavigateToMileage(carId, exteriorColor) }
             )
             InfoCard(
@@ -155,6 +280,7 @@ fun DashboardScreen(
                         (status.elevation?.let { "\n${stringResource(R.string.elevation_label, "$it", "m")}" } ?: "")
                 } else "--",
                 modifier = Modifier.weight(1f),
+                icon = Icons.Default.LocationOn,
                 onClick = { onNavigateToDrives(carId, exteriorColor) }
             )
         }
@@ -180,20 +306,20 @@ fun DashboardScreen(
             }
         }
 
-        // Temperature + Status cards
+        // Temperature cards
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            InfoCard(stringResource(R.string.inside_temp), status.insideTemp?.let { "$it°C" } ?: "--", Modifier.weight(1f))
-            InfoCard(stringResource(R.string.outside_temp), status.outsideTemp?.let { "$it°C" } ?: "--", Modifier.weight(1f))
-            InfoCard(stringResource(R.string.lock), status.locked?.let { if (it) stringResource(R.string.lock_locked) else stringResource(R.string.lock_unlocked) } ?: "--", Modifier.weight(1f))
-            InfoCard(stringResource(R.string.plug), status.pluggedIn?.let { if (it) stringResource(R.string.plug_plugged) else stringResource(R.string.plug_unplugged) } ?: "--", Modifier.weight(1f))
-        }
-
-        // Status row
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatusChip("🔒", if (status.locked == true) stringResource(R.string.lock_locked) else stringResource(R.string.lock_unlocked), status.locked == true)
-            StatusChip("⚡", if (status.pluggedIn == true) stringResource(R.string.plug_plugged) else stringResource(R.string.plug_unplugged), status.pluggedIn == true)
-            StatusChip("💨", if (status.isClimateOn == true) stringResource(R.string.climate_on) else stringResource(R.string.climate_off), status.isClimateOn == true)
-            StatusChip("🛡️", if (status.sentryMode == true) stringResource(R.string.sentry_armed) else stringResource(R.string.sentry_off), status.sentryMode == true)
+            InfoCard(
+                stringResource(R.string.inside_temp),
+                status.insideTemp?.let { "$it°C" } ?: "--",
+                Modifier.weight(1f),
+                icon = Icons.Default.Thermostat
+            )
+            InfoCard(
+                stringResource(R.string.outside_temp),
+                status.outsideTemp?.let { "$it°C" } ?: "--",
+                Modifier.weight(1f),
+                icon = Icons.Default.Thermostat
+            )
         }
 
         // Tire pressure
@@ -205,43 +331,76 @@ fun DashboardScreen(
             InfoCard("RR", status.tpmsDetails?.pressureRr?.let { "$it bar" } ?: "--", Modifier.weight(1f))
         }
 
-        // 7-Day Battery Trend
-        ElevatedCard(
+        // Battery history navigation. No chart is drawn until real history is available.
+        TelemetryPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable {
                     onNavigateToStats(carId, exteriorColor)
-                }
+                },
+            accent = MaterialTheme.colorScheme.primary
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(stringResource(R.string.battery_trend), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                Text(
-                    text = stringResource(R.string.battery_trend_estimated_note),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Bolt,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                status.batteryLevel?.let { BatteryTrendChart(currentBatteryLevel = it) }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.battery_trend),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = stringResource(R.string.battery_history_navigation_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
         // Charging card
         if (status.isCharging) {
-            ElevatedCard(
+            TelemetryPanel(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
                         onNavigateToCurrentCharge(carId, exteriorColor)
                     },
-                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+                accent = StatusWarning
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("⚡ ${stringResource(R.string.charging_in_progress)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Bolt, contentDescription = null, tint = StatusWarning)
+                        Text(
+                            stringResource(R.string.charging_in_progress),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column { Text(stringResource(R.string.charge_power)); Text("${status.chargerPower ?: 0} kW", fontWeight = FontWeight.Bold) }
-                        Column { Text(stringResource(R.string.charge_added)); Text("${status.chargeEnergyAdded ?: 0.0} kWh", fontWeight = FontWeight.Bold) }
-                        Column { Text(stringResource(R.string.charge_remaining)); Text("${status.timeToFullCharge ?: 0.0}h", fontWeight = FontWeight.Bold) }
+                        Column {
+                            Text(stringResource(R.string.charge_power))
+                            Text(status.chargerPower?.let { "$it kW" } ?: "--", fontWeight = FontWeight.Bold)
+                        }
+                        Column {
+                            Text(stringResource(R.string.charge_added))
+                            Text(status.chargeEnergyAdded?.let { "$it kWh" } ?: "--", fontWeight = FontWeight.Bold)
+                        }
+                        Column {
+                            Text(stringResource(R.string.charge_remaining))
+                            Text(status.timeToFullCharge?.let { "${it}h" } ?: "--", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -298,11 +457,15 @@ private fun PartialVehicleDashboard(
             }
         }
 
-        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        TelemetryPanel(
+            modifier = Modifier.fillMaxWidth(),
+            accent = MaterialTheme.colorScheme.primary
+        ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                VehicleHeroGraphic(accent = MaterialTheme.colorScheme.primary)
                 Text(
                     text = stringResource(R.string.dashboard_status_unavailable_title),
                     style = MaterialTheme.typography.titleMedium,
@@ -362,9 +525,9 @@ private fun PartialVehicleDashboard(
 @Composable
 private fun SnapshotBadge(source: String?) {
     val (color, label) = when (source) {
-        "live_mqtt", "teslamate_api" -> StatusSuccess to "实时数据"
-        "database_latest" -> StatusWarning to "历史快照"
-        else -> SwissMuted to "数据不可用"
+        "live_mqtt", "teslamate_api" -> StatusSuccess to stringResource(R.string.snapshot_source_live)
+        "database_latest" -> StatusWarning to stringResource(R.string.snapshot_source_history)
+        else -> SwissMuted to stringResource(R.string.snapshot_source_unavailable)
     }
     Surface(
         color = color,
@@ -384,80 +547,87 @@ private fun InfoCard(
     title: String,
     value: String,
     modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
     onClick: (() -> Unit)? = null
 ) {
-    ElevatedCard(
+    TelemetryPanel(
         modifier = modifier.then(
             if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
         )
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(title, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                icon?.let {
+                    Icon(
+                        imageVector = it,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Text(
+                    title,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
 
 @Composable
-private fun StatusChip(icon: String, label: String, active: Boolean) {
+private fun vehicleStateLabel(state: String): String = when (state.lowercase()) {
+    "online" -> stringResource(R.string.state_online)
+    "driving" -> stringResource(R.string.state_driving)
+    "charging" -> stringResource(R.string.state_charging)
+    "asleep", "suspended" -> stringResource(R.string.state_asleep)
+    "offline" -> stringResource(R.string.state_offline)
+    else -> state
+}
+
+@Composable
+private fun StatusChip(
+    icon: ImageVector,
+    label: String,
+    active: Boolean?,
+    modifier: Modifier = Modifier
+) {
     Surface(
-        color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-        shape = MaterialTheme.shapes.extraLarge
+        modifier = modifier,
+        color = when (active) {
+            true -> MaterialTheme.colorScheme.primaryContainer
+            false -> MaterialTheme.colorScheme.surfaceVariant
+            null -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        },
+        shape = MaterialTheme.shapes.medium
     ) {
-        Text(
-            text = "$icon $label",
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-        )
-    }
-}
-
-@Composable
-private fun BatteryTrendChart(currentBatteryLevel: Int) {
-    // TODO: replace with real 7-day history from API when available
-    // Generate plausible 7-day mock anchored to the actual current battery level
-    val data = remember(currentBatteryLevel) {
-        listOf(
-            (currentBatteryLevel - 6).coerceIn(0, 100),
-            (currentBatteryLevel - 5).coerceIn(0, 100),
-            (currentBatteryLevel - 8).coerceIn(0, 100),
-            (currentBatteryLevel - 4).coerceIn(0, 100),
-            (currentBatteryLevel - 3).coerceIn(0, 100),
-            (currentBatteryLevel - 1).coerceIn(0, 100),
-            currentBatteryLevel.coerceIn(0, 100)
-        )
-    }
-    val labels = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-    val maxVal = data.max()
-    val minVal = data.min()
-    val range = (maxVal - minVal).coerceAtLeast(1)
-    val primaryColor = MaterialTheme.colorScheme.primary
-
-    Canvas(modifier = Modifier.fillMaxWidth().height(120.dp)) {
-        val width = size.width
-        val height = size.height
-        val stepX = width / (data.size - 1)
-        val padding = 20f
-
-        // Draw line
-        val path = androidx.compose.ui.graphics.Path()
-        data.forEachIndexed { index, value ->
-            val x = index * stepX
-            val y = height - padding - ((value - minVal) / range.toFloat()) * (height - 2 * padding)
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        Column(
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (active == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1
+            )
         }
-        drawPath(path, color = primaryColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f))
-
-        // Draw dots
-        data.forEachIndexed { index, value ->
-            val x = index * stepX
-            val y = height - padding - ((value - minVal) / range.toFloat()) * (height - 2 * padding)
-            drawCircle(color = primaryColor, radius = 5f, center = androidx.compose.ui.geometry.Offset(x, y))
-        }
-    }
-
-    // Labels
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        labels.forEach { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }

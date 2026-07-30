@@ -101,6 +101,16 @@ fun LocalDateTime.formatTime(
     return this.format(fmt)
 }
 
+/** Month/day plus time for dense history and detail headers. */
+fun formatMonthDayTime(
+    dateStr: String?,
+    locale: Locale = Locale.getDefault(),
+    is24Hour: Boolean? = null
+): String? {
+    val dateTime = parseIsoDateTime(dateStr) ?: return null
+    return "${dateTime.toLocalDate().formatMediumNoYear(locale)} ${dateTime.formatTime(locale, is24Hour)}"
+}
+
 /** Compact, fixed 24-hour range for detail headers. */
 fun formatCompactDateTimeRange(startDate: String?, endDate: String?): String {
     val start = parseIsoDateTime(startDate) ?: return "--"

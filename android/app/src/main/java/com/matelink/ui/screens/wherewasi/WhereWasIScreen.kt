@@ -69,6 +69,7 @@ import com.matelink.ui.icons.CustomIcons
 import com.matelink.util.formatDuration
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.AmapPointView
+import com.matelink.ui.components.launchExternalIntentSafely
 import com.matelink.ui.theme.CarColorPalettes
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -219,11 +220,7 @@ fun WhereWasIScreen(
                                 FilledIconButton(
                                     onClick = {
                                         val geoUri = Uri.parse("geo:$lat,$lon?q=$lat,$lon")
-                                        try {
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, geoUri))
-                                        } catch (_: android.content.ActivityNotFoundException) {
-                                            // No maps app installed — silently ignore
-                                        }
+                                        context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, geoUri))
                                     },
                                     colors = IconButtonDefaults.filledIconButtonColors(
                                         containerColor = palette.surface,

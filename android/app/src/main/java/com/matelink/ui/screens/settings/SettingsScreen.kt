@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CheckCircle
@@ -61,7 +62,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -78,6 +78,7 @@ import com.matelink.R
 import com.matelink.data.local.TirePosition
 import com.matelink.data.model.Currency
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.launchExternalIntentSafely
 import com.matelink.ui.screens.map.AmapSettingsEntry
 import com.matelink.ui.theme.MateLinkTheme
 import com.matelink.ui.theme.StatusWarning
@@ -88,6 +89,7 @@ import com.matelink.ui.theme.StatusSuccess
 @Composable
 fun SettingsScreen(
     onNavigateToDashboard: () -> Unit,
+    onNavigateBack: () -> Unit = onNavigateToDashboard,
     onNavigateToTariffConfig: () -> Unit = {},
     onNavigateToAmapSetup: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
@@ -123,7 +125,15 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.settings_title)) }
+                title = { Text(stringResource(R.string.settings_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.back)
+                        )
+                    }
+                }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -1054,14 +1064,21 @@ private fun SettingsContent(
             modifier = Modifier.align(Alignment.CenterHorizontally)
         )
         Spacer(modifier = Modifier.height(8.dp))
-        val uriHandler = LocalUriHandler.current
+        val context = LocalContext.current
         Text(
             text = stringResource(R.string.settings_report_issue),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .align(Alignment.CenterHorizontally)
-                .clickable { uriHandler.openUri("https://github.com/MateLink/MateLink/issues") }
+                .clickable {
+                    context.launchExternalIntentSafely(
+                        android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://github.com/MateLink/MateLink/issues")
+                        )
+                    )
+                }
         )
         Spacer(modifier = Modifier.height(16.dp))
     }

@@ -31,8 +31,8 @@ android {
         applicationId = "com.matelink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.0.4"
+        versionCode = 9
+        versionName = "1.3.0"
         buildConfigField("String", "GIT_SHA", "\"${resolveGitSha()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

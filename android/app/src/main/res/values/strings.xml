@@ -92,7 +92,14 @@
     <string name="lock">Lock</string>
     <string name="plug">Plug</string>
     <string name="refresh">Refresh</string>
+    <string name="server_not_configured_message">Server is not configured. Open Settings to connect TeslaMate.</string>
     <string name="elevation_label">Elevation: %1$s%2$s</string>
+    <string name="dashboard_snapshot_time">Snapshot %1$s</string>
+    <string name="snapshot_source_live">Live</string>
+    <string name="snapshot_source_history">History</string>
+    <string name="snapshot_source_unavailable">Unavailable</string>
+    <string name="status_unknown">Unknown</string>
+    <string name="battery_history_navigation_note">View recorded battery history and capacity details</string>
 
     <!-- Status -->
     <string name="state_online">Online</string>
@@ -305,7 +312,7 @@
 
     <!-- Software Versions -->
     <string name="software_avg_interval">Avg Interval</string>
-    <string name="format_interval_days">%1$.1f days</string>
+    <string name="format_interval_days">%1$d days</string>
     <string name="software_newest">Newest</string>
     <string name="software_oldest">Oldest</string>
     <string name="format_updates_count">%1$d updates</string>
@@ -541,10 +548,20 @@
     <string name="current_charge_title">Current Charge</string>
     <string name="current_charge_message">Current charging information.</string>
     <string name="current_charge">Current Charge</string>
-    <string name="usable_percent">Usable (%)</string>
+    <string name="usable_percent">Usable (%1$d%%)</string>
     <string name="not_available">Not available</string>
-    <string name="charge_cost_estimated">Estimated at 1.10/kWh</string>
+    <string name="external_action_unavailable">No app is available to open this link.</string>
+    <string name="charge_cost_estimated">System estimate</string>
     <string name="charge_cost_actual">Actual record</string>
+    <string name="charge_cost_manual">Manual price</string>
+    <string name="edit_charge_cost">Edit price</string>
+    <string name="charge_unit_price">Price per kWh</string>
+    <string name="charge_unit_price_hint">Enter the station price per kWh</string>
+    <string name="charge_price_invalid">Enter a valid non-negative price</string>
+    <string name="charge_price_saved">Price saved</string>
+    <string name="charge_price_clear">Use recorded price</string>
+    <string name="charge_price_dialog_title">Edit charging price</string>
+    <string name="selected_locations_count">%1$d locations</string>
     <string name="energy_source">Energy source</string>
     <string name="energy_coverage">Energy coverage</string>
     <string name="range_information_title">Range Information</string>
@@ -577,21 +594,21 @@
         <item quantity="other">%1$d charges</item>
     </plurals>
     <string name="charges_free_supercharging_hint">Free Supercharging included</string>
-    <string name="chart_charges_per_day">Charges/Day</string>
-    <string name="chart_charges_per_month">Charges/Month</string>
-    <string name="chart_charges_per_week">Charges/Week</string>
-    <string name="chart_cost_per_day">Cost/Day</string>
-    <string name="chart_cost_per_month">Cost/Month</string>
-    <string name="chart_cost_per_week">Cost/Week</string>
+    <string name="chart_charges_per_day">Daily charges</string>
+    <string name="chart_charges_per_month">Monthly charges</string>
+    <string name="chart_charges_per_week">Weekly charges</string>
+    <string name="chart_cost_per_day">Daily cost</string>
+    <string name="chart_cost_per_month">Monthly cost</string>
+    <string name="chart_cost_per_week">Weekly cost</string>
     <string name="chart_distance_per_day">Distance/Day</string>
     <string name="chart_distance_per_month">Distance/Month</string>
     <string name="chart_distance_per_week">Distance/Week</string>
     <string name="chart_drives_per_day">Drives/Day</string>
     <string name="chart_drives_per_month">Drives/Month</string>
     <string name="chart_drives_per_week">Drives/Week</string>
-    <string name="chart_energy_per_day">Energy/Day</string>
-    <string name="chart_energy_per_month">Energy/Month</string>
-    <string name="chart_energy_per_week">Energy/Week</string>
+    <string name="chart_energy_per_day">Daily charging energy</string>
+    <string name="chart_energy_per_month">Monthly charging energy</string>
+    <string name="chart_energy_per_week">Weekly charging energy</string>
     <string name="chart_speed_per_day">Speed/Day</string>
     <string name="chart_speed_per_month">Speed/Month</string>
     <string name="chart_speed_per_week">Speed/Week</string>
@@ -632,8 +649,9 @@
         <item quantity="other">%1$d drives</item>
     </plurals>
     <string name="duration">Duration</string>
-    <string name="duration_label">Duration</string>
-    <string name="efficiency">Efficiency</string>
+    <string name="duration_label">Duration %1$s</string>
+    <string name="efficiency">Energy use</string>
+    <string name="charging_efficiency">Charging efficiency</string>
     <string name="elevation">Elevation</string>
     <string name="elevation_profile">Elevation Profile</string>
     <string name="end">End</string>
@@ -706,7 +724,7 @@
     <string name="outside">Outside</string>
     <string name="per_kwh">/kWh</string>
     <string name="power">Power</string>
-    <string name="range_at_100">Range at 100%%</string>
+    <string name="range_at_100">Range at 100%</string>
     <string name="record_biggest_charge">Biggest Charge</string>
     <string name="record_biggest_drain">Biggest Drain</string>
     <string name="record_biggest_gain">Biggest Gain</string>
@@ -821,7 +839,7 @@
     <string name="stats_energy_used">Energy Used</string>
     <string name="stats_records">Records</string>
     <string name="stats_sync_complete">Sync Complete</string>
-    <string name="stats_sync_percent">%%</string>
+    <string name="stats_sync_percent">%1$d%%</string>
     <string name="stats_syncing">Syncing...</string>
     <string name="stats_temperature_extremes">Temperature Extremes</string>
     <string name="stats_title">Stats</string>

@@ -315,3 +315,112 @@
 - The isolated emulator passed all three migration tests. JVM tests passed 117/117, and both required Debug APK assemblies passed.
 - `adb install -r` updated the phone from v1.0.3 to v1.0.4 while preserving the original first-install time and the databases, DataStore, and shared-preferences directories.
 - After normal launch and a Drives-history navigation tap, the same application process remained alive for 25 seconds with no new fatal or Room-integrity log marker.
+
+# P1.6 Top-Level UI System and Navigation Polish - 2026-07-27
+
+## Design direction
+
+- UI/UX Pro Max: data-dense telemetry dashboard, restrained motion, semantic cyan primary, 4/8dp spacing, 48dp Android touch targets, explicit selected/disabled states, light/dark parity.
+- Anthropic frontend-design: commit to one deliberate “precision vehicle telemetry” direction; avoid generic gradient/card decoration and keep typography, hierarchy, and interaction choices intentional.
+- Scope is UI only. Do not change API, persistence, sync, AMap verification, Room, or data calculation behavior.
+
+## Plan
+
+- [x] Unify global semantic colors, shapes, and typography; reserve the mono font for numeric telemetry instead of ordinary headings and labels.
+- [x] Give the bottom navigation a clear cyan selected state while retaining four labeled top-level destinations.
+- [x] Make Drives and Charges read as top-level destinations: consistent surface top bars and no redundant back arrow.
+- [x] Recompose More into compact, touch-safe action groups; keep Settings and system entries easy to reach.
+- [x] Add the missing Chinese Reports section resource and remove forced uppercase section labels.
+- [x] Preserve accessible text labels for clickable cards and provide content descriptions for the four bottom-navigation icons.
+- [x] Validate JVM tests, Debug APKs, light/dark mode, Chinese layout, narrow-phone rendering, and the existing portrait-only orientation policy.
+- [x] Install with `adb install -r` on the phone, preserve configuration metadata, and run normal navigation smoke checks without instrumentation.
+
+## Review
+
+- Version advanced to `1.1.0` (`versionCode 6`) on branch `codex/app-mimo-ui-optimization`.
+- UI/UX Pro Max and Anthropic frontend-design guided a restrained precision-telemetry system: semantic cyan selection/action color, 4/8dp rhythm, compact cards, explicit hierarchy, and mono type reserved for numeric telemetry.
+- Chinese emulator review covered Dashboard, Drives, Charges, all scrollable More sections, dark mode, 130% font scale, and an approximately 343dp-wide viewport. The application is manifest-locked to portrait, so a forced rotation correctly retained the portrait layout.
+- `:app:testDebugUnitTest`, `:app:assembleDebug`, and `:app:assembleDebugAndroidTest` passed; 117 JVM tests completed with 0 failures, 0 errors, and 0 skipped.
+- `adb install -r` updated the ARM64 phone from `1.0.4` (`versionCode 5`) to `1.1.0` (`versionCode 6`). `firstInstallTime` and the metadata for `databases`, `files/datastore`, and `shared_prefs` remained unchanged.
+- A normal phone launch followed by all four bottom-navigation taps kept the same process alive; fatal and Room-integrity markers were both 0. No instrumentation test ran, and no saved configuration value was read.
+
+# P1.7 Vehicle Telemetry Panel Redesign - 2026-07-29
+
+## Design direction
+
+- Translate the supplied references into a native Android “night-drive telemetry” system rather than reproducing another app pixel-for-pixel.
+- Keep one cyan interaction accent, green for healthy/efficient states, orange for time or battery-use warnings, and neutral graphite surfaces.
+- Every major panel gets a semantic icon or code-drawn graphic. Numeric telemetry uses `MetricMono`; ordinary Chinese labels remain in the readable UI font.
+- Preserve all existing API, Room, sync, map, calculation, filtering, and navigation behavior. Never invent a metric to fill the reference layout.
+- Remotion is not used because these are static Compose screens. Reusable Material icons and deterministic Compose `Canvas` graphics are the correct production assets.
+- Android’s experimental Compose Styles API is not enabled because it requires compileSdk 37 and alpha Compose dependencies; the stable theme/component architecture remains in place.
+
+## Plan
+
+- [x] Add stable shared telemetry panel, metric, gauge, route, and vehicle-hero components.
+- [x] Recompose Dashboard around a vehicle hero, honest battery telemetry, status actions, location, temperature, tire pressure, and real charging data.
+- [x] Recompose Drives into icon-led route cards with duration, distance, efficiency, and battery change; keep parked timeline items visually distinct.
+- [x] Recompose Charges into icon-led session cards with duration, energy, cost, type, and battery change.
+- [x] Strengthen Drive Detail and Charge Detail headers without changing their charts, maps, or calculations.
+- [x] Add a prominent battery-health gauge and tighten capacity, degradation, and range hierarchy.
+- [x] Keep More as a dense, icon-led launch grid aligned with the same panel system.
+- [x] Validate Chinese/light/dark/narrow layouts on the emulator, run JVM/build gates, then preserve-data install and normal navigation checks on the phone.
+
+## Review
+
+- Version advanced to `1.2.0` (`versionCode 7`) on branch `codex/app-mimo-ui-optimization`; HEAD remained `c559d9e` and no file was staged, committed, or pushed.
+- Added reusable native Compose telemetry panels, metric strips, route indicators, a health gauge, and a deterministic Canvas vehicle graphic. Remotion and generated raster assets were intentionally unnecessary.
+- Dashboard, Drives, Charges, their detail headers, Battery Health, More, theme, typography, and bottom navigation now share one Chinese-first night-drive telemetry hierarchy.
+- Removed the fabricated seven-day battery trend. Nullable vehicle states and charging values now render as unavailable instead of false or zero; unprocessed charge type is explicitly unknown.
+- Emulator review covered Chinese dark mode, light-mode contrast, and a 900x2000 narrow portrait viewport. The partial-data Dashboard remained readable and scrollable without horizontal clipping.
+- `:app:testDebugUnitTest`, `:app:assembleDebug`, and `:app:assembleDebugAndroidTest` passed.
+- `adb install -r` updated the ARM64 phone from `1.1.0` (`versionCode 6`) to `1.2.0` (`versionCode 7`). `firstInstallTime` and the metadata for `databases`, `files/datastore`, and `shared_prefs` remained unchanged.
+- A normal phone launch and all four bottom-navigation taps retained PID `13037`; fatal and Room/SQLite error markers were both 0. No instrumentation test ran and no saved configuration value was read.
+
+# P1.8 Crash Elimination and Navigation Audit - 2026-07-29
+
+## Plan
+
+- [x] Reproduce the reported Battery Capacity crash on the emulator and capture only the app exception class, stack frames, and triggering route.
+- [x] Build an emulator-only navigation matrix for the four top-level tabs and all 17 non-mutating More action cards; record each route's process/crash result without inspecting saved credentials.
+- [x] Trace the failing code path, rank hypotheses, and add the narrowest regression test at the real failure seam before applying a production fix.
+- [x] Apply the minimal crash fix without changing user configuration, TeslaMate data, Room rows, map keys, or unrelated UI behavior.
+- [x] Re-run the exact emulator reproduction, the complete emulator navigation matrix, JVM tests, and Debug APK builds.
+- [x] Perform a preserve-data `adb install -r` update on the real phone, then run normal navigation smoke checks and read-only fatal/Room-log verification. Never use instrumentation on the user phone.
+
+## Review
+
+- Reproduced two independent render-time crashes: Battery Health passed an integer to a resource with a literal `%`, and Software Updates passed an integer to a `%1$.1f` resource.
+- Added focused red/green JVM format-contract tests for both resource contracts. The original tests failed first; the final full suite reports 121 tests with 0 failures, errors, or skipped tests.
+- Emulator navigation verification covered all four bottom tabs, all 17 More action cards, Settings return, and AMap configuration return. No data-mutating, export, external-app, save, delete, or instrumentation action ran.
+- `:app:assembleDebug` and `:app:assembleDebugAndroidTest` passed. The v1.2.1 (`versionCode 8`) Debug APK was installed with `adb install -r` on the real phone; `firstInstallTime` and data-directory metadata stayed unchanged. Normal launch and cold-start Battery route verification retained a live process with no app crash marker.
+
+# P1.9 Dense Drive and Charge History UI - 2026-07-30
+
+## Design direction
+
+- Use the published `mobile-android-design` guidance for adaptive Jetpack Compose layout and the `UI/UX Pro Max` guidance for compact telemetry hierarchy and chart grouping.
+- Increase information density without shrinking touch targets: compact internal padding and typography, use three- or four-column metric strips when the width supports them, and keep narrow screens readable.
+- Keep source data honest. Shorter labels and compact timestamps must not invent duration, cost, address, energy, battery, power, or temperature values.
+- Preserve API, Room, sync, stored connection settings, and AMap Key. Persist manual charge prices in an isolated per-car/per-session preference without touching connection credentials.
+
+## Plan
+
+- [x] Audit drive/charge list and detail data contracts, formatting, charts, and cost behavior.
+- [x] Compact Drives history route, timestamp, filters, summary, and metric rows; use Chinese-first route text and rename user-visible efficiency to energy consumption.
+- [x] Compact Drive Detail route, month/day timestamps, duration, metrics, and group each telemetry value with its corresponding curve.
+- [x] Compact Charges history filters, summary, location row, session route, and metric rows without misleading per-day labels.
+- [x] Compact Charge Detail time/duration and group energy, battery, power, temperature, and cost; add a clear per-session manual price/cost edit flow.
+- [x] Add focused formatting/state tests, then run all JVM tests and both Debug APK build gates.
+- [x] Validate the affected navigation paths on an emulator, install with `adb install -r` on the phone, and verify configuration metadata and crash logs without instrumentation.
+
+## Review
+
+- Version advanced to `1.3.0` (`versionCode 9`) on branch `codex/app-mimo-ui-optimization`; HEAD remained `c559d9e` and no file was staged, committed, or pushed.
+- Drives and Charges now use compact four-column summaries, tighter panels, Chinese-first addresses, and consistent “能耗” wording. Detail timestamps omit the year, real duration is visible, and each available metric group is placed directly beside its corresponding curve.
+- Charge filters use compact 7/30/90/all controls. Manual non-negative unit prices are stored by car/session and one shared resolver keeps list, summary, chart, and detail costs consistent; the dialog also supports returning to the recorded price.
+- No distance curve was invented because the current drive samples do not expose a trustworthy cumulative-distance series.
+- `git diff --check` and both string-resource XML parses passed. `:app:testDebugUnitTest`, `:app:assembleDebug`, and `:app:assembleDebugAndroidTest` passed with 130 JVM tests, 0 failures, 0 errors, and 0 skipped.
+- Chinese dark-mode emulator review covered the compact Dashboard, Drives, and Charges layouts without a crash.
+- `adb install -r` updated the ARM64 phone from `1.2.1` (`versionCode 8`) to `1.3.0` (`versionCode 9`). `firstInstallTime` and the metadata for `databases`, `files/datastore`, and `shared_prefs` remained unchanged.
+- Normal phone checks opened Dashboard, Drives, the first Drive Detail, Charges, the first Charge Detail, the price dialog (cancelled without saving), More, and Battery Health. PID `26852` remained alive and final fatal, ANR, Room, and SQLite markers were 0. No instrumentation test ran and no saved configuration value was read.
