@@ -161,10 +161,10 @@ sealed interface Screen {
     data class SentryHistory(val carId: Int, val exteriorColor: String? = null) : Screen
 
     @Serializable
-    data class AnnualReport(val carId: Int, val year: Int = 2025) : Screen
+    data class AnnualReport(val carId: Int, val year: Int = java.time.Year.now().value) : Screen
 
     @Serializable
-    data class AnnualReportPDF(val carId: Int, val year: Int = 2025) : Screen
+    data class AnnualReportPDF(val carId: Int, val year: Int = java.time.Year.now().value) : Screen
 
     @Serializable
     data class Export(val carId: Int) : Screen
@@ -689,7 +689,8 @@ fun NavGraph(
                 onNavigateToStats = { navController.navigate(Screen.Stats(it, route.exteriorColor)) },
                 onNavigateToBattery = { navController.navigate(Screen.Battery(it, 0f, route.exteriorColor)) },
                 onNavigateToMileage = { navController.navigate(Screen.Mileage(it, route.exteriorColor)) },
-                onNavigateToTrips = { navController.navigate(Screen.Trips(it, route.exteriorColor)) },
+                onNavigateToDrives = { navController.navigate(Screen.Drives(it, route.exteriorColor)) },
+                onNavigateToLongTrips = { navController.navigate(Screen.Trips(it, route.exteriorColor)) },
                 onNavigateToUpdates = { navController.navigate(Screen.Updates(it, route.exteriorColor)) },
                 onNavigateToSentryHistory = { navController.navigate(Screen.SentryHistory(it, route.exteriorColor)) },
                 onNavigateToSettings = { navController.navigate(Screen.Settings) },
@@ -701,8 +702,6 @@ fun NavGraph(
                 onNavigateToTimeline = { navController.navigate(Screen.Timeline(it, route.exteriorColor)) },
                 onNavigateToAnnualReport = { navController.navigate(Screen.AnnualReport(it)) },
                 onNavigateToExport = { navController.navigate(Screen.Export(it)) },
-                onNavigateToVehicle3d = { navController.navigate(Screen.Vehicle3d(it)) },
-                onNavigateToCurrentCharge = { navController.navigate(Screen.CurrentCharge(it, route.exteriorColor)) }
             )
         }
 

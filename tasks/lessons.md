@@ -69,3 +69,8 @@
 
 - Pattern: A verified standalone SDK preview can coexist with legacy page-level map wrappers that silently discard coordinates and routes, making a successful Key look broken everywhere else.
 - Prevention rule: When adding a native SDK integration, inventory every wrapper and click entry, route them through one lifecycle-safe renderer, and verify point, route, and multi-marker variants on the installed app. A location action must open the intended in-app map; it must not navigate to an unrelated list, become conditional no-op, or silently fall back to another provider.
+
+## 2026-08-01 Non-blocking user choices
+
+- Pattern: A choice that only affects presentation or the next local step should not pause the entire repair and verification flow.
+- Prevention rule: Surface such choices in an in-app or inline popup when available, keep the approved default moving, and stop only for destructive actions or materially expanded scope.

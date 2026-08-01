@@ -123,6 +123,65 @@ fun EfficiencyScreen(
                 )
             }
 
+            Text(
+                text = stringResource(R.string.efficiency_windows_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                EfficiencyWindowCard(
+                    modifier = Modifier.weight(1f),
+                    label = stringResource(R.string.efficiency_last_90_days),
+                    value = uiState.last90DaysEfficiencyWhKm
+                )
+                EfficiencyWindowCard(
+                    modifier = Modifier.weight(1f),
+                    label = stringResource(R.string.efficiency_summer),
+                    value = uiState.summerEfficiencyWhKm
+                )
+                EfficiencyWindowCard(
+                    modifier = Modifier.weight(1f),
+                    label = stringResource(R.string.efficiency_winter),
+                    value = uiState.winterEfficiencyWhKm
+                )
+            }
+
+            uiState.personalPercentile?.let { position ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, SwissOutline),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = stringResource(R.string.efficiency_personal_position),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = stringResource(R.string.efficiency_percentile_summary, position.percentile, position.sampleCount),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(R.string.efficiency_percentile_bounds, position.min, position.median, position.max),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.efficiency_public_benchmark_unavailable),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             // Efficiency by Speed Chart
             if (uiState.efficiencyBySpeed.isNotEmpty()) {
                 Card(
@@ -185,6 +244,19 @@ private fun StatCard(
             )
         }
     }
+}
+
+@Composable
+private fun EfficiencyWindowCard(
+    modifier: Modifier,
+    label: String,
+    value: Double?
+) {
+    StatCard(
+        modifier = modifier,
+        label = label,
+        value = value?.let { String.format("%.0f Wh/km", it) } ?: stringResource(R.string.no_data)
+    )
 }
 
 @Composable

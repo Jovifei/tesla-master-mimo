@@ -86,6 +86,7 @@ class SettingsDataStore @Inject constructor(
     private val lastSelectedCarIdKey = intPreferencesKey("last_selected_car_id")
     private val carImageOverridesKey = stringPreferencesKey("car_image_overrides")
     private val chargePriceOverridesKey = stringPreferencesKey("charge_price_overrides")
+    private val chargeTotalOverridesKey = stringPreferencesKey("charge_total_overrides")
     private val languageCodeKey = stringPreferencesKey("language_code")
     private val notificationPermissionAskedKey = booleanPreferencesKey("notification_permission_asked")
     private val tariffEnabledKey = booleanPreferencesKey("tariff_enabled")
@@ -145,6 +146,11 @@ class SettingsDataStore @Inject constructor(
 
     val chargePriceOverrides: Flow<Map<String, Double>> = context.dataStore.data.map { preferences ->
         parseChargePriceOverrides(preferences[chargePriceOverridesKey] ?: "{}")
+    }
+
+    /** Manual total amount (¥) overrides, keyed by car ID and charge ID. */
+    val chargeTotalOverrides: Flow<Map<String, Double>> = context.dataStore.data.map { preferences ->
+        parseChargePriceOverrides(preferences[chargeTotalOverridesKey] ?: "{}")
     }
 
     private fun parseOverridesJson(jsonString: String): Map<Int, CarImageOverride> {
@@ -303,6 +309,20 @@ class SettingsDataStore @Inject constructor(
                 overrides.remove(key)
             }
             preferences[chargePriceOverridesKey] = chargePriceOverridesToJson(overrides)
+        }
+    }
+
+    suspend fun saveChargeTotalOverride(key: String, totalAmount: Double?) {
+        context.dataStore.edit { preferences ->
+            val overrides = parseChargePriceOverrides(
+                preferences[chargeTotalOverridesKey] ?: "{}"
+            ).toMutableMap()
+            if (totalAmount != null && totalAmount.isFinite() && totalAmount >= 0.0) {
+                overrides[key] = totalAmount
+            } else {
+                overrides.remove(key)
+            }
+            preferences[chargeTotalOverridesKey] = chargePriceOverridesToJson(overrides)
         }
     }
 

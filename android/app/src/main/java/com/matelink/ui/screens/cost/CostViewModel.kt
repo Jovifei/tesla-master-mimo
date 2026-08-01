@@ -4,8 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.local.dao.AggregateDao
+import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.domain.analytics.AnalysisHistoryRepository
+import com.matelink.domain.analytics.chargeTotalOverrideKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,8 +32,9 @@ data class CostUiState(
 
 @HiltViewModel
 class CostViewModel @Inject constructor(
-    private val repository: TeslamateRepository,
-    private val aggregateDao: AggregateDao
+    private val historyRepository: AnalysisHistoryRepository,
+    private val aggregateDao: AggregateDao,
+    private val settingsDataStore: SettingsDataStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CostUiState())
@@ -51,20 +55,23 @@ class CostViewModel @Inject constructor(
                     emptySet()
                 }
 
-                // Fetch all charges (large page size to get complete history)
-                when (val result = repository.getCharges(carId, page = 1, show = 50000)) {
+                val manualTotals = settingsDataStore.chargeTotalOverrides.first()
+                when (val result = historyRepository.load(carId)) {
                     is ApiResult.Success -> {
-                        val charges = result.data
-                        val charged = charges.filter { it.cost != null && it.cost > 0 }
+                        val charges = result.data.charges
+                        val costFor: (com.matelink.data.api.models.ChargeData) -> Double? = { charge ->
+                            manualTotals[chargeTotalOverrideKey(carId, charge.chargeId)] ?: charge.cost
+                        }
+                        val charged = charges.filter { costFor(it)?.let { value -> value > 0.0 } == true }
 
                         // Monthly AC/DC cost breakdown
                         val monthly = charged
                             .groupBy { it.startDate?.take(7) ?: "Unknown" }
                             .map { (month, list) ->
                                 val ac = list.filter { it.chargeId !in dcChargeIds }
-                                    .sumOf { it.cost ?: 0.0 }
+                                    .sumOf { costFor(it) ?: 0.0 }
                                 val dc = list.filter { it.chargeId in dcChargeIds }
-                                    .sumOf { it.cost ?: 0.0 }
+                                    .sumOf { costFor(it) ?: 0.0 }
                                 MonthlyCost(month, ac, dc)
                             }
                             .sortedBy { it.month }
@@ -76,14 +83,18 @@ class CostViewModel @Inject constructor(
                             .map { (addr, list) ->
                                 LocationCost(
                                     address = addr,
-                                    totalCost = list.sumOf { it.cost ?: 0.0 },
+                                    totalCost = list.sumOf { costFor(it) ?: 0.0 },
                                     count = list.size
                                 )
                             }
                             .sortedByDescending { it.totalCost }
                             .take(5)
 
-                        val total = charges.sumOf { it.cost ?: 0.0 }
+                        val total = charges.sumOf { charge ->
+                            manualTotals[chargeTotalOverrideKey(carId, charge.chargeId)]
+                                ?: charge.cost
+                                ?: 0.0
+                        }
                         val energy = charges.sumOf { it.chargeEnergyAdded ?: 0.0 }
 
                         _uiState.value = CostUiState(

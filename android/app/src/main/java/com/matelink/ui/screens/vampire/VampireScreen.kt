@@ -130,6 +130,21 @@ fun VampireScreen(
                 )
             }
 
+            if (uiState.idlePeriods.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, SwissOutline),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Text(
+                        text = stringResource(R.string.vampire_no_data),
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             // Daily drain chart
             if (uiState.dailyDrains.isNotEmpty()) {
                 Card(

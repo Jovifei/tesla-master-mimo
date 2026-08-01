@@ -138,7 +138,7 @@ private fun SummarySection(uiState: CostUiState) {
         SummaryCard(
             modifier = Modifier.weight(1f),
             title = stringResource(R.string.cost_total),
-            value = String.format("%.2f", uiState.totalCost),
+            value = String.format("¥%.2f", uiState.totalCost),
             subtitle = stringResource(R.string.cost_charges_count, uiState.totalCharges)
         )
         SummaryCard(
@@ -147,7 +147,7 @@ private fun SummarySection(uiState: CostUiState) {
             value = String.format("%.1f kWh", uiState.totalEnergy),
             subtitle = if (uiState.totalEnergy > 0 && uiState.totalCost > 0) {
                 String.format(
-                    "%.2f/kWh",
+                    "¥%.2f/kWh",
                     uiState.totalCost / uiState.totalEnergy
                 )
             } else {
@@ -308,7 +308,7 @@ private fun LocationCard(locationCost: LocationCost) {
                 )
             }
             Text(
-                text = String.format("%.2f", locationCost.totalCost),
+                text = String.format("¥%.2f", locationCost.totalCost),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(start = 12.dp)

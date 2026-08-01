@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.domain.analytics.AnalysisHistoryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,7 +40,7 @@ data class RangeUiState(
 
 @HiltViewModel
 class RangeViewModel @Inject constructor(
-    private val repository: TeslamateRepository
+    private val historyRepository: AnalysisHistoryRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RangeUiState())
@@ -74,9 +75,9 @@ class RangeViewModel @Inject constructor(
                 _uiState.update { it.copy(isLoading = true) }
             }
 
-            when (val result = repository.getDrives(id, show = 50000)) {
+            when (val result = historyRepository.load(id)) {
                 is ApiResult.Success -> {
-                    val trips = result.data
+                    val trips = result.data.drives
                         .mapNotNull { drive -> toRangeTrip(drive) }
                         .sortedByDescending { it.startDate }
 

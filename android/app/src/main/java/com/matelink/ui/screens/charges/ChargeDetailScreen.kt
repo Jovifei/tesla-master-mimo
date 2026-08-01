@@ -140,11 +140,11 @@ fun ChargeDetailScreen(
                     units = uiState.units,
                     currencySymbol = uiState.currencySymbol,
                     isDcCharge = uiState.isDcCharge,
-                    pricePerKwh = uiState.pricePerKwh,
+                    manualTotalAmount = uiState.manualTotalAmount,
                     containingTrip = uiState.containingTrip,
                     onNavigateToTripDetail = onNavigateToTripDetail,
                     onRemoveFromTrip = viewModel::removeFromTrip,
-                    onSavePricePerKwh = viewModel::savePricePerKwh,
+                    onSaveManualTotal = viewModel::saveManualTotalAmount,
                     modifier = Modifier.padding(padding)
                 )
             }
@@ -160,11 +160,11 @@ private fun ChargeDetailContent(
     units: Units?,
     currencySymbol: String,
     isDcCharge: Boolean,
-    pricePerKwh: Double?,
+    manualTotalAmount: Double?,
     containingTrip: Pair<Long, com.matelink.domain.model.Trip>?,
     onNavigateToTripDetail: (String) -> Unit,
     onRemoveFromTrip: () -> Unit,
-    onSavePricePerKwh: (Double?) -> Unit,
+    onSaveManualTotal: (Double?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
@@ -228,7 +228,7 @@ private fun ChargeDetailContent(
             isDcCharge = isDcCharge,
             costText = costText,
             costSourceText = costSourceText,
-            pricePerKwh = pricePerKwh,
+            manualTotalAmount = manualTotalAmount,
             currencySymbol = currencySymbol,
             onEditPrice = { showPriceDialog = true }
         )
@@ -415,15 +415,15 @@ private fun ChargeDetailContent(
 
     if (showPriceDialog) {
         ChargePriceDialog(
-            currentPrice = pricePerKwh,
+            currentTotal = manualTotalAmount,
             currencySymbol = currencySymbol,
             onDismiss = { showPriceDialog = false },
-            onSave = { price ->
-                onSavePricePerKwh(price)
+            onSave = { total ->
+                onSaveManualTotal(total)
                 showPriceDialog = false
             },
             onClear = {
-                onSavePricePerKwh(null)
+                onSaveManualTotal(null)
                 showPriceDialog = false
             }
         )
@@ -436,7 +436,7 @@ private fun LocationHeaderCard(
     isDcCharge: Boolean,
     costText: String,
     costSourceText: String,
-    pricePerKwh: Double?,
+    manualTotalAmount: Double?,
     currencySymbol: String,
     onEditPrice: () -> Unit
 ) {
@@ -577,8 +577,8 @@ private fun LocationHeaderCard(
                     }
                 }
                 Text(
-                    text = pricePerKwh?.let {
-                        "${stringResource(R.string.charge_unit_price)} $currencySymbol${"%.3f".format(it)}"
+                    text = manualTotalAmount?.let {
+                        "${stringResource(R.string.charge_total_amount)} $currencySymbol${"%.2f".format(it)}"
                     } ?: stringResource(R.string.edit_charge_cost),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
@@ -612,27 +612,27 @@ private fun CompactHeaderValue(label: String, value: String, modifier: Modifier 
 
 @Composable
 private fun ChargePriceDialog(
-    currentPrice: Double?,
+    currentTotal: Double?,
     currencySymbol: String,
     onDismiss: () -> Unit,
     onSave: (Double) -> Unit,
     onClear: () -> Unit
 ) {
-    var value by remember(currentPrice) {
-        mutableStateOf(currentPrice?.let { "%.3f".format(it) } ?: "")
+    var value by remember(currentTotal) {
+        mutableStateOf(currentTotal?.let { "%.2f".format(it) } ?: "")
     }
     val parsed = value.trim().replace(',', '.').toDoubleOrNull()
     val isValid = parsed != null && parsed.isFinite() && parsed >= 0.0
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.charge_price_dialog_title)) },
+        title = { Text(stringResource(R.string.charge_total_dialog_title)) },
         text = {
             OutlinedTextField(
                 value = value,
                 onValueChange = { value = it },
-                label = { Text(stringResource(R.string.charge_unit_price)) },
-                placeholder = { Text(stringResource(R.string.charge_unit_price_hint)) },
+                label = { Text(stringResource(R.string.charge_total_amount)) },
+                placeholder = { Text(stringResource(R.string.charge_total_amount_hint)) },
                 prefix = { Text(currencySymbol) },
                 supportingText = if (value.isNotBlank() && !isValid) {
                     { Text(stringResource(R.string.charge_price_invalid)) }
@@ -652,7 +652,7 @@ private fun ChargePriceDialog(
         },
         dismissButton = {
             Row {
-                if (currentPrice != null) {
+                if (currentTotal != null) {
                     TextButton(onClick = onClear) {
                         Text(stringResource(R.string.charge_price_clear))
                     }

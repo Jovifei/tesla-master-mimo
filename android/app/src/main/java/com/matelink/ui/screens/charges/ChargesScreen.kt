@@ -88,7 +88,7 @@ import com.matelink.ui.components.parseListItemDate
 import com.matelink.ui.theme.CarColorPalette
 import com.matelink.ui.theme.CarColorPalettes
 import com.matelink.domain.analytics.ChargeCostSource
-import com.matelink.domain.analytics.resolveChargeCost
+import com.matelink.domain.analytics.resolveChargeCostFromTotal
 import com.matelink.util.toChineseDisplayAddress
 import java.time.LocalDate
 
@@ -349,7 +349,7 @@ private fun ChargesContent(
                         else -> null
                     },
                     currencySymbol = currencySymbol,
-                    pricePerKwh = priceOverrides[charge.chargeId],
+                    manualTotalAmount = priceOverrides[charge.chargeId],
                     freeSupercharging = freeSupercharging,
                     palette = palette,
                     onEditCost = {
@@ -649,7 +649,7 @@ private fun ChargeItem(
     charge: ChargeData,
     isDcCharge: Boolean?,
     currencySymbol: String,
-    pricePerKwh: Double?,
+    manualTotalAmount: Double?,
     freeSupercharging: Boolean,
     palette: CarColorPalette,
     onEditCost: (() -> Unit)? = null,
@@ -666,8 +666,8 @@ private fun ChargeItem(
     }
     val energy = presentChargeEnergy(charge.chargeEnergyAdded)
 
-    val effectiveCost = resolveChargeCost(
-        pricePerKwh = pricePerKwh,
+    val effectiveCost = resolveChargeCostFromTotal(
+        manualTotalAmount = manualTotalAmount,
         freeSupercharging = freeSupercharging,
         isDcCharge = isDcCharge == true,
         teslaMateCost = charge.cost,

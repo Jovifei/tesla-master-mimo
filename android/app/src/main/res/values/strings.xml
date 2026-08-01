@@ -161,6 +161,7 @@
     <string name="more_item_battery_health">Battery Health</string>
     <string name="more_item_mileage">Mileage</string>
     <string name="more_item_trips">Trips</string>
+    <string name="more_item_long_trips">Long-distance trips</string>
     <string name="more_item_software_updates">Software Updates</string>
     <string name="more_item_sentry_history">Sentry History</string>
     <string name="more_item_efficiency">Efficiency</string>
@@ -222,6 +223,14 @@
     <string name="efficiency_total_distance">Total Distance</string>
     <string name="efficiency_by_speed_title">Efficiency by Speed</string>
     <string name="efficiency_by_speed_subtitle">Wh/km at different speed ranges</string>
+    <string name="efficiency_windows_title">Time windows</string>
+    <string name="efficiency_last_90_days">Last 90 days</string>
+    <string name="efficiency_summer">Summer</string>
+    <string name="efficiency_winter">Winter</string>
+    <string name="efficiency_personal_position">Your consumption position</string>
+    <string name="efficiency_percentile_summary">P%1$d among %2$d valid drives (lower Wh/km is better)</string>
+    <string name="efficiency_percentile_bounds">Range %1$.0f–%2$.0f Wh/km, median %3$.0f Wh/km</string>
+    <string name="efficiency_public_benchmark_unavailable">Public same-model benchmark: no verified sample available</string>
 
     <!-- Cost Analysis -->
     <string name="cost_title">Cost Analysis</string>
@@ -263,6 +272,7 @@
     <string name="vampire_tip_updates_desc">OTA updates and periodic check-ins cause brief wake-ups. Schedule updates during periods when the car will be plugged in.</string>
     <string name="vampire_how_title">How This Works</string>
     <string name="vampire_how_desc">Vampire drain is calculated by analyzing gaps between charge sessions. When the battery level drops without any recorded drive in between, the energy loss is attributed to standby power consumption. The estimated average power draw assumes a 75 kWh battery capacity.</string>
+    <string name="vampire_no_data">No attributable standby drain was detected. At least two charge records with a battery drop and no intervening drive are required; the cause is not inferred without evidence.</string>
     <string name="widget_description">Tesla vehicle status widget</string>
 
     <!-- Duration formatting -->
@@ -553,14 +563,14 @@
     <string name="external_action_unavailable">No app is available to open this link.</string>
     <string name="charge_cost_estimated">System estimate</string>
     <string name="charge_cost_actual">Actual record</string>
-    <string name="charge_cost_manual">Manual price</string>
-    <string name="edit_charge_cost">Edit price</string>
-    <string name="charge_unit_price">Price per kWh</string>
-    <string name="charge_unit_price_hint">Enter the station price per kWh</string>
+    <string name="charge_cost_manual">Manual total</string>
+    <string name="edit_charge_cost">Modify total amount</string>
+    <string name="charge_total_amount">Session total</string>
+    <string name="charge_total_amount_hint">Enter the total amount for this charge</string>
     <string name="charge_price_invalid">Enter a valid non-negative price</string>
-    <string name="charge_price_saved">Price saved</string>
+    <string name="charge_price_saved">Total amount saved</string>
     <string name="charge_price_clear">Use recorded price</string>
-    <string name="charge_price_dialog_title">Edit charging price</string>
+    <string name="charge_total_dialog_title">Modify total amount</string>
     <string name="selected_locations_count">%1$d locations</string>
     <string name="energy_source">Energy source</string>
     <string name="energy_coverage">Energy coverage</string>

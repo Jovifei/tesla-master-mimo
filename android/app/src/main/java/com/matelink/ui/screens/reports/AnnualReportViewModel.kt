@@ -19,7 +19,7 @@ import javax.inject.Inject
 
 data class AnnualReportUiState(
     val isLoading: Boolean = true,
-    val year: Int = 2025,
+    val year: Int = java.time.Year.now().value,
     val carStats: CarStats? = null,
     val monthlyDrives: List<MonthlyDriveAggregation> = emptyList(),
     val monthlyCharges: List<MonthlyChargeAggregation> = emptyList(),
@@ -49,7 +49,7 @@ class AnnualReportViewModel @Inject constructor(
     private fun loadYears() {
         viewModelScope.launch {
             try {
-                val years = statsRepository.getAvailableYears(carId)
+                val years = availableReportYears(java.time.Year.now().value, statsRepository.getAvailableYears(carId))
                 _uiState.value = _uiState.value.copy(availableYears = years)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e

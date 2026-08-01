@@ -11,8 +11,8 @@ import com.matelink.data.model.Currency
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.domain.LocalDayBoundaries
-import com.matelink.domain.analytics.chargePriceOverrideKey
-import com.matelink.domain.analytics.resolveChargeCost
+import com.matelink.domain.analytics.chargeTotalOverrideKey
+import com.matelink.domain.analytics.resolveChargeCostFromTotal
 import android.content.Context
 import com.matelink.R
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -177,14 +177,14 @@ class ChargesViewModel @Inject constructor(
 
     private fun observeChargePriceOverrides() {
         viewModelScope.launch {
-            settingsDataStore.chargePriceOverrides.collect { overrides ->
+        settingsDataStore.chargeTotalOverrides.collect { overrides ->
                 allPriceOverrides = overrides
                 val id = carId
                 _uiState.update { state ->
                     state.copy(
                         priceOverrides = if (id == null) emptyMap() else {
                             allCharges.mapNotNull { charge ->
-                                overrides[chargePriceOverrideKey(id, charge.chargeId)]
+                                overrides[chargeTotalOverrideKey(id, charge.chargeId)]
                                     ?.let { charge.chargeId to it }
                             }.toMap()
                         }
@@ -215,7 +215,7 @@ class ChargesViewModel @Inject constructor(
             _uiState.update { state ->
                 state.copy(
                     priceOverrides = allCharges.mapNotNull { charge ->
-                        allPriceOverrides[chargePriceOverrideKey(id, charge.chargeId)]
+                        allPriceOverrides[chargeTotalOverrideKey(id, charge.chargeId)]
                             ?.let { charge.chargeId to it }
                     }.toMap()
                 )
@@ -375,7 +375,7 @@ class ChargesViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     allCharges = result.data
                     val priceOverrides = result.data.mapNotNull { charge ->
-                        allPriceOverrides[chargePriceOverrideKey(id, charge.chargeId)]
+                        allPriceOverrides[chargeTotalOverrideKey(id, charge.chargeId)]
                             ?.let { charge.chargeId to it }
                     }.toMap()
                     val granularity = determineGranularity(startDate, endDate)
@@ -674,8 +674,8 @@ class ChargesViewModel @Inject constructor(
 
     private fun effectiveCost(charge: ChargeData, state: ChargesUiState): Double? {
         val isDcCharge = charge.chargeId in state.dcChargeIds
-        return resolveChargeCost(
-            pricePerKwh = state.priceOverrides[charge.chargeId],
+        return resolveChargeCostFromTotal(
+            manualTotalAmount = state.priceOverrides[charge.chargeId],
             freeSupercharging = state.freeSupercharging,
             isDcCharge = isDcCharge,
             teslaMateCost = charge.cost,

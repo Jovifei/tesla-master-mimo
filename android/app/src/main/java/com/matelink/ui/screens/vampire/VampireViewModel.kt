@@ -7,6 +7,7 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.domain.analytics.AnalysisHistoryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,7 +54,7 @@ data class DailyDrain(
 
 @HiltViewModel
 class VampireViewModel @Inject constructor(
-    private val repository: TeslamateRepository,
+    private val historyRepository: AnalysisHistoryRepository,
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
@@ -73,26 +74,19 @@ class VampireViewModel @Inject constructor(
             try {
                 val carId = settingsRepository.currentCarId.first()
 
-                val chargesResult = repository.getCharges(carId, show = 50000)
-                val drivesResult = repository.getDrives(carId, show = 50000)
+                val historyResult = historyRepository.load(carId)
 
-                if (chargesResult is ApiResult.Error) {
+                if (historyResult is ApiResult.Error) {
                     _uiState.value = VampireUiState(
                         isLoading = false,
-                        error = chargesResult.message
-                    )
-                    return@launch
-                }
-                if (drivesResult is ApiResult.Error) {
-                    _uiState.value = VampireUiState(
-                        isLoading = false,
-                        error = drivesResult.message
+                        error = historyResult.message
                     )
                     return@launch
                 }
 
-                val charges = (chargesResult as ApiResult.Success).data
-                val drives = (drivesResult as ApiResult.Success).data
+                val history = (historyResult as ApiResult.Success).data
+                val charges = history.charges
+                val drives = history.drives
 
                 val periods = computeIdleDrainPeriods(charges, drives)
 

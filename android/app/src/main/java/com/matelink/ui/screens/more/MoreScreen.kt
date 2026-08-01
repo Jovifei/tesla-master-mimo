@@ -75,7 +75,8 @@ fun MoreScreen(
     onNavigateToStats: (carId: Int) -> Unit,
     onNavigateToBattery: (carId: Int) -> Unit,
     onNavigateToMileage: (carId: Int) -> Unit,
-    onNavigateToTrips: (carId: Int) -> Unit,
+    onNavigateToDrives: (carId: Int) -> Unit,
+    onNavigateToLongTrips: (carId: Int) -> Unit = {},
     onNavigateToUpdates: (carId: Int) -> Unit,
     onNavigateToSentryHistory: (carId: Int) -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -86,9 +87,7 @@ fun MoreScreen(
     onNavigateToVampire: (carId: Int) -> Unit = {},
     onNavigateToTimeline: (carId: Int) -> Unit = {},
     onNavigateToAnnualReport: (carId: Int) -> Unit = {},
-    onNavigateToExport: (carId: Int) -> Unit = {},
-    onNavigateToVehicle3d: (carId: Int) -> Unit = {},
-    onNavigateToCurrentCharge: (carId: Int) -> Unit = {}
+    onNavigateToExport: (carId: Int) -> Unit = {}
 ) {
     val palette = swissPalette()
     Scaffold(
@@ -160,7 +159,10 @@ fun MoreScreen(
                             onNavigateToMileage(carId)
                         },
                         MoreAction(Icons.Default.History, stringResource(R.string.more_item_trips)) {
-                            onNavigateToTrips(carId)
+                            onNavigateToDrives(carId)
+                        },
+                        MoreAction(Icons.Default.Route, stringResource(R.string.more_item_long_trips)) {
+                            onNavigateToLongTrips(carId)
                         },
                         MoreAction(Icons.Default.Analytics, stringResource(R.string.more_item_efficiency)) {
                             onNavigateToEfficiency(carId)
@@ -191,12 +193,6 @@ fun MoreScreen(
                         MoreAction(Icons.Default.Update, stringResource(R.string.more_item_export_data)) {
                             onNavigateToExport(carId)
                         },
-                        MoreAction(Icons.Default.VerifiedUser, stringResource(R.string.more_item_vehicle_3d_preview)) {
-                            onNavigateToVehicle3d(carId)
-                        },
-                        MoreAction(Icons.Default.Bolt, stringResource(R.string.current_charge)) {
-                            onNavigateToCurrentCharge(carId)
-                        }
                     )
                 )
             }
@@ -368,7 +364,8 @@ private fun MoreScreenPreview() {
             onNavigateToStats = {},
             onNavigateToBattery = {},
             onNavigateToMileage = {},
-            onNavigateToTrips = {},
+            onNavigateToDrives = {},
+            onNavigateToLongTrips = {},
             onNavigateToUpdates = {},
             onNavigateToSentryHistory = {},
             onNavigateToSettings = {},

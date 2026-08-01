@@ -93,7 +93,7 @@ data class DrivesUiState(
     val summary: DrivesSummary = DrivesSummary(),
     val units: Units? = null,
     val distanceFilter: DriveDistanceFilter = DriveDistanceFilter.ALL,
-    val dateFilter: DriveDateFilter = DriveDateFilter.LAST_7_DAYS,
+    val dateFilter: DriveDateFilter = DriveDateFilter.ALL_TIME,
     val customStartDate: LocalDate? = null,
     val customEndDate: LocalDate? = null,
     val scrollPosition: Int = 0,
@@ -146,7 +146,7 @@ class DrivesViewModel @Inject constructor(
         private fun restoreInitialState(handle: SavedStateHandle): DrivesUiState {
             val dateFilter = handle.get<String>(KEY_DATE_FILTER)
                 ?.let { runCatching { DriveDateFilter.valueOf(it) }.getOrNull() }
-                ?: DriveDateFilter.LAST_7_DAYS
+                ?: DriveDateFilter.ALL_TIME
             val distanceFilter = handle.get<String>(KEY_DISTANCE_FILTER)
                 ?.let { runCatching { DriveDistanceFilter.valueOf(it) }.getOrNull() }
                 ?: DriveDistanceFilter.ALL

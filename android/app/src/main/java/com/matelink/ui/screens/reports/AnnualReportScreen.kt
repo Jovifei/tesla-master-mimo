@@ -30,7 +30,7 @@ import com.matelink.domain.model.CarStats
 @Composable
 fun AnnualReportScreen(
     carId: Int = 1,
-    year: Int = 2025,
+    year: Int = java.time.Year.now().value,
     onBack: () -> Unit = {},
     onNavigateToPDF: () -> Unit = {},
     viewModel: AnnualReportViewModel = hiltViewModel()
@@ -64,15 +64,7 @@ fun AnnualReportScreen(
         }
 
         val stats = uiState.carStats
-        if (stats == null) {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(stringResource(R.string.annual_report_no_data, uiState.year))
-            }
-            return@Scaffold
-        }
+        val hasData = stats?.quickStats?.let { it.totalDrives > 0 || it.totalCharges > 0 } == true
 
         Column(
             modifier = Modifier
@@ -89,8 +81,19 @@ fun AnnualReportScreen(
                 onYearSelected = viewModel::selectYear
             )
 
-            // T-101: Annual Summary
-            AnnualSummarySection(stats)
+            if (!hasData) {
+                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = stringResource(R.string.annual_report_no_data, uiState.year),
+                        modifier = Modifier.padding(20.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                val availableStats = requireNotNull(stats)
+
+                // T-101: Annual Summary
+                AnnualSummarySection(availableStats)
 
             // T-102: Monthly Trends
             MonthlyTrendsSection(
@@ -98,16 +101,17 @@ fun AnnualReportScreen(
                 monthlyCharges = uiState.monthlyCharges
             )
 
-            // T-103: Driving Habits
-            DrivingHabitsSection(stats)
+                // T-103: Driving Habits
+                DrivingHabitsSection(availableStats)
 
-            // T-104: Generate PDF
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = onNavigateToPDF,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.annual_report_generate_pdf))
+                // T-104: Generate PDF
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = onNavigateToPDF,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.annual_report_generate_pdf))
+                }
             }
 
             Spacer(modifier = Modifier.height(32.dp))

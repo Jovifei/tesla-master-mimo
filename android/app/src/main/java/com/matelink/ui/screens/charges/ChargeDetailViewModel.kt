@@ -14,8 +14,8 @@ import com.matelink.domain.TripRepository
 import com.matelink.domain.analytics.ChargeCostSource
 import com.matelink.domain.analytics.EffectiveChargeCostInput
 import com.matelink.domain.analytics.EffectiveChargeCostResolver
-import com.matelink.domain.analytics.chargePriceOverrideKey
-import com.matelink.domain.analytics.manualChargeAmount
+import com.matelink.domain.analytics.chargeTotalOverrideKey
+import com.matelink.domain.analytics.validManualChargeTotal
 import com.matelink.domain.model.Trip
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,7 +38,7 @@ data class ChargeDetailUiState(
     ),
     val currencySymbol: String = "€",
     val isDcCharge: Boolean = false,
-    val pricePerKwh: Double? = null,
+    val manualTotalAmount: Double? = null,
     val containingTrip: Pair<Long, Trip>? = null
 )
 
@@ -169,11 +169,11 @@ class ChargeDetailViewModel @Inject constructor(
                         is ApiResult.Success -> carResult.data.carSettings?.freeSupercharging == true
                         is ApiResult.Error -> false
                     }
-                    val pricePerKwh = settingsDataStore.chargePriceOverrides.first()[
-                        chargePriceOverrideKey(carId, chargeId)
+                    val manualTotalAmount = settingsDataStore.chargeTotalOverrides.first()[
+                        chargeTotalOverrideKey(carId, chargeId)
                     ]
                     val costPresentation = presentChargeDetailCost(
-                        manualAmount = manualChargeAmount(pricePerKwh, detail.chargeEnergyAdded),
+                        manualAmount = validManualChargeTotal(manualTotalAmount),
                         manuallyFree = isExplicitlyFree && isDcCharge,
                         teslaMateCost = detail.cost,
                         energyKwh = detail.chargeEnergyAdded
@@ -186,7 +186,7 @@ class ChargeDetailViewModel @Inject constructor(
                             stats = stats,
                             costPresentation = costPresentation,
                             isDcCharge = isDcCharge,
-                            pricePerKwh = pricePerKwh,
+                            manualTotalAmount = manualTotalAmount,
                             error = null
                         )
                     }
@@ -207,23 +207,24 @@ class ChargeDetailViewModel @Inject constructor(
         _uiState.update { it.copy(error = null) }
     }
 
-    fun savePricePerKwh(pricePerKwh: Double?) {
+    fun saveManualTotalAmount(totalAmount: Double?) {
         val currentCarId = carId ?: return
         val currentChargeId = chargeId ?: return
         val detail = _uiState.value.chargeDetail ?: return
-        if (pricePerKwh != null && (!pricePerKwh.isFinite() || pricePerKwh < 0.0)) return
+        val validTotal = validManualChargeTotal(totalAmount)
+        if (totalAmount != null && validTotal == null) return
 
         viewModelScope.launch {
-            settingsDataStore.saveChargePriceOverride(
-                chargePriceOverrideKey(currentCarId, currentChargeId),
-                pricePerKwh
+            settingsDataStore.saveChargeTotalOverride(
+                chargeTotalOverrideKey(currentCarId, currentChargeId),
+                validTotal
             )
             val state = _uiState.value
             _uiState.update {
                 it.copy(
-                    pricePerKwh = pricePerKwh,
+                    manualTotalAmount = validTotal,
                     costPresentation = presentChargeDetailCost(
-                        manualAmount = manualChargeAmount(pricePerKwh, detail.chargeEnergyAdded),
+                        manualAmount = validTotal,
                         manuallyFree = state.costPresentation.state == ChargeDetailCostState.FREE,
                         teslaMateCost = detail.cost,
                         energyKwh = detail.chargeEnergyAdded

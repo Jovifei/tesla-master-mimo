@@ -160,6 +160,7 @@
     <string name="more_item_battery_health">电池健康</string>
     <string name="more_item_mileage">里程统计</string>
     <string name="more_item_trips">行程记录</string>
+    <string name="more_item_long_trips">长途旅程</string>
     <string name="more_item_software_updates">软件更新</string>
     <string name="more_item_sentry_history">哨兵历史</string>
     <string name="more_item_efficiency">能耗</string>
@@ -221,6 +222,14 @@
     <string name="efficiency_total_distance">总里程</string>
     <string name="efficiency_by_speed_title">分速能耗</string>
     <string name="efficiency_by_speed_subtitle">不同速度区间的能耗 (Wh/km)</string>
+    <string name="efficiency_windows_title">时间区间</string>
+    <string name="efficiency_last_90_days">近 90 天</string>
+    <string name="efficiency_summer">夏季</string>
+    <string name="efficiency_winter">冬季</string>
+    <string name="efficiency_personal_position">我的能耗位置</string>
+    <string name="efficiency_percentile_summary">有效行程 %2$d 段中位于 P%1$d（Wh/km 越低越好）</string>
+    <string name="efficiency_percentile_bounds">区间 %1$.0f–%2$.0f Wh/km，中位数 %3$.0f Wh/km</string>
+    <string name="efficiency_public_benchmark_unavailable">同车型公开样本：暂无已验证数据</string>
 
     <!-- Cost Analysis -->
     <string name="cost_title">费用分析</string>
@@ -262,6 +271,7 @@
     <string name="vampire_tip_updates_desc">OTA 更新和定期检查会导致短暂唤醒。建议在插枪充电期间安排更新。</string>
     <string name="vampire_how_title">工作原理</string>
     <string name="vampire_how_desc">待机能耗通过分析充电间隔来计算。当电池电量下降但期间无行驶记录时，能量损失归因于待机功耗。估算的平均功率基于 75 kWh 电池容量。</string>
+    <string name="vampire_no_data">暂未发现可归因的待机能耗。至少需要两条充电记录、期间电量下降且没有行程；没有证据时不推断具体原因。</string>
     <string name="widget_description">Tesla 车辆状态小组件</string>
 
     <!-- Duration formatting -->
@@ -550,14 +560,14 @@
     <string name="external_action_unavailable">没有可用应用打开此链接。</string>
     <string name="charge_cost_estimated">系统估算</string>
     <string name="charge_cost_actual">实际记录</string>
-    <string name="charge_cost_manual">人工单价</string>
-    <string name="edit_charge_cost">修改单价</string>
-    <string name="charge_unit_price">每度单价</string>
-    <string name="charge_unit_price_hint">输入该充电站每度电价格</string>
+    <string name="charge_cost_manual">人工总价</string>
+    <string name="edit_charge_cost">修改总价</string>
+    <string name="charge_total_amount">本次充电总价</string>
+    <string name="charge_total_amount_hint">输入本次充电的人民币总价</string>
     <string name="charge_price_invalid">请输入有效的非负价格</string>
-    <string name="charge_price_saved">单价已保存</string>
+    <string name="charge_price_saved">总价已保存</string>
     <string name="charge_price_clear">使用原始记录</string>
-    <string name="charge_price_dialog_title">修改充电单价</string>
+    <string name="charge_total_dialog_title">修改充电总价</string>
     <string name="selected_locations_count">已选 %1$d 个地点</string>
     <string name="energy_source">能耗来源</string>
     <string name="energy_coverage">能耗覆盖率</string>

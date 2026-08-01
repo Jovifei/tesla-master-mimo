@@ -468,3 +468,19 @@
 - Installed version `1.3.2` (`versionCode 11`) with `adb install -r`; first-install timestamp remained unchanged.
 - Physical-device smoke test kept Dashboard, Drives, Charges, and More alive/foreground; critical crash/auth/database log markers: 0.
 - No instrumentation, app-data clear, uninstall, commit, or push was performed.
+
+## P1.12 Complete-history analytics and honest report delivery
+
+- [x] Define the unified all-history analysis source, separate long-distance grouping, manual per-session total charge amount, and empty-data semantics.
+- [x] Add focused tests for history deduplication/windows, manual totals, percentile direction, standby attribution, drive routing, and annual current/previous years.
+- [x] Switch Efficiency, Cost, Range, and Vampire view models to the unified history source; expose compact window/percentile/currency/no-data UI.
+- [x] Keep More → 行程历史 on all individual drives and remove the 3D vehicle/current-charge report entries.
+- [x] Run full JVM/lint/build gates, bump the app version, install with `adb install -r`, and complete normal physical-device navigation smoke tests.
+
+### Review
+
+- Design and implementation plan committed before code changes; no source data, `.env`, API Key, or vehicle identifier was read or logged.
+- 147 JVM tests passed with 0 failures/errors/skips; `assembleDebug` and `assembleDebugAndroidTest` passed.
+- Lint remains blocked by the repository's existing 842 missing-translation errors and 254 warnings; no new touched-file format or crash error was found in the report.
+- Version advanced to `1.4.0` (`versionCode 12`); `adb install -r` preserved `firstInstallTime` and the configuration directory metadata.
+- Normal device checks covered More analysis/report routes, annual 2025/2026 switching, Battery capacity, Dashboard AMap preview, Drives, and Charges. PID remained alive and critical crash/ANR/Room/SQLite/format/AMap markers were 0.
