@@ -82,7 +82,7 @@
     <string name="climate_off">空调关闭</string>
     <string name="sentry_armed">哨兵已开启</string>
     <string name="sentry_off">哨兵关闭</string>
-    <string name="high_soc_warning">电量过高 - 日常使用建议充至 80-90%</string>
+    <string name="high_soc_warning" formatted="false">电量过高 - 日常使用建议充至 80-90%</string>
     <string name="tire_pressure">胎压</string>
     <string name="battery_trend">7天电量趋势</string>
     <string name="km_range">%d km 续航</string>
@@ -440,8 +440,8 @@
 
     <!-- TPMS -->
     <string name="tpms_notification_title">胎压警告</string>
-    <string name="tpms_notification_body">请检查胎压</string>
-    <string name="tpms_notification_cleared">胎压正常</string>
+    <string name="tpms_notification_body">%1$s：请检查胎压（%2$s）</string>
+    <string name="tpms_notification_cleared">%1$s：胎压正常</string>
     <string name="tire_fl_full">左前轮</string>
     <string name="tire_fr_full">右前轮</string>
     <string name="tire_rl_full">左后轮</string>
@@ -452,13 +452,13 @@
     <!-- Charging notifications -->
     <string name="charging_notification_title">充电</string>
     <string name="charging_notification_loading">加载充电数据中...</string>
-    <string name="charging_notification_dc_finished_title">直流充电完成</string>
+    <string name="charging_notification_dc_finished_title">%1$s：直流充电完成</string>
     <string name="charging_notification_dc_finished_content">你的 Tesla 已完成直流充电。</string>
     <string name="charging_channel_name">充电</string>
     <string name="charging_channel_description">充电状态通知</string>
 
     <!-- Sentry notifications -->
-    <string name="sentry_notification_title">哨兵模式警报</string>
+    <string name="sentry_notification_title">%1$s：哨兵模式警报</string>
     <string name="sentry_action_open_tesla">打开 Tesla</string>
     <string name="sentry_channel_name">哨兵模式</string>
     <string name="sentry_channel_description">哨兵模式警报通知</string>

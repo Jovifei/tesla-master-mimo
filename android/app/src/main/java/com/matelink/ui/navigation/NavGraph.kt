@@ -354,8 +354,8 @@ fun NavGraph(
                 onNavigateToCurrentCharge = { carId, exteriorColor ->
                     navController.navigate(Screen.CurrentCharge(carId, exteriorColor))
                 },
-                onNavigateToWhereWasI = { carId, timestamp, exteriorColor ->
-                    navController.navigate(Screen.WhereWasI(carId, timestamp, exteriorColor))
+                onNavigateToAmapPreview = {
+                    navController.navigate(Screen.AmapPreview)
                 },
                 onNavigateToSentryHistory = { carId, exteriorColor ->
                     navController.navigate(Screen.SentryHistory(carId, exteriorColor))

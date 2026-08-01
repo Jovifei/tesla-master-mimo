@@ -82,7 +82,7 @@
     <string name="climate_off">Climate OFF</string>
     <string name="sentry_armed">Sentry ARMED</string>
     <string name="sentry_off">Sentry OFF</string>
-    <string name="high_soc_warning">High charge level - consider reducing to 80-90% for daily use</string>
+    <string name="high_soc_warning" formatted="false">High charge level - consider reducing to 80-90% for daily use</string>
     <string name="tire_pressure">Tire Pressure</string>
     <string name="battery_trend">7-Day Battery Trend</string>
     <string name="battery_trend_estimated_note">Estimated demo trend based on the current battery level until history data is connected.</string>
@@ -441,8 +441,8 @@
 
     <!-- TPMS -->
     <string name="tpms_notification_title">Tire Pressure Warning</string>
-    <string name="tpms_notification_body">Check tire pressure</string>
-    <string name="tpms_notification_cleared">Tire pressure OK</string>
+    <string name="tpms_notification_body">%1$s: Check tire pressure (%2$s)</string>
+    <string name="tpms_notification_cleared">%1$s: Tire pressure OK</string>
     <string name="tire_fl_full">Front Left</string>
     <string name="tire_fr_full">Front Right</string>
     <string name="tire_rl_full">Rear Left</string>
@@ -453,13 +453,13 @@
     <!-- Charging notifications -->
     <string name="charging_notification_title">Charging</string>
     <string name="charging_notification_loading">Loading charging data...</string>
-    <string name="charging_notification_dc_finished_title">DC Charging Complete</string>
+    <string name="charging_notification_dc_finished_title">%1$s: DC Charging Complete</string>
     <string name="charging_notification_dc_finished_content">Your Tesla has finished DC charging.</string>
     <string name="charging_channel_name">Charging</string>
     <string name="charging_channel_description">Charging status notifications</string>
 
     <!-- Sentry notifications -->
-    <string name="sentry_notification_title">Sentry Mode Alert</string>
+    <string name="sentry_notification_title">%1$s: Sentry Mode Alert</string>
     <string name="sentry_action_open_tesla">Open Tesla</string>
     <string name="sentry_channel_name">Sentry Mode</string>
     <string name="sentry_channel_description">Sentry mode alert notifications</string>

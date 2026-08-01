@@ -23,7 +23,7 @@
     <string name="climate_off">Clim OFF</string>
     <string name="sentry_armed">Sentinelle ACTIVE</string>
     <string name="sentry_off">Sentinelle OFF</string>
-    <string name="high_soc_warning">Niveau de charge élevé - limiter à 80-90% pour un usage quotidien recommandé</string>
+    <string name="high_soc_warning" formatted="false">Niveau de charge élevé - limiter à 80-90% pour un usage quotidien recommandé</string>
     <string name="tire_pressure">Pression des pneus</string>
     <string name="battery_trend">Tendance batterie 7 jours</string>
     <string name="km_range">%d km d\'autonomie</string>

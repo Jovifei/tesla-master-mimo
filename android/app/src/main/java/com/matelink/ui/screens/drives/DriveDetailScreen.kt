@@ -1,8 +1,5 @@
 package com.matelink.ui.screens.drives
 
-import android.content.Intent
-import android.net.Uri
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -77,7 +74,6 @@ import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.RouteIndicator
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.TelemetrySectionHeader
-import com.matelink.ui.components.launchExternalIntentSafely
 import com.matelink.ui.screens.trips.displayName
 import com.matelink.ui.theme.CarColorPalettes
 import com.matelink.util.formatDurationCompact
@@ -452,34 +448,14 @@ private fun DetailTimeValue(
 
 @Composable
 private fun DriveMapCard(positions: List<DrivePosition>, routeColor: Color) {
-    val context = LocalContext.current
     val startLabel = stringResource(R.string.start)
     val endLabel = stringResource(R.string.end)
     val validPositions = positions.filter { it.latitude != null && it.longitude != null }
 
     if (validPositions.isEmpty()) return
 
-    val startPoint = validPositions.firstOrNull()
-    val endPoint = validPositions.lastOrNull()
-
-    fun openInMaps() {
-        if (startPoint != null && endPoint != null) {
-            // Open Google Maps with directions from start to end
-            val uri = Uri.parse(
-                "https://www.google.com/maps/dir/?api=1" +
-                        "&origin=${startPoint.latitude},${startPoint.longitude}" +
-                        "&destination=${endPoint.latitude},${endPoint.longitude}" +
-                        "&travelmode=driving"
-            )
-            val intent = Intent(Intent.ACTION_VIEW, uri)
-            context.launchExternalIntentSafely(intent)
-        }
-    }
-
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { openInMaps() },
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         )
@@ -510,7 +486,8 @@ private fun DriveMapCard(positions: List<DrivePosition>, routeColor: Color) {
                     modifier = Modifier.fillMaxSize(),
                     routePoints = routePoints,
                     startTitle = startLabel,
-                    endTitle = endLabel
+                    endTitle = endLabel,
+                    routeColor = routeColor
                 )
             }
         }

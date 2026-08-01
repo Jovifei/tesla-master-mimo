@@ -118,7 +118,7 @@ class ChargingMonitorService : Service() {
         chargingNotificationManager.ensureChannelExists()
 
         val notification = NotificationCompat.Builder(this, ChargingNotificationManager.CHANNEL_ID)
-            .setContentTitle(getString(R.string.charging_notification_title, ""))
+            .setContentTitle(getString(R.string.charging_notification_title))
             .setContentText(getString(R.string.charging_notification_loading))
             .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)

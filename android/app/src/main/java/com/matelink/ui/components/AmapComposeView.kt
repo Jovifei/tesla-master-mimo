@@ -1,23 +1,13 @@
 package com.matelink.ui.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import com.matelink.R
+import com.matelink.domain.map.AmapConfiguration
+import com.matelink.ui.screens.map.AmapMapMarker
+import com.matelink.ui.screens.map.AmapNativeMapView
 
-/**
- * Placeholder for AMap (高德地图) MapView.
- * Amap SDK requires manual AAR download from https://lbs.amap.com.
- * This placeholder is shown when the SDK is not available.
- */
 @Composable
 fun AmapComposeView(
     modifier: Modifier = Modifier,
@@ -27,17 +17,29 @@ fun AmapComposeView(
     markers: List<Pair<Double, Double>> = emptyList(),
     polylinePoints: List<Pair<Double, Double>> = emptyList()
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color(0xFFE8F5E9)),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = stringResource(R.string.amap_legacy_preview_unavailable),
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-            color = Color.Gray
+    val center = (latitude to longitude)
+        .takeIf { AmapConfiguration.isUsableCoordinate(it.first, it.second) }
+    val validMarkers = markers
+        .filter { AmapConfiguration.isUsableCoordinate(it.first, it.second) }
+        .map { AmapMapMarker(it.first, it.second) }
+    val validPolyline = polylinePoints
+        .filter { AmapConfiguration.isUsableCoordinate(it.first, it.second) }
+    if (center == null && validMarkers.isEmpty() && validPolyline.isEmpty()) {
+        AmapStatusMessage(R.string.amap_no_position, modifier)
+        return
+    }
+
+    AmapMapGate(modifier = modifier) { apiKey, onLoading, onLoaded, onFailure ->
+        AmapNativeMapView(
+            apiKey = apiKey,
+            modifier = Modifier.fillMaxSize(),
+            center = center,
+            markers = validMarkers,
+            polylinePoints = validPolyline,
+            zoom = zoom,
+            onLoading = onLoading,
+            onLoaded = onLoaded,
+            onFailure = onFailure
         )
     }
 }

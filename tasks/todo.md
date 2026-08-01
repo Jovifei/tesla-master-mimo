@@ -424,3 +424,47 @@
 - Chinese dark-mode emulator review covered the compact Dashboard, Drives, and Charges layouts without a crash.
 - `adb install -r` updated the ARM64 phone from `1.2.1` (`versionCode 8`) to `1.3.0` (`versionCode 9`). `firstInstallTime` and the metadata for `databases`, `files/datastore`, and `shared_prefs` remained unchanged.
 - Normal phone checks opened Dashboard, Drives, the first Drive Detail, Charges, the first Charge Detail, the price dialog (cancelled without saving), More, and Battery Health. PID `26852` remained alive and final fatal, ANR, Room, and SQLite markers were 0. No instrumentation test ran and no saved configuration value was read.
+
+# P1.10 Embedded AMap Navigation Repair - 2026-08-01
+
+## Root-cause hypothesis
+
+- The saved Key is verified and the standalone preview loads, but Dashboard, Drive Detail, Charge Detail, Where Was I, and Regions still call legacy placeholder composables that discard coordinates and route points.
+- Dashboard location navigation is additionally miswired to Drives, and its map card becomes a no-op when `stateSince` is absent.
+
+## Plan
+
+- [x] Reproduce the Dashboard and Drive Detail placeholders on the physical phone without reading the saved Key.
+- [x] Verify the settings UI reports `地图已加载` and trace the coordinate/click data flow.
+- [x] Add a failing contract test proving legacy wrappers do not delegate to the native AMap renderer.
+- [x] Replace point, route, and multi-marker placeholders with one lifecycle-safe native AMap renderer and configuration gate.
+- [x] Route the Dashboard location entry to the actual AMap preview and keep embedded maps interactive.
+- [x] Run targeted tests, the full JVM suite, Debug APK builds, and static privacy checks.
+- [x] Advance the patch version, install with `adb install -r`, and verify Dashboard, Drive Detail, Charge Detail, and configuration preservation on the phone.
+
+## Review
+
+- Root cause: `AmapPointView`, `AmapRouteView`, and `AmapComposeView` were legacy placeholders that ignored every coordinate and route argument. Dashboard location also navigated to Drives, its map card could become a `stateSince`-dependent no-op, and detail map cards redirected to external providers.
+- The phone settings UI reported `地图已加载`, proving the saved Key and privacy/verification state were already valid; no Key value was read or logged.
+- Added one native, lifecycle-safe AMap renderer for point, route/polyline, and multi-marker views, with a shared setup-state gate and redacted failure logging. Dashboard location now opens the real in-app AMap preview.
+- The new contract test first failed 2/2 against the placeholder implementation, then passed after the fix. The complete suite reports 132 JVM tests with 0 failures, 0 errors, and 0 skipped; `assembleDebug` and `assembleDebugAndroidTest` passed.
+- Version advanced from `1.3.0` (`versionCode 9`) to `1.3.1` (`versionCode 10`). `adb install -r` preserved `firstInstallTime` and the metadata for `databases`, `files/datastore`, and `shared_prefs`.
+- Physical-device checks created native AMap views on Dashboard, Drive Detail, and Charge Detail; Dashboard Location opened `高德地图预览` with `地图已加载`. Legacy placeholder, map-state error, SDK auth, fatal, ANR, Room, and SQLite markers were all 0. No instrumentation, uninstall, data clear, saved-Key read, commit, or push occurred.
+## P1.11 Runtime Reliability Regression Audit
+
+- [x] Add failing contracts for notification formatting and AMap verification back handling.
+- [x] Align notification resource placeholders with their callers.
+- [x] Replace the deprecated verification Activity back override.
+- [x] Run targeted tests, full JVM/build verification, and focused lint checks.
+- [x] Install the versioned APK with `adb install -r` and repeat safe device smoke tests.
+
+### Review
+
+- Red contracts reproduced all three defects before the fix and passed afterward.
+- Notification titles now preserve vehicle/tire context; literal percentage copy is explicitly non-formatting.
+- AMap Key verification uses `OnBackPressedDispatcher` and still returns a canceled result without exposing the candidate Key.
+- `:app:testDebugUnitTest`, `:app:assembleDebug`, and `:app:assembleDebugAndroidTest` passed; 135 JVM tests, 0 failures/errors.
+- Focused Lint findings for `MissingSuperCall`, `StringFormatInvalid`, and `StringFormatCount`: 0.
+- Installed version `1.3.2` (`versionCode 11`) with `adb install -r`; first-install timestamp remained unchanged.
+- Physical-device smoke test kept Dashboard, Drives, Charges, and More alive/foreground; critical crash/auth/database log markers: 0.
+- No instrumentation, app-data clear, uninstall, commit, or push was performed.

@@ -23,7 +23,7 @@
     <string name="climate_off">エアコン OFF</string>
     <string name="sentry_armed">セントリーモード ON</string>
     <string name="sentry_off">セントリーモード OFF</string>
-    <string name="high_soc_warning">充電レベルが高いです - 日常使用では80-90%に抑えることをお勧めします</string>
+    <string name="high_soc_warning" formatted="false">充電レベルが高いです - 日常使用では80-90%に抑えることをお勧めします</string>
     <string name="tire_pressure">タイヤ空気圧</string>
     <string name="battery_trend">7日間のバッテリー推移</string>
     <string name="km_range">%d km 航続距離</string>

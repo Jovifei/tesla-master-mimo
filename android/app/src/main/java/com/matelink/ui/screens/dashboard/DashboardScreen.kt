@@ -48,7 +48,7 @@ fun DashboardScreen(
     onNavigateToUpdates: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToStats: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToCurrentCharge: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
-    onNavigateToWhereWasI: (carId: Int, timestamp: String, exteriorColor: String?) -> Unit = { _, _, _ -> },
+    onNavigateToAmapPreview: () -> Unit = {},
     onNavigateToSentryHistory: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToTrips: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     viewModel: DashboardViewModel = hiltViewModel()
@@ -281,7 +281,7 @@ fun DashboardScreen(
                 } else "--",
                 modifier = Modifier.weight(1f),
                 icon = Icons.Default.LocationOn,
-                onClick = { onNavigateToDrives(carId, exteriorColor) }
+                onClick = onNavigateToAmapPreview
             )
         }
 
@@ -289,14 +289,7 @@ fun DashboardScreen(
         val latitude = status.latitude
         val longitude = status.longitude
         if (latitude != null && longitude != null) {
-            ElevatedCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        val ts = status.stateSince
-                        if (!ts.isNullOrBlank()) onNavigateToWhereWasI(carId, ts, exteriorColor)
-                    }
-            ) {
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 AmapPointView(
                     modifier = Modifier.fillMaxWidth().height(200.dp),
                     latitude = latitude,

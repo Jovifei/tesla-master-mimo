@@ -23,7 +23,7 @@
     <string name="climate_off">Klima AUS</string>
     <string name="sentry_armed">Sentry AKTIV</string>
     <string name="sentry_off">Sentry AUS</string>
-    <string name="high_soc_warning">Hoher Ladestand - für den täglichen Gebrauch auf 80-90% begrenzen empfohlen</string>
+    <string name="high_soc_warning" formatted="false">Hoher Ladestand - für den täglichen Gebrauch auf 80-90% begrenzen empfohlen</string>
     <string name="tire_pressure">Reifendruck</string>
     <string name="battery_trend">7-Tage Batterieverlauf</string>
     <string name="km_range">%d km Reichweite</string>

@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import androidx.activity.ComponentActivity
+import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +50,9 @@ class AmapKeyVerificationActivity : ComponentActivity() {
             complete(Activity.RESULT_CANCELED)
             return
         }
+        onBackPressedDispatcher.addCallback(this) {
+            complete(Activity.RESULT_CANCELED)
+        }
         enableEdgeToEdge()
         setContent {
             MateLinkTheme {
@@ -61,9 +65,6 @@ class AmapKeyVerificationActivity : ComponentActivity() {
             }
         }
     }
-
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() = complete(Activity.RESULT_CANCELED)
 
     private fun complete(resultCode: Int) {
         if (completed) return

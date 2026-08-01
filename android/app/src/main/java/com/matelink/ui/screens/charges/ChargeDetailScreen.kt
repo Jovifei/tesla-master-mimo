@@ -1,7 +1,5 @@
 package com.matelink.ui.screens.charges
 
-import android.content.Intent
-import android.net.Uri
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -82,7 +80,6 @@ import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.screens.trips.displayName
 import com.matelink.ui.components.AmapPointView
-import com.matelink.ui.components.launchExternalIntentSafely
 import com.matelink.util.formatDurationCompact
 import com.matelink.util.formatMonthDayTime
 import com.matelink.util.formatTime
@@ -670,20 +667,11 @@ private fun ChargePriceDialog(
 
 @Composable
 private fun ChargeMapCard(latitude: Double, longitude: Double) {
-    val context = LocalContext.current
     val locationTitle = stringResource(R.string.location)
     val chargeLocationMarker = stringResource(R.string.charge_location)
 
-    fun openInMaps() {
-        val geoUri = Uri.parse("geo:$latitude,$longitude?q=$latitude,$longitude")
-        val intent = Intent(Intent.ACTION_VIEW, geoUri)
-        context.launchExternalIntentSafely(intent)
-    }
-
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { openInMaps() },
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         )
