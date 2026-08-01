@@ -160,7 +160,7 @@
     <string name="more_item_statistics">Statistics</string>
     <string name="more_item_battery_health">Battery Health</string>
     <string name="more_item_mileage">Mileage</string>
-    <string name="more_item_trips">Trips</string>
+    <string name="more_item_trips">Trip history</string>
     <string name="more_item_long_trips">Long-distance trips</string>
     <string name="more_item_software_updates">Software Updates</string>
     <string name="more_item_sentry_history">Sentry History</string>
@@ -227,10 +227,22 @@
     <string name="efficiency_last_90_days">Last 90 days</string>
     <string name="efficiency_summer">Summer</string>
     <string name="efficiency_winter">Winter</string>
-    <string name="efficiency_personal_position">Your consumption position</string>
+    <string name="efficiency_personal_position">Average in selected window</string>
     <string name="efficiency_percentile_summary">P%1$d among %2$d valid drives (lower Wh/km is better)</string>
     <string name="efficiency_percentile_bounds">Range %1$.0f–%2$.0f Wh/km, median %3$.0f Wh/km</string>
     <string name="efficiency_public_benchmark_unavailable">Public same-model benchmark: no verified sample available</string>
+    <string name="analysis_filter_all">All</string>
+    <string name="analysis_filter_last_90_days">Last 3 months</string>
+    <string name="analysis_filter_summer">Summer</string>
+    <string name="analysis_filter_winter">Winter</string>
+    <string name="analysis_filter_custom">Custom</string>
+    <string name="analysis_no_records">No analyzable records</string>
+    <string name="analysis_coverage_insufficient">Coverage insufficient</string>
+    <string name="efficiency_personal_history_title">Personal history range</string>
+    <string name="efficiency_trip_position">Trip %1$d · P%2$d · %3$.0f Wh/km</string>
+    <string name="efficiency_trip_details">%1$s → %2$s</string>
+    <string name="efficiency_public_sample_count">Public comparable samples: %d</string>
+    <string name="efficiency_public_sample_insufficient">Public sample insufficient; ranking hidden</string>
 
     <!-- Cost Analysis -->
     <string name="cost_title">Cost Analysis</string>
@@ -242,6 +254,10 @@
     <string name="cost_dc">DC Charging</string>
     <string name="cost_top_locations">Top Locations</string>
     <string name="cost_location_count">%d charges</string>
+    <string name="cost_average_session">Average/session</string>
+    <string name="cost_average_session_hint">Manual totals included</string>
+    <string name="cost_average_kwh">Average/kWh</string>
+    <string name="cost_average_kwh_hint">Effective cost</string>
 
     <!-- Range Analysis -->
     <string name="range_analysis_title">Range Analysis</string>
@@ -251,6 +267,8 @@
     <string name="range_trip_list_title">Recent Trips (%d)</string>
     <string name="range_estimated">Estimated</string>
     <string name="range_actual">Actual</string>
+    <string name="range_influences_title">Factors affecting prediction error</string>
+    <string name="range_influences_values">Summer %1$s · Winter %2$s · Low speed %3$s · High speed %4$s</string>
 
     <!-- Vampire Drain (Standby Power Consumption) -->
     <string name="vampire_title">Standby Power Drain</string>
@@ -259,7 +277,7 @@
     <string name="vampire_avg_power">Avg Power</string>
     <string name="vampire_idle_periods">Idle Periods</string>
     <string name="vampire_daily_title">Daily Drain</string>
-    <string name="vampire_daily_subtitle">Battery % lost while parked (no driving)</string>
+    <string name="vampire_daily_subtitle">Estimated standby energy lost per day (kWh)</string>
     <string name="vampire_recent_title">Recent Idle Periods</string>
     <string name="vampire_tips_title">Optimization Tips</string>
     <string name="vampire_tip_sentry_title">Sentry Mode</string>
@@ -273,6 +291,12 @@
     <string name="vampire_how_title">How This Works</string>
     <string name="vampire_how_desc">Vampire drain is calculated by analyzing gaps between charge sessions. When the battery level drops without any recorded drive in between, the energy loss is attributed to standby power consumption. The estimated average power draw assumes a 75 kWh battery capacity.</string>
     <string name="vampire_no_data">No attributable standby drain was detected. At least two charge records with a battery drop and no intervening drive are required; the cause is not inferred without evidence.</string>
+    <string name="vampire_total_kwh">Total standby energy</string>
+    <string name="vampire_confidence">Confidence</string>
+    <string name="vampire_cause_unknown">Cause not attributable from available evidence</string>
+    <string name="vampire_confidence_high">High: battery drop and no drive confirmed</string>
+    <string name="vampire_confidence_low">Low: coverage insufficient</string>
+    <string name="vampire_location_unknown">Location unavailable</string>
     <string name="widget_description">Tesla vehicle status widget</string>
 
     <!-- Duration formatting -->
@@ -906,6 +930,8 @@
     <string name="annual_report_busiest_day">Busiest Day</string>
     <string name="annual_report_most_distance_day">Most Distance in a Day</string>
     <string name="annual_report_na">N/A</string>
+    <string name="annual_report_effective_cost">Effective cost incl. manual totals</string>
+    <string name="annual_report_standby_energy">Standby energy</string>
     <string name="label_charges">Charges</string>
     <string name="record_fastest_drive">Fastest Drive</string>
 
@@ -1035,4 +1061,9 @@
     <string name="settings_connection_timeout">Connection timed out.</string>
     <string name="settings_unrecognised_server_data">Server returned unrecognised data.</string>
     <string name="settings_server_unreachable">Server is temporarily unreachable.</string>
+    <string name="efficiency_trend_title">Average consumption trend</string>
+    <string name="efficiency_trend_empty">No analyzable trend data</string>
+    <string name="efficiency_percentile_buckets">0–25%%: %1$d · 25–50%%: %2$d · 50–75%%: %3$d · 75–100%%: %4$d</string>
+    <string name="cost_manual_count">Manual total: %d charges</string>
+    <string name="vampire_detected_unknown">Detected standby consumption; cause unknown</string>
 </resources>

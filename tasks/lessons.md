@@ -74,3 +74,8 @@
 
 - Pattern: A choice that only affects presentation or the next local step should not pause the entire repair and verification flow.
 - Prevention rule: Surface such choices in an in-app or inline popup when available, keep the approved default moving, and stop only for destructive actions or materially expanded scope.
+
+## 2026-08-01 Do not close a partially implemented design
+
+- Pattern: A successful build, install, and smoke test does not prove that every item in an approved multi-page design is implemented.
+- Prevention rule: Track each approved requirement to code, test, and device evidence; report partial completion explicitly and continue until every required item has its own proof.

@@ -8,12 +8,17 @@ import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.domain.analytics.AnalysisHistoryRepository
+import com.matelink.domain.analytics.AnalysisWindow
+import com.matelink.domain.analytics.StandbyCause
+import com.matelink.domain.analytics.standbyAttribution
+import com.matelink.domain.analytics.selectWindow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.OffsetDateTime
+import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 
@@ -33,12 +38,18 @@ data class IdleDrainPeriod(
     val drainPercent: Int,
     val hoursIdle: Double,
     val avgPowerW: Double,
-    val dateKey: String
+    val dateKey: String,
+    val energyKwh: Double,
+    val location: String?,
+    val cause: StandbyCause,
+    val confidence: Float
 )
 
 data class VampireUiState(
     val isLoading: Boolean = true,
+    val selectedWindow: AnalysisWindow = AnalysisWindow.ALL_TIME,
     val totalDrainPercent: Int = 0,
+    val totalDrainKwh: Double = 0.0,
     val avgPowerW: Double = 0.0,
     val idlePeriods: List<IdleDrainPeriod> = emptyList(),
     val dailyDrains: List<DailyDrain> = emptyList(),
@@ -48,6 +59,7 @@ data class VampireUiState(
 data class DailyDrain(
     val date: String,
     val totalDrainPercent: Int,
+    val totalDrainKwh: Double,
     val avgPowerW: Double,
     val periodCount: Int
 )
@@ -60,6 +72,9 @@ class VampireViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(VampireUiState())
     val uiState = _uiState.asStateFlow()
+    private var allPeriods: List<IdleDrainPeriod> = emptyList()
+    private var customStart: LocalDate? = null
+    private var customEnd: LocalDate? = null
 
     companion object {
         // Approximate usable battery capacity in kWh for power estimation.
@@ -90,20 +105,8 @@ class VampireViewModel @Inject constructor(
 
                 val periods = computeIdleDrainPeriods(charges, drives)
 
-                val totalDrain = periods.sumOf { it.drainPercent }
-                val avgPower = if (periods.isNotEmpty()) {
-                    periods.map { it.avgPowerW }.average()
-                } else 0.0
-
-                val dailyDrains = groupByDay(periods)
-
-                _uiState.value = VampireUiState(
-                    isLoading = false,
-                    totalDrainPercent = totalDrain,
-                    avgPowerW = avgPower,
-                    idlePeriods = periods,
-                    dailyDrains = dailyDrains
-                )
+                allPeriods = periods
+                recalculate(_uiState.value.selectedWindow)
             } catch (e: Exception) {
                 _uiState.value = VampireUiState(
                     isLoading = false,
@@ -111,6 +114,35 @@ class VampireViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    fun selectWindow(window: AnalysisWindow) {
+        customStart = null
+        customEnd = null
+        _uiState.value = _uiState.value.copy(selectedWindow = window)
+        recalculate(window)
+    }
+
+    fun selectCustomRange(start: LocalDate, end: LocalDate) {
+        customStart = start
+        customEnd = end
+        _uiState.value = _uiState.value.copy(selectedWindow = AnalysisWindow.CUSTOM)
+        recalculate(AnalysisWindow.CUSTOM)
+    }
+
+    private fun recalculate(window: AnalysisWindow) {
+        val dated = allPeriods.mapNotNull { period ->
+            runCatching { LocalDate.parse(period.dateKey) }.getOrNull()?.let { DatedIdle(it, period) }
+        }
+        val selected = selectWindow(dated, window, LocalDate.now(), customStart, customEnd).map { it.period }
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            totalDrainPercent = selected.sumOf { it.drainPercent },
+            totalDrainKwh = selected.sumOf { it.energyKwh },
+            avgPowerW = selected.takeIf { it.isNotEmpty() }?.map { it.avgPowerW }?.average() ?: 0.0,
+            idlePeriods = selected,
+            dailyDrains = groupByDay(selected)
+        )
     }
 
     /**
@@ -174,12 +206,11 @@ class VampireViewModel @Inject constructor(
                 continue
             }
 
-            if (hoursIdle < 0.5) continue // Ignore very short idle periods (< 30 min)
-
             // Estimate average power draw (watts)
             // drainDrop% of battery capacity over the idle hours
             val energyWh = (drainDrop / 100.0) * ESTIMATED_BATTERY_KWH * 1000.0
             val avgPowerW = if (hoursIdle > 0) energyWh / hoursIdle else 0.0
+            val attribution = standbyAttribution(false, false, false)
 
             val dateKey = try {
                 OffsetDateTime.parse(prevEndDate).toLocalDate().toString()
@@ -194,7 +225,12 @@ class VampireViewModel @Inject constructor(
                     drainPercent = drainDrop,
                     hoursIdle = hoursIdle,
                     avgPowerW = avgPowerW,
-                    dateKey = dateKey
+                    dateKey = dateKey,
+                    energyKwh = energyWh / 1000.0,
+                    location = prevCharge.address ?: nextCharge.address,
+                    cause = attribution.cause,
+                    // A battery drop proves detected consumption, not its cause.
+                    confidence = attribution.confidence
                 )
             )
         }
@@ -230,6 +266,7 @@ class VampireViewModel @Inject constructor(
                 DailyDrain(
                     date = date,
                     totalDrainPercent = dayPeriods.sumOf { it.drainPercent },
+                    totalDrainKwh = dayPeriods.sumOf { it.energyKwh },
                     avgPowerW = dayPeriods.map { it.avgPowerW }.average(),
                     periodCount = dayPeriods.size
                 )
@@ -239,4 +276,11 @@ class VampireViewModel @Inject constructor(
     }
 
     fun refresh() = load()
+
+    private data class DatedIdle(
+        override val date: LocalDate,
+        val period: IdleDrainPeriod
+    ) : com.matelink.domain.analytics.DatedSourceRecord {
+        override val id: Int get() = period.startDate.hashCode()
+    }
 }

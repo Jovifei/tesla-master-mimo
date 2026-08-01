@@ -484,3 +484,24 @@
 - Lint remains blocked by the repository's existing 842 missing-translation errors and 254 warnings; no new touched-file format or crash error was found in the report.
 - Version advanced to `1.4.0` (`versionCode 12`); `adb install -r` preserved `firstInstallTime` and the configuration directory metadata.
 - Normal device checks covered More analysis/report routes, annual 2025/2026 switching, Battery capacity, Dashboard AMap preview, Drives, and Charges. PID remained alive and critical crash/ANR/Room/SQLite/format/AMap markers were 0.
+
+# P1.13 Approved history-analysis completion - 2026-08-01
+
+## Plan
+
+- [x] Add one reusable all/90-day/summer/winter/custom date selector and pass inclusive custom boundaries to Efficiency, Cost, Range, and Standby.
+- [x] Make Efficiency show a trend, personal percentile range with bucket counts, per-drive expandable positions, and verified-public-sample-unavailable state; use average speed for speed buckets.
+- [x] Make Cost distinguish valid cost/energy coverage from missing values, keep manual total precedence, and show manual-total count in the summary.
+- [x] Make Range summarize seasonal and average-speed prediction accuracy; keep missing values as no-data text.
+- [x] Make Standby include every computable parked interval, expose kWh/day, location, confidence, and unknown-cause wording without inferring attribution.
+- [x] Make Annual report metrics honest when only one data family exists; always show effective cost and standby coverage states.
+- [x] Add percentile tie semantics and custom-window boundary tests; bump to version 1.4.1 (versionCode 13).
+- [x] Run the full JVM suite and both Debug APK build gates, then preserve-data install and complete physical-device regression across all approved analysis routes.
+
+## Review
+
+- Targeted analytics/charges/reports/domain tests passed after the implementation; compileDebugKotlin passed.
+- No verified public same-model aggregate source exists in this repository, so no ranking, sample count, median, or fabricated value is displayed; the UI explicitly reports public-sample insufficiency.
+- The final full gate reports 152 JVM tests with 0 failures, errors, or skipped tests; both Debug APK build gates passed after clearing the generated KSP cache.
+- Version 1.4.1 (versionCode 13) was installed with `adb install -r -d`; firstInstallTime remained `2026-07-26 21:35:02`, and the process stayed alive through analysis, report, history, and long-distance routes.
+- Physical checks covered all four analysis pages, custom date dialog, current/previous annual reports, 行程历史, and 长途旅程. Fatal/app, Room/corruption, format, ANR, and AMap markers were 0. No instrumentation, uninstall, data clear, Key read, commit, or push occurred.

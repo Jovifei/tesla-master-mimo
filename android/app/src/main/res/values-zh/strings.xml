@@ -159,7 +159,7 @@
     <string name="more_item_statistics">统计概览</string>
     <string name="more_item_battery_health">电池健康</string>
     <string name="more_item_mileage">里程统计</string>
-    <string name="more_item_trips">行程记录</string>
+    <string name="more_item_trips">行程历史</string>
     <string name="more_item_long_trips">长途旅程</string>
     <string name="more_item_software_updates">软件更新</string>
     <string name="more_item_sentry_history">哨兵历史</string>
@@ -226,10 +226,22 @@
     <string name="efficiency_last_90_days">近 90 天</string>
     <string name="efficiency_summer">夏季</string>
     <string name="efficiency_winter">冬季</string>
-    <string name="efficiency_personal_position">我的能耗位置</string>
+    <string name="efficiency_personal_position">所选时间范围平均能耗位置</string>
     <string name="efficiency_percentile_summary">有效行程 %2$d 段中位于 P%1$d（Wh/km 越低越好）</string>
     <string name="efficiency_percentile_bounds">区间 %1$.0f–%2$.0f Wh/km，中位数 %3$.0f Wh/km</string>
     <string name="efficiency_public_benchmark_unavailable">同车型公开样本：暂无已验证数据</string>
+    <string name="analysis_filter_all">全部</string>
+    <string name="analysis_filter_last_90_days">近 3 月</string>
+    <string name="analysis_filter_summer">夏季</string>
+    <string name="analysis_filter_winter">冬季</string>
+    <string name="analysis_filter_custom">自定义</string>
+    <string name="analysis_no_records">暂无可分析记录</string>
+    <string name="analysis_coverage_insufficient">覆盖率不足</string>
+    <string name="efficiency_personal_history_title">个人历史区间</string>
+    <string name="efficiency_trip_position">行程 %1$d · P%2$d · %3$.0f Wh/km</string>
+    <string name="efficiency_trip_details">%1$s → %2$s</string>
+    <string name="efficiency_public_sample_count">同车型可比公开样本：%d</string>
+    <string name="efficiency_public_sample_insufficient">公开样本不足，暂不排名</string>
 
     <!-- Cost Analysis -->
     <string name="cost_title">费用分析</string>
@@ -241,6 +253,10 @@
     <string name="cost_dc">直流充电</string>
     <string name="cost_top_locations">热门充电地点</string>
     <string name="cost_location_count">%d 次充电</string>
+    <string name="cost_average_session">平均每次</string>
+    <string name="cost_average_session_hint">包含人工总价</string>
+    <string name="cost_average_kwh">平均每度</string>
+    <string name="cost_average_kwh_hint">按有效费用计算</string>
 
     <!-- Range Analysis -->
     <string name="range_analysis_title">续航分析</string>
@@ -250,6 +266,8 @@
     <string name="range_trip_list_title">最近行程 (%d)</string>
     <string name="range_estimated">预估</string>
     <string name="range_actual">实际</string>
+    <string name="range_influences_title">预测误差影响因素</string>
+    <string name="range_influences_values">夏季 %1$s · 冬季 %2$s · 低速 %3$s · 高速 %4$s</string>
 
     <!-- Vampire Drain (Standby Power Consumption) -->
     <string name="vampire_title">待机能耗</string>
@@ -258,7 +276,7 @@
     <string name="vampire_avg_power">平均功率</string>
     <string name="vampire_idle_periods">待机时段</string>
     <string name="vampire_daily_title">每日待机能耗</string>
-    <string name="vampire_daily_subtitle">停放期间（无行驶）的电池损耗百分比</string>
+    <string name="vampire_daily_subtitle">每日估算待机能耗（kWh）</string>
     <string name="vampire_recent_title">近期待机时段</string>
     <string name="vampire_tips_title">优化建议</string>
     <string name="vampire_tip_sentry_title">哨兵模式</string>
@@ -272,6 +290,12 @@
     <string name="vampire_how_title">工作原理</string>
     <string name="vampire_how_desc">待机能耗通过分析充电间隔来计算。当电池电量下降但期间无行驶记录时，能量损失归因于待机功耗。估算的平均功率基于 75 kWh 电池容量。</string>
     <string name="vampire_no_data">暂未发现可归因的待机能耗。至少需要两条充电记录、期间电量下降且没有行程；没有证据时不推断具体原因。</string>
+    <string name="vampire_total_kwh">总待机能耗</string>
+    <string name="vampire_confidence">可信度</string>
+    <string name="vampire_cause_unknown">现有证据无法归因具体原因</string>
+    <string name="vampire_confidence_high">高：已确认电量下降且期间无行程</string>
+    <string name="vampire_confidence_low">低：覆盖率不足</string>
+    <string name="vampire_location_unknown">地点不可用</string>
     <string name="widget_description">Tesla 车辆状态小组件</string>
 
     <!-- Duration formatting -->
@@ -972,6 +996,8 @@
     <string name="annual_report_busiest_day">最忙的一天</string>
     <string name="annual_report_most_distance_day">单日最远</string>
     <string name="annual_report_na">无数据</string>
+    <string name="annual_report_effective_cost">有效费用（含人工总价）</string>
+    <string name="annual_report_standby_energy">待机能耗</string>
     <string name="label_charges">充电</string>
     <string name="record_fastest_drive">最快行程</string>
 
@@ -1024,4 +1050,9 @@
     <string name="settings_connection_timeout">连接超时。</string>
     <string name="settings_unrecognised_server_data">服务器返回了无法识别的数据。</string>
     <string name="settings_server_unreachable">服务器暂时无法访问。</string>
+    <string name="efficiency_trend_title">平均能耗趋势</string>
+    <string name="efficiency_trend_empty">暂无可分析趋势数据</string>
+    <string name="efficiency_percentile_buckets">0–25%%：%1$d · 25–50%%：%2$d · 50–75%%：%3$d · 75–100%%：%4$d</string>
+    <string name="cost_manual_count">人工总价：%d 次</string>
+    <string name="vampire_detected_unknown">已检测到待机耗电；原因未知</string>
 </resources>

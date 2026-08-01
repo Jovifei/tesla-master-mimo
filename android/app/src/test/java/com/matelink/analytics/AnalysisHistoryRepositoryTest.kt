@@ -44,6 +44,25 @@ class AnalysisHistoryRepositoryTest {
         assertEquals(NoDataReason.NO_RECORDS, coverage.reason)
     }
 
+    @Test
+    fun customWindowIncludesBothBoundaries() {
+        val records = listOf(
+            TimedRecord(1, LocalDate.of(2026, 1, 1)),
+            TimedRecord(2, LocalDate.of(2026, 1, 15)),
+            TimedRecord(3, LocalDate.of(2026, 2, 1))
+        )
+
+        val selected = selectWindow(
+            records,
+            AnalysisWindow.CUSTOM,
+            asOf = LocalDate.of(2026, 2, 10),
+            customStart = LocalDate.of(2026, 1, 1),
+            customEnd = LocalDate.of(2026, 1, 15)
+        )
+
+        assertEquals(listOf(1, 2), selected.map { it.id })
+    }
+
     private data class TimedRecord(
         override val id: Int,
         override val date: LocalDate

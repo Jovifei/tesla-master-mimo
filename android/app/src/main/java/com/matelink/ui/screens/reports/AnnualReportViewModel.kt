@@ -7,9 +7,13 @@ import com.matelink.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.matelink.data.local.dao.MonthlyChargeAggregation
 import com.matelink.data.local.dao.MonthlyDriveAggregation
+import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.repository.StatsRepository
+import com.matelink.data.repository.ApiResult
 import com.matelink.domain.model.CarStats
 import com.matelink.domain.model.YearFilter
+import com.matelink.domain.analytics.AnalysisHistoryRepository
+import kotlinx.coroutines.flow.first
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +27,8 @@ data class AnnualReportUiState(
     val carStats: CarStats? = null,
     val monthlyDrives: List<MonthlyDriveAggregation> = emptyList(),
     val monthlyCharges: List<MonthlyChargeAggregation> = emptyList(),
+    val effectiveCost: Double? = null,
+    val standbyKwh: Double? = null,
     val availableYears: List<Int> = emptyList(),
     val error: String? = null
 )
@@ -30,7 +36,9 @@ data class AnnualReportUiState(
 @HiltViewModel
 class AnnualReportViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val statsRepository: StatsRepository
+    private val statsRepository: StatsRepository,
+    private val historyRepository: AnalysisHistoryRepository,
+    private val settingsDataStore: SettingsDataStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AnnualReportUiState())
@@ -73,12 +81,25 @@ class AnnualReportViewModel @Inject constructor(
                 val stats = statsRepository.getStats(carId, yearFilter)
                 val monthlyDrives = statsRepository.getMonthlyDriveAggregation(carId, year)
                 val monthlyCharges = statsRepository.getMonthlyChargeAggregation(carId, year)
+                val remoteMetrics = runCatching {
+                    when (val history = historyRepository.load(carId)) {
+                        is ApiResult.Success -> {
+                            val manualTotals = settingsDataStore.chargeTotalOverrides.first()
+                            val effectiveCost = annualEffectiveCost(carId, year, history.data.charges, manualTotals)
+                            val standbyKwh = annualStandbyKwh(year, history.data.charges, history.data.drives)
+                            effectiveCost to standbyKwh
+                        }
+                        is ApiResult.Error -> null
+                    }
+                }.getOrNull()
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     carStats = stats,
                     monthlyDrives = monthlyDrives,
-                    monthlyCharges = monthlyCharges
+                    monthlyCharges = monthlyCharges,
+                    effectiveCost = remoteMetrics?.first,
+                    standbyKwh = remoteMetrics?.second
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(

@@ -53,6 +53,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.AnalysisWindowSelector
 import com.matelink.ui.theme.SwissOutline
 import com.matelink.ui.theme.StatusSuccess
 import com.matelink.ui.theme.StatusWarning
@@ -116,14 +117,22 @@ fun RangeScreen(
             if (uiState.isLoading && !uiState.isRefreshing) {
                 MateLinkLoadingPlaceholder()
             } else {
-                RangeContent(uiState = uiState)
+                RangeContent(
+                    uiState = uiState,
+                    onWindowSelected = viewModel::selectWindow,
+                    onCustomRangeSelected = viewModel::selectCustomRange
+                )
             }
         }
     }
 }
 
 @Composable
-private fun RangeContent(uiState: RangeUiState) {
+private fun RangeContent(
+    uiState: RangeUiState,
+    onWindowSelected: (com.matelink.domain.analytics.AnalysisWindow) -> Unit,
+    onCustomRangeSelected: (java.time.LocalDate, java.time.LocalDate) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -131,8 +140,41 @@ private fun RangeContent(uiState: RangeUiState) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        AnalysisWindowSelector(
+            selected = uiState.selectedWindow,
+            onSelected = onWindowSelected,
+            onCustomSelected = onCustomRangeSelected,
+            modifier = Modifier.fillMaxWidth()
+        )
+
         // Accuracy summary card
         AccuracySummaryCard(uiState = uiState)
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, SwissOutline),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = stringResource(R.string.range_influences_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = stringResource(
+                        R.string.range_influences_values,
+                        uiState.summerAccuracy?.let { "%.1f%%".format(it) } ?: stringResource(R.string.analysis_no_records),
+                        uiState.winterAccuracy?.let { "%.1f%%".format(it) } ?: stringResource(R.string.analysis_no_records),
+                        uiState.lowSpeedAccuracy?.let { "%.1f%%".format(it) } ?: stringResource(R.string.analysis_no_records),
+                        uiState.highSpeedAccuracy?.let { "%.1f%%".format(it) } ?: stringResource(R.string.analysis_no_records)
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
 
         // Trip list header
         if (uiState.trips.isNotEmpty()) {
@@ -158,7 +200,7 @@ private fun RangeContent(uiState: RangeUiState) {
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = stringResource(R.string.no_data),
+                    text = stringResource(R.string.analysis_no_records),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -236,7 +278,7 @@ private fun AccuracySummaryCard(uiState: RangeUiState) {
                 )
             } else {
                 Text(
-                    text = stringResource(R.string.no_data),
+                    text = stringResource(R.string.analysis_no_records),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth(),
@@ -253,11 +295,12 @@ private fun AccuracySummaryCard(uiState: RangeUiState) {
             ) {
                 StatItem(
                     label = stringResource(R.string.range_trip_count),
-                    value = "${uiState.tripCount}"
+                    value = if (uiState.tripCount > 0) "${uiState.tripCount}" else stringResource(R.string.analysis_no_records)
                 )
                 StatItem(
                     label = stringResource(R.string.range_total_distance),
-                    value = "%.1f km".format(uiState.totalDistanceKm)
+                    value = if (uiState.tripCount > 0) "%.1f km".format(uiState.totalDistanceKm)
+                    else stringResource(R.string.analysis_no_records)
                 )
             }
         }

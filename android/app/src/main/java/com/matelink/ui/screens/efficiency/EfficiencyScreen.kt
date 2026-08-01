@@ -1,6 +1,7 @@
 package com.matelink.ui.screens.efficiency
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -22,6 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.matelink.R
+import com.matelink.domain.analytics.AnalysisWindow
+import com.matelink.ui.components.AnalysisWindowSelector
 import com.matelink.ui.theme.SwissOutline
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -98,7 +101,8 @@ fun EfficiencyScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = String.format("%.1f Wh/km", uiState.avgEfficiencyWhKm),
+                        text = uiState.avgEfficiencyWhKm?.let { String.format("%.1f Wh/km", it) }
+                            ?: stringResource(R.string.analysis_no_records),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -114,14 +118,46 @@ fun EfficiencyScreen(
                 StatCard(
                     modifier = Modifier.weight(1f),
                     label = stringResource(R.string.efficiency_drive_count),
-                    value = uiState.driveCount.toString()
+                    value = if (uiState.driveCount > 0) uiState.driveCount.toString() else stringResource(R.string.analysis_no_records)
                 )
                 StatCard(
                     modifier = Modifier.weight(1f),
                     label = stringResource(R.string.efficiency_total_distance),
-                    value = String.format("%.1f km", uiState.totalDistanceKm)
+                    value = if (uiState.driveCount > 0) String.format("%.1f km", uiState.totalDistanceKm)
+                    else stringResource(R.string.analysis_no_records)
                 )
             }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, SwissOutline),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = stringResource(R.string.efficiency_trend_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (uiState.efficiencyTrend.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.efficiency_trend_empty),
+                            modifier = Modifier.padding(top = 8.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        EfficiencyTrendChart(uiState.efficiencyTrend)
+                    }
+                }
+            }
+
+            AnalysisWindowSelector(
+                selected = uiState.selectedWindow,
+                onSelected = viewModel::selectWindow,
+                onCustomSelected = viewModel::selectCustomRange,
+                modifier = Modifier.fillMaxWidth()
+            )
 
             Text(
                 text = stringResource(R.string.efficiency_windows_title),
@@ -172,6 +208,26 @@ fun EfficiencyScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        PercentileRangeBar(position = position)
+                        val bucketCounts = uiState.tripPositions.groupingBy {
+                            when {
+                                it.percentile < 25 -> 0
+                                it.percentile < 50 -> 1
+                                it.percentile < 75 -> 2
+                                else -> 3
+                            }
+                        }.eachCount()
+                        Text(
+                            text = stringResource(
+                                R.string.efficiency_percentile_buckets,
+                                bucketCounts[0] ?: 0,
+                                bucketCounts[1] ?: 0,
+                                bucketCounts[2] ?: 0,
+                                bucketCounts[3] ?: 0
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = stringResource(R.string.efficiency_public_benchmark_unavailable),
@@ -179,6 +235,17 @@ fun EfficiencyScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+            }
+
+            if (uiState.tripPositions.isNotEmpty()) {
+                Text(
+                    text = stringResource(R.string.efficiency_personal_history_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                uiState.tripPositions.take(20).forEachIndexed { index, trip ->
+                    EfficiencyTripRow(index + 1, trip)
                 }
             }
 
@@ -255,8 +322,94 @@ private fun EfficiencyWindowCard(
     StatCard(
         modifier = modifier,
         label = label,
-        value = value?.let { String.format("%.0f Wh/km", it) } ?: stringResource(R.string.no_data)
+        value = value?.let { String.format("%.0f Wh/km", it) } ?: stringResource(R.string.analysis_no_records)
     )
+}
+
+@Composable
+private fun PercentileRangeBar(position: com.matelink.domain.analytics.PercentilePosition) {
+    val trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+    val markerColor = MaterialTheme.colorScheme.primary
+    Column(modifier = Modifier.padding(top = 8.dp)) {
+        Canvas(modifier = Modifier.fillMaxWidth().height(22.dp)) {
+            val y = size.height / 2f
+            drawLine(
+                color = trackColor,
+                start = Offset(0f, y),
+                end = Offset(size.width, y),
+                strokeWidth = 10.dp.toPx()
+            )
+            val x = size.width * (position.percentile / 100f)
+            drawCircle(markerColor, radius = 8.dp.toPx(), center = Offset(x, y))
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("0%", style = MaterialTheme.typography.labelSmall)
+            Text("P${position.percentile}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Text("100%", style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun EfficiencyTripRow(index: Int, trip: EfficiencyTripPosition) {
+    var expanded by remember(trip.driveId) { mutableStateOf(false) }
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, SwissOutline),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = stringResource(R.string.efficiency_trip_position, index, trip.percentile, trip.efficiencyWhKm),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            if (expanded) {
+                val start = trip.startAddress ?: stringResource(R.string.unknown_location)
+                val end = trip.endAddress ?: stringResource(R.string.unknown_location)
+                Text(
+                    text = stringResource(R.string.efficiency_trip_details, start, end),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = trip.date?.toString() ?: stringResource(R.string.analysis_coverage_insufficient),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EfficiencyTrendChart(points: List<EfficiencyTrendPoint>) {
+    val lineColor = MaterialTheme.colorScheme.primary
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val maxValue = points.maxOfOrNull { it.averageWhKm } ?: return
+    val minValue = points.minOfOrNull { it.averageWhKm } ?: return
+    val range = (maxValue - minValue).takeIf { it > 0.0 } ?: 1.0
+    Canvas(modifier = Modifier.fillMaxWidth().height(120.dp).padding(top = 8.dp)) {
+        val step = size.width / (points.size - 1).coerceAtLeast(1)
+        val path = androidx.compose.ui.graphics.Path()
+        points.forEachIndexed { index, point ->
+            val x = index * step
+            val y = size.height - ((point.averageWhKm - minValue) / range).toFloat() * size.height
+            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            drawCircle(lineColor, 5.dp.toPx(), Offset(x, y))
+        }
+        drawPath(path, lineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx()))
+    }
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        points.forEach { point ->
+            Text(
+                text = point.month.takeLast(5),
+                style = MaterialTheme.typography.labelSmall,
+                color = labelColor
+            )
+        }
+    }
 }
 
 @Composable

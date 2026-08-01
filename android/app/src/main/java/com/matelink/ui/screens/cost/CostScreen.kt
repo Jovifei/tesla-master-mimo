@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.matelink.R
+import com.matelink.ui.components.AnalysisWindowSelector
 import com.matelink.ui.theme.SwissOutline
 import kotlin.math.max
 
@@ -88,6 +89,26 @@ fun CostScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            AnalysisWindowSelector(
+                selected = uiState.selectedWindow,
+                onSelected = viewModel::selectWindow,
+                onCustomSelected = viewModel::selectCustomRange,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (uiState.totalCharges == 0) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Text(
+                        text = stringResource(R.string.analysis_no_records),
+                        modifier = Modifier.padding(20.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             // Summary cards
             SummarySection(uiState)
 
@@ -131,6 +152,8 @@ fun CostScreen(
 
 @Composable
 private fun SummarySection(uiState: CostUiState) {
+    val hasCost = uiState.costCoverage > 0
+    val hasEnergy = uiState.energyCoverage > 0
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -138,14 +161,14 @@ private fun SummarySection(uiState: CostUiState) {
         SummaryCard(
             modifier = Modifier.weight(1f),
             title = stringResource(R.string.cost_total),
-            value = String.format("¥%.2f", uiState.totalCost),
+            value = if (hasCost) String.format("¥%.2f", uiState.totalCost) else stringResource(R.string.analysis_no_records),
             subtitle = stringResource(R.string.cost_charges_count, uiState.totalCharges)
         )
         SummaryCard(
             modifier = Modifier.weight(1f),
             title = stringResource(R.string.cost_energy_added),
-            value = String.format("%.1f kWh", uiState.totalEnergy),
-            subtitle = if (uiState.totalEnergy > 0 && uiState.totalCost > 0) {
+            value = if (hasEnergy) String.format("%.1f kWh", uiState.totalEnergy) else stringResource(R.string.analysis_no_records),
+            subtitle = if (hasCost && hasEnergy && uiState.totalEnergy > 0) {
                 String.format(
                     "¥%.2f/kWh",
                     uiState.totalCost / uiState.totalEnergy
@@ -153,6 +176,28 @@ private fun SummarySection(uiState: CostUiState) {
             } else {
                 ""
             }
+        )
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        SummaryCard(
+            modifier = Modifier.weight(1f),
+            title = stringResource(R.string.cost_average_session),
+            value = uiState.averageSessionCost?.let { String.format("¥%.2f", it) }
+                ?: stringResource(R.string.analysis_no_records),
+            subtitle = if (uiState.manualCostCount > 0) {
+                stringResource(R.string.cost_manual_count, uiState.manualCostCount)
+            } else stringResource(R.string.cost_average_session_hint)
+        )
+        SummaryCard(
+            modifier = Modifier.weight(1f),
+            title = stringResource(R.string.cost_average_kwh),
+            value = if (hasCost && hasEnergy && uiState.totalEnergy > 0) {
+                String.format("¥%.2f/kWh", uiState.totalCost / uiState.totalEnergy)
+            } else stringResource(R.string.analysis_no_records),
+            subtitle = stringResource(R.string.cost_average_kwh_hint)
         )
     }
 }

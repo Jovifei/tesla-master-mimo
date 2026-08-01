@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.matelink.R
+import com.matelink.ui.components.AnalysisWindowSelector
 import com.matelink.ui.theme.SwissOutline
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
@@ -85,6 +86,13 @@ fun VampireScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            AnalysisWindowSelector(
+                selected = uiState.selectedWindow,
+                onSelected = viewModel::selectWindow,
+                onCustomSelected = viewModel::selectCustomRange,
+                modifier = Modifier.fillMaxWidth()
+            )
+
             // Summary card - Total drain
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -99,7 +107,8 @@ fun VampireScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "${uiState.totalDrainPercent}%",
+                        text = if (uiState.idlePeriods.isNotEmpty()) "${uiState.totalDrainPercent}%"
+                        else stringResource(R.string.analysis_no_records),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.error
@@ -121,12 +130,20 @@ fun VampireScreen(
                 VampireStatCard(
                     modifier = Modifier.weight(1f),
                     label = stringResource(R.string.vampire_avg_power),
-                    value = String.format("%.1f W", uiState.avgPowerW)
+                    value = if (uiState.idlePeriods.isNotEmpty()) String.format("%.1f W", uiState.avgPowerW)
+                    else stringResource(R.string.analysis_no_records)
                 )
                 VampireStatCard(
                     modifier = Modifier.weight(1f),
                     label = stringResource(R.string.vampire_idle_periods),
-                    value = uiState.idlePeriods.size.toString()
+                    value = if (uiState.idlePeriods.isNotEmpty()) uiState.idlePeriods.size.toString()
+                    else stringResource(R.string.analysis_no_records)
+                )
+                VampireStatCard(
+                    modifier = Modifier.weight(1f),
+                    label = stringResource(R.string.vampire_total_kwh),
+                    value = if (uiState.idlePeriods.isNotEmpty()) String.format("%.2f kWh", uiState.totalDrainKwh)
+                    else stringResource(R.string.analysis_no_records)
                 )
             }
 
@@ -138,7 +155,7 @@ fun VampireScreen(
                     colors = CardDefaults.cardColors(containerColor = Color.White)
                 ) {
                     Text(
-                        text = stringResource(R.string.vampire_no_data),
+                        text = stringResource(R.string.analysis_coverage_insufficient),
                         modifier = Modifier.padding(16.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -327,6 +344,18 @@ private fun IdlePeriodItem(period: IdleDrainPeriod) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        Text(
+            text = period.location ?: stringResource(R.string.vampire_location_unknown),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = stringResource(R.string.vampire_confidence) + ": " +
+                "%.0f%%".format(period.confidence * 100) + " \u00B7 " +
+                stringResource(R.string.vampire_detected_unknown),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -354,7 +383,7 @@ private fun DailyDrainBarChart(
     data: List<DailyDrain>,
     modifier: Modifier = Modifier
 ) {
-    val maxDrain = data.maxOfOrNull { it.totalDrainPercent } ?: 1
+    val maxDrain = data.maxOfOrNull { it.totalDrainKwh } ?: 1.0
     val barColor = MaterialTheme.colorScheme.error
     val gridColor = MaterialTheme.colorScheme.outlineVariant
 
@@ -380,7 +409,7 @@ private fun DailyDrainBarChart(
 
         // Draw bars
         data.reversed().forEachIndexed { index, dailyDrain ->
-            val barHeight = (dailyDrain.totalDrainPercent / maxValue * chartHeight).toFloat()
+            val barHeight = (dailyDrain.totalDrainKwh / maxValue * chartHeight).toFloat()
             val x = index * (barWidth + barSpacing) + barSpacing / 2
             val y = chartHeight - barHeight
 

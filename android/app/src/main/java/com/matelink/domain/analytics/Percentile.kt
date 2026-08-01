@@ -14,10 +14,13 @@ data class PercentilePosition(
 fun percentilePosition(samples: List<Double>, value: Double): PercentilePosition? {
     val sorted = samples.filter { it.isFinite() }.sorted()
     if (sorted.isEmpty() || !value.isFinite()) return null
-    val rank = sorted.count { it <= value }
-    val percentile = ((rank - 1).coerceAtLeast(0).toDouble() / (sorted.size - 1).coerceAtLeast(1) * 100.0)
-        .roundToInt()
-        .coerceIn(0, 100)
+    val percentile = when {
+        value <= sorted.first() -> 0
+        value >= sorted.last() -> 100
+        else -> (sorted.count { it <= value }.toDouble() / sorted.size * 100.0)
+            .roundToInt()
+            .coerceIn(0, 100)
+    }
     return PercentilePosition(
         percentile = percentile,
         sampleCount = sorted.size,

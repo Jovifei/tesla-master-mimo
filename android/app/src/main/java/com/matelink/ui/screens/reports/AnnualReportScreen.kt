@@ -93,7 +93,7 @@ fun AnnualReportScreen(
                 val availableStats = requireNotNull(stats)
 
                 // T-101: Annual Summary
-                AnnualSummarySection(availableStats)
+                HonestAnnualSummarySection(availableStats, uiState.effectiveCost, uiState.standbyKwh)
 
             // T-102: Monthly Trends
             MonthlyTrendsSection(
@@ -145,8 +145,145 @@ private fun YearSelector(
 
 // ==================== T-101: Annual Summary ====================
 
+/*
 @Composable
-private fun AnnualSummarySection(stats: CarStats) {
+private fun LegacyHonestAnnualSummarySection(stats: CarStats, effectiveCost: Double?, standbyKwh: Double?) {
+    val qs = stats.quickStats
+    val noData = stringResource(R.string.analysis_no_records)
+    Text(
+        text = stringResource(R.string.annual_report_summary),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold
+    )
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        SummaryCard(
+            title = stringResource(R.string.total_distance),
+            value = if (qs.totalDrives > 0) String.format("%,.0f km", qs.totalDistanceKm) else noData,
+            modifier = Modifier.weight(1f)
+        )
+        SummaryCard(
+            title = stringResource(R.string.stats_total_drives),
+            value = if (qs.totalDrives > 0) qs.totalDrives.toString() else noData,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        SummaryCard(
+            title = stringResource(R.string.stats_energy_used),
+            value = if (qs.totalDrives > 0) String.format("%,.1f kWh", qs.totalEnergyConsumedKwh) else noData,
+            modifier = Modifier.weight(1f)
+        )
+        SummaryCard(
+            title = stringResource(R.string.stats_avg_efficiency),
+            value = if (qs.totalDrives > 0 && qs.avgEfficiencyWhKm > 0) String.format("%.0f Wh/km", qs.avgEfficiencyWhKm) else noData,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        SummaryCard(
+            title = stringResource(R.string.label_charges),
+            value = if (qs.totalCharges > 0) qs.totalCharges.toString() else noData,
+            modifier = Modifier.weight(1f)
+        )
+        SummaryCard(
+            title = stringResource(R.string.energy_added),
+            value = if (qs.totalCharges > 0) String.format("%,.1f kWh", qs.totalEnergyAddedKwh) else noData,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        SummaryCard(
+            title = stringResource(R.string.annual_report_effective_cost),
+            value = effectiveCost?.let { String.format("¥%.2f", it) } ?: noData,
+            modifier = Modifier.weight(1f)
+        )
+        SummaryCard(
+            title = stringResource(R.string.stats_avg_cost_kwh),
+            value = if (effectiveCost != null && qs.totalEnergyAddedKwh > 0) {
+                String.format("¥%.3f", effectiveCost / qs.totalEnergyAddedKwh)
+            } else noData,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    SummaryCard(
+        title = stringResource(R.string.annual_report_standby_energy),
+        value = standbyKwh?.let { String.format("%.2f kWh", it) }
+            ?: stringResource(R.string.analysis_coverage_insufficient),
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+*/
+
+@Composable
+private fun HonestAnnualSummarySection(stats: CarStats, effectiveCost: Double?, standbyKwh: Double?) {
+    val qs = stats.quickStats
+    val noData = stringResource(R.string.analysis_no_records)
+    Text(
+        text = stringResource(R.string.annual_report_summary),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold
+    )
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        SummaryCard(
+            title = stringResource(R.string.total_distance),
+            value = if (qs.totalDrives > 0) String.format("%,.0f km", qs.totalDistanceKm) else noData,
+            modifier = Modifier.weight(1f)
+        )
+        SummaryCard(
+            title = stringResource(R.string.stats_total_drives),
+            value = if (qs.totalDrives > 0) qs.totalDrives.toString() else noData,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        SummaryCard(
+            title = stringResource(R.string.stats_energy_used),
+            value = if (qs.totalDrives > 0) String.format("%,.1f kWh", qs.totalEnergyConsumedKwh) else noData,
+            modifier = Modifier.weight(1f)
+        )
+        SummaryCard(
+            title = stringResource(R.string.stats_avg_efficiency),
+            value = if (qs.totalDrives > 0 && qs.avgEfficiencyWhKm > 0) String.format("%.0f Wh/km", qs.avgEfficiencyWhKm) else noData,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        SummaryCard(
+            title = stringResource(R.string.label_charges),
+            value = if (qs.totalCharges > 0) qs.totalCharges.toString() else noData,
+            modifier = Modifier.weight(1f)
+        )
+        SummaryCard(
+            title = stringResource(R.string.energy_added),
+            value = if (qs.totalCharges > 0) String.format("%,.1f kWh", qs.totalEnergyAddedKwh) else noData,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        SummaryCard(
+            title = stringResource(R.string.annual_report_effective_cost),
+            value = effectiveCost?.let { String.format("\u00A5%.2f", it) } ?: noData,
+            modifier = Modifier.weight(1f)
+        )
+        SummaryCard(
+            title = stringResource(R.string.stats_avg_cost_kwh),
+            value = if (effectiveCost != null && qs.totalEnergyAddedKwh > 0) {
+                String.format("\u00A5%.3f", effectiveCost / qs.totalEnergyAddedKwh)
+            } else noData,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    SummaryCard(
+        title = stringResource(R.string.annual_report_standby_energy),
+        value = standbyKwh?.let { String.format("%.2f kWh", it) }
+            ?: stringResource(R.string.analysis_coverage_insufficient),
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+/* Legacy summary implementation retained only as historical reference.
+@Composable
+private fun AnnualSummarySection(stats: CarStats, effectiveCost: Double?, standbyKwh: Double?) {
     val qs = stats.quickStats
 
     Text(
@@ -162,12 +299,12 @@ private fun AnnualSummarySection(stats: CarStats) {
     ) {
         SummaryCard(
             title = stringResource(R.string.total_distance),
-            value = String.format("%,.0f km", qs.totalDistanceKm),
+            value = if (qs.totalDrives > 0) String.format("%,.0f km", qs.totalDistanceKm) else stringResource(R.string.analysis_no_records),
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
             title = stringResource(R.string.stats_total_drives),
-            value = "${qs.totalDrives}",
+            value = if (qs.totalDrives > 0) "${qs.totalDrives}" else stringResource(R.string.analysis_no_records),
             modifier = Modifier.weight(1f)
         )
     }
@@ -178,12 +315,12 @@ private fun AnnualSummarySection(stats: CarStats) {
     ) {
         SummaryCard(
             title = stringResource(R.string.stats_energy_used),
-            value = String.format("%,.1f kWh", qs.totalEnergyConsumedKwh),
+            value = if (qs.totalDrives > 0) String.format("%,.1f kWh", qs.totalEnergyConsumedKwh) else stringResource(R.string.analysis_no_records),
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
             title = stringResource(R.string.stats_avg_efficiency),
-            value = String.format("%.0f Wh/km", qs.avgEfficiencyWhKm),
+            value = if (qs.totalDrives > 0 && qs.avgEfficiencyWhKm > 0) String.format("%.0f Wh/km", qs.avgEfficiencyWhKm) else stringResource(R.string.analysis_no_records),
             modifier = Modifier.weight(1f)
         )
     }
@@ -194,12 +331,12 @@ private fun AnnualSummarySection(stats: CarStats) {
     ) {
         SummaryCard(
             title = stringResource(R.string.label_charges),
-            value = "${qs.totalCharges}",
+            value = if (qs.totalCharges > 0) "${qs.totalCharges}" else stringResource(R.string.analysis_no_records),
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
             title = stringResource(R.string.energy_added),
-            value = String.format("%,.1f kWh", qs.totalEnergyAddedKwh),
+            value = if (qs.totalCharges > 0) String.format("%,.1f kWh", qs.totalEnergyAddedKwh) else stringResource(R.string.analysis_no_records),
             modifier = Modifier.weight(1f)
         )
     }
@@ -219,6 +356,28 @@ private fun AnnualSummarySection(stats: CarStats) {
                 value = if (qs.avgCostPerKwh != null) String.format("€%.3f", qs.avgCostPerKwh) else stringResource(R.string.annual_report_na),
                 modifier = Modifier.weight(1f)
             )
+        }
+    }
+
+    if (effectiveCost != null || standbyKwh != null) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            effectiveCost?.let {
+                SummaryCard(
+                    title = stringResource(R.string.annual_report_effective_cost),
+                    value = String.format("¥%.2f", it),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            standbyKwh?.let {
+                SummaryCard(
+                    title = stringResource(R.string.annual_report_standby_energy),
+                    value = String.format("%.2f kWh", it),
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
     }
 
@@ -243,6 +402,7 @@ private fun AnnualSummarySection(stats: CarStats) {
     }
 }
 
+*/
 @Composable
 private fun SummaryCard(
     title: String,
