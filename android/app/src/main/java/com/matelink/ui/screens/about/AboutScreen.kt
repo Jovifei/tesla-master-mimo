@@ -17,25 +17,37 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.matelink.BuildConfig
 import com.matelink.R
 import com.matelink.ui.theme.MateLinkTheme
 import com.matelink.ui.theme.swissPalette
+import com.matelink.ui.common.PublicInfoLinks
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(onNavigateBack: () -> Unit) {
     val palette = swissPalette()
+    val uriHandler = LocalUriHandler.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = palette.surface,
@@ -52,7 +64,8 @@ fun AboutScreen(onNavigateBack: () -> Unit) {
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.surface)
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -86,6 +99,26 @@ fun AboutScreen(onNavigateBack: () -> Unit) {
                     stringResource(R.string.about_link_license)
                 )
             )
+            val links = listOf(
+                Triple(R.string.public_info_help, PublicInfoLinks.Page.HELP, "helpLink"),
+                Triple(R.string.public_info_legal, PublicInfoLinks.Page.LEGAL, "legalLink"),
+                Triple(R.string.public_info_changelog, PublicInfoLinks.Page.CHANGELOG, "changelogLink")
+            )
+            val publicPagesUnconfigured = stringResource(R.string.about_public_pages_unconfigured)
+            val openLinkFailed = stringResource(R.string.about_open_link_failed)
+            links.forEach { (label, page, tag) ->
+                val link = PublicInfoLinks.url(BuildConfig.MATELINK_PUBLIC_INFO_BASE_URL, page)
+                OutlinedButton(onClick = {
+                    if (link == null) {
+                        scope.launch { snackbarHostState.showSnackbar(publicPagesUnconfigured) }
+                    } else {
+                        runCatching { uriHandler.openUri(link) }
+                            .onFailure { scope.launch { snackbarHostState.showSnackbar(openLinkFailed) } }
+                    }
+                }, modifier = Modifier.fillMaxWidth().testTag(tag)) {
+                    Text(if (link == null) "${stringResource(label)}（公开页面暂未配置）" else stringResource(label))
+                }
+            }
             Text(
                 text = stringResource(R.string.about_footer),
                 style = MaterialTheme.typography.bodySmall,

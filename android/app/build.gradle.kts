@@ -34,6 +34,9 @@ android {
         versionCode = 14
         versionName = "1.4.2"
         buildConfigField("String", "GIT_SHA", "\"${resolveGitSha()}\"")
+        val publicInfoBaseUrl = providers.gradleProperty("MATELINK_PUBLIC_INFO_BASE_URL").orElse("").get()
+        buildConfigField("String", "MATELINK_PUBLIC_INFO_BASE_URL", "\"$publicInfoBaseUrl\"")
+        manifestPlaceholders["amapApiKey"] = providers.gradleProperty("AMAP_API_KEY").orElse("").get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -149,4 +152,28 @@ tasks.matching { it.name.startsWith("connected") && it.name.endsWith("AndroidTes
                 "Run them only on an isolated test device with -PallowConnectedDeviceTests=isolated-device."
         }
     }
+}
+
+val verifyDebugForegroundServiceType by tasks.registering {
+    dependsOn("processDebugMainManifest")
+
+    doLast {
+        val mergedManifest = layout.buildDirectory
+            .file("intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml")
+            .get()
+            .asFile
+        val manifestText = mergedManifest.readText()
+        val workManagerService = Regex(
+            """<service\s+[^>]*android:name="androidx.work.impl.foreground.SystemForegroundService"[^>]*android:foregroundServiceType="dataSync"""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+
+        check(workManagerService.containsMatchIn(manifestText)) {
+            "Merged WorkManager foreground service must declare android:foregroundServiceType=\"dataSync\"."
+        }
+    }
+}
+
+tasks.named("check") {
+    dependsOn(verifyDebugForegroundServiceType)
 }

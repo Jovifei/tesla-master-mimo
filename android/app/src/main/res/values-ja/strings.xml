@@ -82,4 +82,6 @@
     <string name="range_trip_list_title">最近の走行 (%d)</string>
     <string name="range_estimated">予測</string>
     <string name="range_actual">実際</string>
+    <string name="usable_percent">Usable %1$d%%</string>
+    <string name="charge_cost_estimated">Estimated at 1.10/kWh</string>
 </resources>

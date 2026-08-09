@@ -82,4 +82,6 @@
     <string name="range_trip_list_title">Letzte Fahrten (%d)</string>
     <string name="range_estimated">Geschätzt</string>
     <string name="range_actual">Tatsächlich</string>
+    <string name="usable_percent">Nutzbar %1$d%%</string>
+    <string name="charge_cost_estimated">Geschaetzt mit 1.10/kWh</string>
 </resources>

@@ -51,6 +51,9 @@
     <string name="amap_vehicle_marker">Vehicle</string>
     <string name="amap_legacy_preview_unavailable">Map preview is not available in this view.</string>
     <string name="app_name">MateLink</string>
+    <string name="public_info_help">Help</string>
+    <string name="public_info_legal">Privacy and disclaimer</string>
+    <string name="public_info_changelog">Changelog</string>
 
     <!-- Navigation -->
     <string name="nav_dashboard">Dashboard</string>
@@ -1069,4 +1072,10 @@
     <string name="amap_enter_key">Enter Key</string>
     <string name="amap_key_dialog_title">Enter or change AMap Key</string>
     <string name="amap_key_dialog_hint">The Key is visible only while editing. It is encrypted after verification succeeds and is never shown again.</string>
+    <string name="about_public_info">Public information</string>
+    <string name="about_help">Help</string>
+    <string name="about_legal">Privacy and disclaimer</string>
+    <string name="about_changelog">Changelog</string>
+    <string name="about_public_pages_unconfigured">Public pages are not configured yet.</string>
+    <string name="about_open_link_failed">Unable to open this page.</string>
 </resources>

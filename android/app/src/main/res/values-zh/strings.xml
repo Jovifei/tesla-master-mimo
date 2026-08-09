@@ -51,6 +51,9 @@
     <string name="amap_vehicle_marker">车辆</string>
     <string name="amap_legacy_preview_unavailable">此页面暂不提供地图预览。</string>
     <string name="app_name">MateLink</string>
+    <string name="public_info_help">使用说明</string>
+    <string name="public_info_legal">隐私与免责声明</string>
+    <string name="public_info_changelog">更新日志</string>
 
     <!-- Navigation -->
     <string name="nav_dashboard">仪表盘</string>
@@ -1058,4 +1061,10 @@
     <string name="amap_enter_key">输入 Key</string>
     <string name="amap_key_dialog_title">输入或更改高德 Key</string>
     <string name="amap_key_dialog_hint">Key 只在编辑时显示，验证成功后会加密保存，之后不会再次显示。</string>
+    <string name="about_public_info">公开说明</string>
+    <string name="about_help">使用说明</string>
+    <string name="about_legal">隐私与免责声明</string>
+    <string name="about_changelog">更新日志</string>
+    <string name="about_public_pages_unconfigured">公开页面暂未配置。</string>
+    <string name="about_open_link_failed">无法打开此页面。</string>
 </resources>

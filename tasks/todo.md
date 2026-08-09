@@ -524,3 +524,17 @@
 - `app_glm` was removed from `.gitmodules`, the parent gitlink, the working tree, and local submodule metadata. The separate remote repository was not deleted.
 - `android/.kotlin/` and `deploy/*.env` are ignored. No `.env` content, API key, token, or user configuration was read or staged.
 - Existing unrelated parent-worktree deletions and the legacy `app_mimo` worktree changes remain uncommitted and preserved.
+
+# P1.14 Branch consolidation - 2026-08-09
+
+## Plan
+
+- [x] Merge `codex/app-mimo-data-setup` into the latest `main` line without discarding unique qualification tests or public-information assets.
+- [x] Resolve overlapping UI/resource/build conflicts in favor of the latest `main` implementation and retain the data-setup verification gates.
+- [x] Re-run JVM tests, Debug APK builds, AndroidTest APK build, and foreground-service manifest validation.
+
+## Review
+
+- Merge validation passed: `:app:testDebugUnitTest`, `:app:assembleDebug`, `:app:assembleDebugAndroidTest`, and `:app:verifyDebugForegroundServiceType`.
+- `git diff --cached --check` passed and no merge markers remain.
+- No `.env` content, API key, token, vehicle identifier, or user configuration was read or staged.
