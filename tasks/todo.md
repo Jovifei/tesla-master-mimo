@@ -505,3 +505,22 @@
 - The final full gate reports 152 JVM tests with 0 failures, errors, or skipped tests; both Debug APK build gates passed after clearing the generated KSP cache.
 - Version 1.4.1 (versionCode 13) was installed with `adb install -r -d`; firstInstallTime remained `2026-07-26 21:35:02`, and the process stayed alive through analysis, report, history, and long-distance routes.
 - Physical checks covered all four analysis pages, custom date dialog, current/previous annual reports, 行程历史, and 长途旅程. Fatal/app, Room/corruption, format, ANR, and AMap markers were 0. No instrumentation, uninstall, data clear, Key read, commit, or push occurred.
+
+# Repository consolidation and stable publish - 2026-08-09
+
+## Plan
+
+- [x] Publish the verified `app_mimo` stable line to its `main` branch.
+- [x] Remove the retired `app_glm` submodule from the parent repository.
+- [x] Update the parent `app_mimo` gitlink to the published stable commit.
+- [x] Keep local secret files and generated state out of Git.
+- [x] Push both repository `main` branches and the stable tag.
+
+## Review
+
+- `app_mimo/main` is `3140b0e`; `testDebugUnitTest`, `assembleDebug`, and `assembleDebugAndroidTest` passed with the Android SDK supplied only to the process environment.
+- `v1.4.2` remains the stable release marker and is published to the `app_mimo` remote.
+- `tesla_master/main` is `6166b6a`; its commit removes `app_glm` and points `app_mimo` to `3140b0e`.
+- `app_glm` was removed from `.gitmodules`, the parent gitlink, the working tree, and local submodule metadata. The separate remote repository was not deleted.
+- `android/.kotlin/` and `deploy/*.env` are ignored. No `.env` content, API key, token, or user configuration was read or staged.
+- Existing unrelated parent-worktree deletions and the legacy `app_mimo` worktree changes remain uncommitted and preserved.
