@@ -57,14 +57,14 @@ docker compose ps
 | --- | --- | --- |
 | TeslaMate | `http://localhost:4000` | 首次登录 Tesla、采集车辆数据 |
 | Grafana | `http://localhost:3000` | 仪表盘查看，不填进 MateLink |
-| TeslaMateApi | `http://localhost:8080` | MateLink 要填写的 API 根地址 |
+| TeslaMateApi | `http://localhost:18080` | MateLink 要填写的 API 根地址 |
 
 ## 4. 首次使用顺序
 
 1. 打开 `http://localhost:4000`
 2. 按 TeslaMate 提示完成 Tesla 登录授权
 3. 等 TeslaMate 开始采集车辆数据
-4. 打开 `http://localhost:8080/api/v1/cars`
+4. 打开 `http://localhost:18080/api/v1/cars`
 5. 如果能看到车辆 JSON，说明 API 可供 MateLink 使用
 
 Tesla 登录授权由 TeslaMate Web 页面处理，不在 MateLink 里实现。MateLink 不保存 Tesla 账号密码，也不直接登录 Tesla；它只读取 TeslaMateApi 暴露出来的数据。
@@ -76,14 +76,14 @@ Tesla 登录授权由 TeslaMate Web 页面处理，不在 MateLink 里实现。M
 MateLink Settings 里填写：
 
 ```text
-API 根地址: http://192.168.1.100:8080
+API 根地址: http://192.168.1.100:18080
 API Token: .env 里的 MATE_LINK_API_TOKEN
 ```
 
 不要填写：
 
 ```text
-http://192.168.1.100:8080/api/v1
+http://192.168.1.100:18080/api/v1
 http://192.168.1.100:4000
 http://192.168.1.100:3000
 ```
@@ -116,5 +116,5 @@ https://teslamate-api.example.com
 | `docker ps` 连不上 Docker | Docker Desktop 没完全启动 | 打开 Docker Desktop，等 engine 变绿 |
 | TeslaMateApi 容器反复重启 | 数据库密码或加密 Key 不一致 | 检查 `.env` 和 compose 环境变量 |
 | App 提示 401 | API Token 不一致 | 确认 App 里填的是 `MATE_LINK_API_TOKEN` |
-| 浏览器返回网页而不是 JSON | 访问成了 Web UI 或 Grafana | 用 `http://主机IP:8080/api/v1/cars` 测 API |
+| 浏览器返回网页而不是 JSON | 访问成了 Web UI 或 Grafana | 用 `http://主机IP:18080/api/v1/cars` 测 API |
 | App 连不上局域网 IP | 手机和主机不在同一网络 | 检查 Wi-Fi、VPN、防火墙 |

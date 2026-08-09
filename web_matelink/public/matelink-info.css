@@ -1,0 +1,7 @@
+:root { color-scheme: light dark; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.6; }
+body { margin: 0; background: Canvas; color: CanvasText; }
+main { max-width: 760px; margin: auto; padding: 24px 18px 48px; }
+header, footer { border-bottom: 1px solid color-mix(in srgb, CanvasText 18%, transparent); padding: 12px 0; }
+footer { border-top: 1px solid color-mix(in srgb, CanvasText 18%, transparent); border-bottom: 0; margin-top: 32px; color: color-mix(in srgb, CanvasText 70%, transparent); font-size: .9rem; }
+nav { display: flex; flex-wrap: wrap; gap: 14px; }
+a { color: LinkText; } code { overflow-wrap: anywhere; } h1 { line-height: 1.2; } .note { padding: 12px; border-left: 4px solid #b7791f; background: color-mix(in srgb, CanvasText 7%, transparent); }

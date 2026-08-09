@@ -45,6 +45,12 @@
                 tools:node="remove" />
         </provider>
 
+        <!-- DataSyncWorker supplies DATA_SYNC foreground info through WorkManager. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

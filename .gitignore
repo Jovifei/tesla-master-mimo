@@ -1,5 +1,6 @@
 # Android local state and build outputs
 android/.gradle/
+android/.kotlin/
 android/**/build/
 android/local.properties
 
@@ -8,3 +9,4 @@ android/.idea/
 
 # Local deployment secrets
 deploy/**/.env
+deploy/*.env

@@ -216,7 +216,7 @@ private fun CollapsibleSection(
 }
 
 @Composable
-private fun SettingsContent(
+internal fun SettingsContent(
     modifier: Modifier = Modifier,
     uiState: SettingsUiState,
     instanceUiState: InstanceUiState = InstanceUiState(),
@@ -391,7 +391,7 @@ private fun SettingsContent(
             placeholder = { Text(stringResource(R.string.settings_server_url_placeholder)) },
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag("urlInput"),
+                .testTag("serverAddressInput"),
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
             enabled = !uiState.isTesting && !uiState.isSaving
@@ -410,6 +410,7 @@ private fun SettingsContent(
             value = uiState.apiToken,
             onValueChange = onApiTokenChange,
             label = { Text(stringResource(R.string.settings_api_token_label)) },
+            modifier = Modifier.fillMaxWidth().testTag("apiKeyInput"),
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -421,6 +422,7 @@ private fun SettingsContent(
                 text = warning,
                 style = MaterialTheme.typography.bodySmall,
                 color = StatusWarning,
+                modifier = Modifier.padding(top = 8.dp).testTag("localHttpWarning")
             )
         }
 
@@ -927,7 +929,7 @@ private fun SettingsContent(
             OutlinedButton(
                 onClick = onTestConnection,
                 enabled = uiState.serverUrl.isNotBlank() && !uiState.mockMode && !uiState.isTesting && !uiState.isSaving,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).testTag("testConnectionButton")
             ) {
                 if (uiState.isTesting) {
                     CircularProgressIndicator(
@@ -944,6 +946,7 @@ private fun SettingsContent(
                 enabled = (uiState.serverUrl.isNotBlank() || uiState.mockMode) && !uiState.isTesting && !uiState.isSaving,
                 modifier = Modifier
                     .weight(1f)
+                    .testTag("saveConfigurationButton")
                     .testTag("saveButton")
             ) {
                 if (uiState.isSaving) {
@@ -1140,7 +1143,21 @@ private fun SettingsContent(
 @Composable
 private fun TestResultCard(result: TestResult) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (com.matelink.BuildConfig.DEBUG) {
+                    Modifier.testTag(
+                        if (result.primaryResult is ServerTestResult.Success) {
+                            "connectionTestResultSuccess"
+                        } else {
+                            "connectionTestResultFailure"
+                        }
+                    )
+                } else {
+                    Modifier
+                }
+            ),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )

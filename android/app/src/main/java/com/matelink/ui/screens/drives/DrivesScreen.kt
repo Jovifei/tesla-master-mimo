@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -53,6 +54,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -81,6 +85,7 @@ import com.matelink.util.formatDuration
 import com.matelink.util.formatDurationCompact
 import com.matelink.ui.theme.CarColorPalette
 import com.matelink.ui.theme.CarColorPalettes
+import com.matelink.util.toChineseDisplayAddress
 import java.time.Duration
 import java.time.LocalDate
 import java.time.OffsetDateTime
@@ -151,6 +156,20 @@ fun DrivesScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .then(
+                    if (com.matelink.BuildConfig.DEBUG) {
+                        Modifier
+                            .testTag("drivesPullToRefresh")
+                            .semantics {
+                                onClick(label = "Refresh drives") {
+                                    viewModel.refresh()
+                                    true
+                                }
+                            }
+                    } else {
+                        Modifier
+                    }
+                )
         ) {
             if (uiState.isLoading && !uiState.isRefreshing) {
                 MateLinkLoadingPlaceholder(color = palette.accent)
@@ -592,8 +611,8 @@ private fun DriveItem(
 ) {
     val context = LocalContext.current
     val unknown = stringResource(R.string.unknown)
-    val startCity = drive.startAddress ?: unknown
-    val endCity = drive.endAddress ?: unknown
+    val startCity = drive.startAddress.toChineseDisplayAddress() ?: unknown
+    val endCity = drive.endAddress.toChineseDisplayAddress() ?: unknown
 
     val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
     EditorialListItem(
@@ -603,6 +622,7 @@ private fun DriveItem(
         heroValue = "%.0f".format(UnitFormatter.formatDistanceValue(drive.distance ?: 0.0, units)),
         heroUnit = UnitFormatter.getDistanceUnit(units).uppercase(java.util.Locale.getDefault()),
         onClick = onClick,
+        modifier = Modifier.heightIn(min = 112.dp),
     ) {
         EditorialPill(formatDuration(context.resources, drive.durationMin ?: 0))
         EditorialPill("${drive.speedMax ?: 0} ${UnitFormatter.getSpeedUnit(units)}")
@@ -650,10 +670,14 @@ private fun ParkedItem(
     EditorialListItem(
         accent = MaterialTheme.colorScheme.outline,
         dateline = formatEditorialDate(item.startDate, true),
-        title = stringResource(R.string.drive_history_parked_at, item.location ?: unknown),
+        title = stringResource(
+            R.string.drive_history_parked_at,
+            item.location.toChineseDisplayAddress() ?: unknown
+        ),
         heroValue = durationText,
         heroUnit = stringResource(R.string.trip_timeline_parked).uppercase(java.util.Locale.getDefault()),
         onClick = onClick,
+        modifier = Modifier.heightIn(min = 112.dp),
     ) {
         EditorialPill(stringResource(R.string.parked_for, durationText))
         val batteryStart = item.olderDrive.endBatteryLevel

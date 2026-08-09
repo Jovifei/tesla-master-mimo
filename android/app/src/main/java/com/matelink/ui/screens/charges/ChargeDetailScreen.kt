@@ -63,6 +63,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlin.math.roundToInt
@@ -80,6 +81,8 @@ import com.matelink.util.formatDurationCompact
 import com.matelink.util.formatMedium
 import com.matelink.util.formatTime
 import com.matelink.util.parseIsoDateTime
+import com.matelink.util.formatCompactDateTimeRange
+import com.matelink.util.toChineseDisplayAddress
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -410,13 +413,9 @@ private fun LocationHeaderCard(
     costText: String,
     costSourceText: String
 ) {
-    val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
     val locationLabel = stringResource(R.string.location)
     val unknownLocationLabel = stringResource(R.string.unknown_location)
-    val startedLabel = stringResource(R.string.started)
-    val endedLabel = stringResource(R.string.ended)
     val energyAddedLabel = stringResource(R.string.energy_added_header)
-    val costLabel = stringResource(R.string.cost)
     val unknownLabel = stringResource(R.string.unknown)
 
     Card(
@@ -426,8 +425,8 @@ private fun LocationHeaderCard(
         )
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Location
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -445,7 +444,7 @@ private fun LocationHeaderCard(
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                     )
                     Text(
-                        text = detail.address ?: unknownLocationLabel,
+                        text = detail.address.toChineseDisplayAddress() ?: unknownLocationLabel,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -458,7 +457,7 @@ private fun LocationHeaderCard(
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
             )
 
-            // Start time
+            // Compact start/end range on one line.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.Schedule,
@@ -467,48 +466,16 @@ private fun LocationHeaderCard(
                     tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = startedLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = formatDateTime(detail.startDate, unknownLabel, is24Hour),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
-
-            // End time
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Schedule,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                val range = formatCompactDateTimeRange(detail.startDate, detail.endDate)
+                Text(
+                    text = detail.durationStr?.takeIf { it.isNotBlank() }
+                        ?.let { "$range · $it" }
+                        ?: range,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = endedLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = formatDateTime(detail.endDate, unknownLabel, is24Hour),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    detail.durationStr?.let { duration ->
-                        Text(
-                            text = stringResource(R.string.duration_label, duration),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        )
-                    }
-                }
             }
 
             // Energy added and cost summary

@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="public_info_help">使用说明</string>
+    <string name="public_info_legal">隐私与免责声明</string>
+    <string name="public_info_changelog">更新日志</string>
     <string name="app_name">MateLink</string>
 
     <!-- Navigation -->
@@ -484,7 +487,7 @@
     <string name="current_charge_title">当前充电</string>
     <string name="current_charge_message">当前充电信息。</string>
     <string name="current_charge">当前充电</string>
-    <string name="usable_percent">可用 (%)</string>
+    <string name="usable_percent">可用 %1$d%%</string>
     <string name="not_available">暂无数据</string>
     <string name="charge_cost_estimated">按 1.10 元/度估算</string>
     <string name="range_information_title">续航信息</string>
@@ -939,4 +942,10 @@
     <string name="settings_connection_timeout">连接超时。</string>
     <string name="settings_unrecognised_server_data">服务器返回了无法识别的数据。</string>
     <string name="settings_server_unreachable">服务器暂时无法访问。</string>
+    <string name="about_public_info">公开说明</string>
+    <string name="about_help">使用说明</string>
+    <string name="about_legal">隐私与免责声明</string>
+    <string name="about_changelog">更新日志</string>
+    <string name="about_public_pages_unconfigured">公开页面暂未配置。</string>
+    <string name="about_open_link_failed">无法打开此页面。</string>
 </resources>

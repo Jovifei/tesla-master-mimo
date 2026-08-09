@@ -247,3 +247,123 @@
 - Applied the 500 m route threshold to drive display, summaries, and charts; short repositioning is represented by the surrounding parked interval and parked timestamps render in 24-hour form.
 - Verified `:app:testDebugUnitTest` and `:app:assembleDebug`; installed the APK on device `6e4fa92f` and confirmed no WorkManager initialization/fatal startup log.
 - Still pending: adapter-backed parked power/temperature, charge-cost overrides and Chinese geocoding, sentry events/media, capability-aware Android API client, and final visual calibration.
+
+# Crash, Detail UI, and Data Completion - 2026-07-11
+
+## Confirmed Evidence
+
+- [x] Commit the previous verified delivery as `7f01e4d` without staging `.env`, IDE state, or build outputs.
+- [x] Reproduce Dashboard refresh crash on device and capture the `SystemForegroundService` type mismatch stack.
+- [x] Confirm Docker services and history APIs are healthy while live status and drive energy fields remain unavailable.
+- [x] Write `docs/superpowers/plans/2026-07-11-app-mimo-crash-ui-data-repair.md`.
+
+## Next Execution
+
+- [x] P0: fix merged WorkManager `dataSync` foreground-service declaration and prove cold launch/refresh on device.
+- [x] Reproduce and fix the battery page crash after the global worker crash is removed.
+- [ ] Add Adapter status snapshot with MQTT persistence and PostgreSQL fallback.
+- [x] Persist computed drive energy/efficiency and expose it in drive details without fabricating zero values.
+- [ ] Add clickable parked details and compact Chinese-only drive/charge detail headers. (Chinese display and 24-hour detail time complete; parked details pending.)
+- [ ] Add Room-backed manual charge cost overrides and the 1.10/kWh estimate rule. (Estimate display complete; Room-backed in-app override pending.)
+- [ ] Complete Dashboard, stats, Chinese geocoding, visual QA, and device smoke verification.
+
+## Review - Crash and Detail Repair Progress
+
+- Declared WorkManager's merged `SystemForegroundService` as `dataSync` and added a Gradle merged-manifest verification task. On device `6e4fa92f`, 20 cold launches and 5 Dashboard refreshes completed with no new crash-buffer entry.
+- Fixed Battery Detail's malformed percentage format string and prevented negative range-loss values. Entered Battery and opened/closed its detail five times with no crash.
+- A real history drive with API `energy_consumed_net = null` now displays calculated power-sample energy (`0.13 kWh`) and efficiency (`156.6 Wh/km`) rather than `0`.
+- Drive headers now remove mixed English administrative suffixes when a Chinese address component exists and force 24-hour times. Charge cards no longer treat an absent/zero TeslaMate cost as free: they display the 1.10/kWh estimate label instead.
+- Remaining proof boundary: the current TeslaMateApi `/status` endpoint still returns no live snapshot, so the full Dashboard state, MQTT/DB Adapter, parked metrics, in-app cost overrides, Chinese geocoding, and sentry media require the pending adapter and persistence work.
+
+# Compact Details, Parked Data, and Dashboard Snapshot - 2026-07-11
+
+## Execution
+
+- [x] Build the bounded Go MateLink Adapter package with legacy proxy, capabilities, snapshot, and parked-detail endpoints.
+- [x] Add Android Adapter snapshot integration and source-aware Dashboard state.
+- [x] Compress charge and drive headers into one-line 24-hour ranges.
+- [x] Increase drive/parked history card height and make parked cards navigate to a dedicated detail screen.
+- [x] Merge persisted calculated drive energy into history rows with source and coverage.
+- [x] Run child-result boundary review, Go/Docker/Android tests, and device launch verification.
+- [x] Write `docs/BUG-REPAIR-REPORT-2026-07-11.md` and list candidate files without staging or committing.
+
+## Review - Compact Details and Adapter
+
+- Child-Claude stayed inside the requested boundary but returned analysis only; parent execution completed and reviewed all changes.
+- Go tests, Compose validation, Android unit tests, APK build and device installation passed.
+- Real Adapter responses contain battery/range/odometer/TPMS and parked-period metrics.
+- Final populated-dashboard and parked-navigation device smoke remains blocked by the missing App API token (HTTP 401).
+
+# Continuation Handoff - 2026-07-16
+
+## Read-only verification
+
+- [x] Read the parent `AGENTS.md`, repository lessons, prior handoff evidence, and Obsidian project notes.
+- [x] Confirm the supplied old task ID belongs to `E:\project\jovi-automation`, so its history must not be mixed into `app_mimo`.
+- [x] Reconcile stale notes against the current tree: Adapter snapshot, parked detail, compact headers, Room v13 energy provenance, and honest missing-data rendering already exist in the working tree.
+- [x] Confirm Docker services are running, the configured Adapter token is present, and the authenticated capabilities endpoint returns HTTP 200.
+- [x] Re-run Go tests, Compose validation, Android unit tests, Debug assembly, and diff hygiene successfully.
+
+## Current boundary
+
+- [ ] Connect an Android device, save the matching API token in the app, and verify populated Dashboard plus parked-detail navigation on device.
+- [ ] After explicit Jovi approval, implement the next bounded code package: Room-backed manual charge-cost overrides and explicit free-charge state, wired through repository/ViewModel/UI with focused tests.
+- [ ] Do not stage or commit until Jovi separately approves the exact candidate file list.
+
+## Review
+
+- No implementation code was changed during this continuation pass.
+- The current server-side data path is healthy; device-side authenticated visual proof is unavailable because no Android device is connected.
+- The smallest remaining product implementation edge is charge-cost override persistence; the 1.10/kWh estimate resolver already exists and should be reused.
+
+# Obsidian Memory and Address Refresh - 2026-07-16
+
+## Plan
+
+- [x] Re-read the app_mimo handoff session evidence for durable local and remote addresses.
+- [x] Verify the independent repository remote, parent repository remote, active LAN address, and live Adapter endpoints.
+- [x] Replace stale Adapter status in the app_mimo Obsidian project memory.
+- [x] Add a durable address/evidence index without copying any secret value.
+- [x] Re-check the updated memory against the current repository and runtime state.
+
+## Review
+
+- `app_mimo` remote: `https://github.com/Jovifei/tesla-master-mimo.git`; parent coordination remote: `https://github.com/Jovifei/Tesla_MateLink.git`.
+- Adapter API Root is port `8080`; both loopback and the current LAN address returned HTTP 200 on 2026-07-16.
+- No working public MateLink API URL is currently proven; documentation domain names remain examples only.
+- Updated the Obsidian overview, plan, progress, decisions, workflow knowledge, and new address/evidence index under the project memory directory.
+
+# GPT-5.6 Commander Handoff - 2026-07-16
+
+## Plan
+
+- [x] Consolidate product purpose, validated completion, live blockers, repo state, addresses, references, and authorization rules for an external GPT-5.6 commander.
+- [x] Provide a bounded first instruction that starts with P0 device acceptance and forbids unauthorized implementation expansion.
+- [x] Register the handoff document in the app_mimo Obsidian memory as the commander entry point.
+- [x] Perform an independent-reader review before handing the document to Jovi.
+
+## Review
+
+- Canonical document: `docs/GPT56_COMMANDER_HANDOFF_2026-07-16.md`.
+- Obsidian entry: `06-GPT56指挥官交接.md` under the app_mimo project memory directory.
+- The document contains no secret values and explicitly distinguishes dynamic facts from durable decisions.
+- Independent-reader review added four boundary fixes: non-document write authorization, device-state authorization, document-write authorization, and evidence redaction.
+- Second independent-reader pass closed the remaining conflicts: document maintenance now requires current-turn authorization, and failure-state tests cannot change Docker, host networking, or server-side data without explicit authorization.
+
+# P0.13-G3.1 Parked Detail Utility Boundary and Revalidation - 2026-07-22
+
+## Plan
+
+- [x] Record the exact branch, HEAD, existing 11-file staged G3 baseline, and mixed-worktree boundary.
+- [x] Read the authorized display utilities and their direct tests; audit static declarations and call sites.
+- [x] Stage only the two independent display utilities and their existing direct tests, without changing the working tree.
+- [x] Recheck the staged closure, allowed path boundary, diff hygiene, and secret/privacy exposure.
+- [x] Generate a fresh staged patch; apply it to a new clean external validation copy; run the required JVM and APK builds.
+- [x] Record the result, remaining G4 hunks, and the single authorized next action.
+
+## Review
+
+- Staged the two pure presentation utilities and their direct tests, increasing the approved G3 candidate from 11 to 15 paths. The four working-tree SHA-256 values were identical before and after staging.
+- The staged patch applied cleanly to a fresh detached worktree from `8f547e12e350f312007937a1fd756f625ebbfade`; no `.env` file was copied. `testDebugUnitTest` passed 37 tests with 0 failures and 0 errors; both required APK assemblies passed.
+- Scope and sensitive-data checks passed: no forbidden G4-G7 paths, credential-like content, or literal coordinate values entered the staged patch. Existing G4-G7 working-tree content remains unstaged.
+- Review caveat: the direct utility tests prove the same-day/cross-year and Chinese/non-Chinese cases, but do not yet assert every missing, invalid, blank, and unrecognised-input case listed in the acceptance matrix. No test logic was changed because this task forbids it.

@@ -19,3 +19,13 @@
 
 - Pattern: Several screens turned missing realtime or historical fields into `0`, `false`, fabricated capacity, or a free charge, making unavailable data look authoritative.
 - Prevention rule: Preserve nullable values through repository, calculation, and UI layers. Every derived metric must declare its source and sample coverage; only an explicit user override may mark a charge as free.
+
+## 2026-07-11 Foreground Worker Device Proof
+
+- Pattern: A build and ordinary startup smoke test passed, but the first real foreground `DataSyncWorker` launch crashed because the merged WorkManager service did not declare the `dataSync` foreground service type.
+- Prevention rule: Any worker that calls `setForeground` must be exercised on-device, and the merged Manifest service declaration must be inspected. Startup-only smoke tests do not prove refresh or forced-sync paths.
+
+## 2026-08-09 Multi-Repository Publication Boundary
+
+- Pattern: Publishing the stable `app_mimo/main` while leaving the visible `codex/app-mimo-data-setup` worktree uncommitted made the repository client still show active changes.
+- Prevention rule: Before closing a Git task, enumerate every visible repository and worktree branch, publish each explicitly requested branch, update the parent submodule gitlink to the exact child commit, and report any intentionally preserved dirty worktree separately.

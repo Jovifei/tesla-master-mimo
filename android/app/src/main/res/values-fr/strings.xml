@@ -88,4 +88,6 @@
     <string name="range_trip_list_title">Trajets récents (%d)</string>
     <string name="range_estimated">Estimé</string>
     <string name="range_actual">Réel</string>
+    <string name="usable_percent">Disponible %1$d%%</string>
+    <string name="charge_cost_estimated">Estimation a 1.10/kWh</string>
 </resources>

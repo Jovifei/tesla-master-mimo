@@ -61,6 +61,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -80,6 +81,8 @@ import com.matelink.util.formatDurationCompact
 import com.matelink.util.formatMedium
 import com.matelink.util.formatTime
 import com.matelink.util.parseIsoDateTime
+import com.matelink.util.toChineseDisplayAddress
+import com.matelink.util.formatCompactDateTimeRange
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -163,7 +166,7 @@ private fun DriveDetailContent(
     onRemoveFromTrip: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
+    val is24Hour = true
     val scrollState = rememberScrollState()
     var sharedXFraction by remember { mutableStateOf<Float?>(null) }
 
@@ -361,7 +364,11 @@ private fun DriveDetailContent(
 
 @Composable
 private fun RouteHeaderCard(detail: DriveDetail) {
-    val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
+    val unknown = stringResource(R.string.unknown_location)
+    val startAddress = detail.startAddress.toChineseDisplayAddress() ?: unknown
+    val endAddress = detail.endAddress.toChineseDisplayAddress() ?: unknown
+    val timeRange = formatCompactDateTimeRange(detail.startDate, detail.endDate)
+    val duration = detail.durationStr?.takeIf { it.isNotBlank() }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -369,11 +376,13 @@ private fun RouteHeaderCard(detail: DriveDetail) {
         )
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Start location
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Icon(
                     imageVector = Icons.Default.LocationOn,
                     contentDescription = null,
@@ -381,48 +390,14 @@ private fun RouteHeaderCard(detail: DriveDetail) {
                     tint = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = stringResource(R.string.from),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = detail.startAddress ?: stringResource(R.string.unknown_location),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(start = 36.dp),
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
-            )
-
-            // End location
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.tertiary
+                Text(
+                    text = "$startAddress \u2192 $endAddress",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = stringResource(R.string.to),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = detail.endAddress ?: stringResource(R.string.unknown_location),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
             }
 
             HorizontalDivider(
@@ -430,7 +405,6 @@ private fun RouteHeaderCard(detail: DriveDetail) {
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
             )
 
-            // Start time
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.Schedule,
@@ -439,48 +413,13 @@ private fun RouteHeaderCard(detail: DriveDetail) {
                     tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = stringResource(R.string.started),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = formatDateTime(detail.startDate, is24Hour),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
-
-            // End time
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Schedule,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                Text(
+                    text = if (duration == null) timeRange else "$timeRange · $duration",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = stringResource(R.string.ended),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = formatDateTime(detail.endDate, is24Hour),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    detail.durationStr?.let { duration ->
-                        Text(
-                            text = stringResource(R.string.duration_label, duration),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        )
-                    }
-                }
             }
         }
     }

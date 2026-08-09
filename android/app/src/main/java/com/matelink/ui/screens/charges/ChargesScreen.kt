@@ -66,6 +66,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -91,6 +94,7 @@ import com.matelink.ui.theme.CarColorPalettes
 import com.matelink.domain.analytics.ChargeCostSource
 import com.matelink.domain.analytics.EffectiveChargeCostInput
 import com.matelink.domain.analytics.EffectiveChargeCostResolver
+import com.matelink.util.toChineseDisplayAddress
 import java.time.LocalDate
 
 data class ChargeEnergyPresentation(
@@ -150,6 +154,20 @@ fun ChargesScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .then(
+                    if (com.matelink.BuildConfig.DEBUG) {
+                        Modifier
+                            .testTag("chargesPullToRefresh")
+                            .semantics {
+                                onClick(label = "Refresh charges") {
+                                    viewModel.refresh()
+                                    true
+                                }
+                            }
+                    } else {
+                        Modifier
+                    }
+                )
         ) {
             if (uiState.isLoading && !uiState.isRefreshing) {
                 MateLinkLoadingPlaceholder(color = palette.accent)
@@ -702,11 +720,11 @@ private fun ChargeItem(
     }
     val costPillText = if (onEditCost != null) "$costText ↗" else costText
 
-    val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
+    val is24Hour = true
     EditorialListItem(
         accent = accent,
         dateline = formatEditorialDate(charge.startDate, is24Hour),
-        title = charge.address ?: unknownLocation,
+        title = charge.address.toChineseDisplayAddress() ?: unknownLocation,
         heroValue = energy.energyKwh?.let { "%.1f".format(it) } ?: notAvailableLabel,
         heroUnit = if (energy.energyKwh != null) "kWh" else "",
         onClick = onClick,
