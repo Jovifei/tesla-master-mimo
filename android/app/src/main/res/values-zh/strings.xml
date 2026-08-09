@@ -1055,4 +1055,7 @@
     <string name="efficiency_percentile_buckets">0–25%%：%1$d · 25–50%%：%2$d · 50–75%%：%3$d · 75–100%%：%4$d</string>
     <string name="cost_manual_count">人工总价：%d 次</string>
     <string name="vampire_detected_unknown">已检测到待机耗电；原因未知</string>
+    <string name="amap_enter_key">输入 Key</string>
+    <string name="amap_key_dialog_title">输入或更改高德 Key</string>
+    <string name="amap_key_dialog_hint">Key 只在编辑时显示，验证成功后会加密保存，之后不会再次显示。</string>
 </resources>

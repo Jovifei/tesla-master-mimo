@@ -35,7 +35,7 @@ class AmapSetupGuideContentTest {
                     uiState = AmapSetupUiState(),
                     onCopyPackage = { copied = "package" },
                     onCopySha1 = { copied = "sha1" },
-                    onKeyChange = {}, onVerifyDraftKey = {}, onVerifySavedKey = {}, onChangeKey = {},
+                    onKeyChange = {}, onVerifyDraftKey = {}, onVerifySavedKey = {}, onChangeKey = {}, onCancelKeyEdit = {},
                     onPrivacyAgreedChange = {}, onNavigateToPreview = {}
                 )
             }
@@ -46,6 +46,7 @@ class AmapSetupGuideContentTest {
         composeRule.onNodeWithText(context.getString(R.string.amap_key_not_saved)).fetchSemanticsNode()
         composeRule.onNodeWithText(context.getString(R.string.amap_copy_package)).performClick()
         assertEquals("package", copied)
+        composeRule.onNodeWithText(context.getString(R.string.amap_enter_key)).performClick()
         assertTrue(composeRule.onNode(hasSetTextAction()).fetchSemanticsNode().config.contains(SemanticsProperties.Password))
         composeRule.onNodeWithText(context.getString(R.string.amap_verify_and_save)).assertIsNotEnabled()
         composeRule.onNodeWithText(context.getString(R.string.amap_preview)).assertIsNotEnabled()
@@ -69,14 +70,15 @@ class AmapSetupGuideContentTest {
                 AmapSetupGuideContent(
                     identity = InstalledAppIdentity("com.matelink", "AA:BB", "Debug"),
                     uiState = AmapSetupUiState(hasKey = true, mapLoaded = true),
-                    onCopyPackage = {}, onCopySha1 = {}, onKeyChange = {}, onVerifyDraftKey = {}, onVerifySavedKey = {}, onChangeKey = {},
+                    onCopyPackage = {}, onCopySha1 = {}, onKeyChange = {}, onVerifyDraftKey = {}, onVerifySavedKey = {}, onChangeKey = {}, onCancelKeyEdit = {},
                     onPrivacyAgreedChange = {}, onNavigateToPreview = {}
                 )
             }
         }
 
         composeRule.onNodeWithText(context.getString(R.string.amap_key_verified)).assertIsDisplayed()
-        composeRule.onNodeWithText(context.getString(R.string.amap_change_key)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.amap_change_key)).assertIsDisplayed().performClick()
+        composeRule.onNodeWithText(context.getString(R.string.amap_key_dialog_title)).assertIsDisplayed()
     }
 
     @Test
@@ -87,7 +89,7 @@ class AmapSetupGuideContentTest {
                 AmapSetupGuideContent(
                     identity = InstalledAppIdentity("com.matelink", "AA:BB", "Debug"),
                     uiState = AmapSetupUiState(hasKey = true, privacyAgreed = true),
-                    onCopyPackage = {}, onCopySha1 = {}, onKeyChange = {}, onVerifyDraftKey = {}, onVerifySavedKey = {}, onChangeKey = {},
+                    onCopyPackage = {}, onCopySha1 = {}, onKeyChange = {}, onVerifyDraftKey = {}, onVerifySavedKey = {}, onChangeKey = {}, onCancelKeyEdit = {},
                     onPrivacyAgreedChange = {}, onNavigateToPreview = {}
                 )
             }
@@ -105,12 +107,13 @@ class AmapSetupGuideContentTest {
                 AmapSetupGuideContent(
                     identity = InstalledAppIdentity("com.matelink", "AA:BB", "Debug"),
                     uiState = AmapSetupUiState(keyInput = "candidate-key"),
-                    onCopyPackage = {}, onCopySha1 = {}, onKeyChange = {}, onVerifyDraftKey = {}, onVerifySavedKey = {}, onChangeKey = {},
+                    onCopyPackage = {}, onCopySha1 = {}, onKeyChange = {}, onVerifyDraftKey = {}, onVerifySavedKey = {}, onChangeKey = {}, onCancelKeyEdit = {},
                     onPrivacyAgreedChange = {}, onNavigateToPreview = {}
                 )
             }
         }
 
+        composeRule.onNodeWithText(context.getString(R.string.amap_enter_key)).performClick()
         composeRule.onNodeWithText(context.getString(R.string.amap_verification_requires_privacy)).fetchSemanticsNode()
         composeRule.onNodeWithText(context.getString(R.string.amap_verify_and_save)).assertIsNotEnabled()
     }

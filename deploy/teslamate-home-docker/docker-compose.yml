@@ -82,7 +82,8 @@ services:
       - API_TOKEN=${MATE_LINK_API_TOKEN}
       - TZ=${TZ}
     ports:
-      - "8080:8080"
+      # Windows commonly reserves 8055-8154; expose the host API outside that range.
+      - "18080:8080"
     depends_on:
       - database
       - mosquitto

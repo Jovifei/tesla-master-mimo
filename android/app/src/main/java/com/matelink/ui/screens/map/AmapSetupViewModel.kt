@@ -88,6 +88,15 @@ class AmapSetupViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(verificationFailed = true, keyInput = "", isEditingKey = !_uiState.value.hasKey)
     }
 
+    fun cancelEditingKey() {
+        _uiState.value = _uiState.value.copy(
+            keyInput = "",
+            keyError = false,
+            verificationFailed = false,
+            isEditingKey = false
+        )
+    }
+
     fun setPrivacyAgreed(agreed: Boolean) { viewModelScope.launch { store.setPrivacyAgreed(agreed) } }
 }
 

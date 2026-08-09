@@ -1066,4 +1066,7 @@
     <string name="efficiency_percentile_buckets">0–25%%: %1$d · 25–50%%: %2$d · 50–75%%: %3$d · 75–100%%: %4$d</string>
     <string name="cost_manual_count">Manual total: %d charges</string>
     <string name="vampire_detected_unknown">Detected standby consumption; cause unknown</string>
+    <string name="amap_enter_key">Enter Key</string>
+    <string name="amap_key_dialog_title">Enter or change AMap Key</string>
+    <string name="amap_key_dialog_hint">The Key is visible only while editing. It is encrypted after verification succeeds and is never shown again.</string>
 </resources>
