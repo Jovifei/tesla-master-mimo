@@ -79,3 +79,8 @@
 
 - Pattern: A successful build, install, and smoke test does not prove that every item in an approved multi-page design is implemented.
 - Prevention rule: Track each approved requirement to code, test, and device evidence; report partial completion explicitly and continue until every required item has its own proof.
+
+## 2026-08-09 End-to-end repair must include device proof
+
+- Pattern: A build-only result is not enough when the user reports a runtime Docker or Android configuration problem.
+- Prevention rule: After the smallest safe fix, verify the live service boundary, build the APK, install with data-preserving replacement, exercise the affected UI path, and inspect crash markers before reporting completion. Keep the exact host-port migration visible when an OS reservation prevents the original port.
