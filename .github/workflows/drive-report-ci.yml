@@ -29,10 +29,10 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
@@ -99,7 +99,7 @@ jobs:
         working-directory: deploy/teslamate-home-docker/adapter
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Go 1.22
         uses: actions/setup-go@v5
@@ -128,15 +128,14 @@ jobs:
 
   contract:
     name: Shared Drive Report contract
-    if: ${{ hashFiles('tools/validate_drive_report_contract.py') != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
