@@ -10,8 +10,8 @@ import javax.inject.Singleton
 data class DetectedDriveReport(
     val carId: Int,
     val driveId: Int,
-    val durationMinutes: Int,
-    val distanceKm: Double
+    val durationMinutes: Int?,
+    val distanceKm: Double?
 )
 
 data class DriveReportDetectionResult(
@@ -24,6 +24,9 @@ class DriveReportDeliveryRepository @Inject constructor(
     private val driveSummaryDao: DriveSummaryDao,
     private val driveReportDao: DriveReportDao
 ) {
+    suspend fun currentCursor(carId: Int): DriveReportCursorEntity? =
+        driveReportDao.getCursor(carId)
+
     suspend fun detectCompletedDrives(
         carId: Int,
         now: Long = System.currentTimeMillis()
@@ -33,15 +36,28 @@ class DriveReportDeliveryRepository @Inject constructor(
                 carId = it.carId,
                 driveId = it.driveId,
                 endDate = it.endDate,
+                endedAtEpochMillis = null,
                 durationMinutes = it.durationMin,
                 distanceKm = it.distance
             )
         }
+        return detectCompletedCandidates(carId, candidates, now)
+    }
+
+    suspend fun detectCompletedCandidates(
+        carId: Int,
+        candidates: List<CompletedDriveCandidate>,
+        now: Long = System.currentTimeMillis()
+    ): DriveReportDetectionResult {
         val cursor = driveReportDao.getCursor(carId)
+        val activationCutoff = cursor
+            ?.takeIf { it.lastSeenDriveId == 0 }
+            ?.initializedAt
         val plan = CompletedDriveDetector.evaluate(
             carId = carId,
             currentCursor = cursor?.lastSeenDriveId,
-            candidates = candidates
+            candidates = candidates,
+            minimumEndEpochMillis = activationCutoff
         )
 
         if (cursor == null) {
@@ -62,19 +78,12 @@ class DriveReportDeliveryRepository @Inject constructor(
                     DriveReportDeliveryEntity(
                         carId = candidate.carId,
                         driveId = candidate.driveId,
-                        detectedAt = now
+                        detectedAt = now,
+                        durationMinutes = candidate.durationMinutes,
+                        distanceKm = candidate.distanceKm
                     )
                 )
-                if (rowId != -1L) {
-                    add(
-                        DetectedDriveReport(
-                            carId = candidate.carId,
-                            driveId = candidate.driveId,
-                            durationMinutes = candidate.durationMinutes,
-                            distanceKm = candidate.distanceKm
-                        )
-                    )
-                }
+                if (rowId != -1L) add(candidate.toDetectedReport())
             }
         }
 
@@ -94,6 +103,16 @@ class DriveReportDeliveryRepository @Inject constructor(
         driveReportDao.getLatestUnseen()
 
     suspend fun unseenCount(): Int = driveReportDao.countUnseen()
+
+    suspend fun pendingNotificationReports(): List<DetectedDriveReport> =
+        driveReportDao.getPendingNotifications().map { delivery ->
+            DetectedDriveReport(
+                carId = delivery.carId,
+                driveId = delivery.driveId,
+                durationMinutes = delivery.durationMinutes,
+                distanceKm = delivery.distanceKm
+            )
+        }
 
     suspend fun markNotificationPosted(
         carId: Int,
@@ -118,4 +137,11 @@ class DriveReportDeliveryRepository @Inject constructor(
     ) {
         driveReportDao.markDismissed(carId, driveId, at, DriveReportDeliveryState.DISMISSED)
     }
+
+    private fun CompletedDriveCandidate.toDetectedReport() = DetectedDriveReport(
+        carId = carId,
+        driveId = driveId,
+        durationMinutes = durationMinutes,
+        distanceKm = distanceKm
+    )
 }

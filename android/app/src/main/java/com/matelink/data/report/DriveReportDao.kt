@@ -40,6 +40,15 @@ interface DriveReportDao {
     suspend fun getLatestUnseen(): DriveReportDeliveryEntity?
 
     @Query("""
+        SELECT * FROM drive_report_delivery
+        WHERE notificationPostedAt IS NULL
+          AND openedAt IS NULL
+          AND dismissedAt IS NULL
+        ORDER BY detectedAt ASC
+    """)
+    suspend fun getPendingNotifications(): List<DriveReportDeliveryEntity>
+
+    @Query("""
         SELECT COUNT(*) FROM drive_report_delivery
         WHERE openedAt IS NULL AND dismissedAt IS NULL
     """)

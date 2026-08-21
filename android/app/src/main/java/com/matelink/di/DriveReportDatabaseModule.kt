@@ -22,7 +22,9 @@ object DriveReportDatabaseModule {
         context,
         DriveReportDatabase::class.java,
         DriveReportDatabase.DATABASE_NAME
-    ).build()
+    )
+        .addMigrations(DriveReportDatabase.MIGRATION_1_2)
+        .build()
 
     @Provides
     @Singleton

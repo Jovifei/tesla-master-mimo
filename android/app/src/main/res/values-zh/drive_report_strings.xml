@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="drive_report_channel_name">行驶报告</string>
+    <string name="drive_report_channel_description">新行程完成后的报告提醒</string>
+    <string name="drive_report_notification_title">本次行程已结束</string>
+    <string name="drive_report_notification_content">行驶 %1$.1f km · 用时 %2$d 分钟，点击查看报告</string>
+    <string name="drive_report_notification_summary_title">有 %1$d 份新行驶报告</string>
+    <string name="drive_report_notification_summary_content">打开 MateLink 查看已完成的行程。</string>
+    <string name="drive_report_prompt_title">本次行程已结束</string>
+    <string name="drive_report_prompt_message">行驶报告已经准备好。</string>
+    <string name="drive_report_prompt_view">查看报告</string>
+    <string name="drive_report_prompt_later">稍后</string>
+    <string name="drive_report_title">行驶报告</string>
+    <string name="drive_report_loading">正在准备行驶报告…</string>
+    <string name="drive_report_notification_content_generic">行驶报告已准备好，点击查看。</string>
+    <string name="drive_report_prompt_summary_message">有 %1$d 份行驶报告待查看，将先打开最新一份。</string>
+</resources>

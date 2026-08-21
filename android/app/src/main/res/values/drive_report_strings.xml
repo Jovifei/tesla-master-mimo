@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="drive_report_channel_name">Drive reports</string>
+    <string name="drive_report_channel_description">Notifications for newly completed drives</string>
+    <string name="drive_report_notification_title">Trip complete</string>
+    <string name="drive_report_notification_content">%1$.1f km · %2$d min. Tap to view the report.</string>
+    <string name="drive_report_notification_summary_title">%1$d new trip reports</string>
+    <string name="drive_report_notification_summary_content">Open MateLink to review your completed trips.</string>
+    <string name="drive_report_prompt_title">Trip complete</string>
+    <string name="drive_report_prompt_message">Your drive report is ready.</string>
+    <string name="drive_report_prompt_view">View report</string>
+    <string name="drive_report_prompt_later">Later</string>
+    <string name="drive_report_title">Drive report</string>
+    <string name="drive_report_loading">Preparing the drive report…</string>
+    <string name="drive_report_notification_content_generic">Trip details are ready. Tap to view the report.</string>
+    <string name="drive_report_prompt_summary_message">%1$d drive reports are ready. The latest report will open first.</string>
+</resources>

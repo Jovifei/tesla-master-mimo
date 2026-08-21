@@ -4,6 +4,7 @@ data class CompletedDriveCandidate(
     val carId: Int,
     val driveId: Int,
     val endDate: String,
+    val endedAtEpochMillis: Long? = null,
     val durationMinutes: Int,
     val distanceKm: Double
 ) {
@@ -26,7 +27,8 @@ object CompletedDriveDetector {
     fun evaluate(
         carId: Int,
         currentCursor: Int?,
-        candidates: List<CompletedDriveCandidate>
+        candidates: List<CompletedDriveCandidate>,
+        minimumEndEpochMillis: Long? = null
     ): CompletedDriveDetectionPlan {
         require(carId > 0) { "carId must be positive" }
 
@@ -47,7 +49,14 @@ object CompletedDriveDetector {
         }
 
         val safeCursor = currentCursor.coerceAtLeast(0)
-        val newDrives = eligible.filter { it.driveId > safeCursor }
+        val newDrives = eligible
+            .asSequence()
+            .filter { it.driveId > safeCursor }
+            .filter { candidate ->
+                minimumEndEpochMillis == null ||
+                    candidate.endedAtEpochMillis?.let { it >= minimumEndEpochMillis } == true
+            }
+            .toList()
         return CompletedDriveDetectionPlan(
             initialized = false,
             nextCursor = maxOf(safeCursor, highestEligibleId),

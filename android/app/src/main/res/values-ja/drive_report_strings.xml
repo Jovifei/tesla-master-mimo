@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="drive_report_channel_name">走行レポート</string>
+    <string name="drive_report_channel_description">走行完了後のレポート通知</string>
+    <string name="drive_report_notification_title">走行が終了しました</string>
+    <string name="drive_report_notification_content">%1$.1f km・%2$d 分。タップしてレポートを表示します。</string>
+    <string name="drive_report_notification_summary_title">新しい走行レポート %1$d 件</string>
+    <string name="drive_report_notification_summary_content">MateLink を開いて完了した走行を確認してください。</string>
+    <string name="drive_report_prompt_title">走行が終了しました</string>
+    <string name="drive_report_prompt_message">走行レポートの準備ができました。</string>
+    <string name="drive_report_prompt_view">レポートを表示</string>
+    <string name="drive_report_prompt_later">後で</string>
+    <string name="drive_report_title">走行レポート</string>
+    <string name="drive_report_loading">走行レポートを準備しています…</string>
+    <string name="drive_report_notification_content_generic">走行レポートの準備ができました。タップして表示します。</string>
+    <string name="drive_report_prompt_summary_message">%1$d 件の走行レポートがあります。最新のレポートを先に開きます。</string>
+</resources>

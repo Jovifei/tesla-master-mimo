@@ -23,6 +23,10 @@ data class DriveReportDeliveryEntity(
     val carId: Int,
     val driveId: Int,
     val detectedAt: Long,
+    // Added in DriveReportDatabase V2. Nullable keeps V1 rows honest: an
+    // earlier candidate did not persist enough facts to claim a real zero.
+    val durationMinutes: Int? = null,
+    val distanceKm: Double? = null,
     val notificationPostedAt: Long? = null,
     val openedAt: Long? = null,
     val dismissedAt: Long? = null,
@@ -35,6 +39,8 @@ data class DriveReportCursorEntity(
     @PrimaryKey
     val carId: Int,
     val lastSeenDriveId: Int,
+    // Feature-activation watermark. If an initially empty API later exposes
+    // older history, only drives ending after this instant may be delivered.
     val initializedAt: Long,
     val lastCheckedAt: Long
 )

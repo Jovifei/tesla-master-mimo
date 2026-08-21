@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="drive_report_channel_name">Rapports de trajet</string>
+    <string name="drive_report_channel_description">Notifications des trajets terminés</string>
+    <string name="drive_report_notification_title">Trajet terminé</string>
+    <string name="drive_report_notification_content">%1$.1f km · %2$d min. Touchez pour voir le rapport.</string>
+    <string name="drive_report_notification_summary_title">%1$d nouveaux rapports de trajet</string>
+    <string name="drive_report_notification_summary_content">Ouvrez MateLink pour consulter les trajets terminés.</string>
+    <string name="drive_report_prompt_title">Trajet terminé</string>
+    <string name="drive_report_prompt_message">Votre rapport de trajet est prêt.</string>
+    <string name="drive_report_prompt_view">Voir le rapport</string>
+    <string name="drive_report_prompt_later">Plus tard</string>
+    <string name="drive_report_title">Rapport de trajet</string>
+    <string name="drive_report_loading">Préparation du rapport de trajet…</string>
+    <string name="drive_report_notification_content_generic">Les détails du trajet sont prêts. Touchez pour voir le rapport.</string>
+    <string name="drive_report_prompt_summary_message">%1$d rapports sont prêts. Le plus récent sera ouvert en premier.</string>
+</resources>
