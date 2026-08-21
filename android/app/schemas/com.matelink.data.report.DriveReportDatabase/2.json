@@ -1,0 +1,147 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "85475e11d4f6c8f6ae048ab1c9d1f883",
+    "entities": [
+      {
+        "tableName": "drive_report_delivery",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`carId` INTEGER NOT NULL, `driveId` INTEGER NOT NULL, `detectedAt` INTEGER NOT NULL, `durationMinutes` INTEGER, `distanceKm` REAL, `notificationPostedAt` INTEGER, `openedAt` INTEGER, `dismissedAt` INTEGER, `deliveryState` TEXT NOT NULL, `reportVersion` INTEGER NOT NULL, PRIMARY KEY(`carId`, `driveId`))",
+        "fields": [
+          {
+            "fieldPath": "carId",
+            "columnName": "carId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "driveId",
+            "columnName": "driveId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detectedAt",
+            "columnName": "detectedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "durationMinutes",
+            "columnName": "durationMinutes",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "distanceKm",
+            "columnName": "distanceKm",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "notificationPostedAt",
+            "columnName": "notificationPostedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "openedAt",
+            "columnName": "openedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dismissedAt",
+            "columnName": "dismissedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "deliveryState",
+            "columnName": "deliveryState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reportVersion",
+            "columnName": "reportVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "carId",
+            "driveId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_drive_report_delivery_deliveryState",
+            "unique": false,
+            "columnNames": [
+              "deliveryState"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_drive_report_delivery_deliveryState` ON `${TABLE_NAME}` (`deliveryState`)"
+          },
+          {
+            "name": "index_drive_report_delivery_carId_detectedAt",
+            "unique": false,
+            "columnNames": [
+              "carId",
+              "detectedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_drive_report_delivery_carId_detectedAt` ON `${TABLE_NAME}` (`carId`, `detectedAt`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "drive_report_cursor",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`carId` INTEGER NOT NULL, `lastSeenDriveId` INTEGER NOT NULL, `initializedAt` INTEGER NOT NULL, `lastCheckedAt` INTEGER NOT NULL, PRIMARY KEY(`carId`))",
+        "fields": [
+          {
+            "fieldPath": "carId",
+            "columnName": "carId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSeenDriveId",
+            "columnName": "lastSeenDriveId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "initializedAt",
+            "columnName": "initializedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastCheckedAt",
+            "columnName": "lastCheckedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "carId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '85475e11d4f6c8f6ae048ab1c9d1f883')"
+    ]
+  }
+}

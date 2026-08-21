@@ -67,10 +67,20 @@ jobs:
 
       - name: Check tracked source and Room schema drift
         run: |
-          git status --short
-          test -z "$(git status --short --untracked-files=no)"
           git diff --check
           git diff --exit-code -- android/app/schemas
+          schema_status="$(git status --porcelain --untracked-files=all -- android/app/schemas)"
+          if [ -n "$schema_status" ]; then
+            echo "Room schema drift detected:"
+            echo "$schema_status"
+            exit 1
+          fi
+          tracked_status="$(git status --porcelain --untracked-files=no)"
+          if [ -n "$tracked_status" ]; then
+            echo "Tracked source drift detected:"
+            echo "$tracked_status"
+            exit 1
+          fi
 
       - name: Upload Android verification artifacts
         if: always()
