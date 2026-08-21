@@ -76,7 +76,7 @@ class DriveReportActivity : ComponentActivity() {
             Intent(context, DriveReportActivity::class.java).apply {
                 putExtra(EXTRA_CAR_ID, carId)
                 putExtra(EXTRA_DRIVE_ID, driveId)
-                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             }
     }
 }

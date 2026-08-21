@@ -33,29 +33,35 @@ class DriveReportDeliveryCoordinator @Inject constructor(
     private val appVisibilityTracker: AppVisibilityTracker,
     private val notificationManager: DriveReportNotificationManager
 ) {
-    suspend fun deliverPending() {
+    suspend fun deliverPending(): Boolean {
         val pending = repository.pendingNotificationReports()
-        when (
+        return when (
             DriveReportDeliveryPolicy.decide(
                 isForeground = appVisibilityTracker.isForeground,
                 notificationsEnabled = notificationManager.canNotify(),
                 pendingCount = pending.size
             )
         ) {
-            DriveReportDeliverySurface.SINGLE_NOTIFICATION -> {
+            DriveReportDeliverySurface.SINGLE_NOTIFICATION -> try {
                 val report = pending.single()
                 notificationManager.showSingle(report)
                 repository.markNotificationPosted(report.carId, report.driveId)
+                true
+            } catch (_: RuntimeException) {
+                false
             }
-            DriveReportDeliverySurface.SUMMARY_NOTIFICATION -> {
+            DriveReportDeliverySurface.SUMMARY_NOTIFICATION -> try {
                 notificationManager.showSummary(pending.size)
                 pending.forEach {
                     repository.markNotificationPosted(it.carId, it.driveId)
                 }
+                true
+            } catch (_: RuntimeException) {
+                false
             }
             DriveReportDeliverySurface.FOREGROUND_PROMPT,
             DriveReportDeliverySurface.PENDING_ONLY,
-            DriveReportDeliverySurface.NOTHING -> Unit
+            DriveReportDeliverySurface.NOTHING -> true
         }
     }
 }

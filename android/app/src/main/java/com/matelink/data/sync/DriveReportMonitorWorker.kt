@@ -19,6 +19,7 @@ import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.domain.report.CompletedDriveCandidate
+import com.matelink.domain.report.DriveReportPaginationPolicy
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.time.LocalDateTime
@@ -44,12 +45,15 @@ class DriveReportMonitorWorker @AssistedInject constructor(
             return Result.success()
         }
 
+        // Pending reports are local facts and should still be deliverable when
+        // the next network request fails. Do not let a transient API failure
+        // strand a report that was detected by an earlier run.
+        var shouldRetry = !coordinator.deliverPending()
+
         val cars = when (val result = repository.getCars()) {
             is ApiResult.Success -> result.data
             is ApiResult.Error -> return classifyError(result)
         }
-
-        var shouldRetry = false
         for (car in cars) {
             when (val candidates = loadCandidates(car.carId)) {
                 is CandidateLoad.Success -> {
@@ -60,7 +64,7 @@ class DriveReportMonitorWorker @AssistedInject constructor(
             }
         }
 
-        coordinator.deliverPending()
+        if (!coordinator.deliverPending()) shouldRetry = true
         return if (shouldRetry) Result.retry() else Result.success()
     }
 
@@ -90,12 +94,18 @@ class DriveReportMonitorWorker @AssistedInject constructor(
                     }
                     values += pageCandidates
 
-                    // The API lists newest drives first. One page is sufficient
-                    // to establish an initial high-water mark. Later runs page
-                    // until they reach the existing cursor.
-                    if (cursor == null || cursor.lastSeenDriveId == 0) break
-                    if (pageCandidates.any { it.driveId <= cursor.lastSeenDriveId }) break
-                    if (result.data.size < PAGE_SIZE) break
+                    // The API lists newest drives first. A truly new install
+                    // needs only the newest page for its high-water mark. A
+                    // persisted cursor of zero means the first run was empty;
+                    // later history must be paged and filtered by initializedAt
+                    // so more than one page of post-activation drives is not lost.
+                    val requestNext = DriveReportPaginationPolicy.shouldRequestNextPage(
+                        currentCursor = cursor?.lastSeenDriveId,
+                        candidateIds = pageCandidates.map { it.driveId },
+                        resultSize = result.data.size,
+                        pageSize = PAGE_SIZE
+                    )
+                    if (!requestNext) break
                     page += 1
                 }
             }
