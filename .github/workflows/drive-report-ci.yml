@@ -1,0 +1,153 @@
+name: Drive Report CI
+
+on:
+  push:
+    branches:
+      - feature/20260820-drive-completion-report
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "android/**"
+      - "deploy/teslamate-home-docker/adapter/**"
+      - "shared/contracts/**"
+      - "tools/validate_drive_report_contract.py"
+      - ".github/workflows/drive-report-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: drive-report-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android JVM, lint and APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x android/gradlew
+
+      - name: Show tool versions
+        run: |
+          java -version
+          ./android/gradlew -p android --version
+
+      - name: JVM unit tests
+        run: ./android/gradlew -p android :app:testDebugUnitTest --no-daemon --stacktrace
+
+      # The repository starts this feature with a documented legacy lint debt
+      # (883 errors / 270 warnings). Keep producing the full report without
+      # hiding it, but do not prevent the independent build gates from running.
+      - name: Android lint (record legacy baseline)
+        continue-on-error: true
+        run: ./android/gradlew -p android :app:lintDebug --no-daemon --stacktrace
+
+      - name: Build debug APK
+        run: ./android/gradlew -p android :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Build AndroidTest APK
+        run: ./android/gradlew -p android :app:assembleDebugAndroidTest --no-daemon --stacktrace
+
+      - name: Verify WorkManager foreground service type
+        run: ./android/gradlew -p android :app:verifyDebugForegroundServiceType --no-daemon --stacktrace
+
+      - name: Check tracked source and Room schema drift
+        run: |
+          git diff --check
+          git diff --exit-code -- android/app/schemas
+          schema_status="$(git status --porcelain --untracked-files=all -- android/app/schemas)"
+          if [ -n "$schema_status" ]; then
+            echo "Room schema drift detected:"
+            echo "$schema_status"
+            exit 1
+          fi
+          tracked_status="$(git status --porcelain --untracked-files=no)"
+          if [ -n "$tracked_status" ]; then
+            echo "Tracked source drift detected:"
+            echo "$tracked_status"
+            exit 1
+          fi
+
+      - name: Upload Android verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drive-report-android-verification
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            android/app/build/reports/tests/testDebugUnitTest/**
+            android/app/build/test-results/testDebugUnitTest/**
+            android/app/build/reports/lint-results-debug.html
+            android/app/build/reports/lint-results-debug.xml
+            android/app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/androidTest/debug/*.apk
+            android/app/build/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml
+            android/app/schemas/**
+
+  adapter:
+    name: Adapter Go verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: deploy/teslamate-home-docker/adapter
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go 1.22
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache-dependency-path: deploy/teslamate-home-docker/adapter/go.sum
+
+      - name: Show Go version
+        run: go version
+
+      - name: Verify modules
+        run: go mod verify
+
+      - name: Run tests
+        run: go test ./... -count=1 -v
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Check source drift
+        working-directory: .
+        run: |
+          git status --short
+          test -z "$(git status --short --untracked-files=no)"
+          git diff --check
+
+  contract:
+    name: Shared Drive Report contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Validate shared fixtures
+        run: python tools/validate_drive_report_contract.py

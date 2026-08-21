@@ -9,16 +9,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.matelink.ui.navigation.MateLinkNavHost
+import com.matelink.ui.screens.drivereport.DriveReportPromptHost
 import com.matelink.ui.theme.MateLinkTheme
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-
-    // Tracks the latest intent so a new deep-link arriving while the activity
-    // is already running (onNewIntent) propagates into the Compose tree and
-    // re-fires NavGraph's LaunchedEffect(intent). Held as Compose state so a
-    // new instance triggers recomposition without recreating the activity.
     private var currentIntent by mutableStateOf<Intent?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,7 +23,9 @@ class MainActivity : ComponentActivity() {
         currentIntent = intent
         setContent {
             MateLinkTheme {
-                MateLinkNavHost(intent = currentIntent)
+                DriveReportPromptHost {
+                    MateLinkNavHost(intent = currentIntent)
+                }
             }
         }
     }

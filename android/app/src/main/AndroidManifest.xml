@@ -12,7 +12,6 @@
 
     <uses-feature android:glEsVersion="0x00020000" android:required="true" />
 
-    <!-- Package visibility for Android 11+ -->
     <queries>
         <package android:name="com.teslamotors.tesla" />
     </queries>
@@ -27,7 +26,6 @@
         android:networkSecurityConfig="@xml/network_security_config"
         tools:targetApi="35">
 
-        <!-- Disable WorkManager auto-initialize (Hilt requires manual init) -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
@@ -38,7 +36,6 @@
                 tools:node="remove" />
         </provider>
 
-        <!-- DataSyncWorker supplies DATA_SYNC foreground info through WorkManager. -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"
@@ -56,17 +53,16 @@
         </activity>
 
         <activity
+            android:name=".ui.screens.drivereport.DriveReportActivity"
+            android:exported="false"
+            android:theme="@style/Theme.MateLink" />
+
+        <activity
             android:name=".ui.screens.map.AmapKeyVerificationActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:process=":amap_verification"
             android:theme="@style/Theme.MateLink" />
-
-        <!-- DataSyncWorker requests WorkManager foreground data-sync execution. -->
-        <service
-            android:name="androidx.work.impl.foreground.SystemForegroundService"
-            android:foregroundServiceType="dataSync"
-            tools:node="merge" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -78,7 +74,6 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Boot receiver: reschedule workers after device reboot -->
         <receiver
             android:name=".receiver.BootReceiver"
             android:exported="false">
@@ -87,7 +82,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Charging monitor foreground service -->
         <service
             android:name=".service.ChargingMonitorService"
             android:exported="false"
@@ -97,7 +91,6 @@
                 android:value="Monitoring charging sessions and TPMS pressure for Tesla vehicle" />
         </service>
 
-        <!-- Home screen widget -->
         <receiver
             android:name=".widget.CarWidgetReceiver"
             android:exported="true">
