@@ -9,6 +9,11 @@ import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.model.Currency
+import com.matelink.domain.analytics.observedCostSumOrNull
+import com.matelink.domain.analytics.buildMileageEvidence
+import com.matelink.domain.analytics.observedBatteryUsagePercent
+import com.matelink.domain.analytics.observedDistanceKm
+import com.matelink.domain.analytics.observedEnergyKwh
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,7 +62,7 @@ data class DailyMileage(
 
 data class MileageUiState(
     // Settings
-    val currencySymbol: String = "€",
+    val currencySymbol: String = com.matelink.data.model.Currency.CNY.symbol,
     val units: Units? = null,
 
     val isLoading: Boolean = true,
@@ -348,18 +353,20 @@ class MileageViewModel @Inject constructor(
     // Get yearly data for chart
     fun getYearlyChartData(): List<Pair<Int, Double>> {
         val state = _uiState.value
-        return state.yearlyData.map { it.year to it.totalDistance }
+        return state.yearlyData
+            .filter { buildMileageEvidence(it.drives).hasDistance }
+            .map { it.year to it.totalDistance }
             .sortedBy { it.first }
     }
 
-    // Get monthly data for chart (all 12 months, with 0 for missing months)
+    // Get monthly data for chart. Months without an observed distance are not
+    // emitted, so a missing metric cannot become a zero-height data point.
     fun getMonthlyChartData(): List<Pair<Int, Double>> {
         val state = _uiState.value
-        val monthlyMap = state.monthlyData.associate { it.yearMonth.monthValue to it.totalDistance }
-
-        return (1..12).map { month ->
-            month to (monthlyMap[month] ?: 0.0)
-        }
+        return state.monthlyData
+            .filter { buildMileageEvidence(it.drives).hasDistance }
+            .map { it.yearMonth.monthValue to it.totalDistance }
+            .sortedBy { it.first }
     }
 
     // Get daily data for chart within selected month
@@ -369,9 +376,12 @@ class MileageViewModel @Inject constructor(
         val dailyMap = state.dailyData.associate { it.date.dayOfMonth to it.totalDistance }
 
         val daysInMonth = selectedMonth.lengthOfMonth()
-        return (1..daysInMonth).map { day ->
-            day to (dailyMap[day] ?: 0.0)
-        }.filter { it.second > 0 } // Only return days with data for cleaner chart
+        return (1..daysInMonth).mapNotNull { day ->
+            val dayData = state.dailyData.find { it.date.dayOfMonth == day }
+            if (dayData != null && buildMileageEvidence(dayData.drives).hasDistance) {
+                day to dayData.totalDistance
+            } else null
+        }
     }
 }
 
@@ -397,18 +407,11 @@ private fun computeYearAggregation(
         var totalEnergy = 0.0
         var totalBatteryUsage = 0.0
         for (td in yearDrives) {
-            totalDistance += td.drive.distance ?: 0.0
-            totalEnergy += td.drive.energyConsumedNet ?: 0.0
-            val start = td.drive.startBatteryLevel
-            val end = td.drive.endBatteryLevel
-            if (start != null && end != null) {
-                totalBatteryUsage += (start - end).toDouble()
-            }
+            totalDistance += td.drive.observedDistanceKm() ?: 0.0
+            totalEnergy += td.drive.observedEnergyKwh() ?: 0.0
+            totalBatteryUsage += td.drive.observedBatteryUsagePercent() ?: 0.0
         }
-        val totalCost = chargesByYear[year]
-            ?.mapNotNull { it.charge.cost }
-            ?.sum()
-            ?.takeIf { it > 0 }
+        val totalCost = observedCostSumOrNull(chargesByYear[year].orEmpty().map { it.charge.cost })
 
         YearlyMileage(
             year = year,
@@ -426,7 +429,7 @@ private fun computeYearAggregation(
     val totalLifetimeEnergy = yearlyData.sumOf { it.totalEnergy }
     val distanceForEfficiency = if (isImperial) totalLifetimeDistance * 0.621371 else totalLifetimeDistance
     val avgLifetimeEnergyDistance = if (distanceForEfficiency > 0) (totalLifetimeEnergy * 1000.0) / distanceForEfficiency else 0.0
-    val totalLifetimeEnergyCost = charges.mapNotNull { it.charge.cost }.sum().takeIf { it > 0 }
+    val totalLifetimeEnergyCost = observedCostSumOrNull(charges.map { it.charge.cost })
 
     val firstDriveDate = drives.minByOrNull { it.dateTime }?.dateTime?.toLocalDate()
 
@@ -470,18 +473,11 @@ private fun computeMonthAggregation(
         var totalEnergy = 0.0
         var totalBatteryUsage = 0.0
         for (td in monthDrives) {
-            totalDistance += td.drive.distance ?: 0.0
-            totalEnergy += td.drive.energyConsumedNet ?: 0.0
-            val start = td.drive.startBatteryLevel
-            val end = td.drive.endBatteryLevel
-            if (start != null && end != null) {
-                totalBatteryUsage += (start - end).toDouble()
-            }
+            totalDistance += td.drive.observedDistanceKm() ?: 0.0
+            totalEnergy += td.drive.observedEnergyKwh() ?: 0.0
+            totalBatteryUsage += td.drive.observedBatteryUsagePercent() ?: 0.0
         }
-        val totalCost = chargesByYearMonth[yearMonth]
-            ?.mapNotNull { it.charge.cost }
-            ?.sum()
-            ?.takeIf { it > 0 }
+        val totalCost = observedCostSumOrNull(chargesByYearMonth[yearMonth].orEmpty().map { it.charge.cost })
 
         MonthlyMileage(
             yearMonth = yearMonth,
@@ -500,7 +496,7 @@ private fun computeMonthAggregation(
     val yearTotalEnergy = monthlyData.sumOf { it.totalEnergy }
     val distanceForEfficiency = if (isImperial) yearTotalDistance * 0.621371 else yearTotalDistance
     val avgYearEnergyDistance = if (distanceForEfficiency > 0) (yearTotalEnergy * 1000.0) / distanceForEfficiency else 0.0
-    val yearTotalEnergyCost = monthlyData.mapNotNull { it.totalEnergyCost }.sum().takeIf { it > 0 }
+    val yearTotalEnergyCost = observedCostSumOrNull(monthlyData.map { it.totalEnergyCost })
 
     return MonthAggregation(
         monthlyData = monthlyData,
@@ -531,18 +527,11 @@ private fun computeDailyAggregation(
         var totalEnergy = 0.0
         var totalBatteryUsage = 0.0
         for (td in dayDrives) {
-            totalDistance += td.drive.distance ?: 0.0
-            totalEnergy += td.drive.energyConsumedNet ?: 0.0
-            val start = td.drive.startBatteryLevel
-            val end = td.drive.endBatteryLevel
-            if (start != null && end != null) {
-                totalBatteryUsage += (start - end).toDouble()
-            }
+            totalDistance += td.drive.observedDistanceKm() ?: 0.0
+            totalEnergy += td.drive.observedEnergyKwh() ?: 0.0
+            totalBatteryUsage += td.drive.observedBatteryUsagePercent() ?: 0.0
         }
-        val totalCost = chargesByDay[date]
-            ?.mapNotNull { it.charge.cost }
-            ?.sum()
-            ?.takeIf { it > 0 }
+        val totalCost = observedCostSumOrNull(chargesByDay[date].orEmpty().map { it.charge.cost })
 
         DailyMileage(
             date = date,

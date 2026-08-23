@@ -38,15 +38,15 @@ class SettingsScreenTest {
             }
         }
 
+        composeRule.onNodeWithTag("advancedNetworkSection").performClick()
         composeRule.onNodeWithTag("serverAddressInput").assertExists()
-        composeRule.onNodeWithTag("apiKeyInput").assertExists()
+        composeRule.onNodeWithTag("tokenInput").assertExists()
         composeRule.onNodeWithTag("testConnectionButton").assertExists()
         composeRule.onNodeWithTag("saveConfigurationButton").assertExists()
-        composeRule.onNodeWithTag("tokenInput").assertDoesNotExist()
-        composeRule.onNodeWithTag("apiKeyInput")
+        composeRule.onNodeWithTag("tokenInput")
             .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Password))
         composeRule.onAllNodesWithTag("serverAddressInput").assertCountEquals(1)
-        composeRule.onAllNodesWithTag("apiKeyInput").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("tokenInput").assertCountEquals(1)
     }
 
     @Test fun testConnectionAndSaveButtonsAreIndependent() {

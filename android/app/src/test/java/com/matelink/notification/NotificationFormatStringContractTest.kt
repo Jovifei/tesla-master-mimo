@@ -21,7 +21,7 @@ class NotificationFormatStringContractTest {
 
     @Test
     fun unformattedPercentageCopyIsExplicitlyNonFormatting() {
-        listOf("values", "values-de", "values-fr", "values-ja", "values-zh").forEach { directory ->
+        listOf("values", "values-zh").forEach { directory ->
             val file = File("src/main/res/$directory/strings.xml")
             val document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file)
             val nodes = document.getElementsByTagName("string")

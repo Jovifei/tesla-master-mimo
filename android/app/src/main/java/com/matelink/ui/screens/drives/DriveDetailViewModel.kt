@@ -33,23 +33,23 @@ data class DriveDetailUiState(
 )
 
 data class DriveDetailStats(
-    val speedMax: Int,
-    val speedAvg: Double,
-    val speedMin: Int,
-    val powerMax: Int,
-    val powerMin: Int,
-    val powerAvg: Double,
-    val elevationMax: Int,
-    val elevationMin: Int,
-    val elevationGain: Int,
-    val elevationLoss: Int,
-    val batteryStart: Int,
-    val batteryEnd: Int,
-    val batteryUsed: Int,
+    val speedMax: Int?,
+    val speedAvg: Double?,
+    val speedMin: Int?,
+    val powerMax: Int?,
+    val powerMin: Int?,
+    val powerAvg: Double?,
+    val elevationMax: Int?,
+    val elevationMin: Int?,
+    val elevationGain: Int?,
+    val elevationLoss: Int?,
+    val batteryStart: Int?,
+    val batteryEnd: Int?,
+    val batteryUsed: Int?,
     val energy: DriveDetailEnergyPresentation,
-    val distance: Double,
-    val durationMin: Int,
-    val avgSpeedFromDistance: Double,
+    val distance: Double?,
+    val durationMin: Int?,
+    val avgSpeedFromDistance: Double?,
     val outsideTempAvg: Double?,
     val insideTempAvg: Double?
 )
@@ -136,9 +136,9 @@ class DriveDetailViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     val detail = detailResult.data
                     val persistedEnergy = driveSummaryDao.get(driveId)
-                    val stats = calculateStats(
-                        detail,
-                        presentDriveDetailEnergy(
+                    val stats = calculateDriveDetailStats(
+                        detail = detail,
+                        energy = presentDriveDetailEnergy(
                             energyKwh = persistedEnergy?.energyConsumed,
                             efficiencyWhKm = persistedEnergy?.efficiency,
                             energySource = persistedEnergy?.energySource,
@@ -219,77 +219,80 @@ class DriveDetailViewModel @Inject constructor(
         }
     }
 
-    private fun calculateStats(
-        detail: DriveDetail,
-        energy: DriveDetailEnergyPresentation
-    ): DriveDetailStats {
-        val positions = detail.positions ?: emptyList()
+}
 
-        // Speed stats from positions
-        val speeds = positions.mapNotNull { it.speed }
-        val speedMax = speeds.maxOrNull() ?: detail.speedMax ?: 0
-        val speedMin = speeds.filter { it > 0 }.minOrNull() ?: 0
-        val speedAvg = if (speeds.isNotEmpty()) speeds.average() else detail.speedAvg ?: 0.0
+internal fun calculateDriveDetailStats(
+    detail: DriveDetail,
+    energy: DriveDetailEnergyPresentation
+): DriveDetailStats {
+    val positions = detail.positions.orEmpty()
 
-        // Power stats from positions
-        val powers = positions.mapNotNull { it.power }
-        val powerMax = powers.maxOrNull() ?: detail.powerMax ?: 0
-        val powerMin = powers.minOrNull() ?: detail.powerMin ?: 0
-        val powerAvg = if (powers.isNotEmpty()) powers.average() else 0.0
+    val speeds = positions.mapNotNull { it.speed?.takeIf { value -> value >= 0 } }
+    val speedMax = speeds.maxOrNull() ?: detail.speedMax?.takeIf { it >= 0 }
+    val speedMin = speeds.minOrNull()
+    val speedAvg = speeds.takeIf { it.isNotEmpty() }?.average()
+        ?: detail.speedAvg?.takeIf { it.isFinite() && it >= 0.0 }
 
-        // Elevation stats
-        val elevations = positions.mapNotNull { it.elevation }
-        val elevationMax = elevations.maxOrNull() ?: 0
-        val elevationMin = elevations.minOrNull() ?: 0
-        val (elevationGain, elevationLoss) = calculateElevationChange(elevations)
+    val powers = positions.mapNotNull { it.power }
+    val powerMax = powers.maxOrNull() ?: detail.powerMax
+    val powerMin = powers.minOrNull() ?: detail.powerMin
+    val powerAvg = powers.takeIf { it.isNotEmpty() }?.average()
 
-        // Battery stats
-        val batteryLevels = positions.mapNotNull { it.batteryLevel }
-        val batteryStart = batteryLevels.firstOrNull() ?: detail.startBatteryLevel ?: 0
-        val batteryEnd = batteryLevels.lastOrNull() ?: detail.endBatteryLevel ?: 0
-        val batteryUsed = batteryStart - batteryEnd
+    val elevations = positions.mapNotNull { it.elevation }
+    val elevationMax = elevations.maxOrNull()
+    val elevationMin = elevations.minOrNull()
+    val (elevationGain, elevationLoss) = calculateElevationChangeOrNull(elevations)
 
-        val distance = detail.distance ?: 0.0
-
-        // Duration and average speed from distance
-        val durationMin = detail.durationMin ?: 0
-        val avgSpeedFromDistance = if (durationMin > 0) (distance / durationMin) * 60 else 0.0
-
-        return DriveDetailStats(
-            speedMax = speedMax,
-            speedAvg = speedAvg,
-            speedMin = speedMin,
-            powerMax = powerMax,
-            powerMin = powerMin,
-            powerAvg = powerAvg,
-            elevationMax = elevationMax,
-            elevationMin = elevationMin,
-            elevationGain = elevationGain,
-            elevationLoss = elevationLoss,
-            batteryStart = batteryStart,
-            batteryEnd = batteryEnd,
-            batteryUsed = batteryUsed,
-            energy = energy,
-            distance = distance,
-            durationMin = durationMin,
-            avgSpeedFromDistance = avgSpeedFromDistance,
-            outsideTempAvg = detail.outsideTempAvg,
-            insideTempAvg = detail.insideTempAvg
-        )
+    val batteryLevels = positions.mapNotNull { it.batteryLevel?.takeIf { value -> value in 0..100 } }
+    val batteryStart = batteryLevels.firstOrNull()
+        ?: detail.startBatteryLevel?.takeIf { it in 0..100 }
+    val batteryEnd = batteryLevels.lastOrNull()
+        ?: detail.endBatteryLevel?.takeIf { it in 0..100 }
+    val batteryUsed = if (batteryStart != null && batteryEnd != null) {
+        (batteryStart - batteryEnd).takeIf { it >= 0 }
+    } else {
+        null
     }
 
-    private fun calculateElevationChange(elevations: List<Int>): Pair<Int, Int> {
-        if (elevations.size < 2) return Pair(0, 0)
-
-        var gain = 0
-        var loss = 0
-
-        for (i in 1 until elevations.size) {
-            val diff = elevations[i] - elevations[i - 1]
-            if (diff > 0) gain += diff
-            else loss += -diff
-        }
-
-        return Pair(gain, loss)
+    val distance = detail.distance?.takeIf { it.isFinite() && it >= 0.0 }
+    val durationMin = detail.durationMin?.takeIf { it >= 0 }
+    val avgSpeedFromDistance = if (distance != null && durationMin != null && durationMin > 0) {
+        (distance / durationMin) * 60
+    } else {
+        null
     }
+
+    return DriveDetailStats(
+        speedMax = speedMax,
+        speedAvg = speedAvg,
+        speedMin = speedMin,
+        powerMax = powerMax,
+        powerMin = powerMin,
+        powerAvg = powerAvg,
+        elevationMax = elevationMax,
+        elevationMin = elevationMin,
+        elevationGain = elevationGain,
+        elevationLoss = elevationLoss,
+        batteryStart = batteryStart,
+        batteryEnd = batteryEnd,
+        batteryUsed = batteryUsed,
+        energy = energy,
+        distance = distance,
+        durationMin = durationMin,
+        avgSpeedFromDistance = avgSpeedFromDistance,
+        outsideTempAvg = detail.outsideTempAvg,
+        insideTempAvg = detail.insideTempAvg
+    )
+}
+
+private fun calculateElevationChangeOrNull(elevations: List<Int>): Pair<Int?, Int?> {
+    if (elevations.size < 2) return Pair(null, null)
+
+    var gain = 0
+    var loss = 0
+    for (i in 1 until elevations.size) {
+        val diff = elevations[i] - elevations[i - 1]
+        if (diff > 0) gain += diff else loss += -diff
+    }
+    return Pair(gain, loss)
 }

@@ -13,6 +13,8 @@ class PublicInfoLinksTest {
 
     @Test fun validHttpsRoot_buildsThreeFixedPathsWithoutDoubleSlash() {
         assertEquals("https://info.matelink.local/help/", PublicInfoLinks.url("https://info.matelink.local", PublicInfoLinks.Page.HELP))
+        assertEquals("https://info.matelink.local/terms/", PublicInfoLinks.url("https://info.matelink.local/", PublicInfoLinks.Page.TERMS))
+        assertEquals("https://info.matelink.local/privacy/", PublicInfoLinks.url("https://info.matelink.local/", PublicInfoLinks.Page.PRIVACY))
         assertEquals("https://info.matelink.local/legal/", PublicInfoLinks.url("https://info.matelink.local/", PublicInfoLinks.Page.LEGAL))
         assertEquals("https://info.matelink.local/changelog/", PublicInfoLinks.url("https://info.matelink.local/", PublicInfoLinks.Page.CHANGELOG))
     }

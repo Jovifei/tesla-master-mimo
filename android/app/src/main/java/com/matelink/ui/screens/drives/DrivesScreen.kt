@@ -488,6 +488,8 @@ private fun DistanceFilterChips(
 
 @Composable
 private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColorPalette) {
+    val hasSummary = summary.totalDrives > 0
+    val unavailable = stringResource(R.string.not_available)
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -514,25 +516,25 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                         TelemetryMetricSpec(
                             Icons.Default.DirectionsCar,
                             stringResource(R.string.total_trips),
-                            "%,d".format(summary.totalDrives),
+                            if (hasSummary) "%,d".format(summary.totalDrives) else unavailable,
                             palette.accent
                         ),
                         TelemetryMetricSpec(
                             CustomIcons.SteeringWheel,
                             stringResource(R.string.total_distance),
-                            UnitFormatter.formatDistance(summary.totalDistanceKm, units),
+                            if (hasSummary) UnitFormatter.formatDistance(summary.totalDistanceKm, units) else unavailable,
                             palette.accent
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Timer,
                             stringResource(R.string.total_time),
-                            formatDuration(LocalContext.current.resources, summary.totalDurationMin),
+                            if (hasSummary) formatDuration(LocalContext.current.resources, summary.totalDurationMin) else unavailable,
                             Color(0xFFF59E0B)
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Speed,
                             stringResource(R.string.max_speed),
-                            UnitFormatter.formatSpeed(summary.maxSpeedKmh.toDouble(), units),
+                            summary.maxSpeedKmh?.let { UnitFormatter.formatSpeed(it.toDouble(), units) } ?: unavailable,
                             Color(0xFF22C55E)
                         )
                     ),
@@ -876,8 +878,8 @@ private fun DrivesChartPage(
                     displayValue = "%.1f $distanceUnit".format(distance)
                 )
             }
-            DrivesChartType.TOP_SPEED -> chartData.map { data ->
-                val speed = data.maxSpeed
+            DrivesChartType.TOP_SPEED -> chartData.mapNotNull { data ->
+                val speed = data.maxSpeed ?: return@mapNotNull null
                 BarChartData(
                     label = data.label,
                     value = speed.toDouble(),

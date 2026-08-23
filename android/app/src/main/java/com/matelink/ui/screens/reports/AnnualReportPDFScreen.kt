@@ -23,6 +23,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.data.local.dao.MonthlyChargeAggregation
 import com.matelink.data.local.dao.MonthlyDriveAggregation
+import com.matelink.data.model.Currency
 import com.matelink.domain.model.CarStats
 import com.matelink.ui.components.launchExternalIntentSafely
 import java.io.File
@@ -134,11 +135,36 @@ fun AnnualReportPDFScreen(
 
                     uiState.carStats?.let { stats ->
                         val qs = stats.quickStats
-                        Text("${stringResource(R.string.pdf_report_total_distance)} ${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km")
+                        val noData = stringResource(R.string.analysis_no_records)
+                        val coverage = stats.analysisCoverage
+                        val hasDistance = qs.totalDrives > 0 &&
+                            (coverage?.driveDistanceSampleCount ?: qs.totalDrives) > 0
+                        val hasEnergy = qs.totalDrives > 0 &&
+                            (coverage?.driveEnergySampleCount ?: qs.totalDrives) > 0
+                        val hasChargeEnergy = qs.totalCharges > 0 &&
+                            (coverage?.chargeEnergySampleCount ?: qs.totalCharges) > 0
+                        Text(
+                            "${stringResource(R.string.pdf_report_total_distance)} " +
+                                if (hasDistance) "${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km" else noData
+                        )
                         Text("${stringResource(R.string.pdf_report_total_drives)} ${qs.totalDrives}")
-                        Text("${stringResource(R.string.pdf_report_energy_used)} ${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh")
+                        Text(
+                            "${stringResource(R.string.pdf_report_energy_used)} " +
+                                if (hasEnergy) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh" else noData
+                        )
                         Text("${stringResource(R.string.pdf_report_charges_label)} ${qs.totalCharges}")
-                        Text("${stringResource(R.string.pdf_report_avg_efficiency)} ${String.format(java.util.Locale.US, "%.0f", qs.avgEfficiencyWhKm)} Wh/km")
+                        Text(
+                            "${stringResource(R.string.pdf_report_avg_efficiency)} " +
+                                if (hasDistance && hasEnergy && qs.avgEfficiencyWhKm > 0.0) {
+                                    "${String.format(java.util.Locale.US, "%.0f", qs.avgEfficiencyWhKm)} Wh/km"
+                                } else {
+                                    noData
+                                }
+                        )
+                        Text(
+                            "${stringResource(R.string.pdf_report_energy_added_label)} " +
+                                if (hasChargeEnergy) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyAddedKwh)} kWh" else noData
+                        )
                     }
                 }
             }
@@ -266,9 +292,19 @@ private class PdfBuilder(private val context: Context) {
         stats: CarStats,
         year: Int,
         monthlyDrives: List<MonthlyDriveAggregation> = emptyList(),
-        monthlyCharges: List<MonthlyChargeAggregation> = emptyList()
+        monthlyCharges: List<MonthlyChargeAggregation> = emptyList(),
+        currencySymbol: String = Currency.CNY.symbol
     ): String {
         val qs = stats.quickStats
+        val coverage = stats.analysisCoverage
+        val hasDistance = qs.totalDrives > 0 &&
+            (coverage?.driveDistanceSampleCount ?: qs.totalDrives) > 0
+        val hasEnergy = qs.totalDrives > 0 &&
+            (coverage?.driveEnergySampleCount ?: qs.totalDrives) > 0
+        val hasChargeEnergy = qs.totalCharges > 0 &&
+            (coverage?.chargeEnergySampleCount ?: qs.totalCharges) > 0
+        val hasCost = qs.totalCost?.isFinite() == true &&
+            (coverage?.chargeCostSampleCount ?: qs.totalCharges) > 0
 
         newPage()
 
@@ -279,14 +315,41 @@ private class PdfBuilder(private val context: Context) {
 
         // Summary
         text(context.getString(R.string.annual_report_summary), h2Paint, 28f)
-        text("${context.getString(R.string.pdf_report_total_distance)} ${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km", bodyPaint)
+        text(
+            "${context.getString(R.string.pdf_report_total_distance)} " +
+                if (hasDistance) "${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km"
+                else context.getString(R.string.analysis_no_records),
+            bodyPaint
+        )
         text("${context.getString(R.string.pdf_report_total_drives)} ${qs.totalDrives}", bodyPaint)
-        text("${context.getString(R.string.pdf_report_energy_used)} ${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh", bodyPaint)
-        text("${context.getString(R.string.pdf_report_avg_efficiency)} ${String.format(java.util.Locale.US, "%.0f", qs.avgEfficiencyWhKm)} Wh/km", bodyPaint)
+        text(
+            "${context.getString(R.string.pdf_report_energy_used)} " +
+                if (hasEnergy) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh"
+                else context.getString(R.string.analysis_no_records),
+            bodyPaint
+        )
+        text(
+            "${context.getString(R.string.pdf_report_avg_efficiency)} " +
+                if (hasDistance && hasEnergy && qs.avgEfficiencyWhKm > 0.0) {
+                    "${String.format(java.util.Locale.US, "%.0f", qs.avgEfficiencyWhKm)} Wh/km"
+                } else {
+                    context.getString(R.string.analysis_no_records)
+                },
+            bodyPaint
+        )
         text("${context.getString(R.string.pdf_report_charges_label)} ${qs.totalCharges}", bodyPaint)
-        text("${context.getString(R.string.pdf_report_energy_added_label)} ${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyAddedKwh)} kWh", bodyPaint)
-        if (qs.totalCost != null && qs.totalCost > 0) {
-            text("${context.getString(R.string.pdf_report_total_cost_label)} ${String.format(java.util.Locale.US, "%.2f", qs.totalCost)}", bodyPaint)
+        text(
+            "${context.getString(R.string.pdf_report_energy_added_label)} " +
+                if (hasChargeEnergy) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyAddedKwh)} kWh"
+                else context.getString(R.string.analysis_no_records),
+            bodyPaint
+        )
+        if (hasCost) {
+            text(
+                context.getString(R.string.pdf_report_total_cost_label) + " " +
+                    currencySymbol + String.format(java.util.Locale.US, "%.2f", qs.totalCost),
+                bodyPaint
+            )
         }
         spacer(8f)
 
@@ -301,7 +364,8 @@ private class PdfBuilder(private val context: Context) {
                 text("${context.getString(R.string.pdf_report_fastest_drive)} ${it.speedMax} km/h (${it.startDate})", bodyPaint)
             }
             qs.mostEfficientDrive?.let {
-                text("${context.getString(R.string.pdf_report_most_efficient)} ${String.format(java.util.Locale.US, "%.0f", it.efficiency)} Wh/km (${it.startDate})", bodyPaint)
+                val efficiency = it.efficiency?.let { value -> String.format(java.util.Locale.US, "%.0f", value) } ?: "N/A"
+                text("${context.getString(R.string.pdf_report_most_efficient)} $efficiency Wh/km (${it.startDate})", bodyPaint)
             }
         }
 
@@ -378,7 +442,8 @@ fun generatePdf(
     stats: CarStats,
     year: Int,
     monthlyDrives: List<MonthlyDriveAggregation> = emptyList(),
-    monthlyCharges: List<MonthlyChargeAggregation> = emptyList()
+    monthlyCharges: List<MonthlyChargeAggregation> = emptyList(),
+    currencySymbol: String = Currency.CNY.symbol
 ): String {
-    return PdfBuilder(context).build(stats, year, monthlyDrives, monthlyCharges)
+    return PdfBuilder(context).build(stats, year, monthlyDrives, monthlyCharges, currencySymbol)
 }

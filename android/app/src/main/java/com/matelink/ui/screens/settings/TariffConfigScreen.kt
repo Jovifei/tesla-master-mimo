@@ -60,6 +60,7 @@ import com.matelink.R
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.ui.theme.MateLinkTheme
 import org.json.JSONArray
+import java.util.Locale
 
 /**
  * Data class representing a time range for tariff periods.
@@ -70,7 +71,7 @@ data class TimeRange(
     val endHour: Int
 ) {
     val display: String
-        get() = String.format("%02d:00-%02d:00", startHour, endHour)
+        get() = String.format(Locale.getDefault(), "%02d:00-%02d:00", startHour, endHour)
 
     val hours: Double
         get() = if (endHour > startHour) {
@@ -145,6 +146,7 @@ fun TariffConfigScreen(
             peakRanges = uiState.peakRanges,
             flatRanges = uiState.flatRanges,
             valleyRanges = uiState.valleyRanges,
+            currencySymbol = uiState.currencySymbol,
             onEnabledChange = viewModel::updateEnabled,
             onPeakPriceChange = viewModel::updatePeakPrice,
             onFlatPriceChange = viewModel::updateFlatPrice,
@@ -168,6 +170,7 @@ private fun TariffConfigContent(
     peakRanges: List<TimeRange>,
     flatRanges: List<TimeRange>,
     valleyRanges: List<TimeRange>,
+    currencySymbol: String,
     onEnabledChange: (Boolean) -> Unit,
     onPeakPriceChange: (Double) -> Unit,
     onFlatPriceChange: (Double) -> Unit,
@@ -225,6 +228,7 @@ private fun TariffConfigContent(
                 label = stringResource(R.string.tariff_peak),
                 color = Color(0xFFE53935),
                 price = peakPrice,
+                currencySymbol = currencySymbol,
                 ranges = peakRanges,
                 onPriceChange = onPeakPriceChange,
                 onRangesChange = onPeakRangesChange
@@ -237,6 +241,7 @@ private fun TariffConfigContent(
                 label = stringResource(R.string.tariff_flat),
                 color = Color(0xFFFF9800),
                 price = flatPrice,
+                currencySymbol = currencySymbol,
                 ranges = flatRanges,
                 onPriceChange = onFlatPriceChange,
                 onRangesChange = onFlatRangesChange
@@ -249,6 +254,7 @@ private fun TariffConfigContent(
                 label = stringResource(R.string.tariff_valley),
                 color = Color(0xFF2196F3),
                 price = valleyPrice,
+                currencySymbol = currencySymbol,
                 ranges = valleyRanges,
                 onPriceChange = onValleyPriceChange,
                 onRangesChange = onValleyRangesChange
@@ -263,7 +269,8 @@ private fun TariffConfigContent(
                 valleyPrice = valleyPrice,
                 peakRanges = peakRanges,
                 flatRanges = flatRanges,
-                valleyRanges = valleyRanges
+                valleyRanges = valleyRanges,
+                currencySymbol = currencySymbol
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -290,6 +297,7 @@ private fun PeriodSection(
     label: String,
     color: Color,
     price: Double,
+    currencySymbol: String,
     ranges: List<TimeRange>,
     onPriceChange: (Double) -> Unit,
     onRangesChange: (List<TimeRange>) -> Unit
@@ -334,12 +342,12 @@ private fun PeriodSection(
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "¥",
+                        text = currencySymbol,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     OutlinedTextField(
-                        value = String.format("%.2f", price),
+                        value = String.format(Locale.getDefault(), "%.2f", price),
                         onValueChange = { value ->
                             value.toDoubleOrNull()?.let { onPriceChange(it) }
                         },
@@ -449,7 +457,7 @@ private fun AddTimeRangeDialog(
                         )
                     )
                     Text(
-                        text = String.format("%02d:00", startHour),
+                        text = String.format(Locale.getDefault(), "%02d:00", startHour),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -471,7 +479,7 @@ private fun AddTimeRangeDialog(
                         )
                     )
                     Text(
-                        text = String.format("%02d:00", endHour),
+                        text = String.format(Locale.getDefault(), "%02d:00", endHour),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -498,7 +506,8 @@ private fun CostPreviewSection(
     valleyPrice: Double,
     peakRanges: List<TimeRange>,
     flatRanges: List<TimeRange>,
-    valleyRanges: List<TimeRange>
+    valleyRanges: List<TimeRange>,
+    currencySymbol: String
 ) {
     val totalKwh = 50.0 // Assume 50 kWh monthly charging
     val peakHours = peakRanges.sumOf { it.hours }
@@ -547,7 +556,7 @@ private fun CostPreviewSection(
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = String.format("¥%.2f", if (savings > 0) savings else touCost),
+                    text = currencySymbol + String.format(Locale.getDefault(), "%.2f", if (savings > 0) savings else touCost),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = if (savings > 0) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
@@ -575,6 +584,7 @@ private fun CostPreviewSection(
                     PeriodBreakdownRow(
                         color = Color(0xFFE53935),
                         label = stringResource(R.string.tariff_peak),
+                        currencySymbol = currencySymbol,
                         price = peakPrice,
                         hours = peakHours,
                         totalHours = totalHours
@@ -583,6 +593,7 @@ private fun CostPreviewSection(
                     PeriodBreakdownRow(
                         color = Color(0xFFFF9800),
                         label = stringResource(R.string.tariff_flat),
+                        currencySymbol = currencySymbol,
                         price = flatPrice,
                         hours = flatHours,
                         totalHours = totalHours
@@ -591,6 +602,7 @@ private fun CostPreviewSection(
                     PeriodBreakdownRow(
                         color = Color(0xFF2196F3),
                         label = stringResource(R.string.tariff_valley),
+                        currencySymbol = currencySymbol,
                         price = valleyPrice,
                         hours = valleyHours,
                         totalHours = totalHours
@@ -605,6 +617,7 @@ private fun CostPreviewSection(
 private fun PeriodBreakdownRow(
     color: Color,
     label: String,
+    currencySymbol: String,
     price: Double,
     hours: Double,
     totalHours: Double
@@ -623,13 +636,13 @@ private fun PeriodBreakdownRow(
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = "$label ¥${String.format("%.2f", price)}/kWh",
+            text = label + " " + currencySymbol + String.format(Locale.getDefault(), "%.2f", price) + "/kWh",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
         )
         Text(
-            text = "${String.format("%.0f", if (totalHours > 0) hours / totalHours * 100 else 0.0)}% · ${hours.toInt()}h",
+            text = "${String.format(Locale.getDefault(), "%.0f", if (totalHours > 0) hours / totalHours * 100 else 0.0)}% · ${hours.toInt()}h",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -648,6 +661,7 @@ private fun TariffConfigScreenPreview() {
             peakRanges = listOf(TimeRange(10, 14), TimeRange(18, 20)),
             flatRanges = listOf(TimeRange(7, 9), TimeRange(15, 17), TimeRange(21, 22)),
             valleyRanges = listOf(TimeRange(23, 23), TimeRange(0, 6)),
+            currencySymbol = com.matelink.data.model.Currency.CNY.symbol,
             onEnabledChange = {},
             onPeakPriceChange = {},
             onFlatPriceChange = {},

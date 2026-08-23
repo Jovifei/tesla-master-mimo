@@ -18,8 +18,58 @@ enum class AnalysisWindow {
 
 enum class NoDataReason {
     NO_RECORDS,
+    COLLECTING,
     INSUFFICIENT_COVERAGE,
+    FILTER_EMPTY,
     SOURCE_UNAVAILABLE
+}
+
+/**
+ * Classifies an empty history response without turning a provider state into
+ * a misleading zero-valued metric.
+ *
+ * The availability strings are intentionally kept open because compatible
+ * providers may add values before the app is updated. Unknown or missing
+ * metadata keeps the legacy NO_RECORDS behavior.
+ */
+fun classifyEmptyHistory(
+    driveCount: Int,
+    chargeCount: Int,
+    driveAvailability: String? = null,
+    chargeAvailability: String? = null
+): NoDataReason? {
+    if (driveCount > 0 || chargeCount > 0) return null
+
+    val availability = listOfNotNull(driveAvailability, chargeAvailability)
+    return when {
+        availability.any { it.equals("collecting", ignoreCase = true) } ->
+            NoDataReason.COLLECTING
+        availability.isNotEmpty() && availability.all {
+            it.equals("unsupported", ignoreCase = true)
+        } -> NoDataReason.SOURCE_UNAVAILABLE
+        else -> NoDataReason.NO_RECORDS
+    }
+}
+
+/**
+ * Keeps provider-empty, filter-empty and field-incomplete states distinct.
+ * A record count alone must not make an analysis metric look observed.
+ */
+fun classifyMetricNoData(
+    historyReason: NoDataReason?,
+    sourceRecordCount: Int,
+    selectedRecordCount: Int,
+    validSampleCount: Int
+): NoDataReason? = when {
+    validSampleCount > 0 -> null
+    sourceRecordCount <= 0 -> historyReason ?: NoDataReason.NO_RECORDS
+    selectedRecordCount <= 0 -> NoDataReason.FILTER_EMPTY
+    else -> NoDataReason.INSUFFICIENT_COVERAGE
+}
+
+enum class HistoryFreshness {
+    FRESH,
+    STALE
 }
 
 data class HistoryCoverage(

@@ -3,6 +3,7 @@ package com.matelink.data.repository
 import android.util.Log
 import com.matelink.data.api.NominatimApi
 import com.matelink.data.api.NominatimAddress
+import com.matelink.data.local.ConnectionModeStore
 import com.matelink.data.local.dao.GeocodeCacheDao
 import com.matelink.data.local.dao.GeocodeProgressDao
 import com.matelink.data.local.dao.GeocodeQueueDao
@@ -49,7 +50,8 @@ class GeocodingRepository @Inject constructor(
     private val nominatimApi: NominatimApi,
     private val geocodeCacheDao: GeocodeCacheDao,
     private val geocodeQueueDao: GeocodeQueueDao,
-    private val geocodeProgressDao: GeocodeProgressDao
+    private val geocodeProgressDao: GeocodeProgressDao,
+    private val connectionModeStore: ConnectionModeStore
 ) {
     companion object {
         // Grid precision: 0.01° ≈ 1.1km at equator
@@ -87,6 +89,7 @@ class GeocodingRepository @Inject constructor(
      * Get the next batch of items to geocode.
      */
     suspend fun getNextBatch(limit: Int = 1): List<GeocodeQueueItem> {
+        if (!allowsExternalGeocoding(connectionModeStore.current())) return emptyList()
         return geocodeQueueDao.getNextBatch(limit)
     }
 
@@ -98,6 +101,8 @@ class GeocodingRepository @Inject constructor(
         carId: Int,
         locations: List<Pair<Double, Double>>
     ): Int {
+        if (!allowsExternalGeocoding(connectionModeStore.current())) return 0
+
         val items = locations.map { (lat, lon) ->
             val gridLat = toGridCoord(lat)
             val gridLon = toGridCoord(lon)
@@ -146,6 +151,8 @@ class GeocodingRepository @Inject constructor(
      * Called by background worker only.
      */
     suspend fun geocodeAndCache(item: GeocodeQueueItem): GeocodeCache? {
+        if (!allowsExternalGeocoding(connectionModeStore.current())) return null
+
         return try {
             val response = nominatimApi.reverseGeocode(item.latitude, item.longitude)
             if (!response.isSuccessful) {
@@ -255,6 +262,7 @@ class GeocodingRepository @Inject constructor(
 
         // Return cached result if available
         addressCache[cacheKey]?.let { return it }
+        if (!allowsExternalGeocoding(connectionModeStore.current())) return null
 
         return try {
             val response = nominatimApi.reverseGeocode(latitude, longitude)
@@ -282,6 +290,7 @@ class GeocodingRepository @Inject constructor(
 
         // Return cached result if available
         locationCache[cacheKey]?.let { return it }
+        if (!allowsExternalGeocoding(connectionModeStore.current())) return null
 
         return try {
             val response = nominatimApi.reverseGeocode(latitude, longitude)
@@ -343,6 +352,7 @@ class GeocodingRepository @Inject constructor(
             Log.d("GeocodingRepository", "Returning cached boundary for $countryCode with ${it.polygons.size} polygons")
             return it
         }
+        if (!allowsExternalGeocoding(connectionModeStore.current())) return null
 
         return try {
             Log.d("GeocodingRepository", "Fetching boundary from API for $countryCode")

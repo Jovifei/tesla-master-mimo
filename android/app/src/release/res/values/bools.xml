@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Self-hosted MateLink may use trusted private-network HTTP for legacy
+        installations. UrlSecurity still rejects public HTTP before any
+        bearer-token request; JourVolt cloud URLs remain HTTPS-only.
+    -->
+    <bool name="allow_cleartext_traffic">true</bool>
+</resources>

@@ -25,6 +25,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MateLink"
         android:networkSecurityConfig="@xml/network_security_config"
+        android:usesCleartextTraffic="@bool/allow_cleartext_traffic"
         tools:targetApi="35">
 
         <!-- Disable WorkManager auto-initialize (Hilt requires manual init) -->
@@ -53,6 +54,15 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="${jourvoltAuthHost}"
+                    android:pathPrefix="/oauth/callback"
+                    android:scheme="https" />
+            </intent-filter>
         </activity>
 
         <activity
@@ -61,12 +71,6 @@
             android:exported="false"
             android:process=":amap_verification"
             android:theme="@style/Theme.MateLink" />
-
-        <!-- DataSyncWorker requests WorkManager foreground data-sync execution. -->
-        <service
-            android:name="androidx.work.impl.foreground.SystemForegroundService"
-            android:foregroundServiceType="dataSync"
-            tools:node="merge" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -243,3 +243,24 @@ Update `tasks/todo.md` with exact test/build/install evidence, then commit only 
 - Current/prior annual reports and explicit no-data states are covered by Task 6.
 - Obsolete More entries and privacy boundaries are covered by Tasks 4 and 7.
 - No placeholder steps or unspecified file paths are used in the plan.
+
+## 2026-08-21 Current Worktree Status
+
+The implementation described by Tasks 2 through 6 is present in the current worktree and the focused contracts pass. The authoritative local evidence is:
+
+- `AnalysisHistory.kt` and `AnalysisHistoryRepository.kt`: all-time/90-day/season/custom windows, source-ID de-duplication, paged history loading, and explicit no-record coverage.
+- `ManualChargeAmount.kt` and `ChargeCostOverrideStore`: per-session manual total precedence and car/charge scoping.
+- `DrivesViewModel.kt` and `MoreScreen.kt`: all-time drive history default and routing to the complete drives screen.
+- `Percentile.kt`, `StandbyAttribution.kt`, `AnnualReportYears.kt`: transparent metric boundaries and dedicated contracts.
+- Focused Gradle run on 2026-08-21: `AnalysisHistoryRepositoryTest`, `ManualChargeAmountTest`, `DrivesHistoryContractTest`, `PercentileTest`, `StandbyAttributionTest`, and `AnnualReportYearsTest` passed.
+- Network failure handling now preserves the last successful in-process snapshot as `STALE` and shows a localized cache banner on efficiency, cost, range, standby, and annual report screens; no cached snapshot still remains an error.
+
+Remaining items are intentionally not marked complete: real Fleet/Telemetry history, formal signing, public DNS/HTTPS, Tesla approval, server backup restore, and real-device acceptance. The existing Room drive/charge summaries now provide a persistent stale fallback across app processes; this implementation is covered by mapper/repository tests, but a process-death device E2E was not claimed. The current product status remains `APP STRUCTURE READY / LOCAL MOCK HISTORY PASS / REAL TESLA PILOT BLOCKED`.
+
+## 2026-08-21 Local delivery closeout
+
+- `HistorySummaryMapper.kt` normalizes stored Room drive/charge summaries into the shared analysis model while preserving unknown placeholders and real zero cost.
+- `AnalysisHistoryRepository.kt` now uses the existing Room summaries after network failure, labels the result `STALE`, and lets a fresh server response replace it; no schema migration was introduced.
+- `StatsScreen.kt` keeps the existing cards and visual language and adds a 96dp bottom content inset so the final recommendation action remains above the persistent navigation bar when scrolled to the end.
+- Android evidence: `202` JVM tests, failures/errors/skips `0`; Debug, Debug AndroidTest, Release and Release lint passed; `MissingTranslation=0`, no lint baseline. Lint's remaining `256` issues are recorded as multi-language coverage/release-gate work, not runtime bugs.
+- The unsigned `com.matelink` Release artifact is version `1.4.2`, SHA-256 `704593A8EEC463DBABCAF20E9BD338016708C9901CEC9906C9121A69F84972F1`. Real Tesla OAuth/Fleet, DNS/HTTPS, formal signing, server and physical-device acceptance remain external gates.

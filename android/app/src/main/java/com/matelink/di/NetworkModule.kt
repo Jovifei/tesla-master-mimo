@@ -1,12 +1,17 @@
 package com.matelink.di
 
-import android.annotation.SuppressLint
 import com.matelink.BuildConfig
 import com.matelink.data.api.NominatimApi
+import com.matelink.data.api.NominatimResult
 import com.matelink.data.api.OpenMeteoApi
+import com.matelink.data.api.OpenMeteoWeatherResponse
 import com.matelink.data.api.TeslamateApi
 import com.matelink.data.api.UrlSecurity
+import com.matelink.data.local.ConnectionMode
+import com.matelink.data.local.ConnectionModeStore
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.JourVoltSessionStore
+import com.matelink.data.local.JourVoltSessionRefresher
 import com.matelink.data.repository.ConnectionUrlValidation
 import com.matelink.data.repository.validateConnectionUrl
 import com.squareup.moshi.Moshi
@@ -20,13 +25,8 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
-import java.security.SecureRandom
-import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -52,44 +52,99 @@ object NetworkModule {
     @Singleton
     fun provideTeslamateApiFactory(
         settingsDataStore: SettingsDataStore,
+        jourVoltSessionStore: JourVoltSessionStore,
+        jourVoltSessionRefresher: JourVoltSessionRefresher,
+        connectionModeStore: ConnectionModeStore,
         moshi: Moshi
     ): TeslamateApiFactory {
-        return TeslamateApiFactory(settingsDataStore, moshi)
+        return TeslamateApiFactory(
+            settingsDataStore,
+            jourVoltSessionStore,
+            jourVoltSessionRefresher,
+            connectionModeStore,
+            moshi
+        )
     }
 
     @Provides
     @Singleton
-    fun provideNominatimApi(moshi: Moshi): NominatimApi {
+    fun provideNominatimApi(
+        moshi: Moshi,
+        connectionModeStore: ConnectionModeStore
+    ): NominatimApi {
         val okHttpClient = OkHttpClient.Builder()
             .addInterceptor(userAgentInterceptor)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .build()
 
-        return Retrofit.Builder()
+        val delegate = Retrofit.Builder()
             .baseUrl("https://nominatim.openstreetmap.org/")
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
             .create(NominatimApi::class.java)
+
+        return object : NominatimApi {
+            override suspend fun reverseGeocode(
+                latitude: Double,
+                longitude: Double
+            ): retrofit2.Response<NominatimResult?> {
+                if (connectionModeStore.current() != ConnectionMode.SELF_HOSTED) {
+                    return unavailableExternalService()
+                }
+                return delegate.reverseGeocode(latitude, longitude)
+            }
+
+            override suspend fun searchCountryBoundary(
+                countryCode: String,
+                query: String
+            ): retrofit2.Response<List<NominatimResult>> {
+                if (connectionModeStore.current() != ConnectionMode.SELF_HOSTED) {
+                    return unavailableExternalService()
+                }
+                return delegate.searchCountryBoundary(countryCode, query)
+            }
+        }
     }
 
     @Provides
     @Singleton
-    fun provideOpenMeteoApi(moshi: Moshi): OpenMeteoApi {
+    fun provideOpenMeteoApi(
+        moshi: Moshi,
+        connectionModeStore: ConnectionModeStore
+    ): OpenMeteoApi {
         val okHttpClient = OkHttpClient.Builder()
             .addInterceptor(userAgentInterceptor)
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .build()
 
-        return Retrofit.Builder()
+        val delegate = Retrofit.Builder()
             .baseUrl("https://archive-api.open-meteo.com/")
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
             .create(OpenMeteoApi::class.java)
+
+        return object : OpenMeteoApi {
+            override suspend fun getHistoricalWeather(
+                latitude: Double,
+                longitude: Double,
+                startDate: String,
+                endDate: String
+            ): retrofit2.Response<OpenMeteoWeatherResponse> {
+                if (connectionModeStore.current() != ConnectionMode.SELF_HOSTED) {
+                    return unavailableExternalService()
+                }
+                return delegate.getHistoricalWeather(latitude, longitude, startDate, endDate)
+            }
+        }
     }
+}
+
+private fun <T> unavailableExternalService(): retrofit2.Response<T> {
+    throw IllegalStateException("External coordinate services are disabled in JourVolt")
 }
 
 /**
@@ -110,6 +165,9 @@ internal fun normalizedApiToken(value: String): String = value.trim()
  */
 class TeslamateApiFactory(
     private val settingsDataStore: SettingsDataStore,
+    private val jourVoltSessionStore: JourVoltSessionStore,
+    private val jourVoltSessionRefresher: JourVoltSessionRefresher,
+    private val connectionModeStore: ConnectionModeStore,
     private val moshi: Moshi
 ) {
     // Cache multiple API instances keyed by their configuration
@@ -127,16 +185,31 @@ class TeslamateApiFactory(
         @Suppress("UNUSED_PARAMETER") acceptInvalidCerts: Boolean? = null,
         apiTokenOverride: String? = null
     ): TeslamateApi {
-        val validatedUrl = when (val validation = validateConnectionUrl(baseUrl)) {
+        val cloudMode = connectionModeStore.mode.first() == ConnectionMode.TESLA_CLOUD
+        val requestedUrl = if (cloudMode) {
+            BuildConfig.JOURVOLT_API_BASE_URL
+        } else {
+            baseUrl
+        }
+        val validatedUrl = when (val validation = validateConnectionUrl(requestedUrl)) {
             is ConnectionUrlValidation.Valid -> validation.normalizedUrl
             is ConnectionUrlValidation.Invalid -> throw IllegalArgumentException("Invalid API root URL")
         }
         if (UrlSecurity.classify(validatedUrl) == UrlSecurity.Verdict.Unsafe) {
             throw IllegalArgumentException("Public HTTP is not secure")
         }
+        val urlVerdict = UrlSecurity.classify(validatedUrl)
+        val allowsDebugLocalHttp = BuildConfig.DEBUG && urlVerdict == UrlSecurity.Verdict.LocalHttp
+        if (cloudMode && urlVerdict != UrlSecurity.Verdict.Https && !allowsDebugLocalHttp) {
+            throw IllegalArgumentException("JourVolt cloud API must use HTTPS")
+        }
         val normalizedUrl = validatedUrl + "/"
         val settings = settingsDataStore.settings.first()
-        val apiToken = normalizedApiToken(apiTokenOverride ?: settings.apiToken)
+        val apiToken = if (cloudMode) {
+            normalizedApiToken(jourVoltSessionStore.current()?.accessToken.orEmpty())
+        } else {
+            normalizedApiToken(apiTokenOverride ?: settings.apiToken)
+        }
 
         val cacheKey = ApiCacheKey(normalizedUrl, apiToken)
 
@@ -144,7 +217,7 @@ class TeslamateApiFactory(
         apiCache[cacheKey]?.let { return it }
 
         // Create new API instance
-        val okHttpClient = createOkHttpClient(apiToken)
+        val okHttpClient = createOkHttpClient(apiToken, cloudMode)
 
         val api = Retrofit.Builder()
             .baseUrl(normalizedUrl)
@@ -174,18 +247,43 @@ class TeslamateApiFactory(
     }
 
     private fun createOkHttpClient(
-        apiToken: String
+        apiToken: String,
+        cloudMode: Boolean
     ): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .addInterceptor { chain ->
                 val requestBuilder = chain.request().newBuilder()
                     .header("User-Agent", "MateLink/${BuildConfig.VERSION_NAME}")
-                if (apiToken.isNotBlank()) {
-                    requestBuilder.addHeader("Authorization", "Bearer $apiToken")
+                val currentToken = if (cloudMode) {
+                    jourVoltSessionStore.current()?.accessToken.orEmpty()
+                } else {
+                    apiToken
+                }
+                if (currentToken.isNotBlank()) {
+                    requestBuilder.header("Authorization", "Bearer $currentToken")
                 }
                 chain.proceed(requestBuilder.build())
             }
-            .connectTimeout(1, TimeUnit.SECONDS)
+            .authenticator { _, response ->
+                val request = response.request
+                if (!cloudMode || request.header("X-JourVolt-Retry") != null) {
+                    return@authenticator null
+                }
+                val staleToken = request.header("Authorization")
+                    ?.removePrefix("Bearer ")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@authenticator null
+                val refreshed = kotlinx.coroutines.runBlocking {
+                    jourVoltSessionRefresher.refreshIfCurrent(staleToken)
+                }
+                refreshed?.let {
+                    request.newBuilder()
+                        .header("Authorization", "Bearer $it")
+                        .header("X-JourVolt-Retry", "1")
+                        .build()
+                }
+            }
+            .connectTimeout(if (cloudMode) 10 else 1, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
 
@@ -201,20 +299,5 @@ class TeslamateApiFactory(
         }
 
         return builder.build()
-    }
-
-    @SuppressLint("TrustAllX509TrustManager", "CustomX509TrustManager")
-    private fun configureInsecureTls(builder: OkHttpClient.Builder) {
-        val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
-            override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-            override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-        })
-
-        val sslContext = SSLContext.getInstance("TLS")
-        sslContext.init(null, trustAllCerts, SecureRandom())
-
-        builder.sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
-        builder.hostnameVerifier { _, _ -> true }
     }
 }

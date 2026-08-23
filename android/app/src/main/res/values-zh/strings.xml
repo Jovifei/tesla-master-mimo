@@ -51,6 +51,41 @@
     <string name="amap_vehicle_marker">车辆</string>
     <string name="amap_legacy_preview_unavailable">此页面暂不提供地图预览。</string>
     <string name="app_name">MateLink</string>
+    <string name="tesla_login_title">连接你的 Tesla</string>
+    <string name="tesla_login_description">登录将在 Tesla 官方页面完成，MateLink 不会接收或保存你的 Tesla 密码。</string>
+    <string name="tesla_login_terms_consent">我已阅读并同意《用户协议》。</string>
+    <string name="tesla_login_privacy_consent">我已阅读并同意《隐私政策》。</string>
+    <string name="tesla_login_view_terms">查看用户协议</string>
+    <string name="tesla_login_view_privacy">查看隐私政策</string>
+    <string name="tesla_login_documents_unavailable">用户协议和隐私政策发布前，Tesla 云端登录不可用。</string>
+    <string name="tesla_login_consent_required">请先分别同意用户协议和隐私政策。</string>
+    <string name="tesla_login_button">使用 Tesla 登录</string>
+    <string name="tesla_login_self_hosted">高级：连接自托管服务</string>
+    <string name="tesla_login_loading">正在打开 Tesla 授权页面…</string>
+    <string name="tesla_login_error">登录失败：%1$s</string>
+    <string name="tesla_login_error_request">授权请求被拒绝，请检查已发布的登录配置后重试。</string>
+    <string name="tesla_login_error_authorization">Tesla 授权被拒绝或会话已失效，请重新开始登录。</string>
+    <string name="tesla_login_error_rate_limit">Tesla 请求暂时受到限流，请稍后重试。</string>
+    <string name="tesla_login_error_service">Tesla 云登录暂时不可用，请稍后重试。</string>
+    <string name="tesla_login_error_generic">暂时无法启动 Tesla 云登录，请重试。</string>
+    <string name="tesla_login_error_unavailable">Tesla 授权暂时不可用，请稍后重试。</string>
+    <string name="tesla_login_error_cancelled">你已取消 Tesla 授权。</string>
+    <string name="tesla_login_error_exchange">Tesla 授权未能完成，请重试。</string>
+    <string name="tesla_login_error_not_configured">此构建未配置 Tesla 云登录。</string>
+    <string name="tesla_login_callback_invalid">出于安全原因，已拒绝此 Tesla 回调。</string>
+    <string name="tesla_login_authorization_invalid">Tesla 授权链接无效或不是官方 Tesla 页面。</string>
+    <string name="tesla_account_title">Tesla 账号</string>
+    <string name="tesla_account_connected">已通过 Tesla 官方授权连接。</string>
+    <string name="tesla_account_test_session">本机 Mock 测试会话，未使用 Tesla 账号。</string>
+    <string name="tesla_account_not_connected">尚未连接 Tesla 云端账号。</string>
+    <string name="tesla_account_reauthorize">连接或重新授权 Tesla</string>
+    <string name="tesla_account_logout">退出登录</string>
+    <string name="tesla_account_delete">注销账号</string>
+    <string name="tesla_account_delete_failed">账号注销失败，请检查网络后重试。</string>
+    <string name="tesla_account_delete_title">注销云端账号？</string>
+    <string name="tesla_account_delete_message">此操作将永久删除 JourVolt 云端账号、Tesla 授权令牌、云端会话和云端车辆数据；不会删除已有的本地自托管数据。</string>
+    <string name="tesla_account_delete_confirm">确认注销</string>
+    <string name="tesla_account_delete_cancel">取消</string>
     <string name="public_info_help">使用说明</string>
     <string name="public_info_legal">隐私与免责声明</string>
     <string name="public_info_changelog">更新日志</string>
@@ -62,9 +97,19 @@
     <string name="nav_more">更多</string>
 
     <!-- Dashboard -->
-    <string name="dashboard_loading">加载中...</string>
+    <string name="dashboard_loading">加载中…</string>
     <string name="dashboard_status_unavailable_title">车辆已连接，实时状态同步中</string>
     <string name="dashboard_status_unavailable_body">TeslaMate 已检测到你的车辆，但实时状态快照还不可用。等待 TeslaMate 完成首次同步后再刷新。</string>
+    <string name="dashboard_error_auth_title">需要重新授权 Tesla</string>
+    <string name="dashboard_error_auth_body">Tesla 会话已失去授权。请重新连接 Tesla，才能继续读取实时车辆状态。</string>
+    <string name="dashboard_error_rate_limit_title">Tesla 服务正在限流</string>
+    <string name="dashboard_error_rate_limit_body">Tesla 暂时限制了请求。请稍后刷新；页面不会用虚构数据替换最后确认的状态。</string>
+    <string name="dashboard_error_service_title">车辆服务暂不可用</string>
+    <string name="dashboard_error_service_body">车辆服务暂时无法访问。请稍后刷新；当前不会生成虚假的实时数值。</string>
+    <string name="dashboard_error_network_title">无法连接车辆服务</string>
+    <string name="dashboard_error_network_body">请检查网络后刷新。页面仍显示的内容只代表最后一次确认的快照。</string>
+    <string name="dashboard_error_generic_title">实时状态不可用</string>
+    <string name="dashboard_error_generic_body">暂时无法加载实时车辆状态，请刷新重试。</string>
     <string name="dashboard_partial_status_body">MateLink 已能从 TeslaMate 读取这辆车。电量、位置、锁车、空调和胎压卡片需要实时状态接口返回快照。</string>
     <string name="dashboard_partial_status_detail">状态接口：%1$s</string>
     <string name="dashboard_partial_model">车型</string>
@@ -85,7 +130,7 @@
     <string name="climate_off">空调关闭</string>
     <string name="sentry_armed">哨兵已开启</string>
     <string name="sentry_off">哨兵关闭</string>
-    <string name="high_soc_warning" formatted="false">电量过高 - 日常使用建议充至 80-90%</string>
+    <string name="high_soc_warning" formatted="false">电量过高 – 日常使用建议充至 80–90%</string>
     <string name="tire_pressure">胎压</string>
     <string name="battery_trend">7天电量趋势</string>
     <string name="km_range">%d km 续航</string>
@@ -99,6 +144,7 @@
     <string name="dashboard_snapshot_time">快照时间 %1$s</string>
     <string name="snapshot_source_live">实时数据</string>
     <string name="snapshot_source_history">历史快照</string>
+    <string name="snapshot_source_mock">本地模拟</string>
     <string name="snapshot_source_unavailable">数据不可用</string>
     <string name="status_unknown">暂无数据</string>
     <string name="battery_history_navigation_note">查看已记录的电池历史与容量详情</string>
@@ -157,8 +203,8 @@
     <string name="more_section_analysis">数据分析</string>
     <string name="more_section_reports">报告与导出</string>
     <string name="more_section_system">系统</string>
-    <string name="more_status_title">验证状态</string>
-    <string name="more_status_body">部分功能仍使用预览、模拟或缓存数据，连接 TeslaMate 后将显示实时数据。</string>
+    <string name="more_status_title">数据状态</string>
+    <string name="more_status_body">连接成功后可查看实时车辆数据；统计分析页面需要积累足够的历史记录后才会完整。</string>
     <string name="more_item_statistics">统计概览</string>
     <string name="more_item_battery_health">电池健康</string>
     <string name="more_item_mileage">里程统计</string>
@@ -193,7 +239,7 @@
 
     <!-- Common -->
     <string name="back">返回</string>
-    <string name="loading">加载中...</string>
+    <string name="loading">加载中…</string>
     <string name="no_data">暂无数据</string>
     <string name="offline">离线 - 显示缓存数据</string>
     <string name="ok">确定</string>
@@ -239,6 +285,22 @@
     <string name="analysis_filter_winter">冬季</string>
     <string name="analysis_filter_custom">自定义</string>
     <string name="analysis_no_records">暂无可分析记录</string>
+    <string name="metric_state_loading_title">正在加载车辆数据</string>
+    <string name="metric_state_loading_body">这通常只需要片刻。</string>
+    <string name="metric_state_empty_title">尚未开始采集历史数据</string>
+    <string name="metric_state_empty_body">记录将从连接之日起开始。缺失的历史不会显示为零值。</string>
+    <string name="metric_state_insufficient_title">有效数据不足</string>
+    <string name="metric_state_insufficient_body">已有记录，但此分析所需的字段缺失或覆盖不足。</string>
+    <string name="metric_state_filter_empty_title">当前范围没有记录</string>
+    <string name="metric_state_filter_empty_body">请切换时间范围，或选择“全部”。</string>
+    <string name="metric_state_collecting_title">历史数据正在采集</string>
+    <string name="metric_state_collecting_body">数据源已经开始记录，新的历史数据到达后会显示分析结果。</string>
+    <string name="metric_state_unavailable_title">历史数据不可用</string>
+    <string name="metric_state_unavailable_body">当前数据源不提供此分析所需的历史数据。</string>
+    <string name="metric_state_cached_title">当前显示缓存历史</string>
+    <string name="metric_state_cached_body">网络暂时不可用，当前数值来自上一次成功获取的历史快照。</string>
+    <string name="metric_state_error_title">无法加载数据</string>
+    <string name="metric_state_retry">重试</string>
     <string name="analysis_coverage_insufficient">覆盖率不足</string>
     <string name="efficiency_personal_history_title">个人历史区间</string>
     <string name="efficiency_trip_position">行程 %1$d · P%2$d · %3$.0f Wh/km</string>
@@ -263,36 +325,55 @@
 
     <!-- Range Analysis -->
     <string name="range_analysis_title">续航分析</string>
-    <string name="range_accuracy_title">续航预测准确度</string>
+    <string name="range_accuracy_title">额定续航消耗偏差</string>
     <string name="range_trip_count">行程数</string>
     <string name="range_total_distance">总里程</string>
     <string name="range_trip_list_title">最近行程 (%d)</string>
     <string name="range_estimated">预估</string>
     <string name="range_actual">实际</string>
-    <string name="range_influences_title">预测误差影响因素</string>
+    <string name="range_influences_title">偏差影响因素</string>
     <string name="range_influences_values">夏季 %1$s · 冬季 %2$s · 低速 %3$s · 高速 %4$s</string>
+    <string name="range_personalized_title">个性化续航（近90天）</string>
+    <string name="range_personalized_description">按距离加权的能耗模型，不是 Tesla 官方预测。</string>
+    <string name="range_personalized_value">%1$.0f km</string>
+    <string name="range_personalized_source_grouped">已匹配当前温度和速度条件</string>
+    <string name="range_personalized_source_global">近90天全条件模型</string>
+    <string name="range_personalized_no_recent_data">暂无可用于该模型的近90天有效行程样本。</string>
+    <string name="range_personalized_insufficient">有效数据不足：%1$d 次行程 / %2$.0f km。至少需要10次行程和300 km。</string>
+    <string name="range_personalized_capacity_unavailable">能耗模型已就绪，但当前可用电池容量不可用，因此不输出个性化公里数。</string>
+    <string name="range_personalized_rated_fallback">Tesla 额定续航：%1$.0f km</string>
+    <string name="range_personalized_details">%1$d 次有效行程 · %2$.0f km · 置信度 %3$d%%</string>
+    <string name="range_personalized_conditions">当前条件：%1$s温度 · %2$s速度</string>
+    <string name="range_temperature_cold">低温</string>
+    <string name="range_temperature_mild">温和</string>
+    <string name="range_temperature_hot">高温</string>
+    <string name="range_speed_low">低速</string>
+    <string name="range_speed_cruise">巡航速度</string>
+    <string name="range_speed_high">高速</string>
 
     <!-- Vampire Drain (Standby Power Consumption) -->
     <string name="vampire_title">待机能耗</string>
-    <string name="vampire_total_drain_label">总待机能耗</string>
-    <string name="vampire_total_drain_subtitle">所有检测到的待机耗电时段总和</string>
+    <string name="vampire_total_drain_label">检测到的停车电量下降</string>
+    <string name="vampire_total_drain_subtitle">两次充电之间且无行程记录的 SOC 下降总和；不据此推算能量</string>
     <string name="vampire_avg_power">平均功率</string>
     <string name="vampire_idle_periods">待机时段</string>
     <string name="vampire_daily_title">每日待机能耗</string>
     <string name="vampire_daily_subtitle">每日估算待机能耗（kWh）</string>
     <string name="vampire_recent_title">近期待机时段</string>
-    <string name="vampire_tips_title">优化建议</string>
+    <string name="vampire_general_info_title">通用省电信息</string>
     <string name="vampire_tip_sentry_title">哨兵模式</string>
-    <string name="vampire_tip_sentry_desc">哨兵模式功耗约 250-300W。在安全地点停放时关闭可显著降低待机能耗。</string>
+    <string name="vampire_tip_sentry_desc">哨兵模式功耗约 250–300W。在安全地点停放时关闭可显著降低待机能耗。</string>
     <string name="vampire_tip_cabin_overheat_title">车内过热保护</string>
     <string name="vampire_tip_cabin_overheat_desc">该功能会运行空调以保持车内温度低于阈值。如无需此功能，可在炎热天气设为「关闭」或「仅通风」。</string>
     <string name="vampire_tip_climate_title">远程空调</string>
-    <string name="vampire_tip_climate_desc">预热/预冷功耗约 3-5 kW。长时间停放时避免反复开启远程空调。</string>
+    <string name="vampire_tip_climate_desc">预热/预冷功耗约 3–5 kW。长时间停放时避免反复开启远程空调。</string>
     <string name="vampire_tip_updates_title">软件更新</string>
     <string name="vampire_tip_updates_desc">OTA 更新和定期检查会导致短暂唤醒。建议在插枪充电期间安排更新。</string>
     <string name="vampire_how_title">工作原理</string>
-    <string name="vampire_how_desc">待机能耗通过分析充电间隔来计算。当电池电量下降但期间无行驶记录时，能量损失归因于待机功耗。估算的平均功率基于 75 kWh 电池容量。</string>
+    <string name="vampire_how_desc">待机耗电首先根据两次充电之间、且没有行驶记录的电量下降来识别。只有在有可用电池容量或 Telemetry 能耗数据时才显示 kWh 和平均功率；仅凭电量下降不会推断具体原因。</string>
     <string name="vampire_no_data">暂未发现可归因的待机能耗。至少需要两条充电记录、期间电量下降且没有行程；没有证据时不推断具体原因。</string>
+    <string name="vampire_soc_only_title">目前只有电量百分比证据</string>
+    <string name="vampire_soc_only_body">这是低置信度的停车期间电量变化。获得 Telemetry 或实测容量后，才能计算能量和平均功率；原因仍不会在没有证据时推断。</string>
     <string name="vampire_total_kwh">总待机能耗</string>
     <string name="vampire_confidence">可信度</string>
     <string name="vampire_cause_unknown">现有证据无法归因具体原因</string>
@@ -315,7 +396,7 @@
 
     <!-- Widget -->
     <string name="widget_error_configure">加载小组件出错</string>
-    <string name="widget_loading">加载中...</string>
+    <string name="widget_loading">加载中…</string>
     <string name="no_vehicles_found">未找到车辆</string>
     <string name="error_loading_data">加载数据出错</string>
     <string name="widget_select_car_title">选择车辆</string>
@@ -488,7 +569,7 @@
 
     <!-- Charging notifications -->
     <string name="charging_notification_title">充电</string>
-    <string name="charging_notification_loading">加载充电数据中...</string>
+    <string name="charging_notification_loading">加载充电数据中…</string>
     <string name="charging_notification_dc_finished_title">%1$s：直流充电完成</string>
     <string name="charging_notification_dc_finished_content">你的 Tesla 已完成直流充电。</string>
     <string name="charging_channel_name">充电</string>
@@ -561,6 +642,7 @@
     <string name="no_battery_data">暂无电池数据</string>
     <string name="battery_capacity_title">电池容量</string>
     <string name="battery_capacity_message">你的电池容量信息。</string>
+    <string name="battery_capacity_observed_note">来自已连接数据源的容量观测值。</string>
     <string name="capacity">容量</string>
     <string name="usable_new">可用（新）</string>
     <string name="usable_now">可用（当前）</string>
@@ -572,6 +654,26 @@
     <string name="estimated_degradation">预估衰减</string>
     <string name="loss_kwh">损失 (kWh)</string>
     <string name="loss_percent">损失 (%)</string>
+    <string name="battery_trend_title">电池健康趋势</string>
+    <string name="battery_trend_description">基于额定续航样本估算，不等同于实测容量。</string>
+    <string name="battery_trend_status_estimate">已具备早期基线的趋势估算</string>
+    <string name="battery_trend_status_only">已有趋势数据，但缺少早期基线</string>
+    <string name="battery_trend_status_unavailable">有效样本不足，暂无法计算趋势</string>
+    <string name="battery_trend_current_range">当前标准化续航</string>
+    <string name="battery_trend_baseline_range">早期基线续航</string>
+    <string name="battery_trend_degradation">估算衰减</string>
+    <string name="battery_trend_no_samples">暂无有效的电池趋势观测</string>
+    <string name="battery_trend_period">数据范围：%1$s – %2$s</string>
+    <string name="battery_trend_confidence">置信评分：%1$d%%</string>
+    <string name="battery_trend_chart_title">标准化续航趋势</string>
+    <string name="battery_trend_chart_description">包含 %1$d 个按日汇总点的电池趋势图</string>
+    <string name="battery_trend_unavailable_message" formatted="false">至少需要跨 30 天的 10 个有效样本；样本需满足电量 70–100% 且温度 15–30°C。</string>
+    <plurals name="battery_trend_valid_samples">
+        <item quantity="other">%d 个有效样本</item>
+    </plurals>
+    <plurals name="battery_trend_coverage_days">
+        <item quantity="other">%d 天</item>
+    </plurals>
 
     <!-- Battery extra -->
     <string name="range">续航</string>
@@ -661,7 +763,7 @@
     <string name="current_charge_estimated_end">预估结束</string>
     <string name="current_charge_live">实时</string>
     <string name="current_charge_not_charging">未充电</string>
-    <string name="current_charge_starting">启动中...</string>
+    <string name="current_charge_starting">启动中…</string>
     <string name="current_charge_unsupported">不支持</string>
     <string name="current_max">当前最大</string>
     <string name="current_min">当前最小</string>
@@ -695,8 +797,8 @@
     <string name="filter_all">全部</string>
     <string name="filter_commute_km">通勤 (&lt; 50km)</string>
     <string name="filter_commute_mi">通勤 (&lt; 30mi)</string>
-    <string name="filter_day_trip_km">短途 (50-200km)</string>
-    <string name="filter_day_trip_mi">短途 (30-125mi)</string>
+    <string name="filter_day_trip_km">短途 (50–200km)</string>
+    <string name="filter_day_trip_mi">短途 (30–125mi)</string>
     <string name="filter_last_30_days">近 30 天</string>
     <string name="filter_last_7_days">近 7 天</string>
     <string name="filter_last_90_days">近 90 天</string>
@@ -818,8 +920,9 @@
     <string name="settings_resync_dialog_text_suffix">并从服务器重新下载。</string>
     <string name="settings_resync_dialog_title">重新同步数据</string>
     <string name="settings_resync_hint">强制全量数据重新同步</string>
-    <string name="settings_resyncing">重新同步中...</string>
+    <string name="settings_resyncing">重新同步中…</string>
     <string name="settings_save">保存</string>
+    <string name="settings_connection_test">连接测试</string>
     <string name="settings_secondary_server">备用 API</string>
     <string name="settings_secondary_url_hint">备用 API 根地址。不要添加 /api 或 /api/v1。</string>
     <string name="settings_secondary_url_label">备用 API 地址</string>
@@ -834,6 +937,8 @@
     <string name="settings_show_short_hint">显示缩写值</string>
     <string name="settings_show_short_label">简短值</string>
     <string name="settings_test_connection">测试连接</string>
+    <string name="settings_save_untested_warning">连接尚未验证。再次点击保存仍可保存，或先测试连接。</string>
+    <string name="settings_enter_app">进入应用</string>
     <string name="show_password">显示密码</string>
     <string name="show_token">显示令牌</string>
     <string name="soc_energy_added">已充能量</string>
@@ -861,12 +966,82 @@
     <string name="stats_deep_sync_title">深度同步</string>
     <string name="stats_drives_overview">行程概览</string>
     <string name="stats_driving_days">行驶天数</string>
-    <string name="stats_empty">暂无统计数据</string>
+    <string name="stats_empty">暂时没有历史记录，第一次行驶或充电后将从此处开始统计。</string>
+    <string name="stats_history_collecting">已开始采集历史数据，将从连接日期开始记录。</string>
+    <string name="stats_history_unsupported">当前数据源不提供历史记录。</string>
+    <string name="stats_analysis_summary">综合分析</string>
+    <string name="stats_analysis_summary_subtitle">当前筛选周期的关键结论</string>
+    <string name="stats_analysis_distance">行驶里程</string>
+    <string name="stats_analysis_efficiency">加权效率</string>
+    <string name="stats_analysis_energy_used">行驶能耗</string>
+    <string name="stats_analysis_energy_added">充入电量</string>
+    <string name="stats_analysis_cost">已记录费用</string>
+    <string name="stats_analysis_samples">数据记录</string>
+    <string name="stats_analysis_sample_count">行程与充电记录</string>
+    <string name="stats_analysis_observed">观测值</string>
+    <string name="stats_analysis_derived">派生值</string>
+    <string name="stats_analysis_estimated">估算值</string>
+    <string name="stats_analysis_evidence_sample_count">%1$s · 样本数 %2$d</string>
+    <string name="stats_analysis_unavailable">不可用</string>
+    <string name="stats_analysis_collecting_value">采集中</string>
+    <string name="stats_analysis_collecting">数据仍在采集</string>
+    <string name="stats_analysis_retryable">刷新后重试</string>
+    <string name="stats_analysis_deep_available">下方已有温度和海拔等详细分析</string>
+    <string name="stats_analysis_deep_collecting">详细分析仍在采集记录</string>
+    <string name="stats_analysis_derived_title">派生结论</string>
+    <string name="stats_analysis_derived_subtitle">根据当前筛选周期内的有效记录计算</string>
+    <string name="stats_analysis_usage_title">使用模式</string>
+    <string name="stats_analysis_usage_subtitle">展示当前周期内观测到或计算出的行驶与充电行为</string>
+    <string name="stats_analysis_avg_drive_duration">平均行程时长</string>
+    <string name="stats_analysis_driving_days">驾驶天数</string>
+    <string name="stats_analysis_avg_charge_duration">平均充电时长</string>
+    <string name="stats_analysis_max_speed">记录最高速度</string>
+    <string name="stats_analysis_avg_drive_distance">平均每次行驶</string>
+    <string name="stats_analysis_avg_distance_per_day">日均驾驶里程</string>
+    <string name="stats_analysis_drive_count">行程次数</string>
+    <string name="stats_analysis_avg_charge_energy">平均每次充电</string>
+    <string name="stats_analysis_cost_per_100km">每百公里费用</string>
+    <string name="stats_analysis_charge_drive_ratio">充入/行驶能量比</string>
+    <string name="stats_analysis_charge_loss">充电损耗</string>
+    <string name="stats_analysis_data_coverage">数据覆盖率</string>
+    <string name="stats_analysis_data_coverage_subtitle">当前筛选周期内各指标拥有有效输入的记录比例</string>
+    <string name="stats_analysis_distance_coverage">里程数据</string>
+    <string name="stats_analysis_drive_energy_coverage">行驶能耗</string>
+    <string name="stats_analysis_charge_energy_coverage">充电能量</string>
+    <string name="stats_analysis_charge_energy_used_coverage">电网能量</string>
+    <string name="stats_analysis_charge_loss_coverage">损耗证据</string>
+    <string name="stats_analysis_cost_coverage">费用数据</string>
+    <string name="stats_analysis_coverage_records">%1$d / %2$d</string>
+    <string name="stats_analysis_records_suffix">条记录</string>
+    <string name="stats_analysis_coverage_period">观测范围：%1$s – %2$s · %3$d</string>
+    <string name="stats_analysis_coverage_period_without_days">观测范围：%1$s – %2$s</string>
+    <string name="stats_analysis_days_suffix">天</string>
+    <string name="stats_analysis_view_mileage">查看里程分解</string>
+    <string name="stats_recommendations_title">基于数据的建议</string>
+    <string name="stats_recommendations_subtitle">仅在样本量、覆盖范围和可信度门槛全部满足时显示。</string>
+    <string name="stats_recommendation_standby_title">降低停车耗电</string>
+    <string name="stats_recommendation_standby_description">观测到的停车功率持续高于证据门槛。</string>
+    <string name="stats_recommendation_standby_action">检查长时间停车期间的哨兵模式、空调和车辆频繁唤醒。</string>
+    <string name="stats_recommendation_high_speed_title">改善高速能效</string>
+    <string name="stats_recommendation_high_speed_description">高速组能耗比 50–90 km/h 基准组高出 15% 以上。</string>
+    <string name="stats_recommendation_high_speed_action">条件允许时降低持续高速，并用接下来五次相似行程复核变化。</string>
+    <string name="stats_recommendation_cold_title">改善低温能效</string>
+    <string name="stats_recommendation_cold_description">低于 10°C 的行程能耗比 10–25°C 组高出 15% 以上。</string>
+    <string name="stats_recommendation_cold_action">插枪时提前预热，并比较速度和里程相近的后续行程。</string>
+    <string name="stats_recommendation_charge_loss_title">检查充电损耗</string>
+    <string name="stats_recommendation_charge_loss_description">实测电网侧充电损耗持续高于 12% 门槛。</string>
+    <string name="stats_recommendation_charge_loss_action">检查低电流充电、线缆温度和壁挂充电器配置。</string>
+    <string name="stats_recommendation_standby_evidence">%1$.0f W · 门槛 %2$.0f W · %3$d 个窗口 / %4$.0f 小时 · 观察 %5$d 天 · 可信度 %6$d%%</string>
+    <string name="stats_recommendation_efficiency_evidence">%1$.0f Wh/km · 门槛 %2$.0f Wh/km · %3$d 次行程 / %4$.0f km · 观察 %5$d 天 · 可信度 %6$d%%</string>
+    <string name="stats_recommendation_charge_loss_evidence">%1$.1f%% · 门槛 %2$.0f%% · %3$d 次充电 / %4$.0f kWh · 观察 %5$d 天 · 可信度 %6$d%%</string>
+    <string name="stats_recommendation_impact">预计每月可节省：%1$.1f–%2$.1f kWh</string>
+    <string name="stats_recommendation_action">建议动作：%1$s</string>
+    <string name="stats_recommendation_method" formatted="false">方法：把观测到的超额能耗折算为 30 天，区间取实测机会的 50%–100%。</string>
     <string name="stats_energy_used">已用能量</string>
     <string name="stats_records">记录</string>
     <string name="stats_sync_complete">同步完成</string>
     <string name="stats_sync_percent">%1$d%%</string>
-    <string name="stats_syncing">同步中...</string>
+    <string name="stats_syncing">同步中…</string>
     <string name="stats_temperature_extremes">极端温度</string>
     <string name="stats_title">统计</string>
     <string name="stats_total_charges">总充电次数</string>
@@ -894,7 +1069,7 @@
     <string name="weather_card_title">天气</string>
     <string name="weather_distance">距离</string>
     <string name="weather_end">结束</string>
-    <string name="weather_loading">加载天气中...</string>
+    <string name="weather_loading">加载天气中…</string>
     <string name="weather_start">开始</string>
     <string name="weather_time">时间</string>
     <string name="weather_unavailable">天气数据不可用</string>

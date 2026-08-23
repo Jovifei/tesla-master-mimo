@@ -6,12 +6,14 @@ import com.matelink.data.api.models.ChargeData
 import com.matelink.data.local.dao.ChargeSummaryDao
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.dao.AggregateDao
+import com.matelink.data.local.ConnectionModeStore
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.domain.analytics.PaginationGuard
 import com.matelink.domain.analytics.DriveEnergyResolver
 import com.matelink.domain.analytics.DrivePowerSample
 import com.matelink.data.repository.ApiResult
+import com.matelink.data.repository.allowsExternalGeocoding
 import com.matelink.data.repository.GeocodingRepository
 import com.matelink.data.repository.TeslamateRepository
 import javax.inject.Inject
@@ -27,7 +29,9 @@ class SyncRepository @Inject constructor(
     private val chargeSummaryDao: ChargeSummaryDao,
     private val aggregateDao: AggregateDao,
     private val syncManager: SyncManager,
-    private val geocodingRepository: GeocodingRepository
+    private val geocodingRepository: GeocodingRepository,
+    private val connectionModeStore: ConnectionModeStore,
+    private val historyMetadataStore: HistoryMetadataStore
 ) {
     companion object {
         private const val TAG = "SyncRepository"
@@ -71,6 +75,7 @@ class SyncRepository @Inject constructor(
             while (hasMore) {
                 when (val result = teslamateRepository.getDrives(carId, page = page, show = 50)) {
                     is ApiResult.Success -> {
+                        result.metadata?.let { historyMetadataStore.updateDrives(carId, it) }
                         val drives = result.data
                         if (drives.isEmpty()) {
                             hasMore = false
@@ -109,6 +114,7 @@ class SyncRepository @Inject constructor(
             while (hasMore) {
                 when (val result = teslamateRepository.getCharges(carId, page = page, show = 50)) {
                     is ApiResult.Success -> {
+                        result.metadata?.let { historyMetadataStore.updateCharges(carId, it) }
                         val charges = result.data
                         if (charges.isEmpty()) {
                             hasMore = false
@@ -229,9 +235,14 @@ class SyncRepository @Inject constructor(
 
     private suspend fun enqueueGeocoding(carId: Int) {
         try {
-            val drives = driveSummaryDao.getAllChronological(carId)
-            val locations = mutableListOf<Pair<Double, Double>>()
-            // TODO: extract positions from drive data for geocoding
+            if (!allowsExternalGeocoding(connectionModeStore.current())) {
+                Log.d(TAG, "Skipping external geocoding for non-self-hosted mode")
+                return
+            }
+
+            val driveLocations = aggregateDao.getDriveLocationsNeedingGeocode(carId)
+            val chargeLocations = aggregateDao.getChargeLocationsNeedingGeocode(carId)
+            val locations = (driveLocations + chargeLocations).map { it.toLatLon() }
             if (locations.isNotEmpty()) {
                 geocodingRepository.enqueueLocationsForCar(carId, locations)
             }

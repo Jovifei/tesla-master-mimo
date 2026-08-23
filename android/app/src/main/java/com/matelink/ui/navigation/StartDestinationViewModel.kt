@@ -2,6 +2,10 @@ package com.matelink.ui.navigation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.matelink.data.local.ConnectionModeStore
+import com.matelink.data.local.ConnectionMode
+import com.matelink.data.local.InstanceDataStore
+import com.matelink.data.local.JourVoltSessionStore
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -9,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -16,11 +21,17 @@ import javax.inject.Inject
 @HiltViewModel
 class StartDestinationViewModel @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val jourVoltSessionStore: JourVoltSessionStore,
+    private val instanceDataStore: InstanceDataStore,
+    private val connectionModeStore: ConnectionModeStore
 ) : ViewModel() {
 
     private val _startDestination = MutableStateFlow<Screen?>(null)
     val startDestination: StateFlow<Screen?> = _startDestination.asStateFlow()
+
+    private val _connectionMode = MutableStateFlow<ConnectionMode?>(null)
+    val connectionMode: StateFlow<ConnectionMode?> = _connectionMode.asStateFlow()
 
     private val _notificationPermissionAsked = MutableStateFlow(true) // default true to avoid flash
     val notificationPermissionAsked: StateFlow<Boolean> = _notificationPermissionAsked.asStateFlow()
@@ -36,9 +47,19 @@ class StartDestinationViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            // Configuration is available from More. Starting there hid all
-            // primary screens whenever a connection was incomplete.
-            _startDestination.value = Screen.Dashboard
+            val settings = settingsDataStore.settings.first()
+            val instances = instanceDataStore.instances.first()
+            val mode = connectionModeStore.resolveInitial(
+                settings = settings,
+                instances = instances,
+                hasJourVoltSession = jourVoltSessionStore.current() != null
+            )
+            _connectionMode.value = mode
+            _startDestination.value = when {
+                mode == ConnectionMode.SELF_HOSTED -> Screen.Dashboard
+                jourVoltSessionStore.current() != null -> Screen.Dashboard
+                else -> Screen.TeslaLogin
+            }
         }
         viewModelScope.launch {
             settingsDataStore.notificationPermissionAsked.collect {

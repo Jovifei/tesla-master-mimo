@@ -4,9 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.BatteryHealth
 import com.matelink.data.api.models.CarStatus
+import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.Units
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.domain.analytics.AnalysisHistoryRepository
+import com.matelink.domain.analytics.BatteryTrendEstimate
+import com.matelink.domain.analytics.BatteryTrendSample
+import com.matelink.domain.analytics.estimateBatteryTrend
+import com.matelink.util.parseIsoDateTime
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +27,7 @@ data class BatteryUiState(
     val error: String? = null,
     val batteryHealth: BatteryHealth? = null,
     val carStatus: CarStatus? = null,
+    val batteryTrend: BatteryTrendEstimate? = null,
     val units: Units? = null,
     val originalCapacity: Double? = null,
     val ratedEfficiency: Double? = null,
@@ -44,7 +51,13 @@ data class BatteryStats(
     val estimatedRange: Double,
     val ratedRange: Double,
     val idealRange: Double,
-    val rangeAt100: Double?
+    val rangeAt100: Double?,
+    val batteryTrend: BatteryTrendEstimate? = null,
+    // Keep missing live fields distinct from a real zero reading at the UI boundary.
+    val batteryLevelObserved: Int? = null,
+    val estimatedRangeObserved: Double? = null,
+    val ratedRangeObserved: Double? = null,
+    val idealRangeObserved: Double? = null
 ) {
     val hasCapacityEstimate: Boolean
         get() = originalCapacity > 0.0 && currentCapacity > 0.0 && healthPercent in 0.0..100.0
@@ -53,12 +66,24 @@ data class BatteryStats(
         get() = maxRangeNew != null || maxRangeNow != null
 
     val hasLiveStatus: Boolean
-        get() = batteryLevel > 0 || estimatedRange > 0.0 || ratedRange > 0.0 || idealRange > 0.0
+        get() = batteryLevelObserved != null ||
+            estimatedRangeObserved != null ||
+            ratedRangeObserved != null ||
+            idealRangeObserved != null
+
+    val hasBatteryStatus: Boolean
+        get() = batteryLevelObserved != null
+
+    val hasRangeStatus: Boolean
+        get() = estimatedRangeObserved != null ||
+            ratedRangeObserved != null ||
+            idealRangeObserved != null
 }
 
 @HiltViewModel
 class BatteryViewModel @Inject constructor(
-    private val repository: TeslamateRepository
+    private val repository: TeslamateRepository,
+    private val historyRepository: AnalysisHistoryRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BatteryUiState())
@@ -108,6 +133,12 @@ class BatteryViewModel @Inject constructor(
             // Keep range history visible even when TeslaMateApi has no MQTT snapshot.
             val healthResult = repository.getBatteryHealth(id)
             val statusResult = repository.getCarStatus(id)
+            val historyResult = runCatching { historyRepository.load(id) }.getOrNull()
+            val batteryTrend = (historyResult as? ApiResult.Success)
+                ?.data
+                ?.drives
+                ?.mapNotNull { it.toBatteryTrendSample() }
+                ?.let(::estimateBatteryTrend)
 
             _uiState.update {
                 it.copy(
@@ -115,6 +146,7 @@ class BatteryViewModel @Inject constructor(
                     isRefreshing = false,
                     batteryHealth = (healthResult as? ApiResult.Success)?.data,
                     carStatus = (statusResult as? ApiResult.Success)?.data?.status,
+                    batteryTrend = batteryTrend ?: it.batteryTrend,
                     units = (statusResult as? ApiResult.Success)?.data?.units,
                     error = (healthResult as? ApiResult.Error)?.message
                 )
@@ -124,13 +156,14 @@ class BatteryViewModel @Inject constructor(
 
     fun computeStats(): BatteryStats? {
         val state = _uiState.value
-        val health = state.batteryHealth ?: return null
+        val health = state.batteryHealth
         val status = state.carStatus
+        if (health == null && status == null && state.batteryTrend == null) return null
 
         // Use data from the battery health API
-        val apiHealthPercent = health.batteryHealthPercentage?.takeIf { it in 0.0..100.0 }
-        val originalCapacity = health.maxCapacity?.takeIf { it > 0.0 } ?: state.originalCapacity
-        val currentCapacity = health.currentCapacity?.takeIf { it > 0.0 }
+        val apiHealthPercent = health?.batteryHealthPercentage?.takeIf { it in 0.0..100.0 }
+        val originalCapacity = health?.maxCapacity?.takeIf { it > 0.0 } ?: state.originalCapacity
+        val currentCapacity = health?.currentCapacity?.takeIf { it > 0.0 }
         val healthPercent = apiHealthPercent ?: when {
             originalCapacity != null && currentCapacity != null -> currentCapacity / originalCapacity * 100.0
             else -> 0.0
@@ -140,12 +173,12 @@ class BatteryViewModel @Inject constructor(
 
         // Range from API
         val rangeMetrics = BatteryRangeMetrics.from(
-            maxRangeKm = health.maxRange,
-            currentRangeKm = health.currentRange
+            maxRangeKm = health?.maxRange,
+            currentRangeKm = health?.currentRange
         )
 
         // Efficiency from API (Wh/km)
-        val ratedEfficiency = health.ratedEfficiency?.takeIf { it > 0.0 } ?: state.ratedEfficiency ?: 0.0
+        val ratedEfficiency = health?.ratedEfficiency?.takeIf { it > 0.0 } ?: state.ratedEfficiency ?: 0.0
 
         // Current status from CarStatus
         val batteryLevel = status?.batteryLevel ?: 0
@@ -154,12 +187,13 @@ class BatteryViewModel @Inject constructor(
         val ratedRange = status?.ratedBatteryRangeKm ?: 0.0
         val idealRange = status?.idealBatteryRangeKm ?: 0.0
 
-        // Estimate range at 100%
-        val rangeAt100 = if (batteryLevel >= 10 && ratedRange > 0) {
+        // Estimate range at 100% only when both live SOC and rated range were observed.
+        // A health endpoint's current range is not enough evidence for this calculation.
+        val rangeAt100 = if (status?.batteryLevel != null && status.ratedBatteryRangeKm != null &&
+            batteryLevel >= 10 && ratedRange > 0
+        ) {
             (ratedRange / batteryLevel) * 100
-        } else {
-            rangeMetrics.currentRangeKm
-        }
+        } else null
 
         return BatteryStats(
             currentCapacity = currentCapacity ?: 0.0,
@@ -176,7 +210,22 @@ class BatteryViewModel @Inject constructor(
             estimatedRange = estimatedRange,
             ratedRange = ratedRange,
             idealRange = idealRange,
-            rangeAt100 = rangeAt100
+            rangeAt100 = rangeAt100,
+            batteryTrend = state.batteryTrend,
+            batteryLevelObserved = status?.batteryLevel,
+            estimatedRangeObserved = status?.estBatteryRangeKm,
+            ratedRangeObserved = status?.ratedBatteryRangeKm,
+            idealRangeObserved = status?.idealBatteryRangeKm
+        )
+    }
+
+    private fun DriveData.toBatteryTrendSample(): BatteryTrendSample? {
+        val date = parseIsoDateTime(startDate ?: endDate)?.toLocalDate() ?: return null
+        return BatteryTrendSample(
+            date = date,
+            socPercent = (startBatteryLevel ?: endBatteryLevel)?.toDouble(),
+            ratedRangeKm = startRatedRangeKm ?: endRatedRangeKm,
+            temperatureC = outsideTempAvg
         )
     }
 }

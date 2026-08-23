@@ -1,3 +1,6 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -23,6 +26,10 @@ fun resolveGitSha(): String {
     }
 }
 
+fun quoteBuildConfigString(value: String): String {
+    return "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+}
+
 android {
     namespace = "com.matelink"
     compileSdk = 35
@@ -36,14 +43,80 @@ android {
         buildConfigField("String", "GIT_SHA", "\"${resolveGitSha()}\"")
         val publicInfoBaseUrl = providers.gradleProperty("MATELINK_PUBLIC_INFO_BASE_URL").orElse("").get()
         buildConfigField("String", "MATELINK_PUBLIC_INFO_BASE_URL", "\"$publicInfoBaseUrl\"")
+        buildConfigField("boolean", "JOURVOLT_MOCK_LOGIN", "false")
+        buildConfigField("String", "JOURVOLT_MOCK_SOURCE", "\"\"")
+        val cloudLoginEnabled = providers.gradleProperty("JOURVOLT_CLOUD_LOGIN")
+            .orElse("true")
+            .get()
+            .toBoolean()
+        buildConfigField("boolean", "JOURVOLT_CLOUD_LOGIN", cloudLoginEnabled.toString())
+        val cloudBaseUrl = providers.gradleProperty("JOURVOLT_API_BASE_URL")
+            .orElse("https://api.jourvolt.com/")
+            .get()
+        buildConfigField("String", "JOURVOLT_API_BASE_URL", quoteBuildConfigString(cloudBaseUrl))
+        buildConfigField("String", "JOURVOLT_MOCK_BASE_URL", "\"\"")
         manifestPlaceholders["amapApiKey"] = providers.gradleProperty("AMAP_API_KEY").orElse("").get()
+        val jourVoltAuthHost = providers.gradleProperty("JOURVOLT_AUTH_HOST")
+            .orElse("auth.jourvolt.com")
+            .get()
+            .trim()
+            .removePrefix("https://")
+            .removeSuffix("/")
+        buildConfigField("String", "JOURVOLT_AUTH_HOST", quoteBuildConfigString(jourVoltAuthHost))
+        manifestPlaceholders["jourvoltAuthHost"] = jourVoltAuthHost
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    val formalReleaseSigningConfig = providers.gradleProperty("MATELINK_SIGNING_PROPERTIES_FILE")
+        .orNull
+        ?.let { configuredPath ->
+            val propertiesFile = File(configuredPath).absoluteFile
+            check(propertiesFile.isFile) {
+                "MATELINK_SIGNING_PROPERTIES_FILE does not point to a file"
+            }
+            val properties = Properties()
+            propertiesFile.inputStream().use { properties.load(it) }
+            fun requiredProperty(name: String): String =
+                properties.getProperty(name)?.trim().orEmpty().also {
+                    check(it.isNotEmpty()) { "Signing property $name is required" }
+                }
+
+            val configuredStoreFile = File(requiredProperty("storeFile"))
+            val keystoreFile = if (configuredStoreFile.isAbsolute) {
+                configuredStoreFile
+            } else {
+                File(propertiesFile.parentFile ?: project.rootDir, configuredStoreFile.path)
+            }
+            check(keystoreFile.isFile) { "Signing keystore file does not exist" }
+
+            signingConfigs.create("formalRelease") {
+                storeFile = keystoreFile
+                storePassword = requiredProperty("storePassword")
+                keyAlias = requiredProperty("keyAlias")
+                keyPassword = requiredProperty("keyPassword")
+            }
+        }
+
     buildTypes {
+        debug {
+            applicationIdSuffix = ".test.mock"
+            resValue("string", "app_name", "MateLink Test")
+            buildConfigField("boolean", "JOURVOLT_MOCK_LOGIN", "true")
+            buildConfigField("String", "JOURVOLT_MOCK_SOURCE", "\"mock_fixture\"")
+            buildConfigField("boolean", "JOURVOLT_CLOUD_LOGIN", "false")
+            val mockBaseUrl = providers.gradleProperty("JOURVOLT_MOCK_BASE_URL")
+                .orElse("http://10.0.2.2:18090/")
+                .get()
+            buildConfigField("String", "JOURVOLT_MOCK_BASE_URL", quoteBuildConfigString(mockBaseUrl))
+            val debugApiBaseUrl = providers.gradleProperty("JOURVOLT_DEBUG_API_BASE_URL")
+                .orElse(mockBaseUrl)
+                .get()
+            buildConfigField("String", "JOURVOLT_API_BASE_URL", quoteBuildConfigString(debugApiBaseUrl))
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = formalReleaseSigningConfig
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -81,6 +154,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.browser)
 
     // Compose
     implementation(platform(libs.androidx.compose.bom))
@@ -112,6 +186,7 @@ dependencies {
 
     // Security (EncryptedSharedPreferences)
     implementation(libs.security.crypto)
+    implementation(libs.errorprone.annotations)
 
     // Room
     implementation(libs.room.runtime)
@@ -155,7 +230,7 @@ tasks.matching { it.name.startsWith("connected") && it.name.endsWith("AndroidTes
 }
 
 val verifyDebugForegroundServiceType by tasks.registering {
-    dependsOn("processDebugMainManifest")
+        dependsOn("processDebugMainManifest")
 
     doLast {
         val mergedManifest = layout.buildDirectory

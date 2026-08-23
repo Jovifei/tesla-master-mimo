@@ -11,7 +11,8 @@ data class CarsResponse(
 
 @JsonClass(generateAdapter = true)
 data class CarsData(
-    @Json(name = "cars") val cars: List<CarData>? = null
+    @Json(name = "cars") val cars: List<CarData>? = null,
+    @Json(name = "meta") val meta: ApiDataMeta? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -64,7 +65,8 @@ data class CarStatusResponse(
 @JsonClass(generateAdapter = true)
 data class CarStatusData(
     @Json(name = "status") val status: CarStatus? = null,
-    @Json(name = "units") val units: Units? = null
+    @Json(name = "units") val units: Units? = null,
+    @Json(name = "meta") val meta: ApiDataMeta? = null
 )
 
 @Immutable

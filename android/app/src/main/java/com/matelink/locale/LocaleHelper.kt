@@ -2,7 +2,6 @@ package com.matelink.locale
 
 import android.content.Context
 import android.content.res.Configuration
-import android.os.Build
 import java.util.Locale
 
 /**
@@ -12,9 +11,6 @@ import java.util.Locale
  *   ""  = System default
  *   "en" = English
  *   "zh" = 中文
- *   "ja" = 日本語
- *   "de" = Deutsch
- *   "fr" = Français
  */
 object LocaleHelper {
 
@@ -22,10 +18,7 @@ object LocaleHelper {
     val SUPPORTED_LOCALES: List<Pair<String, String>> = listOf(
         "" to "System Default",
         "en" to "English",
-        "zh" to "中文",
-        "ja" to "日本語",
-        "de" to "Deutsch",
-        "fr" to "Français"
+        "zh" to "中文"
     )
 
     /**
@@ -40,12 +33,7 @@ object LocaleHelper {
             Locale(languageCode)
         }
 
-        val currentLocale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            context.resources.configuration.locales[0]
-        } else {
-            @Suppress("DEPRECATION")
-            context.resources.configuration.locale
-        }
+        val currentLocale = context.resources.configuration.locales[0]
 
         // Check if locale actually changed
         if (currentLocale.language == locale.language) {
@@ -55,16 +43,8 @@ object LocaleHelper {
         Locale.setDefault(locale)
 
         val config = Configuration(context.resources.configuration)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            config.setLocale(locale)
-        } else {
-            @Suppress("DEPRECATION")
-            config.locale = locale
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            config.setLocales(android.os.LocaleList(locale))
-        }
+        config.setLocale(locale)
+        config.setLocales(android.os.LocaleList(locale))
 
         context.resources.updateConfiguration(config, context.resources.displayMetrics)
         return true
@@ -74,11 +54,6 @@ object LocaleHelper {
      * Get the current app locale.
      */
     fun getCurrentLocale(context: Context): Locale {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            context.resources.configuration.locales[0]
-        } else {
-            @Suppress("DEPRECATION")
-            context.resources.configuration.locale
-        }
+        return context.resources.configuration.locales[0]
     }
 }

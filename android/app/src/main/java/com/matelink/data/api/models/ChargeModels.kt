@@ -10,7 +10,8 @@ data class ChargesResponse(
 
 @JsonClass(generateAdapter = true)
 data class ChargesData(
-    @Json(name = "charges") val charges: List<ChargeData>? = null
+    @Json(name = "charges") val charges: List<ChargeData>? = null,
+    @Json(name = "meta") val meta: ApiDataMeta? = null
 )
 
 @JsonClass(generateAdapter = true)

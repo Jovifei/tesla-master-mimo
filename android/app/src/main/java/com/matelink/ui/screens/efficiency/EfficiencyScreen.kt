@@ -23,9 +23,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.matelink.R
+import com.matelink.domain.analytics.HistoryFreshness
 import com.matelink.domain.analytics.AnalysisWindow
 import com.matelink.ui.components.AnalysisWindowSelector
+import com.matelink.ui.components.CachedHistoryBanner
+import com.matelink.ui.components.MetricPanelKind
+import com.matelink.ui.components.MetricStatusPanel
+import com.matelink.ui.components.HistoryStatusPanel
 import com.matelink.ui.theme.SwissOutline
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +66,11 @@ fun EfficiencyScreen(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator()
+                MetricStatusPanel(
+                    kind = MetricPanelKind.LOADING,
+                    title = stringResource(R.string.metric_state_loading_title),
+                    body = stringResource(R.string.metric_state_loading_body)
+                )
             }
             return@Scaffold
         }
@@ -70,10 +80,23 @@ fun EfficiencyScreen(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = uiState.error ?: stringResource(R.string.no_data),
-                    color = MaterialTheme.colorScheme.error,
-                    textAlign = TextAlign.Center
+                MetricStatusPanel(
+                    kind = MetricPanelKind.ERROR,
+                    title = stringResource(R.string.metric_state_error_title),
+                    body = uiState.error ?: stringResource(R.string.no_data)
+                )
+            }
+            return@Scaffold
+        }
+
+        if (uiState.driveCount == 0) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                HistoryStatusPanel(
+                    reason = uiState.noDataReason,
+                    emptyBody = stringResource(R.string.metric_state_empty_body)
                 )
             }
             return@Scaffold
@@ -87,12 +110,19 @@ fun EfficiencyScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            if (uiState.historyFreshness == HistoryFreshness.STALE) {
+                CachedHistoryBanner(
+                    title = stringResource(R.string.metric_state_cached_title),
+                    body = stringResource(R.string.metric_state_cached_body)
+                )
+            }
+
             // Summary card - Average Efficiency
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(1.dp, SwissOutline),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
@@ -101,7 +131,7 @@ fun EfficiencyScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = uiState.avgEfficiencyWhKm?.let { String.format("%.1f Wh/km", it) }
+                        text = uiState.avgEfficiencyWhKm?.let { String.format(Locale.getDefault(), "%.1f Wh/km", it) }
                             ?: stringResource(R.string.analysis_no_records),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold,
@@ -123,7 +153,7 @@ fun EfficiencyScreen(
                 StatCard(
                     modifier = Modifier.weight(1f),
                     label = stringResource(R.string.efficiency_total_distance),
-                    value = if (uiState.driveCount > 0) String.format("%.1f km", uiState.totalDistanceKm)
+                    value = if (uiState.driveCount > 0) String.format(Locale.getDefault(), "%.1f km", uiState.totalDistanceKm)
                     else stringResource(R.string.analysis_no_records)
                 )
             }
@@ -132,7 +162,7 @@ fun EfficiencyScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(1.dp, SwissOutline),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
@@ -190,7 +220,7 @@ fun EfficiencyScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
                     border = BorderStroke(1.dp, SwissOutline),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
@@ -255,7 +285,7 @@ fun EfficiencyScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
                     border = BorderStroke(1.dp, SwissOutline),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
@@ -296,7 +326,7 @@ private fun StatCard(
         modifier = modifier,
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, SwissOutline),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
@@ -322,7 +352,7 @@ private fun EfficiencyWindowCard(
     StatCard(
         modifier = modifier,
         label = label,
-        value = value?.let { String.format("%.0f Wh/km", it) } ?: stringResource(R.string.analysis_no_records)
+        value = value?.let { String.format(Locale.getDefault(), "%.0f Wh/km", it) } ?: stringResource(R.string.analysis_no_records)
     )
 }
 
@@ -357,7 +387,7 @@ private fun EfficiencyTripRow(index: Int, trip: EfficiencyTripPosition) {
         modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, SwissOutline),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(

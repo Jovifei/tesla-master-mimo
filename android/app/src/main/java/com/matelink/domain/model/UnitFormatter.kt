@@ -19,11 +19,11 @@ object UnitFormatter {
      * Value is also converted here as the API do not convert to ft when user select mi instead of km.
      */
     fun formatElevation(value: Int?, units: Units?): String {
-        val v = value ?: 0
+        if (value == null) return "—"
         return if (units?.isImperial == true) {
-            "%,d ft".format((v * 3.28084).toInt())
+            "%,d ft".format((value * 3.28084).toInt())
         } else {
-            "%,d m".format(v)
+            "%,d m".format(value)
         }
     }
 

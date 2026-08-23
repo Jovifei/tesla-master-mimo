@@ -10,7 +10,8 @@ data class BatteryHealthResponse(
 
 @JsonClass(generateAdapter = true)
 data class BatteryHealthData(
-    @Json(name = "battery_health") val batteryHealth: BatteryHealth? = null
+    @Json(name = "battery_health") val batteryHealth: BatteryHealth? = null,
+    @Json(name = "meta") val meta: ApiDataMeta? = null
 )
 
 @JsonClass(generateAdapter = true)

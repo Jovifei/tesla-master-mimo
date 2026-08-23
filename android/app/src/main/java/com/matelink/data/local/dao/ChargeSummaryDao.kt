@@ -72,12 +72,23 @@ interface ChargeSummaryDao {
     @Query("SELECT COALESCE(SUM(cost), 0) FROM charges_summary WHERE carId = :carId")
     suspend fun sumCost(carId: Int): Double
 
+    /** Number of charge records with an observed cost; zero is a valid value. */
+    @Query("SELECT COUNT(cost) FROM charges_summary WHERE carId = :carId")
+    suspend fun countWithCost(carId: Int): Int
+
     @Query("""
         SELECT COALESCE(SUM(cost), 0) FROM charges_summary
         WHERE carId = :carId
         AND startDate >= :startDate AND startDate < :endDate
     """)
     suspend fun sumCostInRange(carId: Int, startDate: String, endDate: String): Double
+
+    @Query("""
+        SELECT COUNT(cost) FROM charges_summary
+        WHERE carId = :carId
+        AND startDate >= :startDate AND startDate < :endDate
+    """)
+    suspend fun countWithCostInRange(carId: Int, startDate: String, endDate: String): Int
 
     // Average cost per kWh
     @Query("""

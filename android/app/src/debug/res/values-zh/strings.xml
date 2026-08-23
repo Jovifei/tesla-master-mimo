@@ -1,0 +1,3 @@
+<resources>
+    <string name="debug_mock_login">本机 Mock 登录（仅测试包）</string>
+</resources>

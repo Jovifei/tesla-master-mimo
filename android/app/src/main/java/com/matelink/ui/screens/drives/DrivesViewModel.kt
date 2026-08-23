@@ -62,7 +62,7 @@ data class DriveChartData(
     val count: Int,
     val totalDistance: Double,
     val totalDurationMin: Int,
-    val maxSpeed: Int,
+    val maxSpeed: Int?,
     val sortKey: Long
 )
 
@@ -114,7 +114,7 @@ data class DrivesSummary(
     val totalDurationMin: Int = 0,
     val avgDistancePerDrive: Double = 0.0,
     val avgDurationPerDrive: Int = 0,
-    val maxSpeedKmh: Int = 0
+    val maxSpeedKmh: Int? = null
 )
 
 @HiltViewModel
@@ -347,7 +347,7 @@ class DrivesViewModel @Inject constructor(
         }
 
         // Calculate summary and chart data from filtered drives
-        val summary = calculateSummary(drivesForStats)
+        val summary = calculateDrivesSummary(drivesForStats)
         val chartData = calculateChartData(drivesForStats, granularity, state.startDate)
 
         _uiState.update {
@@ -501,26 +501,26 @@ class DrivesViewModel @Inject constructor(
             count = drives.size,
             totalDistance = drives.sumOf { it.distance ?: 0.0 },
             totalDurationMin = drives.sumOf { it.durationMin ?: 0 },
-            maxSpeed = drives.maxOfOrNull { it.speedMax ?: 0 } ?: 0,
+            maxSpeed = drives.mapNotNull { it.speedMax?.takeIf { speed -> speed >= 0 } }.maxOrNull(),
             sortKey = sortKey
         )
     }
+}
 
-    private fun calculateSummary(drives: List<DriveData>): DrivesSummary {
-        if (drives.isEmpty()) return DrivesSummary()
+internal fun calculateDrivesSummary(drives: List<DriveData>): DrivesSummary {
+    if (drives.isEmpty()) return DrivesSummary()
 
-        val totalDistance = drives.sumOf { it.distance ?: 0.0 }
-        val totalDuration = drives.sumOf { it.durationMin ?: 0 }
-        val maxSpeed = drives.mapNotNull { it.speedMax }.maxOrNull() ?: 0
-        val count = drives.size
+    val totalDistance = drives.sumOf { it.distance ?: 0.0 }
+    val totalDuration = drives.sumOf { it.durationMin ?: 0 }
+    val maxSpeed = drives.mapNotNull { it.speedMax?.takeIf { speed -> speed >= 0 } }.maxOrNull()
+    val count = drives.size
 
-        return DrivesSummary(
-            totalDrives = count,
-            totalDistanceKm = totalDistance,
-            totalDurationMin = totalDuration,
-            avgDistancePerDrive = if (count > 0) totalDistance / count else 0.0,
-            avgDurationPerDrive = if (count > 0) totalDuration / count else 0,
-            maxSpeedKmh = maxSpeed
-        )
-    }
+    return DrivesSummary(
+        totalDrives = count,
+        totalDistanceKm = totalDistance,
+        totalDurationMin = totalDuration,
+        avgDistancePerDrive = if (count > 0) totalDistance / count else 0.0,
+        avgDurationPerDrive = if (count > 0) totalDuration / count else 0,
+        maxSpeedKmh = maxSpeed
+    )
 }

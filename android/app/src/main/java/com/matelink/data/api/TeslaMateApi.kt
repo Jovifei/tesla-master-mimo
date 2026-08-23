@@ -18,8 +18,7 @@ import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.Query
 
-// TODO(D6): Android is missing 1 endpoint that iOS uses:
-//   - GET api/readyz   (readiness probe — used in iOS OnboardingView)
+// The readiness probe is included for onboarding/connection checks.
 // Note: neither platform uses /api/healthz (available on server but unused).
 // All Retrofit @GET paths are relative (no leading "/").
 // iOS uses mixed leading "/" — ensure base URL ends with "/" for consistency.

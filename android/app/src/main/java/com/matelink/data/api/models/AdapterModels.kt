@@ -29,6 +29,16 @@ data class AdapterSnapshot(
     @Json(name = "field_sources") val fieldSources: Map<String, String> = emptyMap()
 )
 
+/** Optional metadata shared by history, health, and compatibility responses. */
+@JsonClass(generateAdapter = true)
+data class ApiDataMeta(
+    @Json(name = "availability") val availability: String? = null,
+    @Json(name = "source") val source: String? = null,
+    @Json(name = "observed_at") val observedAt: String? = null,
+    @Json(name = "collection_started_at") val collectionStartedAt: String? = null,
+    @Json(name = "coverage_percent") val coveragePercent: Double? = null
+)
+
 @JsonClass(generateAdapter = true)
 data class ParkedDetailResponse(
     @Json(name = "data") val data: ParkedDetailData? = null,

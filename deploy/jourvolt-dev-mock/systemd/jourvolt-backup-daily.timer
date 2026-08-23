@@ -1,0 +1,11 @@
+[Unit]
+Description=Run JourVolt encrypted PostgreSQL daily backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=15min
+Unit=jourvolt-backup-daily.service
+
+[Install]
+WantedBy=timers.target

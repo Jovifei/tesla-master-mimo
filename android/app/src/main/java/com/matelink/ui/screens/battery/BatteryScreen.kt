@@ -3,6 +3,7 @@ package com.matelink.ui.screens.battery
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -55,13 +56,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
+import com.matelink.domain.analytics.BatteryTrendSource
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.TelemetryGauge
 import com.matelink.ui.components.TelemetryPanel
@@ -139,7 +147,12 @@ fun BatteryScreen(
                     MateLinkLoadingPlaceholder(color = palette.accent)
                 } else {
                     val stats = viewModel.computeStats()
-                    if (stats != null && (stats.hasCapacityEstimate || stats.hasRangeEstimate || stats.hasLiveStatus)) {
+                    if (stats != null && (
+                            stats.hasCapacityEstimate ||
+                                stats.hasRangeEstimate ||
+                                stats.hasLiveStatus ||
+                                stats.batteryTrend != null
+                            )) {
                         BatteryHealthContent(
                             stats = stats,
                             units = uiState.units,
@@ -215,6 +228,11 @@ private fun BatteryHealthContent(
                         title = stringResource(R.string.battery_health_title),
                         accent = healthColor
                     )
+                    Text(
+                        text = stringResource(R.string.battery_capacity_observed_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -255,10 +273,239 @@ private fun BatteryHealthContent(
             }
             CapacityCard(stats = stats, units = units, palette = palette, onClick = onCardClick)
             DegradationCard(stats = stats, palette = palette, onClick = onCardClick)
+        } else {
+            stats.batteryTrend?.let { trend ->
+                BatteryTrendCard(trend = trend, units = units, palette = palette)
+            }
+            if (stats.hasBatteryStatus) {
+                BatteryStatusCard(stats = stats)
+            }
+            if (stats.hasRangeStatus) {
+                RangeInformationCard(stats = stats, units = units)
+            }
         }
         if (stats.hasRangeEstimate) {
             RangeCard(stats = stats, units = units, palette = palette, onClick = onCardClick)
         }
+    }
+}
+
+@Composable
+private fun BatteryTrendCard(
+    trend: com.matelink.domain.analytics.BatteryTrendEstimate,
+    units: com.matelink.data.api.models.Units?,
+    palette: CarColorPalette
+) {
+    val title = stringResource(R.string.battery_trend_title)
+    val description = stringResource(R.string.battery_trend_description)
+    val status = when (trend.source) {
+        BatteryTrendSource.TREND_ESTIMATE -> stringResource(R.string.battery_trend_status_estimate)
+        BatteryTrendSource.TREND_ONLY -> stringResource(R.string.battery_trend_status_only)
+        BatteryTrendSource.UNAVAILABLE -> stringResource(R.string.battery_trend_status_unavailable)
+    }
+    val currentLabel = stringResource(R.string.battery_trend_current_range)
+    val baselineLabel = stringResource(R.string.battery_trend_baseline_range)
+    val degradationLabel = stringResource(R.string.battery_trend_degradation)
+    val samplesLabel = if (trend.sampleCount > 0) {
+        val sampleCountLabel = pluralStringResource(
+            R.plurals.battery_trend_valid_samples,
+            trend.sampleCount,
+            trend.sampleCount
+        )
+        val coverageDaysLabel = pluralStringResource(
+            R.plurals.battery_trend_coverage_days,
+            trend.coverageDays.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            trend.coverageDays
+        )
+        "$sampleCountLabel · $coverageDaysLabel"
+    } else {
+        stringResource(R.string.battery_trend_no_samples)
+    }
+    val confidenceLabel = stringResource(R.string.battery_trend_confidence, trend.confidencePercent)
+    val periodLabel = if (trend.firstDate != null && trend.lastDate != null) {
+        stringResource(R.string.battery_trend_period, trend.firstDate, trend.lastDate)
+    } else {
+        null
+    }
+    val unavailableMessage = stringResource(R.string.battery_trend_unavailable_message)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = palette.surface)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.BatteryChargingFull,
+                    contentDescription = null,
+                    tint = palette.accent,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.onSurface
+                )
+            }
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.onSurfaceVariant
+            )
+            Text(
+                text = status,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = palette.accent
+            )
+
+            if (trend.source != BatteryTrendSource.UNAVAILABLE && trend.points.size >= 2) {
+                BatteryTrendChart(trend = trend, palette = palette)
+            }
+
+            trend.normalizedCurrentRangeKm?.let { currentRange ->
+                BatteryTrendValueRow(
+                    label = currentLabel,
+                    value = UnitFormatter.formatDistance(currentRange, units),
+                    palette = palette
+                )
+            }
+            trend.baselineRangeKm?.let { baselineRange ->
+                BatteryTrendValueRow(
+                    label = baselineLabel,
+                    value = UnitFormatter.formatDistance(baselineRange, units),
+                    palette = palette
+                )
+            }
+            trend.degradationPercent?.let { degradation ->
+                BatteryTrendValueRow(
+                    label = degradationLabel,
+                    value = "%.1f%%".format(degradation),
+                    palette = palette
+                )
+            }
+
+            if (trend.source == BatteryTrendSource.UNAVAILABLE) {
+                Text(
+                    text = unavailableMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.onSurfaceVariant
+                )
+            }
+            Text(
+                text = samplesLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.onSurfaceVariant
+            )
+            periodLabel?.let { period ->
+                Text(
+                    text = period,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.onSurfaceVariant
+                )
+            }
+            if (trend.confidencePercent > 0) {
+                Text(
+                    text = confidenceLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BatteryTrendChart(
+    trend: com.matelink.domain.analytics.BatteryTrendEstimate,
+    palette: CarColorPalette
+) {
+    val points = trend.points
+    val minValue = points.minOf { it.normalizedRangeKm }
+    val maxValue = points.maxOf { it.normalizedRangeKm }
+    val valueRange = (maxValue - minValue).takeIf { it > 0.0 } ?: 1.0
+    val chartDescription = stringResource(
+        R.string.battery_trend_chart_description,
+        points.size
+    )
+
+    Text(
+        text = stringResource(R.string.battery_trend_chart_title),
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = palette.onSurface
+    )
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp)
+            .semantics { contentDescription = chartDescription }
+    ) {
+        val step = size.width / (points.size - 1).coerceAtLeast(1)
+        val path = Path()
+        points.forEachIndexed { index, point ->
+            val x = index * step
+            val y = size.height -
+                ((point.normalizedRangeKm - minValue) / valueRange).toFloat() * size.height
+            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            drawCircle(palette.accent, radius = 4.dp.toPx(), center = Offset(x, y))
+        }
+        drawLine(
+            color = palette.onSurface.copy(alpha = 0.12f),
+            start = Offset(0f, size.height),
+            end = Offset(size.width, size.height),
+            strokeWidth = 1.dp.toPx()
+        )
+        drawPath(
+            path = path,
+            color = palette.accent,
+            style = Stroke(width = 2.dp.toPx())
+        )
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = points.first().date.toString().takeLast(5),
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.onSurfaceVariant
+        )
+        Text(
+            text = points.last().date.toString().takeLast(5),
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun BatteryTrendValueRow(
+    label: String,
+    value: String,
+    palette: CarColorPalette
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = palette.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = palette.onSurface
+        )
     }
 }
 
@@ -437,9 +684,6 @@ private fun CapacityValueCard(
     }
 }
 
-// TODO(parity): iOS BatteryHealthView shows a degradation curve chart (LineMark + PointMark)
-//  displaying capacity % over time. Android only shows a snapshot card.
-//  Ref: app_mimo/ios/MateLink/Features/Battery/BatteryHealthView.swift
 @Composable
 private fun DegradationCard(stats: BatteryStats, palette: CarColorPalette, onClick: () -> Unit) {
     var showTooltip by remember { mutableStateOf(false) }
@@ -753,14 +997,28 @@ private fun BatteryDetailScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Battery Status Section
-            BatteryStatusCard(stats = stats)
+            if (stats.hasBatteryStatus) {
+                // Battery Status Section
+                BatteryStatusCard(stats = stats)
+            }
 
-            // Range Information Section
-            RangeInformationCard(stats = stats, units = units)
+            if (stats.hasRangeStatus) {
+                // Range Information Section
+                RangeInformationCard(stats = stats, units = units)
+            }
 
-            // Estimated Total Capacity Section
-            EstimatedCapacityCard(stats = stats, units = units)
+            if (stats.rangeAt100 != null) {
+                // Estimated Total Capacity Section
+                EstimatedCapacityCard(stats = stats, units = units)
+            }
+
+            if (!stats.hasBatteryStatus && !stats.hasRangeStatus && stats.rangeAt100 == null) {
+                Text(
+                    text = stringResource(R.string.no_battery_data),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -925,7 +1183,7 @@ private fun RangeInformationCard(stats: BatteryStats, units: com.matelink.data.a
             RangeInfoRow(
                 title = estimatedRangeLabel,
                 subtitle = estimatedRangeSubtitle,
-                value = UnitFormatter.formatDistance(stats.estimatedRange, units),
+                value = formatRange(stats.estimatedRangeObserved, units, stringResource(R.string.not_available)),
                 valueColor = RangeBlue
             )
 
@@ -934,7 +1192,7 @@ private fun RangeInformationCard(stats: BatteryStats, units: com.matelink.data.a
             RangeInfoRow(
                 title = ratedRangeLabel,
                 subtitle = ratedRangeSubtitle,
-                value = UnitFormatter.formatDistance(stats.ratedRange, units),
+                value = formatRange(stats.ratedRangeObserved, units, stringResource(R.string.not_available)),
                 valueColor = RangeBlue
             )
 
@@ -943,7 +1201,7 @@ private fun RangeInformationCard(stats: BatteryStats, units: com.matelink.data.a
             RangeInfoRow(
                 title = idealRangeLabel,
                 subtitle = idealRangeSubtitle,
-                value = UnitFormatter.formatDistance(stats.idealRange, units),
+                value = formatRange(stats.idealRangeObserved, units, stringResource(R.string.not_available)),
                 valueColor = RangeBlue
             )
         }

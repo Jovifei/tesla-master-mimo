@@ -1,0 +1,47 @@
+services:
+  jourvolt-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: jourvolt
+      POSTGRES_USER: jourvolt
+      POSTGRES_PASSWORD: jourvolt
+    volumes:
+      - jourvolt-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jourvolt -d jourvolt"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  jourvolt-dev-api:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://jourvolt:jourvolt@jourvolt-postgres:5432/jourvolt?sslmode=disable
+      LISTEN_ADDR: :8080
+      JOURVOLT_ENABLE_MOCK: ${JOURVOLT_ENABLE_MOCK:-true}
+      JOURVOLT_ENABLE_MOCK_HISTORY: ${JOURVOLT_ENABLE_MOCK_HISTORY:-true}
+      TESLA_CLIENT_ID: ${TESLA_CLIENT_ID:-}
+      TESLA_CLIENT_SECRET: ${TESLA_CLIENT_SECRET:-}
+      TESLA_REDIRECT_URI: ${TESLA_REDIRECT_URI:-}
+      JOURVOLT_APP_LINK_URI: ${JOURVOLT_APP_LINK_URI:-}
+      JOURVOLT_TOKEN_KEY_BASE64: ${JOURVOLT_TOKEN_KEY_BASE64:-}
+    depends_on:
+      jourvolt-postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18090:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  jourvolt-postgres:

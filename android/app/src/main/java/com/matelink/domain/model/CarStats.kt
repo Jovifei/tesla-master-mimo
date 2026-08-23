@@ -4,6 +4,8 @@ import com.matelink.data.local.dao.BusiestDayResult
 import com.matelink.data.local.dao.MostDistanceDayResult
 import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.DriveSummary
+import com.matelink.domain.analytics.Recommendation
+import com.matelink.domain.analytics.AnalysisCoverage
 
 /**
  * Complete stats for a car, containing both Quick Stats and Deep Stats.
@@ -13,7 +15,9 @@ data class CarStats(
     val yearFilter: YearFilter,
     val quickStats: QuickStats,
     val deepStats: DeepStats?,
-    val syncProgress: SyncProgress?
+    val syncProgress: SyncProgress?,
+    val recommendations: List<Recommendation> = emptyList(),
+    val analysisCoverage: AnalysisCoverage? = null
 )
 
 /**
@@ -140,7 +144,7 @@ data class DeepStats(
  */
 data class DriveElevationRecord(
     val driveId: Int,
-    val elevationM: Int,
+    val elevationM: Int?,
     val elevationGainM: Int?,
     val date: String?
 )
@@ -150,7 +154,7 @@ data class DriveElevationRecord(
  */
 data class DriveTempRecord(
     val driveId: Int,
-    val tempC: Double,
+    val tempC: Double?,
     val date: String?
 )
 
@@ -159,7 +163,7 @@ data class DriveTempRecord(
  */
 data class ChargeTempRecord(
     val chargeId: Int,
-    val tempC: Double,
+    val tempC: Double?,
     val date: String?
 )
 
@@ -168,7 +172,7 @@ data class ChargeTempRecord(
  */
 data class ChargePowerRecord(
     val chargeId: Int,
-    val powerKw: Int,
+    val powerKw: Int?,
     val date: String?
 )
 

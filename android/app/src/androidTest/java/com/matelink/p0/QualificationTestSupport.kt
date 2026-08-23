@@ -105,6 +105,7 @@ internal fun ComposeTestRule.navigateToSettings(context: Context) {
     scrollMoreTo(context.getString(R.string.settings_title))
     onNodeWithText(context.getString(R.string.settings_title), useUnmergedTree = true)
         .performClick()
+    onNodeWithTag("advancedNetworkSection").performClick()
     onNodeWithTag("serverAddressInput").assertExists()
 }
 

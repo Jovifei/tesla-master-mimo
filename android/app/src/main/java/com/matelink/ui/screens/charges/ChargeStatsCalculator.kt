@@ -9,38 +9,46 @@ object ChargeStatsCalculator {
 
         // Power stats
         val powers = points.mapNotNull { it.chargerPower }
-        val powerMax = powers.maxOrNull() ?: 0
-        val powerMin = powers.filter { it > 0 }.minOrNull() ?: 0
-        val powerAvg = if (powers.isNotEmpty()) powers.average() else 0.0
+        val powerMax = powers.maxOrNull()
+        val powerMin = powers.minOrNull()
+        val powerAvg = powers.takeIf { it.isNotEmpty() }?.average()
 
         // Voltage stats
         val voltages = points.mapNotNull { it.chargerVoltage }
-        val voltageMax = voltages.maxOrNull() ?: 0
-        val voltageMin = voltages.filter { it > 0 }.minOrNull() ?: 0
-        val voltageAvg = if (voltages.isNotEmpty()) voltages.average() else 0.0
+        val voltageMax = voltages.maxOrNull()
+        val voltageMin = voltages.minOrNull()
+        val voltageAvg = voltages.takeIf { it.isNotEmpty() }?.average()
 
         // Current stats
         val currents = points.mapNotNull { it.chargerCurrent }
-        val currentMax = currents.maxOrNull() ?: 0
-        val currentMin = currents.filter { it > 0 }.minOrNull() ?: 0
-        val currentAvg = if (currents.isNotEmpty()) currents.average() else 0.0
+        val currentMax = currents.maxOrNull()
+        val currentMin = currents.minOrNull()
+        val currentAvg = currents.takeIf { it.isNotEmpty() }?.average()
 
         // Temperature stats
         val temps = points.mapNotNull { it.outsideTemp }
-        val tempMax = temps.maxOrNull() ?: detail.outsideTempAvg ?: 0.0
-        val tempMin = temps.minOrNull() ?: detail.outsideTempAvg ?: 0.0
-        val tempAvg = if (temps.isNotEmpty()) temps.average() else detail.outsideTempAvg ?: 0.0
+        val tempMax = temps.maxOrNull() ?: detail.outsideTempAvg
+        val tempMin = temps.minOrNull() ?: detail.outsideTempAvg
+        val tempAvg = temps.takeIf { it.isNotEmpty() }?.average() ?: detail.outsideTempAvg
 
         // Battery stats
         val batteryLevels = points.mapNotNull { it.batteryLevel }
-        val batteryStart = batteryLevels.firstOrNull() ?: detail.startBatteryLevel ?: 0
-        val batteryEnd = batteryLevels.lastOrNull() ?: detail.currentOrEndBatteryLevel ?: 0
-        val batteryAdded = batteryEnd - batteryStart
+        val batteryStart = batteryLevels.firstOrNull() ?: detail.startBatteryLevel
+        val batteryEnd = batteryLevels.lastOrNull() ?: detail.currentOrEndBatteryLevel
+        val batteryAdded = if (batteryStart != null && batteryEnd != null) {
+            batteryEnd - batteryStart
+        } else {
+            null
+        }
 
         // Energy stats
-        val energyAdded = detail.chargeEnergyAdded ?: 0.0
-        val energyUsed = detail.chargeEnergyUsed ?: energyAdded
-        val efficiency = if (energyUsed > 0) (energyAdded / energyUsed) * 100 else 100.0
+        val energyAdded = detail.chargeEnergyAdded?.takeIf { it.isFinite() && it >= 0.0 }
+        val energyUsed = detail.chargeEnergyUsed?.takeIf { it.isFinite() && it >= 0.0 }
+        val efficiency = if (energyAdded != null && energyUsed != null && energyUsed > 0.0) {
+            (energyAdded / energyUsed * 100.0).takeIf { it.isFinite() && energyAdded <= energyUsed }
+        } else {
+            null
+        }
 
         return ChargeDetailStats(
             powerMax = powerMax,
@@ -61,7 +69,7 @@ object ChargeStatsCalculator {
             energyAdded = energyAdded,
             energyUsed = energyUsed,
             efficiency = efficiency,
-            durationMin = detail.durationMin ?: 0,
+            durationMin = detail.durationMin?.takeIf { it >= 0 },
             cost = detail.cost
         )
     }

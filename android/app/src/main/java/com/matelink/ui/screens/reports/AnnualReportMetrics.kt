@@ -21,8 +21,9 @@ fun annualStandbyKwh(
     year: Int,
     charges: List<ChargeData>,
     drives: List<DriveData>,
-    batteryCapacityKwh: Double = 75.0
+    batteryCapacityKwh: Double? = null
 ): Double? {
+    val usableCapacity = batteryCapacityKwh?.takeIf { it.isFinite() && it > 0.0 } ?: return null
     val sortedCharges = charges.filter { it.startDate != null && it.endDate != null }
         .sortedBy { it.startDate }
     if (sortedCharges.size < 2) return null
@@ -44,7 +45,7 @@ fun annualStandbyKwh(
                 val driveEnd = runCatching { OffsetDateTime.parse(drive.endDate!!) }.getOrNull()
                 driveStart != null && driveEnd != null && driveStart.isBefore(nextTime) && previousTime.isBefore(driveEnd)
             }) return@forEach
-        total += drop / 100.0 * batteryCapacityKwh
+        total += drop / 100.0 * usableCapacity
         count++
     }
     return total.takeIf { count > 0 }

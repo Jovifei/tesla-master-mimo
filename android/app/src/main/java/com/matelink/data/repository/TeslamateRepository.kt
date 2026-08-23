@@ -1,6 +1,7 @@
 package com.matelink.data.repository
 
 import com.matelink.data.api.UrlSecurity
+import com.matelink.BuildConfig
 import com.matelink.data.api.TeslamateApi
 import com.matelink.data.api.models.BatteryHealth
 import com.matelink.data.api.models.CarData
@@ -15,6 +16,8 @@ import com.matelink.data.api.models.AdapterSnapshot
 import com.matelink.data.api.models.ParkedDetailData
 import com.matelink.data.api.models.UpdateData
 import com.matelink.data.local.AppSettings
+import com.matelink.data.local.ConnectionMode
+import com.matelink.data.local.ConnectionModeStore
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.di.TeslamateApiFactory
 import kotlinx.coroutines.flow.first
@@ -28,12 +31,37 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import javax.net.ssl.SSLException
 
+enum class ApiErrorKind {
+    AUTH_REQUIRED,
+    RATE_LIMITED,
+    SERVICE_UNAVAILABLE,
+    NETWORK,
+    CONFIGURATION,
+    INVALID_RESPONSE,
+    UNKNOWN
+}
+
+fun apiErrorKindFor(code: Int?, message: String? = null): ApiErrorKind = when {
+    code == 401 || code == 403 -> ApiErrorKind.AUTH_REQUIRED
+    code == 429 -> ApiErrorKind.RATE_LIMITED
+    code != null && code in 500..599 -> ApiErrorKind.SERVICE_UNAVAILABLE
+    message?.contains("not configured", ignoreCase = true) == true -> ApiErrorKind.CONFIGURATION
+    message?.contains("unrecognised", ignoreCase = true) == true -> ApiErrorKind.INVALID_RESPONSE
+    message?.contains("unreachable", ignoreCase = true) == true ||
+        message?.contains("timed out", ignoreCase = true) == true -> ApiErrorKind.NETWORK
+    else -> ApiErrorKind.UNKNOWN
+}
+
 sealed class ApiResult<out T> {
-    data class Success<T>(val data: T) : ApiResult<T>()
+    data class Success<T>(
+        val data: T,
+        val metadata: ApiResponseMetadata? = null
+    ) : ApiResult<T>()
     data class Error(
         val message: String,
         val code: Int? = null,
-        val details: String? = null
+        val details: String? = null,
+        val kind: ApiErrorKind = apiErrorKindFor(code, message)
     ) : ApiResult<Nothing>()
 }
 
@@ -78,10 +106,11 @@ private fun Throwable.isJsonParsingError(): Boolean {
 class TeslamateRepository @Inject constructor(
     private val apiFactory: TeslamateApiFactory,
     private val settingsDataStore: SettingsDataStore,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val connectionModeStore: ConnectionModeStore
 ) {
     private suspend fun isMockMode(): Boolean =
-        settingsRepository.mockMode.firstOrNull() == true
+        BuildConfig.JOURVOLT_MOCK_LOGIN && settingsRepository.mockMode.firstOrNull() == true
 
     // Cache: true = endpoint exists (API 1.24+), false = 404 (older API)
     private val currentChargeApiAvailable = mutableMapOf<Int, Boolean>()
@@ -117,10 +146,16 @@ class TeslamateRepository @Inject constructor(
         apiCall: suspend (TeslamateApi) -> ApiResult<T>
     ): ApiResult<T> {
         val settings = getSettings()
-        if (settings.serverUrl.isBlank()) {
+        val mode = connectionModeStore.mode.first()
+        val serverUrl = if (mode == ConnectionMode.TESLA_CLOUD) {
+            BuildConfig.JOURVOLT_API_BASE_URL
+        } else {
+            settings.serverUrl
+        }
+        if (serverUrl.isBlank()) {
             return ApiResult.Error("Server not configured")
         }
-        val primaryApi = getApiForUrl(settings.serverUrl)
+        val primaryApi = getApiForUrl(serverUrl)
             ?: return ApiResult.Error("Server not configured")
         return try {
             apiCall(primaryApi)
@@ -356,13 +391,21 @@ class TeslamateRepository @Inject constructor(
         page: Int = 1,
         show: Int = 50000
     ): ApiResult<List<ChargeData>> {
-        if (isMockMode()) return ApiResult.Success(MockDataProvider.getCharges())
+        if (isMockMode()) {
+            return ApiResult.Success(
+                MockDataProvider.getCharges(),
+                ApiResponseMetadata(availability = "available", source = BuildConfig.JOURVOLT_MOCK_SOURCE, coveragePercent = 100.0)
+            )
+        }
         return executeWithFallback { api ->
             try {
                 val response = api.getCharges(carId, startDate, endDate, page = page, show = show)
                 if (response.isSuccessful) {
-                    val charges = response.body()?.data?.charges ?: emptyList()
-                    ApiResult.Success(charges)
+                    val body = response.body()?.data
+                    ApiResult.Success(
+                        body?.charges ?: emptyList(),
+                        body?.meta?.toApiResponseMetadata()
+                    )
                 } else {
                     ApiResult.Error("Failed to fetch charges: ${response.code()}", response.code())
                 }
@@ -426,13 +469,21 @@ class TeslamateRepository @Inject constructor(
         page: Int = 1,
         show: Int = 50000
     ): ApiResult<List<DriveData>> {
-        if (isMockMode()) return ApiResult.Success(MockDataProvider.getDrives())
+        if (isMockMode()) {
+            return ApiResult.Success(
+                MockDataProvider.getDrives(),
+                ApiResponseMetadata(availability = "available", source = BuildConfig.JOURVOLT_MOCK_SOURCE, coveragePercent = 100.0)
+            )
+        }
         return executeWithFallback { api ->
             try {
                 val response = api.getDrives(carId, startDate, endDate, page = page, show = show)
                 if (response.isSuccessful) {
-                    val drives = response.body()?.data?.drives ?: emptyList()
-                    ApiResult.Success(drives)
+                    val body = response.body()?.data
+                    ApiResult.Success(
+                        body?.drives ?: emptyList(),
+                        body?.meta?.toApiResponseMetadata()
+                    )
                 } else {
                     ApiResult.Error("Failed to fetch drives: ${response.code()}", response.code())
                 }
@@ -464,14 +515,20 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getBatteryHealth(carId: Int): ApiResult<BatteryHealth> {
-        if (isMockMode()) return ApiResult.Success(MockDataProvider.getBatteryHealth())
+        if (isMockMode()) {
+            return ApiResult.Success(
+                MockDataProvider.getBatteryHealth(),
+                ApiResponseMetadata(availability = "available", source = BuildConfig.JOURVOLT_MOCK_SOURCE, coveragePercent = 100.0)
+            )
+        }
         return executeWithFallback { api ->
             try {
                 val response = api.getBatteryHealth(carId)
                 if (response.isSuccessful) {
-                    val health = response.body()?.data?.batteryHealth
+                    val body = response.body()?.data
+                    val health = body?.batteryHealth
                     if (health != null) {
-                        ApiResult.Success(health)
+                        ApiResult.Success(health, body?.meta?.toApiResponseMetadata())
                     } else {
                         ApiResult.Error("No battery health data returned")
                     }

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.matelink.data.local.StatsDatabase
 import com.matelink.data.local.dao.AggregateDao
+import com.matelink.data.local.dao.ChargeCostOverrideDao
 import com.matelink.data.local.dao.ChargeSummaryDao
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.dao.GeocodeCacheDao
@@ -55,6 +56,12 @@ object DatabaseModule {
     @Singleton
     fun provideChargeSummaryDao(database: StatsDatabase): ChargeSummaryDao {
         return database.chargeSummaryDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideChargeCostOverrideDao(database: StatsDatabase): ChargeCostOverrideDao {
+        return database.chargeCostOverrideDao()
     }
 
     @Provides

@@ -24,9 +24,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.matelink.R
+import com.matelink.domain.analytics.HistoryFreshness
 import com.matelink.ui.components.AnalysisWindowSelector
+import com.matelink.ui.components.CachedHistoryBanner
+import com.matelink.ui.components.MetricPanelKind
+import com.matelink.ui.components.MetricStatusPanel
+import com.matelink.ui.components.HistoryStatusPanel
 import com.matelink.ui.theme.SwissOutline
 import kotlin.math.max
+import java.util.Locale
 
 private val AcColor = Color(0xFF2196F3)   // Blue
 private val DcColor = Color(0xFFFF9800)   // Orange
@@ -63,7 +69,11 @@ fun CostScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator()
+                MetricStatusPanel(
+                    kind = MetricPanelKind.LOADING,
+                    title = stringResource(R.string.metric_state_loading_title),
+                    body = stringResource(R.string.metric_state_loading_body)
+                )
             }
             return@Scaffold
         }
@@ -73,9 +83,10 @@ fun CostScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = uiState.error ?: stringResource(R.string.no_data),
-                    color = MaterialTheme.colorScheme.error
+                MetricStatusPanel(
+                    kind = MetricPanelKind.ERROR,
+                    title = stringResource(R.string.metric_state_error_title),
+                    body = uiState.error ?: stringResource(R.string.no_data)
                 )
             }
             return@Scaffold
@@ -96,24 +107,26 @@ fun CostScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            if (uiState.historyFreshness == HistoryFreshness.STALE) {
+                CachedHistoryBanner(
+                    title = stringResource(R.string.metric_state_cached_title),
+                    body = stringResource(R.string.metric_state_cached_body)
+                )
+            }
+
             if (uiState.totalCharges == 0) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Text(
-                        text = stringResource(R.string.analysis_no_records),
-                        modifier = Modifier.padding(20.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                HistoryStatusPanel(
+                    reason = uiState.noDataReason,
+                    emptyBody = stringResource(R.string.metric_state_empty_body)
+                )
+                return@Column
             }
 
             // Summary cards
-            SummarySection(uiState)
+            SummarySection(uiState, uiState.currencySymbol)
 
             // Monthly AC/DC cost chart
-            if (uiState.monthlyCosts.isNotEmpty()) {
+            if (uiState.monthlyCosts.isNotEmpty() && uiState.costCoverage > 0) {
                 Text(
                     text = stringResource(R.string.cost_monthly_breakdown),
                     style = MaterialTheme.typography.titleMedium,
@@ -134,14 +147,14 @@ fun CostScreen(
             }
 
             // Top locations
-            if (uiState.topLocations.isNotEmpty()) {
+            if (uiState.topLocations.isNotEmpty() && uiState.costCoverage > 0) {
                 Text(
                     text = stringResource(R.string.cost_top_locations),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 uiState.topLocations.forEach { loc ->
-                    LocationCard(locationCost = loc)
+                    LocationCard(locationCost = loc, currencySymbol = uiState.currencySymbol)
                 }
             }
 
@@ -151,7 +164,7 @@ fun CostScreen(
 }
 
 @Composable
-private fun SummarySection(uiState: CostUiState) {
+private fun SummarySection(uiState: CostUiState, currencySymbol: String) {
     val hasCost = uiState.costCoverage > 0
     val hasEnergy = uiState.energyCoverage > 0
     Row(
@@ -161,18 +174,15 @@ private fun SummarySection(uiState: CostUiState) {
         SummaryCard(
             modifier = Modifier.weight(1f),
             title = stringResource(R.string.cost_total),
-            value = if (hasCost) String.format("¥%.2f", uiState.totalCost) else stringResource(R.string.analysis_no_records),
+            value = if (hasCost) formatMoney(currencySymbol, uiState.totalCost, 2) else stringResource(R.string.analysis_no_records),
             subtitle = stringResource(R.string.cost_charges_count, uiState.totalCharges)
         )
         SummaryCard(
             modifier = Modifier.weight(1f),
             title = stringResource(R.string.cost_energy_added),
-            value = if (hasEnergy) String.format("%.1f kWh", uiState.totalEnergy) else stringResource(R.string.analysis_no_records),
+            value = if (hasEnergy) String.format(Locale.getDefault(), "%.1f kWh", uiState.totalEnergy) else stringResource(R.string.analysis_no_records),
             subtitle = if (hasCost && hasEnergy && uiState.totalEnergy > 0) {
-                String.format(
-                    "¥%.2f/kWh",
-                    uiState.totalCost / uiState.totalEnergy
-                )
+                formatMoney(currencySymbol, uiState.totalCost / uiState.totalEnergy, 2) + "/kWh"
             } else {
                 ""
             }
@@ -185,7 +195,7 @@ private fun SummarySection(uiState: CostUiState) {
         SummaryCard(
             modifier = Modifier.weight(1f),
             title = stringResource(R.string.cost_average_session),
-            value = uiState.averageSessionCost?.let { String.format("¥%.2f", it) }
+            value = uiState.averageSessionCost?.let { formatMoney(currencySymbol, it, 2) }
                 ?: stringResource(R.string.analysis_no_records),
             subtitle = if (uiState.manualCostCount > 0) {
                 stringResource(R.string.cost_manual_count, uiState.manualCostCount)
@@ -195,7 +205,7 @@ private fun SummarySection(uiState: CostUiState) {
             modifier = Modifier.weight(1f),
             title = stringResource(R.string.cost_average_kwh),
             value = if (hasCost && hasEnergy && uiState.totalEnergy > 0) {
-                String.format("¥%.2f/kWh", uiState.totalCost / uiState.totalEnergy)
+                formatMoney(currencySymbol, uiState.totalCost / uiState.totalEnergy, 2) + "/kWh"
             } else stringResource(R.string.analysis_no_records),
             subtitle = stringResource(R.string.cost_average_kwh_hint)
         )
@@ -213,9 +223,7 @@ private fun SummaryCard(
         modifier = modifier,
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, SwissOutline),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -253,9 +261,7 @@ private fun MonthlyCostChart(monthlyCosts: List<MonthlyCost>) {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, SwissOutline),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Canvas(
@@ -323,14 +329,12 @@ private fun LegendDot(color: Color, label: String) {
 }
 
 @Composable
-private fun LocationCard(locationCost: LocationCost) {
+private fun LocationCard(locationCost: LocationCost, currencySymbol: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, SwissOutline),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Row(
             modifier = Modifier
@@ -353,11 +357,16 @@ private fun LocationCard(locationCost: LocationCost) {
                 )
             }
             Text(
-                text = String.format("¥%.2f", locationCost.totalCost),
+                text = formatMoney(currencySymbol, locationCost.totalCost, 2),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(start = 12.dp)
             )
         }
     }
+}
+
+private fun formatMoney(symbol: String, amount: Double, decimals: Int): String {
+    val pattern = "%s%." + decimals + "f"
+    return String.format(Locale.getDefault(), pattern, symbol, amount)
 }

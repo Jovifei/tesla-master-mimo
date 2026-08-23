@@ -100,16 +100,16 @@ class SettingsFullUiQualificationTest {
         ActivityScenario.launch(MainActivity::class.java).use {
             composeRule.navigateToSettings(context)
             composeRule.onAllNodesWithTag("serverAddressInput").assertCountEquals(1)
-            composeRule.onAllNodesWithTag("apiKeyInput").assertCountEquals(1)
-            composeRule.onNodeWithTag("apiKeyInput")
+            composeRule.onAllNodesWithTag("tokenInput").assertCountEquals(1)
+            composeRule.onNodeWithTag("tokenInput")
                 .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Password))
             composeRule.onNodeWithTag("testConnectionButton").assertExists()
             composeRule.onNodeWithTag("saveConfigurationButton").assertExists()
             composeRule.onNodeWithTag("tokenInput").assertDoesNotExist()
 
             resetFixtureRequests()
-            composeRule.onNodeWithTag("apiKeyInput").performTextClearance()
-            composeRule.onNodeWithTag("apiKeyInput").performTextInput(INVALID_SYNTHETIC_TOKEN)
+            composeRule.onNodeWithTag("tokenInput").performTextClearance()
+            composeRule.onNodeWithTag("tokenInput").performTextInput(INVALID_SYNTHETIC_TOKEN)
             composeRule.onNodeWithTag("testConnectionButton").performScrollTo().performClick()
             composeRule.waitForTag("connectionTestResultFailure")
             check(fixtureResponseCount(401) > 0) { "wrong synthetic key did not receive 401" }
@@ -118,8 +118,8 @@ class SettingsFullUiQualificationTest {
             }
             composeRule.onNodeWithText(INVALID_SYNTHETIC_TOKEN).assertDoesNotExist()
 
-            composeRule.onNodeWithTag("apiKeyInput").performTextClearance()
-            composeRule.onNodeWithTag("apiKeyInput").performTextInput(VALID_SYNTHETIC_TOKEN)
+            composeRule.onNodeWithTag("tokenInput").performTextClearance()
+            composeRule.onNodeWithTag("tokenInput").performTextInput(VALID_SYNTHETIC_TOKEN)
             composeRule.onNodeWithTag("testConnectionButton").performClick()
             composeRule.waitForTag("connectionTestResultSuccess")
 

@@ -3,7 +3,6 @@ package com.matelink.data.sync
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
@@ -260,18 +259,16 @@ class TpmsPressureWorker @AssistedInject constructor(
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                appContext.getString(R.string.tpms_channel_name),
-                NotificationManager.IMPORTANCE_DEFAULT
-            ).apply {
-                description = appContext.getString(R.string.tpms_channel_description)
-            }
-
-            val notificationManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE)
-                    as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            appContext.getString(R.string.tpms_channel_name),
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = appContext.getString(R.string.tpms_channel_description)
         }
+
+        val notificationManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE)
+                as NotificationManager
+        notificationManager.createNotificationChannel(channel)
     }
 }

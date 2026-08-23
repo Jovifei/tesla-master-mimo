@@ -1,5 +1,6 @@
 package com.matelink.ui.screens.dashboard
 
+import com.matelink.BuildConfig
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,6 +14,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material3.*
@@ -22,12 +24,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.res.stringResource
 import com.matelink.R
 import com.matelink.data.api.models.CarData
+import com.matelink.data.repository.ApiErrorKind
 import com.matelink.ui.components.AmapPointView
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.VehicleHeroGraphic
@@ -35,6 +39,7 @@ import com.matelink.ui.theme.StatusSuccess
 import com.matelink.ui.theme.StatusWarning
 import com.matelink.ui.theme.SwissInk
 import com.matelink.ui.theme.SwissMuted
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,6 +74,7 @@ fun DashboardScreen(
         PartialVehicleDashboard(
             car = car,
             error = uiState.error,
+            errorKind = uiState.errorKind,
             onRefresh = { viewModel.refresh() },
             onNavigateToSettings = onNavigateToSettings
         )
@@ -94,13 +100,19 @@ fun DashboardScreen(
             Text(
                 text = car?.displayName ?: "My Tesla",
                 style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SnapshotBadge(uiState.snapshotSource)
                 Spacer(modifier = Modifier.width(8.dp))
                 IconButton(onClick = { viewModel.refresh() }) {
                     Icon(Icons.Default.Refresh, stringResource(R.string.refresh))
+                }
+                IconButton(onClick = onNavigateToSettings) {
+                    Icon(Icons.Default.Settings, stringResource(R.string.settings_title))
                 }
             }
         }
@@ -268,7 +280,7 @@ fun DashboardScreen(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             InfoCard(
                 title = stringResource(R.string.odometer),
-                value = status.odometer?.let { "${String.format("%,.0f", it)} km" } ?: "--",
+                value = status.odometer?.let { "${String.format(Locale.getDefault(), "%,.0f", it)} km" } ?: "--",
                 modifier = Modifier.weight(1f),
                 icon = Icons.Default.Speed,
                 onClick = { onNavigateToMileage(carId, exteriorColor) }
@@ -276,7 +288,7 @@ fun DashboardScreen(
             InfoCard(
                 title = stringResource(R.string.location),
                 value = if (status.latitude != null && status.longitude != null) {
-                    "${String.format("%.4f", status.latitude)}, ${String.format("%.4f", status.longitude)}" +
+                    "${String.format(Locale.getDefault(), "%.4f", status.latitude)}, ${String.format(Locale.getDefault(), "%.4f", status.longitude)}" +
                         (status.elevation?.let { "\n${stringResource(R.string.elevation_label, "$it", "m")}" } ?: "")
                 } else "--",
                 modifier = Modifier.weight(1f),
@@ -405,6 +417,7 @@ fun DashboardScreen(
 private fun PartialVehicleDashboard(
     car: CarData?,
     error: String?,
+    errorKind: ApiErrorKind?,
     onRefresh: () -> Unit,
     onNavigateToSettings: () -> Unit
 ) {
@@ -460,12 +473,24 @@ private fun PartialVehicleDashboard(
             ) {
                 VehicleHeroGraphic(accent = MaterialTheme.colorScheme.primary)
                 Text(
-                    text = stringResource(R.string.dashboard_status_unavailable_title),
+                    text = stringResource(
+                        if (error == null) {
+                            R.string.dashboard_status_unavailable_title
+                        } else {
+                            dashboardErrorTitleRes(errorKind)
+                        }
+                    ),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = stringResource(R.string.dashboard_partial_status_body),
+                    text = stringResource(
+                        if (error == null) {
+                            R.string.dashboard_partial_status_body
+                        } else {
+                            dashboardErrorBodyRes(errorKind)
+                        }
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -515,12 +540,51 @@ private fun PartialVehicleDashboard(
     }
 }
 
+internal enum class SnapshotSourceKind {
+    LIVE,
+    HISTORY,
+    MOCK,
+    UNAVAILABLE
+}
+
+internal fun dashboardErrorTitleRes(kind: ApiErrorKind?): Int = when (kind) {
+    ApiErrorKind.AUTH_REQUIRED -> R.string.dashboard_error_auth_title
+    ApiErrorKind.RATE_LIMITED -> R.string.dashboard_error_rate_limit_title
+    ApiErrorKind.SERVICE_UNAVAILABLE -> R.string.dashboard_error_service_title
+    ApiErrorKind.NETWORK -> R.string.dashboard_error_network_title
+    else -> R.string.dashboard_error_generic_title
+}
+
+internal fun dashboardErrorBodyRes(kind: ApiErrorKind?): Int = when (kind) {
+    ApiErrorKind.AUTH_REQUIRED -> R.string.dashboard_error_auth_body
+    ApiErrorKind.RATE_LIMITED -> R.string.dashboard_error_rate_limit_body
+    ApiErrorKind.SERVICE_UNAVAILABLE -> R.string.dashboard_error_service_body
+    ApiErrorKind.NETWORK -> R.string.dashboard_error_network_body
+    else -> R.string.dashboard_error_generic_body
+}
+
+internal fun snapshotSourceKind(source: String?): SnapshotSourceKind = when (source) {
+    "live_mqtt", "teslamate_api", "fleet_api" -> SnapshotSourceKind.LIVE
+    "database_latest" -> SnapshotSourceKind.HISTORY
+    BuildConfig.JOURVOLT_MOCK_SOURCE -> if (BuildConfig.JOURVOLT_MOCK_LOGIN) {
+        SnapshotSourceKind.MOCK
+    } else {
+        SnapshotSourceKind.UNAVAILABLE
+    }
+    else -> SnapshotSourceKind.UNAVAILABLE
+}
+
 @Composable
 private fun SnapshotBadge(source: String?) {
-    val (color, label) = when (source) {
-        "live_mqtt", "teslamate_api" -> StatusSuccess to stringResource(R.string.snapshot_source_live)
-        "database_latest" -> StatusWarning to stringResource(R.string.snapshot_source_history)
-        else -> SwissMuted to stringResource(R.string.snapshot_source_unavailable)
+    val (color, label) = when (snapshotSourceKind(source)) {
+        SnapshotSourceKind.LIVE -> StatusSuccess to stringResource(R.string.snapshot_source_live)
+        SnapshotSourceKind.HISTORY -> StatusWarning to stringResource(R.string.snapshot_source_history)
+        SnapshotSourceKind.MOCK -> if (BuildConfig.DEBUG) {
+            StatusWarning to stringResource(R.string.snapshot_source_mock)
+        } else {
+            SwissMuted to stringResource(R.string.snapshot_source_unavailable)
+        }
+        SnapshotSourceKind.UNAVAILABLE -> SwissMuted to stringResource(R.string.snapshot_source_unavailable)
     }
     Surface(
         color = color,

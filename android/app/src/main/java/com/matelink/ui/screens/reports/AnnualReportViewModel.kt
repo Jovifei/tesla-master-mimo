@@ -7,12 +7,15 @@ import com.matelink.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.matelink.data.local.dao.MonthlyChargeAggregation
 import com.matelink.data.local.dao.MonthlyDriveAggregation
+import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.model.Currency
 import com.matelink.data.repository.StatsRepository
 import com.matelink.data.repository.ApiResult
 import com.matelink.domain.model.CarStats
 import com.matelink.domain.model.YearFilter
 import com.matelink.domain.analytics.AnalysisHistoryRepository
+import com.matelink.domain.analytics.HistoryFreshness
 import kotlinx.coroutines.flow.first
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,12 +26,14 @@ import javax.inject.Inject
 
 data class AnnualReportUiState(
     val isLoading: Boolean = true,
+    val historyFreshness: HistoryFreshness = HistoryFreshness.FRESH,
     val year: Int = java.time.Year.now().value,
     val carStats: CarStats? = null,
     val monthlyDrives: List<MonthlyDriveAggregation> = emptyList(),
     val monthlyCharges: List<MonthlyChargeAggregation> = emptyList(),
     val effectiveCost: Double? = null,
     val standbyKwh: Double? = null,
+    val currencySymbol: String = Currency.CNY.symbol,
     val availableYears: List<Int> = emptyList(),
     val error: String? = null
 )
@@ -38,6 +43,7 @@ class AnnualReportViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val statsRepository: StatsRepository,
     private val historyRepository: AnalysisHistoryRepository,
+    private val chargeCostOverrideStore: ChargeCostOverrideStore,
     private val settingsDataStore: SettingsDataStore
 ) : ViewModel() {
 
@@ -78,13 +84,18 @@ class AnnualReportViewModel @Inject constructor(
             try {
                 val year = _uiState.value.year
                 val yearFilter = YearFilter.Year(year)
+                val currencySymbol = Currency.findByCode(
+                    settingsDataStore.settings.first().currencyCode
+                ).symbol
                 val stats = statsRepository.getStats(carId, yearFilter)
                 val monthlyDrives = statsRepository.getMonthlyDriveAggregation(carId, year)
                 val monthlyCharges = statsRepository.getMonthlyChargeAggregation(carId, year)
+                var historyFreshness = HistoryFreshness.FRESH
                 val remoteMetrics = runCatching {
                     when (val history = historyRepository.load(carId)) {
                         is ApiResult.Success -> {
-                            val manualTotals = settingsDataStore.chargeTotalOverrides.first()
+                            historyFreshness = history.data.freshness
+                            val manualTotals = chargeCostOverrideStore.getAll()
                             val effectiveCost = annualEffectiveCost(carId, year, history.data.charges, manualTotals)
                             val standbyKwh = annualStandbyKwh(year, history.data.charges, history.data.drives)
                             effectiveCost to standbyKwh
@@ -99,7 +110,9 @@ class AnnualReportViewModel @Inject constructor(
                     monthlyDrives = monthlyDrives,
                     monthlyCharges = monthlyCharges,
                     effectiveCost = remoteMetrics?.first,
-                    standbyKwh = remoteMetrics?.second
+                    standbyKwh = remoteMetrics?.second,
+                    currencySymbol = currencySymbol,
+                    historyFreshness = historyFreshness
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(

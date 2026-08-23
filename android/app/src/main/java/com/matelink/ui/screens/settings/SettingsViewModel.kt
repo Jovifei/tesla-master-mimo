@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -16,6 +15,8 @@ import androidx.work.WorkManager
 import com.matelink.R
 import com.matelink.data.api.UrlSecurity
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.ConnectionMode
+import com.matelink.data.local.ConnectionModeStore
 import com.matelink.data.local.TirePosition
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.ConnectionTestOutcome
@@ -45,7 +46,7 @@ data class SettingsUiState(
     val httpBasicAuthUsername: String = "",
     val httpBasicAuthPassword: String = "",
     val acceptInvalidCerts: Boolean = false,
-    val currencyCode: String = "EUR",
+    val currencyCode: String = "CNY",
     val showShortDrivesCharges: Boolean = false,
     val languageCode: String = "",
     val mockMode: Boolean = false,
@@ -84,6 +85,7 @@ internal fun serverUrlForDisplay(savedUrl: String): String = savedUrl.ifBlank { 
 class SettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settingsDataStore: SettingsDataStore,
+    private val connectionModeStore: ConnectionModeStore,
     private val settingsRepository: SettingsRepository,
     private val repository: TeslamateRepository,
     private val syncManager: SyncManager,
@@ -272,6 +274,7 @@ class SettingsViewModel @Inject constructor(
                     apiToken = _uiState.value.apiToken,
                     currencyCode = _uiState.value.currencyCode
                 )
+                connectionModeStore.set(ConnectionMode.SELF_HOSTED)
 
                 // Trigger sync after settings are saved (handles first-time setup)
                 triggerImmediateSync()
@@ -459,19 +462,17 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                TpmsPressureWorker.CHANNEL_ID,
-                context.getString(R.string.tpms_channel_name),
-                NotificationManager.IMPORTANCE_DEFAULT
-            ).apply {
-                description = context.getString(R.string.tpms_channel_description)
-            }
-
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE)
-                    as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            TpmsPressureWorker.CHANNEL_ID,
+            context.getString(R.string.tpms_channel_name),
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = context.getString(R.string.tpms_channel_description)
         }
+
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE)
+                as NotificationManager
+        notificationManager.createNotificationChannel(channel)
     }
 
     private fun showTpmsNotification(title: String, body: String) {

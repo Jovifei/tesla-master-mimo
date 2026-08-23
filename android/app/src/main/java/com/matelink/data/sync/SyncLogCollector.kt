@@ -18,7 +18,7 @@ class SyncLogCollector @Inject constructor() {
 
     companion object {
         private const val MAX_LOG_ENTRIES = 500
-        private val dateFormat = DateTimeFormatter.ofPattern("HH:mm:ss.SSS", Locale.getDefault())
+        private val dateFormat = DateTimeFormatter.ofPattern("HH:mm:ss.SSS", Locale.ROOT)
     }
 
     private val _logs = MutableStateFlow<List<String>>(emptyList())

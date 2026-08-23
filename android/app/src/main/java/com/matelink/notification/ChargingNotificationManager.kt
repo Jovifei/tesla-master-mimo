@@ -331,21 +331,19 @@ class ChargingNotificationManager @Inject constructor(
      * Create the notification channel for charging notifications.
      */
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                context.getString(R.string.charging_channel_name),
-                NotificationManager.IMPORTANCE_DEFAULT  // Default importance for lock screen visibility
-            ).apply {
-                description = context.getString(R.string.charging_channel_description)
-                setShowBadge(false)  // Don't show app badge for ongoing charging
-                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-                setSound(null, null)  // No sound
-                enableVibration(false)  // No vibration
-            }
-
-            notificationManager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            context.getString(R.string.charging_channel_name),
+            NotificationManager.IMPORTANCE_DEFAULT  // Default importance for lock screen visibility
+        ).apply {
+            description = context.getString(R.string.charging_channel_description)
+            setShowBadge(false)  // Don't show app badge for ongoing charging
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            setSound(null, null)  // No sound
+            enableVibration(false)  // No vibration
         }
+
+        notificationManager.createNotificationChannel(channel)
     }
 
     /**

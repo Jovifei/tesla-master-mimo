@@ -52,8 +52,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.BorderStroke
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
+import com.matelink.domain.analytics.HistoryFreshness
+import com.matelink.domain.analytics.PersonalizedRangeSource
+import com.matelink.domain.analytics.RangeSpeedBand
+import com.matelink.domain.analytics.RangeTemperatureBand
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.AnalysisWindowSelector
+import com.matelink.ui.components.CachedHistoryBanner
+import com.matelink.ui.components.MetricPanelKind
+import com.matelink.ui.components.MetricStatusPanel
+import com.matelink.ui.components.HistoryStatusPanel
 import com.matelink.ui.theme.SwissOutline
 import com.matelink.ui.theme.StatusSuccess
 import com.matelink.ui.theme.StatusWarning
@@ -101,7 +109,7 @@ fun RangeScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.surface
                 )
             )
         },
@@ -147,6 +155,23 @@ private fun RangeContent(
             modifier = Modifier.fillMaxWidth()
         )
 
+        if (uiState.historyFreshness == HistoryFreshness.STALE) {
+            CachedHistoryBanner(
+                title = stringResource(R.string.metric_state_cached_title),
+                body = stringResource(R.string.metric_state_cached_body)
+            )
+        }
+
+        PersonalizedRangeCard(uiState = uiState)
+
+        if (uiState.trips.isEmpty()) {
+            HistoryStatusPanel(
+                reason = uiState.noDataReason,
+                emptyBody = stringResource(R.string.metric_state_empty_body)
+            )
+            return@Column
+        }
+
         // Accuracy summary card
         AccuracySummaryCard(uiState = uiState)
 
@@ -154,7 +179,7 @@ private fun RangeContent(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(8.dp),
             border = BorderStroke(1.dp, SwissOutline),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
@@ -165,10 +190,10 @@ private fun RangeContent(
                 Text(
                     text = stringResource(
                         R.string.range_influences_values,
-                        uiState.summerAccuracy?.let { "%.1f%%".format(it) } ?: stringResource(R.string.analysis_no_records),
-                        uiState.winterAccuracy?.let { "%.1f%%".format(it) } ?: stringResource(R.string.analysis_no_records),
-                        uiState.lowSpeedAccuracy?.let { "%.1f%%".format(it) } ?: stringResource(R.string.analysis_no_records),
-                        uiState.highSpeedAccuracy?.let { "%.1f%%".format(it) } ?: stringResource(R.string.analysis_no_records)
+                        uiState.summerDeviationPercent?.let { "%.1f%%".format(it) } ?: stringResource(R.string.analysis_no_records),
+                        uiState.winterDeviationPercent?.let { "%.1f%%".format(it) } ?: stringResource(R.string.analysis_no_records),
+                        uiState.lowSpeedDeviationPercent?.let { "%.1f%%".format(it) } ?: stringResource(R.string.analysis_no_records),
+                        uiState.highSpeedDeviationPercent?.let { "%.1f%%".format(it) } ?: stringResource(R.string.analysis_no_records)
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -191,17 +216,133 @@ private fun RangeContent(
             RangeTripCard(trip = trip)
         }
 
-        // Empty state
-        if (!uiState.isLoading && uiState.trips.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 48.dp),
-                contentAlignment = Alignment.Center
-            ) {
+    }
+}
+
+@Composable
+private fun PersonalizedRangeCard(uiState: RangeUiState) {
+    val model = uiState.personalizedRange ?: return
+    val sourceLabel = when (model.source) {
+        PersonalizedRangeSource.GROUPED -> stringResource(R.string.range_personalized_source_grouped)
+        PersonalizedRangeSource.GLOBAL -> stringResource(R.string.range_personalized_source_global)
+        PersonalizedRangeSource.UNAVAILABLE -> null
+    }
+    val temperatureLabel = model.temperatureBand?.let { band ->
+        stringResource(
+            when (band) {
+                RangeTemperatureBand.COLD -> R.string.range_temperature_cold
+                RangeTemperatureBand.MILD -> R.string.range_temperature_mild
+                RangeTemperatureBand.HOT -> R.string.range_temperature_hot
+            }
+        )
+    }
+    val speedLabel = model.speedBand?.let { band ->
+        stringResource(
+            when (band) {
+                RangeSpeedBand.LOW -> R.string.range_speed_low
+                RangeSpeedBand.CRUISE -> R.string.range_speed_cruise
+                RangeSpeedBand.HIGH -> R.string.range_speed_high
+            }
+        )
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, SwissOutline),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.Route,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = stringResource(R.string.analysis_no_records),
-                    style = MaterialTheme.typography.bodyLarge,
+                    text = stringResource(R.string.range_personalized_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.range_personalized_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            when {
+                model.rangeKm != null -> {
+                    Text(
+                        text = stringResource(R.string.range_personalized_value, model.rangeKm),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    sourceLabel?.let { label ->
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                model.source != PersonalizedRangeSource.UNAVAILABLE -> {
+                    Text(
+                        text = stringResource(R.string.range_personalized_capacity_unavailable),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    uiState.ratedRangeKm?.let { ratedRange ->
+                        Text(
+                            text = stringResource(R.string.range_personalized_rated_fallback, ratedRange),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                else -> {
+                    Text(
+                        text = if (model.sampleCount == 0) {
+                            stringResource(R.string.range_personalized_no_recent_data)
+                        } else {
+                            stringResource(
+                                R.string.range_personalized_insufficient,
+                                model.sampleCount,
+                                model.distanceKm
+                            )
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (model.sampleCount > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(
+                        R.string.range_personalized_details,
+                        model.sampleCount,
+                        model.distanceKm,
+                        model.confidencePercent
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (temperatureLabel != null && speedLabel != null) {
+                Text(
+                    text = stringResource(
+                        R.string.range_personalized_conditions,
+                        temperatureLabel,
+                        speedLabel
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -211,10 +352,10 @@ private fun RangeContent(
 
 @Composable
 private fun AccuracySummaryCard(uiState: RangeUiState) {
-    val accuracyColor = when {
-        uiState.avgAccuracy == null -> MaterialTheme.colorScheme.onSurfaceVariant
-        uiState.avgAccuracy >= 90.0 -> AccuracyGreen
-        uiState.avgAccuracy >= 75.0 -> AccuracyYellow
+    val deviationColor = when {
+        uiState.avgDeviationPercent == null -> MaterialTheme.colorScheme.onSurfaceVariant
+        uiState.avgDeviationPercent <= 10.0 -> AccuracyGreen
+        uiState.avgDeviationPercent <= 25.0 -> AccuracyYellow
         else -> AccuracyRed
     }
 
@@ -222,9 +363,7 @@ private fun AccuracySummaryCard(uiState: RangeUiState) {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, SwissOutline),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -249,30 +388,30 @@ private fun AccuracySummaryCard(uiState: RangeUiState) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Accuracy percentage
-            if (uiState.avgAccuracy != null) {
+            // Rated-range deviation percentage
+            if (uiState.avgDeviationPercent != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "%.1f%%".format(uiState.avgAccuracy),
+                        text = "%.1f%%".format(uiState.avgDeviationPercent),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold,
-                        color = accuracyColor
+                        color = deviationColor
                     )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 LinearProgressIndicator(
-                    progress = { (uiState.avgAccuracy / 100.0).toFloat() },
+                    progress = { (uiState.avgDeviationPercent / 100.0).coerceIn(0.0, 1.0).toFloat() },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(8.dp)
                         .clip(RoundedCornerShape(4.dp)),
-                    color = accuracyColor,
+                    color = deviationColor,
                     trackColor = MaterialTheme.colorScheme.surface,
                     strokeCap = StrokeCap.Round
                 )
@@ -326,9 +465,9 @@ private fun StatItem(label: String, value: String) {
 
 @Composable
 private fun RangeTripCard(trip: RangeTrip) {
-    val accuracyColor = when {
-        trip.accuracyPercent >= 90.0 -> AccuracyGreen
-        trip.accuracyPercent >= 75.0 -> AccuracyYellow
+    val deviationColor = when {
+        trip.deviationPercent <= 10.0 -> AccuracyGreen
+        trip.deviationPercent <= 25.0 -> AccuracyYellow
         else -> AccuracyRed
     }
 
@@ -338,9 +477,7 @@ private fun RangeTripCard(trip: RangeTrip) {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, SwissOutline),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
             modifier = Modifier.padding(12.dp)
@@ -382,15 +519,15 @@ private fun RangeTripCard(trip: RangeTrip) {
                     Icon(
                         imageVector = Icons.Filled.CheckCircle,
                         contentDescription = null,
-                        tint = accuracyColor,
+                        tint = deviationColor,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "%.1f%%".format(trip.accuracyPercent),
+                        text = "%.1f%%".format(trip.deviationPercent),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
-                        color = accuracyColor
+                        color = deviationColor
                     )
                 }
             }

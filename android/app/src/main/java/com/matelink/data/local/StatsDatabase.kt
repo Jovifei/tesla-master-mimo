@@ -5,6 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.matelink.data.local.dao.AggregateDao
+import com.matelink.data.local.dao.ChargeCostOverrideDao
 import com.matelink.data.local.dao.ChargeSummaryDao
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.dao.GeocodeCacheDao
@@ -16,6 +17,7 @@ import com.matelink.data.local.dao.SyncStateDao
 import com.matelink.data.local.dao.TripCountryCacheDao
 import com.matelink.data.local.dao.TripRouteCacheDao
 import com.matelink.data.local.entity.ChargeDetailAggregate
+import com.matelink.data.local.entity.ChargeCostOverride
 import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.DriveDetailAggregate
 import com.matelink.data.local.entity.DriveSummary
@@ -47,6 +49,7 @@ import com.matelink.data.local.entity.TripRouteCache
         SyncState::class,
         DriveSummary::class,
         ChargeSummary::class,
+        ChargeCostOverride::class,
         DriveDetailAggregate::class,
         ChargeDetailAggregate::class,
         GeocodeCache::class,
@@ -59,7 +62,7 @@ import com.matelink.data.local.entity.TripRouteCache
         SavedTripLeg::class,
         SavedTripConsumedFingerprint::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = true
 )
 abstract class StatsDatabase : RoomDatabase() {
@@ -67,6 +70,7 @@ abstract class StatsDatabase : RoomDatabase() {
     abstract fun syncStateDao(): SyncStateDao
     abstract fun driveSummaryDao(): DriveSummaryDao
     abstract fun chargeSummaryDao(): ChargeSummaryDao
+    abstract fun chargeCostOverrideDao(): ChargeCostOverrideDao
     abstract fun aggregateDao(): AggregateDao
     abstract fun geocodeCacheDao(): GeocodeCacheDao
     abstract fun geocodeQueueDao(): GeocodeQueueDao
@@ -345,6 +349,26 @@ abstract class StatsDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) = Unit
         }
 
+        /** Migration from V15 to V16: persist per-vehicle manual charge costs in Room. */
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `charge_cost_overrides` (
+                        `carId` INTEGER NOT NULL,
+                        `chargeId` INTEGER NOT NULL,
+                        `manualTotalAmount` REAL NOT NULL,
+                        PRIMARY KEY(`carId`, `chargeId`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_charge_cost_overrides_carId` " +
+                        "ON `charge_cost_overrides` (`carId`)"
+                )
+            }
+        }
+
         private fun rebuildDrivesSummaryWithEnergyDefaults(db: SupportSQLiteDatabase) {
             val energySource = if (hasColumn(db, "drives_summary", "energySource")) "`energySource`" else "NULL"
             val energyCoverageSeconds = if (hasColumn(db, "drives_summary", "energyCoverageSeconds")) {
@@ -503,7 +527,7 @@ abstract class StatsDatabase : RoomDatabase() {
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
             MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
-            MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15
+            MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16
         )
     }
 }

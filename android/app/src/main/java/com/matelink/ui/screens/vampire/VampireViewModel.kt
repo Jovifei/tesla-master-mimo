@@ -9,8 +9,12 @@ import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.domain.analytics.AnalysisHistoryRepository
 import com.matelink.domain.analytics.AnalysisWindow
+import com.matelink.domain.analytics.HistoryFreshness
+import com.matelink.domain.analytics.NoDataReason
 import com.matelink.domain.analytics.StandbyCause
 import com.matelink.domain.analytics.standbyAttribution
+import com.matelink.domain.analytics.estimateStandbyEnergy
+import com.matelink.domain.analytics.isQualifiedStandbyWindow
 import com.matelink.domain.analytics.selectWindow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,9 +41,9 @@ data class IdleDrainPeriod(
     val endDate: String,
     val drainPercent: Int,
     val hoursIdle: Double,
-    val avgPowerW: Double,
+    val avgPowerW: Double?,
     val dateKey: String,
-    val energyKwh: Double,
+    val energyKwh: Double?,
     val location: String?,
     val cause: StandbyCause,
     val confidence: Float
@@ -47,10 +51,12 @@ data class IdleDrainPeriod(
 
 data class VampireUiState(
     val isLoading: Boolean = true,
+    val historyFreshness: HistoryFreshness = HistoryFreshness.FRESH,
+    val noDataReason: NoDataReason? = null,
     val selectedWindow: AnalysisWindow = AnalysisWindow.ALL_TIME,
     val totalDrainPercent: Int = 0,
-    val totalDrainKwh: Double = 0.0,
-    val avgPowerW: Double = 0.0,
+    val totalDrainKwh: Double? = null,
+    val avgPowerW: Double? = null,
     val idlePeriods: List<IdleDrainPeriod> = emptyList(),
     val dailyDrains: List<DailyDrain> = emptyList(),
     val error: String? = null
@@ -59,8 +65,8 @@ data class VampireUiState(
 data class DailyDrain(
     val date: String,
     val totalDrainPercent: Int,
-    val totalDrainKwh: Double,
-    val avgPowerW: Double,
+    val totalDrainKwh: Double?,
+    val avgPowerW: Double?,
     val periodCount: Int
 )
 
@@ -73,15 +79,10 @@ class VampireViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(VampireUiState())
     val uiState = _uiState.asStateFlow()
     private var allPeriods: List<IdleDrainPeriod> = emptyList()
+    private var historyRecordCount: Int = 0
+    private var historyReason: NoDataReason? = null
     private var customStart: LocalDate? = null
     private var customEnd: LocalDate? = null
-
-    companion object {
-        // Approximate usable battery capacity in kWh for power estimation.
-        // Used when rated range data is unavailable. 75 kWh is a common midpoint
-        // across Model 3/Y variants (LR/Performance).
-        private const val ESTIMATED_BATTERY_KWH = 75.0
-    }
 
     fun load() {
         viewModelScope.launch {
@@ -100,6 +101,12 @@ class VampireViewModel @Inject constructor(
                 }
 
                 val history = (historyResult as ApiResult.Success).data
+                historyRecordCount = history.drives.size + history.charges.size
+                historyReason = history.coverage.reason
+                _uiState.value = _uiState.value.copy(
+                    historyFreshness = history.freshness,
+                    noDataReason = historyReason
+                )
                 val charges = history.charges
                 val drives = history.drives
 
@@ -135,11 +142,18 @@ class VampireViewModel @Inject constructor(
             runCatching { LocalDate.parse(period.dateKey) }.getOrNull()?.let { DatedIdle(it, period) }
         }
         val selected = selectWindow(dated, window, LocalDate.now(), customStart, customEnd).map { it.period }
+        val noDataReason = when {
+            selected.isNotEmpty() -> null
+            historyRecordCount == 0 -> historyReason ?: NoDataReason.NO_RECORDS
+            allPeriods.isNotEmpty() -> NoDataReason.FILTER_EMPTY
+            else -> NoDataReason.INSUFFICIENT_COVERAGE
+        }
         _uiState.value = _uiState.value.copy(
             isLoading = false,
+            noDataReason = noDataReason,
             totalDrainPercent = selected.sumOf { it.drainPercent },
-            totalDrainKwh = selected.sumOf { it.energyKwh },
-            avgPowerW = selected.takeIf { it.isNotEmpty() }?.map { it.avgPowerW }?.average() ?: 0.0,
+            totalDrainKwh = selected.mapNotNull { it.energyKwh }.takeIf { it.isNotEmpty() }?.sum(),
+            avgPowerW = selected.mapNotNull { it.avgPowerW }.takeIf { it.isNotEmpty() }?.average(),
             idlePeriods = selected,
             dailyDrains = groupByDay(selected)
         )
@@ -206,10 +220,16 @@ class VampireViewModel @Inject constructor(
                 continue
             }
 
-            // Estimate average power draw (watts)
-            // drainDrop% of battery capacity over the idle hours
-            val energyWh = (drainDrop / 100.0) * ESTIMATED_BATTERY_KWH * 1000.0
-            val avgPowerW = if (hoursIdle > 0) energyWh / hoursIdle else 0.0
+            if (!isQualifiedStandbyWindow(hoursIdle)) continue
+
+            // A battery percentage drop proves a change, but not its energy in kWh.
+            // No usable capacity or telemetry energy is available in this response,
+            // so keep energy and average power unavailable instead of using a model default.
+            val energyEstimate = estimateStandbyEnergy(
+                drainPercent = drainDrop,
+                usableBatteryKwh = null,
+                hoursIdle = hoursIdle
+            )
             val attribution = standbyAttribution(false, false, false)
 
             val dateKey = try {
@@ -224,9 +244,9 @@ class VampireViewModel @Inject constructor(
                     endDate = nextStartDate,
                     drainPercent = drainDrop,
                     hoursIdle = hoursIdle,
-                    avgPowerW = avgPowerW,
+                    avgPowerW = energyEstimate?.averagePowerW,
                     dateKey = dateKey,
-                    energyKwh = energyWh / 1000.0,
+                    energyKwh = energyEstimate?.energyKwh,
                     location = prevCharge.address ?: nextCharge.address,
                     cause = attribution.cause,
                     // A battery drop proves detected consumption, not its cause.
@@ -266,8 +286,8 @@ class VampireViewModel @Inject constructor(
                 DailyDrain(
                     date = date,
                     totalDrainPercent = dayPeriods.sumOf { it.drainPercent },
-                    totalDrainKwh = dayPeriods.sumOf { it.energyKwh },
-                    avgPowerW = dayPeriods.map { it.avgPowerW }.average(),
+                    totalDrainKwh = dayPeriods.mapNotNull { it.energyKwh }.takeIf { it.isNotEmpty() }?.sum(),
+                    avgPowerW = dayPeriods.mapNotNull { it.avgPowerW }.takeIf { it.isNotEmpty() }?.average(),
                     periodCount = dayPeriods.size
                 )
             }

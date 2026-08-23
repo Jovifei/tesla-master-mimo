@@ -10,7 +10,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.CarData
 import com.matelink.data.api.models.CarStatus
+import com.matelink.data.repository.ApiErrorKind
 import com.matelink.data.repository.ApiResult
+import com.matelink.data.repository.apiErrorKindFor
 import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.sync.DataSyncWorker
@@ -27,6 +29,8 @@ data class DashboardUiState(
     val car: CarData? = null,
     val status: CarStatus? = null,
     val error: String? = null,
+    val errorCode: Int? = null,
+    val errorKind: ApiErrorKind? = null,
     val snapshotSource: String? = null,
     val observedAt: String? = null,
     val fieldSources: Map<String, String> = emptyMap()
@@ -62,6 +66,9 @@ class DashboardViewModel @Inject constructor(
                 }
 
                 val effectiveCarId = car?.carId ?: carId
+                if (car != null && car.carId != carId) {
+                    settingsRepository.setCurrentCarId(car.carId)
+                }
                 val adapterResult = repository.getAdapterSnapshot(effectiveCarId)
                 val statusResult = if (adapterResult is ApiResult.Error) {
                     repository.getCarStatus(effectiveCarId)
@@ -72,9 +79,9 @@ class DashboardViewModel @Inject constructor(
                     else -> null
                 }
 
-                val errorMsg = when {
-                    carsResult is ApiResult.Error -> carsResult.message
-                    adapterResult is ApiResult.Error && statusResult is ApiResult.Error -> statusResult.message
+                val primaryError = when {
+                    carsResult is ApiResult.Error -> carsResult
+                    adapterResult is ApiResult.Error && statusResult is ApiResult.Error -> statusResult
                     else -> null
                 }
 
@@ -82,7 +89,9 @@ class DashboardViewModel @Inject constructor(
                     isLoading = false,
                     car = car,
                     status = status,
-                    error = errorMsg,
+                    error = primaryError?.message,
+                    errorCode = primaryError?.code,
+                    errorKind = primaryError?.kind,
                     snapshotSource = (adapterResult as? ApiResult.Success)?.data?.source
                         ?: if (statusResult is ApiResult.Success) "teslamate_api" else null,
                     observedAt = (adapterResult as? ApiResult.Success)?.data?.observedAt,
@@ -93,7 +102,8 @@ class DashboardViewModel @Inject constructor(
             } catch (e: Exception) {
                 _uiState.value = DashboardUiState(
                     isLoading = false,
-                    error = e.message
+                    error = e.message,
+                    errorKind = apiErrorKindFor(null, e.message)
                 )
             }
         }
@@ -110,6 +120,8 @@ class DashboardViewModel @Inject constructor(
                             _uiState.value = _uiState.value.copy(
                                 status = result.data.status,
                                 error = null,
+                                errorCode = null,
+                                errorKind = null,
                                 snapshotSource = result.data.source,
                                 observedAt = result.data.observedAt,
                                 fieldSources = result.data.fieldSources
@@ -120,9 +132,15 @@ class DashboardViewModel @Inject constructor(
                                 is ApiResult.Success -> _uiState.value = _uiState.value.copy(
                                     status = legacy.data.status,
                                     error = null,
+                                    errorCode = null,
+                                    errorKind = null,
                                     snapshotSource = "teslamate_api"
                                 )
-                                is ApiResult.Error -> Unit
+                                is ApiResult.Error -> _uiState.value = _uiState.value.copy(
+                                    error = legacy.message,
+                                    errorCode = legacy.code,
+                                    errorKind = legacy.kind
+                                )
                             }
                         }
                     }

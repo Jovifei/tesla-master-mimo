@@ -81,6 +81,18 @@ import com.matelink.R
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.repository.GeocodeProgressInfo
+import com.matelink.data.sync.HistoryMetadataState
+import com.matelink.domain.analytics.AnalysisSummary
+import com.matelink.domain.analytics.AnalysisConclusions
+import com.matelink.domain.analytics.AnalysisCoverage
+import com.matelink.domain.analytics.MetricEvidence
+import com.matelink.domain.analytics.MetricState
+import com.matelink.domain.analytics.Recommendation
+import com.matelink.domain.analytics.RecommendationKind
+import com.matelink.domain.analytics.buildAnalysisConclusions
+import com.matelink.domain.analytics.observedCostPerDistanceOrNull
+import com.matelink.domain.analytics.buildAnalysisSummary
+import com.matelink.domain.analytics.withHistoryCollectionState
 import com.matelink.domain.model.CarStats
 import com.matelink.domain.model.DeepStats
 import com.matelink.domain.model.MaxDistanceBetweenChargesRecord
@@ -92,10 +104,8 @@ import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.icons.CustomIcons
 import com.matelink.ui.theme.CarColorPalette
 import com.matelink.ui.theme.CarColorPalettes
+import java.util.Locale
 
-// TODO(parity): iOS StatisticsView has full Year→Month→Day→Detail drilldown hierarchy.
-//  Android only shows a flat view with year filter chips.
-//  Ref: app_mimo/ios/MateLink/Features/Statistics/StatisticsView.swift
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatsScreen(
@@ -105,6 +115,7 @@ fun StatsScreen(
     onNavigateToDriveDetail: (Int) -> Unit = {},
     onNavigateToChargeDetail: (Int) -> Unit = {},
     onNavigateToDayDetail: (String) -> Unit = {},
+    onNavigateToMileage: () -> Unit = {},
     onNavigateToCountriesVisited: (Int?) -> Unit = {}, // year (null for all time)
     viewModel: StatsViewModel = hiltViewModel()
 ) {
@@ -220,10 +231,13 @@ fun StatsScreen(
             if (uiState.isLoading) {
                 MateLinkLoadingPlaceholder(color = palette.accent)
             } else if (uiState.carStats == null) {
-                val emptyMessage = if (uiState.isSyncing) {
-                    stringResource(R.string.stats_syncing)
-                } else {
-                    stringResource(R.string.stats_empty)
+                val emptyMessage = when {
+                    uiState.isSyncing -> stringResource(R.string.stats_syncing)
+                    uiState.historyMetadata?.isCollecting == true ->
+                        stringResource(R.string.stats_history_collecting)
+                    uiState.historyMetadata?.isUnsupported == true ->
+                        stringResource(R.string.stats_history_unsupported)
+                    else -> stringResource(R.string.stats_empty)
                 }
                 EmptyState(
                     message = emptyMessage,
@@ -241,6 +255,7 @@ fun StatsScreen(
                     isUpdating = uiState.isUpdating,
                     geocodeProgress = uiState.geocodeProgress,
                     isGeocoding = uiState.isGeocoding,
+                    historyMetadata = uiState.historyMetadata,
                     palette = palette,
                     currencySymbol = uiState.currencySymbol,
                     units = uiState.units,
@@ -250,6 +265,7 @@ fun StatsScreen(
                     onNavigateToDriveDetail = onNavigateToDriveDetail,
                     onNavigateToChargeDetail = onNavigateToChargeDetail,
                     onNavigateToDayDetail = onNavigateToDayDetail,
+                    onNavigateToMileage = onNavigateToMileage,
                     onNavigateToCountriesVisited = onNavigateToCountriesVisited,
                     onRangeRecordClick = { rangeRecordToShow = it },
                     onGapRecordClick = { gapDays, fromDate, toDate, title ->
@@ -350,6 +366,7 @@ private fun StatsContent(
     isUpdating: Boolean,
     geocodeProgress: GeocodeProgressInfo?,
     isGeocoding: Boolean,
+    historyMetadata: HistoryMetadataState?,
     palette: CarColorPalette,
     currencySymbol: String,
     units: Units?,
@@ -359,11 +376,15 @@ private fun StatsContent(
     onNavigateToDriveDetail: (Int) -> Unit,
     onNavigateToChargeDetail: (Int) -> Unit,
     onNavigateToDayDetail: (String) -> Unit,
+    onNavigateToMileage: () -> Unit,
     onNavigateToCountriesVisited: (Int?) -> Unit, // year (null for all time)
     onRangeRecordClick: (MaxDistanceBetweenChargesRecord) -> Unit,
     onGapRecordClick: (Double, String, String, String) -> Unit,
     onSyncProgressClick: (() -> Unit)? = null
 ) {
+    val drivesCollecting = historyMetadata?.drives?.availability == "collecting"
+    val chargesCollecting = historyMetadata?.charges?.availability == "collecting"
+
     Column(modifier = Modifier.fillMaxSize()) {
         // Year filter chips — pinned above the scrollable content
         YearFilterChips(
@@ -377,7 +398,14 @@ private fun StatsContent(
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
+            // The root NavGraph owns the persistent bottom bar. Keep the
+            // final recommendation action above it on compact screens.
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                top = 16.dp,
+                end = 16.dp,
+                bottom = 96.dp
+            ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // Sync progress indicator if deep sync is actively running
@@ -398,6 +426,38 @@ private fun StatsContent(
                         progress = geocodeProgress,
                         palette = palette,
                         onClick = onSyncProgressClick
+                    )
+                }
+            }
+
+            // Compact conclusions layer. The existing records and overview cards remain below it.
+            item {
+                AnalysisSummaryCard(
+                    quickStats = stats.quickStats,
+                    summary = buildAnalysisSummary(stats.quickStats, stats.analysisCoverage).withHistoryCollectionState(
+                        drivesCollecting = drivesCollecting,
+                        chargesCollecting = chargesCollecting
+                    ),
+                    conclusions = buildAnalysisConclusions(stats.quickStats, stats.analysisCoverage).withHistoryCollectionState(
+                        drivesCollecting = drivesCollecting,
+                        chargesCollecting = chargesCollecting
+                    ),
+                    coverage = stats.analysisCoverage,
+                    deepStatsAvailable = stats.deepStats != null,
+                    drivesCollecting = drivesCollecting,
+                    chargesCollecting = chargesCollecting,
+                    palette = palette,
+                    currencySymbol = currencySymbol,
+                    units = units,
+                    onNavigateToMileage = onNavigateToMileage
+                )
+            }
+
+            if (stats.recommendations.isNotEmpty()) {
+                item {
+                    RecommendationsCard(
+                        recommendations = stats.recommendations,
+                        palette = palette
                     )
                 }
             }
@@ -428,6 +488,7 @@ private fun StatsContent(
             item {
                 QuickStatsDrivesCard(
                     quickStats = stats.quickStats,
+                    coverage = stats.analysisCoverage,
                     palette = palette,
                     currencySymbol = currencySymbol,
                     units = units
@@ -438,6 +499,7 @@ private fun StatsContent(
             item {
                 QuickStatsChargesCard(
                     quickStats = stats.quickStats,
+                    coverage = stats.analysisCoverage,
                     palette = palette,
                     currencySymbol = currencySymbol
                 )
@@ -470,6 +532,574 @@ private fun StatsContent(
         }
         } // end Box (scrollable area)
     } // end Column
+}
+
+@Composable
+private fun RecommendationsCard(
+    recommendations: List<Recommendation>,
+    palette: CarColorPalette
+) {
+    StatsCard(
+        title = stringResource(R.string.stats_recommendations_title),
+        icon = Icons.Default.Analytics,
+        palette = palette
+    ) {
+        Text(
+            text = stringResource(R.string.stats_recommendations_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = palette.onSurfaceVariant
+        )
+        recommendations.forEachIndexed { index, recommendation ->
+            if (index > 0) {
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(color = palette.onSurface.copy(alpha = 0.08f))
+                Spacer(modifier = Modifier.height(12.dp))
+            } else {
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+            RecommendationItem(recommendation = recommendation, palette = palette)
+        }
+    }
+}
+
+@Composable
+private fun RecommendationItem(
+    recommendation: Recommendation,
+    palette: CarColorPalette
+) {
+    val title: String
+    val description: String
+    val action: String
+    val evidence: String
+    when (recommendation.kind) {
+        RecommendationKind.STANDBY_POWER -> {
+            title = stringResource(R.string.stats_recommendation_standby_title)
+            description = stringResource(R.string.stats_recommendation_standby_description)
+            action = stringResource(R.string.stats_recommendation_standby_action)
+            evidence = stringResource(
+                R.string.stats_recommendation_standby_evidence,
+                recommendation.triggerValue,
+                recommendation.thresholdValue,
+                 recommendation.sampleCount,
+                 recommendation.coverage,
+                 recommendation.observationDays,
+                 recommendation.confidencePercent
+            )
+        }
+        RecommendationKind.HIGH_SPEED_EFFICIENCY -> {
+            title = stringResource(R.string.stats_recommendation_high_speed_title)
+            description = stringResource(R.string.stats_recommendation_high_speed_description)
+            action = stringResource(R.string.stats_recommendation_high_speed_action)
+            evidence = stringResource(
+                R.string.stats_recommendation_efficiency_evidence,
+                recommendation.triggerValue,
+                recommendation.thresholdValue,
+                 recommendation.sampleCount,
+                 recommendation.coverage,
+                 recommendation.observationDays,
+                 recommendation.confidencePercent
+            )
+        }
+        RecommendationKind.COLD_WEATHER_EFFICIENCY -> {
+            title = stringResource(R.string.stats_recommendation_cold_title)
+            description = stringResource(R.string.stats_recommendation_cold_description)
+            action = stringResource(R.string.stats_recommendation_cold_action)
+            evidence = stringResource(
+                R.string.stats_recommendation_efficiency_evidence,
+                recommendation.triggerValue,
+                recommendation.thresholdValue,
+                 recommendation.sampleCount,
+                 recommendation.coverage,
+                 recommendation.observationDays,
+                 recommendation.confidencePercent
+            )
+        }
+        RecommendationKind.CHARGE_LOSS -> {
+            title = stringResource(R.string.stats_recommendation_charge_loss_title)
+            description = stringResource(R.string.stats_recommendation_charge_loss_description)
+            action = stringResource(R.string.stats_recommendation_charge_loss_action)
+            evidence = stringResource(
+                R.string.stats_recommendation_charge_loss_evidence,
+                recommendation.triggerValue,
+                recommendation.thresholdValue,
+                 recommendation.sampleCount,
+                 recommendation.coverage,
+                 recommendation.observationDays,
+                 recommendation.confidencePercent
+            )
+        }
+    }
+
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        color = palette.onSurface
+    )
+    Spacer(modifier = Modifier.height(4.dp))
+    Text(
+        text = description,
+        style = MaterialTheme.typography.bodyMedium,
+        color = palette.onSurfaceVariant
+    )
+    Spacer(modifier = Modifier.height(6.dp))
+    Text(
+        text = evidence,
+        style = MaterialTheme.typography.labelMedium,
+        color = palette.accent
+    )
+    Text(
+        text = stringResource(
+            R.string.stats_recommendation_impact,
+            recommendation.monthlyImpact.minimumMonthlyKwh,
+            recommendation.monthlyImpact.maximumMonthlyKwh
+        ),
+        style = MaterialTheme.typography.bodySmall,
+        color = palette.onSurfaceVariant
+    )
+    Text(
+        text = stringResource(R.string.stats_recommendation_action, action),
+        style = MaterialTheme.typography.bodySmall,
+        color = palette.onSurface
+    )
+    Text(
+        text = stringResource(R.string.stats_recommendation_method),
+        style = MaterialTheme.typography.labelSmall,
+        color = palette.onSurfaceVariant
+    )
+}
+
+@Composable
+private fun AnalysisSummaryCard(
+    quickStats: QuickStats,
+    summary: AnalysisSummary,
+    conclusions: AnalysisConclusions,
+    coverage: AnalysisCoverage?,
+    deepStatsAvailable: Boolean,
+    drivesCollecting: Boolean,
+    chargesCollecting: Boolean,
+    palette: CarColorPalette,
+    currencySymbol: String,
+    units: Units?,
+    onNavigateToMileage: () -> Unit
+) {
+    StatsCard(
+        title = stringResource(R.string.stats_analysis_summary),
+        icon = Icons.Default.Analytics,
+        palette = palette
+    ) {
+        Text(
+            text = stringResource(R.string.stats_analysis_summary_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = palette.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_distance),
+                metric = summary.distanceKm,
+                formatter = { UnitFormatter.formatDistance(it, units, 0) },
+                modifier = Modifier.weight(1f)
+            )
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_efficiency),
+                metric = summary.efficiencyWhKm,
+                formatter = { UnitFormatter.formatEfficiency(it, units, 0) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_energy_used),
+                metric = summary.drivingEnergyKwh,
+                formatter = { formatEnergy(it) },
+                modifier = Modifier.weight(1f)
+            )
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_energy_added),
+                metric = summary.chargedEnergyKwh,
+                formatter = { formatEnergy(it) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_cost),
+                metric = summary.totalCost,
+                formatter = { String.format(Locale.getDefault(), "%.2f %s", it, currencySymbol) },
+                modifier = Modifier.weight(1f)
+            )
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_samples),
+                value = if (summary.sourceRecordCount > 0) {
+                    summary.sourceRecordCount.toString()
+                } else {
+                    stringResource(R.string.analysis_no_records)
+                },
+                detail = stringResource(R.string.stats_analysis_sample_count),
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = if (deepStatsAvailable) {
+                stringResource(R.string.stats_analysis_deep_available)
+            } else {
+                stringResource(R.string.stats_analysis_deep_collecting)
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+        HorizontalDivider(color = palette.onSurface.copy(alpha = 0.08f))
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = stringResource(R.string.stats_analysis_derived_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = palette.onSurface
+        )
+        Text(
+            text = stringResource(R.string.stats_analysis_derived_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = palette.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_avg_drive_distance),
+                metric = conclusions.averageDriveDistanceKm,
+                formatter = { UnitFormatter.formatDistance(it, units, 1) },
+                modifier = Modifier.weight(1f)
+            )
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_avg_charge_energy),
+                metric = conclusions.averageChargeEnergyKwh,
+                formatter = { formatEnergy(it) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_cost_per_100km),
+                metric = conclusions.costPer100Km,
+                formatter = { String.format(Locale.getDefault(), "%.2f %s", it, currencySymbol) },
+                modifier = Modifier.weight(1f)
+            )
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_charge_drive_ratio),
+                metric = conclusions.chargedToDrivingEnergyPercent,
+                formatter = { String.format(Locale.getDefault(), "%.0f%%", it) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_charge_loss),
+                metric = conclusions.chargingLossPercent,
+                formatter = { String.format(Locale.getDefault(), "%.1f%%", it) },
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(modifier = Modifier.weight(1f))
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        HorizontalDivider(color = palette.onSurface.copy(alpha = 0.08f))
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = stringResource(R.string.stats_analysis_usage_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = palette.onSurface
+        )
+        Text(
+            text = stringResource(R.string.stats_analysis_usage_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = palette.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_avg_drive_duration),
+                value = quickStats.avgDriveMinutes
+                    ?.takeIf { it.isFinite() && it > 0.0 }
+                    ?.let { String.format(Locale.getDefault(), "%.0f min", it) }
+                    ?: stringResource(R.string.analysis_no_records),
+                detail = stringResource(R.string.stats_analysis_derived),
+                modifier = Modifier.weight(1f)
+            )
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_driving_days),
+                value = quickStats.totalDrivingDays
+                    ?.takeIf { it > 0 }
+                    ?.toString()
+                    ?: stringResource(R.string.analysis_no_records),
+                detail = stringResource(R.string.stats_analysis_observed),
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_avg_distance_per_day),
+                metric = conclusions.averageDistancePerDrivingDayKm,
+                formatter = { UnitFormatter.formatDistance(it, units, 1) },
+                modifier = Modifier.weight(1f)
+            )
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_drive_count),
+                value = quickStats.totalDrives.takeIf { it > 0 }?.toString()
+                    ?: stringResource(R.string.analysis_no_records),
+                detail = stringResource(R.string.stats_analysis_observed),
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_avg_charge_duration),
+                value = quickStats.avgChargeMinutes
+                    ?.takeIf { it.isFinite() && it > 0.0 }
+                    ?.let { String.format(Locale.getDefault(), "%.0f min", it) }
+                    ?: stringResource(R.string.analysis_no_records),
+                detail = stringResource(R.string.stats_analysis_derived),
+                modifier = Modifier.weight(1f)
+            )
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_max_speed),
+                value = quickStats.maxSpeedKmh
+                    ?.takeIf { it > 0 }
+                    ?.let { String.format(Locale.getDefault(), "%d km/h", it) }
+                    ?: stringResource(R.string.analysis_no_records),
+                detail = stringResource(R.string.stats_analysis_observed),
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        HorizontalDivider(color = palette.onSurface.copy(alpha = 0.08f))
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = stringResource(R.string.stats_analysis_data_coverage),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = palette.onSurface
+        )
+        Text(
+            text = stringResource(R.string.stats_analysis_data_coverage_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = palette.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_distance_coverage),
+                value = coveragePercent(coverage?.distanceCoveragePercent, drivesCollecting),
+                detail = coverageDetail(coverage?.driveDistanceSampleCount, coverage?.driveRecordCount),
+                modifier = Modifier.weight(1f)
+            )
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_drive_energy_coverage),
+                value = coveragePercent(coverage?.driveEnergyCoveragePercent, drivesCollecting),
+                detail = coverageDetail(coverage?.driveEnergySampleCount, coverage?.driveRecordCount),
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_charge_energy_coverage),
+                value = coveragePercent(coverage?.chargeEnergyCoveragePercent, chargesCollecting),
+                detail = coverageDetail(coverage?.chargeEnergySampleCount, coverage?.chargeRecordCount),
+                modifier = Modifier.weight(1f)
+            )
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_cost_coverage),
+                value = coveragePercent(coverage?.costCoveragePercent, chargesCollecting),
+                detail = coverageDetail(coverage?.chargeCostSampleCount, coverage?.chargeRecordCount),
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_charge_energy_used_coverage),
+                value = coveragePercent(coverage?.chargeEnergyUsedCoveragePercent, chargesCollecting),
+                detail = coverageDetail(coverage?.chargeEnergyUsedSampleCount, coverage?.chargeRecordCount),
+                modifier = Modifier.weight(1f)
+            )
+            SummaryMetricItem(
+                title = stringResource(R.string.stats_analysis_charge_loss_coverage),
+                value = coveragePercent(coverage?.chargeLossCoveragePercent, chargesCollecting),
+                detail = coverageDetail(coverage?.chargeLossSampleCount, coverage?.chargeRecordCount),
+                modifier = Modifier.weight(1f)
+            )
+        }
+        coverage?.let { data ->
+            val first = data.firstObservedDate?.toString()
+            val last = data.lastObservedDate?.toString()
+            if (first != null && last != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = data.observationDays?.let { days ->
+                        stringResource(
+                            R.string.stats_analysis_coverage_period,
+                            first,
+                            last,
+                            days
+                        ) + " " + stringResource(R.string.stats_analysis_days_suffix)
+                    } ?: stringResource(
+                        R.string.stats_analysis_coverage_period_without_days,
+                        first,
+                        last
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        TextButton(
+            onClick = onNavigateToMileage,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                imageVector = Icons.Default.DirectionsCar,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.stats_analysis_view_mileage))
+        }
+    }
+}
+
+@Composable
+private fun coveragePercent(value: Double?, collecting: Boolean): String =
+    value?.takeIf { it.isFinite() }?.let { String.format(Locale.getDefault(), "%.0f%%", it) }
+        ?: if (collecting) {
+            stringResource(R.string.stats_analysis_collecting_value)
+        } else {
+            stringResource(R.string.analysis_no_records)
+        }
+
+@Composable
+private fun coverageDetail(valid: Int?, total: Int?): String =
+    if (valid != null && total != null) {
+        stringResource(R.string.stats_analysis_coverage_records, valid, total) +
+            " " + stringResource(R.string.stats_analysis_records_suffix)
+    } else {
+        stringResource(R.string.stats_analysis_unavailable)
+    }
+
+@Composable
+private fun SummaryMetricItem(
+    title: String,
+    metric: MetricState<Double>? = null,
+    formatter: ((Double) -> String)? = null,
+    value: String? = null,
+    detail: String? = null,
+    modifier: Modifier = Modifier
+) {
+    val available = metric as? MetricState.Available<*>
+    val numericValue = available?.value as? Double
+    val displayValue = value ?: when (metric) {
+        is MetricState.Available<*> -> numericValue?.let { formatter?.invoke(it) }
+            ?: stringResource(R.string.stats_analysis_unavailable)
+        is MetricState.Collecting -> stringResource(R.string.stats_analysis_collecting_value)
+        is MetricState.Unavailable -> stringResource(R.string.stats_analysis_unavailable)
+        is MetricState.Failed -> stringResource(R.string.stats_analysis_unavailable)
+        null -> stringResource(R.string.analysis_no_records)
+    }
+    val evidenceLabel = when (metric) {
+        is MetricState.Available<*> -> {
+            val label = when (metric.evidence) {
+                MetricEvidence.OBSERVED -> stringResource(R.string.stats_analysis_observed)
+                MetricEvidence.DERIVED -> stringResource(R.string.stats_analysis_derived)
+                MetricEvidence.ESTIMATED -> stringResource(R.string.stats_analysis_estimated)
+            }
+            metric.sampleCount?.takeIf { it > 0 }?.let {
+                stringResource(R.string.stats_analysis_evidence_sample_count, label, it)
+            } ?: label
+        }
+        is MetricState.Collecting -> stringResource(R.string.stats_analysis_collecting)
+        is MetricState.Unavailable -> stringResource(R.string.stats_analysis_unavailable)
+        is MetricState.Failed -> if (metric.retryable) {
+            stringResource(R.string.stats_analysis_retryable)
+        } else {
+            stringResource(R.string.stats_analysis_unavailable)
+        }
+        null -> stringResource(R.string.stats_analysis_unavailable)
+    }
+
+    Column(modifier = modifier) {
+        Text(
+            text = displayValue,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = detail ?: evidenceLabel,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -624,10 +1254,27 @@ private fun GeocodeProgressCard(
 // ======== Quick Stats Cards ========
 
 @Composable
-private fun QuickStatsDrivesCard(quickStats: QuickStats, palette: CarColorPalette, currencySymbol: String, units: Units?) {
+private fun QuickStatsDrivesCard(
+    quickStats: QuickStats,
+    coverage: AnalysisCoverage?,
+    palette: CarColorPalette,
+    currencySymbol: String,
+    units: Units?
+) {
+    val noData = stringResource(R.string.analysis_no_records)
+    val hasDistance = quickStats.totalDrives > 0 &&
+        (coverage?.driveDistanceSampleCount ?: quickStats.totalDrives) > 0
+    val hasEnergy = quickStats.totalDrives > 0 &&
+        (coverage?.driveEnergySampleCount ?: quickStats.totalDrives) > 0
+    val hasCost = quickStats.totalCharges > 0 &&
+        quickStats.totalCost?.isFinite() == true &&
+        (coverage?.chargeCostSampleCount ?: quickStats.totalCharges) > 0
     // Calculate cost per 100 km: (totalCost / totalDistanceKm) * 100
-    val costPer100Km = if (quickStats.totalCost != null && quickStats.totalCost > 0 && quickStats.totalDistanceKm > 0) {
-        (quickStats.totalCost / quickStats.totalDistanceKm) * 100
+    val costPer100Km = if (hasCost && hasDistance) {
+        observedCostPerDistanceOrNull(
+            totalCost = quickStats.totalCost,
+            distanceKm = quickStats.totalDistanceKm
+        )
     } else {
         null
     }
@@ -640,12 +1287,16 @@ private fun QuickStatsDrivesCard(quickStats: QuickStats, palette: CarColorPalett
         Row(modifier = Modifier.fillMaxWidth()) {
             StatItem(
                 label = stringResource(R.string.stats_total_drives),
-                value = "%,d".format(quickStats.totalDrives),
+                value = if (quickStats.totalDrives > 0) String.format(Locale.getDefault(), "%,d", quickStats.totalDrives) else noData,
                 modifier = Modifier.weight(1f)
             )
             StatItem(
                 label = stringResource(R.string.stats_driving_days),
-                value = quickStats.totalDrivingDays?.let { "%,d".format(it) } ?: "-",
+                value = if (quickStats.totalDrives > 0) {
+                    quickStats.totalDrivingDays?.let { String.format(Locale.getDefault(), "%,d", it) } ?: noData
+                } else {
+                    noData
+                },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -653,12 +1304,12 @@ private fun QuickStatsDrivesCard(quickStats: QuickStats, palette: CarColorPalett
         Row(modifier = Modifier.fillMaxWidth()) {
             StatItem(
                 label = stringResource(R.string.total_distance),
-                value = UnitFormatter.formatDistance(quickStats.totalDistanceKm, units, 0),
+                value = if (hasDistance) UnitFormatter.formatDistance(quickStats.totalDistanceKm, units, 0) else noData,
                 modifier = Modifier.weight(1f)
             )
             StatItem(
                 label = stringResource(R.string.stats_energy_used),
-                value = formatEnergy(quickStats.totalEnergyConsumedKwh),
+                value = if (hasEnergy) formatEnergy(quickStats.totalEnergyConsumedKwh) else noData,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -666,12 +1317,14 @@ private fun QuickStatsDrivesCard(quickStats: QuickStats, palette: CarColorPalett
         Row(modifier = Modifier.fillMaxWidth()) {
             StatItem(
                 label = stringResource(R.string.stats_avg_efficiency),
-                value = UnitFormatter.formatEfficiency(quickStats.avgEfficiencyWhKm, units, 0),
+                value = if (hasDistance && hasEnergy && quickStats.avgEfficiencyWhKm > 0.0) {
+                    UnitFormatter.formatEfficiency(quickStats.avgEfficiencyWhKm, units, 0)
+                } else noData,
                 modifier = Modifier.weight(1f)
             )
             StatItem(
                 label = stringResource(R.string.stats_cost_per_distance, UnitFormatter.getDistanceUnit(units)),
-                value = costPer100Km?.let { "%.2f %s".format(it, currencySymbol) } ?: "N/A",
+                value = costPer100Km?.let { String.format(Locale.getDefault(), "%.2f %s", it, currencySymbol) } ?: noData,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -679,7 +1332,18 @@ private fun QuickStatsDrivesCard(quickStats: QuickStats, palette: CarColorPalett
 }
 
 @Composable
-private fun QuickStatsChargesCard(quickStats: QuickStats, palette: CarColorPalette, currencySymbol: String) {
+private fun QuickStatsChargesCard(
+    quickStats: QuickStats,
+    coverage: AnalysisCoverage?,
+    palette: CarColorPalette,
+    currencySymbol: String
+) {
+    val noData = stringResource(R.string.analysis_no_records)
+    val hasEnergy = quickStats.totalCharges > 0 &&
+        (coverage?.chargeEnergySampleCount ?: quickStats.totalCharges) > 0
+    val hasCost = quickStats.totalCharges > 0 &&
+        quickStats.totalCost?.isFinite() == true &&
+        (coverage?.chargeCostSampleCount ?: quickStats.totalCharges) > 0
     StatsCard(
         title = stringResource(R.string.stats_charges_overview),
         icon = Icons.Default.BatteryChargingFull,
@@ -688,26 +1352,30 @@ private fun QuickStatsChargesCard(quickStats: QuickStats, palette: CarColorPalet
         Row(modifier = Modifier.fillMaxWidth()) {
             StatItem(
                 label = stringResource(R.string.stats_total_charges),
-                value = "%,d".format(quickStats.totalCharges),
+                value = if (quickStats.totalCharges > 0) String.format(Locale.getDefault(), "%,d", quickStats.totalCharges) else noData,
                 modifier = Modifier.weight(1f)
             )
             StatItem(
                 label = stringResource(R.string.energy_added),
-                value = formatEnergy(quickStats.totalEnergyAddedKwh),
+                value = if (hasEnergy) formatEnergy(quickStats.totalEnergyAddedKwh) else noData,
                 modifier = Modifier.weight(1f)
             )
         }
-        if (quickStats.totalCost != null && quickStats.totalCost > 0) {
+        if (hasCost) {
             Spacer(modifier = Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth()) {
                 StatItem(
                     label = stringResource(R.string.total_cost),
-                    value = "%.2f %s".format(quickStats.totalCost, currencySymbol),
+                    value = String.format(Locale.getDefault(), "%.2f %s", quickStats.totalCost, currencySymbol),
                     modifier = Modifier.weight(1f)
                 )
                 StatItem(
                     label = stringResource(R.string.stats_avg_cost_kwh),
-                    value = quickStats.avgCostPerKwh?.let { "%.3f %s".format(it, currencySymbol) } ?: "N/A",
+                    value = if (hasEnergy) {
+                        quickStats.avgCostPerKwh?.let { String.format(Locale.getDefault(), "%.3f %s", it, currencySymbol) } ?: noData
+                    } else {
+                        noData
+                    },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -795,7 +1463,7 @@ private fun RecordsCard(
         driveRecords.add(RecordData("🏎️", labelTopSpeed, UnitFormatter.formatSpeed(drive.speedMax.toDouble(), units), drive.startDate.take(10)) { onDriveClick(drive.driveId) })
     }
     quickStats.mostEfficientDrive?.let { drive ->
-        driveRecords.add(RecordData("🌱", labelMostEfficient, UnitFormatter.formatEfficiency(drive.efficiency ?: 0.0, units, 0), drive.startDate.take(10)) { onDriveClick(drive.driveId) })
+        driveRecords.add(RecordData("🌱", labelMostEfficient, drive.efficiency?.let { UnitFormatter.formatEfficiency(it, units, 0) } ?: "N/A", drive.startDate.take(10)) { onDriveClick(drive.driveId) })
     }
     quickStats.longestDrivingStreak?.let { streak ->
         driveRecords.add(RecordData("🔥", labelLongestStreak, stringResource(R.string.format_days_count, streak.streakDays), "${streak.startDate} → ${streak.endDate}", null))
@@ -816,20 +1484,20 @@ private fun RecordsCard(
         batteryRecords.add(RecordData("📉", labelBiggestDrain, "-${record.percentChange}%", "${record.startLevel}% → ${record.endLevel}%") { onDriveClick(record.recordId) })
     }
     quickStats.biggestCharge?.let { charge ->
-        batteryRecords.add(RecordData("⚡", labelBiggestCharge, "%.0f kWh".format(charge.energyAdded), charge.startDate.take(10)) { onChargeClick(charge.chargeId) })
+        batteryRecords.add(RecordData("⚡", labelBiggestCharge, String.format(Locale.getDefault(), "%.0f kWh", charge.energyAdded), charge.startDate.take(10)) { onChargeClick(charge.chargeId) })
     }
     deepStats?.chargeWithMaxPower?.let { record ->
-        batteryRecords.add(RecordData("⚡", labelPeakPower, "${record.powerKw} kW", record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
+        batteryRecords.add(RecordData("⚡", labelPeakPower, record.powerKw?.let { "$it kW" } ?: "N/A", record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
     }
     quickStats.mostExpensiveCharge?.let { charge ->
         charge.cost?.let { cost ->
-            batteryRecords.add(RecordData("💸", labelMostExpensive, "%.2f %s".format(cost, currencySymbol), charge.startDate.take(10)) { onChargeClick(charge.chargeId) })
+            batteryRecords.add(RecordData("💸", labelMostExpensive, String.format(Locale.getDefault(), "%.2f %s", cost, currencySymbol), charge.startDate.take(10)) { onChargeClick(charge.chargeId) })
         }
     }
     quickStats.mostExpensivePerKwhCharge?.let { charge ->
         charge.cost?.let { cost ->
             if (charge.energyAdded > 0) {
-                batteryRecords.add(RecordData("📈", labelPriciestKwh, "%.3f %s".format(cost / charge.energyAdded, currencySymbol), charge.startDate.take(10)) { onChargeClick(charge.chargeId) })
+                batteryRecords.add(RecordData("📈", labelPriciestKwh, String.format(Locale.getDefault(), "%.3f %s", cost / charge.energyAdded, currencySymbol), charge.startDate.take(10)) { onChargeClick(charge.chargeId) })
             }
         }
     }
@@ -843,16 +1511,16 @@ private fun RecordsCard(
         weatherRecords.add(RecordData("⛰️", labelMostClimbing, record.elevationGainM?.let { "+" + UnitFormatter.formatElevation(it, units) } ?: "N/A", record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
     }
     deepStats?.hottestDrive?.let { record ->
-        weatherRecords.add(RecordData("🌡️", labelHottestDrive, UnitFormatter.formatTemperature(record.tempC, units, 1), record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
+        weatherRecords.add(RecordData("🌡️", labelHottestDrive, record.tempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
     }
     deepStats?.coldestDrive?.let { record ->
-        weatherRecords.add(RecordData("🧊", labelColdestDrive, UnitFormatter.formatTemperature(record.tempC, units, 1), record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
+        weatherRecords.add(RecordData("🧊", labelColdestDrive, record.tempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
     }
     deepStats?.hottestCharge?.let { record ->
-        weatherRecords.add(RecordData("☀️", labelHottestCharge, UnitFormatter.formatTemperature(record.tempC, units, 1), record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
+        weatherRecords.add(RecordData("☀️", labelHottestCharge, record.tempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
     }
     deepStats?.coldestCharge?.let { record ->
-        weatherRecords.add(RecordData("❄️", labelColdestCharge, UnitFormatter.formatTemperature(record.tempC, units, 1), record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
+        weatherRecords.add(RecordData("❄️", labelColdestCharge, record.tempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
     }
 
     // Category 4: Miscelaneous
@@ -1140,9 +1808,9 @@ private fun TemperatureStatsCard(deepStats: DeepStats, palette: CarColorPalette,
 
 private fun formatEnergy(kwh: Double): String {
     return if (kwh >= 1000) {
-        "%.1f MWh".format(kwh / 1000)
+        String.format(Locale.getDefault(), "%.1f MWh", kwh / 1000)
     } else {
-        "%.0f kWh".format(kwh)
+        String.format(Locale.getDefault(), "%.0f kWh", kwh)
     }
 }
 

@@ -228,16 +228,14 @@ class DataSyncWorker @AssistedInject constructor(
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Data Sync",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Background sync for stats data"
-            }
-            val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "Data Sync",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Background sync for stats data"
         }
+        val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.createNotificationChannel(channel)
     }
 }

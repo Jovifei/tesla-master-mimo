@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.ChargeData
+import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.dao.AggregateDao
 import com.matelink.data.model.Currency
@@ -13,6 +14,7 @@ import com.matelink.data.repository.TeslamateRepository
 import com.matelink.domain.LocalDayBoundaries
 import com.matelink.domain.analytics.chargeTotalOverrideKey
 import com.matelink.domain.analytics.resolveChargeCostFromTotal
+import com.matelink.domain.analytics.observedCostSumOrNull
 import android.content.Context
 import com.matelink.R
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -74,7 +76,9 @@ data class ChargeChartData(
     val countAc: Int,
     val countDc: Int,
     val totalCost: Double,
-    val sortKey: Long // For sorting (epoch day, week number, or year-month)
+    val sortKey: Long, // For sorting (epoch day, week number, or year-month)
+    val costCoverage: Int = 0,
+    val energyCoverage: Int = 0
 )
 
 data class ChargesUiState(
@@ -103,7 +107,7 @@ data class ChargesUiState(
     val scrollPosition: Int = 0,  // First visible item index
     val scrollOffset: Int = 0,    // Scroll offset within first item
     val summary: ChargesSummary = ChargesSummary(),
-    val currencySymbol: String = "€",
+    val currencySymbol: String = com.matelink.data.model.Currency.CNY.symbol,
     val teslamateBaseUrl: String = "",
     val freeSupercharging: Boolean = false,
     val priceOverrides: Map<Int, Double> = emptyMap()
@@ -111,10 +115,11 @@ data class ChargesUiState(
 
 data class ChargesSummary(
     val totalCharges: Int = 0,
-    val totalEnergyAdded: Double = 0.0,
-    val totalCost: Double = 0.0,
-    val avgEnergyPerCharge: Double = 0.0,
-    val avgCostPerCharge: Double = 0.0
+    val totalEnergyAdded: Double? = null,
+    val totalCost: Double? = null,
+    val avgEnergyPerCharge: Double? = null,
+    val avgCostPerCharge: Double? = null,
+    val costCoverage: Int = 0
 )
 
 @HiltViewModel
@@ -122,6 +127,7 @@ class ChargesViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val repository: TeslamateRepository,
     private val settingsDataStore: SettingsDataStore,
+    private val chargeCostOverrideStore: ChargeCostOverrideStore,
     private val aggregateDao: AggregateDao,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -177,7 +183,8 @@ class ChargesViewModel @Inject constructor(
 
     private fun observeChargePriceOverrides() {
         viewModelScope.launch {
-        settingsDataStore.chargeTotalOverrides.collect { overrides ->
+            chargeCostOverrideStore.ensureLegacyMigrated()
+            chargeCostOverrideStore.observeAll().collect { overrides ->
                 allPriceOverrides = overrides
                 val id = carId
                 _uiState.update { state ->
@@ -633,11 +640,14 @@ class ChargesViewModel @Inject constructor(
         dcChargeIds: Set<Int>
     ): ChargeChartData {
         val dcCharges = charges.filter { it.chargeId in dcChargeIds }
-        val energyDc = dcCharges.sumOf { it.chargeEnergyAdded ?: 0.0 }
-        val energyTotal = charges.sumOf { it.chargeEnergyAdded ?: 0.0 }
+        val energyDc = dcCharges.mapNotNull { observedChargeEnergy(it.chargeEnergyAdded) }.sum()
+        val energyValues = charges.mapNotNull { observedChargeEnergy(it.chargeEnergyAdded) }
+        val energyTotal = energyValues.sum()
         val state = _uiState.value
-        val costDc = dcCharges.sumOf { effectiveCost(it, state) ?: 0.0 }
-        val costTotal = charges.sumOf { effectiveCost(it, state) ?: 0.0 }
+        val dcCosts = dcCharges.mapNotNull { effectiveCost(it, state) }
+        val costs = charges.mapNotNull { effectiveCost(it, state) }
+        val costDc = observedCostSumOrNull(dcCosts) ?: 0.0
+        val costTotal = observedCostSumOrNull(costs) ?: 0.0
         val countDc = dcCharges.size
         val countTotal = charges.size
         return ChargeChartData(
@@ -651,24 +661,29 @@ class ChargesViewModel @Inject constructor(
             costDc = costDc,
             costAc = costTotal - costDc,
             countDc = countDc,
-            countAc = countTotal - countDc
+            countAc = countTotal - countDc,
+            costCoverage = costs.size,
+            energyCoverage = energyValues.size
         )
     }
 
     private fun calculateSummary(charges: List<ChargeData>): ChargesSummary {
         if (charges.isEmpty()) return ChargesSummary()
 
-        val totalEnergy = charges.sumOf { it.chargeEnergyAdded ?: 0.0 }
+        val energyValues = charges.mapNotNull { observedChargeEnergy(it.chargeEnergyAdded) }
+        val totalEnergy = energyValues.takeIf { it.isNotEmpty() }?.sum()
         val state = _uiState.value
-        val totalCost = charges.sumOf { effectiveCost(it, state) ?: 0.0 }
+        val costs = charges.mapNotNull { effectiveCost(it, state) }
+        val totalCost = observedCostSumOrNull(costs)
         val count = charges.size
 
         return ChargesSummary(
             totalCharges = count,
             totalEnergyAdded = totalEnergy,
             totalCost = totalCost,
-            avgEnergyPerCharge = if (count > 0) totalEnergy / count else 0.0,
-            avgCostPerCharge = if (count > 0) totalCost / count else 0.0
+            avgEnergyPerCharge = totalEnergy?.let { it / energyValues.size },
+            avgCostPerCharge = totalCost?.let { it / costs.size },
+            costCoverage = costs.size
         )
     }
 
@@ -682,4 +697,8 @@ class ChargesViewModel @Inject constructor(
             energyKwh = charge.chargeEnergyAdded
         ).cost
     }
+
 }
+
+internal fun observedChargeEnergy(value: Double?): Double? =
+    value?.takeIf { it.isFinite() && it >= 0.0 }

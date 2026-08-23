@@ -21,8 +21,20 @@ import com.matelink.domain.model.GapRecord
 import com.matelink.domain.model.MaxDistanceBetweenChargesRecord
 import com.matelink.domain.model.StreakRecord
 import com.matelink.domain.model.YearFilter
+import com.matelink.domain.analytics.RecommendationChargeSample
+import com.matelink.domain.analytics.RecommendationDriveSample
+import com.matelink.domain.analytics.AnalysisChargeCoverageSample
+import com.matelink.domain.analytics.AnalysisDriveCoverageSample
+import com.matelink.domain.analytics.buildAnalysisCoverage
+import com.matelink.domain.analytics.buildRecommendationEvidence
+import com.matelink.domain.analytics.buildRecommendations
+import com.matelink.domain.analytics.observedAggregateCostOrNull
+import com.matelink.domain.analytics.toAnalysisChargeData
+import com.matelink.domain.analytics.toAnalysisDriveData
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -45,14 +57,73 @@ class StatsRepository @Inject constructor(
         val quickStats = getQuickStats(carId, yearFilter)
         val deepStats = getDeepStats(carId, yearFilter)
         val syncProgress = syncManager.getProgressForCar(carId)
+        val (recommendations, analysisCoverage) = getRecommendationsAndCoverage(carId, yearFilter)
 
         return CarStats(
             carId = carId,
             yearFilter = yearFilter,
             quickStats = quickStats,
             deepStats = deepStats,
-            syncProgress = syncProgress
+            syncProgress = syncProgress,
+            recommendations = recommendations,
+            analysisCoverage = analysisCoverage
         )
+    }
+
+    private suspend fun getRecommendationsAndCoverage(carId: Int, yearFilter: YearFilter) = withContext(Dispatchers.Default) {
+        val (drives, charges) = when (yearFilter) {
+            is YearFilter.AllTime ->
+                driveSummaryDao.getAllChronological(carId) to chargeSummaryDao.getAllForCar(carId)
+            is YearFilter.Year -> {
+                val startDate = "${yearFilter.year}-01-01T00:00:00"
+                val endDate = "${yearFilter.year + 1}-01-01T00:00:00"
+                driveSummaryDao.getDrivesInRange(carId, startDate, endDate) to
+                chargeSummaryDao.getChargesInRange(carId, startDate, endDate)
+            }
+        }
+        // Room summaries retain legacy non-null columns for schema compatibility.
+        // Rehydrate through the neutral API models before analytics so placeholder
+        // zeros are not treated as observed measurements.
+        val analysisDrives = drives.map { it.toAnalysisDriveData() }
+        val analysisCharges = charges.map { it.toAnalysisChargeData() }
+        val recommendations = buildRecommendations(
+            buildRecommendationEvidence(
+                drives = analysisDrives.map {
+                    RecommendationDriveSample(
+                        distanceKm = it.distance,
+                        energyKwh = it.energyConsumedNet,
+                        averageSpeedKmh = it.speedAvg,
+                        outsideTemperatureC = it.outsideTempAvg,
+                        observedAt = it.startDate
+                    )
+                },
+                charges = analysisCharges.map {
+                    RecommendationChargeSample(
+                        energyAddedKwh = it.chargeEnergyAdded,
+                        energyUsedKwh = it.chargeEnergyUsed,
+                        observedAt = it.startDate
+                    )
+                }
+            )
+        )
+        val coverage = buildAnalysisCoverage(
+            drives = analysisDrives.map {
+                AnalysisDriveCoverageSample(
+                    distanceKm = it.distance,
+                    energyKwh = it.energyConsumedNet,
+                    observedAt = it.startDate
+                )
+            },
+            charges = analysisCharges.map {
+                AnalysisChargeCoverageSample(
+                    energyAddedKwh = it.chargeEnergyAdded,
+                    cost = it.cost,
+                    observedAt = it.startDate,
+                    energyUsedKwh = it.chargeEnergyUsed
+                )
+            }
+        )
+        recommendations to coverage
     }
 
     /**
@@ -66,6 +137,7 @@ class StatsRepository @Inject constructor(
     }
 
     private suspend fun getQuickStatsAllTime(carId: Int): QuickStats {
+        val pricedChargeCount = chargeSummaryDao.countWithCost(carId)
         return QuickStats(
             totalDrives = driveSummaryDao.count(carId),
             totalDistanceKm = driveSummaryDao.sumDistance(carId),
@@ -77,8 +149,14 @@ class StatsRepository @Inject constructor(
 
             totalCharges = chargeSummaryDao.count(carId),
             totalEnergyAddedKwh = chargeSummaryDao.sumEnergyAdded(carId),
-            totalCost = chargeSummaryDao.sumCost(carId).takeIf { it > 0 },
-            avgCostPerKwh = chargeSummaryDao.avgCostPerKwh(carId).takeIf { it > 0 },
+            totalCost = observedAggregateCostOrNull(
+                totalCost = chargeSummaryDao.sumCost(carId),
+                pricedRecordCount = pricedChargeCount
+            ),
+            avgCostPerKwh = observedAggregateCostOrNull(
+                totalCost = chargeSummaryDao.avgCostPerKwh(carId),
+                pricedRecordCount = pricedChargeCount
+            ),
             avgChargeMinutes = chargeSummaryDao.avgDuration(carId),
 
             longestDrive = driveSummaryDao.longestDrive(carId),
@@ -141,6 +219,7 @@ class StatsRepository @Inject constructor(
     private suspend fun getQuickStatsForYear(carId: Int, year: Int): QuickStats {
         val startDate = "$year-01-01T00:00:00"
         val endDate = "${year + 1}-01-01T00:00:00"
+        val pricedChargeCount = chargeSummaryDao.countWithCostInRange(carId, startDate, endDate)
 
         return QuickStats(
             totalDrives = driveSummaryDao.countInRange(carId, startDate, endDate),
@@ -153,8 +232,14 @@ class StatsRepository @Inject constructor(
 
             totalCharges = chargeSummaryDao.countInRange(carId, startDate, endDate),
             totalEnergyAddedKwh = chargeSummaryDao.sumEnergyAddedInRange(carId, startDate, endDate),
-            totalCost = chargeSummaryDao.sumCostInRange(carId, startDate, endDate).takeIf { it > 0 },
-            avgCostPerKwh = chargeSummaryDao.avgCostPerKwhInRange(carId, startDate, endDate).takeIf { it > 0 },
+            totalCost = observedAggregateCostOrNull(
+                totalCost = chargeSummaryDao.sumCostInRange(carId, startDate, endDate),
+                pricedRecordCount = pricedChargeCount
+            ),
+            avgCostPerKwh = observedAggregateCostOrNull(
+                totalCost = chargeSummaryDao.avgCostPerKwhInRange(carId, startDate, endDate),
+                pricedRecordCount = pricedChargeCount
+            ),
             avgChargeMinutes = null, // Not critical for year view
 
             longestDrive = driveSummaryDao.longestDriveInRange(carId, startDate, endDate),
@@ -257,7 +342,7 @@ class StatsRepository @Inject constructor(
                 val drive = driveSummaryDao.get(agg.driveId)
                 DriveElevationRecord(
                     driveId = agg.driveId,
-                    elevationM = agg.maxElevation ?: 0,
+                    elevationM = agg.maxElevation,
                     elevationGainM = agg.elevationGain,
                     date = drive?.startDate
                 )
@@ -266,7 +351,7 @@ class StatsRepository @Inject constructor(
                 val drive = driveSummaryDao.get(agg.driveId)
                 DriveElevationRecord(
                     driveId = agg.driveId,
-                    elevationM = agg.minElevation ?: 0,
+                    elevationM = agg.minElevation,
                     elevationGainM = agg.elevationGain,
                     date = drive?.startDate
                 )
@@ -275,7 +360,7 @@ class StatsRepository @Inject constructor(
                 val drive = driveSummaryDao.get(agg.driveId)
                 DriveElevationRecord(
                     driveId = agg.driveId,
-                    elevationM = agg.maxElevation ?: 0,
+                    elevationM = agg.maxElevation,
                     elevationGainM = agg.elevationGain,
                     date = drive?.startDate
                 )
@@ -289,7 +374,7 @@ class StatsRepository @Inject constructor(
                 val drive = driveSummaryDao.get(agg.driveId)
                 DriveTempRecord(
                     driveId = agg.driveId,
-                    tempC = agg.maxOutsideTemp ?: 0.0,
+                    tempC = agg.maxOutsideTemp,
                     date = drive?.startDate
                 )
             },
@@ -297,7 +382,7 @@ class StatsRepository @Inject constructor(
                 val drive = driveSummaryDao.get(agg.driveId)
                 DriveTempRecord(
                     driveId = agg.driveId,
-                    tempC = agg.minOutsideTemp ?: 0.0,
+                    tempC = agg.minOutsideTemp,
                     date = drive?.startDate
                 )
             },
@@ -308,7 +393,7 @@ class StatsRepository @Inject constructor(
                 val charge = chargeSummaryDao.get(agg.chargeId)
                 ChargeTempRecord(
                     chargeId = agg.chargeId,
-                    tempC = agg.maxOutsideTemp ?: 0.0,
+                    tempC = agg.maxOutsideTemp,
                     date = charge?.startDate
                 )
             },
@@ -316,7 +401,7 @@ class StatsRepository @Inject constructor(
                 val charge = chargeSummaryDao.get(agg.chargeId)
                 ChargeTempRecord(
                     chargeId = agg.chargeId,
-                    tempC = agg.minOutsideTemp ?: 0.0,
+                    tempC = agg.minOutsideTemp,
                     date = charge?.startDate
                 )
             },
@@ -326,7 +411,7 @@ class StatsRepository @Inject constructor(
                 val charge = chargeSummaryDao.get(agg.chargeId)
                 ChargePowerRecord(
                     chargeId = agg.chargeId,
-                    powerKw = agg.maxChargerPower ?: 0,
+                    powerKw = agg.maxChargerPower,
                     date = charge?.startDate
                 )
             },
@@ -372,7 +457,7 @@ class StatsRepository @Inject constructor(
                 val drive = driveSummaryDao.get(agg.driveId)
                 DriveElevationRecord(
                     driveId = agg.driveId,
-                    elevationM = agg.maxElevation ?: 0,
+                    elevationM = agg.maxElevation,
                     elevationGainM = agg.elevationGain,
                     date = drive?.startDate
                 )
@@ -382,7 +467,7 @@ class StatsRepository @Inject constructor(
                 val drive = driveSummaryDao.get(agg.driveId)
                 DriveElevationRecord(
                     driveId = agg.driveId,
-                    elevationM = agg.maxElevation ?: 0,
+                    elevationM = agg.maxElevation,
                     elevationGainM = agg.elevationGain,
                     date = drive?.startDate
                 )
@@ -396,7 +481,7 @@ class StatsRepository @Inject constructor(
                 val drive = driveSummaryDao.get(agg.driveId)
                 DriveTempRecord(
                     driveId = agg.driveId,
-                    tempC = agg.maxOutsideTemp ?: 0.0,
+                    tempC = agg.maxOutsideTemp,
                     date = drive?.startDate
                 )
             },
@@ -404,7 +489,7 @@ class StatsRepository @Inject constructor(
                 val drive = driveSummaryDao.get(agg.driveId)
                 DriveTempRecord(
                     driveId = agg.driveId,
-                    tempC = agg.minOutsideTemp ?: 0.0,
+                    tempC = agg.minOutsideTemp,
                     date = drive?.startDate
                 )
             },
@@ -415,7 +500,7 @@ class StatsRepository @Inject constructor(
                 val charge = chargeSummaryDao.get(agg.chargeId)
                 ChargeTempRecord(
                     chargeId = agg.chargeId,
-                    tempC = agg.maxOutsideTemp ?: 0.0,
+                    tempC = agg.maxOutsideTemp,
                     date = charge?.startDate
                 )
             },
@@ -423,7 +508,7 @@ class StatsRepository @Inject constructor(
                 val charge = chargeSummaryDao.get(agg.chargeId)
                 ChargeTempRecord(
                     chargeId = agg.chargeId,
-                    tempC = agg.minOutsideTemp ?: 0.0,
+                    tempC = agg.minOutsideTemp,
                     date = charge?.startDate
                 )
             },
@@ -433,7 +518,7 @@ class StatsRepository @Inject constructor(
                 val charge = chargeSummaryDao.get(agg.chargeId)
                 ChargePowerRecord(
                     chargeId = agg.chargeId,
-                    powerKw = agg.maxChargerPower ?: 0,
+                    powerKw = agg.maxChargerPower,
                     date = charge?.startDate
                 )
             },

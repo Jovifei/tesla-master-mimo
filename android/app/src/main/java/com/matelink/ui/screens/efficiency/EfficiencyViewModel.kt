@@ -7,9 +7,14 @@ import com.matelink.data.repository.ApiResult
 import com.matelink.domain.analytics.AnalysisHistoryRepository
 import com.matelink.domain.analytics.AnalysisWindow
 import com.matelink.domain.analytics.DatedSourceRecord
+import com.matelink.domain.analytics.EfficiencySample
+import com.matelink.domain.analytics.HistoryFreshness
+import com.matelink.domain.analytics.NoDataReason
+import com.matelink.domain.analytics.calculateWeightedEfficiency
 import com.matelink.domain.analytics.PercentilePosition
 import com.matelink.domain.analytics.percentilePosition
 import com.matelink.domain.analytics.selectWindow
+import com.matelink.domain.analytics.classifyMetricNoData
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.LocalDate
 import java.time.OffsetDateTime
@@ -35,6 +40,8 @@ data class EfficiencyTrendPoint(
 
 data class EfficiencyUiState(
     val isLoading: Boolean = true,
+    val historyFreshness: HistoryFreshness = HistoryFreshness.FRESH,
+    val noDataReason: NoDataReason? = null,
     val selectedWindow: AnalysisWindow = AnalysisWindow.ALL_TIME,
     val avgEfficiencyWhKm: Double? = null,
     val last90DaysEfficiencyWhKm: Double? = null,
@@ -57,25 +64,34 @@ class EfficiencyViewModel @Inject constructor(
     val uiState = _uiState.asStateFlow()
 
     private var currentCarId: Int? = null
-    private var validDrives: List<DriveData> = emptyList()
     private var datedDrives: List<DatedEfficiency> = emptyList()
+    private var historyRecordCount: Int = 0
+    private var historyReason: NoDataReason? = null
+    private var historyLoaded: Boolean = false
     private var customStart: LocalDate? = null
     private var customEnd: LocalDate? = null
 
     fun load(carId: Int) {
-        if (currentCarId == carId && validDrives.isNotEmpty()) {
+        if (currentCarId == carId && historyLoaded) {
             recalculate(_uiState.value.selectedWindow)
             return
         }
         currentCarId = carId
+        historyLoaded = false
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             when (val result = historyRepository.load(carId)) {
                 is ApiResult.Success -> {
-                    validDrives = result.data.drives.filter { it.efficiencyWhKm?.isFinite() == true }
-                    datedDrives = validDrives.mapNotNull { drive ->
+                    historyRecordCount = result.data.drives.size
+                    historyReason = result.data.coverage.reason
+                    _uiState.value = _uiState.value.copy(
+                        historyFreshness = result.data.freshness,
+                        noDataReason = historyReason
+                    )
+                    datedDrives = result.data.drives.mapNotNull { drive ->
                         parseDate(drive)?.let { date -> DatedEfficiency(date, drive) }
                     }
+                    historyLoaded = true
                     recalculate(_uiState.value.selectedWindow)
                 }
                 is ApiResult.Error -> _uiState.value = EfficiencyUiState(isLoading = false, error = result.message)
@@ -98,10 +114,15 @@ class EfficiencyViewModel @Inject constructor(
     }
 
     private fun recalculate(window: AnalysisWindow) {
-        if (validDrives.isEmpty() && _uiState.value.isLoading) return
         val selected = selectWindow(datedDrives, window, LocalDate.now(), customStart, customEnd).map { it.drive }
         val values = selected.mapNotNull { it.efficiencyWhKm }.filter { it.isFinite() }
-        val average = values.takeIf { it.isNotEmpty() }?.average()
+        val noDataReason = classifyMetricNoData(
+            historyReason = historyReason,
+            sourceRecordCount = historyRecordCount,
+            selectedRecordCount = selected.size,
+            validSampleCount = values.size
+        )
+        val average = weightedAverage(selected)
         val position = average?.let { percentilePosition(values, it) }
         val positions = position?.let { personal ->
             selected.mapNotNull { drive ->
@@ -133,13 +154,16 @@ class EfficiencyViewModel @Inject constructor(
 
         _uiState.value = _uiState.value.copy(
             isLoading = false,
+            noDataReason = noDataReason,
             avgEfficiencyWhKm = average,
             efficiencyBySpeed = bySpeed,
             efficiencyTrend = trend,
             tripPositions = positions,
             personalPercentile = position,
             driveCount = values.size,
-            totalDistanceKm = selected.sumOf { it.distance ?: 0.0 },
+            totalDistanceKm = selected.sumOf { drive ->
+                drive.distance?.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
+            },
             last90DaysEfficiencyWhKm = averageFor(AnalysisWindow.LAST_90_DAYS),
             summerEfficiencyWhKm = averageFor(AnalysisWindow.SUMMER),
             winterEfficiencyWhKm = averageFor(AnalysisWindow.WINTER)
@@ -148,9 +172,18 @@ class EfficiencyViewModel @Inject constructor(
 
     private fun averageFor(window: AnalysisWindow): Double? =
         selectWindow(datedDrives, window, LocalDate.now(), customStart, customEnd)
-            .mapNotNull { it.drive.efficiencyWhKm }
-            .takeIf { it.isNotEmpty() }
-            ?.average()
+            .map { it.drive }
+            .let(::weightedAverage)
+
+    private fun weightedAverage(drives: List<DriveData>): Double? =
+        calculateWeightedEfficiency(
+            drives.map { drive ->
+                EfficiencySample(
+                    distanceKm = drive.distance,
+                    energyKwh = drive.energyConsumedNet
+                )
+            }
+        ).efficiencyWhKm
 
     private fun parseDate(drive: DriveData): LocalDate? {
         val value = drive.startDate ?: return null

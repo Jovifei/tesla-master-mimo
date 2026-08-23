@@ -12,3 +12,10 @@
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**
+
+# AMap native SDK loads mapcore classes by exact name from JNI/reflection.
+-keep class com.amap.api.** { *; }
+-keep class com.autonavi.** { *; }
+-dontwarn com.amap.api.**
+-dontwarn com.autonavi.**
+-dontwarn com.amap.ams.gnss.GnssSoftLocator

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Deliberately absent from the launcher and release source set. -->
+        <activity
+            android:name=".debug.DesignReviewActivity"
+            android:exported="true"
+            android:label="MateLink design review" />
+    </application>
+</manifest>

@@ -80,6 +80,8 @@ import com.matelink.data.model.Currency
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.launchExternalIntentSafely
 import com.matelink.ui.screens.map.AmapSettingsEntry
+import com.matelink.ui.screens.auth.TeslaAccountSection
+import com.matelink.ui.screens.auth.TeslaLoginViewModel
 import com.matelink.ui.theme.MateLinkTheme
 import com.matelink.ui.theme.StatusWarning
 import com.matelink.ui.theme.StatusError
@@ -92,8 +94,12 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit = onNavigateToDashboard,
     onNavigateToTariffConfig: () -> Unit = {},
     onNavigateToAmapSetup: () -> Unit = {},
+    onNavigateToTeslaLogin: () -> Unit = {},
+    onLogout: () -> Unit = {},
+    onAccountDeleted: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
-    instanceViewModel: InstanceViewModel = hiltViewModel()
+    instanceViewModel: InstanceViewModel = hiltViewModel(),
+    teslaLoginViewModel: TeslaLoginViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val instanceUiState by instanceViewModel.uiState.collectAsState()
@@ -176,7 +182,15 @@ fun SettingsScreen(
                 onInstanceEditorNameChange = instanceViewModel::updateEditorName,
                 onInstanceEditorUrlChange = instanceViewModel::updateEditorServerUrl,
                 onInstanceEditorTokenChange = instanceViewModel::updateEditorToken,
-                onInstanceEditorCarIdChange = instanceViewModel::updateEditorCarId
+                onInstanceEditorCarIdChange = instanceViewModel::updateEditorCarId,
+                accountContent = {
+                    TeslaAccountSection(
+                        viewModel = teslaLoginViewModel,
+                        onLogin = onNavigateToTeslaLogin,
+                        onLogout = onLogout,
+                        onDelete = onAccountDeleted
+                    )
+                }
             )
         }
     }
@@ -192,6 +206,7 @@ private fun CollapsibleSection(
     title: String,
     expanded: Boolean,
     onToggle: () -> Unit,
+    testTag: String? = null,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
@@ -200,6 +215,7 @@ private fun CollapsibleSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onToggle)
+                .then(if (testTag == null) Modifier else Modifier.testTag(testTag))
                 .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -262,7 +278,8 @@ internal fun SettingsContent(
     onInstanceEditorNameChange: (String) -> Unit = {},
     onInstanceEditorUrlChange: (String) -> Unit = {},
     onInstanceEditorTokenChange: (String) -> Unit = {},
-    onInstanceEditorCarIdChange: (Int) -> Unit = {}
+    onInstanceEditorCarIdChange: (Int) -> Unit = {},
+    accountContent: @Composable () -> Unit = {}
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
     var basicAuthPasswordVisible by remember { mutableStateOf(false) }
@@ -279,6 +296,9 @@ internal fun SettingsContent(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
+        accountContent()
+        Spacer(modifier = Modifier.height(16.dp))
+
         if (uiState.isFirstRunSetup) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -382,76 +402,45 @@ internal fun SettingsContent(
         }
 
         }
-        // === Server Connection Section ===
-        Text(
-            text = stringResource(R.string.settings_connect_title),
-            style = MaterialTheme.typography.titleMedium
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = stringResource(R.string.settings_connect_description),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = uiState.serverUrl,
-            onValueChange = onServerUrlChange,
-            label = { Text(stringResource(R.string.settings_server_url_label)) },
-            placeholder = { Text(stringResource(R.string.settings_server_url_placeholder)) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("serverAddressInput"),
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-            enabled = !uiState.isTesting && !uiState.isSaving
-        )
-
-        Text(
-            text = stringResource(R.string.settings_root_url_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp)
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = uiState.apiToken,
-            onValueChange = onApiTokenChange,
-            label = { Text(stringResource(R.string.settings_api_token_label)) },
-            modifier = Modifier.fillMaxWidth().testTag("apiKeyInput"),
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            enabled = !uiState.isTesting && !uiState.isSaving
-        )
-
-        uiState.connectionWarning?.let { warning ->
-            Text(
-                text = warning,
-                style = MaterialTheme.typography.bodySmall,
-                color = StatusWarning,
-                modifier = Modifier.padding(top = 8.dp).testTag("localHttpWarning")
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // === Advanced Network Settings (Collapsed by default) ===
-        if (false) {
+        // === Self-hosted connection (collapsed by default) ===
         HorizontalDivider()
-
         CollapsibleSection(
             title = stringResource(R.string.settings_advanced_network),
             expanded = advancedNetworkExpanded,
-            onToggle = { advancedNetworkExpanded = !advancedNetworkExpanded }
+            onToggle = { advancedNetworkExpanded = !advancedNetworkExpanded },
+            testTag = "advancedNetworkSection"
         ) {
             Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = stringResource(R.string.settings_connect_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedTextField(
+                value = uiState.serverUrl,
+                onValueChange = onServerUrlChange,
+                label = { Text(stringResource(R.string.settings_server_url_label)) },
+                placeholder = { Text(stringResource(R.string.settings_server_url_placeholder)) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("serverAddressInput"),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                enabled = !uiState.isTesting && !uiState.isSaving
+            )
+
+            Text(
+                text = stringResource(R.string.settings_root_url_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Secondary API root URL
             OutlinedTextField(
@@ -624,7 +613,6 @@ internal fun SettingsContent(
 
             Spacer(modifier = Modifier.height(8.dp))
         }
-        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -777,28 +765,30 @@ internal fun SettingsContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Mock mode toggle
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.mock_mode),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = stringResource(R.string.mock_mode_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+        if (com.matelink.BuildConfig.DEBUG) {
+            // Test-package-only mock mode.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.mock_mode),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = stringResource(R.string.mock_mode_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = uiState.mockMode,
+                    onCheckedChange = onMockModeChange
                 )
             }
-            Switch(
-                checked = uiState.mockMode,
-                onCheckedChange = onMockModeChange
-            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))

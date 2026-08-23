@@ -32,7 +32,7 @@ class StatsDatabaseMigrationTest {
     }
 
     @Test
-    fun migratesLegacyV14IdentityHashToV15WithoutChangingRows() {
+    fun migratesLegacyV14IdentityHashToLatestWithoutChangingRows() {
         val databaseName = "legacy-v14-identity-hash"
         helper.createDatabase(databaseName, 14).apply {
             execSQL("UPDATE room_master_table SET identity_hash = '442084c21fe8ce4522f3edacfbcc3884' WHERE id = 42")
@@ -47,7 +47,7 @@ class StatsDatabaseMigrationTest {
         try {
             database.openHelper.writableDatabase.query("PRAGMA user_version").use { cursor ->
                 cursor.moveToFirst()
-                assertEquals(15, cursor.getInt(0))
+                assertEquals(16, cursor.getInt(0))
             }
             database.openHelper.writableDatabase.query(
                 "SELECT identity_hash FROM room_master_table WHERE id = 42"
@@ -57,6 +57,33 @@ class StatsDatabaseMigrationTest {
             }
         } finally {
             database.close()
+        }
+    }
+
+    @Test
+    fun migratesV15ToV16WithChargeCostOverrideTable() {
+        val databaseName = "legacy-v15-charge-cost-overrides"
+        helper.createDatabase(databaseName, 15).close()
+
+        val migrated = helper.runMigrationsAndValidate(
+            databaseName,
+            16,
+            true,
+            StatsDatabase.MIGRATION_15_16
+        )
+        try {
+            migrated.query(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'charge_cost_overrides'"
+            ).use { cursor ->
+                assertEquals(1, cursor.count)
+            }
+            migrated.query(
+                "PRAGMA table_info(`charge_cost_overrides`)"
+            ).use { cursor ->
+                assertEquals(3, cursor.count)
+            }
+        } finally {
+            migrated.close()
         }
     }
 

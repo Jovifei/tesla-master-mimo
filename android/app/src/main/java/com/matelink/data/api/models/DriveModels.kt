@@ -10,7 +10,8 @@ data class DrivesResponse(
 
 @JsonClass(generateAdapter = true)
 data class DrivesData(
-    @Json(name = "drives") val drives: List<DriveData>? = null
+    @Json(name = "drives") val drives: List<DriveData>? = null,
+    @Json(name = "meta") val meta: ApiDataMeta? = null
 )
 
 @JsonClass(generateAdapter = true)

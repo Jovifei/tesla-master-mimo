@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.Units
+import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.entity.SavedTripLeg
 import com.matelink.data.model.Currency
@@ -14,7 +15,6 @@ import com.matelink.domain.TripRepository
 import com.matelink.domain.analytics.ChargeCostSource
 import com.matelink.domain.analytics.EffectiveChargeCostInput
 import com.matelink.domain.analytics.EffectiveChargeCostResolver
-import com.matelink.domain.analytics.chargeTotalOverrideKey
 import com.matelink.domain.analytics.validManualChargeTotal
 import com.matelink.domain.model.Trip
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -36,32 +36,32 @@ data class ChargeDetailUiState(
         cost = null,
         state = ChargeDetailCostState.UNAVAILABLE
     ),
-    val currencySymbol: String = "€",
+    val currencySymbol: String = Currency.CNY.symbol,
     val isDcCharge: Boolean = false,
     val manualTotalAmount: Double? = null,
     val containingTrip: Pair<Long, Trip>? = null
 )
 
 data class ChargeDetailStats(
-    val powerMax: Int,
-    val powerMin: Int,
-    val powerAvg: Double,
-    val voltageMax: Int,
-    val voltageMin: Int,
-    val voltageAvg: Double,
-    val currentMax: Int,
-    val currentMin: Int,
-    val currentAvg: Double,
-    val tempMax: Double,
-    val tempMin: Double,
-    val tempAvg: Double,
-    val batteryStart: Int,
-    val batteryEnd: Int,
-    val batteryAdded: Int,
-    val energyAdded: Double,
-    val energyUsed: Double,
-    val efficiency: Double,
-    val durationMin: Int,
+    val powerMax: Int?,
+    val powerMin: Int?,
+    val powerAvg: Double?,
+    val voltageMax: Int?,
+    val voltageMin: Int?,
+    val voltageAvg: Double?,
+    val currentMax: Int?,
+    val currentMin: Int?,
+    val currentAvg: Double?,
+    val tempMax: Double?,
+    val tempMin: Double?,
+    val tempAvg: Double?,
+    val batteryStart: Int?,
+    val batteryEnd: Int?,
+    val batteryAdded: Int?,
+    val energyAdded: Double?,
+    val energyUsed: Double?,
+    val efficiency: Double?,
+    val durationMin: Int?,
     val cost: Double?
 )
 
@@ -113,6 +113,7 @@ internal fun presentChargeDetailCost(
 class ChargeDetailViewModel @Inject constructor(
     private val repository: TeslamateRepository,
     private val settingsDataStore: SettingsDataStore,
+    private val chargeCostOverrideStore: ChargeCostOverrideStore,
     private val tripRepository: TripRepository
 ) : ViewModel() {
 
@@ -169,9 +170,7 @@ class ChargeDetailViewModel @Inject constructor(
                         is ApiResult.Success -> carResult.data.carSettings?.freeSupercharging == true
                         is ApiResult.Error -> false
                     }
-                    val manualTotalAmount = settingsDataStore.chargeTotalOverrides.first()[
-                        chargeTotalOverrideKey(carId, chargeId)
-                    ]
+                    val manualTotalAmount = chargeCostOverrideStore.getAmount(carId, chargeId)
                     val costPresentation = presentChargeDetailCost(
                         manualAmount = validManualChargeTotal(manualTotalAmount),
                         manuallyFree = isExplicitlyFree && isDcCharge,
@@ -215,10 +214,7 @@ class ChargeDetailViewModel @Inject constructor(
         if (totalAmount != null && validTotal == null) return
 
         viewModelScope.launch {
-            settingsDataStore.saveChargeTotalOverride(
-                chargeTotalOverrideKey(currentCarId, currentChargeId),
-                validTotal
-            )
+            chargeCostOverrideStore.save(currentCarId, currentChargeId, validTotal)
             val state = _uiState.value
             _uiState.update {
                 it.copy(

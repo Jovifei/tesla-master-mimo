@@ -51,6 +51,41 @@
     <string name="amap_vehicle_marker">Vehicle</string>
     <string name="amap_legacy_preview_unavailable">Map preview is not available in this view.</string>
     <string name="app_name">MateLink</string>
+    <string name="tesla_login_title">Connect your Tesla</string>
+    <string name="tesla_login_description">Sign in on the official Tesla page. MateLink never sees or stores your Tesla password.</string>
+    <string name="tesla_login_terms_consent">I have read and agree to the User Agreement.</string>
+    <string name="tesla_login_privacy_consent">I have read and agree to the Privacy Policy.</string>
+    <string name="tesla_login_view_terms">View User Agreement</string>
+    <string name="tesla_login_view_privacy">View Privacy Policy</string>
+    <string name="tesla_login_documents_unavailable">Tesla cloud sign-in is unavailable until the User Agreement and Privacy Policy are published.</string>
+    <string name="tesla_login_consent_required">Accept both the User Agreement and Privacy Policy before continuing.</string>
+    <string name="tesla_login_button">Use Tesla login</string>
+    <string name="tesla_login_self_hosted">Advanced: connect a self-hosted service</string>
+    <string name="tesla_login_loading">Opening Tesla authorization…</string>
+    <string name="tesla_login_error">Sign-in failed: %1$s</string>
+    <string name="tesla_login_error_request">The authorization request was rejected. Check the published login configuration and try again.</string>
+    <string name="tesla_login_error_authorization">Tesla authorization was rejected or the session is no longer valid. Start again.</string>
+    <string name="tesla_login_error_rate_limit">Tesla requests are temporarily rate limited. Wait a moment and try again.</string>
+    <string name="tesla_login_error_service">Tesla cloud login is temporarily unavailable. Try again later.</string>
+    <string name="tesla_login_error_generic">Tesla cloud login could not be started. Try again.</string>
+    <string name="tesla_login_error_unavailable">Tesla authorization is temporarily unavailable.</string>
+    <string name="tesla_login_error_cancelled">Tesla authorization was cancelled.</string>
+    <string name="tesla_login_error_exchange">Tesla authorization could not be completed. Try again.</string>
+    <string name="tesla_login_error_not_configured">Tesla cloud login is not configured in this build.</string>
+    <string name="tesla_login_callback_invalid">The Tesla callback was rejected for security reasons.</string>
+    <string name="tesla_login_authorization_invalid">The Tesla authorization link is invalid or not an official Tesla page.</string>
+    <string name="tesla_account_title">Tesla account</string>
+    <string name="tesla_account_connected">Connected through official Tesla authorization.</string>
+    <string name="tesla_account_test_session">Local mock test session. No Tesla account was used.</string>
+    <string name="tesla_account_not_connected">No Tesla cloud account is connected.</string>
+    <string name="tesla_account_reauthorize">Connect or re-authorize Tesla</string>
+    <string name="tesla_account_logout">Log out</string>
+    <string name="tesla_account_delete">Delete account</string>
+    <string name="tesla_account_delete_failed">Account deletion failed. Check your connection and try again.</string>
+    <string name="tesla_account_delete_title">Delete cloud account?</string>
+    <string name="tesla_account_delete_message">This permanently removes your JourVolt cloud account, Tesla authorization tokens, cloud sessions and cloud vehicle data. Existing local self-hosted data is not removed.</string>
+    <string name="tesla_account_delete_confirm">Delete account</string>
+    <string name="tesla_account_delete_cancel">Cancel</string>
     <string name="public_info_help">Help</string>
     <string name="public_info_legal">Privacy and disclaimer</string>
     <string name="public_info_changelog">Changelog</string>
@@ -62,9 +97,19 @@
     <string name="nav_more">More</string>
 
     <!-- Dashboard -->
-    <string name="dashboard_loading">Loading Dashboard...</string>
+    <string name="dashboard_loading">Loading Dashboard…</string>
     <string name="dashboard_status_unavailable_title">Vehicle connected, live status pending</string>
     <string name="dashboard_status_unavailable_body">TeslaMate has detected your vehicle, but the live status snapshot is not available yet. Wait for TeslaMate to finish the first sync, then refresh.</string>
+    <string name="dashboard_error_auth_title">Tesla authorization required</string>
+    <string name="dashboard_error_auth_body">The Tesla session is no longer authorized. Reconnect Tesla to continue loading live vehicle status.</string>
+    <string name="dashboard_error_rate_limit_title">Tesla service is rate limited</string>
+    <string name="dashboard_error_rate_limit_body">Tesla has temporarily limited requests. Wait a moment and refresh; the last confirmed status is not replaced.</string>
+    <string name="dashboard_error_service_title">Vehicle service unavailable</string>
+    <string name="dashboard_error_service_body">The vehicle service is temporarily unavailable. Refresh later; no live value is being invented.</string>
+    <string name="dashboard_error_network_title">Cannot reach vehicle service</string>
+    <string name="dashboard_error_network_body">Check the network connection and refresh. Any value still shown is the last confirmed snapshot.</string>
+    <string name="dashboard_error_generic_title">Live status unavailable</string>
+    <string name="dashboard_error_generic_body">Live vehicle status could not be loaded. Refresh to try again.</string>
     <string name="dashboard_partial_status_body">MateLink can read this vehicle from TeslaMate. Battery, location, lock, climate, and TPMS cards need the live status endpoint to return a snapshot.</string>
     <string name="dashboard_partial_status_detail">Status endpoint: %1$s</string>
     <string name="dashboard_partial_model">Model</string>
@@ -85,10 +130,9 @@
     <string name="climate_off">Climate OFF</string>
     <string name="sentry_armed">Sentry ARMED</string>
     <string name="sentry_off">Sentry OFF</string>
-    <string name="high_soc_warning" formatted="false">High charge level - consider reducing to 80-90% for daily use</string>
+    <string name="high_soc_warning" formatted="false">High charge level – consider reducing to 80–90% for daily use</string>
     <string name="tire_pressure">Tire Pressure</string>
     <string name="battery_trend">7-Day Battery Trend</string>
-    <string name="battery_trend_estimated_note">Estimated demo trend based on the current battery level until history data is connected.</string>
     <string name="km_range">%d km range</string>
     <string name="charge_limit">Limit: %s</string>
     <string name="vehicle">Vehicle</string>
@@ -100,6 +144,7 @@
     <string name="dashboard_snapshot_time">Snapshot %1$s</string>
     <string name="snapshot_source_live">Live</string>
     <string name="snapshot_source_history">History</string>
+    <string name="snapshot_source_mock">Local mock</string>
     <string name="snapshot_source_unavailable">Unavailable</string>
     <string name="status_unknown">Unknown</string>
     <string name="battery_history_navigation_note">View recorded battery history and capacity details</string>
@@ -158,8 +203,8 @@
     <string name="more_section_analysis">Data Analysis</string>
     <string name="more_section_reports">Reports</string>
     <string name="more_section_system">System</string>
-    <string name="more_status_title">Verification Status</string>
-    <string name="more_status_body">Some destinations still rely on preview, mock, or cached data until a TeslaMate connection is verified.</string>
+    <string name="more_status_title">Data status</string>
+    <string name="more_status_body">Live vehicle data is available when connected. Analysis pages may remain limited until enough history has been collected.</string>
     <string name="more_item_statistics">Statistics</string>
     <string name="more_item_battery_health">Battery Health</string>
     <string name="more_item_mileage">Mileage</string>
@@ -194,7 +239,7 @@
 
     <!-- Common -->
     <string name="back">Back</string>
-    <string name="loading">Loading...</string>
+    <string name="loading">Loading…</string>
     <string name="no_data">No data available</string>
     <string name="offline">Offline - showing cached data</string>
     <string name="ok">OK</string>
@@ -239,7 +284,23 @@
     <string name="analysis_filter_summer">Summer</string>
     <string name="analysis_filter_winter">Winter</string>
     <string name="analysis_filter_custom">Custom</string>
-    <string name="analysis_no_records">No analyzable records</string>
+    <string name="analysis_no_records">No records yet</string>
+    <string name="metric_state_loading_title">Loading vehicle data</string>
+    <string name="metric_state_loading_body">This should only take a moment.</string>
+    <string name="metric_state_empty_title">No history has been collected yet</string>
+    <string name="metric_state_empty_body">Records begin from the connection date. Missing history is not shown as zero.</string>
+    <string name="metric_state_insufficient_title">Not enough usable data</string>
+    <string name="metric_state_insufficient_body">Records exist, but the fields required for this analysis are missing or incomplete.</string>
+    <string name="metric_state_filter_empty_title">No records in this range</string>
+    <string name="metric_state_filter_empty_body">Try another time range or choose All.</string>
+    <string name="metric_state_collecting_title">History collection is in progress</string>
+    <string name="metric_state_collecting_body">The data source has started collecting records. Analysis will appear as new history arrives.</string>
+    <string name="metric_state_unavailable_title">History is unavailable</string>
+    <string name="metric_state_unavailable_body">This data source does not provide the history needed for this analysis.</string>
+    <string name="metric_state_cached_title">Showing cached history</string>
+    <string name="metric_state_cached_body">The network is unavailable. These values use the last successful history snapshot.</string>
+    <string name="metric_state_error_title">Data could not be loaded</string>
+    <string name="metric_state_retry">Retry</string>
     <string name="analysis_coverage_insufficient">Coverage insufficient</string>
     <string name="efficiency_personal_history_title">Personal history range</string>
     <string name="efficiency_trip_position">Trip %1$d · P%2$d · %3$.0f Wh/km</string>
@@ -264,36 +325,55 @@
 
     <!-- Range Analysis -->
     <string name="range_analysis_title">Range Analysis</string>
-    <string name="range_accuracy_title">Range Prediction Accuracy</string>
+    <string name="range_accuracy_title">Rated Range Consumption Deviation</string>
     <string name="range_trip_count">Trips</string>
     <string name="range_total_distance">Total Distance</string>
     <string name="range_trip_list_title">Recent Trips (%d)</string>
     <string name="range_estimated">Estimated</string>
     <string name="range_actual">Actual</string>
-    <string name="range_influences_title">Factors affecting prediction error</string>
+    <string name="range_influences_title">Factors affecting deviation</string>
     <string name="range_influences_values">Summer %1$s · Winter %2$s · Low speed %3$s · High speed %4$s</string>
+    <string name="range_personalized_title">Personalized range (90 days)</string>
+    <string name="range_personalized_description">Distance-weighted energy model, not a Tesla prediction.</string>
+    <string name="range_personalized_value">%1$.0f km</string>
+    <string name="range_personalized_source_grouped">Matched temperature and speed conditions</string>
+    <string name="range_personalized_source_global">Recent all-condition model</string>
+    <string name="range_personalized_no_recent_data">No valid driving samples are available for this model yet.</string>
+    <string name="range_personalized_insufficient">Not enough valid data: %1$d trips / %2$.0f km. Need at least 10 trips and 300 km.</string>
+    <string name="range_personalized_capacity_unavailable">The efficiency model is ready, but usable battery capacity is unavailable, so a numeric personalized range is withheld.</string>
+    <string name="range_personalized_rated_fallback">Tesla rated range: %1$.0f km</string>
+    <string name="range_personalized_details">%1$d valid trips · %2$.0f km · confidence %3$d%%</string>
+    <string name="range_personalized_conditions">Current conditions: %1$s temperature · %2$s speed</string>
+    <string name="range_temperature_cold">cold</string>
+    <string name="range_temperature_mild">mild</string>
+    <string name="range_temperature_hot">hot</string>
+    <string name="range_speed_low">low speed</string>
+    <string name="range_speed_cruise">cruise speed</string>
+    <string name="range_speed_high">high speed</string>
 
     <!-- Vampire Drain (Standby Power Consumption) -->
     <string name="vampire_title">Standby Power Drain</string>
-    <string name="vampire_total_drain_label">Total Idle Drain</string>
-    <string name="vampire_total_drain_subtitle">Sum of all detected idle drain periods</string>
+    <string name="vampire_total_drain_label">Detected parked battery drop</string>
+    <string name="vampire_total_drain_subtitle">Sum of SOC drops between charges with no recorded drive; energy is not inferred</string>
     <string name="vampire_avg_power">Avg Power</string>
     <string name="vampire_idle_periods">Idle Periods</string>
     <string name="vampire_daily_title">Daily Drain</string>
     <string name="vampire_daily_subtitle">Estimated standby energy lost per day (kWh)</string>
     <string name="vampire_recent_title">Recent Idle Periods</string>
-    <string name="vampire_tips_title">Optimization Tips</string>
+    <string name="vampire_general_info_title">General energy-saving information</string>
     <string name="vampire_tip_sentry_title">Sentry Mode</string>
-    <string name="vampire_tip_sentry_desc">Sentry mode consumes 250-300W. Disable when parked in safe locations to reduce standby drain significantly.</string>
+    <string name="vampire_tip_sentry_desc">Sentry mode consumes 250–300W. Disable when parked in safe locations to reduce standby drain significantly.</string>
     <string name="vampire_tip_cabin_overheat_title">Cabin Overheat Protection</string>
     <string name="vampire_tip_cabin_overheat_desc">This feature runs the AC to keep cabin temperature below threshold. Set to \"Off\" or \"No A/C\" in hot weather if not needed.</string>
     <string name="vampire_tip_climate_title">Remote Climate</string>
-    <string name="vampire_tip_climate_desc">Preconditioning draws ~3-5 kW. Avoid repeated remote climate activations when the car is parked for extended periods.</string>
+    <string name="vampire_tip_climate_desc">Preconditioning draws ~3–5 kW. Avoid repeated remote climate activations when the car is parked for extended periods.</string>
     <string name="vampire_tip_updates_title">Software Updates</string>
     <string name="vampire_tip_updates_desc">OTA updates and periodic check-ins cause brief wake-ups. Schedule updates during periods when the car will be plugged in.</string>
     <string name="vampire_how_title">How This Works</string>
-    <string name="vampire_how_desc">Vampire drain is calculated by analyzing gaps between charge sessions. When the battery level drops without any recorded drive in between, the energy loss is attributed to standby power consumption. The estimated average power draw assumes a 75 kWh battery capacity.</string>
+    <string name="vampire_how_desc">Standby drain starts with a battery drop between charge sessions without a recorded drive. Energy in kWh and average power are shown only when usable battery capacity or telemetry energy is available; the cause is not inferred from a battery drop alone.</string>
     <string name="vampire_no_data">No attributable standby drain was detected. At least two charge records with a battery drop and no intervening drive are required; the cause is not inferred without evidence.</string>
+    <string name="vampire_soc_only_title">Only battery-percentage evidence is available</string>
+    <string name="vampire_soc_only_body">This is a low-confidence parked battery change. Energy, average power and cause remain unknown until telemetry or observed capacity data is available.</string>
     <string name="vampire_total_kwh">Total standby energy</string>
     <string name="vampire_confidence">Confidence</string>
     <string name="vampire_cause_unknown">Cause not attributable from available evidence</string>
@@ -316,7 +396,7 @@
 
     <!-- Widget -->
     <string name="widget_error_configure">Error loading widget</string>
-    <string name="widget_loading">Loading...</string>
+    <string name="widget_loading">Loading…</string>
     <string name="no_vehicles_found">No vehicles found</string>
     <string name="error_loading_data">Error loading data</string>
     <string name="widget_select_car_title">Select Car</string>
@@ -489,7 +569,7 @@
 
     <!-- Charging notifications -->
     <string name="charging_notification_title">Charging</string>
-    <string name="charging_notification_loading">Loading charging data...</string>
+    <string name="charging_notification_loading">Loading charging data…</string>
     <string name="charging_notification_dc_finished_title">%1$s: DC Charging Complete</string>
     <string name="charging_notification_dc_finished_content">Your Tesla has finished DC charging.</string>
     <string name="charging_channel_name">Charging</string>
@@ -564,6 +644,7 @@
     <string name="no_battery_data">No battery data available</string>
     <string name="battery_capacity_title">Battery Capacity</string>
     <string name="battery_capacity_message">Your battery capacity information.</string>
+    <string name="battery_capacity_observed_note">Observed capacity data from the connected data source.</string>
     <string name="capacity">Capacity</string>
     <string name="usable_new">Usable (New)</string>
     <string name="usable_now">Usable (Now)</string>
@@ -575,6 +656,28 @@
     <string name="estimated_degradation">Estimated Degradation</string>
     <string name="loss_kwh">Loss (kWh)</string>
     <string name="loss_percent">Loss (%)</string>
+    <string name="battery_trend_title">Battery health trend</string>
+    <string name="battery_trend_description">An estimate based on rated-range samples, not measured capacity.</string>
+    <string name="battery_trend_status_estimate">Trend estimate with an early baseline</string>
+    <string name="battery_trend_status_only">Trend available; an early baseline is not available</string>
+    <string name="battery_trend_status_unavailable">Not enough valid samples for a trend</string>
+    <string name="battery_trend_current_range">Current normalized range</string>
+    <string name="battery_trend_baseline_range">Early baseline range</string>
+    <string name="battery_trend_degradation">Estimated degradation</string>
+    <string name="battery_trend_no_samples">No valid battery trend observations yet</string>
+    <string name="battery_trend_period">Data window: %1$s – %2$s</string>
+    <string name="battery_trend_confidence">Confidence score: %1$d%%</string>
+    <string name="battery_trend_chart_title">Normalized range trend</string>
+    <string name="battery_trend_chart_description">Battery trend chart with %1$d daily points</string>
+    <string name="battery_trend_unavailable_message" formatted="false">At least 10 valid samples across 30 days are required. Samples must be 70–100% SOC and 15–30°C.</string>
+    <plurals name="battery_trend_valid_samples">
+        <item quantity="one">%d valid sample</item>
+        <item quantity="other">%d valid samples</item>
+    </plurals>
+    <plurals name="battery_trend_coverage_days">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
 
     <!-- Battery extra -->
     <string name="range">Range</string>
@@ -665,7 +768,7 @@
     <string name="current_charge_estimated_end">Estimated End</string>
     <string name="current_charge_live">Live</string>
     <string name="current_charge_not_charging">Not Charging</string>
-    <string name="current_charge_starting">Starting...</string>
+    <string name="current_charge_starting">Starting…</string>
     <string name="current_charge_unsupported">Unsupported</string>
     <string name="current_max">Current Max</string>
     <string name="current_min">Current Min</string>
@@ -700,8 +803,8 @@
     <string name="filter_all">All</string>
     <string name="filter_commute_km">Commute (&lt; 50km)</string>
     <string name="filter_commute_mi">Commute (&lt; 30mi)</string>
-    <string name="filter_day_trip_km">Day Trip (50-200km)</string>
-    <string name="filter_day_trip_mi">Day Trip (30-125mi)</string>
+    <string name="filter_day_trip_km">Day Trip (50–200km)</string>
+    <string name="filter_day_trip_mi">Day Trip (30–125mi)</string>
     <string name="filter_last_30_days">Last 30 Days</string>
     <string name="filter_last_7_days">Last 7 Days</string>
     <string name="filter_last_90_days">Last 90 Days</string>
@@ -827,7 +930,7 @@
     <string name="settings_resync_dialog_text_suffix">and re-download from server.</string>
     <string name="settings_resync_dialog_title">Resync Data</string>
     <string name="settings_resync_hint">Force full data resync</string>
-    <string name="settings_resyncing">Resyncing...</string>
+    <string name="settings_resyncing">Resyncing…</string>
     <string name="settings_save">Save</string>
     <string name="settings_secondary_server">Secondary API</string>
     <string name="settings_secondary_url_hint">Fallback API root URL. Do not add /api or /api/v1.</string>
@@ -872,12 +975,82 @@
     <string name="stats_deep_sync_title">Deep Sync</string>
     <string name="stats_drives_overview">Drives Overview</string>
     <string name="stats_driving_days">Driving Days</string>
-    <string name="stats_empty">No stats available</string>
+    <string name="stats_empty">No history yet. Statistics will appear from the first recorded drive or charge.</string>
+    <string name="stats_history_collecting">History collection has started. Records will appear from the connection date.</string>
+    <string name="stats_history_unsupported">This data source does not provide historical records.</string>
+    <string name="stats_analysis_summary">Analysis Summary</string>
+    <string name="stats_analysis_summary_subtitle">Key conclusions from the selected period</string>
+    <string name="stats_analysis_distance">Distance</string>
+    <string name="stats_analysis_efficiency">Weighted efficiency</string>
+    <string name="stats_analysis_energy_used">Driving energy</string>
+    <string name="stats_analysis_energy_added">Charged energy</string>
+    <string name="stats_analysis_cost">Recorded cost</string>
+    <string name="stats_analysis_samples">Source records</string>
+    <string name="stats_analysis_sample_count">Drive and charge records</string>
+    <string name="stats_analysis_observed">Observed</string>
+    <string name="stats_analysis_derived">Derived</string>
+    <string name="stats_analysis_estimated">Estimated</string>
+    <string name="stats_analysis_evidence_sample_count">%1$s · n=%2$d</string>
+    <string name="stats_analysis_unavailable">Unavailable</string>
+    <string name="stats_analysis_collecting_value">Collecting</string>
+    <string name="stats_analysis_collecting">Data is still being collected</string>
+    <string name="stats_analysis_retryable">Refresh to retry</string>
+    <string name="stats_analysis_deep_available">Detailed weather and elevation analysis is available below</string>
+    <string name="stats_analysis_deep_collecting">Detailed analysis is still collecting records</string>
+    <string name="stats_analysis_derived_title">Derived conclusions</string>
+    <string name="stats_analysis_derived_subtitle">Calculated from valid records in the selected period</string>
+    <string name="stats_analysis_usage_title">Usage pattern</string>
+    <string name="stats_analysis_usage_subtitle">Observed and derived driving and charging behavior</string>
+    <string name="stats_analysis_avg_drive_duration">Average drive duration</string>
+    <string name="stats_analysis_driving_days">Driving days</string>
+    <string name="stats_analysis_avg_charge_duration">Average charge duration</string>
+    <string name="stats_analysis_max_speed">Highest recorded speed</string>
+    <string name="stats_analysis_avg_drive_distance">Average distance per drive</string>
+    <string name="stats_analysis_avg_distance_per_day">Average distance per driving day</string>
+    <string name="stats_analysis_drive_count">Drive count</string>
+    <string name="stats_analysis_avg_charge_energy">Average energy per charge</string>
+    <string name="stats_analysis_cost_per_100km">Cost per 100 km</string>
+    <string name="stats_analysis_charge_drive_ratio">Charged / driving energy</string>
+    <string name="stats_analysis_charge_loss">Charging loss</string>
+    <string name="stats_analysis_data_coverage">Data coverage</string>
+    <string name="stats_analysis_data_coverage_subtitle">Valid inputs among records in the selected period</string>
+    <string name="stats_analysis_distance_coverage">Distance values</string>
+    <string name="stats_analysis_drive_energy_coverage">Drive energy</string>
+    <string name="stats_analysis_charge_energy_coverage">Charge energy</string>
+    <string name="stats_analysis_charge_energy_used_coverage">Grid energy</string>
+    <string name="stats_analysis_charge_loss_coverage">Loss evidence</string>
+    <string name="stats_analysis_cost_coverage">Cost values</string>
+    <string name="stats_analysis_coverage_records">%1$d / %2$d</string>
+    <string name="stats_analysis_records_suffix">records</string>
+    <string name="stats_analysis_coverage_period">Observed %1$s – %2$s · %3$d</string>
+    <string name="stats_analysis_coverage_period_without_days">Observed %1$s – %2$s</string>
+    <string name="stats_analysis_days_suffix">days</string>
+    <string name="stats_analysis_view_mileage">View mileage breakdown</string>
+    <string name="stats_recommendations_title">Data-backed suggestions</string>
+    <string name="stats_recommendations_subtitle">Shown only when sample size, coverage and confidence gates are met.</string>
+    <string name="stats_recommendation_standby_title">Reduce parking energy use</string>
+    <string name="stats_recommendation_standby_description">Observed parking power is consistently above the evidence threshold.</string>
+    <string name="stats_recommendation_standby_action">Review Sentry Mode, climate and frequent wake-ups during long parking periods.</string>
+    <string name="stats_recommendation_high_speed_title">Improve high-speed efficiency</string>
+    <string name="stats_recommendation_high_speed_description">The high-speed group uses over 15% more energy than the 50–90 km/h baseline.</string>
+    <string name="stats_recommendation_high_speed_action">Reduce sustained high speed where practical and compare the next five similar trips.</string>
+    <string name="stats_recommendation_cold_title">Improve cold-weather efficiency</string>
+    <string name="stats_recommendation_cold_description">Trips below 10°C use over 15% more energy than the 10–25°C group.</string>
+    <string name="stats_recommendation_cold_action">Precondition while plugged in and compare trips with similar speed and distance.</string>
+    <string name="stats_recommendation_charge_loss_title">Review charging loss</string>
+    <string name="stats_recommendation_charge_loss_description">Measured grid energy loss is consistently above the 12% threshold.</string>
+    <string name="stats_recommendation_charge_loss_action">Check low-current charging, cable temperature and wall connector configuration.</string>
+    <string name="stats_recommendation_standby_evidence">%1$.0f W · threshold %2$.0f W · %3$d windows / %4$.0f h · %5$d days · confidence %6$d%%</string>
+    <string name="stats_recommendation_efficiency_evidence">%1$.0f Wh/km · threshold %2$.0f Wh/km · %3$d trips / %4$.0f km · %5$d days · confidence %6$d%%</string>
+    <string name="stats_recommendation_charge_loss_evidence">%1$.1f%% · threshold %2$.0f%% · %3$d charges / %4$.0f kWh · %5$d days · confidence %6$d%%</string>
+    <string name="stats_recommendation_impact">Estimated monthly saving: %1$.1f–%2$.1f kWh</string>
+    <string name="stats_recommendation_action">Action: %1$s</string>
+    <string name="stats_recommendation_method" formatted="false">Method: observed excess normalized to 30 days; the range represents 50–100% of the measured opportunity.</string>
     <string name="stats_energy_used">Energy Used</string>
     <string name="stats_records">Records</string>
     <string name="stats_sync_complete">Sync Complete</string>
     <string name="stats_sync_percent">%1$d%%</string>
-    <string name="stats_syncing">Syncing...</string>
+    <string name="stats_syncing">Syncing…</string>
     <string name="stats_temperature_extremes">Temperature Extremes</string>
     <string name="stats_title">Stats</string>
     <string name="stats_total_charges">Total Charges</string>
@@ -905,7 +1078,7 @@
     <string name="weather_card_title">Weather</string>
     <string name="weather_distance">Distance</string>
     <string name="weather_end">End</string>
-    <string name="weather_loading">Loading weather...</string>
+    <string name="weather_loading">Loading weather…</string>
     <string name="weather_start">Start</string>
     <string name="weather_time">Time</string>
     <string name="weather_unavailable">Weather unavailable</string>

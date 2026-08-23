@@ -85,10 +85,8 @@ class ApiClient @Inject constructor(
             }
             .addInterceptor { chain ->
                 val response = chain.proceed(chain.request())
-                // Handle 401/403 - could trigger re-auth flow
-                if (response.code == 401 || response.code == 403) {
-                    // TODO: Implement token refresh or redirect to login
-                }
+                // This legacy self-hosted client does not own JourVolt sessions.
+                // Cloud refresh is handled by TeslamateApiFactory.
                 response
             }
             .addInterceptor(logging)

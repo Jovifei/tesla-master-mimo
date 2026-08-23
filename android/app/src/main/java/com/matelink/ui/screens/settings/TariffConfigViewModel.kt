@@ -3,6 +3,7 @@ package com.matelink.ui.screens.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.model.Currency
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +20,7 @@ data class TariffConfigUiState(
     val peakRanges: List<TimeRange> = listOf(TimeRange(10, 14), TimeRange(18, 20)),
     val flatRanges: List<TimeRange> = listOf(TimeRange(7, 9), TimeRange(15, 17), TimeRange(21, 22)),
     val valleyRanges: List<TimeRange> = listOf(TimeRange(23, 23), TimeRange(0, 6)),
+    val currencySymbol: String = Currency.CNY.symbol,
     val isSaving: Boolean = false
 )
 
@@ -40,7 +42,8 @@ class TariffConfigViewModel @Inject constructor(
                 valleyPrice = settings.tariffValleyPrice,
                 peakRanges = parseTimeRanges(settings.tariffPeakRanges),
                 flatRanges = parseTimeRanges(settings.tariffFlatRanges),
-                valleyRanges = parseTimeRanges(settings.tariffValleyRanges)
+                valleyRanges = parseTimeRanges(settings.tariffValleyRanges),
+                currencySymbol = Currency.findByCode(settings.currencyCode).symbol
             )
         }
     }

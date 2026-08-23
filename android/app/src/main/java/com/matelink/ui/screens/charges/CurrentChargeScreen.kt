@@ -396,9 +396,9 @@ private fun CurrentChargeHeaderCard(
     val instantVoltage = latestPoint?.chargerVoltage
     val instantCurrent = latestPoint?.chargerCurrent
 
-    val startLevel = detail.startBatteryLevel ?: 0
-    val currentLevel = detail.currentOrEndBatteryLevel ?: 0
-    val targetLevel = chargeLimitSoc ?: 100
+    val startLevel = detail.startBatteryLevel
+    val currentLevel = detail.currentOrEndBatteryLevel
+    val targetLevel = chargeLimitSoc
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -422,7 +422,7 @@ private fun CurrentChargeHeaderCard(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        text = "$startLevel%",
+                        text = startLevel?.let { "$it%" } ?: unknownLabel,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -447,7 +447,7 @@ private fun CurrentChargeHeaderCard(
                             tint = accentColor
                         )
                         Text(
-                            text = "$currentLevel%",
+                            text = currentLevel?.let { "$it%" } ?: unknownLabel,
                             style = MaterialTheme.typography.displaySmall,
                             fontWeight = FontWeight.ExtraBold,
                             color = accentColor
@@ -466,7 +466,7 @@ private fun CurrentChargeHeaderCard(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        text = "$targetLevel%",
+                        text = targetLevel?.let { "$it%" } ?: unknownLabel,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -479,14 +479,16 @@ private fun CurrentChargeHeaderCard(
                 }
             }
 
-            // SoC progress bar
-            LiveSocProgressBar(
-                currentLevel = currentLevel,
-                startLevel = startLevel,
-                targetLevel = targetLevel,
-                accentColor = accentColor,
-                modifier = Modifier.fillMaxWidth()
-            )
+            // Only draw progress when all three SOC observations are available.
+            if (currentLevel != null && startLevel != null && targetLevel != null) {
+                LiveSocProgressBar(
+                    currentLevel = currentLevel,
+                    startLevel = startLevel,
+                    targetLevel = targetLevel,
+                    accentColor = accentColor,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
             // Elapsed time + Estimated end
             HorizontalDivider(
@@ -576,10 +578,17 @@ private fun CurrentChargeHeaderCard(
                 // Energy added as "+NN% (MM,NN kWh)"
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(horizontalAlignment = Alignment.End) {
-                        val socAdded = currentLevel - startLevel
-                        val kwhAdded = detail.chargeEnergyAdded ?: 0.0
+                        val socAdded = if (currentLevel != null && startLevel != null) {
+                            "+%d%%".format(currentLevel - startLevel)
+                        } else {
+                            unknownLabel
+                        }
+                        val kwhAdded = detail.chargeEnergyAdded
+                            ?.takeIf { it.isFinite() && it >= 0.0 }
+                            ?.let { "%.2f kWh".format(it) }
+                            ?: unknownLabel
                         Text(
-                            text = "+%d%% (%.2f kWh)".format(socAdded, kwhAdded),
+                            text = "$socAdded ($kwhAdded)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = accentColor

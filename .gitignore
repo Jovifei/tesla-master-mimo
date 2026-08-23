@@ -3,6 +3,10 @@ android/.gradle/
 android/.kotlin/
 android/**/build/
 android/local.properties
+android/keystore.properties
+android/*.jks
+android/*.keystore
+android/keys/
 
 # IDE-local project metadata
 android/.idea/
@@ -10,3 +14,4 @@ android/.idea/
 # Local deployment secrets
 deploy/**/.env
 deploy/*.env
+deploy/jourvolt-dev-mock/backups/

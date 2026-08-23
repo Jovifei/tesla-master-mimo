@@ -1,0 +1,28 @@
+{
+	email {$JOURVOLT_ACME_EMAIL}
+}
+
+{$JOURVOLT_API_DOMAIN}, {$JOURVOLT_APP_DOMAIN} {
+	encode zstd gzip
+
+	handle /.well-known/assetlinks.json {
+		root * /srv
+		file_server
+	}
+
+	# The Android login screen links to these published documents before OAuth.
+	# Keep them static and independent from the API process.
+	handle /terms* {
+		root * /srv
+		file_server
+	}
+
+	handle /privacy* {
+		root * /srv
+		file_server
+	}
+
+	handle {
+		reverse_proxy jourvolt-api:8080
+	}
+}

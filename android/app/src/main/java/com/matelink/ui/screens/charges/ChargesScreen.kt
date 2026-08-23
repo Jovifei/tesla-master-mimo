@@ -613,27 +613,33 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                         TelemetryMetricSpec(
                             Icons.Default.BatteryChargingFull,
                             stringResource(R.string.total_energy),
-                            when {
-                                summary.totalEnergyAdded > 999 -> "%.2f MWh".format(summary.totalEnergyAdded / 1000)
-                                summary.totalEnergyAdded < 10 -> "%.1f kWh".format(summary.totalEnergyAdded)
-                                else -> "%.0f kWh".format(summary.totalEnergyAdded)
-                            },
+                            summary.totalEnergyAdded?.let { energy ->
+                                when {
+                                    energy > 999 -> "%.2f MWh".format(energy / 1000)
+                                    energy < 10 -> "%.1f kWh".format(energy)
+                                    else -> "%.0f kWh".format(energy)
+                                }
+                            } ?: stringResource(R.string.not_available),
                             palette.acColor
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Paid,
                             stringResource(R.string.total_cost),
-                            when {
-                                summary.totalCost < 100 -> "$currencySymbol%.2f".format(summary.totalCost)
-                                summary.totalCost < 1000 -> "$currencySymbol%.1f".format(summary.totalCost)
-                                else -> "$currencySymbol%.0f".format(summary.totalCost)
-                            },
+                            summary.totalCost?.let { cost ->
+                                when {
+                                    cost < 100 -> "$currencySymbol%.2f".format(cost)
+                                    cost < 1000 -> "$currencySymbol%.1f".format(cost)
+                                    else -> "$currencySymbol%.0f".format(cost)
+                                }
+                            } ?: stringResource(R.string.not_available),
                             Color(0xFF22C55E)
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Paid,
                             stringResource(R.string.avg_cost_per_session),
-                            "$currencySymbol%.2f".format(summary.avgCostPerCharge),
+                            summary.avgCostPerCharge?.let { cost ->
+                                "$currencySymbol%.2f".format(cost)
+                            } ?: stringResource(R.string.not_available),
                             palette.dcColor
                         )
                     ),
@@ -974,7 +980,9 @@ private fun ChargesChartPage(
                 BarChartData(
                     label = data.label,
                     value = data.totalEnergy,
-                    displayValue = "%.1f kWh".format(data.totalEnergy),
+                    displayValue = if (data.energyCoverage > 0) {
+                        "%.1f kWh".format(data.totalEnergy)
+                    } else stringResource(R.string.not_available),
                     segments = listOf(
                         BarSegment(data.energyAc, palette.acColor, "AC"),
                         BarSegment(data.energyDc, palette.dcColor, "DC")
@@ -985,7 +993,9 @@ private fun ChargesChartPage(
                 BarChartData(
                     label = data.label,
                     value = data.totalCost,
-                    displayValue = "$currencySymbol%.2f".format(data.totalCost),
+                    displayValue = if (data.costCoverage > 0) {
+                        "$currencySymbol%.2f".format(data.totalCost)
+                    } else stringResource(R.string.not_available),
                     segments = listOf(
                         BarSegment(data.costAc, palette.acColor, "AC"),
                         BarSegment(data.costDc, palette.dcColor, "DC")

@@ -2,6 +2,8 @@ package com.matelink.ui.screens.reports
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -25,6 +27,9 @@ import com.matelink.R
 import com.matelink.data.local.dao.MonthlyChargeAggregation
 import com.matelink.data.local.dao.MonthlyDriveAggregation
 import com.matelink.domain.model.CarStats
+import com.matelink.domain.analytics.HistoryFreshness
+import com.matelink.ui.components.CachedHistoryBanner
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,6 +86,13 @@ fun AnnualReportScreen(
                 onYearSelected = viewModel::selectYear
             )
 
+            if (uiState.historyFreshness == HistoryFreshness.STALE) {
+                CachedHistoryBanner(
+                    title = stringResource(R.string.metric_state_cached_title),
+                    body = stringResource(R.string.metric_state_cached_body)
+                )
+            }
+
             if (!hasData) {
                 ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -93,7 +105,12 @@ fun AnnualReportScreen(
                 val availableStats = requireNotNull(stats)
 
                 // T-101: Annual Summary
-                HonestAnnualSummarySection(availableStats, uiState.effectiveCost, uiState.standbyKwh)
+                HonestAnnualSummarySection(
+                    availableStats,
+                    uiState.effectiveCost,
+                    uiState.standbyKwh,
+                    uiState.currencySymbol
+                )
 
             // T-102: Monthly Trends
             MonthlyTrendsSection(
@@ -127,17 +144,16 @@ private fun YearSelector(
 ) {
     if (years.size <= 1) return
 
-    Row(
+    LazyRow(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = 4.dp)
     ) {
-        years.forEach { year ->
+        items(years) { year ->
             FilterChip(
                 selected = year == selectedYear,
                 onClick = { onYearSelected(year) },
-                label = { Text(year.toString()) },
-                modifier = Modifier.padding(horizontal = 4.dp)
+                label = { Text(year.toString()) }
             )
         }
     }
@@ -147,7 +163,12 @@ private fun YearSelector(
 
 /*
 @Composable
-private fun LegacyHonestAnnualSummarySection(stats: CarStats, effectiveCost: Double?, standbyKwh: Double?) {
+private fun LegacyHonestAnnualSummarySection(
+    stats: CarStats,
+    effectiveCost: Double?,
+    standbyKwh: Double?,
+    currencySymbol: String
+) {
     val qs = stats.quickStats
     val noData = stringResource(R.string.analysis_no_records)
     Text(
@@ -194,13 +215,13 @@ private fun LegacyHonestAnnualSummarySection(stats: CarStats, effectiveCost: Dou
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SummaryCard(
             title = stringResource(R.string.annual_report_effective_cost),
-            value = effectiveCost?.let { String.format("¥%.2f", it) } ?: noData,
+            value = effectiveCost?.let { formatMoney(currencySymbol, it, 2) } ?: noData,
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
             title = stringResource(R.string.stats_avg_cost_kwh),
             value = if (effectiveCost != null && qs.totalEnergyAddedKwh > 0) {
-                String.format("¥%.3f", effectiveCost / qs.totalEnergyAddedKwh)
+                formatMoney(currencySymbol, effectiveCost / qs.totalEnergyAddedKwh, 3)
             } else noData,
             modifier = Modifier.weight(1f)
         )
@@ -215,9 +236,20 @@ private fun LegacyHonestAnnualSummarySection(stats: CarStats, effectiveCost: Dou
 */
 
 @Composable
-private fun HonestAnnualSummarySection(stats: CarStats, effectiveCost: Double?, standbyKwh: Double?) {
+private fun HonestAnnualSummarySection(
+    stats: CarStats,
+    effectiveCost: Double?,
+    standbyKwh: Double?,
+    currencySymbol: String
+) {
     val qs = stats.quickStats
     val noData = stringResource(R.string.analysis_no_records)
+    val driveDistanceSamples = stats.analysisCoverage?.driveDistanceSampleCount ?: qs.totalDrives
+    val driveEnergySamples = stats.analysisCoverage?.driveEnergySampleCount ?: qs.totalDrives
+    val chargeEnergySamples = stats.analysisCoverage?.chargeEnergySampleCount ?: qs.totalCharges
+    val hasDistance = qs.totalDrives > 0 && driveDistanceSamples > 0
+    val hasDrivingEnergy = qs.totalDrives > 0 && driveEnergySamples > 0
+    val hasChargeEnergy = qs.totalCharges > 0 && chargeEnergySamples > 0
     Text(
         text = stringResource(R.string.annual_report_summary),
         style = MaterialTheme.typography.titleMedium,
@@ -226,7 +258,7 @@ private fun HonestAnnualSummarySection(stats: CarStats, effectiveCost: Double?, 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SummaryCard(
             title = stringResource(R.string.total_distance),
-            value = if (qs.totalDrives > 0) String.format("%,.0f km", qs.totalDistanceKm) else noData,
+            value = if (hasDistance) String.format(Locale.getDefault(), "%,.0f km", qs.totalDistanceKm) else noData,
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
@@ -238,12 +270,12 @@ private fun HonestAnnualSummarySection(stats: CarStats, effectiveCost: Double?, 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SummaryCard(
             title = stringResource(R.string.stats_energy_used),
-            value = if (qs.totalDrives > 0) String.format("%,.1f kWh", qs.totalEnergyConsumedKwh) else noData,
+            value = if (hasDrivingEnergy) String.format(Locale.getDefault(), "%,.1f kWh", qs.totalEnergyConsumedKwh) else noData,
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
             title = stringResource(R.string.stats_avg_efficiency),
-            value = if (qs.totalDrives > 0 && qs.avgEfficiencyWhKm > 0) String.format("%.0f Wh/km", qs.avgEfficiencyWhKm) else noData,
+            value = if (hasDistance && hasDrivingEnergy && qs.avgEfficiencyWhKm > 0) String.format(Locale.getDefault(), "%.0f Wh/km", qs.avgEfficiencyWhKm) else noData,
             modifier = Modifier.weight(1f)
         )
     }
@@ -255,27 +287,27 @@ private fun HonestAnnualSummarySection(stats: CarStats, effectiveCost: Double?, 
         )
         SummaryCard(
             title = stringResource(R.string.energy_added),
-            value = if (qs.totalCharges > 0) String.format("%,.1f kWh", qs.totalEnergyAddedKwh) else noData,
+            value = if (hasChargeEnergy) String.format(Locale.getDefault(), "%,.1f kWh", qs.totalEnergyAddedKwh) else noData,
             modifier = Modifier.weight(1f)
         )
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SummaryCard(
             title = stringResource(R.string.annual_report_effective_cost),
-            value = effectiveCost?.let { String.format("\u00A5%.2f", it) } ?: noData,
+            value = effectiveCost?.let { formatMoney(currencySymbol, it, 2) } ?: noData,
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
             title = stringResource(R.string.stats_avg_cost_kwh),
-            value = if (effectiveCost != null && qs.totalEnergyAddedKwh > 0) {
-                String.format("\u00A5%.3f", effectiveCost / qs.totalEnergyAddedKwh)
+            value = if (effectiveCost != null && hasChargeEnergy && qs.totalEnergyAddedKwh > 0) {
+                formatMoney(currencySymbol, effectiveCost / qs.totalEnergyAddedKwh, 3)
             } else noData,
             modifier = Modifier.weight(1f)
         )
     }
     SummaryCard(
         title = stringResource(R.string.annual_report_standby_energy),
-        value = standbyKwh?.let { String.format("%.2f kWh", it) }
+        value = standbyKwh?.let { String.format(Locale.getDefault(), "%.2f kWh", it) }
             ?: stringResource(R.string.analysis_coverage_insufficient),
         modifier = Modifier.fillMaxWidth()
     )
@@ -283,7 +315,12 @@ private fun HonestAnnualSummarySection(stats: CarStats, effectiveCost: Double?, 
 
 /* Legacy summary implementation retained only as historical reference.
 @Composable
-private fun AnnualSummarySection(stats: CarStats, effectiveCost: Double?, standbyKwh: Double?) {
+private fun AnnualSummarySection(
+    stats: CarStats,
+    effectiveCost: Double?,
+    standbyKwh: Double?,
+    currencySymbol: String
+) {
     val qs = stats.quickStats
 
     Text(
@@ -348,12 +385,13 @@ private fun AnnualSummarySection(stats: CarStats, effectiveCost: Double?, standb
         ) {
             SummaryCard(
                 title = stringResource(R.string.total_cost),
-                value = String.format("€%.2f", qs.totalCost),
+                value = formatMoney(currencySymbol, qs.totalCost, 2),
                 modifier = Modifier.weight(1f)
             )
             SummaryCard(
                 title = stringResource(R.string.stats_avg_cost_kwh),
-                value = if (qs.avgCostPerKwh != null) String.format("€%.3f", qs.avgCostPerKwh) else stringResource(R.string.annual_report_na),
+                value = qs.avgCostPerKwh?.let { formatMoney(currencySymbol, it, 3) }
+                    ?: stringResource(R.string.annual_report_na),
                 modifier = Modifier.weight(1f)
             )
         }
@@ -367,7 +405,7 @@ private fun AnnualSummarySection(stats: CarStats, effectiveCost: Double?, standb
             effectiveCost?.let {
                 SummaryCard(
                     title = stringResource(R.string.annual_report_effective_cost),
-                    value = String.format("¥%.2f", it),
+                    value = formatMoney(currencySymbol, it, 2),
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -397,7 +435,11 @@ private fun AnnualSummarySection(stats: CarStats, effectiveCost: Double?, standb
             RecordRow(stringResource(R.string.record_fastest_drive), "${it.speedMax} km/h", it.startDate)
         }
         qs.mostEfficientDrive?.let {
-            RecordRow(stringResource(R.string.record_most_efficient), String.format("%.0f Wh/km", it.efficiency), it.startDate)
+            RecordRow(
+                stringResource(R.string.record_most_efficient),
+                it.efficiency?.let { efficiency -> String.format("%.0f Wh/km", efficiency) } ?: "N/A",
+                it.startDate
+            )
         }
     }
 }
@@ -467,7 +509,7 @@ private fun MonthlyTrendsSection(
         BarChart(
             data = monthlyDrives.map { it.totalDistance.toFloat() },
             labels = monthlyDrives.map { monthLabel(it.month) },
-            color = Color(0xFF1E88E5),
+            color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.fillMaxWidth().height(160.dp)
         )
 
@@ -478,7 +520,7 @@ private fun MonthlyTrendsSection(
         LineChart(
             data = monthlyDrives.map { it.driveCount.toFloat() },
             labels = monthlyDrives.map { monthLabel(it.month) },
-            color = Color(0xFF43A047),
+            color = MaterialTheme.colorScheme.tertiary,
             modifier = Modifier.fillMaxWidth().height(120.dp)
         )
     }
@@ -490,7 +532,7 @@ private fun MonthlyTrendsSection(
         BarChart(
             data = monthlyCharges.map { it.totalEnergy.toFloat() },
             labels = monthlyCharges.map { monthLabel(it.month) },
-            color = Color(0xFFFB8C00),
+            color = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.fillMaxWidth().height(160.dp)
         )
     }
@@ -606,14 +648,14 @@ private fun DrivingHabitsSection(stats: CarStats) {
         Column(modifier = Modifier.padding(16.dp)) {
             // Average drive duration
             qs.avgDriveMinutes?.let { mins ->
-                HabitRow(stringResource(R.string.annual_report_avg_drive_duration), String.format("%.0f min", mins))
+                HabitRow(stringResource(R.string.annual_report_avg_drive_duration), String.format(Locale.getDefault(), "%.0f min", mins))
             }
 
             // Driving days
             qs.totalDrivingDays?.let { days ->
                 HabitRow(stringResource(R.string.annual_report_unique_driving_days), "$days days")
                 if (qs.totalDrives > 0 && days > 0) {
-                    HabitRow(stringResource(R.string.annual_report_drives_per_day), String.format("%.1f", qs.totalDrives.toFloat() / days))
+                    HabitRow(stringResource(R.string.annual_report_drives_per_day), String.format(Locale.getDefault(), "%.1f", qs.totalDrives.toFloat() / days))
                 }
             }
 
@@ -640,7 +682,7 @@ private fun DrivingHabitsSection(stats: CarStats) {
 
             // Most distance day
             qs.mostDistanceDay?.let {
-                HabitRow(stringResource(R.string.annual_report_most_distance_day), String.format("%.1f km (%s)", it.totalDistance, it.day))
+                HabitRow(stringResource(R.string.annual_report_most_distance_day), String.format(Locale.getDefault(), "%.1f km (%s)", it.totalDistance, it.day))
             }
         }
     }
@@ -657,4 +699,9 @@ private fun HabitRow(label: String, value: String) {
         Text(label, style = MaterialTheme.typography.bodyMedium)
         Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
     }
+}
+
+private fun formatMoney(symbol: String, amount: Double, decimals: Int): String {
+    val pattern = "%s%." + decimals + "f"
+    return String.format(java.util.Locale.getDefault(), pattern, symbol, amount)
 }

@@ -1,0 +1,20 @@
+[Unit]
+Description=JourVolt encrypted PostgreSQL daily backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=jourvolt
+SupplementaryGroups=docker
+WorkingDirectory=/srv/jourvolt/app_mimo/deploy/jourvolt-dev-mock
+EnvironmentFile=/etc/jourvolt/backup.env
+ExecStart=/bin/bash /srv/jourvolt/app_mimo/deploy/jourvolt-dev-mock/backup-db.sh --prune --require-upload
+TimeoutStartSec=15min
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/srv/jourvolt-backups
+UMask=0077

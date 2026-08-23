@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import com.matelink.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -30,7 +31,9 @@ class SettingsRepository @Inject constructor(
     val currentCarId: Flow<Int> = context.dataStore.data.map { it[Keys.CURRENT_CAR_ID] ?: 1 }
     val theme: Flow<String> = context.dataStore.data.map { it[Keys.THEME] ?: "system" }
     val units: Flow<String> = context.dataStore.data.map { it[Keys.UNITS] ?: "km" }
-    val mockMode: Flow<Boolean> = context.dataStore.data.map { it[Keys.MOCK_MODE] ?: false }
+    val mockMode: Flow<Boolean> = context.dataStore.data.map {
+        BuildConfig.JOURVOLT_MOCK_LOGIN && (it[Keys.MOCK_MODE] ?: false)
+    }
 
     suspend fun setServer(url: String, token: String) {
         context.dataStore.edit {
@@ -52,6 +55,7 @@ class SettingsRepository @Inject constructor(
     }
 
     suspend fun setMockMode(enabled: Boolean) {
+        if (!BuildConfig.JOURVOLT_MOCK_LOGIN) return
         context.dataStore.edit { it[Keys.MOCK_MODE] = enabled }
     }
 }

@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.matelink.R
 import com.matelink.data.local.dao.MonthlyChargeAggregation
 import com.matelink.data.local.dao.MonthlyDriveAggregation
+import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.model.Currency
 import com.matelink.data.repository.StatsRepository
 import com.matelink.domain.model.CarStats
 import com.matelink.domain.model.YearFilter
@@ -15,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -26,6 +29,7 @@ data class AnnualReportPDFUiState(
     val carStats: CarStats? = null,
     val monthlyDrives: List<MonthlyDriveAggregation> = emptyList(),
     val monthlyCharges: List<MonthlyChargeAggregation> = emptyList(),
+    val currencySymbol: String = Currency.CNY.symbol,
     val availableYears: List<Int> = emptyList(),
     val pdfPath: String? = null,
     val error: String? = null
@@ -34,7 +38,8 @@ data class AnnualReportPDFUiState(
 @HiltViewModel
 class AnnualReportPDFViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val statsRepository: StatsRepository
+    private val statsRepository: StatsRepository,
+    private val settingsDataStore: SettingsDataStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AnnualReportPDFUiState())
@@ -63,6 +68,9 @@ class AnnualReportPDFViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
                 val year = _uiState.value.year
+                val currencySymbol = Currency.findByCode(
+                    settingsDataStore.settings.first().currencyCode
+                ).symbol
                 val stats = statsRepository.getStats(carId, YearFilter.Year(year))
                 val monthlyDrives = statsRepository.getMonthlyDriveAggregation(carId, year)
                 val monthlyCharges = statsRepository.getMonthlyChargeAggregation(carId, year)
@@ -70,7 +78,8 @@ class AnnualReportPDFViewModel @Inject constructor(
                     isLoading = false,
                     carStats = stats,
                     monthlyDrives = monthlyDrives,
-                    monthlyCharges = monthlyCharges
+                    monthlyCharges = monthlyCharges,
+                    currencySymbol = currencySymbol
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -102,7 +111,8 @@ class AnnualReportPDFViewModel @Inject constructor(
                 val path = withContext(Dispatchers.IO) {
                     generatePdf(
                         context, stats, _uiState.value.year,
-                        _uiState.value.monthlyDrives, _uiState.value.monthlyCharges
+                        _uiState.value.monthlyDrives, _uiState.value.monthlyCharges,
+                        _uiState.value.currencySymbol
                     )
                 }
                 _uiState.value = _uiState.value.copy(isGeneratingPdf = false, pdfPath = path)

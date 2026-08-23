@@ -280,9 +280,9 @@ private fun ChargeDetailContent(
                 title = energyLabel,
                 icon = Icons.Default.EnergySavingsLeaf,
                 stats = listOf(
-                    StatItem(addedLabel, "%.2f kWh".format(s.energyAdded)),
-                    StatItem(usedLabel, "%.2f kWh".format(s.energyUsed)),
-                    StatItem(efficiencyLabel, "%.1f%%".format(s.efficiency))
+                    StatItem(addedLabel, s.energyAdded?.let { "%.2f kWh".format(it) } ?: unavailableLabel),
+                    StatItem(usedLabel, s.energyUsed?.let { "%.2f kWh".format(it) } ?: unavailableLabel),
+                    StatItem(efficiencyLabel, s.efficiency?.let { "%.1f%%".format(it) } ?: unavailableLabel)
                 )
             )
             // Battery section
@@ -290,10 +290,10 @@ private fun ChargeDetailContent(
                 title = batteryLabel,
                 icon = Icons.Default.BatteryChargingFull,
                 stats = listOf(
-                    StatItem(startLabel, "${s.batteryStart}%"),
-                    StatItem(endLabel, "${s.batteryEnd}%"),
-                    StatItem(addedLabel, "+${s.batteryAdded}%"),
-                    StatItem(durationLabel, formatDurationCompact(s.durationMin))
+                    StatItem(startLabel, s.batteryStart?.let { "$it%" } ?: unavailableLabel),
+                    StatItem(endLabel, s.batteryEnd?.let { "$it%" } ?: unavailableLabel),
+                    StatItem(addedLabel, s.batteryAdded?.let { "%+d%%".format(it) } ?: unavailableLabel),
+                    StatItem(durationLabel, s.durationMin?.let(::formatDurationCompact) ?: unavailableLabel)
                 )
             )
             if (hasChartData && chargePoints.any { it.batteryLevel != null }) {
@@ -308,14 +308,14 @@ private fun ChargeDetailContent(
             }
 
             // Power section
-            if (s.powerMax > 0) {
+            if (s.powerMax != null) {
                 StatsSectionCard(
                     title = powerLabel,
                     icon = Icons.Default.Bolt,
                     stats = listOf(
-                        StatItem(maximumLabel, "${s.powerMax} kW"),
-                        StatItem(minimumLabel, "${s.powerMin} kW"),
-                        StatItem(averageLabel, "%.1f kW".format(s.powerAvg))
+                        StatItem(maximumLabel, s.powerMax?.let { "$it kW" } ?: unavailableLabel),
+                        StatItem(minimumLabel, s.powerMin?.let { "$it kW" } ?: unavailableLabel),
+                        StatItem(averageLabel, s.powerAvg?.let { "%.1f kW".format(it) } ?: unavailableLabel)
                     )
                 )
                 if (hasChartData && chargePoints.any { (it.chargerPower ?: 0) > 0 }) {
@@ -332,17 +332,19 @@ private fun ChargeDetailContent(
 
             // Voltage & Current section
             // Shown only for AC charges
-            if (!isDcCharge) {
+            val hasElectricalData = s.voltageMax != null || s.voltageMin != null || s.voltageAvg != null ||
+                s.currentMax != null || s.currentMin != null || s.currentAvg != null
+            if (!isDcCharge && hasElectricalData) {
                 StatsSectionCard(
                     title = chargerLabel,
                     icon = Icons.Default.ElectricalServices,
                     stats = listOf(
-                        StatItem(voltageMaxLabel, "${s.voltageMax} V"),
-                        StatItem(voltageMinLabel, "${s.voltageMin} V"),
-                        StatItem(voltageAvgLabel, "%.0f V".format(s.voltageAvg)),
-                        StatItem(currentMaxLabel, "${s.currentMax} A"),
-                        StatItem(currentMinLabel, "${s.currentMin} A"),
-                        StatItem(currentAvgLabel, "%.1f A".format(s.currentAvg))
+                        StatItem(voltageMaxLabel, s.voltageMax?.let { "$it V" } ?: unavailableLabel),
+                        StatItem(voltageMinLabel, s.voltageMin?.let { "$it V" } ?: unavailableLabel),
+                        StatItem(voltageAvgLabel, s.voltageAvg?.let { "%.0f V".format(it) } ?: unavailableLabel),
+                        StatItem(currentMaxLabel, s.currentMax?.let { "$it A" } ?: unavailableLabel),
+                        StatItem(currentMinLabel, s.currentMin?.let { "$it A" } ?: unavailableLabel),
+                        StatItem(currentAvgLabel, s.currentAvg?.let { "%.1f A".format(it) } ?: unavailableLabel)
                     )
                 )
                 if (hasChartData && chargePoints.any { (it.chargerVoltage ?: 0) > 0 }) {
@@ -368,14 +370,14 @@ private fun ChargeDetailContent(
             }
 
             // Temperature section
-            if (s.tempMax > -100) {
+            if (s.tempMax != null) {
                 StatsSectionCard(
                     title = temperatureLabel,
                     icon = Icons.Default.DeviceThermostat,
                     stats = listOf(
-                        StatItem(maximumLabel, UnitFormatter.formatTemperature(s.tempMax, units)),
-                        StatItem(minimumLabel, UnitFormatter.formatTemperature(s.tempMin, units)),
-                        StatItem(averageLabel, UnitFormatter.formatTemperature(s.tempAvg, units))
+                        StatItem(maximumLabel, s.tempMax?.let { UnitFormatter.formatTemperature(it, units) } ?: unavailableLabel),
+                        StatItem(minimumLabel, s.tempMin?.let { UnitFormatter.formatTemperature(it, units) } ?: unavailableLabel),
+                        StatItem(averageLabel, s.tempAvg?.let { UnitFormatter.formatTemperature(it, units) } ?: unavailableLabel)
                     )
                 )
                 if (hasChartData && chargePoints.any { it.outsideTemp != null }) {

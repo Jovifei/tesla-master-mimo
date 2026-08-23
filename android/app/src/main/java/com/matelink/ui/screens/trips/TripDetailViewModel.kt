@@ -71,7 +71,7 @@ data class TripDetailUiState(
     val isMapLoading: Boolean = true,
     val countries: List<TripCountry> = emptyList(),
     val units: Units? = null,
-    val currencySymbol: String = "€",
+    val currencySymbol: String = Currency.CNY.symbol,
 
     // Edit / merge / delete (PR 2)
     val savedTripId: Long? = null,

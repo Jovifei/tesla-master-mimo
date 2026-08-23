@@ -1,0 +1,3 @@
+<resources>
+    <string name="debug_mock_login">Local mock login (test package only)</string>
+</resources>

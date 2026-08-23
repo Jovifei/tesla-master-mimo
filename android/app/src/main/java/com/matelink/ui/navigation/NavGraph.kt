@@ -21,9 +21,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.matelink.R
+import com.matelink.data.local.ConnectionMode
+import com.matelink.ui.screens.auth.TeslaAccountSection
+import com.matelink.ui.screens.auth.TeslaLoginScreen
+import com.matelink.ui.screens.auth.TeslaLoginViewModel
 import com.matelink.ui.screens.about.AboutScreen
 import com.matelink.ui.screens.battery.BatteryScreen
 import com.matelink.ui.screens.charges.ChargeDetailScreen
@@ -72,6 +77,9 @@ import kotlinx.serialization.Serializable
  * - `year = -1` means [YearFilter.AllTime]
  */
 sealed interface Screen {
+    @Serializable
+    data object TeslaLogin : Screen
+
     @Serializable
     data object Settings : Screen
 
@@ -205,6 +213,16 @@ private fun safeDisplayCountry(countryCode: String): String {
     }
 }
 
+internal fun shouldRedirectToTeslaLogin(
+    startDestination: Screen?,
+    connectionMode: ConnectionMode?,
+    isAuthenticated: Boolean,
+    currentRoute: String
+): Boolean = startDestination == Screen.Dashboard &&
+    connectionMode == ConnectionMode.TESLA_CLOUD &&
+    !isAuthenticated &&
+    !currentRoute.contains("TeslaLogin")
+
 @Composable
 fun NavGraph(
     intent: Intent? = null,
@@ -212,8 +230,13 @@ fun NavGraph(
 ) {
     val navController = rememberNavController()
     val startDestination by startViewModel.startDestination.collectAsState()
+    val connectionMode by startViewModel.connectionMode.collectAsState()
     val currentCarId by startViewModel.currentCarId.collectAsState()
     val notificationPermissionAsked by startViewModel.notificationPermissionAsked.collectAsState()
+    val teslaLoginViewModel: TeslaLoginViewModel = hiltViewModel()
+    val isTeslaSessionAuthenticated by teslaLoginViewModel.isAuthenticated.collectAsState()
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStackEntry?.destination?.route.orEmpty()
     val coroutineScope = rememberCoroutineScope()
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -248,6 +271,7 @@ fun NavGraph(
 
     // Handle deep-link from notification or adb intent
     LaunchedEffect(intent) {
+        teslaLoginViewModel.handleAuthorizationCallback(intent)
         intent?.let {
             val navigateTo = it.getStringExtra("EXTRA_NAVIGATE_TO")
             val carId = it.getIntExtra("EXTRA_CAR_ID", -1)
@@ -274,14 +298,52 @@ fun NavGraph(
         }
     }
 
+    LaunchedEffect(startDestination, connectionMode, isTeslaSessionAuthenticated, currentRoute) {
+        if (shouldRedirectToTeslaLogin(
+                startDestination = startDestination,
+                connectionMode = connectionMode,
+                isAuthenticated = isTeslaSessionAuthenticated,
+                currentRoute = currentRoute
+            )
+        ) {
+            navController.navigate(Screen.TeslaLogin) {
+                popUpTo(Screen.Dashboard) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+
     Scaffold(
-        bottomBar = { MateLinkBottomBar(navController, currentCarId) }
+        bottomBar = {
+            if (!currentRoute.contains("TeslaLogin")) {
+                MateLinkBottomBar(navController, currentCarId)
+            }
+        }
     ) { innerPadding ->
         NavHost(
             navController = navController,
             startDestination = startDestination ?: Screen.Dashboard,
             modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)
         ) {
+        composable<Screen.TeslaLogin> {
+            TeslaLoginScreen(
+                viewModel = teslaLoginViewModel,
+                onLoginSuccess = {
+                    navController.navigate(Screen.Dashboard) {
+                        popUpTo<Screen.TeslaLogin> { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
+                onOpenSelfHosted = {
+                    teslaLoginViewModel.openSelfHosted {
+                        navController.navigate(Screen.Settings) {
+                            popUpTo<Screen.TeslaLogin> { inclusive = true }
+                        }
+                    }
+                }
+            )
+        }
+
         composable<Screen.Settings> {
             SettingsScreen(
                 onNavigateToDashboard = {
@@ -299,6 +361,26 @@ fun NavGraph(
                 },
                 onNavigateToAmapSetup = {
                     navController.navigate(Screen.AmapSetup)
+                },
+                onNavigateToTeslaLogin = {
+                    teslaLoginViewModel.reauthorize {
+                        navController.navigate(Screen.TeslaLogin) {
+                            popUpTo(Screen.Dashboard) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                },
+                onLogout = {
+                    navController.navigate(Screen.TeslaLogin) {
+                        popUpTo(Screen.Dashboard) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
+                onAccountDeleted = {
+                    navController.navigate(Screen.TeslaLogin) {
+                        popUpTo(Screen.Dashboard) { inclusive = true }
+                        launchSingleTop = true
+                    }
                 }
             )
         }
@@ -484,6 +566,9 @@ fun NavGraph(
                 },
                 onNavigateToDayDetail = { targetDay ->
                     navController.navigate(Screen.Mileage(route.carId, route.exteriorColor, targetDay))
+                },
+                onNavigateToMileage = {
+                    navController.navigate(Screen.Mileage(route.carId, route.exteriorColor))
                 },
                 onNavigateToCountriesVisited = { year ->
                     navController.navigate(Screen.CountriesVisited(route.carId, route.exteriorColor, year ?: -1))

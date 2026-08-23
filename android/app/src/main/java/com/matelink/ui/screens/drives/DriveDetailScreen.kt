@@ -230,9 +230,9 @@ private fun DriveDetailContent(
                 title = stringResource(R.string.speed),
                 icon = Icons.Default.Speed,
                 stats = listOf(
-                    StatItem(stringResource(R.string.maximum), UnitFormatter.formatSpeed(s.speedMax.toDouble(), units)),
-                    StatItem(stringResource(R.string.average), UnitFormatter.formatSpeed(s.speedAvg, units)),
-                    StatItem(stringResource(R.string.avg_distance), UnitFormatter.formatSpeed(s.avgSpeedFromDistance, units))
+                    StatItem(stringResource(R.string.maximum), s.speedMax?.let { UnitFormatter.formatSpeed(it.toDouble(), units) } ?: notAvailableLabel),
+                    StatItem(stringResource(R.string.average), s.speedAvg?.let { UnitFormatter.formatSpeed(it, units) } ?: notAvailableLabel),
+                    StatItem(stringResource(R.string.avg_distance), s.avgSpeedFromDistance?.let { UnitFormatter.formatSpeed(it, units) } ?: notAvailableLabel)
                 )
             )
             if (hasChartData) {
@@ -251,8 +251,8 @@ private fun DriveDetailContent(
                 title = stringResource(R.string.trip),
                 icon = CustomIcons.SteeringWheel,
                 stats = listOf(
-                    StatItem(stringResource(R.string.distance), UnitFormatter.formatDistance(s.distance, units)),
-                    StatItem(stringResource(R.string.duration), formatDurationCompact(s.durationMin)),
+                    StatItem(stringResource(R.string.distance), s.distance?.let { UnitFormatter.formatDistance(it, units) } ?: notAvailableLabel),
+                    StatItem(stringResource(R.string.duration), s.durationMin?.let(::formatDurationCompact) ?: notAvailableLabel),
                     StatItem(
                         stringResource(R.string.efficiency),
                         s.energy.efficiencyWhKm?.let { UnitFormatter.formatEfficiency(it, units) }
@@ -266,9 +266,9 @@ private fun DriveDetailContent(
                 title = stringResource(R.string.battery),
                 icon = Icons.Default.BatteryChargingFull,
                 stats = listOf(
-                    StatItem(stringResource(R.string.start), "${s.batteryStart}%"),
-                    StatItem(stringResource(R.string.end), "${s.batteryEnd}%"),
-                    StatItem(stringResource(R.string.used), "${s.batteryUsed}%"),
+                    StatItem(stringResource(R.string.start), s.batteryStart?.let { "$it%" } ?: notAvailableLabel),
+                    StatItem(stringResource(R.string.end), s.batteryEnd?.let { "$it%" } ?: notAvailableLabel),
+                    StatItem(stringResource(R.string.used), s.batteryUsed?.let { "$it%" } ?: notAvailableLabel),
                     StatItem(
                         stringResource(R.string.energy),
                         s.energy.energyKwh?.let { "%.2f kWh".format(it) } ?: notAvailableLabel
@@ -305,9 +305,9 @@ private fun DriveDetailContent(
                 title = stringResource(R.string.power),
                 icon = Icons.Default.Bolt,
                 stats = listOf(
-                    StatItem(stringResource(R.string.max_accel), "${s.powerMax} kW"),
-                    StatItem(stringResource(R.string.min_regen), "${s.powerMin} kW"),
-                    StatItem(stringResource(R.string.average), "%.1f kW".format(s.powerAvg))
+                    StatItem(stringResource(R.string.max_accel), s.powerMax?.let { "$it kW" } ?: notAvailableLabel),
+                    StatItem(stringResource(R.string.min_regen), s.powerMin?.let { "$it kW" } ?: notAvailableLabel),
+                    StatItem(stringResource(R.string.average), s.powerAvg?.let { "%.1f kW".format(it) } ?: notAvailableLabel)
                 )
             )
             if (hasChartData) {
@@ -321,15 +321,15 @@ private fun DriveDetailContent(
             }
 
             // Elevation section
-            if (s.elevationMax > 0 || s.elevationMin > 0) {
+            if (s.elevationMax != null || s.elevationMin != null || s.elevationGain != null || s.elevationLoss != null) {
                 StatsSectionCard(
                     title = stringResource(R.string.elevation),
                     icon = Icons.Default.Landscape,
                     stats = listOf(
-                        StatItem(stringResource(R.string.maximum), "%,d m".format(s.elevationMax)),
-                        StatItem(stringResource(R.string.minimum), "%,d m".format(s.elevationMin)),
-                        StatItem(stringResource(R.string.gain), "+%,d m".format(s.elevationGain)),
-                        StatItem(stringResource(R.string.loss), "-%,d m".format(s.elevationLoss))
+                        StatItem(stringResource(R.string.maximum), UnitFormatter.formatElevation(s.elevationMax, units)),
+                        StatItem(stringResource(R.string.minimum), UnitFormatter.formatElevation(s.elevationMin, units)),
+                        StatItem(stringResource(R.string.gain), s.elevationGain?.let { "+${UnitFormatter.formatElevation(it, units)}" } ?: notAvailableLabel),
+                        StatItem(stringResource(R.string.loss), s.elevationLoss?.let { "-${UnitFormatter.formatElevation(it, units)}" } ?: notAvailableLabel)
                     )
                 )
                 if (hasChartData) {

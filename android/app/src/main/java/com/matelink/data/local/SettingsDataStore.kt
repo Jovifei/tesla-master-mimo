@@ -52,7 +52,7 @@ data class AppSettings(
     val httpBasicAuthUsername: String = "",
     val httpBasicAuthPassword: String = "",
     val acceptInvalidCerts: Boolean = false,
-    val currencyCode: String = "EUR",
+    val currencyCode: String = "CNY",
     val showShortDrivesCharges: Boolean = false,
     val teslamateBaseUrl: String = "",
     val lastSelectedCarId: Int? = null,
@@ -87,6 +87,7 @@ class SettingsDataStore @Inject constructor(
     private val carImageOverridesKey = stringPreferencesKey("car_image_overrides")
     private val chargePriceOverridesKey = stringPreferencesKey("charge_price_overrides")
     private val chargeTotalOverridesKey = stringPreferencesKey("charge_total_overrides")
+    private val chargeTotalOverridesMigratedKey = booleanPreferencesKey("charge_total_overrides_migrated")
     private val languageCodeKey = stringPreferencesKey("language_code")
     private val notificationPermissionAskedKey = booleanPreferencesKey("notification_permission_asked")
     private val tariffEnabledKey = booleanPreferencesKey("tariff_enabled")
@@ -113,7 +114,7 @@ class SettingsDataStore @Inject constructor(
             httpBasicAuthUsername = secureStore.getHttpBasicUsername(),
             httpBasicAuthPassword = secureStore.getHttpBasicPassword(),
             acceptInvalidCerts = preferences[acceptInvalidCertsKey] ?: false,
-            currencyCode = preferences[currencyCodeKey] ?: "EUR",
+            currencyCode = preferences[currencyCodeKey] ?: legacyDefaultCurrency(preferences),
             showShortDrivesCharges = preferences[showShortDrivesChargesKey] ?: false,
             teslamateBaseUrl = preferences[teslamateBaseUrlKey] ?: "",
             lastSelectedCarId = preferences[lastSelectedCarIdKey],
@@ -151,6 +152,11 @@ class SettingsDataStore @Inject constructor(
     /** Manual total amount (¥) overrides, keyed by car ID and charge ID. */
     val chargeTotalOverrides: Flow<Map<String, Double>> = context.dataStore.data.map { preferences ->
         parseChargePriceOverrides(preferences[chargeTotalOverridesKey] ?: "{}")
+    }
+
+    /** Whether the legacy JSON total overrides have been copied into Room. */
+    val chargeTotalOverridesMigrated: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[chargeTotalOverridesMigratedKey] ?: false
     }
 
     private fun parseOverridesJson(jsonString: String): Map<Int, CarImageOverride> {
@@ -198,6 +204,13 @@ class SettingsDataStore @Inject constructor(
                 }
             }
         }.getOrDefault(emptyMap())
+    }
+
+    private fun legacyDefaultCurrency(preferences: Preferences): String {
+        return defaultCurrencyCode(
+            serverUrl = preferences[serverUrlKey],
+            apiToken = secureStore.getApiToken()
+        )
     }
 
     private fun chargePriceOverridesToJson(overrides: Map<String, Double>): String =
@@ -326,6 +339,14 @@ class SettingsDataStore @Inject constructor(
         }
     }
 
+    /** Mark the legacy total override JSON as migrated and remove the old copy. */
+    suspend fun markChargeTotalOverridesMigrated() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(chargeTotalOverridesKey)
+            preferences[chargeTotalOverridesMigratedKey] = true
+        }
+    }
+
     suspend fun saveNotificationPermissionAsked() {
         context.dataStore.edit { preferences ->
             preferences[notificationPermissionAskedKey] = true
@@ -358,3 +379,6 @@ class SettingsDataStore @Inject constructor(
         }
     }
 }
+
+internal fun defaultCurrencyCode(serverUrl: String?, apiToken: String): String =
+    if (!serverUrl.isNullOrBlank() || apiToken.isNotBlank()) "EUR" else "CNY"

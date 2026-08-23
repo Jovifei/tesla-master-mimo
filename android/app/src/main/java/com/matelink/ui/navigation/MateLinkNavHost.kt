@@ -48,11 +48,19 @@ private fun topLevelRouteName(dest: TopLevelDestination): String = when (dest) {
 
 private fun currentTopLevelDestination(route: String?): TopLevelDestination? {
     if (route == null) return null
+    val normalizedRoute = route.replace('$', '.')
+    val routeLeaf = normalizedRoute
+        .substringBefore('/')
+        .substringBefore('?')
+        .substringAfterLast('.')
     return TopLevelDestination.entries.firstOrNull { dest ->
         val name = topLevelRouteName(dest)
         // Type-safe routes use the FQCN as the base route; data-class destinations
-        // may append path or query placeholders, so match both suffix styles.
-        route == name || route.startsWith("$name/") || route.startsWith("$name?")
+        // may append path or query placeholders. Kotlin/JVM nested routes may use
+        // '$' in the runtime string, so normalize that form before matching. R8
+        // can change the route prefix, so the stable serial-name leaf is a fallback.
+        normalizedRoute == name || normalizedRoute.startsWith("$name/") ||
+            normalizedRoute.startsWith("$name?") || routeLeaf == dest.name
     }
 }
 

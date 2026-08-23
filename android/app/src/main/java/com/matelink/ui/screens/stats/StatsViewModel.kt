@@ -18,6 +18,8 @@ import com.matelink.data.repository.GeocodeProgressInfo
 import com.matelink.data.repository.StatsRepository
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.sync.DataSyncWorker
+import com.matelink.data.sync.HistoryMetadataState
+import com.matelink.data.sync.HistoryMetadataStore
 import com.matelink.data.sync.SyncLogCollector
 import com.matelink.data.sync.SyncManager
 import com.matelink.data.local.entity.DriveSummary
@@ -47,8 +49,9 @@ data class StatsUiState(
     val syncProgress: SyncProgress? = null,
     val geocodeProgress: GeocodeProgressInfo? = null,
     val isGeocoding: Boolean = false,
-    val currencySymbol: String = "€",
+    val currencySymbol: String = Currency.CNY.symbol,
     val units: Units? = null,
+    val historyMetadata: HistoryMetadataState? = null,
     val error: String? = null,
     val isUpdating: Boolean = false
 )
@@ -60,7 +63,8 @@ class StatsViewModel @Inject constructor(
     private val teslamateRepository: TeslamateRepository,
     private val syncManager: SyncManager,
     private val syncLogCollector: SyncLogCollector,
-    private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore,
+    private val historyMetadataStore: HistoryMetadataStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StatsUiState())
@@ -76,6 +80,7 @@ class StatsViewModel @Inject constructor(
     private var syncObserverJob: Job? = null
     private var progressObserverJob: Job? = null
     private var geocodeProgressJob: Job? = null
+    private var historyMetadataJob: Job? = null
 
     init {
         loadSettings()
@@ -96,6 +101,11 @@ class StatsViewModel @Inject constructor(
         startObservingSyncStatus()
         startObservingProgress(id)
         startObservingGeocodeProgress(id)
+        startObservingHistoryMetadata(id)
+        // Statistics is the first screen that needs historical summaries. If
+        // Room is empty, let the existing KEEP worker policy fetch them once;
+        // real cloud sessions may legitimately return an empty history.
+        triggerSync()
     }
 
     private fun loadUnits(carId: Int) {
@@ -134,6 +144,15 @@ class StatsViewModel @Inject constructor(
                         isGeocoding = progress != null && progress.processed < progress.total
                     )
                 }
+            }
+        }
+    }
+
+    private fun startObservingHistoryMetadata(id: Int) {
+        historyMetadataJob?.cancel()
+        historyMetadataJob = viewModelScope.launch {
+            historyMetadataStore.observe(id).collect { metadata ->
+                _uiState.update { it.copy(historyMetadata = metadata) }
             }
         }
     }
