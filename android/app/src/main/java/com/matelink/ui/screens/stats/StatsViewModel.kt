@@ -141,7 +141,9 @@ class StatsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         geocodeProgress = progress,
-                        isGeocoding = progress != null && progress.processed < progress.total
+                        isGeocoding = progress != null &&
+                            progress.processed < progress.total &&
+                            progress.availability == com.matelink.data.repository.ChineseLocationAvailability.READY
                     )
                 }
             }

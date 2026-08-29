@@ -104,6 +104,7 @@ import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.icons.CustomIcons
 import com.matelink.ui.theme.CarColorPalette
 import com.matelink.ui.theme.CarColorPalettes
+import com.matelink.ui.theme.MetricMono
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -420,7 +421,7 @@ private fun StatsContent(
             }
 
             // Geocode progress indicator if location identification is ongoing
-            if (isGeocoding && geocodeProgress != null) {
+            if (geocodeProgress != null && geocodeProgress.processed < geocodeProgress.total) {
                 item {
                     GeocodeProgressCard(
                         progress = geocodeProgress,
@@ -1079,7 +1080,10 @@ private fun SummaryMetricItem(
     Column(modifier = modifier) {
         Text(
             text = displayValue,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontFamily = MetricMono,
+                fontFeatureSettings = "tnum"
+            ),
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
@@ -1203,6 +1207,7 @@ private fun GeocodeProgressCard(
     palette: CarColorPalette,
     onClick: (() -> Unit)? = null
 ) {
+    val pending = (progress.total - progress.processed).coerceAtLeast(0)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -1214,7 +1219,7 @@ private fun GeocodeProgressCard(
                 }
             ),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+            containerColor = MaterialTheme.colorScheme.primaryContainer
         )
     ) {
         Row(
@@ -1227,7 +1232,7 @@ private fun GeocodeProgressCard(
                 imageVector = Icons.Default.Place,
                 contentDescription = null,
                 modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onTertiaryContainer
+                tint = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -1236,19 +1241,40 @@ private fun GeocodeProgressCard(
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                LinearProgressIndicator(
-                    progress = { progress.percentage },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    text = stringResource(R.string.geocode_progress_status, progress.processed, progress.total),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                )
+                if (progress.availability == com.matelink.data.repository.ChineseLocationAvailability.READY) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LinearProgressIndicator(
+                        progress = { progress.percentage },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = stringResource(R.string.geocode_progress_status, progress.processed, pending),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                } else {
+                    Text(
+                        text = stringResource(locationRecognitionUnavailableRes(progress.availability)),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
             }
         }
     }
+}
+
+private fun locationRecognitionUnavailableRes(
+    availability: com.matelink.data.repository.ChineseLocationAvailability
+): Int = when (availability) {
+    com.matelink.data.repository.ChineseLocationAvailability.KEY_NOT_CONFIGURED ->
+        R.string.location_recognition_key_not_configured
+    com.matelink.data.repository.ChineseLocationAvailability.PRIVACY_NOT_ACCEPTED ->
+        R.string.location_recognition_privacy_not_accepted
+    com.matelink.data.repository.ChineseLocationAvailability.RESTART_REQUIRED ->
+        R.string.location_recognition_restart_required
+    com.matelink.data.repository.ChineseLocationAvailability.READY ->
+        R.string.geocode_progress_status
 }
 
 // ======== Quick Stats Cards ========
@@ -1943,6 +1969,8 @@ private fun StatsCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         colors = CardDefaults.cardColors(
             containerColor = palette.surface
         )
@@ -2010,6 +2038,8 @@ private fun RecordCard(
                     Modifier
                 }
             ),
+        shape = MaterialTheme.shapes.large,
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         colors = CardDefaults.cardColors(
             containerColor = palette.surface
         )

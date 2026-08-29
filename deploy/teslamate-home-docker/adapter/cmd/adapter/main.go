@@ -28,28 +28,56 @@ type snapshot struct {
 }
 
 type parkedDetail struct {
-	OlderDriveID       int      `json:"older_drive_id"`
-	NewerDriveID       int      `json:"newer_drive_id"`
-	StartDate          string   `json:"start_date"`
-	EndDate            string   `json:"end_date"`
-	Address            *string  `json:"address"`
-	StartBatteryLevel  *int     `json:"start_battery_level"`
-	EndBatteryLevel    *int     `json:"end_battery_level"`
-	BatteryDelta       *int     `json:"battery_delta"`
-	EnergyKWh          *float64 `json:"energy_kwh"`
-	AveragePowerKW     *float64 `json:"average_power_kw"`
-	PeakPowerKW        *float64 `json:"peak_power_kw"`
-	InsideTempAverage  *float64 `json:"inside_temp_average"`
-	OutsideTempAverage *float64 `json:"outside_temp_average"`
-	SampleCount        int      `json:"sample_count"`
-	CoverageSeconds    int64    `json:"coverage_seconds"`
-	CoverageRatio      float64  `json:"coverage_ratio"`
-	Source             string   `json:"source"`
+	OlderDriveID       int           `json:"older_drive_id"`
+	NewerDriveID       int           `json:"newer_drive_id"`
+	StartDate          string        `json:"start_date"`
+	EndDate            string        `json:"end_date"`
+	Address            *string       `json:"address"`
+	StartBatteryLevel  *int          `json:"start_battery_level"`
+	EndBatteryLevel    *int          `json:"end_battery_level"`
+	BatteryDelta       *int          `json:"battery_delta"`
+	EnergyKWh          *float64      `json:"energy_kwh"`
+	AveragePowerKW     *float64      `json:"average_power_kw"`
+	PeakPowerKW        *float64      `json:"peak_power_kw"`
+	InsideTempAverage  *float64      `json:"inside_temp_average"`
+	OutsideTempAverage *float64      `json:"outside_temp_average"`
+	SampleCount        int           `json:"sample_count"`
+	CoverageSeconds    int64         `json:"coverage_seconds"`
+	CoverageRatio      float64       `json:"coverage_ratio"`
+	LinkedCharge       *linkedCharge `json:"linked_charge,omitempty"`
+	Source             string        `json:"source"`
+}
+
+type linkedCharge struct {
+	ChargeID       int      `json:"charge_id"`
+	StartDate      string   `json:"start_date"`
+	EndDate        string   `json:"end_date"`
+	EnergyAddedKWh *float64 `json:"energy_added_kwh"`
+}
+
+type standbyWindow struct {
+	StartDate                string   `json:"start_date"`
+	EndDate                  string   `json:"end_date"`
+	Address                  *string  `json:"address"`
+	DurationSeconds          int64    `json:"duration_seconds"`
+	StartBatteryLevel        *int     `json:"start_battery_level"`
+	EndBatteryLevel          *int     `json:"end_battery_level"`
+	BatteryDelta             *int     `json:"battery_delta"`
+	EnergyKWh                *float64 `json:"energy_kwh"`
+	AveragePowerW            *float64 `json:"average_power_w"`
+	PeakPowerW               *float64 `json:"peak_power_w"`
+	CoverageRatio            float64  `json:"coverage_ratio"`
+	InsideTempAverage        *float64 `json:"inside_temp_average"`
+	OutsideTempAverage       *float64 `json:"outside_temp_average"`
+	ClimateActiveSampleCount int      `json:"climate_active_sample_count"`
+	ClimateSampleCount       int      `json:"climate_sample_count"`
+	Source                   string   `json:"source"`
 }
 
 type dataStore interface {
 	Snapshot(context.Context, int) (snapshot, error)
 	Parked(context.Context, int, int, int) (parkedDetail, error)
+	Standby(context.Context, int) ([]standbyWindow, error)
 }
 
 type postgresStore struct {
@@ -61,6 +89,8 @@ type server struct {
 	store    dataStore
 	proxy    http.Handler
 	apiToken string
+	mqtt     *mqttSnapshotStore
+	loc      *time.Location
 }
 
 func main() {
@@ -82,7 +112,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	s := &server{store: &postgresStore{db: db, loc: loc}, proxy: httputil.NewSingleHostReverseProxy(upstream), apiToken: strings.TrimSpace(os.Getenv("API_TOKEN"))}
+	mqttStore := newMQTTSnapshotStore()
+	s := &server{store: &postgresStore{db: db, loc: loc}, proxy: httputil.NewSingleHostReverseProxy(upstream), apiToken: strings.TrimSpace(os.Getenv("API_TOKEN")), mqtt: mqttStore, loc: loc}
+	go runMQTT(mqttStore)
 	log.Printf("MateLink Adapter listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", s.routes()))
 }
@@ -92,6 +124,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/matelink/v1/capabilities", s.capabilities)
 	mux.HandleFunc("GET /api/matelink/v1/cars/{carId}/snapshot", s.vehicleSnapshot)
 	mux.HandleFunc("GET /api/matelink/v1/cars/{carId}/parked/{olderDriveId}/{newerDriveId}", s.parked)
+	mux.HandleFunc("GET /api/matelink/v1/cars/{carId}/standby", s.standby)
 	mux.Handle("/api/", s.proxy)
 	return s.authenticate(mux)
 }
@@ -105,7 +138,7 @@ func (s *server) authenticate(next http.Handler) http.Handler {
 	})
 }
 func (s *server) capabilities(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, 200, map[string]any{"data": map[string]any{"adapter_version": "1", "features": []string{"snapshot", "parked_detail", "legacy_proxy"}}})
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"adapter_version": "1", "features": []string{"snapshot", "mqtt_snapshot", "parked_detail", "legacy_proxy"}}})
 }
 func (s *server) vehicleSnapshot(w http.ResponseWriter, r *http.Request) {
 	id, err := pathInt(r, "carId")
@@ -114,6 +147,15 @@ func (s *server) vehicleSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value, err := s.store.Snapshot(r.Context(), id)
+	if s.mqtt != nil {
+		if live, ok := s.mqtt.Snapshot(id, time.Now(), s.loc); ok {
+			if err != nil {
+				value, err = live, nil
+			} else {
+				value = mergeSnapshot(value, live)
+			}
+		}
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, 404, "no vehicle snapshot")
 		return
@@ -152,6 +194,21 @@ func (s *server) parked(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"data": value})
+}
+
+func (s *server) standby(w http.ResponseWriter, r *http.Request) {
+	carID, err := pathInt(r, "carId")
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	value, err := s.store.Standby(r.Context(), carID)
+	if err != nil {
+		log.Printf("standby store request failed")
+		writeError(w, 500, "standby data unavailable")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"data": map[string]any{"windows": value}})
 }
 
 func (p *postgresStore) Snapshot(ctx context.Context, carID int) (snapshot, error) {
@@ -206,6 +263,20 @@ func (p *postgresStore) Parked(ctx context.Context, carID, olderID, newerID int)
 		return parkedDetail{}, err
 	}
 	result := parkedDetail{OlderDriveID: olderID, NewerDriveID: newerID, StartDate: formatTime(start, p.loc), EndDate: formatTime(end, p.loc), Address: nullStringPtr(address), StartBatteryLevel: nullIntPtr(startBattery), EndBatteryLevel: nullIntPtr(endBattery), SampleCount: len(values), Source: "database_latest"}
+	var chargeID int
+	var chargeStart, chargeEnd time.Time
+	var chargeEnergy sql.NullFloat64
+	chargeErr := p.db.QueryRowContext(ctx, `SELECT id,start_date,end_date,charge_energy_added FROM charges WHERE car_id=$1 AND start_date<$3 AND COALESCE(end_date,start_date)>$2 ORDER BY start_date LIMIT 1`, carID, start, end).Scan(&chargeID, &chargeStart, &chargeEnd, &chargeEnergy)
+	if chargeErr == nil {
+		result.LinkedCharge = &linkedCharge{
+			ChargeID:       chargeID,
+			StartDate:      formatTime(chargeStart, p.loc),
+			EndDate:        formatTime(chargeEnd, p.loc),
+			EnergyAddedKWh: nullFloatPtr(chargeEnergy),
+		}
+	} else if !errors.Is(chargeErr, sql.ErrNoRows) {
+		return parkedDetail{}, chargeErr
+	}
 	if result.StartBatteryLevel != nil && result.EndBatteryLevel != nil {
 		d := *result.EndBatteryLevel - *result.StartBatteryLevel
 		result.BatteryDelta = &d
@@ -264,6 +335,140 @@ func (p *postgresStore) Parked(ctx context.Context, carID, olderID, newerID int)
 	return result, nil
 }
 
+func (p *postgresStore) Standby(ctx context.Context, carID int) ([]standbyWindow, error) {
+	const intervals = `SELECT older.end_date,newer.start_date,COALESCE(a.display_name,a.name),op.battery_level,np.battery_level FROM drives older JOIN LATERAL (SELECT d.start_date,d.start_position_id FROM drives d WHERE d.car_id=older.car_id AND d.start_date>older.end_date ORDER BY d.start_date LIMIT 1) newer ON true LEFT JOIN addresses a ON a.id=older.end_address_id LEFT JOIN positions op ON op.id=older.end_position_id LEFT JOIN positions np ON np.id=newer.start_position_id WHERE older.car_id=$1 AND older.end_date IS NOT NULL ORDER BY older.end_date DESC`
+	rows, err := p.db.QueryContext(ctx, intervals, carID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []standbyWindow
+	for rows.Next() {
+		var start, end time.Time
+		var address sql.NullString
+		var startBattery, endBattery sql.NullInt64
+		if err := rows.Scan(&start, &end, &address, &startBattery, &endBattery); err != nil {
+			return nil, err
+		}
+		if !end.After(start) {
+			continue
+		}
+		var linkedChargeID int
+		chargeErr := p.db.QueryRowContext(ctx, `SELECT id FROM charges WHERE car_id=$1 AND start_date<$3 AND COALESCE(end_date,start_date)>$2 ORDER BY start_date LIMIT 1`, carID, start, end).Scan(&linkedChargeID)
+		if chargeErr == nil {
+			continue
+		}
+		if !errors.Is(chargeErr, sql.ErrNoRows) {
+			return nil, chargeErr
+		}
+
+		window := standbyWindow{
+			StartDate:         formatTime(start, p.loc),
+			EndDate:           formatTime(end, p.loc),
+			Address:           nullStringPtr(address),
+			DurationSeconds:   int64(end.Sub(start).Seconds()),
+			StartBatteryLevel: nullIntPtr(startBattery),
+			EndBatteryLevel:   nullIntPtr(endBattery),
+			Source:            "database_latest",
+		}
+		if window.StartBatteryLevel != nil && window.EndBatteryLevel != nil {
+			delta := *window.EndBatteryLevel - *window.StartBatteryLevel
+			window.BatteryDelta = &delta
+		}
+
+		samples, err := p.db.QueryContext(ctx, `SELECT date,power,inside_temp,outside_temp,is_climate_on FROM positions WHERE car_id=$1 AND drive_id IS NULL AND date BETWEEN $2 AND $3 ORDER BY date`, carID, start, end)
+		if err != nil {
+			return nil, err
+		}
+		type sample struct {
+			at                     time.Time
+			power, inside, outside sql.NullFloat64
+			climate                sql.NullBool
+		}
+		var values []sample
+		for samples.Next() {
+			var value sample
+			if err := samples.Scan(&value.at, &value.power, &value.inside, &value.outside, &value.climate); err != nil {
+				samples.Close()
+				return nil, err
+			}
+			values = append(values, value)
+		}
+		if err := samples.Err(); err != nil {
+			samples.Close()
+			return nil, err
+		}
+		samples.Close()
+
+		var energy, peak, insideSum, outsideSum float64
+		var powerCount, insideCount, outsideCount, climateCount int
+		var climateActive bool
+		var coverage int64
+		for index, value := range values {
+			if value.power.Valid {
+				power := math.Max(value.power.Float64, 0)
+				if power > peak {
+					peak = power
+				}
+				powerCount++
+			}
+			if value.inside.Valid {
+				insideSum += value.inside.Float64
+				insideCount++
+			}
+			if value.outside.Valid {
+				outsideSum += value.outside.Float64
+				outsideCount++
+			}
+			if value.climate.Valid {
+				climateCount++
+				if value.climate.Bool {
+					climateActive = true
+				}
+			}
+			if index > 0 && values[index-1].power.Valid && value.power.Valid {
+				seconds := int64(value.at.Sub(values[index-1].at).Seconds())
+				if seconds > 0 && seconds <= 900 {
+					previous := math.Max(values[index-1].power.Float64, 0)
+					current := math.Max(value.power.Float64, 0)
+					energy += (previous + current) / 2 * float64(seconds) / 3600
+					coverage += seconds
+				}
+			}
+		}
+		if total := window.DurationSeconds; total > 0 {
+			window.CoverageRatio = math.Min(float64(coverage)/float64(total), 1)
+		}
+		if energy > 0 {
+			window.EnergyKWh = &energy
+		}
+		if coverage > 0 {
+			averageW := energy * 1000 / (float64(coverage) / 3600)
+			peakW := peak * 1000
+			window.AveragePowerW = &averageW
+			window.PeakPowerW = &peakW
+		}
+		if insideCount > 0 {
+			value := insideSum / float64(insideCount)
+			window.InsideTempAverage = &value
+		}
+		if outsideCount > 0 {
+			value := outsideSum / float64(outsideCount)
+			window.OutsideTempAverage = &value
+		}
+		window.ClimateSampleCount = climateCount
+		if climateActive {
+			window.ClimateActiveSampleCount = 1
+		}
+		result = append(result, window)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func pathInt(r *http.Request, name string) (int, error) {
 	value, err := strconv.Atoi(r.PathValue(name))
 	if err != nil || value <= 0 {
@@ -306,6 +511,13 @@ func nullFloat(v sql.NullFloat64) any {
 		return v.Float64
 	}
 	return nil
+}
+func nullFloatPtr(v sql.NullFloat64) *float64 {
+	if !v.Valid {
+		return nil
+	}
+	value := v.Float64
+	return &value
 }
 func nullInt(v sql.NullInt64) any {
 	if v.Valid {

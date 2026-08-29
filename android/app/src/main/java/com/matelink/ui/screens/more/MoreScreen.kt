@@ -91,11 +91,13 @@ fun MoreScreen(
 ) {
     val palette = swissPalette()
     Scaffold(
-        containerColor = palette.surface,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.nav_more), fontWeight = FontWeight.SemiBold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.surface)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
         }
     ) { padding ->
@@ -275,10 +277,11 @@ private fun MoreActionTile(
     val palette = swissPalette()
     Surface(
         onClick = action.onClick,
-        color = palette.surface,
+        color = MaterialTheme.colorScheme.surface,
         contentColor = palette.ink,
         shape = MaterialTheme.shapes.large,
-        border = androidx.compose.foundation.BorderStroke(1.dp, palette.outline),
+        tonalElevation = 0.dp,
+        shadowElevation = 1.dp,
         modifier = modifier.heightIn(min = 92.dp)
     ) {
         Column(
@@ -305,9 +308,10 @@ private fun MoreActionTile(
 private fun SectionCard(content: @Composable () -> Unit) {
     val palette = swissPalette()
     Surface(
-        color = palette.surface,
+        color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(8.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, palette.outline),
+        tonalElevation = 0.dp,
+        shadowElevation = 1.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column { content() }

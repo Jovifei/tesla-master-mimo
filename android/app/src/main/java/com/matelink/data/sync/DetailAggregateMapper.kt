@@ -6,6 +6,7 @@ import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.local.entity.ChargeDetailAggregate
 import com.matelink.data.local.entity.DriveDetailAggregate
 import com.matelink.data.local.entity.SchemaVersion
+import kotlin.math.roundToInt
 
 internal fun DriveDetail.toAggregate(carId: Int, computedAt: Long): DriveDetailAggregate {
     val positions = positions.orEmpty()
@@ -69,9 +70,9 @@ internal fun ChargeDetail.toAggregate(carId: Int, computedAt: Long): ChargeDetai
         isFastCharger = isFastCharger,
         fastChargerBrand = chargerDetails.firstNonBlank { it.fastChargerBrand },
         connectorType = chargerDetails.firstNonBlank { it.fastChargerType },
-        maxChargerPower = chargerDetails.mapNotNull { it.chargerPower }.maxOrNull(),
-        maxChargerVoltage = chargerDetails.mapNotNull { it.chargerVoltage }.maxOrNull(),
-        maxChargerCurrent = chargerDetails.mapNotNull { it.chargerActualCurrent }.maxOrNull(),
+        maxChargerPower = chargerDetails.mapNotNull { it.chargerPower }.maxOrNull()?.roundToInt(),
+        maxChargerVoltage = chargerDetails.mapNotNull { it.chargerVoltage }.maxOrNull()?.roundToInt(),
+        maxChargerCurrent = chargerDetails.mapNotNull { it.chargerActualCurrent }.maxOrNull()?.roundToInt(),
         chargerPhases = chargerDetails.mapNotNull { it.chargerPhases }.maxOrNull(),
         maxOutsideTemp = outsideTemperatures.maxOrNull(),
         minOutsideTemp = outsideTemperatures.minOrNull(),

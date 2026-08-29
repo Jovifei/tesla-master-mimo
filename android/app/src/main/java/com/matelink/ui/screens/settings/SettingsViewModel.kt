@@ -18,6 +18,7 @@ import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.ConnectionMode
 import com.matelink.data.local.ConnectionModeStore
 import com.matelink.data.local.TirePosition
+import com.matelink.data.local.TpmsAlertProfile
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.ConnectionTestOutcome
 import com.matelink.data.repository.SettingsRepository
@@ -59,7 +60,12 @@ data class SettingsUiState(
     val error: String? = null,
     val successMessage: String? = null,
     val needsRecreate: Boolean = false,
-    val isFirstRunSetup: Boolean = false
+    val isFirstRunSetup: Boolean = false,
+    val tpmsCarId: Int = 1,
+    val tpmsTargetBar: String = "2.9",
+    val tpmsLowBar: String = "2.6",
+    val tpmsHighBar: String = "3.4",
+    val tpmsProfileEnabled: Boolean = false
 )
 
 /**
@@ -105,6 +111,9 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val settings = settingsDataStore.settings.first()
             val mockMode = settingsRepository.mockMode.first()
+            val tpmsCarId = settingsRepository.currentCarId.first()
+            val tpmsProfile = settingsDataStore.getTpmsAlertProfile(tpmsCarId)
+                ?: TpmsAlertProfile.modelYSuggestion
             _uiState.value = _uiState.value.copy(
                 serverUrl = serverUrlForDisplay(settings.serverUrl),
                 apiToken = settings.apiToken,
@@ -113,6 +122,11 @@ class SettingsViewModel @Inject constructor(
                 showShortDrivesCharges = settings.showShortDrivesCharges,
                 languageCode = settings.languageCode,
                 mockMode = mockMode,
+                tpmsCarId = tpmsCarId,
+                tpmsTargetBar = tpmsProfile.targetBar.toDisplayString(),
+                tpmsLowBar = tpmsProfile.lowBar.toDisplayString(),
+                tpmsHighBar = tpmsProfile.highBar.toDisplayString(),
+                tpmsProfileEnabled = settingsDataStore.getTpmsAlertProfile(tpmsCarId)?.enabled == true,
                 isFirstRunSetup = !settings.isConfigured && !mockMode,
                 isLoading = false
             )
@@ -227,6 +241,52 @@ class SettingsViewModel @Inject constructor(
                 isTesting = false,
                 testResult = TestResult(primaryResult)
             )
+        }
+    }
+
+    fun updateTpmsTargetBar(value: String) {
+        _uiState.value = _uiState.value.copy(tpmsTargetBar = value, error = null)
+    }
+
+    fun updateTpmsLowBar(value: String) {
+        _uiState.value = _uiState.value.copy(tpmsLowBar = value, error = null)
+    }
+
+    fun updateTpmsHighBar(value: String) {
+        _uiState.value = _uiState.value.copy(tpmsHighBar = value, error = null)
+    }
+
+    /** Explicitly saves and enables the per-car App custom reminder profile. */
+    fun saveTpmsAlertProfile() {
+        val current = _uiState.value
+        val target = current.tpmsTargetBar.toDoubleOrNull()
+        val low = current.tpmsLowBar.toDoubleOrNull()
+        val high = current.tpmsHighBar.toDoubleOrNull()
+        if (target == null || low == null || high == null ||
+            !TpmsAlertProfile(target, low, high, enabled = true).isValid
+        ) {
+            _uiState.value = current.copy(
+                error = context.getString(R.string.tpms_profile_validation_error)
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                settingsDataStore.saveTpmsAlertProfile(
+                    carId = current.tpmsCarId,
+                    profile = TpmsAlertProfile(target, low, high, enabled = true)
+                )
+            }.onSuccess {
+                _uiState.value = _uiState.value.copy(
+                    tpmsProfileEnabled = true,
+                    successMessage = context.getString(R.string.tpms_profile_saved)
+                )
+            }.onFailure {
+                _uiState.value = _uiState.value.copy(
+                    error = context.getString(R.string.error_save_settings)
+                )
+            }
         }
     }
 
@@ -403,7 +463,7 @@ class SettingsViewModel @Inject constructor(
             )
 
             _uiState.value = _uiState.value.copy(
-                successMessage = context.getString(R.string.debug_tpms_simulated, tire.name)
+                successMessage = context.getString(R.string.debug_tpms_simulated, tireName)
             )
         }
     }
@@ -508,4 +568,7 @@ class SettingsViewModel @Inject constructor(
             successMessage = "TPMS check triggered - check logcat for TpmsPressureWorker"
         )
     }
+
+    private fun Double.toDisplayString(): String =
+        if (this % 1.0 == 0.0) toInt().toString() else toString()
 }

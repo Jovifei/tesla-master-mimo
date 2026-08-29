@@ -36,6 +36,13 @@ data class CurrentChargeUiState(
     val dcFinishedSince: String? = null,
     val timeToFullCharge: Double? = null,
     val chargeLimitSoc: Int? = null,
+    val chargePortDoorOpen: Boolean? = null,
+    val chargerPhases: Int? = null,
+    val chargerVoltage: Double? = null,
+    val chargerActualCurrent: Double? = null,
+    val chargeCurrentRequest: Double? = null,
+    val chargeCurrentRequestMax: Double? = null,
+    val scheduledChargingStartTime: String? = null,
     /** Charge points in chronological order (reversed from API's newest-first) */
     val chronologicalPoints: List<ChargePoint> = emptyList()
 )
@@ -105,6 +112,34 @@ class CurrentChargeViewModel @Inject constructor(
             is ApiResult.Success -> statusResult.data.status.chargeLimitSoc
             is ApiResult.Error -> _uiState.value.chargeLimitSoc
         }
+        val chargePortDoorOpen = when (statusResult) {
+            is ApiResult.Success -> statusResult.data.status.chargingDetails?.chargePortDoorOpen
+            is ApiResult.Error -> _uiState.value.chargePortDoorOpen
+        }
+        val chargerPhases = when (statusResult) {
+            is ApiResult.Success -> statusResult.data.status.chargingDetails?.chargerPhases
+            is ApiResult.Error -> _uiState.value.chargerPhases
+        }
+        val chargerVoltage = when (statusResult) {
+            is ApiResult.Success -> statusResult.data.status.chargerVoltageValue
+            is ApiResult.Error -> _uiState.value.chargerVoltage
+        }
+        val chargerActualCurrent = when (statusResult) {
+            is ApiResult.Success -> statusResult.data.status.chargerActualCurrentValue
+            is ApiResult.Error -> _uiState.value.chargerActualCurrent
+        }
+        val chargeCurrentRequest = when (statusResult) {
+            is ApiResult.Success -> statusResult.data.status.chargeCurrentRequestValue
+            is ApiResult.Error -> _uiState.value.chargeCurrentRequest
+        }
+        val chargeCurrentRequestMax = when (statusResult) {
+            is ApiResult.Success -> statusResult.data.status.chargeCurrentRequestMaxValue
+            is ApiResult.Error -> _uiState.value.chargeCurrentRequestMax
+        }
+        val scheduledChargingStartTime = when (statusResult) {
+            is ApiResult.Success -> statusResult.data.status.scheduledChargingStartTime
+            is ApiResult.Error -> _uiState.value.scheduledChargingStartTime
+        }
         val isDcChargeFromStatus = when (statusResult) {
             is ApiResult.Success -> statusResult.data.status.isDcCharging
             is ApiResult.Error -> null  // No status data available -> assume AC
@@ -149,6 +184,13 @@ class CurrentChargeViewModel @Inject constructor(
                             dcFinishedSince = if (isDcFinishedPluggedIn) stateSince else null,
                             timeToFullCharge = timeToFullCharge,
                             chargeLimitSoc = chargeLimitSoc,
+                            chargePortDoorOpen = chargePortDoorOpen,
+                            chargerPhases = chargerPhases,
+                            chargerVoltage = chargerVoltage,
+                            chargerActualCurrent = chargerActualCurrent,
+                            chargeCurrentRequest = chargeCurrentRequest,
+                            chargeCurrentRequestMax = chargeCurrentRequestMax,
+                            scheduledChargingStartTime = scheduledChargingStartTime,
                             chronologicalPoints = chronoPoints,
                             error = null
                         )
@@ -160,7 +202,18 @@ class CurrentChargeViewModel @Inject constructor(
                         // in the API yet (happens for the first moments of every session).
                         // Show the "charge starting" state and let the loop poll fast.
                         _uiState.update {
-                            it.copy(isLoading = false, isChargeStarting = true, error = null)
+                            it.copy(
+                                isLoading = false,
+                                isChargeStarting = true,
+                                chargePortDoorOpen = chargePortDoorOpen,
+                                chargerPhases = chargerPhases,
+                                chargerVoltage = chargerVoltage,
+                                chargerActualCurrent = chargerActualCurrent,
+                                chargeCurrentRequest = chargeCurrentRequest,
+                                chargeCurrentRequestMax = chargeCurrentRequestMax,
+                                scheduledChargingStartTime = scheduledChargingStartTime,
+                                error = null
+                            )
                         }
                     }
                     isDcFinishedPluggedIn -> {

@@ -57,6 +57,7 @@ import com.matelink.ui.screens.stats.CountriesVisitedScreen
 import com.matelink.ui.screens.stats.RegionsVisitedScreen
 import com.matelink.ui.screens.stats.StatsScreen
 import com.matelink.ui.screens.sentry.SentryHistoryScreen
+import com.matelink.ui.screens.tpms.TpmsTrendScreen
 import com.matelink.ui.screens.trips.CreateTripScreen
 import com.matelink.ui.screens.trips.TripDetailScreen
 import com.matelink.ui.screens.trips.TripsScreen
@@ -169,6 +170,9 @@ sealed interface Screen {
     data class SentryHistory(val carId: Int, val exteriorColor: String? = null) : Screen
 
     @Serializable
+    data class TpmsTrend(val carId: Int, val exteriorColor: String? = null) : Screen
+
+    @Serializable
     data class AnnualReport(val carId: Int, val year: Int = java.time.Year.now().value) : Screen
 
     @Serializable
@@ -223,6 +227,29 @@ internal fun shouldRedirectToTeslaLogin(
     !isAuthenticated &&
     !currentRoute.contains("TeslaLogin")
 
+internal fun notificationScreen(
+    navigateTo: String?,
+    carId: Int,
+    exteriorColor: String?,
+    driveId: Int
+): Screen? {
+    if (navigateTo == null || carId <= 0) return null
+    return when (navigateTo) {
+        "current_charge" -> Screen.CurrentCharge(carId, exteriorColor)
+        "charges" -> Screen.Charges(carId, exteriorColor)
+        "drives" -> Screen.Drives(carId, exteriorColor)
+        "mileage" -> Screen.Mileage(carId, exteriorColor)
+        "battery" -> Screen.Battery(carId, exteriorColor = exteriorColor)
+        "stats" -> Screen.Stats(carId, exteriorColor)
+        "countries_visited" -> Screen.CountriesVisited(carId, exteriorColor)
+        "updates" -> Screen.Updates(carId, exteriorColor)
+        "sentry_history" -> Screen.SentryHistory(carId, exteriorColor)
+        "drive_detail" -> driveId.takeIf { it > 0 }
+            ?.let { Screen.DriveDetail(carId, it, exteriorColor) }
+        else -> null
+    }
+}
+
 @Composable
 fun NavGraph(
     intent: Intent? = null,
@@ -276,23 +303,10 @@ fun NavGraph(
             val navigateTo = it.getStringExtra("EXTRA_NAVIGATE_TO")
             val carId = it.getIntExtra("EXTRA_CAR_ID", -1)
             val exteriorColor = it.getStringExtra("EXTRA_EXTERIOR_COLOR")
-            if (navigateTo != null && carId > 0) {
-                val screen: Screen? = when (navigateTo) {
-                    "current_charge" -> Screen.CurrentCharge(carId, exteriorColor)
-                    "charges" -> Screen.Charges(carId, exteriorColor)
-                    "drives" -> Screen.Drives(carId, exteriorColor)
-                    "mileage" -> Screen.Mileage(carId, exteriorColor)
-                    "battery" -> Screen.Battery(carId, exteriorColor = exteriorColor)
-                    "stats" -> Screen.Stats(carId, exteriorColor)
-                    "countries_visited" -> Screen.CountriesVisited(carId, exteriorColor)
-                    "updates" -> Screen.Updates(carId, exteriorColor)
-                    "sentry_history" -> Screen.SentryHistory(carId, exteriorColor)
-                    else -> null
-                }
-                screen?.let { s ->
-                    navController.navigate(s) {
-                        launchSingleTop = true
-                    }
+            val driveId = it.getIntExtra("EXTRA_DRIVE_ID", -1)
+            notificationScreen(navigateTo, carId, exteriorColor, driveId)?.let { screen ->
+                navController.navigate(screen) {
+                    launchSingleTop = true
                 }
             }
         }
@@ -442,6 +456,9 @@ fun NavGraph(
                 onNavigateToSentryHistory = { carId, exteriorColor ->
                     navController.navigate(Screen.SentryHistory(carId, exteriorColor))
                 },
+                onNavigateToTpmsTrend = { carId, exteriorColor ->
+                    navController.navigate(Screen.TpmsTrend(carId, exteriorColor))
+                },
                 onNavigateToTrips = { carId, exteriorColor ->
                     navController.navigate(Screen.Trips(carId, exteriorColor))
                 }
@@ -503,7 +520,10 @@ fun NavGraph(
                 carId = route.carId,
                 olderDriveId = route.olderDriveId,
                 newerDriveId = route.newerDriveId,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToChargeDetail = { chargeId ->
+                    navController.navigate(Screen.ChargeDetail(route.carId, chargeId, route.exteriorColor))
+                }
             )
         }
 
@@ -683,6 +703,15 @@ fun NavGraph(
         composable<Screen.SentryHistory> { backStackEntry ->
             val route = backStackEntry.toRoute<Screen.SentryHistory>()
             SentryHistoryScreen(
+                carId = route.carId,
+                exteriorColor = route.exteriorColor,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable<Screen.TpmsTrend> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.TpmsTrend>()
+            TpmsTrendScreen(
                 carId = route.carId,
                 exteriorColor = route.exteriorColor,
                 onNavigateBack = { navController.popBackStack() }

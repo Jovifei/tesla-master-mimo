@@ -7,6 +7,8 @@ import com.matelink.data.local.dao.ChargeSummaryDao
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.dao.AggregateDao
 import com.matelink.data.local.ConnectionModeStore
+import com.matelink.data.local.CompletedTripNotificationProcessor
+import com.matelink.data.local.TripNotificationStateStore
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.domain.analytics.PaginationGuard
@@ -16,12 +18,71 @@ import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.allowsExternalGeocoding
 import com.matelink.data.repository.GeocodingRepository
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.notification.TripNotificationManager
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * Coordinates syncing of drives and charges data from TeslaMate API to local database.
  */
+internal class DriveSummarySyncAccumulator {
+    private var seenIds = emptySet<Int>()
+    private val collectedSummaries = mutableListOf<DriveSummary>()
+
+    val summaries: List<DriveSummary>
+        get() = collectedSummaries
+
+    /** Returns whether the synchronizer must fetch another page. */
+    fun addPage(pageIds: List<Int>, pageSummaries: List<DriveSummary>): Boolean {
+        collectedSummaries += pageSummaries
+        val decision = PaginationGuard.evaluate(
+            pageSize = 50,
+            seenIds = seenIds,
+            pageIds = pageIds
+        )
+        seenIds = decision.seenIds
+        return !decision.stop
+    }
+}
+
+internal sealed interface DriveSummaryPageResult {
+    data class Success(
+        val sourceIds: List<Int>,
+        val summaries: List<DriveSummary>
+    ) : DriveSummaryPageResult
+
+    data object Failure : DriveSummaryPageResult
+}
+
+/** Runs the page-completion boundary before completed-trip notifications are considered. */
+internal class DriveSummarySyncRunner(
+    private val fetchPage: suspend (page: Int) -> DriveSummaryPageResult,
+    private val persistPage: suspend (List<DriveSummary>) -> Unit,
+    private val onCompleted: suspend (List<DriveSummary>) -> Unit
+) {
+    suspend fun sync(): Boolean {
+        val accumulator = DriveSummarySyncAccumulator()
+        var page = 1
+        var hasMore = true
+        while (hasMore) {
+            when (val result = fetchPage(page)) {
+                DriveSummaryPageResult.Failure -> return false
+                is DriveSummaryPageResult.Success -> {
+                    if (result.sourceIds.isEmpty()) {
+                        hasMore = false
+                    } else {
+                        persistPage(result.summaries)
+                        hasMore = accumulator.addPage(result.sourceIds, result.summaries)
+                        if (hasMore) page++
+                    }
+                }
+            }
+        }
+        onCompleted(accumulator.summaries)
+        return true
+    }
+}
+
 @Singleton
 class SyncRepository @Inject constructor(
     private val teslamateRepository: TeslamateRepository,
@@ -31,11 +92,18 @@ class SyncRepository @Inject constructor(
     private val syncManager: SyncManager,
     private val geocodingRepository: GeocodingRepository,
     private val connectionModeStore: ConnectionModeStore,
-    private val historyMetadataStore: HistoryMetadataStore
+    private val historyMetadataStore: HistoryMetadataStore,
+    private val tripNotificationStateStore: TripNotificationStateStore,
+    private val tripNotificationManager: TripNotificationManager
 ) {
     companion object {
         private const val TAG = "SyncRepository"
     }
+
+    private val tripNotificationProcessor = CompletedTripNotificationProcessor(
+        tripNotificationStateStore,
+        tripNotificationManager
+    )
 
     /**
      * Sync all data for a car. Returns true if successful, false on network error.
@@ -68,41 +136,34 @@ class SyncRepository @Inject constructor(
 
     private suspend fun syncDriveSummaries(carId: Int): Boolean {
         return try {
-            var page = 1
-            var hasMore = true
-            var seenIds = emptySet<Int>()
-
-            while (hasMore) {
-                when (val result = teslamateRepository.getDrives(carId, page = page, show = 50)) {
+            DriveSummarySyncRunner(
+                fetchPage = { page ->
+                    when (val result = teslamateRepository.getDrives(carId, page = page, show = 50)) {
                     is ApiResult.Success -> {
                         result.metadata?.let { historyMetadataStore.updateDrives(carId, it) }
                         val drives = result.data
-                        if (drives.isEmpty()) {
-                            hasMore = false
-                        } else {
-                            val summaries = drives.mapNotNull { it.toSummary(carId) }
-                            driveSummaryDao.upsertAll(summaries)
-                            val decision = PaginationGuard.evaluate(
-                                pageSize = 50,
-                                seenIds = seenIds,
-                                pageIds = drives.map { it.id }
-                            )
-                            seenIds = decision.seenIds
-                            hasMore = !decision.stop
-                            if (hasMore) page++
-                        }
+                        DriveSummaryPageResult.Success(
+                            sourceIds = drives.map { it.id },
+                            summaries = drives.mapNotNull { it.toSummary(carId) }
+                        )
                     }
                     is ApiResult.Error -> {
                         Log.e(TAG, "Failed to sync drive summaries: ${result.message}")
-                        return false
+                        DriveSummaryPageResult.Failure
                     }
                 }
-            }
-            true
+                },
+                persistPage = driveSummaryDao::upsertAll,
+                onCompleted = { summaries -> notifyCompletedDriveUpdates(carId, summaries) }
+            ).sync()
         } catch (e: Exception) {
             Log.e(TAG, "Error syncing drive summaries", e)
             false
         }
+    }
+
+    private suspend fun notifyCompletedDriveUpdates(carId: Int, summaries: List<DriveSummary>) {
+        tripNotificationProcessor.process(carId, summaries)
     }
 
     private suspend fun syncChargeSummaries(carId: Int): Boolean {

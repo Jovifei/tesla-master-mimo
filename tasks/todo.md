@@ -1,5 +1,91 @@
 # JourVolt Android rollout implementation - 2026-08-09
 
+# 2026-08-27 MateLink 实时状态、充电参数与原创车型图
+
+## TPMS 趋势与行程通知（Jovi 已授权最小 Android 改动）
+
+- [x] Task 1：Room v17 TPMS 本地样本、每车阈值配置和纯趋势/原因分析。
+- [x] Task 2：TPMS Worker 样本写入、阈值状态转换和本地通知。
+- [x] Task 3：Dashboard 胎压入口、7/30 日四线趋势、证据总结和阈值设置。
+- [x] Task 4：同步后新完成行程的首次同步抑制与一次性通知。
+- [x] Task 5：全量门禁、Release 边界和独立 Debug 通知设备验证。
+
+## Debug 状态验证（Jovi 已授权独立测试包）
+
+- [x] RED：Debug 状态 fixture 合约测试先以预期断言失败。
+- [x] GREEN：新增 Debug-only 状态验证页，复用正式展示组件。
+- [x] VERIFY：构建、签名/包名检查，并在 `com.matelink.test.mock` 完成五种状态与 360/412、中英、明暗、100/200% 视觉矩阵。
+
+- [x] Adapter 接入 Paho MQTT v1.5.1、默认/命名空间主题、120 秒来源分类和 PostgreSQL 降级。
+- [x] Android 状态模型保留零值/false/小数，Dashboard 按驾驶/开口/胎压状态增量显示。
+- [x] 当前充电页增加充电口、相数、 voltage/current、请求电流和计划时间的有观测面板。
+- [x] Canvas 绘制 Model 3/Y/S/X 无 Logo 原创轮廓，未知车型保留通用轮廓；未接入官网图片或用户照片。
+- [x] Go/Android 全量单测、Go vet、Compose 配置、Go 1.24 镜像、MQTT fresh/retained/reconnect smoke、Release 静态标记扫描。
+- [x] 实体手机同签名覆盖安装：`6e4fa92f` 已通过启动检查，`adb install -r` 成功并保留原包数据。
+- [x] 实体手机基础 UI 回归：Dashboard 的 Model Y 标题与原创车型图、充电历史及四项底栏均已实际打开验证。
+- [ ] 实体手机状态化 UI 回归：当前仅有历史快照，尚未观测驾驶、开口、TPMS 告警或进行中的充电状态。
+- [ ] 专用 AVD UI 回归：新建 Android 35 AVD 已启动 Android，但未注册 ADB，属于宿主 Emulator↔ADB 通道阻塞。
+
+## Review
+
+- PASS：TPMS Task 1 完成 Luna/high implementer → 规格 reviewer → 质量 reviewer 闭环；独立 `com.matelink.test.mock` AndroidTest 在 GM1910 运行 `15/15`、`0 failures / 0 errors / 0 skipped`。验证 v16→v17 旧行程/手动充电成本保留、TPMS 复合键/缺失/零/范围/清理、每车阈值 profile 与多车隔离；正式 `com.matelink` 仍保留。
+- PASS：TPMS Task 2 完成 Luna/high 实现与规格/质量审核闭环；独立 Debug AndroidTest 在 GM1910 运行 `22/22`、`0 failures / 0 errors / 0 skipped`。验证 Tesla/custom UUID claim、lease takeover/stale token、失败重试、partial-warning 不误清除、profile reset、非有限值与 Worker→repository 集成；正式 `com.matelink` 仍保留并恢复前台。
+- PASS：TPMS Task 3 完成 Luna/high 实现与规格/质量审核闭环；`TpmsTrendPresentationTest` 运行 `10/10`、`0 failures / 0 errors / 0 skipped`。验证 7/30 日查询、空值断线、不伪造零值、失败重试、窗口/车辆竞态保护、因素与建议绑定，以及中英文非诊断文案；正式 `com.matelink` 未受影响。
+- PASS：TPMS Task 4 完成直接实现后的 Luna/high 规格/质量审核闭环；JVM 定向测试 `15/15`、`0 failures / 0 errors / 0 skipped`，覆盖完整多页后才处理、首次同步静默、通知失败不推进水位、成功逐条推进、地址回退和中英文格式。GM1910 独立 Debug AndroidTest `1/1`、`0 failures / 0 errors / 0 skipped`，验证通知 Intent extras 解析到既有 `DriveDetail`；正式 `com.matelink` 保留，测试包由框架自动移除。
+- PASS：TPMS Task 5 全量门禁通过：Debug/Release JVM 各 `376` 项（Debug `0/0/0`、Release `0/0/8` failures/errors/skips），`assembleDebug`、`assembleRelease`、`lintRelease` 通过；lint 为 `0 errors / 204 warnings`，中英文各 `1203` 字符串且零缺失。Adapter `go test ./... -count=1`、`go vet ./...` 与 `docker compose --env-file .env.example config --quiet` 通过。Release 未签名 APK 为 `com.matelink` 1.4.2，SHA-256 `4DD3626CB0EB344077466642FB88C2E9E29F48DBB75A649CDD9852343E66CEE1`，未命中测试包/状态验证/回环应用标记。
+- PASS：GM1910 独立 Debug AndroidTest：通知 Intent 深链 `1/1`，实体系统通知（自定义 TPMS 阈值、完成行程）`2/2`，均 `0 failures / 0 errors / 0 skipped`；修复自定义 TPMS 通道在 Worker 尚未运行时不创建而被 Android 丢弃的问题，并使权限、应用通知开关或通道被禁用时 release claim/保留行程水位以便后续重试。测试结束后 Debug 与测试包自动卸载；正式 `com.matelink` 保持 1.4.2，`firstInstallTime=2026-07-26 21:35:02`、`lastUpdateTime=2026-08-27 22:08:21` 未变。
+- PASS：最新 Release 候选已与正式包证书 SHA-256 `9ab144e824abf26a5941819abb06831288c36a8bfe622657e3dc9d88281fc774` 一致，使用 `adb install -r -d` 成功覆盖；正式包数据保留，`firstInstallTime=2026-07-26 21:35:02` 未变，`lastUpdateTime=2026-08-29 02:00:14` 更新。启动后 `MainActivity` 正常前台，Dashboard 实际显示 Model Y/仪表盘/行程/充电，日志无 MateLink Fatal/ANR。
+- PASS：最新正式候选在 GM1910 实际从 Dashboard 胎压卡进入 `胎压趋势` 页，显示 `近 7 天`、`近 30 天`、无历史不可用状态和证据不足总结；当前正式手机仍只有历史快照，真实驾驶/充电/告警数据不作伪造。
+
+- PASS：Adapter `go test ./... -count=1`、`go vet ./...`；Docker image `golang:1.24-alpine` 构建成功。
+- PASS：隔离 MQTT smoke 验证默认/命名空间主题、fresh `live_mqtt`、启动前 retained `mqtt_latest`、负数/零/小数、无效值不覆盖、断线重连和日志脱敏。
+- PASS：Android Debug/Release 各 `314` 个 JVM 用例通过；`assembleDebug`、`assembleRelease`、`lintRelease` 通过；lint `0` Error、`200` Warning、`8` Information，`MissingTranslation=0`，无 baseline。
+- PASS：本轮强制重跑状态化 JVM 用例：Debug/Release 各 `16` 项（车型映射、驾驶/开口/TPMS、充电参数、JSON 精度）均为 `0 failures / 0 errors / 0 skipped`；Adapter `go test ./... -count=1` 通过。
+- PASS：Release `com.matelink` 未签名候选哈希 `8A0971771261429080E86982837650B936765D110AA4942813F11A50BDE43759`；未命中测试包、Mock、回环、官网图库或 Logo 标记。
+- PASS：实体机 `sys.boot_completed=1`；原包与候选均为 `com.matelink` 1.4.2，签名 SHA-256 一致；同签名 `adb install -r` 返回 `Success`，仅更新 `lastUpdateTime`。
+- PASS：实体机已解锁；Dashboard 显示本地化 Model Y 标题、无 Logo Canvas 车型图、最近快照时间，且仪表盘/行程/充电/更多四项导航均实际切换后返回仪表盘。
+- PARTIAL：实体机手动刷新后仍为历史快照；驾驶、开口、TPMS 告警及进行中的充电参数均没有可观测实体数据，不能把隐藏状态当作该四类 UI 的设备通过证据。
+- PASS：独立 Debug `com.matelink.test.mock` 已在实体机启动状态验证页：驾驶回收、开口+TPMS、单相 AC、DC 和全缺失字段均完成视觉与 UI 结构核对；正式 `com.matelink` 已恢复前台，未清除其数据。
+- PASS：Debug/Release JVM 各 `315` 项，分别为 `0/0/0` 与 `0/0/1`（失败/错误/跳过）；`assembleDebug`、`assembleRelease`、`lintRelease` 通过，lint `0` Error、`200` Warning、`MissingTranslation=0`。Debug APK 包名为 `com.matelink.test.mock`，Release 不含状态验证 Activity 标记。
+- PASS：Luna/high implementer → 规格 reviewer → 质量 reviewer 完成修复闭环，最终 reviewer 为 `Ready: Yes`，无 Critical/Important/Minor。
+- PASS：最终强制门禁：Debug/Release JVM 各 `322` 项，分别为 `0 failures / 0 errors / 0 skipped` 与 `0 / 0 / 8`；`assembleDebug`、`assembleRelease`、`lintRelease` 通过，lint `0` Error、`204` Warning、`MissingTranslation=0`；Adapter test/vet 与 Compose config 通过。
+- PASS：独立 Debug 完成 360×800 中文浅色100%、360×800 英文深色200%、412×915 中文深色200%、412×915 英文浅色100% 的覆盖矩阵；驾驶、开口+TPMS、AC、DC、缺失字段均有实体截图/UI 结构证据。
+- PASS：Debug English preference 在 force-stop/cold-start 后保持；最终 APK SHA-256 `03B734999D70411249D690FD9D5B8BE5B5D71E1C13F742D5AB9FCBB42F6AED15`，Release 未命中 Debug 状态标记。
+- PASS：手机已恢复物理 `1440×3120`、`600 dpi`，系统字体仍为 `1.0`、系统浅色/zh-CN 未改，正式 `com.matelink` 已恢复前台；独立测试包保留安装。
+- BLOCKED：新建 Pixel 5 API 35 AVD 在 17.9 秒完成 Android boot，但未监听 `5560/5561`、ADB 未注册；WHPX 与系统镜像检查通过，已停止诊断 AVD，未修改旧 AVD。
+- NOT_PERFORMED：未执行卸载、清数据或 instrumentation；未执行专用 AVD UI 回归；未 stage/commit/push。
+- Boundary：当前工作树保留既有混合修改；本轮没有启动用户数据 Compose、远程服务器、真实 Tesla OAuth/Fleet 或生产配置。
+
+# 2026-08-23 方案 B：车型、地点、充电驻车与待机能耗（已获 Jovi 授权）
+
+- [ ] RED/GREEN：CNY 缺省迁移、充电列表直改总价、地点识别文案与状态
+- [ ] RED/GREEN：高德中文地点解析与无 Nominatim 地址回退边界
+- [ ] RED/GREEN：充电驻车关联、普通驻车兼容与一跳充电详情
+- [ ] RED/GREEN：待机 7/30/365 天窗口、覆盖阈值、空调归因和不足原因
+- [ ] RED/GREEN：原创车型图、自动外观色和用户相册覆盖/重置
+- [ ] VERIFY：Go/Android 全量门禁、原创素材审查、模拟器回归与受控真机覆盖
+
+## Review
+
+- 规格：`docs/superpowers/specs/2026-08-23-matelink-vehicle-location-energy-design.md`
+- 实施计划：`tasks/plans/2026-08-23-matelink-vehicle-location-energy-implementation.md`
+- 边界：不得打包 Tesla 官网图片；不得伪造待机原因/能耗；不提交 Git 或改变服务器配置。
+
+# 2026-08-23 珍珠电驱轻量视觉优化（已获 Jovi 授权）
+
+- [x] RED/GREEN：新增底部导航语义图标与动效令牌契约测试，并确认先失败后通过
+- [x] GREEN：实现底部导航图标映射与选中轻动效，保持原路由和标签
+- [x] GREEN：优化 Telemetry/More/Stats 面板材质、边缘和数字字体，不改布局与数据
+- [x] GREEN：增加首页刷新一次性动效和首次有效数据的短促过渡
+- [x] VERIFY：运行 Android Debug/Release 测试、构建、lint、差异检查和本地预览
+
+## Review
+
+- 规格：`docs/superpowers/specs/2026-08-23-pearl-drive-motion-design.md`
+- 实施计划：`tasks/plans/2026-08-23-pearl-drive-motion-implementation.md`
+- 授权边界：Android UI/测试/文档/本地预览；Jovi 后续明确授权同签名 Release 覆盖安装；不改登录/服务器、不 stage/commit/push。
+- 结果：`PHONE_SMOKE_PASS`；Debug/Release 合计 570 个 JVM 用例通过，lint 195 项/0 Error/`MissingTranslation=0`/无 baseline；签名 `com.matelink` 已用 `adb install -r` 覆盖，未执行 instrumentation。
+
 > 当前源状态（2026-08-21）：正式 App 为 `com.matelink`；`com.jourvolt.app` 和早期 Consumer/Expert 分叉记录均为历史，不代表当前交付目标。当前本地证据为 `APP STRUCTURE READY / LOCAL MOCK HISTORY PASS / REAL TESLA PILOT BLOCKED`；以下按时间顺序保留历史执行记录，最新条目在文件末尾。
 
 ## Plan
@@ -1375,6 +1461,20 @@
 - [x] 登录页拆分用户协议和隐私政策的主动确认；未配置公开 HTTPS 页面时正式云登录 fail-closed。
 - [x] 将当前同意版本绑定到 OAuth 授权事务，并在身份验证完成后原子保存；不保存 Tesla 密码或 Tesla token 到 Android。
 - [x] 完成账户删除确认和 P1 数据级联删除：用户、JourVolt session、加密 Tesla grant、车辆关联和同意记录。
+
+## 2026-08-24 服务器 staging 部署（当前）
+
+- [x] 使用 `jourvolt` SSH 公钥账户上传无密钥 bundle 到阿里云 ECS，并部署 Compose 项目 `jourvolt-staging`。
+- [x] JourVolt Go API 与 PostgreSQL 容器 healthy；`/healthz`、`/readyz` 均返回 `status=ok`。
+- [x] 通过 SSH 回环隧道运行 Mock smoke：`LOCAL MOCK PASS`；1 台车辆、18 条行程、5 条充电，logout/revocation 通过。
+- [x] API 仅绑定 `127.0.0.1:18090`，未开放公网；原 `star-photo` 主服务和 worker 保持 healthy。
+- [x] 记录依赖代理根因：服务器到 `proxy.golang.org` 超时，Docker 构建阶段改用 `goproxy.cn` 后重建成功。
+- [ ] 正式 Pilot 仍待：域名 HTTPS、Tesla 应用批准、正式私密配置、App Link/assetlinks 和真实单车 OAuth/Fleet 验收。
+
+### Review
+
+- 服务器 staging PASS 不等于生产部署、Tesla 官方 OAuth 或真实车辆 PASS；当前 `JOURVOLT_ENABLE_MOCK=true`、`JOURVOLT_ENABLE_MOCK_HISTORY=true` 仅用于开发验证。
+- 未操作原有摄影容器；未读取或写入 Tesla secret、账号密码、refresh token 或正式 token key；未执行 Git stage/commit/push。
 - [x] 修复 Debug Mock 删除账户误走正式 HTTPS 校验的问题；仅 `com.matelink.test.mock` 允许本机回环 HTTP，Release 保持 HTTPS-only。
 - [x] 通过 Go test/vet、PostgreSQL 集成测试、本机 Docker HTTP 生命周期和 `emulator-5554` 手工 Mock 回归；未使用实体手机或 instrumentation。
 - [x] 更新 Android/云接口/Pilot 文档及 Obsidian 当前进度，明确本地证据不等于真实 Tesla Pilot。

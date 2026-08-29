@@ -14,6 +14,7 @@ import com.matelink.data.api.models.GlobalSettingsData
 import com.matelink.data.api.models.Units
 import com.matelink.data.api.models.AdapterSnapshot
 import com.matelink.data.api.models.ParkedDetailData
+import com.matelink.data.api.models.StandbyWindowData
 import com.matelink.data.api.models.UpdateData
 import com.matelink.data.local.AppSettings
 import com.matelink.data.local.ConnectionMode
@@ -378,6 +379,21 @@ class TeslamateRepository @Inject constructor(
                 response.isSuccessful && parked != null -> ApiResult.Success(parked)
                 else -> ApiResult.Error(
                     response.body()?.error ?: "Parked detail unavailable",
+                    response.code()
+                )
+            }
+        }
+    }
+
+    suspend fun getStandbyWindows(carId: Int): ApiResult<List<StandbyWindowData>> {
+        if (isMockMode()) return ApiResult.Error("Standby analysis requires real adapter data")
+        return executeWithFallback { api ->
+            val response = api.getStandby(carId)
+            val windows = response.body()?.data?.windows
+            when {
+                response.isSuccessful && windows != null -> ApiResult.Success(windows)
+                else -> ApiResult.Error(
+                    response.body()?.error ?: "Standby data unavailable",
                     response.code()
                 )
             }

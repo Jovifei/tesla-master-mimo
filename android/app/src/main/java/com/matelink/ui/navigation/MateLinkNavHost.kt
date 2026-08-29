@@ -2,11 +2,15 @@ package com.matelink.ui.navigation
 
 import android.content.Intent
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.size
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BatteryChargingFull
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.ElectricCar
-import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -18,6 +22,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -32,11 +38,15 @@ import com.matelink.ui.theme.swissPalette
  * routes require a `carId` that is only known at runtime; [navigateToTopLevel]
  * resolves the active car when a tab is tapped.
  */
-enum class TopLevelDestination(val labelRes: Int, val icon: ImageVector) {
-    Dashboard(R.string.nav_dashboard, Icons.Default.Dashboard),
-    Drives(R.string.nav_drives, Icons.Default.ElectricCar),
-    Charges(R.string.nav_charges, Icons.Default.BatteryChargingFull),
-    More(R.string.nav_more, Icons.Default.MoreHoriz)
+internal enum class TopLevelDestination(
+    val labelRes: Int,
+    val icon: ImageVector,
+    val iconKey: TopLevelIconKey
+) {
+    Dashboard(R.string.nav_dashboard, Icons.Default.Speed, TopLevelIconKey.VEHICLE),
+    Drives(R.string.nav_drives, Icons.Default.Route, TopLevelIconKey.ROUTE),
+    Charges(R.string.nav_charges, Icons.Default.Bolt, TopLevelIconKey.ENERGY),
+    More(R.string.nav_more, Icons.Default.Analytics, TopLevelIconKey.ANALYSIS)
 }
 
 private fun topLevelRouteName(dest: TopLevelDestination): String = when (dest) {
@@ -116,7 +126,26 @@ fun MateLinkBottomBar(
                 NavigationBarItem(
                     selected = dest == selected,
                     onClick = { navigateToTopLevel(navController, dest, currentCarId) },
-                    icon = { Icon(dest.icon, contentDescription = label) },
+                    icon = {
+                        val iconScale by animateFloatAsState(
+                            targetValue = PearlDriveMotion.iconScale(dest == selected),
+                            animationSpec = tween(
+                                durationMillis = PearlDriveMotion.NavigationSelectionDurationMillis,
+                                easing = FastOutSlowInEasing
+                            ),
+                            label = "pearl_drive_nav_icon_scale"
+                        )
+                        Icon(
+                            imageVector = dest.icon,
+                            contentDescription = label,
+                            modifier = Modifier
+                                .size(24.dp)
+                                .graphicsLayer {
+                                    scaleX = iconScale
+                                    scaleY = iconScale
+                                }
+                        )
+                    },
                     label = { Text(label) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,

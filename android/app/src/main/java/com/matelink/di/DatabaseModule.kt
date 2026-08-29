@@ -15,6 +15,7 @@ import com.matelink.data.local.dao.SentryAlertLogDao
 import com.matelink.data.local.dao.SyncStateDao
 import com.matelink.data.local.dao.TripCountryCacheDao
 import com.matelink.data.local.dao.TripRouteCacheDao
+import com.matelink.data.local.dao.TpmsPressureSampleDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -110,5 +111,11 @@ object DatabaseModule {
     @Singleton
     fun provideSavedTripDao(database: StatsDatabase): SavedTripDao {
         return database.savedTripDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideTpmsPressureSampleDao(database: StatsDatabase): TpmsPressureSampleDao {
+        return database.tpmsPressureSampleDao()
     }
 }

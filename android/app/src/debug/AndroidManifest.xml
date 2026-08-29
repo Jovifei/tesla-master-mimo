@@ -6,5 +6,9 @@
             android:name=".debug.DesignReviewActivity"
             android:exported="true"
             android:label="MateLink design review" />
+        <activity
+            android:name=".debug.StateScenarioReviewActivity"
+            android:exported="true"
+            android:label="MateLink state verification" />
     </application>
 </manifest>

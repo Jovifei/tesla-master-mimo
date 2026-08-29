@@ -73,7 +73,7 @@ data class CarWidgetDisplayData(
                 chargerPower = status.chargerPower,
                 chargeEnergyAdded = status.chargeEnergyAdded,
                 timeToFullCharge = status.timeToFullCharge,
-                chargerVoltage = status.chargingDetails?.chargerVoltage,
+                chargerVoltage = status.chargerVoltage,
                 chargerActualCurrent = status.chargerActualCurrent,
                 acPhases = status.acPhases,
                 sentryEventCount = 0,  // Populated separately by worker from SentryStateRepository

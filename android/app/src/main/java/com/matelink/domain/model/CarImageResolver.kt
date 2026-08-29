@@ -1,5 +1,29 @@
 package com.matelink.domain.model
 
+import java.util.Locale
+
+enum class VehicleHeroModel {
+    MODEL_3,
+    MODEL_Y,
+    MODEL_S,
+    MODEL_X,
+    UNKNOWN
+}
+
+data class VehicleHeroProfile(
+    val model: VehicleHeroModel,
+    val colorCode: String,
+    val wheelDiameterInches: Int?,
+    val isPerformance: Boolean
+)
+
+fun resolveVehicleHeroProfile(
+    model: String?,
+    exteriorColor: String?,
+    wheelType: String?,
+    trimBadging: String?
+): VehicleHeroProfile = CarImageResolver.resolveHeroProfile(model, exteriorColor, wheelType, trimBadging)
+
 /**
  * Represents a car model variant for the image picker.
  *
@@ -443,6 +467,31 @@ object CarImageResolver {
         if (color == null) return null
         val normalized = color.lowercase().replace(" ", "").replace("-", "").replace("_", "")
         return COLOR_CODES[normalized]
+    }
+
+    fun resolveHeroProfile(
+        model: String?,
+        exteriorColor: String?,
+        wheelType: String?,
+        trimBadging: String?
+    ): VehicleHeroProfile {
+        val normalizedModel = model?.trim()?.uppercase(Locale.ROOT)
+            ?.removePrefix("MODEL")
+            ?.trim()
+        val heroModel = when (normalizedModel) {
+            "3" -> VehicleHeroModel.MODEL_3
+            "Y" -> VehicleHeroModel.MODEL_Y
+            "S" -> VehicleHeroModel.MODEL_S
+            "X" -> VehicleHeroModel.MODEL_X
+            else -> VehicleHeroModel.UNKNOWN
+        }
+        val colorCode = mapColor(exteriorColor) ?: "PPSW"
+        val wheelDiameter = wheelType
+            ?.let { Regex("(18|19|20|21|22)").find(it)?.value?.toIntOrNull() }
+        val isPerformance = trimBadging?.trim()?.let {
+            it.startsWith("P", ignoreCase = true) || it.contains("performance", ignoreCase = true)
+        } == true
+        return VehicleHeroProfile(heroModel, colorCode, wheelDiameter, isPerformance)
     }
 
     private fun mapWheel(modelVariant: String, wheelType: String?): String? {

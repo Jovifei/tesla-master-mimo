@@ -24,6 +24,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +43,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.matelink.domain.model.VehicleHeroModel
+import com.matelink.domain.model.resolveVehicleHeroProfile
 import com.matelink.ui.theme.MetricMono
 
 @Immutable
@@ -63,15 +66,10 @@ fun TelemetryPanel(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+        shadowElevation = 1.dp,
         border = BorderStroke(
-            1.dp,
-            Brush.linearGradient(
-                listOf(
-                    accent.copy(alpha = 0.34f),
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-                )
-            )
+            0.5.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)
         )
     ) {
         content()
@@ -233,9 +231,16 @@ fun TelemetryGauge(
 @Composable
 fun VehicleHeroGraphic(
     modifier: Modifier = Modifier,
-    accent: Color = MaterialTheme.colorScheme.primary
+    accent: Color = MaterialTheme.colorScheme.primary,
+    model: String? = null,
+    exteriorColor: String? = null,
+    wheelType: String? = null,
+    trimBadging: String? = null
 ) {
-    val body = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f)
+    val profile = remember(model, exteriorColor, wheelType, trimBadging) {
+        resolveVehicleHeroProfile(model, exteriorColor, wheelType, trimBadging)
+    }
+    val body = heroPaintColor(profile.colorCode, accent)
     val window = MaterialTheme.colorScheme.surfaceContainerHighest
     val outline = MaterialTheme.colorScheme.outlineVariant
     val wheel = MaterialTheme.colorScheme.surface
@@ -253,28 +258,30 @@ fun VehicleHeroGraphic(
             size = Size(w * 0.68f, h * 0.48f)
         )
 
-        val car = Path().apply {
-            moveTo(w * 0.14f, h * 0.68f)
-            cubicTo(w * 0.20f, h * 0.54f, w * 0.31f, h * 0.48f, w * 0.40f, h * 0.44f)
-            cubicTo(w * 0.47f, h * 0.30f, w * 0.58f, h * 0.24f, w * 0.70f, h * 0.32f)
-            cubicTo(w * 0.76f, h * 0.36f, w * 0.80f, h * 0.48f, w * 0.88f, h * 0.52f)
-            cubicTo(w * 0.92f, h * 0.55f, w * 0.92f, h * 0.69f, w * 0.87f, h * 0.72f)
-            lineTo(w * 0.18f, h * 0.72f)
-            close()
-        }
+        val car = vehicleHeroBody(profile.model, w, h)
         drawPath(
             path = car,
             brush = Brush.linearGradient(
-                colors = listOf(body, accent.copy(alpha = 0.78f), body),
+                colors = listOf(body, body.copy(alpha = 0.72f), body),
                 start = Offset(w * 0.18f, h * 0.38f),
                 end = Offset(w * 0.86f, h * 0.74f)
             )
         )
+        drawPath(
+            path = car,
+            color = outline,
+            style = Stroke(width = 1.dp.toPx())
+        )
 
         val glass = Path().apply {
-            moveTo(w * 0.42f, h * 0.45f)
-            cubicTo(w * 0.49f, h * 0.31f, w * 0.58f, h * 0.29f, w * 0.68f, h * 0.35f)
-            lineTo(w * 0.75f, h * 0.49f)
+            val roofHeight = when (profile.model) {
+                VehicleHeroModel.MODEL_Y, VehicleHeroModel.MODEL_X -> 0.25f
+                VehicleHeroModel.MODEL_S -> 0.32f
+                else -> 0.30f
+            }
+            moveTo(w * 0.40f, h * 0.46f)
+            cubicTo(w * 0.48f, h * roofHeight, w * 0.59f, h * (roofHeight - 0.01f), w * 0.69f, h * (roofHeight + 0.07f))
+            lineTo(w * 0.76f, h * 0.49f)
             close()
         }
         drawPath(glass, color = window)
@@ -285,10 +292,20 @@ fun VehicleHeroGraphic(
             strokeWidth = 1.dp.toPx()
         )
 
-        listOf(w * 0.30f, w * 0.76f).forEach { wheelX ->
-            drawCircle(color = wheel, radius = h * 0.13f, center = Offset(wheelX, h * 0.72f))
-            drawCircle(color = outline, radius = h * 0.072f, center = Offset(wheelX, h * 0.72f))
-            drawCircle(color = accent, radius = h * 0.025f, center = Offset(wheelX, h * 0.72f))
+        val wheelRadius = h * (0.115f + ((profile.wheelDiameterInches ?: 19) - 18) * 0.006f)
+        val wheelXs = when (profile.model) {
+            VehicleHeroModel.MODEL_S -> listOf(w * 0.27f, w * 0.78f)
+            VehicleHeroModel.MODEL_X -> listOf(w * 0.29f, w * 0.77f)
+            else -> listOf(w * 0.30f, w * 0.76f)
+        }
+        wheelXs.forEach { wheelX ->
+            drawCircle(color = wheel, radius = wheelRadius, center = Offset(wheelX, h * 0.72f))
+            drawCircle(color = outline, radius = wheelRadius * 0.56f, center = Offset(wheelX, h * 0.72f))
+            drawCircle(
+                color = if (profile.isPerformance) Color(0xFFE45757) else accent,
+                radius = wheelRadius * 0.20f,
+                center = Offset(wheelX, h * 0.72f)
+            )
         }
 
         drawRoundRect(
@@ -298,6 +315,50 @@ fun VehicleHeroGraphic(
             cornerRadius = CornerRadius(4.dp.toPx())
         )
     }
+}
+
+private fun vehicleHeroBody(model: VehicleHeroModel, width: Float, height: Float): Path = Path().apply {
+    when (model) {
+        VehicleHeroModel.MODEL_Y -> {
+            moveTo(width * 0.12f, height * 0.69f)
+            cubicTo(width * 0.18f, height * 0.49f, width * 0.30f, height * 0.44f, width * 0.40f, height * 0.41f)
+            cubicTo(width * 0.46f, height * 0.24f, width * 0.58f, height * 0.20f, width * 0.70f, height * 0.29f)
+            cubicTo(width * 0.77f, height * 0.34f, width * 0.81f, height * 0.48f, width * 0.89f, height * 0.53f)
+        }
+        VehicleHeroModel.MODEL_X -> {
+            moveTo(width * 0.10f, height * 0.69f)
+            cubicTo(width * 0.14f, height * 0.47f, width * 0.27f, height * 0.40f, width * 0.37f, height * 0.38f)
+            cubicTo(width * 0.43f, height * 0.21f, width * 0.57f, height * 0.16f, width * 0.72f, height * 0.25f)
+            cubicTo(width * 0.81f, height * 0.30f, width * 0.85f, height * 0.46f, width * 0.92f, height * 0.52f)
+        }
+        VehicleHeroModel.MODEL_S -> {
+            moveTo(width * 0.10f, height * 0.68f)
+            cubicTo(width * 0.18f, height * 0.55f, width * 0.30f, height * 0.50f, width * 0.42f, height * 0.45f)
+            cubicTo(width * 0.49f, height * 0.31f, width * 0.62f, height * 0.27f, width * 0.73f, height * 0.34f)
+            cubicTo(width * 0.80f, height * 0.38f, width * 0.84f, height * 0.50f, width * 0.91f, height * 0.54f)
+        }
+        else -> {
+            moveTo(width * 0.14f, height * 0.68f)
+            cubicTo(width * 0.20f, height * 0.54f, width * 0.31f, height * 0.48f, width * 0.40f, height * 0.44f)
+            cubicTo(width * 0.47f, height * 0.30f, width * 0.58f, height * 0.24f, width * 0.70f, height * 0.32f)
+            cubicTo(width * 0.76f, height * 0.36f, width * 0.80f, height * 0.48f, width * 0.88f, height * 0.52f)
+        }
+    }
+    cubicTo(width * 0.93f, height * 0.56f, width * 0.92f, height * 0.69f, width * 0.87f, height * 0.72f)
+    lineTo(width * 0.18f, height * 0.72f)
+    close()
+}
+
+private fun heroPaintColor(code: String, accent: Color): Color = when (code) {
+    "PPSW" -> Color(0xFFE8E9EA)
+    "PMNG" -> Color(0xFF73777C)
+    "PBSB", "PB01", "PB02" -> Color(0xFF24558A)
+    "PPSB" -> Color(0xFF1D3557)
+    "PPMR", "PR01" -> Color(0xFFB6424A)
+    "PN00" -> Color(0xFF242629)
+    "PN01" -> Color(0xFF111315)
+    "PX02" -> Color(0xFF9BA2AA)
+    else -> accent.copy(alpha = 0.88f)
 }
 
 @Composable

@@ -12,8 +12,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -21,6 +22,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +35,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
+import com.matelink.data.api.models.LinkedCharge
+import com.matelink.ui.components.TelemetryPanel
+import com.matelink.ui.theme.StatusWarning
 import com.matelink.data.api.models.ParkedDetailData
 import com.matelink.util.formatCompactDateTimeRange
 import com.matelink.util.toChineseDisplayAddress
@@ -44,6 +49,7 @@ fun ParkedDetailScreen(
     olderDriveId: Int,
     newerDriveId: Int,
     onNavigateBack: () -> Unit,
+    onNavigateToChargeDetail: (Int) -> Unit = {},
     viewModel: ParkedDetailViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -68,7 +74,11 @@ fun ParkedDetailScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) { CircularProgressIndicator() }
-            state.data != null -> ParkedDetailContent(state.data!!, Modifier.padding(padding))
+            state.data != null -> ParkedDetailContent(
+                data = state.data!!,
+                modifier = Modifier.padding(padding),
+                onNavigateToChargeDetail = onNavigateToChargeDetail
+            )
             else -> Column(
                 modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
                 verticalArrangement = Arrangement.Center,
@@ -79,7 +89,11 @@ fun ParkedDetailScreen(
 }
 
 @Composable
-private fun ParkedDetailContent(data: ParkedDetailData, modifier: Modifier = Modifier) {
+private fun ParkedDetailContent(
+    data: ParkedDetailData,
+    modifier: Modifier = Modifier,
+    onNavigateToChargeDetail: (Int) -> Unit
+) {
     val unavailable = stringResource(R.string.not_available)
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -96,8 +110,17 @@ private fun ParkedDetailContent(data: ParkedDetailData, modifier: Modifier = Mod
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
+        data.linkedCharge?.let { linkedCharge ->
+            ChargeParkedCard(
+                linkedCharge = linkedCharge,
+                onNavigateToChargeDetail = onNavigateToChargeDetail
+            )
+        }
+
         MetricBand(
             title = "驻车消耗",
+            icon = Icons.Default.Bolt,
+            accent = MaterialTheme.colorScheme.primary,
             entries = listOf(
                 "电量变化" to data.batteryDelta?.let { "$it%" }.orUnavailable(unavailable),
                 "估算能耗" to data.energyKwh?.let { "%.2f kWh".format(it) }.orUnavailable(unavailable),
@@ -107,6 +130,8 @@ private fun ParkedDetailContent(data: ParkedDetailData, modifier: Modifier = Mod
         )
         MetricBand(
             title = "环境与数据",
+            icon = Icons.Default.Thermostat,
+            accent = MaterialTheme.colorScheme.tertiary,
             entries = listOf(
                 "车内温度" to data.insideTempAverage?.let { "%.1f °C".format(it) }.orUnavailable(unavailable),
                 "车外温度" to data.outsideTempAverage?.let { "%.1f °C".format(it) }.orUnavailable(unavailable),
@@ -124,13 +149,63 @@ private fun ParkedDetailContent(data: ParkedDetailData, modifier: Modifier = Mod
 }
 
 @Composable
-private fun MetricBand(title: String, entries: List<Pair<String, String>>) {
-    Card(
+private fun ChargeParkedCard(
+    linkedCharge: LinkedCharge,
+    onNavigateToChargeDetail: (Int) -> Unit
+) {
+    TelemetryPanel(accent = StatusWarning) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.BatteryChargingFull,
+                    contentDescription = null,
+                    tint = StatusWarning
+                )
+                Text(
+                    text = stringResource(R.string.charge_parked_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = stringResource(R.string.charge_parked_summary),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            linkedCharge.energyAddedKwh?.takeIf { it.isFinite() && it >= 0.0 }?.let { energy ->
+                Text(
+                    text = "%.1f kWh".format(energy),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = StatusWarning
+                )
+            }
+            TextButton(onClick = { onNavigateToChargeDetail(linkedCharge.chargeId) }) {
+                Text(stringResource(R.string.charge_parked_view))
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetricBand(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    accent: androidx.compose.ui.graphics.Color,
+    entries: List<Pair<String, String>>
+) {
+    TelemetryPanel(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        accent = accent
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(imageVector = icon, contentDescription = null, tint = accent)
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
             entries.chunked(2).forEach { row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     row.forEach { (label, value) ->

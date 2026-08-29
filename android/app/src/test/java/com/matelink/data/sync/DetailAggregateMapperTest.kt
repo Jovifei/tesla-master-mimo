@@ -65,9 +65,9 @@ class DetailAggregateMapperTest {
                 ChargePoint(
                     outsideTemp = 16.0,
                     chargerDetails = ChargerDetails(
-                        chargerPower = 90,
-                        chargerVoltage = 400,
-                        chargerActualCurrent = 220,
+                        chargerPower = 90.0,
+                        chargerVoltage = 400.0,
+                        chargerActualCurrent = 220.0,
                         chargerPhases = 0,
                         fastChargerPresent = true,
                         fastChargerBrand = "Tesla",
@@ -76,7 +76,7 @@ class DetailAggregateMapperTest {
                 ),
                 ChargePoint(
                     outsideTemp = 23.0,
-                    chargerDetails = ChargerDetails(chargerPower = 120, chargerVoltage = 410, chargerActualCurrent = 240)
+                    chargerDetails = ChargerDetails(chargerPower = 120.0, chargerVoltage = 410.0, chargerActualCurrent = 240.0)
                 )
             )
         ).toAggregate(carId = 4, computedAt = 123L)

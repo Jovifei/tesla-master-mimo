@@ -15,6 +15,7 @@ import com.matelink.domain.LocalDayBoundaries
 import com.matelink.domain.analytics.chargeTotalOverrideKey
 import com.matelink.domain.analytics.resolveChargeCostFromTotal
 import com.matelink.domain.analytics.observedCostSumOrNull
+import com.matelink.domain.analytics.validManualChargeTotal
 import android.content.Context
 import com.matelink.R
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -665,6 +666,16 @@ class ChargesViewModel @Inject constructor(
             costCoverage = costs.size,
             energyCoverage = energyValues.size
         )
+    }
+
+    fun saveManualTotalAmount(chargeId: Int, totalAmount: Double?) {
+        val currentCarId = carId ?: return
+        val validTotal = validManualChargeTotal(totalAmount)
+        if (totalAmount != null && validTotal == null) return
+
+        viewModelScope.launch {
+            chargeCostOverrideStore.save(currentCarId, chargeId, validTotal)
+        }
     }
 
     private fun calculateSummary(charges: List<ChargeData>): ChargesSummary {

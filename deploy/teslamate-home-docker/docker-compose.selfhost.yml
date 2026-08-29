@@ -1,0 +1,187 @@
+# ECS 裁剪版自托管 Compose —— Compose 项目名 matelink-selfhost
+#
+# 与同目录 docker-compose.yml（Jovi 自己电脑上在跑的家用模板）的区别：
+#   1) 移除 grafana 整个服务与 teslamate-grafana-data 卷（省 150-250 MB 与约 600 MB 镜像下载）；
+#   2) teslamate / teslamateapi / postgres / mosquitto 一律【不发布宿主机端口】；
+#   3) 只有 matelink-adapter 绑 127.0.0.1:18080，是唯一对外组件；
+#   4) 五个服务全部显式 mem_limit，合计 700 MB（232+288+76+64+40）。
+#
+# 落盘路径（ECS）：/home/jourvolt/matelink-selfhost/docker-compose.selfhost.yml
+# 本文件是【新增】，绝不修改同目录的 docker-compose.yml。
+#
+name: matelink-selfhost
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ---------------------------------------------------------------- 共享 PostgreSQL（两库：jourvolt + teslamate）
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:18-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jourvolt
+      POSTGRES_PASSWORD: ${JOURVOLT_DB_PASSWORD:?set JOURVOLT_DB_PASSWORD in .env}
+      POSTGRES_DB: jourvolt
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+      TZ: ${TZ:-Asia/Shanghai}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - max_connections=30
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - temp_buffers=2MB
+      - -c
+      - effective_cache_size=256MB
+      - -c
+      - wal_buffers=4MB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - log_min_duration_statement=2000
+      - -c
+      - log_statement=none
+    volumes:
+      # postgres:18+ 镜像把 PGDATA 改成了 /var/lib/postgresql/<大版本>/docker，
+      # 挂载点必须是 /var/lib/postgresql；挂到 .../data 会被 entrypoint 判为「legacy 挂载」并拒绝启动。
+      # 挂 /var/lib/postgresql 对 16 / 17 / 18 都成立（16/17 的 PGDATA 是其下的 data 子目录）。
+      - selfhost-postgres:/var/lib/postgresql
+    mem_limit: 232m
+    memswap_limit: 344m
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jourvolt -d jourvolt"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - jourvolt-infra
+    # 不发布 5432
+
+  # ---------------------------------------------------------------- Mosquitto（仅项目内网可达）
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    command: mosquitto -c /mosquitto-no-auth.conf
+    volumes:
+      - mosquitto-conf:/mosquitto/config
+      - mosquitto-data:/mosquitto/data
+    mem_limit: 40m
+    memswap_limit: 64m
+    logging: *default-logging
+    networks:
+      - jourvolt-infra
+    # 不发布 1883
+
+  # ---------------------------------------------------------------- TeslaMate
+  teslamate:
+    image: teslamate/teslamate:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    environment:
+      ENCRYPTION_KEY: ${TESLAMATE_ENCRYPTION_KEY:?set TESLAMATE_ENCRYPTION_KEY in .env}
+      DATABASE_USER: teslamate
+      DATABASE_PASS: ${TESLAMATE_DB_PASSWORD:?set TESLAMATE_DB_PASSWORD in .env}
+      DATABASE_NAME: teslamate
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_POOL_SIZE: 5
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      TZ: ${TZ:-Asia/Shanghai}
+      VIRTUAL_HOST: 127.0.0.1
+      CHECK_ORIGIN: ${TESLAMATE_CHECK_ORIGIN:-false}
+    # 说明（对架构文档 5.3 骨架的一处偏离）：原骨架有 `./import:/opt/app/import`。
+    # 该挂载只服务于 TeslaMate 的 CSV 历史导入，本轮迁移走 pg_restore，不需要它；
+    # 而 teslamate 容器以非 root 用户运行，jourvolt 无 sudo 无法 chown 宿主机目录，
+    # 保留挂载会持续刷 "[warn] Cannot access directory '/opt/app/import': :eacces"。
+    # 移除后 import/ 可继续保持 700（只放迁移 dump），不降低安全性。
+    cap_drop:
+      - ALL
+    mem_limit: 288m
+    memswap_limit: 512m
+    logging: *default-logging
+    networks:
+      - jourvolt-infra
+    # 不发布 4000：仅经 SSH 隧道直连容器 IP 访问（见 tunnel-teslamate.sh）
+
+  # ---------------------------------------------------------------- TeslaMateApi（端口不发布）
+  teslamateapi:
+    image: tobiasehlert/teslamateapi:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+      teslamate:
+        condition: service_started
+    environment:
+      ENCRYPTION_KEY: ${TESLAMATE_ENCRYPTION_KEY:?}
+      DATABASE_USER: teslamate
+      DATABASE_PASS: ${TESLAMATE_DB_PASSWORD:?}
+      DATABASE_NAME: teslamate
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      MQTT_HOST: mosquitto
+      TZ: ${TZ:-Asia/Shanghai}
+      API_TOKEN: ${MATE_LINK_API_TOKEN:?set MATE_LINK_API_TOKEN in .env}
+      API_TOKEN_HEADER: Authorization
+    mem_limit: 64m
+    memswap_limit: 104m
+    logging: *default-logging
+    networks:
+      - jourvolt-infra
+    # 不发布 8080：无 token 也会响应，暴露等于公开车辆数据
+
+  # ---------------------------------------------------------------- MateLink Adapter（唯一对外）
+  matelink-adapter:
+    build:
+      context: ./adapter
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+      teslamateapi:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://teslamate:${TESLAMATE_DB_PASSWORD}@postgres:5432/teslamate?sslmode=disable
+      UPSTREAM_URL: http://teslamateapi:8080
+      API_TOKEN: ${MATE_LINK_API_TOKEN:?}
+      TZ: ${TZ:-Asia/Shanghai}
+      MQTT_ENABLED: ${MQTT_ENABLED:-true}
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      MQTT_NAMESPACE: ${MQTT_NAMESPACE:-}
+    ports:
+      - "127.0.0.1:18080:8080"
+    mem_limit: 76m
+    memswap_limit: 120m
+    logging: *default-logging
+    networks:
+      - jourvolt-infra
+
+volumes:
+  selfhost-postgres:
+  mosquitto-conf:
+  mosquitto-data:
+
+networks:
+  jourvolt-infra:
+    name: jourvolt-infra

@@ -144,10 +144,33 @@
     <string name="dashboard_snapshot_time">Snapshot %1$s</string>
     <string name="snapshot_source_live">Live</string>
     <string name="snapshot_source_history">History</string>
+    <string name="snapshot_source_recent">Recent state</string>
     <string name="snapshot_source_mock">Local mock</string>
     <string name="snapshot_source_unavailable">Unavailable</string>
     <string name="status_unknown">Unknown</string>
     <string name="battery_history_navigation_note">View recorded battery history and capacity details</string>
+    <string name="vehicle_model_3">Model 3</string>
+    <string name="vehicle_model_y">Model Y</string>
+    <string name="vehicle_model_s">Model S</string>
+    <string name="vehicle_model_x">Model X</string>
+    <string name="vehicle_trim_performance">Performance</string>
+    <string name="vehicle_trim_long_range">Long Range</string>
+    <string name="vehicle_trim_standard_range">Standard Range</string>
+    <string name="vehicle_speed">Speed</string>
+    <string name="vehicle_power_consuming">Consuming</string>
+    <string name="vehicle_power_regenerating">Regenerating</string>
+    <string name="vehicle_power_steady">Power</string>
+    <string name="vehicle_gear">Gear</string>
+    <string name="vehicle_shift_drive">D</string>
+    <string name="vehicle_shift_reverse">R</string>
+    <string name="vehicle_shift_neutral">N</string>
+    <string name="vehicle_shift_park">P</string>
+    <string name="vehicle_openings_title">Open vehicle</string>
+    <string name="vehicle_doors_open">Doors open</string>
+    <string name="vehicle_windows_open">Windows open</string>
+    <string name="vehicle_frunk_open">Front trunk open</string>
+    <string name="vehicle_trunk_open">Trunk open</string>
+    <string name="tire_pressure_warning">Check pressure</string>
 
     <!-- Status -->
     <string name="state_online">Online</string>
@@ -353,6 +376,18 @@
 
     <!-- Vampire Drain (Standby Power Consumption) -->
     <string name="vampire_title">Standby Power Drain</string>
+    <string name="standby_range_7_days">7 days</string>
+    <string name="standby_range_30_days">30 days</string>
+    <string name="standby_range_year">1 year</string>
+    <string name="standby_insufficient_detail">Current range has %1$d observed parking windows and %2$.1f qualified hours. A stable conclusion needs 5 valid windows and 20 qualified hours.</string>
+    <string name="standby_evidence_title">Evidence and coverage</string>
+    <string name="standby_evidence_summary">Observed %1$d parking windows; %2$d valid windows; %3$.1f qualified hours.</string>
+    <string name="standby_stable_conclusion">Enough data for a stable conclusion</string>
+    <string name="standby_preliminary_observation">Preliminary observation only</string>
+    <string name="standby_attribution_title">Observed causes</string>
+    <string name="standby_climate_observed">Climate activity was observed in one or more valid windows.</string>
+    <string name="standby_climate_not_observed">No climate activity was observed in the valid windows.</string>
+    <string name="standby_sentry_not_collected">Sentry status was not collected by this history source.</string>
     <string name="vampire_total_drain_label">Detected parked battery drop</string>
     <string name="vampire_total_drain_subtitle">Sum of SOC drops between charges with no recorded drive; energy is not inferred</string>
     <string name="vampire_avg_power">Avg Power</string>
@@ -560,12 +595,49 @@
     <string name="tpms_notification_title">Tire Pressure Warning</string>
     <string name="tpms_notification_body">%1$s: Check tire pressure (%2$s)</string>
     <string name="tpms_notification_cleared">%1$s: Tire pressure OK</string>
+    <string name="tpms_custom_notification_title">App custom reminder</string>
+    <string name="tpms_custom_low_body">App custom reminder: %1$s observed pressure %2$.2f bar is below threshold %3$.2f bar.</string>
+    <string name="tpms_custom_high_body">App custom reminder: %1$s observed pressure %2$.2f bar is above threshold %3$.2f bar.</string>
     <string name="tire_fl_full">Front Left</string>
     <string name="tire_fr_full">Front Right</string>
     <string name="tire_rl_full">Rear Left</string>
     <string name="tire_rr_full">Rear Right</string>
     <string name="tpms_channel_name">Tire Pressure</string>
     <string name="tpms_channel_description">Tire pressure monitoring alerts</string>
+    <string name="tpms_trend_title">Tire Pressure Trends</string>
+    <string name="tpms_trend_window_7">7 days</string>
+    <string name="tpms_trend_window_30">30 days</string>
+    <string name="tpms_trend_load_failed">Unable to load tire-pressure history. Try again.</string>
+    <string name="tpms_trend_unavailable">No valid tire-pressure history is available for this window.</string>
+    <string name="tpms_trend_unavailable_short">unavailable</string>
+    <string name="tpms_trend_chart_title">Recorded pressure</string>
+    <string name="tpms_trend_coverage">Coverage: %1$d recorded samples</string>
+    <string name="tpms_trend_wheel_summary">%1$s · latest %2$s · delta %3$s</string>
+    <string name="tpms_trend_possible_factors">Possible factors</string>
+    <string name="tpms_trend_factor_ambient">Possible ambient-temperature effect</string>
+    <string name="tpms_trend_factor_highway">Possible highway warm-up effect</string>
+    <string name="tpms_trend_factor_parking">Possible parking-related pressure change</string>
+    <string name="tpms_trend_factor_insufficient">Not enough evidence to suggest a factor</string>
+    <string name="tpms_trend_parking_recommendation">Parking pattern detected; manual cold check recommended.</string>
+    <string name="tpms_trend_evidence_disclaimer">These are possible factors from recorded samples, not a confirmed cause.</string>
+    <string name="tpms_trend_conclusion_ambient">Possible ambient-temperature effect; cause not confirmed.</string>
+    <string name="tpms_trend_conclusion_highway">Possible highway warm-up effect; cause not confirmed.</string>
+    <string name="tpms_trend_conclusion_parking">Possible parking-related pressure change; cause not confirmed.</string>
+    <string name="tpms_trend_conclusion_insufficient">Possible factor unavailable: insufficient evidence.</string>
+    <string name="tpms_trend_recommendation_manual_cold_check">Manual cold check recommended.</string>
+    <string name="tpms_pressure_unit">bar</string>
+    <string name="tpms_profile_title">Per-car cold tire-pressure profile</string>
+    <string name="tpms_profile_source_hint">Use the cold-pressure label on the driver-side door pillar as the starting source. Values here are for this car only.</string>
+    <string name="tpms_profile_model_y_suggestion">Editable Model Y suggestion: target 2.9 bar, low 2.6 bar, high 3.4 bar. This is a suggestion, not a universal Tesla limit.</string>
+    <string name="tpms_profile_target_label">Cold target</string>
+    <string name="tpms_profile_low_label">Low reminder below</string>
+    <string name="tpms_profile_high_label">High reminder above</string>
+    <string name="tpms_custom_reminder_label">App custom reminder</string>
+    <string name="tpms_profile_enabled">Enabled after explicit save for car %1$d.</string>
+    <string name="tpms_profile_not_enabled">Not enabled until you explicitly save this profile.</string>
+    <string name="tpms_profile_save">Save App custom reminder</string>
+    <string name="tpms_profile_validation_error">Enter finite values with 0 &lt; low &lt; target &lt; high.</string>
+    <string name="tpms_profile_saved">App custom reminder saved for this car.</string>
 
     <!-- Charging notifications -->
     <string name="charging_notification_title">Charging</string>
@@ -726,6 +798,9 @@
     <string name="avg_distance">Avg Distance</string>
     <string name="charge_details_title">Charge Details</string>
     <string name="charge_free">Free</string>
+    <string name="charge_parked_title">Charging while parked</string>
+    <string name="charge_parked_summary">A charging session overlaps this parked period.</string>
+    <string name="charge_parked_view">View this charge</string>
     <string name="charge_history">Charge History</string>
     <string name="charge_location">Location</string>
     <string name="charger">Charger</string>
@@ -773,6 +848,19 @@
     <string name="current_max">Current Max</string>
     <string name="current_min">Current Min</string>
     <string name="current_profile">Current Profile</string>
+    <string name="current_charge_parameters">Charging status</string>
+    <string name="current_charge_port">Charge port</string>
+    <string name="current_charge_port_open">Open</string>
+    <string name="current_charge_port_closed">Closed</string>
+    <string name="current_charge_type">Charge type</string>
+    <string name="current_charge_type_dc">DC</string>
+    <string name="current_charge_type_single_ac">Single-phase AC</string>
+    <string name="current_charge_type_three_ac">Three-phase AC</string>
+    <string name="current_charge_voltage">Voltage</string>
+    <string name="current_charge_current">Actual current</string>
+    <string name="current_charge_requested_current">Requested current</string>
+    <string name="current_charge_max_current">Maximum current</string>
+    <string name="current_charge_scheduled_start">Scheduled start</string>
     <string name="dc_unplug_warning_message">Please unplug the DC charger.</string>
     <string name="dc_unplug_warning_title">DC Unplug Warning</string>
     <string name="debug_sentry_simulate_event">Simulate Sentry Event</string>
@@ -828,8 +916,11 @@
     </plurals>
     <string name="gain">Gain</string>
     <string name="gap_type_driving">Driving</string>
-    <string name="geocode_progress_status">%1$d/%2$d</string>
-    <string name="geocode_progress_title">Geocoding</string>
+    <string name="geocode_progress_status">%1$d historical places identified, %2$d pending</string>
+    <string name="geocode_progress_title">Location recognition</string>
+    <string name="location_recognition_key_not_configured">Set up an AMap key to identify Chinese places.</string>
+    <string name="location_recognition_privacy_not_accepted">Accept the AMap privacy notice to identify places.</string>
+    <string name="location_recognition_restart_required">Restart the app after changing the AMap key to identify places.</string>
     <string name="hide_password">Hide Password</string>
     <string name="hide_token">Hide Token</string>
     <string name="info_about_calculation">About this calculation</string>
@@ -1251,4 +1342,9 @@
     <string name="about_changelog">Changelog</string>
     <string name="about_public_pages_unconfigured">Public pages are not configured yet.</string>
     <string name="about_open_link_failed">Unable to open this page.</string>
+    <string name="trip_notification_channel_name">Trip updates</string>
+    <string name="trip_notification_channel_description">Notifies you after a newly completed drive is synced.</string>
+    <string name="trip_notification_title">Trip completed</string>
+    <string name="trip_notification_body">%1$s → %2$s · %3$.1f km · %4$d min</string>
+    <string name="trip_notification_unknown_location">Unknown location</string>
 </resources>

@@ -3,6 +3,7 @@ package com.matelink.data.api.models
 import androidx.compose.runtime.Immutable
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
+import kotlin.math.roundToInt
 
 @JsonClass(generateAdapter = true)
 data class CarsResponse(
@@ -107,11 +108,19 @@ data class CarStatus(
     val isCharging: Boolean get() = chargingState?.lowercase() == "charging"
     val chargeEnergyAdded: Double? get() = chargingDetails?.chargeEnergyAdded
     val chargeLimitSoc: Int? get() = chargingDetails?.chargeLimitSoc
-    val chargerPower: Int? get() = chargingDetails?.chargerPower
+    val chargerPower: Int? get() = chargerPowerValue?.roundToInt()
+    val chargerPowerValue: Double? get() = chargingDetails?.chargerPower
     //val chargerPhases: Int? get() = chargingDetails?.chargerPhases
     val acPhases: Int? get() = chargingDetails?.acPhases
-    val chargerActualCurrent: Int? get() = chargingDetails?.chargerActualCurrent
-    val chargeCurrentRequestMax: Int? get() = chargingDetails?.chargeCurrentRequestMax
+    val chargerVoltage: Int? get() = chargerVoltageValue?.roundToInt()
+    val chargerVoltageValue: Double? get() = chargingDetails?.chargerVoltage
+    val chargerActualCurrent: Int? get() = chargerActualCurrentValue?.roundToInt()
+    val chargerActualCurrentValue: Double? get() = chargingDetails?.chargerActualCurrent
+    val chargeCurrentRequest: Int? get() = chargeCurrentRequestValue?.roundToInt()
+    val chargeCurrentRequestValue: Double? get() = chargingDetails?.chargeCurrentRequest
+    val chargeCurrentRequestMax: Int? get() = chargeCurrentRequestMaxValue?.roundToInt()
+    val chargeCurrentRequestMaxValue: Double? get() = chargingDetails?.chargeCurrentRequestMax
+    val scheduledChargingStartTime: String? get() = chargingDetails?.scheduledChargingStartTime
     val isDcCharging: Boolean get() = chargingDetails?.isDcCharging ?: false
     val isChargeComplete: Boolean get() = chargingState?.lowercase() == "complete"
     /**
@@ -155,8 +164,9 @@ data class CarStatus(
     val version: String? get() = carVersions?.version
     val updateAvailable: Boolean? get() = carVersions?.updateAvailable
 
-    val speed: Int? get() = drivingDetails?.speed
-    val power: Int? get() = drivingDetails?.power
+    val speed: Double? get() = drivingDetails?.speed
+    val shiftState: String? get() = drivingDetails?.shiftState
+    val power: Double? get() = drivingDetails?.power
     val heading: Int? get() = drivingDetails?.heading
     val elevation: Int? get() = drivingDetails?.elevation
 }
@@ -191,8 +201,8 @@ data class CarVersions(
 @JsonClass(generateAdapter = true)
 data class DrivingDetails(
     @Json(name = "shift_state") val shiftState: String? = null,
-    @Json(name = "power") val power: Int? = null,
-    @Json(name = "speed") val speed: Int? = null,
+    @Json(name = "power") val power: Double? = null,
+    @Json(name = "speed") val speed: Double? = null,
     @Json(name = "heading") val heading: Int? = null,
     @Json(name = "elevation") val elevation: Int? = null
 )
@@ -221,12 +231,13 @@ data class ChargingDetails(
     @Json(name = "charge_energy_added") val chargeEnergyAdded: Double? = null,
     @Json(name = "charge_limit_soc") val chargeLimitSoc: Int? = null,
     @Json(name = "charge_port_door_open") val chargePortDoorOpen: Boolean? = null,
-    @Json(name = "charger_actual_current") val chargerActualCurrent: Int? = null,
+    @Json(name = "charger_actual_current") val chargerActualCurrent: Double? = null,
     @Json(name = "charger_phases") val chargerPhases: Int? = null,
-    @Json(name = "charger_power") val chargerPower: Int? = null,
-    @Json(name = "charger_voltage") val chargerVoltage: Int? = null,
-    @Json(name = "charge_current_request") val chargeCurrentRequest: Int? = null,
-    @Json(name = "charge_current_request_max") val chargeCurrentRequestMax: Int? = null,
+    @Json(name = "charger_power") val chargerPower: Double? = null,
+    @Json(name = "charger_voltage") val chargerVoltage: Double? = null,
+    @Json(name = "charge_current_request") val chargeCurrentRequest: Double? = null,
+    @Json(name = "charge_current_request_max") val chargeCurrentRequestMax: Double? = null,
+    @Json(name = "scheduled_charging_start_time") val scheduledChargingStartTime: String? = null,
     @Json(name = "time_to_full_charge") val timeToFullCharge: Double? = null
 ) {
     /**

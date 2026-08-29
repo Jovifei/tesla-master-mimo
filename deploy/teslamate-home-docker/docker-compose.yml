@@ -81,6 +81,12 @@ services:
       - UPSTREAM_URL=http://teslamateapi:8080
       - API_TOKEN=${MATE_LINK_API_TOKEN}
       - TZ=${TZ}
+      - MQTT_ENABLED=${MQTT_ENABLED:-true}
+      - MQTT_HOST=mosquitto
+      - MQTT_PORT=1883
+      - MQTT_NAMESPACE=${MQTT_NAMESPACE:-}
+      - MQTT_USERNAME=${MQTT_USERNAME:-}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
     ports:
       # Windows commonly reserves 8055-8154; expose the host API outside that range.
       - "18080:8080"

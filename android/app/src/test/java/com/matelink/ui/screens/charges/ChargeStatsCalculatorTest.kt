@@ -39,9 +39,9 @@ class ChargeStatsCalculatorTest {
                         batteryLevel = 0,
                         outsideTemp = 0.0,
                         chargerDetails = ChargerDetails(
-                            chargerPower = 0,
-                            chargerVoltage = 0,
-                            chargerActualCurrent = 0
+                            chargerPower = 0.0,
+                            chargerVoltage = 0.0,
+                            chargerActualCurrent = 0.0
                         )
                     )
                 )

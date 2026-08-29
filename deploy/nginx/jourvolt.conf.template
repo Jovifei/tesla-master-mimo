@@ -1,0 +1,170 @@
+# =============================================================================
+# jourvolt.conf.template — JourVolt / MateLink 公网入口 nginx 配置模板
+# -----------------------------------------------------------------------------
+# 由 deploy/scripts/setup-root.sh 渲染为 /etc/nginx/conf.d/jourvolt.conf。
+# 占位符：%SELFHOST% / %API% / %APPLINK%（渲染时替换为三个真实域名）。
+#
+# 硬约束：
+#   1. 不使用 `_` 或 `default_server`（与既有 star-photo.conf 共存于 80 端口，
+#      全部按 server_name 精确匹配，绝不抢默认主机）。
+#   2. 证书通过 include 片段引入（jourvolt-ssl.inc），片段默认指向自签占位
+#      证书，任何时刻 `nginx -t` 都必须通过；LE 签发成功后由 setup-root.sh
+#      把片段切换为 Let's Encrypt 路径。
+#   3. limit_req 限流：10 r/s per client IP，burst 20。
+# =============================================================================
+
+# ---- 共享限流区（http 上下文；conf.d 由 nginx.conf 的 http{} include） ----
+limit_req_zone $binary_remote_addr zone=jourvolt:10m rate=10r/s;
+limit_req_status 429;
+
+# -----------------------------------------------------------------------------
+# :80 —— 只做 ACME HTTP-01 challenge + 其余 301 到 HTTPS
+# -----------------------------------------------------------------------------
+server {
+    listen 80;
+    listen [::]:80;
+    server_name %SELFHOST% %API% %APPLINK%;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /srv/jourvolt/acme;
+        default_type "text/plain";
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# -----------------------------------------------------------------------------
+# :443 —— %SELFHOST%（Adapter 入口）→ 全路径反代 127.0.0.1:18080
+# -----------------------------------------------------------------------------
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name %SELFHOST%;
+
+    include /etc/nginx/conf.d/jourvolt-ssl.inc;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:jourvolt_ssl:10m;
+    ssl_session_timeout 1h;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    location / {
+        limit_req zone=jourvolt burst=20 nodelay;
+        proxy_pass http://127.0.0.1:18080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+    }
+}
+
+# -----------------------------------------------------------------------------
+# :443 —— %API%（Go API / Tesla OAuth 回调）→ 反代 127.0.0.1:18090
+# -----------------------------------------------------------------------------
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name %API%;
+
+    include /etc/nginx/conf.d/jourvolt-ssl.inc;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:jourvolt_ssl:10m;
+    ssl_session_timeout 1h;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    # Tesla 3p 公钥静态直出（架构文档 7.1：api 主机同 auth 主机托管公钥）
+    location ^~ /.well-known/appspecific/ {
+        limit_req zone=jourvolt burst=20 nodelay;
+        root /srv/jourvolt/public;
+        default_type application/x-pem-file;
+        try_files $uri =404;
+    }
+
+    location / {
+        limit_req zone=jourvolt burst=20 nodelay;
+        proxy_pass http://127.0.0.1:18090;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+    }
+}
+
+# -----------------------------------------------------------------------------
+# :443 —— %APPLINK%（App Link / 静态资产托管）
+#   静态优先：assetlinks.json / terms / privacy / Tesla 3p 公钥
+#   其余路径按架构文档 7.1 反代到 Go API 127.0.0.1:18090
+# -----------------------------------------------------------------------------
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name %APPLINK%;
+
+    include /etc/nginx/conf.d/jourvolt-ssl.inc;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:jourvolt_ssl:10m;
+    ssl_session_timeout 1h;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    root /srv/jourvolt/public;
+
+    # Android App Link 校验文件（由 publish-static.sh 发布，指纹为占位符）
+    location = /.well-known/assetlinks.json {
+        limit_req zone=jourvolt burst=20 nodelay;
+        default_type application/json;
+        try_files $uri =404;
+    }
+
+    # Tesla 第三方应用公钥
+    location ^~ /.well-known/appspecific/ {
+        limit_req zone=jourvolt burst=20 nodelay;
+        default_type application/x-pem-file;
+        try_files $uri =404;
+    }
+
+    # 法律页（静态直出，不经后端）
+    location ^~ /terms/ {
+        limit_req zone=jourvolt burst=20 nodelay;
+        try_files $uri $uri/ =404;
+    }
+    location ^~ /privacy/ {
+        limit_req zone=jourvolt burst=20 nodelay;
+        try_files $uri $uri/ =404;
+    }
+
+    # APK 下载页（静态直出：index.html + app-release.apk；不经后端）
+    location ^~ /download/ {
+        limit_req zone=jourvolt burst=20 nodelay;
+        try_files $uri $uri/ =404;
+    }
+
+    # 其余路径：反代 Go API（架构文档 7.1 %APPLINK% server 约定）
+    location / {
+        limit_req zone=jourvolt burst=20 nodelay;
+        proxy_pass http://127.0.0.1:18090;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+    }
+}

@@ -193,13 +193,13 @@ object MockDataProvider {
         longitude = 13.4000,
         chargePoints = listOf(
             ChargePoint(date = isoPast(1440), batteryLevel = 20, chargeEnergyAdded = 0.0,
-                chargerDetails = ChargerDetails(chargerPower = 150, chargerVoltage = 400, chargerActualCurrent = 300, chargerPhases = 0),
+                chargerDetails = ChargerDetails(chargerPower = 150.0, chargerVoltage = 400.0, chargerActualCurrent = 300.0, chargerPhases = 0),
                 outsideTemp = 18.0),
             ChargePoint(date = isoPast(1410), batteryLevel = 45, chargeEnergyAdded = 22.0,
-                chargerDetails = ChargerDetails(chargerPower = 150, chargerVoltage = 400, chargerActualCurrent = 300, chargerPhases = 0),
+                chargerDetails = ChargerDetails(chargerPower = 150.0, chargerVoltage = 400.0, chargerActualCurrent = 300.0, chargerPhases = 0),
                 outsideTemp = 18.5),
             ChargePoint(date = isoPast(1380), batteryLevel = 80, chargeEnergyAdded = 45.2,
-                chargerDetails = ChargerDetails(chargerPower = 80, chargerVoltage = 390, chargerActualCurrent = 205, chargerPhases = 0),
+                chargerDetails = ChargerDetails(chargerPower = 80.0, chargerVoltage = 390.0, chargerActualCurrent = 205.0, chargerPhases = 0),
                 outsideTemp = 19.0)
         ),
         isCharging = false

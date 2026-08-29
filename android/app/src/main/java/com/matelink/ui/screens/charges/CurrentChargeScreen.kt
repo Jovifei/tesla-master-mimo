@@ -70,6 +70,8 @@ import androidx.compose.ui.platform.LocalContext
 import com.matelink.ui.components.FullscreenDualAxisLineChart
 import com.matelink.ui.components.FullscreenLineChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.TelemetryPanel
+import com.matelink.ui.components.TelemetrySectionHeader
 import com.matelink.util.formatDuration
 import com.matelink.util.formatTime
 import com.matelink.util.parseIsoDateTime
@@ -179,6 +181,13 @@ fun CurrentChargeScreen(
                     dcFinishedSince = uiState.dcFinishedSince,
                     timeToFullCharge = uiState.timeToFullCharge,
                     chargeLimitSoc = uiState.chargeLimitSoc,
+                    chargePortDoorOpen = uiState.chargePortDoorOpen,
+                    chargerPhases = uiState.chargerPhases,
+                    chargerVoltage = uiState.chargerVoltage,
+                    chargerActualCurrent = uiState.chargerActualCurrent,
+                    chargeCurrentRequest = uiState.chargeCurrentRequest,
+                    chargeCurrentRequestMax = uiState.chargeCurrentRequestMax,
+                    scheduledChargingStartTime = uiState.scheduledChargingStartTime,
                     chronologicalPoints = uiState.chronologicalPoints,
                     modifier = Modifier.padding(padding)
                 )
@@ -240,6 +249,13 @@ private fun CurrentChargeContent(
     dcFinishedSince: String? = null,
     timeToFullCharge: Double?,
     chargeLimitSoc: Int?,
+    chargePortDoorOpen: Boolean?,
+    chargerPhases: Int?,
+    chargerVoltage: Double?,
+    chargerActualCurrent: Double?,
+    chargeCurrentRequest: Double?,
+    chargeCurrentRequestMax: Double?,
+    scheduledChargingStartTime: String?,
     chronologicalPoints: List<ChargePoint>,
     modifier: Modifier = Modifier
 ) {
@@ -276,6 +292,16 @@ private fun CurrentChargeContent(
         if (isDcFinishedPluggedIn) {
             DcUnplugWarningBanner(dcFinishedSince = dcFinishedSince)
         }
+
+        CurrentChargeParametersCard(
+            chargePortDoorOpen = chargePortDoorOpen,
+            chargerPhases = chargerPhases,
+            chargerVoltage = chargerVoltage,
+            chargerActualCurrent = chargerActualCurrent,
+            chargeCurrentRequest = chargeCurrentRequest,
+            chargeCurrentRequestMax = chargeCurrentRequestMax,
+            scheduledChargingStartTime = scheduledChargingStartTime
+        )
 
         // Charts - always show cards, even with few data points
         val timeLabels = extractChronoTimeLabels(chronologicalPoints, is24Hour)
@@ -376,6 +402,97 @@ private fun CurrentChargeContent(
     }
 }
 
+private data class CurrentChargeParameter(
+    val label: String,
+    val value: String
+)
+
+@Composable
+internal fun CurrentChargeParametersCard(
+    chargePortDoorOpen: Boolean?,
+    chargerPhases: Int?,
+    chargerVoltage: Double?,
+    chargerActualCurrent: Double?,
+    chargeCurrentRequest: Double?,
+    chargeCurrentRequestMax: Double?,
+    scheduledChargingStartTime: String?
+) {
+    val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
+    val parameters = buildList {
+        chargePortDoorOpen?.let {
+            add(
+                CurrentChargeParameter(
+                    stringResource(R.string.current_charge_port),
+                    stringResource(if (it) R.string.current_charge_port_open else R.string.current_charge_port_closed)
+                )
+            )
+        }
+        chargePhaseFor(chargerPhases)?.let { phase ->
+            add(
+                CurrentChargeParameter(
+                    stringResource(R.string.current_charge_type),
+                    when (phase) {
+                        ChargePhase.DC -> stringResource(R.string.current_charge_type_dc)
+                        ChargePhase.SINGLE_PHASE_AC -> stringResource(R.string.current_charge_type_single_ac)
+                        ChargePhase.THREE_PHASE_AC -> stringResource(R.string.current_charge_type_three_ac)
+                    }
+                )
+            )
+        }
+        formatChargeMetric(chargerVoltage, "V")?.let {
+            add(CurrentChargeParameter(stringResource(R.string.current_charge_voltage), it))
+        }
+        formatChargeMetric(chargerActualCurrent, "A")?.let {
+            add(CurrentChargeParameter(stringResource(R.string.current_charge_current), it))
+        }
+        formatChargeMetric(chargeCurrentRequest, "A")?.let {
+            add(CurrentChargeParameter(stringResource(R.string.current_charge_requested_current), it))
+        }
+        formatChargeMetric(chargeCurrentRequestMax, "A")?.let {
+            add(CurrentChargeParameter(stringResource(R.string.current_charge_max_current), it))
+        }
+        formatScheduledChargingTime(scheduledChargingStartTime, is24Hour)?.let {
+            add(CurrentChargeParameter(stringResource(R.string.current_charge_scheduled_start), it))
+        }
+    }
+    if (parameters.isEmpty()) return
+
+    TelemetryPanel(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            TelemetrySectionHeader(
+                icon = Icons.Default.ElectricalServices,
+                title = stringResource(R.string.current_charge_parameters),
+                accent = Color(0xFFFF9800)
+            )
+            parameters.chunked(2).forEach { rowParameters ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    rowParameters.forEach { parameter ->
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = parameter.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = parameter.value,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                    if (rowParameters.size == 1) Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun CurrentChargeHeaderCard(
     detail: ChargeDetail,
@@ -393,8 +510,6 @@ private fun CurrentChargeHeaderCard(
     // Get instant values from the latest data point
     val latestPoint = chronologicalPoints.lastOrNull()
     val instantPower = latestPoint?.chargerPower
-    val instantVoltage = latestPoint?.chargerVoltage
-    val instantCurrent = latestPoint?.chargerCurrent
 
     val startLevel = detail.startBatteryLevel
     val currentLevel = detail.currentOrEndBatteryLevel
@@ -602,16 +717,6 @@ private fun CurrentChargeHeaderCard(
                 }
             }
 
-            // Voltage & Current (AC only)
-            if (!isDcCharge && instantVoltage != null && instantCurrent != null) {
-                Text(
-                    text = "$instantVoltage V \u00B7 $instantCurrent A",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
         }
     }
 }

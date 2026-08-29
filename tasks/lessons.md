@@ -310,3 +310,8 @@
 
 - 现象：Release 实体页面只有首页，`MateLinkBottomBar` 因混淆后的类型安全 route 与 `qualifiedName` 不匹配而返回空。
 - Prevention rule：导航顶层匹配必须兼容 JVM `$` 路由和 R8 改写前缀，使用稳定类型名末段回退；签名 Release 必须逐项点击验证一级入口。
+
+## 2026-08-23 真机导航验证不能在 L1 Dashboard 直接使用返回键
+
+- 现象：在 Dashboard 上发送 `KEYCODE_BACK` 会退出 MateLink，后续坐标测试可能落到其他系统应用，产生无效结果。
+- Prevention rule：真机 L1 回归使用显式 `am start` 恢复 MateLink 或直接点击底部导航；仅在已确认的 L2/L3 页面使用返回键。每次坐标输入后先验证当前焦点仍为 `com.matelink/.MainActivity`。

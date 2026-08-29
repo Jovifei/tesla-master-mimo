@@ -23,8 +23,11 @@ type recordingStore struct {
 	snapshotErr   error
 	parkedValue   parkedDetail
 	parkedErr     error
+	standbyValue  []standbyWindow
+	standbyErr    error
 	snapshotCalls int
 	parkedCalls   int
+	standbyCalls  int
 }
 
 func (s *recordingStore) Snapshot(context.Context, int) (snapshot, error) {
@@ -41,6 +44,14 @@ func (s *recordingStore) Parked(context.Context, int, int, int) (parkedDetail, e
 		return parkedDetail{}, s.parkedErr
 	}
 	return s.parkedValue, nil
+}
+
+func (s *recordingStore) Standby(context.Context, int) ([]standbyWindow, error) {
+	s.standbyCalls++
+	if s.standbyErr != nil {
+		return nil, s.standbyErr
+	}
+	return s.standbyValue, nil
 }
 
 func testSnapshot() snapshot {
@@ -217,6 +228,39 @@ func TestParkedUsesStableAdjacentDriveIDs(t *testing.T) {
 		t.Fatal("parked response mapping changed")
 	}
 	assertJSON(t, res)
+	assertNoSyntheticCredentials(t, res.Body.String(), logs.String())
+}
+
+func TestParkedResponsePreservesLinkedChargeWhenIntervalsOverlap(t *testing.T) {
+	value := testParkedDetail()
+	value.LinkedCharge = &linkedCharge{ChargeID: 41}
+	store := &recordingStore{parkedValue: value}
+	res, logs := serve(t, testServer(store), "/api/matelink/v1/cars/7/parked/11/12", validTestSecret)
+	if res.Code != http.StatusOK {
+		t.Fatalf("got status %d", res.Code)
+	}
+	if !containsAll(res.Body.String(), "linked_charge", "charge_id", "41") {
+		t.Fatal("parked response lost its linked charge")
+	}
+	assertNoSyntheticCredentials(t, res.Body.String(), logs.String())
+}
+
+func TestStandbyResponseReturnsOnlyAdapterObservedWindows(t *testing.T) {
+	delta := -1
+	store := &recordingStore{standbyValue: []standbyWindow{{
+		StartDate:       "2026-08-20T00:00:00+08:00",
+		EndDate:         "2026-08-20T04:00:00+08:00",
+		DurationSeconds: 14400,
+		BatteryDelta:    &delta,
+		CoverageRatio:   0.9,
+	}}}
+	res, logs := serve(t, testServer(store), "/api/matelink/v1/cars/7/standby", validTestSecret)
+	if res.Code != http.StatusOK {
+		t.Fatalf("got status %d", res.Code)
+	}
+	if !containsAll(res.Body.String(), "windows", "battery_delta", "coverage_ratio") {
+		t.Fatal("standby response is missing observed window evidence")
+	}
 	assertNoSyntheticCredentials(t, res.Body.String(), logs.String())
 }
 

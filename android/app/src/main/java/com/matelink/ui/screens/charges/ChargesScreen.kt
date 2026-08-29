@@ -111,6 +111,7 @@ fun ChargesScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val isDarkTheme = isSystemInDarkTheme()
     val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
+    var priceEditTarget by remember { mutableStateOf<ChargeData?>(null) }
 
     LaunchedEffect(carId) {
         viewModel.setCarId(carId)
@@ -179,6 +180,7 @@ fun ChargesScreen(
                     onLocationFilterCleared = { viewModel.clearLocationFilter() },
                     onChargeTypeFilterSelected = { viewModel.setChargeTypeFilter(it) },
                     onCostFilterSelected = { viewModel.setCostFilter(it) },
+                    onEditCost = { charge -> priceEditTarget = charge },
                     onChargeClick = { chargeId, scrollIndex, scrollOffset ->
                         viewModel.saveScrollPosition(scrollIndex, scrollOffset)
                         onNavigateToChargeDetail(chargeId)
@@ -186,6 +188,22 @@ fun ChargesScreen(
                 )
             }
         }
+    }
+
+    priceEditTarget?.let { charge ->
+        ChargePriceDialog(
+            currentTotal = uiState.priceOverrides[charge.chargeId],
+            currencySymbol = uiState.currencySymbol,
+            onDismiss = { priceEditTarget = null },
+            onSave = { total ->
+                viewModel.saveManualTotalAmount(charge.chargeId, total)
+                priceEditTarget = null
+            },
+            onClear = {
+                viewModel.saveManualTotalAmount(charge.chargeId, null)
+                priceEditTarget = null
+            }
+        )
     }
 }
 
@@ -218,6 +236,7 @@ private fun ChargesContent(
     onCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
     onChargeTypeFilterSelected: (ChargeTypeFilter) -> Unit,
     onCostFilterSelected: (CostFilter) -> Unit,
+    onEditCost: (ChargeData) -> Unit,
     onChargeClick: (chargeId: Int, scrollIndex: Int, scrollOffset: Int) -> Unit
 ) {
     val listState = rememberLazyListState(
@@ -352,13 +371,7 @@ private fun ChargesContent(
                     manualTotalAmount = priceOverrides[charge.chargeId],
                     freeSupercharging = freeSupercharging,
                     palette = palette,
-                    onEditCost = {
-                        onChargeClick(
-                            charge.chargeId,
-                            listState.firstVisibleItemIndex,
-                            listState.firstVisibleItemScrollOffset
-                        )
-                    },
+                    onEditCost = { onEditCost(charge) },
                     onClick = {
                         onChargeClick(
                             charge.chargeId,

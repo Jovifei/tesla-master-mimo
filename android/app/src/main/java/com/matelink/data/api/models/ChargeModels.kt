@@ -2,6 +2,7 @@ package com.matelink.data.api.models
 
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
+import kotlin.math.roundToInt
 
 @JsonClass(generateAdapter = true)
 data class ChargesResponse(
@@ -110,16 +111,19 @@ data class ChargePoint(
     @Json(name = "battery_info") val batteryInfo: ChargeBatteryInfo? = null
 ) {
     // Convenience accessors
-    val chargerPower: Int? get() = chargerDetails?.chargerPower
-    val chargerVoltage: Int? get() = chargerDetails?.chargerVoltage
-    val chargerCurrent: Int? get() = chargerDetails?.chargerActualCurrent
+    val chargerPower: Int? get() = chargerPowerValue?.roundToInt()
+    val chargerPowerValue: Double? get() = chargerDetails?.chargerPower
+    val chargerVoltage: Int? get() = chargerVoltageValue?.roundToInt()
+    val chargerVoltageValue: Double? get() = chargerDetails?.chargerVoltage
+    val chargerCurrent: Int? get() = chargerCurrentValue?.roundToInt()
+    val chargerCurrentValue: Double? get() = chargerDetails?.chargerActualCurrent
 }
 
 @JsonClass(generateAdapter = true)
 data class ChargerDetails(
-    @Json(name = "charger_power") val chargerPower: Int? = null,
-    @Json(name = "charger_voltage") val chargerVoltage: Int? = null,
-    @Json(name = "charger_actual_current") val chargerActualCurrent: Int? = null,
+    @Json(name = "charger_power") val chargerPower: Double? = null,
+    @Json(name = "charger_voltage") val chargerVoltage: Double? = null,
+    @Json(name = "charger_actual_current") val chargerActualCurrent: Double? = null,
     @Json(name = "charger_phases") val chargerPhases: Int? = null,
     @Json(name = "fast_charger_present") val fastChargerPresent: Boolean? = null,
     @Json(name = "fast_charger_brand") val fastChargerBrand: String? = null,

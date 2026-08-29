@@ -15,3 +15,10 @@ android/.idea/
 deploy/**/.env
 deploy/*.env
 deploy/jourvolt-dev-mock/backups/
+
+# Agent tooling internals (local only, never commit)
+.comet/
+.superpowers/
+.workbuddy/*
+!.workbuddy/memory
+!.workbuddy/memory/**

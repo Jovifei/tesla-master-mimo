@@ -63,5 +63,45 @@ data class ParkedDetailData(
     @Json(name = "sample_count") val sampleCount: Int = 0,
     @Json(name = "coverage_seconds") val coverageSeconds: Long = 0,
     @Json(name = "coverage_ratio") val coverageRatio: Double = 0.0,
+    @Json(name = "linked_charge") val linkedCharge: LinkedCharge? = null,
     @Json(name = "source") val source: String
+)
+
+@JsonClass(generateAdapter = true)
+data class LinkedCharge(
+    @Json(name = "charge_id") val chargeId: Int,
+    @Json(name = "start_date") val startDate: String? = null,
+    @Json(name = "end_date") val endDate: String? = null,
+    @Json(name = "energy_added_kwh") val energyAddedKwh: Double? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class StandbyResponse(
+    @Json(name = "data") val data: StandbyData? = null,
+    @Json(name = "error") val error: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class StandbyData(
+    @Json(name = "windows") val windows: List<StandbyWindowData> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class StandbyWindowData(
+    @Json(name = "start_date") val startDate: String,
+    @Json(name = "end_date") val endDate: String,
+    @Json(name = "address") val address: String? = null,
+    @Json(name = "duration_seconds") val durationSeconds: Long = 0,
+    @Json(name = "start_battery_level") val startBatteryLevel: Int? = null,
+    @Json(name = "end_battery_level") val endBatteryLevel: Int? = null,
+    @Json(name = "battery_delta") val batteryDelta: Int? = null,
+    @Json(name = "energy_kwh") val energyKwh: Double? = null,
+    @Json(name = "average_power_w") val averagePowerW: Double? = null,
+    @Json(name = "peak_power_w") val peakPowerW: Double? = null,
+    @Json(name = "coverage_ratio") val coverageRatio: Double = 0.0,
+    @Json(name = "inside_temp_average") val insideTempAverage: Double? = null,
+    @Json(name = "outside_temp_average") val outsideTempAverage: Double? = null,
+    @Json(name = "climate_active_sample_count") val climateActiveSampleCount: Int = 0,
+    @Json(name = "climate_sample_count") val climateSampleCount: Int = 0,
+    @Json(name = "source") val source: String = "unknown"
 )

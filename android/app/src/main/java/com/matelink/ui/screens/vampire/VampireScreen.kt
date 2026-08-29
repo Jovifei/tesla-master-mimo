@@ -22,13 +22,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.matelink.R
-import com.matelink.domain.analytics.HistoryFreshness
-import com.matelink.ui.components.AnalysisWindowSelector
-import com.matelink.ui.components.CachedHistoryBanner
+import com.matelink.domain.analytics.StandbyRange
+import com.matelink.ui.components.DateRangePickerDialog
 import com.matelink.ui.components.MetricPanelKind
 import com.matelink.ui.components.MetricStatusPanel
-import com.matelink.ui.components.HistoryStatusPanel
+import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.theme.SwissOutline
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -93,9 +93,14 @@ fun VampireScreen(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
                 contentAlignment = Alignment.Center
             ) {
-                HistoryStatusPanel(
-                    reason = uiState.noDataReason,
-                    emptyBody = stringResource(R.string.vampire_no_data)
+                MetricStatusPanel(
+                    kind = MetricPanelKind.UNAVAILABLE,
+                    title = stringResource(R.string.vampire_no_data),
+                    body = stringResource(
+                        R.string.standby_insufficient_detail,
+                        uiState.observedWindowCount,
+                        uiState.qualifiedHours
+                    )
                 )
             }
             return@Scaffold
@@ -109,19 +114,12 @@ fun VampireScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            AnalysisWindowSelector(
+            StandbyRangeSelector(
                 selected = uiState.selectedWindow,
                 onSelected = viewModel::selectWindow,
                 onCustomSelected = viewModel::selectCustomRange,
                 modifier = Modifier.fillMaxWidth()
             )
-
-            if (uiState.historyFreshness == HistoryFreshness.STALE) {
-                CachedHistoryBanner(
-                    title = stringResource(R.string.metric_state_cached_title),
-                    body = stringResource(R.string.metric_state_cached_body)
-                )
-            }
 
             if (uiState.idlePeriods.any { it.energyKwh == null }) {
                 MetricStatusPanel(
@@ -129,6 +127,38 @@ fun VampireScreen(
                     title = stringResource(R.string.vampire_soc_only_title),
                     body = stringResource(R.string.vampire_soc_only_body)
                 )
+            }
+
+            TelemetryPanel(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.standby_evidence_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.standby_evidence_summary,
+                            uiState.observedWindowCount,
+                            uiState.idlePeriods.size,
+                            uiState.qualifiedHours
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = if (uiState.hasStableConclusion) {
+                            stringResource(R.string.standby_stable_conclusion)
+                        } else {
+                            stringResource(R.string.standby_preliminary_observation)
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
 
             // Summary card - Total drain
@@ -244,36 +274,25 @@ fun VampireScreen(
                 }
             }
 
-            // Optimization tips
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, SwissOutline),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+            TelemetryPanel(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = stringResource(R.string.vampire_general_info_title),
+                        text = stringResource(R.string.standby_attribution_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    VampireTip(
-                        title = stringResource(R.string.vampire_tip_sentry_title),
-                        description = stringResource(R.string.vampire_tip_sentry_desc)
+                    Text(
+                        text = if (uiState.idlePeriods.any { it.cause == com.matelink.domain.analytics.StandbyCause.CLIMATE }) {
+                            stringResource(R.string.standby_climate_observed)
+                        } else {
+                            stringResource(R.string.standby_climate_not_observed)
+                        },
+                        style = MaterialTheme.typography.bodySmall
                     )
-                    VampireTip(
-                        title = stringResource(R.string.vampire_tip_cabin_overheat_title),
-                        description = stringResource(R.string.vampire_tip_cabin_overheat_desc)
-                    )
-                    VampireTip(
-                        title = stringResource(R.string.vampire_tip_climate_title),
-                        description = stringResource(R.string.vampire_tip_climate_desc)
-                    )
-                    VampireTip(
-                        title = stringResource(R.string.vampire_tip_updates_title),
-                        description = stringResource(R.string.vampire_tip_updates_desc)
+                    Text(
+                        text = stringResource(R.string.standby_sentry_not_collected),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -327,6 +346,45 @@ private fun VampireStatCard(
                 fontWeight = FontWeight.Bold
             )
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StandbyRangeSelector(
+    selected: StandbyRange,
+    onSelected: (StandbyRange) -> Unit,
+    onCustomSelected: (LocalDate, LocalDate) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showDatePicker by remember { mutableStateOf(false) }
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(
+            StandbyRange.LAST_7_DAYS to R.string.standby_range_7_days,
+            StandbyRange.LAST_30_DAYS to R.string.standby_range_30_days,
+            StandbyRange.LAST_YEAR to R.string.standby_range_year,
+            StandbyRange.ALL_TIME to R.string.filter_all_time
+        ).forEach { (range, label) ->
+            FilterChip(
+                selected = selected == range,
+                onClick = { onSelected(range) },
+                label = { Text(stringResource(label)) }
+            )
+        }
+        FilterChip(
+            selected = selected == StandbyRange.CUSTOM,
+            onClick = { showDatePicker = true },
+            label = { Text(stringResource(R.string.filter_custom)) }
+        )
+    }
+    if (showDatePicker) {
+        DateRangePickerDialog(
+            onDismiss = { showDatePicker = false },
+            onRangeSelected = { start, end ->
+                showDatePicker = false
+                onCustomSelected(start, end)
+            }
+        )
     }
 }
 

@@ -13,6 +13,7 @@ import com.matelink.data.api.models.UpdatesResponse
 import com.matelink.data.api.models.AdapterCapabilitiesResponse
 import com.matelink.data.api.models.AdapterSnapshotResponse
 import com.matelink.data.api.models.ParkedDetailResponse
+import com.matelink.data.api.models.StandbyResponse
 import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.Path
@@ -39,6 +40,11 @@ interface TeslamateApi {
         @Path("olderDriveId") olderDriveId: Int,
         @Path("newerDriveId") newerDriveId: Int
     ): Response<ParkedDetailResponse>
+
+    @GET("api/matelink/v1/cars/{carId}/standby")
+    suspend fun getStandby(
+        @Path("carId") carId: Int
+    ): Response<StandbyResponse>
 
     @GET("api/ping")
     suspend fun ping(): Response<PingResponse>

@@ -47,7 +47,7 @@ class StatsDatabaseMigrationTest {
         try {
             database.openHelper.writableDatabase.query("PRAGMA user_version").use { cursor ->
                 cursor.moveToFirst()
-                assertEquals(16, cursor.getInt(0))
+                assertEquals(17, cursor.getInt(0))
             }
             database.openHelper.writableDatabase.query(
                 "SELECT identity_hash FROM room_master_table WHERE id = 42"
@@ -81,6 +81,76 @@ class StatsDatabaseMigrationTest {
                 "PRAGMA table_info(`charge_cost_overrides`)"
             ).use { cursor ->
                 assertEquals(3, cursor.count)
+            }
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migratesV16ToV17RetainsRowsAndCreatesTpmsPrimaryKeySchema() {
+        val databaseName = "legacy-v16-tpms-pressure-samples"
+        helper.createDatabase(databaseName, 16).apply {
+            execSQL(
+                """
+                INSERT INTO drives_summary (
+                    driveId, carId, startDate, endDate, durationMin, startAddress, endAddress,
+                    distance, speedMax, speedAvg, powerMax, powerMin, startBatteryLevel,
+                    endBatteryLevel, outsideTempAvg, insideTempAvg, energyConsumed, efficiency
+                ) VALUES (
+                    101, 7, '2026-01-01T00:00:00Z', '2026-01-01T01:00:00Z', 60, 'A', 'B',
+                    123.45, 97, 54, 120, -50, 80, 70, 12.5, 21.0, 20.25, 164.0
+                )
+                """.trimIndent()
+            )
+            execSQL(
+                """
+                INSERT INTO charge_cost_overrides (carId, chargeId, manualTotalAmount)
+                VALUES (7, 501, 88.75)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            databaseName,
+            17,
+            true,
+            StatsDatabase.MIGRATION_16_17
+        )
+        try {
+            migrated.query(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tpms_pressure_samples'"
+            ).use { cursor -> assertEquals(1, cursor.count) }
+            migrated.query("PRAGMA index_list(`tpms_pressure_samples`)").use { cursor ->
+                assertEquals(1, cursor.count)
+                cursor.moveToFirst()
+                assertEquals("pk", cursor.getString(cursor.getColumnIndexOrThrow("origin")))
+            }
+            migrated.query("PRAGMA table_info(`tpms_pressure_samples`)").use { cursor ->
+                assertEquals(7, cursor.count)
+            }
+            migrated.query(
+                "SELECT carId, startDate, distance, speedMax, energyConsumed, efficiency " +
+                    "FROM drives_summary WHERE driveId = 101"
+            ).use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(7, cursor.getInt(0))
+                assertEquals("2026-01-01T00:00:00Z", cursor.getString(1))
+                assertEquals(123.45, cursor.getDouble(2), 0.0)
+                assertEquals(97, cursor.getInt(3))
+                assertEquals(20.25, cursor.getDouble(4), 0.0)
+                assertEquals(164.0, cursor.getDouble(5), 0.0)
+            }
+            migrated.query(
+                "SELECT manualTotalAmount FROM charge_cost_overrides WHERE carId = 7 AND chargeId = 501"
+            ).use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(88.75, cursor.getDouble(0), 0.0)
+            }
+            migrated.query("SELECT identity_hash FROM room_master_table WHERE id = 42").use { cursor ->
+                cursor.moveToFirst()
+                assertNotEquals("99551db285888bcd78917317b4c68076", cursor.getString(0))
             }
         } finally {
             migrated.close()

@@ -16,6 +16,7 @@ import com.matelink.data.local.dao.SentryAlertLogDao
 import com.matelink.data.local.dao.SyncStateDao
 import com.matelink.data.local.dao.TripCountryCacheDao
 import com.matelink.data.local.dao.TripRouteCacheDao
+import com.matelink.data.local.dao.TpmsPressureSampleDao
 import com.matelink.data.local.entity.ChargeDetailAggregate
 import com.matelink.data.local.entity.ChargeCostOverride
 import com.matelink.data.local.entity.ChargeSummary
@@ -31,6 +32,7 @@ import com.matelink.data.local.entity.SentryAlertLog
 import com.matelink.data.local.entity.SyncState
 import com.matelink.data.local.entity.TripCountryCache
 import com.matelink.data.local.entity.TripRouteCache
+import com.matelink.data.local.entity.TpmsPressureSample
 
 /**
  * Room database for storing stats data locally.
@@ -60,9 +62,10 @@ import com.matelink.data.local.entity.TripRouteCache
         TripCountryCache::class,
         SavedTrip::class,
         SavedTripLeg::class,
-        SavedTripConsumedFingerprint::class
+        SavedTripConsumedFingerprint::class,
+        TpmsPressureSample::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = true
 )
 abstract class StatsDatabase : RoomDatabase() {
@@ -79,6 +82,7 @@ abstract class StatsDatabase : RoomDatabase() {
     abstract fun tripRouteCacheDao(): TripRouteCacheDao
     abstract fun tripCountryCacheDao(): TripCountryCacheDao
     abstract fun savedTripDao(): SavedTripDao
+    abstract fun tpmsPressureSampleDao(): TpmsPressureSampleDao
 
     companion object {
         const val DATABASE_NAME = "matelink_stats.db"
@@ -369,6 +373,26 @@ abstract class StatsDatabase : RoomDatabase() {
             }
         }
 
+        /** Migration from V16 to V17: persist local TPMS pressure observations. */
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `tpms_pressure_samples` (
+                        `carId` INTEGER NOT NULL,
+                        `observedAt` INTEGER NOT NULL,
+                        `pressureFl` REAL,
+                        `pressureFr` REAL,
+                        `pressureRl` REAL,
+                        `pressureRr` REAL,
+                        `outsideTempC` REAL,
+                        PRIMARY KEY(`carId`, `observedAt`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         private fun rebuildDrivesSummaryWithEnergyDefaults(db: SupportSQLiteDatabase) {
             val energySource = if (hasColumn(db, "drives_summary", "energySource")) "`energySource`" else "NULL"
             val energyCoverageSeconds = if (hasColumn(db, "drives_summary", "energyCoverageSeconds")) {
@@ -527,7 +551,8 @@ abstract class StatsDatabase : RoomDatabase() {
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
             MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
-            MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16
+            MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
+            MIGRATION_16_17
         )
     }
 }

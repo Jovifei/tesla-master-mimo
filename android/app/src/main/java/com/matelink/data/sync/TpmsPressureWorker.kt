@@ -1,10 +1,14 @@
 package com.matelink.data.sync
 
-import android.app.NotificationChannel
+import android.Manifest
 import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -19,10 +23,23 @@ import com.matelink.BuildConfig
 import com.matelink.R
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.TirePosition
+import com.matelink.data.local.TpmsAlertProfile
+import com.matelink.data.local.TpmsCustomAlertStateStore
+import com.matelink.data.local.TpmsCustomAlertClaim
+import com.matelink.data.local.entity.TpmsPressureSample
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.repository.TpmsHistoryRepository
 import com.matelink.data.repository.TpmsStateChange
+import com.matelink.data.repository.TpmsStateChangeClaim
+import com.matelink.data.repository.TpmsStateChangeClaimResult
 import com.matelink.data.repository.TpmsStateRepository
+import com.matelink.domain.analytics.TpmsCustomAlert
+import com.matelink.domain.analytics.TpmsCustomAlertEvaluator
+import com.matelink.domain.analytics.tpmsCustomAlertFingerprint
+import com.matelink.notification.TpmsTrendNotificationManager
+import com.matelink.notification.NotificationDeliveryUnavailableException
+import com.matelink.notification.ensureTpmsNotificationChannel
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
@@ -40,7 +57,10 @@ class TpmsPressureWorker @AssistedInject constructor(
     @Assisted workerParams: WorkerParameters,
     private val teslamateRepository: TeslamateRepository,
     private val tpmsStateRepository: TpmsStateRepository,
-    private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore,
+    private val tpmsHistoryRepository: TpmsHistoryRepository,
+    private val tpmsCustomAlertStateStore: TpmsCustomAlertStateStore,
+    private val tpmsTrendNotificationManager: TpmsTrendNotificationManager
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
@@ -67,7 +87,8 @@ class TpmsPressureWorker @AssistedInject constructor(
 
             if (BuildConfig.DEBUG) {
                 // Debug: Use OneTimeWorkRequest with delay for shorter intervals
-                // Use REPLACE policy so reinstalling updates the interval
+                // Append the successor to the currently running work. KEEP would discard
+                // this request while the current worker is still running.
                 val request = OneTimeWorkRequestBuilder<TpmsPressureWorker>()
                     .setConstraints(constraints)
                     .setInitialDelay(INTERVAL_MINUTES, TimeUnit.MINUTES)
@@ -76,7 +97,7 @@ class TpmsPressureWorker @AssistedInject constructor(
 
                 WorkManager.getInstance(context).enqueueUniqueWork(
                     WORK_NAME,
-                    ExistingWorkPolicy.REPLACE,
+                    ExistingWorkPolicy.APPEND_OR_REPLACE,
                     request
                 )
 
@@ -121,7 +142,11 @@ class TpmsPressureWorker @AssistedInject constructor(
                 .addTag("$TAG-immediate")
                 .build()
 
-            WorkManager.getInstance(context).enqueue(request)
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                WORK_NAME,
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
+                request
+            )
             Log.d(TAG, "Triggered immediate TPMS check")
         }
     }
@@ -137,7 +162,7 @@ class TpmsPressureWorker @AssistedInject constructor(
         }
 
         // Create notification channel
-        createNotificationChannel()
+        ensureTpmsNotificationChannel(appContext)
 
         try {
             // Get list of cars
@@ -145,7 +170,7 @@ class TpmsPressureWorker @AssistedInject constructor(
             val cars = when (carsResult) {
                 is ApiResult.Success -> carsResult.data
                 is ApiResult.Error -> {
-                    Log.e(TAG, "Failed to fetch cars: ${carsResult.message}")
+                    Log.e(TAG, "event=fetch_cars_failed category=api_error")
                     return Result.retry()
                 }
             }
@@ -162,7 +187,7 @@ class TpmsPressureWorker @AssistedInject constructor(
                 try {
                     checkCarTpms(car.carId, car.displayName)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error checking TPMS for car ${car.carId}", e)
+                    Log.e(TAG, "event=check_tpms_failed carId=${car.carId} category=unexpected")
                 }
             }
 
@@ -175,7 +200,7 @@ class TpmsPressureWorker @AssistedInject constructor(
 
             return Result.success()
         } catch (e: Exception) {
-            Log.e(TAG, "Unexpected error in TPMS worker", e)
+            Log.e(TAG, "event=tpms_worker_failed category=unexpected")
 
             // In debug mode, reschedule even on failure
             if (BuildConfig.DEBUG) {
@@ -192,28 +217,57 @@ class TpmsPressureWorker @AssistedInject constructor(
         val status = when (statusResult) {
             is ApiResult.Success -> statusResult.data.status
             is ApiResult.Error -> {
-                Log.e(TAG, "Failed to fetch status for car $carId: ${statusResult.message}")
+                Log.e(TAG, "event=fetch_status_failed carId=$carId category=api_error")
                 return
             }
         }
 
         val tpmsDetails = status.tpmsDetails
+        val outsideTempC = status.outsideTemp
 
-        // Detect state change
-        val stateChange = tpmsStateRepository.detectStateChange(carId, tpmsDetails)
+        val profile = settingsDataStore.getTpmsAlertProfile(carId)
 
-        // Update stored state
-        tpmsStateRepository.updateState(carId, tpmsDetails)
-
-        // Show notification if state changed
-        if (stateChange != null) {
-            showNotification(carId, carName, stateChange)
-        }
+        processSuccessfulTpmsStatus(
+            carId = carId,
+            carName = carName,
+            tpmsDetails = tpmsDetails,
+            outsideTempC = outsideTempC,
+            observedAt = System.currentTimeMillis(),
+            profile = profile,
+            saveObservation = tpmsHistoryRepository::saveObservation,
+            pruneOlderThan90Days = tpmsHistoryRepository::pruneOlderThan90Days,
+            detectTeslaStateChange = tpmsStateRepository::detectStateChange,
+            updateTeslaState = tpmsStateRepository::updateState,
+            resetCustomState = tpmsCustomAlertStateStore::resetForProfile,
+            claimCustomAlerts = tpmsCustomAlertStateStore::claimAlerts,
+            commitCustomAlert = tpmsCustomAlertStateStore::commitClaim,
+            releaseCustomAlert = tpmsCustomAlertStateStore::releaseClaim,
+            claimTeslaStateChange = tpmsStateRepository::claimStateChange,
+            commitTeslaStateChange = tpmsStateRepository::commitStateChange,
+            releaseTeslaStateChange = tpmsStateRepository::releaseStateChange,
+            notifyTesla = ::showNotification,
+            notifyCustom = { id, _, alert ->
+                tpmsTrendNotificationManager.showCustomAlert(id, alert)
+            }
+        )
     }
 
     private fun showNotification(carId: Int, carName: String, stateChange: TpmsStateChange) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                appContext,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) throw NotificationDeliveryUnavailableException()
+        if (!NotificationManagerCompat.from(appContext).areNotificationsEnabled()) {
+            throw NotificationDeliveryUnavailableException()
+        }
+        ensureTpmsNotificationChannel(appContext)
         val notificationManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE)
                 as NotificationManager
+        if (notificationManager.getNotificationChannel(CHANNEL_ID)?.importance ==
+            NotificationManager.IMPORTANCE_NONE
+        ) throw NotificationDeliveryUnavailableException()
 
         val (title, body) = when (stateChange) {
             is TpmsStateChange.WarningStarted -> {
@@ -244,9 +298,9 @@ class TpmsPressureWorker @AssistedInject constructor(
 
         // Use different notification ID per car
         val notificationId = NOTIFICATION_ID_BASE + carId
-        notificationManager.notify(notificationId, notification)
+        runCatching { notificationManager.notify(notificationId, notification) }
+            .getOrElse { throw NotificationDeliveryUnavailableException(it) }
 
-        Log.d(TAG, "Showed TPMS notification for car $carId: $body")
     }
 
     private fun getTireFullName(tire: TirePosition): String {
@@ -258,17 +312,122 @@ class TpmsPressureWorker @AssistedInject constructor(
         }
     }
 
-    private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            appContext.getString(R.string.tpms_channel_name),
-            NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
-            description = appContext.getString(R.string.tpms_channel_description)
-        }
+}
 
-        val notificationManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE)
-                as NotificationManager
-        notificationManager.createNotificationChannel(channel)
+private fun TpmsAlertProfile?.isEnabledAndValid(): Boolean =
+    this != null && enabled && isValid
+
+private fun com.matelink.data.api.models.TpmsDetails?.hasCompleteSoftWarningFields(): Boolean =
+    this != null && warningFl != null && warningFr != null && warningRl != null && warningRr != null
+
+internal suspend fun processSuccessfulTpmsStatus(
+    carId: Int,
+    carName: String,
+    tpmsDetails: com.matelink.data.api.models.TpmsDetails?,
+    outsideTempC: Double? = null,
+    observedAt: Long,
+    profile: TpmsAlertProfile?,
+    saveObservation: suspend (TpmsPressureSample) -> Unit,
+    pruneOlderThan90Days: suspend (Int, Long) -> Unit,
+    detectTeslaStateChange: suspend (Int, com.matelink.data.api.models.TpmsDetails?) -> TpmsStateChange?,
+    updateTeslaState: suspend (Int, com.matelink.data.api.models.TpmsDetails?) -> Unit,
+    resetCustomState: suspend (Int, String) -> Unit,
+    claimCustomAlerts: suspend (
+        Int,
+        String,
+        Map<TirePosition, com.matelink.data.local.TpmsCustomWheelObservation>,
+        Boolean,
+        Long
+    ) -> List<TpmsCustomAlertClaim>,
+    commitCustomAlert: suspend (Int, TpmsCustomAlertClaim) -> Unit,
+    releaseCustomAlert: suspend (Int, TpmsCustomAlertClaim) -> Unit,
+    notifyTesla: (Int, String, TpmsStateChange) -> Unit,
+    notifyCustom: (Int, String, TpmsCustomAlert) -> Unit,
+    claimTeslaStateChange: (suspend (Int, com.matelink.data.api.models.TpmsDetails?, Long) -> TpmsStateChangeClaimResult)? = null,
+    commitTeslaStateChange: (suspend (Int, TpmsStateChangeClaim) -> Unit)? = null,
+    releaseTeslaStateChange: (suspend (Int, TpmsStateChangeClaim) -> Unit)? = null
+) {
+    val sample = TpmsPressureSample(
+        carId = carId,
+        observedAt = observedAt,
+        pressureFl = tpmsDetails?.pressureFl?.takeIf { it.isFinite() },
+        pressureFr = tpmsDetails?.pressureFr?.takeIf { it.isFinite() },
+        pressureRl = tpmsDetails?.pressureRl?.takeIf { it.isFinite() },
+        pressureRr = tpmsDetails?.pressureRr?.takeIf { it.isFinite() },
+        outsideTempC = outsideTempC?.takeIf { it.isFinite() }
+    )
+    saveObservation(sample)
+    pruneOlderThan90Days(carId, observedAt)
+
+    val hasCompleteTeslaObservation = tpmsDetails.hasCompleteSoftWarningFields()
+    val teslaClaimResult = if (hasCompleteTeslaObservation) {
+        claimTeslaStateChange?.invoke(carId, tpmsDetails, observedAt)
+            ?: detectTeslaStateChange(carId, tpmsDetails)?.let { change ->
+                TpmsStateChangeClaimResult.Claimed(
+                    TpmsStateChangeClaim(change, requireNotNull(tpmsDetails).toLegacyTpmsState())
+                )
+            }
+            ?: TpmsStateChangeClaimResult.NoTransition
+    } else {
+        TpmsStateChangeClaimResult.NoTransition
+    }
+    val teslaClaim = (teslaClaimResult as? TpmsStateChangeClaimResult.Claimed)?.claim
+
+    // Keep the legacy test seam's snapshot bookkeeping. The real worker supplies
+    // durable claim callbacks, so a null claim there means no transition or a
+    // live claim and must not bypass the transaction.
+    if (hasCompleteTeslaObservation && claimTeslaStateChange == null &&
+        teslaClaimResult is TpmsStateChangeClaimResult.NoTransition
+    ) {
+        updateTeslaState(carId, tpmsDetails)
+    }
+
+    val profileFingerprint = profile?.tpmsCustomAlertFingerprint() ?: DISABLED_PROFILE_FINGERPRINT
+    resetCustomState(carId, profileFingerprint)
+    val customObservations = profile
+        ?.takeIf { it.isEnabledAndValid() }
+        ?.let { TpmsCustomAlertEvaluator().observe(it, tpmsDetails) }
+        ?: emptyMap()
+    val customClaims = claimCustomAlerts(
+        carId,
+        profileFingerprint,
+        customObservations,
+        teslaClaimResult !is TpmsStateChangeClaimResult.NoTransition,
+        observedAt
+    )
+
+    if (teslaClaimResult is TpmsStateChangeClaimResult.Claimed && teslaClaim != null) {
+        try {
+            notifyTesla(carId, carName, teslaClaim.change)
+            commitTeslaStateChange?.invoke(carId, teslaClaim)
+                ?: updateTeslaState(carId, tpmsDetails)
+        } catch (_: Exception) {
+            releaseTeslaStateChange?.invoke(carId, teslaClaim)
+        }
+    } else {
+        customClaims.forEach { claim ->
+            val alert = TpmsCustomAlert(
+                wheel = claim.wheel,
+                state = claim.state,
+                observedPressureBar = claim.observedPressureBar,
+                thresholdBar = claim.thresholdBar
+            )
+            try {
+                notifyCustom(carId, carName, alert)
+                commitCustomAlert(carId, claim)
+            } catch (_: Exception) {
+                releaseCustomAlert(carId, claim)
+            }
+        }
     }
 }
+
+private fun com.matelink.data.api.models.TpmsDetails.toLegacyTpmsState() =
+    com.matelink.data.local.TpmsState(
+        warningFl = warningFl == true,
+        warningFr = warningFr == true,
+        warningRl = warningRl == true,
+        warningRr = warningRr == true
+    )
+
+private const val DISABLED_PROFILE_FINGERPRINT = "disabled"

@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.json.JSONObject
 import javax.inject.Inject
@@ -43,7 +44,7 @@ data class CarImageOverride(
     }
 }
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "matelink_settings")
+internal val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "matelink_settings")
 
 data class AppSettings(
     val serverUrl: String = "",
@@ -97,6 +98,7 @@ class SettingsDataStore @Inject constructor(
     private val tariffPeakRangesKey = stringPreferencesKey("tariff_peak_ranges")
     private val tariffFlatRangesKey = stringPreferencesKey("tariff_flat_ranges")
     private val tariffValleyRangesKey = stringPreferencesKey("tariff_valley_ranges")
+    private val tpmsAlertProfilesKey = stringPreferencesKey("tpms_alert_profiles")
 
     /** SharedPreferences for language code — shared with MateLinkApplication for early reads. */
     private val languagePrefs: SharedPreferences =
@@ -159,6 +161,10 @@ class SettingsDataStore @Inject constructor(
         preferences[chargeTotalOverridesMigratedKey] ?: false
     }
 
+    val tpmsAlertProfiles: Flow<Map<Int, TpmsAlertProfile>> = context.dataStore.data.map { preferences ->
+        parseTpmsAlertProfiles(preferences[tpmsAlertProfilesKey] ?: "{}")
+    }
+
     private fun parseOverridesJson(jsonString: String): Map<Int, CarImageOverride> {
         return try {
             val result = mutableMapOf<Int, CarImageOverride>()
@@ -205,6 +211,25 @@ class SettingsDataStore @Inject constructor(
             }
         }.getOrDefault(emptyMap())
     }
+
+    private fun parseTpmsAlertProfiles(jsonString: String): Map<Int, TpmsAlertProfile> = runCatching {
+        val obj = JSONObject(jsonString)
+        buildMap {
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val carId = key.toIntOrNull() ?: continue
+                val profile = runCatching {
+                    obj.optJSONObject(key)?.let { TpmsAlertProfile.fromJson(it.toString()) }
+                }.getOrNull()
+                if (profile != null) put(carId, profile)
+            }
+        }
+    }.getOrDefault(emptyMap())
+
+    private fun tpmsAlertProfilesToJson(profiles: Map<Int, TpmsAlertProfile>): String = JSONObject().apply {
+        profiles.forEach { (carId, profile) -> put(carId.toString(), JSONObject(profile.toJson())) }
+    }.toString()
 
     private fun legacyDefaultCurrency(preferences: Preferences): String {
         return defaultCurrencyCode(
@@ -373,10 +398,67 @@ class SettingsDataStore @Inject constructor(
         }
     }
 
+    fun observeTpmsAlertProfile(carId: Int): Flow<TpmsAlertProfile?> =
+        tpmsAlertProfiles.map { it[carId] }
+
+    suspend fun getTpmsAlertProfile(carId: Int): TpmsAlertProfile? =
+        observeTpmsAlertProfile(carId).first()
+
+    /** Save only a finite, strictly ordered profile; invalid profiles can never enable alerts. */
+    suspend fun saveTpmsAlertProfile(carId: Int, profile: TpmsAlertProfile) {
+        require(profile.isValid) { "TPMS alert bounds must satisfy 0 < low < target < high" }
+        context.dataStore.edit { preferences ->
+            val profiles = parseTpmsAlertProfiles(preferences[tpmsAlertProfilesKey] ?: "{}").toMutableMap()
+            profiles[carId] = profile
+            preferences[tpmsAlertProfilesKey] = tpmsAlertProfilesToJson(profiles)
+        }
+    }
+
+    suspend fun clearTpmsAlertProfile(carId: Int) {
+        context.dataStore.edit { preferences ->
+            val profiles = parseTpmsAlertProfiles(preferences[tpmsAlertProfilesKey] ?: "{}").toMutableMap()
+            profiles.remove(carId)
+            preferences[tpmsAlertProfilesKey] = tpmsAlertProfilesToJson(profiles)
+        }
+    }
+
     suspend fun clearSettings() {
         context.dataStore.edit { preferences ->
             preferences.clear()
         }
+    }
+}
+
+data class TpmsAlertProfile(
+    val targetBar: Double,
+    val lowBar: Double,
+    val highBar: Double,
+    val enabled: Boolean
+) {
+    val isValid: Boolean
+        get() = targetBar.isFinite() && lowBar.isFinite() && highBar.isFinite() &&
+            0.0 < lowBar && lowBar < targetBar && targetBar < highBar
+
+    fun toJson(): String = JSONObject().apply {
+        put("targetBar", targetBar)
+        put("lowBar", lowBar)
+        put("highBar", highBar)
+        put("enabled", enabled)
+    }.toString()
+
+    companion object {
+        /** Editable Model Y suggestion, not a universal Tesla alert threshold. */
+        val modelYSuggestion = TpmsAlertProfile(2.9, 2.6, 3.4, enabled = false)
+
+        fun fromJson(json: String): TpmsAlertProfile? = runCatching {
+            val obj = JSONObject(json)
+            TpmsAlertProfile(
+                targetBar = obj.getDouble("targetBar"),
+                lowBar = obj.getDouble("lowBar"),
+                highBar = obj.getDouble("highBar"),
+                enabled = obj.optBoolean("enabled", false)
+            ).takeIf { it.isValid }
+        }.getOrNull()
     }
 }
 

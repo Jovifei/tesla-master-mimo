@@ -11,6 +11,7 @@ import com.matelink.data.local.entity.GeocodeCache
 import com.matelink.data.local.entity.GeocodeProgress
 import com.matelink.data.local.entity.GeocodeQueueItem
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -32,7 +33,8 @@ data class GeocodedLocation(
 data class GeocodeProgressInfo(
     val processed: Int,
     val total: Int,
-    val percentage: Float
+    val percentage: Float,
+    val availability: ChineseLocationAvailability
 )
 
 /**
@@ -48,6 +50,7 @@ data class CountryBoundary(
 @Singleton
 class GeocodingRepository @Inject constructor(
     private val nominatimApi: NominatimApi,
+    private val amapReverseGeocoder: AmapReverseGeocoder,
     private val geocodeCacheDao: GeocodeCacheDao,
     private val geocodeQueueDao: GeocodeQueueDao,
     private val geocodeProgressDao: GeocodeProgressDao,
@@ -90,6 +93,7 @@ class GeocodingRepository @Inject constructor(
      */
     suspend fun getNextBatch(limit: Int = 1): List<GeocodeQueueItem> {
         if (!allowsExternalGeocoding(connectionModeStore.current())) return emptyList()
+        if (amapReverseGeocoder.currentAvailability() != ChineseLocationAvailability.READY) return emptyList()
         return geocodeQueueDao.getNextBatch(limit)
     }
 
@@ -154,25 +158,21 @@ class GeocodingRepository @Inject constructor(
         if (!allowsExternalGeocoding(connectionModeStore.current())) return null
 
         return try {
-            val response = nominatimApi.reverseGeocode(item.latitude, item.longitude)
-            if (!response.isSuccessful) {
-                geocodeQueueDao.markAttempt(item.gridLat, item.gridLon, System.currentTimeMillis())
+            val location = amapReverseGeocoder.reverse(item.latitude, item.longitude)
+            if (location == null) {
+                if (amapReverseGeocoder.currentAvailability() == ChineseLocationAvailability.READY) {
+                    geocodeQueueDao.markAttempt(item.gridLat, item.gridLon, System.currentTimeMillis())
+                }
                 return null
             }
-
-            val result = response.body()
-            val address = result?.address
 
             val cache = GeocodeCache(
                 gridLat = item.gridLat,
                 gridLon = item.gridLon,
-                countryCode = address?.countryCode?.uppercase(),
-                countryName = address?.country,
-                regionName = address?.state,
-                city = address?.city
-                    ?: address?.town
-                    ?: address?.village
-                    ?: address?.municipality,
+                countryCode = location.countryCode,
+                countryName = location.countryName,
+                regionName = location.regionName,
+                city = location.city,
                 cachedAt = System.currentTimeMillis()
             )
 
@@ -181,7 +181,9 @@ class GeocodingRepository @Inject constructor(
 
             cache
         } catch (e: Exception) {
-            geocodeQueueDao.markAttempt(item.gridLat, item.gridLon, System.currentTimeMillis())
+            if (amapReverseGeocoder.currentAvailability() == ChineseLocationAvailability.READY) {
+                geocodeQueueDao.markAttempt(item.gridLat, item.gridLon, System.currentTimeMillis())
+            }
             null
         }
     }
@@ -233,14 +235,15 @@ class GeocodingRepository @Inject constructor(
      * Observe geocoding progress for a car.
      */
     fun observeGeocodeProgress(carId: Int): Flow<GeocodeProgressInfo?> {
-        return geocodeProgressDao.observe(carId).map { progress ->
+        return combine(geocodeProgressDao.observe(carId), amapReverseGeocoder.availability) { progress, availability ->
             if (progress == null || progress.totalLocations == 0) {
                 null
             } else {
                 GeocodeProgressInfo(
                     processed = progress.processedLocations,
                     total = progress.totalLocations,
-                    percentage = progress.processedLocations.toFloat() / progress.totalLocations
+                    percentage = progress.processedLocations.toFloat() / progress.totalLocations,
+                    availability = availability
                 )
             }
         }
@@ -264,19 +267,8 @@ class GeocodingRepository @Inject constructor(
         addressCache[cacheKey]?.let { return it }
         if (!allowsExternalGeocoding(connectionModeStore.current())) return null
 
-        return try {
-            val response = nominatimApi.reverseGeocode(latitude, longitude)
-            if (response.isSuccessful) {
-                val result = response.body()
-                val address = formatAddress(result?.address)
-                    ?: result?.displayName?.split(",")?.take(3)?.joinToString(", ")
-
-                address?.also { addressCache[cacheKey] = it }
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            null
+        return amapReverseGeocoder.reverse(latitude, longitude)?.address?.also {
+            addressCache[cacheKey] = it
         }
     }
 
@@ -292,29 +284,14 @@ class GeocodingRepository @Inject constructor(
         locationCache[cacheKey]?.let { return it }
         if (!allowsExternalGeocoding(connectionModeStore.current())) return null
 
-        return try {
-            val response = nominatimApi.reverseGeocode(latitude, longitude)
-            if (response.isSuccessful) {
-                val result = response.body()
-                val address = result?.address
-                val location = GeocodedLocation(
-                    address = formatAddress(address)
-                        ?: result?.displayName?.split(",")?.take(3)?.joinToString(", "),
-                    countryCode = address?.countryCode?.uppercase(),
-                    countryName = address?.country,
-                    regionName = address?.state,
-                    city = address?.city
-                        ?: address?.town
-                        ?: address?.village
-                        ?: address?.municipality
-                )
-                locationCache[cacheKey] = location
-                location
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            null
+        return amapReverseGeocoder.reverse(latitude, longitude)?.let { location ->
+            GeocodedLocation(
+                address = location.address,
+                countryCode = location.countryCode,
+                countryName = location.countryName,
+                regionName = location.regionName,
+                city = location.city
+            ).also { locationCache[cacheKey] = it }
         }
     }
 

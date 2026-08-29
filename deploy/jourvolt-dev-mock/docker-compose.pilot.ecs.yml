@@ -1,0 +1,62 @@
+# P1 ECS pilot compose: API only.
+#
+# Design (docs/ARCH-2026-08-28-jourvolt-deploy.md 5.4):
+#   - single `jourvolt-dev-api` service; the PostgreSQL instance is external
+#     (the running `jourvolt-staging` postgres on the `jourvolt-staging_default`
+#     network by default; switch JOURVOLT_DB_NETWORK to `jourvolt-infra` after
+#     the shared-instance migration in ARCH 5.4).
+#   - no edge service and no 80/443 binding: host nginx already terminates
+#     HTTPS for api./auth.teslalink.joviluma.com and proxies to 127.0.0.1:18090.
+#   - the loopback port mapping matches the existing nginx upstream.
+#
+# Usage on the ECS host (see docs/JOURVOLT-ECS-SECRET-SETUP.md):
+#   docker compose --env-file .env -f docker-compose.pilot.ecs.yml config --quiet
+#   docker compose --env-file .env -f docker-compose.pilot.ecs.yml up -d --build
+#
+# NOTE: stop the old mock `jourvolt-dev-api` container from docker-compose.yml
+# before starting this project, otherwise 127.0.0.1:18090 conflicts:
+#   docker compose -f docker-compose.yml stop jourvolt-dev-api
+
+name: jourvolt-pilot
+
+services:
+  jourvolt-dev-api:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://jourvolt:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD or DATABASE_URL in .env}@jourvolt-postgres:5432/jourvolt?sslmode=disable}
+      LISTEN_ADDR: :8080
+      JOURVOLT_ENABLE_MOCK: "false"
+      JOURVOLT_ENABLE_MOCK_HISTORY: "false"
+      # Empty Tesla values keep the API in fail-closed `unconfigured` mode:
+      # it boots and reports 503 oauth_not_configured until Jovi fills the
+      # two secrets in the private .env. Nothing is printed to logs.
+      TESLA_CLIENT_ID: ${TESLA_CLIENT_ID:-}
+      TESLA_CLIENT_SECRET: ${TESLA_CLIENT_SECRET:-}
+      TESLA_REDIRECT_URI: ${TESLA_REDIRECT_URI:?set TESLA_REDIRECT_URI in .env}
+      JOURVOLT_APP_LINK_URI: ${JOURVOLT_APP_LINK_URI:?set JOURVOLT_APP_LINK_URI in .env}
+      JOURVOLT_TOKEN_KEY_BASE64: ${JOURVOLT_TOKEN_KEY_BASE64:?set JOURVOLT_TOKEN_KEY_BASE64 in .env}
+      TESLA_AUTH_URL: ${TESLA_AUTH_URL:-https://auth.tesla.cn/oauth2/v3/authorize}
+      TESLA_TOKEN_URL: ${TESLA_TOKEN_URL:-https://auth.tesla.cn/oauth2/v3/token}
+      TESLA_ISSUER: ${TESLA_ISSUER:-https://auth.tesla.cn/oauth2/v3/nts}
+      TESLA_JWKS_URL: ${TESLA_JWKS_URL:-https://auth.tesla.cn/oauth2/v3/discovery/thirdparty/keys}
+      TESLA_FLEET_API_BASE: ${TESLA_FLEET_API_BASE:-https://fleet-api.prd.cn.vn.cloud.tesla.cn}
+    ports:
+      - "127.0.0.1:18090:8080"
+    networks:
+      - db
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+networks:
+  db:
+    name: ${JOURVOLT_DB_NETWORK:-jourvolt-staging_default}
+    external: true

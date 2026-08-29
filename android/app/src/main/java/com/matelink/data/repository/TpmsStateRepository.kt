@@ -7,120 +7,124 @@ import com.matelink.data.local.TpmsStateDataStore
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Represents a change in TPMS warning state.
- */
 sealed class TpmsStateChange {
-    /**
-     * One or more tires have entered a warning state.
-     */
     data class WarningStarted(val tires: List<TirePosition>) : TpmsStateChange()
-
-    /**
-     * All tires have returned to normal (no warnings).
-     */
     data object WarningCleared : TpmsStateChange()
 }
 
-/**
- * Repository for managing TPMS state and detecting state changes.
- * Handles the business logic for determining when to notify users about tire pressure changes.
- */
+data class TpmsStateChangeClaim(
+    val change: TpmsStateChange,
+    val nextState: TpmsState,
+    val token: String = ""
+)
+
+sealed interface TpmsStateChangeClaimResult {
+    data object NoTransition : TpmsStateChangeClaimResult
+    data class Claimed(val claim: TpmsStateChangeClaim) : TpmsStateChangeClaimResult
+    data object InFlight : TpmsStateChangeClaimResult
+}
+
 @Singleton
 class TpmsStateRepository @Inject constructor(
     private val tpmsStateDataStore: TpmsStateDataStore
 ) {
-    /**
-     * Detect if there's a state change between the stored state and current TPMS data.
-     * Returns null if there's no meaningful state change to notify about.
-     *
-     * @param carId The car ID to check
-     * @param currentTpms The current TPMS details from the API
-     * @return A TpmsStateChange if a transition occurred, null otherwise
-     */
     suspend fun detectStateChange(carId: Int, currentTpms: TpmsDetails?): TpmsStateChange? {
-        val previousState = tpmsStateDataStore.getState(carId)
-        val currentState = currentTpms?.toTpmsState() ?: TpmsState()
+        if (currentTpms == null || !currentTpms.hasCompleteSoftWarningFields()) return null
+        return tpmsStateChange(tpmsStateDataStore.getState(carId), currentTpms.toTpmsState())
+    }
 
-        val previousHadWarning = previousState.hasAnyWarning
-        val currentHasWarning = currentState.hasAnyWarning
-
-        return when {
-            // Transition from no warning to warning
-            !previousHadWarning && currentHasWarning -> {
-                TpmsStateChange.WarningStarted(currentState.getWarningTires())
+    suspend fun claimStateChange(
+        carId: Int,
+        currentTpms: TpmsDetails?,
+        now: Long = System.currentTimeMillis()
+    ): TpmsStateChangeClaimResult {
+        if (currentTpms == null || !currentTpms.hasCompleteSoftWarningFields()) {
+            return TpmsStateChangeClaimResult.NoTransition
+        }
+        return when (val result = tpmsStateDataStore.claimStateChange(carId, currentTpms.toTpmsState(), now)) {
+            TpmsStateDataStore.TpmsStateDataStoreClaimResult.NoTransition ->
+                TpmsStateChangeClaimResult.NoTransition
+            TpmsStateDataStore.TpmsStateDataStoreClaimResult.InFlight ->
+                TpmsStateChangeClaimResult.InFlight
+            is TpmsStateDataStore.TpmsStateDataStoreClaimResult.Claimed -> {
+                val change = tpmsStateChange(result.claim.previousState, result.claim.nextState)
+                    ?: return TpmsStateChangeClaimResult.NoTransition
+                TpmsStateChangeClaimResult.Claimed(
+                    TpmsStateChangeClaim(change, result.claim.nextState, result.claim.token)
+                )
             }
-            // Transition from warning to no warning
-            previousHadWarning && !currentHasWarning -> {
-                TpmsStateChange.WarningCleared
-            }
-            // Warning state changed (different tires now have warnings)
-            previousHadWarning && currentHasWarning &&
-                previousState.getWarningTires() != currentState.getWarningTires() -> {
-                TpmsStateChange.WarningStarted(currentState.getWarningTires())
-            }
-            // No state change
-            else -> null
         }
     }
 
-    /**
-     * Update the stored TPMS state for a car.
-     *
-     * @param carId The car ID to update
-     * @param tpms The current TPMS details from the API
-     */
-    suspend fun updateState(carId: Int, tpms: TpmsDetails?) {
-        val state = tpms?.toTpmsState() ?: TpmsState()
-        tpmsStateDataStore.saveState(carId, state.copy(lastCheckedAt = System.currentTimeMillis()))
-    }
-
-    /**
-     * Get the current stored TPMS state for a car.
-     */
-    suspend fun getState(carId: Int): TpmsState {
-        return tpmsStateDataStore.getState(carId)
-    }
-
-    /**
-     * Clear all stored TPMS states.
-     */
-    suspend fun clearAllStates() {
-        tpmsStateDataStore.clearAllStates()
-    }
-
-    /**
-     * Simulate a TPMS warning for testing purposes (debug builds only).
-     * Sets a warning state for the specified tire.
-     */
-    suspend fun simulateWarning(carId: Int, tire: TirePosition) {
-        val state = TpmsState(
-            warningFl = tire == TirePosition.FL,
-            warningFr = tire == TirePosition.FR,
-            warningRl = tire == TirePosition.RL,
-            warningRr = tire == TirePosition.RR,
-            lastCheckedAt = System.currentTimeMillis()
+    suspend fun commitStateChange(carId: Int, claim: TpmsStateChangeClaim) {
+        tpmsStateDataStore.commitStateChange(
+            carId,
+            TpmsStateDataStore.TpmsStateTransitionClaim(
+                previousState = TpmsState(),
+                nextState = claim.nextState,
+                token = claim.token
+            ),
+            System.currentTimeMillis()
         )
-        tpmsStateDataStore.saveState(carId, state)
     }
 
-    /**
-     * Clear the TPMS warning state for a car (for testing).
-     */
+    suspend fun releaseStateChange(carId: Int, claim: TpmsStateChangeClaim) {
+        tpmsStateDataStore.releaseStateChange(
+            carId,
+            TpmsStateDataStore.TpmsStateTransitionClaim(
+                previousState = TpmsState(),
+                nextState = claim.nextState,
+                token = claim.token
+            )
+        )
+    }
+
+    suspend fun updateState(carId: Int, tpms: TpmsDetails?) {
+        if (tpms == null || !tpms.hasCompleteSoftWarningFields()) return
+        tpmsStateDataStore.saveState(carId, tpms.toTpmsState().copy(lastCheckedAt = System.currentTimeMillis()))
+    }
+
+    suspend fun getState(carId: Int): TpmsState = tpmsStateDataStore.getState(carId)
+
+    suspend fun clearAllStates() = tpmsStateDataStore.clearAllStates()
+
+    suspend fun simulateWarning(carId: Int, tire: TirePosition) {
+        tpmsStateDataStore.saveState(
+            carId,
+            TpmsState(
+                warningFl = tire == TirePosition.FL,
+                warningFr = tire == TirePosition.FR,
+                warningRl = tire == TirePosition.RL,
+                warningRr = tire == TirePosition.RR,
+                lastCheckedAt = System.currentTimeMillis()
+            )
+        )
+    }
+
     suspend fun clearWarning(carId: Int) {
         tpmsStateDataStore.saveState(carId, TpmsState(lastCheckedAt = System.currentTimeMillis()))
     }
 }
 
-/**
- * Extension function to convert API TpmsDetails to local TpmsState.
- */
-private fun TpmsDetails.toTpmsState(): TpmsState {
-    return TpmsState(
-        warningFl = warningFl ?: false,
-        warningFr = warningFr ?: false,
-        warningRl = warningRl ?: false,
-        warningRr = warningRr ?: false,
-        lastCheckedAt = System.currentTimeMillis()
-    )
+private fun TpmsDetails.hasCompleteSoftWarningFields(): Boolean =
+    warningFl != null && warningFr != null && warningRl != null && warningRr != null
+
+internal fun tpmsStateChange(previous: TpmsState, current: TpmsState): TpmsStateChange? {
+    return when {
+        !previous.hasAnyWarning && current.hasAnyWarning ->
+            TpmsStateChange.WarningStarted(current.getWarningTires())
+        previous.hasAnyWarning && !current.hasAnyWarning ->
+            TpmsStateChange.WarningCleared
+        previous.hasAnyWarning && current.hasAnyWarning &&
+            previous.getWarningTires() != current.getWarningTires() ->
+            TpmsStateChange.WarningStarted(current.getWarningTires())
+        else -> null
+    }
 }
+
+private fun TpmsDetails.toTpmsState(): TpmsState = TpmsState(
+    warningFl = warningFl == true,
+    warningFr = warningFr == true,
+    warningRl = warningRl == true,
+    warningRr = warningRr == true
+)

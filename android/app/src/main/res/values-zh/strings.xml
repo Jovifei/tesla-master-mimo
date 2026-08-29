@@ -144,10 +144,33 @@
     <string name="dashboard_snapshot_time">快照时间 %1$s</string>
     <string name="snapshot_source_live">实时数据</string>
     <string name="snapshot_source_history">历史快照</string>
+    <string name="snapshot_source_recent">最近状态</string>
     <string name="snapshot_source_mock">本地模拟</string>
     <string name="snapshot_source_unavailable">数据不可用</string>
     <string name="status_unknown">暂无数据</string>
     <string name="battery_history_navigation_note">查看已记录的电池历史与容量详情</string>
+    <string name="vehicle_model_3">Model 3</string>
+    <string name="vehicle_model_y">Model Y</string>
+    <string name="vehicle_model_s">Model S</string>
+    <string name="vehicle_model_x">Model X</string>
+    <string name="vehicle_trim_performance">性能版</string>
+    <string name="vehicle_trim_long_range">长续航版</string>
+    <string name="vehicle_trim_standard_range">标准续航版</string>
+    <string name="vehicle_speed">速度</string>
+    <string name="vehicle_power_consuming">消耗</string>
+    <string name="vehicle_power_regenerating">回收</string>
+    <string name="vehicle_power_steady">功率</string>
+    <string name="vehicle_gear">挡位</string>
+    <string name="vehicle_shift_drive">D</string>
+    <string name="vehicle_shift_reverse">R</string>
+    <string name="vehicle_shift_neutral">N</string>
+    <string name="vehicle_shift_park">P</string>
+    <string name="vehicle_openings_title">车辆未关闭</string>
+    <string name="vehicle_doors_open">车门打开</string>
+    <string name="vehicle_windows_open">车窗打开</string>
+    <string name="vehicle_frunk_open">前备箱打开</string>
+    <string name="vehicle_trunk_open">后备箱打开</string>
+    <string name="tire_pressure_warning">请检查胎压</string>
 
     <!-- Status -->
     <string name="state_online">在线</string>
@@ -353,6 +376,18 @@
 
     <!-- Vampire Drain (Standby Power Consumption) -->
     <string name="vampire_title">待机能耗</string>
+    <string name="standby_range_7_days">近 7 天</string>
+    <string name="standby_range_30_days">近 30 天</string>
+    <string name="standby_range_year">近 1 年</string>
+    <string name="standby_insufficient_detail">当前范围有 %1$d 个停车窗口、%2$.1f 小时合格覆盖。稳定结论至少需要 5 个有效窗口和 20 小时合格覆盖。</string>
+    <string name="standby_evidence_title">证据与覆盖</string>
+    <string name="standby_evidence_summary">已观测 %1$d 个停车窗口；%2$d 个有效窗口；%3$.1f 小时合格覆盖。</string>
+    <string name="standby_stable_conclusion">数据已足够形成稳定结论</string>
+    <string name="standby_preliminary_observation">目前仅为初步观察</string>
+    <string name="standby_attribution_title">已观测原因</string>
+    <string name="standby_climate_observed">至少一个有效窗口记录到空调活动。</string>
+    <string name="standby_climate_not_observed">有效窗口中未记录到空调活动。</string>
+    <string name="standby_sentry_not_collected">当前历史数据源未采集哨兵状态。</string>
     <string name="vampire_total_drain_label">检测到的停车电量下降</string>
     <string name="vampire_total_drain_subtitle">两次充电之间且无行程记录的 SOC 下降总和；不据此推算能量</string>
     <string name="vampire_avg_power">平均功率</string>
@@ -560,12 +595,49 @@
     <string name="tpms_notification_title">胎压警告</string>
     <string name="tpms_notification_body">%1$s：请检查胎压（%2$s）</string>
     <string name="tpms_notification_cleared">%1$s：胎压正常</string>
+    <string name="tpms_custom_notification_title">App 自定义提醒</string>
+    <string name="tpms_custom_low_body">App 自定义提醒：%1$s 观测胎压 %2$.2f bar，低于阈值 %3$.2f bar。</string>
+    <string name="tpms_custom_high_body">App 自定义提醒：%1$s 观测胎压 %2$.2f bar，高于阈值 %3$.2f bar。</string>
     <string name="tire_fl_full">左前轮</string>
     <string name="tire_fr_full">右前轮</string>
     <string name="tire_rl_full">左后轮</string>
     <string name="tire_rr_full">右后轮</string>
     <string name="tpms_channel_name">胎压监测</string>
     <string name="tpms_channel_description">胎压监测提醒</string>
+    <string name="tpms_trend_title">胎压趋势</string>
+    <string name="tpms_trend_window_7">近 7 天</string>
+    <string name="tpms_trend_window_30">近 30 天</string>
+    <string name="tpms_trend_load_failed">胎压历史加载失败，请重试。</string>
+    <string name="tpms_trend_unavailable">此时间范围内没有可用的有效胎压历史记录。</string>
+    <string name="tpms_trend_unavailable_short">不可用</string>
+    <string name="tpms_trend_chart_title">已记录胎压</string>
+    <string name="tpms_trend_coverage">覆盖：已记录 %1$d 个样本</string>
+    <string name="tpms_trend_wheel_summary">%1$s · 最新 %2$s · 变化 %3$s</string>
+    <string name="tpms_trend_possible_factors">可能因素</string>
+    <string name="tpms_trend_factor_ambient">可能受环境温度影响</string>
+    <string name="tpms_trend_factor_highway">可能受高速行驶升温影响</string>
+    <string name="tpms_trend_factor_parking">可能与停车后的胎压变化有关</string>
+    <string name="tpms_trend_factor_insufficient">证据不足，无法提示可能因素</string>
+    <string name="tpms_trend_parking_recommendation">发现停车模式；建议人工进行冷态检查。</string>
+    <string name="tpms_trend_evidence_disclaimer">这些只是根据已记录样本推断的可能因素，不代表已确认的原因。</string>
+    <string name="tpms_trend_conclusion_ambient">可能受环境温度影响；原因尚未确认。</string>
+    <string name="tpms_trend_conclusion_highway">可能受高速行驶升温影响；原因尚未确认。</string>
+    <string name="tpms_trend_conclusion_parking">可能与停车后的胎压变化有关；原因尚未确认。</string>
+    <string name="tpms_trend_conclusion_insufficient">可能因素不可用：证据不足。</string>
+    <string name="tpms_trend_recommendation_manual_cold_check">建议人工进行冷态检查。</string>
+    <string name="tpms_pressure_unit">bar</string>
+    <string name="tpms_profile_title">每辆车的冷态胎压设置</string>
+    <string name="tpms_profile_source_hint">请以驾驶员侧车门柱上的冷态胎压标签为起始依据。这里的数值仅适用于当前车辆。</string>
+    <string name="tpms_profile_model_y_suggestion">可编辑的 Model Y 建议：目标 2.9 bar，低于 2.6 bar，高于 3.4 bar。此建议不是 Tesla 通用限制。</string>
+    <string name="tpms_profile_target_label">冷态目标</string>
+    <string name="tpms_profile_low_label">低于此值提醒</string>
+    <string name="tpms_profile_high_label">高于此值提醒</string>
+    <string name="tpms_custom_reminder_label">App 自定义提醒</string>
+    <string name="tpms_profile_enabled">明确保存后已为车辆 %1$d 启用。</string>
+    <string name="tpms_profile_not_enabled">明确保存此设置前不会启用。</string>
+    <string name="tpms_profile_save">保存 App 自定义提醒</string>
+    <string name="tpms_profile_validation_error">请输入有效数值，并满足 0 &lt; 低位 &lt; 目标 &lt; 高位。</string>
+    <string name="tpms_profile_saved">已为当前车辆保存 App 自定义提醒。</string>
 
     <!-- Charging notifications -->
     <string name="charging_notification_title">充电</string>
@@ -722,6 +794,9 @@
     <string name="avg_distance">平均距离</string>
     <string name="charge_details_title">充电详情</string>
     <string name="charge_free">免费</string>
+    <string name="charge_parked_title">充电驻车</string>
+    <string name="charge_parked_summary">该驻车时段与一条真实充电记录重叠。</string>
+    <string name="charge_parked_view">查看本次充电</string>
     <string name="charge_history">充电历史</string>
     <string name="charge_location">位置</string>
     <string name="charger">充电桩</string>
@@ -768,6 +843,19 @@
     <string name="current_max">当前最大</string>
     <string name="current_min">当前最小</string>
     <string name="current_profile">当前配置</string>
+    <string name="current_charge_parameters">充电状态</string>
+    <string name="current_charge_port">充电口</string>
+    <string name="current_charge_port_open">打开</string>
+    <string name="current_charge_port_closed">关闭</string>
+    <string name="current_charge_type">充电类型</string>
+    <string name="current_charge_type_dc">直流</string>
+    <string name="current_charge_type_single_ac">单相交流</string>
+    <string name="current_charge_type_three_ac">三相交流</string>
+    <string name="current_charge_voltage">电压</string>
+    <string name="current_charge_current">实际电流</string>
+    <string name="current_charge_requested_current">请求电流</string>
+    <string name="current_charge_max_current">最大电流</string>
+    <string name="current_charge_scheduled_start">计划开始</string>
     <string name="dc_unplug_warning_message">请拔下直流充电枪。</string>
     <string name="dc_unplug_warning_title">直流拔枪警告</string>
     <string name="debug_sentry_simulate_event">模拟哨兵事件</string>
@@ -819,8 +907,11 @@
     </plurals>
     <string name="gain">增益</string>
     <string name="gap_type_driving">行驶</string>
-    <string name="geocode_progress_status">%1$d/%2$d</string>
-    <string name="geocode_progress_title">地理编码</string>
+    <string name="geocode_progress_status">已识别 %1$d 个历史地点，待处理 %2$d 个</string>
+    <string name="geocode_progress_title">地点识别</string>
+    <string name="location_recognition_key_not_configured">请先配置高德 Key，才能识别中文地点。</string>
+    <string name="location_recognition_privacy_not_accepted">请同意高德隐私说明后再识别地点。</string>
+    <string name="location_recognition_restart_required">更换高德 Key 后请重启 App，再识别地点。</string>
     <string name="hide_password">隐藏密码</string>
     <string name="hide_token">隐藏令牌</string>
     <string name="info_about_calculation">关于此计算</string>
@@ -1242,4 +1333,9 @@
     <string name="about_changelog">更新日志</string>
     <string name="about_public_pages_unconfigured">公开页面暂未配置。</string>
     <string name="about_open_link_failed">无法打开此页面。</string>
+    <string name="trip_notification_channel_name">行程更新</string>
+    <string name="trip_notification_channel_description">同步到新完成的行程后通知你。</string>
+    <string name="trip_notification_title">行程已完成</string>
+    <string name="trip_notification_body">%1$s → %2$s · %3$.1f 公里 · %4$d 分钟</string>
+    <string name="trip_notification_unknown_location">未知地点</string>
 </resources>

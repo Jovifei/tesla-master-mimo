@@ -613,7 +613,7 @@ private fun CompactHeaderValue(label: String, value: String, modifier: Modifier 
 }
 
 @Composable
-private fun ChargePriceDialog(
+internal fun ChargePriceDialog(
     currentTotal: Double?,
     currencySymbol: String,
     onDismiss: () -> Unit,
