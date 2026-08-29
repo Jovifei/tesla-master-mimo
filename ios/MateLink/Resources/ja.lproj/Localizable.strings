@@ -68,3 +68,34 @@
 "loading" = "読み込み中...";
 "no_data" = "データがありません";
 "offline" = "オフライン - キャッシュデータを表示中";
+
+// Apple Redesign (2026-08)
+"battery_health.rated_range" = "定格航続距離";
+"battery_health.ideal_range" = "理想航続距離";
+"battery_health.original_capacity" = "初期容量";
+"battery_health.current_capacity" = "現在容量";
+"battery_health.degradation_trend" = "劣化トレンド";
+"battery_health.health_excellent" = "優秀";
+"battery_health.health_good" = "良好";
+"battery_health.health_fair" = "普通";
+"battery_health.health_degraded" = "劣化";
+"drives.summary.total_distance" = "総走行距離";
+"drives.summary.total_time" = "総時間";
+"drives.summary.avg_efficiency" = "平均効率";
+"charges.summary.total_energy" = "総充電量";
+"charges.summary.total_cost" = "総費用";
+"charges.summary.sessions" = "回数";
+"charges.current_banner" = "現在の充電";
+"charges.current_live" = "リアルタイム充電セッション";
+"settings.network" = "ネットワーク";
+"settings.display" = "表示";
+"settings.instances" = "インスタンス";
+"settings.instances_desc" = "複数の TeslaMate サーバー接続を管理します。";
+"settings.development" = "開発";
+"settings.map" = "地図";
+"settings.about" = "アプリについて";
+"more.vehicle" = "車両";
+"more.analytics" = "分析";
+"more.reports" = "レポート";
+"more.history" = "履歴";
+"more.system" = "システム";

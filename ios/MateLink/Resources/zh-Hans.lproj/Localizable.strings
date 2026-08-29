@@ -106,3 +106,34 @@
 "common.battery" = "电池";
 "common.efficiency" = "效率";
 "common.version" = "版本";
+
+/* Apple Redesign (2026-08) */
+"battery_health.rated_range" = "额定续航";
+"battery_health.ideal_range" = "理想续航";
+"battery_health.original_capacity" = "出厂容量";
+"battery_health.current_capacity" = "当前容量";
+"battery_health.degradation_trend" = "衰减趋势";
+"battery_health.health_excellent" = "优秀";
+"battery_health.health_good" = "良好";
+"battery_health.health_fair" = "一般";
+"battery_health.health_degraded" = "老化";
+"drives.summary.total_distance" = "总里程";
+"drives.summary.total_time" = "总时长";
+"drives.summary.avg_efficiency" = "平均效率";
+"charges.summary.total_energy" = "总电量";
+"charges.summary.total_cost" = "总费用";
+"charges.summary.sessions" = "次数";
+"charges.current_banner" = "当前充电";
+"charges.current_live" = "实时充电会话";
+"settings.network" = "网络";
+"settings.display" = "显示";
+"settings.instances" = "实例";
+"settings.instances_desc" = "管理多个 TeslaMate 服务器连接";
+"settings.development" = "开发";
+"settings.map" = "地图";
+"settings.about" = "关于";
+"more.vehicle" = "车辆";
+"more.analytics" = "数据分析";
+"more.reports" = "报告";
+"more.history" = "历史";
+"more.system" = "系统";

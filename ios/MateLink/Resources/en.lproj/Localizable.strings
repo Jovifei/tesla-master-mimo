@@ -68,3 +68,34 @@
 "loading" = "Loading...";
 "no_data" = "No data available";
 "offline" = "Offline - showing cached data";
+
+// Apple Redesign (2026-08)
+"battery_health.rated_range" = "Rated Range";
+"battery_health.ideal_range" = "Ideal Range";
+"battery_health.original_capacity" = "Original";
+"battery_health.current_capacity" = "Current";
+"battery_health.degradation_trend" = "Degradation Trend";
+"battery_health.health_excellent" = "Excellent";
+"battery_health.health_good" = "Good";
+"battery_health.health_fair" = "Fair";
+"battery_health.health_degraded" = "Degraded";
+"drives.summary.total_distance" = "Total Distance";
+"drives.summary.total_time" = "Total Time";
+"drives.summary.avg_efficiency" = "Avg Efficiency";
+"charges.summary.total_energy" = "Total Energy";
+"charges.summary.total_cost" = "Total Cost";
+"charges.summary.sessions" = "Sessions";
+"charges.current_banner" = "Current Charge";
+"charges.current_live" = "Live charging session";
+"settings.network" = "Network";
+"settings.display" = "Display";
+"settings.instances" = "Instances";
+"settings.instances_desc" = "Manage multiple TeslaMate server connections.";
+"settings.development" = "Development";
+"settings.map" = "Map";
+"settings.about" = "About";
+"more.vehicle" = "Vehicle";
+"more.analytics" = "Analytics";
+"more.reports" = "Reports";
+"more.history" = "History";
+"more.system" = "System";
