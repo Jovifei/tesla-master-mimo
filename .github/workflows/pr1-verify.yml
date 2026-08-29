@@ -1,0 +1,98 @@
+name: PR1 verification
+
+on:
+  push:
+    branches:
+      - fix/20260829-live-data-analysis-truth
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr1-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android JVM, APK and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run Android verification
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon \
+            :app:testDebugUnitTest \
+            :app:testReleaseUnitTest \
+            :app:assembleDebug \
+            :app:assembleRelease \
+            :app:assembleDebugAndroidTest \
+            :app:lintRelease
+
+      - name: Upload Android verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr1-android-verification
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            android/app/build/outputs/apk/**/*.apk
+            android/app/build/reports/**
+            android/app/build/test-results/**
+
+  adapter:
+    name: Adapter Go verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: deploy/teslamate-home-docker/adapter/go.mod
+          cache-dependency-path: deploy/teslamate-home-docker/adapter/go.sum
+
+      - name: Run Adapter tests
+        working-directory: deploy/teslamate-home-docker/adapter
+        run: |
+          go test ./... -count=1
+          go vet ./...
+          go mod verify
+
+  source:
+    name: Archive exact PR1 source
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Create source archive
+        run: git archive --format=zip --output=pr1-source.zip HEAD
+
+      - name: Upload source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr1-source
+          retention-days: 14
+          path: pr1-source.zip
