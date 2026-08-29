@@ -20,6 +20,7 @@ struct DriveDataPoint: Identifiable {
 struct DriveDetailView: View {
     let drive: Drive
 
+    @Environment(\.carPalette) private var palette
     @State private var selectedTab: DriveTab = .speed
     @State private var dataPoints: [DriveDataPoint] = []
     @State private var visibleRange: ClosedRange<Double> = 0...1
@@ -58,24 +59,23 @@ struct DriveDetailView: View {
 
     // MARK: - Body
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    headerCard
-                    statsGrid
-                    batteryBar
-                    chartSection
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
+        ScrollView {
+            VStack(spacing: 16) {
+                headerCard
+                routeMapCard
+                statsGrid
+                batteryBar
+                chartSection
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Drive Detail")
-            .navigationBarTitleDisplayMode(.inline)
-            .onAppear {
-                dataPoints = generateDataPoints()
-                visibleRange = 0...Double(drive.durationMin)
-            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Drive Detail")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            dataPoints = generateDataPoints()
+            visibleRange = 0...Double(drive.durationMin)
         }
     }
 
@@ -83,27 +83,27 @@ struct DriveDetailView: View {
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Image(systemName: "car.fill")
-                    .foregroundColor(.blue)
+                Image(systemName: MateIcons.drives)
+                    .foregroundStyle(palette.accent)
                     .font(.caption)
                 Text("Drive")
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(.blue)
+                    .foregroundStyle(palette.accent)
                 Spacer()
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Circle().fill(Color.blue).frame(width: 8, height: 8)
+                    Circle().fill(.blue).frame(width: 8, height: 8)
                     Text(drive.startAddress)
                         .font(.headline.weight(.semibold))
                 }
 
                 HStack(spacing: 8) {
-                    Circle().fill(Color.red).frame(width: 8, height: 8)
+                    Circle().fill(.red).frame(width: 8, height: 8)
                     Text(drive.endAddress)
                         .font(.headline.weight(.semibold))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -112,14 +112,26 @@ struct DriveDetailView: View {
             HStack(spacing: 16) {
                 Label(formattedDate(drive.startDate), systemImage: "calendar")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Label("\(drive.durationMin) min", systemImage: "clock")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding()
         .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    // MARK: - Route Map Card
+    private var routeMapCard: some View {
+        DriveRouteMap(
+            startLat: drive.startLatitude,
+            startLon: drive.startLongitude,
+            endLat: drive.endLatitude,
+            endLon: drive.endLongitude
+        )
+        .frame(height: 200)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
