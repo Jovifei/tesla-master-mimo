@@ -19,31 +19,29 @@ struct CurrentChargeView: View {
     private let approxCapacityKwh: Double = 75
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if loading {
-                    ProgressView("Loading...").padding(40)
-                } else if let loadError {
-                    EmptyStateView(
-                        "Current Charge Unavailable",
-                        systemImage: "exclamationmark.triangle",
-                        message: loadError
-                    )
-                } else if let s = status, (state.isMockMode ? (s.state == .charging || s.pluggedIn) : (currentCharge != nil)) {
-                    content(for: s)
-                } else {
-                    EmptyStateView(
-                        "Not Charging",
-                        systemImage: "bolt.slash",
-                        message: "Live charge data appears here when the vehicle is charging or plugged in."
-                    )
-                }
+        Group {
+            if loading {
+                ProgressView("Loading…").padding(40)
+            } else if let loadError {
+                EmptyStateView(
+                    "Current Charge Unavailable",
+                    systemImage: "exclamationmark.triangle",
+                    message: loadError
+                )
+            } else if let s = status, (state.isMockMode ? (s.state == .charging || s.pluggedIn) : (currentCharge != nil)) {
+                content(for: s)
+            } else {
+                EmptyStateView(
+                    "Not Charging",
+                    systemImage: "bolt.slash",
+                    message: "Live charge data appears here when the vehicle is charging or plugged in."
+                )
             }
-            .navigationTitle("Current Charge")
-            .navigationBarTitleDisplayMode(.inline)
-            .task { await refresh() }
-            .onReceive(timer) { _ in now = Date() }
         }
+        .navigationTitle("Current Charge")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await refresh() }
+        .onReceive(timer) { _ in now = Date() }
     }
 
     private func content(for s: CarStatus) -> some View {
