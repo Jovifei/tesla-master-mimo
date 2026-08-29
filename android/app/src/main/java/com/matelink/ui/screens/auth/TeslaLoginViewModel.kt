@@ -94,7 +94,7 @@ class TeslaLoginViewModel @Inject constructor(
                 }
                 if (!isTrustedTeslaAuthorizationUrl(
                         body.authorizationUrl,
-                        BuildConfig.JOURVOLT_AUTH_HOST
+                        BuildConfig.JOURVOLT_API_BASE_URL
                     )
                 ) {
                     error(context.getString(R.string.tesla_login_authorization_invalid))

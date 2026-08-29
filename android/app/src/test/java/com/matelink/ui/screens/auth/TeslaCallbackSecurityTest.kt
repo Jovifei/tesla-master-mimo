@@ -6,6 +6,9 @@ import org.junit.Test
 
 class TeslaCallbackSecurityTest {
     private val host = "auth.jourvolt.com"
+    private val apiHost = "api.jourvolt.com"
+    private val apiRedirect =
+        "https%3A%2F%2Fapi.jourvolt.com%2Fv1%2Fauth%2Ftesla%2Fcallback"
 
     @Test
     fun acceptsOnlyTheConfiguredHttpsCallback() {
@@ -24,30 +27,41 @@ class TeslaCallbackSecurityTest {
 
     @Test
     fun acceptsOnlyOfficialTeslaAuthorizationEndpoints() {
-        val query = "client_id=client&redirect_uri=https%3A%2F%2Fauth.jourvolt.com%2Foauth%2Fcallback" +
+        val query = "client_id=client&redirect_uri=$apiRedirect" +
             "&response_type=code&scope=openid%20offline_access%20vehicle_device_data"
-        assertTrue(isTrustedTeslaAuthorizationUrl("https://auth.tesla.cn/oauth2/v3/authorize?$query", host))
-        assertTrue(isTrustedTeslaAuthorizationUrl("https://auth.tesla.com/oauth2/v3/authorize?$query", host))
+        assertTrue(isTrustedTeslaAuthorizationUrl("https://auth.tesla.cn/oauth2/v3/authorize?$query", apiHost))
+        assertTrue(isTrustedTeslaAuthorizationUrl("https://auth.tesla.com/oauth2/v3/authorize?$query", apiHost))
     }
 
     @Test
     fun rejectsAuthorizationUrlWithUntrustedOriginOrMissingMinimumScope() {
-        val query = "client_id=client&redirect_uri=https%3A%2F%2Fauth.jourvolt.com%2Foauth%2Fcallback" +
+        val query = "client_id=client&redirect_uri=$apiRedirect" +
             "&response_type=code&scope=vehicle_device_data"
-        assertFalse(isTrustedTeslaAuthorizationUrl("http://auth.tesla.cn/oauth2/v3/authorize?$query", host))
-        assertFalse(isTrustedTeslaAuthorizationUrl("https://auth.tesla.cn.evil/oauth2/v3/authorize?$query", host))
-        assertFalse(isTrustedTeslaAuthorizationUrl("https://auth.tesla.cn/wrong?$query", host))
-        assertFalse(isTrustedTeslaAuthorizationUrl("https://auth.tesla.cn/oauth2/v3/authorize?$query", host))
+        assertFalse(isTrustedTeslaAuthorizationUrl("http://auth.tesla.cn/oauth2/v3/authorize?$query", apiHost))
+        assertFalse(isTrustedTeslaAuthorizationUrl("https://auth.tesla.cn.evil/oauth2/v3/authorize?$query", apiHost))
+        assertFalse(isTrustedTeslaAuthorizationUrl("https://auth.tesla.cn/wrong?$query", apiHost))
+        assertFalse(isTrustedTeslaAuthorizationUrl("https://auth.tesla.cn/oauth2/v3/authorize?$query", apiHost))
     }
 
     @Test
-    fun rejectsAuthorizationRedirectOutsideJourVoltAppLink() {
+    fun rejectsAuthorizationRedirectOutsideJourVoltApiCallback() {
         val query = "client_id=client&redirect_uri=https%3A%2F%2Fevil.example%2Foauth%2Fcallback" +
             "&response_type=code&scope=openid%20offline_access"
         assertFalse(
             isTrustedTeslaAuthorizationUrl(
                 "https://auth.tesla.cn/oauth2/v3/authorize?$query",
-                host
+                apiHost
+            )
+        )
+        // The App Link hop (/oauth/callback on the auth host) is the SECOND hop,
+        // issued by the JourVolt API after ticket issuance; Tesla must never be
+        // pointed there directly.
+        val appLinkQuery = "client_id=client&redirect_uri=https%3A%2F%2Fauth.jourvolt.com%2Foauth%2Fcallback" +
+            "&response_type=code&scope=openid%20offline_access"
+        assertFalse(
+            isTrustedTeslaAuthorizationUrl(
+                "https://auth.tesla.cn/oauth2/v3/authorize?$appLinkQuery",
+                apiHost
             )
         )
     }

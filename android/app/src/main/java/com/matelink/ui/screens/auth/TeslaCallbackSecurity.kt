@@ -28,6 +28,12 @@ internal fun isTrustedTeslaCallback(
 /**
  * The API is trusted to construct the authorization request, but the app must
  * still fail closed before handing a returned URL to a browser.
+ *
+ * Tesla hands the authorization code back to the JourVolt API callback
+ * (`https://<api host>/v1/auth/tesla/callback`); the server validates state,
+ * issues a one-time ticket, and hops to the App Link (`/oauth/callback`)
+ * which opens this app. [expectedRedirectHost] is therefore the JourVolt
+ * API host (from [com.matelink.BuildConfig.JOURVOLT_API_BASE_URL]).
  */
 internal fun isTrustedTeslaAuthorizationUrl(
     raw: String,
@@ -72,7 +78,7 @@ internal fun isTrustedTeslaAuthorizationUrl(
         redirect.scheme.equals("https", ignoreCase = true) &&
         redirectHost == normalizedRedirectHost &&
         (redirect.port == -1 || redirect.port == 443) &&
-        redirect.path == "/oauth/callback" &&
+        redirect.path == "/v1/auth/tesla/callback" &&
         redirect.userInfo == null &&
         redirect.query == null &&
         redirect.fragment == null &&
