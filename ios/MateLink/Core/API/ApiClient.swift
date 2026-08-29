@@ -72,11 +72,19 @@ actor TeslaMateAPI {
     }
 
     func getChargeDetail(_ carId: Int, chargeId: Int) async throws -> Charge {
-        return try await fetch("/api/v1/cars/\(carId)/charges/\(chargeId)")
+        let resp: ChargeDetailResponse = try await fetch("/api/v1/cars/\(carId)/charges/\(chargeId)")
+        guard let charge = resp.data?.charge else {
+            throw ApiError.invalidResponse
+        }
+        return charge
     }
 
     func getDriveDetail(_ carId: Int, driveId: Int) async throws -> Drive {
-        return try await fetch("/api/v1/cars/\(carId)/drives/\(driveId)")
+        let resp: DriveDetailResponse = try await fetch("/api/v1/cars/\(carId)/drives/\(driveId)")
+        guard let drive = resp.data?.drive else {
+            throw ApiError.invalidResponse
+        }
+        return drive
     }
 
     func getBatteryHealth(_ carId: Int) async throws -> BatteryHealth {
@@ -90,6 +98,151 @@ actor TeslaMateAPI {
     func getGlobalSettings() async throws -> TeslamateUnits {
         let resp: GlobalSettingsResponse = try await fetch("/api/v1/globalsettings")
         return resp.data.settings.teslamateUnits
+    }
+
+    // MARK: - Paginated List Endpoints
+
+    /// Fetch charges with pagination and optional date range filter.
+    func getCharges(carId: Int, page: Int = 1, show: Int = 50,
+                    startDate: String? = nil, endDate: String? = nil) async throws -> [Charge] {
+        var path = "/api/v1/cars/\(carId)/charges?page=\(page)&show=\(show)"
+        if let s = startDate { path += "&startDate=\(s)" }
+        if let e = endDate { path += "&endDate=\(e)" }
+        let resp: ChargesListResponse = try await fetch(path)
+        return resp.data.charges
+    }
+
+    /// Fetch drives with pagination and optional date range filter.
+    func getDrives(carId: Int, page: Int = 1, show: Int = 50,
+                   startDate: String? = nil, endDate: String? = nil) async throws -> [Drive] {
+        var path = "/api/v1/cars/\(carId)/drives?page=\(page)&show=\(show)"
+        if let s = startDate { path += "&startDate=\(s)" }
+        if let e = endDate { path += "&endDate=\(e)" }
+        let resp: DrivesListResponse = try await fetch(path)
+        return resp.data.drives
+    }
+
+    /// Fetch all pages of charges (auto-paginates with 50/page).
+    func getAllCharges(carId: Int, startDate: String? = nil, endDate: String? = nil) async throws -> [Charge] {
+        var all: [Charge] = []
+        var page = 1
+        while true {
+            let batch = try await getCharges(carId: carId, page: page, show: 50,
+                                             startDate: startDate, endDate: endDate)
+            all.append(contentsOf: batch)
+            if batch.count < 50 { break }
+            page += 1
+        }
+        return all
+    }
+
+    /// Fetch all pages of drives (auto-paginates with 50/page).
+    func getAllDrives(carId: Int, startDate: String? = nil, endDate: String? = nil) async throws -> [Drive] {
+        var all: [Drive] = []
+        var page = 1
+        while true {
+            let batch = try await getDrives(carId: carId, page: page, show: 50,
+                                            startDate: startDate, endDate: endDate)
+            all.append(contentsOf: batch)
+            if batch.count < 50 { break }
+            page += 1
+        }
+        return all
+    }
+
+    // MARK: - Detail Endpoints with Nested Data
+
+    /// Charge detail with per-point curve data (ChargePoint array).
+    func getChargeDetailWithPoints(carId: Int, chargeId: Int) async throws -> ChargeDetailResponse {
+        try await fetch("/api/v1/cars/\(carId)/charges/\(chargeId)")
+    }
+
+    /// Drive detail with per-position trajectory data (DrivePosition array).
+    func getDriveDetailWithPositions(carId: Int, driveId: Int) async throws -> DriveDetailResponse {
+        try await fetch("/api/v1/cars/\(carId)/drives/\(driveId)")
+    }
+
+    // MARK: - MateLink Extension Endpoints (matelink/v1/)
+
+    /// Real-time vehicle snapshot (matelink/v1 extension).
+    func getSnapshot(carId: Int) async throws -> SnapshotResponse {
+        try await fetch("/api/matelink/v1/cars/\(carId)/snapshot")
+    }
+}
+
+// MARK: - List Response Wrappers
+
+struct ChargesListResponse: Codable {
+    let data: ChargesListData
+}
+struct ChargesListData: Codable {
+    let charges: [Charge]
+}
+
+struct DrivesListResponse: Codable {
+    let data: DrivesListData
+}
+struct DrivesListData: Codable {
+    let drives: [Drive]
+}
+
+// MARK: - Detail Response Wrappers (nested data.charge / data.drive)
+
+struct ChargeDetailResponse: Codable {
+    let data: ChargeDetailDataWrapper?
+    let error: String?
+}
+struct ChargeDetailDataWrapper: Codable {
+    let charge: Charge?
+    let car: DetailCarInfo?
+}
+
+struct DriveDetailResponse: Codable {
+    let data: DriveDetailDataWrapper?
+    let error: String?
+}
+struct DriveDetailDataWrapper: Codable {
+    let drive: Drive?
+    let car: DetailCarInfo?
+}
+
+struct DetailCarInfo: Codable {
+    let carId: Int?
+    let carName: String?
+    enum CodingKeys: String, CodingKey {
+        case carId = "car_id"
+        case carName = "car_name"
+    }
+}
+
+// MARK: - Snapshot Response
+
+struct SnapshotResponse: Codable {
+    let status: String?
+    let batteryLevel: Int?
+    let rangeKm: Double?
+    let speed: Int?
+    let power: Double?
+    let pluggedIn: Bool?
+    let chargingState: String?
+    let locked: Bool?
+    let sentryMode: Bool?
+    let insideTemp: Double?
+    let outsideTemp: Double?
+    let isClimateOn: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case batteryLevel = "battery_level"
+        case rangeKm = "range_km"
+        case speed, power
+        case pluggedIn = "plugged_in"
+        case chargingState = "charging_state"
+        case locked
+        case sentryMode = "sentry_mode"
+        case insideTemp = "inside_temp"
+        case outsideTemp = "outside_temp"
+        case isClimateOn = "is_climate_on"
     }
 }
 
