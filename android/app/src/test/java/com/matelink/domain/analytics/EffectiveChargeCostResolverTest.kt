@@ -1,6 +1,7 @@
 package com.matelink.domain.analytics
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class EffectiveChargeCostResolverTest {
@@ -74,6 +75,33 @@ class EffectiveChargeCostResolverTest {
         )
 
         assertEquals(11.0, result.cost!!, 0.0)
+        assertEquals(ChargeCostSource.ESTIMATE, result.source)
+    }
+
+    @Test
+    fun negativeAndNonFiniteEnergyCannotProduceEstimatedCost() {
+        listOf(
+            -1.0,
+            Double.NaN,
+            Double.POSITIVE_INFINITY,
+            Double.NEGATIVE_INFINITY
+        ).forEach { energy ->
+            val result = EffectiveChargeCostResolver.resolve(
+                EffectiveChargeCostInput(energyKwh = energy)
+            )
+
+            assertNull(result.cost)
+            assertEquals(ChargeCostSource.ESTIMATE, result.source)
+        }
+    }
+
+    @Test
+    fun observedZeroEnergyRemainsAValidEstimatedZero() {
+        val result = EffectiveChargeCostResolver.resolve(
+            EffectiveChargeCostInput(energyKwh = 0.0)
+        )
+
+        assertEquals(0.0, result.cost!!, 0.0)
         assertEquals(ChargeCostSource.ESTIMATE, result.source)
     }
 }

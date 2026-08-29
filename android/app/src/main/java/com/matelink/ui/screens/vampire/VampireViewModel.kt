@@ -1,10 +1,10 @@
 package com.matelink.ui.screens.vampire
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.StandbyWindowData
 import com.matelink.data.repository.ApiResult
-import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.domain.analytics.NoDataReason
 import com.matelink.domain.analytics.QualifiedStandbyWindow
@@ -20,7 +20,6 @@ import java.time.OffsetDateTime
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 data class IdleDrainPeriod(
@@ -64,11 +63,12 @@ data class DailyDrain(
 @HiltViewModel
 class VampireViewModel @Inject constructor(
     private val repository: TeslamateRepository,
-    private val settingsRepository: SettingsRepository
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(VampireUiState())
     val uiState = _uiState.asStateFlow()
 
+    private val routeCarId: Int? = savedStateHandle["carId"]
     private var allWindows: List<QualifiedStandbyWindow> = emptyList()
     private var customStart: LocalDate? = null
     private var customEnd: LocalDate? = null
@@ -76,8 +76,20 @@ class VampireViewModel @Inject constructor(
     fun load() {
         viewModelScope.launch {
             val selectedWindow = _uiState.value.selectedWindow
-            _uiState.value = VampireUiState(isLoading = true, selectedWindow = selectedWindow)
-            val carId = settingsRepository.currentCarId.first()
+            _uiState.value = VampireUiState(
+                isLoading = true,
+                selectedWindow = selectedWindow
+            )
+            val carId = routeCarId
+            if (carId == null || carId <= 0) {
+                _uiState.value = VampireUiState(
+                    isLoading = false,
+                    selectedWindow = selectedWindow,
+                    error = "Vehicle is unavailable"
+                )
+                return@launch
+            }
+
             when (val response = repository.getStandbyWindows(carId)) {
                 is ApiResult.Error -> _uiState.value = VampireUiState(
                     isLoading = false,
@@ -121,7 +133,9 @@ class VampireViewModel @Inject constructor(
             customStart = customStart,
             customEnd = customEnd
         )
-        val periods = selected.filter { it.isEligible }.map(::toIdleDrainPeriod)
+        val periods = selected
+            .filter(QualifiedStandbyWindow::isEligible)
+            .map(::toIdleDrainPeriod)
         _uiState.value = VampireUiState(
             isLoading = false,
             noDataReason = when {
@@ -141,8 +155,12 @@ class VampireViewModel @Inject constructor(
         )
     }
 
-    private fun toQualifiedWindow(window: StandbyWindowData): QualifiedStandbyWindow? {
-        val date = runCatching { OffsetDateTime.parse(window.startDate).toLocalDate() }.getOrNull() ?: return null
+    private fun toQualifiedWindow(
+        window: StandbyWindowData
+    ): QualifiedStandbyWindow? {
+        val date = runCatching {
+            OffsetDateTime.parse(window.startDate).toLocalDate()
+        }.getOrNull() ?: return null
         return qualifyStandbyWindow(
             StandbyWindowInput(
                 date = date,
@@ -155,46 +173,70 @@ class VampireViewModel @Inject constructor(
                 energyKwh = window.energyKwh,
                 averagePowerW = window.averagePowerW,
                 peakPowerW = window.peakPowerW,
-                climateActivePercent = if (window.climateSampleCount > 0) {
-                    window.climateActiveSampleCount.toDouble() / window.climateSampleCount * 100.0
-                } else {
-                    null
-                },
+                climateActivePercent =
+                    if (window.climateSampleCount > 0) {
+                        window.climateActiveSampleCount.toDouble() /
+                            window.climateSampleCount *
+                            100.0
+                    } else {
+                        null
+                    },
                 climateSampleCount = window.climateSampleCount
             )
         )
     }
 
-    private fun toIdleDrainPeriod(window: QualifiedStandbyWindow): IdleDrainPeriod {
+    private fun toIdleDrainPeriod(
+        window: QualifiedStandbyWindow
+    ): IdleDrainPeriod {
         val input = window.input
-        val climateActive = input.climateActivePercent?.let { it > 0.0 } == true
+        val climateActive = input.climateActivePercent
+            ?.let { it > 0.0 } == true
         return IdleDrainPeriod(
-            startDate = input.startDate ?: input.date.atStartOfDay().toString(),
-            endDate = input.endDate ?: input.date.atStartOfDay().plusHours(input.durationHours.toLong()).toString(),
+            startDate = input.startDate
+                ?: input.date.atStartOfDay().toString(),
+            endDate = input.endDate
+                ?: input.date.atStartOfDay()
+                    .plusHours(input.durationHours.toLong())
+                    .toString(),
             drainPercent = -(window.socDeltaPercent ?: 0),
             hoursIdle = input.durationHours,
             avgPowerW = window.averagePowerW,
             dateKey = input.date.toString(),
             energyKwh = window.energyKwh,
             location = input.address,
-            cause = if (climateActive) StandbyCause.CLIMATE else StandbyCause.UNKNOWN,
+            cause = if (climateActive) {
+                StandbyCause.CLIMATE
+            } else {
+                StandbyCause.UNKNOWN
+            },
             confidence = if (climateActive) 1f else 0f,
             coveragePercent = input.coveragePercent,
             climateSampleCount = input.climateSampleCount
         )
     }
 
-    private fun groupByDay(periods: List<IdleDrainPeriod>): List<DailyDrain> = periods
-        .groupBy { it.dateKey }
+    private fun groupByDay(
+        periods: List<IdleDrainPeriod>
+    ): List<DailyDrain> = periods
+        .groupBy(IdleDrainPeriod::dateKey)
         .map { (date, dayPeriods) ->
             DailyDrain(
                 date = date,
-                totalDrainPercent = dayPeriods.sumOf { it.drainPercent },
-                totalDrainKwh = dayPeriods.mapNotNull { it.energyKwh }.takeIf { it.isNotEmpty() }?.sum(),
-                avgPowerW = dayPeriods.mapNotNull { it.avgPowerW }.takeIf { it.isNotEmpty() }?.average(),
+                totalDrainPercent = dayPeriods.sumOf(
+                    IdleDrainPeriod::drainPercent
+                ),
+                totalDrainKwh = dayPeriods
+                    .mapNotNull(IdleDrainPeriod::energyKwh)
+                    .takeIf(List<Double>::isNotEmpty)
+                    ?.sum(),
+                avgPowerW = dayPeriods
+                    .mapNotNull(IdleDrainPeriod::avgPowerW)
+                    .takeIf(List<Double>::isNotEmpty)
+                    ?.average(),
                 periodCount = dayPeriods.size
             )
         }
-        .sortedByDescending { it.date }
+        .sortedByDescending(DailyDrain::date)
         .take(365)
 }

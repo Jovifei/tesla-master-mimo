@@ -24,15 +24,25 @@ object EffectiveChargeCostResolver {
     private const val ESTIMATED_COST_PER_KWH = 1.10
 
     fun resolve(input: EffectiveChargeCostInput): EffectiveChargeCost {
-        val manualAmount = input.manualAmount?.takeIf { it.isFinite() && it >= 0.0 }
-        val teslaMateCost = input.teslaMateCost?.takeIf { it.isFinite() && it > 0.0 }
-        val estimatedCost = input.energyKwh?.takeIf { it.isFinite() }?.times(ESTIMATED_COST_PER_KWH)
+        val manualAmount = input.manualAmount?.takeIf {
+            it.isFinite() && it >= 0.0
+        }
+        val teslaMateCost = input.teslaMateCost?.takeIf {
+            it.isFinite() && it > 0.0
+        }
+        val estimatedCost = input.energyKwh
+            ?.takeIf { it.isFinite() && it >= 0.0 }
+            ?.times(ESTIMATED_COST_PER_KWH)
 
         return when {
-            manualAmount != null -> EffectiveChargeCost(manualAmount, ChargeCostSource.MANUAL)
-            input.manuallyFree -> EffectiveChargeCost(0.0, ChargeCostSource.FREE)
-            teslaMateCost != null -> EffectiveChargeCost(teslaMateCost, ChargeCostSource.TESLAMATE)
-            else -> EffectiveChargeCost(estimatedCost, ChargeCostSource.ESTIMATE)
+            manualAmount != null ->
+                EffectiveChargeCost(manualAmount, ChargeCostSource.MANUAL)
+            input.manuallyFree ->
+                EffectiveChargeCost(0.0, ChargeCostSource.FREE)
+            teslaMateCost != null ->
+                EffectiveChargeCost(teslaMateCost, ChargeCostSource.TESLAMATE)
+            else ->
+                EffectiveChargeCost(estimatedCost, ChargeCostSource.ESTIMATE)
         }
     }
 }

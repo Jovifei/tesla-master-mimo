@@ -1,0 +1,115 @@
+name: Apply and verify PR1 follow-up
+
+on:
+  push:
+    branches:
+      - fix/20260829-live-data-analysis-truth
+    paths:
+      - .github/patches/pr1-followup.patch.gz.b64.part*
+      - .github/workflows/pr1-apply-followup.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr1-followup-apply
+  cancel-in-progress: false
+
+jobs:
+  apply-verify-commit:
+    name: Apply, verify and commit exact follow-up
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/20260829-live-data-analysis-truth
+          fetch-depth: 0
+
+      - name: Reconstruct and apply exact reviewed patch
+        run: |
+          cat .github/patches/pr1-followup.patch.gz.b64.part* | base64 --decode > /tmp/pr1-followup.patch.gz
+          echo "9fc7fc5f32356011bd319ac58e59dab372c38adadaa83aaf3c69f4c09791c3e9  /tmp/pr1-followup.patch.gz" | sha256sum --check
+          gzip --decompress --stdout /tmp/pr1-followup.patch.gz > /tmp/pr1-followup.patch
+          echo "c19697af41097e0929b0b1135f802214ab910bd2ffa97c614efb428cb0326a78  /tmp/pr1-followup.patch" | sha256sum --check
+          git apply --check /tmp/pr1-followup.patch
+          git apply --whitespace=error-all /tmp/pr1-followup.patch
+          git diff --check
+
+      - name: Verify Go formatting
+        run: |
+          test -z "$(gofmt -l \
+            deploy/teslamate-home-docker/adapter/cmd/adapter/main.go \
+            deploy/teslamate-home-docker/adapter/cmd/adapter/main_test.go \
+            deploy/teslamate-home-docker/adapter/cmd/adapter/mqtt.go \
+            deploy/teslamate-home-docker/adapter/cmd/adapter/mqtt_test.go)"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run Android verification
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon \
+            :app:testDebugUnitTest \
+            :app:testReleaseUnitTest \
+            :app:assembleDebug \
+            :app:assembleRelease \
+            :app:assembleDebugAndroidTest \
+            :app:verifyDebugForegroundServiceType \
+            :app:lintRelease
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: deploy/teslamate-home-docker/adapter/go.mod
+          cache-dependency-path: deploy/teslamate-home-docker/adapter/go.sum
+
+      - name: Run Adapter verification
+        working-directory: deploy/teslamate-home-docker/adapter
+        run: |
+          go test ./... -count=1
+          go vet ./...
+          go mod verify
+
+      - name: Verify exact scope and remove temporary applicator
+        run: |
+          rm .github/patches/pr1-followup.patch.gz.b64.part*
+          rm .github/workflows/pr1-apply-followup.yml
+          rmdir .github/patches 2>/dev/null || true
+          git diff --check
+          if git diff --name-only | grep -E '(^|/)(\.env($|\.)|local\.properties$|build/|\.gradle/|\.kotlin/)' ; then
+            echo 'Forbidden generated or secret-like path found in candidate diff' >&2
+            exit 1
+          fi
+
+      - name: Commit and push verified follow-up
+        env:
+          BRANCH: fix/20260829-live-data-analysis-truth
+        run: |
+          git config user.name 'Jovifei'
+          git config user.email '110970864+Jovifei@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(pr1): complete live-state and analysis truth'
+          git push origin HEAD:"$BRANCH"
+
+      - name: Upload verification outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr1-followup-verification
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            android/app/build/outputs/apk/**/*.apk
+            android/app/build/reports/**
+            android/app/build/test-results/**
