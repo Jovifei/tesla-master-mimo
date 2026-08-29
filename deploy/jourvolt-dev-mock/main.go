@@ -358,6 +358,10 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.mockLogin(w, r)
 		return
 	}
+	if r.URL.Path == "/oauth/callback" {
+		a.applinkFallbackPage(w, r)
+		return
+	}
 	if a.authRoute(w, r) {
 		return
 	}
