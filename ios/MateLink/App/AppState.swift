@@ -107,7 +107,10 @@ class AppState: ObservableObject {
     }
 
     var currentCar: Car? { cars.first { $0.id == currentCarId } }
-    var carAccent: Color { CarColor.from(currentCar?.color ?? "").accent }
+    var carPalette: CarColorPalette {
+        CarColorPalettes.forExteriorColor(currentCar?.color, isDark: isDarkMode)
+    }
+    var carAccent: Color { carPalette.accent }
 
     init() {
         apiToken = KeychainHelper.load("apiToken") ?? ""
