@@ -626,6 +626,7 @@
     <string name="tpms_trend_conclusion_insufficient">Possible factor unavailable: insufficient evidence.</string>
     <string name="tpms_trend_recommendation_manual_cold_check">Manual cold check recommended.</string>
     <string name="tpms_pressure_unit">bar</string>
+    <string name="settings_tpms_entry_subtitle">Target pressure &amp; alert thresholds per car</string>
     <string name="tpms_profile_title">Per-car cold tire-pressure profile</string>
     <string name="tpms_profile_source_hint">Use the cold-pressure label on the driver-side door pillar as the starting source. Values here are for this car only.</string>
     <string name="tpms_profile_model_y_suggestion">Editable Model Y suggestion: target 2.9 bar, low 2.6 bar, high 3.4 bar. This is a suggestion, not a universal Tesla limit.</string>

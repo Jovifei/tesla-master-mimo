@@ -42,6 +42,7 @@ import com.matelink.ui.screens.mileage.MileageScreen
 import com.matelink.ui.screens.more.MoreScreen
 import com.matelink.ui.screens.settings.SettingsScreen
 import com.matelink.ui.screens.settings.TariffConfigScreen
+import com.matelink.ui.screens.settings.TpmsSettingsScreen
 import com.matelink.ui.screens.map.AmapMapScreen
 import com.matelink.ui.screens.map.AmapSetupGuideScreen
 import com.matelink.ui.screens.reports.AnnualReportPDFScreen
@@ -86,6 +87,9 @@ sealed interface Screen {
 
     @Serializable
     data object TariffConfig : Screen
+
+    @Serializable
+    data object TpmsSettings : Screen
 
     @Serializable
     data object AmapSetup : Screen
@@ -373,6 +377,9 @@ fun NavGraph(
                 onNavigateToTariffConfig = {
                     navController.navigate(Screen.TariffConfig)
                 },
+                onNavigateToTpmsSettings = {
+                    navController.navigate(Screen.TpmsSettings)
+                },
                 onNavigateToAmapSetup = {
                     navController.navigate(Screen.AmapSetup)
                 },
@@ -401,6 +408,12 @@ fun NavGraph(
 
         composable<Screen.TariffConfig> {
             TariffConfigScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable<Screen.TpmsSettings> {
+            TpmsSettingsScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }

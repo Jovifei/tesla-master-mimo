@@ -94,6 +94,7 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit = onNavigateToDashboard,
     onNavigateToTariffConfig: () -> Unit = {},
     onNavigateToAmapSetup: () -> Unit = {},
+    onNavigateToTpmsSettings: () -> Unit = {},
     onNavigateToTeslaLogin: () -> Unit = {},
     onLogout: () -> Unit = {},
     onAccountDeleted: () -> Unit = {},
@@ -167,11 +168,8 @@ fun SettingsScreen(
                 },
                 onNavigateToTariffConfig = onNavigateToTariffConfig,
                 onNavigateToAmapSetup = onNavigateToAmapSetup,
+                onNavigateToTpmsSettings = onNavigateToTpmsSettings,
                 onForceResync = viewModel::forceResync,
-                onTpmsTargetBarChange = viewModel::updateTpmsTargetBar,
-                onTpmsLowBarChange = viewModel::updateTpmsLowBar,
-                onTpmsHighBarChange = viewModel::updateTpmsHighBar,
-                onSaveTpmsAlertProfile = viewModel::saveTpmsAlertProfile,
                 onSimulateTpmsWarning = viewModel::simulateTpmsWarning,
                 onClearTpmsWarning = viewModel::clearTpmsWarning,
                 onRunTpmsCheckNow = viewModel::runTpmsCheckNow,
@@ -267,11 +265,8 @@ internal fun SettingsContent(
     onSave: () -> Unit,
     onNavigateToTariffConfig: () -> Unit = {},
     onNavigateToAmapSetup: () -> Unit = {},
+    onNavigateToTpmsSettings: () -> Unit = {},
     onForceResync: () -> Unit = {},
-    onTpmsTargetBarChange: (String) -> Unit = {},
-    onTpmsLowBarChange: (String) -> Unit = {},
-    onTpmsHighBarChange: (String) -> Unit = {},
-    onSaveTpmsAlertProfile: () -> Unit = {},
     onSimulateTpmsWarning: (TirePosition) -> Unit = {},
     onClearTpmsWarning: () -> Unit = {},
     onRunTpmsCheckNow: () -> Unit = {},
@@ -677,13 +672,32 @@ internal fun SettingsContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        TpmsAlertProfileSection(
-            uiState = uiState,
-            onTargetChange = onTpmsTargetBarChange,
-            onLowChange = onTpmsLowBarChange,
-            onHighChange = onTpmsHighBarChange,
-            onSave = onSaveTpmsAlertProfile
-        )
+        Card(
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onNavigateToTpmsSettings),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.tpms_profile_title),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_tpms_entry_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+            }
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -1175,89 +1189,6 @@ internal fun SettingsContent(
                 }
             }
         )
-    }
-}
-
-@Composable
-private fun TpmsAlertProfileSection(
-    uiState: SettingsUiState,
-    onTargetChange: (String) -> Unit,
-    onLowChange: (String) -> Unit,
-    onHighChange: (String) -> Unit,
-    onSave: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.tpms_profile_title),
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text = stringResource(R.string.tpms_profile_source_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = stringResource(R.string.tpms_profile_model_y_suggestion),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            OutlinedTextField(
-                value = uiState.tpmsTargetBar,
-                onValueChange = onTargetChange,
-                label = { Text(stringResource(R.string.tpms_profile_target_label)) },
-                suffix = { Text(stringResource(R.string.tpms_pressure_unit)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth().testTag("tpmsTargetInput")
-            )
-            OutlinedTextField(
-                value = uiState.tpmsLowBar,
-                onValueChange = onLowChange,
-                label = { Text(stringResource(R.string.tpms_profile_low_label)) },
-                suffix = { Text(stringResource(R.string.tpms_pressure_unit)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth().testTag("tpmsLowInput")
-            )
-            OutlinedTextField(
-                value = uiState.tpmsHighBar,
-                onValueChange = onHighChange,
-                label = { Text(stringResource(R.string.tpms_profile_high_label)) },
-                suffix = { Text(stringResource(R.string.tpms_pressure_unit)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth().testTag("tpmsHighInput")
-            )
-            Text(
-                text = stringResource(R.string.tpms_custom_reminder_label),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = if (uiState.tpmsProfileEnabled) {
-                    stringResource(R.string.tpms_profile_enabled, uiState.tpmsCarId)
-                } else {
-                    stringResource(R.string.tpms_profile_not_enabled)
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Button(
-                onClick = onSave,
-                modifier = Modifier.fillMaxWidth().testTag("saveTpmsProfileButton")
-            ) {
-                Text(stringResource(R.string.tpms_profile_save))
-            }
-        }
     }
 }
 
