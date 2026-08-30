@@ -1,0 +1,27 @@
+name: Export latest main source
+
+on:
+  push:
+    branches:
+      - tmp/20260830-main-source-export
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Archive main source
+        run: git archive --format=zip --output=main-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: latest-main-source
+          retention-days: 1
+          path: main-source.zip
