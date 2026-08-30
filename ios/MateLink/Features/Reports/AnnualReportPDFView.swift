@@ -231,8 +231,8 @@ struct AnnualReportPDFView: View {
             charges = await state.mock.getCharges(state.currentCarId)
         } else if let api = state.real {
             do {
-                drives = try await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")
-                charges = try await api.fetch("/api/v1/cars/\(state.currentCarId)/charges")
+                drives = try await api.getAllDrives(carId: state.currentCarId)
+                charges = try await api.getAllCharges(carId: state.currentCarId)
             } catch {
                 drives = []
                 charges = []

@@ -128,7 +128,7 @@ struct EfficiencyView: View {
             if state.isMockMode {
                 drives = await state.mock.getDrives(state.currentCarId)
             } else if let api = state.real {
-                drives = try await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")
+                drives = try await api.getAllDrives(carId: state.currentCarId)
             } else {
                 throw URLError(.notConnectedToInternet)
             }
@@ -140,18 +140,23 @@ struct EfficiencyView: View {
         }
         let filteredDrives = drives.filter { $0.distanceKm > 1 }
         points = filteredDrives.map { d in
-            let speed = max(0, Int((d.distanceKm / Double(max(d.durationMin, 1))) * 60.0))
+            let speed = max(0, Int(d.averageSpeedKmh.rounded()))
             return EfficiencyPoint(speed: speed, efficiency: Int(d.efficiency.rounded()), temp: d.outsideTempAvg, date: String(d.startDate.prefix(10)))
         }
 
-        let zoneDefs: [(String, Int, Int)] = [
-            ("0-30", 0, 30), ("30-60", 30, 60), ("60-90", 60, 90),
-            ("90-120", 90, 120), ("120+", 120, 300)
-        ]
-        zones = zoneDefs.map { label, minS, maxS in
+        // Android: 20 km/h buckets from speedAvg
+        zones = stride(from: 0, through: 120, by: 20).map { minS in
+            let maxS = minS == 120 ? 300 : minS + 20
+            let label = minS == 120 ? "120+" : "\(minS)-\(maxS)"
             let pts = points.filter { $0.speed >= minS && $0.speed < maxS }
             let count = pts.count
-            let avg = count > 0 ? pts.map(\.efficiency).reduce(0, +) / count : 0
+            let totalDistance = filteredDrives.filter {
+                let s = Int($0.averageSpeedKmh.rounded())
+                return s >= minS && s < maxS
+            }
+            let energy = totalDistance.reduce(0.0) { $0 + $1.consumptionKwh }
+            let km = totalDistance.reduce(0.0) { $0 + $1.distanceKm }
+            let avg = km > 0 ? Int((energy / km * 1000).rounded()) : 0
             let best = pts.map(\.efficiency).min() ?? 0
             return SpeedZone(label: label, minSpeed: minS, maxSpeed: maxS, count: count, avgEff: avg, bestEff: best)
         }

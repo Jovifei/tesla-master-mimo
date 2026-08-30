@@ -27,6 +27,9 @@ struct MoreView: View {
                 NavigationLink(value: Route.mileage(carId: state.currentCarId)) {
                     Label("Mileage", systemImage: MateIcons.mileage)
                 }
+                NavigationLink(value: Route.trips(carId: state.currentCarId)) {
+                    Label("Long Trips", systemImage: MateIcons.trips)
+                }
                 NavigationLink(value: Route.efficiency(carId: state.currentCarId)) {
                     Label("Efficiency", systemImage: MateIcons.efficiency)
                 }
@@ -38,6 +41,9 @@ struct MoreView: View {
                 }
                 NavigationLink(value: Route.vampire(carId: state.currentCarId)) {
                     Label("Vampire Drain", systemImage: MateIcons.vampire)
+                }
+                NavigationLink(value: Route.countriesVisited(carId: state.currentCarId)) {
+                    Label("Countries Visited", systemImage: MateIcons.countries)
                 }
             }
 
@@ -55,6 +61,9 @@ struct MoreView: View {
             Section(L10n.string("more.history")) {
                 NavigationLink(value: Route.timeline(carId: state.currentCarId)) {
                     Label("Timeline", systemImage: MateIcons.timeline)
+                }
+                NavigationLink(value: Route.whereWasI(carId: state.currentCarId, timestamp: ISO8601DateFormatter().string(from: Date()))) {
+                    Label("Where Was I?", systemImage: MateIcons.location)
                 }
                 NavigationLink(value: Route.sentryHistory(carId: state.currentCarId)) {
                     Label("Sentry History", systemImage: MateIcons.sentryHistory)

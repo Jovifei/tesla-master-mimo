@@ -3,10 +3,21 @@ import SwiftUI
 struct ChargeListView: View {
     @EnvironmentObject var state: AppState
     @Environment(\.carPalette) private var palette
-    @State private var charges: [Charge] = []
+    @State private var allCharges: [Charge] = []
     @State private var loading = true
     @State private var status: CarStatus?
     @State private var loadError: String?
+    @State private var dateFilter: HistoryDateFilter = .last7Days
+    @State private var typeFilter: ChargeTypeFilter = .all
+    @State private var costFilter: CostFilter = .all
+
+    private var charges: [Charge] {
+        allCharges.filter { charge in
+            !ChargeFilterRules.isShortCharge(charge)
+                && (typeFilter == .all || charge.chargingType == typeFilter.label)
+                && costFilter.matches(charge.cost)
+        }
+    }
 
     private var showsCurrentCharge: Bool {
         guard let s = status else { return false }
@@ -28,6 +39,32 @@ struct ChargeListView: View {
             }
         }
         .navigationTitle("Charges")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Picker("Date", selection: $dateFilter) {
+                        ForEach(HistoryDateFilter.allCases) { filter in
+                            Text(filter.label).tag(filter)
+                        }
+                    }
+                    Picker("Type", selection: $typeFilter) {
+                        ForEach(ChargeTypeFilter.allCases) { filter in
+                            Text(filter.label).tag(filter)
+                        }
+                    }
+                    Picker("Cost", selection: $costFilter) {
+                        ForEach(CostFilter.allCases) { filter in
+                            Text(filter.label).tag(filter)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                }
+            }
+        }
+        .onChange(of: dateFilter) { _ in
+            Task { await load() }
+        }
         .refreshable { await load() }
         .task { await load() }
     }
@@ -99,19 +136,26 @@ struct ChargeListView: View {
         if charges.isEmpty { loading = true }
 
         // Cache-first
-        if let api = state.real, let cached = await api.getCachedCharges(carId: carId) {
-            charges = cached
+        if let api = state.real, dateFilter == .allTime, let cached = await api.getCachedCharges(carId: carId) {
+            allCharges = cached
             loading = false
         }
 
+        let bounds = dateFilter.isoBounds()
         if state.isMockMode {
-            charges = await state.mock.getCharges(carId)
+            allCharges = await state.mock.getCharges(carId)
             status = await state.mock.mockStatus(carId)
         } else if let api = state.real {
             do {
-                let fresh: [Charge] = try await api.getAllCharges(carId: carId)
-                charges = fresh
-                await api.cacheCharges(fresh, carId: carId)
+                let fresh: [Charge] = try await api.getAllCharges(
+                    carId: carId,
+                    startDate: bounds?.start,
+                    endDate: bounds?.end
+                )
+                allCharges = fresh
+                if dateFilter == .allTime {
+                    await api.cacheCharges(fresh, carId: carId)
+                }
             } catch {
                 if charges.isEmpty {
                     loadError = error.localizedDescription

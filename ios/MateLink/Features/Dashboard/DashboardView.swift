@@ -8,7 +8,7 @@ struct DashboardView: View {
     @State private var status: CarStatus?
     @State private var showCarSwitcher = false
     @State private var isRefreshing = false
-    @State private var loadError: String?
+    @State private var snapshotSource: String?
 
     var body: some View {
         ScrollView {
@@ -42,7 +42,7 @@ struct DashboardView: View {
     @ViewBuilder
     private func dashboardContent(_ s: CarStatus) -> some View {
         // 1. Header — car name, state badge, settings
-        DashboardHeader(status: s, showCarSwitcher: $showCarSwitcher)
+                    DashboardHeader(status: s, snapshotSource: snapshotSource, showCarSwitcher: $showCarSwitcher)
 
         // 2. Hero Telemetry Card — battery %, range, speed, power
         TelemetryHeroCard(status: s, palette: palette)
@@ -67,7 +67,10 @@ struct DashboardView: View {
         VehicleInfoCards(status: s, palette: palette)
 
         // 7. Tire Pressure Grid
-        TirePressureGrid(status: s, palette: palette)
+        NavigationLink(value: Route.tpmsTrend(carId: state.currentCarId)) {
+            TirePressureGrid(status: s, palette: palette)
+        }
+        .buttonStyle(.plain)
 
         // 8. Charging Panel (only when actively charging — mirrors Android isCharging)
         if s.isCharging {
@@ -98,24 +101,36 @@ struct DashboardView: View {
 
         if state.isMockMode {
             status = await state.mock.mockStatus(state.currentCarId)
+            snapshotSource = "mock"
         } else if let api = state.real {
             let carId = state.currentCarId
             do {
-                status = try await api.fetch("/api/v1/cars/\(carId)/status")
+                let snap = try await api.getAdapterSnapshot(carId: carId)
+                status = snap.status
+                snapshotSource = snap.source
             } catch {
-                status = nil
-                loadError = "Unable to load vehicle status: \(error.localizedDescription)"
+                do {
+                    status = try await api.fetch("/api/v1/cars/\(carId)/status")
+                    snapshotSource = "teslamate_api"
+                } catch {
+                    status = nil
+                    snapshotSource = nil
+                    loadError = "Unable to load vehicle status: \(error.localizedDescription)"
+                }
             }
         } else {
             status = nil
             loadError = "No TeslaMate instance is configured."
         }
 
-        // Widget data
-        if let s = status, let defaults = UserDefaults(suiteName: "group.com.matelink") {
-            defaults.set(Int(s.batteryLevel), forKey: "widget_battery")
-            defaults.set(Int(s.usableBatteryRangeKm), forKey: "widget_range")
-            defaults.set(s.state.rawValue, forKey: "widget_state")
+        // Widget data + TPMS history samples (Android Worker equivalent)
+        if let s = status {
+            TpmsSampleStore.record(from: s)
+            if let defaults = UserDefaults(suiteName: "group.com.matelink") {
+                defaults.set(Int(s.batteryLevel), forKey: "widget_battery")
+                defaults.set(Int(s.usableBatteryRangeKm), forKey: "widget_range")
+                defaults.set(s.state.rawValue, forKey: "widget_state")
+            }
         }
     }
 }
@@ -124,6 +139,7 @@ struct DashboardView: View {
 
 private struct DashboardHeader: View {
     let status: CarStatus
+    let snapshotSource: String?
     @Binding var showCarSwitcher: Bool
     @EnvironmentObject var state: AppState
 
@@ -140,7 +156,10 @@ private struct DashboardHeader: View {
             }
             Spacer()
 
-            // State badge
+            if let snapshotSource {
+                SnapshotBadge(source: snapshotSource)
+            }
+
             Text(status.state.localizedLabel)
                 .font(.caption.weight(.medium))
                 .padding(.horizontal, 10)
@@ -657,6 +676,37 @@ private struct PartialDashboardView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Snapshot source badge (Android SnapshotBadge)
+
+private struct SnapshotBadge: View {
+    let source: String
+
+    private var kind: (label: String, color: Color) {
+        switch source {
+        case "live_mqtt", "teslamate_api", "fleet_api":
+            return ("Live", MateColors.charging)
+        case "mqtt_latest":
+            return ("Recent", MateColors.warning)
+        case "database_latest":
+            return ("History", MateColors.warning)
+        case "mock":
+            return ("Mock", MateColors.warning)
+        default:
+            return (source, .secondary)
+        }
+    }
+
+    var body: some View {
+        Text(kind.label)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .foregroundStyle(kind.color)
+            .background(kind.color.opacity(0.15))
+            .clipShape(Capsule())
     }
 }
 

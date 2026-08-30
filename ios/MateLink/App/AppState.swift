@@ -192,6 +192,18 @@ class AppState: ObservableObject {
         }
     }
 
+    func loadAllDrives() async throws -> [Drive] {
+        if isMockMode { return await mock.getDrives(currentCarId) }
+        guard let api = real else { throw ApiError.invalidResponse }
+        return try await api.getAllDrives(carId: currentCarId)
+    }
+
+    func loadAllCharges() async throws -> [Charge] {
+        if isMockMode { return await mock.getCharges(currentCarId) }
+        guard let api = real else { throw ApiError.invalidResponse }
+        return try await api.getAllCharges(carId: currentCarId)
+    }
+
     func connect(url: String, token: String) async throws {
         let api = TeslaMateAPI(baseURL: url, token: token.isEmpty ? nil : token)
         let resp: CarApiResponse = try await api.fetch("/api/v1/cars")

@@ -36,16 +36,17 @@
 | 刚开始充电闪「未充电」 | `getCurrentCharge` 把 200+error 当失败；`isChargeStarting` 判断反了 | 解析 wrapper；starting = `isCharging && currentCharge == nil` |
 | 换车重启丢失 | `currentCarId` 默认 1，未从 instance 恢复 | `selectCar` 写 instance；`init` 读回 |
 
-## 明确未搬过来的能力（下一批，不是本轮 bug）
+## 明确未搬过来的能力（平台基础设施，不是业务公式）
 
-这些是 Android 已有、iOS 仍为缺口或占位，**不要当成已验收**：
+这些 **无法只靠搬 Android 页面逻辑** 完成，需要 iOS 原生能力：
 
-1. DriveList / ChargeList 筛选（日期、距离、AC/DC、费用）与默认 7 天范围
-2. Dashboard MateLink snapshot adapter（iOS 仍只用 `/status` + partial 降级）
-3. Trips / TPMS 趋势 / Countries / WhereWasI 等仍为占位页
-4. iOS Widget：源码在，`project.yml` 无 extension target，仍 deferred
-5. 自定义字体 `.ttf` 可能未入库（`VERIFY_IOS.md` 检查项 5）
-6. 通知、高德 SDK、Apple Watch（见父仓 `docs/TODO-mimo.md` I-1 / I-2 / I-5）
+1. iOS Widget extension target / entitlements / App Group 签名
+2. 后台 MQTT + 本地 Room 同步（`DataSyncWorker`）— iOS 用分页 API 全量拉取代替分析库
+3. Sentry 真机告警采集（Android 是 Worker 日志，不是 TeslaMate REST）
+4. 系统通知、高德 SDK 原生渲染（地图目前 MapKit 回退）
+5. Apple Watch
+
+业务筛选、snapshot、分析公式、Trips/TPMS/Countries/WhereWasI 已在本分支按 Android 规则实现。
 
 ## 后面应该执行什么
 

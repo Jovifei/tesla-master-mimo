@@ -115,7 +115,7 @@ struct DestinationsView: View {
             if state.isMockMode {
                 drives = await state.mock.getDrives(state.currentCarId)
             } else if let api = state.real {
-                drives = try await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")
+                drives = try await api.getAllDrives(carId: state.currentCarId)
             } else {
                 throw URLError(.notConnectedToInternet)
             }

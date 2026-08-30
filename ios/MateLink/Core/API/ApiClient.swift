@@ -184,9 +184,18 @@ actor TeslaMateAPI {
 
     // MARK: - MateLink Extension Endpoints (matelink/v1/)
 
-    /// Real-time vehicle snapshot (matelink/v1 extension).
-    func getSnapshot(carId: Int) async throws -> SnapshotResponse {
-        try await fetch("/api/matelink/v1/cars/\(carId)/snapshot")
+    /// MateLink adapter snapshot — Android `AdapterSnapshot`.
+    func getAdapterSnapshot(carId: Int) async throws -> AdapterSnapshotData {
+        let resp: AdapterSnapshotEnvelope = try await fetch("/api/matelink/v1/cars/\(carId)/snapshot")
+        guard let data = resp.data else {
+            throw ApiError.invalidResponse
+        }
+        return data
+    }
+
+    func getStandbyWindows(carId: Int) async throws -> [StandbyWindowData] {
+        let resp: StandbyEnvelope = try await fetch("/api/matelink/v1/cars/\(carId)/standby")
+        return resp.data?.windows ?? []
     }
 }
 
@@ -236,6 +245,100 @@ struct DetailCarInfo: Codable {
 }
 
 // MARK: - Snapshot Response
+
+struct AdapterSnapshotEnvelope: Decodable {
+    let data: AdapterSnapshotData?
+    let error: String?
+}
+
+struct AdapterSnapshotData: Decodable {
+    let status: CarStatus
+    let observedAt: String?
+    let source: String
+    let fieldSources: [String: String]?
+
+    enum CodingKeys: String, CodingKey {
+        case status, source
+        case observedAt = "observed_at"
+        case fieldSources = "field_sources"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        status = try c.decode(CarStatus.self, forKey: .status)
+        observedAt = try? c.decode(String.self, forKey: .observedAt)
+        source = (try? c.decode(String.self, forKey: .source)) ?? "unknown"
+        fieldSources = try? c.decode([String: String].self, forKey: .fieldSources)
+    }
+}
+
+struct StandbyEnvelope: Decodable {
+    let data: StandbyData?
+    let error: String?
+}
+
+struct StandbyData: Decodable {
+    let windows: [StandbyWindowData]
+}
+
+struct StandbyWindowData: Decodable, Identifiable {
+    var id: String { startDate }
+    let startDate: String
+    let endDate: String
+    let address: String?
+    let durationSeconds: Int
+    let startBatteryLevel: Int?
+    let endBatteryLevel: Int?
+    let batteryDelta: Int?
+    let energyKwh: Double?
+    let averagePowerW: Double?
+    let peakPowerW: Double?
+    let coverageRatio: Double
+    let climateActiveSampleCount: Int
+    let climateSampleCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case address
+        case startDate = "start_date"
+        case endDate = "end_date"
+        case durationSeconds = "duration_seconds"
+        case startBatteryLevel = "start_battery_level"
+        case endBatteryLevel = "end_battery_level"
+        case batteryDelta = "battery_delta"
+        case energyKwh = "energy_kwh"
+        case averagePowerW = "average_power_w"
+        case peakPowerW = "peak_power_w"
+        case coverageRatio = "coverage_ratio"
+        case climateActiveSampleCount = "climate_active_sample_count"
+        case climateSampleCount = "climate_sample_count"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        startDate = (try? c.decode(String.self, forKey: .startDate)) ?? ""
+        endDate = (try? c.decode(String.self, forKey: .endDate)) ?? ""
+        address = try? c.decode(String.self, forKey: .address)
+        durationSeconds = (try? c.decode(Int.self, forKey: .durationSeconds)) ?? 0
+        startBatteryLevel = try? c.decode(Int.self, forKey: .startBatteryLevel)
+        endBatteryLevel = try? c.decode(Int.self, forKey: .endBatteryLevel)
+        batteryDelta = try? c.decode(Int.self, forKey: .batteryDelta)
+        energyKwh = try? c.decode(Double.self, forKey: .energyKwh)
+        averagePowerW = try? c.decode(Double.self, forKey: .averagePowerW)
+        peakPowerW = try? c.decode(Double.self, forKey: .peakPowerW)
+        coverageRatio = (try? c.decode(Double.self, forKey: .coverageRatio)) ?? 0
+        climateActiveSampleCount = (try? c.decode(Int.self, forKey: .climateActiveSampleCount)) ?? 0
+        climateSampleCount = (try? c.decode(Int.self, forKey: .climateSampleCount)) ?? 0
+    }
+
+    var durationHours: Double { Double(durationSeconds) / 3600.0 }
+    var coveragePercent: Double { coverageRatio * 100.0 }
+    var isQualified: Bool {
+        durationHours >= 2
+            && batteryDelta != nil
+            && (batteryDelta ?? 0) < 0
+    }
+    var hasPowerCoverage: Bool { coveragePercent >= 80 }
+}
 
 struct SnapshotResponse: Codable {
     let status: String?

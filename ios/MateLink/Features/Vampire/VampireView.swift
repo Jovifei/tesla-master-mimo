@@ -80,55 +80,79 @@ struct VampireView: View {
 
     func loadData() async {
         loadError = nil
-        let drives: [Drive]
-        do {
-            if state.isMockMode {
-                drives = await state.mock.getDrives(state.currentCarId)
-            } else if let api = state.real {
-                drives = try await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")
-            } else {
-                throw URLError(.notConnectedToInternet)
-            }
-        } catch {
-            drains = []
-            totalKWh = 0
-            totalKm = 0
-            loadError = "Unable to load real drive data: \(error.localizedDescription)"
+        if state.isMockMode {
+            await loadFromDriveGaps()
             return
         }
+        guard let api = state.real else {
+            loadError = "No TeslaMate instance is configured."
+            return
+        }
+        do {
+            let windows = try await api.getStandbyWindows(carId: state.currentCarId)
+            let cutoff = Calendar.current.date(byAdding: .day, value: -29, to: Date()) ?? Date()
+            let qualified = windows.filter { window in
+                guard window.isQualified else { return false }
+                guard let start = HistoryDateFilter.parseISO(window.startDate) else { return false }
+                return start >= cutoff
+            }
+            drains = qualified.map { window in
+                let kWh: Double
+                if window.hasPowerCoverage, let energy = window.energyKwh {
+                    kWh = energy
+                } else {
+                    kWh = 0
+                }
+                let km = Int((kWh / 75.0) * 520.0)
+                return VampireDrain(
+                    date: String(window.startDate.prefix(10)),
+                    kWh: kWh,
+                    km: km,
+                    temp: 0
+                )
+            }
+            totalKWh = drains.reduce(0) { $0 + $1.kWh }
+            totalKm = drains.reduce(0) { $0 + $1.km }
+        } catch {
+            await loadFromDriveGaps()
+            if drains.isEmpty {
+                loadError = "Standby API unavailable: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Fallback matching Android qualify rules when adapter standby is missing.
+    private func loadFromDriveGaps() async {
+        let drives: [Drive]
+        if state.isMockMode {
+            drives = await state.mock.getDrives(state.currentCarId)
+        } else if let api = state.real {
+            drives = (try? await api.getAllDrives(carId: state.currentCarId)) ?? []
+        } else {
+            drives = []
+        }
         let sortedDrives = drives.sorted { $0.startDate < $1.startDate }
+        var calculated: [VampireDrain] = []
+        var totalKwh: Double = 0
         guard sortedDrives.count > 1 else {
             drains = []
             totalKWh = 0
             totalKm = 0
             return
         }
-
-        var calculated: [VampireDrain] = []
-        var totalKwh: Double = 0
-
         for i in 1..<sortedDrives.count {
             let prev = sortedDrives[i - 1], cur = sortedDrives[i]
-
-            let fmt = ISO8601DateFormatter()
-            fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let prevEnd = fmt.date(from: prev.endDate) ?? Date()
-            let curStart = fmt.date(from: cur.startDate) ?? Date()
+            guard let prevEnd = HistoryDateFilter.parseISO(prev.endDate),
+                  let curStart = HistoryDateFilter.parseISO(cur.startDate) else { continue }
             let gapHours = curStart.timeIntervalSince(prevEnd) / 3600.0
-
-            guard gapHours > 1 && gapHours < 48 else { continue }
-
+            guard gapHours >= 2 else { continue }
             let battLoss = prev.endBatteryLevel - cur.startBatteryLevel
             guard battLoss > 0 else { continue }
-
             let kWh = Double(battLoss) / 100.0 * batteryCapacity
             let km = Int(Double(battLoss) / 100.0 * idealRange)
             totalKwh += kWh
-
-            let date = String(prev.endDate.prefix(10))
-            calculated.append(VampireDrain(date: date, kWh: kWh, km: km, temp: cur.outsideTempAvg))
+            calculated.append(VampireDrain(date: String(prev.endDate.prefix(10)), kWh: kWh, km: km, temp: cur.outsideTempAvg))
         }
-
         drains = calculated
         totalKWh = totalKwh
         totalKm = Int(totalKwh * idealRange / batteryCapacity)

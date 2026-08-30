@@ -135,8 +135,8 @@ struct ExportView: View {
             charges = await state.mock.getCharges(carId)
         } else if let api = state.real {
             do {
-                drives = try await api.fetch("/api/v1/cars/\(carId)/drives")
-                charges = try await api.fetch("/api/v1/cars/\(carId)/charges")
+                drives = try await api.getAllDrives(carId: carId)
+                charges = try await api.getAllCharges(carId: carId)
             } catch {
                 drives = []
                 charges = []
@@ -151,16 +151,13 @@ struct ExportView: View {
         }
 
         var years = Set<Int>()
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
         for d in drives {
-            if let date = dateFormatter.date(from: d.startDate) {
+            if let date = HistoryDateFilter.parseISO(d.startDate) {
                 years.insert(Calendar.current.component(.year, from: date))
             }
         }
         for c in charges {
-            if let date = dateFormatter.date(from: c.startDate) {
+            if let date = HistoryDateFilter.parseISO(c.startDate) {
                 years.insert(Calendar.current.component(.year, from: date))
             }
         }

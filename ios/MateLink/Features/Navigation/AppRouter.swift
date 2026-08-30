@@ -50,25 +50,25 @@ struct RouteDestinationView: View {
         case .export:
             ExportView()
 
-        // Trips (deferred — placeholder)
-        case .trips(let carId):
-            TripsPlaceholder(carId: carId)
-        case .tripDetail(let carId, _):
-            TripsPlaceholder(carId: carId)
-        case .createTrip(let carId):
-            TripsPlaceholder(carId: carId)
+        // Trips
+        case .trips(_):
+            TripsView()
+        case .tripDetail(_, _), .createTrip(_):
+            TripsView()
 
-        // TPMS (deferred)
-        case .tpmsTrend, .tpmsSettings:
-            TpmsPlaceholder()
+        // TPMS
+        case .tpmsTrend(_):
+            TpmsTrendView()
+        case .tpmsSettings:
+            TpmsTrendView()
 
-        // Countries (deferred)
-        case .countriesVisited, .regionsVisited:
-            CountriesPlaceholder()
+        // Countries
+        case .countriesVisited(_), .regionsVisited(_, _, _):
+            CountriesVisitedView()
 
-        // Location (deferred)
-        case .whereWasI:
-            WhereWasIPlaceholder()
+        // Location
+        case .whereWasI(_, _):
+            WhereWasIView()
 
         // System
         case .settings:
@@ -151,33 +151,3 @@ private struct ChargeDetailLoader: View {
     }
 }
 
-// MARK: - Placeholder Views (for routes not yet implemented)
-
-struct TripsPlaceholder: View {
-    let carId: Int
-    var body: some View {
-        EmptyStateView("Trips", systemImage: MateIcons.trips,
-                       message: "Coming in a future update")
-    }
-}
-
-struct TpmsPlaceholder: View {
-    var body: some View {
-        EmptyStateView("TPMS Trend", systemImage: MateIcons.tpms,
-                       message: "Coming in a future update")
-    }
-}
-
-struct CountriesPlaceholder: View {
-    var body: some View {
-        EmptyStateView("Countries Visited", systemImage: MateIcons.countries,
-                       message: "Coming in a future update")
-    }
-}
-
-struct WhereWasIPlaceholder: View {
-    var body: some View {
-        EmptyStateView("Where Was I?", systemImage: MateIcons.location,
-                       message: "Coming in a future update")
-    }
-}

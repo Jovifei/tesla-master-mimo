@@ -414,12 +414,19 @@ struct Drive: Codable, Identifiable {
     let endLatitude: Double; let endLongitude: Double
     let startBatteryLevel: Int; let endBatteryLevel: Int
     let startIdealRangeKm: Double; let endIdealRangeKm: Double
-    let outsideTempAvg: Double; let speedMax: Double; let powerMax: Double; let powerMin: Double
+    let outsideTempAvg: Double; let speedMax: Double; let speedAvg: Double
+    let powerMax: Double; let powerMin: Double
     let elevationGain: Double; let elevationLoss: Double
     /// Trajectory samples — present on drive detail API (`drive_details`).
     let positions: [DrivePosition]?
 
-    /// 行程能耗 (kWh) = 距离(km) × 效率(Wh/km) / 1000
+    /// Average speed in km/h — API `speed_avg`, else distance/duration.
+    var averageSpeedKmh: Double {
+        if speedAvg > 0 { return speedAvg }
+        return distanceKm / Double(max(durationMin, 1)) * 60.0
+    }
+
+    /// Weighted-efficiency helper: energy kWh for this drive.
     var consumptionKwh: Double { distanceKm * efficiency / 1000.0 }
 
     /// Memberwise init for Previews / mocks.
@@ -431,7 +438,8 @@ struct Drive: Codable, Identifiable {
         endLatitude: Double, endLongitude: Double,
         startBatteryLevel: Int, endBatteryLevel: Int,
         startIdealRangeKm: Double, endIdealRangeKm: Double,
-        outsideTempAvg: Double, speedMax: Double, powerMax: Double, powerMin: Double,
+        outsideTempAvg: Double, speedMax: Double, speedAvg: Double = 0,
+        powerMax: Double, powerMin: Double,
         elevationGain: Double, elevationLoss: Double,
         positions: [DrivePosition]? = nil
     ) {
@@ -442,7 +450,7 @@ struct Drive: Codable, Identifiable {
         self.endLatitude = endLatitude; self.endLongitude = endLongitude
         self.startBatteryLevel = startBatteryLevel; self.endBatteryLevel = endBatteryLevel
         self.startIdealRangeKm = startIdealRangeKm; self.endIdealRangeKm = endIdealRangeKm
-        self.outsideTempAvg = outsideTempAvg; self.speedMax = speedMax
+        self.outsideTempAvg = outsideTempAvg; self.speedMax = speedMax; self.speedAvg = speedAvg
         self.powerMax = powerMax; self.powerMin = powerMin
         self.elevationGain = elevationGain; self.elevationLoss = elevationLoss
         self.positions = positions
@@ -456,6 +464,7 @@ struct Drive: Codable, Identifiable {
         case startLatitude = "start_latitude"; case startLongitude = "start_longitude"
         case endLatitude = "end_latitude"; case endLongitude = "end_longitude"
         case outsideTempAvg = "outside_temp_avg"; case speedMax = "speed_max"
+        case speedAvg = "speed_avg"
         case powerMax = "power_max"; case powerMin = "power_min"
         case elevationGain = "elevation_gain"; case elevationLoss = "elevation_loss"
         // Nested containers (TeslaMate API v1.24+)
@@ -481,6 +490,7 @@ struct Drive: Codable, Identifiable {
         endLongitude = (try? top.decode(Double.self, forKey: .endLongitude)) ?? 0
         outsideTempAvg = (try? top.decode(Double.self, forKey: .outsideTempAvg)) ?? 0
         speedMax = (try? top.decode(Double.self, forKey: .speedMax)) ?? 0
+        speedAvg = (try? top.decode(Double.self, forKey: .speedAvg)) ?? 0
         powerMax = (try? top.decode(Double.self, forKey: .powerMax)) ?? 0
         powerMin = (try? top.decode(Double.self, forKey: .powerMin)) ?? 0
         elevationGain = (try? top.decode(Double.self, forKey: .elevationGain)) ?? 0
@@ -531,6 +541,7 @@ struct Drive: Codable, Identifiable {
         try c.encode(endIdealRangeKm, forKey: .endIdealRangeKm)
         try c.encode(outsideTempAvg, forKey: .outsideTempAvg)
         try c.encode(speedMax, forKey: .speedMax)
+        try c.encode(speedAvg, forKey: .speedAvg)
         try c.encode(powerMax, forKey: .powerMax)
         try c.encode(powerMin, forKey: .powerMin)
         try c.encode(elevationGain, forKey: .elevationGain)

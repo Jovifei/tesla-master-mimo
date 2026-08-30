@@ -3,9 +3,17 @@ import SwiftUI
 struct DriveListView: View {
     @EnvironmentObject var state: AppState
     @Environment(\.carPalette) private var palette
-    @State private var drives: [Drive] = []
+    @State private var allDrives: [Drive] = []
     @State private var loading = true
     @State private var loadError: String?
+    @State private var dateFilter: HistoryDateFilter = .allTime
+    @State private var distanceFilter: DriveDistanceFilter = .all
+
+    private var drives: [Drive] {
+        allDrives.filter { drive in
+            !DriveFilterRules.isShortDrive(drive) && distanceFilter.matches(drive.distanceKm)
+        }
+    }
 
     var body: some View {
         Group {
@@ -22,6 +30,27 @@ struct DriveListView: View {
             }
         }
         .navigationTitle("Drives")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Picker("Date", selection: $dateFilter) {
+                        ForEach(HistoryDateFilter.allCases) { filter in
+                            Text(filter.label).tag(filter)
+                        }
+                    }
+                    Picker("Distance", selection: $distanceFilter) {
+                        ForEach(DriveDistanceFilter.allCases) { filter in
+                            Text(filter.label).tag(filter)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                }
+            }
+        }
+        .onChange(of: dateFilter) { _ in
+            Task { await load() }
+        }
         .refreshable { await load() }
         .task { await load() }
     }
@@ -87,20 +116,25 @@ struct DriveListView: View {
         let carId = state.currentCarId
         if drives.isEmpty { loading = true }
 
-        // Cache-first
-        if let api = state.real, let cached = await api.getCachedDrives(carId: carId) {
-            drives = cached
+        if let api = state.real, dateFilter == .allTime, let cached = await api.getCachedDrives(carId: carId) {
+            allDrives = cached
             loading = false
         }
 
-        // Fetch fresh
+        let bounds = dateFilter.isoBounds()
         if state.isMockMode {
-            drives = await state.mock.getDrives(carId)
+            allDrives = await state.mock.getDrives(carId)
         } else if let api = state.real {
             do {
-                let fresh: [Drive] = try await api.getAllDrives(carId: carId)
-                drives = fresh
-                await api.cacheDrives(fresh, carId: carId)
+                let fresh: [Drive] = try await api.getAllDrives(
+                    carId: carId,
+                    startDate: bounds?.start,
+                    endDate: bounds?.end
+                )
+                allDrives = fresh
+                if dateFilter == .allTime {
+                    await api.cacheDrives(fresh, carId: carId)
+                }
             } catch {
                 loadError = error.localizedDescription
             }
