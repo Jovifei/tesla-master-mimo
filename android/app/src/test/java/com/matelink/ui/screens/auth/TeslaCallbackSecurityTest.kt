@@ -15,6 +15,9 @@ class TeslaCallbackSecurityTest {
         assertTrue(
             isTrustedTeslaCallback("https", host, "/oauth/callback", host)
         )
+        assertTrue(
+            isTrustedTeslaCallback("intent", host, "/oauth/callback", host)
+        )
     }
 
     @Test

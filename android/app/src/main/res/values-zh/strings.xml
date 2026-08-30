@@ -71,6 +71,7 @@
     <string name="tesla_login_error_unavailable">Tesla 授权暂时不可用，请稍后重试。</string>
     <string name="tesla_login_error_cancelled">你已取消 Tesla 授权。</string>
     <string name="tesla_login_error_exchange">Tesla 授权未能完成，请重试。</string>
+    <string name="tesla_login_error_token_config">Tesla 应用凭据被拒绝，请联系维护者检查云端登录配置。</string>
     <string name="tesla_login_error_not_configured">此构建未配置 Tesla 云登录。</string>
     <string name="tesla_login_callback_invalid">出于安全原因，已拒绝此 Tesla 回调。</string>
     <string name="tesla_login_authorization_invalid">Tesla 授权链接无效或不是官方 Tesla 页面。</string>

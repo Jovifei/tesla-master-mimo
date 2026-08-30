@@ -38,8 +38,8 @@ services:
       JOURVOLT_TOKEN_KEY_BASE64: ${JOURVOLT_TOKEN_KEY_BASE64:?set JOURVOLT_TOKEN_KEY_BASE64 in .env}
       TESLA_AUTH_URL: ${TESLA_AUTH_URL:-https://auth.tesla.cn/oauth2/v3/authorize}
       TESLA_TOKEN_URL: ${TESLA_TOKEN_URL:-https://auth.tesla.cn/oauth2/v3/token}
-      TESLA_ISSUER: ${TESLA_ISSUER:-https://auth.tesla.cn/oauth2/v3/nts}
-      TESLA_JWKS_URL: ${TESLA_JWKS_URL:-https://auth.tesla.cn/oauth2/v3/discovery/thirdparty/keys}
+      TESLA_ISSUER: ${TESLA_ISSUER:-https://auth.tesla.cn/oauth2/v3}
+      TESLA_JWKS_URL: ${TESLA_JWKS_URL:-https://auth.tesla.cn/oauth2/v3/discovery/keys}
       TESLA_FLEET_API_BASE: ${TESLA_FLEET_API_BASE:-https://fleet-api.prd.cn.vn.cloud.tesla.cn}
     ports:
       - "127.0.0.1:18090:8080"

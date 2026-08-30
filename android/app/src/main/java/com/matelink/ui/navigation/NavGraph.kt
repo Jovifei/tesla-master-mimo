@@ -2,9 +2,11 @@ package com.matelink.ui.navigation
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
@@ -17,8 +19,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavHostController
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -26,7 +31,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.matelink.R
 import com.matelink.data.local.ConnectionMode
-import com.matelink.ui.screens.auth.TeslaAccountSection
 import com.matelink.ui.screens.auth.TeslaLoginScreen
 import com.matelink.ui.screens.auth.TeslaLoginViewModel
 import com.matelink.ui.screens.about.AboutScreen
@@ -231,6 +235,13 @@ internal fun shouldRedirectToTeslaLogin(
     !isAuthenticated &&
     !currentRoute.contains("TeslaLogin")
 
+internal fun NavHostController.navigateToDashboardAfterTeslaAuth() {
+    navigate(Screen.Dashboard) {
+        popUpTo(graph.findStartDestination().id) { inclusive = true }
+        launchSingleTop = true
+    }
+}
+
 internal fun notificationScreen(
     navigateTo: String?,
     carId: Int,
@@ -266,8 +277,12 @@ fun NavGraph(
     val notificationPermissionAsked by startViewModel.notificationPermissionAsked.collectAsState()
     val teslaLoginViewModel: TeslaLoginViewModel = hiltViewModel()
     val isTeslaSessionAuthenticated by teslaLoginViewModel.isAuthenticated.collectAsState()
+    val openDashboardAfterLogin by teslaLoginViewModel.openDashboardAfterLogin.collectAsState()
+    val revealLoginError by teslaLoginViewModel.revealLoginError.collectAsState()
+    val pendingAuthorizationUrl by teslaLoginViewModel.pendingAuthorizationUrl.collectAsState()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route.orEmpty()
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -316,6 +331,35 @@ fun NavGraph(
         }
     }
 
+    LaunchedEffect(pendingAuthorizationUrl) {
+        val url = pendingAuthorizationUrl ?: return@LaunchedEffect
+        teslaLoginViewModel.consumePendingAuthorizationUrl()
+        CustomTabsIntent.Builder()
+            .setShowTitle(true)
+            .build()
+            .launchUrl(context, Uri.parse(url))
+    }
+
+    LaunchedEffect(openDashboardAfterLogin) {
+        if (openDashboardAfterLogin) {
+            navController.navigateToDashboardAfterTeslaAuth()
+            teslaLoginViewModel.consumeDashboardAfterLogin()
+        }
+    }
+
+    LaunchedEffect(revealLoginError, currentRoute) {
+        if (!revealLoginError) return@LaunchedEffect
+        if (currentRoute.contains("TeslaLogin")) {
+            teslaLoginViewModel.consumeRevealLoginError()
+            return@LaunchedEffect
+        }
+        if (currentRoute.isBlank()) return@LaunchedEffect
+        navController.navigate(Screen.TeslaLogin) {
+            launchSingleTop = true
+        }
+        teslaLoginViewModel.consumeRevealLoginError()
+    }
+
     LaunchedEffect(startDestination, connectionMode, isTeslaSessionAuthenticated, currentRoute) {
         if (shouldRedirectToTeslaLogin(
                 startDestination = startDestination,
@@ -347,10 +391,7 @@ fun NavGraph(
             TeslaLoginScreen(
                 viewModel = teslaLoginViewModel,
                 onLoginSuccess = {
-                    navController.navigate(Screen.Dashboard) {
-                        popUpTo<Screen.TeslaLogin> { inclusive = true }
-                        launchSingleTop = true
-                    }
+                    navController.navigateToDashboardAfterTeslaAuth()
                 },
                 onOpenSelfHosted = {
                     teslaLoginViewModel.openSelfHosted {
@@ -364,6 +405,7 @@ fun NavGraph(
 
         composable<Screen.Settings> {
             SettingsScreen(
+                teslaLoginViewModel = teslaLoginViewModel,
                 onNavigateToDashboard = {
                     navController.navigate(Screen.Dashboard) {
                         popUpTo<Screen.Settings> { inclusive = true }

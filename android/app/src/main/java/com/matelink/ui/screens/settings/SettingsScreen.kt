@@ -90,6 +90,7 @@ import com.matelink.ui.theme.StatusSuccess
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    teslaLoginViewModel: TeslaLoginViewModel,
     onNavigateToDashboard: () -> Unit,
     onNavigateBack: () -> Unit = onNavigateToDashboard,
     onNavigateToTariffConfig: () -> Unit = {},
@@ -99,8 +100,7 @@ fun SettingsScreen(
     onLogout: () -> Unit = {},
     onAccountDeleted: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
-    instanceViewModel: InstanceViewModel = hiltViewModel(),
-    teslaLoginViewModel: TeslaLoginViewModel = hiltViewModel()
+    instanceViewModel: InstanceViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val instanceUiState by instanceViewModel.uiState.collectAsState()

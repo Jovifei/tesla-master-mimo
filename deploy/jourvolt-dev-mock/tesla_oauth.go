@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,12 +19,12 @@ import (
 var errOAuthCallbackRejected = errors.New("oauth_callback_rejected")
 
 type teslaOAuth struct {
-	config   *teslaConfig
-	store    *store
-	cipher   *tokenCipher
-	oauth2   oauth2.Config
-	verifier *oidc.IDTokenVerifier
-	client   *http.Client
+	config    *teslaConfig
+	store     *store
+	cipher    *tokenCipher
+	oauth2    oauth2.Config
+	verifiers map[string]*oidc.IDTokenVerifier
+	client    *http.Client
 }
 
 type authStart struct {
@@ -32,7 +34,15 @@ type authStart struct {
 }
 
 func newTeslaOAuth(config *teslaConfig, store *store, cipher *tokenCipher, client *http.Client) *teslaOAuth {
-	keySet := oidc.NewRemoteKeySet(context.Background(), config.JWKSURL)
+	makeVerifier := func(issuer, jwks string) *oidc.IDTokenVerifier {
+		keySet := oidc.NewRemoteKeySet(context.Background(), jwks)
+		return oidc.NewVerifier(issuer, keySet, &oidc.Config{ClientID: config.ClientID})
+	}
+	verifiers := map[string]*oidc.IDTokenVerifier{
+		config.Issuer:      makeVerifier(config.Issuer, config.JWKSURL),
+		defaultTeslaIssuer: makeVerifier(defaultTeslaIssuer, defaultTeslaJWKSURL),
+		teslaNTSIssuer:     makeVerifier(teslaNTSIssuer, teslaNTSJWKSURL),
+	}
 	return &teslaOAuth{
 		config: config,
 		store:  store,
@@ -41,16 +51,30 @@ func newTeslaOAuth(config *teslaConfig, store *store, cipher *tokenCipher, clien
 			ClientID:     config.ClientID,
 			ClientSecret: config.ClientSecret,
 			RedirectURL:  config.RedirectURI,
-			Scopes:       []string{"openid", "offline_access", "vehicle_device_data"},
+			Scopes:       []string{"openid", "offline_access", "vehicle_device_data", "vehicle_location"},
 			Endpoint: oauth2.Endpoint{
 				AuthURL:   config.Authorization,
 				TokenURL:  config.TokenEndpoint,
 				AuthStyle: oauth2.AuthStyleInParams,
 			},
 		},
-		verifier: oidc.NewVerifier(config.Issuer, keySet, &oidc.Config{ClientID: config.ClientID}),
-		client:   client,
+		verifiers: verifiers,
+		client:    client,
 	}
+}
+
+func (o *teslaOAuth) verifierForIssuer(raw string) *oidc.IDTokenVerifier {
+	issuer := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if v := o.verifiers[issuer]; v != nil {
+		return v
+	}
+	if v := o.verifiers[o.config.Issuer]; v != nil {
+		return v
+	}
+	for _, v := range o.verifiers {
+		return v
+	}
+	return nil
 }
 
 func (o *teslaOAuth) start(ctx context.Context, consent oauthConsent) (authStart, error) {
@@ -110,16 +134,28 @@ func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, e
 		code,
 		oauth2.SetAuthURLParam("audience", o.config.FleetAPIBase),
 	)
-	if err != nil || token.AccessToken == "" || token.RefreshToken == "" || token.Expiry.IsZero() {
+	if err != nil {
+		log.Printf("tesla oauth token exchange failed: %s", teslaCallbackLogError(err))
+		return "", err
+	}
+	if token.AccessToken == "" || token.RefreshToken == "" || token.Expiry.IsZero() {
+		log.Printf("tesla oauth token incomplete: has_refresh=%t expiry_zero=%t", token.RefreshToken != "", token.Expiry.IsZero())
 		return "", errOAuthCallbackRejected
 	}
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok || rawIDToken == "" {
+		log.Printf("tesla oauth token missing id_token")
 		return "", errOAuthCallbackRejected
 	}
-	idToken, err := o.verifier.Verify(exchangeContext, rawIDToken)
-	if err != nil {
+	callbackIssuer := strings.TrimSpace(values.Get("issuer"))
+	verifier := o.verifierForIssuer(callbackIssuer)
+	if verifier == nil {
 		return "", errOAuthCallbackRejected
+	}
+	idToken, err := verifier.Verify(exchangeContext, rawIDToken)
+	if err != nil {
+		log.Printf("tesla oauth id_token verify failed issuer=%q: %v", callbackIssuer, err)
+		return "", fmt.Errorf("tesla id_token: %w", err)
 	}
 	var claims struct {
 		Subject string `json:"sub"`
@@ -223,7 +259,7 @@ func (a *app) authRoute(w http.ResponseWriter, r *http.Request) bool {
 		}
 		ticket, err := a.oauth.callback(r.Context(), r.URL.Query())
 		if err != nil {
-			http.Redirect(w, r, a.oauth.appLink("", "authorization_failed"), http.StatusSeeOther)
+			http.Redirect(w, r, a.oauth.appLink("", teslaAppLinkError(err)), http.StatusSeeOther)
 			return true
 		}
 		http.Redirect(w, r, a.oauth.appLink(ticket, ""), http.StatusSeeOther)

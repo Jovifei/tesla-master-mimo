@@ -9,6 +9,8 @@ import java.util.Locale
  * is exchanged. Android intent filters are not the only way another app can
  * deliver an explicit intent to an exported activity.
  */
+internal fun isTeslaOAuthCallbackPath(path: String?): Boolean = path == "/oauth/callback"
+
 internal fun isTrustedTeslaCallback(uri: Uri?, expectedHost: String): Boolean {
     return isTrustedTeslaCallback(uri?.scheme, uri?.host, uri?.path, expectedHost)
 }
@@ -20,9 +22,11 @@ internal fun isTrustedTeslaCallback(
     expectedHost: String
 ): Boolean {
     if (scheme.isNullOrBlank() || host.isNullOrBlank() || expectedHost.isBlank()) return false
-    return scheme.equals("https", ignoreCase = true) &&
+    val trustedScheme = scheme.equals("https", ignoreCase = true) ||
+        scheme.equals("intent", ignoreCase = true)
+    return trustedScheme &&
         host.equals(expectedHost, ignoreCase = true) &&
-        path == "/oauth/callback"
+        isTeslaOAuthCallbackPath(path)
 }
 
 /**

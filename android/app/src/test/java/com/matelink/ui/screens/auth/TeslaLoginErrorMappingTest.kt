@@ -18,4 +18,14 @@ class TeslaLoginErrorMappingTest {
     fun unknownStatusUsesGenericRetryCopy() {
         assertEquals(R.string.tesla_login_error_generic, teslaLoginErrorMessageRes(418))
     }
+
+    @Test
+    fun mapsCallbackErrorQueryToUserFacingCopy() {
+        assertEquals(R.string.tesla_login_error_cancelled, teslaLoginCallbackErrorRes("access_denied"))
+        assertEquals(R.string.tesla_login_error_cancelled, teslaLoginCallbackErrorRes("cancelled"))
+        assertEquals(R.string.tesla_login_error_token_config, teslaLoginCallbackErrorRes("unauthorized_client"))
+        assertEquals(R.string.tesla_login_error_exchange, teslaLoginCallbackErrorRes("authorization_failed"))
+        assertEquals(R.string.tesla_login_error_exchange, teslaLoginCallbackErrorRes("id_token_invalid"))
+        assertEquals(R.string.tesla_login_error_exchange, teslaLoginCallbackErrorRes("invalid_grant"))
+    }
 }

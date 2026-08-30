@@ -11,9 +11,14 @@ import (
 const (
 	defaultTeslaAuthURL  = "https://auth.tesla.cn/oauth2/v3/authorize"
 	defaultTeslaTokenURL = "https://auth.tesla.cn/oauth2/v3/token"
-	defaultTeslaIssuer   = "https://auth.tesla.cn/oauth2/v3/nts"
-	defaultTeslaJWKSURL  = "https://auth.tesla.cn/oauth2/v3/discovery/thirdparty/keys"
+	// Tesla's authorization response includes RFC 9207 `iss=https://auth.tesla.cn/oauth2/v3`
+	// (observed on live callback 2026-08-30). That document's JWKS is discovery/keys,
+	// not the partner NTS thirdparty/keys used for client_credentials.
+	defaultTeslaIssuer   = "https://auth.tesla.cn/oauth2/v3"
+	defaultTeslaJWKSURL  = "https://auth.tesla.cn/oauth2/v3/discovery/keys"
 	defaultTeslaFleetURL = "https://fleet-api.prd.cn.vn.cloud.tesla.cn"
+	teslaNTSIssuer       = "https://auth.tesla.cn/oauth2/v3/nts"
+	teslaNTSJWKSURL      = "https://auth.tesla.cn/oauth2/v3/discovery/thirdparty/keys"
 )
 
 type teslaConfig struct {

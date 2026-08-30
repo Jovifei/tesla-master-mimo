@@ -71,6 +71,7 @@
     <string name="tesla_login_error_unavailable">Tesla authorization is temporarily unavailable.</string>
     <string name="tesla_login_error_cancelled">Tesla authorization was cancelled.</string>
     <string name="tesla_login_error_exchange">Tesla authorization could not be completed. Try again.</string>
+    <string name="tesla_login_error_token_config">Tesla application credentials were rejected. Ask the maintainer to check the cloud login configuration.</string>
     <string name="tesla_login_error_not_configured">Tesla cloud login is not configured in this build.</string>
     <string name="tesla_login_callback_invalid">The Tesla callback was rejected for security reasons.</string>
     <string name="tesla_login_authorization_invalid">The Tesla authorization link is invalid or not an official Tesla page.</string>

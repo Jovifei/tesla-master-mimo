@@ -67,10 +67,10 @@ func TestTeslaChinaDefaultsMatchOfficialOIDCMetadata(t *testing.T) {
 	if defaultTeslaTokenURL != "https://auth.tesla.cn/oauth2/v3/token" {
 		t.Fatalf("token endpoint = %q", defaultTeslaTokenURL)
 	}
-	if defaultTeslaIssuer != "https://auth.tesla.cn/oauth2/v3/nts" {
+	if defaultTeslaIssuer != "https://auth.tesla.cn/oauth2/v3" {
 		t.Fatalf("issuer = %q", defaultTeslaIssuer)
 	}
-	if defaultTeslaJWKSURL != "https://auth.tesla.cn/oauth2/v3/discovery/thirdparty/keys" {
+	if defaultTeslaJWKSURL != "https://auth.tesla.cn/oauth2/v3/discovery/keys" {
 		t.Fatalf("JWKS endpoint = %q", defaultTeslaJWKSURL)
 	}
 	if defaultTeslaFleetURL != "https://fleet-api.prd.cn.vn.cloud.tesla.cn" {
