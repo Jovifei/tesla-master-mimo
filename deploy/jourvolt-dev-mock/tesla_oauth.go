@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -63,18 +64,92 @@ func newTeslaOAuth(config *teslaConfig, store *store, cipher *tokenCipher, clien
 	}
 }
 
+func normalizeTeslaIssuer(raw string) string {
+	return strings.TrimRight(strings.TrimSpace(raw), "/")
+}
+
+func peekJWTIssuer(rawIDToken string) string {
+	parts := strings.Split(rawIDToken, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var claims struct {
+		Issuer string `json:"iss"`
+	}
+	if json.Unmarshal(payload, &claims) != nil {
+		return ""
+	}
+	return normalizeTeslaIssuer(claims.Issuer)
+}
+
+func (o *teslaOAuth) allowedVerifier(raw string) *oidc.IDTokenVerifier {
+	if o == nil {
+		return nil
+	}
+	return o.verifiers[normalizeTeslaIssuer(raw)]
+}
+
 func (o *teslaOAuth) verifierForIssuer(raw string) *oidc.IDTokenVerifier {
-	issuer := strings.TrimRight(strings.TrimSpace(raw), "/")
-	if v := o.verifiers[issuer]; v != nil {
+	if v := o.allowedVerifier(raw); v != nil {
 		return v
 	}
-	if v := o.verifiers[o.config.Issuer]; v != nil {
+	if o == nil || o.config == nil {
+		return nil
+	}
+	if v := o.allowedVerifier(o.config.Issuer); v != nil {
 		return v
 	}
 	for _, v := range o.verifiers {
 		return v
 	}
 	return nil
+}
+
+func (o *teslaOAuth) idTokenIssuerCandidates(rawIDToken, callbackIssuer string) []string {
+	seen := make(map[string]struct{}, 2)
+	out := make([]string, 0, 2)
+	add := func(raw string) {
+		issuer := normalizeTeslaIssuer(raw)
+		if issuer == "" {
+			return
+		}
+		if _, exists := seen[issuer]; exists {
+			return
+		}
+		seen[issuer] = struct{}{}
+		out = append(out, issuer)
+	}
+	add(peekJWTIssuer(rawIDToken))
+	add(callbackIssuer)
+	return out
+}
+
+func (o *teslaOAuth) verifyIDToken(ctx context.Context, rawIDToken, callbackIssuer string) (*oidc.IDToken, error) {
+	var lastErr error
+	tried := 0
+	for _, issuer := range o.idTokenIssuerCandidates(rawIDToken, callbackIssuer) {
+		verifier := o.allowedVerifier(issuer)
+		if verifier == nil {
+			continue
+		}
+		tried++
+		idToken, err := verifier.Verify(ctx, rawIDToken)
+		if err == nil {
+			return idToken, nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	if tried == 0 {
+		return nil, errors.New("no allowed tesla issuer")
+	}
+	return nil, errors.New("id token verify failed")
 }
 
 func (o *teslaOAuth) start(ctx context.Context, consent oauthConsent) (authStart, error) {
@@ -148,13 +223,14 @@ func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, e
 		return "", errOAuthCallbackRejected
 	}
 	callbackIssuer := strings.TrimSpace(values.Get("issuer"))
-	verifier := o.verifierForIssuer(callbackIssuer)
-	if verifier == nil {
-		return "", errOAuthCallbackRejected
-	}
-	idToken, err := verifier.Verify(exchangeContext, rawIDToken)
+	idToken, err := o.verifyIDToken(exchangeContext, rawIDToken, callbackIssuer)
 	if err != nil {
-		log.Printf("tesla oauth id_token verify failed issuer=%q: %v", callbackIssuer, err)
+		log.Printf(
+			"tesla oauth id_token verify failed callback_issuer=%q token_iss=%q: %v",
+			callbackIssuer,
+			peekJWTIssuer(rawIDToken),
+			err,
+		)
 		return "", fmt.Errorf("tesla id_token: %w", err)
 	}
 	var claims struct {
