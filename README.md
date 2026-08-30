@@ -119,6 +119,8 @@ open MateLink.xcworkspace
 - 使用 CocoaPods 后应打开 `.xcworkspace`，不要直接打开裸 `.xcodeproj`。
 - Windows 侧只能完成源码检查和工程文件准备，不能声明 iOS 编译、签名或真机验证通过。
 - iOS Widget 当前是 `deferred / source exists but target not wired`，不能当作已完成能力验收。
+- **iOS 开发请在 `feature/ios-apple-redesign`（或后续 `feature/ios-*`）上进行，不要提交到 `main`。**
+- 2026-08-30 进度：Apple 核心页已重写；门告警、充电状态、行程/充电详情曲线、当前充电轮询已对齐 Android。下一步见 `docs/IOS-APPLE-REDESIGN-HANDOFF-2026-08-30.md` 与 `ios/VERIFY_IOS.md`。
 
 ### Web 开发
 
@@ -275,6 +277,8 @@ Notes:
 - After CocoaPods integration, open `.xcworkspace`, not the bare `.xcodeproj`.
 - Windows can prepare and inspect source files, but cannot prove iOS compilation, signing, or device validation.
 - iOS Widget status is `deferred / source exists but target not wired`; it should not be accepted as a finished feature yet.
+- Keep iOS work on `feature/ios-apple-redesign` (or later `feature/ios-*`). Do not commit it to `main`.
+- 2026-08-30: core Apple screens plus Android logic parity for openings, charging state, detail curves, and current-charge polling. Next steps: `docs/IOS-APPLE-REDESIGN-HANDOFF-2026-08-30.md`.
 
 ### Web Development
 

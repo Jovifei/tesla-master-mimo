@@ -15,6 +15,8 @@ struct DashboardView: View {
             VStack(spacing: 16) {
                 if let s = status {
                     dashboardContent(s)
+                } else if let car = state.currentCar, loadError != nil {
+                    PartialDashboardView(car: car, error: loadError!, onRefresh: { Task { await refresh() } })
                 } else if let loadError {
                     EmptyStateView("Dashboard Unavailable",
                                    systemImage: "exclamationmark.triangle",
@@ -48,8 +50,8 @@ struct DashboardView: View {
         // 3. Status Chips — lock, plug, climate, sentry
         StatusChipRow(status: s, palette: palette)
 
-        // 4. Door / Window Open Warning
-        if !s.locked || (s.sentryMode && s.state == .online) {
+        // 4. Door / Window Open Warning (mirrors Android openVehicleOpenings)
+        if VehicleStatusPresentation.shouldShowOpeningPanel(s) {
             DoorWarning(status: s)
         }
 
@@ -67,8 +69,8 @@ struct DashboardView: View {
         // 7. Tire Pressure Grid
         TirePressureGrid(status: s, palette: palette)
 
-        // 8. Charging Panel (only when charging)
-        if s.state == .charging {
+        // 8. Charging Panel (only when actively charging — mirrors Android isCharging)
+        if s.isCharging {
             NavigationLink {
                 CurrentChargeView()
             } label: {
@@ -97,8 +99,9 @@ struct DashboardView: View {
         if state.isMockMode {
             status = await state.mock.mockStatus(state.currentCarId)
         } else if let api = state.real {
+            let carId = state.currentCarId
             do {
-                status = try await api.fetch("/api/v1/cars/\(state.currentCarId)/status")
+                status = try await api.fetch("/api/v1/cars/\(carId)/status")
             } catch {
                 status = nil
                 loadError = "Unable to load vehicle status: \(error.localizedDescription)"
@@ -310,7 +313,7 @@ private struct DoorWarning: View {
         HStack {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(MateColors.warning)
-            Text("Vehicle is not locked — check doors and windows")
+            Text(VehicleStatusPresentation.openingWarningText(status))
                 .font(.caption)
                 .foregroundStyle(MateColors.warning)
         }
@@ -613,6 +616,50 @@ private struct HighSOCWarning: View {
     }
 }
 
+// MARK: - Partial Dashboard (status unavailable — mirrors Android PartialVehicleDashboard)
+
+private struct PartialDashboardView: View {
+    let car: Car
+    let error: String
+    let onRefresh: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text(car.name)
+                    .font(.title2.bold())
+                Spacer()
+                Text("Partial")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(MateColors.warning.opacity(0.2))
+                    .foregroundStyle(MateColors.warning)
+                    .clipShape(Capsule())
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Model \(car.model)", systemImage: "car.fill")
+                Label(car.color, systemImage: "paintpalette")
+                Label("\(car.totalDrives) drives", systemImage: "road.lanes")
+            }
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+
+            Text(error)
+                .font(.caption)
+                .foregroundStyle(MateColors.error)
+
+            Button(action: onRefresh) {
+                Label("Retry", systemImage: MateIcons.refresh)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 // MARK: - Car Switcher Sheet
 
 struct CarSwitcherView: View {
@@ -623,7 +670,7 @@ struct CarSwitcherView: View {
         NavigationStack {
             List(state.cars) { car in
                 Button(action: {
-                    state.currentCarId = car.id
+                    state.selectCar(car.id)
                     dismiss()
                 }) {
                     HStack {

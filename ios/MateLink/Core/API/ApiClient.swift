@@ -68,7 +68,9 @@ actor TeslaMateAPI {
     }
 
     func getCurrentCharge(_ carId: Int) async throws -> Charge? {
-        try await fetch("/api/v1/cars/\(carId)/charges/current")
+        let resp: ChargeDetailResponse = try await fetch("/api/v1/cars/\(carId)/charges/current")
+        if resp.error != nil { return nil }
+        return resp.data?.charge
     }
 
     func getChargeDetail(_ carId: Int, chargeId: Int) async throws -> Charge {
@@ -79,8 +81,26 @@ actor TeslaMateAPI {
         return charge
     }
 
+    /// Charge detail including `charge_details` curve points.
+    func getChargeDetailWithPoints(_ carId: Int, chargeId: Int) async throws -> Charge {
+        let resp = try await fetchChargeDetailResponse(carId: carId, chargeId: chargeId)
+        guard let charge = resp.data?.charge else {
+            throw ApiError.invalidResponse
+        }
+        return charge
+    }
+
     func getDriveDetail(_ carId: Int, driveId: Int) async throws -> Drive {
         let resp: DriveDetailResponse = try await fetch("/api/v1/cars/\(carId)/drives/\(driveId)")
+        guard let drive = resp.data?.drive else {
+            throw ApiError.invalidResponse
+        }
+        return drive
+    }
+
+    /// Drive detail including `drive_details` trajectory (preferred for charts/maps).
+    func getDriveDetailWithPositions(_ carId: Int, driveId: Int) async throws -> Drive {
+        let resp = try await fetchDriveDetailResponse(carId: carId, driveId: driveId)
         guard let drive = resp.data?.drive else {
             throw ApiError.invalidResponse
         }
@@ -152,13 +172,13 @@ actor TeslaMateAPI {
 
     // MARK: - Detail Endpoints with Nested Data
 
-    /// Charge detail with per-point curve data (ChargePoint array).
-    func getChargeDetailWithPoints(carId: Int, chargeId: Int) async throws -> ChargeDetailResponse {
+    /// Charge detail including `charge_details` curve points.
+    func fetchChargeDetailResponse(carId: Int, chargeId: Int) async throws -> ChargeDetailResponse {
         try await fetch("/api/v1/cars/\(carId)/charges/\(chargeId)")
     }
 
-    /// Drive detail with per-position trajectory data (DrivePosition array).
-    func getDriveDetailWithPositions(carId: Int, driveId: Int) async throws -> DriveDetailResponse {
+    /// Drive detail including `drive_details` trajectory points.
+    func fetchDriveDetailResponse(carId: Int, driveId: Int) async throws -> DriveDetailResponse {
         try await fetch("/api/v1/cars/\(carId)/drives/\(driveId)")
     }
 
@@ -370,7 +390,15 @@ private extension CarStatus {
             speed: speed,
             power: power,
             heading: heading,
-            shiftState: shiftState
+            shiftState: shiftState,
+            isDcCharging: isDcCharging,
+            version: version,
+            doorsOpen: doorsOpen,
+            windowsOpen: windowsOpen,
+            frunkOpen: frunkOpen,
+            trunkOpen: trunkOpen,
+            geofence: geofence,
+            chargingState: chargingState
         )
     }
 }

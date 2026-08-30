@@ -112,12 +112,24 @@ class AppState: ObservableObject {
     }
     var carAccent: Color { carPalette.accent }
 
+    func selectCar(_ carId: Int) {
+        currentCarId = carId
+        if let instanceId = activeInstanceID,
+           let index = instances.firstIndex(where: { $0.id == instanceId }) {
+            instances[index].carId = carId
+        }
+    }
+
     init() {
         apiToken = KeychainHelper.load("apiToken") ?? ""
         serverURL = UserDefaults.standard.string(forKey: AppStateStorageKeys.serverURL) ?? ""
         instances = AppState.loadInstances()
         activeInstanceID = UserDefaults.standard.string(forKey: AppStateStorageKeys.activeInstanceID)
         onboardingDone = UserDefaults.standard.bool(forKey: AppStateStorageKeys.onboardingDone)
+        if let instanceId = activeInstanceID,
+           let instance = instances.first(where: { $0.id == instanceId }) {
+            currentCarId = instance.carId
+        }
         let savedMockMode = UserDefaults.standard.object(forKey: AppStateStorageKeys.mockMode) as? Bool
         if onboardingDone && !serverURL.isEmpty {
             ensureLegacyInstance()

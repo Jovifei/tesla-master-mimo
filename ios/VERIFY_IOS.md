@@ -83,6 +83,20 @@ The app works fully in mock mode without any server:
 6. Select the connected iPhone.
 7. Run the `MateLink` scheme.
 
+## Android Logic Parity (2026-08-30)
+
+Aligned on branch `feature/ios-apple-redesign` (not `main`):
+
+- Door/window/frunk/trunk warnings use `VehicleStatusPresentation.openVehicleOpenings` (same rules as Android).
+- Dashboard charging panel shows only when `CarStatus.isCharging`.
+- Drive/charge detail loaders request `drive_details` / `charge_details` and feed real charts and polylines when points exist.
+- Current charge polls every 30s, 4s while TeslaMate has not created the charge row, and keeps a DC-complete-plugged-in warning.
+- Selected car is stored on the active TeslaMate instance and restored on launch.
+
+Still not ported (next batch): list filters, dashboard snapshot adapter, Trips/TPMS/Countries placeholders, Widget target.
+
+Handoff: `docs/IOS-APPLE-REDESIGN-HANDOFF-2026-08-30.md`
+
 ## API Integration (Phase 2)
 
 When the user provides API credentials:

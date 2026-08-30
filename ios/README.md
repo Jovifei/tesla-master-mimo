@@ -27,6 +27,14 @@ Windows can verify source presence and project metadata, but it cannot prove a n
 
 Mac plus Xcode are still required for simulator build proof, device signing, and CocoaPods workspace validation.
 
+## Current Branch
+
+iOS Apple redesign work lives on **`feature/ios-apple-redesign`**. Do not commit this work to `main`.
+
+Status as of 2026-08-30: core screens rewritten in Apple style, and Dashboard / drive-charge detail / current-charge logic aligned with Android. Mac `xcodebuild` has not been run from Windows.
+
+Handoff for the next agent: `docs/IOS-APPLE-REDESIGN-HANDOFF-2026-08-30.md`
+
 ## Minimum Launch Goal
 
 The first acceptable Mac-side proof is a successful app launch into either:

@@ -9,11 +9,13 @@ struct DriveRouteMap: View {
     let startLon: Double
     let endLat: Double
     let endLon: Double
+    var routeCoordinates: [CLLocationCoordinate2D] = []
 
     var body: some View {
         DriveRouteMapRepresentable(
             start: startCoordinate,
-            end: endCoordinate
+            end: endCoordinate,
+            route: routeCoordinates.isEmpty ? [startCoordinate, endCoordinate] : routeCoordinates.map(convertIfChinese)
         )
     }
 
@@ -36,6 +38,7 @@ struct DriveRouteMap: View {
 private struct DriveRouteMapRepresentable: UIViewRepresentable {
     let start: CLLocationCoordinate2D
     let end: CLLocationCoordinate2D
+    let route: [CLLocationCoordinate2D]
 
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
@@ -59,17 +62,19 @@ private struct DriveRouteMapRepresentable: UIViewRepresentable {
 
         map.addAnnotations([startAnnotation, endAnnotation])
 
-        let polyline = MKPolyline(coordinates: [start, end], count: 2)
+        let polyline = MKPolyline(coordinates: route, count: route.count)
         map.addOverlay(polyline)
 
+        let lats = route.map(\.latitude)
+        let lons = route.map(\.longitude)
         let region = MKCoordinateRegion(
             center: CLLocationCoordinate2D(
-                latitude: (start.latitude + end.latitude) / 2,
-                longitude: (start.longitude + end.longitude) / 2
+                latitude: (lats.min()! + lats.max()!) / 2,
+                longitude: (lons.min()! + lons.max()!) / 2
             ),
             span: MKCoordinateSpan(
-                latitudeDelta: max(abs(start.latitude - end.latitude) * 1.5, 0.01),
-                longitudeDelta: max(abs(start.longitude - end.longitude) * 1.5, 0.01)
+                latitudeDelta: max((lats.max()! - lats.min()) * 1.5, 0.01),
+                longitudeDelta: max((lons.max()! - lons.min()) * 1.5, 0.01)
             )
         )
         map.setRegion(region, animated: false)

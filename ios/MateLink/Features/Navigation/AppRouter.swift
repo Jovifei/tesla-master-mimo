@@ -112,7 +112,7 @@ private struct DriveDetailLoader: View {
             let all = await state.mock.getDrives(carId)
             drive = all.first { $0.id == driveId }
         } else if let api = state.real {
-            drive = try? await api.getDriveDetail(carId, driveId: driveId)
+            drive = try? await api.getDriveDetailWithPositions(carId, driveId: driveId)
         }
     }
 }
@@ -146,7 +146,7 @@ private struct ChargeDetailLoader: View {
             let all = await state.mock.getCharges(carId)
             charge = all.first { $0.id == chargeId }
         } else if let api = state.real {
-            charge = try? await api.getChargeDetail(carId, chargeId: chargeId)
+            charge = try? await api.getChargeDetailWithPoints(carId, chargeId: chargeId)
         }
     }
 }

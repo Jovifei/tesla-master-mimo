@@ -10,7 +10,7 @@ struct ChargeListView: View {
 
     private var showsCurrentCharge: Bool {
         guard let s = status else { return false }
-        return s.state == .charging || s.pluggedIn
+        return s.isCharging || s.pluggedIn
     }
 
     var body: some View {
