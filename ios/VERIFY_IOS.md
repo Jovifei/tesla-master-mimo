@@ -85,17 +85,15 @@ The app works fully in mock mode without any server:
 
 ## Android Logic Parity (2026-08-30)
 
-Aligned on branch `feature/ios-apple-redesign` (not `main`):
+Canonical status: `docs/IOS-APPLE-REDESIGN-HANDOFF-2026-08-30.md`
 
-- Door/window/frunk/trunk warnings use `VehicleStatusPresentation.openVehicleOpenings` (same rules as Android).
-- Dashboard charging panel shows only when `CarStatus.isCharging`.
-- Drive/charge detail loaders request `drive_details` / `charge_details` and feed real charts and polylines when points exist.
-- Current charge polls every 30s, 4s while TeslaMate has not created the charge row, and keeps a DC-complete-plugged-in warning.
-- Selected car is stored on the active TeslaMate instance and restored on launch.
+Done on `feature/ios-apple-redesign` (not `main`):
 
-Still not ported (next batch): list filters, dashboard snapshot adapter, Trips/TPMS/Countries placeholders, Widget target.
+- Openings, `isCharging`, detail points/polylines, current-charge 30s/4s + DC unplug warning, selected-car persistence
+- Adapter snapshot first (`data.status`) then `/status`; Drive/Charge list filters (charge default last 7 days)
+- Analytics use `getAllDrives` / `getAllCharges`; Vampire standby API; TripDetector; Countries / WhereWasI / TPMS 7–30 day local samples
 
-Handoff: `docs/IOS-APPLE-REDESIGN-HANDOFF-2026-08-30.md`
+Blocked on Windows: no `xcodebuild`. Still deferred: Widget target, Sentry live capture, APNs, AMap SDK, Watch.
 
 ## API Integration (Phase 2)
 

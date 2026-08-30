@@ -1,13 +1,13 @@
 # 2026-08-30 iOS Apple 重设计（分支 feature/ios-apple-redesign，禁止提交 main）
 
-- [x] Apple 设计系统 + 类型安全导航 + Dashboard/行程/充电/电池/设置/Onboarding/More 重写
-- [x] 对齐 Android 核心逻辑：开口告警、isCharging、详情 points 图表/轨迹、当前充电轮询与 DC 警告、换车持久化
-- [ ] Mac：`xcodegen generate` + `pod install` + `xcodebuild` 模拟器编译
-- [ ] Mock 手测：门告警、充电面板、详情曲线、CurrentCharge 轮询/DC 警告、换车重启
-- [ ] 推送 `origin/feature/ios-apple-redesign`（确认后再做，不要 push main）
-- [ ] 下一批：DriveList/ChargeList 筛选、Dashboard snapshot、Trips/TPMS/Countries 占位页、Widget target
+- [x] Apple 设计系统 + 类型安全导航 + 核心页重写
+- [x] 车辆核心逻辑：开口告警、isCharging、详情曲线/轨迹、当前充电轮询、换车持久化（`e9666f7`）
+- [x] 列表筛选、snapshot、分析全量、Trips/TPMS/Countries/WhereWasI（`f72a4ec`）
+- [ ] Mac：`xcodegen generate` + `pod install` + `xcodebuild`（Windows 卡死，无法证明）
+- [ ] Mock 手测：筛选、snapshot 徽章、长途/胎压/国家/位置、充电 7 天默认
+- [ ] 将来：Widget target、APNs、高德 SDK、Sentry 真机采集、Watch
 
-交接文档：`docs/IOS-APPLE-REDESIGN-HANDOFF-2026-08-30.md`
+交接（完成 / 卡点 / 将来）：`docs/IOS-APPLE-REDESIGN-HANDOFF-2026-08-30.md`
 
 # JourVolt Android rollout implementation - 2026-08-09
 

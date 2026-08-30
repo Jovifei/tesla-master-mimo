@@ -1,58 +1,67 @@
 # iOS Apple 重设计交接 — 2026-08-30
 
 > 分支：`feature/ios-apple-redesign`（禁止提交到 `main`）
-> 远端：`origin/feature/ios-apple-redesign`
+> 远端：`https://github.com/Jovifei/tesla-master-mimo.git`
 > 工作区：`app_mimo/ios/`
-> 对照基线：Android `com.matelink` 核心车辆逻辑
+> 对照基线：Android `com.matelink`
+> 本地 HEAD（本文档提交前）：`f72a4ec`
 
-## 当前完成了什么
+给后续 agent：先读本文，再读 `ios/VERIFY_IOS.md`。不要在 `main` 上继续 iOS 工作。
 
-本分支已完成两层工作：
+---
 
-1. **Apple 原生风格核心页**（此前已推送，HEAD 起点 `28ef539`）
-   - 设计系统：`MateTheme` / `CarColorPalette` / `MateAnimation`
-   - 类型安全导航：`Route` enum + `RouteDestinationView`
-   - Dashboard / 行程列表与详情 / 充电列表与详情 / 电池健康 / Settings / Onboarding / More
-   - 分页 API、`ChargePoint` / `DrivePosition`、LTTB 降采样、三语本地化
+## 现在完成了什么
 
-2. **Android 核心业务逻辑对齐**（本轮，待本提交入库）
-   - 门/窗/前后备箱告警：新增 `VehicleStatusPresentation.swift`，对齐 Android `openVehicleOpenings()`
-   - Dashboard 充电面板：仅 `CarStatus.isCharging` 时显示（不再用粗粒度 `state == .charging`）
-   - 行程详情：走 `getDriveDetailWithPositions`，有 `positions` 时用真实曲线与完整轨迹折线
-   - 充电详情：走 `getChargeDetailWithPoints`，有 `charge_points` 时用真实功率曲线
-   - 当前充电：30s 轮询；TeslaMate 尚未建 charge 行时 4s 快轮询；DC 满电未拔枪警告；`UserDefaults` 记住 DC 会话
-   - `getCurrentCharge`：无活跃充电返回 `nil`（对齐 Android `NoActiveCharge`），不再当解码失败
-   - 换车：`AppState.selectCar` 写入 instance，启动时从 active instance 恢复 `currentCarId`
+三层都在这条分支上，Windows 源码已齐，**尚未 Mac 编译证明**。
 
-## 本轮修复的逻辑差异（根因）
+### 1. Apple 原生核心页（已推送至 `28ef539`）
 
-| 症状 | 根因 | 修复 |
+设计系统 `MateTheme` / `CarColorPalette` / `MateAnimation`；类型安全 `Route` + `RouteDestinationView`；Dashboard / 行程 / 充电 / 电池 / Settings / Onboarding / More；分页 API、曲线模型、LTTB、en/zh-Hans/ja。
+
+### 2. 车辆核心逻辑对齐（`e9666f7`）
+
+- 门/窗/前后备箱：`VehicleStatusPresentation` = Android `openVehicleOpenings`
+- 充电面板仅 `CarStatus.isCharging`
+- 行程/充电详情：`positions` / `charge_points` 真实曲线与轨迹
+- 当前充电：30s / 起步 4s 轮询、DC 满电未拔枪警告、无活跃充电返回 `nil`
+- 换车写入 instance，启动时恢复 `currentCarId`
+
+### 3. 列表、snapshot、分析与占位页（`f72a4ec`）
+
+- Dashboard：优先 `/api/matelink/v1/cars/{id}/snapshot`（嵌套 `data.status`），失败再 `/status`；Live/Recent/History/Mock 徽章
+- 行程列表：日期筛选默认 All time、距离桶、短行程 1 min / 0.5 km
+- 充电列表：日期默认最近 7 天、AC/DC、有无费用、短充 0.1 kWh
+- 分析页全量分页：`getAllDrives` / `getAllCharges`（不再只取 TeslaMate 第一页）
+- Efficiency 加权效率 + `speed_avg` 20 km/h 桶；Range 的 `diff` 改为额定续航差；Cost 地点按总花费 Top 5
+- Vampire：standby API，资格 ≥2h、覆盖 ≥80%、默认 30 天；失败再按行程间隔回退
+- 长途 `TripDetector`（300 km + 两段行程 + 一次 DC）
+- 到访国家（地址末段）、Where Was I（行驶/充电/停车）、TPMS 7/30 天（Dashboard 刷新采样）
+- More 入口已挂上 Long Trips / Countries / Where Was I；Dashboard 胎压可点进趋势
+
+---
+
+## 卡在什么地方
+
+这些不是“还没搬公式”，是当前环境或平台栈拦住了。
+
+| 卡点 | 原因 | 影响 |
 |------|------|------|
-| Dashboard 门告警不准 | iOS 未解码 `doors_open` 等字段，也没有 Android 的 opening 集合逻辑 | `CarStatus` 补字段 + `VehicleStatusPresentation` |
-| 充电面板在插枪未充电时也出现 | 用 `CarState.charging` 而不是 `charging_state == "charging"` | `isCharging` 计算属性 |
-| 行程/充电详情是估算图 | 详情 API 只取摘要，丢掉 `drive_details` / `charge_details` | 带 points 的 detail API + 图表/地图消费真实点 |
-| 行程地图只有起终点直线 | `DriveRouteMap` 只画两点 | 多点 polyline |
-| 当前充电无刷新 / 无 DC 警告 | 页面一次性加载，无会话记忆 | 轮询循环 + DC 会话持久化 |
-| 刚开始充电闪「未充电」 | `getCurrentCharge` 把 200+error 当失败；`isChargeStarting` 判断反了 | 解析 wrapper；starting = `isCharging && currentCharge == nil` |
-| 换车重启丢失 | `currentCarId` 默认 1，未从 instance 恢复 | `selectCar` 写 instance；`init` 读回 |
+| **没有 Mac / Xcode 证明** | 本机是 Windows，不能跑 `xcodebuild` / 模拟器 / 签名 | 不能宣称编译通过或可上架 |
+| **Widget 未接线** | `MateLink/Widget` 有源码，`project.yml` 无 extension、无 entitlements、App Group 未验证 | 不能把小组件当已交付 |
+| **无 Room / WorkManager / MQTT** | Android Stats、Export、Sentry、TPMS 历史依赖本地库和后台 Worker | iOS 用 REST 分页 + UserDefaults 采样近似，不是同一套后台 |
+| **Sentry 真机采集** | Android 写本地告警日志，不是 TeslaMate 列表 API | iOS real 模式仍无对等采集通道 |
+| **系统通知 / 高德原生 SDK / Watch** | 需要 APNs、高德 iOS Key、Watch target | 地图目前 MapKit 回退 |
+| **字体文件可能未入库** | `VERIFY_IOS.md` 检查项 5：`Inter-*.ttf` / `JetBrainsMono-*.ttf` | Mac 上若缺字体，回退系统字体 |
 
-## 明确未搬过来的能力（平台基础设施，不是业务公式）
+Android/deploy 工作区里还有**未纳入本分支 iOS 提交**的改动（Tesla 登录文案、jourvolt-dev-mock）。不要把它们混进 iOS commit。
 
-这些 **无法只靠搬 Android 页面逻辑** 完成，需要 iOS 原生能力：
+---
 
-1. iOS Widget extension target / entitlements / App Group 签名
-2. 后台 MQTT + 本地 Room 同步（`DataSyncWorker`）— iOS 用分页 API 全量拉取代替分析库
-3. Sentry 真机告警采集（Android 是 Worker 日志，不是 TeslaMate REST）
-4. 系统通知、高德 SDK 原生渲染（地图目前 MapKit 回退）
-5. Apple Watch
+## 将来需要完成什么
 
-业务筛选、snapshot、分析公式、Trips/TPMS/Countries/WhereWasI 已在本分支按 Android 规则实现。
+按顺序，仍在 `feature/ios-apple-redesign` 或后续 `feature/ios-*`。
 
-## 后面应该执行什么
-
-按顺序做，不要跳到 `main` 上开发。
-
-### 1. Mac 编译（必须，Windows 无法证明）
+### 立刻（Mac，阻塞验收）
 
 ```bash
 cd app_mimo/ios
@@ -62,45 +71,46 @@ xcodebuild -workspace MateLink.xcworkspace -scheme MateLink \
   -destination 'platform=iOS Simulator,name=iPhone 16' build
 ```
 
-打开 `MateLink.xcworkspace`，不要打开裸 `.xcodeproj`。步骤见 `ios/VERIFY_IOS.md`。
+打开 `MateLink.xcworkspace`，不要打开裸 `.xcodeproj`。清单：`ios/VERIFY_IOS.md`。
 
-### 2. Mock 模式手测
+Mock 手测：门告警、充电面板、列表筛选（充电默认 7 天）、snapshot 徽章、详情曲线、CurrentCharge 轮询/DC 警告、换车重启、Long Trips / TPMS / Countries / Where Was I。
 
-- Dashboard：打开门/窗时出现告警；仅主动充电时出现充电面板
-- 行程详情：图表与地图为曲线/轨迹，不是两点直线
-- 充电详情：功率曲线来自 `charge_points`
-- 当前充电：30s 刷新；刚启动约 4s；DC 满电未拔枪显示警告
-- 切换车辆后杀进程再开，仍是同一辆车
+### 随后（平台能力，独立任务）
 
-### 3. 推送本分支（确认编译/手测后再做）
+1. Widget：`project.yml` extension + entitlements + App Group `group.com.matelink` 真机验证
+2. 后台刷新 / 通知：对齐 Android TPMS/Sentry `NotificationCompat`
+3. 高德 iOS SDK（现为 MapKit）
+4. Sentry 真机采集（若产品需要，不能假装 TeslaMate REST 已有）
+5. Apple Watch（Android 无对等物，属 iOS 增量）
 
-```powershell
-cd E:\project\tesla_master\app_mimo
-git push origin feature/ios-apple-redesign
-```
+### 不要做
 
-不要 `git push origin main`。`app_mimo` 是父仓 submodule，父仓指针更新是另一次提交。
+- 不要 `git push origin main`
+- 不要把 Android OAuth / deploy mock 改动并进 iOS 提交
+- 不要把 mock 失败静默回退成假数据
 
-### 4. 下一批功能（建议新 commit，仍在本分支或 `feature/ios-*`）
+---
 
-1. DriveList / ChargeList 筛选与默认日期范围（对齐 Android ViewModel）
-2. Dashboard snapshot API 适配
-3. 占位页：Trips、TPMS、Countries
-4. Widget target wiring（独立任务）
-
-## 关键文件
+## 关键路径
 
 | 路径 | 角色 |
 |------|------|
-| `ios/MateLink/Core/Utils/VehicleStatusPresentation.swift` | 开口告警，对齐 Android |
-| `ios/MateLink/Core/Models/CarStatus.swift` | 状态/行程/充电模型 |
-| `ios/MateLink/Core/API/ApiClient.swift` | 详情 points、current charge 空态 |
-| `ios/MateLink/Features/Charges/CurrentChargeView.swift` | 轮询 + DC 警告 |
-| `ios/MateLink/App/AppState.swift` | 换车持久化 |
-| `ios/VERIFY_IOS.md` | Mac 验证清单 |
+| `ios/MateLink/Core/Utils/VehicleStatusPresentation.swift` | 开口告警 |
+| `ios/MateLink/Core/Utils/HistoryDateFilter.swift` | 日期/距离/充电筛选常量 |
+| `ios/MateLink/Core/Utils/TripDetector.swift` | 长途检测 |
+| `ios/MateLink/Core/Utils/TpmsSampleStore.swift` | 胎压本地采样 |
+| `ios/MateLink/Core/API/ApiClient.swift` | snapshot / standby / 分页 / current charge |
+| `ios/MateLink/Features/Dashboard/DashboardView.swift` | snapshot 优先 + 胎压入口 |
+| `ios/MateLink/Features/Drives/DriveListView.swift` | 行程筛选 |
+| `ios/MateLink/Features/Charges/ChargeListView.swift` | 充电筛选 |
+| `ios/MateLink/Features/Trips/TripsView.swift` | 长途 |
+| `ios/MateLink/Features/Tpms/TpmsTrendView.swift` | 胎压趋势 |
+| `ios/VERIFY_IOS.md` | Mac 验证 |
 
-## 验证边界
+## 提交记录（本分支 iOS 相关）
 
-- Windows：仅源码级检查，**不能**声明 xcodebuild / 签名 / 真机通过
-- 本轮未跑 Xcode
-- mock 与 real 不可混淆；真实请求失败必须显示错误/空态，禁止静默回退 mock
+| Commit | 内容 |
+|--------|------|
+| `28ef539` | Settings / Onboarding / More Apple 重写 |
+| `e9666f7` | 车辆核心逻辑对齐 |
+| `f72a4ec` | 列表筛选、snapshot、分析全量、Trips/TPMS/Countries/WhereWasI |

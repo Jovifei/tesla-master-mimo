@@ -31,9 +31,9 @@ Mac plus Xcode are still required for simulator build proof, device signing, and
 
 iOS Apple redesign work lives on **`feature/ios-apple-redesign`**. Do not commit this work to `main`.
 
-Status as of 2026-08-30: core screens rewritten in Apple style, and Dashboard / drive-charge detail / current-charge logic aligned with Android. Mac `xcodebuild` has not been run from Windows.
+Status as of 2026-08-30: Apple core screens plus Android business-logic parity (filters, snapshot, analytics, trips/TPMS/countries/where-was-i). **Blocked:** no Mac `xcodebuild` from Windows. **Later:** Widget target, notifications, AMap SDK, Sentry live capture, Watch.
 
-Handoff for the next agent: `docs/IOS-APPLE-REDESIGN-HANDOFF-2026-08-30.md`
+Handoff: `docs/IOS-APPLE-REDESIGN-HANDOFF-2026-08-30.md`
 
 ## Minimum Launch Goal
 
