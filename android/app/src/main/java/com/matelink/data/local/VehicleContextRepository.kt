@@ -16,8 +16,8 @@ class VehicleContextRepository @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val teslamateRepository: TeslamateRepository,
     private val legacyHistoryMigrationRepository: LegacyHistoryMigrationRepository
-) : HistoryCarIdResolver {
-    suspend fun resolve(car: CarData): VehicleContext {
+) : HistoryCarIdResolver, VehicleContextResolver {
+    override suspend fun resolve(car: CarData): VehicleContext {
         val mode = connectionModeStore.mode.first() ?: ConnectionMode.SELF_HOSTED
         val serverUrl = settingsRepository.serverUrl.first()
         val source = if (mode == ConnectionMode.TESLA_CLOUD) {
@@ -81,7 +81,7 @@ class VehicleContextRepository @Inject constructor(
      * Records provenance only after an explicit user migration-binding action.
      * Resolving ordinary self-hosted data must never rewrite a V17 unknown marker.
      */
-    suspend fun recordExplicitUpgradeOrigin(car: CarData): Boolean {
+    override suspend fun recordExplicitUpgradeOrigin(car: CarData): Boolean {
         val context = resolve(car)
         if (context.connectionSource != HistoryConnectionSource.SELF_HOSTED) return false
         return legacyHistoryMigrationRepository.recordExplicitUpgradeOrigin(

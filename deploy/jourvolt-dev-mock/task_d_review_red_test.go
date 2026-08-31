@@ -41,7 +41,8 @@ func TestTaskDConfigureUsesOfficialFleetTelemetryConfigBodyAndPollsSynced(t *tes
 	defer proxy.Close()
 	service := newTelemetryServiceForTest("partner.example.com")
 	service.commandProxyURL = proxy.URL
-	service.memory.registerVehicle(telemetryRefWithVIN(service, "user-a", 1, "5YJ3E1EA7KF123456"))
+	ref := telemetryRefWithVIN(service, "user-a", 1, "5YJ3E1EA7KF123456")
+	service.memory.registerVehicle(ref)
 	if err := service.configure(nil, "user-a", 1); err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +75,9 @@ func TestTaskDConfigureMapsSkippedMissingKeyWithoutExposingProviderBody(t *testi
 	}
 	if strings.Contains(err.Error(), "5YJ3E1EA7KF123456") {
 		t.Fatalf("missing_key error leaked VIN: %v", err)
+	}
+	if pairing, pairingErr := service.pairing(nil, "user-a", 1); pairingErr != nil || pairing.ConfigSynced == nil || *pairing.ConfigSynced {
+		t.Fatalf("missing_key config truth = %#v, %v", pairing, pairingErr)
 	}
 }
 

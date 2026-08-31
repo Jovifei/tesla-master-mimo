@@ -607,6 +607,10 @@ func (s *telemetryMemoryStore) registerVehicle(ref telemetryVehicleRef) error {
 func (s *telemetryMemoryStore) ingest(record telemetryRecord, stopDebounce time.Duration) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.ingestLocked(record, stopDebounce)
+}
+
+func (s *telemetryMemoryStore) ingestLocked(record telemetryRecord, stopDebounce time.Duration) (int, error) {
 	if record.EventID == "" {
 		return 0, errors.New("telemetry event identity is empty")
 	}

@@ -1392,5 +1392,22 @@
     <string name="data_readiness_bind_legacy_title">Verify this legacy archive?</string>
     <string name="data_readiness_bind_legacy_message">Confirm that this local history belongs to the currently selected vehicle. This records the vehicle model and archive provenance before any migration can be offered.</string>
     <string name="data_readiness_bind_legacy_confirm">Verify archive</string>
+    <string name="telemetry_setup_title">Fleet Telemetry</string>
+    <string name="telemetry_setup_pairing_required">Tesla virtual key pairing required</string>
+    <string name="telemetry_setup_waiting_vehicle">Waiting for vehicle configuration</string>
+    <string name="telemetry_setup_permission_required">Tesla permission required</string>
+    <string name="telemetry_setup_billing_blocked">Tesla billing needs attention</string>
+    <string name="telemetry_setup_error">Fleet Telemetry is temporarily unavailable</string>
+    <string name="telemetry_setup_not_configured">Fleet Telemetry service is not configured</string>
+    <string name="telemetry_setup_collecting">Collecting data</string>
+    <string name="telemetry_setup_available">Data collection is available</string>
+    <string name="telemetry_config_sync_state">Configuration: %1$s</string>
+    <string name="telemetry_config_synced">Synced</string>
+    <string name="telemetry_config_pending">Pending</string>
+    <string name="telemetry_config_unknown">Unknown</string>
+    <string name="telemetry_action_open_virtual_key">Open Tesla to add virtual key</string>
+    <string name="telemetry_action_configure">I have paired it, enable data collection</string>
+    <string name="telemetry_action_retry_configuration">Retry data collection setup</string>
+    <string name="telemetry_virtual_key_unavailable">The Tesla virtual-key link is unavailable. Refresh and try again.</string>
     <string name="more_item_data_readiness">Data status</string>
 </resources>

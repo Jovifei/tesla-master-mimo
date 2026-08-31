@@ -829,9 +829,12 @@ func (a *app) readyz(w http.ResponseWriter, r *http.Request) {
 		a.json(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
 		return
 	}
-	if a.telemetry != nil && (!a.telemetry.started || !a.telemetry.mqttConnected.Load() || !a.telemetry.mqttSubscribed.Load()) {
-		a.json(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "telemetry": "mqtt_not_ready"})
-		return
+	if a.telemetry != nil {
+		telemetryState := a.telemetry.telemetryReadinessState(ctx)
+		if telemetryState != "" {
+			a.json(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "telemetry": telemetryState})
+			return
+		}
 	}
 	a.json(w, http.StatusOK, map[string]any{
 		"status": "ok", "mode": a.mode, "persistence": "postgres",

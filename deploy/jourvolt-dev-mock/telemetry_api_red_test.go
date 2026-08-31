@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -56,6 +57,181 @@ func TestTelemetryPairingReturnsConfiguredVirtualKeyURLWithoutVIN(t *testing.T) 
 	}
 	if strings.Contains(recorder.Body.String(), "5YJ3E1EA7KF123456") {
 		t.Fatal("pairing response leaked plaintext VIN")
+	}
+}
+
+func TestTask2MQTTStatusDoesNotOverwriteVerifiedConfigSync(t *testing.T) {
+	service := newTelemetryServiceForTest("partner.example.com")
+	ref := telemetryRefWithVIN(service, "user-a", 1, "5YJ3E1EA7KF123456")
+	service.memory.registerVehicle(ref)
+	a := &app{telemetry: service, provider: testProvider{vehicles: map[string][]vehicle{"user-a": {{ID: 1}}}}}
+
+	service.memory.setPairing(ref, telemetryPairing{Status: "available", ConfigSynced: boolPointer(true)})
+	for _, mqttStatus := range []string{"collecting", "waiting_vehicle"} {
+		if result := service.updateStatusForVIN(context.Background(), ref.VINHash, mqttStatus); result.Classification != telemetryPersistenceDurable {
+			t.Fatalf("MQTT %s persistence result = %#v", mqttStatus, result)
+		}
+		recorder := httptest.NewRecorder()
+		a.carResource(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/cars/1/telemetry/pairing", nil), "user-a", "/api/v1/cars/1/telemetry/pairing")
+		var envelope struct {
+			Data map[string]any `json:"data"`
+		}
+		if recorder.Code != http.StatusOK || json.Unmarshal(recorder.Body.Bytes(), &envelope) != nil {
+			t.Fatalf("pairing after MQTT %s = %d %s", mqttStatus, recorder.Code, recorder.Body.String())
+		}
+		if got, present := envelope.Data["config_synced"]; !present || got != true {
+			t.Fatalf("config_synced after MQTT %s = %#v (present=%t), want true", mqttStatus, got, present)
+		}
+	}
+}
+
+func TestTask2PairingConfigSyncFalseAndUnknownRemainStoredTruth(t *testing.T) {
+	service := newTelemetryServiceForTest("partner.example.com")
+	ref := telemetryRefWithVIN(service, "user-a", 1, "5YJ3E1EA7KF123456")
+	service.memory.registerVehicle(ref)
+
+	service.memory.setPairing(ref, telemetryPairing{Status: "waiting_vehicle", ConfigSynced: boolPointer(false)})
+	if result := service.updateStatusForVIN(context.Background(), ref.VINHash, "collecting"); result.Classification != telemetryPersistenceDurable {
+		t.Fatalf("false-state MQTT result = %#v", result)
+	}
+	if response, err := service.pairing(context.Background(), ref.UserID, ref.VehicleID); err != nil || response.ConfigSynced == nil || *response.ConfigSynced {
+		t.Fatalf("stored false config truth = %#v, %v", response, err)
+	}
+
+	service.memory.setPairing(ref, telemetryPairing{Status: "pairing_required"})
+	if result := service.updateStatusForVIN(context.Background(), ref.VINHash, "collecting"); result.Classification != telemetryPersistenceDurable {
+		t.Fatalf("unknown-state MQTT result = %#v", result)
+	}
+	response, err := service.pairing(context.Background(), ref.UserID, ref.VehicleID)
+	if err != nil || response.ConfigSynced != nil {
+		t.Fatalf("unknown config truth = %#v, %v", response, err)
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil || !strings.Contains(string(encoded), `"config_synced":null`) {
+		t.Fatalf("unknown config JSON = %s, %v", encoded, err)
+	}
+}
+
+func TestTask2ConfigureErrorPreservesLastVerifiedConfigTruth(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"error":"upstream_failure"}`))
+	}))
+	defer proxy.Close()
+	service := newTelemetryServiceForTest("partner.example.com")
+	service.commandProxyURL = proxy.URL
+	ref := telemetryRefWithVIN(service, "user-a", 1, "5YJ3E1EA7KF123456")
+	service.memory.registerVehicle(ref)
+	service.memory.setPairing(ref, telemetryPairing{Status: "available", ConfigSynced: boolPointer(true)})
+
+	if err := service.configure(context.Background(), ref.UserID, ref.VehicleID); err == nil {
+		t.Fatal("configure error must be returned")
+	}
+	if response, err := service.pairing(context.Background(), ref.UserID, ref.VehicleID); err != nil || response.ConfigSynced == nil || !*response.ConfigSynced {
+		t.Fatalf("config truth after configure error = %#v, %v", response, err)
+	}
+}
+
+func TestTask2ConfigurePersistsOnlyOfficialConfigGETTruth(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		synced bool
+	}{
+		{name: "officially synced", synced: true},
+		{name: "officially pending", synced: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					_, _ = w.Write([]byte(`{"response":{"updated_vehicles":1,"skipped_vehicles":{"missing_key":[]}}}`))
+					return
+				}
+				_, _ = w.Write([]byte(fmt.Sprintf(`{"response":{"synced":%t}}`, tc.synced)))
+			}))
+			defer proxy.Close()
+			service := newTelemetryServiceForTest("partner.example.com")
+			service.commandProxyURL = proxy.URL
+			ref := telemetryRefWithVIN(service, "user-a", 1, "5YJ3E1EA7KF123456")
+			service.memory.registerVehicle(ref)
+
+			if err := service.configure(context.Background(), ref.UserID, ref.VehicleID); err != nil {
+				t.Fatal(err)
+			}
+			response, err := service.pairing(context.Background(), ref.UserID, ref.VehicleID)
+			if err != nil || response.ConfigSynced == nil || *response.ConfigSynced != tc.synced {
+				t.Fatalf("official GET config truth = %#v, %v; want %t", response, err, tc.synced)
+			}
+		})
+	}
+}
+
+func TestTask2AcceptedConfigureWithoutOfficialGETKeepsUnknownConfigTruth(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			_, _ = w.Write([]byte(`{"response":{"updated_vehicles":1,"skipped_vehicles":{"missing_key":[]}}}`))
+			return
+		}
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer proxy.Close()
+	service := newTelemetryServiceForTest("partner.example.com")
+	service.commandProxyURL = proxy.URL
+	ref := telemetryRefWithVIN(service, "user-a", 1, "5YJ3E1EA7KF123456")
+	service.memory.registerVehicle(ref)
+
+	if err := service.configure(context.Background(), ref.UserID, ref.VehicleID); err != nil {
+		t.Fatal(err)
+	}
+	if response, err := service.pairing(context.Background(), ref.UserID, ref.VehicleID); err != nil || response.ConfigSynced != nil {
+		t.Fatalf("accepted configure without official GET = %#v, %v", response, err)
+	}
+}
+
+func TestTask2ConfigureOnlyPersistsExplicitFleetConfigSyncedBoolean(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		getResponse string
+		wantSynced  *bool
+	}{
+		{name: "empty response stays unknown", getResponse: `{}`, wantSynced: nil},
+		{name: "incomplete response stays unknown", getResponse: `{"response":{}}`, wantSynced: nil},
+		{name: "null synced stays unknown", getResponse: `{"response":{"synced":null}}`, wantSynced: nil},
+		{name: "malformed synced stays unknown", getResponse: `{"response":{"synced":"false"}}`, wantSynced: nil},
+		{name: "explicit false persists false", getResponse: `{"response":{"synced":false}}`, wantSynced: boolPointer(false)},
+		{name: "explicit true persists true", getResponse: `{"response":{"synced":true}}`, wantSynced: boolPointer(true)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					_, _ = w.Write([]byte(`{"response":{"updated_vehicles":1,"skipped_vehicles":{"missing_key":[]}}}`))
+					return
+				}
+				_, _ = w.Write([]byte(tc.getResponse))
+			}))
+			defer proxy.Close()
+
+			service := newTelemetryServiceForTest("partner.example.com")
+			service.commandProxyURL = proxy.URL
+			ref := telemetryRefWithVIN(service, "user-a", 1, "5YJ3E1EA7KF123456")
+			service.memory.registerVehicle(ref)
+
+			if err := service.configure(context.Background(), ref.UserID, ref.VehicleID); err != nil {
+				t.Fatal(err)
+			}
+			response, err := service.pairing(context.Background(), ref.UserID, ref.VehicleID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if response.ConfigSynced == nil || tc.wantSynced == nil {
+				if response.ConfigSynced != tc.wantSynced {
+					t.Fatalf("config_synced = %#v, want %#v", response.ConfigSynced, tc.wantSynced)
+				}
+				return
+			}
+			if *response.ConfigSynced != *tc.wantSynced {
+				t.Fatalf("config_synced = %t, want %t", *response.ConfigSynced, *tc.wantSynced)
+			}
+		})
 	}
 }
 

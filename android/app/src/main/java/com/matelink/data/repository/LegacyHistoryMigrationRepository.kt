@@ -105,7 +105,7 @@ class LegacyHistoryMigrationRepository @Inject constructor(
     private val aggregateDao: AggregateDao,
     private val chargeCostOverrideDao: ChargeCostOverrideDao,
     private val legacyHistoryArchiveDao: LegacyHistoryArchiveDao
-) {
+) : LegacyHistoryMigrationService {
     /**
      * Converts a V17 model-unknown marker only with real current car metadata.
      * This is an explicit binding, never an inference from a positive car id.
@@ -125,7 +125,7 @@ class LegacyHistoryMigrationRepository @Inject constructor(
         ) == 1
     }
 
-    suspend fun inspect(
+    override suspend fun inspect(
         legacyCarId: Int,
         currentModel: String?,
         currentVehicleFingerprint: String?,
@@ -147,7 +147,7 @@ class LegacyHistoryMigrationRepository @Inject constructor(
         )
     }
 
-    suspend fun migrate(
+    override suspend fun migrate(
         legacyCarId: Int,
         targetHistoryCarId: Int,
         eligibility: LegacyHistoryMigrationEligibility

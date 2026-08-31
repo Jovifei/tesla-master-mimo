@@ -24,22 +24,26 @@ var (
 )
 
 type telemetryService struct {
-	store           *store
-	config          *telemetryConfig
-	memory          *telemetryMemoryStore
-	vinHashKey      []byte
-	cipher          *tokenCipher
-	caPEM           string
-	commandProxyURL string
-	httpClient      *http.Client
-	started         bool
-	mqttConnected   atomic.Bool
-	mqttSubscribed  atomic.Bool
-	mqttHealthy     atomic.Bool
-	receiveSequence atomic.Uint64
-	finalizerMu     sync.Mutex
-	finalizerCancel context.CancelFunc
-	finalizerDone   chan struct{}
+	store                    *store
+	config                   *telemetryConfig
+	memory                   *telemetryMemoryStore
+	vinHashKey               []byte
+	cipher                   *tokenCipher
+	caPEM                    string
+	commandProxyURL          string
+	httpClient               *http.Client
+	started                  atomic.Bool
+	mqttConnected            atomic.Bool
+	mqttSubscribed           atomic.Bool
+	mqttPersistence          atomic.Bool
+	mqttHealthy              atomic.Bool
+	persistenceReady         func(context.Context) bool
+	pairingConfigTruthWriter func(context.Context, string, int, string, bool) error
+	mqttInvalid              atomic.Uint64
+	receiveSequence          atomic.Uint64
+	finalizerMu              sync.Mutex
+	finalizerCancel          context.CancelFunc
+	finalizerDone            chan struct{}
 }
 
 func newTelemetryService(config *telemetryConfig, database *store) *telemetryService {
@@ -288,12 +292,14 @@ type telemetryPairing struct {
 	UpdatedAt     time.Time
 	ErrorClass    string
 	VirtualKeyURL string
+	ConfigSynced  *bool
 }
 
 type telemetryPairingResponse struct {
 	Status        string `json:"status"`
 	VirtualKeyURL string `json:"virtual_key_url"`
 	UpdatedAt     string `json:"updated_at,omitempty"`
+	ConfigSynced  *bool  `json:"config_synced"`
 }
 
 func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID int) (telemetryPairingResponse, error) {
@@ -308,9 +314,10 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 	} else if s.store != nil && s.store.pool != nil {
 		var updatedAt time.Time
 		var errorClass string
-		err := s.store.pool.QueryRow(ctx, `SELECT status, updated_at, error_class FROM jourvolt_telemetry_pairing WHERE user_id=$1 AND vehicle_id=$2`, userID, vehicleID).Scan(&status.Status, &updatedAt, &errorClass)
+		var configSynced *bool
+		err := s.store.pool.QueryRow(ctx, `SELECT status, updated_at, error_class, config_synced FROM jourvolt_telemetry_pairing WHERE user_id=$1 AND vehicle_id=$2`, userID, vehicleID).Scan(&status.Status, &updatedAt, &errorClass, &configSynced)
 		if err == nil {
-			status.UpdatedAt, status.ErrorClass = updatedAt, errorClass
+			status.UpdatedAt, status.ErrorClass, status.ConfigSynced = updatedAt, errorClass, configSynced
 		} else if !isVehicleLookupMiss(err) {
 			return telemetryPairingResponse{}, err
 		}
@@ -318,7 +325,11 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 	if status.Status == "" {
 		status.Status = "pairing_required"
 	}
-	response := telemetryPairingResponse{Status: status.Status, VirtualKeyURL: "https://tesla.com/_ak/" + s.config.PartnerDomain}
+	response := telemetryPairingResponse{
+		Status:        status.Status,
+		VirtualKeyURL: "https://tesla.com/_ak/" + s.config.PartnerDomain,
+		ConfigSynced:  status.ConfigSynced,
+	}
 	if !status.UpdatedAt.IsZero() {
 		response.UpdatedAt = status.UpdatedAt.UTC().Format(time.RFC3339)
 	}
@@ -377,9 +388,9 @@ type officialFleetTelemetryConfigureRequest struct {
 
 type officialFleetTelemetryResponse struct {
 	Response struct {
-		Synced          bool `json:"synced"`
-		UpdatedVehicles int  `json:"updated_vehicles"`
-		Config          any  `json:"config"`
+		Synced          *bool `json:"synced"`
+		UpdatedVehicles int   `json:"updated_vehicles"`
+		Config          any   `json:"config"`
 		SkippedVehicles struct {
 			MissingKey          []string `json:"missing_key"`
 			UnsupportedHardware []string `json:"unsupported_hardware"`
@@ -459,7 +470,9 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 			if len(skipped.MissingKey) == 0 {
 				status = "telemetry_error"
 			}
-			s.setPairingStatus(ctx, userID, vehicleID, status)
+			if err := s.setPairingConfigTruth(ctx, userID, vehicleID, status, false); err != nil {
+				return errTelemetryCommand
+			}
 			if status == "pairing_required" {
 				return errTelemetryPairing
 			}
@@ -481,9 +494,17 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 		if err != nil {
 			continue
 		}
-		if configResponse.Response.Synced {
-			s.setPairingStatus(ctx, userID, vehicleID, "available")
+		if configResponse.Response.Synced == nil {
+			continue
+		}
+		if *configResponse.Response.Synced {
+			if err := s.setPairingConfigTruth(ctx, userID, vehicleID, "available", true); err != nil {
+				return errTelemetryCommand
+			}
 			return nil
+		}
+		if err := s.setPairingConfigTruth(ctx, userID, vehicleID, "waiting_vehicle", false); err != nil {
+			return errTelemetryCommand
 		}
 	}
 	// The vehicle may be asleep; expose a pending state and let the next GET
@@ -607,7 +628,12 @@ func bodyHasExactCode(body []byte, expected ...string) bool {
 
 func (s *telemetryService) setPairingStatus(ctx context.Context, userID string, vehicleID int, status string) {
 	if s.memory != nil {
-		s.memory.setPairing(telemetryVehicleRef{UserID: userID, VehicleID: vehicleID}, telemetryPairing{Status: status, UpdatedAt: time.Now().UTC()})
+		s.memory.mu.Lock()
+		defer s.memory.mu.Unlock()
+		key := telemetryKey{UserID: userID, VehicleID: vehicleID}
+		pairing := s.memory.pairings[key]
+		pairing.Status, pairing.UpdatedAt = status, time.Now().UTC()
+		s.memory.pairings[key] = pairing
 		return
 	}
 	if s.store == nil || s.store.pool == nil {
@@ -617,6 +643,24 @@ func (s *telemetryService) setPairingStatus(ctx context.Context, userID string, 
 INSERT INTO jourvolt_telemetry_pairing(user_id, vehicle_id, status, updated_at)
 VALUES ($1, $2, $3, now())
 ON CONFLICT (user_id, vehicle_id) DO UPDATE SET status=EXCLUDED.status, updated_at=EXCLUDED.updated_at`, userID, vehicleID, status)
+}
+
+func (s *telemetryService) setPairingConfigTruth(ctx context.Context, userID string, vehicleID int, status string, configSynced bool) error {
+	if s.pairingConfigTruthWriter != nil {
+		return s.pairingConfigTruthWriter(ctx, userID, vehicleID, status, configSynced)
+	}
+	if s.memory != nil {
+		s.memory.setPairing(telemetryVehicleRef{UserID: userID, VehicleID: vehicleID}, telemetryPairing{Status: status, ConfigSynced: boolPointer(configSynced), UpdatedAt: time.Now().UTC()})
+		return nil
+	}
+	if s.store == nil || s.store.pool == nil {
+		return nil
+	}
+	_, err := s.store.pool.Exec(ctx, `
+INSERT INTO jourvolt_telemetry_pairing(user_id, vehicle_id, status, config_synced, updated_at)
+VALUES ($1, $2, $3, $4, now())
+ON CONFLICT (user_id, vehicle_id) DO UPDATE SET status=EXCLUDED.status, config_synced=EXCLUDED.config_synced, updated_at=EXCLUDED.updated_at`, userID, vehicleID, status, configSynced)
+	return err
 }
 
 func (s *telemetryService) providerVehicleID(ctx context.Context, userID string, vehicleID int) (string, error) {

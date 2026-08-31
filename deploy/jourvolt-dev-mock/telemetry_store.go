@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS jourvolt_telemetry_pairing (
     vehicle_id INTEGER NOT NULL REFERENCES jourvolt_vehicles(id) ON DELETE CASCADE,
     status TEXT NOT NULL,
     error_class TEXT NOT NULL DEFAULT '',
+	config_synced BOOLEAN,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, vehicle_id)
 );
@@ -87,6 +88,7 @@ ALTER TABLE jourvolt_telemetry_event_buffer ADD COLUMN IF NOT EXISTS receive_seq
 ALTER TABLE jourvolt_telemetry_latest ADD COLUMN IF NOT EXISTS receive_sequence BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS completion_key TEXT;
 ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS public_id INTEGER;
+ALTER TABLE jourvolt_telemetry_pairing ADD COLUMN IF NOT EXISTS config_synced BOOLEAN;
 ALTER TABLE jourvolt_telemetry_sessions ALTER COLUMN public_id SET DEFAULT nextval('jourvolt_telemetry_session_public_id_seq');
 UPDATE jourvolt_telemetry_sessions SET public_id=nextval('jourvolt_telemetry_session_public_id_seq') WHERE public_id IS NULL;
 ALTER TABLE jourvolt_telemetry_sessions ALTER COLUMN public_id SET NOT NULL;
@@ -102,43 +104,56 @@ func ensureTelemetrySchema(ctx context.Context, pool *pgxpool.Pool) error {
 	return err
 }
 
+type telemetryPostgresIngestResult struct {
+	Accepted int
+	Mapped   bool
+}
+
 func (s *telemetryService) ingestPostgres(ctx context.Context, record telemetryRecord) (int, error) {
+	result, err := s.ingestPostgresWithMapping(ctx, record)
+	return result.Accepted, err
+}
+
+func (s *telemetryService) ingestPostgresWithMapping(ctx context.Context, record telemetryRecord) (telemetryPostgresIngestResult, error) {
 	if s.store == nil || s.store.pool == nil {
-		return 0, nil
+		return telemetryPostgresIngestResult{}, nil
 	}
-	rows, err := s.store.pool.Query(ctx, `SELECT user_id, vehicle_id FROM jourvolt_telemetry_vehicle_keys WHERE vin_hash=$1`, record.VINHash)
+	tx, err := s.store.pool.Begin(ctx)
 	if err != nil {
-		return 0, err
+		return telemetryPostgresIngestResult{}, err
+	}
+	defer tx.Rollback(ctx)
+	rows, err := tx.Query(ctx, `SELECT user_id, vehicle_id FROM jourvolt_telemetry_vehicle_keys WHERE vin_hash=$1 FOR KEY SHARE`, record.VINHash)
+	if err != nil {
+		return telemetryPostgresIngestResult{}, err
 	}
 	refs := make([]telemetryVehicleRef, 0)
 	for rows.Next() {
 		var ref telemetryVehicleRef
 		if err := rows.Scan(&ref.UserID, &ref.VehicleID); err != nil {
 			rows.Close()
-			return 0, err
+			return telemetryPostgresIngestResult{}, err
 		}
 		refs = append(refs, ref)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return 0, err
+		return telemetryPostgresIngestResult{}, err
 	}
 	rows.Close()
 	if len(refs) == 0 {
-		return 0, nil
+		if err := tx.Commit(ctx); err != nil {
+			return telemetryPostgresIngestResult{}, err
+		}
+		return telemetryPostgresIngestResult{Mapped: false}, nil
 	}
-	tx, err := s.store.pool.Begin(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback(ctx)
 	accepted := 0
 	for _, ref := range refs {
 		valueHash := hashTelemetryValue(record.Value)
 		var previousHash string
 		previousErr := tx.QueryRow(ctx, `SELECT value_hash FROM jourvolt_telemetry_latest WHERE user_id=$1 AND vehicle_id=$2 AND field_name=$3 FOR UPDATE`, ref.UserID, ref.VehicleID, record.FieldName).Scan(&previousHash)
 		if previousErr != nil && !errors.Is(previousErr, pgx.ErrNoRows) {
-			return 0, previousErr
+			return telemetryPostgresIngestResult{}, previousErr
 		}
 		if previousErr == nil && previousHash == valueHash {
 			continue
@@ -153,11 +168,11 @@ RETURNING true`, record.EventID, ref.UserID, ref.VehicleID, record.FieldName, re
 			continue
 		}
 		if err != nil {
-			return 0, err
+			return telemetryPostgresIngestResult{}, err
 		}
 		encoded, err := json.Marshal(record.Value)
 		if err != nil {
-			return 0, err
+			return telemetryPostgresIngestResult{}, err
 		}
 		commandTag, err := tx.Exec(ctx, `
 INSERT INTO jourvolt_telemetry_latest(user_id, vehicle_id, field_name, value_json, observed_at, source, value_hash, receive_sequence)
@@ -165,7 +180,7 @@ VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)
 ON CONFLICT (user_id, vehicle_id, field_name) DO UPDATE SET value_json=EXCLUDED.value_json, observed_at=EXCLUDED.observed_at, source=EXCLUDED.source, value_hash=EXCLUDED.value_hash, updated_at=now()
 WHERE EXCLUDED.observed_at > jourvolt_telemetry_latest.observed_at`, ref.UserID, ref.VehicleID, record.FieldName, encoded, record.ObservedAt, record.Source, valueHash, record.ReceiveSequence)
 		if err != nil {
-			return 0, err
+			return telemetryPostgresIngestResult{}, err
 		}
 		if commandTag.RowsAffected() == 0 {
 			continue
@@ -173,20 +188,20 @@ WHERE EXCLUDED.observed_at > jourvolt_telemetry_latest.observed_at`, ref.UserID,
 		accepted++
 		if point, ok := routePointFromLocation(telemetrySessionEvent{Value: record.Value, ObservedAt: record.ObservedAt}); ok {
 			if err := insertDownsampledRoutePoint(ctx, tx, ref, point); err != nil {
-				return 0, err
+				return telemetryPostgresIngestResult{}, err
 			}
 		}
 		if err := applyPostgresSessionEvent(ctx, tx, ref, record, s.config.StopDebounce); err != nil {
-			return 0, err
+			return telemetryPostgresIngestResult{}, err
 		}
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM jourvolt_telemetry_event_buffer WHERE expires_at < now()`); err != nil {
-		return 0, err
+		return telemetryPostgresIngestResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return 0, err
+		return telemetryPostgresIngestResult{}, err
 	}
-	return accepted, nil
+	return telemetryPostgresIngestResult{Accepted: accepted, Mapped: true}, nil
 }
 
 func insertDownsampledRoutePoint(ctx context.Context, tx pgx.Tx, ref telemetryVehicleRef, point telemetryRoutePoint) error {

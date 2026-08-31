@@ -531,7 +531,15 @@ fun NavGraph(
             val route = backStackEntry.toRoute<Screen.DataReadiness>()
             DataReadinessScreen(
                 carId = route.carId,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onReauthorize = {
+                    teslaLoginViewModel.reauthorize {
+                        navController.navigate(Screen.TeslaLogin) {
+                            popUpTo(Screen.Dashboard) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                }
             )
         }
 
