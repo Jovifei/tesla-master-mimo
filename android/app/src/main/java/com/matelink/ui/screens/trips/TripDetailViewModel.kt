@@ -362,7 +362,7 @@ class TripDetailViewModel @Inject constructor(
 
         val points = mutableListOf<EdgePoint>()
 
-        val driveCoords = aggregateDao.getDriveEdgeCoordinates(trip.drives.map { it.driveId })
+        val driveCoords = aggregateDao.getDriveEdgeCoordinates(currentCarId, trip.drives.map { it.driveId })
             .associateBy { it.driveId }
 
         // Drive start + end points from cached coordinates

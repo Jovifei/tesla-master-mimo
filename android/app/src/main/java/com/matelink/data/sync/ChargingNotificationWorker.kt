@@ -14,6 +14,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.matelink.data.local.ChargeSessionStateDataStore
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.SentryEvent
 import com.matelink.data.repository.SentryStateRepository
@@ -42,7 +43,8 @@ class ChargingNotificationWorker @AssistedInject constructor(
     private val chargingNotificationManager: ChargingNotificationManager,
     private val sentryStateRepository: SentryStateRepository,
     private val sentryNotificationManager: SentryNotificationManager,
-    private val chargeSessionStateDataStore: ChargeSessionStateDataStore
+    private val chargeSessionStateDataStore: ChargeSessionStateDataStore,
+    private val vehicleContextRepository: VehicleContextRepository
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
@@ -156,7 +158,8 @@ class ChargingNotificationWorker @AssistedInject constructor(
             // Check each car
             for (car in cars) {
                 try {
-                    checkCarStatus(car.carId)
+                    val vehicleContext = vehicleContextRepository.resolve(car)
+                    checkCarStatus(car.carId, vehicleContext.localHistoryCarId)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error checking car ${car.carId}", e)
                 }
@@ -173,11 +176,11 @@ class ChargingNotificationWorker @AssistedInject constructor(
         }
     }
 
-    private suspend fun checkCarStatus(carId: Int) {
+    private suspend fun checkCarStatus(remoteApiCarId: Int, historyCarId: Int) {
         // Get car info and status
         val carsResult = teslamateRepository.getCars()
         val car = when (carsResult) {
-            is ApiResult.Success -> carsResult.data.find { it.carId == carId }
+            is ApiResult.Success -> carsResult.data.find { it.carId == remoteApiCarId }
             is ApiResult.Error -> {
                 Log.e(TAG, "Failed to fetch car info: ${carsResult.message}")
                 return
@@ -185,15 +188,15 @@ class ChargingNotificationWorker @AssistedInject constructor(
         }
 
         if (car == null) {
-            Log.e(TAG, "Car $carId not found")
+            Log.e(TAG, "Car $historyCarId not found")
             return
         }
 
-        val statusResult = teslamateRepository.getCarStatus(carId)
+        val statusResult = teslamateRepository.getCarStatus(remoteApiCarId)
         val statusData = when (statusResult) {
             is ApiResult.Success -> statusResult.data
             is ApiResult.Error -> {
-                Log.e(TAG, "Failed to fetch status for car $carId: ${statusResult.message}")
+                Log.e(TAG, "Failed to fetch status for car $historyCarId: ${statusResult.message}")
                 return
             }
         }
@@ -203,61 +206,61 @@ class ChargingNotificationWorker @AssistedInject constructor(
         // Persist whether the active session is DC; this is the only moment we can
         // tell (post-completion `charger_phases` is null regardless of charge type).
         if (status.isCharging && status.isDcCharging) {
-            chargeSessionStateDataStore.setLastSessionDc(carId, true)
+            chargeSessionStateDataStore.setLastSessionDc(historyCarId, true)
         } else if (status.pluggedIn == false) {
-            chargeSessionStateDataStore.clear(carId)
+            chargeSessionStateDataStore.clear(historyCarId)
         }
 
         val dcFinishedPluggedIn = status.isChargeCompletePluggedIn &&
-            chargeSessionStateDataStore.wasLastSessionDc(carId)
+            chargeSessionStateDataStore.wasLastSessionDc(historyCarId)
 
         // --- Charging ---
         if (status.isCharging) {
-            Log.d(TAG, "Car $carId is charging at ${status.batteryLevel}%")
+            Log.d(TAG, "Car $historyCarId is charging at ${status.batteryLevel}%")
             try {
                 ChargingMonitorService.start(appContext)
             } catch (e: Exception) {
                 // On Android 12+, can't start foreground service from background
                 // Fall back to showing notification directly (won't update in real-time)
                 Log.w(TAG, "Cannot start foreground service, showing notification directly: ${e.message}")
-                val liveChargeAvailable = teslamateRepository.isCurrentChargeAvailable(carId)
+                val liveChargeAvailable = teslamateRepository.isCurrentChargeAvailable(remoteApiCarId)
                 chargingNotificationManager.showChargingNotification(
-                    car, status, liveChargeAvailable,
+                    car, historyCarId, status, liveChargeAvailable,
                     chronometerBaseMs = status.stateSinceEpochMs
                 )
             }
         } else if (dcFinishedPluggedIn) {
             // DC charge finished but cable still plugged — keep service alive
-            Log.d(TAG, "Car $carId DC charge finished but still plugged in")
+            Log.d(TAG, "Car $historyCarId DC charge finished but still plugged in")
             try {
                 ChargingMonitorService.start(appContext)
             } catch (e: Exception) {
                 Log.w(TAG, "Cannot start foreground service for DC-finished state: ${e.message}")
             }
         } else {
-            Log.d(TAG, "Car $carId is not charging, stopping monitor service")
+            Log.d(TAG, "Car $historyCarId is not charging, stopping monitor service")
             ChargingMonitorService.stop(appContext)
-            chargingNotificationManager.cancelNotification(carId)
+            chargingNotificationManager.cancelNotification(historyCarId)
         }
 
         // --- Sentry ---
         val sentryMode = status.sentryMode ?: false
         val isSentryAlerted = status.isSentryAlerted
 
-        when (val event = sentryStateRepository.processStatus(carId, sentryMode, isSentryAlerted, status.latitude, status.longitude, status.geofence)) {
+        when (val event = sentryStateRepository.processStatus(remoteApiCarId, sentryMode, isSentryAlerted, status.latitude, status.longitude, status.geofence)) {
             is SentryEvent.AlertDetected -> {
-                Log.d(TAG, "Sentry alert #${event.count} for car $carId (notify=${event.shouldNotify})")
+                Log.d(TAG, "Sentry alert #${event.count} for car $historyCarId (notify=${event.shouldNotify})")
                 sentryNotificationManager.showSentryAlert(
                     carName = car.displayName,
-                    carId = carId,
+                    carId = historyCarId,
                     eventCount = event.count,
                     shouldAlert = event.shouldNotify
                 )
                 CarWidgetUpdateWorker.scheduleImmediateUpdate(appContext)
             }
             is SentryEvent.SessionEnded -> {
-                Log.d(TAG, "Sentry session ended for car $carId")
-                sentryNotificationManager.cancelNotification(carId)
+                Log.d(TAG, "Sentry session ended for car $historyCarId")
+                sentryNotificationManager.cancelNotification(historyCarId)
             }
             null -> { /* no event */ }
         }

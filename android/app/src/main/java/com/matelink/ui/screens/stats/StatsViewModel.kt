@@ -12,6 +12,7 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.model.Currency
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.GeocodeProgressInfo
@@ -64,7 +65,8 @@ class StatsViewModel @Inject constructor(
     private val syncManager: SyncManager,
     private val syncLogCollector: SyncLogCollector,
     private val settingsDataStore: SettingsDataStore,
-    private val historyMetadataStore: HistoryMetadataStore
+    private val historyMetadataStore: HistoryMetadataStore,
+    private val vehicleContextRepository: VehicleContextRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StatsUiState())
@@ -153,7 +155,10 @@ class StatsViewModel @Inject constructor(
     private fun startObservingHistoryMetadata(id: Int) {
         historyMetadataJob?.cancel()
         historyMetadataJob = viewModelScope.launch {
-            historyMetadataStore.observe(id).collect { metadata ->
+            val historyId = runCatching {
+                vehicleContextRepository.requireLocalHistoryCarId(id)
+            }.getOrNull() ?: return@launch
+            historyMetadataStore.observe(historyId).collect { metadata ->
                 _uiState.update { it.copy(historyMetadata = metadata) }
             }
         }
@@ -168,7 +173,10 @@ class StatsViewModel @Inject constructor(
         syncObserverJob = viewModelScope.launch {
             syncManager.syncStatus.collect { status ->
                 val id = carId ?: return@collect
-                val carProgress = status.carProgresses[id]
+                val historyId = runCatching {
+                    vehicleContextRepository.requireLocalHistoryCarId(id)
+                }.getOrNull() ?: return@collect
+                val carProgress = status.carProgresses[historyId]
 
                 // Update syncing state
                 val isSyncing = carProgress != null &&

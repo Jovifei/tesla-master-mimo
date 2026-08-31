@@ -44,6 +44,7 @@ import com.matelink.ui.screens.drives.ParkedDetailScreen
 import com.matelink.ui.screens.drives.DrivesScreen
 import com.matelink.ui.screens.mileage.MileageScreen
 import com.matelink.ui.screens.more.MoreScreen
+import com.matelink.ui.screens.readiness.DataReadinessScreen
 import com.matelink.ui.screens.settings.SettingsScreen
 import com.matelink.ui.screens.settings.TariffConfigScreen
 import com.matelink.ui.screens.settings.TpmsSettingsScreen
@@ -140,6 +141,9 @@ sealed interface Screen {
 
     @Serializable
     data class Battery(val carId: Int, val efficiency: Float = 0f, val exteriorColor: String? = null) : Screen
+
+    @Serializable
+    data class DataReadiness(val carId: Int) : Screen
 
     @Serializable
     data class Mileage(val carId: Int, val exteriorColor: String? = null, val targetDay: String? = null) : Screen
@@ -516,7 +520,18 @@ fun NavGraph(
                 },
                 onNavigateToTrips = { carId, exteriorColor ->
                     navController.navigate(Screen.Trips(carId, exteriorColor))
+                },
+                onNavigateToReadiness = { carId ->
+                    navController.navigate(Screen.DataReadiness(carId))
                 }
+            )
+        }
+
+        composable<Screen.DataReadiness> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.DataReadiness>()
+            DataReadinessScreen(
+                carId = route.carId,
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 
@@ -871,6 +886,7 @@ fun NavGraph(
                 onNavigateToTimeline = { navController.navigate(Screen.Timeline(it, route.exteriorColor)) },
                 onNavigateToAnnualReport = { navController.navigate(Screen.AnnualReport(it)) },
                 onNavigateToExport = { navController.navigate(Screen.Export(it)) },
+                onNavigateToReadiness = { navController.navigate(Screen.DataReadiness(it)) },
             )
         }
 

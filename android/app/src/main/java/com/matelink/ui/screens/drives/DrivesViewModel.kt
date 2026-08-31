@@ -10,6 +10,7 @@ import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.repository.UnifiedHistoryRepository
 import com.matelink.domain.LocalDayBoundaries
 import com.matelink.R
 import android.content.Context
@@ -121,6 +122,7 @@ data class DrivesSummary(
 class DrivesViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val repository: TeslamateRepository,
+    private val historyRepository: UnifiedHistoryRepository,
     private val settingsDataStore: SettingsDataStore,
     private val driveSummaryDao: DriveSummaryDao,
     private val savedStateHandle: SavedStateHandle
@@ -280,10 +282,10 @@ class DrivesViewModel @Inject constructor(
             val startDateStr = startDate?.let { LocalDayBoundaries.startOfDay(it) }
             val endDateStr = endDate?.let { LocalDayBoundaries.endOfDay(it) }
 
-            when (val result = repository.getDrives(id, startDateStr, endDateStr)) {
+            when (val result = historyRepository.load(id, startDateStr, endDateStr)) {
                 is ApiResult.Success -> {
-                    allDrives = result.data
-                    val localMetrics = driveSummaryDao.getAllChronological(id).associate { summary ->
+                    allDrives = result.data.drives
+                    val localMetrics = driveSummaryDao.getAllChronological(result.data.context.localHistoryCarId).associate { summary ->
                         summary.driveId to DriveHistoryMetrics(
                             energyKwh = summary.energyConsumed,
                             efficiencyWhKm = summary.efficiency,

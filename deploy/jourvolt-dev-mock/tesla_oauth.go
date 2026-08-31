@@ -225,12 +225,7 @@ func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, e
 	callbackIssuer := strings.TrimSpace(values.Get("issuer"))
 	idToken, err := o.verifyIDToken(exchangeContext, rawIDToken, callbackIssuer)
 	if err != nil {
-		log.Printf(
-			"tesla oauth id_token verify failed callback_issuer=%q token_iss=%q: %v",
-			callbackIssuer,
-			peekJWTIssuer(rawIDToken),
-			err,
-		)
+		logTeslaIDTokenVerificationFailure(callbackIssuer, rawIDToken, err)
 		return "", fmt.Errorf("tesla id_token: %w", err)
 	}
 	var claims struct {
@@ -257,6 +252,16 @@ func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, e
 		token.Expiry.UTC(),
 	)
 	return ticket, err
+}
+
+func logTeslaIDTokenVerificationFailure(callbackIssuer, rawIDToken string, verifierErr error) {
+	_ = rawIDToken
+	_ = verifierErr
+	issuerCategory := "unrecognized"
+	if normalizeTeslaIssuer(callbackIssuer) == defaultTeslaIssuer || normalizeTeslaIssuer(callbackIssuer) == teslaNTSIssuer {
+		issuerCategory = "known"
+	}
+	log.Printf("tesla oauth id_token verify failed class=id_token_invalid issuer=%s", issuerCategory)
 }
 
 func (o *teslaOAuth) appLink(ticket, errorCode string) string {

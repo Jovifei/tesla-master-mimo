@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -59,6 +60,68 @@ func TestFleetGetMapsRateLimit(t *testing.T) {
 	var payload teslaVehicleListEnvelope
 	if err := provider.get(context.Background(), "user-1", "/api/1/vehicles", &payload); !errors.Is(err, errTeslaRateLimited) {
 		t.Fatalf("Fleet error = %v, want rate limited", err)
+	}
+}
+
+func TestSanitizeFleetLogDoesNotExposeResponseSecrets(t *testing.T) {
+	vin := "5YJ3E1EA7KF123456"
+	token := "bearer-secret-token"
+	coordinates := "31.2304,121.4737"
+	got := sanitizeFleetLog("GET", "/api/1/vehicles/"+vin+"/vehicle_data", http.StatusPaymentRequired, []byte(`{"error":"billing_blocked","authorization":"Bearer bearer-secret-token","vin":"5YJ3E1EA7KF123456","latitude":31.2304,"longitude":121.4737}`))
+	for _, secret := range []string{vin, token, coordinates} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("sanitized Fleet log contains sensitive value %q: %q", secret, got)
+		}
+	}
+	if !strings.Contains(got, "endpoint=vehicle_data") || !strings.Contains(got, "error_class=billing_blocked") {
+		t.Fatalf("sanitized Fleet log lacks safe endpoint/class: %q", got)
+	}
+}
+
+func TestFleetBillingSubstringDoesNotClassifyAsBilling(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"message":"billing is temporarily unavailable"}`))
+	}))
+	defer server.Close()
+
+	provider := &fleetProvider{tokens: &testAccessTokens{}, client: server.Client(), baseURL: server.URL}
+	var payload teslaVehicleDataEnvelope
+	err := provider.get(context.Background(), "user-1", "/api/1/vehicles", &payload)
+	if errors.Is(err, errTeslaBillingBlocked) {
+		t.Fatalf("unstructured billing text classified as billing: %v", err)
+	}
+	status, messageKey, action := readinessError(err)
+	if status != "telemetry_error" || messageKey != "telemetry_error" || action != "retry_later" {
+		t.Fatalf("unstructured billing readiness = %q, %q, %q", status, messageKey, action)
+	}
+}
+
+func TestFleetBillingResponsePreservesTypedClassificationWithoutBody(t *testing.T) {
+	vin := "5YJ3E1EA7KF123456"
+	token := "bearer-secret-token"
+	coordinates := "31.2304,121.4737"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusPaymentRequired)
+		_, _ = w.Write([]byte(`{"error":"billing_blocked","authorization":"Bearer bearer-secret-token","vin":"5YJ3E1EA7KF123456","latitude":31.2304,"longitude":121.4737}`))
+	}))
+	defer server.Close()
+
+	provider := &fleetProvider{tokens: &testAccessTokens{}, client: server.Client(), baseURL: server.URL}
+	var payload teslaVehicleDataEnvelope
+	err := provider.get(context.Background(), "user-1", "/api/1/vehicles/"+vin+"/vehicle_data", &payload)
+	var fleetErr *fleetAPIError
+	if !errors.As(err, &fleetErr) || fleetErr.class != "billing_blocked" || fleetErr.statusCode != http.StatusPaymentRequired {
+		t.Fatalf("Fleet billing error = %#v, want typed billing classification", err)
+	}
+	status, messageKey, action := readinessError(err)
+	if status != "billing_blocked" || messageKey != "billing_blocked" || action != "resolve_billing" {
+		t.Fatalf("billing readiness = %q, %q, %q for %v", status, messageKey, action, err)
+	}
+	for _, secret := range []string{vin, token, coordinates} {
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("billing error contains sensitive value %q: %v", secret, err)
+		}
 	}
 }
 
@@ -142,5 +205,42 @@ func TestFleetVehicleDataMapsToReadOnlyAndroidStatus(t *testing.T) {
 	}
 	if status.ObservedAt.IsZero() {
 		t.Fatal("observed time must be populated")
+	}
+}
+
+func TestFleetVehicleDataPreservesObservedLocationAndTPMSPointers(t *testing.T) {
+	latitude, longitude, pressure := 0.0, 0.0, 0.0
+	softWarning := false
+
+	status := mapTeslaVehicleStatus(teslaVehicleData{
+		DriveState: teslaDriveState{Latitude: &latitude, Longitude: &longitude},
+		VehicleState: teslaVehicleState{
+			TPMSPressureFL:    &pressure,
+			TPMSSoftWarningFL: &softWarning,
+		},
+	}, "Observed Tesla", "online")
+
+	if status.Latitude == nil || *status.Latitude != 0 || status.Longitude == nil || *status.Longitude != 0 {
+		t.Fatalf("observed zero location was not preserved: latitude=%#v longitude=%#v", status.Latitude, status.Longitude)
+	}
+	if status.TPMSPressureFL == nil || *status.TPMSPressureFL != 0 {
+		t.Fatalf("observed zero TPMS pressure was not preserved: %#v", status.TPMSPressureFL)
+	}
+	if status.TPMSSoftWarningFL == nil || *status.TPMSSoftWarningFL {
+		t.Fatalf("observed false TPMS warning was not preserved: %#v", status.TPMSSoftWarningFL)
+	}
+}
+
+func TestFleetVehicleDataKeepsMissingLocationAndTPMSUnavailable(t *testing.T) {
+	status := mapTeslaVehicleStatus(teslaVehicleData{}, "Offline Tesla", "offline")
+
+	if status.Latitude != nil || status.Longitude != nil {
+		t.Fatalf("missing location must remain nil: latitude=%#v longitude=%#v", status.Latitude, status.Longitude)
+	}
+	if status.TPMSPressureFL != nil || status.TPMSPressureFR != nil || status.TPMSPressureRL != nil || status.TPMSPressureRR != nil {
+		t.Fatalf("missing TPMS pressure must remain nil: %#v", status)
+	}
+	if status.TPMSSoftWarningFL != nil || status.TPMSSoftWarningFR != nil || status.TPMSSoftWarningRL != nil || status.TPMSSoftWarningRR != nil {
+		t.Fatalf("missing TPMS warning must remain nil: %#v", status)
 	}
 }

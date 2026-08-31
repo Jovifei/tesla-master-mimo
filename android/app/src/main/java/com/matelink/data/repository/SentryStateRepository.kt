@@ -1,6 +1,8 @@
 package com.matelink.data.repository
 
 import com.matelink.data.local.SentryStateDataStore
+import com.matelink.data.local.HistoryCarIdResolver
+import com.matelink.data.local.LegacyHistoryCarIdResolver
 import com.matelink.data.local.dao.SentryAlertLogDao
 import com.matelink.data.local.entity.SentryAlertLog
 import javax.inject.Inject
@@ -32,8 +34,13 @@ sealed class SentryEvent {
 @Singleton
 class SentryStateRepository @Inject constructor(
     private val dataStore: SentryStateDataStore,
-    private val alertLogDao: SentryAlertLogDao
+    private val alertLogDao: SentryAlertLogDao,
+    private val vehicleContextRepository: HistoryCarIdResolver
 ) {
+    constructor(dataStore: SentryStateDataStore, alertLogDao: SentryAlertLogDao) :
+        this(dataStore, alertLogDao, LegacyHistoryCarIdResolver)
+    private suspend fun historyId(remoteApiCarId: Int) =
+        vehicleContextRepository.requireLocalHistoryCarId(remoteApiCarId)
     companion object {
         /** Debounce window for all event processing (counting, logging, alerting).
          *  Slightly over 60s because the car screen stays on for exactly 1 minute per event. */
@@ -56,11 +63,12 @@ class SentryStateRepository @Inject constructor(
         longitude: Double? = null,
         geofence: String? = null
     ): SentryEvent? {
-        val state = dataStore.getState(carId)
+        val historyCarId = historyId(carId)
+        val state = dataStore.getState(historyCarId)
 
         // Sentry mode just turned off — reset session
         if (!sentryMode && state.sentryActive) {
-            dataStore.resetSession(carId)
+            dataStore.resetSession(historyCarId)
             return SentryEvent.SessionEnded
         }
 
@@ -72,7 +80,7 @@ class SentryStateRepository @Inject constructor(
         if (!state.sentryActive) {
             val now = System.currentTimeMillis()
             sessionStartedAt = now
-            dataStore.saveState(carId, state.copy(sentryActive = true, sessionStartedAt = now))
+            dataStore.saveState(historyCarId, state.copy(sentryActive = true, sessionStartedAt = now))
         } else {
             sessionStartedAt = state.sessionStartedAt
         }
@@ -85,10 +93,10 @@ class SentryStateRepository @Inject constructor(
 
             if (shouldNotify) {
                 // Increment counter and log to history only when we actually notify
-                val updated = dataStore.incrementEventCount(carId)
+                val updated = dataStore.incrementEventCount(historyCarId)
                 alertLogDao.insert(
                     SentryAlertLog(
-                        carId = carId,
+                        carId = historyCarId,
                         detectedAt = now,
                         sessionStartedAt = sessionStartedAt,
                         latitude = latitude,
@@ -108,7 +116,7 @@ class SentryStateRepository @Inject constructor(
      * Get the current event count for a car's sentry session.
      */
     suspend fun getEventCount(carId: Int): Int {
-        return dataStore.getState(carId).eventCount
+        return dataStore.getState(historyId(carId)).eventCount
     }
 
     /**
@@ -117,20 +125,21 @@ class SentryStateRepository @Inject constructor(
      */
     suspend fun forceIncrementEventCount(carId: Int, latitude: Double? = null, longitude: Double? = null, geofence: String? = null): Int {
         // Ensure sentry is marked active with a session start time
-        val state = dataStore.getState(carId)
+        val historyCarId = historyId(carId)
+        val state = dataStore.getState(historyCarId)
         val sessionStartedAt: Long
         if (!state.sentryActive) {
             val now = System.currentTimeMillis()
             sessionStartedAt = now
-            dataStore.saveState(carId, state.copy(sentryActive = true, sessionStartedAt = now))
+            dataStore.saveState(historyCarId, state.copy(sentryActive = true, sessionStartedAt = now))
         } else {
             sessionStartedAt = state.sessionStartedAt
         }
-        val updated = dataStore.incrementEventCount(carId)
+        val updated = dataStore.incrementEventCount(historyCarId)
         // Always log for debug simulation (bypasses debounce like the notification does)
         alertLogDao.insert(
             SentryAlertLog(
-                carId = carId,
+                carId = historyCarId,
                 detectedAt = System.currentTimeMillis(),
                 sessionStartedAt = sessionStartedAt,
                 latitude = latitude,

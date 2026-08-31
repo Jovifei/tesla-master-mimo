@@ -88,6 +88,24 @@ Tesla 配置五项必须同时存在；缺一项服务会拒绝启动。所有�
 
 真实模式启用前还必须完成：Tesla 中国开发者应用审核、域名公钥托管、伙伴注册、HTTPS 回调，以及 Android `assetlinks.json` 与正式签名绑定。API 域名必须对应 `TESLA_REDIRECT_URI`，App Link 域名必须对应 `JOURVOLT_APP_LINK_URI`。未完成时 `/v1/auth/tesla/start` 明确返回 `503 oauth_not_configured`。
 
+## Fleet Telemetry 数据通道
+
+Task D 将官方 `tesla/fleet-telemetry` 作为独立容器运行；JourVolt 不实现 Tesla 的 mTLS、WebSocket 或 Flatbuffers 协议。官方服务监听车辆 mTLS 入口 `4443`，状态端口 `8080` 只在 Compose 网络内暴露，并把 decoded `V`、connectivity、alerts、errors 通过内部 MQTT 发布。生产部署必须将 `TESLA_FLEET_TELEMETRY_IMAGE` 设为不可变镜像引用 `tesla/fleet-telemetry@sha256:<64_lowercase_hex_characters>`，并将同一值传给 Compose 的 `FLEET_TELEMETRY_IMAGE`；任何 mutable tag 都不得用于生产。`tesla/fleet-telemetry:v0.9.4` 可仅作为本地开发的固定 tag 示例，不得复制到生产私有配置。
+
+启用前必须在私有配置中同时填写 `TELEMETRY_MQTT_URL`、topic base、公网 host/port、vehicle-command proxy、cert/key 挂载路径和 32 字节 `TELEMETRY_VIN_HASH_KEY_BASE64`；MQTT 用户名和密码必须成对填写。任一字段不完整，API fail-closed。私钥目录由 Compose 以只读方式挂载到官方 Fleet Telemetry 容器；仓库只保存路径和无密钥配置模板。
+
+本地拓扑可用 `docker compose --profile telemetry up -d` 检查；`jourvolt-mqtt` 没有宿主机端口，API 也不暴露 MQTT。若要替换默认 topic base，必须同步修改私有部署使用的 Fleet Telemetry `server_config.json` 中的 MQTT `topic_base`，使其与 `TELEMETRY_MQTT_TOPIC_BASE` 完全一致。
+
+新增接口：
+
+- `GET /api/v1/cars/{id}/telemetry/pairing` 返回 pairing 状态和由 `TESLA_PARTNER_DOMAIN` 派生的 Tesla virtual-key URL。
+- `POST /api/v1/cars/{id}/telemetry/configure` 以严格超时调用配置的 vehicle-command proxy；只返回安全错误分类，不返回 proxy body。
+- `GET /api/v1/cars/{id}/telemetry/readiness` 返回 `pairing_required`、`waiting_vehicle`、`collecting`、`available`、`telemetry_error` 或 `billing_blocked`。
+
+MQTT 数据只允许显式字段白名单。latest、短期 event buffer、降采样 route points 与 drive/charge session summary 写入 PostgreSQL；不会长期保存完整高频原始流。新 telemetry 表只存 keyed VIN hash，不存明文 VIN。没有新鲜 telemetry 时才使用既有一次性 `vehicle_data` fallback。
+
+QoS1 与持久 MQTT session 是本服务的传输边界：同一用户、车辆、字段的规范化 value hash 与已持久化 latest 相同即为 no-op，不更新 `observed_at`、路线或 session。Tesla `Time` 不在 allowlist，不能作为 epoch 或跨 topic 排序依据；跨 topic 的任意源端顺序不可获得，状态机只使用已持久化 previous value/open session，并以永久 completion key 防止重复完成。
+
 服务端配置还会在启动时 fail-closed：`TESLA_REDIRECT_URI` 必须是 `/v1/auth/tesla/callback`，`JOURVOLT_APP_LINK_URI` 必须是 `/oauth/callback`；两个地址不能含用户信息、query、fragment 或非 443 端口。
 
 Android 正式包仍需由签名持有人在本机签名。仓库提供 `android/keystore.properties.example` 字段模板和 `android/build-pilot-apk.ps1 -SigningPropertiesPath` 入口；不要把 properties、keystore、密码或正式证书指纹写入 Git 或聊天。未传 `-SigningPropertiesPath` 时脚本明确输出 `UNSIGNED_RELEASE`，不会误报可发布。

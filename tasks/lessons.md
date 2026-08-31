@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-08-30 首次登录必须解释数据可用性
+
+- Pattern：只显示空白占位会让新用户误以为登录或车辆接口失败，也会让旧用户的本机历史与云端新身份混在一起。
+- Prevention rule：首次绑定后按稳定车辆身份展示字段级就绪状态；缺失保持 unavailable 并解释收集条件，旧历史必须验证身份并经用户确认后迁移。
+
 ## 2026-07-09 Git Approval
 
 - Pattern: The user requires explicit approval before any Git commit.

@@ -123,9 +123,9 @@ class AnalysisHistoryRepositoryTest {
             coverage = HistoryCoverage(0, 0, NoDataReason.NO_RECORDS)
         )
 
-        cache.put(7, snapshot)
+        cache.put("stable:7", snapshot)
 
-        val stale = cache.stale(7, "network unavailable")
+        val stale = cache.stale("stable:7", "network unavailable")
         assertEquals(HistoryFreshness.STALE, stale?.freshness)
         assertEquals(snapshot.fetchedAt, stale?.fetchedAt)
         assertEquals("network unavailable", stale?.staleReason)

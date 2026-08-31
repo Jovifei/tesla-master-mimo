@@ -1,5 +1,56 @@
 # JourVolt Android rollout implementation - 2026-08-09
 
+## 2026-08-30 数据完整性与首次登录体验
+
+- [x] Task A：服务端补齐位置、四轮胎压和数据就绪状态，保留 null/false/0 语义。
+- [x] Task B：Android 修复电量提示、电池健康错误、首次登录数据准备弹窗与永久数据状态入口。
+- [x] Task C：引入稳定车辆上下文，隔离旧 Room 历史并提供经确认的安全迁移。
+  - [x] RED/GREEN：VehicleContext 持久化在进程重载和并发下不丢失映射/计数，提交失败时失败关闭。
+  - [x] RED/GREEN：普通自托管解析不改写旧历史迁移来源或 `MODEL_UNKNOWN`；仅显式用户绑定可记录来源/车型。
+  - [x] RED/GREEN：充电通知展示、更新和取消始终使用同一 local history namespace ID。
+  - [x] RED/GREEN：统一历史逐字段合并，保留 null、零值和部分远端证据。
+  - [x] RED/GREEN：TPMS 单次 Worker 运行固定 VehicleContext/historyCarId，并贯穿 claim/release/evaluation。
+  - [x] VERIFY：定向测试、fresh Debug JVM 全量、androidTest 编译与限定范围 diff 审核。
+- [x] Task D：实现 Fleet Telemetry 独立服务骨架、持久化、幂等行程/充电状态机和配对状态接口。
+  - [x] D1 RED/GREEN：固定官方字段集合锁定 configure/allowlist 的名称、大小写与受支持预警/充电字段。
+  - [x] D2 RED/GREEN：QoS1 重投与重启后，相同规范化值不推进 latest、不重复完成 session；Tesla `Time` 不作为 epoch。
+  - [x] D3 RED/GREEN：本地与 ECS Compose 将同一 CA/certificate 目录只读挂入 API，默认禁用 telemetry 的配置可解析。
+  - [x] D4 RED/GREEN：捕获 OAuth ID-token 校验失败日志，证明不含回调 issuer、未验证 token issuer、token、VIN 或坐标等原始值。
+  - [x] VERIFY：定向/完整 Go test 与 vet、Compose config、`git diff --check` 和敏感信息扫描。
+- [x] Task D blockers：Android 历史兼容、当前充电、无消息停车收尾、MQTT 单 worker、Compose 证书边界与 HTTP 优雅退出。
+  - [x] RED/GREEN：完成会话使用稳定的 Int-safe `public_id`，并保留 Android nullable/list JSON 形状。
+  - [x] RED/GREEN：`charges/current` 返回 telemetry 未闭合会话或状态源中的活动充电。
+  - [x] RED/GREEN：持久化停车候选，后台 finalizer 在截止后恰好收尾（修复 `telemetryMemoryStore.ingest` 透传 `config.StopDebounce`，此前硬编码 20s 默认值导致到期判定晚 10s）。
+  - [x] RED/GREEN：MQTT 回调只入有界队列，单 worker 有时限、背压和可观测健康状态（补测试 fixture 的 `TopicBase`，此前为空导致消息解析失败、worker 不落库）。
+  - [x] RED/GREEN：API 仅挂 CA 单文件；官方容器独占 cert/key；渲染配置仅在临时内存卷并以 0600 保存。
+  - [x] RED/GREEN：带超时的 `http.Server` 与 SIGTERM/SIGINT 优雅关闭。
+  - [x] VERIFY：定向/全量 Go test、vet、fresh PostgreSQL、Compose config、diff 与敏感信息扫描。
+- [x] Task E：Debug/Release、Go、Compose、Release 配置与差异复核；不提交、不推送、不部署。
+  - [x] Go：`go test ./...` + `go vet ./...` 全绿；fresh `postgres:16-alpine`（127.0.0.1:55433）集成测试 QoS1 重投/重启幂等通过，容器即用即删。
+  - [x] Compose：`docker compose config` 校验 docker-compose.yml 与 docker-compose.pilot.ecs.yml（± .env.ecs.example）均通过。
+  - [x] Release 配置护栏：android/app/build.gradle.kts 新增 guard，缺 `JOURVOLT_API_BASE_URL` 或 `JOURVOLT_AUTH_HOST≠auth.teslalink.joviluma.com` 时 Release 构建 fail-fast；缺失 / 正确 / 错误 host 三场景实测通过。`build-pilot-apk.ps1` 恒定显式传参，不受影响。
+  - [x] Android 门禁：`:app:testDebugUnitTest` + `:app:testReleaseUnitTest` + `:app:lintRelease` 在非沙箱模式后台执行，BUILD SUCCESSFUL（21m26s，70 actionable tasks）；lintRelease 无 error，HTML 报告已生成。
+
+### 边界
+
+- 保留当前 main、登录修复和所有用户未提交服务端改动。
+- 不修改 iOS；不 reset、stash、commit、push 或部署。
+- 已完成的 TPMS 趋势、自定义预警和行程通知只做回归验证，不重复实现。
+
+## Task C Review
+
+- PASS：同步 SharedPreferences 提交与并发/重建 AndroidTest；普通解析不再绑定旧归档，新增显式确认入口。
+- PASS：通知、TPMS 和统一历史均固定 local history namespace；Room v19 保存可验证的 API nullable evidence。
+- PASS：定向 JVM、fresh Debug JVM（434/434）及 Debug androidTest 编译通过；未执行 Git 写操作或部署。
+
+## Task D Review
+
+- PASS (2026-08-30 fresh): `deploy/jourvolt-dev-mock/README.md` requires production `TESLA_FLEET_TELEMETRY_IMAGE=tesla/fleet-telemetry@sha256:<64_lowercase_hex_characters>` and prohibits mutable production tags; `tesla/fleet-telemetry:v0.9.4` is documented only for local development.
+- PASS (2026-08-30 fresh): `TestTelemetryPostgresQoS1RedeliverySurvivesRestartWithoutAdvancingOrCompletingTwice` passed with `-count=1` against temporary healthy `postgres:16-alpine` container `jourvolt-taskd-pg-20260830-3f3c2fe2d93a` on `127.0.0.1:55433`; `docker rm -f` exit code was 0 and the container was absent afterward.
+- PASS (2026-08-30 fresh): `go test ./...` and `go vet ./...` in `deploy/jourvolt-dev-mock` both exited 0; the README production-image rule check passed.
+- PASS (2026-08-30 fresh): repository-wide `git diff --check` exited 0; only existing CRLF conversion warnings were emitted.
+- PASS (2026-08-31 fresh): Task D blockers 全部 7 项 RED/GREEN 转绿（停车候选 finalizer 与 MQTT 有界队列单 worker 两处 RED 已由组长修复：前者因 `telemetryMemoryStore.ingest` 硬编码 `defaultDriveStopDebounce` 未透传 `config.StopDebounce`，后者因测试 fixture 缺 `TopicBase` 导致 MQTT 消息解析失败）；`go test ./...`、`go vet ./...` 与两份 Compose `config` 复核均通过。
+
 # 2026-08-27 MateLink 实时状态、充电参数与原创车型图
 
 ## TPMS 趋势与行程通知（Jovi 已授权最小 Android 改动）

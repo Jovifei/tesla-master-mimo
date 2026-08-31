@@ -24,6 +24,13 @@ interface ChargeCostOverrideDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(overrides: List<ChargeCostOverride>)
 
+    @Query("""
+        INSERT OR IGNORE INTO charge_cost_overrides (carId, chargeId, manualTotalAmount)
+        SELECT :targetCarId, chargeId, manualTotalAmount
+        FROM charge_cost_overrides WHERE carId = :legacyCarId
+    """)
+    suspend fun copyFromLegacy(legacyCarId: Int, targetCarId: Int)
+
     @Query("DELETE FROM charge_cost_overrides WHERE carId = :carId AND chargeId = :chargeId")
     suspend fun delete(carId: Int, chargeId: Int)
 }

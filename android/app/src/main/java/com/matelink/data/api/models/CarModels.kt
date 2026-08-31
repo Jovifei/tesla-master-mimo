@@ -19,6 +19,7 @@ data class CarsData(
 @JsonClass(generateAdapter = true)
 data class CarData(
     @Json(name = "car_id") val carId: Int,
+    @Json(name = "vehicle_uid") val vehicleUid: String? = null,
     @Json(name = "name") val name: String? = null,
     @Json(name = "car_details") val carDetails: CarDetails? = null,
     @Json(name = "car_exterior") val carExterior: CarExterior? = null,

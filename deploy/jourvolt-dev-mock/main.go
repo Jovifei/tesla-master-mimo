@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -11,8 +12,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -104,6 +107,10 @@ CREATE TABLE IF NOT EXISTS jourvolt_vehicles (
 ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS terms_version TEXT;
 ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS privacy_version TEXT;`)
 	if err != nil {
+		pool.Close()
+		return nil, err
+	}
+	if err := ensureTelemetrySchema(ctx, pool); err != nil {
 		pool.Close()
 		return nil, err
 	}
@@ -217,6 +224,7 @@ func (s *store) deleteUser(ctx context.Context, userID string) error {
 
 type vehicle struct {
 	ID            int    `json:"id"`
+	VehicleUID    string `json:"vehicle_uid,omitempty"`
 	DisplayName   string `json:"displayName"`
 	State         string `json:"state"`
 	BatteryLevel  int    `json:"batteryLevel,omitempty"`
@@ -268,24 +276,41 @@ type vehicleStatus struct {
 	Power                   *int
 	Speed                   *int
 	Heading                 *int
+	Latitude                *float64
+	Longitude               *float64
+	TPMSPressureFL          *float64
+	TPMSPressureFR          *float64
+	TPMSPressureRL          *float64
+	TPMSPressureRR          *float64
+	TPMSSoftWarningFL       *bool
+	TPMSSoftWarningFR       *bool
+	TPMSSoftWarningRL       *bool
+	TPMSSoftWarningRR       *bool
 	IsClimateOn             *bool
 	InsideTemp              *float64
 	OutsideTemp             *float64
 	IsPreconditioning       *bool
+	ProviderIdentity        string
 	Source                  string
 }
 
 type mockProvider struct{}
 
-func (mockProvider) Vehicles(context.Context, string) ([]vehicle, error) {
+func (mockProvider) Vehicles(_ context.Context, userID string) ([]vehicle, error) {
+	if userID != "mock-user" {
+		return nil, errVehicleNotFound
+	}
 	return []vehicle{{
-		ID: 1, DisplayName: "Development Model 3", State: "charging", BatteryLevel: 76,
+		ID: 1, VehicleUID: "mock-vehicle-1", DisplayName: "Development Model 3", State: "charging", BatteryLevel: 76,
 		Source: "mock_fixture", Model: "3", TrimBadging: "Development",
 		ExteriorColor: "Pearl White", WheelType: "Aero",
 	}}, nil
 }
 
-func (mockProvider) Status(context.Context, string, int) (vehicleStatus, error) {
+func (mockProvider) Status(_ context.Context, userID string, _ int) (vehicleStatus, error) {
+	if userID != "mock-user" {
+		return vehicleStatus{}, errVehicleNotFound
+	}
 	charging := "Charging"
 	return vehicleStatus{
 		ObservedAt: time.Now().UTC(), DisplayName: "Development Model 3", State: "charging",
@@ -336,6 +361,7 @@ type app struct {
 	mockEnabled        bool
 	mockHistoryEnabled bool
 	mode               string
+	telemetry          *telemetryService
 }
 
 func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -531,13 +557,21 @@ func (a *app) cars(w http.ResponseWriter, r *http.Request, userID string) {
 		return
 	}
 	items := make([]map[string]any, 0, len(vehicles))
-	driveCount, chargeCount := 0, 0
-	if a.hasMockHistory(userID) {
-		driveCount, chargeCount = len(mockDriveFixtures()), len(mockChargeFixtures())
-	}
 	for _, v := range vehicles {
+		driveCount, chargeCount := 0, 0
+		if a.hasMockHistory(userID) {
+			driveCount, chargeCount = len(mockDriveFixtures()), len(mockChargeFixtures())
+		}
+		if a.telemetry != nil {
+			if drives, _, err := a.telemetry.history(userID, v.ID, "drive"); err == nil {
+				driveCount = len(drives)
+			}
+			if charges, _, err := a.telemetry.history(userID, v.ID, "charge"); err == nil {
+				chargeCount = len(charges)
+			}
+		}
 		items = append(items, map[string]any{
-			"car_id": v.ID, "name": v.DisplayName,
+			"car_id": v.ID, "vehicle_uid": v.VehicleUID, "name": v.DisplayName,
 			"car_details":     map[string]any{"model": emptyAsNil(v.Model), "trim_badging": emptyAsNil(v.TrimBadging), "efficiency": nil},
 			"car_exterior":    map[string]any{"exterior_color": emptyAsNil(v.ExteriorColor), "wheel_type": emptyAsNil(v.WheelType)},
 			"teslamate_stats": map[string]any{"total_charges": chargeCount, "total_drives": driveCount},
@@ -567,9 +601,19 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 	switch parts[1] {
 	case "status":
 		a.status(w, r, userID, carID, false)
+	case "data-readiness":
+		if r.Method != http.MethodGet {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		a.dataReadiness(w, r, userID, carID)
+	case "telemetry":
+		a.telemetryResource(w, r, userID, carID, parts[2:])
 	case "charges":
 		if len(parts) > 2 && parts[2] == "current" {
-			a.json(w, http.StatusOK, map[string]any{"data": nil, "error": "No active charging in progress."})
+			a.currentCharge(w, r, userID, carID)
+		} else if a.telemetry != nil {
+			a.telemetryHistory(w, r, userID, carID, "charge", parts[2:])
 		} else if len(parts) > 2 && a.hasMockHistory(userID) {
 			a.mockChargeDetail(w, parts[2])
 		} else if a.hasMockHistory(userID) {
@@ -582,7 +626,9 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 			}})
 		}
 	case "drives":
-		if len(parts) > 2 && a.hasMockHistory(userID) {
+		if a.telemetry != nil {
+			a.telemetryHistory(w, r, userID, carID, "drive", parts[2:])
+		} else if len(parts) > 2 && a.hasMockHistory(userID) {
 			a.mockDriveDetail(w, parts[2])
 		} else if a.hasMockHistory(userID) {
 			a.json(w, http.StatusOK, map[string]any{"data": map[string]any{
@@ -635,6 +681,13 @@ func (a *app) requireVehicle(w http.ResponseWriter, r *http.Request, userID stri
 }
 
 func (a *app) vehicleOwned(ctx context.Context, userID string, vehicleID int) (bool, error) {
+	if a.store != nil && a.store.pool != nil {
+		if _, err := a.store.fleetVehicle(ctx, userID, vehicleID); err == nil {
+			return true, nil
+		} else if !isVehicleLookupMiss(err) {
+			return false, err
+		}
+	}
 	vehicles, err := a.provider.Vehicles(ctx, userID)
 	if err != nil {
 		return false, err
@@ -647,8 +700,15 @@ func (a *app) vehicleOwned(ctx context.Context, userID string, vehicleID int) (b
 	return false, nil
 }
 
+func isVehicleLookupMiss(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows) || errors.Is(err, errVehicleNotFound) || err.Error() == "vehicle_not_found"
+}
+
 func (a *app) status(w http.ResponseWriter, r *http.Request, userID string, carID int, snapshot bool) {
-	providerStatus, err := a.provider.Status(r.Context(), userID, carID)
+	providerStatus, err := a.currentVehicleStatus(r.Context(), userID, carID)
 	if err != nil {
 		a.providerError(w, err)
 		return
@@ -664,6 +724,9 @@ func (a *app) status(w http.ResponseWriter, r *http.Request, userID string, carI
 			"doors_open": providerStatus.DoorsOpen, "trunk_open": providerStatus.TrunkOpen,
 			"frunk_open": providerStatus.FrunkOpen, "is_user_present": providerStatus.IsUserPresent,
 			"center_display_state": providerStatus.CenterDisplayState,
+		},
+		"car_geodata": map[string]any{
+			"geofence": nil, "latitude": providerStatus.Latitude, "longitude": providerStatus.Longitude,
 		},
 		"car_versions": map[string]any{"version": providerStatus.Version, "update_available": nil, "update_version": nil},
 		"driving_details": map[string]any{
@@ -689,6 +752,12 @@ func (a *app) status(w http.ResponseWriter, r *http.Request, userID string, carI
 			"charge_current_request_max": providerStatus.ChargeCurrentRequestMax,
 			"time_to_full_charge":        providerStatus.TimeToFullCharge,
 		},
+		"tpms_details": map[string]any{
+			"tpms_pressure_fl": providerStatus.TPMSPressureFL, "tpms_pressure_fr": providerStatus.TPMSPressureFR,
+			"tpms_pressure_rl": providerStatus.TPMSPressureRL, "tpms_pressure_rr": providerStatus.TPMSPressureRR,
+			"tpms_soft_warning_fl": providerStatus.TPMSSoftWarningFL, "tpms_soft_warning_fr": providerStatus.TPMSSoftWarningFR,
+			"tpms_soft_warning_rl": providerStatus.TPMSSoftWarningRL, "tpms_soft_warning_rr": providerStatus.TPMSSoftWarningRR,
+		},
 	}
 	units := map[string]string{"unit_of_length": "km", "unit_of_pressure": "bar", "unit_of_temperature": "C"}
 	if snapshot {
@@ -708,6 +777,8 @@ func (a *app) providerError(w http.ResponseWriter, err error) {
 		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "provider_not_configured"})
 	case errors.Is(err, errTeslaReauthorization):
 		a.json(w, http.StatusUnauthorized, map[string]string{"error": "tesla_reauthorization_required"})
+	case errors.Is(err, errTeslaBillingBlocked):
+		a.json(w, http.StatusPaymentRequired, map[string]string{"error": "billing_blocked"})
 	case errors.Is(err, errTeslaRateLimited):
 		w.Header().Set("Retry-After", "60")
 		a.json(w, http.StatusTooManyRequests, map[string]string{"error": "tesla_rate_limited"})
@@ -758,13 +829,18 @@ func (a *app) readyz(w http.ResponseWriter, r *http.Request) {
 		a.json(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
 		return
 	}
+	if a.telemetry != nil && (!a.telemetry.started || !a.telemetry.mqttConnected.Load() || !a.telemetry.mqttSubscribed.Load()) {
+		a.json(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "telemetry": "mqtt_not_ready"})
+		return
+	}
 	a.json(w, http.StatusOK, map[string]any{
 		"status": "ok", "mode": a.mode, "persistence": "postgres",
 	})
 }
 
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		dsn = "postgres://jourvolt:jourvolt@127.0.0.1:5432/jourvolt?sslmode=disable"
@@ -789,20 +865,37 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	telemetrySettings, err := loadTelemetryConfig(os.Getenv)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if telemetrySettings != nil && teslaSettings != nil {
+		telemetrySettings.PartnerDomain = teslaSettings.PartnerDomain
+	}
 	httpClient := &http.Client{Timeout: 20 * time.Second}
 	mock := mockProvider{}
 	dataProvider := provider(unconfiguredProvider{})
 	mode := "unconfigured"
 	var oauth *teslaOAuth
+	telemetry := newTelemetryService(telemetrySettings, store)
 	if teslaSettings != nil {
 		cipher, err := newTokenCipher(teslaSettings.TokenKey)
 		if err != nil {
 			log.Fatal(err)
 		}
+		if telemetry != nil {
+			telemetry.cipher = cipher
+		}
 		tokenManager := &teslaTokenManager{store: store, cipher: cipher, config: teslaSettings, client: httpClient}
+		registrar := newTeslaPartnerRegistrar(teslaSettings, httpClient)
+		if err := registrar.ensure(ctx); err != nil {
+			log.Printf("tesla partner register deferred domain=%s: %v", teslaSettings.PartnerDomain, err)
+		} else {
+			log.Printf("tesla partner register ok domain=%s", teslaSettings.PartnerDomain)
+		}
 		fleet := &fleetProvider{
 			store: store, tokens: tokenManager, cipher: cipher,
-			client: httpClient, baseURL: teslaSettings.FleetAPIBase,
+			client: httpClient, baseURL: teslaSettings.FleetAPIBase, registrar: registrar, telemetry: telemetry,
 		}
 		oauth = newTeslaOAuth(teslaSettings, store, cipher, httpClient)
 		dataProvider = fleet
@@ -817,14 +910,25 @@ func main() {
 	}
 	a := &app{
 		store: store, mock: mock, provider: dataProvider, oauth: oauth,
-		mockEnabled: enableMock, mockHistoryEnabled: enableMockHistory, mode: mode,
+		mockEnabled: enableMock, mockHistoryEnabled: enableMockHistory, mode: mode, telemetry: telemetry,
+	}
+	if telemetry != nil {
+		telemetry.startFinalizer(ctx)
+		defer telemetry.stopFinalizer()
+	}
+	if subscriber := newTelemetrySubscriber(telemetry); subscriber != nil {
+		if err := subscriber.start(ctx); err != nil {
+			log.Printf("telemetry MQTT consumer unavailable; readiness will remain degraded")
+		} else {
+			defer subscriber.stop()
+		}
 	}
 	addr := os.Getenv("LISTEN_ADDR")
 	if addr == "" {
 		addr = ":8080"
 	}
 	log.Printf("jourvolt api listening on %s mode=%s", addr, mode)
-	if err := http.ListenAndServe(addr, a); err != nil {
+	if err := serveJourVolt(ctx, addr, a); err != nil {
 		log.Fatal(fmt.Errorf("listen: %w", err))
 	}
 }

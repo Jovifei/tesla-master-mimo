@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.CarData
 import com.matelink.data.api.models.CarStatus
+import com.matelink.data.api.models.DataReadiness
 import com.matelink.data.api.models.Units
 import com.matelink.data.repository.ApiErrorKind
 import com.matelink.data.repository.ApiResult
@@ -17,6 +18,7 @@ import com.matelink.data.repository.GeocodingRepository
 import com.matelink.data.repository.apiErrorKindFor
 import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.local.DataReadinessStore
 import com.matelink.data.sync.DataSyncWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -37,7 +39,10 @@ data class DashboardUiState(
     val observedAt: String? = null,
     val fieldSources: Map<String, String> = emptyMap(),
     val units: Units = Units(),
-    val cachedAddress: String? = null
+    val cachedAddress: String? = null,
+    val dataReadiness: DataReadiness? = null,
+    val dataReadinessCarId: Int? = null,
+    val showReadinessIntro: Boolean = false
 )
 
 @HiltViewModel
@@ -45,11 +50,14 @@ class DashboardViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: TeslamateRepository,
     private val settingsRepository: SettingsRepository,
-    private val geocodingRepository: GeocodingRepository
+    private val geocodingRepository: GeocodingRepository,
+    private val dataReadinessStore: DataReadinessStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
+
+    private var requestGeneration = 0L
 
     init {
         loadDashboard()
@@ -57,6 +65,7 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun loadDashboard() {
+        val generation = ++requestGeneration
         viewModelScope.launch {
             try {
                 val carId = settingsRepository.currentCarId.first()
@@ -94,7 +103,7 @@ class DashboardViewModel @Inject constructor(
                     adapterResult is ApiResult.Error && statusResult is ApiResult.Error -> statusResult
                     else -> null
                 }
-
+                if (generation != requestGeneration) return@launch
                 _uiState.value = DashboardUiState(
                     isLoading = false,
                     car = car,
@@ -109,9 +118,33 @@ class DashboardViewModel @Inject constructor(
                     units = units,
                     cachedAddress = loadCachedAddress(status)
                 )
+
+                launch {
+                    val readinessResult = try {
+                        repository.getDataReadiness(effectiveCarId)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
+                    val readiness = (readinessResult as? ApiResult.Success)?.data ?: return@launch
+                    if (generation != requestGeneration) return@launch
+                    _uiState.update { current ->
+                        if (current.car?.carId != effectiveCarId) {
+                            current
+                        } else {
+                            current.copy(
+                                dataReadiness = readiness,
+                                dataReadinessCarId = effectiveCarId,
+                                showReadinessIntro = !dataReadinessStore.hasSeen(readiness, effectiveCarId)
+                            )
+                        }
+                    }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (generation != requestGeneration) return@launch
                 _uiState.value = DashboardUiState(
                     isLoading = false,
                     error = e.message,
@@ -179,6 +212,15 @@ class DashboardViewModel @Inject constructor(
     fun refresh() {
         triggerDataSync()
         loadDashboard()
+    }
+
+    fun dismissReadinessIntro() {
+        val readiness = _uiState.value.dataReadiness ?: return
+        val carId = _uiState.value.dataReadinessCarId ?: return
+        _uiState.update { it.copy(showReadinessIntro = false) }
+        viewModelScope.launch {
+            dataReadinessStore.markSeen(readiness, carId)
+        }
     }
 
     private fun triggerDataSync() {

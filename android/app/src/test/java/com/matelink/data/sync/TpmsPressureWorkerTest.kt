@@ -25,6 +25,39 @@ class TpmsPressureWorkerTest {
     private val profile = TpmsAlertProfile(2.9, 2.6, 3.4, enabled = true)
 
     @Test
+    fun capturedHistoryNamespaceFlowsThroughTeslaClaimAndRelease() = runBlocking {
+        val historyCarId = -9
+        val lifecycleIds = mutableListOf<Int>()
+        val claim = com.matelink.data.repository.TpmsStateChangeClaim(
+            change = TpmsStateChange.WarningStarted(listOf(TirePosition.FL)),
+            nextState = com.matelink.data.local.TpmsState(warningFl = true)
+        )
+
+        processSuccessfulTpmsStatus(
+            carId = historyCarId,
+            carName = "Elysa",
+            tpmsDetails = TpmsDetails(warningFl = true, warningFr = false, warningRl = false, warningRr = false),
+            observedAt = 1234L,
+            profile = null,
+            saveObservation = { lifecycleIds += it.carId },
+            pruneOlderThan90Days = { id, _ -> lifecycleIds += id },
+            detectTeslaStateChange = { _, _ -> error("captured claim path must be used") },
+            updateTeslaState = { _, _ -> error("captured claim path must be used") },
+            resetCustomState = { id, _ -> lifecycleIds += id },
+            claimCustomAlerts = { id, _, _, _, _ -> lifecycleIds += id; emptyList() },
+            commitCustomAlert = { _, _ -> },
+            releaseCustomAlert = { _, _ -> },
+            notifyTesla = { _, _, _ -> error("force release") },
+            notifyCustom = { _, _, _ -> },
+            claimTeslaStateChange = { id, _, _ -> lifecycleIds += id; com.matelink.data.repository.TpmsStateChangeClaimResult.Claimed(claim) },
+            commitTeslaStateChange = { id, _ -> lifecycleIds += id },
+            releaseTeslaStateChange = { id, _ -> lifecycleIds += id }
+        )
+
+        assertEquals(List(6) { historyCarId }, lifecycleIds)
+    }
+
+    @Test
     fun successfulStatusPersistsFiniteSnapshotTemperatureAndPrunesNinetyDayHistory() = runBlocking {
         val saved = mutableListOf<TpmsPressureSample>()
         val pruned = mutableListOf<Pair<Int, Long>>()

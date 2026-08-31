@@ -44,6 +44,7 @@ object MockDataProvider {
     fun getCars(): List<CarData> = listOf(
         CarData(
             carId = 1,
+            vehicleUid = "mock-vehicle-1",
             name = "Model 3 Performance",
             carDetails = CarDetails(
                 model = "3",

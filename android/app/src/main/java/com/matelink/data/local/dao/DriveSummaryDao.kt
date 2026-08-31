@@ -17,8 +17,23 @@ interface DriveSummaryDao {
     @Upsert
     suspend fun upsert(drive: DriveSummary)
 
-    @Query("SELECT * FROM drives_summary WHERE driveId = :driveId")
-    suspend fun get(driveId: Int): DriveSummary?
+    @Query("""
+        INSERT OR IGNORE INTO drives_summary (
+            driveId, carId, startDate, endDate, durationMin, startAddress, endAddress,
+            distance, speedMax, speedAvg, powerMax, powerMin, startBatteryLevel,
+            endBatteryLevel, outsideTempAvg, insideTempAvg, energyConsumed, efficiency,
+            energySource, energyCoverageSeconds, energyCoverageRatio, apiEvidence
+        )
+        SELECT driveId, :targetCarId, startDate, endDate, durationMin, startAddress, endAddress,
+            distance, speedMax, speedAvg, powerMax, powerMin, startBatteryLevel,
+            endBatteryLevel, outsideTempAvg, insideTempAvg, energyConsumed, efficiency,
+            energySource, energyCoverageSeconds, energyCoverageRatio, apiEvidence
+        FROM drives_summary WHERE carId = :legacyCarId
+    """)
+    suspend fun copyFromLegacy(legacyCarId: Int, targetCarId: Int)
+
+    @Query("SELECT * FROM drives_summary WHERE driveId = :driveId AND carId = :carId")
+    suspend fun get(carId: Int, driveId: Int): DriveSummary?
 
     @Query("SELECT * FROM drives_summary WHERE carId = :carId ORDER BY startDate DESC")
     fun observeAll(carId: Int): Flow<List<DriveSummary>>
@@ -230,7 +245,7 @@ interface DriveSummaryDao {
     // Get drive IDs that need detail processing
     @Query("""
         SELECT d.driveId FROM drives_summary d
-        LEFT JOIN drive_detail_aggregates a ON d.driveId = a.driveId
+        LEFT JOIN drive_detail_aggregates a ON d.carId = a.carId AND d.driveId = a.driveId
         WHERE d.carId = :carId
         AND (a.driveId IS NULL OR a.schemaVersion < :currentVersion)
         ORDER BY d.driveId
@@ -240,7 +255,7 @@ interface DriveSummaryDao {
     // Count unprocessed drives
     @Query("""
         SELECT COUNT(*) FROM drives_summary d
-        LEFT JOIN drive_detail_aggregates a ON d.driveId = a.driveId
+        LEFT JOIN drive_detail_aggregates a ON d.carId = a.carId AND d.driveId = a.driveId
         WHERE d.carId = :carId
         AND (a.driveId IS NULL OR a.schemaVersion < :currentVersion)
     """)

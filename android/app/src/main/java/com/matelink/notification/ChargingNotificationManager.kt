@@ -51,13 +51,14 @@ class ChargingNotificationManager @Inject constructor(
      */
     fun showChargingNotification(
         car: CarData,
+        localHistoryCarId: Int,
         status: CarStatus,
         liveChargeAvailable: Boolean = false,
         dcFinishedPluggedIn: Boolean = false,
         chronometerBaseMs: Long? = null
     ) {
         createNotificationChannel()
-        val notificationId = NOTIFICATION_ID_BASE + car.carId
+        val notificationId = chargingNotificationId(localHistoryCarId)
         val notification = buildNotification(car, status, liveChargeAvailable, dcFinishedPluggedIn, chronometerBaseMs)
         notificationManager.notify(notificationId, notification)
         Log.d(TAG, "Showed charging notification for car ${car.carId}: ${status.batteryLevel}% -> ${status.chargeLimitSoc}%")
@@ -132,10 +133,10 @@ class ChargingNotificationManager @Inject constructor(
     /**
      * Cancel the charging notification for a car.
      */
-    fun cancelNotification(carId: Int) {
-        val notificationId = NOTIFICATION_ID_BASE + carId
+    fun cancelNotification(localHistoryCarId: Int) {
+        val notificationId = chargingNotificationId(localHistoryCarId)
         notificationManager.cancel(notificationId)
-        Log.d(TAG, "Cancelled charging notification for car $carId")
+        Log.d(TAG, "Cancelled charging notification for local history car $localHistoryCarId")
     }
 
     /**
@@ -358,3 +359,6 @@ class ChargingNotificationManager @Inject constructor(
         )
     }
 }
+
+internal fun chargingNotificationId(localHistoryCarId: Int): Int =
+    ChargingNotificationManager.NOTIFICATION_ID_BASE + localHistoryCarId

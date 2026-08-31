@@ -147,6 +147,29 @@ android {
     }
 }
 
+// Production App Link guard: a Release build must carry explicitly provided
+// JourVolt API / App Link configuration. Silent fallbacks (api.jourvolt.com /
+// auth.jourvolt.com) must never reach a signed package, so a Release task graph
+// fails fast when the pilot properties are absent. Debug builds are unaffected;
+// build-pilot-apk.ps1 always passes both properties explicitly.
+val releaseGuardApiBaseUrl = providers.gradleProperty("JOURVOLT_API_BASE_URL").orNull
+val releaseGuardAuthHost = providers.gradleProperty("JOURVOLT_AUTH_HOST").orNull
+    ?.trim()
+    ?.removePrefix("https://")
+    ?.removeSuffix("/")
+tasks.matching { it.name == "generateReleaseBuildConfig" }.configureEach {
+    doFirst {
+        check(!releaseGuardApiBaseUrl.isNullOrBlank()) {
+            "Release guard: provide -PJOURVOLT_API_BASE_URL explicitly; " +
+                "a Release package must never fall back to the default API URL"
+        }
+        check(releaseGuardAuthHost == "auth.teslalink.joviluma.com") {
+            "Release guard: provide -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com explicitly " +
+                "(got: ${releaseGuardAuthHost ?: "<missing>"}); the App Link host must match production assetlinks"
+        }
+    }
+}
+
 dependencies {
     // Core Android
     implementation(libs.androidx.core.ktx)

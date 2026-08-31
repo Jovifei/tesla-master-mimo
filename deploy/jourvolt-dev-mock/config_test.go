@@ -34,6 +34,27 @@ func TestTeslaConfigAcceptsCompleteHTTPSSettings(t *testing.T) {
 	if config == nil || config.FleetAPIBase != defaultTeslaFleetURL {
 		t.Fatalf("unexpected Tesla configuration: %#v", config)
 	}
+	if config.PartnerDomain != "auth.example.com" {
+		t.Fatalf("partner domain = %q, want App Link host", config.PartnerDomain)
+	}
+}
+
+func TestTeslaConfigAcceptsPartnerDomainOverride(t *testing.T) {
+	values := map[string]string{
+		"TESLA_CLIENT_ID":           "client-id",
+		"TESLA_CLIENT_SECRET":       "client-secret",
+		"TESLA_REDIRECT_URI":        "https://api.example.com/v1/auth/tesla/callback",
+		"JOURVOLT_APP_LINK_URI":     "https://auth.example.com/oauth/callback",
+		"JOURVOLT_TOKEN_KEY_BASE64": base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)),
+		"TESLA_PARTNER_DOMAIN":      "https://auth.teslalink.joviluma.com",
+	}
+	config, err := loadTeslaConfig(func(name string) string { return values[name] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.PartnerDomain != "auth.teslalink.joviluma.com" {
+		t.Fatalf("partner domain = %q", config.PartnerDomain)
+	}
 }
 
 func TestTeslaConfigRejectsUnexpectedCallbackPaths(t *testing.T) {

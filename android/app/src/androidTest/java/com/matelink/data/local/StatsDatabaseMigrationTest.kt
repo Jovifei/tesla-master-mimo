@@ -8,6 +8,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
+import com.matelink.data.repository.LegacyHistoryMigrationRepository
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,6 +22,139 @@ class StatsDatabaseMigrationTest {
         StatsDatabase::class.java.canonicalName,
         FrameworkSQLiteOpenHelperFactory()
     )
+
+    @Test
+    fun migratesV18ToV19WithoutTreatingLegacyPlaceholdersAsApiEvidence() {
+        val databaseName = "legacy-v18-api-evidence"
+        helper.createDatabase(databaseName, 18).apply {
+            execSQL(
+                """
+                INSERT INTO drives_summary (
+                    driveId, carId, startDate, endDate, durationMin, startAddress, endAddress,
+                    distance, speedMax, speedAvg, powerMax, powerMin, startBatteryLevel,
+                    endBatteryLevel, outsideTempAvg, insideTempAvg, energyConsumed, efficiency,
+                    energySource, energyCoverageSeconds, energyCoverageRatio
+                ) VALUES (700, -1, '2026-01-01T00:00:00Z', '2026-01-01T01:00:00Z', 0, '', '',
+                    0.0, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, 0, 0.0)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            databaseName,
+            19,
+            true,
+            StatsDatabase.MIGRATION_18_19
+        )
+        try {
+            migrated.query("SELECT apiEvidence FROM drives_summary WHERE carId = -1 AND driveId = 700").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(null, cursor.getString(0))
+            }
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migratingV17CreatesUnknownModelUpgradeMarkersButFreshV18DoesNot() {
+        val upgradedName = "legacy-v17-upgrade-marker"
+        helper.createDatabase(upgradedName, 17).apply {
+            execSQL(
+                """
+                INSERT INTO drives_summary (
+                    driveId, carId, startDate, endDate, durationMin, startAddress, endAddress,
+                    distance, speedMax, speedAvg, powerMax, powerMin, startBatteryLevel,
+                    endBatteryLevel, outsideTempAvg, insideTempAvg, energyConsumed, efficiency,
+                    energySource, energyCoverageSeconds, energyCoverageRatio
+                ) VALUES (
+                    700, 42, '2026-01-01T00:00:00Z', '2026-01-01T01:00:00Z', 60, 'A', 'B',
+                    10.0, 80, 40, 100, -20, 70, 60, NULL, NULL, 2.0, 200.0, 'api', 0, 0.0
+                )
+                """.trimIndent()
+            )
+            execSQL(
+                """
+                INSERT INTO charges_summary (
+                    chargeId, carId, startDate, endDate, durationMin, address, latitude, longitude,
+                    energyAdded, energyUsed, cost, startBatteryLevel, endBatteryLevel,
+                    outsideTempAvg, odometer
+                ) VALUES (
+                    701, 42, '2026-01-02T00:00:00Z', '2026-01-02T01:00:00Z', 60, 'C', 1.0, 2.0,
+                    20.0, NULL, NULL, 60, 80, NULL, 100.0
+                )
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val upgraded = helper.runMigrationsAndValidate(
+            upgradedName,
+            18,
+            true,
+            StatsDatabase.MIGRATION_17_18
+        )
+        try {
+            upgraded.query(
+                "SELECT vehicleFingerprint, vehicleModel, upgradeOrigin FROM legacy_history_archives WHERE legacyCarId = 42"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("legacy-v17:car:42", cursor.getString(0))
+                assertEquals("MODEL_UNKNOWN", cursor.getString(1))
+                assertEquals("UPGRADE_ARCHIVE_MODEL_UNKNOWN", cursor.getString(2))
+            }
+        } finally {
+            upgraded.close()
+        }
+
+        val upgradedRoom = Room.databaseBuilder(
+            InstrumentationRegistry.getInstrumentation().targetContext,
+            StatsDatabase::class.java,
+            upgradedName
+        ).addMigrations(*StatsDatabase.ALL_MIGRATIONS).build()
+        try {
+            val repository = LegacyHistoryMigrationRepository(
+                database = upgradedRoom,
+                driveSummaryDao = upgradedRoom.driveSummaryDao(),
+                chargeSummaryDao = upgradedRoom.chargeSummaryDao(),
+                aggregateDao = upgradedRoom.aggregateDao(),
+                chargeCostOverrideDao = upgradedRoom.chargeCostOverrideDao(),
+                legacyHistoryArchiveDao = upgradedRoom.legacyHistoryArchiveDao()
+            )
+            val fingerprint = "self-hosted:https://example.test:car:42"
+            val beforeBinding = kotlinx.coroutines.runBlocking {
+                repository.inspect(42, "3", fingerprint, 100.0)
+            }
+            assertEquals(
+                com.matelink.data.repository.LegacyHistoryMigrationBlockReason.ARCHIVE_MARKER_UNAVAILABLE,
+                beforeBinding.reason
+            )
+            assertTrue(!beforeBinding.eligible)
+            assertTrue(kotlinx.coroutines.runBlocking {
+                repository.recordExplicitUpgradeOrigin(42, "3", fingerprint)
+            })
+            val afterBinding = kotlinx.coroutines.runBlocking {
+                repository.inspect(42, "3", fingerprint, 100.0)
+            }
+            assertTrue(afterBinding.eligible)
+        } finally {
+            upgradedRoom.close()
+        }
+
+        val fresh = Room.inMemoryDatabaseBuilder(
+            InstrumentationRegistry.getInstrumentation().targetContext,
+            StatsDatabase::class.java
+        ).build()
+        try {
+            fresh.openHelper.writableDatabase.query("SELECT COUNT(*) FROM legacy_history_archives").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+        } finally {
+            fresh.close()
+        }
+    }
 
     @Test
     fun migratesLegacyV13RowsAndDefaultMetadataToV14() {
@@ -47,7 +182,7 @@ class StatsDatabaseMigrationTest {
         try {
             database.openHelper.writableDatabase.query("PRAGMA user_version").use { cursor ->
                 cursor.moveToFirst()
-                assertEquals(17, cursor.getInt(0))
+                assertEquals(19, cursor.getInt(0))
             }
             database.openHelper.writableDatabase.query(
                 "SELECT identity_hash FROM room_master_table WHERE id = 42"
@@ -154,6 +289,180 @@ class StatsDatabaseMigrationTest {
             }
         } finally {
             migrated.close()
+        }
+    }
+
+    @Test
+    fun migratesV17ToV18ScopesRepeatedDriveAndChargeIdsAndKeepsLegacyArchive() {
+        val databaseName = "legacy-v17-composite-history"
+        helper.createDatabase(databaseName, 17).apply {
+            execSQL(
+                """
+                INSERT INTO drives_summary (
+                    driveId, carId, startDate, endDate, durationMin, startAddress, endAddress,
+                    distance, speedMax, speedAvg, powerMax, powerMin, startBatteryLevel,
+                    endBatteryLevel, outsideTempAvg, insideTempAvg, energyConsumed, efficiency,
+                    energySource, energyCoverageSeconds, energyCoverageRatio
+                ) VALUES (77, 7, '2026-01-01T00:00:00Z', '2026-01-01T01:00:00Z', 60, 'A', 'B',
+                    12.0, 80, 40, 100, -20, 70, 60, NULL, NULL, 2.0, 166.0, 'api', 0, 0.0)
+                """.trimIndent()
+            )
+            execSQL(
+                """
+                INSERT INTO charges_summary (
+                    chargeId, carId, startDate, endDate, durationMin, address, latitude, longitude,
+                    energyAdded, energyUsed, cost, startBatteryLevel, endBatteryLevel,
+                    outsideTempAvg, odometer
+                ) VALUES (88, 7, '2026-01-02T00:00:00Z', '2026-01-02T01:00:00Z', 60, 'C', 1.0, 2.0,
+                    20.0, NULL, 3.0, 60, 80, NULL, 100.0)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            databaseName,
+            18,
+            true,
+            StatsDatabase.MIGRATION_17_18
+        )
+        try {
+            migrated.execSQL(
+                """
+                INSERT INTO drives_summary
+                SELECT driveId, 8, startDate, endDate, durationMin, startAddress, endAddress,
+                    distance, speedMax, speedAvg, powerMax, powerMin, startBatteryLevel,
+                    endBatteryLevel, outsideTempAvg, insideTempAvg, energyConsumed, efficiency,
+                    energySource, energyCoverageSeconds, energyCoverageRatio
+                FROM drives_summary WHERE carId = 7 AND driveId = 77
+                """.trimIndent()
+            )
+            migrated.execSQL(
+                """
+                INSERT INTO charges_summary
+                SELECT chargeId, 8, startDate, endDate, durationMin, address, latitude, longitude,
+                    energyAdded, energyUsed, cost, startBatteryLevel, endBatteryLevel,
+                    outsideTempAvg, odometer
+                FROM charges_summary WHERE carId = 7 AND chargeId = 88
+                """.trimIndent()
+            )
+
+            migrated.execSQL(
+                """
+                INSERT OR IGNORE INTO drives_summary (
+                    driveId, carId, startDate, endDate, durationMin, startAddress, endAddress,
+                    distance, speedMax, speedAvg, powerMax, powerMin, startBatteryLevel,
+                    endBatteryLevel, outsideTempAvg, insideTempAvg, energyConsumed, efficiency,
+                    energySource, energyCoverageSeconds, energyCoverageRatio
+                ) SELECT driveId, 9, startDate, endDate, durationMin, startAddress, endAddress,
+                    distance, speedMax, speedAvg, powerMax, powerMin, startBatteryLevel,
+                    endBatteryLevel, outsideTempAvg, insideTempAvg, energyConsumed, efficiency,
+                    energySource, energyCoverageSeconds, energyCoverageRatio
+                FROM drives_summary WHERE carId = 7 AND driveId = 77
+                """.trimIndent()
+            )
+            migrated.execSQL(
+                """
+                INSERT OR IGNORE INTO drives_summary (
+                    driveId, carId, startDate, endDate, durationMin, startAddress, endAddress,
+                    distance, speedMax, speedAvg, powerMax, powerMin, startBatteryLevel,
+                    endBatteryLevel, outsideTempAvg, insideTempAvg, energyConsumed, efficiency,
+                    energySource, energyCoverageSeconds, energyCoverageRatio
+                ) SELECT driveId, 9, startDate, endDate, durationMin, startAddress, endAddress,
+                    distance, speedMax, speedAvg, powerMax, powerMin, startBatteryLevel,
+                    endBatteryLevel, outsideTempAvg, insideTempAvg, energyConsumed, efficiency,
+                    energySource, energyCoverageSeconds, energyCoverageRatio
+                FROM drives_summary WHERE carId = 7 AND driveId = 77
+                """.trimIndent()
+            )
+
+            migrated.query("SELECT COUNT(*) FROM drives_summary WHERE driveId = 77").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(3, cursor.getInt(0))
+            }
+            migrated.query("SELECT COUNT(*) FROM charges_summary WHERE chargeId = 88").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(2, cursor.getInt(0))
+            }
+            migrated.query("SELECT COUNT(*) FROM drives_summary WHERE carId = 7").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(1, cursor.getInt(0))
+            }
+            migrated.query("PRAGMA foreign_key_check").use { cursor -> assertEquals(0, cursor.count) }
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun repositoryMigrationPreservesLegacyRowsAndIsIdempotent() {
+        val databaseName = "legacy-v17-repository-migration"
+        helper.createDatabase(databaseName, 17).apply {
+            execSQL(
+                """
+                INSERT INTO drives_summary (
+                    driveId, carId, startDate, endDate, durationMin, startAddress, endAddress,
+                    distance, speedMax, speedAvg, powerMax, powerMin, startBatteryLevel,
+                    endBatteryLevel, outsideTempAvg, insideTempAvg, energyConsumed, efficiency,
+                    energySource, energyCoverageSeconds, energyCoverageRatio
+                ) VALUES (7, 7, '2026-01-01T00:00:00Z', '2026-01-01T01:00:00Z', 60, 'A', 'B',
+                    12.0, 80, 40, 100, -20, 70, 60, NULL, NULL, 2.0, 166.0, 'api', 0, 0.0)
+                """.trimIndent()
+            )
+            execSQL(
+                """
+                INSERT INTO charges_summary (
+                    chargeId, carId, startDate, endDate, durationMin, address, latitude, longitude,
+                    energyAdded, energyUsed, cost, startBatteryLevel, endBatteryLevel,
+                    outsideTempAvg, odometer
+                ) VALUES (8, 7, '2026-01-02T00:00:00Z', '2026-01-02T01:00:00Z', 60, 'C', 1.0, 2.0,
+                    20.0, NULL, 3.0, 60, 80, NULL, 100.0)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val database = Room.databaseBuilder(
+            InstrumentationRegistry.getInstrumentation().targetContext,
+            StatsDatabase::class.java,
+            databaseName
+        ).addMigrations(*StatsDatabase.ALL_MIGRATIONS).build()
+        try {
+            val fingerprint = "self-hosted:http://example.test:7"
+            kotlinx.coroutines.runBlocking {
+                database.legacyHistoryArchiveDao().recordExplicitUpgradeOrigin(
+                    com.matelink.data.local.entity.LegacyHistoryArchive(
+                        legacyCarId = 7,
+                        vehicleFingerprint = fingerprint,
+                        vehicleModel = "3",
+                        upgradeOrigin = com.matelink.data.local.entity.LegacyHistoryArchive.EXPLICIT_UPGRADE_ARCHIVE,
+                        recordedAt = 1L
+                    )
+                )
+            }
+            val repository = LegacyHistoryMigrationRepository(
+                database = database,
+                driveSummaryDao = database.driveSummaryDao(),
+                chargeSummaryDao = database.chargeSummaryDao(),
+                aggregateDao = database.aggregateDao(),
+                chargeCostOverrideDao = database.chargeCostOverrideDao(),
+                legacyHistoryArchiveDao = database.legacyHistoryArchiveDao()
+            )
+            val eligibility = kotlinx.coroutines.runBlocking {
+                repository.inspect(7, "3", fingerprint, 100.0)
+            }
+            assertTrue(eligibility.eligible)
+
+            val first = kotlinx.coroutines.runBlocking { repository.migrate(7, -1, eligibility) }
+            val secondMigration = kotlinx.coroutines.runBlocking { repository.migrate(7, -1, eligibility) }
+            assertEquals(2, first.copiedRecordCount)
+            assertEquals(2, secondMigration.copiedRecordCount)
+            assertEquals(1, kotlinx.coroutines.runBlocking { database.driveSummaryDao().count(7) })
+            assertEquals(1, kotlinx.coroutines.runBlocking { database.driveSummaryDao().count(-1) })
+            assertEquals(1, kotlinx.coroutines.runBlocking { database.chargeSummaryDao().count(7) })
+            assertEquals(1, kotlinx.coroutines.runBlocking { database.chargeSummaryDao().count(-1) })
+        } finally {
+            database.close()
         }
     }
 

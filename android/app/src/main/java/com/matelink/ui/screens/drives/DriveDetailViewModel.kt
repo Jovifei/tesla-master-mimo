@@ -6,6 +6,7 @@ import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.repository.ApiResult
+import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.local.entity.SavedTripLeg
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.WeatherPoint
@@ -97,6 +98,7 @@ internal fun presentDriveDetailEnergy(
 class DriveDetailViewModel @Inject constructor(
     private val repository: TeslamateRepository,
     private val driveSummaryDao: DriveSummaryDao,
+    private val vehicleContextRepository: VehicleContextRepository,
     private val weatherRepository: WeatherRepository,
     private val tripRepository: TripRepository
 ) : ViewModel() {
@@ -135,7 +137,8 @@ class DriveDetailViewModel @Inject constructor(
             when (detailResult) {
                 is ApiResult.Success -> {
                     val detail = detailResult.data
-                    val persistedEnergy = driveSummaryDao.get(driveId)
+                    val localHistoryCarId = vehicleContextRepository.requireLocalHistoryCarId(carId)
+                    val persistedEnergy = driveSummaryDao.get(localHistoryCarId, driveId)
                     val stats = calculateDriveDetailStats(
                         detail = detail,
                         energy = presentDriveDetailEnergy(

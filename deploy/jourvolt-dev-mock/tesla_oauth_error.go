@@ -37,13 +37,13 @@ func teslaCallbackLogError(err error) string {
 		if retrieve.Response != nil {
 			status = retrieve.Response.StatusCode
 		}
-		body := strings.TrimSpace(string(retrieve.Body))
-		if len(body) > 300 {
-			body = body[:300]
+		code := sanitizeTeslaErrorCode(retrieve.ErrorCode)
+		if code == "" {
+			code = "authorization_failed"
 		}
-		return fmt.Sprintf("status=%d tesla_error=%s body=%s", status, retrieve.ErrorCode, body)
+		return fmt.Sprintf("status=%d tesla_error=%s", status, code)
 	}
-	return err.Error()
+	return "status=0 tesla_error=authorization_failed"
 }
 
 func sanitizeTeslaErrorCode(code string) string {

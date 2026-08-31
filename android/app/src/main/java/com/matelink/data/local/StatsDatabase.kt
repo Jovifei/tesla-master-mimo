@@ -9,6 +9,7 @@ import com.matelink.data.local.dao.ChargeCostOverrideDao
 import com.matelink.data.local.dao.ChargeSummaryDao
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.dao.GeocodeCacheDao
+import com.matelink.data.local.dao.LegacyHistoryArchiveDao
 import com.matelink.data.local.dao.GeocodeProgressDao
 import com.matelink.data.local.dao.GeocodeQueueDao
 import com.matelink.data.local.dao.SavedTripDao
@@ -23,6 +24,7 @@ import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.DriveDetailAggregate
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.GeocodeCache
+import com.matelink.data.local.entity.LegacyHistoryArchive
 import com.matelink.data.local.entity.GeocodeProgress
 import com.matelink.data.local.entity.GeocodeQueueItem
 import com.matelink.data.local.entity.SavedTrip
@@ -63,9 +65,10 @@ import com.matelink.data.local.entity.TpmsPressureSample
         SavedTrip::class,
         SavedTripLeg::class,
         SavedTripConsumedFingerprint::class,
-        TpmsPressureSample::class
+        TpmsPressureSample::class,
+        LegacyHistoryArchive::class
     ],
-    version = 17,
+    version = 19,
     exportSchema = true
 )
 abstract class StatsDatabase : RoomDatabase() {
@@ -83,6 +86,7 @@ abstract class StatsDatabase : RoomDatabase() {
     abstract fun tripCountryCacheDao(): TripCountryCacheDao
     abstract fun savedTripDao(): SavedTripDao
     abstract fun tpmsPressureSampleDao(): TpmsPressureSampleDao
+    abstract fun legacyHistoryArchiveDao(): LegacyHistoryArchiveDao
 
     companion object {
         const val DATABASE_NAME = "matelink_stats.db"
@@ -393,6 +397,155 @@ abstract class StatsDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration from V17 to V18: scope history records by local history car id.
+         *
+         * V17 used driveId/chargeId as global primary keys. Rebuilding only the
+         * four affected tables keeps every archive row while allowing two vehicle
+         * namespaces to contain the same provider id.
+         */
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                rebuildDriveHistoryTables(db)
+                rebuildChargeHistoryTables(db)
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `legacy_history_archives` (
+                        `legacyCarId` INTEGER NOT NULL,
+                        `vehicleFingerprint` TEXT NOT NULL,
+                        `vehicleModel` TEXT NOT NULL,
+                        `upgradeOrigin` TEXT NOT NULL,
+                        `recordedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`legacyCarId`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO `legacy_history_archives` (
+                        `legacyCarId`, `vehicleFingerprint`, `vehicleModel`, `upgradeOrigin`, `recordedAt`
+                    )
+                    SELECT `carId`, 'legacy-v17:car:' || `carId`, 'MODEL_UNKNOWN',
+                        'UPGRADE_ARCHIVE_MODEL_UNKNOWN', 0
+                    FROM (
+                        SELECT `carId` FROM `drives_summary`
+                        UNION
+                        SELECT `carId` FROM `charges_summary`
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        /**
+         * V19 stores the exact nullable API payload alongside legacy summary
+         * columns. V18 values remain legacy/unproven instead of being inferred.
+         */
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `drives_summary` ADD COLUMN `apiEvidence` TEXT")
+                db.execSQL("ALTER TABLE `charges_summary` ADD COLUMN `apiEvidence` TEXT")
+            }
+        }
+
+        private fun rebuildDriveHistoryTables(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `drive_detail_aggregates` RENAME TO `drive_detail_aggregates_v17`")
+            db.execSQL("ALTER TABLE `drives_summary` RENAME TO `drives_summary_v17`")
+            db.execSQL(
+                """
+                CREATE TABLE `drives_summary` (
+                    `driveId` INTEGER NOT NULL, `carId` INTEGER NOT NULL,
+                    `startDate` TEXT NOT NULL, `endDate` TEXT NOT NULL,
+                    `durationMin` INTEGER NOT NULL, `startAddress` TEXT NOT NULL,
+                    `endAddress` TEXT NOT NULL, `distance` REAL NOT NULL,
+                    `speedMax` INTEGER NOT NULL, `speedAvg` INTEGER NOT NULL,
+                    `powerMax` INTEGER NOT NULL, `powerMin` INTEGER NOT NULL,
+                    `startBatteryLevel` INTEGER NOT NULL, `endBatteryLevel` INTEGER NOT NULL,
+                    `outsideTempAvg` REAL, `insideTempAvg` REAL,
+                    `energyConsumed` REAL, `efficiency` REAL, `energySource` TEXT,
+                    `energyCoverageSeconds` INTEGER NOT NULL DEFAULT 0,
+                    `energyCoverageRatio` REAL NOT NULL DEFAULT 0,
+                    PRIMARY KEY(`carId`, `driveId`)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT INTO `drives_summary`
+                SELECT `driveId`, `carId`, `startDate`, `endDate`, `durationMin`,
+                    `startAddress`, `endAddress`, `distance`, `speedMax`, `speedAvg`,
+                    `powerMax`, `powerMin`, `startBatteryLevel`, `endBatteryLevel`,
+                    `outsideTempAvg`, `insideTempAvg`, `energyConsumed`, `efficiency`,
+                    `energySource`, `energyCoverageSeconds`, `energyCoverageRatio`
+                FROM `drives_summary_v17`
+                """.trimIndent()
+            )
+            createDriveDetailAggregatesTable(db, "drive_detail_aggregates", includeForeignKey = true, compositeKey = true)
+            db.execSQL(
+                """
+                INSERT INTO `drive_detail_aggregates`
+                SELECT `driveId`, `carId`, `schemaVersion`, `computedAt`, `maxElevation`, `minElevation`,
+                    `startElevation`, `endElevation`, `elevationGain`, `elevationLoss`, `hasElevationData`,
+                    `maxInsideTemp`, `minInsideTemp`, `maxOutsideTemp`, `minOutsideTemp`, `maxPower`,
+                    `minPower`, `climateOnPositions`, `positionCount`, `startLatitude`, `startLongitude`,
+                    `startCountryCode`, `startCountryName`, `startRegionName`, `startCity`,
+                    `endLatitude`, `endLongitude`, `extraJson`
+                FROM `drive_detail_aggregates_v17`
+                """.trimIndent()
+            )
+            db.execSQL("DROP TABLE `drive_detail_aggregates_v17`")
+            db.execSQL("DROP TABLE `drives_summary_v17`")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_drives_summary_carId` ON `drives_summary` (`carId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_drives_summary_carId_startDate` ON `drives_summary` (`carId`, `startDate`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_drive_detail_aggregates_carId` ON `drive_detail_aggregates` (`carId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_drive_detail_aggregates_driveId` ON `drive_detail_aggregates` (`driveId`)")
+        }
+
+        private fun rebuildChargeHistoryTables(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `charge_detail_aggregates` RENAME TO `charge_detail_aggregates_v17`")
+            db.execSQL("ALTER TABLE `charges_summary` RENAME TO `charges_summary_v17`")
+            db.execSQL(
+                """
+                CREATE TABLE `charges_summary` (
+                    `chargeId` INTEGER NOT NULL, `carId` INTEGER NOT NULL,
+                    `startDate` TEXT NOT NULL, `endDate` TEXT NOT NULL,
+                    `durationMin` INTEGER NOT NULL, `address` TEXT NOT NULL,
+                    `latitude` REAL NOT NULL, `longitude` REAL NOT NULL,
+                    `energyAdded` REAL NOT NULL, `energyUsed` REAL, `cost` REAL,
+                    `startBatteryLevel` INTEGER NOT NULL, `endBatteryLevel` INTEGER NOT NULL,
+                    `outsideTempAvg` REAL, `odometer` REAL NOT NULL,
+                    PRIMARY KEY(`carId`, `chargeId`)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT INTO `charges_summary`
+                SELECT `chargeId`, `carId`, `startDate`, `endDate`, `durationMin`, `address`,
+                    `latitude`, `longitude`, `energyAdded`, `energyUsed`, `cost`,
+                    `startBatteryLevel`, `endBatteryLevel`, `outsideTempAvg`, `odometer`
+                FROM `charges_summary_v17`
+                """.trimIndent()
+            )
+            createChargeDetailAggregatesTable(db, "charge_detail_aggregates", compositeKey = true)
+            db.execSQL(
+                """
+                INSERT INTO `charge_detail_aggregates`
+                SELECT `chargeId`, `carId`, `schemaVersion`, `computedAt`, `isFastCharger`,
+                    `fastChargerBrand`, `connectorType`, `maxChargerPower`, `maxChargerVoltage`,
+                    `maxChargerCurrent`, `chargerPhases`, `maxOutsideTemp`, `minOutsideTemp`,
+                    `chargePointCount`, `countryCode`, `countryName`, `regionName`, `city`, `extraJson`
+                FROM `charge_detail_aggregates_v17`
+                """.trimIndent()
+            )
+            db.execSQL("DROP TABLE `charge_detail_aggregates_v17`")
+            db.execSQL("DROP TABLE `charges_summary_v17`")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_charges_summary_carId` ON `charges_summary` (`carId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_charges_summary_carId_startDate` ON `charges_summary` (`carId`, `startDate`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_charge_detail_aggregates_carId` ON `charge_detail_aggregates` (`carId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_charge_detail_aggregates_chargeId` ON `charge_detail_aggregates` (`chargeId`)")
+        }
+
         private fun rebuildDrivesSummaryWithEnergyDefaults(db: SupportSQLiteDatabase) {
             val energySource = if (hasColumn(db, "drives_summary", "energySource")) "`energySource`" else "NULL"
             val energyCoverageSeconds = if (hasColumn(db, "drives_summary", "energyCoverageSeconds")) {
@@ -470,13 +623,19 @@ abstract class StatsDatabase : RoomDatabase() {
         private fun createDriveDetailAggregatesTable(
             db: SupportSQLiteDatabase,
             tableName: String,
-            includeForeignKey: Boolean
+            includeForeignKey: Boolean,
+            compositeKey: Boolean = false
         ) {
             val foreignKey = if (includeForeignKey) {
-                ", FOREIGN KEY(`driveId`) REFERENCES `drives_summary`(`driveId`) ON UPDATE NO ACTION ON DELETE CASCADE"
+                if (compositeKey) {
+                    ", FOREIGN KEY(`carId`, `driveId`) REFERENCES `drives_summary`(`carId`, `driveId`) ON UPDATE NO ACTION ON DELETE CASCADE"
+                } else {
+                    ", FOREIGN KEY(`driveId`) REFERENCES `drives_summary`(`driveId`) ON UPDATE NO ACTION ON DELETE CASCADE"
+                }
             } else {
                 ""
             }
+            val primaryKey = if (compositeKey) "PRIMARY KEY(`carId`, `driveId`)" else "PRIMARY KEY(`driveId`)"
             db.execSQL(
                 """
                 CREATE TABLE `$tableName` (
@@ -508,7 +667,32 @@ abstract class StatsDatabase : RoomDatabase() {
                     `endLatitude` REAL,
                     `endLongitude` REAL,
                     `extraJson` TEXT,
-                    PRIMARY KEY(`driveId`)$foreignKey
+                    $primaryKey$foreignKey
+                )
+                """.trimIndent()
+            )
+        }
+
+        private fun createChargeDetailAggregatesTable(
+            db: SupportSQLiteDatabase,
+            tableName: String,
+            compositeKey: Boolean
+        ) {
+            val primaryKey = if (compositeKey) "PRIMARY KEY(`carId`, `chargeId`)" else "PRIMARY KEY(`chargeId`)"
+            db.execSQL(
+                """
+                CREATE TABLE `$tableName` (
+                    `chargeId` INTEGER NOT NULL, `carId` INTEGER NOT NULL,
+                    `schemaVersion` INTEGER NOT NULL, `computedAt` INTEGER NOT NULL,
+                    `isFastCharger` INTEGER NOT NULL, `fastChargerBrand` TEXT,
+                    `connectorType` TEXT, `maxChargerPower` INTEGER,
+                    `maxChargerVoltage` INTEGER, `maxChargerCurrent` INTEGER,
+                    `chargerPhases` INTEGER, `maxOutsideTemp` REAL,
+                    `minOutsideTemp` REAL, `chargePointCount` INTEGER NOT NULL,
+                    `countryCode` TEXT, `countryName` TEXT, `regionName` TEXT,
+                    `city` TEXT, `extraJson` TEXT,
+                    $primaryKey,
+                    FOREIGN KEY(`carId`, `chargeId`) REFERENCES `charges_summary`(`carId`, `chargeId`) ON UPDATE NO ACTION ON DELETE CASCADE
                 )
                 """.trimIndent()
             )
@@ -552,7 +736,7 @@ abstract class StatsDatabase : RoomDatabase() {
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
             MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
             MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
-            MIGRATION_16_17
+            MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19
         )
     }
 }

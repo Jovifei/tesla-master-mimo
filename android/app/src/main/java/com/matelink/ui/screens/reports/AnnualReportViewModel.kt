@@ -96,7 +96,12 @@ class AnnualReportViewModel @Inject constructor(
                         is ApiResult.Success -> {
                             historyFreshness = history.data.freshness
                             val manualTotals = chargeCostOverrideStore.getAll()
-                            val effectiveCost = annualEffectiveCost(carId, year, history.data.charges, manualTotals)
+                            val effectiveCost = annualEffectiveCost(
+                                history.data.context?.localHistoryCarId ?: carId,
+                                year,
+                                history.data.charges,
+                                manualTotals
+                            )
                             val standbyKwh = annualStandbyKwh(year, history.data.charges, history.data.drives)
                             effectiveCost to standbyKwh
                         }

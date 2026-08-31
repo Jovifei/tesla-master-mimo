@@ -1,0 +1,39 @@
+{
+  "host": "0.0.0.0",
+  "port": __PUBLIC_PORT__,
+  "status_port": 8080,
+  "log_level": "info",
+  "json_log_enable": true,
+  "namespace": "jourvolt_telemetry",
+  "reliable_ack": false,
+  "transmit_decoded_records": true,
+  "rate_limit": {
+    "enabled": true,
+    "message_interval_time": 30,
+    "message_limit": 1000
+  },
+  "records": {
+    "V": ["mqtt"],
+    "connectivity": ["mqtt"],
+    "alerts": ["mqtt"],
+    "errors": ["mqtt"]
+  },
+  "tls": {
+    "server_cert": "__SERVER_CERT_PATH__",
+    "server_key": "__SERVER_KEY_PATH__"
+  },
+  "mqtt": {
+    "broker": "__MQTT_BROKER__",
+    "client_id": "jourvolt-fleet-telemetry",
+    "username": "__MQTT_USERNAME__",
+    "password": "__MQTT_PASSWORD__",
+    "topic_base": "__MQTT_TOPIC_BASE__",
+    "qos": 1,
+    "retained": false,
+    "connect_timeout_ms": 30000,
+    "publish_timeout_ms": 2500,
+    "disconnect_timeout_ms": 250,
+    "connect_retry_interval_ms": 10000,
+    "keep_alive_seconds": 30
+  }
+}

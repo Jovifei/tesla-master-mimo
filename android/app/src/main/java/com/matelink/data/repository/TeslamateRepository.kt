@@ -10,6 +10,9 @@ import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.DriveDetail
+import com.matelink.data.api.models.DataReadiness
+import com.matelink.data.api.models.DataReadinessItem
+import com.matelink.data.api.models.DataReadinessResponse
 import com.matelink.data.api.models.GlobalSettingsData
 import com.matelink.data.api.models.Units
 import com.matelink.data.api.models.AdapterSnapshot
@@ -23,6 +26,7 @@ import com.matelink.data.local.SettingsDataStore
 import com.matelink.di.TeslamateApiFactory
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.CancellationException
 import com.squareup.moshi.JsonDataException
 import com.squareup.moshi.JsonEncodingException
 import java.net.ConnectException
@@ -31,6 +35,7 @@ import java.net.UnknownHostException
 import javax.inject.Inject
 import javax.inject.Singleton
 import javax.net.ssl.SSLException
+import retrofit2.Response
 
 enum class ApiErrorKind {
     AUTH_REQUIRED,
@@ -64,6 +69,32 @@ sealed class ApiResult<out T> {
         val details: String? = null,
         val kind: ApiErrorKind = apiErrorKindFor(code, message)
     ) : ApiResult<Nothing>()
+}
+
+internal fun compatibilityDataReadiness(carId: Int): DataReadiness = DataReadiness(
+    capabilityVersion = 0,
+    vehicleUid = "self-hosted:car:$carId",
+    items = listOf("live_status", "location", "tpms", "drives", "charges", "battery_health").map {
+        DataReadinessItem(
+            key = it,
+            status = "unknown",
+            source = "legacy_compatibility",
+            messageKey = "data_readiness_legacy_compatibility",
+            action = "none"
+        )
+    }
+)
+
+internal fun dataReadinessResultForResponse(
+    response: Response<DataReadinessResponse>,
+    carId: Int,
+    allowLegacyCompatibility: Boolean = false
+): ApiResult<DataReadiness> = when {
+    response.code() == 404 && allowLegacyCompatibility -> ApiResult.Success(compatibilityDataReadiness(carId))
+    response.code() == 404 -> ApiResult.Error("Data readiness endpoint unavailable", response.code())
+    response.isSuccessful -> response.body()?.data?.let { ApiResult.Success(it) }
+        ?: ApiResult.Error("Data readiness unavailable", response.code())
+    else -> ApiResult.Error("Failed to fetch data readiness: ${response.code()}", response.code())
 }
 
 data class CarStatusWithUnits(
@@ -160,6 +191,8 @@ class TeslamateRepository @Inject constructor(
             ?: return ApiResult.Error("Server not configured")
         return try {
             apiCall(primaryApi)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             ApiResult.Error(connectionErrorMessage(e))
         }
@@ -223,6 +256,8 @@ class TeslamateRepository @Inject constructor(
                         hint = "Continuing with vehicle check"
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 ConnectionStepResult.Warning(
                     message = "Readiness check failed: ${e.message ?: "unknown error"}",
@@ -260,6 +295,8 @@ class TeslamateRepository @Inject constructor(
                     firstCarName = cars.firstOrNull()?.displayName
                 )
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: javax.net.ssl.SSLHandshakeException) {
             ApiResult.Error("Server certificate cannot be verified")
         } catch (e: Exception) {
@@ -286,7 +323,10 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getCars(): ApiResult<List<CarData>> {
-        if (isMockMode()) return ApiResult.Success(MockDataProvider.getCars())
+        if (isMockMode()) {
+            val cars = MockDataProvider.getCars()
+            return ApiResult.Success(cars)
+        }
         return executeWithFallback { api ->
             try {
                 val response = api.getCars()
@@ -546,7 +586,7 @@ class TeslamateRepository @Inject constructor(
                     if (health != null) {
                         ApiResult.Success(health, body?.meta?.toApiResponseMetadata())
                     } else {
-                        ApiResult.Error("No battery health data returned")
+                        ApiResult.Error("Battery health unavailable")
                     }
                 } else {
                     ApiResult.Error("Failed to fetch battery health: ${response.code()}", response.code())
@@ -554,6 +594,18 @@ class TeslamateRepository @Inject constructor(
             } catch (e: Exception) {
                 throw e
             }
+        }
+    }
+
+    suspend fun getDataReadiness(carId: Int): ApiResult<DataReadiness> {
+        if (isMockMode()) return ApiResult.Success(compatibilityDataReadiness(carId))
+        val allowLegacyCompatibility = connectionModeStore.mode.first() == ConnectionMode.SELF_HOSTED
+        return executeWithFallback { api ->
+            dataReadinessResultForResponse(
+                api.getDataReadiness(carId),
+                carId,
+                allowLegacyCompatibility
+            )
         }
     }
 

@@ -9,6 +9,7 @@ import com.matelink.data.local.dao.ChargeSummaryDao
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.dao.GeocodeCacheDao
 import com.matelink.data.local.dao.GeocodeProgressDao
+import com.matelink.data.local.dao.LegacyHistoryArchiveDao
 import com.matelink.data.local.dao.GeocodeQueueDao
 import com.matelink.data.local.dao.SavedTripDao
 import com.matelink.data.local.dao.SentryAlertLogDao
@@ -117,5 +118,11 @@ object DatabaseModule {
     @Singleton
     fun provideTpmsPressureSampleDao(database: StatsDatabase): TpmsPressureSampleDao {
         return database.tpmsPressureSampleDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideLegacyHistoryArchiveDao(database: StatsDatabase): LegacyHistoryArchiveDao {
+        return database.legacyHistoryArchiveDao()
     }
 }

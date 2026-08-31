@@ -13,9 +13,11 @@ import androidx.core.app.NotificationCompat
 import com.matelink.R
 import com.matelink.data.local.ChargeSessionStateDataStore
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.notification.ChargingNotificationManager
+import com.matelink.notification.chargingNotificationId
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -57,6 +59,7 @@ class ChargingMonitorService : Service() {
     @Inject lateinit var settingsDataStore: SettingsDataStore
     @Inject lateinit var chargingNotificationManager: ChargingNotificationManager
     @Inject lateinit var chargeSessionStateDataStore: ChargeSessionStateDataStore
+    @Inject lateinit var vehicleContextRepository: VehicleContextRepository
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var monitorJob: Job? = null
@@ -186,6 +189,7 @@ class ChargingMonitorService : Service() {
      */
     private fun updateForegroundNotification(
         notificationId: Int,
+        localHistoryCarId: Int,
         notification: Notification,
         car: com.matelink.data.api.models.CarData,
         status: com.matelink.data.api.models.CarStatus,
@@ -204,7 +208,7 @@ class ChargingMonitorService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to update foreground notification", e)
             chargingNotificationManager.showChargingNotification(
-                car, status, liveChargeAvailable,
+                car, localHistoryCarId, status, liveChargeAvailable,
                 chronometerBaseMs = status.stateSinceEpochMs
             )
         }
@@ -234,6 +238,7 @@ class ChargingMonitorService : Service() {
             var anyCharging = false
 
             for (car in cars) {
+                val historyCarId = vehicleContextRepository.resolve(car).localHistoryCarId
                 val statusResult = teslamateRepository.getCarStatus(car.carId)
                 val statusData = when (statusResult) {
                     is ApiResult.Success -> statusResult.data
@@ -245,50 +250,50 @@ class ChargingMonitorService : Service() {
 
                 val status = statusData.status
 
-                val notificationId = ChargingNotificationManager.NOTIFICATION_ID_BASE + car.carId
+                val notificationId = chargingNotificationId(historyCarId)
 
                 // Only `isCharging && phases == 0` confirms DC. After completion phases
                 // is null for any charge type, so we persist the in-session flag.
                 if (status.isCharging && status.isDcCharging) {
-                    chargeSessionStateDataStore.setLastSessionDc(car.carId, true)
+                    chargeSessionStateDataStore.setLastSessionDc(historyCarId, true)
                 } else if (status.pluggedIn == false) {
-                    chargeSessionStateDataStore.clear(car.carId)
+                    chargeSessionStateDataStore.clear(historyCarId)
                 }
 
-                val wasDcSession = chargeSessionStateDataStore.wasLastSessionDc(car.carId)
+                val wasDcSession = chargeSessionStateDataStore.wasLastSessionDc(historyCarId)
                 val dcFinishedPluggedIn = status.isChargeCompletePluggedIn && wasDcSession
 
                 when {
                     status.isCharging -> {
                         anyCharging = true
-                        activeNotificationCarIds.add(car.carId)
-                        Log.d(TAG, "Car ${car.carId} charging at ${status.batteryLevel}%")
+                        activeNotificationCarIds.add(historyCarId)
+                        Log.d(TAG, "Car $historyCarId charging at ${status.batteryLevel}%")
 
                         val liveChargeAvailable = teslamateRepository.isCurrentChargeAvailable(car.carId)
                         val notification = chargingNotificationManager.buildNotification(
                             car, status, liveChargeAvailable,
                             chronometerBaseMs = status.stateSinceEpochMs
                         )
-                        updateForegroundNotification(notificationId, notification, car, status, liveChargeAvailable)
+                        updateForegroundNotification(notificationId, historyCarId, notification, car, status, liveChargeAvailable)
                     }
 
                     dcFinishedPluggedIn -> {
                         // DC charge finished but cable still plugged — keep notification alive
                         anyCharging = true
-                        activeNotificationCarIds.add(car.carId)
-                        Log.d(TAG, "Car ${car.carId} DC charge finished but still plugged in")
+                        activeNotificationCarIds.add(historyCarId)
+                        Log.d(TAG, "Car $historyCarId DC charge finished but still plugged in")
 
                         val notification = chargingNotificationManager.buildNotification(
                             car, status,
                             dcFinishedPluggedIn = true,
                             chronometerBaseMs = status.stateSinceEpochMs
                         )
-                        updateForegroundNotification(notificationId, notification, car, status, liveChargeAvailable = false)
+                        updateForegroundNotification(notificationId, historyCarId, notification, car, status, liveChargeAvailable = false)
                     }
 
                     else -> {
-                        activeNotificationCarIds.remove(car.carId)
-                        chargingNotificationManager.cancelNotification(car.carId)
+                        activeNotificationCarIds.remove(historyCarId)
+                        chargingNotificationManager.cancelNotification(historyCarId)
                     }
                 }
             }
