@@ -4,14 +4,17 @@
 
 ### Plan
 
-- [ ] 完成本轮 Android/Go 修复、测试和文档的范围审查后提交到 `main`。
-- [ ] 推送 `main` 到 `origin/main`，核对远端提交与本地工作树。
+- [x] 完成本轮 Android/Go 修复、测试和文档的范围审查后提交到 `main`，代码提交为 `3e5a769`。
+- [x] 推送 `main` 到 `origin/main`，并核对远端与本地完整 SHA 一致。
 - [ ] 在真实车辆上完成虚拟钥匙配对、Telemetry 配置同步和位置/胎压/行程/充电事件验证。
 - [ ] 若真实验证需要，单独部署并验证 ECS 最新兼容路由；不以本地 Mock 代替真实 Pilot。
 
 ### Review
 
-- 待提交与推送后填写准确 commit、验证结果和剩余外部门禁。
+- PASS：`3e5a769` 已推送到 `origin/main`；提交范围无 iOS、无生成 EXE、无 keystore/env/properties。
+- PASS：新鲜 Android Debug/Release 测试、构建、AndroidTest 编译、Release lint、Go test/vet、Compose、diff check 和精确敏感扫描均通过。
+- NOT_PERFORMED：真实虚拟钥匙配对、Telemetry 配置同步、位置/胎压/行程/充电事件和生产部署仍未执行。
+- Boundary：本地生成的 `deploy/jourvolt-dev-mock/jourvolt-dev-api.exe` 未提交；下一阶段不以本地 Mock 代替真实 Pilot。
 
 ## 2026-08-31 收尾复核
 
