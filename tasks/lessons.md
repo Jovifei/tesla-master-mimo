@@ -320,3 +320,38 @@
 
 - 现象：在 Dashboard 上发送 `KEYCODE_BACK` 会退出 MateLink，后续坐标测试可能落到其他系统应用，产生无效结果。
 - Prevention rule：真机 L1 回归使用显式 `am start` 恢复 MateLink 或直接点击底部导航；仅在已确认的 L2/L3 页面使用返回键。每次坐标输入后先验证当前焦点仍为 `com.matelink/.MainActivity`。
+
+## 2026-08-31 Fleet vehicle UID omission caused history-page crash
+
+- Pattern: `fleetProvider.Vehicles` calculated the stable `providerID` but omitted `VehicleUID` when constructing the API vehicle. Because the JSON field uses `omitempty`, cloud `/api/v1/cars` responses omitted `vehicle_uid`; the Android `VehicleContext` identity guard then failed while Drives/Charges loaded history. The exception escaped `viewModelScope`, so the process crashed after the page click. Efficiency and Range shared the same history repository and had the same latent path.
+- Evidence: OnePlus 7 Pro `6e4fa92f` logcat at 21:55:02, 21:55:07, 21:55:51 and 21:57:25 reported `Process: com.matelink` and `IllegalArgumentException: cloud vehicle uid is required`; the release mapping resolved the stack to `VehicleContextRepository.resolve` -> `VehicleContextStore.resolveCar` -> `cloudVehicleStableIdentity`.
+- Resolution: Fleet vehicle mapping now returns `VehicleUID: providerID`; missing cloud identity raises `HistoryIdentityUnavailableException`; `UnifiedHistoryRepository` converts it to a recoverable configuration result; Drives, Charges, Efficiency, Range, Cost and Stats render localized waiting copy. Stats progress observers and range detail reads also ignore this expected unavailable state. No numeric car-ID fallback was added, so history isolation remains fail-closed.
+- Prevention rule: Test every stable identity field across provider model -> JSON -> Android model, and make history repositories convert expected identity-unavailable states before UI coroutines. After any history/Room change, exercise each affected navigation entry on the target device and inspect post-interaction `AndroidRuntime` logs; build success alone is insufficient.
+- Boundary: local source, tests, signed APK and the live ECS health boundary are verified; real Tesla vehicle UID response and history-page clicks still require the real account flow before end-to-end Pilot can be claimed.
+
+## 2026-08-31 ECS deployment must sync the build closure
+
+- Pattern: The ECS working directory was an older partial Go tree. Uploading only the changed `fleet_provider.go` produced compile errors for missing Telemetry types; the failed build happened before container replacement, but a partial source tree would have been unsafe to leave.
+- Prevention rule: Before rebuilding a remote Go service, compare the remote source manifest with the local build closure; upload the matching production `.go`, module files and Docker build inputs to a temporary directory, verify hashes, keep a rollback copy, and use `docker compose up --no-deps` for the API only. In PowerShell, use a single-quoted here-string for remote Bash so `$(...)` and `$1` are not evaluated locally. Validate the actual HTTP method and path before treating a 404 as a route failure.
+
+## 2026-09-01 首次登录数据等待不是订阅失败
+
+- Pattern: Tesla OAuth successfully creates a session and returns a current vehicle snapshot, but position, drive/charge history, standby analysis and continuous TPMS/events may still be waiting for the vehicle or Fleet Telemetry. Showing a generic error makes a normal first-login state look like an account or subscription failure.
+- Prevention rule: On first connection, render per-capability `available`, `waiting_vehicle`, `collecting`, `unsupported` and `unknown` states with source/time. Explain that local history starts accumulating after login; never replace missing values with zero and never call a paid subscription requirement without a server-provided billing state.
+
+## 2026-09-01 可选待机端点必须有本机降级
+
+- Pattern: The cloud compatibility service did not expose the self-hosted-only standby endpoint, so Android showed `Standby data unavailable` after an expected 404.
+- Resolution: The cloud route returns a typed collecting empty result; Android falls back through `UnifiedHistoryRepository` and derives only adjacent-drive parking candidates. Charge-overlap windows are excluded, and kWh/power stay nullable without measured capacity or telemetry coverage.
+- Prevention rule: Treat optional history endpoints as capability states, not transport errors. Test 404, empty response, local history, charging overlap and no-history cases separately; verify the device sees a localized collecting state before claiming the page is fixed.
+
+## 2026-09-01 AMap 和高级网络设置需要分层引导
+
+- Pattern: A single long AMap instruction block and an ungrouped advanced-network form obscured the primary action and made cloud login look dependent on self-hosted TeslaMate.
+- Resolution: Use a short three-step AMap wizard with Material icons, copy actions, privacy and verification kept in the final step. Group network inputs into server, authentication and security cards, and make copy mode-aware for cloud versus self-hosted connections.
+- Prevention rule: For setup UX changes, update Compose tests and AndroidTest selectors together; preserve the existing security/verification callbacks and test 360dp-width navigation, content descriptions and large text before delivery.
+
+## 2026-09-01 版本号和修复说明必须同批交付
+
+- Pattern: A code update without an in-app explanation left device testers unable to tell which behavior had changed, especially when the build SHA still pointed at the pre-commit HEAD.
+- Prevention rule: Every user-visible update increments `versionCode`/`versionName`, adds localized release notes, and distinguishes the version from the build Git SHA. Do not publish or push until the notes match the tested candidate and the exact APK identity is recorded.

@@ -12,9 +12,11 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.HistoryIdentityUnavailableException
 import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.model.Currency
 import com.matelink.data.repository.ApiResult
+import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.data.repository.GeocodeProgressInfo
 import com.matelink.data.repository.StatsRepository
 import com.matelink.data.repository.TeslamateRepository
@@ -31,6 +33,7 @@ import com.matelink.domain.model.YearFilter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -126,8 +129,14 @@ class StatsViewModel @Inject constructor(
     private fun startObservingProgress(id: Int) {
         progressObserverJob?.cancel()
         progressObserverJob = viewModelScope.launch {
-            statsRepository.observeDeepSyncProgress(id).collect { progress ->
-                _uiState.update { it.copy(deepSyncProgress = progress) }
+            try {
+                statsRepository.observeDeepSyncProgress(id).collect { progress ->
+                    _uiState.update { it.copy(deepSyncProgress = progress) }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: HistoryIdentityUnavailableException) {
+                if (carId == id) _uiState.update { it.copy(error = HISTORY_IDENTITY_UNAVAILABLE) }
             }
         }
     }
@@ -139,15 +148,21 @@ class StatsViewModel @Inject constructor(
     private fun startObservingGeocodeProgress(id: Int) {
         geocodeProgressJob?.cancel()
         geocodeProgressJob = viewModelScope.launch {
-            statsRepository.observeGeocodeProgress(id).collect { progress ->
-                _uiState.update {
-                    it.copy(
-                        geocodeProgress = progress,
-                        isGeocoding = progress != null &&
-                            progress.processed < progress.total &&
-                            progress.availability == com.matelink.data.repository.ChineseLocationAvailability.READY
-                    )
+            try {
+                statsRepository.observeGeocodeProgress(id).collect { progress ->
+                    _uiState.update {
+                        it.copy(
+                            geocodeProgress = progress,
+                            isGeocoding = progress != null &&
+                                progress.processed < progress.total &&
+                                progress.availability == com.matelink.data.repository.ChineseLocationAvailability.READY
+                        )
+                    }
                 }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: HistoryIdentityUnavailableException) {
+                if (carId == id) _uiState.update { it.copy(error = HISTORY_IDENTITY_UNAVAILABLE) }
             }
         }
     }
@@ -259,7 +274,11 @@ class StatsViewModel @Inject constructor(
      */
     suspend fun getDrivesForRangeRecord(fromDate: String, toDate: String): List<DriveSummary> {
         val id = carId ?: return emptyList()
-        return statsRepository.getDrivesBetweenDates(id, fromDate, toDate)
+        return try {
+            statsRepository.getDrivesBetweenDates(id, fromDate, toDate)
+        } catch (_: HistoryIdentityUnavailableException) {
+            emptyList()
+        }
     }
 
     private suspend fun loadStatsInternal() {
@@ -300,10 +319,16 @@ class StatsViewModel @Inject constructor(
                     error = null
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _uiState.update {
                 it.copy(
-                    error = e.message ?: context.getString(R.string.error_load_stats)
+                    error = if (e is HistoryIdentityUnavailableException) {
+                        HISTORY_IDENTITY_UNAVAILABLE
+                    } else {
+                        e.message ?: context.getString(R.string.error_load_stats)
+                    }
                 )
             }
         }

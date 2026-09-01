@@ -36,8 +36,7 @@ data class VehicleContext(
 fun cloudVehicleStableIdentity(accountNamespace: String, vehicleUid: String): String {
     val account = accountNamespace.trim()
     val uid = vehicleUid.trim()
-    require(account.isNotEmpty()) { "cloud account namespace is required" }
-    require(uid.isNotEmpty()) { "cloud vehicle uid is required" }
+    if (account.isEmpty() || uid.isEmpty()) throw HistoryIdentityUnavailableException()
     return "cloud:${sha256Hex("account:$account")}:vehicle:$uid"
 }
 

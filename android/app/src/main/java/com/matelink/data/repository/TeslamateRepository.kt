@@ -129,6 +129,25 @@ internal fun telemetryPairingResultForResponse(
     )
 }
 
+internal const val STANDBY_ENDPOINT_UNAVAILABLE = "standby_endpoint_unavailable"
+
+internal fun standbyResultForResponse(
+    response: Response<com.matelink.data.api.models.StandbyResponse>
+): ApiResult<List<StandbyWindowData>> = when {
+    response.code() == 404 -> ApiResult.Error(
+        message = "Standby history endpoint unavailable",
+        code = response.code(),
+        details = STANDBY_ENDPOINT_UNAVAILABLE,
+        kind = ApiErrorKind.CONFIGURATION
+    )
+    response.isSuccessful -> response.body()?.data?.windows?.let { ApiResult.Success(it) }
+        ?: ApiResult.Error("Standby data unavailable", response.code())
+    else -> ApiResult.Error(
+        response.body()?.error ?: "Standby data unavailable",
+        response.code()
+    )
+}
+
 internal fun telemetryConfigureResultForResponse(
     response: Response<TelemetryConfigureResponse>
 ): ApiResult<TelemetryConfigureResult> = when {
@@ -472,15 +491,7 @@ class TeslamateRepository @Inject constructor(
     suspend fun getStandbyWindows(carId: Int): ApiResult<List<StandbyWindowData>> {
         if (isMockMode()) return ApiResult.Error("Standby analysis requires real adapter data")
         return executeWithFallback { api ->
-            val response = api.getStandby(carId)
-            val windows = response.body()?.data?.windows
-            when {
-                response.isSuccessful && windows != null -> ApiResult.Success(windows)
-                else -> ApiResult.Error(
-                    response.body()?.error ?: "Standby data unavailable",
-                    response.code()
-                )
-            }
+            standbyResultForResponse(api.getStandby(carId))
         }
     }
 

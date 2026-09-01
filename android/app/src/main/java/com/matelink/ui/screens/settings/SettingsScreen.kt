@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -75,6 +76,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
+import com.matelink.data.local.ConnectionMode
 import com.matelink.data.local.TirePosition
 import com.matelink.data.model.Currency
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
@@ -247,6 +249,34 @@ private fun CollapsibleSection(
 }
 
 @Composable
+private fun SettingsPanelCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            content()
+        }
+    }
+}
+
+@Composable
 internal fun SettingsContent(
     modifier: Modifier = Modifier,
     uiState: SettingsUiState,
@@ -290,6 +320,7 @@ internal fun SettingsContent(
     var currencyDropdownExpanded by remember { mutableStateOf(false) }
     var showShortDrivesChargesInfoDialog by remember { mutableStateOf(false) }
     var showResyncConfirmDialog by remember { mutableStateOf(false) }
+    var showReleaseNotesDialog by rememberSaveable { mutableStateOf(false) }
     var advancedNetworkExpanded by rememberSaveable { mutableStateOf(false) }
     var extraSettingsExpanded by rememberSaveable { mutableStateOf(false) }
 
@@ -416,13 +447,28 @@ internal fun SettingsContent(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = stringResource(R.string.settings_connect_description),
+                text = stringResource(
+                    if (uiState.connectionMode == ConnectionMode.TESLA_CLOUD) {
+                        R.string.settings_cloud_connection_description
+                    } else {
+                        R.string.settings_self_hosted_connection_description
+                    }
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            SettingsPanelCard(
+                stringResource(
+                    if (uiState.connectionMode == ConnectionMode.TESLA_CLOUD) {
+                        R.string.settings_self_hosted_panel_title
+                    } else {
+                        R.string.settings_server_panel_title
+                    }
+                )
+            ) {
             OutlinedTextField(
                 value = uiState.serverUrl,
                 onValueChange = onServerUrlChange,
@@ -464,8 +510,11 @@ internal fun SettingsContent(
                 modifier = Modifier.padding(top = 4.dp)
             )
 
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
+            SettingsPanelCard(stringResource(R.string.settings_auth_panel_title)) {
             // API Token
             OutlinedTextField(
                 value = uiState.apiToken,
@@ -558,8 +607,11 @@ internal fun SettingsContent(
                 modifier = Modifier.padding(top = 4.dp)
             )
 
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
+            SettingsPanelCard(stringResource(R.string.settings_security_panel_title)) {
             // Accept invalid certificates toggle
             Row(
                 modifier = Modifier
@@ -612,6 +664,8 @@ internal fun SettingsContent(
                         )
                     }
                 }
+            }
+
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -973,7 +1027,7 @@ internal fun SettingsContent(
         ) {
             OutlinedButton(
                 onClick = onTestConnection,
-                enabled = uiState.serverUrl.isNotBlank() && !uiState.mockMode && !uiState.isTesting && !uiState.isSaving,
+                enabled = hasExplicitServerUrl(uiState.serverUrl) && !uiState.mockMode && !uiState.isTesting && !uiState.isSaving,
                 modifier = Modifier.weight(1f).testTag("testConnectionButton")
             ) {
                 if (uiState.isTesting) {
@@ -988,7 +1042,11 @@ internal fun SettingsContent(
 
             Button(
                 onClick = onSave,
-                enabled = (uiState.serverUrl.isNotBlank() || uiState.mockMode) && !uiState.isTesting && !uiState.isSaving,
+                enabled = (
+                    hasExplicitServerUrl(uiState.serverUrl) ||
+                        uiState.mockMode ||
+                        uiState.connectionMode == ConnectionMode.TESLA_CLOUD
+                    ) && !uiState.isTesting && !uiState.isSaving,
                 modifier = Modifier
                     .weight(1f)
                     .testTag("saveConfigurationButton")
@@ -1080,13 +1138,56 @@ internal fun SettingsContent(
             }
         }
 
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showReleaseNotesDialog = true },
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.settings_release_notes_version),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_release_notes_view),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        }
+
         // Version number and issue link at bottom
         Spacer(modifier = Modifier.height(48.dp))
         Text(
             text = "v${com.matelink.BuildConfig.VERSION_NAME} (${com.matelink.BuildConfig.GIT_SHA})",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-            modifier = Modifier.align(Alignment.CenterHorizontally)
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .clickable { showReleaseNotesDialog = true }
         )
         Spacer(modifier = Modifier.height(8.dp))
         val context = LocalContext.current
@@ -1106,6 +1207,28 @@ internal fun SettingsContent(
                 }
         )
         Spacer(modifier = Modifier.height(16.dp))
+    }
+
+    if (showReleaseNotesDialog) {
+        AlertDialog(
+            onDismissRequest = { showReleaseNotesDialog = false },
+            title = { Text(stringResource(R.string.settings_release_notes_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stringResource(R.string.settings_release_notes_version),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(stringResource(R.string.settings_release_notes_body))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showReleaseNotesDialog = false }) {
+                    Text(stringResource(R.string.settings_release_notes_close))
+                }
+            }
+        )
     }
 
     // Instance Editor Dialog

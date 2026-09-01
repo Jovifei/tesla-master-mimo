@@ -543,6 +543,14 @@ func (a *app) adapterResource(w http.ResponseWriter, r *http.Request, userID, pa
 	switch parts[1] {
 	case "snapshot":
 		a.status(w, r, userID, carID, true)
+	case "standby":
+		// Cloud mode keeps history on the phone. Return a typed collecting
+		// response so an optional self-hosted-only endpoint is not shown as
+		// a transport error before local history has accumulated.
+		a.json(w, http.StatusOK, map[string]any{"data": map[string]any{
+			"windows": []any{},
+			"meta": map[string]any{"availability": "collecting", "source": "local_history"},
+		}})
 	case "parked":
 		a.json(w, http.StatusOK, map[string]any{"data": nil, "error": "history_not_collected"})
 	default:

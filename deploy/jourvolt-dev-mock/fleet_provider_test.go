@@ -14,6 +14,26 @@ type testAccessTokens struct {
 	calls []string
 }
 
+func TestFleetVehicleCarriesProviderUID(t *testing.T) {
+	got := fleetVehicleFromProvider(
+		storedVehicle{ID: 7, Model: "Y"},
+		"provider-vehicle-7",
+		"Model Y",
+		"online",
+	)
+
+	if got.VehicleUID != "provider-vehicle-7" {
+		t.Fatalf("vehicle UID = %q, want provider-vehicle-7", got.VehicleUID)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"vehicle_uid":"provider-vehicle-7"`) {
+		t.Fatalf("serialized vehicle lacks vehicle_uid: %s", encoded)
+	}
+}
+
 func (t *testAccessTokens) accessToken(_ context.Context, _ string, rejected string) (string, error) {
 	t.calls = append(t.calls, rejected)
 	if rejected == "old-token" {

@@ -183,13 +183,19 @@ func (p *fleetProvider) Vehicles(ctx context.Context, userID string) ([]vehicle,
 				return nil, err
 			}
 		}
-		vehicles = append(vehicles, vehicle{
-			ID: stored.ID, DisplayName: displayName, State: teslaVehicle.State,
-			Source: "fleet_api", Model: stored.Model, TrimBadging: stored.TrimBadging,
-			ExteriorColor: stored.ExteriorColor, WheelType: stored.WheelType,
-		})
+		vehicles = append(vehicles, fleetVehicleFromProvider(
+			stored, providerID, displayName, teslaVehicle.State,
+		))
 	}
 	return vehicles, nil
+}
+
+func fleetVehicleFromProvider(stored storedVehicle, providerID, displayName, state string) vehicle {
+	return vehicle{
+		ID: stored.ID, VehicleUID: providerID, DisplayName: displayName, State: state,
+		Source: "fleet_api", Model: stored.Model, TrimBadging: stored.TrimBadging,
+		ExteriorColor: stored.ExteriorColor, WheelType: stored.WheelType,
+	}
 }
 
 func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int) (vehicleStatus, error) {

@@ -6,16 +6,30 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -28,18 +42,80 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.BuildConfig
 import com.matelink.R
 import com.matelink.domain.map.InstalledAppSignature
+
+internal enum class AmapSetupWizardStep(
+    val titleRes: Int,
+    val bodyRes: Int
+) {
+    IDENTITY(R.string.amap_setup_step_1_title, R.string.amap_setup_step_1_body),
+    PRIVACY(R.string.amap_setup_step_2_title, R.string.amap_setup_step_2_body),
+    KEY(R.string.amap_setup_step_3_title, R.string.amap_setup_step_3_body);
+
+    val stepNumber: Int get() = ordinal + 1
+    val progressFraction: Float get() = stepNumber / entries.size.toFloat()
+
+    fun previous(): AmapSetupWizardStep? = entries.getOrNull(ordinal - 1)
+
+    fun next(): AmapSetupWizardStep? = entries.getOrNull(ordinal + 1)
+}
+
+@Composable
+private fun AmapSetupIllustration() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Language,
+                contentDescription = stringResource(R.string.amap_setup_platform_illustration),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Icon(
+                imageVector = Icons.Filled.ContentCopy,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Icon(
+                imageVector = Icons.Filled.VpnKey,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,64 +173,151 @@ internal fun AmapSetupGuideContent(
     onNavigateToPreview: () -> Unit
 ) {
     var showKeyDialog by remember { mutableStateOf(false) }
+    var step by rememberSaveable { mutableStateOf(AmapSetupWizardStep.IDENTITY) }
 
     Column(
         modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(stringResource(R.string.amap_setup_steps), style = MaterialTheme.typography.bodyMedium)
-        Text(stringResource(R.string.amap_setup_warning), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-        Text(stringResource(R.string.amap_identity_package, identity.packageName))
-        Text(stringResource(R.string.amap_identity_build, identity.buildType))
-        Text(stringResource(R.string.amap_identity_sha1, identity.sha1 ?: stringResource(R.string.amap_sha1_unavailable)))
-        OutlinedButton(onClick = onCopyPackage) { Text(stringResource(R.string.amap_copy_package)) }
-        OutlinedButton(onClick = onCopySha1, enabled = identity.sha1 != null) { Text(stringResource(R.string.amap_copy_sha1)) }
-        Text(stringResource(R.string.amap_privacy_notice), style = MaterialTheme.typography.bodySmall)
-        androidx.compose.foundation.layout.Row {
-            Checkbox(checked = uiState.privacyAgreed, onCheckedChange = onPrivacyAgreedChange)
-            Text(stringResource(R.string.amap_privacy_agree), modifier = Modifier.padding(top = 12.dp))
-        }
-        when {
-            uiState.hasVerifiedKey && !uiState.isEditingKey -> {
-                Text(stringResource(R.string.amap_key_verified), style = MaterialTheme.typography.bodySmall)
-                if (uiState.verificationFailed) {
-                    Text(stringResource(R.string.amap_change_verification_failed), color = MaterialTheme.colorScheme.error)
-                }
-                OutlinedButton(onClick = { onChangeKey(); showKeyDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.amap_change_key))
-                }
-            }
-            uiState.hasKey && !uiState.isEditingKey -> {
-                Text(stringResource(R.string.amap_key_saved_unverified), style = MaterialTheme.typography.bodySmall)
-                if (uiState.verificationFailed) {
-                    Text(stringResource(R.string.amap_verification_failed), color = MaterialTheme.colorScheme.error)
-                }
-                OutlinedButton(
-                    onClick = onVerifySavedKey,
-                    enabled = uiState.privacyAgreed,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.amap_verify_saved_key)) }
-                OutlinedButton(onClick = { onChangeKey(); showKeyDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.amap_change_key))
-                }
-            }
-            else -> {
-                Text(stringResource(R.string.amap_key_not_saved), style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(onClick = { showKeyDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.amap_enter_key))
-                }
-                Text(stringResource(R.string.amap_key_storage_notice), style = MaterialTheme.typography.bodySmall)
-                if (uiState.keyError) Text(stringResource(R.string.amap_key_invalid), color = MaterialTheme.colorScheme.error)
-                if (uiState.verificationFailed) Text(stringResource(R.string.amap_verification_failed), color = MaterialTheme.colorScheme.error)
-            }
-        }
-        if (uiState.restartRequired) Text(stringResource(R.string.amap_restart_required), color = MaterialTheme.colorScheme.error)
-        Spacer(Modifier.height(4.dp))
-        OutlinedButton(
-            onClick = onNavigateToPreview,
-            enabled = uiState.hasVerifiedKey && uiState.privacyAgreed && !uiState.restartRequired,
+        Text(
+            text = stringResource(
+                R.string.amap_setup_step_progress,
+                step.stepNumber,
+                AmapSetupWizardStep.entries.size
+            ),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary
+        )
+        LinearProgressIndicator(
+            progress = { step.progressFraction },
             modifier = Modifier.fillMaxWidth()
-        ) { Text(stringResource(R.string.amap_preview)) }
+        )
+
+        AmapSetupIllustration()
+        Text(
+            text = stringResource(step.titleRes),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = stringResource(step.bodyRes),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        when (step) {
+            AmapSetupWizardStep.IDENTITY -> {
+                Text(stringResource(R.string.amap_setup_warning), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            }
+
+            AmapSetupWizardStep.PRIVACY -> {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.amap_identity_package, identity.packageName))
+                        Text(stringResource(R.string.amap_identity_build, identity.buildType))
+                        Text(stringResource(R.string.amap_identity_sha1, identity.sha1 ?: stringResource(R.string.amap_sha1_unavailable)))
+                        OutlinedButton(onClick = onCopyPackage, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Filled.ContentCopy, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(R.string.amap_copy_package))
+                        }
+                        OutlinedButton(
+                            onClick = onCopySha1,
+                            enabled = identity.sha1 != null,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.ContentCopy, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(R.string.amap_copy_sha1))
+                        }
+                    }
+                }
+            }
+
+            AmapSetupWizardStep.KEY -> {
+                Text(stringResource(R.string.amap_privacy_notice), style = MaterialTheme.typography.bodySmall)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .toggleable(
+                            value = uiState.privacyAgreed,
+                            role = Role.Checkbox,
+                            onValueChange = onPrivacyAgreedChange
+                        ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = uiState.privacyAgreed, onCheckedChange = null)
+                    Text(stringResource(R.string.amap_privacy_agree), modifier = Modifier.padding(top = 12.dp))
+                }
+                when {
+                    uiState.hasVerifiedKey && !uiState.isEditingKey -> {
+                        Text(stringResource(R.string.amap_key_verified), style = MaterialTheme.typography.bodySmall)
+                        if (uiState.verificationFailed) {
+                            Text(stringResource(R.string.amap_change_verification_failed), color = MaterialTheme.colorScheme.error)
+                        }
+                        OutlinedButton(onClick = { onChangeKey(); showKeyDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.amap_change_key))
+                        }
+                    }
+                    uiState.hasKey && !uiState.isEditingKey -> {
+                        Text(stringResource(R.string.amap_key_saved_unverified), style = MaterialTheme.typography.bodySmall)
+                        if (uiState.verificationFailed) {
+                            Text(stringResource(R.string.amap_verification_failed), color = MaterialTheme.colorScheme.error)
+                        }
+                        OutlinedButton(
+                            onClick = onVerifySavedKey,
+                            enabled = uiState.privacyAgreed,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(stringResource(R.string.amap_verify_saved_key)) }
+                        OutlinedButton(onClick = { onChangeKey(); showKeyDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.amap_change_key))
+                        }
+                    }
+                    else -> {
+                        Text(stringResource(R.string.amap_key_not_saved), style = MaterialTheme.typography.bodySmall)
+                        OutlinedButton(onClick = { showKeyDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.amap_enter_key))
+                        }
+                        Text(stringResource(R.string.amap_key_storage_notice), style = MaterialTheme.typography.bodySmall)
+                        if (uiState.keyError) Text(stringResource(R.string.amap_key_invalid), color = MaterialTheme.colorScheme.error)
+                        if (uiState.verificationFailed) Text(stringResource(R.string.amap_verification_failed), color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                if (uiState.restartRequired) Text(stringResource(R.string.amap_restart_required), color = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.height(4.dp))
+                OutlinedButton(
+                    onClick = onNavigateToPreview,
+                    enabled = uiState.hasVerifiedKey && uiState.privacyAgreed && !uiState.restartRequired,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(stringResource(R.string.amap_preview)) }
+            }
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            step.previous()?.let { previous ->
+                OutlinedButton(onClick = { step = previous }, modifier = Modifier.weight(1f)) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.amap_setup_previous)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.amap_setup_previous))
+                }
+            }
+            if (step.previous() == null) Spacer(Modifier.weight(1f))
+            step.next()?.let { next ->
+                Button(onClick = { step = next }, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.amap_setup_next))
+                    Spacer(Modifier.width(6.dp))
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = stringResource(R.string.amap_setup_next)
+                    )
+                }
+            }
+        }
     }
 
     if (showKeyDialog) {

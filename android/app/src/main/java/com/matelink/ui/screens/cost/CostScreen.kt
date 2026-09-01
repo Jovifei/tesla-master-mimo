@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.matelink.R
+import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.domain.analytics.HistoryFreshness
 import com.matelink.ui.components.AnalysisWindowSelector
 import com.matelink.ui.components.CachedHistoryBanner
@@ -86,7 +87,11 @@ fun CostScreen(
                 MetricStatusPanel(
                     kind = MetricPanelKind.ERROR,
                     title = stringResource(R.string.metric_state_error_title),
-                    body = uiState.error ?: stringResource(R.string.no_data)
+                    body = if (uiState.error == HISTORY_IDENTITY_UNAVAILABLE) {
+                        stringResource(R.string.history_identity_unavailable_message)
+                    } else {
+                        uiState.error ?: stringResource(R.string.no_data)
+                    }
                 )
             }
             return@Scaffold

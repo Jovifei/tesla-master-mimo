@@ -2,6 +2,7 @@ package com.matelink.data.repository
 
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.DriveData
+import com.matelink.data.local.HistoryIdentityUnavailableException
 import com.matelink.data.local.VehicleContext
 import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.local.dao.ChargeSummaryDao
@@ -24,6 +25,15 @@ data class UnifiedHistory(
     val fetchedAt: Instant = Instant.now()
 )
 
+internal const val HISTORY_IDENTITY_UNAVAILABLE = "history_identity_unavailable"
+
+internal fun historyIdentityUnavailableError(): ApiResult.Error =
+    ApiResult.Error(
+        message = HISTORY_IDENTITY_UNAVAILABLE,
+        details = HISTORY_IDENTITY_UNAVAILABLE,
+        kind = ApiErrorKind.CONFIGURATION
+    )
+
 /** One read path for remote history plus the vehicle-scoped Room cache. */
 @Singleton
 class UnifiedHistoryRepository @Inject constructor(
@@ -42,7 +52,11 @@ class UnifiedHistoryRepository @Inject constructor(
                 ?: return ApiResult.Error("Vehicle is no longer available")
             is ApiResult.Error -> return result
         }
-        val context = vehicleContextRepository.resolve(car)
+        val context = try {
+            vehicleContextRepository.resolve(car)
+        } catch (_: HistoryIdentityUnavailableException) {
+            return historyIdentityUnavailableError()
+        }
         val localDrives = if (startDate != null && endDate != null) {
             driveSummaryDao.getDrivesInRange(context.localHistoryCarId, startDate, endDate)
         } else {

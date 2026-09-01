@@ -69,6 +69,19 @@ class DataReadinessReviewContractTest {
         assertEquals("Unavailable", stringValue("values", "data_readiness_status_unavailable"))
     }
 
+    @Test
+    fun firstLoginCopyExplainsCollectionWithoutCallingItALoginFailure() {
+        val chinese = stringValue("values-zh", "data_readiness_intro_body")
+        val english = stringValue("values", "data_readiness_intro_body")
+
+        assertTrue(chinese.contains("首次登录"))
+        assertTrue(chinese.contains("收集"))
+        assertTrue(chinese.contains("不是登录失败"))
+        assertTrue(english.contains("first login", ignoreCase = true))
+        assertTrue(english.contains("collected", ignoreCase = true))
+        assertTrue(english.contains("not a login failure", ignoreCase = true))
+    }
+
     private fun stringValue(directory: String, name: String): String {
         val document = DocumentBuilderFactory.newInstance()
             .newDocumentBuilder()

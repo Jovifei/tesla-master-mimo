@@ -2,6 +2,7 @@ package com.matelink.ui.screens.vampire
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -22,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.matelink.R
+import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.domain.analytics.StandbyRange
 import com.matelink.ui.components.DateRangePickerDialog
 import com.matelink.ui.components.MetricPanelKind
@@ -82,7 +84,17 @@ fun VampireScreen(
                 MetricStatusPanel(
                     kind = MetricPanelKind.ERROR,
                     title = stringResource(R.string.metric_state_error_title),
-                    body = uiState.error ?: stringResource(R.string.no_data)
+                    body = when {
+                        uiState.errorDetails == HISTORY_IDENTITY_UNAVAILABLE -> {
+                            stringResource(R.string.history_identity_unavailable_message)
+                        }
+                        uiState.errorCode == 401 || uiState.errorCode == 403 -> {
+                            stringResource(R.string.vampire_auth_required)
+                        }
+                        else -> stringResource(R.string.vampire_data_unavailable)
+                    },
+                    actionLabel = stringResource(R.string.refresh),
+                    onAction = viewModel::refresh
                 )
             }
             return@Scaffold
@@ -95,12 +107,18 @@ fun VampireScreen(
             ) {
                 MetricStatusPanel(
                     kind = MetricPanelKind.UNAVAILABLE,
-                    title = stringResource(R.string.vampire_no_data),
+                    title = if (uiState.noDataReason == com.matelink.domain.analytics.NoDataReason.COLLECTING) {
+                        stringResource(R.string.vampire_collecting_title)
+                    } else {
+                        stringResource(R.string.vampire_no_data)
+                    },
                     body = stringResource(
                         R.string.standby_insufficient_detail,
                         uiState.observedWindowCount,
                         uiState.qualifiedHours
-                    )
+                    ),
+                    actionLabel = stringResource(R.string.refresh),
+                    onAction = viewModel::refresh
                 )
             }
             return@Scaffold
@@ -358,7 +376,10 @@ private fun StandbyRangeSelector(
     modifier: Modifier = Modifier
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(
+        modifier = modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         listOf(
             StandbyRange.LAST_7_DAYS to R.string.standby_range_7_days,
             StandbyRange.LAST_30_DAYS to R.string.standby_range_30_days,

@@ -1,5 +1,18 @@
 # JourVolt Android rollout implementation - 2026-08-09
 
+## 2026-09-01 主分支同步与下一步 Telemetry Pilot
+
+### Plan
+
+- [ ] 完成本轮 Android/Go 修复、测试和文档的范围审查后提交到 `main`。
+- [ ] 推送 `main` 到 `origin/main`，核对远端提交与本地工作树。
+- [ ] 在真实车辆上完成虚拟钥匙配对、Telemetry 配置同步和位置/胎压/行程/充电事件验证。
+- [ ] 若真实验证需要，单独部署并验证 ECS 最新兼容路由；不以本地 Mock 代替真实 Pilot。
+
+### Review
+
+- 待提交与推送后填写准确 commit、验证结果和剩余外部门禁。
+
 ## 2026-08-31 收尾复核
 
 - [x] MQTT：手动 ACK 仅在持久化成功/持久化重复/永久无效后执行；未知映射、取消、数据库故障和背压保持未确认；连接代次、启动取消、停止排空和 readyz 状态均有回归覆盖。
@@ -2799,3 +2812,43 @@
 
 - PASS: `TelemetryPairingContractTest` passed 10/10 after the RED/GREEN cycle; its timeout regression proves the only configure request is the user's explicit tap. Fresh `:app:testDebugUnitTest --rerun-tasks` passed 447 tests with 0 failures/errors/skips. `:app:compileDebugAndroidTestKotlin` passed without running a device test. English/Chinese string parity is 1266/1266 keys with no differences, and `git diff --check` passed. No stage/commit/push/reset/stash/clean/deploy.
 - NOT_PERFORMED: instrumentation was not run.
+
+# 2026-08-31 行程与充电页面闪退修复
+
+## Plan
+
+- [x] 读取真机 `AndroidRuntime` 崩溃栈，复现并定位到云车辆 UID 缺失。
+- [x] 对服务端 Fleet 车辆映射和 Android 历史身份边界完成 RED -> GREEN。
+- [x] 为缺失身份增加可恢复错误和中英文等待提示，不以数字车 ID 伪造身份。
+- [x] 完成 Go、Android Debug/Release、AndroidTest 编译、Release lint 与签名候选验证。
+- [x] 通过 `adb install -r` 安装候选包并检查启动后无新 MateLink FATAL；统计页同类观察路径也已加保护。
+
+## Review
+
+- PASS：Go `go test ./... -count=1`、`go vet ./...`；Android Debug/Release 各 `449` 个 JVM 测试；`:app:compileDebugAndroidTestKotlin`；`:app:assembleRelease`；`:app:lintRelease`（0 Error、0 MissingTranslation）；`git diff --check` 均通过。
+- PASS：服务端回归测试验证 Fleet JSON 包含 `vehicle_uid`；Android 回归验证缺失云身份保持 fail-closed 并返回 `CONFIGURATION/history_identity_unavailable`。
+- PASS：最终签名候选 `E:\Claude_allow\Download\matelink-1.4.2-release-signed-history-crash-fix-stats-20260831.apk`，包名 `com.matelink`，SHA-256 `E39CCE42A593521EDEECDDEF0ED32604331A6D06CCBA2F675385ED385CD85CE1`，`apksigner` v2 verified；已使用 `adb install -r` 覆盖安装。
+- DEVICE PASS（启动级）：设备安装后应用正常启动到登录页，安装后没有新的 `com.matelink` FATAL；本轮安装前设备上已不存在正式包，因此不声称保留已被用户卸载的数据。
+- REVIEW：质量复核未发现 P0/P1；剩余 P2 是真实 Fleet provider -> 云端 API -> Android 解码 -> 历史页面的端到端测试尚未执行，需真实 Tesla 会话后补证。
+- PASS：ECS 已完成匹配服务端源同步与 API 重建；公网 `/healthz`、`/readyz` 为 200 且 `fleet/postgres/ok`，未授权车辆接口为 401，PostgreSQL 与 `star-photo` 容器未被重启。
+- PASS：正确的 `GET /v1/auth/tesla/start` 返回 200，授权端点为官方 `auth.tesla.cn/oauth2/v3/authorize`，回调为 `api.teslalink.joviluma.com/v1/auth/tesla/callback`；此前 POST 404 已确认是探测方法错误。
+- NOT_PERFORMED：未输入 Tesla 凭据，未完成真实云登录/历史页面点击；未 commit/push。
+# 2026-09-01 数据准备、待机能耗与设置体验修复
+
+## Plan
+
+- [x] 为云端首次登录的等待/收集状态与待机 404 降级补 RED 测试。
+- [x] 修复待机能耗的本地历史降级和中文空态，不把缺失数据显示为错误或 0。
+- [x] 优化首次登录数据准备提示，明确区分实时可用、车辆等待、历史收集和不支持。
+- [x] 将高德 Key 配置改为 3 步图文面板，保留复制、隐私和验证闭环。
+- [x] 将高级网络改为云端/自托管模式感知的卡片面板，加入版本号和本次修复说明。
+- [x] 更新工程 Bug 记录、Lessons；完成本地构建与真机覆盖升级验证。
+- [x] Obsidian/Codex memory 同步：项目 Markdown 镜像已通过 `invoke-mirror.ps1` 更新为 `MEMORY_UPDATED`；当前没有可写的项目槽位，不创建新 Vault 槽位。
+
+## Review
+
+- LOCAL PASS：Android Debug/Release 单测、Debug/Release 构建、Release lint、AndroidTest 编译、JourVolt API/Adapter Go test/vet 均通过。
+- DEVICE PASS：同签名 `com.matelink` 由 1.4.2 覆盖升级至 1.4.3；首装时间保持，Dashboard、行程、充电、待机、设置和 AMap 向导可打开；无新增 MateLink FATAL。
+- TELEMETRY PILOT PASS：NOT PERFORMED；未执行真实 Fleet Telemetry、虚拟钥匙配对或真实行程/充电事件，不能以本地测试代替。
+- 版本候选：`E:\Claude_allow\Download\matelink-1.4.3-release-signed-readiness-standby-amap-settings-20260901.apk`，SHA-256 `0C92E0040F192F7229E0710F0C8119A3D63CEDCC03527F3374CBA87A0A968DC1`。
+- 边界：本轮不修改 iOS，不提交、不推送、不部署；保留当前工作树中的既有用户资产。

@@ -11,6 +11,16 @@
     <string name="amap_status_verification_required">Verification required</string>
     <string name="amap_status_restart_required">Restart required after key change</string>
     <string name="amap_setup_title">Configure AMap</string>
+    <string name="amap_setup_step_1_title">1. Create an Android Key</string>
+    <string name="amap_setup_step_1_body">Open the AMap Open Platform, create an application, and choose an Android SDK Key.</string>
+    <string name="amap_setup_step_2_title">2. Bind MateLink</string>
+    <string name="amap_setup_step_2_body">Copy the package name and the SHA1 below into the Android security settings in AMap.</string>
+    <string name="amap_setup_step_3_title">3. Paste and verify</string>
+    <string name="amap_setup_step_3_body">Paste the Android SDK Key here, accept the map privacy information, then test and save it.</string>
+    <string name="amap_setup_step_progress">Step %1$d of %2$d</string>
+    <string name="amap_setup_next">Next</string>
+    <string name="amap_setup_previous">Previous</string>
+    <string name="amap_setup_platform_illustration">AMap Open Platform</string>
     <string name="amap_identity_package">Package: %1$s</string>
     <string name="amap_identity_build">Build: %1$s</string>
     <string name="amap_identity_sha1">SHA1: %1$s</string>
@@ -146,6 +156,7 @@
     <string name="plug">Plug</string>
     <string name="refresh">Refresh</string>
     <string name="server_not_configured_message">Server is not configured. Open Settings to connect TeslaMate.</string>
+    <string name="history_identity_unavailable_message">Vehicle identity is still being prepared. History will be available after the vehicle data is updated.</string>
     <string name="elevation_label">Elevation: %1$s%2$s</string>
     <string name="dashboard_snapshot_time">Snapshot %1$s</string>
     <string name="snapshot_source_live">Live</string>
@@ -385,7 +396,7 @@
     <string name="standby_range_7_days">7 days</string>
     <string name="standby_range_30_days">30 days</string>
     <string name="standby_range_year">1 year</string>
-    <string name="standby_insufficient_detail">Current range has %1$d observed parking windows and %2$.1f qualified hours. A stable conclusion needs 5 valid windows and 20 qualified hours.</string>
+    <string name="standby_insufficient_detail">This range has %1$d observed parking windows and %2$.1f qualified hours. After first login, drive and charge history appears gradually as the vehicle reconnects and the data source collects observations; a stable conclusion needs 5 valid windows and 20 qualified hours.</string>
     <string name="standby_evidence_title">Evidence and coverage</string>
     <string name="standby_evidence_summary">Observed %1$d parking windows; %2$d valid windows; %3$.1f qualified hours.</string>
     <string name="standby_stable_conclusion">Enough data for a stable conclusion</string>
@@ -413,6 +424,9 @@
     <string name="vampire_how_title">How This Works</string>
     <string name="vampire_how_desc">Standby drain starts with a battery drop between charge sessions without a recorded drive. Energy in kWh and average power are shown only when usable battery capacity or telemetry energy is available; the cause is not inferred from a battery drop alone.</string>
     <string name="vampire_no_data">No attributable standby drain was detected. At least two charge records with a battery drop and no intervening drive are required; the cause is not inferred without evidence.</string>
+    <string name="vampire_collecting_title">Standby history is still collecting</string>
+    <string name="vampire_data_unavailable">Standby data is temporarily unavailable. Try again later.</string>
+    <string name="vampire_auth_required">Vehicle authorization is no longer valid. Sign in to Tesla again.</string>
     <string name="vampire_soc_only_title">Only battery-percentage evidence is available</string>
     <string name="vampire_soc_only_body">This is a low-confidence parked battery change. Energy, average power and cause remain unknown until telemetry or observed capacity data is available.</string>
     <string name="vampire_total_kwh">Total standby energy</string>
@@ -1001,6 +1015,12 @@
     <string name="settings_accept_invalid_certs_hint">Allow self-signed certificates</string>
     <string name="settings_accept_invalid_certs_warning">Warning: This reduces security</string>
     <string name="settings_advanced_network">Advanced Network</string>
+    <string name="settings_cloud_connection_description">This app is using the JourVolt/Tesla cloud connection. The self-hosted settings below are optional and are only used when you connect your own TeslaMate service.</string>
+    <string name="settings_self_hosted_connection_description">Use these settings only for your own TeslaMate-compatible API. Cloud login does not require them.</string>
+    <string name="settings_self_hosted_panel_title">Self-hosted connection (optional)</string>
+    <string name="settings_server_panel_title">Server addresses</string>
+    <string name="settings_auth_panel_title">Authentication</string>
+    <string name="settings_security_panel_title">Security</string>
     <string name="settings_api_token_hint">Optional. Add this if your TeslaMate API requires a token.</string>
     <string name="settings_api_token_label">API Token</string>
     <string name="settings_api_token_placeholder">Enter token</string>
@@ -1021,6 +1041,14 @@
     <string name="settings_palette_preview">Palette Preview</string>
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
+    <string name="settings_release_notes_title">This update</string>
+    <string name="settings_release_notes_version">MateLink 1.4.3</string>
+    <string name="settings_release_notes_view">View update notes</string>
+    <string name="settings_release_notes_close">Got it</string>
+    <string name="settings_release_notes_body">• First-login data status now explains available, waiting, collecting, and unsupported fields.
+• Standby history no longer shows a generic error when the optional endpoint is unavailable; it uses device history conservatively.
+• AMap setup is now a three-step guide with copy and verification actions.
+• Advanced network settings now distinguish cloud and self-hosted connections.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>
     <string name="settings_resync_dialog_text_delete">This will delete all local data.</string>
@@ -1356,7 +1384,7 @@
     <string name="trip_notification_unknown_location">Unknown location</string>
     <string name="data_readiness_title">Data Status</string>
     <string name="data_readiness_intro_title">Vehicle connected, some data is still preparing</string>
-    <string name="data_readiness_intro_body">MateLink only displays data it actually receives; it never treats missing values as 0.</string>
+    <string name="data_readiness_intro_body">After first login, live status may be available immediately. Location, drive history and charge history appear after the vehicle reconnects and the data source has collected more observations. “Waiting” or “Collecting” is not a login failure or a subscription requirement. MateLink only displays data it actually receives; it never treats missing values as 0. If the status page asks for a virtual-key pairing, follow that guide to enable continuous telemetry.</string>
     <string name="data_readiness_intro_continue">Enter Dashboard</string>
     <string name="data_readiness_intro_open">View Data Status</string>
     <string name="data_readiness_item_live_status">Live status</string>
@@ -1380,6 +1408,7 @@
     <string name="data_readiness_source_fleet_api">Fleet API</string>
     <string name="data_readiness_source_mock">Local mock</string>
     <string name="data_readiness_source_legacy">Legacy compatibility</string>
+    <string name="data_readiness_source_local_history">This device</string>
     <string name="data_readiness_source_unavailable">Unavailable</string>
     <string name="data_readiness_load_error">Data status could not be loaded. Check the connection and try again.</string>
     <string name="data_readiness_migrate_legacy">Verify and migrate local history</string>

@@ -81,6 +81,7 @@ import com.matelink.R
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.repository.GeocodeProgressInfo
+import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.data.sync.HistoryMetadataState
 import com.matelink.domain.analytics.AnalysisSummary
 import com.matelink.domain.analytics.AnalysisConclusions
@@ -126,6 +127,7 @@ fun StatsScreen(
     val isDarkTheme = isSystemInDarkTheme()
     val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
     var showSyncLogsDialog by remember { mutableStateOf(false) }
+    val historyIdentityUnavailableMessage = stringResource(R.string.history_identity_unavailable_message)
 
     // State for Records pager - remember across filter changes
     var recordsSelectedCategory by rememberSaveable { mutableStateOf("") }
@@ -162,7 +164,13 @@ fun StatsScreen(
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(error)
+            snackbarHostState.showSnackbar(
+                if (error == HISTORY_IDENTITY_UNAVAILABLE) {
+                    historyIdentityUnavailableMessage
+                } else {
+                    error
+                }
+            )
             viewModel.clearError()
         }
     }

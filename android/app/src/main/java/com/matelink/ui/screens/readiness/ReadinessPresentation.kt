@@ -27,6 +27,7 @@ fun readinessSourceLabelRes(source: String): Int = when (source.trim().lowercase
     "fleet_api" -> R.string.data_readiness_source_fleet_api
     "mock_fixture" -> R.string.data_readiness_source_mock
     "legacy_compatibility" -> R.string.data_readiness_source_legacy
+    "local_history" -> R.string.data_readiness_source_local_history
     else -> R.string.data_readiness_source_unavailable
 }
 

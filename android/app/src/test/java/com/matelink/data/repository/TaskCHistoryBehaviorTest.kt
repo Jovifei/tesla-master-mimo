@@ -43,6 +43,16 @@ class TaskCHistoryBehaviorTest {
     }
 
     @Test
+    fun missingCloudVehicleIdentityFailsClosedWithDomainError() {
+        try {
+            cloudVehicleStableIdentity("account-a", "")
+            throw AssertionError("missing cloud vehicle identity must fail closed")
+        } catch (_: HistoryIdentityUnavailableException) {
+            // Missing provider identity must not be replaced by the numeric car id.
+        }
+    }
+
+    @Test
     fun sameRemoteIdInDifferentLocalNamespacesIsNotAReadMatch() {
         val legacy = listOf(DriveData(7))
         val newVehicleLocalHistory = emptyList<DriveData>()

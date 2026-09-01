@@ -38,8 +38,8 @@ android {
         applicationId = "com.matelink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "1.4.2"
+        versionCode = 15
+        versionName = "1.4.3"
         buildConfigField("String", "GIT_SHA", "\"${resolveGitSha()}\"")
         val publicInfoBaseUrl = providers.gradleProperty("MATELINK_PUBLIC_INFO_BASE_URL").orElse("").get()
         buildConfigField("String", "MATELINK_PUBLIC_INFO_BASE_URL", "\"$publicInfoBaseUrl\"")

@@ -65,6 +65,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.Units
+import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.domain.model.UnitFormatter
 import com.matelink.ui.components.BarChartData
 import com.matelink.ui.components.DateRangePickerDialog
@@ -123,10 +124,15 @@ fun DrivesScreen(
     }
 
     val serverNotConfiguredMessage = stringResource(R.string.server_not_configured_message)
+    val historyIdentityUnavailableMessage = stringResource(R.string.history_identity_unavailable_message)
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
             snackbarHostState.showSnackbar(
-                if (error == "Server not configured") serverNotConfiguredMessage else error
+                when (error) {
+                    "Server not configured" -> serverNotConfiguredMessage
+                    HISTORY_IDENTITY_UNAVAILABLE -> historyIdentityUnavailableMessage
+                    else -> error
+                }
             )
             viewModel.clearError()
         }

@@ -6,17 +6,20 @@ import com.matelink.data.api.models.StandbyWindowData
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.repository.UnifiedHistoryRepository
 import com.matelink.domain.analytics.NoDataReason
 import com.matelink.domain.analytics.QualifiedStandbyWindow
 import com.matelink.domain.analytics.StandbyCause
 import com.matelink.domain.analytics.StandbyRange
 import com.matelink.domain.analytics.StandbyWindowInput
+import com.matelink.domain.analytics.buildLocalStandbyWindows
 import com.matelink.domain.analytics.qualifyStandbyWindow
 import com.matelink.domain.analytics.selectStandbyWindows
 import com.matelink.domain.analytics.summarizeStandbyWindows
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.LocalDate
 import java.time.OffsetDateTime
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -50,7 +53,9 @@ data class VampireUiState(
     val observedWindowCount: Int = 0,
     val qualifiedHours: Double = 0.0,
     val hasStableConclusion: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val errorCode: Int? = null,
+    val errorDetails: String? = null
 )
 
 data class DailyDrain(
@@ -61,10 +66,24 @@ data class DailyDrain(
     val periodCount: Int
 )
 
+internal fun resolveStandbyFallback(
+    direct: ApiResult<List<StandbyWindowData>>,
+    local: ApiResult<List<StandbyWindowData>>
+): ApiResult<List<StandbyWindowData>> = when {
+    direct is ApiResult.Success && direct.data.isNotEmpty() -> direct
+    local is ApiResult.Success -> local
+    direct is ApiResult.Error && (
+        direct.code == 404 || direct.details == com.matelink.data.repository.STANDBY_ENDPOINT_UNAVAILABLE
+        ) -> local
+    direct is ApiResult.Success -> local
+    else -> direct
+}
+
 @HiltViewModel
 class VampireViewModel @Inject constructor(
     private val repository: TeslamateRepository,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val historyRepository: UnifiedHistoryRepository
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(VampireUiState())
     val uiState = _uiState.asStateFlow()
@@ -77,19 +96,54 @@ class VampireViewModel @Inject constructor(
         viewModelScope.launch {
             val selectedWindow = _uiState.value.selectedWindow
             _uiState.value = VampireUiState(isLoading = true, selectedWindow = selectedWindow)
-            val carId = settingsRepository.currentCarId.first()
-            when (val response = repository.getStandbyWindows(carId)) {
-                is ApiResult.Error -> _uiState.value = VampireUiState(
+            try {
+                val carId = settingsRepository.currentCarId.first()
+                when (val response = loadStandbyWindows(carId)) {
+                    is ApiResult.Error -> _uiState.value = VampireUiState(
+                        isLoading = false,
+                        selectedWindow = selectedWindow,
+                        error = response.message,
+                        errorCode = response.code,
+                        errorDetails = response.details
+                    )
+                    is ApiResult.Success -> {
+                        allWindows = response.data.mapNotNull(::toQualifiedWindow)
+                        recalculate(selectedWindow)
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.value = VampireUiState(
                     isLoading = false,
                     selectedWindow = selectedWindow,
-                    error = response.message
+                    error = e.message,
+                    errorCode = null
                 )
-                is ApiResult.Success -> {
-                    allWindows = response.data.mapNotNull(::toQualifiedWindow)
-                    recalculate(selectedWindow)
-                }
             }
         }
+    }
+
+    private suspend fun loadStandbyWindows(carId: Int): ApiResult<List<StandbyWindowData>> {
+        val direct = repository.getStandbyWindows(carId)
+        if (direct is ApiResult.Success && direct.data.isNotEmpty()) return direct
+
+        val fallback: ApiResult<List<StandbyWindowData>> = when (val history =
+            historyRepository.load(remoteApiCarId = carId)
+        ) {
+            is ApiResult.Success -> {
+                val windows = buildLocalStandbyWindows(history.data.drives, history.data.charges)
+                ApiResult.Success(
+                    windows,
+                    com.matelink.data.repository.ApiResponseMetadata(
+                        availability = if (windows.isEmpty()) "collecting" else "available",
+                        source = "local_history"
+                    )
+                )
+            }
+            is ApiResult.Error -> history
+        }
+        return resolveStandbyFallback(direct, fallback)
     }
 
     fun selectWindow(window: StandbyRange) {
@@ -126,7 +180,7 @@ class VampireViewModel @Inject constructor(
             isLoading = false,
             noDataReason = when {
                 periods.isNotEmpty() -> null
-                allWindows.isEmpty() -> NoDataReason.INSUFFICIENT_COVERAGE
+                allWindows.isEmpty() -> NoDataReason.COLLECTING
                 else -> NoDataReason.FILTER_EMPTY
             },
             selectedWindow = window,

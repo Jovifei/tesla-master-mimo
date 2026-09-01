@@ -11,6 +11,16 @@
     <string name="amap_status_verification_required">需要验证</string>
     <string name="amap_status_restart_required">修改后需重启</string>
     <string name="amap_setup_title">配置高德地图</string>
+    <string name="amap_setup_step_1_title">1. 创建 Android Key</string>
+    <string name="amap_setup_step_1_body">打开高德开放平台，创建应用并选择 Android SDK Key。</string>
+    <string name="amap_setup_step_2_title">2. 绑定 MateLink</string>
+    <string name="amap_setup_step_2_body">将下面的包名和 SHA1 填入高德控制台的 Android 安全设置。</string>
+    <string name="amap_setup_step_3_title">3. 粘贴并验证</string>
+    <string name="amap_setup_step_3_body">在这里粘贴 Android SDK Key，同意地图隐私说明，然后测试并保存。</string>
+    <string name="amap_setup_step_progress">第 %1$d 步，共 %2$d 步</string>
+    <string name="amap_setup_next">下一步</string>
+    <string name="amap_setup_previous">上一步</string>
+    <string name="amap_setup_platform_illustration">高德开放平台</string>
     <string name="amap_identity_package">包名：%1$s</string>
     <string name="amap_identity_build">构建类型：%1$s</string>
     <string name="amap_identity_sha1">SHA1：%1$s</string>
@@ -146,6 +156,7 @@
     <string name="plug">充电枪</string>
     <string name="refresh">刷新</string>
     <string name="server_not_configured_message">服务器尚未配置，请前往“设置”连接 TeslaMate。</string>
+    <string name="history_identity_unavailable_message">车辆身份信息仍在准备中，更新车辆数据后即可查看历史记录。</string>
     <string name="elevation_label">海拔: %1$s%2$s</string>
     <string name="dashboard_snapshot_time">快照时间 %1$s</string>
     <string name="snapshot_source_live">实时数据</string>
@@ -385,7 +396,7 @@
     <string name="standby_range_7_days">近 7 天</string>
     <string name="standby_range_30_days">近 30 天</string>
     <string name="standby_range_year">近 1 年</string>
-    <string name="standby_insufficient_detail">当前范围有 %1$d 个停车窗口、%2$.1f 小时合格覆盖。稳定结论至少需要 5 个有效窗口和 20 小时合格覆盖。</string>
+    <string name="standby_insufficient_detail">当前范围有 %1$d 个停车窗口、%2$.1f 小时合格覆盖。首次登录后，车辆重新联网并由数据源持续收集观测，行程和充电历史会逐步显示；稳定结论至少需要 5 个有效窗口和 20 小时合格覆盖。</string>
     <string name="standby_evidence_title">证据与覆盖</string>
     <string name="standby_evidence_summary">已观测 %1$d 个停车窗口；%2$d 个有效窗口；%3$.1f 小时合格覆盖。</string>
     <string name="standby_stable_conclusion">数据已足够形成稳定结论</string>
@@ -413,6 +424,9 @@
     <string name="vampire_how_title">工作原理</string>
     <string name="vampire_how_desc">待机耗电首先根据两次充电之间、且没有行驶记录的电量下降来识别。只有在有可用电池容量或 Telemetry 能耗数据时才显示 kWh 和平均功率；仅凭电量下降不会推断具体原因。</string>
     <string name="vampire_no_data">暂未发现可归因的待机能耗。至少需要两条充电记录、期间电量下降且没有行程；没有证据时不推断具体原因。</string>
+    <string name="vampire_collecting_title">待机历史正在收集</string>
+    <string name="vampire_data_unavailable">待机数据暂时无法读取，请稍后重试。</string>
+    <string name="vampire_auth_required">车辆授权已失效，请重新登录 Tesla。</string>
     <string name="vampire_soc_only_title">目前只有电量百分比证据</string>
     <string name="vampire_soc_only_body">这是低置信度的停车期间电量变化。获得 Telemetry 或实测容量后，才能计算能量和平均功率；原因仍不会在没有证据时推断。</string>
     <string name="vampire_total_kwh">总待机能耗</string>
@@ -992,6 +1006,12 @@
     <string name="settings_accept_invalid_certs_hint">允许自签名证书</string>
     <string name="settings_accept_invalid_certs_warning">警告：这会降低安全性</string>
     <string name="settings_advanced_network">高级网络</string>
+    <string name="settings_cloud_connection_description">当前使用 JourVolt/Tesla 云端连接。下面的自托管设置是可选的，仅在连接你自己的 TeslaMate 服务时使用。</string>
+    <string name="settings_self_hosted_connection_description">仅在连接你自己的 TeslaMate 兼容 API 时填写。云端登录不需要这些设置。</string>
+    <string name="settings_self_hosted_panel_title">自托管连接（可选）</string>
+    <string name="settings_server_panel_title">服务器地址</string>
+    <string name="settings_auth_panel_title">认证信息</string>
+    <string name="settings_security_panel_title">安全选项</string>
     <string name="settings_api_token_hint">输入你的 API 令牌</string>
     <string name="settings_api_token_label">API 令牌</string>
     <string name="settings_api_token_placeholder">输入令牌</string>
@@ -1011,6 +1031,14 @@
     <string name="settings_palette_preview">调色板预览</string>
     <string name="settings_primary_server">主服务器</string>
     <string name="settings_report_issue">报告问题</string>
+    <string name="settings_release_notes_title">本次更新</string>
+    <string name="settings_release_notes_version">MateLink 1.4.3</string>
+    <string name="settings_release_notes_view">查看本次更新</string>
+    <string name="settings_release_notes_close">知道了</string>
+    <string name="settings_release_notes_body">• 首次登录的数据状态会明确区分可用、等待、收集中和不支持。
+• 待机历史接口暂不可用时不再显示通用错误，改为保守使用本机历史。
+• 高德配置改为三步向导，并保留复制和验证操作。
+• 高级网络设置现在区分云端连接和自托管连接。</string>
     <string name="settings_resync_button">重新同步</string>
     <string name="settings_resync_confirm">确认重新同步</string>
     <string name="settings_resync_dialog_text_delete">这将删除所有本地数据。</string>
@@ -1347,7 +1375,7 @@
     <string name="trip_notification_unknown_location">未知地点</string>
     <string name="data_readiness_title">数据状态</string>
     <string name="data_readiness_intro_title">车辆已连接，部分数据正在准备。</string>
-    <string name="data_readiness_intro_body">MateLink 只显示实际收到的数据，不会把缺失值当成 0。</string>
+    <string name="data_readiness_intro_body">首次登录后，实时车况可能马上可用；位置、行程历史和充电历史要等车辆重新联网，并由数据源持续收集后逐步显示。“等待车辆”或“收集中”不是登录失败，也不代表需要订阅。MateLink 只显示实际收到的数据，不会把缺失值当成 0。如果数据状态要求配对虚拟钥匙，请按页面指引开启持续遥测。</string>
     <string name="data_readiness_intro_continue">进入 Dashboard</string>
     <string name="data_readiness_intro_open">查看数据状态</string>
     <string name="data_readiness_item_live_status">实时状态</string>
@@ -1371,6 +1399,7 @@
     <string name="data_readiness_source_fleet_api">车队 API</string>
     <string name="data_readiness_source_mock">本地模拟</string>
     <string name="data_readiness_source_legacy">旧版兼容模式</string>
+    <string name="data_readiness_source_local_history">本机</string>
     <string name="data_readiness_source_unavailable">暂不可用</string>
     <string name="data_readiness_load_error">数据状态加载失败，请检查连接后重试。</string>
     <string name="data_readiness_migrate_legacy">验证并迁移本机历史</string>
