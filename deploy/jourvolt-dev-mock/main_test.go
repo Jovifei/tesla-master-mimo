@@ -74,6 +74,27 @@ func TestHealthzAndReadinessFailClosedWithoutStore(t *testing.T) {
 	}
 }
 
+func TestTelemetryReadinessSurfacesNilTelemetryInFleetMode(t *testing.T) {
+	tests := []struct {
+		name string
+		mode string
+		want string
+	}{
+		{name: "fleet without telemetry", mode: "fleet", want: "telemetry_not_configured"},
+		{name: "fleet with debug mock without telemetry", mode: "fleet_with_debug_mock", want: "telemetry_not_configured"},
+		{name: "mock only without telemetry", mode: "mock_only", want: ""},
+		{name: "unconfigured without telemetry", mode: "unconfigured", want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			api := &app{mode: test.mode}
+			if got := api.readinessTelemetryState(context.Background()); got != test.want {
+				t.Fatalf("readinessTelemetryState() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestMockProviderReturnsDevelopmentVehicle(t *testing.T) {
 	vehicles, err := (mockProvider{}).Vehicles(context.Background(), "mock-user")
 	if err != nil {

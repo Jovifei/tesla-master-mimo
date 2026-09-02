@@ -837,16 +837,34 @@ func (a *app) readyz(w http.ResponseWriter, r *http.Request) {
 		a.json(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
 		return
 	}
-	if a.telemetry != nil {
-		telemetryState := a.telemetry.telemetryReadinessState(ctx)
-		if telemetryState != "" {
-			a.json(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "telemetry": telemetryState})
-			return
-		}
+	if state := a.readinessTelemetryState(ctx); state != "" {
+		a.json(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "telemetry": state})
+		return
 	}
 	a.json(w, http.StatusOK, map[string]any{
 		"status": "ok", "mode": a.mode, "persistence": "postgres",
 	})
+}
+
+// readinessTelemetryState returns a non-empty diagnostic when the telemetry
+// chain is unhealthy. In fleet mode (Tesla account login) trip/charge history
+// depends on Fleet Telemetry MQTT, so a nil telemetry service is surfaced as
+// "telemetry_not_configured" rather than silently reporting "ok".
+func (a *app) readinessTelemetryState(ctx context.Context) string {
+	if a.telemetry != nil {
+		return a.telemetry.telemetryReadinessState(ctx)
+	}
+	if isFleetMode(a.mode) {
+		return "telemetry_not_configured"
+	}
+	return ""
+}
+
+// isFleetMode reports whether the process is running in Tesla Fleet API mode,
+// where live data and trip/charge history depend on Fleet Telemetry MQTT.
+// Mock-only and unconfigured modes have their own (non-telemetry) history path.
+func isFleetMode(mode string) bool {
+	return mode == "fleet" || mode == "fleet_with_debug_mock"
 }
 
 func main() {
