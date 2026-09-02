@@ -63,6 +63,13 @@
     <string name="app_name">MateLink</string>
     <string name="tesla_login_title">Connect your Tesla</string>
     <string name="tesla_login_description">Sign in on the official Tesla page. MateLink never sees or stores your Tesla password.</string>
+    <string name="tesla_login_documents_section">Before you continue</string>
+    <string name="tesla_login_documents_hint">Read and accept both public documents before starting Tesla authorization.</string>
+    <string name="tesla_login_cloud_section">Tesla cloud sign-in</string>
+    <string name="tesla_login_cloud_hint">Authorization happens on the official Tesla page and returns to MateLink when complete.</string>
+    <string name="tesla_login_self_hosted_hint">If you use your own TeslaMate service, open the self-hosted connection settings here.</string>
+    <string name="tesla_login_self_hosted_open">Open self-hosted settings</string>
+    <string name="tesla_login_back">Back to settings</string>
     <string name="tesla_login_terms_consent">I have read and agree to the User Agreement.</string>
     <string name="tesla_login_privacy_consent">I have read and agree to the Privacy Policy.</string>
     <string name="tesla_login_view_terms">View User Agreement</string>
@@ -1042,12 +1049,14 @@
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
     <string name="settings_release_notes_title">This update</string>
-    <string name="settings_release_notes_version">MateLink 1.4.3</string>
+    <string name="settings_release_notes_version">MateLink 1.4.4</string>
     <string name="settings_release_notes_view">View update notes</string>
     <string name="settings_release_notes_close">Got it</string>
-    <string name="settings_release_notes_body">• First-login data status now explains available, waiting, collecting, and unsupported fields.
+    <string name="settings_release_notes_body">• Fixed the Tesla login button being incorrectly disabled when the public document URL was omitted.
+• The login page now uses consistent panels for the intro, consent, cloud sign-in, and self-hosted connection; reauthorization can return to Settings.
+• First-login data status now explains available, waiting, collecting, and unsupported fields.
 • Standby history no longer shows a generic error when the optional endpoint is unavailable; it uses device history conservatively.
-• AMap setup is now a three-step guide with copy and verification actions.
+• AMap setup is now a three-step panelled guide with copy and verification actions.
 • Advanced network settings now distinguish cloud and self-hosted connections.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>

@@ -1,5 +1,30 @@
 # JourVolt Android rollout implementation - 2026-08-09
 
+## 2026-09-01 真机登录与高德配置回归（当前）
+
+### Plan
+
+- [x] 连接并核对真实 `com.matelink` 包、版本、签名和保留数据。
+- [x] 捕获登录页与高德配置页现状，读取 AndroidRuntime/网络错误证据并定位根因。
+- [x] 以现有面板风格完成最小 Android 修复，并补回归测试。
+- [x] 使用同签名 `adb install -r` 覆盖升级，验证登录入口、高德向导、返回/错误/重试和冷启动无崩溃。
+- [x] 记录实际设备证据、未执行的真实 Tesla/Telemetry 边界和下一步。
+
+### Review
+
+- LOCAL PASS：定向回归、Android Debug/Release 单测、AndroidTest 编译、Debug/Release 构建和 Release lint 通过；Debug/Release 均完成 468 项，Release 8 项预期跳过，lint 0 Error/0 MissingTranslation。
+- DEVICE PASS：OnePlus 7 Pro `6e4fa92f` 使用同签名 `adb install -r` 从 `com.matelink` 1.4.3 升级至 1.4.4；`firstInstallTime` 保持，v2 签名通过。登录协议地址、官方 Tesla 授权入口、设置返回、高德三步面板和 Key 对话框均已验证。
+- DEVICE REVIEW：曾捕获一次 `Input dispatching timed out`；ANR 采样中 MateLink 主线程处于 OnePlus `__refrigerator`，无 Java/Kotlin 阻塞栈。重启后重复设置/登录/高德路径未再复现，记录为设备级偶发 ANR，后续继续观察。
+- TELEMETRY PILOT PASS：NOT_PERFORMED；未输入 Tesla 凭据，未完成真实车辆 Telemetry、虚拟钥匙配对或真实行程/充电事件。
+- APK：`E:\Claude_allow\Download\matelink-1.4.4-login-amap-panels-final-20260902.apk`，SHA-256 `A5D85DDEFA674353223589694D9CAF1AB03F3A58156AD582FDB050D2187A1AD`。
+
+## 2026-09-02 登录、高德配置与设备回归修复记录
+
+- 登录页原先因 Release 漏传 `MATELINK_PUBLIC_INFO_BASE_URL` 被错误禁用；现在默认指向 `https://auth.teslalink.joviluma.com`，Release 同时要求显式传入并做 host 校验。
+- 登录页改为统一面板层级，设置重新授权可返回设置；只点击登录按钮时实际打开官方 `https://auth.tesla.cn/oauth2/v3/authorize`。
+- 高德配置页改为进度面板、内容面板、状态面板和统一返回/下一步按钮；无 Key、隐私确认和验证对话框均未崩溃。
+- 证据与剩余边界见 `docs/BUG-REPAIR-REPORT-2026-09-02-login-amap-device.md`；本轮源码提交到 `main`，未部署服务器。
+
 ## 2026-09-01 主分支同步与下一步 Telemetry Pilot
 
 ### Plan

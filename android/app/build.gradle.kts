@@ -38,10 +38,12 @@ android {
         applicationId = "com.matelink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.4.3"
+        versionCode = 16
+        versionName = "1.4.4"
         buildConfigField("String", "GIT_SHA", "\"${resolveGitSha()}\"")
-        val publicInfoBaseUrl = providers.gradleProperty("MATELINK_PUBLIC_INFO_BASE_URL").orElse("").get()
+        val publicInfoBaseUrl = providers.gradleProperty("MATELINK_PUBLIC_INFO_BASE_URL")
+            .orElse("https://auth.teslalink.joviluma.com")
+            .get()
         buildConfigField("String", "MATELINK_PUBLIC_INFO_BASE_URL", "\"$publicInfoBaseUrl\"")
         buildConfigField("boolean", "JOURVOLT_MOCK_LOGIN", "false")
         buildConfigField("String", "JOURVOLT_MOCK_SOURCE", "\"\"")
@@ -153,6 +155,9 @@ android {
 // fails fast when the pilot properties are absent. Debug builds are unaffected;
 // build-pilot-apk.ps1 always passes both properties explicitly.
 val releaseGuardApiBaseUrl = providers.gradleProperty("JOURVOLT_API_BASE_URL").orNull
+val releaseGuardPublicInfoBaseUrl = providers.gradleProperty("MATELINK_PUBLIC_INFO_BASE_URL").orNull
+    ?.trim()
+    ?.removeSuffix("/")
 val releaseGuardAuthHost = providers.gradleProperty("JOURVOLT_AUTH_HOST").orNull
     ?.trim()
     ?.removePrefix("https://")
@@ -162,6 +167,9 @@ tasks.matching { it.name == "generateReleaseBuildConfig" }.configureEach {
         check(!releaseGuardApiBaseUrl.isNullOrBlank()) {
             "Release guard: provide -PJOURVOLT_API_BASE_URL explicitly; " +
                 "a Release package must never fall back to the default API URL"
+        }
+        check(releaseGuardPublicInfoBaseUrl == "https://auth.teslalink.joviluma.com") {
+            "Release guard: provide -PMATELINK_PUBLIC_INFO_BASE_URL=https://auth.teslalink.joviluma.com explicitly"
         }
         check(releaseGuardAuthHost == "auth.teslalink.joviluma.com") {
             "Release guard: provide -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com explicitly " +

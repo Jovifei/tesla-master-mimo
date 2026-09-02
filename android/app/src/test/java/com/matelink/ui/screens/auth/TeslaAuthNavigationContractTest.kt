@@ -114,6 +114,25 @@ class TeslaAuthNavigationContractTest {
     }
 
     @Test
+    fun releaseBuildAndSetupSurfacesKeepCloudLoginAvailableAndPanelled() {
+        val build = File("build.gradle.kts").readText()
+        val login = source("ui/screens/auth/TeslaLoginScreen.kt")
+        val navigation = source("ui/navigation/NavGraph.kt")
+        val amap = source("ui/screens/map/AmapSetupGuideScreen.kt")
+
+        assertTrue(build.contains("orElse(\"https://auth.teslalink.joviluma.com\")"))
+        assertTrue(build.contains("releaseGuardPublicInfoBaseUrl"))
+        assertTrue(login.contains("CardDefaults.cardColors"))
+        assertTrue(login.contains("verticalScroll"))
+        assertTrue(login.contains("Role.Checkbox"))
+        assertTrue(login.contains("onNavigateBack"))
+        assertTrue(navigation.contains("onNavigateBack"))
+        assertTrue(navigation.contains("navController.popBackStack()"))
+        assertTrue(navigation.contains("navController.navigate(Screen.Settings)"))
+        assertTrue(amap.contains("BorderStroke"))
+    }
+
+    @Test
     fun accountDeletionOffersTeslaConsentRevocationPage() {
         val api = source("ui/screens/auth/TeslaAuthApi.kt")
         val viewModel = source("ui/screens/auth/TeslaLoginViewModel.kt")

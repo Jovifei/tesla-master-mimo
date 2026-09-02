@@ -355,3 +355,20 @@
 
 - Pattern: A code update without an in-app explanation left device testers unable to tell which behavior had changed, especially when the build SHA still pointed at the pre-commit HEAD.
 - Prevention rule: Every user-visible update increments `versionCode`/`versionName`, adds localized release notes, and distinguishes the version from the build Git SHA. Do not publish or push until the notes match the tested candidate and the exact APK identity is recorded.
+
+## 2026-09-02 Release 公共协议地址必须防漏配
+
+- Pattern: Release 构建未传 `MATELINK_PUBLIC_INFO_BASE_URL` 时，`PublicInfoLinks` 返回空值，登录页把协议按钮和 Tesla 登录按钮全部禁用，并误导用户以为云端授权不可用。
+- Resolution: 默认值指向已发布的官方协议域名；Release guard 同时要求显式传入 `https://auth.teslalink.joviluma.com`，避免静默使用错误地址。每个发布包都要检查生成的 BuildConfig 和真机协议按钮状态。
+- Prevention rule: 公开协议地址与 API/Auth host 一样属于 Release 必填配置；构建脚本、构建命令和设备入口必须使用同一套 fail-fast 校验，不能只凭源码默认值判断登录可用。
+
+## 2026-09-02 重新授权导航不能让自动重定向抢先清栈
+
+- Pattern: 设置页重新授权先清会话，Dashboard 自动登录重定向可能在异步回调导航前执行并清掉 Settings，导致登录页返回桌面或没有返回入口。
+- Resolution: 登录页始终提供安全返回；有上一级时返回上一级，没有上一级时进入 Settings，并在返回窗口抑制自动重定向；成功授权后仍由统一导航清栈回 Dashboard。
+- Prevention rule: 对“清会话 + 异步导航”流程测试返回、取消、超时和成功四条路径；不要只测试成功回调，也不要依赖 `previousBackStackEntry` 作为唯一来源判断。
+
+## 2026-09-02 设备 ANR 需要区分应用阻塞与系统冻结
+
+- Pattern: OnePlus 设备曾报告 `Input dispatching timed out`，但 ANR 采样中 MateLink 主线程和工作线程均处于 `__refrigerator`，没有 Java/Kotlin 堆栈，不能据此改业务线程。
+- Prevention rule: ANR 必须同时读取 DropBox 主线程栈、进程 CPU/冻结状态和重启后复现结果；只有拿到应用栈或稳定复现后才修改代码。设备级冻结保留为 DEVICE REVIEW，不升级为应用 Bug 修复通过。

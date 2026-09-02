@@ -17,7 +17,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -233,8 +236,10 @@ internal fun shouldRedirectToTeslaLogin(
     startDestination: Screen?,
     connectionMode: ConnectionMode?,
     isAuthenticated: Boolean,
-    currentRoute: String
-): Boolean = startDestination == Screen.Dashboard &&
+    currentRoute: String,
+    suppressAutoRedirect: Boolean = false
+): Boolean = !suppressAutoRedirect &&
+    startDestination == Screen.Dashboard &&
     connectionMode == ConnectionMode.TESLA_CLOUD &&
     !isAuthenticated &&
     !currentRoute.contains("TeslaLogin")
@@ -286,6 +291,7 @@ fun NavGraph(
     val pendingAuthorizationUrl by teslaLoginViewModel.pendingAuthorizationUrl.collectAsState()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route.orEmpty()
+    var suppressLoginRedirect by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -346,6 +352,7 @@ fun NavGraph(
 
     LaunchedEffect(openDashboardAfterLogin) {
         if (openDashboardAfterLogin) {
+            suppressLoginRedirect = false
             navController.navigateToDashboardAfterTeslaAuth()
             teslaLoginViewModel.consumeDashboardAfterLogin()
         }
@@ -364,12 +371,25 @@ fun NavGraph(
         teslaLoginViewModel.consumeRevealLoginError()
     }
 
-    LaunchedEffect(startDestination, connectionMode, isTeslaSessionAuthenticated, currentRoute) {
+    LaunchedEffect(currentRoute) {
+        if (currentRoute.contains("Dashboard")) {
+            suppressLoginRedirect = false
+        }
+    }
+
+    LaunchedEffect(
+        startDestination,
+        connectionMode,
+        isTeslaSessionAuthenticated,
+        currentRoute,
+        suppressLoginRedirect
+    ) {
         if (shouldRedirectToTeslaLogin(
                 startDestination = startDestination,
                 connectionMode = connectionMode,
                 isAuthenticated = isTeslaSessionAuthenticated,
-                currentRoute = currentRoute
+                currentRoute = currentRoute,
+                suppressAutoRedirect = suppressLoginRedirect
             )
         ) {
             navController.navigate(Screen.TeslaLogin) {
@@ -394,7 +414,16 @@ fun NavGraph(
         composable<Screen.TeslaLogin> {
             TeslaLoginScreen(
                 viewModel = teslaLoginViewModel,
+                onNavigateBack = {
+                    suppressLoginRedirect = true
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.Settings) {
+                            launchSingleTop = true
+                        }
+                    }
+                },
                 onLoginSuccess = {
+                    suppressLoginRedirect = false
                     navController.navigateToDashboardAfterTeslaAuth()
                 },
                 onOpenSelfHosted = {
@@ -430,20 +459,22 @@ fun NavGraph(
                     navController.navigate(Screen.AmapSetup)
                 },
                 onNavigateToTeslaLogin = {
+                    suppressLoginRedirect = true
                     teslaLoginViewModel.reauthorize {
                         navController.navigate(Screen.TeslaLogin) {
-                            popUpTo(Screen.Dashboard) { inclusive = true }
                             launchSingleTop = true
                         }
                     }
                 },
                 onLogout = {
+                    suppressLoginRedirect = false
                     navController.navigate(Screen.TeslaLogin) {
                         popUpTo(Screen.Dashboard) { inclusive = true }
                         launchSingleTop = true
                     }
                 },
                 onAccountDeleted = {
+                    suppressLoginRedirect = false
                     navController.navigate(Screen.TeslaLogin) {
                         popUpTo(Screen.Dashboard) { inclusive = true }
                         launchSingleTop = true

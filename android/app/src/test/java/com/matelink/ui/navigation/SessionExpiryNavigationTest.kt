@@ -41,4 +41,17 @@ class SessionExpiryNavigationTest {
             )
         )
     }
+
+    @Test
+    fun reauthorizationLogoutWindowDoesNotClearSettingsRoute() {
+        assertFalse(
+            shouldRedirectToTeslaLogin(
+                startDestination = Screen.Dashboard,
+                connectionMode = ConnectionMode.TESLA_CLOUD,
+                isAuthenticated = false,
+                currentRoute = "Settings",
+                suppressAutoRedirect = true
+            )
+        )
+    }
 }

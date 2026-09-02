@@ -33,8 +33,8 @@ class SettingsExperienceContractTest {
     @Test
     fun currentReleaseShowsVersionAndLocalizedRepairNotes() {
         val gradle = File("build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 15"))
-        assertTrue(gradle.contains("versionName = \"1.4.3\""))
+        assertTrue(gradle.contains("versionCode = 16"))
+        assertTrue(gradle.contains("versionName = \"1.4.4\""))
         assertEquals(
             "本次更新",
             stringValue("values-zh", "settings_release_notes_title")

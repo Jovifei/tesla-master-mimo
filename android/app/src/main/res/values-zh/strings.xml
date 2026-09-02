@@ -63,6 +63,13 @@
     <string name="app_name">MateLink</string>
     <string name="tesla_login_title">连接你的 Tesla</string>
     <string name="tesla_login_description">登录将在 Tesla 官方页面完成，MateLink 不会接收或保存你的 Tesla 密码。</string>
+    <string name="tesla_login_documents_section">登录前确认</string>
+    <string name="tesla_login_documents_hint">请分别阅读并同意以下两份公开文件，再开始 Tesla 授权。</string>
+    <string name="tesla_login_cloud_section">Tesla 云端登录</string>
+    <string name="tesla_login_cloud_hint">授权会在 Tesla 官方页面完成，成功后自动返回 MateLink。</string>
+    <string name="tesla_login_self_hosted_hint">如果你使用自己的 TeslaMate 服务，可以在这里进入自托管连接设置。</string>
+    <string name="tesla_login_self_hosted_open">进入自托管设置</string>
+    <string name="tesla_login_back">返回设置</string>
     <string name="tesla_login_terms_consent">我已阅读并同意《用户协议》。</string>
     <string name="tesla_login_privacy_consent">我已阅读并同意《隐私政策》。</string>
     <string name="tesla_login_view_terms">查看用户协议</string>
@@ -1032,12 +1039,14 @@
     <string name="settings_primary_server">主服务器</string>
     <string name="settings_report_issue">报告问题</string>
     <string name="settings_release_notes_title">本次更新</string>
-    <string name="settings_release_notes_version">MateLink 1.4.3</string>
+    <string name="settings_release_notes_version">MateLink 1.4.4</string>
     <string name="settings_release_notes_view">查看本次更新</string>
     <string name="settings_release_notes_close">知道了</string>
-    <string name="settings_release_notes_body">• 首次登录的数据状态会明确区分可用、等待、收集中和不支持。
+    <string name="settings_release_notes_body">• 修复协议地址漏配导致 Tesla 登录按钮被错误禁用的问题。
+• 登录页统一为说明、协议确认、云端登录和自托管面板，重新授权可返回设置。
+• 首次登录的数据状态会明确区分可用、等待、收集中和不支持。
 • 待机历史接口暂不可用时不再显示通用错误，改为保守使用本机历史。
-• 高德配置改为三步向导，并保留复制和验证操作。
+• 高德配置改为统一面板的三步向导，并保留复制和验证操作。
 • 高级网络设置现在区分云端连接和自托管连接。</string>
     <string name="settings_resync_button">重新同步</string>
     <string name="settings_resync_confirm">确认重新同步</string>
