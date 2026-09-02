@@ -208,7 +208,7 @@ fun DashboardScreen(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                SnapshotBadge(uiState.snapshotFreshness, uiState.snapshotMixedSources)
+                SnapshotBadge(uiState.snapshotFreshness, uiState.snapshotMixedSources, uiState.snapshotSource)
                 Spacer(modifier = Modifier.width(8.dp))
                 IconButton(onClick = refresh) {
                     Icon(
@@ -927,12 +927,16 @@ internal fun snapshotSourceKind(source: String?): SnapshotSourceKind = when (sou
 }
 
 @Composable
-private fun SnapshotBadge(freshness: SnapshotFreshness, mixedSources: Boolean) {
-    val (color, label) = when (freshness) {
-        SnapshotFreshness.LIVE -> StatusSuccess to stringResource(R.string.snapshot_source_live)
-        SnapshotFreshness.HISTORY -> StatusWarning to stringResource(R.string.snapshot_source_history)
-        SnapshotFreshness.RECENT -> StatusWarning to stringResource(R.string.snapshot_source_recent)
-        SnapshotFreshness.UNAVAILABLE -> SwissMuted to stringResource(R.string.snapshot_source_unavailable)
+private fun SnapshotBadge(freshness: SnapshotFreshness, mixedSources: Boolean, source: String?) {
+    val mockEvidence = source == BuildConfig.JOURVOLT_MOCK_SOURCE && BuildConfig.JOURVOLT_MOCK_LOGIN
+    val (color, label) = when {
+        mockEvidence && BuildConfig.DEBUG -> StatusWarning to stringResource(R.string.snapshot_source_mock)
+        else -> when (freshness) {
+            SnapshotFreshness.LIVE -> StatusSuccess to stringResource(R.string.snapshot_source_live)
+            SnapshotFreshness.HISTORY -> StatusWarning to stringResource(R.string.snapshot_source_history)
+            SnapshotFreshness.RECENT -> StatusWarning to stringResource(R.string.snapshot_source_recent)
+            SnapshotFreshness.UNAVAILABLE -> SwissMuted to stringResource(R.string.snapshot_source_unavailable)
+        }
     }
     Surface(
         color = color,

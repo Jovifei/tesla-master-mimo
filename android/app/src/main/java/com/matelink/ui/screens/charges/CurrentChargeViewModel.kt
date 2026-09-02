@@ -199,7 +199,7 @@ class CurrentChargeViewModel @Inject constructor(
                             it.copy(
                                 isLoading = false,
                                 isChargeStarting = true,
-                                                            error = null
+                                error = null
                             )
                         }
                     }
