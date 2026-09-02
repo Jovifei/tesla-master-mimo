@@ -416,7 +416,9 @@ fun NavGraph(
                 viewModel = teslaLoginViewModel,
                 onNavigateBack = {
                     suppressLoginRedirect = true
-                    if (!navController.popBackStack()) {
+                    val popped = navController.popBackStack()
+                    teslaLoginViewModel.cancelReauthorization()
+                    if (!popped) {
                         navController.navigate(Screen.Settings) {
                             launchSingleTop = true
                         }

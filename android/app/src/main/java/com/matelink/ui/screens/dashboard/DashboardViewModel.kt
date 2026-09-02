@@ -20,6 +20,9 @@ import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.local.DataReadinessStore
 import com.matelink.data.sync.DataSyncWorker
+import com.matelink.domain.telemetry.SnapshotFreshness
+import com.matelink.domain.telemetry.snapshotEvidence
+import com.matelink.domain.telemetry.usableVehicleCoordinates
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
@@ -38,6 +41,8 @@ data class DashboardUiState(
     val snapshotSource: String? = null,
     val observedAt: String? = null,
     val fieldSources: Map<String, String> = emptyMap(),
+    val snapshotFreshness: SnapshotFreshness = SnapshotFreshness.UNAVAILABLE,
+    val snapshotMixedSources: Boolean = false,
     val units: Units = Units(),
     val cachedAddress: String? = null,
     val dataReadiness: DataReadiness? = null,
@@ -97,6 +102,17 @@ class DashboardViewModel @Inject constructor(
                     statusResult is ApiResult.Success -> statusResult.data.units
                     else -> Units()
                 }
+                val evidence = when {
+                    adapterResult is ApiResult.Success -> snapshotEvidence(
+                        adapterResult.data.source,
+                        adapterResult.data.observedAt,
+                        adapterResult.data.fieldSources
+                    )
+                    statusResult is ApiResult.Success -> snapshotEvidence(
+                        "teslamate_api", null, emptyMap()
+                    )
+                    else -> snapshotEvidence(null, null, emptyMap())
+                }
 
                 val primaryError = when {
                     carsResult is ApiResult.Error -> carsResult
@@ -115,6 +131,8 @@ class DashboardViewModel @Inject constructor(
                         ?: if (statusResult is ApiResult.Success) "teslamate_api" else null,
                     observedAt = (adapterResult as? ApiResult.Success)?.data?.observedAt,
                     fieldSources = (adapterResult as? ApiResult.Success)?.data?.fieldSources.orEmpty(),
+                    snapshotFreshness = evidence.freshness,
+                    snapshotMixedSources = evidence.isMixed,
                     units = units,
                     cachedAddress = loadCachedAddress(status)
                 )
@@ -159,9 +177,12 @@ class DashboardViewModel @Inject constructor(
             while (true) {
                 delay(5000)
                 try {
+                    val generation = requestGeneration
                     val carId = settingsRepository.currentCarId.first()
                     when (val result = repository.getAdapterSnapshot(carId)) {
                         is ApiResult.Success -> {
+                            val evidence = snapshotEvidence(result.data.source, result.data.observedAt, result.data.fieldSources)
+                            if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
                             _uiState.value = _uiState.value.copy(
                                 status = result.data.status,
                                 error = null,
@@ -170,26 +191,39 @@ class DashboardViewModel @Inject constructor(
                                 snapshotSource = result.data.source,
                                 observedAt = result.data.observedAt,
                                 fieldSources = result.data.fieldSources,
+                                snapshotFreshness = evidence.freshness,
+                                snapshotMixedSources = evidence.isMixed,
                                 units = result.data.units,
                                 cachedAddress = loadCachedAddress(result.data.status)
                             )
                         }
                         is ApiResult.Error -> {
                             when (val legacy = repository.getCarStatus(carId)) {
-                                is ApiResult.Success -> _uiState.value = _uiState.value.copy(
+                                is ApiResult.Success -> {
+                                    if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
+                                    _uiState.value = _uiState.value.copy(
                                     status = legacy.data.status,
                                     error = null,
                                     errorCode = null,
                                     errorKind = null,
                                     snapshotSource = "teslamate_api",
+                                    observedAt = null,
+                                    fieldSources = emptyMap(),
+                                    snapshotFreshness = SnapshotFreshness.HISTORY,
+                                    snapshotMixedSources = false,
                                     units = legacy.data.units,
                                     cachedAddress = loadCachedAddress(legacy.data.status)
                                 )
-                                is ApiResult.Error -> _uiState.value = _uiState.value.copy(
+                                }
+                                is ApiResult.Error -> {
+                                    if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
+                                    _uiState.value = _uiState.value.copy(
                                     error = legacy.message,
                                     errorCode = legacy.code,
-                                    errorKind = legacy.kind
+                                    errorKind = legacy.kind,
+                                    snapshotFreshness = SnapshotFreshness.UNAVAILABLE
                                 )
+                                }
                             }
                         }
                     }
@@ -241,9 +275,8 @@ class DashboardViewModel @Inject constructor(
     }
 
     private suspend fun loadCachedAddress(status: CarStatus?): String? {
-        val latitude = status?.latitude ?: return null
-        val longitude = status.longitude ?: return null
-        val cache = geocodingRepository.getFromCache(latitude, longitude) ?: return null
+        val coordinates = usableVehicleCoordinates(status?.latitude, status?.longitude) ?: return null
+        val cache = geocodingRepository.getFromCache(coordinates.first, coordinates.second) ?: return null
         return listOfNotNull(cache.city, cache.regionName, cache.countryName)
             .map(String::trim)
             .filter(String::isNotEmpty)

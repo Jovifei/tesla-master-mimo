@@ -27,8 +27,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -314,8 +312,6 @@ internal fun SettingsContent(
     onInstanceEditorCarIdChange: (Int) -> Unit = {},
     accountContent: @Composable () -> Unit = {}
 ) {
-    var passwordVisible by remember { mutableStateOf(false) }
-    var basicAuthPasswordVisible by remember { mutableStateOf(false) }
     var languageDropdownExpanded by remember { mutableStateOf(false) }
     var currencyDropdownExpanded by remember { mutableStateOf(false) }
     var showShortDrivesChargesInfoDialog by remember { mutableStateOf(false) }
@@ -469,203 +465,46 @@ internal fun SettingsContent(
                     }
                 )
             ) {
-            OutlinedTextField(
-                value = uiState.serverUrl,
-                onValueChange = onServerUrlChange,
-                label = { Text(stringResource(R.string.settings_server_url_label)) },
-                placeholder = { Text(stringResource(R.string.settings_server_url_placeholder)) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("serverAddressInput"),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                enabled = !uiState.isTesting && !uiState.isSaving
-            )
-
-            Text(
-                text = stringResource(R.string.settings_root_url_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Secondary API root URL
-            OutlinedTextField(
-                value = uiState.secondaryServerUrl,
-                onValueChange = onSecondaryServerUrlChange,
-                label = { Text(stringResource(R.string.settings_secondary_url_label)) },
-                placeholder = { Text(stringResource(R.string.settings_secondary_url_placeholder)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                enabled = !uiState.isTesting && !uiState.isSaving
-            )
-
-            Text(
-                text = stringResource(R.string.settings_secondary_url_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            SettingsPanelCard(stringResource(R.string.settings_auth_panel_title)) {
-            // API Token
-            OutlinedTextField(
-                value = uiState.apiToken,
-                onValueChange = onApiTokenChange,
-                label = { Text(stringResource(R.string.settings_api_token_label)) },
-                placeholder = { Text(stringResource(R.string.settings_api_token_placeholder)) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("tokenInput"),
-                singleLine = true,
-                visualTransformation = if (passwordVisible) {
-                    VisualTransformation.None
-                } else {
-                    PasswordVisualTransformation()
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                trailingIcon = {
-                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                        Icon(
-                            imageVector = if (passwordVisible) {
-                                Icons.Filled.VisibilityOff
-                            } else {
-                                Icons.Filled.Visibility
-                            },
-                            contentDescription = stringResource(
-                                if (passwordVisible) R.string.hide_token else R.string.show_token
-                            )
-                        )
-                    }
-                },
-                enabled = !uiState.isTesting && !uiState.isSaving
-            )
-
-            Text(
-                text = stringResource(R.string.settings_api_token_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // HTTP Basic Auth
-            OutlinedTextField(
-                value = uiState.httpBasicAuthUsername,
-                onValueChange = onHttpBasicAuthUsernameChange,
-                label = { Text(stringResource(R.string.settings_http_basic_auth_username_label)) },
-                placeholder = { Text(stringResource(R.string.settings_http_basic_auth_username_placeholder)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = !uiState.isTesting && !uiState.isSaving
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            OutlinedTextField(
-                value = uiState.httpBasicAuthPassword,
-                onValueChange = onHttpBasicAuthPasswordChange,
-                label = { Text(stringResource(R.string.settings_http_basic_auth_password_label)) },
-                placeholder = { Text(stringResource(R.string.settings_http_basic_auth_password_placeholder)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = if (basicAuthPasswordVisible) {
-                    VisualTransformation.None
-                } else {
-                    PasswordVisualTransformation()
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                trailingIcon = {
-                    IconButton(onClick = { basicAuthPasswordVisible = !basicAuthPasswordVisible }) {
-                        Icon(
-                            imageVector = if (basicAuthPasswordVisible) {
-                                Icons.Filled.VisibilityOff
-                            } else {
-                                Icons.Filled.Visibility
-                            },
-                            contentDescription = stringResource(
-                                if (basicAuthPasswordVisible) R.string.hide_password else R.string.show_password
-                            )
-                        )
-                    }
-                },
-                enabled = !uiState.isTesting && !uiState.isSaving
-            )
-
-            Text(
-                text = stringResource(R.string.settings_http_basic_auth_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            SettingsPanelCard(stringResource(R.string.settings_security_panel_title)) {
-            // Accept invalid certificates toggle
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.settings_accept_invalid_certs),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_accept_invalid_certs_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
-                    checked = uiState.acceptInvalidCerts,
-                    onCheckedChange = onAcceptInvalidCertsChange,
+                OutlinedTextField(
+                    value = uiState.serverUrl,
+                    onValueChange = onServerUrlChange,
+                    label = { Text(stringResource(R.string.settings_server_url_label)) },
+                    placeholder = { Text(stringResource(R.string.settings_server_url_placeholder)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("serverAddressInput"),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     enabled = !uiState.isTesting && !uiState.isSaving
                 )
-            }
-
-            if (uiState.acceptInvalidCerts) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = StatusWarning.copy(alpha = 0.1f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Warning,
-                            contentDescription = null,
-                            tint = StatusWarning,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.settings_accept_invalid_certs_warning),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = StatusWarning
-                        )
-                    }
-                }
-            }
-
+                Text(
+                    text = stringResource(R.string.settings_root_url_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = uiState.apiToken,
+                    onValueChange = onApiTokenChange,
+                    label = { Text(stringResource(R.string.settings_api_token_label)) },
+                    placeholder = { Text(stringResource(R.string.settings_api_token_placeholder)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("tokenInput"),
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    enabled = !uiState.isTesting && !uiState.isSaving
+                )
+                Text(
+                    text = stringResource(R.string.settings_api_token_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = stringResource(R.string.settings_legacy_advanced_hidden),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))

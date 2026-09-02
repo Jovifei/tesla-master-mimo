@@ -55,6 +55,7 @@ import com.matelink.ui.components.VehicleHeroGraphic
 import com.matelink.domain.model.VehicleHeroModel
 import com.matelink.domain.model.VehicleHeroProfile
 import com.matelink.domain.model.UnitFormatter
+import com.matelink.domain.telemetry.SnapshotFreshness
 import com.matelink.domain.model.resolveVehicleHeroProfile
 import com.matelink.ui.theme.StatusSuccess
 import com.matelink.ui.theme.StatusWarning
@@ -207,7 +208,7 @@ fun DashboardScreen(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                SnapshotBadge(uiState.snapshotSource)
+                SnapshotBadge(uiState.snapshotFreshness, uiState.snapshotMixedSources)
                 Spacer(modifier = Modifier.width(8.dp))
                 IconButton(onClick = refresh) {
                     Icon(
@@ -301,7 +302,7 @@ fun DashboardScreen(
                                         PowerDirection.STEADY -> stringResource(R.string.vehicle_power_steady)
                                         null -> stringResource(R.string.power)
                                     },
-                                    value = "%.0f W".format(Locale.ROOT, kotlin.math.abs(it)),
+                                    value = "%.1f kW".format(Locale.ROOT, kotlin.math.abs(it)),
                                     tint = if (direction == PowerDirection.REGENERATING) StatusSuccess else StatusWarning
                                 )
                             )
@@ -371,7 +372,7 @@ fun DashboardScreen(
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = rangeKm?.let { stringResource(R.string.km_range, it.toInt()) } ?: "--",
+                            text = rangeKm?.let { UnitFormatter.formatDistance(it, uiState.units, 0) } ?: "--",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
@@ -493,7 +494,7 @@ fun DashboardScreen(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             InfoCard(
                 title = stringResource(R.string.odometer),
-                value = status.odometer?.let { "${String.format(Locale.getDefault(), "%,.0f", it)} km" } ?: "--",
+                value = status.odometer?.let { UnitFormatter.formatDistance(it, uiState.units, 0) } ?: "--",
                 modifier = Modifier.weight(1f),
                 icon = Icons.Default.Speed,
                 onClick = { onNavigateToMileage(carId, exteriorColor) }
@@ -530,13 +531,13 @@ fun DashboardScreen(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             InfoCard(
                 stringResource(R.string.inside_temp),
-                status.insideTemp?.let { "$it°C" } ?: "--",
+                status.insideTemp?.let { UnitFormatter.formatTemperature(it, uiState.units, 1) } ?: "--",
                 Modifier.weight(1f),
                 icon = Icons.Default.Thermostat
             )
             InfoCard(
                 stringResource(R.string.outside_temp),
-                status.outsideTemp?.let { "$it°C" } ?: "--",
+                status.outsideTemp?.let { UnitFormatter.formatTemperature(it, uiState.units, 1) } ?: "--",
                 Modifier.weight(1f),
                 icon = Icons.Default.Thermostat
             )
@@ -914,9 +915,9 @@ internal fun dashboardErrorBodyRes(kind: ApiErrorKind?): Int = when (kind) {
 }
 
 internal fun snapshotSourceKind(source: String?): SnapshotSourceKind = when (source) {
-    "live_mqtt", "teslamate_api", "fleet_api" -> SnapshotSourceKind.LIVE
+    "live_mqtt", "fleet_api" -> SnapshotSourceKind.LIVE
     "mqtt_latest" -> SnapshotSourceKind.RECENT
-    "database_latest" -> SnapshotSourceKind.HISTORY
+    "database_latest", "teslamate_api" -> SnapshotSourceKind.HISTORY
     BuildConfig.JOURVOLT_MOCK_SOURCE -> if (BuildConfig.JOURVOLT_MOCK_LOGIN) {
         SnapshotSourceKind.MOCK
     } else {
@@ -926,24 +927,19 @@ internal fun snapshotSourceKind(source: String?): SnapshotSourceKind = when (sou
 }
 
 @Composable
-private fun SnapshotBadge(source: String?) {
-    val (color, label) = when (snapshotSourceKind(source)) {
-        SnapshotSourceKind.LIVE -> StatusSuccess to stringResource(R.string.snapshot_source_live)
-        SnapshotSourceKind.HISTORY -> StatusWarning to stringResource(R.string.snapshot_source_history)
-        SnapshotSourceKind.RECENT -> StatusWarning to stringResource(R.string.snapshot_source_recent)
-        SnapshotSourceKind.MOCK -> if (BuildConfig.DEBUG) {
-            StatusWarning to stringResource(R.string.snapshot_source_mock)
-        } else {
-            SwissMuted to stringResource(R.string.snapshot_source_unavailable)
-        }
-        SnapshotSourceKind.UNAVAILABLE -> SwissMuted to stringResource(R.string.snapshot_source_unavailable)
+private fun SnapshotBadge(freshness: SnapshotFreshness, mixedSources: Boolean) {
+    val (color, label) = when (freshness) {
+        SnapshotFreshness.LIVE -> StatusSuccess to stringResource(R.string.snapshot_source_live)
+        SnapshotFreshness.HISTORY -> StatusWarning to stringResource(R.string.snapshot_source_history)
+        SnapshotFreshness.RECENT -> StatusWarning to stringResource(R.string.snapshot_source_recent)
+        SnapshotFreshness.UNAVAILABLE -> SwissMuted to stringResource(R.string.snapshot_source_unavailable)
     }
     Surface(
         color = color,
         shape = MaterialTheme.shapes.extraLarge
     ) {
         Text(
-            text = label,
+            text = if (mixedSources) "$label · ${stringResource(R.string.snapshot_source_mixed)}" else label,
             color = Color.White,
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)

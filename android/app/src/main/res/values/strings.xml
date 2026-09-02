@@ -170,6 +170,7 @@
     <string name="snapshot_source_history">History</string>
     <string name="snapshot_source_recent">Recent state</string>
     <string name="snapshot_source_mock">Local mock</string>
+    <string name="snapshot_source_mixed">Mixed</string>
     <string name="snapshot_source_unavailable">Unavailable</string>
     <string name="status_unknown">Unknown</string>
     <string name="battery_history_navigation_note">View recorded battery history and capacity details</string>
@@ -869,6 +870,7 @@
     <string name="current_avg">Current Avg</string>
     <string name="current_charge_elapsed">Elapsed</string>
     <string name="current_charge_estimated_end">Estimated End</string>
+    <string name="current_charge_samples_insufficient">Only %1$d sample(s) available; at least 2 are required to draw this trend.</string>
     <string name="current_charge_live">Live</string>
     <string name="current_charge_not_charging">Not Charging</string>
     <string name="current_charge_starting">Starting…</string>
@@ -1038,6 +1040,7 @@
     <string name="settings_connection_test">Connection Test</string>
     <string name="settings_currency_label">Currency</string>
     <string name="settings_currency_select">Select Currency</string>
+    <string name="settings_legacy_advanced_hidden">Legacy multi-server, Basic Auth, and invalid-certificate controls are hidden because they are not part of the supported connection path.</string>
     <string name="settings_display_title">Display</string>
     <string name="settings_extra">Extra</string>
     <string name="settings_http_basic_auth_hint">HTTP Basic Authentication</string>

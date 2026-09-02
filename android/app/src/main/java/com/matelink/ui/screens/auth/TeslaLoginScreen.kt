@@ -68,6 +68,7 @@ fun TeslaLoginScreen(
     val uiState by viewModel.uiState.collectAsState()
     val isAuthenticated by viewModel.isAuthenticated.collectAsState()
     val hasCurrentConsent by viewModel.hasCurrentConsent.collectAsState()
+    val reauthorizing by viewModel.reauthorizing.collectAsState()
     val context = LocalContext.current
     val termsUrl = PublicInfoLinks.url(
         BuildConfig.MATELINK_PUBLIC_INFO_BASE_URL,
@@ -81,8 +82,8 @@ fun TeslaLoginScreen(
     var termsAccepted by rememberSaveable { mutableStateOf(false) }
     var privacyAccepted by rememberSaveable { mutableStateOf(false) }
 
-    LaunchedEffect(isAuthenticated) {
-        if (isAuthenticated) onLoginSuccess()
+    LaunchedEffect(isAuthenticated, reauthorizing) {
+        if (isAuthenticated && !reauthorizing) onLoginSuccess()
     }
     LaunchedEffect(hasCurrentConsent) {
         if (hasCurrentConsent) {

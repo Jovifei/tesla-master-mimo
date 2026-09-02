@@ -2,6 +2,7 @@ package com.matelink.ui.screens.charges
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.matelink.data.api.models.CarStatus
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.ChargePoint
 import com.matelink.data.api.models.Units
@@ -10,6 +11,9 @@ import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.CurrentChargeOutcome
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.domain.telemetry.SnapshotEvidence
+import com.matelink.domain.telemetry.SnapshotFreshness
+import com.matelink.domain.telemetry.snapshotEvidence
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -44,8 +48,18 @@ data class CurrentChargeUiState(
     val chargeCurrentRequest: Double? = null,
     val chargeCurrentRequestMax: Double? = null,
     val scheduledChargingStartTime: String? = null,
+    val snapshotFreshness: SnapshotFreshness = SnapshotFreshness.UNAVAILABLE,
+    val snapshotSource: String? = null,
+    val snapshotObservedAt: String? = null,
+    val snapshotMixedSources: Boolean = false,
     /** Charge points in chronological order (reversed from API's newest-first) */
     val chronologicalPoints: List<ChargePoint> = emptyList()
+)
+
+private data class VehicleStatusEvidence(
+    val status: CarStatus?,
+    val units: Units?,
+    val evidence: SnapshotEvidence
 )
 
 @HiltViewModel
@@ -96,58 +110,45 @@ class CurrentChargeViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
         }
 
-        // Fetch current charge and car status concurrently
-        val (chargeResult, statusResult) = coroutineScope {
+        // Fetch current charge and the best available vehicle snapshot concurrently.
+        val (chargeResult, vehicleStatus) = coroutineScope {
             val charge = async { repository.getCurrentCharge(carId) }
-            val status = async { repository.getCarStatus(carId) }
+            val status = async { loadVehicleStatus(carId) }
             charge.await() to status.await()
         }
 
-        val units = when (statusResult) {
-            is ApiResult.Success -> statusResult.data.units
-            is ApiResult.Error -> _uiState.value.units
+        val status = vehicleStatus.status
+        val units = vehicleStatus.units ?: _uiState.value.units
+        val timeToFullCharge = status?.timeToFullCharge
+        val chargeLimitSoc = status?.chargeLimitSoc
+        val chargePortDoorOpen = status?.chargingDetails?.chargePortDoorOpen
+        val chargerPhases = status?.chargingDetails?.chargerPhases
+        val chargerVoltage = status?.chargerVoltageValue
+        val chargerActualCurrent = status?.chargerActualCurrentValue
+        val chargeCurrentRequest = status?.chargeCurrentRequestValue
+        val chargeCurrentRequestMax = status?.chargeCurrentRequestMaxValue
+        val scheduledChargingStartTime = status?.scheduledChargingStartTime
+        val isDcChargeFromStatus = status?.chargingDetails?.chargerPhases?.let { it == 0 }
+
+        // Never preserve stale instantaneous charging values after a snapshot failure.
+        _uiState.update {
+            it.copy(
+                units = units,
+                timeToFullCharge = timeToFullCharge,
+                chargeLimitSoc = chargeLimitSoc,
+                chargePortDoorOpen = chargePortDoorOpen,
+                chargerPhases = chargerPhases,
+                chargerVoltage = chargerVoltage,
+                chargerActualCurrent = chargerActualCurrent,
+                chargeCurrentRequest = chargeCurrentRequest,
+                chargeCurrentRequestMax = chargeCurrentRequestMax,
+                scheduledChargingStartTime = scheduledChargingStartTime,
+                snapshotFreshness = vehicleStatus.evidence.freshness,
+                snapshotSource = vehicleStatus.evidence.source,
+                snapshotObservedAt = vehicleStatus.evidence.observedAt,
+                snapshotMixedSources = vehicleStatus.evidence.isMixed
+            )
         }
-        val timeToFullCharge = when (statusResult) {
-            is ApiResult.Success -> statusResult.data.status.timeToFullCharge
-            is ApiResult.Error -> _uiState.value.timeToFullCharge
-        }
-        val chargeLimitSoc = when (statusResult) {
-            is ApiResult.Success -> statusResult.data.status.chargeLimitSoc
-            is ApiResult.Error -> _uiState.value.chargeLimitSoc
-        }
-        val chargePortDoorOpen = when (statusResult) {
-            is ApiResult.Success -> statusResult.data.status.chargingDetails?.chargePortDoorOpen
-            is ApiResult.Error -> _uiState.value.chargePortDoorOpen
-        }
-        val chargerPhases = when (statusResult) {
-            is ApiResult.Success -> statusResult.data.status.chargingDetails?.chargerPhases
-            is ApiResult.Error -> _uiState.value.chargerPhases
-        }
-        val chargerVoltage = when (statusResult) {
-            is ApiResult.Success -> statusResult.data.status.chargerVoltageValue
-            is ApiResult.Error -> _uiState.value.chargerVoltage
-        }
-        val chargerActualCurrent = when (statusResult) {
-            is ApiResult.Success -> statusResult.data.status.chargerActualCurrentValue
-            is ApiResult.Error -> _uiState.value.chargerActualCurrent
-        }
-        val chargeCurrentRequest = when (statusResult) {
-            is ApiResult.Success -> statusResult.data.status.chargeCurrentRequestValue
-            is ApiResult.Error -> _uiState.value.chargeCurrentRequest
-        }
-        val chargeCurrentRequestMax = when (statusResult) {
-            is ApiResult.Success -> statusResult.data.status.chargeCurrentRequestMaxValue
-            is ApiResult.Error -> _uiState.value.chargeCurrentRequestMax
-        }
-        val scheduledChargingStartTime = when (statusResult) {
-            is ApiResult.Success -> statusResult.data.status.scheduledChargingStartTime
-            is ApiResult.Error -> _uiState.value.scheduledChargingStartTime
-        }
-        val isDcChargeFromStatus = when (statusResult) {
-            is ApiResult.Success -> statusResult.data.status.isDcCharging
-            is ApiResult.Error -> null  // No status data available -> assume AC
-        }
-        val status = (statusResult as? ApiResult.Success)?.data?.status
 
         // Persist the DC flag while the session is still live; post-completion we can
         // only tell whether a session was DC from this stored value.
@@ -178,22 +179,12 @@ class CurrentChargeViewModel @Inject constructor(
                             isLoading = false,
                             isChargeStarting = false,
                             chargeDetail = detailWithChronoPoints,
-                            units = units,
                             stats = stats,
                             isDcCharge = isDcCharge,
                             isUnsupportedApi = false,
                             isNotCharging = detail.isCharging == false && !isDcFinishedPluggedIn,
                             isDcFinishedPluggedIn = isDcFinishedPluggedIn,
                             dcFinishedSince = if (isDcFinishedPluggedIn) stateSince else null,
-                            timeToFullCharge = timeToFullCharge,
-                            chargeLimitSoc = chargeLimitSoc,
-                            chargePortDoorOpen = chargePortDoorOpen,
-                            chargerPhases = chargerPhases,
-                            chargerVoltage = chargerVoltage,
-                            chargerActualCurrent = chargerActualCurrent,
-                            chargeCurrentRequest = chargeCurrentRequest,
-                            chargeCurrentRequestMax = chargeCurrentRequestMax,
-                            scheduledChargingStartTime = scheduledChargingStartTime,
                             chronologicalPoints = chronoPoints,
                             error = null
                         )
@@ -208,14 +199,7 @@ class CurrentChargeViewModel @Inject constructor(
                             it.copy(
                                 isLoading = false,
                                 isChargeStarting = true,
-                                chargePortDoorOpen = chargePortDoorOpen,
-                                chargerPhases = chargerPhases,
-                                chargerVoltage = chargerVoltage,
-                                chargerActualCurrent = chargerActualCurrent,
-                                chargeCurrentRequest = chargeCurrentRequest,
-                                chargeCurrentRequestMax = chargeCurrentRequestMax,
-                                scheduledChargingStartTime = scheduledChargingStartTime,
-                                error = null
+                                                            error = null
                             )
                         }
                     }
@@ -234,8 +218,13 @@ class CurrentChargeViewModel @Inject constructor(
                         // Keep refresh loop running to detect unplug
                     }
                     status == null -> {
-                        // No status to corroborate (its fetch failed). Don't kick the user
-                        // out on a one-off failure — leave the state as is and poll again.
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                isChargeStarting = false,
+                                isNotCharging = false
+                            )
+                        }
                     }
                     else -> {
                         // Status confirms: charging has stopped and cable unplugged
@@ -268,6 +257,32 @@ class CurrentChargeViewModel @Inject constructor(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private suspend fun loadVehicleStatus(carId: Int): VehicleStatusEvidence {
+        return when (val adapter = repository.getAdapterSnapshot(carId)) {
+            is ApiResult.Success -> VehicleStatusEvidence(
+                status = adapter.data.status,
+                units = adapter.data.units,
+                evidence = snapshotEvidence(
+                    adapter.data.source,
+                    adapter.data.observedAt,
+                    adapter.data.fieldSources
+                )
+            )
+            is ApiResult.Error -> when (val legacy = repository.getCarStatus(carId)) {
+                is ApiResult.Success -> VehicleStatusEvidence(
+                    status = legacy.data.status,
+                    units = legacy.data.units,
+                    evidence = snapshotEvidence("teslamate_api", null, emptyMap())
+                )
+                is ApiResult.Error -> VehicleStatusEvidence(
+                    status = null,
+                    units = null,
+                    evidence = snapshotEvidence(null, null, emptyMap())
+                )
             }
         }
     }

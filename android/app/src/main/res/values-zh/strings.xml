@@ -170,6 +170,7 @@
     <string name="snapshot_source_history">历史快照</string>
     <string name="snapshot_source_recent">最近状态</string>
     <string name="snapshot_source_mock">本地模拟</string>
+    <string name="snapshot_source_mixed">混合来源</string>
     <string name="snapshot_source_unavailable">数据不可用</string>
     <string name="status_unknown">暂无数据</string>
     <string name="battery_history_navigation_note">查看已记录的电池历史与容量详情</string>
@@ -864,6 +865,7 @@
     <string name="current_avg">当前平均</string>
     <string name="current_charge_elapsed">已用时间</string>
     <string name="current_charge_estimated_end">预估结束</string>
+    <string name="current_charge_samples_insufficient">当前只有 %1$d 个样本，至少需要 2 个样本才能绘制趋势。</string>
     <string name="current_charge_live">实时</string>
     <string name="current_charge_not_charging">未充电</string>
     <string name="current_charge_starting">启动中…</string>
@@ -1028,6 +1030,7 @@
     <string name="settings_connected">已连接</string>
     <string name="settings_currency_label">货币</string>
     <string name="settings_currency_select">选择货币</string>
+    <string name="settings_legacy_advanced_hidden">历史多服务器、Basic Auth 与忽略证书错误选项已隐藏；当前受支持的连接配置仅使用服务器地址和 API Key。</string>
     <string name="settings_display_title">显示</string>
     <string name="settings_extra">其他</string>
     <string name="settings_http_basic_auth_hint">HTTP 基本认证</string>

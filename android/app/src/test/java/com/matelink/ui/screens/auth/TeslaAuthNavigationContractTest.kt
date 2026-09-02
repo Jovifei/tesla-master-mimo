@@ -63,8 +63,9 @@ class TeslaAuthNavigationContractTest {
         val login = source("ui/screens/auth/TeslaLoginScreen.kt")
         val navigation = source("ui/navigation/NavGraph.kt")
 
-        assertTrue(login.contains("LaunchedEffect(isAuthenticated)"))
-        assertTrue(login.contains("if (isAuthenticated) onLoginSuccess()"))
+        assertTrue(login.contains("LaunchedEffect(isAuthenticated, reauthorizing)"))
+        assertTrue(login.contains("if (isAuthenticated && !reauthorizing) onLoginSuccess()"))
+        assertTrue(login.contains("viewModel.reauthorizing.collectAsState()"))
         assertTrue(navigation.contains("navigateToDashboardAfterTeslaAuth()"))
         assertTrue(navigation.contains("openDashboardAfterLogin"))
         assertTrue(navigation.contains("revealLoginError"))

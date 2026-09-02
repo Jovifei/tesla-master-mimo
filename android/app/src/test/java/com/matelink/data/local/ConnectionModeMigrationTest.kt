@@ -46,14 +46,27 @@ class ConnectionModeMigrationTest {
     }
 
     @Test
-    fun persistedCloudModeDoesNotOverrideLegacySelfHostedConnection() {
+    fun persistedCloudModeRemainsAuthoritativeAcrossRestarts() {
         assertEquals(
-            ConnectionMode.SELF_HOSTED,
+            ConnectionMode.TESLA_CLOUD,
             resolveInitialConnectionMode(
                 persistedMode = ConnectionMode.TESLA_CLOUD,
                 settings = AppSettings(serverUrl = "https://legacy.example", apiToken = "token"),
                 instances = emptyList(),
                 hasJourVoltSession = false
+            )
+        )
+    }
+
+    @Test
+    fun persistedSelfHostedModeIsNotOverriddenByCloudSession() {
+        assertEquals(
+            ConnectionMode.SELF_HOSTED,
+            resolveInitialConnectionMode(
+                persistedMode = ConnectionMode.SELF_HOSTED,
+                settings = AppSettings(serverUrl = "https://teslamate.example", apiToken = "token"),
+                instances = emptyList(),
+                hasJourVoltSession = true
             )
         )
     }

@@ -11,6 +11,11 @@ class DashboardSnapshotSourceTest {
     }
 
     @Test
+    fun teslamateApiIsHistoricalEvidenceNotLive() {
+        assertEquals(SnapshotSourceKind.HISTORY, snapshotSourceKind("teslamate_api"))
+    }
+
+    @Test
     fun mockFixtureIsPresentedAsMockEvidence() {
         val expected = if (BuildConfig.JOURVOLT_MOCK_LOGIN) {
             SnapshotSourceKind.MOCK

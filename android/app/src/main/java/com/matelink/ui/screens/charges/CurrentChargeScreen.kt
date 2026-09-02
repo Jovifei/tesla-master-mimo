@@ -1,10 +1,5 @@
 package com.matelink.ui.screens.charges
 
-import androidx.compose.animation.animateColor
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -66,6 +61,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.ChargePoint
+import com.matelink.domain.telemetry.SnapshotFreshness
 import androidx.compose.ui.platform.LocalContext
 import com.matelink.ui.components.FullscreenDualAxisLineChart
 import com.matelink.ui.components.FullscreenLineChart
@@ -108,9 +104,9 @@ fun CurrentChargeScreen(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(stringResource(R.string.current_charge_title))
-                        if (uiState.chargeDetail != null && !uiState.isNotCharging && !uiState.isDcFinishedPluggedIn) {
+                        if (!uiState.isNotCharging && !uiState.isDcFinishedPluggedIn) {
                             Spacer(modifier = Modifier.width(8.dp))
-                            LiveBadge()
+                            ChargeSnapshotBadge(uiState.snapshotFreshness, uiState.snapshotMixedSources)
                         }
                     }
                 },
@@ -197,27 +193,22 @@ fun CurrentChargeScreen(
 }
 
 @Composable
-private fun LiveBadge() {
-    val infiniteTransition = rememberInfiniteTransition(label = "livePulse")
-    val badgeColor by infiniteTransition.animateColor(
-        initialValue = Color(0xFFE53935),
-        targetValue = Color(0xFFFF5252),
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "liveBadgeColor"
-    )
-
+private fun ChargeSnapshotBadge(freshness: SnapshotFreshness, mixedSources: Boolean) {
+    val (color, label) = when (freshness) {
+        SnapshotFreshness.LIVE -> Color(0xFFE53935) to stringResource(R.string.current_charge_live)
+        SnapshotFreshness.RECENT -> MaterialTheme.colorScheme.tertiary to stringResource(R.string.snapshot_source_recent)
+        SnapshotFreshness.HISTORY -> MaterialTheme.colorScheme.secondary to stringResource(R.string.snapshot_source_history)
+        SnapshotFreshness.UNAVAILABLE -> MaterialTheme.colorScheme.outline to stringResource(R.string.snapshot_source_unavailable)
+    }
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
-            .background(badgeColor)
+            .background(color)
             .padding(horizontal = 6.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = stringResource(R.string.current_charge_live),
+            text = if (mixedSources) "$label · ${stringResource(R.string.snapshot_source_mixed)}" else label,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = Color.White
@@ -319,7 +310,8 @@ private fun CurrentChargeContent(
         val powerProfileTitle = stringResource(R.string.power_profile)
         LiveChartCard(
             title = powerProfileTitle,
-            icon = Icons.Default.Bolt
+            icon = Icons.Default.Bolt,
+            sampleCount = powers.size
         ) {
             if (powers.size >= 2) {
                 var yMin = kotlin.math.floor(powers.min())
@@ -350,7 +342,8 @@ private fun CurrentChargeContent(
             val vcTitle = stringResource(R.string.voltage_and_current_profile)
             LiveChartCard(
                 title = vcTitle,
-                icon = Icons.Default.ElectricalServices
+                icon = Icons.Default.ElectricalServices,
+                sampleCount = minOf(voltages.size, currents.size)
             ) {
                 if (voltages.size >= 2 && currents.size >= 2) {
                     FullscreenDualAxisLineChart(
@@ -374,7 +367,8 @@ private fun CurrentChargeContent(
         val batteryLevelTitle = stringResource(R.string.battery_level)
         LiveChartCard(
             title = batteryLevelTitle,
-            icon = Icons.Default.BatteryChargingFull
+            icon = Icons.Default.BatteryChargingFull,
+            sampleCount = batteryLevels.size
         ) {
             if (batteryLevels.size >= 2) {
                 var yMin = (kotlin.math.floor(batteryLevels.min() / 10.0) * 10).toFloat()
@@ -897,6 +891,7 @@ private fun DcUnplugWarningBanner(dcFinishedSince: String?) {
 private fun LiveChartCard(
     title: String,
     icon: ImageVector,
+    sampleCount: Int? = null,
     content: @Composable () -> Unit
 ) {
     Card(
@@ -926,7 +921,15 @@ private fun LiveChartCard(
                 )
             }
 
-            content()
+            if (sampleCount != null && sampleCount < 2) {
+                Text(
+                    text = stringResource(R.string.current_charge_samples_insufficient, sampleCount),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                content()
+            }
         }
     }
 }

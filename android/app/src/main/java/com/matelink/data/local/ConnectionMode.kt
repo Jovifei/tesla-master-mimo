@@ -10,9 +10,9 @@ import com.matelink.data.model.Instance
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,8 +27,13 @@ private val Context.connectionModeDataStore: DataStore<Preferences> by preferenc
 )
 
 /**
- * Persists the selected connection route without changing any existing
+ * Persists the user's selected connection route without changing any existing
  * server, token, Room, or instance data.
+ *
+ * Once a mode has been persisted it is authoritative. Legacy server/session
+ * signals are consulted only when no mode has ever been stored. This prevents
+ * a stale self-hosted URL or a still-valid cloud session from silently undoing
+ * an explicit mode choice on the next process start.
  */
 @Singleton
 class ConnectionModeStore @Inject constructor(
@@ -41,10 +46,11 @@ class ConnectionModeStore @Inject constructor(
         .map { preferences -> preferences[modeKey]?.let(::parse) }
 
     init {
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
-            .launch {
-                mode.collect { _current.value = it }
-            }
+        kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+        ).launch {
+            mode.collect { _current.value = it }
+        }
     }
 
     fun current(): ConnectionMode? = _current.value
@@ -57,9 +63,8 @@ class ConnectionModeStore @Inject constructor(
     }
 
     /**
-     * Performs the one-time upgrade migration. Existing self-hosted settings
-     * take precedence over the new cloud-login default; a JourVolt session
-     * means the user already completed cloud authorization.
+     * Resolves startup mode. Legacy inference is a one-time migration path only:
+     * a persisted mode always wins on subsequent launches.
      */
     suspend fun resolveInitial(
         settings: AppSettings,
@@ -73,7 +78,7 @@ class ConnectionModeStore @Inject constructor(
             instances = instances,
             hasJourVoltSession = hasJourVoltSession
         )
-        if (persistedMode != resolved) {
+        if (persistedMode == null) {
             set(resolved)
         }
         return resolved
@@ -89,11 +94,11 @@ internal fun resolveInitialConnectionMode(
     instances: List<Instance>,
     hasJourVoltSession: Boolean
 ): ConnectionMode = when {
+    persistedMode != null -> persistedMode
     hasJourVoltSession -> ConnectionMode.TESLA_CLOUD
     settings.serverUrl.isNotBlank() ||
         settings.apiToken.isNotBlank() ||
         instances.any { it.serverUrl.isNotBlank() } -> ConnectionMode.SELF_HOSTED
-    persistedMode != null -> persistedMode
     else -> ConnectionMode.TESLA_CLOUD
 }
 

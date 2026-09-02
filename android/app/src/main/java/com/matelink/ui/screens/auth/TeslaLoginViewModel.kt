@@ -53,6 +53,8 @@ class TeslaLoginViewModel @Inject constructor(
     val openDashboardAfterLogin: StateFlow<Boolean> = _openDashboardAfterLogin.asStateFlow()
     private val _revealLoginError = MutableStateFlow(false)
     val revealLoginError: StateFlow<Boolean> = _revealLoginError.asStateFlow()
+    private val _reauthorizing = MutableStateFlow(false)
+    val reauthorizing: StateFlow<Boolean> = _reauthorizing.asStateFlow()
     val isAuthenticated: StateFlow<Boolean> = sessionStore.session
         .map { it != null }
         .stateIn(viewModelScope, SharingStarted.Eagerly, sessionStore.current() != null)
@@ -152,6 +154,7 @@ class TeslaLoginViewModel @Inject constructor(
         ) {
             TeslaCallbackReplayDecision.Ignore -> return
             TeslaCallbackReplayDecision.OpenDashboard -> {
+                _reauthorizing.value = false
                 _uiState.value = TeslaLoginUiState.Idle
                 _openDashboardAfterLogin.value = true
                 return
@@ -175,6 +178,7 @@ class TeslaLoginViewModel @Inject constructor(
                     ) {
                         handledCallbackTicket = ticket
                         callbackTicketInFlight = null
+                        _reauthorizing.value = false
                         _uiState.value = TeslaLoginUiState.Idle
                         _openDashboardAfterLogin.value = true
                         return@runCatching
@@ -193,6 +197,7 @@ class TeslaLoginViewModel @Inject constructor(
                 connectionModeStore.set(ConnectionMode.TESLA_CLOUD)
                 handledCallbackTicket = ticket
                 callbackTicketInFlight = null
+                _reauthorizing.value = false
                 if (shouldPublishTeslaRequest(requestId, requestGeneration)) {
                     _uiState.value = TeslaLoginUiState.Idle
                     _openDashboardAfterLogin.value = true
@@ -237,6 +242,7 @@ class TeslaLoginViewModel @Inject constructor(
 
     fun logout(onComplete: () -> Unit) {
         val session = sessionStore.current()
+        _reauthorizing.value = false
         beginRequest()
         requestJob?.cancel()
         requestJob = viewModelScope.launch(Dispatchers.IO) {
@@ -253,9 +259,18 @@ class TeslaLoginViewModel @Inject constructor(
     }
 
     fun reauthorize(onReady: () -> Unit) {
-        logout {
-            onReady()
-        }
+        beginRequest()
+        requestJob?.cancel()
+        callbackTicketInFlight = null
+        _reauthorizing.value = true
+        _uiState.value = TeslaLoginUiState.Idle
+        onReady()
+    }
+
+    fun cancelReauthorization() {
+        _reauthorizing.value = false
+        callbackTicketInFlight = null
+        _uiState.value = TeslaLoginUiState.Idle
     }
 
     fun deleteAccount(onSuccess: (String?) -> Unit, onFailure: () -> Unit) {
@@ -278,6 +293,7 @@ class TeslaLoginViewModel @Inject constructor(
             if (deleted && shouldPublishTeslaRequest(requestId, requestGeneration)) {
                 sessionStore.clear()
                 consentStore.clear()
+                _reauthorizing.value = false
                 _uiState.value = TeslaLoginUiState.Idle
                 withContext(Dispatchers.Main.immediate) {
                     onSuccess(deletionResponse?.teslaConsentRevokeUrl)
