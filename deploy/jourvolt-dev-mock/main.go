@@ -617,6 +617,12 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 		a.dataReadiness(w, r, userID, carID)
 	case "telemetry":
 		a.telemetryResource(w, r, userID, carID, parts[2:])
+	case "history":
+		if len(parts) >= 3 && parts[2] == "import" {
+			a.historyImport(w, r, userID, carID)
+		} else {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+		}
 	case "charges":
 		if len(parts) > 2 && parts[2] == "current" {
 			a.currentCharge(w, r, userID, carID)

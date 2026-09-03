@@ -120,6 +120,17 @@ class SyncRepository @Inject constructor(
         val historyCarId = context.localHistoryCarId
         Log.d(TAG, "Starting sync for car $historyCarId")
 
+        // Phase 0: Upload local history to the cloud (Tesla Cloud mode only) so a
+        // re-login can sync previously-collected data back. Best-effort: a failed
+        // upload must not block the cloud→local pull.
+        if (connectionModeStore.current() == com.matelink.data.local.ConnectionMode.TESLA_CLOUD) {
+            try {
+                uploadLocalHistory(context.remoteApiCarId, historyCarId)
+            } catch (e: Exception) {
+                Log.w(TAG, "History upload failed for car $historyCarId", e)
+            }
+        }
+
         // Phase 1: Sync summaries
         syncManager.updateSummaryProgress(historyCarId)
 
@@ -321,6 +332,41 @@ class SyncRepository @Inject constructor(
         }
     }
 
+    /**
+     * Uploads locally-collected history (drive/charge summaries) to the cloud so
+     * a later re-login can sync it back. Runs only in Tesla Cloud mode; in
+     * self-hosted mode the server already owns the data and there is nothing to
+     * upload. Route points are not persisted locally by design, so the payload
+     * carries summaries only — trajectories are re-collected by Fleet Telemetry.
+     */
+    suspend fun uploadLocalHistory(remoteApiCarId: Int, historyCarId: Int): Boolean {
+        if (connectionModeStore.current() != com.matelink.data.local.ConnectionMode.TESLA_CLOUD) {
+            Log.d(TAG, "Skipping history upload: not in Tesla Cloud mode")
+            return true
+        }
+        val allDrives = driveSummaryDao.getAllChronological(historyCarId).mapNotNull { it.toImportSession("drive") }
+        val allCharges = chargeSummaryDao.getAllForCar(historyCarId).mapNotNull { it.toImportSession("charge") }
+        val bounded = HistoryUploadFilter.boundToLatestTwoDataDays(allDrives, allCharges)
+        if (bounded.drives.isEmpty() && bounded.charges.isEmpty()) {
+            Log.d(TAG, "No local history within upload window for car $historyCarId")
+            return true
+        }
+        val request = com.matelink.data.api.models.HistoryImportRequest(
+            drives = bounded.drives,
+            charges = bounded.charges
+        )
+        return when (val result = teslamateRepository.uploadLocalHistory(remoteApiCarId, request)) {
+            is ApiResult.Success -> {
+                Log.d(TAG, "Uploaded ${result.data.importedDrives} drives, ${result.data.importedCharges} charges for car $historyCarId")
+                true
+            }
+            is ApiResult.Error -> {
+                Log.w(TAG, "History upload failed for car $historyCarId: ${result.message}")
+                false
+            }
+        }
+    }
+
 }
 
 internal fun DriveData.toSyncSummary(carId: Int): DriveSummary? {
@@ -373,4 +419,57 @@ internal fun ChargeData.toSyncSummary(carId: Int): ChargeSummary? {
         odometer = odometer ?: 0.0,
         apiEvidence = HistorySummaryEvidenceCodec.encode(this)
     )
+}
+
+internal fun DriveSummary.toImportSession(kind: String): com.matelink.data.api.models.HistoryImportSession? {
+    val started = normalizeImportTimestamp(startDate) ?: return null
+    val ended = normalizeImportTimestamp(endDate) ?: return null
+    return com.matelink.data.api.models.HistoryImportSession(
+        sessionId = "local-$kind-$driveId",
+        startedAt = started,
+        endedAt = ended,
+        odometerStart = null,
+        odometerEnd = null,
+        energyAdded = if (kind == "charge") null else energyConsumed,
+        route = emptyList()
+    )
+}
+
+internal fun ChargeSummary.toImportSession(kind: String): com.matelink.data.api.models.HistoryImportSession? {
+    val started = normalizeImportTimestamp(startDate) ?: return null
+    val ended = normalizeImportTimestamp(endDate) ?: return null
+    return com.matelink.data.api.models.HistoryImportSession(
+        sessionId = "local-$kind-$chargeId",
+        startedAt = started,
+        endedAt = ended,
+        odometerStart = null,
+        odometerEnd = odometer.takeIf { it > 0.0 },
+        energyAdded = energyAdded,
+        route = emptyList()
+    )
+}
+
+/**
+ * Normalizes a locally-stored timestamp string into RFC3339 for upload. The
+ * local cache stores API-provided strings (usually ISO 8601), but some legacy
+ * rows may carry offsets or no timezone; default to UTC when ambiguous.
+ */
+private fun normalizeImportTimestamp(value: String): String? {
+    if (value.isBlank()) return null
+    return try {
+        val instant = java.time.Instant.parse(value)
+        instant.toString()
+    } catch (e: Exception) {
+        // Fall back to OffsetDateTime parsing, then LocalDateTime assumed UTC.
+        try {
+            java.time.OffsetDateTime.parse(value).toInstant().toString()
+        } catch (e2: Exception) {
+            try {
+                val local = java.time.LocalDateTime.parse(value)
+                local.atOffset(java.time.ZoneOffset.UTC).toInstant().toString()
+            } catch (e3: Exception) {
+                null
+            }
+        }
+    }
 }
