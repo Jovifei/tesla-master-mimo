@@ -2,13 +2,37 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 )
+
+const (
+	maxImportBodyBytes          = 10 << 20 // 10 MiB
+	maxImportSessionsPerKind    = 200
+	maxImportTotalSessions      = 400
+	maxImportRoutePointsPerItem = 10000
+	maxImportTotalRoutePoints   = 100000
+)
+
+func scopedImportedSessionID(userID string, vehicleID int, kind, clientSessionID string) string {
+	h := sha256.New()
+	h.Write([]byte(userID))
+	h.Write([]byte{0})
+	h.Write([]byte(strconv.Itoa(vehicleID)))
+	h.Write([]byte{0})
+	h.Write([]byte(kind))
+	h.Write([]byte{0})
+	h.Write([]byte(clientSessionID))
+	return "local_import:" + hex.EncodeToString(h.Sum(nil))
+}
 
 // historyImportRequest is the payload for importing previously-collected local
 // history into the cloud. The app uploads the history it already has on the
@@ -53,15 +77,47 @@ type historyImportSessionValidationError struct {
 
 func (e *historyImportSessionValidationError) Error() string { return e.Message }
 
-func importRequestFromBody(r *http.Request) (historyImportRequest, error) {
+func validateImportRequest(req historyImportRequest) error {
+	if len(req.Drives) > maxImportSessionsPerKind || len(req.Charges) > maxImportSessionsPerKind ||
+		len(req.Drives)+len(req.Charges) > maxImportTotalSessions {
+		return &historyImportSessionValidationError{Message: "too_many_sessions"}
+	}
+	totalRoutePoints := 0
+	for _, drive := range req.Drives {
+		if len(drive.Route) > maxImportRoutePointsPerItem {
+			return &historyImportSessionValidationError{Message: "too_many_route_points"}
+		}
+		totalRoutePoints += len(drive.Route)
+	}
+	for _, charge := range req.Charges {
+		if len(charge.Route) > maxImportRoutePointsPerItem {
+			return &historyImportSessionValidationError{Message: "too_many_route_points"}
+		}
+		totalRoutePoints += len(charge.Route)
+	}
+	if totalRoutePoints > maxImportTotalRoutePoints {
+		return &historyImportSessionValidationError{Message: "too_many_route_points"}
+	}
+	return nil
+}
+
+func importRequestFromBody(w http.ResponseWriter, r *http.Request) (historyImportRequest, error) {
+	reader := http.MaxBytesReader(w, r.Body, maxImportBodyBytes)
 	var request historyImportRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	if err := json.NewDecoder(reader).Decode(&request); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) || strings.Contains(err.Error(), "request body too large") {
+			return historyImportRequest{}, &historyImportSessionValidationError{Message: "request_body_too_large"}
+		}
 		return historyImportRequest{}, &historyImportSessionValidationError{Message: "invalid_json"}
+	}
+	if err := validateImportRequest(request); err != nil {
+		return historyImportRequest{}, err
 	}
 	return request, nil
 }
 
-func (req historyImportSession) toTelemetrySession(kind string) (telemetrySession, error) {
+func (req historyImportSession) toTelemetrySession(userID string, vehicleID int, kind string) (telemetrySession, error) {
 	if kind != "drive" && kind != "charge" {
 		return telemetrySession{}, &historyImportSessionValidationError{Message: "invalid_kind"}
 	}
@@ -76,10 +132,11 @@ func (req historyImportSession) toTelemetrySession(kind string) (telemetrySessio
 	if end.Before(start) {
 		return telemetrySession{}, &historyImportSessionValidationError{Message: "ended_at_before_started_at"}
 	}
-	id := req.SessionID
-	if id == "" {
-		id = sessionID(kind, start)
+	rawID := req.SessionID
+	if rawID == "" {
+		rawID = sessionID(kind, start)
 	}
+	id := scopedImportedSessionID(userID, vehicleID, kind, rawID)
 	route := make([]telemetryRoutePoint, 0, len(req.Route))
 	for _, point := range req.Route {
 		if point.Latitude == nil || point.Longitude == nil {
@@ -115,7 +172,7 @@ func (s *telemetryService) importHistory(ctx context.Context, userID string, veh
 	}
 	drives := make([]telemetrySession, 0, len(request.Drives))
 	for _, item := range request.Drives {
-		session, err := item.toTelemetrySession("drive")
+		session, err := item.toTelemetrySession(userID, vehicleID, "drive")
 		if err != nil {
 			return historyImportResult{}, err
 		}
@@ -123,7 +180,7 @@ func (s *telemetryService) importHistory(ctx context.Context, userID string, veh
 	}
 	charges := make([]telemetrySession, 0, len(request.Charges))
 	for _, item := range request.Charges {
-		session, err := item.toTelemetrySession("charge")
+		session, err := item.toTelemetrySession(userID, vehicleID, "charge")
 		if err != nil {
 			return historyImportResult{}, err
 		}
@@ -232,10 +289,14 @@ func (a *app) historyImport(w http.ResponseWriter, r *http.Request, userID strin
 		a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
 	}
-	request, err := importRequestFromBody(r)
+	request, err := importRequestFromBody(w, r)
 	if err != nil {
 		var validationErr *historyImportSessionValidationError
 		if errors.As(err, &validationErr) {
+			if validationErr.Message == "request_body_too_large" {
+				a.json(w, http.StatusRequestEntityTooLarge, map[string]string{"error": validationErr.Message})
+				return
+			}
 			a.json(w, http.StatusBadRequest, map[string]string{"error": validationErr.Message})
 			return
 		}

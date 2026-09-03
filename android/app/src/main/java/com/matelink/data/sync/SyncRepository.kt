@@ -344,15 +344,16 @@ class SyncRepository @Inject constructor(
             Log.d(TAG, "Skipping history upload: not in Tesla Cloud mode")
             return true
         }
-        val drives = driveSummaryDao.getAllChronological(historyCarId).mapNotNull { it.toImportSession("drive") }
-        val charges = chargeSummaryDao.getAllForCar(historyCarId).mapNotNull { it.toImportSession("charge") }
-        if (drives.isEmpty() && charges.isEmpty()) {
-            Log.d(TAG, "No local history to upload for car $historyCarId")
+        val allDrives = driveSummaryDao.getAllChronological(historyCarId).mapNotNull { it.toImportSession("drive") }
+        val allCharges = chargeSummaryDao.getAllForCar(historyCarId).mapNotNull { it.toImportSession("charge") }
+        val bounded = HistoryUploadFilter.boundToLatestTwoDataDays(allDrives, allCharges)
+        if (bounded.drives.isEmpty() && bounded.charges.isEmpty()) {
+            Log.d(TAG, "No local history within upload window for car $historyCarId")
             return true
         }
         val request = com.matelink.data.api.models.HistoryImportRequest(
-            drives = drives,
-            charges = charges
+            drives = bounded.drives,
+            charges = bounded.charges
         )
         return when (val result = teslamateRepository.uploadLocalHistory(remoteApiCarId, request)) {
             is ApiResult.Success -> {

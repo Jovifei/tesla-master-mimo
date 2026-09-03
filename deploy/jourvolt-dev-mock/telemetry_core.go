@@ -796,22 +796,36 @@ func (s *telemetryMemoryStore) historyStartedAt(userID string, vehicleID int) ti
 	return s.startedAt[telemetryKey{UserID: userID, VehicleID: vehicleID}]
 }
 
-// importSessions appends locally-imported completed sessions into the store,
-// assigning public ids and advancing the started-at watermark.
+// importSessions upserts locally-imported completed sessions into the store,
+// assigning public ids for new sessions and preserving existing public ids on update.
 func (s *telemetryMemoryStore) importSessions(userID string, vehicleID int, drives, charges []telemetrySession) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key := telemetryKey{UserID: userID, VehicleID: vehicleID}
+	existingSessions := append([]telemetrySession(nil), s.completed[key]...)
 	for _, session := range append(append([]telemetrySession(nil), drives...), charges...) {
 		imported := cloneTelemetrySession(&session)
-		if imported.PublicID <= 0 {
-			imported.PublicID = s.allocatePublicIDLocked()
+		foundIdx := -1
+		for i, existing := range existingSessions {
+			if existing.ID == imported.ID {
+				foundIdx = i
+				break
+			}
 		}
-		s.completed[key] = append(s.completed[key], *imported)
+		if foundIdx >= 0 {
+			imported.PublicID = existingSessions[foundIdx].PublicID
+			existingSessions[foundIdx] = *imported
+		} else {
+			if imported.PublicID <= 0 {
+				imported.PublicID = s.allocatePublicIDLocked()
+			}
+			existingSessions = append(existingSessions, *imported)
+		}
 		if s.startedAt[key].IsZero() || session.StartAt.Before(s.startedAt[key]) {
 			s.startedAt[key] = session.StartAt
 		}
 	}
+	s.completed[key] = existingSessions
 }
 
 // retainLatestDays deletes completed sessions outside the account's two most
