@@ -17,7 +17,10 @@ import com.matelink.data.api.models.ParkedDetailResponse
 import com.matelink.data.api.models.StandbyResponse
 import com.matelink.data.api.models.TelemetryConfigureResponse
 import com.matelink.data.api.models.TelemetryPairingResponse
+import com.matelink.data.api.models.HistoryImportRequest
+import com.matelink.data.api.models.HistoryImportResponse
 import retrofit2.Response
+import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.POST
@@ -130,6 +133,12 @@ interface TeslamateApi {
         @Query("page") page: Int? = null,
         @Query("show") show: Int? = null
     ): Response<UpdatesResponse>
+
+    @POST("api/v1/cars/{carId}/history/import")
+    suspend fun importHistory(
+        @Path("carId") carId: Int,
+        @Body request: HistoryImportRequest
+    ): Response<HistoryImportResponse>
 
     @GET("api/v1/globalsettings")
     suspend fun getGlobalSettings(): Response<GlobalSettingsResponse>

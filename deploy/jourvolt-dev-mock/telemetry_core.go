@@ -795,3 +795,82 @@ func (s *telemetryMemoryStore) historyStartedAt(userID string, vehicleID int) ti
 	defer s.mu.Unlock()
 	return s.startedAt[telemetryKey{UserID: userID, VehicleID: vehicleID}]
 }
+
+// importSessions upserts locally-imported completed sessions into the store,
+// assigning public ids for new sessions and preserving existing public ids on update.
+func (s *telemetryMemoryStore) importSessions(userID string, vehicleID int, drives, charges []telemetrySession) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := telemetryKey{UserID: userID, VehicleID: vehicleID}
+	existingSessions := append([]telemetrySession(nil), s.completed[key]...)
+	for _, session := range append(append([]telemetrySession(nil), drives...), charges...) {
+		imported := cloneTelemetrySession(&session)
+		foundIdx := -1
+		for i, existing := range existingSessions {
+			if existing.ID == imported.ID {
+				foundIdx = i
+				break
+			}
+		}
+		if foundIdx >= 0 {
+			imported.PublicID = existingSessions[foundIdx].PublicID
+			existingSessions[foundIdx] = *imported
+		} else {
+			if imported.PublicID <= 0 {
+				imported.PublicID = s.allocatePublicIDLocked()
+			}
+			existingSessions = append(existingSessions, *imported)
+		}
+		if s.startedAt[key].IsZero() || session.StartAt.Before(s.startedAt[key]) {
+			s.startedAt[key] = session.StartAt
+		}
+	}
+	s.completed[key] = existingSessions
+}
+
+// retainLatestDays deletes completed sessions outside the account's two most
+// recent calendar days that contain data, across all vehicles of that account.
+// It returns the retained day strings (YYYY-MM-DD, newest first).
+func (s *telemetryMemoryStore) retainLatestDays(userID string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	daySet := map[string]bool{}
+	for key, sessions := range s.completed {
+		if key.UserID != userID {
+			continue
+		}
+		for _, session := range sessions {
+			if session.EndAt == nil {
+				continue
+			}
+			daySet[session.StartAt.UTC().Format("2006-01-02")] = true
+		}
+	}
+	days := make([]string, 0, len(daySet))
+	for day := range daySet {
+		days = append(days, day)
+	}
+	sort.Strings(days)
+	// descending order (newest first)
+	for i, j := 0, len(days)-1; i < j; i, j = i+1, j-1 {
+		days[i], days[j] = days[j], days[i]
+	}
+	if len(days) <= 2 {
+		return days
+	}
+	retained := days[:2]
+	retainedSet := map[string]bool{retained[0]: true, retained[1]: true}
+	for key, sessions := range s.completed {
+		if key.UserID != userID {
+			continue
+		}
+		filtered := sessions[:0]
+		for _, session := range sessions {
+			if session.EndAt == nil || retainedSet[session.StartAt.UTC().Format("2006-01-02")] {
+				filtered = append(filtered, session)
+			}
+		}
+		s.completed[key] = filtered
+	}
+	return retained
+}

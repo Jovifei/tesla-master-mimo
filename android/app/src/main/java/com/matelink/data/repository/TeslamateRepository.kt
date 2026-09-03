@@ -702,6 +702,34 @@ class TeslamateRepository @Inject constructor(
         }
     }
 
+    /**
+     * Uploads previously-collected local history (drive/charge summaries) to the
+     * cloud so a re-login can sync it back. Only meaningful in Tesla Cloud mode.
+     */
+    suspend fun uploadLocalHistory(
+        carId: Int,
+        request: com.matelink.data.api.models.HistoryImportRequest
+    ): ApiResult<com.matelink.data.api.models.HistoryImportResult> {
+        if (isMockMode()) return ApiResult.Error("History import requires cloud mode")
+        return executeWithFallback { api ->
+            try {
+                val response = api.importHistory(carId, request)
+                if (response.isSuccessful) {
+                    val result = response.body()?.data
+                    if (result != null) {
+                        ApiResult.Success(result)
+                    } else {
+                        ApiResult.Error("No history import result returned")
+                    }
+                } else {
+                    ApiResult.Error("Failed to import history: ${response.code()}", response.code())
+                }
+            } catch (e: Exception) {
+                throw e
+            }
+        }
+    }
+
     suspend fun getGlobalSettings(): ApiResult<GlobalSettingsData> {
         if (isMockMode()) return ApiResult.Success(MockDataProvider.getGlobalSettings())
         return executeWithFallback { api ->
