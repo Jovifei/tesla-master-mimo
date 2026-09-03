@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -153,13 +154,13 @@ type testMQTTMessage struct {
 	payload []byte
 }
 
-func (m testMQTTMessage) Duplicate() bool { return false }
-func (m testMQTTMessage) Qos() byte       { return 1 }
-func (m testMQTTMessage) Retained() bool  { return false }
-func (m testMQTTMessage) Topic() string   { return m.topic }
+func (m testMQTTMessage) Duplicate() bool   { return false }
+func (m testMQTTMessage) Qos() byte         { return 1 }
+func (m testMQTTMessage) Retained() bool    { return false }
+func (m testMQTTMessage) Topic() string     { return m.topic }
 func (m testMQTTMessage) MessageID() uint16 { return 1 }
-func (m testMQTTMessage) Payload() []byte { return m.payload }
-func (m testMQTTMessage) Ack() {}
+func (m testMQTTMessage) Payload() []byte   { return m.payload }
+func (m testMQTTMessage) Ack()              {}
 
 var _ mqtt.Message = testMQTTMessage{}
 
@@ -205,9 +206,7 @@ func TestTaskDComposeSeparatesAPICAFromOfficialKeyAndUsesEphemeralConfig(t *test
 		if strings.Contains(api, "TELEMETRY_CERT_DIR") || !strings.Contains(api, "TELEMETRY_CA_CHAIN_FILE") || !strings.Contains(api, ":/run/secrets/fleet/ca.pem:ro") {
 			t.Fatalf("%s API must mount only the CA chain file: %s", composeFile, api)
 		}
-		if !strings.Contains(text, "fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      type: tmpfs") {
-			t.Fatalf("%s rendered telemetry config must be a tmpfs volume", composeFile)
-		}
+		verifyTelemetryTmpfsVolume(t, composeFile, text)
 	}
 	renderer, err := os.ReadFile("fleet-telemetry/render-server-config.sh")
 	if err != nil {
@@ -215,6 +214,185 @@ func TestTaskDComposeSeparatesAPICAFromOfficialKeyAndUsesEphemeralConfig(t *test
 	}
 	if !strings.Contains(string(renderer), "chmod 0600 /rendered/server_config.json") {
 		t.Fatalf("rendered MQTT credential config must be 0600, got: %s", renderer)
+	}
+}
+
+type volumeConfig struct {
+	driver     string
+	driverOpts map[string]string
+}
+
+func composeNamedVolumeBlock(text, volumeName string) (string, error) {
+	normalized := strings.ReplaceAll(text, "\r\n", "\n")
+	lines := strings.Split(normalized, "\n")
+	targetHeader := volumeName + ":"
+
+	inVolumesSection := false
+	volumesIndent := -1
+	startIdx := -1
+	baseIndent := -1
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+
+		if !inVolumesSection {
+			if trimmed == "volumes:" && indent == 0 {
+				inVolumesSection = true
+				volumesIndent = indent
+			}
+			continue
+		}
+
+		if indent <= volumesIndent {
+			break
+		}
+
+		if trimmed == targetHeader || strings.HasPrefix(trimmed, targetHeader) {
+			startIdx = i
+			baseIndent = indent
+			break
+		}
+	}
+
+	if startIdx < 0 {
+		for i, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == targetHeader || strings.HasPrefix(trimmed, targetHeader) {
+				indent := len(line) - len(strings.TrimLeft(line, " "))
+				startIdx = i
+				baseIndent = indent
+				break
+			}
+		}
+	}
+
+	if startIdx < 0 {
+		return "", fmt.Errorf("volume %q not found", volumeName)
+	}
+
+	var blockLines []string
+	for i := startIdx + 1; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		if indent <= baseIndent {
+			break
+		}
+		blockLines = append(blockLines, line)
+	}
+	return strings.Join(blockLines, "\n"), nil
+}
+
+func parseVolumeBlock(block string) volumeConfig {
+	vc := volumeConfig{driverOpts: make(map[string]string)}
+	lines := strings.Split(block, "\n")
+	inDriverOpts := false
+	driverOptsIndent := -1
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		if inDriverOpts && indent <= driverOptsIndent {
+			inDriverOpts = false
+		}
+
+		parts := strings.SplitN(trimmed, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.Trim(strings.TrimSpace(parts[1]), "\"'")
+
+		if !inDriverOpts {
+			if key == "driver" {
+				vc.driver = val
+			} else if key == "driver_opts" {
+				inDriverOpts = true
+				driverOptsIndent = indent
+			}
+		} else {
+			vc.driverOpts[key] = val
+		}
+	}
+	return vc
+}
+
+func checkTelemetryTmpfsVolumeConfig(vc volumeConfig) error {
+	if vc.driver != "local" {
+		return fmt.Errorf("volume driver must be 'local', got %q", vc.driver)
+	}
+	if vc.driverOpts["type"] != "tmpfs" {
+		return fmt.Errorf("volume driver_opts.type must be 'tmpfs', got %q", vc.driverOpts["type"])
+	}
+	if vc.driverOpts["device"] != "tmpfs" {
+		return fmt.Errorf("volume driver_opts.device must be 'tmpfs', got %q", vc.driverOpts["device"])
+	}
+	oVal := vc.driverOpts["o"]
+	if !strings.Contains(oVal, "size=1m") {
+		return fmt.Errorf("volume driver_opts.o must contain 'size=1m', got %q", oVal)
+	}
+	if !strings.Contains(oVal, "mode=0700") {
+		return fmt.Errorf("volume driver_opts.o must contain 'mode=0700', got %q", oVal)
+	}
+	return nil
+}
+
+func verifyTelemetryTmpfsVolume(t *testing.T, composeFile, text string) {
+	t.Helper()
+	block, err := composeNamedVolumeBlock(text, "fleet-telemetry-config")
+	if err != nil {
+		t.Fatalf("%s: %v", composeFile, err)
+	}
+	vc := parseVolumeBlock(block)
+	if err := checkTelemetryTmpfsVolumeConfig(vc); err != nil {
+		t.Fatalf("%s: %v", composeFile, err)
+	}
+}
+
+func TestComposeNamedVolumeBlockSemantics(t *testing.T) {
+	// 1. CRLF and LF both pass
+	crlfYaml := "volumes:\r\n  fleet-telemetry-config:\r\n    driver: local\r\n    driver_opts:\r\n      type: tmpfs\r\n      device: tmpfs\r\n      o: size=1m,mode=0700\r\n"
+	lfYaml := "volumes:\n  fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      type: tmpfs\n      device: tmpfs\n      o: size=1m,mode=0700\n"
+	verifyTelemetryTmpfsVolume(t, "crlf", crlfYaml)
+	verifyTelemetryTmpfsVolume(t, "lf", lfYaml)
+
+	// 2. Attribute order changes still pass
+	reorderedYaml := "volumes:\n  fleet-telemetry-config:\n    driver_opts:\n      device: tmpfs\n      o: mode=0700,size=1m\n      type: tmpfs\n    driver: local\n"
+	verifyTelemetryTmpfsVolume(t, "reordered", reorderedYaml)
+
+	// 3. Extra legal driver_opts fields still pass
+	extraOptsYaml := "volumes:\n  fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      type: tmpfs\n      device: tmpfs\n      o: size=1m,mode=0700\n      extra_opt: some_value\n"
+	verifyTelemetryTmpfsVolume(t, "extra_opts", extraOptsYaml)
+
+	// 4. Missing type: tmpfs must fail
+	missingType := "volumes:\n  fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      device: tmpfs\n      o: size=1m,mode=0700\n"
+	block, _ := composeNamedVolumeBlock(missingType, "fleet-telemetry-config")
+	if err := checkTelemetryTmpfsVolumeConfig(parseVolumeBlock(block)); err == nil {
+		t.Fatal("expected failure when driver_opts.type is missing")
+	}
+
+	// 5. Missing device: tmpfs must fail
+	missingDevice := "volumes:\n  fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      type: tmpfs\n      o: size=1m,mode=0700\n"
+	block, _ = composeNamedVolumeBlock(missingDevice, "fleet-telemetry-config")
+	if err := checkTelemetryTmpfsVolumeConfig(parseVolumeBlock(block)); err == nil {
+		t.Fatal("expected failure when driver_opts.device is missing")
+	}
+
+	// 6. Missing mode=0700 must fail
+	missingMode := "volumes:\n  fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      type: tmpfs\n      device: tmpfs\n      o: size=1m\n"
+	block, _ = composeNamedVolumeBlock(missingMode, "fleet-telemetry-config")
+	if err := checkTelemetryTmpfsVolumeConfig(parseVolumeBlock(block)); err == nil {
+		t.Fatal("expected failure when mode=0700 is missing")
 	}
 }
 
