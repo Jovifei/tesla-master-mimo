@@ -77,6 +77,8 @@ struct RouteDestinationView: View {
             AboutView()
         case .tariffConfig:
             TariffConfigView()
+        case .dataReadiness:
+            DataReadinessView()
         }
     }
 }

@@ -56,6 +56,9 @@ enum Route: Hashable {
     case about
     case tariffConfig
     case tpmsSettings
+
+    // MARK: - Readiness
+    case dataReadiness(carId: Int)
 }
 
 // MARK: - NavigationLink Convenience

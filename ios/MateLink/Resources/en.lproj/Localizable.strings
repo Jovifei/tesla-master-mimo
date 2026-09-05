@@ -99,3 +99,60 @@
 "more.reports" = "Reports";
 "more.history" = "History";
 "more.system" = "System";
+
+// Data Readiness (mirrors Android data_readiness_* — 2026-09 sync)
+"refresh" = "Refresh";
+"data_readiness_title" = "Data Status";
+"data_readiness_intro_title" = "Vehicle connected, some data is still preparing";
+"data_readiness_intro_body" = "After first login, live status may be available immediately. Location, drive history and charge history appear after the vehicle reconnects and the data source has collected more observations. “Waiting” or “Collecting” is not a login failure or a subscription requirement. MateLink only displays data it actually receives; it never treats missing values as 0. If the status page asks for a virtual-key pairing, follow that guide to enable continuous telemetry.";
+"data_readiness_intro_continue" = "Enter Dashboard";
+"data_readiness_intro_open" = "View Data Status";
+"data_readiness_item_live_status" = "Live status";
+"data_readiness_item_location" = "Location";
+"data_readiness_item_tpms" = "Tire pressure";
+"data_readiness_item_drives" = "Drive history";
+"data_readiness_item_charges" = "Charge history";
+"data_readiness_item_battery_health" = "Battery health";
+"data_readiness_status_available" = "Available";
+"data_readiness_status_collecting" = "Collecting";
+"data_readiness_status_waiting_vehicle" = "Waiting for vehicle";
+"data_readiness_status_unsupported" = "Not supported";
+"data_readiness_status_unavailable" = "Unavailable";
+"data_readiness_action_wake_vehicle" = "Wake the vehicle to collect this data";
+"data_readiness_action_keep_vehicle_connected" = "Keep the vehicle connected to accumulate history";
+"data_readiness_action_not_available" = "Not available from this data source";
+"data_readiness_action_retry_later" = "Try again later";
+"data_readiness_action_legacy" = "This older server does not expose readiness details.";
+"data_readiness_last_observed" = "Last observed: %@";
+"data_readiness_source" = "Source: %@";
+"data_readiness_source_fleet_api" = "Fleet API";
+"data_readiness_source_mock" = "Local mock";
+"data_readiness_source_legacy" = "Legacy compatibility";
+"data_readiness_source_local_history" = "This device";
+"data_readiness_source_unavailable" = "Unavailable";
+"data_readiness_load_error" = "Data status could not be loaded. Check the connection and try again.";
+
+// Fleet Telemetry (mirrors Android telemetry_*)
+"telemetry_setup_title" = "Fleet Telemetry";
+"telemetry_setup_pairing_required" = "Tesla virtual key pairing required";
+"telemetry_setup_waiting_vehicle" = "Waiting for vehicle configuration";
+"telemetry_setup_permission_required" = "Tesla permission required";
+"telemetry_setup_billing_blocked" = "Tesla billing needs attention";
+"telemetry_setup_error" = "Fleet Telemetry is temporarily unavailable";
+"telemetry_setup_not_configured" = "Fleet Telemetry service is not configured";
+"telemetry_setup_collecting" = "Collecting data";
+"telemetry_setup_available" = "Data collection is available";
+"telemetry_config_sync_state" = "Configuration: %@";
+"telemetry_config_synced" = "Synced";
+"telemetry_config_pending" = "Pending";
+"telemetry_config_unknown" = "Unknown";
+"telemetry_action_open_virtual_key" = "Open Tesla to add virtual key";
+"telemetry_action_configure" = "I have paired it, enable data collection";
+"telemetry_action_retry_configuration" = "Retry data collection setup";
+"telemetry_virtual_key_unavailable" = "The Tesla virtual-key link is unavailable. Refresh and try again.";
+"tesla_account_reauthorize" = "Connect or re-authorize Tesla";
+
+// Vampire (mirrors Android vampire_* error states)
+"vampire_data_unavailable" = "Standby data is temporarily unavailable. Try again later.";
+"vampire_auth_required" = "Vehicle authorization is no longer valid. Sign in to Tesla again.";
+"vampire_collecting_title" = "Standby history is still collecting";

@@ -9,6 +9,9 @@ struct DashboardView: View {
     @State private var showCarSwitcher = false
     @State private var isRefreshing = false
     @State private var snapshotSource: String?
+    @State private var loadError: String?
+    @State private var dataReadiness: DataReadiness?
+    @State private var showReadinessIntro = false
 
     var body: some View {
         ScrollView {
@@ -35,6 +38,9 @@ struct DashboardView: View {
         }
         .task { await refresh() }
         .sheet(isPresented: $showCarSwitcher) { CarSwitcherView() }
+        .sheet(isPresented: $showReadinessIntro) {
+            ReadinessIntroSheet(readiness: dataReadiness, carId: state.currentCarId)
+        }
     }
 
     // MARK: - Main Dashboard Content
@@ -59,7 +65,7 @@ struct DashboardView: View {
         NavigationLink {
             LocationDetailView(status: s)
         } label: {
-            LocationMapCard(status: s)
+            LocationMapCard(status: s, readinessLocation: dataReadiness?.item("location"))
         }
         .buttonStyle(.plain)
 
@@ -68,7 +74,7 @@ struct DashboardView: View {
 
         // 7. Tire Pressure Grid
         NavigationLink(value: Route.tpmsTrend(carId: state.currentCarId)) {
-            TirePressureGrid(status: s, palette: palette)
+            TirePressureGrid(status: s, palette: palette, readinessTpms: dataReadiness?.item("tpms"))
         }
         .buttonStyle(.plain)
 
@@ -116,6 +122,14 @@ struct DashboardView: View {
                     status = nil
                     snapshotSource = nil
                     loadError = "Unable to load vehicle status: \(error.localizedDescription)"
+                }
+            }
+            // Data readiness (mirrors Android DashboardViewModel parallel fetch).
+            // Failure is non-fatal: dashboard cards just show their own values.
+            if let readiness = try? await api.getDataReadiness(carId: carId) {
+                dataReadiness = readiness
+                if !DataReadinessSeenStore.hasSeen(readiness, carId: carId) {
+                    showReadinessIntro = true
                 }
             }
         } else {
@@ -344,6 +358,13 @@ private struct DoorWarning: View {
 
 private struct LocationMapCard: View {
     let status: CarStatus
+    var readinessLocation: DataReadinessItem?
+
+    /// Location is considered unavailable until the source reports a real fix
+    /// (mirrors Android: missing values are never displayed as 0).
+    private var hasLocation: Bool {
+        status.latitude != 0 || status.longitude != 0
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -351,11 +372,27 @@ private struct LocationMapCard: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            AmapView(latitude: status.latitude,
-                     longitude: status.longitude,
-                     title: "Current Location")
-                .frame(height: 160)
+            if hasLocation {
+                AmapView(latitude: status.latitude,
+                         longitude: status.longitude,
+                         title: "Current Location")
+                    .frame(height: 160)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                // Readiness fallback: show collection status instead of a blank map
+                // (mirrors Android readinessDashboardValue).
+                HStack(spacing: 8) {
+                    Image(systemName: MateIcons.location)
+                        .foregroundStyle(MateColors.muted)
+                    Text(readinessDashboardValue(readinessLocation))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, minHeight: 60)
+                .background(Color(.tertiarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
 
             HStack {
                 Image(systemName: "arrow.up.arrow.down")
@@ -444,6 +481,7 @@ private struct InfoCard: View {
 private struct TirePressureGrid: View {
     let status: CarStatus
     let palette: CarColorPalette
+    var readinessTpms: DataReadinessItem?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -452,10 +490,14 @@ private struct TirePressureGrid: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 10) {
-                TireCard(label: "FL", value: status.tirePressureFrontLeft, color: palette.accent)
-                TireCard(label: "FR", value: status.tirePressureFrontRight, color: palette.accent)
-                TireCard(label: "RL", value: status.tirePressureRearLeft, color: palette.acColor)
-                TireCard(label: "RR", value: status.tirePressureRearRight, color: palette.dcColor)
+                TireCard(label: "FL", value: status.tirePressureFrontLeft, color: palette.accent,
+                         readinessValue: tireReadinessValue)
+                TireCard(label: "FR", value: status.tirePressureFrontRight, color: palette.accent,
+                         readinessValue: tireReadinessValue)
+                TireCard(label: "RL", value: status.tirePressureRearLeft, color: palette.acColor,
+                         readinessValue: tireReadinessValue)
+                TireCard(label: "RR", value: status.tirePressureRearRight, color: palette.dcColor,
+                         readinessValue: tireReadinessValue)
             }
         }
         .padding()
@@ -463,24 +505,42 @@ private struct TirePressureGrid: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal)
     }
+
+    /// Mirrors Android: tire cards fall back to the tpms readiness status when
+    /// the sensor data has not been collected yet.
+    private var tireReadinessValue: String? {
+        let hasAnyPressure = [status.tirePressureFrontLeft, status.tirePressureFrontRight,
+                              status.tirePressureRearLeft, status.tirePressureRearRight]
+            .contains { $0 != 0 }
+        return hasAnyPressure ? nil : readinessDashboardValue(readinessTpms)
+    }
 }
 
 private struct TireCard: View {
     let label: String
     let value: Double
     let color: Color
+    var readinessValue: String? = nil
 
     var body: some View {
         VStack(spacing: 4) {
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-            Text(String(format: "%.1f", value))
-                .font(MateFont.mono(.medium, size: 16))
-                .monospacedDigit()
-            Text("bar")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            if let readinessValue {
+                Text(readinessValue)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(MateColors.accent)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text(String(format: "%.1f", value))
+                    .font(MateFont.mono(.medium, size: 16))
+                    .monospacedDigit()
+                Text("bar")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)

@@ -137,3 +137,60 @@
 "more.reports" = "报告";
 "more.history" = "历史";
 "more.system" = "系统";
+
+/* Data Readiness（对齐安卓 data_readiness_* — 2026-09 同步） */
+"refresh" = "刷新";
+"data_readiness_title" = "数据状态";
+"data_readiness_intro_title" = "车辆已连接，部分数据正在准备。";
+"data_readiness_intro_body" = "首次登录后，实时车况可能马上可用；位置、行程历史和充电历史要等车辆重新联网，并由数据源持续收集后逐步显示。“等待车辆”或“收集中”不是登录失败，也不代表需要订阅。MateLink 只显示实际收到的数据，不会把缺失值当成 0。如果数据状态要求配对虚拟钥匙，请按页面指引开启持续遥测。";
+"data_readiness_intro_continue" = "进入 Dashboard";
+"data_readiness_intro_open" = "查看数据状态";
+"data_readiness_item_live_status" = "实时状态";
+"data_readiness_item_location" = "位置";
+"data_readiness_item_tpms" = "胎压";
+"data_readiness_item_drives" = "行程历史";
+"data_readiness_item_charges" = "充电历史";
+"data_readiness_item_battery_health" = "电池健康";
+"data_readiness_status_available" = "可用";
+"data_readiness_status_collecting" = "收集中";
+"data_readiness_status_waiting_vehicle" = "等待车辆";
+"data_readiness_status_unsupported" = "不支持";
+"data_readiness_status_unavailable" = "暂不可用";
+"data_readiness_action_wake_vehicle" = "唤醒车辆以收集此数据";
+"data_readiness_action_keep_vehicle_connected" = "保持车辆连接，历史数据会逐步积累";
+"data_readiness_action_not_available" = "当前数据源不提供此数据";
+"data_readiness_action_retry_later" = "请稍后重试";
+"data_readiness_action_legacy" = "旧版服务器未提供数据状态详情。";
+"data_readiness_last_observed" = "最近观测：%@";
+"data_readiness_source" = "来源：%@";
+"data_readiness_source_fleet_api" = "车队 API";
+"data_readiness_source_mock" = "本地模拟";
+"data_readiness_source_legacy" = "旧版兼容模式";
+"data_readiness_source_local_history" = "本机";
+"data_readiness_source_unavailable" = "暂不可用";
+"data_readiness_load_error" = "数据状态加载失败，请检查连接后重试。";
+
+/* Fleet Telemetry（对齐安卓 telemetry_*） */
+"telemetry_setup_title" = "Fleet Telemetry 数据采集";
+"telemetry_setup_pairing_required" = "需要配对 Tesla 虚拟钥匙";
+"telemetry_setup_waiting_vehicle" = "等待车辆完成配置";
+"telemetry_setup_permission_required" = "需要 Tesla 授权";
+"telemetry_setup_billing_blocked" = "Tesla 计费需要处理";
+"telemetry_setup_error" = "Fleet Telemetry 暂时不可用";
+"telemetry_setup_not_configured" = "Fleet Telemetry 服务尚未配置";
+"telemetry_setup_collecting" = "正在采集数据";
+"telemetry_setup_available" = "数据采集可用";
+"telemetry_config_sync_state" = "配置状态：%@";
+"telemetry_config_synced" = "已同步";
+"telemetry_config_pending" = "待同步";
+"telemetry_config_unknown" = "未知";
+"telemetry_action_open_virtual_key" = "前往 Tesla 添加虚拟钥匙";
+"telemetry_action_configure" = "已完成配对，启用数据采集";
+"telemetry_action_retry_configuration" = "重试数据采集配置";
+"telemetry_virtual_key_unavailable" = "Tesla 虚拟钥匙链接不可用，请刷新后重试。";
+"tesla_account_reauthorize" = "连接或重新授权 Tesla";
+
+/* Vampire（对齐安卓 vampire_* 错误分态） */
+"vampire_data_unavailable" = "待机数据暂时无法读取，请稍后重试。";
+"vampire_auth_required" = "车辆授权已失效，请重新登录 Tesla。";
+"vampire_collecting_title" = "待机历史仍在收集中";

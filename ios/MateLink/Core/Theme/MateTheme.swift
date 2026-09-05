@@ -28,6 +28,13 @@ enum MateColors {
     // Separator (1px hairline)
     static let separator = Color(.separator)
 
+    // Muted secondary text (Android SwissMuted: #737373 light / #B7BDC6 dark)
+    static let muted = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? UIColor(red: 0xB7/255, green: 0xBD/255, blue: 0xC6/255, alpha: 1)
+            : UIColor(red: 0x73/255, green: 0x73/255, blue: 0x73/255, alpha: 1)
+    })
+
     // Card / grouped background
     static let groupedBackground = Color(.systemGroupedBackground)
     static let secondaryGrouped   = Color(.secondarySystemGroupedBackground)

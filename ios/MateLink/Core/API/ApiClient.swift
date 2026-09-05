@@ -551,4 +551,116 @@ extension TeslaMateAPI {
     func getCachedCharges(carId: Int) async -> [Charge]? {
         await APICache.shared.read([Charge].self, key: "cache_charges_\(carId)")
     }
+
+    /// POST with empty JSON body — used by telemetry configure.
+    func post<T: Decodable>(_ path: String) async throws -> T {
+        guard let url = URL(string: "\(baseURL)\(path)") else { throw ApiError.networkUnreachable("Invalid URL") }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        do {
+            let (data, resp) = try await session.data(for: req)
+            guard let http = resp as? HTTPURLResponse else { throw ApiError.serverError(0, "Not HTTP") }
+            guard (200...299).contains(http.statusCode) else {
+                throw ApiError.serverError(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+            }
+            do { return try JSONDecoder().decode(T.self, from: data) }
+            catch { throw ApiError.decodingError(error.localizedDescription) }
+        } catch let e as ApiError { throw e }
+        catch let e as URLError where e.code == .timedOut { throw ApiError.timeout }
+        catch { throw ApiError.networkUnreachable(error.localizedDescription) }
+    }
+}
+
+// MARK: - Data Readiness (mirrors Android DataReadinessModels.kt)
+
+struct DataReadinessResponse: Codable {
+    let data: DataReadiness?
+    let error: String?
+}
+
+struct DataReadiness: Codable {
+    let capabilityVersion: Int?
+    let vehicleUid: String?
+    let items: [DataReadinessItem]
+
+    func item(_ key: String) -> DataReadinessItem? {
+        items.first { $0.key == key }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case capabilityVersion = "capability_version"
+        case vehicleUid = "vehicle_uid"
+        case items
+    }
+}
+
+struct DataReadinessItem: Codable {
+    let key: String
+    let status: String
+    let source: String
+    let lastObservedAt: String?
+    let messageKey: String?
+    let action: String?
+
+    enum CodingKeys: String, CodingKey {
+        case key, status, source
+        case lastObservedAt = "last_observed_at"
+        case messageKey = "message_key"
+        case action
+    }
+}
+
+// MARK: - Telemetry Pairing (mirrors Android TelemetryPairingModels.kt)
+
+struct TelemetryPairingResponse: Codable {
+    let data: TelemetryPairingStatus?
+    let error: String?
+}
+
+struct TelemetryPairingStatus: Codable {
+    let status: String
+    let virtualKeyUrl: String?
+    let updatedAt: String?
+    let configSynced: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case virtualKeyUrl = "virtual_key_url"
+        case updatedAt = "updated_at"
+        case configSynced = "config_synced"
+    }
+}
+
+struct TelemetryConfigureResponse: Codable {
+    let data: TelemetryConfigureResult?
+    let error: String?
+}
+
+struct TelemetryConfigureResult: Codable {
+    let status: String
+}
+
+extension TeslaMateAPI {
+    /// GET api/v1/cars/{carId}/data-readiness
+    func getDataReadiness(carId: Int) async throws -> DataReadiness {
+        let resp: DataReadinessResponse = try await fetch("/api/v1/cars/\(carId)/data-readiness")
+        guard let readiness = resp.data else { throw ApiError.invalidResponse }
+        return readiness
+    }
+
+    /// GET api/v1/cars/{carId}/telemetry/pairing
+    func getTelemetryPairing(carId: Int) async throws -> TelemetryPairingStatus {
+        let resp: TelemetryPairingResponse = try await fetch("/api/v1/cars/\(carId)/telemetry/pairing")
+        guard let pairing = resp.data else { throw ApiError.invalidResponse }
+        return pairing
+    }
+
+    /// POST api/v1/cars/{carId}/telemetry/configure
+    func configureTelemetry(carId: Int) async throws -> TelemetryConfigureResult {
+        let resp: TelemetryConfigureResponse = try await post("/api/v1/cars/\(carId)/telemetry/configure")
+        guard let result = resp.data else { throw ApiError.invalidResponse }
+        return result
+    }
 }

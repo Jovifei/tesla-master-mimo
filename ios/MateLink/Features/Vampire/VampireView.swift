@@ -20,62 +20,81 @@ struct VampireView: View {
     private let idealRange: Double = 520
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    // Header
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Vampire Drain").font(.title2).bold()
-                        Text("Estimated battery loss during parking periods")
-                            .font(.caption).foregroundColor(.secondary)
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal)
+        ScrollView {
+            VStack(spacing: 16) {
+                // Header
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Vampire Drain").font(.title2).bold()
+                    Text("Estimated battery loss during parking periods")
+                        .font(.caption).foregroundColor(.secondary)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal)
 
-                    if let loadError {
-                        EmptyStateView("Drain Data Unavailable", systemImage: "exclamationmark.triangle", message: loadError)
-                            .padding(.top, 24)
-                    }
-
-                    // Summary Cards
-                    HStack(spacing: 12) {
-                        StatCard(title: "Total Drain", value: "\(totalKWh.formatted(.number.precision(.fractionLength(1)))) kWh", subtitle: "", color: .red)
-                        StatCard(title: "Range Loss", value: "\(totalKm) km", subtitle: "", color: .orange)
-                        StatCard(title: "Events", value: "\(drains.count)", subtitle: "", color: .secondary)
-                    }.padding(.horizontal)
-
-                    // Trend Chart
-                    if !drains.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Daily Drain Trend")
-                                .font(.subheadline.weight(.medium)).foregroundColor(.secondary)
-                            Chart(drains.suffix(30)) { d in
-                                LineMark(
-                                    x: .value("Date", d.date),
-                                    y: .value("kWh", d.kWh)
-                                )
-                                .foregroundStyle(.red)
-                                .lineStyle(StrokeStyle(lineWidth: 2))
-                            }
-                            .chartXAxis { AxisMarks(values: .stride(by: 7)) }
-                            .frame(height: 250)
-                        }
-                        .padding()
-                        .background(.regularMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .padding(.horizontal)
-                    }
-
-                    if drains.isEmpty {
-                        EmptyStateView("No Drain Data",
-                            systemImage: "bolt.slash",
-                            message: "No parking periods with significant drain found.")
-                            .padding(.top, 40)
-                    }
+                if let loadError {
+                    // Error states mirror Android VampireScreen: auth vs. identity vs. generic.
+                    EmptyStateView(
+                        errorTitle,
+                        systemImage: "exclamationmark.triangle",
+                        message: loadError,
+                        actionLabel: L10n.string("refresh"),
+                        onAction: { Task { await loadData() } }
+                    )
+                    .padding(.top, 24)
                 }
-                .padding(.vertical)
+
+                // Summary Cards
+                HStack(spacing: 12) {
+                    StatCard(title: "Total Drain", value: "\(totalKWh.formatted(.number.precision(.fractionLength(1)))) kWh", subtitle: "", color: .red)
+                    StatCard(title: "Range Loss", value: "\(totalKm) km", subtitle: "", color: .orange)
+                    StatCard(title: "Events", value: "\(drains.count)", subtitle: "", color: .secondary)
+                }.padding(.horizontal)
+
+                // Trend Chart
+                if !drains.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Daily Drain Trend")
+                            .font(.subheadline.weight(.medium)).foregroundColor(.secondary)
+                        Chart(drains.suffix(30)) { d in
+                            LineMark(
+                                x: .value("Date", d.date),
+                                y: .value("kWh", d.kWh)
+                            )
+                            .foregroundStyle(.red)
+                            .lineStyle(StrokeStyle(lineWidth: 2))
+                        }
+                        .chartXAxis { AxisMarks(values: .stride(by: 7)) }
+                        .frame(height: 250)
+                    }
+                    .padding()
+                    .background(.regularMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .padding(.horizontal)
+                }
+
+                if drains.isEmpty && loadError == nil {
+                    EmptyStateView("No Drain Data",
+                        systemImage: "bolt.slash",
+                        message: "No parking periods with significant drain found.",
+                        actionLabel: L10n.string("refresh"),
+                        onAction: { Task { await loadData() } })
+                        .padding(.top, 40)
+                }
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .task { await loadData() }
+            .padding(.vertical)
         }
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await loadData() }
+    }
+
+    /// Mirrors Android VampireScreen error title mapping
+    /// (auth required vs. identity unavailable vs. generic).
+    private var errorTitle: String {
+        if isAuthError { return L10n.string("vampire_auth_required") }
+        return L10n.string("vampire_data_unavailable")
+    }
+
+    private var isAuthError: Bool {
+        guard let loadError else { return false }
+        return loadError.contains("401") || loadError.contains("403") || loadError.contains("Invalid token")
     }
 
     func loadData() async {

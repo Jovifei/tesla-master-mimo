@@ -89,6 +89,13 @@ struct SettingsView: View {
                 }
             }
 
+            // MARK: - Data Status
+            Section {
+                NavigationLink(value: Route.dataReadiness(carId: state.currentCarId)) {
+                    Label(L10n.string("data_readiness_title"), systemImage: "checkmark.seal")
+                }
+            }
+
             // MARK: - Display
             Section(L10n.string("settings.display")) {
                 Toggle("Dark Mode", isOn: $state.isDarkMode)
