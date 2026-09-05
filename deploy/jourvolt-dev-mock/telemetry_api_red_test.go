@@ -2,9 +2,18 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,7 +32,77 @@ func newTelemetryServiceForTest(partnerDomain string) *telemetryService {
 		caPEM:           "test-ca",
 		httpClient:      http.DefaultClient,
 		commandProxyURL: "",
+		tokens:          &staticFleetAccessTokens{token: "test-access-token"},
 	}
+}
+
+type staticFleetAccessTokens struct {
+	token string
+	err   error
+	calls []string
+}
+
+func (tokens *staticFleetAccessTokens) accessToken(_ context.Context, userID, rejectedAccessToken string) (string, error) {
+	tokens.calls = append(tokens.calls, userID+":"+rejectedAccessToken)
+	if tokens.err != nil {
+		return "", tokens.err
+	}
+	return tokens.token, nil
+}
+
+func telemetryTestTLSServer(t *testing.T, handler http.Handler) (*httptest.Server, string) {
+	t.Helper()
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	caTemplate := x509.Certificate{
+		SerialNumber: serial, Subject: pkix.Name{CommonName: "JourVolt test telemetry CA"},
+		NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, &caTemplate, &caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial, err = rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTemplate := x509.Certificate{
+		SerialNumber: serial, Subject: pkix.Name{CommonName: "vehicle-command-proxy"},
+		NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Hour),
+		DNSNames: []string{"vehicle-command-proxy", "localhost"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
+		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	serverDER, err := x509.CreateCertificate(rand.Reader, &serverTemplate, &caTemplate, &serverKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverKeyDER, err := x509.MarshalPKCS8PrivateKey(serverKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificate, err := tls.X509KeyPair(
+		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverDER}),
+		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: serverKeyDER}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewUnstartedServer(handler)
+	server.TLS = &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}
+	server.StartTLS()
+	return server, string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}))
 }
 
 func telemetryRefWithVIN(service *telemetryService, userID string, vehicleID int, vin string) telemetryVehicleRef {
@@ -57,6 +136,61 @@ func TestTelemetryPairingReturnsConfiguredVirtualKeyURLWithoutVIN(t *testing.T) 
 	}
 	if strings.Contains(recorder.Body.String(), "5YJ3E1EA7KF123456") {
 		t.Fatal("pairing response leaked plaintext VIN")
+	}
+}
+
+func TestTelemetryConfigureForwardsCurrentUsersBearerTokenToCommandProxy(t *testing.T) {
+	tokens := &staticFleetAccessTokens{token: "current-user-token"}
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer current-user-token" {
+			t.Errorf("Authorization = %q, want current user Bearer token", got)
+		}
+		switch r.Method {
+		case http.MethodPost:
+			_, _ = w.Write([]byte(`{"response":{}}`))
+		case http.MethodGet:
+			_, _ = w.Write([]byte(`{"response":{"synced":true}}`))
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer proxy.Close()
+
+	service := newTelemetryServiceForTest("partner.example.com")
+	service.commandProxyURL = proxy.URL
+	service.tokens = tokens
+	ref := telemetryRefWithVIN(service, "user-a", 1, "5YJ3E1EA7KF123456")
+	service.memory.registerVehicle(ref)
+
+	if err := service.configure(context.Background(), ref.UserID, ref.VehicleID); err != nil {
+		t.Fatalf("configure() error = %v", err)
+	}
+	if len(tokens.calls) < 2 || tokens.calls[0] != "user-a:" {
+		t.Fatalf("token calls = %#v, want current user token for configure and status read", tokens.calls)
+	}
+}
+
+func TestTelemetryConfigureTrustsConfiguredCAForHTTPSCommandProxy(t *testing.T) {
+	proxy, caPEM := telemetryTestTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			_, _ = w.Write([]byte(`{"response":{}}`))
+		case http.MethodGet:
+			_, _ = w.Write([]byte(`{"response":{"synced":true}}`))
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	}))
+	defer proxy.Close()
+
+	service := newTelemetryServiceForTest("partner.example.com")
+	service.commandProxyURL = proxy.URL
+	service.caPEM = caPEM
+	ref := telemetryRefWithVIN(service, "user-a", 1, "5YJ3E1EA7KF123456")
+	service.memory.registerVehicle(ref)
+
+	if err := service.configure(context.Background(), ref.UserID, ref.VehicleID); err != nil {
+		t.Fatalf("configure() error = %v", err)
 	}
 }
 

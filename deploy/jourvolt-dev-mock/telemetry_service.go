@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"io"
@@ -29,6 +31,7 @@ type telemetryService struct {
 	memory                   *telemetryMemoryStore
 	vinHashKey               []byte
 	cipher                   *tokenCipher
+	tokens                   fleetAccessTokens
 	caPEM                    string
 	commandProxyURL          string
 	httpClient               *http.Client
@@ -426,24 +429,11 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 		return errTelemetryCommand
 	}
 	requestURL := strings.TrimRight(s.commandProxyURL, "/") + "/api/1/vehicles/fleet_telemetry_config"
-	timeout := s.config.CommandTimeout
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
-	requestContext, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(requestContext, http.MethodPost, requestURL, strings.NewReader(string(body)))
+	response, err := s.commandProxyRequest(ctx, userID, http.MethodPost, requestURL, body)
 	if err != nil {
-		return errTelemetryCommand
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	client := s.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: timeout}
-	}
-	response, err := client.Do(req)
-	if err != nil {
+		if errors.Is(err, errTeslaReauthorization) {
+			return errTelemetryPermission
+		}
 		return errTelemetryCommand
 	}
 	defer response.Body.Close()
@@ -490,7 +480,7 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 			case <-timer.C:
 			}
 		}
-		configResponse, err := s.getFleetTelemetryConfig(ctx, vin)
+		configResponse, err := s.getFleetTelemetryConfig(ctx, userID, vin)
 		if err != nil {
 			continue
 		}
@@ -510,6 +500,87 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 	// The vehicle may be asleep; expose a pending state and let the next GET
 	// refresh observe synced=true without blocking the API request indefinitely.
 	return nil
+}
+
+func (s *telemetryService) commandProxyRequest(ctx context.Context, userID, method, requestURL string, body []byte) (*http.Response, error) {
+	if s == nil || s.tokens == nil {
+		return nil, errTeslaReauthorization
+	}
+	accessToken, err := s.tokens.accessToken(ctx, userID, "")
+	if err != nil {
+		return nil, err
+	}
+	response, err := s.commandProxyRequestWithToken(ctx, method, requestURL, body, accessToken)
+	if err != nil || response.StatusCode != http.StatusUnauthorized {
+		return response, err
+	}
+	response.Body.Close()
+	accessToken, err = s.tokens.accessToken(ctx, userID, accessToken)
+	if err != nil {
+		return nil, err
+	}
+	return s.commandProxyRequestWithToken(ctx, method, requestURL, body, accessToken)
+}
+
+func (s *telemetryService) commandProxyRequestWithToken(ctx context.Context, method, requestURL string, body []byte, accessToken string) (*http.Response, error) {
+	timeout := 5 * time.Second
+	if s != nil && s.config != nil && s.config.CommandTimeout > 0 {
+		timeout = s.config.CommandTimeout
+	}
+	requestContext, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(requestContext, method, requestURL, strings.NewReader(string(body)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	client, err := s.commandProxyHTTPClient(requestURL, timeout)
+	if err != nil {
+		return nil, err
+	}
+	return client.Do(req)
+}
+
+func (s *telemetryService) commandProxyHTTPClient(requestURL string, timeout time.Duration) (*http.Client, error) {
+	client := s.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: timeout}
+	}
+	parsed, err := url.Parse(requestURL)
+	if err != nil || parsed.Scheme != "https" {
+		return client, err
+	}
+	ca, err := s.telemetryCA()
+	if err != nil {
+		return nil, err
+	}
+	roots, err := x509.SystemCertPool()
+	if err != nil || roots == nil {
+		roots = x509.NewCertPool()
+	}
+	if !roots.AppendCertsFromPEM(ca) {
+		return nil, errors.New("telemetry CA is not a certificate bundle")
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok || transport == nil {
+		transport = http.DefaultTransport.(*http.Transport)
+	}
+	transport = transport.Clone()
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	if transport.TLSClientConfig != nil {
+		tlsConfig = transport.TLSClientConfig.Clone()
+		tlsConfig.MinVersion = tls.VersionTLS12
+	}
+	tlsConfig.RootCAs = roots
+	transport.TLSClientConfig = tlsConfig
+	configuredClient := *client
+	configuredClient.Transport = transport
+	if configuredClient.Timeout <= 0 {
+		configuredClient.Timeout = timeout
+	}
+	return &configuredClient, nil
 }
 
 func (s *telemetryService) telemetryCA() ([]byte, error) {
@@ -561,24 +632,10 @@ func (s *telemetryService) vinForVehicle(ctx context.Context, userID string, veh
 	return s.cipher.decrypt(encrypted)
 }
 
-func (s *telemetryService) getFleetTelemetryConfig(ctx context.Context, vin string) (officialFleetTelemetryResponse, error) {
+func (s *telemetryService) getFleetTelemetryConfig(ctx context.Context, userID, vin string) (officialFleetTelemetryResponse, error) {
 	var result officialFleetTelemetryResponse
 	requestURL := strings.TrimRight(s.commandProxyURL, "/") + "/api/1/vehicles/" + url.PathEscape(vin) + "/fleet_telemetry_config"
-	timeout := s.config.CommandTimeout
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
-	requestContext, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(requestContext, http.MethodGet, requestURL, nil)
-	if err != nil {
-		return result, err
-	}
-	client := s.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: timeout}
-	}
-	response, err := client.Do(req)
+	response, err := s.commandProxyRequest(ctx, userID, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return result, err
 	}

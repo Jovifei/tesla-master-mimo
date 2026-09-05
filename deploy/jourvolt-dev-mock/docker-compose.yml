@@ -79,6 +79,29 @@ services:
       timeout: 5s
       retries: 6
 
+  vehicle-command-proxy:
+    # Tesla's official HTTP proxy signs Fleet Telemetry configuration with the
+    # application's virtual-key private key. It is deliberately private: only
+    # the API can reach it through the internal telemetry network.
+    image: ${TESLA_VEHICLE_COMMAND_IMAGE:-example.invalid/jourvolt/vehicle-command:unconfigured}
+    profiles: ["telemetry"]
+    restart: unless-stopped
+    mem_limit: 128m
+    command: ["-tls-key", "/run/secrets/vehicle-command/tls.key", "-cert", "/run/secrets/vehicle-command/tls.crt", "-key-file", "/run/secrets/vehicle-command/fleet-key.pem", "-host", "0.0.0.0", "-port", "4444"]
+    expose:
+      - "4444"
+    volumes:
+      - ${TELEMETRY_COMMAND_PROXY_CERT_FILE:-./secrets/telemetry/command-proxy.crt}:/run/secrets/vehicle-command/tls.crt:ro
+      - ${TELEMETRY_COMMAND_PROXY_KEY_FILE:-./secrets/telemetry/command-proxy.key}:/run/secrets/vehicle-command/tls.key:ro
+      - ${TELEMETRY_VEHICLE_COMMAND_KEY_FILE:-./secrets/telemetry/fleet-key.pem}:/run/secrets/vehicle-command/fleet-key.pem:ro
+    networks:
+      - telemetry
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
   fleet-telemetry:
     # An unset image must never select an official tag implicitly. The renderer
     # rejects the empty setting before this profile service can start.

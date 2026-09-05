@@ -843,16 +843,41 @@ func (a *app) readyz(w http.ResponseWriter, r *http.Request) {
 		a.json(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
 		return
 	}
-	if a.telemetry != nil {
-		telemetryState := a.telemetry.telemetryReadinessState(ctx)
-		if telemetryState != "" {
-			a.json(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready", "telemetry": telemetryState})
-			return
-		}
+	// readyz is the Docker healthcheck target (wget /readyz). It must express
+	// whether THIS process can serve traffic, i.e. the store is reachable.
+	// The Fleet Telemetry MQTT chain is business health, not liveness: report it
+	// as a diagnostic field instead of a 503, otherwise a not-yet-connected
+	// telemetry service would fail the healthcheck and trigger a restart loop.
+	telemetry := a.readinessTelemetryState(ctx)
+	if telemetry == "" {
+		telemetry = "ok"
 	}
 	a.json(w, http.StatusOK, map[string]any{
-		"status": "ok", "mode": a.mode, "persistence": "postgres",
+		"status": "ok", "mode": a.mode, "persistence": "postgres", "telemetry": telemetry,
 	})
+}
+
+// readinessTelemetryState returns a non-empty diagnostic when the telemetry
+// chain is not fully healthy, or "" when it is healthy (or not applicable).
+// In fleet mode (Tesla account login) trip/charge history depends on Fleet
+// Telemetry MQTT, so a nil telemetry service is surfaced as
+// "telemetry_not_configured". This value is informational only and must not
+// gate /readyz (which backs the Docker healthcheck).
+func (a *app) readinessTelemetryState(ctx context.Context) string {
+	if a.telemetry != nil {
+		return a.telemetry.telemetryReadinessState(ctx)
+	}
+	if isFleetMode(a.mode) {
+		return "telemetry_not_configured"
+	}
+	return ""
+}
+
+// isFleetMode reports whether the process is running in Tesla Fleet API mode,
+// where live data and trip/charge history depend on Fleet Telemetry MQTT.
+// Mock-only and unconfigured modes have their own (non-telemetry) history path.
+func isFleetMode(mode string) bool {
+	return mode == "fleet" || mode == "fleet_with_debug_mock"
 }
 
 func main() {
@@ -904,6 +929,9 @@ func main() {
 			telemetry.cipher = cipher
 		}
 		tokenManager := &teslaTokenManager{store: store, cipher: cipher, config: teslaSettings, client: httpClient}
+		if telemetry != nil {
+			telemetry.tokens = tokenManager
+		}
 		registrar := newTeslaPartnerRegistrar(teslaSettings, httpClient)
 		if err := registrar.ensure(ctx); err != nil {
 			log.Printf("tesla partner register deferred domain=%s: %v", teslaSettings.PartnerDomain, err)

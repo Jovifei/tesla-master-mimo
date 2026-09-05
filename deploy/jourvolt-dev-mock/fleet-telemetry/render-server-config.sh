@@ -42,4 +42,8 @@ sed \
   -e "s|__MQTT_TOPIC_BASE__|$(json_escape "$TELEMETRY_MQTT_TOPIC_BASE")|g" \
   /template/server_config.json.template > /rendered/server_config.json
 
-chmod 0600 /rendered/server_config.json
+# The fleet-telemetry process runs as the deploy user (uid 1000), not root, and
+# reads this file from the shared rendered directory. Keep it readable by that
+# user while staying private to the host (the rendered directory is 0700).
+chmod 0640 /rendered/server_config.json
+chown "${JOURVOLT_UID:-1000}:${JOURVOLT_GID:-1000}" /rendered/server_config.json 2>/dev/null || true

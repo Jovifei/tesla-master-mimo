@@ -36,7 +36,12 @@ func loadTelemetryConfig(getenv func(string) string) (*telemetryConfig, error) {
 	configured := false
 	for _, name := range names {
 		values[name] = strings.TrimSpace(getenv(name))
-		configured = configured || values[name] != ""
+		// Compose mounts this fixed in-container CA path for the API even when
+		// the optional Telemetry profile is disabled. It is not an activation
+		// signal; any externally supplied Telemetry value is.
+		if name != "TELEMETRY_CA_CERT_PATH" {
+			configured = configured || values[name] != ""
+		}
 	}
 	if !configured {
 		return nil, nil
@@ -95,8 +100,8 @@ func parseTelemetryMQTTURL(raw string) (string, error) {
 
 func parseTelemetryHTTPURL(name, raw string) (string, error) {
 	parsed, err := url.Parse(raw)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", fmt.Errorf("%s must be an absolute HTTP(S) URL without credentials or query", name)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("%s must be an absolute HTTPS URL without credentials or query", name)
 	}
 	return strings.TrimRight(raw, "/"), nil
 }

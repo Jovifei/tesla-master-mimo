@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -71,6 +72,55 @@ func TestHealthzAndReadinessFailClosedWithoutStore(t *testing.T) {
 	api.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if ready.Code != http.StatusServiceUnavailable {
 		t.Fatalf("readyz status = %d, want %d", ready.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestTelemetryReadinessSurfacesNilTelemetryInFleetMode(t *testing.T) {
+	tests := []struct {
+		name string
+		mode string
+		want string
+	}{
+		{name: "fleet without telemetry", mode: "fleet", want: "telemetry_not_configured"},
+		{name: "fleet with debug mock without telemetry", mode: "fleet_with_debug_mock", want: "telemetry_not_configured"},
+		{name: "mock only without telemetry", mode: "mock_only", want: ""},
+		{name: "unconfigured without telemetry", mode: "unconfigured", want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			api := &app{mode: test.mode}
+			if got := api.readinessTelemetryState(context.Background()); got != test.want {
+				t.Fatalf("readinessTelemetryState() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+// TestReadyzStaysHealthyWhenTelemetryNotConfigured guards the Docker
+// healthcheck contract: /readyz must return 200 whenever the store is
+// reachable, regardless of telemetry state. A 503 here would fail the
+// `wget /readyz` healthcheck and trigger a restart loop. Requires a real
+// database via JOURVOLT_TEST_DATABASE_URL.
+func TestReadyzStaysHealthyWhenTelemetryNotConfigured(t *testing.T) {
+	dsn := os.Getenv("JOURVOLT_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("JOURVOLT_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	store, err := openStore(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(store.close)
+
+	api := &app{mode: "fleet", store: store, telemetry: nil}
+	ready := httptest.NewRecorder()
+	api.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if ready.Code != http.StatusOK {
+		t.Fatalf("readyz fleet-nil-telemetry status = %d, want %d; body=%s", ready.Code, http.StatusOK, ready.Body.String())
+	}
+	if !strings.Contains(ready.Body.String(), `"telemetry":"telemetry_not_configured"`) {
+		t.Fatalf("readyz body = %s, want telemetry field = telemetry_not_configured", ready.Body.String())
 	}
 }
 

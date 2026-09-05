@@ -89,6 +89,34 @@ services:
       timeout: 5s
       retries: 6
 
+  vehicle-command-proxy:
+    # Tesla's official HTTP proxy signs Fleet Telemetry configuration with the
+    # application's virtual-key private key. It is deliberately private: only
+    # the API can reach it through the internal telemetry network.
+    image: ${TESLA_VEHICLE_COMMAND_IMAGE:-example.invalid/jourvolt/vehicle-command:unconfigured}
+    profiles: ["telemetry"]
+    restart: unless-stopped
+    mem_limit: 128m
+    # Run as the deploy user (uid 1000) so the container can read the
+    # 0600-owned virtual-key private key and TLS material mounted below.
+    # The official image runs as a non-root uid (65532) by default, which
+    # cannot read those files and crashes with "permission denied".
+    user: "${JOURVOLT_UID:-1000}:${JOURVOLT_GID:-1000}"
+    command: ["-tls-key", "/run/secrets/vehicle-command/tls.key", "-cert", "/run/secrets/vehicle-command/tls.crt", "-key-file", "/run/secrets/vehicle-command/fleet-key.pem", "-host", "0.0.0.0", "-port", "4444"]
+    expose:
+      - "4444"
+    volumes:
+      - ${TELEMETRY_COMMAND_PROXY_CERT_FILE:-/srv/jourvolt-secrets/fleet-telemetry/command-proxy.crt}:/run/secrets/vehicle-command/tls.crt:ro
+      - ${TELEMETRY_COMMAND_PROXY_KEY_FILE:-/srv/jourvolt-secrets/fleet-telemetry/command-proxy.key}:/run/secrets/vehicle-command/tls.key:ro
+      - ${TELEMETRY_VEHICLE_COMMAND_KEY_FILE:-/srv/jourvolt-secrets/fleet-telemetry/fleet-key.pem}:/run/secrets/vehicle-command/fleet-key.pem:ro
+    networks:
+      - telemetry
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
   fleet-telemetry:
     # An unset image must never select an official digest implicitly. The renderer
     # rejects the empty setting before this profile service can start.
@@ -96,6 +124,10 @@ services:
     profiles: ["telemetry"]
     restart: unless-stopped
     mem_limit: 256m
+    # Run as the deploy user (uid 1000) so the process can read the rendered
+    # config and the 0600-owned TLS material. The official image defaults to a
+    # non-root uid (65532) which cannot read either, crashing on startup.
+    user: "${JOURVOLT_UID:-1000}:${JOURVOLT_GID:-1000}"
     command: ["/fleet-telemetry", "-config=/etc/fleet-telemetry/server_config.json"]
     depends_on:
       jourvolt-mqtt:
@@ -107,11 +139,12 @@ services:
     expose:
       - "8080"
     volumes:
-      - fleet-telemetry-config:/etc/fleet-telemetry:ro
+      - ./fleet-telemetry/rendered:/etc/fleet-telemetry:ro
       - ${TELEMETRY_SERVER_CERT_FILE:-/srv/jourvolt-secrets/fleet-telemetry/server.crt}:/run/secrets/fleet/server.crt:ro
       - ${TELEMETRY_SERVER_KEY_FILE:-/srv/jourvolt-secrets/fleet-telemetry/server.key}:/run/secrets/fleet/server.key:ro
     networks:
       - telemetry
+      - default
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -123,6 +156,9 @@ services:
     profiles: ["telemetry"]
     restart: "no"
     mem_limit: 64m
+    # Run as the deploy user so the rendered file is owned by uid 1000 and is
+    # directly readable by the fleet-telemetry process.
+    user: "${JOURVOLT_UID:-1000}:${JOURVOLT_GID:-1000}"
     environment:
       FLEET_TELEMETRY_IMAGE: ${FLEET_TELEMETRY_IMAGE:-}
       TELEMETRY_MQTT_URL: ${TELEMETRY_MQTT_URL:-}
@@ -132,26 +168,28 @@ services:
       TELEMETRY_PUBLIC_PORT: ${TELEMETRY_PUBLIC_PORT:-4443}
       TELEMETRY_SERVER_CERT_PATH: /run/secrets/fleet/server.crt
       TELEMETRY_SERVER_KEY_PATH: /run/secrets/fleet/server.key
+      JOURVOLT_UID: ${JOURVOLT_UID:-1000}
+      JOURVOLT_GID: ${JOURVOLT_GID:-1000}
     command: ["/bin/sh", "/render-server-config.sh"]
     volumes:
       - ./fleet-telemetry/server_config.json.template:/template/server_config.json.template:ro
       - ./fleet-telemetry/render-server-config.sh:/render-server-config.sh:ro
       - ${TELEMETRY_SERVER_CERT_FILE:-/srv/jourvolt-secrets/fleet-telemetry/server.crt}:/run/secrets/fleet/server.crt:ro
       - ${TELEMETRY_SERVER_KEY_FILE:-/srv/jourvolt-secrets/fleet-telemetry/server.key}:/run/secrets/fleet/server.key:ro
-      - fleet-telemetry-config:/rendered
+      - ./fleet-telemetry/rendered:/rendered
 
 networks:
   db:
     name: ${JOURVOLT_DB_NETWORK:-jourvolt-staging_default}
     external: true
+  # The telemetry network stays internal so the MQTT broker and vehicle-command
+  # proxy are never reachable from the internet. fleet-telemetry additionally
+  # attaches to `default` (non-internal) so its public 4443 port can publish for
+  # inbound vehicle connections — an `internal` network has no port mappings.
   telemetry:
     internal: true
+  default:
+    name: jourvolt-pilot_default
 
 volumes:
   jourvolt-mqtt-data:
-  fleet-telemetry-config:
-    driver: local
-    driver_opts:
-      type: tmpfs
-      device: tmpfs
-      o: size=1m,mode=0700

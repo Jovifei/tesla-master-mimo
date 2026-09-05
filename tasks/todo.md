@@ -2891,3 +2891,19 @@
 - TELEMETRY PILOT PASS：NOT PERFORMED；未执行真实 Fleet Telemetry、虚拟钥匙配对或真实行程/充电事件，不能以本地测试代替。
 - 版本候选：`E:\Claude_allow\Download\matelink-1.4.3-release-signed-readiness-standby-amap-settings-20260901.apk`，SHA-256 `0C92E0040F192F7229E0710F0C8119A3D63CEDCC03527F3374CBA87A0A968DC1`。
 - 边界：本轮不修改 iOS，不提交、不推送、不部署；保留当前工作树中的既有用户资产。
+
+# 2026-09-02 云端 Fleet Telemetry 行程采集修复（进行中）
+
+## Plan
+
+- [x] 只读核对 ECS 实际容器、有效配置、端口、证书与健康端点；不输出任何 secret、VIN 或 token。
+- [x] 复现并确认：Fleet 实时快照可用，但 Telemetry 未部署时历史接口只返回空数组。
+- [ ] RED：覆盖 Vehicle Command Proxy 请求必须携带当前用户 Bearer token，且 token 获取失败时不得发请求。
+- [ ] GREEN：以最小注入边界将现有会话 token 交给 Telemetry 配置请求；不写入日志或数据库。
+- [ ] 补齐 ECS Telemetry profile 的官方 command-proxy、内部 TLS 信任、资源与健康边界；默认不自动启用。
+- [ ] 同步 ECS 构建闭包、生成/复用私有证书材料并启动不含 Tesla 配对的基础服务。
+- [ ] 验证 MQTT 持久化、443/4443 入站、Telemetry readiness 与 App 状态；真实车辆配对仅在 Jovi 手动确认后进行。
+
+## Review
+
+- 进行中：ECS 当前仅有 `jourvolt-dev-api` 与 PostgreSQL；Telemetry/MQTT/command-proxy 均未部署，4443 未监听，Telemetry TLS 文件缺失。实时 `vehicle_data` 与历史采集链路已证实分离。

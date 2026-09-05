@@ -11,6 +11,11 @@ func TestTelemetryConfigIsOptionalButAllFieldsFailClosedWhenEnabled(t *testing.T
 	if err != nil || empty != nil {
 		t.Fatalf("empty telemetry config = %#v, %v; want disabled", empty, err)
 	}
+	internalCAOnly := map[string]string{"TELEMETRY_CA_CERT_PATH": "/run/secrets/fleet/ca.pem"}
+	empty, err = loadTelemetryConfig(func(name string) string { return internalCAOnly[name] })
+	if err != nil || empty != nil {
+		t.Fatalf("internal CA mount alone = %#v, %v; want disabled", empty, err)
+	}
 	values := telemetryTestEnv()
 	delete(values, "TELEMETRY_COMMAND_PROXY_URL")
 	if _, err := loadTelemetryConfig(func(name string) string { return values[name] }); err == nil {
@@ -44,6 +49,14 @@ func TestTelemetryConfigRejectsUnsafeEndpointsAndCertificatePaths(t *testing.T) 
 	}
 }
 
+func TestTelemetryConfigRequiresHTTPSCommandProxy(t *testing.T) {
+	values := telemetryTestEnv()
+	values["TELEMETRY_COMMAND_PROXY_URL"] = "http://vehicle-command-proxy:4444"
+	if _, err := loadTelemetryConfig(func(key string) string { return values[key] }); err == nil {
+		t.Fatal("plaintext command proxy URL must be rejected")
+	}
+}
+
 func telemetryTestEnv() map[string]string {
 	return map[string]string{
 		"TELEMETRY_MQTT_URL":            "mqtt://broker:1883",
@@ -52,7 +65,7 @@ func telemetryTestEnv() map[string]string {
 		"TELEMETRY_MQTT_TOPIC_BASE":     "jourvolt/telemetry",
 		"TELEMETRY_PUBLIC_HOST":         "fleet.example.com",
 		"TELEMETRY_PUBLIC_PORT":         "4443",
-		"TELEMETRY_COMMAND_PROXY_URL":   "http://vehicle-command-proxy:4444",
+		"TELEMETRY_COMMAND_PROXY_URL":   "https://vehicle-command-proxy:4444",
 		"TELEMETRY_CA_CERT_PATH":        "/run/secrets/fleet/ca.pem",
 		"TELEMETRY_VIN_HASH_KEY_BASE64": base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))),
 	}
