@@ -2,8 +2,6 @@ package com.matelink.ui.screens.auth
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import androidx.browser.customtabs.CustomTabsIntent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.BuildConfig
@@ -49,6 +47,12 @@ class TeslaLoginViewModel @Inject constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<TeslaLoginUiState>(TeslaLoginUiState.Idle)
     val uiState: StateFlow<TeslaLoginUiState> = _uiState.asStateFlow()
+    private val _pendingAuthorizationUrl = MutableStateFlow<String?>(null)
+    val pendingAuthorizationUrl: StateFlow<String?> = _pendingAuthorizationUrl.asStateFlow()
+    private val _openDashboardAfterLogin = MutableStateFlow(false)
+    val openDashboardAfterLogin: StateFlow<Boolean> = _openDashboardAfterLogin.asStateFlow()
+    private val _revealLoginError = MutableStateFlow(false)
+    val revealLoginError: StateFlow<Boolean> = _revealLoginError.asStateFlow()
     val isAuthenticated: StateFlow<Boolean> = sessionStore.session
         .map { it != null }
         .stateIn(viewModelScope, SharingStarted.Eagerly, sessionStore.current() != null)
@@ -100,17 +104,7 @@ class TeslaLoginViewModel @Inject constructor(
                     error(context.getString(R.string.tesla_login_authorization_invalid))
                 }
                 if (shouldPublishTeslaRequest(requestId, requestGeneration)) {
-                    withContext(Dispatchers.Main) {
-                        if (shouldPublishTeslaRequest(requestId, requestGeneration)) {
-                            CustomTabsIntent.Builder()
-                                .setShowTitle(true)
-                                .build()
-                                .also { it.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                                .launchUrl(context, Uri.parse(body.authorizationUrl))
-                        }
-                    }
-                }
-                if (shouldPublishTeslaRequest(requestId, requestGeneration)) {
+                    _pendingAuthorizationUrl.value = body.authorizationUrl
                     _uiState.value = TeslaLoginUiState.Idle
                 }
             }.onFailure { error ->
@@ -127,27 +121,42 @@ class TeslaLoginViewModel @Inject constructor(
 
     fun handleAuthorizationCallback(intent: Intent?) {
         val callback = intent?.data ?: return
+        if (!isTeslaOAuthCallbackPath(callback.path)) {
+            return
+        }
         if (!isTrustedTeslaCallback(callback, BuildConfig.JOURVOLT_AUTH_HOST)) {
             _uiState.value = TeslaLoginUiState.Error(
                 context.getString(R.string.tesla_login_callback_invalid)
             )
-            return
-        }
-        callback.getQueryParameter("error")?.takeIf { it.isNotBlank() }?.let {
-            _uiState.value = TeslaLoginUiState.Error(
-                context.getString(R.string.tesla_login_error_cancelled)
-            )
+            _revealLoginError.value = true
             return
         }
         val ticket = callback.getQueryParameter("ticket")?.takeIf { it.isNotBlank() }
-            ?: return
-        if (shouldIgnoreTeslaCallbackTicket(
+        val errorCode = callback.getQueryParameter("error")?.takeIf { it.isNotBlank() }
+        if (ticket == null) {
+            if (errorCode != null) {
+                _uiState.value = TeslaLoginUiState.Error(
+                    context.getString(teslaLoginCallbackErrorRes(errorCode))
+                )
+                _revealLoginError.value = true
+            }
+            return
+        }
+        when (
+            teslaCallbackReplayDecision(
                 ticket = ticket,
                 inFlightTicket = callbackTicketInFlight,
-                handledTicket = handledCallbackTicket
+                handledTicket = handledCallbackTicket,
+                hasSession = sessionStore.current() != null
             )
         ) {
-            return
+            TeslaCallbackReplayDecision.Ignore -> return
+            TeslaCallbackReplayDecision.OpenDashboard -> {
+                _uiState.value = TeslaLoginUiState.Idle
+                _openDashboardAfterLogin.value = true
+                return
+            }
+            TeslaCallbackReplayDecision.Process -> Unit
         }
         val requestId = beginRequest()
         callbackTicketInFlight = ticket
@@ -159,6 +168,17 @@ class TeslaLoginViewModel @Inject constructor(
                 val response = authApi().exchange(TeslaAuthExchangeRequest(ticket))
                 val body = response.body()
                 if (!response.isSuccessful || body == null) {
+                    if (shouldTreatTeslaExchangeFailureAsSuccess(
+                            httpStatus = response.code(),
+                            hasSession = sessionStore.current() != null
+                        )
+                    ) {
+                        handledCallbackTicket = ticket
+                        callbackTicketInFlight = null
+                        _uiState.value = TeslaLoginUiState.Idle
+                        _openDashboardAfterLogin.value = true
+                        return@runCatching
+                    }
                     error(context.getString(teslaLoginErrorMessageRes(response.code())))
                 }
                 if (!shouldPublishTeslaRequest(requestId, requestGeneration)) {
@@ -175,6 +195,7 @@ class TeslaLoginViewModel @Inject constructor(
                 callbackTicketInFlight = null
                 if (shouldPublishTeslaRequest(requestId, requestGeneration)) {
                     _uiState.value = TeslaLoginUiState.Idle
+                    _openDashboardAfterLogin.value = true
                 }
             }.onFailure { error ->
                 if (callbackTicketInFlight == ticket &&
@@ -185,9 +206,22 @@ class TeslaLoginViewModel @Inject constructor(
                     _uiState.value = TeslaLoginUiState.Error(
                         error.message ?: context.getString(R.string.tesla_login_error_exchange)
                     )
+                    _revealLoginError.value = true
                 }
             }
         }
+    }
+
+    fun consumePendingAuthorizationUrl() {
+        _pendingAuthorizationUrl.value = null
+    }
+
+    fun consumeDashboardAfterLogin() {
+        _openDashboardAfterLogin.value = false
+    }
+
+    fun consumeRevealLoginError() {
+        _revealLoginError.value = false
     }
 
     fun openSelfHosted(onComplete: () -> Unit) {
@@ -288,11 +322,46 @@ internal fun teslaLoginErrorMessageRes(code: Int): Int = when (code) {
     else -> R.string.tesla_login_error_generic
 }
 
+internal fun teslaLoginCallbackErrorRes(errorCode: String): Int = when (errorCode) {
+    "access_denied", "cancelled", "user_cancelled" -> R.string.tesla_login_error_cancelled
+    "unauthorized_client", "invalid_client" -> R.string.tesla_login_error_token_config
+    else -> R.string.tesla_login_error_exchange
+}
+
+internal enum class TeslaCallbackReplayDecision {
+    Process,
+    Ignore,
+    OpenDashboard
+}
+
+internal fun teslaCallbackReplayDecision(
+    ticket: String,
+    inFlightTicket: String?,
+    handledTicket: String?,
+    hasSession: Boolean
+): TeslaCallbackReplayDecision = when {
+    ticket.isBlank() -> TeslaCallbackReplayDecision.Ignore
+    ticket == inFlightTicket -> TeslaCallbackReplayDecision.Ignore
+    ticket == handledTicket && hasSession -> TeslaCallbackReplayDecision.OpenDashboard
+    ticket == handledTicket -> TeslaCallbackReplayDecision.Ignore
+    else -> TeslaCallbackReplayDecision.Process
+}
+
 internal fun shouldIgnoreTeslaCallbackTicket(
     ticket: String,
     inFlightTicket: String?,
     handledTicket: String?
-): Boolean = ticket.isBlank() || ticket == inFlightTicket || ticket == handledTicket
+): Boolean = teslaCallbackReplayDecision(
+    ticket = ticket,
+    inFlightTicket = inFlightTicket,
+    handledTicket = handledTicket,
+    hasSession = false
+) != TeslaCallbackReplayDecision.Process
+
+internal fun shouldTreatTeslaExchangeFailureAsSuccess(
+    httpStatus: Int,
+    hasSession: Boolean
+): Boolean = hasSession && httpStatus in setOf(401, 403)
 
 internal fun shouldPublishTeslaRequest(requestId: Long, currentRequestId: Long): Boolean =
     requestId == currentRequestId

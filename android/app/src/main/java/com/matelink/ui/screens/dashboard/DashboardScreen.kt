@@ -1,5 +1,6 @@
 package com.matelink.ui.screens.dashboard
 
+import android.content.Intent
 import com.matelink.BuildConfig
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
@@ -38,6 +39,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.res.stringResource
@@ -59,6 +61,10 @@ import com.matelink.ui.theme.StatusWarning
 import com.matelink.ui.theme.SwissInk
 import com.matelink.ui.theme.SwissMuted
 import com.matelink.ui.navigation.PearlDriveMotion
+import com.matelink.ui.components.launchExternalIntentSafely
+import com.matelink.ui.screens.readiness.DataReadinessRows
+import com.matelink.ui.screens.readiness.readinessDashboardValue
+import com.matelink.ui.screens.battery.classifyBatteryCharge
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -78,9 +84,11 @@ fun DashboardScreen(
     onNavigateToSentryHistory: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToTpmsTrend: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToTrips: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
+    onNavigateToReadiness: (carId: Int) -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val refreshRotation = remember { Animatable(0f) }
     val refreshScope = rememberCoroutineScope()
 
@@ -94,6 +102,38 @@ fun DashboardScreen(
             )
         }
         Unit
+    }
+
+    if (!uiState.isLoading && uiState.showReadinessIntro && uiState.dataReadiness != null) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissReadinessIntro,
+            title = { Text(stringResource(R.string.data_readiness_intro_title)) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(stringResource(R.string.data_readiness_intro_body))
+                    DataReadinessRows(uiState.dataReadiness!!)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::dismissReadinessIntro) {
+                    Text(stringResource(R.string.data_readiness_intro_continue))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    viewModel.dismissReadinessIntro()
+                    uiState.dataReadinessCarId?.let(onNavigateToReadiness)
+                }) {
+                    Text(stringResource(R.string.data_readiness_intro_open))
+                }
+            }
+        )
     }
 
     if (uiState.isLoading) {
@@ -362,16 +402,39 @@ fun DashboardScreen(
                         )
                     }
                 }
-                if ((status.chargeLimitSoc ?: 0) > 0) {
-                    Text(stringResource(R.string.charge_limit, "${status.chargeLimitSoc ?: 0}%"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val chargePresentation = classifyBatteryCharge(status.batteryLevel, status.chargeLimitSoc)
+                if (chargePresentation.summary != null) {
+                    val summary = chargePresentation.summary
+                    Text(
+                        stringResource(R.string.battery_charge_summary, summary.currentLevel, summary.targetLevel),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (status.chargeLimitSoc != null) {
+                    Text(
+                        stringResource(R.string.charge_limit, "${status.chargeLimitSoc}%"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                if ((status.chargeLimitSoc ?: 0) > 90) {
+                if (chargePresentation.showHighSocWarning) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         stringResource(R.string.high_soc_warning),
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFFFB8C00)
                     )
+                    TextButton(
+                        onClick = {
+                            context.launchExternalIntentSafely(
+                                Intent(Intent.ACTION_MAIN)
+                                    .addCategory(Intent.CATEGORY_LAUNCHER)
+                                    .setPackage("com.teslamotors.tesla")
+                            )
+                        }
+                    ) {
+                        Text(stringResource(R.string.battery_open_tesla_app))
+                    }
                 }
 
                 Row(
@@ -442,7 +505,7 @@ fun DashboardScreen(
                     cachedAddress = uiState.cachedAddress,
                     latitude = status.latitude,
                     longitude = status.longitude
-                ) ?: "--",
+                ) ?: readinessDashboardValue(uiState.dataReadiness?.item("location")),
                 modifier = Modifier.weight(1f),
                 icon = Icons.Default.LocationOn,
                 onClick = onNavigateToAmapPreview
@@ -490,25 +553,29 @@ fun DashboardScreen(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 InfoCard(
                     stringResource(R.string.tire_fl_full),
-                    status.tpmsDetails?.pressureFl?.let { formatPressure(it, uiState.units) } ?: "--",
+                    status.tpmsDetails?.pressureFl?.let { formatPressure(it, uiState.units) }
+                        ?: readinessDashboardValue(uiState.dataReadiness?.item("tpms")),
                     Modifier.weight(1f),
                     warning = TirePosition.FL in warningTires
                 )
                 InfoCard(
                     stringResource(R.string.tire_fr_full),
-                    status.tpmsDetails?.pressureFr?.let { formatPressure(it, uiState.units) } ?: "--",
+                    status.tpmsDetails?.pressureFr?.let { formatPressure(it, uiState.units) }
+                        ?: readinessDashboardValue(uiState.dataReadiness?.item("tpms")),
                     Modifier.weight(1f),
                     warning = TirePosition.FR in warningTires
                 )
                 InfoCard(
                     stringResource(R.string.tire_rl_full),
-                    status.tpmsDetails?.pressureRl?.let { formatPressure(it, uiState.units) } ?: "--",
+                    status.tpmsDetails?.pressureRl?.let { formatPressure(it, uiState.units) }
+                        ?: readinessDashboardValue(uiState.dataReadiness?.item("tpms")),
                     Modifier.weight(1f),
                     warning = TirePosition.RL in warningTires
                 )
                 InfoCard(
                     stringResource(R.string.tire_rr_full),
-                    status.tpmsDetails?.pressureRr?.let { formatPressure(it, uiState.units) } ?: "--",
+                    status.tpmsDetails?.pressureRr?.let { formatPressure(it, uiState.units) }
+                        ?: readinessDashboardValue(uiState.dataReadiness?.item("tpms")),
                     Modifier.weight(1f),
                     warning = TirePosition.RR in warningTires
                 )

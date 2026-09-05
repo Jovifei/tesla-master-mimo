@@ -33,6 +33,8 @@ import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.domain.analytics.toAnalysisDriveData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -47,16 +49,22 @@ class StatsRepository @Inject constructor(
     private val chargeSummaryDao: ChargeSummaryDao,
     private val aggregateDao: AggregateDao,
     private val syncManager: SyncManager,
-    private val geocodingRepository: GeocodingRepository
+    private val geocodingRepository: GeocodingRepository,
+    private val vehicleContextRepository: com.matelink.data.local.VehicleContextRepository
 ) {
+
+    private suspend fun resolveHistoryCarId(remoteApiCarId: Int): Int {
+        return vehicleContextRepository.resolveRemote(remoteApiCarId).localHistoryCarId
+    }
 
     /**
      * Get complete stats for a car with the given year filter.
      */
     suspend fun getStats(carId: Int, yearFilter: YearFilter): CarStats {
+        val historyCarId = resolveHistoryCarId(carId)
         val quickStats = getQuickStats(carId, yearFilter)
         val deepStats = getDeepStats(carId, yearFilter)
-        val syncProgress = syncManager.getProgressForCar(carId)
+        val syncProgress = syncManager.getProgressForCar(historyCarId)
         val (recommendations, analysisCoverage) = getRecommendationsAndCoverage(carId, yearFilter)
 
         return CarStats(
@@ -71,14 +79,15 @@ class StatsRepository @Inject constructor(
     }
 
     private suspend fun getRecommendationsAndCoverage(carId: Int, yearFilter: YearFilter) = withContext(Dispatchers.Default) {
+        val historyCarId = resolveHistoryCarId(carId)
         val (drives, charges) = when (yearFilter) {
             is YearFilter.AllTime ->
-                driveSummaryDao.getAllChronological(carId) to chargeSummaryDao.getAllForCar(carId)
+                driveSummaryDao.getAllChronological(historyCarId) to chargeSummaryDao.getAllForCar(historyCarId)
             is YearFilter.Year -> {
                 val startDate = "${yearFilter.year}-01-01T00:00:00"
                 val endDate = "${yearFilter.year + 1}-01-01T00:00:00"
-                driveSummaryDao.getDrivesInRange(carId, startDate, endDate) to
-                chargeSummaryDao.getChargesInRange(carId, startDate, endDate)
+                driveSummaryDao.getDrivesInRange(historyCarId, startDate, endDate) to
+                chargeSummaryDao.getChargesInRange(historyCarId, startDate, endDate)
             }
         }
         // Room summaries retain legacy non-null columns for schema compatibility.
@@ -130,9 +139,10 @@ class StatsRepository @Inject constructor(
      * Get quick stats (from summary tables, instant).
      */
     suspend fun getQuickStats(carId: Int, yearFilter: YearFilter): QuickStats {
+        val historyCarId = resolveHistoryCarId(carId)
         return when (yearFilter) {
-            is YearFilter.AllTime -> getQuickStatsAllTime(carId)
-            is YearFilter.Year -> getQuickStatsForYear(carId, yearFilter.year)
+            is YearFilter.AllTime -> getQuickStatsAllTime(historyCarId)
+            is YearFilter.Year -> getQuickStatsForYear(historyCarId, yearFilter.year)
         }
     }
 
@@ -304,8 +314,9 @@ class StatsRepository @Inject constructor(
      * Returns null if no aggregates exist yet.
      */
     suspend fun getDeepStats(carId: Int, yearFilter: YearFilter): DeepStats? {
-        val driveAggregates = aggregateDao.countDriveAggregates(carId)
-        val chargeAggregates = aggregateDao.countChargeAggregates(carId)
+        val historyCarId = resolveHistoryCarId(carId)
+        val driveAggregates = aggregateDao.countDriveAggregates(historyCarId)
+        val chargeAggregates = aggregateDao.countChargeAggregates(historyCarId)
 
         // Return null if no aggregates exist at all
         if (driveAggregates == 0 && chargeAggregates == 0) {
@@ -313,8 +324,8 @@ class StatsRepository @Inject constructor(
         }
 
         return when (yearFilter) {
-            is YearFilter.AllTime -> getDeepStatsAllTime(carId, driveAggregates, chargeAggregates)
-            is YearFilter.Year -> getDeepStatsForYear(carId, yearFilter.year, driveAggregates, chargeAggregates)
+            is YearFilter.AllTime -> getDeepStatsAllTime(historyCarId, driveAggregates, chargeAggregates)
+            is YearFilter.Year -> getDeepStatsForYear(historyCarId, yearFilter.year, driveAggregates, chargeAggregates)
         }
     }
 
@@ -339,7 +350,7 @@ class StatsRepository @Inject constructor(
             maxElevationM = aggregateDao.maxElevation(carId),
             minElevationM = aggregateDao.minElevation(carId),
             driveWithMaxElevation = driveWithMaxElev?.let { agg ->
-                val drive = driveSummaryDao.get(agg.driveId)
+                val drive = driveSummaryDao.get(carId, agg.driveId)
                 DriveElevationRecord(
                     driveId = agg.driveId,
                     elevationM = agg.maxElevation,
@@ -348,7 +359,7 @@ class StatsRepository @Inject constructor(
                 )
             },
             driveWithMinElevation = driveWithMinElev?.let { agg ->
-                val drive = driveSummaryDao.get(agg.driveId)
+                val drive = driveSummaryDao.get(carId, agg.driveId)
                 DriveElevationRecord(
                     driveId = agg.driveId,
                     elevationM = agg.minElevation,
@@ -357,7 +368,7 @@ class StatsRepository @Inject constructor(
                 )
             },
             driveWithMostClimbing = driveWithMostGain?.let { agg ->
-                val drive = driveSummaryDao.get(agg.driveId)
+                val drive = driveSummaryDao.get(carId, agg.driveId)
                 DriveElevationRecord(
                     driveId = agg.driveId,
                     elevationM = agg.maxElevation,
@@ -371,7 +382,7 @@ class StatsRepository @Inject constructor(
             maxCabinTempC = aggregateDao.maxInsideTemp(carId),
             minCabinTempC = aggregateDao.minInsideTemp(carId),
             hottestDrive = hottestDriveAgg?.let { agg ->
-                val drive = driveSummaryDao.get(agg.driveId)
+                val drive = driveSummaryDao.get(carId, agg.driveId)
                 DriveTempRecord(
                     driveId = agg.driveId,
                     tempC = agg.maxOutsideTemp,
@@ -379,7 +390,7 @@ class StatsRepository @Inject constructor(
                 )
             },
             coldestDrive = coldestDriveAgg?.let { agg ->
-                val drive = driveSummaryDao.get(agg.driveId)
+                val drive = driveSummaryDao.get(carId, agg.driveId)
                 DriveTempRecord(
                     driveId = agg.driveId,
                     tempC = agg.minOutsideTemp,
@@ -390,7 +401,7 @@ class StatsRepository @Inject constructor(
             maxOutsideTempChargingC = aggregateDao.maxOutsideTempCharging(carId),
             minOutsideTempChargingC = aggregateDao.minOutsideTempCharging(carId),
             hottestCharge = hottestChargeAgg?.let { agg ->
-                val charge = chargeSummaryDao.get(agg.chargeId)
+                val charge = chargeSummaryDao.get(carId, agg.chargeId)
                 ChargeTempRecord(
                     chargeId = agg.chargeId,
                     tempC = agg.maxOutsideTemp,
@@ -398,7 +409,7 @@ class StatsRepository @Inject constructor(
                 )
             },
             coldestCharge = coldestChargeAgg?.let { agg ->
-                val charge = chargeSummaryDao.get(agg.chargeId)
+                val charge = chargeSummaryDao.get(carId, agg.chargeId)
                 ChargeTempRecord(
                     chargeId = agg.chargeId,
                     tempC = agg.minOutsideTemp,
@@ -408,7 +419,7 @@ class StatsRepository @Inject constructor(
 
             maxChargerPowerKw = aggregateDao.maxChargerPower(carId),
             chargeWithMaxPower = chargeWithMaxPowerAgg?.let { agg ->
-                val charge = chargeSummaryDao.get(agg.chargeId)
+                val charge = chargeSummaryDao.get(carId, agg.chargeId)
                 ChargePowerRecord(
                     chargeId = agg.chargeId,
                     powerKw = agg.maxChargerPower,
@@ -454,7 +465,7 @@ class StatsRepository @Inject constructor(
             maxElevationM = aggregateDao.maxElevationInRange(carId, startDate, endDate),
             minElevationM = null, // Not shown in UI
             driveWithMaxElevation = driveWithMaxElev?.let { agg ->
-                val drive = driveSummaryDao.get(agg.driveId)
+                val drive = driveSummaryDao.get(carId, agg.driveId)
                 DriveElevationRecord(
                     driveId = agg.driveId,
                     elevationM = agg.maxElevation,
@@ -464,7 +475,7 @@ class StatsRepository @Inject constructor(
             },
             driveWithMinElevation = null, // Not shown in UI
             driveWithMostClimbing = driveWithMostGain?.let { agg ->
-                val drive = driveSummaryDao.get(agg.driveId)
+                val drive = driveSummaryDao.get(carId, agg.driveId)
                 DriveElevationRecord(
                     driveId = agg.driveId,
                     elevationM = agg.maxElevation,
@@ -478,7 +489,7 @@ class StatsRepository @Inject constructor(
             maxCabinTempC = aggregateDao.maxInsideTempInRange(carId, startDate, endDate),
             minCabinTempC = aggregateDao.minInsideTempInRange(carId, startDate, endDate),
             hottestDrive = hottestDriveAgg?.let { agg ->
-                val drive = driveSummaryDao.get(agg.driveId)
+                val drive = driveSummaryDao.get(carId, agg.driveId)
                 DriveTempRecord(
                     driveId = agg.driveId,
                     tempC = agg.maxOutsideTemp,
@@ -486,7 +497,7 @@ class StatsRepository @Inject constructor(
                 )
             },
             coldestDrive = coldestDriveAgg?.let { agg ->
-                val drive = driveSummaryDao.get(agg.driveId)
+                val drive = driveSummaryDao.get(carId, agg.driveId)
                 DriveTempRecord(
                     driveId = agg.driveId,
                     tempC = agg.minOutsideTemp,
@@ -497,7 +508,7 @@ class StatsRepository @Inject constructor(
             maxOutsideTempChargingC = aggregateDao.maxOutsideTempChargingInRange(carId, startDate, endDate),
             minOutsideTempChargingC = aggregateDao.minOutsideTempChargingInRange(carId, startDate, endDate),
             hottestCharge = hottestChargeAgg?.let { agg ->
-                val charge = chargeSummaryDao.get(agg.chargeId)
+                val charge = chargeSummaryDao.get(carId, agg.chargeId)
                 ChargeTempRecord(
                     chargeId = agg.chargeId,
                     tempC = agg.maxOutsideTemp,
@@ -505,7 +516,7 @@ class StatsRepository @Inject constructor(
                 )
             },
             coldestCharge = coldestChargeAgg?.let { agg ->
-                val charge = chargeSummaryDao.get(agg.chargeId)
+                val charge = chargeSummaryDao.get(carId, agg.chargeId)
                 ChargeTempRecord(
                     chargeId = agg.chargeId,
                     tempC = agg.minOutsideTemp,
@@ -515,7 +526,7 @@ class StatsRepository @Inject constructor(
 
             maxChargerPowerKw = aggregateDao.maxChargerPowerInRange(carId, startDate, endDate),
             chargeWithMaxPower = chargeWithMaxPowerAgg?.let { agg ->
-                val charge = chargeSummaryDao.get(agg.chargeId)
+                val charge = chargeSummaryDao.get(carId, agg.chargeId)
                 ChargePowerRecord(
                     chargeId = agg.chargeId,
                     powerKw = agg.maxChargerPower,
@@ -539,8 +550,9 @@ class StatsRepository @Inject constructor(
      * Get available years for the year filter dropdown.
      */
     suspend fun getAvailableYears(carId: Int): List<Int> {
-        val driveYears = driveSummaryDao.getYears(carId)
-        val chargeYears = chargeSummaryDao.getYears(carId)
+        val historyCarId = resolveHistoryCarId(carId)
+        val driveYears = driveSummaryDao.getYears(historyCarId)
+        val chargeYears = chargeSummaryDao.getYears(historyCarId)
         return (driveYears + chargeYears).distinct().sortedDescending()
     }
 
@@ -548,14 +560,15 @@ class StatsRepository @Inject constructor(
      * Check if any data is available for stats.
      */
     suspend fun hasData(carId: Int): Boolean {
-        return driveSummaryDao.count(carId) > 0 || chargeSummaryDao.count(carId) > 0
+        val historyCarId = resolveHistoryCarId(carId)
+        return driveSummaryDao.count(historyCarId) > 0 || chargeSummaryDao.count(historyCarId) > 0
     }
 
     /**
      * Check if deep stats are being processed.
      */
     suspend fun isDeepSyncInProgress(carId: Int): Boolean {
-        val progress = syncManager.getProgressForCar(carId)
+        val progress = syncManager.getProgressForCar(resolveHistoryCarId(carId))
         return progress != null && progress.phase.isProcessing()
     }
 
@@ -563,7 +576,7 @@ class StatsRepository @Inject constructor(
      * Get drives between two dates (for range record details).
      */
     suspend fun getDrivesBetweenDates(carId: Int, afterDate: String, beforeDate: String) =
-        driveSummaryDao.getDrivesBetweenDates(carId, afterDate, beforeDate)
+        driveSummaryDao.getDrivesBetweenDates(resolveHistoryCarId(carId), afterDate, beforeDate)
 
     /**
      * Get the sync completion percentage for deep stats.
@@ -573,17 +586,18 @@ class StatsRepository @Inject constructor(
      * progress when schema changes require reprocessing.
      */
     suspend fun getDeepSyncProgress(carId: Int): Float {
+        val historyCarId = resolveHistoryCarId(carId)
         // If sync is marked complete, return 1.0
-        val progress = syncManager.getProgressForCar(carId)
+        val progress = syncManager.getProgressForCar(historyCarId)
         if (progress?.phase == com.matelink.domain.model.SyncPhase.COMPLETE) {
             return 1f
         }
 
-        val totalDrives = driveSummaryDao.count(carId)
-        val totalCharges = chargeSummaryDao.count(carId)
+        val totalDrives = driveSummaryDao.count(historyCarId)
+        val totalCharges = chargeSummaryDao.count(historyCarId)
         // Only count aggregates with current schema version
-        val processedDrives = aggregateDao.countDriveAggregatesWithSchema(carId, SchemaVersion.CURRENT)
-        val processedCharges = aggregateDao.countChargeAggregatesWithSchema(carId, SchemaVersion.CURRENT)
+        val processedDrives = aggregateDao.countDriveAggregatesWithSchema(historyCarId, SchemaVersion.CURRENT)
+        val processedCharges = aggregateDao.countChargeAggregatesWithSchema(historyCarId, SchemaVersion.CURRENT)
 
         val total = totalDrives + totalCharges
         val processed = processedDrives + processedCharges
@@ -598,15 +612,18 @@ class StatsRepository @Inject constructor(
      * progress when schema changes require reprocessing.
      */
     fun observeDeepSyncProgress(carId: Int): kotlinx.coroutines.flow.Flow<Float> {
-        return kotlinx.coroutines.flow.combine(
-            driveSummaryDao.observeCount(carId),
-            chargeSummaryDao.observeCount(carId),
-            aggregateDao.observeDriveAggregateCountWithSchema(carId, SchemaVersion.CURRENT),
-            aggregateDao.observeChargeAggregateCountWithSchema(carId, SchemaVersion.CURRENT)
-        ) { totalDrives, totalCharges, processedDrives, processedCharges ->
-            val total = totalDrives + totalCharges
-            val processed = processedDrives + processedCharges
-            if (total > 0) processed.toFloat() / total else 0f
+        return flow {
+            val historyCarId = resolveHistoryCarId(carId)
+            emitAll(kotlinx.coroutines.flow.combine(
+                driveSummaryDao.observeCount(historyCarId),
+                chargeSummaryDao.observeCount(historyCarId),
+                aggregateDao.observeDriveAggregateCountWithSchema(historyCarId, SchemaVersion.CURRENT),
+                aggregateDao.observeChargeAggregateCountWithSchema(historyCarId, SchemaVersion.CURRENT)
+            ) { totalDrives, totalCharges, processedDrives, processedCharges ->
+                val total = totalDrives + totalCharges
+                val processed = processedDrives + processedCharges
+                if (total > 0) processed.toFloat() / total else 0f
+            })
         }
     }
 
@@ -614,12 +631,13 @@ class StatsRepository @Inject constructor(
      * Get countries visited with aggregated data.
      */
     suspend fun getCountriesVisited(carId: Int, yearFilter: YearFilter): List<CountryRecord> {
+        val historyCarId = resolveHistoryCarId(carId)
         val results = when (yearFilter) {
-            is YearFilter.AllTime -> aggregateDao.getCountriesVisited(carId)
+            is YearFilter.AllTime -> aggregateDao.getCountriesVisited(historyCarId)
             is YearFilter.Year -> {
                 val startDate = "${yearFilter.year}-01-01T00:00:00"
                 val endDate = "${yearFilter.year + 1}-01-01T00:00:00"
-                aggregateDao.getCountriesVisitedInRange(carId, startDate, endDate)
+                aggregateDao.getCountriesVisitedInRange(historyCarId, startDate, endDate)
             }
         }
         return results.map { it.toCountryRecord() }
@@ -629,12 +647,13 @@ class StatsRepository @Inject constructor(
      * Get regions visited within a specific country with aggregated data.
      */
     suspend fun getRegionsVisited(carId: Int, countryCode: String, yearFilter: YearFilter): List<RegionRecord> {
+        val historyCarId = resolveHistoryCarId(carId)
         val results = when (yearFilter) {
-            is YearFilter.AllTime -> aggregateDao.getRegionsVisited(carId, countryCode)
+            is YearFilter.AllTime -> aggregateDao.getRegionsVisited(historyCarId, countryCode)
             is YearFilter.Year -> {
                 val startDate = "${yearFilter.year}-01-01T00:00:00"
                 val endDate = "${yearFilter.year + 1}-01-01T00:00:00"
-                aggregateDao.getRegionsVisitedInRange(carId, countryCode, startDate, endDate)
+                aggregateDao.getRegionsVisitedInRange(historyCarId, countryCode, startDate, endDate)
             }
         }
         return results.map { it.toRegionRecord() }
@@ -645,7 +664,7 @@ class StatsRepository @Inject constructor(
      * Returns null when geocoding is complete or hasn't started.
      */
     fun observeGeocodeProgress(carId: Int): Flow<GeocodeProgressInfo?> {
-        return geocodingRepository.observeGeocodeProgress(carId)
+        return flow { emitAll(geocodingRepository.observeGeocodeProgress(resolveHistoryCarId(carId))) }
     }
 
     /**
@@ -656,12 +675,13 @@ class StatsRepository @Inject constructor(
         countryCode: String,
         yearFilter: YearFilter
     ): List<ChargeLocation> {
+        val historyCarId = resolveHistoryCarId(carId)
         val results = when (yearFilter) {
-            is YearFilter.AllTime -> aggregateDao.getChargeLocationsForCountry(carId, countryCode)
+            is YearFilter.AllTime -> aggregateDao.getChargeLocationsForCountry(historyCarId, countryCode)
             is YearFilter.Year -> {
                 val startDate = "${yearFilter.year}-01-01T00:00:00"
                 val endDate = "${yearFilter.year + 1}-01-01T00:00:00"
-                aggregateDao.getChargeLocationsForCountryInRange(carId, countryCode, startDate, endDate)
+                aggregateDao.getChargeLocationsForCountryInRange(historyCarId, countryCode, startDate, endDate)
             }
         }
         return results.map { it.toChargeLocation() }
@@ -682,12 +702,13 @@ class StatsRepository @Inject constructor(
         countryCode: String,
         yearFilter: YearFilter
     ): List<DriveLocation> {
+        val historyCarId = resolveHistoryCarId(carId)
         val results = when (yearFilter) {
-            is YearFilter.AllTime -> aggregateDao.getDriveLocationsForCountry(carId, countryCode)
+            is YearFilter.AllTime -> aggregateDao.getDriveLocationsForCountry(historyCarId, countryCode)
             is YearFilter.Year -> {
                 val startDate = "${yearFilter.year}-01-01T00:00:00"
                 val endDate = "${yearFilter.year + 1}-01-01T00:00:00"
-                aggregateDao.getDriveLocationsForCountryInRange(carId, countryCode, startDate, endDate)
+                aggregateDao.getDriveLocationsForCountryInRange(historyCarId, countryCode, startDate, endDate)
             }
         }
         return results.map { it.toDriveLocation() }
@@ -696,11 +717,11 @@ class StatsRepository @Inject constructor(
     // === Monthly Aggregation ===
 
     suspend fun getMonthlyDriveAggregation(carId: Int, year: Int): List<com.matelink.data.local.dao.MonthlyDriveAggregation> {
-        return driveSummaryDao.getMonthlyAggregation(carId, year.toString())
+        return driveSummaryDao.getMonthlyAggregation(resolveHistoryCarId(carId), year.toString())
     }
 
     suspend fun getMonthlyChargeAggregation(carId: Int, year: Int): List<com.matelink.data.local.dao.MonthlyChargeAggregation> {
-        return chargeSummaryDao.getMonthlyAggregation(carId, year.toString())
+        return chargeSummaryDao.getMonthlyAggregation(resolveHistoryCarId(carId), year.toString())
     }
 }
 

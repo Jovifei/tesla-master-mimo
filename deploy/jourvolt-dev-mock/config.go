@@ -11,9 +11,14 @@ import (
 const (
 	defaultTeslaAuthURL  = "https://auth.tesla.cn/oauth2/v3/authorize"
 	defaultTeslaTokenURL = "https://auth.tesla.cn/oauth2/v3/token"
-	defaultTeslaIssuer   = "https://auth.tesla.cn/oauth2/v3/nts"
-	defaultTeslaJWKSURL  = "https://auth.tesla.cn/oauth2/v3/discovery/thirdparty/keys"
+	// Tesla's authorization response includes RFC 9207 `iss=https://auth.tesla.cn/oauth2/v3`
+	// (observed on live callback 2026-08-30). That document's JWKS is discovery/keys,
+	// not the partner NTS thirdparty/keys used for client_credentials.
+	defaultTeslaIssuer   = "https://auth.tesla.cn/oauth2/v3"
+	defaultTeslaJWKSURL  = "https://auth.tesla.cn/oauth2/v3/discovery/keys"
 	defaultTeslaFleetURL = "https://fleet-api.prd.cn.vn.cloud.tesla.cn"
+	teslaNTSIssuer       = "https://auth.tesla.cn/oauth2/v3/nts"
+	teslaNTSJWKSURL      = "https://auth.tesla.cn/oauth2/v3/discovery/thirdparty/keys"
 )
 
 type teslaConfig struct {
@@ -27,6 +32,7 @@ type teslaConfig struct {
 	Issuer        string
 	JWKSURL       string
 	FleetAPIBase  string
+	PartnerDomain string
 }
 
 func loadTeslaConfig(getenv func(string) string) (*teslaConfig, error) {
@@ -77,6 +83,15 @@ func loadTeslaConfig(getenv func(string) string) (*teslaConfig, error) {
 		return nil, err
 	}
 
+	appLink, err := url.Parse(values["JOURVOLT_APP_LINK_URI"])
+	if err != nil || appLink.Hostname() == "" {
+		return nil, fmt.Errorf("JOURVOLT_APP_LINK_URI must include a hostname")
+	}
+	partnerDomain, err := normalizePartnerDomain(envOrDefault(getenv, "TESLA_PARTNER_DOMAIN", appLink.Hostname()))
+	if err != nil {
+		return nil, fmt.Errorf("TESLA_PARTNER_DOMAIN: %w", err)
+	}
+
 	config := &teslaConfig{
 		ClientID:      values["TESLA_CLIENT_ID"],
 		ClientSecret:  values["TESLA_CLIENT_SECRET"],
@@ -88,6 +103,7 @@ func loadTeslaConfig(getenv func(string) string) (*teslaConfig, error) {
 		Issuer:        envOrDefault(getenv, "TESLA_ISSUER", defaultTeslaIssuer),
 		JWKSURL:       envOrDefault(getenv, "TESLA_JWKS_URL", defaultTeslaJWKSURL),
 		FleetAPIBase:  strings.TrimRight(envOrDefault(getenv, "TESLA_FLEET_API_BASE", defaultTeslaFleetURL), "/"),
+		PartnerDomain: partnerDomain,
 	}
 	for name, value := range map[string]string{
 		"TESLA_AUTH_URL":       config.Authorization,
@@ -130,6 +146,24 @@ func requireHTTPSURL(name, value string) error {
 		return fmt.Errorf("%s must be an absolute HTTPS URL", name)
 	}
 	return nil
+}
+
+func normalizePartnerDomain(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("must be a hostname")
+	}
+	if strings.Contains(raw, "://") {
+		parsed, err := url.Parse(raw)
+		if err != nil || parsed.Hostname() == "" || parsed.User != nil {
+			return "", fmt.Errorf("must be a hostname")
+		}
+		return parsed.Hostname(), nil
+	}
+	if strings.ContainsAny(raw, "/?#:@") {
+		return "", fmt.Errorf("must be a hostname")
+	}
+	return raw, nil
 }
 
 func requireHTTPSPathURL(name, value, expectedPath string) error {

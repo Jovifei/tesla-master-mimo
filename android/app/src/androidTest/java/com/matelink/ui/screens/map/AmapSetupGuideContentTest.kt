@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -25,7 +26,7 @@ class AmapSetupGuideContentTest {
     @get:Rule val composeRule = createComposeRule()
 
     @Test
-    fun guideShowsAndroidOnlyInstructionsMaskedKeyAndCopyActions() {
+    fun guideShowsEachLocalizedStepAndAccessibleNavigation() {
         var copied = ""
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         composeRule.setContent {
@@ -41,11 +42,27 @@ class AmapSetupGuideContentTest {
             }
         }
 
-        composeRule.onNodeWithText(context.getString(R.string.amap_setup_steps), substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_steps), substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_1_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_1_body)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_progress, 1, 3)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.amap_setup_platform_illustration)).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.amap_setup_warning), substring = true).assertIsDisplayed()
-        composeRule.onNodeWithText(context.getString(R.string.amap_key_not_saved)).fetchSemanticsNode()
         composeRule.onNodeWithText(context.getString(R.string.amap_copy_package)).performClick()
         assertEquals("package", copied)
+
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_next)).assertIsDisplayed().performClick()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_2_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_2_body)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_progress, 2, 3)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.amap_setup_previous)).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(context.getString(R.string.amap_setup_next)).assertIsDisplayed()
+
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_next)).performClick()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_3_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_3_body)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_progress, 3, 3)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.amap_key_not_saved)).fetchSemanticsNode()
         composeRule.onNodeWithText(context.getString(R.string.amap_enter_key)).performClick()
         assertTrue(composeRule.onNode(hasSetTextAction()).fetchSemanticsNode().config.contains(SemanticsProperties.Password))
         composeRule.onNodeWithText(context.getString(R.string.amap_verify_and_save)).assertIsNotEnabled()
@@ -76,6 +93,7 @@ class AmapSetupGuideContentTest {
             }
         }
 
+        navigateToKey(context)
         composeRule.onNodeWithText(context.getString(R.string.amap_key_verified)).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.amap_change_key)).assertIsDisplayed().performClick()
         composeRule.onNodeWithText(context.getString(R.string.amap_key_dialog_title)).assertIsDisplayed()
@@ -95,6 +113,7 @@ class AmapSetupGuideContentTest {
             }
         }
 
+        navigateToKey(context)
         composeRule.onNodeWithText(context.getString(R.string.amap_key_saved_unverified)).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.amap_verify_saved_key)).assertIsDisplayed()
     }
@@ -113,6 +132,7 @@ class AmapSetupGuideContentTest {
             }
         }
 
+        navigateToKey(context)
         composeRule.onNodeWithText(context.getString(R.string.amap_enter_key)).performClick()
         composeRule.onNodeWithText(context.getString(R.string.amap_verification_requires_privacy)).fetchSemanticsNode()
         composeRule.onNodeWithText(context.getString(R.string.amap_verify_and_save)).assertIsNotEnabled()
@@ -126,5 +146,10 @@ class AmapSetupGuideContentTest {
 
         assertEquals("地图服务", context.createConfigurationContext(zhConfig).getString(R.string.amap_settings_section))
         assertEquals("Map services", context.createConfigurationContext(enConfig).getString(R.string.amap_settings_section))
+    }
+
+    private fun navigateToKey(context: android.content.Context) {
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_next)).performClick()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_next)).performClick()
     }
 }

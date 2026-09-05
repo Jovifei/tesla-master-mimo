@@ -8,13 +8,15 @@ import com.matelink.data.api.models.DriveOdometerDetails
 import com.matelink.data.api.models.DriveRange
 import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.DriveSummary
+import com.squareup.moshi.Moshi
 
 /**
  * Rehydrates the existing Room summary cache into the neutral API models used
  * by the analysis screens. Missing summary fields remain missing; persisted
  * fallback data must never turn an unknown value into a measured zero.
  */
-internal fun DriveSummary.toAnalysisDriveData(): DriveData = DriveData(
+fun DriveSummary.toAnalysisDriveData(): DriveData =
+    apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive) ?: DriveData(
     driveId = driveId,
     startDate = startDate,
     endDate = endDate,
@@ -40,7 +42,8 @@ internal fun DriveSummary.toAnalysisDriveData(): DriveData = DriveData(
     consumptionNet = efficiency?.takeIf { it.isFinite() && it >= 0.0 }
 )
 
-internal fun ChargeSummary.toAnalysisChargeData(): ChargeData = ChargeData(
+fun ChargeSummary.toAnalysisChargeData(): ChargeData =
+    apiEvidence?.let(HistorySummaryEvidenceCodec::decodeCharge) ?: ChargeData(
     chargeId = chargeId,
     startDate = startDate,
     endDate = endDate,
@@ -62,3 +65,15 @@ internal fun ChargeSummary.toAnalysisChargeData(): ChargeData = ChargeData(
 )
 
 private fun isBatteryLevel(value: Int): Boolean = value in 1..100
+
+/** Keeps nullable API evidence distinct from old Room scalar placeholders. */
+internal object HistorySummaryEvidenceCodec {
+    private val moshi = Moshi.Builder().build()
+    private val driveAdapter = moshi.adapter(DriveData::class.java)
+    private val chargeAdapter = moshi.adapter(ChargeData::class.java)
+
+    fun encode(drive: DriveData): String = driveAdapter.toJson(drive)
+    fun encode(charge: ChargeData): String = chargeAdapter.toJson(charge)
+    fun decodeDrive(value: String): DriveData? = runCatching { driveAdapter.fromJson(value) }.getOrNull()
+    fun decodeCharge(value: String): ChargeData? = runCatching { chargeAdapter.fromJson(value) }.getOrNull()
+}

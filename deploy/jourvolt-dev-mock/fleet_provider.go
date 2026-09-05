@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -15,12 +17,30 @@ import (
 
 const milesToKilometres = 1.609344
 
+var errTeslaBillingBlocked = errors.New("tesla_billing_blocked")
+
+type fleetAPIError struct {
+	class      string
+	statusCode int
+	cause      error
+}
+
+func (e *fleetAPIError) Error() string {
+	return "fleet api error: " + e.class
+}
+
+func (e *fleetAPIError) Unwrap() error {
+	return e.cause
+}
+
 type fleetProvider struct {
-	store   *store
-	tokens  fleetAccessTokens
-	cipher  *tokenCipher
-	client  *http.Client
-	baseURL string
+	store     *store
+	tokens    fleetAccessTokens
+	cipher    *tokenCipher
+	client    *http.Client
+	baseURL   string
+	registrar *teslaPartnerRegistrar
+	telemetry *telemetryService
 }
 
 type teslaVehicleListEnvelope struct {
@@ -82,6 +102,8 @@ type teslaDriveState struct {
 	Power      *int     `json:"power"`
 	Speed      *float64 `json:"speed"`
 	Heading    *int     `json:"heading"`
+	Latitude   *float64 `json:"latitude"`
+	Longitude  *float64 `json:"longitude"`
 }
 
 type teslaGUISettings struct {
@@ -109,9 +131,20 @@ type teslaVehicleState struct {
 	PassengerRearDoor  *int     `json:"pr"`
 	FrontTrunk         *int     `json:"ft"`
 	RearTrunk          *int     `json:"rt"`
+	TPMSPressureFL     *float64 `json:"tpms_pressure_fl"`
+	TPMSPressureFR     *float64 `json:"tpms_pressure_fr"`
+	TPMSPressureRL     *float64 `json:"tpms_pressure_rl"`
+	TPMSPressureRR     *float64 `json:"tpms_pressure_rr"`
+	TPMSSoftWarningFL  *bool    `json:"tpms_soft_warning_fl"`
+	TPMSSoftWarningFR  *bool    `json:"tpms_soft_warning_fr"`
+	TPMSSoftWarningRL  *bool    `json:"tpms_soft_warning_rl"`
+	TPMSSoftWarningRR  *bool    `json:"tpms_soft_warning_rr"`
 }
 
 func (p *fleetProvider) Vehicles(ctx context.Context, userID string) ([]vehicle, error) {
+	if err := p.registrar.ensure(ctx); err != nil {
+		logFleetAPI("REGISTER", "/api/1/partner_accounts", 0, nil)
+	}
 	var payload teslaVehicleListEnvelope
 	if err := p.get(ctx, userID, "/api/1/vehicles", &payload); err != nil {
 		return nil, err
@@ -142,19 +175,36 @@ func (p *fleetProvider) Vehicles(ctx context.Context, userID string) ([]vehicle,
 		if err != nil {
 			return nil, err
 		}
-		vehicles = append(vehicles, vehicle{
-			ID: stored.ID, DisplayName: displayName, State: teslaVehicle.State,
-			Source: "fleet_api", Model: stored.Model, TrimBadging: stored.TrimBadging,
-			ExteriorColor: stored.ExteriorColor, WheelType: stored.WheelType,
-		})
+		if p.telemetry != nil {
+			if err := p.telemetry.registerVehicle(ctx, telemetryVehicleRef{
+				UserID: userID, VehicleID: stored.ID, VINHash: keyedVINHash(p.telemetry.vinHashKey, teslaVehicle.VIN), VINCiphertext: vinCiphertext,
+				ProviderVehicleID: providerID, DisplayName: displayName,
+			}); err != nil {
+				return nil, err
+			}
+		}
+		vehicles = append(vehicles, fleetVehicleFromProvider(
+			stored, providerID, displayName, teslaVehicle.State,
+		))
 	}
 	return vehicles, nil
+}
+
+func fleetVehicleFromProvider(stored storedVehicle, providerID, displayName, state string) vehicle {
+	return vehicle{
+		ID: stored.ID, VehicleUID: providerID, DisplayName: displayName, State: state,
+		Source: "fleet_api", Model: stored.Model, TrimBadging: stored.TrimBadging,
+		ExteriorColor: stored.ExteriorColor, WheelType: stored.WheelType,
+	}
 }
 
 func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int) (vehicleStatus, error) {
 	stored, err := p.store.fleetVehicle(ctx, userID, vehicleID)
 	if err != nil {
-		return vehicleStatus{}, errVehicleNotFound
+		if isVehicleLookupMiss(err) {
+			return vehicleStatus{}, errVehicleNotFound
+		}
+		return vehicleStatus{}, err
 	}
 	vin, err := p.cipher.decrypt(stored.VINCiphertext)
 	if err != nil {
@@ -183,6 +233,11 @@ func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int
 	}
 
 	status := mapTeslaVehicleStatus(data, displayName, state)
+	providerIdentity, err := p.storedProviderIdentity(ctx, userID, vehicleID)
+	if err != nil {
+		return vehicleStatus{}, err
+	}
+	status.ProviderIdentity = providerIdentity
 	return status, nil
 }
 
@@ -220,10 +275,20 @@ func mapTeslaVehicleStatus(data teslaVehicleData, displayName, state string) veh
 		Power:                   data.DriveState.Power,
 		Speed:                   milesPerHourPointerToKilometres(data.DriveState.Speed),
 		Heading:                 data.DriveState.Heading,
+		Latitude:                data.DriveState.Latitude,
+		Longitude:               data.DriveState.Longitude,
 		Version:                 data.VehicleState.CarVersion,
 		DoorsOpen:               anyOpen(data.VehicleState.DriverFrontDoor, data.VehicleState.DriverRearDoor, data.VehicleState.PassengerFrontDoor, data.VehicleState.PassengerRearDoor),
 		FrunkOpen:               openPointer(data.VehicleState.FrontTrunk),
 		TrunkOpen:               openPointer(data.VehicleState.RearTrunk),
+		TPMSPressureFL:          data.VehicleState.TPMSPressureFL,
+		TPMSPressureFR:          data.VehicleState.TPMSPressureFR,
+		TPMSPressureRL:          data.VehicleState.TPMSPressureRL,
+		TPMSPressureRR:          data.VehicleState.TPMSPressureRR,
+		TPMSSoftWarningFL:       data.VehicleState.TPMSSoftWarningFL,
+		TPMSSoftWarningFR:       data.VehicleState.TPMSSoftWarningFR,
+		TPMSSoftWarningRL:       data.VehicleState.TPMSSoftWarningRL,
+		TPMSSoftWarningRR:       data.VehicleState.TPMSSoftWarningRR,
 		Source:                  "fleet_api",
 	}
 	if data.ChargeState.ChargingState != nil {
@@ -235,6 +300,17 @@ func mapTeslaVehicleStatus(data teslaVehicleData, displayName, state string) veh
 		status.CenterDisplayState = &value
 	}
 	return status
+}
+
+func (p *fleetProvider) storedProviderIdentity(ctx context.Context, userID string, vehicleID int) (string, error) {
+	if p.store == nil || p.store.pool == nil {
+		return "", errVehicleNotFound
+	}
+	var providerID string
+	err := p.store.pool.QueryRow(ctx, `
+SELECT provider_vehicle_id FROM jourvolt_vehicles
+WHERE id=$1 AND user_id=$2`, vehicleID, userID).Scan(&providerID)
+	return providerID, err
 }
 
 func (p *fleetProvider) get(ctx context.Context, userID, path string, target any) error {
@@ -258,24 +334,141 @@ func (p *fleetProvider) get(ctx context.Context, userID, path string, target any
 		}
 	}
 	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	if err != nil {
+		return fmt.Errorf("read Fleet API response: %w", err)
+	}
 	switch response.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
+		if fleetResponseErrorClass(response.StatusCode, body) == "billing_blocked" {
+			logFleetAPI("GET", path, response.StatusCode, body)
+			return &fleetAPIError{class: "billing_blocked", statusCode: response.StatusCode, cause: errTeslaBillingBlocked}
+		}
+		logFleetAPI("GET", path, response.StatusCode, body)
 		return errTeslaReauthorization
 	case http.StatusNotFound:
+		logFleetAPI("GET", path, response.StatusCode, body)
 		return errVehicleNotFound
 	case http.StatusTooManyRequests:
+		logFleetAPI("GET", path, response.StatusCode, body)
 		return errTeslaRateLimited
 	case http.StatusRequestTimeout, http.StatusMisdirectedRequest:
+		logFleetAPI("GET", path, response.StatusCode, body)
 		return errTeslaUnavailable
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		if fleetResponseErrorClass(response.StatusCode, body) == "billing_blocked" {
+			logFleetAPI("GET", path, response.StatusCode, body)
+			return &fleetAPIError{class: "billing_blocked", statusCode: response.StatusCode, cause: errTeslaBillingBlocked}
+		}
+		logFleetAPI("GET", path, response.StatusCode, body)
 		return errTeslaUnavailable
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(target); err != nil {
+	if err := json.Unmarshal(body, target); err != nil {
 		return fmt.Errorf("decode Fleet API response: %w", err)
 	}
 	return nil
+}
+
+func logFleetAPI(method, path string, status int, body []byte) {
+	log.Print(sanitizeFleetLog(method, path, status, body))
+}
+
+func sanitizeFleetLog(method, path string, status int, body []byte) string {
+	return fmt.Sprintf("fleet api method=%s endpoint=%s status=%d error_class=%s", method, fleetEndpointLabel(path), status, fleetResponseErrorClass(status, body))
+}
+
+func fleetEndpointLabel(path string) string {
+	switch {
+	case path == "/api/1/vehicles":
+		return "vehicles"
+	case strings.HasPrefix(path, "/api/1/vehicles/") && strings.HasSuffix(path, "/vehicle_data"):
+		return "vehicle_data"
+	case path == "/api/1/partner_accounts":
+		return "partner_accounts"
+	default:
+		return "unknown"
+	}
+}
+
+func fleetResponseErrorClass(status int, body []byte) string {
+	if status == http.StatusPaymentRequired || fleetBodyIndicatesBilling(body) {
+		return "billing_blocked"
+	}
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return "reauthorization"
+	case http.StatusNotFound:
+		return "vehicle_not_found"
+	case http.StatusTooManyRequests:
+		return "rate_limited"
+	case http.StatusRequestTimeout, http.StatusMisdirectedRequest:
+		return "unavailable"
+	case 0:
+		return "request_failed"
+	case 200, 201, 202, 204:
+		return "none"
+	default:
+		if status >= 200 && status < 300 {
+			return "none"
+		}
+		return "upstream"
+	}
+}
+
+func fleetBodyIndicatesBilling(body []byte) bool {
+	var payload any
+	if json.Unmarshal(body, &payload) != nil {
+		return false
+	}
+	return fleetValueIndicatesBilling(payload, "")
+}
+
+func fleetValueIndicatesBilling(value any, field string) bool {
+	switch value := value.(type) {
+	case string:
+		return fleetExplicitBillingCode(field, value)
+	case []any:
+		for _, item := range value {
+			if fleetValueIndicatesBilling(item, field) {
+				return true
+			}
+		}
+	case map[string]any:
+		for key, item := range value {
+			key = strings.ToLower(strings.TrimSpace(key))
+			if isFleetBillingField(key) && fleetValueIndicatesBilling(item, key) {
+				return true
+			}
+			if (key == "error" || key == "errors" || key == "details") && fleetValueIndicatesBilling(item, key) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isFleetBillingField(field string) bool {
+	switch field {
+	case "error", "error_code", "error_class", "code", "class", "type":
+		return true
+	default:
+		return false
+	}
+}
+
+func fleetExplicitBillingCode(field, value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+	normalized = strings.ReplaceAll(normalized, " ", "_")
+	switch field {
+	case "class", "error_class", "type":
+		return normalized == "billing" || normalized == "payment" || normalized == "billing_blocked" || normalized == "payment_required" || normalized == "payment_blocked"
+	case "error", "error_code", "code":
+		return normalized == "billing_blocked" || normalized == "billing_required" || normalized == "payment_required" || normalized == "payment_blocked"
+	default:
+		return false
+	}
 }
 
 func (p *fleetProvider) request(ctx context.Context, path, accessToken string) (*http.Response, error) {

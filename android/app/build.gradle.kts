@@ -38,10 +38,12 @@ android {
         applicationId = "com.matelink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "1.4.2"
+        versionCode = 16
+        versionName = "1.4.4"
         buildConfigField("String", "GIT_SHA", "\"${resolveGitSha()}\"")
-        val publicInfoBaseUrl = providers.gradleProperty("MATELINK_PUBLIC_INFO_BASE_URL").orElse("").get()
+        val publicInfoBaseUrl = providers.gradleProperty("MATELINK_PUBLIC_INFO_BASE_URL")
+            .orElse("https://auth.teslalink.joviluma.com")
+            .get()
         buildConfigField("String", "MATELINK_PUBLIC_INFO_BASE_URL", "\"$publicInfoBaseUrl\"")
         buildConfigField("boolean", "JOURVOLT_MOCK_LOGIN", "false")
         buildConfigField("String", "JOURVOLT_MOCK_SOURCE", "\"\"")
@@ -147,6 +149,35 @@ android {
     }
 }
 
+// Production App Link guard: a Release build must carry explicitly provided
+// JourVolt API / App Link configuration. Silent fallbacks (api.jourvolt.com /
+// auth.jourvolt.com) must never reach a signed package, so a Release task graph
+// fails fast when the pilot properties are absent. Debug builds are unaffected;
+// build-pilot-apk.ps1 always passes both properties explicitly.
+val releaseGuardApiBaseUrl = providers.gradleProperty("JOURVOLT_API_BASE_URL").orNull
+val releaseGuardPublicInfoBaseUrl = providers.gradleProperty("MATELINK_PUBLIC_INFO_BASE_URL").orNull
+    ?.trim()
+    ?.removeSuffix("/")
+val releaseGuardAuthHost = providers.gradleProperty("JOURVOLT_AUTH_HOST").orNull
+    ?.trim()
+    ?.removePrefix("https://")
+    ?.removeSuffix("/")
+tasks.matching { it.name == "generateReleaseBuildConfig" }.configureEach {
+    doFirst {
+        check(!releaseGuardApiBaseUrl.isNullOrBlank()) {
+            "Release guard: provide -PJOURVOLT_API_BASE_URL explicitly; " +
+                "a Release package must never fall back to the default API URL"
+        }
+        check(releaseGuardPublicInfoBaseUrl == "https://auth.teslalink.joviluma.com") {
+            "Release guard: provide -PMATELINK_PUBLIC_INFO_BASE_URL=https://auth.teslalink.joviluma.com explicitly"
+        }
+        check(releaseGuardAuthHost == "auth.teslalink.joviluma.com") {
+            "Release guard: provide -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com explicitly " +
+                "(got: ${releaseGuardAuthHost ?: "<missing>"}); the App Link host must match production assetlinks"
+        }
+    }
+}
+
 dependencies {
     // Core Android
     implementation(libs.androidx.core.ktx)
@@ -211,6 +242,7 @@ dependencies {
 
     // Testing
     testImplementation(libs.junit)
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.test.core)

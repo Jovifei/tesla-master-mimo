@@ -22,6 +22,7 @@ The original MateLink Android app reuses the existing read-only repository and p
 - `/api/ping` and `/api/readyz`
 - `/api/matelink/v1/capabilities`
 - `/api/matelink/v1/cars/{id}/snapshot`
+- `/api/matelink/v1/cars/{id}/standby` (returns a collecting empty result when cloud history has not accumulated; the client may derive conservative candidates from its local archive)
 - `/api/v1/cars`, `/api/v1/cars/{id}` and `/api/v1/cars/{id}/status`
 - `/api/v1/cars/{id}/drives`, `/drives/{id}` and `/api/v1/cars/{id}/charges`, `/charges/{id}`, `/charges/current`
 - `/api/v1/cars/{id}/battery-health`, `/updates` and `/api/v1/globalsettings`

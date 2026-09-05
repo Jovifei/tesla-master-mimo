@@ -2,9 +2,11 @@ package com.matelink.ui.navigation
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
@@ -15,10 +17,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavHostController
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -26,7 +34,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.matelink.R
 import com.matelink.data.local.ConnectionMode
-import com.matelink.ui.screens.auth.TeslaAccountSection
 import com.matelink.ui.screens.auth.TeslaLoginScreen
 import com.matelink.ui.screens.auth.TeslaLoginViewModel
 import com.matelink.ui.screens.about.AboutScreen
@@ -40,6 +47,7 @@ import com.matelink.ui.screens.drives.ParkedDetailScreen
 import com.matelink.ui.screens.drives.DrivesScreen
 import com.matelink.ui.screens.mileage.MileageScreen
 import com.matelink.ui.screens.more.MoreScreen
+import com.matelink.ui.screens.readiness.DataReadinessScreen
 import com.matelink.ui.screens.settings.SettingsScreen
 import com.matelink.ui.screens.settings.TariffConfigScreen
 import com.matelink.ui.screens.settings.TpmsSettingsScreen
@@ -138,6 +146,9 @@ sealed interface Screen {
     data class Battery(val carId: Int, val efficiency: Float = 0f, val exteriorColor: String? = null) : Screen
 
     @Serializable
+    data class DataReadiness(val carId: Int) : Screen
+
+    @Serializable
     data class Mileage(val carId: Int, val exteriorColor: String? = null, val targetDay: String? = null) : Screen
 
     @Serializable
@@ -225,11 +236,20 @@ internal fun shouldRedirectToTeslaLogin(
     startDestination: Screen?,
     connectionMode: ConnectionMode?,
     isAuthenticated: Boolean,
-    currentRoute: String
-): Boolean = startDestination == Screen.Dashboard &&
+    currentRoute: String,
+    suppressAutoRedirect: Boolean = false
+): Boolean = !suppressAutoRedirect &&
+    startDestination == Screen.Dashboard &&
     connectionMode == ConnectionMode.TESLA_CLOUD &&
     !isAuthenticated &&
     !currentRoute.contains("TeslaLogin")
+
+internal fun NavHostController.navigateToDashboardAfterTeslaAuth() {
+    navigate(Screen.Dashboard) {
+        popUpTo(graph.findStartDestination().id) { inclusive = true }
+        launchSingleTop = true
+    }
+}
 
 internal fun notificationScreen(
     navigateTo: String?,
@@ -266,8 +286,13 @@ fun NavGraph(
     val notificationPermissionAsked by startViewModel.notificationPermissionAsked.collectAsState()
     val teslaLoginViewModel: TeslaLoginViewModel = hiltViewModel()
     val isTeslaSessionAuthenticated by teslaLoginViewModel.isAuthenticated.collectAsState()
+    val openDashboardAfterLogin by teslaLoginViewModel.openDashboardAfterLogin.collectAsState()
+    val revealLoginError by teslaLoginViewModel.revealLoginError.collectAsState()
+    val pendingAuthorizationUrl by teslaLoginViewModel.pendingAuthorizationUrl.collectAsState()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route.orEmpty()
+    var suppressLoginRedirect by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -316,12 +341,55 @@ fun NavGraph(
         }
     }
 
-    LaunchedEffect(startDestination, connectionMode, isTeslaSessionAuthenticated, currentRoute) {
+    LaunchedEffect(pendingAuthorizationUrl) {
+        val url = pendingAuthorizationUrl ?: return@LaunchedEffect
+        teslaLoginViewModel.consumePendingAuthorizationUrl()
+        CustomTabsIntent.Builder()
+            .setShowTitle(true)
+            .build()
+            .launchUrl(context, Uri.parse(url))
+    }
+
+    LaunchedEffect(openDashboardAfterLogin) {
+        if (openDashboardAfterLogin) {
+            suppressLoginRedirect = false
+            navController.navigateToDashboardAfterTeslaAuth()
+            teslaLoginViewModel.consumeDashboardAfterLogin()
+        }
+    }
+
+    LaunchedEffect(revealLoginError, currentRoute) {
+        if (!revealLoginError) return@LaunchedEffect
+        if (currentRoute.contains("TeslaLogin")) {
+            teslaLoginViewModel.consumeRevealLoginError()
+            return@LaunchedEffect
+        }
+        if (currentRoute.isBlank()) return@LaunchedEffect
+        navController.navigate(Screen.TeslaLogin) {
+            launchSingleTop = true
+        }
+        teslaLoginViewModel.consumeRevealLoginError()
+    }
+
+    LaunchedEffect(currentRoute) {
+        if (currentRoute.contains("Dashboard")) {
+            suppressLoginRedirect = false
+        }
+    }
+
+    LaunchedEffect(
+        startDestination,
+        connectionMode,
+        isTeslaSessionAuthenticated,
+        currentRoute,
+        suppressLoginRedirect
+    ) {
         if (shouldRedirectToTeslaLogin(
                 startDestination = startDestination,
                 connectionMode = connectionMode,
                 isAuthenticated = isTeslaSessionAuthenticated,
-                currentRoute = currentRoute
+                currentRoute = currentRoute,
+                suppressAutoRedirect = suppressLoginRedirect
             )
         ) {
             navController.navigate(Screen.TeslaLogin) {
@@ -346,11 +414,17 @@ fun NavGraph(
         composable<Screen.TeslaLogin> {
             TeslaLoginScreen(
                 viewModel = teslaLoginViewModel,
-                onLoginSuccess = {
-                    navController.navigate(Screen.Dashboard) {
-                        popUpTo<Screen.TeslaLogin> { inclusive = true }
-                        launchSingleTop = true
+                onNavigateBack = {
+                    suppressLoginRedirect = true
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Screen.Settings) {
+                            launchSingleTop = true
+                        }
                     }
+                },
+                onLoginSuccess = {
+                    suppressLoginRedirect = false
+                    navController.navigateToDashboardAfterTeslaAuth()
                 },
                 onOpenSelfHosted = {
                     teslaLoginViewModel.openSelfHosted {
@@ -364,6 +438,7 @@ fun NavGraph(
 
         composable<Screen.Settings> {
             SettingsScreen(
+                teslaLoginViewModel = teslaLoginViewModel,
                 onNavigateToDashboard = {
                     navController.navigate(Screen.Dashboard) {
                         popUpTo<Screen.Settings> { inclusive = true }
@@ -384,20 +459,22 @@ fun NavGraph(
                     navController.navigate(Screen.AmapSetup)
                 },
                 onNavigateToTeslaLogin = {
+                    suppressLoginRedirect = true
                     teslaLoginViewModel.reauthorize {
                         navController.navigate(Screen.TeslaLogin) {
-                            popUpTo(Screen.Dashboard) { inclusive = true }
                             launchSingleTop = true
                         }
                     }
                 },
                 onLogout = {
+                    suppressLoginRedirect = false
                     navController.navigate(Screen.TeslaLogin) {
                         popUpTo(Screen.Dashboard) { inclusive = true }
                         launchSingleTop = true
                     }
                 },
                 onAccountDeleted = {
+                    suppressLoginRedirect = false
                     navController.navigate(Screen.TeslaLogin) {
                         popUpTo(Screen.Dashboard) { inclusive = true }
                         launchSingleTop = true
@@ -474,6 +551,25 @@ fun NavGraph(
                 },
                 onNavigateToTrips = { carId, exteriorColor ->
                     navController.navigate(Screen.Trips(carId, exteriorColor))
+                },
+                onNavigateToReadiness = { carId ->
+                    navController.navigate(Screen.DataReadiness(carId))
+                }
+            )
+        }
+
+        composable<Screen.DataReadiness> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.DataReadiness>()
+            DataReadinessScreen(
+                carId = route.carId,
+                onNavigateBack = { navController.popBackStack() },
+                onReauthorize = {
+                    teslaLoginViewModel.reauthorize {
+                        navController.navigate(Screen.TeslaLogin) {
+                            popUpTo(Screen.Dashboard) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
                 }
             )
         }
@@ -829,6 +925,7 @@ fun NavGraph(
                 onNavigateToTimeline = { navController.navigate(Screen.Timeline(it, route.exteriorColor)) },
                 onNavigateToAnnualReport = { navController.navigate(Screen.AnnualReport(it)) },
                 onNavigateToExport = { navController.navigate(Screen.Export(it)) },
+                onNavigateToReadiness = { navController.navigate(Screen.DataReadiness(it)) },
             )
         }
 

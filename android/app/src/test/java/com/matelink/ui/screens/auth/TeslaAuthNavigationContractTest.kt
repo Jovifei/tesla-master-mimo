@@ -11,9 +11,13 @@ class TeslaAuthNavigationContractTest {
         val viewModel = source("ui/screens/auth/TeslaLoginViewModel.kt")
         val manifest = File("src/main/AndroidManifest.xml").readText()
 
-        assertTrue(viewModel.contains("CustomTabsIntent.Builder()"))
         assertTrue(viewModel.contains("TeslaAuthExchangeRequest(ticket)"))
         assertTrue(viewModel.contains("isTrustedTeslaCallback"))
+        assertTrue(viewModel.contains("pendingAuthorizationUrl"))
+        assertFalse(viewModel.contains("FLAG_ACTIVITY_NEW_TASK"))
+        assertTrue(source("ui/navigation/NavGraph.kt").contains("CustomTabsIntent.Builder()"))
+        assertTrue(source("ui/navigation/NavGraph.kt").contains("launchUrl(context, Uri.parse(url))"))
+        assertFalse(source("ui/screens/auth/TeslaLoginScreen.kt").contains("CustomTabsIntent"))
         assertTrue(viewModel.contains("consentStore.recordCurrent()"))
         assertTrue(viewModel.contains("termsVersion = consent.termsVersion"))
         assertTrue(viewModel.contains("privacyVersion = consent.privacyVersion"))
@@ -23,6 +27,8 @@ class TeslaAuthNavigationContractTest {
         assertTrue(manifest.contains("android:autoVerify=\"true\""))
         assertTrue(manifest.contains("android:scheme=\"https\""))
         assertTrue(manifest.contains("android:pathPrefix=\"/oauth/callback\""))
+        assertTrue(manifest.contains("android:launchMode=\"singleTask\""))
+        assertFalse(manifest.contains("android:launchMode=\"singleTop\""))
     }
 
     @Test
@@ -59,8 +65,13 @@ class TeslaAuthNavigationContractTest {
 
         assertTrue(login.contains("LaunchedEffect(isAuthenticated)"))
         assertTrue(login.contains("if (isAuthenticated) onLoginSuccess()"))
-        assertTrue(navigation.contains("popUpTo<Screen.TeslaLogin> { inclusive = true }"))
-        assertTrue(navigation.contains("navController.navigate(Screen.Dashboard)"))
+        assertTrue(navigation.contains("navigateToDashboardAfterTeslaAuth()"))
+        assertTrue(navigation.contains("openDashboardAfterLogin"))
+        assertTrue(navigation.contains("revealLoginError"))
+        assertTrue(navigation.contains("if (currentRoute.isBlank()) return@LaunchedEffect"))
+        assertTrue(navigation.contains("teslaLoginViewModel = teslaLoginViewModel"))
+        assertTrue(source("ui/screens/auth/TeslaLoginViewModel.kt").contains("shouldTreatTeslaExchangeFailureAsSuccess"))
+        assertTrue(source("ui/screens/auth/TeslaAccountSection.kt").contains("TeslaLoginUiState.Error"))
     }
 
     @Test
@@ -100,6 +111,25 @@ class TeslaAuthNavigationContractTest {
         assertTrue(login.contains("legalDocumentsConfigured"))
         assertTrue(api.contains("X-JourVolt-Terms-Version"))
         assertTrue(api.contains("X-JourVolt-Privacy-Version"))
+    }
+
+    @Test
+    fun releaseBuildAndSetupSurfacesKeepCloudLoginAvailableAndPanelled() {
+        val build = File("build.gradle.kts").readText()
+        val login = source("ui/screens/auth/TeslaLoginScreen.kt")
+        val navigation = source("ui/navigation/NavGraph.kt")
+        val amap = source("ui/screens/map/AmapSetupGuideScreen.kt")
+
+        assertTrue(build.contains("orElse(\"https://auth.teslalink.joviluma.com\")"))
+        assertTrue(build.contains("releaseGuardPublicInfoBaseUrl"))
+        assertTrue(login.contains("CardDefaults.cardColors"))
+        assertTrue(login.contains("verticalScroll"))
+        assertTrue(login.contains("Role.Checkbox"))
+        assertTrue(login.contains("onNavigateBack"))
+        assertTrue(navigation.contains("onNavigateBack"))
+        assertTrue(navigation.contains("navController.popBackStack()"))
+        assertTrue(navigation.contains("navController.navigate(Screen.Settings)"))
+        assertTrue(amap.contains("BorderStroke"))
     }
 
     @Test

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.local.TirePosition
 import com.matelink.data.local.dao.DriveSummaryDao
+import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.TpmsPressureSample
 import com.matelink.data.repository.TpmsHistoryRepository
@@ -40,7 +41,8 @@ internal interface TpmsTrendHistorySource {
 
 private class RepositoryTpmsTrendHistorySource(
     private val historyRepository: TpmsHistoryRepository,
-    private val driveSummaryDao: DriveSummaryDao
+    private val driveSummaryDao: DriveSummaryDao,
+    private val vehicleContextRepository: VehicleContextRepository
 ) : TpmsTrendHistorySource {
     override suspend fun load7DaySamples(carId: Int, now: Long): List<TpmsPressureSample> =
         historyRepository.load7DaySamples(carId, now)
@@ -49,7 +51,7 @@ private class RepositoryTpmsTrendHistorySource(
         historyRepository.load30DaySamples(carId, now)
 
     override suspend fun loadDrives(carId: Int): List<DriveSummary> =
-        driveSummaryDao.getAllChronological(carId)
+        driveSummaryDao.getAllChronological(vehicleContextRepository.requireLocalHistoryCarId(carId))
 }
 
 internal class TpmsTrendRefreshController(
@@ -186,7 +188,8 @@ internal fun customReminderLabel(english: String, chinese: String, isChinese: Bo
 @HiltViewModel
 class TpmsTrendViewModel @Inject constructor(
     private val historyRepository: TpmsHistoryRepository,
-    private val driveSummaryDao: DriveSummaryDao
+    private val driveSummaryDao: DriveSummaryDao,
+    private val vehicleContextRepository: VehicleContextRepository
 ) : ViewModel() {
     private val analyzer = TpmsTrendAnalyzer()
     private val _uiState = MutableStateFlow(TpmsTrendUiState())
@@ -194,7 +197,7 @@ class TpmsTrendViewModel @Inject constructor(
 
     private var loadedCarId: Int? = null
     private val refreshController = TpmsTrendRefreshController(
-        source = RepositoryTpmsTrendHistorySource(historyRepository, driveSummaryDao),
+        source = RepositoryTpmsTrendHistorySource(historyRepository, driveSummaryDao, vehicleContextRepository),
         analyzer = analyzer,
         scope = viewModelScope,
         onSuccess = { window, analysis ->

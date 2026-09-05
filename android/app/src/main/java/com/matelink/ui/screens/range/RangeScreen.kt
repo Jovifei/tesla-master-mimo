@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.BorderStroke
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
+import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.domain.analytics.HistoryFreshness
 import com.matelink.domain.analytics.PersonalizedRangeSource
 import com.matelink.domain.analytics.RangeSpeedBand
@@ -89,9 +90,12 @@ fun RangeScreen(
         viewModel.setCarId(carId)
     }
 
+    val historyIdentityUnavailableMessage = stringResource(R.string.history_identity_unavailable_message)
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(error)
+            snackbarHostState.showSnackbar(
+                if (error == HISTORY_IDENTITY_UNAVAILABLE) historyIdentityUnavailableMessage else error
+            )
             viewModel.clearError()
         }
     }

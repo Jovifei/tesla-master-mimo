@@ -61,6 +61,7 @@ data class SettingsUiState(
     val successMessage: String? = null,
     val needsRecreate: Boolean = false,
     val isFirstRunSetup: Boolean = false,
+    val connectionMode: ConnectionMode? = null,
     val tpmsCarId: Int = 1,
     val tpmsTargetBar: String = "2.9",
     val tpmsLowBar: String = "2.6",
@@ -87,6 +88,20 @@ data class TestResult(
 
 internal fun serverUrlForDisplay(savedUrl: String): String = savedUrl.ifBlank { "https://" }
 
+internal fun hasExplicitServerUrl(value: String): Boolean =
+    value.trim().trimEnd('/').isNotBlank() && value.trim().trimEnd('/') != "https:"
+
+internal fun shouldKeepCloudSettings(
+    mode: ConnectionMode?,
+    serverUrl: String,
+    mockMode: Boolean
+): Boolean = !mockMode && mode == ConnectionMode.TESLA_CLOUD && !hasExplicitServerUrl(serverUrl)
+
+internal fun shouldSwitchToSelfHosted(
+    serverUrl: String,
+    mockMode: Boolean
+): Boolean = mockMode || hasExplicitServerUrl(serverUrl)
+
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -111,23 +126,30 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val settings = settingsDataStore.settings.first()
             val mockMode = settingsRepository.mockMode.first()
+            val connectionMode = connectionModeStore.mode.first()
+                ?: if (settings.serverUrl.isBlank()) ConnectionMode.TESLA_CLOUD else ConnectionMode.SELF_HOSTED
             val tpmsCarId = settingsRepository.currentCarId.first()
             val tpmsProfile = settingsDataStore.getTpmsAlertProfile(tpmsCarId)
                 ?: TpmsAlertProfile.modelYSuggestion
             _uiState.value = _uiState.value.copy(
-                serverUrl = serverUrlForDisplay(settings.serverUrl),
+                serverUrl = if (connectionMode == ConnectionMode.TESLA_CLOUD && settings.serverUrl.isBlank()) {
+                    ""
+                } else {
+                    serverUrlForDisplay(settings.serverUrl)
+                },
                 apiToken = settings.apiToken,
                 connectionWarning = localHttpWarning(settings.serverUrl),
                 currencyCode = settings.currencyCode,
                 showShortDrivesCharges = settings.showShortDrivesCharges,
                 languageCode = settings.languageCode,
                 mockMode = mockMode,
+                connectionMode = connectionMode,
                 tpmsCarId = tpmsCarId,
                 tpmsTargetBar = tpmsProfile.targetBar.toDisplayString(),
                 tpmsLowBar = tpmsProfile.lowBar.toDisplayString(),
                 tpmsHighBar = tpmsProfile.highBar.toDisplayString(),
                 tpmsProfileEnabled = settingsDataStore.getTpmsAlertProfile(tpmsCarId)?.enabled == true,
-                isFirstRunSetup = !settings.isConfigured && !mockMode,
+                isFirstRunSetup = !settings.isConfigured && !mockMode && connectionMode == ConnectionMode.SELF_HOSTED,
                 isLoading = false
             )
         }
@@ -313,7 +335,16 @@ class SettingsViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isSaving = true, error = null)
 
             try {
-                val validation = validateConnectionUrl(_uiState.value.serverUrl)
+                val current = _uiState.value
+                if (shouldKeepCloudSettings(current.connectionMode, current.serverUrl, current.mockMode)) {
+                    _uiState.value = current.copy(isSaving = false)
+                    onSuccess()
+                    return@launch
+                }
+
+                val validation = validateConnectionUrl(
+                    current.serverUrl.takeIf(::hasExplicitServerUrl).orEmpty()
+                )
                 if (validation is ConnectionUrlValidation.Invalid && !_uiState.value.mockMode) {
                     _uiState.value = _uiState.value.copy(
                         isSaving = false,
@@ -322,7 +353,7 @@ class SettingsViewModel @Inject constructor(
                     return@launch
                 }
                 val url = (validation as? ConnectionUrlValidation.Valid)?.normalizedUrl.orEmpty()
-                if (! _uiState.value.mockMode && UrlSecurity.classify(url) == UrlSecurity.Verdict.Unsafe) {
+                if (!current.mockMode && UrlSecurity.classify(url) == UrlSecurity.Verdict.Unsafe) {
                     _uiState.value = _uiState.value.copy(
                         isSaving = false,
                         error = context.getString(R.string.settings_public_http_unsafe)
@@ -331,10 +362,12 @@ class SettingsViewModel @Inject constructor(
                 }
                 settingsDataStore.saveConnectionSettings(
                     serverUrl = url,
-                    apiToken = _uiState.value.apiToken,
-                    currencyCode = _uiState.value.currencyCode
+                    apiToken = current.apiToken,
+                    currencyCode = current.currencyCode
                 )
-                connectionModeStore.set(ConnectionMode.SELF_HOSTED)
+                if (shouldSwitchToSelfHosted(current.serverUrl, current.mockMode)) {
+                    connectionModeStore.set(ConnectionMode.SELF_HOSTED)
+                }
 
                 // Trigger sync after settings are saved (handles first-time setup)
                 triggerImmediateSync()

@@ -14,11 +14,12 @@ import androidx.room.PrimaryKey
  */
 @Entity(
     tableName = "drive_detail_aggregates",
+    primaryKeys = ["carId", "driveId"],
     foreignKeys = [
         ForeignKey(
             entity = DriveSummary::class,
-            parentColumns = ["driveId"],
-            childColumns = ["driveId"],
+            parentColumns = ["carId", "driveId"],
+            childColumns = ["carId", "driveId"],
             onDelete = ForeignKey.CASCADE
         )
     ],
@@ -28,7 +29,6 @@ import androidx.room.PrimaryKey
     ]
 )
 data class DriveDetailAggregate(
-    @PrimaryKey
     val driveId: Int,
     val carId: Int,
 

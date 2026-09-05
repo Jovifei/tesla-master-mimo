@@ -6,6 +6,7 @@ import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.ChargePoint
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.ChargeSessionStateDataStore
+import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.CurrentChargeOutcome
 import com.matelink.data.repository.TeslamateRepository
@@ -50,7 +51,8 @@ data class CurrentChargeUiState(
 @HiltViewModel
 class CurrentChargeViewModel @Inject constructor(
     private val repository: TeslamateRepository,
-    private val chargeSessionStateDataStore: ChargeSessionStateDataStore
+    private val chargeSessionStateDataStore: ChargeSessionStateDataStore,
+    private val vehicleContextRepository: VehicleContextRepository
 ) : ViewModel() {
 
     companion object {
@@ -88,6 +90,7 @@ class CurrentChargeViewModel @Inject constructor(
 
     private suspend fun fetchData() {
         val carId = this.carId ?: return
+        val historyCarId = vehicleContextRepository.requireLocalHistoryCarId(carId)
 
         if (_uiState.value.chargeDetail == null) {
             _uiState.update { it.copy(isLoading = true, error = null) }
@@ -149,12 +152,12 @@ class CurrentChargeViewModel @Inject constructor(
         // Persist the DC flag while the session is still live; post-completion we can
         // only tell whether a session was DC from this stored value.
         if (status?.isCharging == true && status.isDcCharging) {
-            chargeSessionStateDataStore.setLastSessionDc(carId, true)
+            chargeSessionStateDataStore.setLastSessionDc(historyCarId, true)
         } else if (status?.pluggedIn == false) {
-            chargeSessionStateDataStore.clear(carId)
+            chargeSessionStateDataStore.clear(historyCarId)
         }
 
-        val wasDcSession = chargeSessionStateDataStore.wasLastSessionDc(carId)
+        val wasDcSession = chargeSessionStateDataStore.wasLastSessionDc(historyCarId)
         val isDcFinishedPluggedIn = status?.isChargeCompletePluggedIn == true && wasDcSession
         val stateSince = status?.stateSince
 

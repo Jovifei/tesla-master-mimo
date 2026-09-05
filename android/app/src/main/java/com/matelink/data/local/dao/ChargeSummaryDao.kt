@@ -17,8 +17,21 @@ interface ChargeSummaryDao {
     @Upsert
     suspend fun upsert(charge: ChargeSummary)
 
-    @Query("SELECT * FROM charges_summary WHERE chargeId = :chargeId")
-    suspend fun get(chargeId: Int): ChargeSummary?
+    @Query("""
+        INSERT OR IGNORE INTO charges_summary (
+            chargeId, carId, startDate, endDate, durationMin, address, latitude, longitude,
+            energyAdded, energyUsed, cost, startBatteryLevel, endBatteryLevel,
+            outsideTempAvg, odometer, apiEvidence
+        )
+        SELECT chargeId, :targetCarId, startDate, endDate, durationMin, address, latitude, longitude,
+            energyAdded, energyUsed, cost, startBatteryLevel, endBatteryLevel,
+            outsideTempAvg, odometer, apiEvidence
+        FROM charges_summary WHERE carId = :legacyCarId
+    """)
+    suspend fun copyFromLegacy(legacyCarId: Int, targetCarId: Int)
+
+    @Query("SELECT * FROM charges_summary WHERE chargeId = :chargeId AND carId = :carId")
+    suspend fun get(carId: Int, chargeId: Int): ChargeSummary?
 
     @Query("SELECT * FROM charges_summary WHERE carId = :carId ORDER BY startDate DESC")
     fun observeAll(carId: Int): Flow<List<ChargeSummary>>
@@ -28,6 +41,9 @@ interface ChargeSummaryDao {
 
     @Query("SELECT MAX(chargeId) FROM charges_summary WHERE carId = :carId")
     suspend fun getMaxChargeId(carId: Int): Int?
+
+    @Query("SELECT MAX(odometer) FROM charges_summary WHERE carId = :carId AND odometer >= 0")
+    suspend fun getMaxNonNegativeOdometer(carId: Int): Double?
 
     @Query("DELETE FROM charges_summary WHERE carId = :carId")
     suspend fun deleteAllForCar(carId: Int)
@@ -169,7 +185,7 @@ interface ChargeSummaryDao {
     // Get charge IDs that need detail processing
     @Query("""
         SELECT c.chargeId FROM charges_summary c
-        LEFT JOIN charge_detail_aggregates a ON c.chargeId = a.chargeId
+        LEFT JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
         WHERE c.carId = :carId
         AND (a.chargeId IS NULL OR a.schemaVersion < :currentVersion)
         ORDER BY c.chargeId
@@ -179,7 +195,7 @@ interface ChargeSummaryDao {
     // Count unprocessed charges
     @Query("""
         SELECT COUNT(*) FROM charges_summary c
-        LEFT JOIN charge_detail_aggregates a ON c.chargeId = a.chargeId
+        LEFT JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
         WHERE c.carId = :carId
         AND (a.chargeId IS NULL OR a.schemaVersion < :currentVersion)
     """)

@@ -4,6 +4,8 @@ import com.matelink.data.api.models.TpmsDetails
 import com.matelink.data.local.TirePosition
 import com.matelink.data.local.TpmsState
 import com.matelink.data.local.TpmsStateDataStore
+import com.matelink.data.local.HistoryCarIdResolver
+import com.matelink.data.local.LegacyHistoryCarIdResolver
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -26,22 +28,44 @@ sealed interface TpmsStateChangeClaimResult {
 
 @Singleton
 class TpmsStateRepository @Inject constructor(
-    private val tpmsStateDataStore: TpmsStateDataStore
+    private val tpmsStateDataStore: TpmsStateDataStore,
+    private val vehicleContextRepository: HistoryCarIdResolver
 ) {
+    constructor(tpmsStateDataStore: TpmsStateDataStore) : this(tpmsStateDataStore, LegacyHistoryCarIdResolver)
+    private suspend fun historyId(remoteApiCarId: Int) =
+        vehicleContextRepository.requireLocalHistoryCarId(remoteApiCarId)
+
     suspend fun detectStateChange(carId: Int, currentTpms: TpmsDetails?): TpmsStateChange? {
+        return detectStateChangeForHistoryCarId(historyId(carId), currentTpms)
+    }
+
+    suspend fun detectStateChangeForHistoryCarId(
+        historyCarId: Int,
+        currentTpms: TpmsDetails?
+    ): TpmsStateChange? {
         if (currentTpms == null || !currentTpms.hasCompleteSoftWarningFields()) return null
-        return tpmsStateChange(tpmsStateDataStore.getState(carId), currentTpms.toTpmsState())
+        return tpmsStateChange(tpmsStateDataStore.getState(historyCarId), currentTpms.toTpmsState())
     }
 
     suspend fun claimStateChange(
         carId: Int,
         currentTpms: TpmsDetails?,
         now: Long = System.currentTimeMillis()
+    ): TpmsStateChangeClaimResult = claimStateChangeForHistoryCarId(
+        historyCarId = historyId(carId),
+        currentTpms = currentTpms,
+        now = now
+    )
+
+    suspend fun claimStateChangeForHistoryCarId(
+        historyCarId: Int,
+        currentTpms: TpmsDetails?,
+        now: Long = System.currentTimeMillis()
     ): TpmsStateChangeClaimResult {
         if (currentTpms == null || !currentTpms.hasCompleteSoftWarningFields()) {
             return TpmsStateChangeClaimResult.NoTransition
         }
-        return when (val result = tpmsStateDataStore.claimStateChange(carId, currentTpms.toTpmsState(), now)) {
+        return when (val result = tpmsStateDataStore.claimStateChange(historyCarId, currentTpms.toTpmsState(), now)) {
             TpmsStateDataStore.TpmsStateDataStoreClaimResult.NoTransition ->
                 TpmsStateChangeClaimResult.NoTransition
             TpmsStateDataStore.TpmsStateDataStoreClaimResult.InFlight ->
@@ -57,8 +81,12 @@ class TpmsStateRepository @Inject constructor(
     }
 
     suspend fun commitStateChange(carId: Int, claim: TpmsStateChangeClaim) {
+        commitStateChangeForHistoryCarId(historyId(carId), claim)
+    }
+
+    suspend fun commitStateChangeForHistoryCarId(historyCarId: Int, claim: TpmsStateChangeClaim) {
         tpmsStateDataStore.commitStateChange(
-            carId,
+            historyCarId,
             TpmsStateDataStore.TpmsStateTransitionClaim(
                 previousState = TpmsState(),
                 nextState = claim.nextState,
@@ -69,8 +97,12 @@ class TpmsStateRepository @Inject constructor(
     }
 
     suspend fun releaseStateChange(carId: Int, claim: TpmsStateChangeClaim) {
+        releaseStateChangeForHistoryCarId(historyId(carId), claim)
+    }
+
+    suspend fun releaseStateChangeForHistoryCarId(historyCarId: Int, claim: TpmsStateChangeClaim) {
         tpmsStateDataStore.releaseStateChange(
-            carId,
+            historyCarId,
             TpmsStateDataStore.TpmsStateTransitionClaim(
                 previousState = TpmsState(),
                 nextState = claim.nextState,
@@ -80,17 +112,21 @@ class TpmsStateRepository @Inject constructor(
     }
 
     suspend fun updateState(carId: Int, tpms: TpmsDetails?) {
-        if (tpms == null || !tpms.hasCompleteSoftWarningFields()) return
-        tpmsStateDataStore.saveState(carId, tpms.toTpmsState().copy(lastCheckedAt = System.currentTimeMillis()))
+        updateStateForHistoryCarId(historyId(carId), tpms)
     }
 
-    suspend fun getState(carId: Int): TpmsState = tpmsStateDataStore.getState(carId)
+    suspend fun updateStateForHistoryCarId(historyCarId: Int, tpms: TpmsDetails?) {
+        if (tpms == null || !tpms.hasCompleteSoftWarningFields()) return
+        tpmsStateDataStore.saveState(historyCarId, tpms.toTpmsState().copy(lastCheckedAt = System.currentTimeMillis()))
+    }
+
+    suspend fun getState(carId: Int): TpmsState = tpmsStateDataStore.getState(historyId(carId))
 
     suspend fun clearAllStates() = tpmsStateDataStore.clearAllStates()
 
     suspend fun simulateWarning(carId: Int, tire: TirePosition) {
         tpmsStateDataStore.saveState(
-            carId,
+            historyId(carId),
             TpmsState(
                 warningFl = tire == TirePosition.FL,
                 warningFr = tire == TirePosition.FR,
@@ -102,7 +138,7 @@ class TpmsStateRepository @Inject constructor(
     }
 
     suspend fun clearWarning(carId: Int) {
-        tpmsStateDataStore.saveState(carId, TpmsState(lastCheckedAt = System.currentTimeMillis()))
+        tpmsStateDataStore.saveState(historyId(carId), TpmsState(lastCheckedAt = System.currentTimeMillis()))
     }
 }
 

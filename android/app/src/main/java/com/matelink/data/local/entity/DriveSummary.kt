@@ -13,13 +13,13 @@ import androidx.room.PrimaryKey
 @Immutable
 @Entity(
     tableName = "drives_summary",
+    primaryKeys = ["carId", "driveId"],
     indices = [
         Index(value = ["carId"]),
         Index(value = ["carId", "startDate"])
     ]
 )
 data class DriveSummary(
-    @PrimaryKey
     val driveId: Int,
     val carId: Int,
 
@@ -60,5 +60,8 @@ data class DriveSummary(
     @ColumnInfo(defaultValue = "0")
     val energyCoverageSeconds: Long = 0,
     @ColumnInfo(defaultValue = "0")
-    val energyCoverageRatio: Double = 0.0
+    val energyCoverageRatio: Double = 0.0,
+
+    /** Exact nullable API fields; legacy scalar columns cannot represent their provenance. */
+    val apiEvidence: String? = null
 )

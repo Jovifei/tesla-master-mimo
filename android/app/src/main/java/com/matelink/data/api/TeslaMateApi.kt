@@ -5,6 +5,7 @@ import com.matelink.data.api.models.CarsResponse
 import com.matelink.data.api.models.CarStatusResponse
 import com.matelink.data.api.models.ChargeDetailResponse
 import com.matelink.data.api.models.ChargesResponse
+import com.matelink.data.api.models.DataReadinessResponse
 import com.matelink.data.api.models.DriveDetailResponse
 import com.matelink.data.api.models.DrivesResponse
 import com.matelink.data.api.models.GlobalSettingsResponse
@@ -14,9 +15,12 @@ import com.matelink.data.api.models.AdapterCapabilitiesResponse
 import com.matelink.data.api.models.AdapterSnapshotResponse
 import com.matelink.data.api.models.ParkedDetailResponse
 import com.matelink.data.api.models.StandbyResponse
+import com.matelink.data.api.models.TelemetryConfigureResponse
+import com.matelink.data.api.models.TelemetryPairingResponse
 import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.Path
+import retrofit2.http.POST
 import retrofit2.http.Query
 
 // The readiness probe is included for onboarding/connection checks.
@@ -104,6 +108,21 @@ interface TeslamateApi {
     suspend fun getBatteryHealth(
         @Path("carId") carId: Int
     ): Response<BatteryHealthResponse>
+
+    @GET("api/v1/cars/{carId}/data-readiness")
+    suspend fun getDataReadiness(
+        @Path("carId") carId: Int
+    ): Response<DataReadinessResponse>
+
+    @GET("api/v1/cars/{carId}/telemetry/pairing")
+    suspend fun getTelemetryPairing(
+        @Path("carId") carId: Int
+    ): Response<TelemetryPairingResponse>
+
+    @POST("api/v1/cars/{carId}/telemetry/configure")
+    suspend fun configureTelemetry(
+        @Path("carId") carId: Int
+    ): Response<TelemetryConfigureResponse>
 
     @GET("api/v1/cars/{carId}/updates")
     suspend fun getUpdates(

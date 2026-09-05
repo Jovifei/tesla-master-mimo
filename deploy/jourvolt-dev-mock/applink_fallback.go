@@ -63,10 +63,10 @@ func (a *app) applinkFallbackPage(w http.ResponseWriter, r *http.Request) {
 		";S.browser_fallback_url=" + url.QueryEscape(landing) + ";end"
 
 	page := applinkView{
-		Status:      status,
-		Detail:      detail,
-		IntentURL:   template.URL(intent),
-		ShowManual:  ticket != "" || errorCode != "",
+		Status:     status,
+		Detail:     detail,
+		IntentURL:  template.URL(intent),
+		ShowManual: ticket != "" || errorCode != "",
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

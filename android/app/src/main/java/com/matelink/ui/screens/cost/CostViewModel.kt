@@ -95,6 +95,7 @@ class CostViewModel @Inject constructor(
     val uiState = _uiState.asStateFlow()
 
     private var currentCarId: Int? = null
+    private var historyCarId: Int? = null
     private var charges: List<DatedCharge> = emptyList()
     private var historyRecordCount: Int = 0
     private var historyReason: NoDataReason? = null
@@ -114,10 +115,13 @@ class CostViewModel @Inject constructor(
             try {
                 val settings = settingsDataStore.settings.first()
                 val currencySymbol = Currency.findByCode(settings.currencyCode).symbol
-                dcChargeIds = runCatching { aggregateDao.getDcChargeIds(carId).toSet() }.getOrDefault(emptySet())
                 manualTotals = chargeCostOverrideStore.getAll()
                 when (val result = historyRepository.load(carId)) {
                     is ApiResult.Success -> {
+                        historyCarId = result.data.context?.localHistoryCarId
+                        dcChargeIds = runCatching {
+                            aggregateDao.getDcChargeIds(historyCarId ?: carId).toSet()
+                        }.getOrDefault(emptySet())
                         historyRecordCount = result.data.charges.size
                         historyReason = result.data.coverage.reason
                         _uiState.value = _uiState.value.copy(
@@ -155,7 +159,7 @@ class CostViewModel @Inject constructor(
     private fun recalculate(window: AnalysisWindow) {
         val selected = selectWindow(charges, window, LocalDate.now(), customStart, customEnd).map { it.charge }
         fun costFor(charge: ChargeData): Double? =
-            (manualTotals[chargeTotalOverrideKey(currentCarId ?: 0, charge.chargeId)] ?: charge.cost)
+            (manualTotals[chargeTotalOverrideKey(historyCarId ?: currentCarId ?: 0, charge.chargeId)] ?: charge.cost)
                 ?.takeIf { it.isFinite() && it >= 0.0 }
         fun energyFor(charge: ChargeData): Double? =
             charge.chargeEnergyAdded?.takeIf { it.isFinite() && it >= 0.0 }
@@ -166,7 +170,7 @@ class CostViewModel @Inject constructor(
         val energy = selected.mapNotNull(::energyFor).sum()
         val costCoverage = selected.count { costFor(it) != null }
         val energyCoverage = selected.count { energyFor(it) != null }
-        val manualCostCount = selected.count { manualTotals.containsKey(chargeTotalOverrideKey(currentCarId ?: 0, it.chargeId)) }
+        val manualCostCount = selected.count { manualTotals.containsKey(chargeTotalOverrideKey(historyCarId ?: currentCarId ?: 0, it.chargeId)) }
         val noDataReason = when {
             selected.isNotEmpty() -> null
             historyRecordCount == 0 -> historyReason ?: NoDataReason.NO_RECORDS

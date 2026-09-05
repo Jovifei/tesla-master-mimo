@@ -26,6 +26,7 @@ import com.matelink.data.local.TirePosition
 import com.matelink.data.local.TpmsAlertProfile
 import com.matelink.data.local.TpmsCustomAlertStateStore
 import com.matelink.data.local.TpmsCustomAlertClaim
+import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.local.entity.TpmsPressureSample
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
@@ -60,7 +61,8 @@ class TpmsPressureWorker @AssistedInject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val tpmsHistoryRepository: TpmsHistoryRepository,
     private val tpmsCustomAlertStateStore: TpmsCustomAlertStateStore,
-    private val tpmsTrendNotificationManager: TpmsTrendNotificationManager
+    private val tpmsTrendNotificationManager: TpmsTrendNotificationManager,
+    private val vehicleContextRepository: VehicleContextRepository
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
@@ -185,7 +187,8 @@ class TpmsPressureWorker @AssistedInject constructor(
             // Check each car
             for (car in cars) {
                 try {
-                    checkCarTpms(car.carId, car.displayName)
+                    val vehicleContext = vehicleContextRepository.resolve(car)
+                    checkCarTpms(car.carId, vehicleContext.localHistoryCarId, car.displayName)
                 } catch (e: Exception) {
                     Log.e(TAG, "event=check_tpms_failed carId=${car.carId} category=unexpected")
                 }
@@ -211,13 +214,13 @@ class TpmsPressureWorker @AssistedInject constructor(
         }
     }
 
-    private suspend fun checkCarTpms(carId: Int, carName: String) {
+    private suspend fun checkCarTpms(remoteApiCarId: Int, historyCarId: Int, carName: String) {
         // Get car status
-        val statusResult = teslamateRepository.getCarStatus(carId)
+        val statusResult = teslamateRepository.getCarStatus(remoteApiCarId)
         val status = when (statusResult) {
             is ApiResult.Success -> statusResult.data.status
             is ApiResult.Error -> {
-                Log.e(TAG, "event=fetch_status_failed carId=$carId category=api_error")
+                Log.e(TAG, "event=fetch_status_failed carId=$historyCarId category=api_error")
                 return
             }
         }
@@ -225,26 +228,40 @@ class TpmsPressureWorker @AssistedInject constructor(
         val tpmsDetails = status.tpmsDetails
         val outsideTempC = status.outsideTemp
 
-        val profile = settingsDataStore.getTpmsAlertProfile(carId)
+        val profile = settingsDataStore.getTpmsAlertProfile(historyCarId)
 
         processSuccessfulTpmsStatus(
-            carId = carId,
+            carId = historyCarId,
             carName = carName,
             tpmsDetails = tpmsDetails,
             outsideTempC = outsideTempC,
             observedAt = System.currentTimeMillis(),
             profile = profile,
-            saveObservation = tpmsHistoryRepository::saveObservation,
-            pruneOlderThan90Days = tpmsHistoryRepository::pruneOlderThan90Days,
-            detectTeslaStateChange = tpmsStateRepository::detectStateChange,
-            updateTeslaState = tpmsStateRepository::updateState,
+            saveObservation = { sample ->
+                tpmsHistoryRepository.saveObservationForHistoryCarId(historyCarId, sample)
+            },
+            pruneOlderThan90Days = { _, now ->
+                tpmsHistoryRepository.pruneOlderThan90DaysForHistoryCarId(historyCarId, now)
+            },
+            detectTeslaStateChange = { _, details ->
+                tpmsStateRepository.detectStateChangeForHistoryCarId(historyCarId, details)
+            },
+            updateTeslaState = { _, details ->
+                tpmsStateRepository.updateStateForHistoryCarId(historyCarId, details)
+            },
             resetCustomState = tpmsCustomAlertStateStore::resetForProfile,
             claimCustomAlerts = tpmsCustomAlertStateStore::claimAlerts,
             commitCustomAlert = tpmsCustomAlertStateStore::commitClaim,
             releaseCustomAlert = tpmsCustomAlertStateStore::releaseClaim,
-            claimTeslaStateChange = tpmsStateRepository::claimStateChange,
-            commitTeslaStateChange = tpmsStateRepository::commitStateChange,
-            releaseTeslaStateChange = tpmsStateRepository::releaseStateChange,
+            claimTeslaStateChange = { _, details, now ->
+                tpmsStateRepository.claimStateChangeForHistoryCarId(historyCarId, details, now)
+            },
+            commitTeslaStateChange = { _, claim ->
+                tpmsStateRepository.commitStateChangeForHistoryCarId(historyCarId, claim)
+            },
+            releaseTeslaStateChange = { _, claim ->
+                tpmsStateRepository.releaseStateChangeForHistoryCarId(historyCarId, claim)
+            },
             notifyTesla = ::showNotification,
             notifyCustom = { id, _, alert ->
                 tpmsTrendNotificationManager.showCustomAlert(id, alert)

@@ -11,6 +11,162 @@
 
 # JourVolt Android rollout implementation - 2026-08-09
 
+## 2026-09-01 真机登录与高德配置回归（当前）
+
+### Plan
+
+- [x] 连接并核对真实 `com.matelink` 包、版本、签名和保留数据。
+- [x] 捕获登录页与高德配置页现状，读取 AndroidRuntime/网络错误证据并定位根因。
+- [x] 以现有面板风格完成最小 Android 修复，并补回归测试。
+- [x] 使用同签名 `adb install -r` 覆盖升级，验证登录入口、高德向导、返回/错误/重试和冷启动无崩溃。
+- [x] 记录实际设备证据、未执行的真实 Tesla/Telemetry 边界和下一步。
+
+### Review
+
+- LOCAL PASS：定向回归、Android Debug/Release 单测、AndroidTest 编译、Debug/Release 构建和 Release lint 通过；Debug/Release 均完成 468 项，Release 8 项预期跳过，lint 0 Error/0 MissingTranslation。
+- DEVICE PASS：OnePlus 7 Pro `6e4fa92f` 使用同签名 `adb install -r` 从 `com.matelink` 1.4.3 升级至 1.4.4；`firstInstallTime` 保持，v2 签名通过。登录协议地址、官方 Tesla 授权入口、设置返回、高德三步面板和 Key 对话框均已验证。
+- DEVICE REVIEW：曾捕获一次 `Input dispatching timed out`；ANR 采样中 MateLink 主线程处于 OnePlus `__refrigerator`，无 Java/Kotlin 阻塞栈。重启后重复设置/登录/高德路径未再复现，记录为设备级偶发 ANR，后续继续观察。
+- TELEMETRY PILOT PASS：NOT_PERFORMED；未输入 Tesla 凭据，未完成真实车辆 Telemetry、虚拟钥匙配对或真实行程/充电事件。
+- APK：`E:\Claude_allow\Download\matelink-1.4.4-login-amap-panels-final-20260902.apk`，SHA-256 `A5D85DDEFA674353223589694D9CAF1AB03F3A58156AD582FDB050D2187A1AD`。
+
+## 2026-09-02 登录、高德配置与设备回归修复记录
+
+- 登录页原先因 Release 漏传 `MATELINK_PUBLIC_INFO_BASE_URL` 被错误禁用；现在默认指向 `https://auth.teslalink.joviluma.com`，Release 同时要求显式传入并做 host 校验。
+- 登录页改为统一面板层级，设置重新授权可返回设置；只点击登录按钮时实际打开官方 `https://auth.tesla.cn/oauth2/v3/authorize`。
+- 高德配置页改为进度面板、内容面板、状态面板和统一返回/下一步按钮；无 Key、隐私确认和验证对话框均未崩溃。
+- 证据与剩余边界见 `docs/BUG-REPAIR-REPORT-2026-09-02-login-amap-device.md`；本轮源码提交到 `main`，未部署服务器。
+
+## 2026-09-01 主分支同步与下一步 Telemetry Pilot
+
+### Plan
+
+- [x] 完成本轮 Android/Go 修复、测试和文档的范围审查后提交到 `main`，代码提交为 `3e5a769`。
+- [x] 推送 `main` 到 `origin/main`，并核对远端与本地完整 SHA 一致。
+- [ ] 在真实车辆上完成虚拟钥匙配对、Telemetry 配置同步和位置/胎压/行程/充电事件验证。
+- [ ] 若真实验证需要，单独部署并验证 ECS 最新兼容路由；不以本地 Mock 代替真实 Pilot。
+
+### Review
+
+- PASS：`3e5a769` 已推送到 `origin/main`；提交范围无 iOS、无生成 EXE、无 keystore/env/properties。
+- PASS：新鲜 Android Debug/Release 测试、构建、AndroidTest 编译、Release lint、Go test/vet、Compose、diff check 和精确敏感扫描均通过。
+- NOT_PERFORMED：真实虚拟钥匙配对、Telemetry 配置同步、位置/胎压/行程/充电事件和生产部署仍未执行。
+- Boundary：本地生成的 `deploy/jourvolt-dev-mock/jourvolt-dev-api.exe` 未提交；下一阶段不以本地 Mock 代替真实 Pilot。
+
+## 2026-08-31 收尾复核
+
+- [x] MQTT：手动 ACK 仅在持久化成功/持久化重复/永久无效后执行；未知映射、取消、数据库故障和背压保持未确认；连接代次、启动取消、停止排空和 readyz 状态均有回归覆盖。
+- [x] Android：数据状态页支持官方 Tesla 虚拟钥匙链接、显式 Telemetry 配置、`config_synced` 三态、30 秒墙钟轮询、切车单飞锁和等待超时后的重试入口。
+- [x] 本地门禁：Android Debug/Release 各 447 项（Release 8 项预期跳过）、assembleDebug/Release、lintRelease（0 errors）、androidTest 编译、Go test/vet、Compose config、资源 parity、Release 标记扫描通过。
+- [x] 临时 PostgreSQL 集成：`TestTelemetryPostgres` 通过；临时容器已删除，未触碰既有容器和数据。
+- [ ] DEVICE PASS / TELEMETRY PILOT PASS：未执行真实设备配对、真实 Tesla/Fleet Telemetry、生产部署；这些不由本地门禁替代。
+
+## 2026-08-31 Task2 server config-sync truth repair (current run)
+
+- [x] PLAN: Restricted changes to JourVolt mock telemetry pairing/store/core/MQTT/service tests and this ledger; preserved unrelated owner changes and performed no Git or deployment mutations.
+- [x] RED: `TestTask2MQTTStatusDoesNotOverwriteVerifiedConfigSync`, `TestTask2PairingConfigSyncFalseAndUnknownRemainStoredTruth`, and `TestTask2ConfigureErrorPreservesLastVerifiedConfigTruth` each failed before the repair because status-derived truth became `null` after MQTT/error status writes.
+- [x] GREEN: Added nullable `config_synced` to memory and `jourvolt_telemetry_pairing`, including `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`; official configuration GET outcomes and explicitly skipped vehicles write truth, while memory/PostgreSQL status updates preserve it.
+- [x] VERIFY: Task2/affected Go tests passed; fresh `go test ./... -count=1` passed (3.136s); `go vet ./...`, both Compose config checks, and full `git diff --check` exited 0. The configured optional PostgreSQL roundtrip test is present but skipped because `JOURVOLT_TEST_DATABASE_URL` is unset. No stage/commit/push/reset/stash/clean/deploy.
+
+### Task2 server-truth review
+
+- PASS (2026-08-31): `config_synced` is now a nullable stored value and remains JSON `null` when unknown. Official GET `synced=true` writes true; official GET false and explicit skipped/missing-key write false; accepted POST and command/query errors preserve the prior stored truth. MQTT `collecting`, `waiting_vehicle`, and error status paths now change only operational status. Scoped review found no secret/VIN response exposure or whitespace errors.
+- PASS (2026-08-31): The remaining persistence-error path is fail-closed. `setPairingConfigTruth` now returns the PostgreSQL write error, and `configure` converts it to the existing `telemetry_error` boundary (HTTP 502), rather than returning a successful saved state. A failing injected persistence writer regression preserves the prior verified `config_synced=true` truth and confirms no HTTP 200 is emitted; the normal memory path is unchanged when no writer is injected.
+
+## 2026-08-31 Task2 telemetry configure ownership race
+
+### Final Task2 quality repair (current run)
+
+### Final Task2 deadline and virtual-key URL hardening (current run, 2026-08-31)
+
+- [x] RED: Added observable suspended-request polling coverage; it failed before the timeout was applied because the in-flight request survived the 30-second deadline.
+- [x] GREEN: Bound the complete polling/request scope with `withTimeout(30_000)` while retaining the 5-second cadence, cancellation behavior, and generation guards.
+- [x] RED/GREEN: Added canonical valid plus duplicate raw-path separator cases; both duplicate-slash URLs failed before direct raw-path validation and now reject.
+- [x] VERIFY: Targeted Task2 contract class and fresh `:app:testDebugUnitTest --rerun-tasks` passed (446 JVM tests, 0 failures/errors/skips); string-resource parity is 1265 default/1265 Chinese keys with no differences; `git diff --check` passed. No stage/commit/push/reset/stash/clean/deploy.
+
+- [x] REVIEW: Scoped review covered DataReadinessViewModel, TelemetryPairingPresentation, TelemetryPairingContractTest, and this ledger; no trailing whitespace in the untracked test file.
+
+- [ ] RED: Add a server pairing contract covering authoritative `config_synced=true`, known-pending `false`, and unknown `null`, without VIN/provider-body leakage.
+- [ ] RED: Add a DataReadinessViewModel behavioral race test with a controllable suspended configure source: A cancellation must retain its lease until its own `finally`; B and a third attempt cannot overlap while A's POST remains in flight; B may proceed after A exits.
+- [ ] GREEN: Return only persisted/verified configuration-sync truth from pairing, and remove early lease release from car changes while preserving stale generation and polling guards.
+- [ ] VERIFY: Targeted Task2 JVM/Go, full Debug JVM, full Go/vet, resource parity, `git diff --check`, and scoped-diff review. No stage/commit/push/reset/stash/clean/deploy.
+
+- [x] RED: Replace the source-regex cancellation assertion with a controllable JVM behavior test: cancel car A, start car B before A's delayed `finally`, then prove a third configure is rejected and configure calls never overlap.
+- [x] GREEN: Make `TelemetryConfigureGate` issue generation-bound ownership tokens; only a matching token may release the gate. Carry the captured car generation through configure completion and polling writes so stale results cannot change the current UI.
+- [x] VERIFY: Run the Task2 readiness JVM tests, fresh `:app:testDebugUnitTest`, and repository `git diff --check`; inspect the scoped diff. No stage/commit/push/reset/stash/clean/deploy.
+
+### Task2 plan and boundaries
+
+- Scope: `android/app/src/main/java/com/matelink/ui/screens/readiness/` and its JVM test(s), plus this ledger only.
+- Preserve: 30-second maximum / 5-second polling policy and existing user-owned dirty changes.
+- Stop condition: any targeted RED failure unrelated to the new race, or any full Debug failure, is reported with its output rather than being hidden.
+
+### Task2 review
+
+- PASS (2026-08-31): RED first failed solely because `TelemetryConfigureGate` lacked a generation-owned lease API. The behavioral JVM regression uses controllable suspended configure calls: A is cancelled, B starts before A's delayed finally, A's finally cannot release B, a third configure is rejected, and peak active calls stays one. Targeted `TelemetryPairingContractTest` passed 6/6 after GREEN; a fresh `:app:testDebugUnitTest --rerun-tasks` passed 443/443 with 0 failures/errors/skips. The gate now releases only an identical lease; configure writes require matching car, generation and lease; polling keeps its existing generation, 5-second interval and 30-second window checks. `git diff --check` passed. No stage/commit/push/reset/stash/clean/deploy.
+
+## 2026-08-30 数据完整性与首次登录体验
+
+- [x] Task A：服务端补齐位置、四轮胎压和数据就绪状态，保留 null/false/0 语义。
+- [x] Task B：Android 修复电量提示、电池健康错误、首次登录数据准备弹窗与永久数据状态入口。
+- [x] Task C：引入稳定车辆上下文，隔离旧 Room 历史并提供经确认的安全迁移。
+  - [x] RED/GREEN：VehicleContext 持久化在进程重载和并发下不丢失映射/计数，提交失败时失败关闭。
+  - [x] RED/GREEN：普通自托管解析不改写旧历史迁移来源或 `MODEL_UNKNOWN`；仅显式用户绑定可记录来源/车型。
+  - [x] RED/GREEN：充电通知展示、更新和取消始终使用同一 local history namespace ID。
+  - [x] RED/GREEN：统一历史逐字段合并，保留 null、零值和部分远端证据。
+  - [x] RED/GREEN：TPMS 单次 Worker 运行固定 VehicleContext/historyCarId，并贯穿 claim/release/evaluation。
+  - [x] VERIFY：定向测试、fresh Debug JVM 全量、androidTest 编译与限定范围 diff 审核。
+- [x] Task D：实现 Fleet Telemetry 独立服务骨架、持久化、幂等行程/充电状态机和配对状态接口。
+  - [x] D1 RED/GREEN：固定官方字段集合锁定 configure/allowlist 的名称、大小写与受支持预警/充电字段。
+  - [x] D2 RED/GREEN：QoS1 重投与重启后，相同规范化值不推进 latest、不重复完成 session；Tesla `Time` 不作为 epoch。
+  - [x] D3 RED/GREEN：本地与 ECS Compose 将同一 CA/certificate 目录只读挂入 API，默认禁用 telemetry 的配置可解析。
+  - [x] D4 RED/GREEN：捕获 OAuth ID-token 校验失败日志，证明不含回调 issuer、未验证 token issuer、token、VIN 或坐标等原始值。
+  - [x] VERIFY：定向/完整 Go test 与 vet、Compose config、`git diff --check` 和敏感信息扫描。
+- [x] Task D blockers：Android 历史兼容、当前充电、无消息停车收尾、MQTT 单 worker、Compose 证书边界与 HTTP 优雅退出。
+  - [x] RED/GREEN：完成会话使用稳定的 Int-safe `public_id`，并保留 Android nullable/list JSON 形状。
+  - [x] RED/GREEN：`charges/current` 返回 telemetry 未闭合会话或状态源中的活动充电。
+  - [x] RED/GREEN：持久化停车候选，后台 finalizer 在截止后恰好收尾（修复 `telemetryMemoryStore.ingest` 透传 `config.StopDebounce`，此前硬编码 20s 默认值导致到期判定晚 10s）。
+  - [x] RED/GREEN：MQTT 回调只入有界队列，单 worker 有时限、背压和可观测健康状态（补测试 fixture 的 `TopicBase`，此前为空导致消息解析失败、worker 不落库）。
+  - [x] RED/GREEN：API 仅挂 CA 单文件；官方容器独占 cert/key；渲染配置仅在临时内存卷并以 0600 保存。
+  - [x] RED/GREEN：带超时的 `http.Server` 与 SIGTERM/SIGINT 优雅关闭。
+  - [x] VERIFY：定向/全量 Go test、vet、fresh PostgreSQL、Compose config、diff 与敏感信息扫描。
+- [x] Task E：Debug/Release、Go、Compose、Release 配置与差异复核；不提交、不推送、不部署。
+  - [x] Go：`go test ./...` + `go vet ./...` 全绿；fresh `postgres:16-alpine`（127.0.0.1:55433）集成测试 QoS1 重投/重启幂等通过，容器即用即删。
+  - [x] Compose：`docker compose config` 校验 docker-compose.yml 与 docker-compose.pilot.ecs.yml（± .env.ecs.example）均通过。
+  - [x] Release 配置护栏：android/app/build.gradle.kts 新增 guard，缺 `JOURVOLT_API_BASE_URL` 或 `JOURVOLT_AUTH_HOST≠auth.teslalink.joviluma.com` 时 Release 构建 fail-fast；缺失 / 正确 / 错误 host 三场景实测通过。`build-pilot-apk.ps1` 恒定显式传参，不受影响。
+  - [x] Android 门禁：`:app:testDebugUnitTest` + `:app:testReleaseUnitTest` + `:app:lintRelease` 在非沙箱模式后台执行，BUILD SUCCESSFUL（21m26s，70 actionable tasks）；lintRelease 无 error，HTML 报告已生成。
+
+### 边界
+
+- 保留当前 main、登录修复和所有用户未提交服务端改动。
+- 不修改 iOS；不 reset、stash、commit、push 或部署。
+- 已完成的 TPMS 趋势、自定义预警和行程通知只做回归验证，不重复实现。
+
+## Task C Review
+
+- PASS：同步 SharedPreferences 提交与并发/重建 AndroidTest；普通解析不再绑定旧归档，新增显式确认入口。
+- PASS：通知、TPMS 和统一历史均固定 local history namespace；Room v19 保存可验证的 API nullable evidence。
+- PASS：定向 JVM、fresh Debug JVM（434/434）及 Debug androidTest 编译通过；未执行 Git 写操作或部署。
+
+## Task D Review
+
+- [x] Task 1 final MQTT quality (2026-08-31): RED/GREEN regression coverage now locks PostgreSQL mappings with latest/event persistence in one transaction, classifies an unmapped zero-accept result as retryable/unacknowledged rather than `durable_duplicate`, blocks a deterministic concurrent mapping delete, prevents stale OnConnect readiness restoration after connection loss, and makes `service.started` atomic. Verified with Task1 targeted tests, fresh local PostgreSQL integration, full Go test/vet, both Compose configs, and diff check; no Android/iOS or Git/deployment action.
+
+- [x] Task 1 control-topic ACK race (2026-08-31): make zero-row status updates and disappeared mappings retryable/unacknowledged; preserve control status semantics; run RED/GREEN plus Go/Compose/diff verification.
+
+- [x] Task 1 MQTT repair (2026-08-31): replace readiness source assertion with behavior/state coverage; repair durable recovery/ACK gate and lifecycle regressions; verify Go, Compose, and diff checks.
+
+- PASS (2026-08-31 repaired): `TestTask1*` 21/21 passes. The readiness checks now exercise explicit connection/subscription/store-schema/persistence states; durable persistence is recorded before the separately guarded ACK attempt. Lifecycle coverage establishes a real connected-client gate before asserting no ACK after connection loss or shutdown, confirms handler options, cancelled startup, nonblocking queue pressure, ordered worker ACK, and reconnect only becoming healthy after a newly durable message. Final Go test/vet, both Compose configs, and `git diff --check` passed. No Android/iOS, Git staging/commit/push/reset/stash/clean, or deployment actions occurred.
+
+- PASS (2026-08-31 control-topic ACK race): RED proved `updateStatusForVIN` lacked an outcome classification; GREEN makes the status update authoritative. In memory, a disappeared mapping is checked under the update lock. In PostgreSQL, `INSERT ... SELECT` must affect at least one row; zero affected rows classify as `unknown_mapping`. Unknown mapping, database failure, and cancellation remain retryable/unacknowledged; valid control updates remain durable. `TestTask1ControlTopicZeroRowStatusUpdateIsRetryableAndUnacknowledged`, `TestTask1*`, fresh `go test ./... -count=1`, `go vet ./...`, both Compose configs, and `git diff --check` passed. No Android/iOS, Git staging/commit/push/reset/stash/clean, or deployment actions occurred.
+
+- PASS (2026-08-31 fresh, Task 1 MQTT repair): RED/GREEN 覆盖 Paho manual ACK/persistent session、durable ACK、retryable persistence/backpressure no-ACK、permanent-invalid counter+ACK、有序单 worker、reconnect health recovery 与 10 秒上限关停后留待重投；`TestTask1*` 10/10 通过，完整 `go test ./... -count=1` 为 120 passed、8 skipped、0 failed，`go vet ./...` 与 `git diff --check` 均退出 0。`docker-compose.yml config -q` 退出 0；`docker-compose.pilot.ecs.yml config -q` 在仅当前进程的非敏感占位必填变量下退出 0（原环境未设置部署变量）。未设置 `JOURVOLT_TEST_DATABASE_URL`，因此现有可选真实 PostgreSQL durability test 本轮跳过；未启动或停止容器。
+
+- PASS (2026-08-30 fresh): `deploy/jourvolt-dev-mock/README.md` requires production `TESLA_FLEET_TELEMETRY_IMAGE=tesla/fleet-telemetry@sha256:<64_lowercase_hex_characters>` and prohibits mutable production tags; `tesla/fleet-telemetry:v0.9.4` is documented only for local development.
+- PASS (2026-08-30 fresh): `TestTelemetryPostgresQoS1RedeliverySurvivesRestartWithoutAdvancingOrCompletingTwice` passed with `-count=1` against temporary healthy `postgres:16-alpine` container `jourvolt-taskd-pg-20260830-3f3c2fe2d93a` on `127.0.0.1:55433`; `docker rm -f` exit code was 0 and the container was absent afterward.
+- PASS (2026-08-30 fresh): `go test ./...` and `go vet ./...` in `deploy/jourvolt-dev-mock` both exited 0; the README production-image rule check passed.
+- PASS (2026-08-30 fresh): repository-wide `git diff --check` exited 0; only existing CRLF conversion warnings were emitted.
+- PASS (2026-08-31 fresh): Task D blockers 全部 7 项 RED/GREEN 转绿（停车候选 finalizer 与 MQTT 有界队列单 worker 两处 RED 已由组长修复：前者因 `telemetryMemoryStore.ingest` 硬编码 `defaultDriveStopDebounce` 未透传 `config.StopDebounce`，后者因测试 fixture 缺 `TopicBase` 导致 MQTT 消息解析失败）；`go test ./...`、`go vet ./...` 与两份 Compose `config` 复核均通过。
+
 # 2026-08-27 MateLink 实时状态、充电参数与原创车型图
 
 ## TPMS 趋势与行程通知（Jovi 已授权最小 Android 改动）
@@ -2682,3 +2838,56 @@
 - PASS：最新未签名 Release APK 为 `E:\Claude_allow\Download\matelink-1.4.2-release-unsigned-20260822-login-generation-v14.apk`，包名 `com.matelink`，SHA-256 `3C7588D70F418E9C29124BCFB2A7D0C0CAC7866A34B808D743923EFBCD8C86BB`；静态扫描未命中 Mock、回环地址、Debug 登录标记或 `com.jourvolt.app`。
 - PASS：隔离 Debug 测试包为 `E:\Claude_allow\Download\matelink-test-mock-debug-20260822-v1.apk`，包名 `com.matelink.test.mock`，SHA-256 `FF1C4D080F3F9F2A2572836A9244F8089A2F02786683852ED893754AB9F19EA4`，不进入 Release。
 - NOT_PERFORMED：ADB 仍为空；没有安装、卸载、清数据或 instrumentation。正式签名、服务器/域名、Tesla 应用批准和真实 OAuth/Fleet 仍未完成。
+# 2026-08-31 Task2 telemetry configure retry dead-end
+
+## Plan
+
+- [x] Trace the readiness presentation, polling timeout, and generation-owned configure lease.
+- [x] RED: Add a presentation regression for waiting/pending telemetry with `configSynced != true`, including no automatic configure invocation.
+- [x] GREEN: Derive the explicit configure/retry affordance from eligible status and unsynced config while preserving blocking error actions.
+- [x] Run targeted Task2, full Debug JVM rerun, Android-test compilation, resource parity, and diff checks.
+
+## Review
+
+- PASS: `TelemetryPairingContractTest` passed 10/10 after the RED/GREEN cycle; its timeout regression proves the only configure request is the user's explicit tap. Fresh `:app:testDebugUnitTest --rerun-tasks` passed 447 tests with 0 failures/errors/skips. `:app:compileDebugAndroidTestKotlin` passed without running a device test. English/Chinese string parity is 1266/1266 keys with no differences, and `git diff --check` passed. No stage/commit/push/reset/stash/clean/deploy.
+- NOT_PERFORMED: instrumentation was not run.
+
+# 2026-08-31 行程与充电页面闪退修复
+
+## Plan
+
+- [x] 读取真机 `AndroidRuntime` 崩溃栈，复现并定位到云车辆 UID 缺失。
+- [x] 对服务端 Fleet 车辆映射和 Android 历史身份边界完成 RED -> GREEN。
+- [x] 为缺失身份增加可恢复错误和中英文等待提示，不以数字车 ID 伪造身份。
+- [x] 完成 Go、Android Debug/Release、AndroidTest 编译、Release lint 与签名候选验证。
+- [x] 通过 `adb install -r` 安装候选包并检查启动后无新 MateLink FATAL；统计页同类观察路径也已加保护。
+
+## Review
+
+- PASS：Go `go test ./... -count=1`、`go vet ./...`；Android Debug/Release 各 `449` 个 JVM 测试；`:app:compileDebugAndroidTestKotlin`；`:app:assembleRelease`；`:app:lintRelease`（0 Error、0 MissingTranslation）；`git diff --check` 均通过。
+- PASS：服务端回归测试验证 Fleet JSON 包含 `vehicle_uid`；Android 回归验证缺失云身份保持 fail-closed 并返回 `CONFIGURATION/history_identity_unavailable`。
+- PASS：最终签名候选 `E:\Claude_allow\Download\matelink-1.4.2-release-signed-history-crash-fix-stats-20260831.apk`，包名 `com.matelink`，SHA-256 `E39CCE42A593521EDEECDDEF0ED32604331A6D06CCBA2F675385ED385CD85CE1`，`apksigner` v2 verified；已使用 `adb install -r` 覆盖安装。
+- DEVICE PASS（启动级）：设备安装后应用正常启动到登录页，安装后没有新的 `com.matelink` FATAL；本轮安装前设备上已不存在正式包，因此不声称保留已被用户卸载的数据。
+- REVIEW：质量复核未发现 P0/P1；剩余 P2 是真实 Fleet provider -> 云端 API -> Android 解码 -> 历史页面的端到端测试尚未执行，需真实 Tesla 会话后补证。
+- PASS：ECS 已完成匹配服务端源同步与 API 重建；公网 `/healthz`、`/readyz` 为 200 且 `fleet/postgres/ok`，未授权车辆接口为 401，PostgreSQL 与 `star-photo` 容器未被重启。
+- PASS：正确的 `GET /v1/auth/tesla/start` 返回 200，授权端点为官方 `auth.tesla.cn/oauth2/v3/authorize`，回调为 `api.teslalink.joviluma.com/v1/auth/tesla/callback`；此前 POST 404 已确认是探测方法错误。
+- NOT_PERFORMED：未输入 Tesla 凭据，未完成真实云登录/历史页面点击；未 commit/push。
+# 2026-09-01 数据准备、待机能耗与设置体验修复
+
+## Plan
+
+- [x] 为云端首次登录的等待/收集状态与待机 404 降级补 RED 测试。
+- [x] 修复待机能耗的本地历史降级和中文空态，不把缺失数据显示为错误或 0。
+- [x] 优化首次登录数据准备提示，明确区分实时可用、车辆等待、历史收集和不支持。
+- [x] 将高德 Key 配置改为 3 步图文面板，保留复制、隐私和验证闭环。
+- [x] 将高级网络改为云端/自托管模式感知的卡片面板，加入版本号和本次修复说明。
+- [x] 更新工程 Bug 记录、Lessons；完成本地构建与真机覆盖升级验证。
+- [x] Obsidian/Codex memory 同步：项目 Markdown 镜像已通过 `invoke-mirror.ps1` 更新为 `MEMORY_UPDATED`；当前没有可写的项目槽位，不创建新 Vault 槽位。
+
+## Review
+
+- LOCAL PASS：Android Debug/Release 单测、Debug/Release 构建、Release lint、AndroidTest 编译、JourVolt API/Adapter Go test/vet 均通过。
+- DEVICE PASS：同签名 `com.matelink` 由 1.4.2 覆盖升级至 1.4.3；首装时间保持，Dashboard、行程、充电、待机、设置和 AMap 向导可打开；无新增 MateLink FATAL。
+- TELEMETRY PILOT PASS：NOT PERFORMED；未执行真实 Fleet Telemetry、虚拟钥匙配对或真实行程/充电事件，不能以本地测试代替。
+- 版本候选：`E:\Claude_allow\Download\matelink-1.4.3-release-signed-readiness-standby-amap-settings-20260901.apk`，SHA-256 `0C92E0040F192F7229E0710F0C8119A3D63CEDCC03527F3374CBA87A0A968DC1`。
+- 边界：本轮不修改 iOS，不提交、不推送、不部署；保留当前工作树中的既有用户资产。

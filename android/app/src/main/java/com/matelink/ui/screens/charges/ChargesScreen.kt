@@ -71,6 +71,7 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.data.api.models.ChargeData
+import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.ui.components.BarChartData
 import com.matelink.ui.components.BarSegment
 import com.matelink.ui.components.DateRangePickerDialog
@@ -118,10 +119,15 @@ fun ChargesScreen(
     }
 
     val serverNotConfiguredMessage = stringResource(R.string.server_not_configured_message)
+    val historyIdentityUnavailableMessage = stringResource(R.string.history_identity_unavailable_message)
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
             snackbarHostState.showSnackbar(
-                if (error == "Server not configured") serverNotConfiguredMessage else error
+                when (error) {
+                    "Server not configured" -> serverNotConfiguredMessage
+                    HISTORY_IDENTITY_UNAVAILABLE -> historyIdentityUnavailableMessage
+                    else -> error
+                }
             )
             viewModel.clearError()
         }

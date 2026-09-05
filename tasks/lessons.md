@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-08-30 首次登录必须解释数据可用性
+
+- Pattern：只显示空白占位会让新用户误以为登录或车辆接口失败，也会让旧用户的本机历史与云端新身份混在一起。
+- Prevention rule：首次绑定后按稳定车辆身份展示字段级就绪状态；缺失保持 unavailable 并解释收集条件，旧历史必须验证身份并经用户确认后迁移。
+
 ## 2026-07-09 Git Approval
 
 - Pattern: The user requires explicit approval before any Git commit.
@@ -315,3 +320,55 @@
 
 - 现象：在 Dashboard 上发送 `KEYCODE_BACK` 会退出 MateLink，后续坐标测试可能落到其他系统应用，产生无效结果。
 - Prevention rule：真机 L1 回归使用显式 `am start` 恢复 MateLink 或直接点击底部导航；仅在已确认的 L2/L3 页面使用返回键。每次坐标输入后先验证当前焦点仍为 `com.matelink/.MainActivity`。
+
+## 2026-08-31 Fleet vehicle UID omission caused history-page crash
+
+- Pattern: `fleetProvider.Vehicles` calculated the stable `providerID` but omitted `VehicleUID` when constructing the API vehicle. Because the JSON field uses `omitempty`, cloud `/api/v1/cars` responses omitted `vehicle_uid`; the Android `VehicleContext` identity guard then failed while Drives/Charges loaded history. The exception escaped `viewModelScope`, so the process crashed after the page click. Efficiency and Range shared the same history repository and had the same latent path.
+- Evidence: OnePlus 7 Pro `6e4fa92f` logcat at 21:55:02, 21:55:07, 21:55:51 and 21:57:25 reported `Process: com.matelink` and `IllegalArgumentException: cloud vehicle uid is required`; the release mapping resolved the stack to `VehicleContextRepository.resolve` -> `VehicleContextStore.resolveCar` -> `cloudVehicleStableIdentity`.
+- Resolution: Fleet vehicle mapping now returns `VehicleUID: providerID`; missing cloud identity raises `HistoryIdentityUnavailableException`; `UnifiedHistoryRepository` converts it to a recoverable configuration result; Drives, Charges, Efficiency, Range, Cost and Stats render localized waiting copy. Stats progress observers and range detail reads also ignore this expected unavailable state. No numeric car-ID fallback was added, so history isolation remains fail-closed.
+- Prevention rule: Test every stable identity field across provider model -> JSON -> Android model, and make history repositories convert expected identity-unavailable states before UI coroutines. After any history/Room change, exercise each affected navigation entry on the target device and inspect post-interaction `AndroidRuntime` logs; build success alone is insufficient.
+- Boundary: local source, tests, signed APK and the live ECS health boundary are verified; real Tesla vehicle UID response and history-page clicks still require the real account flow before end-to-end Pilot can be claimed.
+
+## 2026-08-31 ECS deployment must sync the build closure
+
+- Pattern: The ECS working directory was an older partial Go tree. Uploading only the changed `fleet_provider.go` produced compile errors for missing Telemetry types; the failed build happened before container replacement, but a partial source tree would have been unsafe to leave.
+- Prevention rule: Before rebuilding a remote Go service, compare the remote source manifest with the local build closure; upload the matching production `.go`, module files and Docker build inputs to a temporary directory, verify hashes, keep a rollback copy, and use `docker compose up --no-deps` for the API only. In PowerShell, use a single-quoted here-string for remote Bash so `$(...)` and `$1` are not evaluated locally. Validate the actual HTTP method and path before treating a 404 as a route failure.
+
+## 2026-09-01 首次登录数据等待不是订阅失败
+
+- Pattern: Tesla OAuth successfully creates a session and returns a current vehicle snapshot, but position, drive/charge history, standby analysis and continuous TPMS/events may still be waiting for the vehicle or Fleet Telemetry. Showing a generic error makes a normal first-login state look like an account or subscription failure.
+- Prevention rule: On first connection, render per-capability `available`, `waiting_vehicle`, `collecting`, `unsupported` and `unknown` states with source/time. Explain that local history starts accumulating after login; never replace missing values with zero and never call a paid subscription requirement without a server-provided billing state.
+
+## 2026-09-01 可选待机端点必须有本机降级
+
+- Pattern: The cloud compatibility service did not expose the self-hosted-only standby endpoint, so Android showed `Standby data unavailable` after an expected 404.
+- Resolution: The cloud route returns a typed collecting empty result; Android falls back through `UnifiedHistoryRepository` and derives only adjacent-drive parking candidates. Charge-overlap windows are excluded, and kWh/power stay nullable without measured capacity or telemetry coverage.
+- Prevention rule: Treat optional history endpoints as capability states, not transport errors. Test 404, empty response, local history, charging overlap and no-history cases separately; verify the device sees a localized collecting state before claiming the page is fixed.
+
+## 2026-09-01 AMap 和高级网络设置需要分层引导
+
+- Pattern: A single long AMap instruction block and an ungrouped advanced-network form obscured the primary action and made cloud login look dependent on self-hosted TeslaMate.
+- Resolution: Use a short three-step AMap wizard with Material icons, copy actions, privacy and verification kept in the final step. Group network inputs into server, authentication and security cards, and make copy mode-aware for cloud versus self-hosted connections.
+- Prevention rule: For setup UX changes, update Compose tests and AndroidTest selectors together; preserve the existing security/verification callbacks and test 360dp-width navigation, content descriptions and large text before delivery.
+
+## 2026-09-01 版本号和修复说明必须同批交付
+
+- Pattern: A code update without an in-app explanation left device testers unable to tell which behavior had changed, especially when the build SHA still pointed at the pre-commit HEAD.
+- Prevention rule: Every user-visible update increments `versionCode`/`versionName`, adds localized release notes, and distinguishes the version from the build Git SHA. Do not publish or push until the notes match the tested candidate and the exact APK identity is recorded.
+
+## 2026-09-02 Release 公共协议地址必须防漏配
+
+- Pattern: Release 构建未传 `MATELINK_PUBLIC_INFO_BASE_URL` 时，`PublicInfoLinks` 返回空值，登录页把协议按钮和 Tesla 登录按钮全部禁用，并误导用户以为云端授权不可用。
+- Resolution: 默认值指向已发布的官方协议域名；Release guard 同时要求显式传入 `https://auth.teslalink.joviluma.com`，避免静默使用错误地址。每个发布包都要检查生成的 BuildConfig 和真机协议按钮状态。
+- Prevention rule: 公开协议地址与 API/Auth host 一样属于 Release 必填配置；构建脚本、构建命令和设备入口必须使用同一套 fail-fast 校验，不能只凭源码默认值判断登录可用。
+
+## 2026-09-02 重新授权导航不能让自动重定向抢先清栈
+
+- Pattern: 设置页重新授权先清会话，Dashboard 自动登录重定向可能在异步回调导航前执行并清掉 Settings，导致登录页返回桌面或没有返回入口。
+- Resolution: 登录页始终提供安全返回；有上一级时返回上一级，没有上一级时进入 Settings，并在返回窗口抑制自动重定向；成功授权后仍由统一导航清栈回 Dashboard。
+- Prevention rule: 对“清会话 + 异步导航”流程测试返回、取消、超时和成功四条路径；不要只测试成功回调，也不要依赖 `previousBackStackEntry` 作为唯一来源判断。
+
+## 2026-09-02 设备 ANR 需要区分应用阻塞与系统冻结
+
+- Pattern: OnePlus 设备曾报告 `Input dispatching timed out`，但 ANR 采样中 MateLink 主线程和工作线程均处于 `__refrigerator`，没有 Java/Kotlin 堆栈，不能据此改业务线程。
+- Prevention rule: ANR 必须同时读取 DropBox 主线程栈、进程 CPU/冻结状态和重启后复现结果；只有拿到应用栈或稳定复现后才修改代码。设备级冻结保留为 DEVICE REVIEW，不升级为应用 Bug 修复通过。

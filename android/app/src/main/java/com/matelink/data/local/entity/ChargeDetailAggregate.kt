@@ -13,11 +13,12 @@ import androidx.room.PrimaryKey
  */
 @Entity(
     tableName = "charge_detail_aggregates",
+    primaryKeys = ["carId", "chargeId"],
     foreignKeys = [
         ForeignKey(
             entity = ChargeSummary::class,
-            parentColumns = ["chargeId"],
-            childColumns = ["chargeId"],
+            parentColumns = ["carId", "chargeId"],
+            childColumns = ["carId", "chargeId"],
             onDelete = ForeignKey.CASCADE
         )
     ],
@@ -27,7 +28,6 @@ import androidx.room.PrimaryKey
     ]
 )
 data class ChargeDetailAggregate(
-    @PrimaryKey
     val chargeId: Int,
     val carId: Int,
 

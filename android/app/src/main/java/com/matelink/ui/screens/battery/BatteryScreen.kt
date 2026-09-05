@@ -102,6 +102,7 @@ fun BatteryScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val healthLoadError = stringResource(R.string.battery_health_load_error)
     val isDarkTheme = isSystemInDarkTheme()
     val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
 
@@ -111,7 +112,7 @@ fun BatteryScreen(
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(error)
+            snackbarHostState.showSnackbar(healthLoadError)
             viewModel.clearError()
         }
     }
@@ -157,18 +158,23 @@ fun BatteryScreen(
                             stats = stats,
                             units = uiState.units,
                             palette = palette,
+                            healthAvailability = uiState.batteryHealthAvailability,
                             onCardClick = { viewModel.showDetail() }
                         )
                     } else {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = stringResource(R.string.no_battery_data),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        if (uiState.batteryHealthAvailability != BatteryHealthAvailability.AVAILABLE) {
+                            BatteryHealthAvailabilityCard(uiState.batteryHealthAvailability)
+                        } else {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.no_battery_data),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -198,6 +204,7 @@ private fun BatteryHealthContent(
     stats: BatteryStats,
     units: com.matelink.data.api.models.Units?,
     palette: CarColorPalette,
+    healthAvailability: BatteryHealthAvailability,
     onCardClick: () -> Unit
 ) {
     Column(
@@ -207,6 +214,9 @@ private fun BatteryHealthContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (healthAvailability != BatteryHealthAvailability.AVAILABLE) {
+            BatteryHealthAvailabilityCard(healthAvailability)
+        }
         if (stats.hasCapacityEstimate) {
             val healthColor = when {
                 stats.healthPercent >= 90.0 -> StatusSuccess
@@ -287,6 +297,28 @@ private fun BatteryHealthContent(
         if (stats.hasRangeEstimate) {
             RangeCard(stats = stats, units = units, palette = palette, onClick = onCardClick)
         }
+    }
+}
+
+@Composable
+private fun BatteryHealthAvailabilityCard(availability: BatteryHealthAvailability) {
+    val message = when (availability) {
+        BatteryHealthAvailability.UNSUPPORTED -> stringResource(R.string.battery_health_unsupported)
+        BatteryHealthAvailability.COLLECTING -> stringResource(R.string.battery_health_collecting)
+        BatteryHealthAvailability.UNAVAILABLE -> stringResource(R.string.battery_health_load_error)
+        BatteryHealthAvailability.LOADING -> stringResource(R.string.battery_health_collecting)
+        BatteryHealthAvailability.AVAILABLE -> return
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(16.dp)
+        )
     }
 }
 

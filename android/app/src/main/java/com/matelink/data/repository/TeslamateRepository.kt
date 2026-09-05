@@ -10,11 +10,18 @@ import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.DriveDetail
+import com.matelink.data.api.models.DataReadiness
+import com.matelink.data.api.models.DataReadinessItem
+import com.matelink.data.api.models.DataReadinessResponse
 import com.matelink.data.api.models.GlobalSettingsData
 import com.matelink.data.api.models.Units
 import com.matelink.data.api.models.AdapterSnapshot
 import com.matelink.data.api.models.ParkedDetailData
 import com.matelink.data.api.models.StandbyWindowData
+import com.matelink.data.api.models.TelemetryConfigureResponse
+import com.matelink.data.api.models.TelemetryConfigureResult
+import com.matelink.data.api.models.TelemetryPairingResponse
+import com.matelink.data.api.models.TelemetryPairingStatus
 import com.matelink.data.api.models.UpdateData
 import com.matelink.data.local.AppSettings
 import com.matelink.data.local.ConnectionMode
@@ -23,6 +30,7 @@ import com.matelink.data.local.SettingsDataStore
 import com.matelink.di.TeslamateApiFactory
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.CancellationException
 import com.squareup.moshi.JsonDataException
 import com.squareup.moshi.JsonEncodingException
 import java.net.ConnectException
@@ -31,6 +39,7 @@ import java.net.UnknownHostException
 import javax.inject.Inject
 import javax.inject.Singleton
 import javax.net.ssl.SSLException
+import retrofit2.Response
 
 enum class ApiErrorKind {
     AUTH_REQUIRED,
@@ -64,6 +73,91 @@ sealed class ApiResult<out T> {
         val details: String? = null,
         val kind: ApiErrorKind = apiErrorKindFor(code, message)
     ) : ApiResult<Nothing>()
+}
+
+internal fun compatibilityDataReadiness(carId: Int): DataReadiness = DataReadiness(
+    capabilityVersion = 0,
+    vehicleUid = "self-hosted:car:$carId",
+    items = listOf("live_status", "location", "tpms", "drives", "charges", "battery_health").map {
+        DataReadinessItem(
+            key = it,
+            status = "unknown",
+            source = "legacy_compatibility",
+            messageKey = "data_readiness_legacy_compatibility",
+            action = "none"
+        )
+    }
+)
+
+internal fun dataReadinessResultForResponse(
+    response: Response<DataReadinessResponse>,
+    carId: Int,
+    allowLegacyCompatibility: Boolean = false
+): ApiResult<DataReadiness> = when {
+    response.code() == 404 && allowLegacyCompatibility -> ApiResult.Success(compatibilityDataReadiness(carId))
+    response.code() == 404 -> ApiResult.Error("Data readiness endpoint unavailable", response.code())
+    response.isSuccessful -> response.body()?.data?.let { ApiResult.Success(it) }
+        ?: ApiResult.Error("Data readiness unavailable", response.code())
+    else -> ApiResult.Error("Failed to fetch data readiness: ${response.code()}", response.code())
+}
+
+private val telemetryErrorCodes = setOf(
+    "pairing_required",
+    "permission_required",
+    "billing_blocked",
+    "telemetry_error",
+    "telemetry_not_configured"
+)
+
+internal fun telemetryErrorCodeForBody(body: String?): String? {
+    val code = Regex("\\\"error\\\"\\s*:\\s*\\\"([a-z_]+)\\\"")
+        .find(body.orEmpty())
+        ?.groupValues
+        ?.getOrNull(1)
+    return code?.takeIf(telemetryErrorCodes::contains)
+}
+
+internal fun telemetryPairingResultForResponse(
+    response: Response<TelemetryPairingResponse>
+): ApiResult<TelemetryPairingStatus> = when {
+    response.isSuccessful -> response.body()?.data?.let { ApiResult.Success(it) }
+        ?: ApiResult.Error("Fleet Telemetry status unavailable", response.code(), details = "telemetry_error")
+    else -> ApiResult.Error(
+        message = "Fleet Telemetry status unavailable",
+        code = response.code(),
+        details = telemetryErrorCodeForBody(response.errorBody()?.string()) ?: "telemetry_error"
+    )
+}
+
+internal const val STANDBY_ENDPOINT_UNAVAILABLE = "standby_endpoint_unavailable"
+
+internal fun standbyResultForResponse(
+    response: Response<com.matelink.data.api.models.StandbyResponse>
+): ApiResult<List<StandbyWindowData>> = when {
+    response.code() == 404 -> ApiResult.Error(
+        message = "Standby history endpoint unavailable",
+        code = response.code(),
+        details = STANDBY_ENDPOINT_UNAVAILABLE,
+        kind = ApiErrorKind.CONFIGURATION
+    )
+    response.isSuccessful -> response.body()?.data?.windows?.let { ApiResult.Success(it) }
+        ?: ApiResult.Error("Standby data unavailable", response.code())
+    else -> ApiResult.Error(
+        response.body()?.error ?: "Standby data unavailable",
+        response.code()
+    )
+}
+
+internal fun telemetryConfigureResultForResponse(
+    response: Response<TelemetryConfigureResponse>
+): ApiResult<TelemetryConfigureResult> = when {
+    response.isSuccessful -> response.body()?.data?.let { ApiResult.Success(it) }
+        ?: ApiResult.Error("Fleet Telemetry configuration unavailable", response.code(), details = "telemetry_error")
+    else -> ApiResult.Error(
+        message = "Fleet Telemetry configuration unavailable",
+        code = response.code(),
+        details = telemetryErrorCodeForBody(response.errorBody()?.string()) ?: "telemetry_error"
+    )
 }
 
 data class CarStatusWithUnits(
@@ -109,7 +203,7 @@ class TeslamateRepository @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val settingsRepository: SettingsRepository,
     private val connectionModeStore: ConnectionModeStore
-) {
+) : DataReadinessDataSource {
     private suspend fun isMockMode(): Boolean =
         BuildConfig.JOURVOLT_MOCK_LOGIN && settingsRepository.mockMode.firstOrNull() == true
 
@@ -160,6 +254,8 @@ class TeslamateRepository @Inject constructor(
             ?: return ApiResult.Error("Server not configured")
         return try {
             apiCall(primaryApi)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             ApiResult.Error(connectionErrorMessage(e))
         }
@@ -223,6 +319,8 @@ class TeslamateRepository @Inject constructor(
                         hint = "Continuing with vehicle check"
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 ConnectionStepResult.Warning(
                     message = "Readiness check failed: ${e.message ?: "unknown error"}",
@@ -260,6 +358,8 @@ class TeslamateRepository @Inject constructor(
                     firstCarName = cars.firstOrNull()?.displayName
                 )
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: javax.net.ssl.SSLHandshakeException) {
             ApiResult.Error("Server certificate cannot be verified")
         } catch (e: Exception) {
@@ -286,7 +386,10 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getCars(): ApiResult<List<CarData>> {
-        if (isMockMode()) return ApiResult.Success(MockDataProvider.getCars())
+        if (isMockMode()) {
+            val cars = MockDataProvider.getCars()
+            return ApiResult.Success(cars)
+        }
         return executeWithFallback { api ->
             try {
                 val response = api.getCars()
@@ -302,7 +405,7 @@ class TeslamateRepository @Inject constructor(
         }
     }
 
-    suspend fun getCar(carId: Int): ApiResult<CarData> {
+    override suspend fun getCar(carId: Int): ApiResult<CarData> {
         if (isMockMode()) {
             val car = MockDataProvider.getCars().firstOrNull { it.carId == carId }
                 ?: return ApiResult.Error("No car data returned")
@@ -327,7 +430,7 @@ class TeslamateRepository @Inject constructor(
         }
     }
 
-    suspend fun getCarStatus(carId: Int): ApiResult<CarStatusWithUnits> {
+    override suspend fun getCarStatus(carId: Int): ApiResult<CarStatusWithUnits> {
         if (isMockMode()) return ApiResult.Success(CarStatusWithUnits(MockDataProvider.getCarStatus(), MockDataProvider.getUnits()))
         return executeWithFallback { api ->
             try {
@@ -388,15 +491,7 @@ class TeslamateRepository @Inject constructor(
     suspend fun getStandbyWindows(carId: Int): ApiResult<List<StandbyWindowData>> {
         if (isMockMode()) return ApiResult.Error("Standby analysis requires real adapter data")
         return executeWithFallback { api ->
-            val response = api.getStandby(carId)
-            val windows = response.body()?.data?.windows
-            when {
-                response.isSuccessful && windows != null -> ApiResult.Success(windows)
-                else -> ApiResult.Error(
-                    response.body()?.error ?: "Standby data unavailable",
-                    response.code()
-                )
-            }
+            standbyResultForResponse(api.getStandby(carId))
         }
     }
 
@@ -546,7 +641,7 @@ class TeslamateRepository @Inject constructor(
                     if (health != null) {
                         ApiResult.Success(health, body?.meta?.toApiResponseMetadata())
                     } else {
-                        ApiResult.Error("No battery health data returned")
+                        ApiResult.Error("Battery health unavailable")
                     }
                 } else {
                     ApiResult.Error("Failed to fetch battery health: ${response.code()}", response.code())
@@ -554,6 +649,39 @@ class TeslamateRepository @Inject constructor(
             } catch (e: Exception) {
                 throw e
             }
+        }
+    }
+
+    override suspend fun getDataReadiness(carId: Int): ApiResult<DataReadiness> {
+        if (isMockMode()) return ApiResult.Success(compatibilityDataReadiness(carId))
+        val allowLegacyCompatibility = connectionModeStore.mode.first() == ConnectionMode.SELF_HOSTED
+        return executeWithFallback { api ->
+            dataReadinessResultForResponse(
+                api.getDataReadiness(carId),
+                carId,
+                allowLegacyCompatibility
+            )
+        }
+    }
+
+    override suspend fun getTelemetryPairingStatus(carId: Int): ApiResult<TelemetryPairingStatus> {
+        if (isMockMode()) {
+            return ApiResult.Success(TelemetryPairingStatus(status = "telemetry_not_configured"))
+        }
+        return executeWithFallback { api ->
+            telemetryPairingResultForResponse(api.getTelemetryPairing(carId))
+        }
+    }
+
+    override suspend fun configureTelemetry(carId: Int): ApiResult<TelemetryConfigureResult> {
+        if (isMockMode()) {
+            return ApiResult.Error(
+                message = "Fleet Telemetry is not configured",
+                details = "telemetry_not_configured"
+            )
+        }
+        return executeWithFallback { api ->
+            telemetryConfigureResultForResponse(api.configureTelemetry(carId))
         }
     }
 

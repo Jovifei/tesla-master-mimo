@@ -38,6 +38,7 @@ fun TeslaAccountSection(
 ) {
     val context = LocalContext.current
     val authenticated by viewModel.isAuthenticated.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
     var actionInProgress by rememberSaveable { mutableStateOf(false) }
     var deleteFailed by rememberSaveable { mutableStateOf(false) }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
@@ -94,6 +95,13 @@ fun TeslaAccountSection(
                 }
             }
             if (actionInProgress) CircularProgressIndicator(modifier = Modifier.padding(top = 4.dp))
+            when (val state = uiState) {
+                is TeslaLoginUiState.Error -> Text(
+                    stringResource(R.string.tesla_login_error, state.message),
+                    color = MaterialTheme.colorScheme.error
+                )
+                else -> Unit
+            }
             if (deleteFailed) {
                 Text(
                     stringResource(R.string.tesla_account_delete_failed),

@@ -12,13 +12,13 @@ import androidx.room.PrimaryKey
 @Immutable
 @Entity(
     tableName = "charges_summary",
+    primaryKeys = ["carId", "chargeId"],
     indices = [
         Index(value = ["carId"]),
         Index(value = ["carId", "startDate"])
     ]
 )
 data class ChargeSummary(
-    @PrimaryKey
     val chargeId: Int,
     val carId: Int,
 
@@ -47,5 +47,8 @@ data class ChargeSummary(
     val outsideTempAvg: Double?,
 
     // Odometer at charge time
-    val odometer: Double
+    val odometer: Double,
+
+    /** Exact nullable API fields; legacy scalar columns cannot represent their provenance. */
+    val apiEvidence: String? = null
 )

@@ -11,6 +11,7 @@ import com.matelink.data.local.dao.AggregateDao
 import com.matelink.data.model.Currency
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.repository.UnifiedHistoryRepository
 import com.matelink.domain.LocalDayBoundaries
 import com.matelink.domain.analytics.chargeTotalOverrideKey
 import com.matelink.domain.analytics.resolveChargeCostFromTotal
@@ -127,6 +128,7 @@ data class ChargesSummary(
 class ChargesViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val repository: TeslamateRepository,
+    private val historyRepository: UnifiedHistoryRepository,
     private val settingsDataStore: SettingsDataStore,
     private val chargeCostOverrideStore: ChargeCostOverrideStore,
     private val aggregateDao: AggregateDao,
@@ -137,6 +139,7 @@ class ChargesViewModel @Inject constructor(
     val uiState: StateFlow<ChargesUiState> = _uiState.asStateFlow()
 
     private var carId: Int? = null
+    private var historyCarId: Int? = null
     private var showShortDrivesCharges: Boolean = false
     private var allCharges: List<ChargeData> = emptyList()
     private var allPriceOverrides: Map<String, Double> = emptyMap()
@@ -187,7 +190,7 @@ class ChargesViewModel @Inject constructor(
             chargeCostOverrideStore.ensureLegacyMigrated()
             chargeCostOverrideStore.observeAll().collect { overrides ->
                 allPriceOverrides = overrides
-                val id = carId
+                val id = historyCarId
                 _uiState.update { state ->
                     state.copy(
                         priceOverrides = if (id == null) emptyMap() else {
@@ -223,7 +226,7 @@ class ChargesViewModel @Inject constructor(
             _uiState.update { state ->
                 state.copy(
                     priceOverrides = allCharges.mapNotNull { charge ->
-                        allPriceOverrides[chargeTotalOverrideKey(id, charge.chargeId)]
+                        allPriceOverrides[chargeTotalOverrideKey(historyCarId ?: id, charge.chargeId)]
                             ?.let { charge.chargeId to it }
                     }.toMap()
                 )
@@ -367,23 +370,22 @@ class ChargesViewModel @Inject constructor(
             val startDateStr = startDate?.let { LocalDayBoundaries.startOfDay(it) }
             val endDateStr = endDate?.let { LocalDayBoundaries.endOfDay(it) }
 
-            // Fetch charge IDs from local database aggregates
-            val dcChargeIds = try {
-                aggregateDao.getDcChargeIds(id).toSet()
-            } catch (e: Exception) {
-                emptySet()
-            }
-            val processedChargeIds = try {
-                aggregateDao.getAllProcessedChargeIds(id).toSet()
-            } catch (e: Exception) {
-                emptySet()
-            }
-
-            when (val result = repository.getCharges(id, startDateStr, endDateStr)) {
+            when (val result = historyRepository.load(id, startDateStr, endDateStr)) {
                 is ApiResult.Success -> {
-                    allCharges = result.data
-                    val priceOverrides = result.data.mapNotNull { charge ->
-                        allPriceOverrides[chargeTotalOverrideKey(id, charge.chargeId)]
+                    historyCarId = result.data.context.localHistoryCarId
+                    val dcChargeIds = try {
+                        aggregateDao.getDcChargeIds(result.data.context.localHistoryCarId).toSet()
+                    } catch (e: Exception) {
+                        emptySet()
+                    }
+                    val processedChargeIds = try {
+                        aggregateDao.getAllProcessedChargeIds(result.data.context.localHistoryCarId).toSet()
+                    } catch (e: Exception) {
+                        emptySet()
+                    }
+                    allCharges = result.data.charges
+                    val priceOverrides = result.data.charges.mapNotNull { charge ->
+                        allPriceOverrides[chargeTotalOverrideKey(result.data.context.localHistoryCarId, charge.chargeId)]
                             ?.let { charge.chargeId to it }
                     }.toMap()
                     val granularity = determineGranularity(startDate, endDate)
@@ -669,7 +671,7 @@ class ChargesViewModel @Inject constructor(
     }
 
     fun saveManualTotalAmount(chargeId: Int, totalAmount: Double?) {
-        val currentCarId = carId ?: return
+        val currentCarId = historyCarId ?: return
         val validTotal = validManualChargeTotal(totalAmount)
         if (totalAmount != null && validTotal == null) return
 

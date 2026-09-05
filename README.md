@@ -55,11 +55,12 @@ app_mimo/
 
 ### 真实数据、自托管服务器与地图 Key
 
-真实数据需要用户自己的自托管服务。MateLink 不直接登录 Tesla 账号，也不替代 TeslaMate；它只连接你已经部署好的 TeslaMateApi / MateLink-compatible API。
+真实数据可以通过 JourVolt/Tesla 云端登录获取实时车辆状态，也可以连接用户自己的自托管服务。MateLink 不在 App 内保存 Tesla 密码；自托管路径连接已经部署好的 TeslaMateApi / MateLink-compatible API。
 
 推荐拓扑：
 
 ```text
+MateLink App -> JourVolt Fleet API -> Tesla
 MateLink App -> TeslaMateApi/MateLink-compatible API -> TeslaMate Postgres/MQTT -> TeslaMate
 ```
 
@@ -213,11 +214,12 @@ The app intentionally separates mock mode and real mode:
 
 ### Real Data, Self-Hosted Server, and Map Keys
 
-Real data requires the user's own self-hosted server stack. MateLink does not log into Tesla directly and does not replace TeslaMate; it connects to an already deployed TeslaMateApi / MateLink-compatible API.
+Real-time data can come from the JourVolt/Tesla cloud login or from the user's own self-hosted service. MateLink does not receive or store the Tesla password in the app; the self-hosted path connects to an already deployed TeslaMateApi / MateLink-compatible API.
 
 Recommended topology:
 
 ```text
+MateLink App -> JourVolt Fleet API -> Tesla
 MateLink App -> TeslaMateApi/MateLink-compatible API -> TeslaMate Postgres/MQTT -> TeslaMate
 ```
 

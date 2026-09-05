@@ -6,6 +6,7 @@ import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.local.entity.SavedTripLeg
 import com.matelink.data.model.Currency
 import com.matelink.data.repository.ApiResult
@@ -114,7 +115,8 @@ class ChargeDetailViewModel @Inject constructor(
     private val repository: TeslamateRepository,
     private val settingsDataStore: SettingsDataStore,
     private val chargeCostOverrideStore: ChargeCostOverrideStore,
-    private val tripRepository: TripRepository
+    private val tripRepository: TripRepository,
+    private val vehicleContextRepository: VehicleContextRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChargeDetailUiState())
@@ -122,6 +124,7 @@ class ChargeDetailViewModel @Inject constructor(
 
     private var carId: Int? = null
     private var chargeId: Int? = null
+    private var historyCarId: Int? = null
 
     init {
         loadCurrency()
@@ -142,13 +145,18 @@ class ChargeDetailViewModel @Inject constructor(
 
         this.carId = carId
         this.chargeId = chargeId
+        val resolvedHistoryCarId = viewModelScope.launch {
+            historyCarId = vehicleContextRepository.requireLocalHistoryCarId(carId)
+        }
 
         viewModelScope.launch {
-            val containing = tripRepository.findTripContaining(carId, SavedTripLeg.TYPE_CHARGE, chargeId)
+            resolvedHistoryCarId.join()
+            val containing = tripRepository.findTripContaining(historyCarId ?: carId, SavedTripLeg.TYPE_CHARGE, chargeId)
             _uiState.update { it.copy(containingTrip = containing) }
         }
 
         viewModelScope.launch {
+            resolvedHistoryCarId.join()
             _uiState.update { it.copy(isLoading = true, error = null) }
 
             // Fetch charge detail and units in parallel
@@ -170,7 +178,7 @@ class ChargeDetailViewModel @Inject constructor(
                         is ApiResult.Success -> carResult.data.carSettings?.freeSupercharging == true
                         is ApiResult.Error -> false
                     }
-                    val manualTotalAmount = chargeCostOverrideStore.getAmount(carId, chargeId)
+                    val manualTotalAmount = chargeCostOverrideStore.getAmount(historyCarId ?: carId, chargeId)
                     val costPresentation = presentChargeDetailCost(
                         manualAmount = validManualChargeTotal(manualTotalAmount),
                         manuallyFree = isExplicitlyFree && isDcCharge,
@@ -207,7 +215,7 @@ class ChargeDetailViewModel @Inject constructor(
     }
 
     fun saveManualTotalAmount(totalAmount: Double?) {
-        val currentCarId = carId ?: return
+        val currentCarId = historyCarId ?: return
         val currentChargeId = chargeId ?: return
         val detail = _uiState.value.chargeDetail ?: return
         val validTotal = validManualChargeTotal(totalAmount)

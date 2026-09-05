@@ -25,11 +25,25 @@ services:
       TESLA_CLIENT_ID: ${TESLA_CLIENT_ID:-}
       TESLA_CLIENT_SECRET: ${TESLA_CLIENT_SECRET:-}
       TESLA_REDIRECT_URI: ${TESLA_REDIRECT_URI:-}
+      TESLA_FLEET_API_BASE: ${TESLA_FLEET_API_BASE:-}
+      TESLA_PARTNER_DOMAIN: ${TESLA_PARTNER_DOMAIN:-}
+      TELEMETRY_MQTT_URL: ${TELEMETRY_MQTT_URL:-}
+      TELEMETRY_MQTT_USERNAME: ${TELEMETRY_MQTT_USERNAME:-}
+      TELEMETRY_MQTT_PASSWORD: ${TELEMETRY_MQTT_PASSWORD:-}
+      TELEMETRY_MQTT_TOPIC_BASE: ${TELEMETRY_MQTT_TOPIC_BASE:-}
+      TELEMETRY_PUBLIC_HOST: ${TELEMETRY_PUBLIC_HOST:-}
+      TELEMETRY_PUBLIC_PORT: ${TELEMETRY_PUBLIC_PORT:-}
+      TELEMETRY_COMMAND_PROXY_URL: ${TELEMETRY_COMMAND_PROXY_URL:-}
+      TELEMETRY_CA_CERT_PATH: /run/secrets/fleet/ca.pem
+      TELEMETRY_VIN_HASH_KEY_BASE64: ${TELEMETRY_VIN_HASH_KEY_BASE64:-}
       JOURVOLT_APP_LINK_URI: ${JOURVOLT_APP_LINK_URI:-}
       JOURVOLT_TOKEN_KEY_BASE64: ${JOURVOLT_TOKEN_KEY_BASE64:-}
     depends_on:
       jourvolt-postgres:
         condition: service_healthy
+    networks:
+      - default
+      - telemetry
     ports:
       - "127.0.0.1:18090:8080"
     healthcheck:
@@ -42,6 +56,90 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    volumes:
+      - ${TELEMETRY_CA_CHAIN_FILE:-./secrets/telemetry/ca.pem}:/run/secrets/fleet/ca.pem:ro
+
+  jourvolt-mqtt:
+    image: eclipse-mosquitto:2.0.20
+    profiles: ["telemetry"]
+    restart: unless-stopped
+    mem_limit: 128m
+    environment:
+      MQTT_USERNAME: ${TELEMETRY_MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${TELEMETRY_MQTT_PASSWORD:-}
+    command: ["/bin/sh", "-c", "mosquitto_passwd -b -c /mosquitto/data/passwd \"$$MQTT_USERNAME\" \"$$MQTT_PASSWORD\" && exec mosquitto -c /mosquitto/config/mosquitto.conf"]
+    volumes:
+      - ./fleet-telemetry/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - jourvolt-mqtt-data:/mosquitto/data
+    networks:
+      - telemetry
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h 127.0.0.1 -u \"$$MQTT_USERNAME\" -P \"$$MQTT_PASSWORD\" -t '$$SYS/broker/version' -C 1 -W 3 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  fleet-telemetry:
+    # An unset image must never select an official tag implicitly. The renderer
+    # rejects the empty setting before this profile service can start.
+    image: ${FLEET_TELEMETRY_IMAGE:-example.invalid/jourvolt/fleet-telemetry:unconfigured}
+    profiles: ["telemetry"]
+    restart: unless-stopped
+    mem_limit: 256m
+    command: ["/fleet-telemetry", "-config=/etc/fleet-telemetry/server_config.json"]
+    depends_on:
+      jourvolt-mqtt:
+        condition: service_healthy
+      fleet-telemetry-config:
+        condition: service_completed_successfully
+    ports:
+      - "${TELEMETRY_PUBLIC_BIND:-127.0.0.1}:${TELEMETRY_PUBLIC_PORT:-4443}:4443"
+    expose:
+      - "8080"
+    volumes:
+      - fleet-telemetry-config:/etc/fleet-telemetry:ro
+      - ${TELEMETRY_SERVER_CERT_FILE:-./secrets/telemetry/server.crt}:/run/secrets/fleet/server.crt:ro
+      - ${TELEMETRY_SERVER_KEY_FILE:-./secrets/telemetry/server.key}:/run/secrets/fleet/server.key:ro
+    networks:
+      - telemetry
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  fleet-telemetry-config:
+    image: alpine:3.20
+    profiles: ["telemetry"]
+    restart: "no"
+    mem_limit: 64m
+    environment:
+      FLEET_TELEMETRY_IMAGE: ${FLEET_TELEMETRY_IMAGE:-}
+      TELEMETRY_MQTT_URL: ${TELEMETRY_MQTT_URL:-}
+      TELEMETRY_MQTT_USERNAME: ${TELEMETRY_MQTT_USERNAME:-}
+      TELEMETRY_MQTT_PASSWORD: ${TELEMETRY_MQTT_PASSWORD:-}
+      TELEMETRY_MQTT_TOPIC_BASE: ${TELEMETRY_MQTT_TOPIC_BASE:-}
+      TELEMETRY_PUBLIC_PORT: ${TELEMETRY_PUBLIC_PORT:-4443}
+      TELEMETRY_SERVER_CERT_PATH: /run/secrets/fleet/server.crt
+      TELEMETRY_SERVER_KEY_PATH: /run/secrets/fleet/server.key
+    command: ["/bin/sh", "/render-server-config.sh"]
+    volumes:
+      - ./fleet-telemetry/server_config.json.template:/template/server_config.json.template:ro
+      - ./fleet-telemetry/render-server-config.sh:/render-server-config.sh:ro
+      - ${TELEMETRY_SERVER_CERT_FILE:-./secrets/telemetry/server.crt}:/run/secrets/fleet/server.crt:ro
+      - ${TELEMETRY_SERVER_KEY_FILE:-./secrets/telemetry/server.key}:/run/secrets/fleet/server.key:ro
+      - fleet-telemetry-config:/rendered
 
 volumes:
   jourvolt-postgres:
+  jourvolt-mqtt-data:
+  fleet-telemetry-config:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=1m,mode=0700
+
+networks:
+  telemetry:
+    internal: true

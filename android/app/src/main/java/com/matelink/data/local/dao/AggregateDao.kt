@@ -16,11 +16,28 @@ interface AggregateDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertDriveAggregate(aggregate: DriveDetailAggregate)
 
+    @Query("""
+        INSERT OR IGNORE INTO drive_detail_aggregates (
+            driveId, carId, schemaVersion, computedAt, maxElevation, minElevation,
+            startElevation, endElevation, elevationGain, elevationLoss, hasElevationData,
+            maxInsideTemp, minInsideTemp, maxOutsideTemp, minOutsideTemp, maxPower, minPower,
+            climateOnPositions, positionCount, startLatitude, startLongitude, startCountryCode,
+            startCountryName, startRegionName, startCity, endLatitude, endLongitude, extraJson
+        )
+        SELECT driveId, :targetCarId, schemaVersion, computedAt, maxElevation, minElevation,
+            startElevation, endElevation, elevationGain, elevationLoss, hasElevationData,
+            maxInsideTemp, minInsideTemp, maxOutsideTemp, minOutsideTemp, maxPower, minPower,
+            climateOnPositions, positionCount, startLatitude, startLongitude, startCountryCode,
+            startCountryName, startRegionName, startCity, endLatitude, endLongitude, extraJson
+        FROM drive_detail_aggregates WHERE carId = :legacyCarId
+    """)
+    suspend fun copyDriveAggregatesFromLegacy(legacyCarId: Int, targetCarId: Int)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertDriveAggregates(aggregates: List<DriveDetailAggregate>)
 
-    @Query("SELECT * FROM drive_detail_aggregates WHERE driveId = :driveId")
-    suspend fun getDriveAggregate(driveId: Int): DriveDetailAggregate?
+    @Query("SELECT * FROM drive_detail_aggregates WHERE driveId = :driveId AND carId = :carId")
+    suspend fun getDriveAggregate(carId: Int, driveId: Int): DriveDetailAggregate?
 
     @Query("DELETE FROM drive_detail_aggregates WHERE carId = :carId")
     suspend fun deleteDriveAggregatesForCar(carId: Int)
@@ -30,11 +47,26 @@ interface AggregateDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertChargeAggregate(aggregate: ChargeDetailAggregate)
 
+    @Query("""
+        INSERT OR IGNORE INTO charge_detail_aggregates (
+            chargeId, carId, schemaVersion, computedAt, isFastCharger, fastChargerBrand,
+            connectorType, maxChargerPower, maxChargerVoltage, maxChargerCurrent, chargerPhases,
+            maxOutsideTemp, minOutsideTemp, chargePointCount, countryCode, countryName,
+            regionName, city, extraJson
+        )
+        SELECT chargeId, :targetCarId, schemaVersion, computedAt, isFastCharger, fastChargerBrand,
+            connectorType, maxChargerPower, maxChargerVoltage, maxChargerCurrent, chargerPhases,
+            maxOutsideTemp, minOutsideTemp, chargePointCount, countryCode, countryName,
+            regionName, city, extraJson
+        FROM charge_detail_aggregates WHERE carId = :legacyCarId
+    """)
+    suspend fun copyChargeAggregatesFromLegacy(legacyCarId: Int, targetCarId: Int)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertChargeAggregates(aggregates: List<ChargeDetailAggregate>)
 
-    @Query("SELECT * FROM charge_detail_aggregates WHERE chargeId = :chargeId")
-    suspend fun getChargeAggregate(chargeId: Int): ChargeDetailAggregate?
+    @Query("SELECT * FROM charge_detail_aggregates WHERE chargeId = :chargeId AND carId = :carId")
+    suspend fun getChargeAggregate(carId: Int, chargeId: Int): ChargeDetailAggregate?
 
     @Query("DELETE FROM charge_detail_aggregates WHERE carId = :carId")
     suspend fun deleteChargeAggregatesForCar(carId: Int)
@@ -50,7 +82,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT MAX(maxElevation) FROM drive_detail_aggregates a
-        JOIN drives_summary d ON a.driveId = d.driveId
+        JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId AND a.hasElevationData = 1
         AND d.startDate >= :startDate AND d.startDate < :endDate
     """)
@@ -66,7 +98,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT a.* FROM drive_detail_aggregates a
-        JOIN drives_summary d ON a.driveId = d.driveId
+        JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId AND a.hasElevationData = 1
         AND d.startDate >= :startDate AND d.startDate < :endDate
         ORDER BY a.maxElevation DESC LIMIT 1
@@ -99,7 +131,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT a.* FROM drive_detail_aggregates a
-        JOIN drives_summary d ON a.driveId = d.driveId
+        JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId
         AND a.elevationGain IS NOT NULL
         AND d.startDate >= :startDate AND d.startDate < :endDate
@@ -118,7 +150,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT MAX(maxOutsideTemp) FROM drive_detail_aggregates a
-        JOIN drives_summary d ON a.driveId = d.driveId
+        JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId
         AND d.startDate >= :startDate AND d.startDate < :endDate
     """)
@@ -134,7 +166,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT a.* FROM drive_detail_aggregates a
-        JOIN drives_summary d ON a.driveId = d.driveId
+        JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId AND a.maxOutsideTemp IS NOT NULL
         AND d.startDate >= :startDate AND d.startDate < :endDate
         ORDER BY a.maxOutsideTemp DESC LIMIT 1
@@ -159,7 +191,7 @@ interface AggregateDao {
     // Coldest outside temperature while driving in Range
     @Query("""
         SELECT MIN(minOutsideTemp) FROM drive_detail_aggregates a
-        JOIN drives_summary d ON a.driveId = d.driveId
+        JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId
         AND d.startDate >= :startDate AND d.startDate < :endDate
     """)
@@ -167,7 +199,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT a.* FROM drive_detail_aggregates a
-        JOIN drives_summary d ON a.driveId = d.driveId
+        JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId AND a.minOutsideTemp IS NOT NULL
         AND d.startDate >= :startDate AND d.startDate < :endDate
         ORDER BY a.minOutsideTemp ASC LIMIT 1
@@ -177,7 +209,7 @@ interface AggregateDao {
     // Hottest cabin temperature in Range
     @Query("""
         SELECT MAX(maxInsideTemp) FROM drive_detail_aggregates a
-        JOIN drives_summary d ON a.driveId = d.driveId
+        JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId
         AND d.startDate >= :startDate AND d.startDate < :endDate
     """)
@@ -186,7 +218,7 @@ interface AggregateDao {
     // Coldest cabin temperature in Range
     @Query("""
         SELECT MIN(minInsideTemp) FROM drive_detail_aggregates a
-        JOIN drives_summary d ON a.driveId = d.driveId
+        JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId
         AND d.startDate >= :startDate AND d.startDate < :endDate
     """)
@@ -195,7 +227,7 @@ interface AggregateDao {
     // Coldest outside temperature while charging in Range
     @Query("""
         SELECT MIN(minOutsideTemp) FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId
         AND c.startDate >= :startDate AND c.startDate < :endDate
     """)
@@ -217,7 +249,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT MAX(maxOutsideTemp) FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId
         AND c.startDate >= :startDate AND c.startDate < :endDate
     """)
@@ -233,7 +265,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT a.* FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.maxOutsideTemp IS NOT NULL
         AND c.startDate >= :startDate AND c.startDate < :endDate
         ORDER BY a.maxOutsideTemp DESC LIMIT 1
@@ -254,7 +286,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT a.* FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.minOutsideTemp IS NOT NULL
         AND c.startDate >= :startDate AND c.startDate < :endDate
         ORDER BY a.minOutsideTemp ASC LIMIT 1
@@ -269,7 +301,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT MAX(maxChargerPower) FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId
         AND c.startDate >= :startDate AND c.startDate < :endDate
     """)
@@ -285,7 +317,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT a.* FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.maxChargerPower IS NOT NULL
         AND c.startDate >= :startDate AND c.startDate < :endDate
         ORDER BY a.maxChargerPower DESC LIMIT 1
@@ -300,7 +332,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT COUNT(*) FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.isFastCharger = 0
         AND c.startDate >= :startDate AND c.startDate < :endDate
     """)
@@ -312,7 +344,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT COUNT(*) FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.isFastCharger = 1
         AND c.startDate >= :startDate AND c.startDate < :endDate
     """)
@@ -325,14 +357,14 @@ interface AggregateDao {
     // Sum of energy added for AC charges (join with summary to get energyAdded)
     @Query("""
         SELECT COALESCE(SUM(c.energyAdded), 0.0) FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.isFastCharger = 0
     """)
     suspend fun sumAcChargeEnergy(carId: Int): Double
 
     @Query("""
         SELECT COALESCE(SUM(c.energyAdded), 0.0) FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.isFastCharger = 0
         AND c.startDate >= :startDate AND c.startDate < :endDate
     """)
@@ -341,14 +373,14 @@ interface AggregateDao {
     // Sum of energy added for DC charges
     @Query("""
         SELECT COALESCE(SUM(c.energyAdded), 0.0) FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.isFastCharger = 1
     """)
     suspend fun sumDcChargeEnergy(carId: Int): Double
 
     @Query("""
         SELECT COALESCE(SUM(c.energyAdded), 0.0) FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.isFastCharger = 1
         AND c.startDate >= :startDate AND c.startDate < :endDate
     """)
@@ -397,7 +429,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT COUNT(DISTINCT a.startCountryCode) FROM drive_detail_aggregates a
-        JOIN drives_summary d ON a.driveId = d.driveId
+        JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId AND a.startCountryCode IS NOT NULL
         AND d.startDate >= :startDate AND d.startDate < :endDate
     """)
@@ -419,14 +451,14 @@ interface AggregateDao {
                    MIN(d.startDate) as firstVisitDate, MAX(d.startDate) as lastVisitDate,
                    COUNT(*) as driveCount, SUM(d.distance) as totalDistanceKm
             FROM drive_detail_aggregates a
-            JOIN drives_summary d ON a.driveId = d.driveId
+            JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
             WHERE a.carId = :carId AND a.startCountryCode IS NOT NULL
             GROUP BY a.startCountryCode
         ) drive_stats
         LEFT JOIN (
             SELECT ca.countryCode, SUM(cs.energyAdded) as totalChargeEnergyKwh, COUNT(*) as chargeCount
             FROM charge_detail_aggregates ca
-            JOIN charges_summary cs ON ca.chargeId = cs.chargeId
+            JOIN charges_summary cs ON ca.carId = cs.carId AND ca.chargeId = cs.chargeId
             WHERE ca.carId = :carId AND ca.countryCode IS NOT NULL
             GROUP BY ca.countryCode
         ) charge_stats ON drive_stats.countryCode = charge_stats.countryCode
@@ -449,7 +481,7 @@ interface AggregateDao {
                    MIN(d.startDate) as firstVisitDate, MAX(d.startDate) as lastVisitDate,
                    COUNT(*) as driveCount, SUM(d.distance) as totalDistanceKm
             FROM drive_detail_aggregates a
-            JOIN drives_summary d ON a.driveId = d.driveId
+            JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
             WHERE a.carId = :carId AND a.startCountryCode IS NOT NULL
             AND d.startDate >= :startDate AND d.startDate < :endDate
             GROUP BY a.startCountryCode
@@ -457,7 +489,7 @@ interface AggregateDao {
         LEFT JOIN (
             SELECT ca.countryCode, SUM(cs.energyAdded) as totalChargeEnergyKwh, COUNT(*) as chargeCount
             FROM charge_detail_aggregates ca
-            JOIN charges_summary cs ON ca.chargeId = cs.chargeId
+            JOIN charges_summary cs ON ca.carId = cs.carId AND ca.chargeId = cs.chargeId
             WHERE ca.carId = :carId AND ca.countryCode IS NOT NULL
             AND cs.startDate >= :startDate AND cs.startDate < :endDate
             GROUP BY ca.countryCode
@@ -484,14 +516,14 @@ interface AggregateDao {
                    MIN(d.startDate) as firstVisitDate, MAX(d.startDate) as lastVisitDate,
                    COUNT(*) as driveCount, SUM(d.distance) as totalDistanceKm
             FROM drive_detail_aggregates a
-            JOIN drives_summary d ON a.driveId = d.driveId
+            JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
             WHERE a.carId = :carId AND a.startCountryCode = :countryCode AND a.startRegionName IS NOT NULL
             GROUP BY a.startRegionName
         ) drive_stats
         LEFT JOIN (
             SELECT ca.regionName, SUM(cs.energyAdded) as totalChargeEnergyKwh, COUNT(*) as chargeCount
             FROM charge_detail_aggregates ca
-            JOIN charges_summary cs ON ca.chargeId = cs.chargeId
+            JOIN charges_summary cs ON ca.carId = cs.carId AND ca.chargeId = cs.chargeId
             WHERE ca.carId = :carId AND ca.countryCode = :countryCode AND ca.regionName IS NOT NULL
             GROUP BY ca.regionName
         ) charge_stats ON drive_stats.regionName = charge_stats.regionName
@@ -514,7 +546,7 @@ interface AggregateDao {
                    MIN(d.startDate) as firstVisitDate, MAX(d.startDate) as lastVisitDate,
                    COUNT(*) as driveCount, SUM(d.distance) as totalDistanceKm
             FROM drive_detail_aggregates a
-            JOIN drives_summary d ON a.driveId = d.driveId
+            JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
             WHERE a.carId = :carId AND a.startCountryCode = :countryCode AND a.startRegionName IS NOT NULL
             AND d.startDate >= :startDate AND d.startDate < :endDate
             GROUP BY a.startRegionName
@@ -522,7 +554,7 @@ interface AggregateDao {
         LEFT JOIN (
             SELECT ca.regionName, SUM(cs.energyAdded) as totalChargeEnergyKwh, COUNT(*) as chargeCount
             FROM charge_detail_aggregates ca
-            JOIN charges_summary cs ON ca.chargeId = cs.chargeId
+            JOIN charges_summary cs ON ca.carId = cs.carId AND ca.chargeId = cs.chargeId
             WHERE ca.carId = :carId AND ca.countryCode = :countryCode AND ca.regionName IS NOT NULL
             AND cs.startDate >= :startDate AND cs.startDate < :endDate
             GROUP BY ca.regionName
@@ -548,7 +580,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT COUNT(DISTINCT a.startCity) FROM drive_detail_aggregates a
-        JOIN drives_summary d ON a.driveId = d.driveId
+        JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId AND a.startCity IS NOT NULL
         AND d.startDate >= :startDate AND d.startDate < :endDate
     """)
@@ -567,7 +599,7 @@ interface AggregateDao {
     @Query("""
         SELECT a.startCity as city, a.startCountryCode as countryCode, COUNT(*) as driveCount
         FROM drive_detail_aggregates a
-        JOIN drives_summary d ON a.driveId = d.driveId
+        JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId AND a.startCity IS NOT NULL
         AND d.startDate >= :startDate AND d.startDate < :endDate
         GROUP BY a.startCity, a.startCountryCode
@@ -602,7 +634,7 @@ interface AggregateDao {
     @Query("""
         SELECT a.city, a.countryCode, COUNT(*) as chargeCount, SUM(c.energyAdded) as totalEnergy
         FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.city IS NOT NULL
         GROUP BY a.city, a.countryCode
         ORDER BY chargeCount DESC
@@ -653,9 +685,9 @@ interface AggregateDao {
             countryName = :countryName,
             regionName = :regionName,
             city = :city
-        WHERE chargeId IN (
+        WHERE carId = :carId AND chargeId IN (
             SELECT c.chargeId FROM charges_summary c
-            JOIN charge_detail_aggregates a ON c.chargeId = a.chargeId
+            JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
             WHERE a.carId = :carId
             AND CAST(c.latitude * 100 AS INT) = :gridLat
             AND CAST(c.longitude * 100 AS INT) = :gridLon
@@ -684,7 +716,7 @@ interface AggregateDao {
 
     @Query("""
         SELECT COUNT(*) FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId
         AND c.latitude IS NOT NULL
         AND c.longitude IS NOT NULL
@@ -705,7 +737,7 @@ interface AggregateDao {
     // Get coordinates of charges that need geocoding
     @Query("""
         SELECT c.latitude, c.longitude FROM charge_detail_aggregates a
-        JOIN charges_summary c ON a.chargeId = c.chargeId
+        JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId
         AND c.latitude IS NOT NULL
         AND c.longitude IS NOT NULL
@@ -720,7 +752,7 @@ interface AggregateDao {
         SELECT c.chargeId, c.latitude, c.longitude, c.energyAdded, c.startDate,
                a.isFastCharger, c.address
         FROM charges_summary c
-        JOIN charge_detail_aggregates a ON c.chargeId = a.chargeId
+        JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
         WHERE a.carId = :carId
         AND a.countryCode = :countryCode
         AND c.latitude IS NOT NULL
@@ -733,7 +765,7 @@ interface AggregateDao {
         SELECT c.chargeId, c.latitude, c.longitude, c.energyAdded, c.startDate,
                a.isFastCharger, c.address
         FROM charges_summary c
-        JOIN charge_detail_aggregates a ON c.chargeId = a.chargeId
+        JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
         WHERE a.carId = :carId
         AND a.countryCode = :countryCode
         AND c.latitude IS NOT NULL
@@ -754,7 +786,7 @@ interface AggregateDao {
         SELECT a.driveId, a.startLatitude as latitude, a.startLongitude as longitude,
                d.distance, d.startDate, d.startAddress as address
         FROM drive_detail_aggregates a
-        JOIN drives_summary d ON a.driveId = d.driveId
+        JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId
         AND a.startCountryCode = :countryCode
         AND a.startLatitude IS NOT NULL
@@ -768,7 +800,7 @@ interface AggregateDao {
         SELECT a.driveId, a.startLatitude as latitude, a.startLongitude as longitude,
                d.distance, d.startDate, d.startAddress as address
         FROM drive_detail_aggregates a
-        JOIN drives_summary d ON a.driveId = d.driveId
+        JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId
         AND a.startCountryCode = :countryCode
         AND a.startLatitude IS NOT NULL
@@ -788,7 +820,7 @@ interface AggregateDao {
     /** All DC charge summaries for a car (for trip detection). */
     @Query("""
         SELECT c.* FROM charges_summary c
-        INNER JOIN charge_detail_aggregates a ON c.chargeId = a.chargeId
+        INNER JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
         WHERE c.carId = :carId AND a.isFastCharger = 1
         ORDER BY c.startDate ASC
     """)
@@ -798,19 +830,19 @@ interface AggregateDao {
     @Query("""
         SELECT driveId, startLatitude, startLongitude
         FROM drive_detail_aggregates
-        WHERE driveId IN (:driveIds)
+        WHERE carId = :carId AND driveId IN (:driveIds)
         AND startLatitude IS NOT NULL AND startLongitude IS NOT NULL
     """)
-    suspend fun getDriveCoordinates(driveIds: List<Int>): List<DriveCoordinateResult>
+    suspend fun getDriveCoordinates(carId: Int, driveIds: List<Int>): List<DriveCoordinateResult>
 
     /** Drive start + end coordinates for trip country resolution. */
     @Query("""
         SELECT driveId, startLatitude, startLongitude, endLatitude, endLongitude
         FROM drive_detail_aggregates
-        WHERE driveId IN (:driveIds)
+        WHERE carId = :carId AND driveId IN (:driveIds)
         AND startLatitude IS NOT NULL AND startLongitude IS NOT NULL
     """)
-    suspend fun getDriveEdgeCoordinates(driveIds: List<Int>): List<DriveEdgeCoordinateResult>
+    suspend fun getDriveEdgeCoordinates(carId: Int, driveIds: List<Int>): List<DriveEdgeCoordinateResult>
 }
 
 /**

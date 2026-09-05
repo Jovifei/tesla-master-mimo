@@ -87,7 +87,8 @@ fun MoreScreen(
     onNavigateToVampire: (carId: Int) -> Unit = {},
     onNavigateToTimeline: (carId: Int) -> Unit = {},
     onNavigateToAnnualReport: (carId: Int) -> Unit = {},
-    onNavigateToExport: (carId: Int) -> Unit = {}
+    onNavigateToExport: (carId: Int) -> Unit = {},
+    onNavigateToReadiness: (carId: Int) -> Unit = {}
 ) {
     val palette = swissPalette()
     Scaffold(
@@ -202,6 +203,12 @@ fun MoreScreen(
             item { SectionHeader(stringResource(R.string.more_section_system)) }
             item {
                 SectionCard {
+                    MoreRow(
+                        icon = Icons.Default.VerifiedUser,
+                        title = stringResource(R.string.more_item_data_readiness),
+                        onClick = { onNavigateToReadiness(carId) }
+                    )
+                    MoreDivider()
                     MoreRow(
                         icon = Icons.Default.Update,
                         title = stringResource(R.string.more_item_software_updates),
