@@ -138,7 +138,7 @@ class DrivesViewModel @Inject constructor(
 
     companion object {
         private const val MIN_DURATION_MINUTES = 1
-        private const val MIN_ROUTE_DISTANCE_KM = 0.5
+        private const val MIN_ROUTE_DISTANCE_KM = 0.2
 
         private const val KEY_DATE_FILTER = "filter_date"
         private const val KEY_DISTANCE_FILTER = "filter_distance"
@@ -332,13 +332,13 @@ class DrivesViewModel @Inject constructor(
                 (drive.distance ?: 0.0) >= MIN_ROUTE_DISTANCE_KM
         }
 
-        // Apply distance filter for list display
+        // Apply distance filter for list display, sorted newest first
         val displayDrives = routeDrives.filter { drive ->
             val distance = drive.distance ?: 0.0
             val minOk = distanceFilter.minDistanceKm?.let { distance >= it } ?: true
             val maxOk = distanceFilter.maxDistanceKm?.let { distance < it } ?: true
             minOk && maxOk
-        }
+        }.sortedByDescending { it.startDate }
 
         // Apply distance filter to all drives for summary/charts (include short drives)
         val drivesForStats = routeDrives.filter { drive ->

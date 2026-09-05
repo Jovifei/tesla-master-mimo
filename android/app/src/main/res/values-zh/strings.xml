@@ -172,6 +172,7 @@
     <string name="snapshot_source_mock">本地模拟</string>
     <string name="snapshot_source_mixed">混合来源</string>
     <string name="snapshot_source_unavailable">数据不可用</string>
+    <string name="snapshot_source_asleep">车辆休眠</string>
     <string name="status_unknown">暂无数据</string>
     <string name="battery_history_navigation_note">查看已记录的电池历史与容量详情</string>
     <string name="vehicle_model_3">Model 3</string>
@@ -651,8 +652,27 @@
     <string name="tpms_trend_conclusion_ambient">可能受环境温度影响；原因尚未确认。</string>
     <string name="tpms_trend_conclusion_highway">可能受高速行驶升温影响；原因尚未确认。</string>
     <string name="tpms_trend_conclusion_parking">可能与停车后的胎压变化有关；原因尚未确认。</string>
-    <string name="tpms_trend_conclusion_insufficient">可能因素不可用：证据不足。</string>
     <string name="tpms_trend_recommendation_manual_cold_check">建议人工进行冷态检查。</string>
+    <string name="temperature_trend_title">温度趋势</string>
+    <string name="temperature_trend_window_7">近 7 天</string>
+    <string name="temperature_trend_window_30">近 30 天</string>
+    <string name="temperature_trend_load_failed">温度历史加载失败，请重试。</string>
+    <string name="temperature_trend_unavailable">此时间范围内没有可用的温度历史记录。</string>
+    <string name="temperature_trend_chart_title">车内 / 车外温度变化曲线</string>
+    <string name="temperature_inside_legend">车内</string>
+    <string name="temperature_outside_legend">车外</string>
+    <string name="temperature_current_inside">当前车内</string>
+    <string name="temperature_current_outside">当前车外</string>
+    <string name="temperature_max_outside">最高车外</string>
+    <string name="temperature_max_inside">最高车内</string>
+    <string name="temperature_min_outside">最低车外</string>
+    <string name="temperature_min_inside">最低车内</string>
+    <string name="temperature_cabin_diff">最大温差</string>
+    <string name="temperature_insights_title">温度分析与环境洞察</string>
+    <string name="temperature_insights_solar_gain">暴晒升温指数</string>
+    <string name="temperature_insights_solar_desc">车内在阳光直射下升温较快，建议在高温天气提前使用 App 开启驾驶室过热保护或提前开启空调降温。</string>
+    <string name="temperature_insights_climate_good">空调温控表现</string>
+    <string name="temperature_insights_climate_good_desc">行程中车内温度维持在适宜区间，空调系统温控调节正常。</string>
     <string name="tpms_pressure_unit">bar</string>
     <string name="settings_tpms_entry_subtitle">目标胎压与高低压提醒阈值</string>
     <string name="tpms_profile_title">每辆车的冷态胎压设置</string>
@@ -1042,15 +1062,19 @@
     <string name="settings_primary_server">主服务器</string>
     <string name="settings_report_issue">报告问题</string>
     <string name="settings_release_notes_title">本次更新</string>
-    <string name="settings_release_notes_version">MateLink 1.4.4</string>
+    <string name="settings_release_notes_version">MateLink 2.1.0</string>
     <string name="settings_release_notes_view">查看本次更新</string>
     <string name="settings_release_notes_close">知道了</string>
-    <string name="settings_release_notes_body">• 修复协议地址漏配导致 Tesla 登录按钮被错误禁用的问题。
-• 登录页统一为说明、协议确认、云端登录和自托管面板，重新授权可返回设置。
-• 首次登录的数据状态会明确区分可用、等待、收集中和不支持。
-• 待机历史接口暂不可用时不再显示通用错误，改为保守使用本机历史。
-• 高德配置改为统一面板的三步向导，并保留复制和验证操作。
-• 高级网络设置现在区分云端连接和自托管连接。</string>
+    <string name="settings_release_notes_body">• 行程详情页精简重构：聚焦展示行程、速度、功率、电量核心指标，提升信息获取效率。
+• 全新推出独立「行程曲线分析」二级画面，支持速度曲线、行程距离曲线、功率输出/回收曲线、电量变化曲线及海拔曲线全维度呈现。
+• 行程面板新增一键直达曲线分析入口与图表联动游标交互。
+• 全新推出车内/车外温度变化趋势双曲线，支持近7日/30日对比与暴晒温升环境洞察。
+• 仪表盘“位置”卡片高度对齐与单行精简，视觉更加和谐对称。
+• 胎压趋势图升级右上角清晰轮位图例，横轴平滑显示采样日期。
+• 修复充电记录详情页 404 问题并提供完整充电曲线分析。
+• 统一能耗分析与费用分析为全新 Material 3 风格圆角轻质卡片。
+• 待机历史接口暂不可用时保持稳定，保守使用本机历史。
+• 彻底清除开发调试阶段残留的测试充电数据，保障数据真实性。</string>
     <string name="settings_resync_button">重新同步</string>
     <string name="settings_resync_confirm">确认重新同步</string>
     <string name="settings_resync_dialog_text_delete">这将删除所有本地数据。</string>
@@ -1442,4 +1466,22 @@
     <string name="telemetry_action_retry_configuration">重试数据采集配置</string>
     <string name="telemetry_virtual_key_unavailable">Tesla 虚拟钥匙链接不可用，请刷新后重试。</string>
     <string name="more_item_data_readiness">数据状态</string>
+    <string name="edit_vehicle_photo">更换车辆照片</string>
+    <string name="action_choose_custom_photo">从相册选取爱车照片</string>
+    <string name="action_restore_default_photo">恢复官方车型图</string>
+    <string name="custom_photo_updated">已更新车辆照片</string>
+    <string name="custom_photo_restored">已恢复官方车型图</string>
+    <string name="amap_unconfigured_prompt">未配置高德</string>
+    <string name="gps_waiting_prompt">等待车端 GPS</string>
+    <string name="active_driving_hud_title">正在行驶</string>
+    <string name="active_charging_hud_title">正在充电</string>
+    <string name="close_hud">收起</string>
+    <string name="expand_hud">展开</string>
+    <string name="battery_service_mode_title">关于电池健康与官方测试</string>
+    <string name="battery_service_mode_desc">当前健康度基于表显等效满电续航智能推算（约 %1$.1f%%）。如需进行 Tesla 官方高压电池深度健康校准测试，可在车辆驻车并连接充电桩时，于中控屏依次点击「控制 -> 软件 -> 长按车辆型号文字输入 service 进入服务模式 -> 高压电池 -> 电池健康测试」，系统将自动执行完整的放电与满充校准。</string>
+    <string name="drive_curves_title">行程曲线分析</string>
+    <string name="drive_curves_action">详细曲线</string>
+    <string name="drive_curves_banner_title">行程动态曲线分析</string>
+    <string name="drive_curves_banner_subtitle">点击查看速度、里程、功率、电量与海拔变化</string>
+    <string name="distance_profile">行程距离曲线</string>
 </resources>

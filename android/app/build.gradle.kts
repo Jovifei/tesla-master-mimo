@@ -38,8 +38,8 @@ android {
         applicationId = "com.matelink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "1.4.5"
+        versionCode = 22
+        versionName = "2.1.3"
         buildConfigField("String", "GIT_SHA", "\"${resolveGitSha()}\"")
         val publicInfoBaseUrl = providers.gradleProperty("MATELINK_PUBLIC_INFO_BASE_URL")
             .orElse("https://auth.teslalink.joviluma.com")
@@ -101,19 +101,25 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".test.mock"
-            resValue("string", "app_name", "MateLink Test")
-            buildConfigField("boolean", "JOURVOLT_MOCK_LOGIN", "true")
-            buildConfigField("String", "JOURVOLT_MOCK_SOURCE", "\"mock_fixture\"")
-            buildConfigField("boolean", "JOURVOLT_CLOUD_LOGIN", "false")
-            val mockBaseUrl = providers.gradleProperty("JOURVOLT_MOCK_BASE_URL")
-                .orElse("http://10.0.2.2:18090/")
+            val customAppIdSuffix = providers.gradleProperty("MATELINK_APP_ID_SUFFIX").orNull
+            if (customAppIdSuffix != null) {
+                applicationIdSuffix = customAppIdSuffix.ifEmpty { null }
+            } else {
+                applicationIdSuffix = ".test.mock"
+            }
+            resValue("string", "app_name", "MateLink")
+            buildConfigField("boolean", "JOURVOLT_MOCK_LOGIN", "false")
+            buildConfigField("String", "JOURVOLT_MOCK_SOURCE", "\"\"")
+            buildConfigField("boolean", "JOURVOLT_CLOUD_LOGIN", "true")
+            val cloudBaseUrl = providers.gradleProperty("JOURVOLT_API_BASE_URL")
+                .orElse("https://api.teslalink.joviluma.com/")
                 .get()
-            buildConfigField("String", "JOURVOLT_MOCK_BASE_URL", quoteBuildConfigString(mockBaseUrl))
-            val debugApiBaseUrl = providers.gradleProperty("JOURVOLT_DEBUG_API_BASE_URL")
-                .orElse(mockBaseUrl)
+            buildConfigField("String", "JOURVOLT_API_BASE_URL", quoteBuildConfigString(cloudBaseUrl))
+            val authHost = providers.gradleProperty("JOURVOLT_AUTH_HOST")
+                .orElse("auth.teslalink.joviluma.com")
                 .get()
-            buildConfigField("String", "JOURVOLT_API_BASE_URL", quoteBuildConfigString(debugApiBaseUrl))
+            buildConfigField("String", "JOURVOLT_AUTH_HOST", quoteBuildConfigString(authHost))
+            manifestPlaceholders["jourvoltAuthHost"] = authHost
         }
         release {
             isMinifyEnabled = true
@@ -232,6 +238,9 @@ dependencies {
     // Glance (App Widgets)
     implementation(libs.glance.appwidget)
     implementation(libs.glance.material3)
+
+    // Image loading
+    implementation(libs.coil.compose)
 
     // Charts
     implementation(libs.mpandroidchart)

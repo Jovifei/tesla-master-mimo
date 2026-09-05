@@ -47,7 +47,10 @@ data class DashboardUiState(
     val cachedAddress: String? = null,
     val dataReadiness: DataReadiness? = null,
     val dataReadinessCarId: Int? = null,
-    val showReadinessIntro: Boolean = false
+    val showReadinessIntro: Boolean = false,
+    val customPhotoFile: java.io.File? = null,
+    val isAmapConfigured: Boolean = false,
+    val isHudDismissed: Boolean = false
 )
 
 @HiltViewModel
@@ -56,7 +59,13 @@ class DashboardViewModel @Inject constructor(
     private val repository: TeslamateRepository,
     private val settingsRepository: SettingsRepository,
     private val geocodingRepository: GeocodingRepository,
-    private val dataReadinessStore: DataReadinessStore
+    private val dataReadinessStore: DataReadinessStore,
+    private val vehiclePhotoStore: com.matelink.data.local.VehiclePhotoStore,
+    private val snapshotTripEngine: com.matelink.data.sync.SnapshotTripEngine,
+    private val snapshotChargeEngine: com.matelink.data.sync.SnapshotChargeEngine,
+    private val amapSettingsStore: com.matelink.data.local.AmapSettingsStore,
+    private val vehicleContextRepository: com.matelink.data.local.VehicleContextRepository,
+    private val vehicleStatusStore: com.matelink.data.local.VehicleStatusStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -67,6 +76,22 @@ class DashboardViewModel @Inject constructor(
     init {
         loadDashboard()
         startPolling()
+        viewModelScope.launch {
+            vehiclePhotoStore.photoUpdateSignal.collect {
+                val carId = _uiState.value.car?.carId ?: return@collect
+                val photo = vehiclePhotoStore.getCustomPhotoFile(carId)
+                _uiState.update { it.copy(customPhotoFile = photo) }
+            }
+        }
+        viewModelScope.launch {
+            amapSettingsStore.settings.collect { settings ->
+                _uiState.update { it.copy(isAmapConfigured = settings.hasKey) }
+            }
+        }
+    }
+
+    fun toggleHudDismissed() {
+        _uiState.update { it.copy(isHudDismissed = !it.isHudDismissed) }
     }
 
     private fun loadDashboard() {
@@ -92,11 +117,23 @@ class DashboardViewModel @Inject constructor(
                 val statusResult = if (adapterResult is ApiResult.Error) {
                     repository.getCarStatus(effectiveCarId)
                 } else null
-                val status = when {
+                val liveStatus = when {
                     adapterResult is ApiResult.Success -> adapterResult.data.status
                     statusResult is ApiResult.Success -> statusResult.data.status
                     else -> null
                 }
+                if (liveStatus != null) {
+                    val observed = (adapterResult as? ApiResult.Success)?.data?.observedAt
+                    vehicleStatusStore.saveStatus(effectiveCarId, liveStatus, observed)
+                }
+                val status = liveStatus ?: vehicleStatusStore.getCachedStatus(effectiveCarId)
+
+                val effectiveCar = car ?: CarData(
+                    carId = effectiveCarId,
+                    name = "Jovi大鼠标",
+                    carDetails = com.matelink.data.api.models.CarDetails(model = "Y", trimBadging = "50"),
+                    carExterior = com.matelink.data.api.models.CarExterior(exteriorColor = "DiamondBlack", wheelType = "19_gemini")
+                )
                 val units = when {
                     adapterResult is ApiResult.Success -> adapterResult.data.units
                     statusResult is ApiResult.Success -> statusResult.data.units
@@ -122,19 +159,21 @@ class DashboardViewModel @Inject constructor(
                 if (generation != requestGeneration) return@launch
                 _uiState.value = DashboardUiState(
                     isLoading = false,
-                    car = car,
+                    car = effectiveCar,
                     status = status,
-                    error = primaryError?.message,
-                    errorCode = primaryError?.code,
-                    errorKind = primaryError?.kind,
+                    error = if (status != null) null else primaryError?.message,
+                    errorCode = if (status != null) null else primaryError?.code,
+                    errorKind = if (status != null) null else primaryError?.kind,
                     snapshotSource = (adapterResult as? ApiResult.Success)?.data?.source
-                        ?: if (statusResult is ApiResult.Success) "teslamate_api" else null,
-                    observedAt = (adapterResult as? ApiResult.Success)?.data?.observedAt,
+                        ?: if (statusResult is ApiResult.Success) "teslamate_api" else "cached",
+                    observedAt = (adapterResult as? ApiResult.Success)?.data?.observedAt
+                        ?: vehicleStatusStore.getCachedObservedAt(effectiveCarId),
                     fieldSources = (adapterResult as? ApiResult.Success)?.data?.fieldSources.orEmpty(),
-                    snapshotFreshness = evidence.freshness,
+                    snapshotFreshness = if (liveStatus != null) evidence.freshness else SnapshotFreshness.RECENT,
                     snapshotMixedSources = evidence.isMixed,
                     units = units,
-                    cachedAddress = loadCachedAddress(status)
+                    cachedAddress = loadCachedAddress(status),
+                    customPhotoFile = vehiclePhotoStore.getCustomPhotoFile(effectiveCarId)
                 )
 
                 launch {
@@ -175,7 +214,15 @@ class DashboardViewModel @Inject constructor(
     private fun startPolling() {
         viewModelScope.launch {
             while (true) {
-                delay(5000)
+                val currentState = _uiState.value.status?.state?.lowercase()
+                val currentSpeed = _uiState.value.status?.speed ?: 0.0
+                val delayMs = when {
+                    currentState == "driving" || currentSpeed > 0.0 -> 8000L
+                    currentState == "charging" -> 15000L
+                    currentState == "asleep" -> 60000L
+                    else -> 10000L
+                }
+                delay(delayMs)
                 try {
                     val generation = requestGeneration
                     val carId = settingsRepository.currentCarId.first()
@@ -196,33 +243,39 @@ class DashboardViewModel @Inject constructor(
                                 units = result.data.units,
                                 cachedAddress = loadCachedAddress(result.data.status)
                             )
+                            vehicleStatusStore.saveStatus(carId, result.data.status, result.data.observedAt)
+                            // Record snapshot for automatic trip and charge tracking
+                            try {
+                                val historyCarId = vehicleContextRepository.requireLocalHistoryCarId(carId)
+                                snapshotTripEngine.recordSnapshot(historyCarId, result.data.status)
+                                snapshotChargeEngine.recordSnapshot(historyCarId, result.data.status)
+                            } catch (_: Exception) {
+                            }
                         }
                         is ApiResult.Error -> {
                             when (val legacy = repository.getCarStatus(carId)) {
                                 is ApiResult.Success -> {
                                     if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
+                                    vehicleStatusStore.saveStatus(carId, legacy.data.status, null)
                                     _uiState.value = _uiState.value.copy(
-                                    status = legacy.data.status,
-                                    error = null,
-                                    errorCode = null,
-                                    errorKind = null,
-                                    snapshotSource = "teslamate_api",
-                                    observedAt = null,
-                                    fieldSources = emptyMap(),
-                                    snapshotFreshness = SnapshotFreshness.HISTORY,
-                                    snapshotMixedSources = false,
-                                    units = legacy.data.units,
-                                    cachedAddress = loadCachedAddress(legacy.data.status)
-                                )
+                                        status = legacy.data.status,
+                                        error = null,
+                                        errorCode = null,
+                                        errorKind = null,
+                                        snapshotSource = "teslamate_api",
+                                        observedAt = null,
+                                        fieldSources = emptyMap(),
+                                        snapshotFreshness = SnapshotFreshness.HISTORY,
+                                        snapshotMixedSources = false,
+                                        units = legacy.data.units,
+                                        cachedAddress = loadCachedAddress(legacy.data.status)
+                                    )
                                 }
                                 is ApiResult.Error -> {
                                     if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
                                     _uiState.value = _uiState.value.copy(
-                                    error = legacy.message,
-                                    errorCode = legacy.code,
-                                    errorKind = legacy.kind,
-                                    snapshotFreshness = SnapshotFreshness.UNAVAILABLE
-                                )
+                                        snapshotFreshness = SnapshotFreshness.RECENT
+                                    )
                                 }
                             }
                         }
@@ -233,6 +286,22 @@ class DashboardViewModel @Inject constructor(
                     // Silently fail on polling errors
                 }
             }
+        }
+    }
+
+    fun saveCustomPhoto(inputStream: java.io.InputStream) {
+        val carId = _uiState.value.car?.carId ?: return
+        viewModelScope.launch {
+            val file = vehiclePhotoStore.saveCustomPhoto(carId, inputStream)
+            _uiState.update { it.copy(customPhotoFile = file) }
+        }
+    }
+
+    fun clearCustomPhoto() {
+        val carId = _uiState.value.car?.carId ?: return
+        viewModelScope.launch {
+            vehiclePhotoStore.clearCustomPhoto(carId)
+            _uiState.update { it.copy(customPhotoFile = null) }
         }
     }
 

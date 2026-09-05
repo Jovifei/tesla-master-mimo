@@ -42,6 +42,7 @@ import com.matelink.ui.screens.charges.ChargeDetailScreen
 import com.matelink.ui.screens.charges.ChargesScreen
 import com.matelink.ui.screens.charges.CurrentChargeScreen
 import com.matelink.ui.screens.dashboard.DashboardScreen
+import com.matelink.ui.screens.drives.DriveCurvesScreen
 import com.matelink.ui.screens.drives.DriveDetailScreen
 import com.matelink.ui.screens.drives.ParkedDetailScreen
 import com.matelink.ui.screens.drives.DrivesScreen
@@ -66,6 +67,7 @@ import com.matelink.ui.screens.stats.CountriesVisitedScreen
 import com.matelink.ui.screens.stats.RegionsVisitedScreen
 import com.matelink.ui.screens.stats.StatsScreen
 import com.matelink.ui.screens.sentry.SentryHistoryScreen
+import com.matelink.ui.screens.temperature.TemperatureTrendScreen
 import com.matelink.ui.screens.tpms.TpmsTrendScreen
 import com.matelink.ui.screens.trips.CreateTripScreen
 import com.matelink.ui.screens.trips.TripDetailScreen
@@ -135,6 +137,9 @@ sealed interface Screen {
     data class DriveDetail(val carId: Int, val driveId: Int, val exteriorColor: String? = null) : Screen
 
     @Serializable
+    data class DriveCurves(val carId: Int, val driveId: Int, val exteriorColor: String? = null) : Screen
+
+    @Serializable
     data class ParkedDetail(
         val carId: Int,
         val olderDriveId: Int,
@@ -186,6 +191,9 @@ sealed interface Screen {
 
     @Serializable
     data class TpmsTrend(val carId: Int, val exteriorColor: String? = null) : Screen
+
+    @Serializable
+    data class TemperatureTrend(val carId: Int, val exteriorColor: String? = null) : Screen
 
     @Serializable
     data class AnnualReport(val carId: Int, val year: Int = java.time.Year.now().value) : Screen
@@ -545,11 +553,17 @@ fun NavGraph(
                 onNavigateToAmapPreview = {
                     navController.navigate(Screen.AmapPreview)
                 },
+                onNavigateToAmapSetup = {
+                    navController.navigate(Screen.AmapSetup)
+                },
                 onNavigateToSentryHistory = { carId, exteriorColor ->
                     navController.navigate(Screen.SentryHistory(carId, exteriorColor))
                 },
                 onNavigateToTpmsTrend = { carId, exteriorColor ->
                     navController.navigate(Screen.TpmsTrend(carId, exteriorColor))
+                },
+                onNavigateToTemperatureTrend = { carId, exteriorColor ->
+                    navController.navigate(Screen.TemperatureTrend(carId, exteriorColor))
                 },
                 onNavigateToTrips = { carId, exteriorColor ->
                     navController.navigate(Screen.Trips(carId, exteriorColor))
@@ -647,7 +661,20 @@ fun NavGraph(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToTripDetail = { tripStartDate ->
                     navController.navigate(Screen.TripDetail(route.carId, tripStartDate, route.exteriorColor))
+                },
+                onNavigateToDriveCurves = {
+                    navController.navigate(Screen.DriveCurves(route.carId, route.driveId, route.exteriorColor))
                 }
+            )
+        }
+
+        composable<Screen.DriveCurves> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.DriveCurves>()
+            DriveCurvesScreen(
+                carId = route.carId,
+                driveId = route.driveId,
+                exteriorColor = route.exteriorColor,
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 
@@ -823,6 +850,15 @@ fun NavGraph(
         composable<Screen.TpmsTrend> { backStackEntry ->
             val route = backStackEntry.toRoute<Screen.TpmsTrend>()
             TpmsTrendScreen(
+                carId = route.carId,
+                exteriorColor = route.exteriorColor,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable<Screen.TemperatureTrend> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.TemperatureTrend>()
+            TemperatureTrendScreen(
                 carId = route.carId,
                 exteriorColor = route.exteriorColor,
                 onNavigateBack = { navController.popBackStack() }

@@ -48,6 +48,9 @@ interface ChargeSummaryDao {
     @Query("DELETE FROM charges_summary WHERE carId = :carId")
     suspend fun deleteAllForCar(carId: Int)
 
+    @Query("DELETE FROM charges_summary WHERE chargeId = :chargeId")
+    suspend fun deleteChargeById(chargeId: Int)
+
     // === Quick Stats Queries ===
 
     // Total count

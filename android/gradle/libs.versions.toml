@@ -21,6 +21,7 @@ room = "2.6.1"
 workManager = "2.9.0"
 hiltWork = "1.2.0"
 glance = "1.1.1"
+coil = "2.7.0"
 junit = "4.13.2"
 junitExt = "1.2.1"
 espresso = "3.6.1"
@@ -80,6 +81,7 @@ hilt-work-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.
 # Glance (App Widgets)
 glance-appwidget = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
 glance-material3 = { group = "androidx.glance", name = "glance-material3", version.ref = "glance" }
+coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 
 # Charts
 mpandroidchart = { group = "com.github.PhilJay", name = "MPAndroidChart", version = "v3.1.0" }

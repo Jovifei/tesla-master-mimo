@@ -172,6 +172,7 @@
     <string name="snapshot_source_mock">Local mock</string>
     <string name="snapshot_source_mixed">Mixed</string>
     <string name="snapshot_source_unavailable">Unavailable</string>
+    <string name="snapshot_source_asleep">Vehicle Asleep</string>
     <string name="status_unknown">Unknown</string>
     <string name="battery_history_navigation_note">View recorded battery history and capacity details</string>
     <string name="vehicle_model_3">Model 3</string>
@@ -651,8 +652,28 @@
     <string name="tpms_trend_conclusion_ambient">Possible ambient-temperature effect; cause not confirmed.</string>
     <string name="tpms_trend_conclusion_highway">Possible highway warm-up effect; cause not confirmed.</string>
     <string name="tpms_trend_conclusion_parking">Possible parking-related pressure change; cause not confirmed.</string>
-    <string name="tpms_trend_conclusion_insufficient">Possible factor unavailable: insufficient evidence.</string>
+    <string name="tpms_trend_conclusion_insufficient">Tire pressure is stable across all four tires within normal range.</string>
     <string name="tpms_trend_recommendation_manual_cold_check">Manual cold check recommended.</string>
+    <string name="temperature_trend_title">Temperature Trends</string>
+    <string name="temperature_trend_window_7">7 days</string>
+    <string name="temperature_trend_window_30">30 days</string>
+    <string name="temperature_trend_load_failed">Unable to load temperature history. Try again.</string>
+    <string name="temperature_trend_unavailable">No temperature history is available for this window.</string>
+    <string name="temperature_trend_chart_title">Inside / Outside Temperature Curves</string>
+    <string name="temperature_inside_legend">Cabin</string>
+    <string name="temperature_outside_legend">Outside</string>
+    <string name="temperature_current_inside">Current Cabin</string>
+    <string name="temperature_current_outside">Current Outside</string>
+    <string name="temperature_max_outside">Max Outside</string>
+    <string name="temperature_max_inside">Max Cabin</string>
+    <string name="temperature_min_outside">Min Outside</string>
+    <string name="temperature_min_inside">Min Cabin</string>
+    <string name="temperature_cabin_diff">Max Temp Diff</string>
+    <string name="temperature_insights_title">Temperature &amp; Climate Insights</string>
+    <string name="temperature_insights_solar_gain">Cabin Solar Heat Gain</string>
+    <string name="temperature_insights_solar_desc">Cabin temperature rises quickly under direct sunlight. Consider enabling Cabin Overheat Protection or pre-cooling before driving.</string>
+    <string name="temperature_insights_climate_good">Climate Performance</string>
+    <string name="temperature_insights_climate_good_desc">Cabin temperature remained in comfortable range during drives with efficient climate regulation.</string>
     <string name="tpms_pressure_unit">bar</string>
     <string name="settings_tpms_entry_subtitle">Target pressure &amp; alert thresholds per car</string>
     <string name="tpms_profile_title">Per-car cold tire-pressure profile</string>
@@ -1052,15 +1073,19 @@
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
     <string name="settings_release_notes_title">This update</string>
-    <string name="settings_release_notes_version">MateLink 1.4.4</string>
+    <string name="settings_release_notes_version">MateLink 2.1.0</string>
     <string name="settings_release_notes_view">View update notes</string>
     <string name="settings_release_notes_close">Got it</string>
-    <string name="settings_release_notes_body">• Fixed the Tesla login button being incorrectly disabled when the public document URL was omitted.
-• The login page now uses consistent panels for the intro, consent, cloud sign-in, and self-hosted connection; reauthorization can return to Settings.
-• First-login data status now explains available, waiting, collecting, and unsupported fields.
-• Standby history no longer shows a generic error when the optional endpoint is unavailable; it uses device history conservatively.
-• AMap setup is now a three-step panelled guide with copy and verification actions.
-• Advanced network settings now distinguish cloud and self-hosted connections.</string>
+    <string name="settings_release_notes_body">• Refactored drive details: streamlined parameters focused on trip, speed, power, and battery metrics.
+• Introduced dedicated Drive Curve Analytics screen for detailed multi-dimensional speed, distance, power, SoC, and elevation profiles.
+• Added interactive entry and synced cursor scrub on trip panel to dive into dynamic curves.
+• Added dual-curve inside and outside temperature trend curves with 7-day/30-day views and solar heat gain insights.
+• Aligned dashboard location card height with clean single-line typography.
+• Enhanced TPMS trend chart with clear top-right tire legend and sampling date axis.
+• Fixed 404 error on charge details and restored multi-dimensional charging curves.
+• Unified styling for efficiency and cost analysis cards with Material 3.
+• Standby history remains stable and uses device history conservatively when optional endpoints are unavailable.
+• Completely purged synthetic debug charge data to ensure data authenticity.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>
     <string name="settings_resync_dialog_text_delete">This will delete all local data.</string>
@@ -1451,4 +1476,22 @@
     <string name="telemetry_action_retry_configuration">Retry data collection setup</string>
     <string name="telemetry_virtual_key_unavailable">The Tesla virtual-key link is unavailable. Refresh and try again.</string>
     <string name="more_item_data_readiness">Data status</string>
+    <string name="edit_vehicle_photo">Change vehicle photo</string>
+    <string name="action_choose_custom_photo">Choose photo from album</string>
+    <string name="action_restore_default_photo">Restore default vehicle image</string>
+    <string name="custom_photo_updated">Vehicle photo updated</string>
+    <string name="custom_photo_restored">Default vehicle image restored</string>
+    <string name="amap_unconfigured_prompt">Tap to configure</string>
+    <string name="gps_waiting_prompt">Waiting for GPS</string>
+    <string name="active_driving_hud_title">Driving</string>
+    <string name="active_charging_hud_title">Charging</string>
+    <string name="close_hud">Collapse</string>
+    <string name="expand_hud">Expand</string>
+    <string name="battery_service_mode_title">Battery Health &amp; Service Mode</string>
+    <string name="battery_service_mode_desc">Health is estimated from rated range (~%1$.1f%%). For an official Tesla HV battery health test, park with a charger connected and enter Service Mode on the center screen (Controls -&gt; Software -&gt; Long-press model text -&gt; type service -&gt; High Voltage Battery -&gt; Battery Health Test) for a full calibration cycle.</string>
+    <string name="drive_curves_title">Drive Curve Analytics</string>
+    <string name="drive_curves_action">Detailed Curves</string>
+    <string name="drive_curves_banner_title">Dynamic Curve Analytics</string>
+    <string name="drive_curves_banner_subtitle">Tap to view speed, distance, power, battery &amp; elevation profiles</string>
+    <string name="distance_profile">Distance Profile</string>
 </resources>

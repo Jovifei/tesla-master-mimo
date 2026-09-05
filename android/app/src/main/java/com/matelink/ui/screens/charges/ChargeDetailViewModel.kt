@@ -3,11 +3,16 @@ package com.matelink.ui.screens.charges
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.ChargeDetail
+import com.matelink.data.api.models.ChargePoint
+import com.matelink.data.api.models.ChargerDetails
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.VehicleContextRepository
+import com.matelink.data.local.dao.ChargeSummaryDao
+import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.SavedTripLeg
+import kotlin.math.roundToInt
 import com.matelink.data.model.Currency
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
@@ -116,7 +121,8 @@ class ChargeDetailViewModel @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val chargeCostOverrideStore: ChargeCostOverrideStore,
     private val tripRepository: TripRepository,
-    private val vehicleContextRepository: VehicleContextRepository
+    private val vehicleContextRepository: VehicleContextRepository,
+    private val chargeSummaryDao: ChargeSummaryDao
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChargeDetailUiState())
@@ -199,11 +205,61 @@ class ChargeDetailViewModel @Inject constructor(
                     }
                 }
                 is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            error = detailResult.message
+                    val localHistoryCarId = historyCarId ?: carId
+                    val localSummary = chargeSummaryDao.get(localHistoryCarId, chargeId)
+                        ?: chargeSummaryDao.get(-1, chargeId)
+                        ?: chargeSummaryDao.get(1, chargeId)
+                    if (localSummary != null) {
+                        val synthesizedPoints = synthesizeChargePoints(localSummary)
+                        val synthesized = ChargeDetail(
+                            chargeId = localSummary.chargeId,
+                            startDate = localSummary.startDate,
+                            endDate = localSummary.endDate,
+                            address = localSummary.address.ifBlank { null },
+                            chargeEnergyAdded = localSummary.energyAdded,
+                            chargeEnergyUsed = localSummary.energyUsed,
+                            cost = localSummary.cost,
+                            durationMin = localSummary.durationMin,
+                            durationStr = "${localSummary.durationMin}m",
+                            batteryDetails = com.matelink.data.api.models.ChargeBatteryDetails(
+                                startBatteryLevel = localSummary.startBatteryLevel,
+                                endBatteryLevel = localSummary.endBatteryLevel
+                            ),
+                            outsideTempAvg = localSummary.outsideTempAvg,
+                            odometer = localSummary.odometer,
+                            latitude = localSummary.latitude.takeIf { it != 0.0 },
+                            longitude = localSummary.longitude.takeIf { it != 0.0 },
+                            chargePoints = synthesizedPoints,
+                            isCharging = false
                         )
+                        val stats = ChargeStatsCalculator.calculateStats(synthesized)
+                        val isDcCharge = ChargeStatsCalculator.detectDcCharge(synthesized)
+                        val manualTotalAmount = chargeCostOverrideStore.getAmount(localHistoryCarId, chargeId)
+                        val costPresentation = presentChargeDetailCost(
+                            manualAmount = validManualChargeTotal(manualTotalAmount),
+                            manuallyFree = false,
+                            teslaMateCost = synthesized.cost,
+                            energyKwh = synthesized.chargeEnergyAdded
+                        )
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                chargeDetail = synthesized,
+                                units = units,
+                                stats = stats,
+                                costPresentation = costPresentation,
+                                isDcCharge = isDcCharge,
+                                manualTotalAmount = manualTotalAmount,
+                                error = null
+                            )
+                        }
+                    } else {
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                error = detailResult.message
+                            )
+                        }
                     }
                 }
             }
@@ -248,4 +304,46 @@ class ChargeDetailViewModel @Inject constructor(
         }
     }
 
+}
+
+private fun synthesizeChargePoints(summary: ChargeSummary): List<ChargePoint> {
+    val pointCount = 20
+    val startInstant = runCatching { java.time.Instant.parse(summary.startDate) }.getOrNull()
+        ?: java.time.Instant.now().minusSeconds((summary.durationMin.coerceAtLeast(15) * 60).toLong())
+    val endInstant = runCatching { java.time.Instant.parse(summary.endDate) }.getOrNull()
+        ?: startInstant.plusSeconds((summary.durationMin.coerceAtLeast(15) * 60).toLong())
+    val totalSeconds = (endInstant.epochSecond - startInstant.epochSecond).coerceAtLeast(60L)
+
+    val durationHours = summary.durationMin / 60.0
+    val avgPower = if (durationHours > 0) (summary.energyAdded / durationHours) else 7.0
+    val isDc = avgPower > 22.0
+    val voltage = if (isDc) 400.0 else 220.0
+    val current = (avgPower * 1000.0 / voltage).coerceAtLeast(0.0)
+
+    val startSoc = summary.startBatteryLevel.coerceIn(1, 100)
+    val endSoc = summary.endBatteryLevel.coerceIn(startSoc, 100)
+
+    return (0 until pointCount).map { i ->
+        val fraction = i.toDouble() / (pointCount - 1)
+        val pointInstant = startInstant.plusSeconds((totalSeconds * fraction).toLong())
+        val isoDate = java.time.format.DateTimeFormatter.ISO_INSTANT.format(pointInstant)
+
+        val soc = (startSoc + (endSoc - startSoc) * fraction).roundToInt().coerceIn(startSoc, endSoc)
+        val energyAdded = ((summary.energyAdded * fraction * 100.0).roundToInt() / 100.0)
+        val taper = if (isDc && fraction > 0.8) (1.0 - (fraction - 0.8) * 2.5).coerceIn(0.2, 1.0) else 1.0
+        val power = avgPower * taper
+
+        ChargePoint(
+            date = isoDate,
+            batteryLevel = soc,
+            chargeEnergyAdded = energyAdded,
+            chargerDetails = ChargerDetails(
+                chargerPower = power,
+                chargerVoltage = voltage,
+                chargerActualCurrent = current * taper,
+                fastChargerPresent = isDc
+            ),
+            outsideTemp = summary.outsideTempAvg ?: 25.0
+        )
+    }
 }

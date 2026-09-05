@@ -297,6 +297,40 @@ private fun BatteryHealthContent(
         if (stats.hasRangeEstimate) {
             RangeCard(stats = stats, units = units, palette = palette, onClick = onCardClick)
         }
+
+        // Service Mode Battery Health Test Guide
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = stringResource(R.string.battery_service_mode_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.battery_service_mode_desc, stats.healthPercent),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 
@@ -570,7 +604,6 @@ private fun CapacityCard(stats: BatteryStats, units: com.matelink.data.api.model
     val capacityLabel = stringResource(R.string.capacity)
     val usableNewLabel = stringResource(R.string.usable_new)
     val usableNowLabel = stringResource(R.string.usable_now)
-    val ratedLabel = stringResource(R.string.rated)
     val infoLabel = stringResource(R.string.info)
     val gotItLabel = stringResource(R.string.got_it)
 
@@ -641,36 +674,6 @@ private fun CapacityCard(stats: BatteryStats, units: com.matelink.data.api.model
                     iconColor = CapacityYellow,
                     modifier = Modifier.weight(1f)
                 )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Rated efficiency
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Speed,
-                    contentDescription = null,
-                    tint = palette.accent,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = UnitFormatter.formatEfficiency(stats.ratedEfficiency, units),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = palette.onSurface
-                    )
-                    Text(
-                        text = ratedLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.onSurfaceVariant
-                    )
-                }
             }
         }
     }

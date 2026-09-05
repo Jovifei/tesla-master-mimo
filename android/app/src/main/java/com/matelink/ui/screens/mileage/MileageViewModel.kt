@@ -7,6 +7,7 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.Units
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.repository.UnifiedHistoryRepository
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.model.Currency
 import com.matelink.domain.analytics.observedCostSumOrNull
@@ -138,7 +139,8 @@ private data class MonthAggregation(
 @HiltViewModel
 class MileageViewModel @Inject constructor(
     private val repository: TeslamateRepository,
-    private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore,
+    private val unifiedHistoryRepository: UnifiedHistoryRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MileageUiState())
@@ -255,16 +257,12 @@ class MileageViewModel @Inject constructor(
                 _uiState.update { it.copy(isLoading = true) }
             }
 
-            val drivesDeferred = async { repository.getDrives(id) }
-            val chargesDeferred = async { repository.getCharges(id) }
+            val historyResult = unifiedHistoryRepository.load(id)
 
-            val drivesResult = drivesDeferred.await()
-            val chargesResult = chargesDeferred.await()
-
-            when (drivesResult) {
+            when (historyResult) {
                 is ApiResult.Success -> {
-                    val drives = drivesResult.data
-                    val charges = (chargesResult as? ApiResult.Success)?.data ?: emptyList()
+                    val drives = historyResult.data.drives
+                    val charges = historyResult.data.charges
                     val isImperial = _uiState.value.units?.isImperial == true
 
                     // Pre-parse all dates and run the lifetime / yearly
@@ -313,7 +311,7 @@ class MileageViewModel @Inject constructor(
                         it.copy(
                             isLoading = false,
                             isRefreshing = false,
-                            error = drivesResult.message
+                            error = historyResult.message
                         )
                     }
                 }

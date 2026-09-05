@@ -5,6 +5,7 @@ import com.matelink.R
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.time.format.FormatStyle
@@ -15,18 +16,18 @@ import java.util.Locale
  *
  * Accepts datetime strings with or without a timezone offset, and with or
  * without a trailing "Z" suffix. TeslaMate emits both forms (RFC 3339
- * with offset, or ISO with a trailing Z).
+ * with offset, or ISO with a trailing Z). Converts to local system timezone.
  *
  * Examples:
- *   "2026-05-10T15:39:00Z"      → 2026-05-10T15:39
- *   "2026-05-10T15:39:00+02:00" → 2026-05-10T15:39
+ *   "2026-05-10T15:39:00Z"      → 2026-05-10T15:39 (converted to system zone)
+ *   "2026-05-10T15:39:00+02:00" → 2026-05-10T15:39 (converted to system zone)
  *   "" or null                   → null
  */
 fun parseIsoDateTime(dateStr: String?): LocalDateTime? {
     if (dateStr.isNullOrBlank()) return null
     return try {
         try {
-            OffsetDateTime.parse(dateStr).toLocalDateTime()
+            OffsetDateTime.parse(dateStr).atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime()
         } catch (_: DateTimeParseException) {
             LocalDateTime.parse(dateStr.replace("Z", ""))
         }

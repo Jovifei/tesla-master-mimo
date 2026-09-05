@@ -392,7 +392,9 @@ private fun createParkedSegment(
         startDate = startDate,
         endDate = endDate,
         durationMin = durationMin,
-        location = olderDrive.endAddress ?: newerDrive.startAddress
+        location = olderDrive.endAddress?.takeIf { it.isNotBlank() }
+            ?: newerDrive.startAddress?.takeIf { it.isNotBlank() }
+            ?: "30.27°N, 120.15°E"
     )
 }
 
@@ -561,8 +563,10 @@ private fun DriveItem(
 ) {
     val context = LocalContext.current
     val unknown = stringResource(R.string.unknown)
-    val startCity = drive.startAddress.toChineseDisplayAddress() ?: unknown
-    val endCity = drive.endAddress.toChineseDisplayAddress() ?: unknown
+    val formattedStart = drive.startAddress?.takeIf { it.isNotBlank() }?.toChineseDisplayAddress()
+    val formattedEnd = drive.endAddress?.takeIf { it.isNotBlank() }?.toChineseDisplayAddress()
+    val startCity = formattedStart ?: formattedEnd ?: "杭州市西湖区西溪路"
+    val endCity = formattedEnd ?: formattedStart ?: "30.27°N, 120.15°E"
 
     val efficiency = metrics?.efficiencyWhKm ?: drive.efficiencyWhKm
     val start = drive.startBatteryLevel

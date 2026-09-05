@@ -423,11 +423,19 @@ class ChargesViewModel @Inject constructor(
         val dcChargeIds = state.dcChargeIds
         val granularity = state.chartGranularity
 
-        // First apply short charges filter
+        // Filter out short charges or invalid charges where battery level had no change
+        val validCharges = allCharges.filter { charge ->
+            val startSoc = charge.startBatteryLevel ?: 0
+            val endSoc = charge.endBatteryLevel ?: 0
+            val energy = charge.chargeEnergyAdded ?: 0.0
+            val isZeroSocDelta = (startSoc == 0 && endSoc == 0) || (startSoc > 0 && endSoc > 0 && startSoc == endSoc && energy < 0.5)
+            !isZeroSocDelta
+        }
+
         var filteredCharges = if (showShortDrivesCharges) {
-            allCharges
+            validCharges
         } else {
-            allCharges.filter { charge ->
+            validCharges.filter { charge ->
                 (charge.chargeEnergyAdded ?: 0.0) > MIN_ENERGY_KWH
             }
         }
@@ -441,9 +449,9 @@ class ChargesViewModel @Inject constructor(
 
         // Apply charge type filter to all charges for summary/charts (include short charges)
         val chargesForStats = when (chargeTypeFilter) {
-            ChargeTypeFilter.ALL -> allCharges
-            ChargeTypeFilter.DC -> allCharges.filter { it.chargeId in dcChargeIds }
-            ChargeTypeFilter.AC -> allCharges.filter { it.chargeId !in dcChargeIds }
+            ChargeTypeFilter.ALL -> validCharges
+            ChargeTypeFilter.DC -> validCharges.filter { it.chargeId in dcChargeIds }
+            ChargeTypeFilter.AC -> validCharges.filter { it.chargeId !in dcChargeIds }
         }
 
         // Extract unique locations from the complete set
@@ -492,7 +500,7 @@ class ChargesViewModel @Inject constructor(
                 isLoading = false,
                 isRefreshing = false,
                 isFilterLoading = false,
-                charges = displayChargesFiltered,
+                charges = displayChargesFiltered.sortedByDescending { it.startDate },
                 availableLocations = locations,
                 summary = summary,
                 chartData = chartData

@@ -1,7 +1,10 @@
 package com.matelink.data.repository
 
 import android.content.Context
+import android.util.Log
+import com.amap.api.maps.MapsInitializer
 import com.amap.api.services.core.LatLonPoint
+import com.amap.api.services.core.ServiceSettings
 import com.amap.api.services.geocoder.GeocodeSearch
 import com.amap.api.services.geocoder.RegeocodeQuery
 import com.matelink.data.local.AmapSettings
@@ -43,6 +46,10 @@ class AmapReverseGeocoder @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settingsStore: AmapSettingsStore
 ) {
+    companion object {
+        private const val TAG = "AmapReverseGeocoder"
+    }
+
     val availability: Flow<ChineseLocationAvailability> = settingsStore.settings
         .map(::chineseLocationAvailability)
         .distinctUntilChanged()
@@ -50,14 +57,30 @@ class AmapReverseGeocoder @Inject constructor(
     suspend fun currentAvailability(): ChineseLocationAvailability = availability.first()
 
     suspend fun reverse(latitude: Double, longitude: Double): ChineseLocation? {
-        if (currentAvailability() != ChineseLocationAvailability.READY) return null
-        if (!latitude.isFinite() || !longitude.isFinite()) return null
+        val currentAvail = currentAvailability()
+        if (currentAvail != ChineseLocationAvailability.READY) {
+            Log.d(TAG, "Reverse geocoding skipped: availability is $currentAvail")
+            return null
+        }
+        if (!latitude.isFinite() || !longitude.isFinite() || (latitude == 0.0 && longitude == 0.0)) {
+            return null
+        }
+
+        val key = settingsStore.currentKey().trim().takeIf { it.isNotBlank() } ?: return null
 
         return withContext(Dispatchers.IO) {
             runCatching {
+                MapsInitializer.updatePrivacyShow(context, true, true)
+                MapsInitializer.updatePrivacyAgree(context, true)
+                MapsInitializer.setApiKey(key)
+                ServiceSettings.updatePrivacyShow(context, true, true)
+                ServiceSettings.updatePrivacyAgree(context, true)
+                ServiceSettings.getInstance().setApiKey(key)
+
                 val result = GeocodeSearch(context).getFromLocation(
                     RegeocodeQuery(LatLonPoint(latitude, longitude), 200f, GeocodeSearch.AMAP)
-                )
+                ) ?: return@runCatching null
+
                 val address = result.formatAddress?.trim()?.takeIf { it.isNotEmpty() }
                     ?: return@runCatching null
                 val region = listOfNotNull(
@@ -70,7 +93,11 @@ class AmapReverseGeocoder @Inject constructor(
                     countryName = result.country?.trim()?.takeIf { it.isNotEmpty() } ?: "中国",
                     regionName = region,
                     city = result.city?.trim()?.takeIf { it.isNotEmpty() }
-                )
+                ).also {
+                    Log.i(TAG, "Successfully reverse-geocoded ($latitude, $longitude) -> ${it.address}")
+                }
+            }.onFailure { e ->
+                Log.w(TAG, "Amap reverse geocoding failed for ($latitude, $longitude): ${e.message}", e)
             }.getOrNull()
         }
     }

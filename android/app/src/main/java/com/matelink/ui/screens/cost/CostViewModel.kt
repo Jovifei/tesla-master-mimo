@@ -158,9 +158,15 @@ class CostViewModel @Inject constructor(
 
     private fun recalculate(window: AnalysisWindow) {
         val selected = selectWindow(charges, window, LocalDate.now(), customStart, customEnd).map { it.charge }
-        fun costFor(charge: ChargeData): Double? =
-            (manualTotals[chargeTotalOverrideKey(historyCarId ?: currentCarId ?: 0, charge.chargeId)] ?: charge.cost)
-                ?.takeIf { it.isFinite() && it >= 0.0 }
+        fun costFor(charge: ChargeData): Double? {
+            val manual = manualTotals[chargeTotalOverrideKey(historyCarId ?: currentCarId ?: 0, charge.chargeId)]
+            if (manual != null && manual.isFinite() && manual >= 0.0) return manual
+            if (charge.cost != null && charge.cost.isFinite() && charge.cost >= 0.0) return charge.cost
+            val resolved = com.matelink.domain.analytics.EffectiveChargeCostResolver.resolve(
+                com.matelink.domain.analytics.EffectiveChargeCostInput(energyKwh = charge.chargeEnergyAdded)
+            ).cost
+            return resolved?.takeIf { it.isFinite() && it >= 0.0 }
+        }
         fun energyFor(charge: ChargeData): Double? =
             charge.chargeEnergyAdded?.takeIf { it.isFinite() && it >= 0.0 }
 

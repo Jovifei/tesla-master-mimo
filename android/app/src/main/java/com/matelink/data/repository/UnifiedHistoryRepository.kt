@@ -12,6 +12,8 @@ import com.matelink.data.local.entity.DriveSummary
 import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
+import com.matelink.data.sync.SnapshotChargeEngine
+import com.matelink.data.sync.SnapshotTripEngine
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -40,7 +42,9 @@ class UnifiedHistoryRepository @Inject constructor(
     private val teslamateRepository: TeslamateRepository,
     private val vehicleContextRepository: VehicleContextRepository,
     private val driveSummaryDao: DriveSummaryDao,
-    private val chargeSummaryDao: ChargeSummaryDao
+    private val chargeSummaryDao: ChargeSummaryDao,
+    private val snapshotChargeEngine: SnapshotChargeEngine,
+    private val snapshotTripEngine: SnapshotTripEngine
 ) {
     suspend fun load(
         remoteApiCarId: Int,
@@ -56,6 +60,18 @@ class UnifiedHistoryRepository @Inject constructor(
             vehicleContextRepository.resolve(car)
         } catch (_: HistoryIdentityUnavailableException) {
             return historyIdentityUnavailableError()
+        }
+        val legacyCandidates = listOf(-1, 1, 2)
+        for (legacyId in legacyCandidates) {
+            if (legacyId != context.localHistoryCarId) {
+                driveSummaryDao.copyFromLegacy(legacyId, context.localHistoryCarId)
+                chargeSummaryDao.copyFromLegacy(legacyId, context.localHistoryCarId)
+            }
+        }
+        try {
+            snapshotTripEngine.consolidateFragmentedDrives(context.localHistoryCarId)
+            snapshotChargeEngine.ensureBackfillToday(context.localHistoryCarId)
+        } catch (_: Exception) {
         }
         val localDrives = if (startDate != null && endDate != null) {
             driveSummaryDao.getDrivesInRange(context.localHistoryCarId, startDate, endDate)
@@ -78,7 +94,7 @@ class UnifiedHistoryRepository @Inject constructor(
                     ?.let { driveSummaryDao.upsertAll(it) }
                 merged
             }
-            is ApiResult.Error -> localDrives.map { it.toAnalysisDriveData() }
+            is ApiResult.Error -> localDrives.map { it.toAnalysisDriveData() }.sortedByDescending { it.startDate }
         }
         val charges = when (remoteCharges) {
             is ApiResult.Success -> {
@@ -88,7 +104,7 @@ class UnifiedHistoryRepository @Inject constructor(
                     ?.let { chargeSummaryDao.upsertAll(it) }
                 merged
             }
-            is ApiResult.Error -> localCharges.map { it.toAnalysisChargeData() }
+            is ApiResult.Error -> localCharges.map { it.toAnalysisChargeData() }.sortedByDescending { it.startDate }
         }
 
         if (drives.isEmpty() && charges.isEmpty() && remoteDrives is ApiResult.Error) return remoteDrives
@@ -114,13 +130,15 @@ class UnifiedHistoryRepository @Inject constructor(
         fun mergeDrives(remote: List<DriveData>, local: List<DriveData>): List<DriveData> {
             val localById = local.associateBy { it.driveId }
             val merged = remote.map { it.mergeWith(localById[it.driveId]) }
-            return merged + local.filter { cached -> remote.none { it.driveId == cached.driveId } }
+            return (merged + local.filter { cached -> remote.none { it.driveId == cached.driveId } })
+                .sortedByDescending { it.startDate }
         }
 
         fun mergeCharges(remote: List<ChargeData>, local: List<ChargeData>): List<ChargeData> {
             val localById = local.associateBy { it.chargeId }
             val merged = remote.map { it.mergeWith(localById[it.chargeId]) }
-            return merged + local.filter { cached -> remote.none { it.chargeId == cached.chargeId } }
+            return (merged + local.filter { cached -> remote.none { it.chargeId == cached.chargeId } })
+                .sortedByDescending { it.startDate }
         }
     }
 }

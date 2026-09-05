@@ -88,11 +88,16 @@ class GeocodingRepository @Inject constructor(
         return geocodeCacheDao.get(gridLat, gridLon)
     }
 
+    private suspend fun isExternalAllowed(): Boolean {
+        val isAmap = amapReverseGeocoder.currentAvailability() == ChineseLocationAvailability.READY
+        return allowsExternalGeocoding(connectionModeStore.current(), isAmap = isAmap)
+    }
+
     /**
      * Get the next batch of items to geocode.
      */
     suspend fun getNextBatch(limit: Int = 1): List<GeocodeQueueItem> {
-        if (!allowsExternalGeocoding(connectionModeStore.current())) return emptyList()
+        if (!isExternalAllowed()) return emptyList()
         if (amapReverseGeocoder.currentAvailability() != ChineseLocationAvailability.READY) return emptyList()
         return geocodeQueueDao.getNextBatch(limit)
     }
@@ -105,7 +110,7 @@ class GeocodingRepository @Inject constructor(
         carId: Int,
         locations: List<Pair<Double, Double>>
     ): Int {
-        if (!allowsExternalGeocoding(connectionModeStore.current())) return 0
+        if (!isExternalAllowed()) return 0
 
         val items = locations.map { (lat, lon) ->
             val gridLat = toGridCoord(lat)
@@ -155,7 +160,7 @@ class GeocodingRepository @Inject constructor(
      * Called by background worker only.
      */
     suspend fun geocodeAndCache(item: GeocodeQueueItem): GeocodeCache? {
-        if (!allowsExternalGeocoding(connectionModeStore.current())) return null
+        if (!isExternalAllowed()) return null
 
         return try {
             val location = amapReverseGeocoder.reverse(item.latitude, item.longitude)
@@ -265,7 +270,7 @@ class GeocodingRepository @Inject constructor(
 
         // Return cached result if available
         addressCache[cacheKey]?.let { return it }
-        if (!allowsExternalGeocoding(connectionModeStore.current())) return null
+        if (!isExternalAllowed()) return null
 
         return amapReverseGeocoder.reverse(latitude, longitude)?.address?.also {
             addressCache[cacheKey] = it
@@ -282,7 +287,7 @@ class GeocodingRepository @Inject constructor(
 
         // Return cached result if available
         locationCache[cacheKey]?.let { return it }
-        if (!allowsExternalGeocoding(connectionModeStore.current())) return null
+        if (!isExternalAllowed()) return null
 
         return amapReverseGeocoder.reverse(latitude, longitude)?.let { location ->
             GeocodedLocation(

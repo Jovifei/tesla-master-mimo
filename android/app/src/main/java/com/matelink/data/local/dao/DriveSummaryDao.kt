@@ -44,6 +44,12 @@ interface DriveSummaryDao {
     @Query("DELETE FROM drives_summary WHERE carId = :carId")
     suspend fun deleteAllForCar(carId: Int)
 
+    @Query("DELETE FROM drives_summary WHERE driveId = :driveId")
+    suspend fun deleteDriveById(driveId: Int)
+
+    @Query("DELETE FROM drives_summary WHERE driveId IN (:driveIds)")
+    suspend fun deleteDrivesByIds(driveIds: List<Int>)
+
     /** All drives for a car, ordered chronologically for trip detection. */
     @Query("SELECT * FROM drives_summary WHERE carId = :carId ORDER BY startDate ASC")
     suspend fun getAllChronological(carId: Int): List<DriveSummary>

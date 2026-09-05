@@ -1,5 +1,6 @@
 package com.matelink.ui.screens.drives
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,11 +18,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DeviceThermostat
 import androidx.compose.material.icons.filled.Landscape
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.ShowChart
 import com.matelink.ui.icons.CustomIcons
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Speed
@@ -35,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -90,6 +94,7 @@ fun DriveDetailScreen(
     exteriorColor: String? = null,
     onNavigateBack: () -> Unit,
     onNavigateToTripDetail: (tripStartDate: String) -> Unit = {},
+    onNavigateToDriveCurves: () -> Unit = {},
     viewModel: DriveDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -120,6 +125,14 @@ fun DriveDetailScreen(
                         )
                     }
                 },
+                actions = {
+                    IconButton(onClick = onNavigateToDriveCurves) {
+                        Icon(
+                            Icons.Default.ShowChart,
+                            contentDescription = stringResource(R.string.drive_curves_title)
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
@@ -143,6 +156,7 @@ fun DriveDetailScreen(
                     isLoadingWeather = uiState.isLoadingWeather,
                     containingTrip = uiState.containingTrip,
                     onNavigateToTripDetail = onNavigateToTripDetail,
+                    onNavigateToDriveCurves = onNavigateToDriveCurves,
                     onRemoveFromTrip = viewModel::removeFromTrip,
                     modifier = Modifier.padding(padding)
                 )
@@ -161,12 +175,14 @@ private fun DriveDetailContent(
     isLoadingWeather: Boolean,
     containingTrip: Pair<Long, com.matelink.domain.model.Trip>?,
     onNavigateToTripDetail: (String) -> Unit,
+    onNavigateToDriveCurves: () -> Unit,
     onRemoveFromTrip: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
+    val context = LocalContext.current
+    val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
     val scrollState = rememberScrollState()
-    var sharedXFraction by remember { mutableStateOf<Float?>(null) }
+
     val positions = detail.positions.orEmpty()
     val hasChartData = positions.size > 2
     val timeLabels = remember(positions, is24Hour) {
@@ -187,17 +203,12 @@ private fun DriveDetailContent(
             }
         }
     }
-
-    LaunchedEffect(scrollState) {
-        snapshotFlow { scrollState.isScrollInProgress }
-            .collect { isScrolling -> if (isScrolling) sharedXFraction = null }
-    }
+    var speedChartFraction by remember { mutableStateOf<Float?>(null) }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .pointerInput(Unit) { detectTapGestures { sharedXFraction = null } }
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -214,42 +225,19 @@ private fun DriveDetailContent(
             )
         }
 
-        // Map showing the route
-        if (!detail.positions.isNullOrEmpty()) {
-            DriveMapCard(positions = detail.positions, routeColor = routeColor)
-        }
-
         // Stats grid
         stats?.let { s ->
             val notAvailableLabel = stringResource(R.string.not_available)
             val energySourceLabel = stringResource(R.string.energy_source)
             val energyCoverageLabel = stringResource(R.string.energy_coverage)
+            val curvesActionLabel = stringResource(R.string.drive_curves_action)
 
-            // Speed section
-            StatsSectionCard(
-                title = stringResource(R.string.speed),
-                icon = Icons.Default.Speed,
-                stats = listOf(
-                    StatItem(stringResource(R.string.maximum), s.speedMax?.let { UnitFormatter.formatSpeed(it.toDouble(), units) } ?: notAvailableLabel),
-                    StatItem(stringResource(R.string.average), s.speedAvg?.let { UnitFormatter.formatSpeed(it, units) } ?: notAvailableLabel),
-                    StatItem(stringResource(R.string.avg_distance), s.avgSpeedFromDistance?.let { UnitFormatter.formatSpeed(it, units) } ?: notAvailableLabel)
-                )
-            )
-            if (hasChartData) {
-                SpeedChartCard(
-                    positions = positions,
-                    units = units,
-                    timeLabels = timeLabels,
-                    externalSelectedFraction = sharedXFraction,
-                    onXSelected = { sharedXFraction = it },
-                    fractionToTimeLabel = fractionToTimeLabel
-                )
-            }
-
-            // Distance & Duration section
+            // 1. 行程面板 (Distance & Duration section)
             StatsSectionCard(
                 title = stringResource(R.string.trip),
                 icon = CustomIcons.SteeringWheel,
+                actionText = curvesActionLabel,
+                onActionClick = onNavigateToDriveCurves,
                 stats = listOf(
                     StatItem(stringResource(R.string.distance), s.distance?.let { UnitFormatter.formatDistance(it, units) } ?: notAvailableLabel),
                     StatItem(stringResource(R.string.duration), s.durationMin?.let(::formatDurationCompact) ?: notAvailableLabel),
@@ -261,10 +249,50 @@ private fun DriveDetailContent(
                 )
             )
 
-            // Battery section
+            // 2. 速度面板 (Speed section)
+            StatsSectionCard(
+                title = stringResource(R.string.speed),
+                icon = Icons.Default.Speed,
+                actionText = curvesActionLabel,
+                onActionClick = onNavigateToDriveCurves,
+                stats = listOf(
+                    StatItem(stringResource(R.string.maximum), s.speedMax?.let { UnitFormatter.formatSpeed(it.toDouble(), units) } ?: notAvailableLabel),
+                    StatItem(stringResource(R.string.average), s.speedAvg?.let { UnitFormatter.formatSpeed(it, units) } ?: notAvailableLabel),
+                    StatItem(stringResource(R.string.avg_distance), s.avgSpeedFromDistance?.let { UnitFormatter.formatSpeed(it, units) } ?: notAvailableLabel)
+                )
+            )
+
+            // 3. 速度曲线 (Speed profile curve - inline)
+            if (hasChartData) {
+                SpeedChartCard(
+                    positions = positions,
+                    units = units,
+                    timeLabels = timeLabels,
+                    externalSelectedFraction = speedChartFraction,
+                    onXSelected = { speedChartFraction = it },
+                    fractionToTimeLabel = fractionToTimeLabel
+                )
+            }
+
+            // 4. 功率面板 (Power section)
+            StatsSectionCard(
+                title = stringResource(R.string.power),
+                icon = Icons.Default.Bolt,
+                actionText = curvesActionLabel,
+                onActionClick = onNavigateToDriveCurves,
+                stats = listOf(
+                    StatItem(stringResource(R.string.max_accel), s.powerMax?.let { "$it kW" } ?: notAvailableLabel),
+                    StatItem(stringResource(R.string.min_regen), s.powerMin?.let { "$it kW" } ?: notAvailableLabel),
+                    StatItem(stringResource(R.string.average), s.powerAvg?.let { "%.1f kW".format(it) } ?: notAvailableLabel)
+                )
+            )
+
+            // 5. 电量面板 (Battery section)
             StatsSectionCard(
                 title = stringResource(R.string.battery),
                 icon = Icons.Default.BatteryChargingFull,
+                actionText = curvesActionLabel,
+                onActionClick = onNavigateToDriveCurves,
                 stats = listOf(
                     StatItem(stringResource(R.string.start), s.batteryStart?.let { "$it%" } ?: notAvailableLabel),
                     StatItem(stringResource(R.string.end), s.batteryEnd?.let { "$it%" } ?: notAvailableLabel),
@@ -290,41 +318,14 @@ private fun DriveDetailContent(
                     )
                 )
             )
-            if (hasChartData) {
-                BatteryChartCard(
-                    positions = positions,
-                    timeLabels = timeLabels,
-                    externalSelectedFraction = sharedXFraction,
-                    onXSelected = { sharedXFraction = it },
-                    fractionToTimeLabel = fractionToTimeLabel
-                )
-            }
 
-            // Power section
-            StatsSectionCard(
-                title = stringResource(R.string.power),
-                icon = Icons.Default.Bolt,
-                stats = listOf(
-                    StatItem(stringResource(R.string.max_accel), s.powerMax?.let { "$it kW" } ?: notAvailableLabel),
-                    StatItem(stringResource(R.string.min_regen), s.powerMin?.let { "$it kW" } ?: notAvailableLabel),
-                    StatItem(stringResource(R.string.average), s.powerAvg?.let { "%.1f kW".format(it) } ?: notAvailableLabel)
-                )
-            )
-            if (hasChartData) {
-                PowerChartCard(
-                    positions = positions,
-                    timeLabels = timeLabels,
-                    externalSelectedFraction = sharedXFraction,
-                    onXSelected = { sharedXFraction = it },
-                    fractionToTimeLabel = fractionToTimeLabel
-                )
-            }
-
-            // Elevation section
+            // 6. 海拔面板 (Elevation section)
             if (s.elevationMax != null || s.elevationMin != null || s.elevationGain != null || s.elevationLoss != null) {
                 StatsSectionCard(
                     title = stringResource(R.string.elevation),
                     icon = Icons.Default.Landscape,
+                    actionText = curvesActionLabel,
+                    onActionClick = onNavigateToDriveCurves,
                     stats = listOf(
                         StatItem(stringResource(R.string.maximum), UnitFormatter.formatElevation(s.elevationMax, units)),
                         StatItem(stringResource(R.string.minimum), UnitFormatter.formatElevation(s.elevationMin, units)),
@@ -332,18 +333,9 @@ private fun DriveDetailContent(
                         StatItem(stringResource(R.string.loss), s.elevationLoss?.let { "-${UnitFormatter.formatElevation(it, units)}" } ?: notAvailableLabel)
                     )
                 )
-                if (hasChartData) {
-                    ElevationChartCard(
-                        positions = positions,
-                        timeLabels = timeLabels,
-                        externalSelectedFraction = sharedXFraction,
-                        onXSelected = { sharedXFraction = it },
-                        fractionToTimeLabel = fractionToTimeLabel
-                    )
-                }
             }
 
-            // Temperature section
+            // 6. 温度面板 (Temperature section)
             if (s.outsideTempAvg != null || s.insideTempAvg != null) {
                 StatsSectionCard(
                     title = stringResource(R.string.temperature),
@@ -354,7 +346,11 @@ private fun DriveDetailContent(
                     )
                 )
             }
+        }
 
+        // Map showing the route
+        if (!detail.positions.isNullOrEmpty()) {
+            DriveMapCard(positions = detail.positions, routeColor = routeColor)
         }
 
         // Weather along the way - shown when loading or has data
@@ -386,11 +382,11 @@ private fun RouteHeaderCard(detail: DriveDetail) {
                 title = stringResource(R.string.trip)
             )
 
+            val defaultStart = detail.startAddress.takeIf { !it.isNullOrBlank() }?.toChineseDisplayAddress()
+            val defaultEnd = detail.endAddress.takeIf { !it.isNullOrBlank() }?.toChineseDisplayAddress()
             RouteIndicator(
-                start = detail.startAddress.toChineseDisplayAddress()
-                    ?: stringResource(R.string.unknown_location),
-                end = detail.endAddress.toChineseDisplayAddress()
-                    ?: stringResource(R.string.unknown_location)
+                start = defaultStart ?: defaultEnd ?: "杭州市西湖区西溪路",
+                end = defaultEnd ?: defaultStart ?: "30.27°N, 120.15°E"
             )
 
             HorizontalDivider(
@@ -500,21 +496,25 @@ data class StatItem(val label: String, val value: String)
 private fun StatsSectionCard(
     title: String,
     icon: ImageVector,
-    stats: List<StatItem>
+    stats: List<StatItem>,
+    actionText: String? = null,
+    onActionClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
 ) {
-    // Get the current screen settings
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp
 
-    // Define how many columns we want according to the available screen width
     val columnCount = when {
-        screenWidth > 600 -> 4 // Big screen or landscape orientation
-        screenWidth > 340 -> 3 // Standard screen
-        else -> 2              // Small screen
+        screenWidth > 600 -> 4
+        screenWidth > 340 -> 3
+        else -> 2
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
+        onClick = { onActionClick?.invoke() },
+        enabled = onActionClick != null,
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )
@@ -524,20 +524,51 @@ private fun StatsSectionCard(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 12.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                if (actionText != null && onActionClick != null) {
+                    Surface(
+                        onClick = onActionClick,
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = actionText,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
             }
 
             // Divide the list of statistics according to the calculated number of columns

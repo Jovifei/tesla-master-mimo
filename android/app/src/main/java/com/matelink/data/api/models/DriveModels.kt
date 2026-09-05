@@ -46,6 +46,9 @@ data class DriveData(
 
     val efficiencyWhKm: Double?
         get() {
+            if (consumptionNet != null && consumptionNet > 0.0) {
+                return consumptionNet
+            }
             val dist = distance ?: return null
             if (dist <= 0) return null
             val consumed = energyConsumedNet ?: return null

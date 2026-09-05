@@ -16,4 +16,11 @@ class GeocodingAccessPolicyTest {
         assertFalse(allowsExternalGeocoding(ConnectionMode.TESLA_CLOUD))
         assertFalse(allowsExternalGeocoding(null))
     }
+
+    @Test
+    fun amapAllowedRegardlessOfConnectionMode() {
+        assertTrue(allowsExternalGeocoding(ConnectionMode.TESLA_CLOUD, isAmap = true))
+        assertTrue(allowsExternalGeocoding(null, isAmap = true))
+        assertTrue(allowsExternalGeocoding(ConnectionMode.SELF_HOSTED, isAmap = true))
+    }
 }

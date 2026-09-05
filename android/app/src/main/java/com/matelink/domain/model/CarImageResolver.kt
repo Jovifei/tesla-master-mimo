@@ -340,6 +340,58 @@ object CarImageResolver {
     }
 
     /**
+     * Get the official Tesla Compositor URL for high-resolution 3D vehicle rendering.
+     */
+    fun getCompositorUrl(
+        model: String?,
+        exteriorColor: String?,
+        wheelType: String?,
+        trimBadging: String? = null
+    ): String {
+        val baseModel = when (model?.uppercase()?.trim()) {
+            "3" -> "m3"
+            "Y" -> "my"
+            "S" -> "ms"
+            "X" -> "mx"
+            "CT", "CYBERTRUCK" -> "ct"
+            else -> "my"
+        }
+        val normalizedColor = exteriorColor?.lowercase()?.replace(" ", "")?.replace("-", "")?.replace("_", "")
+        val compositorColor = when {
+            normalizedColor == null -> "PBSB"
+            normalizedColor.contains("quicksilver") -> "PN00"
+            normalizedColor.contains("stealthgrey") || normalizedColor.contains("stealthgray") -> "PN01"
+            normalizedColor.contains("ultrared") -> "PR01"
+            normalizedColor.contains("midnightcherry") -> "PR00"
+            normalizedColor.contains("black") -> "PBSB"
+            normalizedColor.contains("white") -> "PPSW"
+            normalizedColor.contains("silver") || normalizedColor.contains("grey") || normalizedColor.contains("gray") -> "PMNG"
+            normalizedColor.contains("blue") -> "PPSB"
+            normalizedColor.contains("red") || normalizedColor.contains("cherry") -> "PPMR"
+            else -> "PBSB"
+        }
+        val compositorWheel = when {
+            wheelType != null && wheelType.matches(Regex("^[A-Za-z0-9]{4,5}$")) -> wheelType.uppercase()
+            baseModel == "ms" -> if (wheelType?.contains("21", ignoreCase = true) == true) "WT21" else "WT19"
+            baseModel == "mx" -> if (wheelType?.contains("22", ignoreCase = true) == true) "WX22" else "WX20"
+            baseModel == "m3" -> when {
+                wheelType?.contains("20", ignoreCase = true) == true -> if (trimBadging?.contains("p", ignoreCase = true) == true) "W30P" else "W32P"
+                wheelType?.contains("19", ignoreCase = true) == true -> "W39B"
+                wheelType?.contains("18", ignoreCase = true) == true -> "W38B"
+                else -> "W38B"
+            }
+            baseModel == "my" -> when {
+                wheelType?.contains("21", ignoreCase = true) == true || trimBadging?.contains("p", ignoreCase = true) == true -> "WY21P"
+                wheelType?.contains("20", ignoreCase = true) == true -> "WY20P"
+                wheelType?.contains("18", ignoreCase = true) == true -> "WY18B"
+                else -> "WY19B"
+            }
+            else -> "WY19B"
+        }
+        return "https://static-assets.tesla.com/v1/compositor/?model=$baseModel&view=STUD_3QTR&size=1440&bkba_opt=1&options=%24$compositorColor,%24$compositorWheel"
+    }
+
+    /**
      * Check if a specific asset exists (for fallback logic).
      * This should be called with actual asset checking from the AssetManager.
      */

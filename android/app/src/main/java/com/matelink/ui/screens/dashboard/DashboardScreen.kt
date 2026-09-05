@@ -12,9 +12,11 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AcUnit
@@ -45,13 +47,19 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.res.stringResource
 import com.matelink.R
 import com.matelink.data.api.models.CarData
+import com.matelink.data.api.models.CarStatus
+import com.matelink.data.api.models.Units
 import com.matelink.data.local.TirePosition
 import com.matelink.data.repository.ApiErrorKind
 import com.matelink.ui.components.AmapPointView
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.TelemetryMetricSpec
 import com.matelink.ui.components.TelemetryMetricStrip
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import com.matelink.ui.components.VehicleHeroGraphic
+import com.matelink.ui.components.VehicleHeroImage
 import com.matelink.domain.model.VehicleHeroModel
 import com.matelink.domain.model.VehicleHeroProfile
 import com.matelink.domain.model.UnitFormatter
@@ -82,8 +90,10 @@ fun DashboardScreen(
     onNavigateToStats: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToCurrentCharge: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToAmapPreview: () -> Unit = {},
+    onNavigateToAmapSetup: () -> Unit = {},
     onNavigateToSentryHistory: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToTpmsTrend: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
+    onNavigateToTemperatureTrend: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToTrips: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToReadiness: (carId: Int) -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
@@ -92,6 +102,19 @@ fun DashboardScreen(
     val context = LocalContext.current
     val refreshRotation = remember { Animatable(0f) }
     val refreshScope = rememberCoroutineScope()
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri ->
+            if (uri != null) {
+                try {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        viewModel.saveCustomPhoto(stream)
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        }
+    )
 
     val refresh = {
         viewModel.refresh()
@@ -207,18 +230,90 @@ fun DashboardScreen(
                     )
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SnapshotBadge(uiState.snapshotFreshness, uiState.snapshotMixedSources, uiState.snapshotSource)
-                Spacer(modifier = Modifier.width(8.dp))
-                IconButton(onClick = refresh) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = stringResource(R.string.refresh),
-                        modifier = Modifier.graphicsLayer { rotationZ = refreshRotation.value }
-                    )
+            Column(horizontalAlignment = Alignment.End) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val isAsleep = status.state?.equals("asleep", ignoreCase = true) == true ||
+                        uiState.errorKind == ApiErrorKind.SERVICE_UNAVAILABLE ||
+                        uiState.snapshotFreshness == SnapshotFreshness.RECENT
+                    SnapshotBadge(uiState.snapshotFreshness, uiState.snapshotMixedSources, uiState.snapshotSource, isAsleep)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(onClick = refresh) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = stringResource(R.string.refresh),
+                            modifier = Modifier.graphicsLayer { rotationZ = refreshRotation.value }
+                        )
+                    }
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(Icons.Default.Settings, stringResource(R.string.settings_title))
+                    }
                 }
-                IconButton(onClick = onNavigateToSettings) {
-                    Icon(Icons.Default.Settings, stringResource(R.string.settings_title))
+                uiState.observedAt?.takeIf { it.isNotBlank() }?.let {
+                    formatSnapshotTime(it)?.let { formatted ->
+                        Text(
+                            text = formatted,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = 6.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Active Driving or Charging Dynamic HUD
+        val isDrivingActive = (status.state.equals("driving", ignoreCase = true) || (status.speed ?: 0.0) > 0.0)
+        val isChargingActive = (status.isCharging || status.chargingState.equals("charging", ignoreCase = true))
+
+        val navigateToLiveDrives: () -> Unit = { onNavigateToDrives(carId, exteriorColor) }
+
+        if (isDrivingActive && !uiState.isHudDismissed) {
+            ActiveDrivingHudCard(
+                status = status,
+                units = uiState.units,
+                onDismiss = viewModel::toggleHudDismissed,
+                onClick = navigateToLiveDrives
+            )
+        } else if (isChargingActive && !uiState.isHudDismissed) {
+            ActiveChargingHudCard(
+                status = status,
+                onDismiss = viewModel::toggleHudDismissed,
+                onClick = { onNavigateToCurrentCharge(carId, exteriorColor) }
+            )
+        } else if ((isDrivingActive || isChargingActive) && uiState.isHudDismissed) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.toggleHudDismissed() },
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isDrivingActive) Icons.Default.Speed else Icons.Default.Bolt,
+                            contentDescription = null,
+                            tint = if (isDrivingActive) MaterialTheme.colorScheme.primary else StatusWarning,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = if (isDrivingActive) stringResource(R.string.active_driving_hud_title) else stringResource(R.string.active_charging_hud_title),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.expand_hud),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
         }
@@ -233,8 +328,8 @@ fun DashboardScreen(
             accent = MaterialTheme.colorScheme.primary
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -271,12 +366,19 @@ fun DashboardScreen(
                     }
                 }
 
-                VehicleHeroGraphic(
+                VehicleHeroImage(
                     accent = MaterialTheme.colorScheme.primary,
                     model = car?.carDetails?.model,
                     exteriorColor = exteriorColor,
                     wheelType = car?.carExterior?.wheelType,
-                    trimBadging = car?.carDetails?.trimBadging
+                    trimBadging = car?.carDetails?.trimBadging,
+                    customPhotoFile = uiState.customPhotoFile,
+                    onPickPhotoRequested = {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    onResetPhotoRequested = viewModel::clearCustomPhoto
                 )
 
                 drivingTelemetryFor(status)?.let { telemetry ->
@@ -394,15 +496,6 @@ fun DashboardScreen(
                         strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                     )
                 }
-                uiState.observedAt?.takeIf { it.isNotBlank() }?.let {
-                    formatSnapshotTime(it)?.let { formatted ->
-                        Text(
-                            stringResource(R.string.dashboard_snapshot_time, formatted),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
                 val chargePresentation = classifyBatteryCharge(status.batteryLevel, status.chargeLimitSoc)
                 if (chargePresentation.summary != null) {
                     val summary = chargePresentation.summary
@@ -417,25 +510,6 @@ fun DashboardScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-                if (chargePresentation.showHighSocWarning) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        stringResource(R.string.high_soc_warning),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFFB8C00)
-                    )
-                    TextButton(
-                        onClick = {
-                            context.launchExternalIntentSafely(
-                                Intent(Intent.ACTION_MAIN)
-                                    .addCategory(Intent.CATEGORY_LAUNCHER)
-                                    .setPackage("com.teslamotors.tesla")
-                            )
-                        }
-                    ) {
-                        Text(stringResource(R.string.battery_open_tesla_app))
-                    }
                 }
 
                 Row(
@@ -491,25 +565,47 @@ fun DashboardScreen(
         }
 
         // Info cards row
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             InfoCard(
                 title = stringResource(R.string.odometer),
                 value = status.odometer?.let { UnitFormatter.formatDistance(it, uiState.units, 0) } ?: "--",
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
                 icon = Icons.Default.Speed,
                 onClick = { onNavigateToMileage(carId, exteriorColor) }
             )
-            InfoCard(
-                title = stringResource(R.string.location),
-                value = locationDisplay(
+            val isAmapConfigured = uiState.isAmapConfigured
+            val hasGps = status.latitude != null && status.longitude != null
+            val locationText = when {
+                !isAmapConfigured -> stringResource(R.string.amap_unconfigured_prompt)
+                !hasGps -> stringResource(R.string.gps_waiting_prompt)
+                else -> locationDisplay(
                     geofence = status.geofence,
                     cachedAddress = uiState.cachedAddress,
                     latitude = status.latitude,
                     longitude = status.longitude
-                ) ?: readinessDashboardValue(uiState.dataReadiness?.item("location")),
-                modifier = Modifier.weight(1f),
+                ) ?: "${status.latitude}, ${status.longitude}"
+            }
+            val onLocationClick: () -> Unit = when {
+                !isAmapConfigured -> onNavigateToAmapSetup
+                !hasGps -> { { onNavigateToReadiness(carId) } }
+                else -> onNavigateToAmapPreview
+            }
+
+            InfoCard(
+                title = stringResource(R.string.location),
+                value = locationText,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
                 icon = Icons.Default.LocationOn,
-                onClick = onNavigateToAmapPreview
+                onClick = onLocationClick
             )
         }
 
@@ -529,17 +625,20 @@ fun DashboardScreen(
 
         // Temperature cards
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            val onTempClick: () -> Unit = { onNavigateToTemperatureTrend(carId, exteriorColor) }
             InfoCard(
                 stringResource(R.string.inside_temp),
                 status.insideTemp?.let { UnitFormatter.formatTemperature(it, uiState.units, 1) } ?: "--",
                 Modifier.weight(1f),
-                icon = Icons.Default.Thermostat
+                icon = Icons.Default.Thermostat,
+                onClick = onTempClick
             )
             InfoCard(
                 stringResource(R.string.outside_temp),
                 status.outsideTemp?.let { UnitFormatter.formatTemperature(it, uiState.units, 1) } ?: "--",
                 Modifier.weight(1f),
-                icon = Icons.Default.Thermostat
+                icon = Icons.Default.Thermostat,
+                onClick = onTempClick
             )
         }
 
@@ -551,34 +650,39 @@ fun DashboardScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(stringResource(R.string.tire_pressure), style = MaterialTheme.typography.titleSmall)
+            val onTpmsClick: () -> Unit = { onNavigateToTpmsTrend(carId, exteriorColor) }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 InfoCard(
                     stringResource(R.string.tire_fl_full),
                     status.tpmsDetails?.pressureFl?.let { formatPressure(it, uiState.units) }
                         ?: readinessDashboardValue(uiState.dataReadiness?.item("tpms")),
                     Modifier.weight(1f),
-                    warning = TirePosition.FL in warningTires
+                    warning = TirePosition.FL in warningTires,
+                    onClick = onTpmsClick
                 )
                 InfoCard(
                     stringResource(R.string.tire_fr_full),
                     status.tpmsDetails?.pressureFr?.let { formatPressure(it, uiState.units) }
                         ?: readinessDashboardValue(uiState.dataReadiness?.item("tpms")),
                     Modifier.weight(1f),
-                    warning = TirePosition.FR in warningTires
+                    warning = TirePosition.FR in warningTires,
+                    onClick = onTpmsClick
                 )
                 InfoCard(
                     stringResource(R.string.tire_rl_full),
                     status.tpmsDetails?.pressureRl?.let { formatPressure(it, uiState.units) }
                         ?: readinessDashboardValue(uiState.dataReadiness?.item("tpms")),
                     Modifier.weight(1f),
-                    warning = TirePosition.RL in warningTires
+                    warning = TirePosition.RL in warningTires,
+                    onClick = onTpmsClick
                 )
                 InfoCard(
                     stringResource(R.string.tire_rr_full),
                     status.tpmsDetails?.pressureRr?.let { formatPressure(it, uiState.units) }
                         ?: readinessDashboardValue(uiState.dataReadiness?.item("tpms")),
                     Modifier.weight(1f),
-                    warning = TirePosition.RR in warningTires
+                    warning = TirePosition.RR in warningTires,
+                    onClick = onTpmsClick
                 )
             }
         }
@@ -721,7 +825,7 @@ private fun PartialVehicleDashboard(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                VehicleHeroGraphic(
+                VehicleHeroImage(
                     accent = MaterialTheme.colorScheme.primary,
                     model = car?.carDetails?.model,
                     exteriorColor = exterior?.exteriorColor,
@@ -927,14 +1031,15 @@ internal fun snapshotSourceKind(source: String?): SnapshotSourceKind = when (sou
 }
 
 @Composable
-private fun SnapshotBadge(freshness: SnapshotFreshness, mixedSources: Boolean, source: String?) {
+private fun SnapshotBadge(freshness: SnapshotFreshness, mixedSources: Boolean, source: String?, isAsleep: Boolean = false) {
     val mockEvidence = source == BuildConfig.JOURVOLT_MOCK_SOURCE && BuildConfig.JOURVOLT_MOCK_LOGIN
     val (color, label) = when {
         mockEvidence && BuildConfig.DEBUG -> StatusWarning to stringResource(R.string.snapshot_source_mock)
+        isAsleep -> Color(0xFF607D8B) to stringResource(R.string.snapshot_source_asleep)
         else -> when (freshness) {
             SnapshotFreshness.LIVE -> StatusSuccess to stringResource(R.string.snapshot_source_live)
             SnapshotFreshness.HISTORY -> StatusWarning to stringResource(R.string.snapshot_source_history)
-            SnapshotFreshness.RECENT -> StatusWarning to stringResource(R.string.snapshot_source_recent)
+            SnapshotFreshness.RECENT -> Color(0xFF607D8B) to stringResource(R.string.snapshot_source_asleep)
             SnapshotFreshness.UNAVAILABLE -> SwissMuted to stringResource(R.string.snapshot_source_unavailable)
         }
     }
@@ -943,7 +1048,7 @@ private fun SnapshotBadge(freshness: SnapshotFreshness, mixedSources: Boolean, s
         shape = MaterialTheme.shapes.extraLarge
     ) {
         Text(
-            text = if (mixedSources) "$label · ${stringResource(R.string.snapshot_source_mixed)}" else label,
+            text = if (mixedSources && !isAsleep) "$label · ${stringResource(R.string.snapshot_source_mixed)}" else label,
             color = Color.White,
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -991,7 +1096,9 @@ private fun InfoCard(
                 value,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = if (warning) StatusWarning else MaterialTheme.colorScheme.onSurface
+                color = if (warning) StatusWarning else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             if (warning) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1058,3 +1165,250 @@ private fun StatusChip(
         }
     }
 }
+
+@Composable
+private fun ActiveDrivingHudCard(
+    status: CarStatus,
+    units: Units,
+    onDismiss: () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ElevatedCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(StatusSuccess, shape = CircleShape)
+                    )
+                    Text(
+                        text = stringResource(R.string.active_driving_hud_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                TextButton(
+                    onClick = onDismiss,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.close_hud),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = UnitFormatter.formatSpeed(status.speed ?: 0.0, units, 0),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = stringResource(R.string.vehicle_speed),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                val shiftState = shiftStateFor(status.shiftState)
+                shiftState?.let { shift ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = when (shift) {
+                                        ShiftState.DRIVE -> stringResource(R.string.vehicle_shift_drive)
+                                        ShiftState.REVERSE -> stringResource(R.string.vehicle_shift_reverse)
+                                        ShiftState.NEUTRAL -> stringResource(R.string.vehicle_shift_neutral)
+                                        ShiftState.PARK -> stringResource(R.string.vehicle_shift_park)
+                                    },
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = stringResource(R.string.vehicle_gear),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                status.power?.let { powerVal ->
+                    val direction = powerDirection(powerVal)
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "%.1f kW".format(Locale.ROOT, kotlin.math.abs(powerVal)),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = if (direction == PowerDirection.REGENERATING) StatusSuccess else StatusWarning
+                        )
+                        Text(
+                            text = when (direction) {
+                                PowerDirection.CONSUMING -> stringResource(R.string.vehicle_power_consuming)
+                                PowerDirection.REGENERATING -> stringResource(R.string.vehicle_power_regenerating)
+                                else -> stringResource(R.string.power)
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveChargingHudCard(
+    status: CarStatus,
+    onDismiss: () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ElevatedCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(StatusWarning, shape = CircleShape)
+                    )
+                    Text(
+                        text = stringResource(R.string.active_charging_hud_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    (status.chargerPowerValue ?: status.chargerPower?.toDouble())?.let {
+                        Text(
+                            text = "%.1f kW".format(Locale.ROOT, it),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = StatusWarning
+                        )
+                    }
+                }
+                TextButton(
+                    onClick = onDismiss,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.close_hud),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    val chargeEnergy = status.chargeEnergyAdded ?: 0.0
+                    Text(
+                        text = "%.1f kWh".format(Locale.ROOT, chargeEnergy),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = stringResource(R.string.charge_added),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                status.chargerVoltage?.let { v ->
+                    val a = status.chargerActualCurrent ?: 0
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "${v}V / ${a}A",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(R.string.charge_power),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                status.timeToFullCharge?.let { hours ->
+                    val minutes = (hours * 60).toInt()
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = if (minutes >= 60) "${minutes / 60}h ${minutes % 60}m" else "${minutes}m",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                        Text(
+                            text = stringResource(R.string.charge_remaining),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+

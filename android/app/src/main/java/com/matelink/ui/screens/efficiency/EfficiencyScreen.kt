@@ -125,9 +125,8 @@ fun EfficiencyScreen(
             // Summary card - Average Efficiency
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, SwissOutline),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
@@ -165,9 +164,8 @@ fun EfficiencyScreen(
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, SwissOutline),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
@@ -223,9 +221,8 @@ fun EfficiencyScreen(
             uiState.personalPercentile?.let { position ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, SwissOutline),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
@@ -288,9 +285,8 @@ fun EfficiencyScreen(
             if (uiState.efficiencyBySpeed.isNotEmpty()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, SwissOutline),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
@@ -329,9 +325,8 @@ private fun StatCard(
 ) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, SwissOutline),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
@@ -390,9 +385,8 @@ private fun EfficiencyTripRow(index: Int, trip: EfficiencyTripPosition) {
     var expanded by remember(trip.driveId) { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, SwissOutline),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
