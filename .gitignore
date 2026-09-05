@@ -22,3 +22,7 @@ deploy/jourvolt-dev-mock/backups/
 .workbuddy/*
 !.workbuddy/memory
 !.workbuddy/memory/**
+
+# Binaries
+*.exe
+
