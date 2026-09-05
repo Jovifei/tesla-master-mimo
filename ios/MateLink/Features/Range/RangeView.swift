@@ -95,23 +95,16 @@ struct RangeView: View {
     func loadData() async {
         loadError = nil
         do {
-            let rawDrives: [Drive]
-            if state.isMockMode {
-                rawDrives = await state.mock.getDrives(state.currentCarId)
-            } else if let api = state.real {
-                rawDrives = try await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")
-            } else {
-                throw URLError(.notConnectedToInternet)
-            }
-            let drives = rawDrives.filter { $0.distanceKm > 5 }.suffix(30)
-            trips = drives.map { d in
-                let estimated = Int(d.startIdealRangeKm - d.endIdealRangeKm)  // rated range consumed
-                let actual = Int(d.distanceKm)                                  // actual distance driven
+            let drives = try await state.loadAllDrives()
+            trips = drives.compactMap { d -> RangeTrip? in
+                let estimated = d.startIdealRangeKm - d.endIdealRangeKm
+                guard estimated > 0, d.distanceKm > 0 else { return nil }
+                let actual = d.distanceKm
                 return RangeTrip(
                     date: String(d.startDate.prefix(10)),
-                    estimated: estimated,
-                    actual: actual,
-                    diff: d.outsideTempAvg,
+                    estimated: Int(estimated.rounded()),
+                    actual: Int(actual.rounded()),
+                    diff: actual - estimated,
                     temp: d.outsideTempAvg
                 )
             }

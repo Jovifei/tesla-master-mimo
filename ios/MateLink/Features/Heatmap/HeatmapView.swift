@@ -200,7 +200,7 @@ struct HeatmapView: View {
             drives = await state.mock.getDrives(state.currentCarId)
         } else if let api = state.real {
             do {
-                drives = try await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")
+                drives = try await api.getAllDrives(carId: state.currentCarId)
             } catch {
                 drives = []
                 grid = []

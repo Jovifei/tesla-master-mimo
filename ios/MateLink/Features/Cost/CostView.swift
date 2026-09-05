@@ -71,11 +71,11 @@ struct CostView: View {
 
                     // Location Ranking
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Location Ranking (\u{00A5}/kWh)")
+                        Text("Location Ranking (total cost)")
                             .font(.caption.weight(.semibold)).foregroundColor(.secondary)
                             .padding(.horizontal).padding(.vertical, 10)
                         Divider()
-                        ForEach(Array(ranking.prefix(10).enumerated()), id: \.element.id) { i, loc in
+                        ForEach(Array(ranking.filter { $0.cost > 0 }.prefix(5).enumerated()), id: \.element.id) { i, loc in
                             HStack(spacing: 12) {
                                 Text("\(i + 1)").font(.headline).foregroundColor(.secondary).frame(width: 24)
                                 VStack(alignment: .leading, spacing: 2) {
@@ -109,7 +109,7 @@ struct CostView: View {
             if state.isMockMode {
                 charges = await state.mock.getCharges(state.currentCarId)
             } else if let api = state.real {
-                charges = try await api.fetch("/api/v1/cars/\(state.currentCarId)/charges")
+                charges = try await api.getAllCharges(carId: state.currentCarId)
             } else {
                 throw URLError(.notConnectedToInternet)
             }
@@ -146,6 +146,6 @@ struct CostView: View {
         ranking = locMap.map { addr, v in
             LocationCost(address: addr, cost: v.cost, kWh: v.kWh,
                          pricePerKwh: (v.cost / max(v.kWh, 0.1) * 100).rounded() / 100, count: v.count)
-        }.sorted { $0.pricePerKwh < $1.pricePerKwh }
+        }.sorted { $0.cost > $1.cost }
     }
 }

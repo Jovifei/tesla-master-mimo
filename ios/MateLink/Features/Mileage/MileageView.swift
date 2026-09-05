@@ -166,8 +166,8 @@ struct MileageView: View {
             battery = await state.mock.getBatteryHealth(carId)
         } else if let api = state.real {
             do {
-                drives = try await api.fetch("/api/v1/cars/\(carId)/drives")
-                battery = try await api.fetch("/api/v1/cars/\(carId)/battery-health")
+                drives = try await api.getAllDrives(carId: carId)
+                battery = try await api.getBatteryHealth(carId)
             } catch {
                 drives = []
                 battery = nil

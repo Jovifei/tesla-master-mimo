@@ -91,10 +91,9 @@ struct StatisticsView: View {
     // MARK: - Summary Cards
 
     private var summaryCards: some View {
-        let months = (1...12).map { aggregateMonth(year: currentYear, month: $0) }
-        let totalKm   = months.reduce(0) { $0 + $1.totalKm }
-        let totalKwh  = months.reduce(0) { $0 + $1.totalKwh }
-        let totalDrives = months.reduce(0) { $0 + $1.driveCount }
+        let totalKm   = drives.reduce(0) { $0 + $1.distanceKm }
+        let totalKwh  = drives.reduce(0) { $0 + $1.consumptionKwh }
+        let totalDrives = drives.count
 
         return HStack(spacing: 12) {
             SummaryCardView(icon: "road.lanes",
@@ -168,7 +167,8 @@ struct StatisticsView: View {
     // MARK: - Data Helpers
 
     private var currentYear: Int {
-        calendar.component(.year, from: Date())
+        let years = drives.compactMap { dateComponents($0.startDate)?.year }
+        return years.max() ?? calendar.component(.year, from: Date())
     }
 
     private func parseDate(_ iso: String) -> Date? {
@@ -215,7 +215,7 @@ struct StatisticsView: View {
             drives = await state.mock.getDrives(state.currentCarId)
         } else if let api = state.real {
             do {
-                drives = try await api.fetch("/api/v1/cars/\(state.currentCarId)/drives")
+                drives = try await api.getAllDrives(carId: state.currentCarId)
             } catch {
                 drives = []
                 loadError = "Unable to load real drive data: \(error.localizedDescription)"

@@ -2,80 +2,85 @@ import SwiftUI
 
 struct MoreView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.carPalette) private var palette
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Vehicle") {
-                    NavigationLink { CurrentChargeView() } label: {
-                        Label("Current Charge", systemImage: "bolt.circle")
-                    }
-                    NavigationLink { BatteryHealthView() } label: {
-                        Label(L10n.string("battery_health.title"), systemImage: "battery.100.bolt")
-                    }
-                    NavigationLink { StatisticsView() } label: {
-                        Label("Statistics", systemImage: "chart.bar")
-                    }
-                    NavigationLink { UpdatesView() } label: {
-                        Label("Software Updates", systemImage: "arrow.triangle.2.circlepath")
-                    }
+        List {
+            // MARK: - Vehicle
+            Section(L10n.string("more.vehicle")) {
+                NavigationLink(value: Route.currentCharge(carId: state.currentCarId)) {
+                    Label("Current Charge", systemImage: MateIcons.charging)
                 }
-
-                Section("Analytics") {
-                    NavigationLink { MileageView() } label: {
-                        Label("Mileage", systemImage: "map")
-                    }
-                    NavigationLink { HeatmapView() } label: {
-                        Label("Activity Heatmap", systemImage: "calendar")
-                    }
-                    NavigationLink { EfficiencyView() } label: {
-                        Label("Efficiency Curve", systemImage: "chart.xyaxis.line")
-                    }
-                    NavigationLink { DestinationsView() } label: {
-                        Label("Top Destinations", systemImage: "mappin.circle")
-                    }
-                    NavigationLink { RangeView() } label: {
-                        Label("Range Analysis", systemImage: "gauge")
-                    }
+                NavigationLink(value: Route.battery(carId: state.currentCarId)) {
+                    Label(L10n.string("battery_health.title"), systemImage: MateIcons.battery)
                 }
-
-                Section("Reports") {
-                    NavigationLink { AnnualReportPDFView() } label: {
-                        Label("Annual Report", systemImage: "doc.text")
-                    }
-                    NavigationLink { ExportView() } label: {
-                        Label("Export Data", systemImage: "square.and.arrow.up")
-                    }
-                    NavigationLink { Vehicle3DView() } label: {
-                        Label("3D Vehicle Preview", systemImage: "car.2")
-                    }
+                NavigationLink(value: Route.statistics(carId: state.currentCarId)) {
+                    Label("Statistics", systemImage: MateIcons.statistics)
                 }
-
-                Section("History") {
-                    NavigationLink { TimelineView() } label: {
-                        Label("Timeline", systemImage: "clock")
-                    }
-                    NavigationLink { VampireView() } label: {
-                        Label("Vampire Drain", systemImage: "moon.zzz")
-                    }
-                    NavigationLink { CostView() } label: {
-                        Label("Charging Cost", systemImage: "dollarsign.circle")
-                    }
-                    NavigationLink { SentryHistoryView() } label: {
-                        Label("Sentry History", systemImage: "shield.lefthalf.filled")
-                    }
-                }
-
-                Section("System") {
-                    NavigationLink { SettingsView() } label: {
-                        Label(L10n.string("settings.title"), systemImage: "gear")
-                    }
-                    NavigationLink { AboutView() } label: {
-                        Label(L10n.string("about"), systemImage: "info.circle")
-                    }
+                NavigationLink(value: Route.updates(carId: state.currentCarId)) {
+                    Label("Software Updates", systemImage: MateIcons.updates)
                 }
             }
-            .navigationTitle(L10n.string("nav.more"))
+
+            // MARK: - Analytics
+            Section(L10n.string("more.analytics")) {
+                NavigationLink(value: Route.mileage(carId: state.currentCarId)) {
+                    Label("Mileage", systemImage: MateIcons.mileage)
+                }
+                NavigationLink(value: Route.trips(carId: state.currentCarId)) {
+                    Label("Long Trips", systemImage: MateIcons.trips)
+                }
+                NavigationLink(value: Route.efficiency(carId: state.currentCarId)) {
+                    Label("Efficiency", systemImage: MateIcons.efficiency)
+                }
+                NavigationLink(value: Route.cost(carId: state.currentCarId)) {
+                    Label("Charging Cost", systemImage: MateIcons.cost)
+                }
+                NavigationLink(value: Route.range(carId: state.currentCarId)) {
+                    Label("Range Analysis", systemImage: MateIcons.range)
+                }
+                NavigationLink(value: Route.vampire(carId: state.currentCarId)) {
+                    Label("Vampire Drain", systemImage: MateIcons.vampire)
+                }
+                NavigationLink(value: Route.countriesVisited(carId: state.currentCarId)) {
+                    Label("Countries Visited", systemImage: MateIcons.countries)
+                }
+            }
+
+            // MARK: - Reports
+            Section(L10n.string("more.reports")) {
+                NavigationLink(value: Route.annualReport(carId: state.currentCarId)) {
+                    Label("Annual Report", systemImage: MateIcons.annualReport)
+                }
+                NavigationLink(value: Route.export(carId: state.currentCarId)) {
+                    Label("Export Data", systemImage: MateIcons.export)
+                }
+            }
+
+            // MARK: - History
+            Section(L10n.string("more.history")) {
+                NavigationLink(value: Route.timeline(carId: state.currentCarId)) {
+                    Label("Timeline", systemImage: MateIcons.timeline)
+                }
+                NavigationLink(value: Route.whereWasI(carId: state.currentCarId, timestamp: ISO8601DateFormatter().string(from: Date()))) {
+                    Label("Where Was I?", systemImage: MateIcons.location)
+                }
+                NavigationLink(value: Route.sentryHistory(carId: state.currentCarId)) {
+                    Label("Sentry History", systemImage: MateIcons.sentryHistory)
+                }
+            }
+
+            // MARK: - System
+            Section(L10n.string("more.system")) {
+                NavigationLink(value: Route.settings) {
+                    Label(L10n.string("settings.title"), systemImage: MateIcons.settings)
+                }
+                NavigationLink(value: Route.about) {
+                    Label(L10n.string("about"), systemImage: MateIcons.about)
+                }
+            }
         }
+        .listStyle(.insetGrouped)
+        .navigationTitle(L10n.string("nav.more"))
     }
 }

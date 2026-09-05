@@ -125,6 +125,8 @@ private struct CarStatusContainer: Decodable {
     let sentryMode: Bool
     let windowsOpen: Bool
     let doorsOpen: Bool
+    let frunkOpen: Bool
+    let trunkOpen: Bool
     let centerDisplayState: String
 
     private enum CodingKeys: String, CodingKey {
@@ -133,6 +135,8 @@ private struct CarStatusContainer: Decodable {
         case sentryMode = "sentry_mode"
         case windowsOpen = "windows_open"
         case doorsOpen = "doors_open"
+        case frunkOpen = "frunk_open"
+        case trunkOpen = "trunk_open"
         case centerDisplayState = "center_display_state"
     }
 
@@ -143,6 +147,8 @@ private struct CarStatusContainer: Decodable {
         sentryMode = (try? c.decode(Bool.self, forKey: .sentryMode)) ?? false
         windowsOpen = (try? c.decode(Bool.self, forKey: .windowsOpen)) ?? false
         doorsOpen = (try? c.decode(Bool.self, forKey: .doorsOpen)) ?? false
+        frunkOpen = (try? c.decode(Bool.self, forKey: .frunkOpen)) ?? false
+        trunkOpen = (try? c.decode(Bool.self, forKey: .trunkOpen)) ?? false
         centerDisplayState = (try? c.decode(String.self, forKey: .centerDisplayState)) ?? ""
     }
 }
@@ -254,6 +260,16 @@ struct CarStatus: Codable {
     let shiftState: String?
     let isDcCharging: Bool
     let version: String?
+    let doorsOpen: Bool
+    let windowsOpen: Bool
+    let frunkOpen: Bool
+    let trunkOpen: Bool
+    let geofence: String
+    let chargingState: String
+
+    var isCharging: Bool { chargingState.lowercased() == "charging" }
+    var isChargeComplete: Bool { chargingState.lowercased() == "complete" }
+    var isChargeCompletePluggedIn: Bool { isChargeComplete && pluggedIn }
 
     /// Explicit memberwise init for mock/preview use (suppressed by custom init(from:)).
     init(
@@ -269,7 +285,10 @@ struct CarStatus: Codable {
         tirePressureRearLeft: Double, tirePressureRearRight: Double,
         latitude: Double, longitude: Double, elevation: Double,
         speed: Int, power: Double, heading: Int,
-        shiftState: String?, isDcCharging: Bool = false, version: String? = nil
+        shiftState: String?, isDcCharging: Bool = false, version: String? = nil,
+        doorsOpen: Bool = false, windowsOpen: Bool = false,
+        frunkOpen: Bool = false, trunkOpen: Bool = false,
+        geofence: String = "", chargingState: String = ""
     ) {
         self.carId = carId; self.state = state; self.since = since; self.healthy = healthy
         self.odometer = odometer; self.batteryLevel = batteryLevel; self.usableBatteryLevel = usableBatteryLevel
@@ -284,6 +303,9 @@ struct CarStatus: Codable {
         self.latitude = latitude; self.longitude = longitude; self.elevation = elevation
         self.speed = speed; self.power = power; self.heading = heading
         self.shiftState = shiftState; self.isDcCharging = isDcCharging; self.version = version
+        self.doorsOpen = doorsOpen; self.windowsOpen = windowsOpen
+        self.frunkOpen = frunkOpen; self.trunkOpen = trunkOpen
+        self.geofence = geofence; self.chargingState = chargingState
     }
 
     private enum TopKeys: String, CodingKey {
@@ -334,6 +356,7 @@ struct CarStatus: Codable {
         chargerVoltage = charging.chargerVoltage
         timeToFullCharge = charging.timeToFullCharge
         isDcCharging = charging.isDcCharging
+        chargingState = charging.chargingState
 
         // Climate
         insideTemp = climate.insideTemp
@@ -344,6 +367,10 @@ struct CarStatus: Codable {
         healthy = statusContainer.healthy
         locked = statusContainer.locked
         sentryMode = statusContainer.sentryMode
+        doorsOpen = statusContainer.doorsOpen
+        windowsOpen = statusContainer.windowsOpen
+        frunkOpen = statusContainer.frunkOpen
+        trunkOpen = statusContainer.trunkOpen
 
         // TPMS
         tirePressureFrontLeft = tpms.tpmsPressureFl
@@ -354,6 +381,7 @@ struct CarStatus: Codable {
         // Geodata
         latitude = geodata.latitude
         longitude = geodata.longitude
+        geofence = geodata.geofence
 
         // Driving
         shiftState = driving.shiftState.isEmpty ? nil : driving.shiftState
@@ -386,10 +414,19 @@ struct Drive: Codable, Identifiable {
     let endLatitude: Double; let endLongitude: Double
     let startBatteryLevel: Int; let endBatteryLevel: Int
     let startIdealRangeKm: Double; let endIdealRangeKm: Double
-    let outsideTempAvg: Double; let speedMax: Double; let powerMax: Double; let powerMin: Double
+    let outsideTempAvg: Double; let speedMax: Double; let speedAvg: Double
+    let powerMax: Double; let powerMin: Double
     let elevationGain: Double; let elevationLoss: Double
+    /// Trajectory samples — present on drive detail API (`drive_details`).
+    let positions: [DrivePosition]?
 
-    /// 行程能耗 (kWh) = 距离(km) × 效率(Wh/km) / 1000
+    /// Average speed in km/h — API `speed_avg`, else distance/duration.
+    var averageSpeedKmh: Double {
+        if speedAvg > 0 { return speedAvg }
+        return distanceKm / Double(max(durationMin, 1)) * 60.0
+    }
+
+    /// Weighted-efficiency helper: energy kWh for this drive.
     var consumptionKwh: Double { distanceKm * efficiency / 1000.0 }
 
     /// Memberwise init for Previews / mocks.
@@ -401,8 +438,10 @@ struct Drive: Codable, Identifiable {
         endLatitude: Double, endLongitude: Double,
         startBatteryLevel: Int, endBatteryLevel: Int,
         startIdealRangeKm: Double, endIdealRangeKm: Double,
-        outsideTempAvg: Double, speedMax: Double, powerMax: Double, powerMin: Double,
-        elevationGain: Double, elevationLoss: Double
+        outsideTempAvg: Double, speedMax: Double, speedAvg: Double = 0,
+        powerMax: Double, powerMin: Double,
+        elevationGain: Double, elevationLoss: Double,
+        positions: [DrivePosition]? = nil
     ) {
         self.id = id; self.carId = carId; self.startDate = startDate; self.endDate = endDate
         self.distanceKm = distanceKm; self.durationMin = durationMin; self.efficiency = efficiency
@@ -411,9 +450,10 @@ struct Drive: Codable, Identifiable {
         self.endLatitude = endLatitude; self.endLongitude = endLongitude
         self.startBatteryLevel = startBatteryLevel; self.endBatteryLevel = endBatteryLevel
         self.startIdealRangeKm = startIdealRangeKm; self.endIdealRangeKm = endIdealRangeKm
-        self.outsideTempAvg = outsideTempAvg; self.speedMax = speedMax
+        self.outsideTempAvg = outsideTempAvg; self.speedMax = speedMax; self.speedAvg = speedAvg
         self.powerMax = powerMax; self.powerMin = powerMin
         self.elevationGain = elevationGain; self.elevationLoss = elevationLoss
+        self.positions = positions
     }
 
     private enum TopKeys: String, CodingKey {
@@ -424,12 +464,14 @@ struct Drive: Codable, Identifiable {
         case startLatitude = "start_latitude"; case startLongitude = "start_longitude"
         case endLatitude = "end_latitude"; case endLongitude = "end_longitude"
         case outsideTempAvg = "outside_temp_avg"; case speedMax = "speed_max"
+        case speedAvg = "speed_avg"
         case powerMax = "power_max"; case powerMin = "power_min"
         case elevationGain = "elevation_gain"; case elevationLoss = "elevation_loss"
         // Nested containers (TeslaMate API v1.24+)
         case odometerDetails = "odometer_details"
         case batteryDetails = "battery_details"
         case rangeRated = "range_rated"
+        case driveDetails = "drive_details"
     }
 
     init(from decoder: Decoder) throws {
@@ -448,6 +490,7 @@ struct Drive: Codable, Identifiable {
         endLongitude = (try? top.decode(Double.self, forKey: .endLongitude)) ?? 0
         outsideTempAvg = (try? top.decode(Double.self, forKey: .outsideTempAvg)) ?? 0
         speedMax = (try? top.decode(Double.self, forKey: .speedMax)) ?? 0
+        speedAvg = (try? top.decode(Double.self, forKey: .speedAvg)) ?? 0
         powerMax = (try? top.decode(Double.self, forKey: .powerMax)) ?? 0
         powerMin = (try? top.decode(Double.self, forKey: .powerMin)) ?? 0
         elevationGain = (try? top.decode(Double.self, forKey: .elevationGain)) ?? 0
@@ -477,6 +520,8 @@ struct Drive: Codable, Identifiable {
             startIdealRangeKm = (try? top.decode(Double.self, forKey: .startIdealRangeKm)) ?? 0
             endIdealRangeKm = (try? top.decode(Double.self, forKey: .endIdealRangeKm)) ?? 0
         }
+
+        positions = try? top.decode([DrivePosition].self, forKey: .driveDetails)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -496,6 +541,7 @@ struct Drive: Codable, Identifiable {
         try c.encode(endIdealRangeKm, forKey: .endIdealRangeKm)
         try c.encode(outsideTempAvg, forKey: .outsideTempAvg)
         try c.encode(speedMax, forKey: .speedMax)
+        try c.encode(speedAvg, forKey: .speedAvg)
         try c.encode(powerMax, forKey: .powerMax)
         try c.encode(powerMin, forKey: .powerMin)
         try c.encode(elevationGain, forKey: .elevationGain)
@@ -555,6 +601,8 @@ struct Charge: Codable, Identifiable {
     let latitude: Double; let longitude: Double
     let chargingType: String; let powerMax: Double; let powerMin: Double
     let outsideTempAvg: Double
+    /// Per-point curve — present on charge detail API (`charge_details`).
+    let chargePoints: [ChargePoint]?
 
     /// Memberwise init for Previews / mocks.
     init(
@@ -565,7 +613,7 @@ struct Charge: Codable, Identifiable {
         durationMin: Int, cost: Double? = nil, address: String? = nil,
         latitude: Double, longitude: Double,
         chargingType: String, powerMax: Double, powerMin: Double,
-        outsideTempAvg: Double
+        outsideTempAvg: Double, chargePoints: [ChargePoint]? = nil
     ) {
         self.id = id; self.carId = carId; self.startDate = startDate; self.endDate = endDate
         self.chargeEnergyAdded = chargeEnergyAdded; self.startBatteryLevel = startBatteryLevel; self.endBatteryLevel = endBatteryLevel
@@ -574,7 +622,7 @@ struct Charge: Codable, Identifiable {
         self.durationMin = durationMin; self.cost = cost; self.address = address
         self.latitude = latitude; self.longitude = longitude
         self.chargingType = chargingType; self.powerMax = powerMax; self.powerMin = powerMin
-        self.outsideTempAvg = outsideTempAvg
+        self.outsideTempAvg = outsideTempAvg; self.chargePoints = chargePoints
     }
 
     private enum TopKeys: String, CodingKey {
@@ -591,6 +639,7 @@ struct Charge: Codable, Identifiable {
         case rangeIdeal = "range_ideal"
         case chargerPhases = "charger_phases"
         case chargingType = "charging_type"
+        case chargeDetails = "charge_details"
     }
 
     init(from decoder: Decoder) throws {
@@ -643,6 +692,8 @@ struct Charge: Codable, Identifiable {
             let phases = (try? top.decode(Int.self, forKey: .chargerPhases)) ?? -1
             chargingType = (phases == 0) ? "DC" : "AC"
         }
+
+        chargePoints = try? top.decode([ChargePoint].self, forKey: .chargeDetails)
     }
 
     func encode(to encoder: Encoder) throws {

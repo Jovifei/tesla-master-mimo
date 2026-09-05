@@ -107,7 +107,18 @@ class AppState: ObservableObject {
     }
 
     var currentCar: Car? { cars.first { $0.id == currentCarId } }
-    var carAccent: Color { CarColor.from(currentCar?.color ?? "").accent }
+    var carPalette: CarColorPalette {
+        CarColorPalettes.forExteriorColor(currentCar?.color, isDark: isDarkMode)
+    }
+    var carAccent: Color { carPalette.accent }
+
+    func selectCar(_ carId: Int) {
+        currentCarId = carId
+        if let instanceId = activeInstanceID,
+           let index = instances.firstIndex(where: { $0.id == instanceId }) {
+            instances[index].carId = carId
+        }
+    }
 
     init() {
         apiToken = KeychainHelper.load("apiToken") ?? ""
@@ -115,6 +126,10 @@ class AppState: ObservableObject {
         instances = AppState.loadInstances()
         activeInstanceID = UserDefaults.standard.string(forKey: AppStateStorageKeys.activeInstanceID)
         onboardingDone = UserDefaults.standard.bool(forKey: AppStateStorageKeys.onboardingDone)
+        if let instanceId = activeInstanceID,
+           let instance = instances.first(where: { $0.id == instanceId }) {
+            currentCarId = instance.carId
+        }
         let savedMockMode = UserDefaults.standard.object(forKey: AppStateStorageKeys.mockMode) as? Bool
         if onboardingDone && !serverURL.isEmpty {
             ensureLegacyInstance()
@@ -175,6 +190,18 @@ class AppState: ObservableObject {
                 currentCarId = firstCar.id
             }
         }
+    }
+
+    func loadAllDrives() async throws -> [Drive] {
+        if isMockMode { return await mock.getDrives(currentCarId) }
+        guard let api = real else { throw ApiError.invalidResponse }
+        return try await api.getAllDrives(carId: currentCarId)
+    }
+
+    func loadAllCharges() async throws -> [Charge] {
+        if isMockMode { return await mock.getCharges(currentCarId) }
+        guard let api = real else { throw ApiError.invalidResponse }
+        return try await api.getAllCharges(carId: currentCarId)
     }
 
     func connect(url: String, token: String) async throws {

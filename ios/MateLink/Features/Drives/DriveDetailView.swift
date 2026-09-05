@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import CoreLocation
 
 // MARK: - Chart Data Point
 struct DriveDataPoint: Identifiable {
@@ -20,9 +21,11 @@ struct DriveDataPoint: Identifiable {
 struct DriveDetailView: View {
     let drive: Drive
 
+    @Environment(\.carPalette) private var palette
     @State private var selectedTab: DriveTab = .speed
     @State private var dataPoints: [DriveDataPoint] = []
     @State private var visibleRange: ClosedRange<Double> = 0...1
+    @State private var usesSimulatedChart = false
 
     private static let tabColors: [DriveTab: Color] = [
         .speed: Color(red: 0.231, green: 0.510, blue: 0.965),   // #3B82F6
@@ -58,24 +61,29 @@ struct DriveDetailView: View {
 
     // MARK: - Body
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    headerCard
-                    statsGrid
-                    batteryBar
-                    chartSection
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
+        ScrollView {
+            VStack(spacing: 16) {
+                headerCard
+                routeMapCard
+                statsGrid
+                batteryBar
+                chartSection
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Drive Detail")
-            .navigationBarTitleDisplayMode(.inline)
-            .onAppear {
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Drive Detail")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if let positions = drive.positions, !positions.isEmpty {
+                dataPoints = dataPointsFromPositions(positions)
+                usesSimulatedChart = false
+            } else {
                 dataPoints = generateDataPoints()
-                visibleRange = 0...Double(drive.durationMin)
+                usesSimulatedChart = true
             }
+            visibleRange = 0...Double(drive.durationMin)
         }
     }
 
@@ -83,27 +91,27 @@ struct DriveDetailView: View {
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Image(systemName: "car.fill")
-                    .foregroundColor(.blue)
+                Image(systemName: MateIcons.drives)
+                    .foregroundStyle(palette.accent)
                     .font(.caption)
                 Text("Drive")
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(.blue)
+                    .foregroundStyle(palette.accent)
                 Spacer()
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Circle().fill(Color.blue).frame(width: 8, height: 8)
+                    Circle().fill(.blue).frame(width: 8, height: 8)
                     Text(drive.startAddress)
                         .font(.headline.weight(.semibold))
                 }
 
                 HStack(spacing: 8) {
-                    Circle().fill(Color.red).frame(width: 8, height: 8)
+                    Circle().fill(.red).frame(width: 8, height: 8)
                     Text(drive.endAddress)
                         .font(.headline.weight(.semibold))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -112,15 +120,37 @@ struct DriveDetailView: View {
             HStack(spacing: 16) {
                 Label(formattedDate(drive.startDate), systemImage: "calendar")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Label("\(drive.durationMin) min", systemImage: "clock")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding()
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    // MARK: - Route Map Card
+    private var routeMapCard: some View {
+        let coords = routeCoordinates
+        DriveRouteMap(
+            startLat: drive.startLatitude,
+            startLon: drive.startLongitude,
+            endLat: drive.endLatitude,
+            endLon: drive.endLongitude,
+            routeCoordinates: coords
+        )
+        .frame(height: 200)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var routeCoordinates: [CLLocationCoordinate2D] {
+        guard let positions = drive.positions, !positions.isEmpty else { return [] }
+        return positions.compactMap { pos in
+            guard let lat = pos.latitude, let lon = pos.longitude else { return nil }
+            return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        }
     }
 
     // MARK: - Stats Grid
@@ -273,10 +303,11 @@ struct DriveDetailView: View {
             // Brush / Zoom controls
             brushControls
 
-            // Disclaimer
-            Text("Simulated data — based on trip summary")
-                .font(.caption2)
-                .foregroundColor(.secondary)
+            if usesSimulatedChart {
+                Text("Estimated curve — based on trip summary")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding()
         .background(.regularMaterial)
@@ -483,7 +514,38 @@ struct DriveDetailView: View {
         }
     }
 
-    // MARK: - Data Generation
+    // MARK: - Data from API positions
+    private func dataPointsFromPositions(_ positions: [DrivePosition]) -> [DriveDataPoint] {
+        let startDate = parseISO(drive.startDate)
+        return positions.enumerated().compactMap { index, pos in
+            let minute: Double
+            if let startDate, let dateStr = pos.date, let pointDate = parseISO(dateStr) {
+                minute = pointDate.timeIntervalSince(startDate) / 60.0
+            } else {
+                minute = Double(index)
+            }
+            return DriveDataPoint(
+                minute: minute,
+                speed: Double(pos.speed ?? 0),
+                power: Double(pos.power ?? 0) / 1000.0,
+                altitude: Double(pos.elevation ?? 0),
+                insideTemp: pos.insideTemp ?? drive.outsideTempAvg,
+                outsideTemp: pos.outsideTemp ?? drive.outsideTempAvg,
+                tireFL: 2.45, tireFR: 2.48, tireRL: 2.43, tireRR: 2.46
+            )
+        }
+    }
+
+    private func parseISO(_ value: String) -> Date? {
+        let full = ISO8601DateFormatter()
+        full.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = full.date(from: value) { return d }
+        let basic = ISO8601DateFormatter()
+        basic.formatOptions = [.withInternetDateTime]
+        return basic.date(from: value)
+    }
+
+    // MARK: - Data Generation (fallback when no positions)
     private func generateDataPoints() -> [DriveDataPoint] {
         let n = 30
         let avgSpeed = drive.durationMin > 0

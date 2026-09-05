@@ -20,6 +20,7 @@ struct ChargeDetailView: View {
     @State private var isZoomed: Bool = false
 
     private let samples: [ChargeSample]
+    private let usesSimulatedChart: Bool
     private let sampleCount = 30
 
     enum ChartTab: String, CaseIterable {
@@ -44,42 +45,74 @@ struct ChargeDetailView: View {
 
     init(charge: Charge) {
         self.charge = charge
-        let duration = ChargeDetailView.computeDurationMinutes(charge: charge) ?? 45
-        let isDC = charge.chargeType == "DC"
-        // Derive average power from real summary data
+        if let points = charge.chargePoints, !points.isEmpty {
+            self.samples = ChargeDetailView.samplesFromPoints(points, charge: charge)
+            self.usesSimulatedChart = false
+        } else {
+            self.samples = ChargeDetailView.generateSamples(charge: charge)
+            self.usesSimulatedChart = true
+        }
+    }
+
+    private static func generateSamples(charge: Charge) -> [ChargeSample] {
+        let duration = computeDurationMinutes(charge: charge) ?? 45
+        let isDC = charge.chargingType == "DC"
         let avgPower = duration > 0 ? charge.chargeEnergyAdded / (Double(duration) / 60.0) : 0.0
         var result: [ChargeSample] = []
         for i in 0..<30 {
             let minute = Int(round(Double(duration) * Double(i) / 29.0))
-            let fraction = Double(i) / 29.0  // 0.0 to 1.0 through charge session
+            let fraction = Double(i) / 29.0
             let power: Double
             let voltage: Double
             if isDC {
-                // DC fast charging: high power taper as SOC increases
-                // Tapers from ~120% avg to ~40% avg in a realistic CC-CV curve
                 let taperFactor = 1.2 - 0.8 * fraction * fraction
                 let variation = sin(Double(i) * 0.5) * 0.08
                 power = max(0, avgPower * taperFactor * (1 + variation))
-                // Voltage rises as battery SOC increases (CC phase then CV)
                 voltage = 370 + 30 * fraction + sin(Double(i) * 0.3) * 5
             } else {
-                // AC charging: nearly constant power
                 let variation = sin(Double(i) * 0.4) * 0.05
                 power = avgPower * (1 + variation)
                 voltage = 230 + sin(Double(i) * 0.2) * 3
             }
-            // Temperature rises during charging, especially DC
             let baseTemp = charge.outsideTempAvg
             let tempRise = isDC ? 8.0 : 3.0
             let temp = baseTemp + tempRise * (1 - exp(-3 * fraction)) + sin(Double(i) * 0.25) * 0.8
             result.append(ChargeSample(minute: minute, power: power, voltage: voltage, temperature: temp))
         }
-        self.samples = result
+        return result
+    }
+
+    private static func samplesFromPoints(_ points: [ChargePoint], charge: Charge) -> [ChargeSample] {
+        let chronological = Array(points.reversed())
+        let startDate = parseISO(charge.startDate)
+        return chronological.enumerated().map { index, point in
+            let minute: Int
+            if let startDate, let dateStr = point.date, let pointDate = parseISO(dateStr) {
+                minute = Int(pointDate.timeIntervalSince(startDate) / 60.0)
+            } else {
+                minute = index
+            }
+            return ChargeSample(
+                minute: minute,
+                power: Double(point.chargerPower ?? 0),
+                voltage: Double(point.chargerVoltage ?? 0),
+                temperature: point.outsideTemp ?? charge.outsideTempAvg
+            )
+        }
+    }
+
+    private static func parseISO(_ value: String) -> Date? {
+        let full = ISO8601DateFormatter()
+        full.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = full.date(from: value) { return d }
+        let basic = ISO8601DateFormatter()
+        basic.formatOptions = [.withInternetDateTime]
+        return basic.date(from: value)
     }
 
     // MARK: - Computed Properties
 
-    private var isDC: Bool { charge.chargeType == "DC" }
+    private var isDC: Bool { charge.chargingType == "DC" }
 
     private var durationMinutes: Int? {
         ChargeDetailView.computeDurationMinutes(charge: charge)
@@ -255,9 +288,11 @@ struct ChargeDetailView: View {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
-            Text("Simulated data — based on charge summary")
-                .font(.caption2)
-                .foregroundColor(.secondary)
+            if usesSimulatedChart {
+                Text("Estimated curve — based on charge summary")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding()
         .background(.regularMaterial)

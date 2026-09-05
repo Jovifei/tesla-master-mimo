@@ -71,8 +71,8 @@ final class TimelineViewModel: ObservableObject {
             charges = await state.mock.getCharges(carId)
         } else if let api = state.real {
             do {
-                drives = try await api.fetch("/api/v1/cars/\(carId)/drives")
-                charges = try await api.fetch("/api/v1/cars/\(carId)/charges")
+                drives = try await api.getAllDrives(carId: carId)
+                charges = try await api.getAllCharges(carId: carId)
             } catch {
                 errorMessage = error.localizedDescription
                 return
@@ -115,39 +115,10 @@ final class TimelineViewModel: ObservableObject {
         }
 
         merged.sort { $0.start > $1.start }
-
-        // Insert rest events for gaps > 30 minutes
-        var withRests: [TimelineEvent] = []
-        for i in 0..<merged.count {
-            withRests.append(merged[i])
-            guard i + 1 < merged.count else { continue }
-            let curEnd = merged[i].end ?? merged[i].start
-            let nextStart = merged[i + 1].start
-            let gapMin = nextStart.timeIntervalSince(curEnd) / 60
-            if gapMin > 30 {
-                let restStart = curEnd
-                let restEnd = nextStart
-                let duration = Int(gapMin)
-                let hrs = duration / 60
-                let mins = duration % 60
-                let durStr = hrs > 0 ? "\(hrs)h \(mins)m" : "\(mins)m"
-                withRests.append(TimelineEvent(
-                    id: "rest_\(Int(restStart.timeIntervalSince1970))",
-                    type: "rest",
-                    start: restStart,
-                    end: restEnd,
-                    label: "Parked",
-                    detail: "Car was idle \u{00b7} \(durStr)",
-                    metrics: durStr
-                ))
-            }
+        if !merged.isEmpty {
+            merged[merged.count - 1].isLast = true
         }
-
-        if !withRests.isEmpty {
-            withRests[withRests.count - 1].isLast = true
-        }
-
-        self.events = withRests
+        self.events = merged
     }
 }
 

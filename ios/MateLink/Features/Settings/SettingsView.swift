@@ -4,24 +4,27 @@ struct SettingsView: View {
     @EnvironmentObject var state: AppState
     @State private var connectionMessage: String?
     @State private var isTestingConnection = false
+    @State private var testResult: String?
 
     var body: some View {
         List {
-            Section(L10n.string("connection")) {
+            // MARK: - Network
+            Section(L10n.string("settings.network")) {
                 if !state.instances.isEmpty {
                     ForEach(state.instances) { instance in
                         HStack {
-                            VStack(alignment: .leading) {
-                                Text(instance.name)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(instance.name).font(.headline)
                                 Text(instance.serverURL)
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
                             }
                             Spacer()
                             if instance.id == state.activeInstanceID {
                                 Label("Active", systemImage: "checkmark.circle.fill")
                                     .font(.caption)
-                                    .foregroundColor(.green)
+                                    .foregroundStyle(MateColors.success)
                             } else {
                                 Button("Switch") {
                                     Task {
@@ -33,11 +36,14 @@ struct SettingsView: View {
                                         }
                                     }
                                 }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
                             }
                             NavigationLink {
                                 AddInstanceView(instance: instance)
                             } label: {
-                                Image(systemName: "pencil")
+                                Image(systemName: "pencil.circle")
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -45,61 +51,92 @@ struct SettingsView: View {
                         offsets.map { state.instances[$0].id }.forEach(state.deleteInstance)
                     }
                 }
+
                 NavigationLink("Add Instance") {
                     AddInstanceView()
                 }
-                Text("Requires self-hosted TeslaMate + TeslaMateApi-compatible API.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text("Enter the API root URL, not Grafana or TeslaMate Web UI. Do not add /api or /api/v1.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+
                 TextField(L10n.string("server_url"), text: $state.serverURL)
+                    .textContentType(.URL)
+                    .autocapitalization(.none)
+
                 SecureField(L10n.string("api_token"), text: $state.apiToken)
+
                 Button {
                     Task {
                         isTestingConnection = true
+                        testResult = nil
                         defer { isTestingConnection = false }
                         do {
                             try await state.connect(url: state.serverURL, token: state.apiToken)
-                            connectionMessage = "Connection successful."
+                            testResult = "✓ Connected successfully"
                         } catch {
-                            connectionMessage = error.localizedDescription
+                            testResult = "✗ \(error.localizedDescription)"
                         }
                     }
                 } label: {
                     HStack {
-                        if isTestingConnection {
-                            ProgressView()
-                        }
+                        if isTestingConnection { ProgressView().controlSize(.small) }
                         Text(L10n.string("test_connection"))
                     }
                 }
                 .disabled(state.serverURL.isEmpty || isTestingConnection)
+
+                if let result = testResult {
+                    Text(result)
+                        .font(.caption)
+                        .foregroundStyle(result.hasPrefix("✓") ? MateColors.success : MateColors.error)
+                }
             }
-            Section(L10n.string("preferences")) {
+
+            // MARK: - Data Status
+            Section {
+                NavigationLink(value: Route.dataReadiness(carId: state.currentCarId)) {
+                    Label(L10n.string("data_readiness_title"), systemImage: "checkmark.seal")
+                }
+            }
+
+            // MARK: - Display
+            Section(L10n.string("settings.display")) {
+                Toggle("Dark Mode", isOn: $state.isDarkMode)
+
                 NavigationLink {
                     TariffConfigView()
                 } label: {
                     Label("Tariff Config", systemImage: "clock.badge.checkmark")
                 }
-                Toggle("Dark Mode", isOn: $state.isDarkMode)
             }
-            Section("Development") {
+
+            // MARK: - Instances
+            Section(L10n.string("settings.instances")) {
+                Text(L10n.string("settings.instances_desc"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Requires self-hosted TeslaMate + TeslaMateApi-compatible API.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // MARK: - Development
+            Section(L10n.string("settings.development")) {
                 Toggle(L10n.string("mock_mode"), isOn: $state.isMockMode)
-                Text("Do I need a server? Real data yes; Mock mode no.")
+                Text("Mock mode uses built-in sample data — no server required.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
-            Section("China Localization / Map") {
-                Text("AMap/Gaode Web Service Key is user-owned and must be applied for separately. Leave it blank to keep the current fallback map and geocoding behavior.")
+
+            // MARK: - Map
+            Section(L10n.string("settings.map")) {
+                Text("AMap/Gaode Web Service Key is user-owned and must be applied for separately. Leave blank to use the built-in MapKit fallback.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
+
+            // MARK: - About
             Section {
                 Text(L10n.string("version") + " 0.1.0-alpha")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle(L10n.string("settings.title"))

@@ -1,3 +1,14 @@
+# 2026-08-30 iOS Apple 重设计（分支 feature/ios-apple-redesign，禁止提交 main）
+
+- [x] Apple 设计系统 + 类型安全导航 + 核心页重写
+- [x] 车辆核心逻辑：开口告警、isCharging、详情曲线/轨迹、当前充电轮询、换车持久化（`e9666f7`）
+- [x] 列表筛选、snapshot、分析全量、Trips/TPMS/Countries/WhereWasI（`f72a4ec`）
+- [ ] Mac：`xcodegen generate` + `pod install` + `xcodebuild`（Windows 卡死，无法证明）
+- [ ] Mock 手测：筛选、snapshot 徽章、长途/胎压/国家/位置、充电 7 天默认
+- [ ] 将来：Widget target、APNs、高德 SDK、Sentry 真机采集、Watch
+
+交接（完成 / 卡点 / 将来）：`docs/IOS-APPLE-REDESIGN-HANDOFF-2026-08-30.md`
+
 # JourVolt Android rollout implementation - 2026-08-09
 
 ## 2026-09-01 真机登录与高德配置回归（当前）

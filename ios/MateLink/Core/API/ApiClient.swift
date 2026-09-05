@@ -68,15 +68,43 @@ actor TeslaMateAPI {
     }
 
     func getCurrentCharge(_ carId: Int) async throws -> Charge? {
-        try await fetch("/api/v1/cars/\(carId)/charges/current")
+        let resp: ChargeDetailResponse = try await fetch("/api/v1/cars/\(carId)/charges/current")
+        if resp.error != nil { return nil }
+        return resp.data?.charge
     }
 
     func getChargeDetail(_ carId: Int, chargeId: Int) async throws -> Charge {
-        return try await fetch("/api/v1/cars/\(carId)/charges/\(chargeId)")
+        let resp: ChargeDetailResponse = try await fetch("/api/v1/cars/\(carId)/charges/\(chargeId)")
+        guard let charge = resp.data?.charge else {
+            throw ApiError.invalidResponse
+        }
+        return charge
+    }
+
+    /// Charge detail including `charge_details` curve points.
+    func getChargeDetailWithPoints(_ carId: Int, chargeId: Int) async throws -> Charge {
+        let resp = try await fetchChargeDetailResponse(carId: carId, chargeId: chargeId)
+        guard let charge = resp.data?.charge else {
+            throw ApiError.invalidResponse
+        }
+        return charge
     }
 
     func getDriveDetail(_ carId: Int, driveId: Int) async throws -> Drive {
-        return try await fetch("/api/v1/cars/\(carId)/drives/\(driveId)")
+        let resp: DriveDetailResponse = try await fetch("/api/v1/cars/\(carId)/drives/\(driveId)")
+        guard let drive = resp.data?.drive else {
+            throw ApiError.invalidResponse
+        }
+        return drive
+    }
+
+    /// Drive detail including `drive_details` trajectory (preferred for charts/maps).
+    func getDriveDetailWithPositions(_ carId: Int, driveId: Int) async throws -> Drive {
+        let resp = try await fetchDriveDetailResponse(carId: carId, driveId: driveId)
+        guard let drive = resp.data?.drive else {
+            throw ApiError.invalidResponse
+        }
+        return drive
     }
 
     func getBatteryHealth(_ carId: Int) async throws -> BatteryHealth {
@@ -90,6 +118,254 @@ actor TeslaMateAPI {
     func getGlobalSettings() async throws -> TeslamateUnits {
         let resp: GlobalSettingsResponse = try await fetch("/api/v1/globalsettings")
         return resp.data.settings.teslamateUnits
+    }
+
+    // MARK: - Paginated List Endpoints
+
+    /// Fetch charges with pagination and optional date range filter.
+    func getCharges(carId: Int, page: Int = 1, show: Int = 50,
+                    startDate: String? = nil, endDate: String? = nil) async throws -> [Charge] {
+        var path = "/api/v1/cars/\(carId)/charges?page=\(page)&show=\(show)"
+        if let s = startDate { path += "&startDate=\(s)" }
+        if let e = endDate { path += "&endDate=\(e)" }
+        let resp: ChargesListResponse = try await fetch(path)
+        return resp.data.charges
+    }
+
+    /// Fetch drives with pagination and optional date range filter.
+    func getDrives(carId: Int, page: Int = 1, show: Int = 50,
+                   startDate: String? = nil, endDate: String? = nil) async throws -> [Drive] {
+        var path = "/api/v1/cars/\(carId)/drives?page=\(page)&show=\(show)"
+        if let s = startDate { path += "&startDate=\(s)" }
+        if let e = endDate { path += "&endDate=\(e)" }
+        let resp: DrivesListResponse = try await fetch(path)
+        return resp.data.drives
+    }
+
+    /// Fetch all pages of charges (auto-paginates with 50/page).
+    func getAllCharges(carId: Int, startDate: String? = nil, endDate: String? = nil) async throws -> [Charge] {
+        var all: [Charge] = []
+        var page = 1
+        while true {
+            let batch = try await getCharges(carId: carId, page: page, show: 50,
+                                             startDate: startDate, endDate: endDate)
+            all.append(contentsOf: batch)
+            if batch.count < 50 { break }
+            page += 1
+        }
+        return all
+    }
+
+    /// Fetch all pages of drives (auto-paginates with 50/page).
+    func getAllDrives(carId: Int, startDate: String? = nil, endDate: String? = nil) async throws -> [Drive] {
+        var all: [Drive] = []
+        var page = 1
+        while true {
+            let batch = try await getDrives(carId: carId, page: page, show: 50,
+                                            startDate: startDate, endDate: endDate)
+            all.append(contentsOf: batch)
+            if batch.count < 50 { break }
+            page += 1
+        }
+        return all
+    }
+
+    // MARK: - Detail Endpoints with Nested Data
+
+    /// Charge detail including `charge_details` curve points.
+    func fetchChargeDetailResponse(carId: Int, chargeId: Int) async throws -> ChargeDetailResponse {
+        try await fetch("/api/v1/cars/\(carId)/charges/\(chargeId)")
+    }
+
+    /// Drive detail including `drive_details` trajectory points.
+    func fetchDriveDetailResponse(carId: Int, driveId: Int) async throws -> DriveDetailResponse {
+        try await fetch("/api/v1/cars/\(carId)/drives/\(driveId)")
+    }
+
+    // MARK: - MateLink Extension Endpoints (matelink/v1/)
+
+    /// MateLink adapter snapshot — Android `AdapterSnapshot`.
+    func getAdapterSnapshot(carId: Int) async throws -> AdapterSnapshotData {
+        let resp: AdapterSnapshotEnvelope = try await fetch("/api/matelink/v1/cars/\(carId)/snapshot")
+        guard let data = resp.data else {
+            throw ApiError.invalidResponse
+        }
+        return data
+    }
+
+    func getStandbyWindows(carId: Int) async throws -> [StandbyWindowData] {
+        let resp: StandbyEnvelope = try await fetch("/api/matelink/v1/cars/\(carId)/standby")
+        return resp.data?.windows ?? []
+    }
+}
+
+// MARK: - List Response Wrappers
+
+struct ChargesListResponse: Codable {
+    let data: ChargesListData
+}
+struct ChargesListData: Codable {
+    let charges: [Charge]
+}
+
+struct DrivesListResponse: Codable {
+    let data: DrivesListData
+}
+struct DrivesListData: Codable {
+    let drives: [Drive]
+}
+
+// MARK: - Detail Response Wrappers (nested data.charge / data.drive)
+
+struct ChargeDetailResponse: Codable {
+    let data: ChargeDetailDataWrapper?
+    let error: String?
+}
+struct ChargeDetailDataWrapper: Codable {
+    let charge: Charge?
+    let car: DetailCarInfo?
+}
+
+struct DriveDetailResponse: Codable {
+    let data: DriveDetailDataWrapper?
+    let error: String?
+}
+struct DriveDetailDataWrapper: Codable {
+    let drive: Drive?
+    let car: DetailCarInfo?
+}
+
+struct DetailCarInfo: Codable {
+    let carId: Int?
+    let carName: String?
+    enum CodingKeys: String, CodingKey {
+        case carId = "car_id"
+        case carName = "car_name"
+    }
+}
+
+// MARK: - Snapshot Response
+
+struct AdapterSnapshotEnvelope: Decodable {
+    let data: AdapterSnapshotData?
+    let error: String?
+}
+
+struct AdapterSnapshotData: Decodable {
+    let status: CarStatus
+    let observedAt: String?
+    let source: String
+    let fieldSources: [String: String]?
+
+    enum CodingKeys: String, CodingKey {
+        case status, source
+        case observedAt = "observed_at"
+        case fieldSources = "field_sources"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        status = try c.decode(CarStatus.self, forKey: .status)
+        observedAt = try? c.decode(String.self, forKey: .observedAt)
+        source = (try? c.decode(String.self, forKey: .source)) ?? "unknown"
+        fieldSources = try? c.decode([String: String].self, forKey: .fieldSources)
+    }
+}
+
+struct StandbyEnvelope: Decodable {
+    let data: StandbyData?
+    let error: String?
+}
+
+struct StandbyData: Decodable {
+    let windows: [StandbyWindowData]
+}
+
+struct StandbyWindowData: Decodable, Identifiable {
+    var id: String { startDate }
+    let startDate: String
+    let endDate: String
+    let address: String?
+    let durationSeconds: Int
+    let startBatteryLevel: Int?
+    let endBatteryLevel: Int?
+    let batteryDelta: Int?
+    let energyKwh: Double?
+    let averagePowerW: Double?
+    let peakPowerW: Double?
+    let coverageRatio: Double
+    let climateActiveSampleCount: Int
+    let climateSampleCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case address
+        case startDate = "start_date"
+        case endDate = "end_date"
+        case durationSeconds = "duration_seconds"
+        case startBatteryLevel = "start_battery_level"
+        case endBatteryLevel = "end_battery_level"
+        case batteryDelta = "battery_delta"
+        case energyKwh = "energy_kwh"
+        case averagePowerW = "average_power_w"
+        case peakPowerW = "peak_power_w"
+        case coverageRatio = "coverage_ratio"
+        case climateActiveSampleCount = "climate_active_sample_count"
+        case climateSampleCount = "climate_sample_count"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        startDate = (try? c.decode(String.self, forKey: .startDate)) ?? ""
+        endDate = (try? c.decode(String.self, forKey: .endDate)) ?? ""
+        address = try? c.decode(String.self, forKey: .address)
+        durationSeconds = (try? c.decode(Int.self, forKey: .durationSeconds)) ?? 0
+        startBatteryLevel = try? c.decode(Int.self, forKey: .startBatteryLevel)
+        endBatteryLevel = try? c.decode(Int.self, forKey: .endBatteryLevel)
+        batteryDelta = try? c.decode(Int.self, forKey: .batteryDelta)
+        energyKwh = try? c.decode(Double.self, forKey: .energyKwh)
+        averagePowerW = try? c.decode(Double.self, forKey: .averagePowerW)
+        peakPowerW = try? c.decode(Double.self, forKey: .peakPowerW)
+        coverageRatio = (try? c.decode(Double.self, forKey: .coverageRatio)) ?? 0
+        climateActiveSampleCount = (try? c.decode(Int.self, forKey: .climateActiveSampleCount)) ?? 0
+        climateSampleCount = (try? c.decode(Int.self, forKey: .climateSampleCount)) ?? 0
+    }
+
+    var durationHours: Double { Double(durationSeconds) / 3600.0 }
+    var coveragePercent: Double { coverageRatio * 100.0 }
+    var isQualified: Bool {
+        durationHours >= 2
+            && batteryDelta != nil
+            && (batteryDelta ?? 0) < 0
+    }
+    var hasPowerCoverage: Bool { coveragePercent >= 80 }
+}
+
+struct SnapshotResponse: Codable {
+    let status: String?
+    let batteryLevel: Int?
+    let rangeKm: Double?
+    let speed: Int?
+    let power: Double?
+    let pluggedIn: Bool?
+    let chargingState: String?
+    let locked: Bool?
+    let sentryMode: Bool?
+    let insideTemp: Double?
+    let outsideTemp: Double?
+    let isClimateOn: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case batteryLevel = "battery_level"
+        case rangeKm = "range_km"
+        case speed, power
+        case pluggedIn = "plugged_in"
+        case chargingState = "charging_state"
+        case locked
+        case sentryMode = "sentry_mode"
+        case insideTemp = "inside_temp"
+        case outsideTemp = "outside_temp"
+        case isClimateOn = "is_climate_on"
     }
 }
 
@@ -217,7 +493,15 @@ private extension CarStatus {
             speed: speed,
             power: power,
             heading: heading,
-            shiftState: shiftState
+            shiftState: shiftState,
+            isDcCharging: isDcCharging,
+            version: version,
+            doorsOpen: doorsOpen,
+            windowsOpen: windowsOpen,
+            frunkOpen: frunkOpen,
+            trunkOpen: trunkOpen,
+            geofence: geofence,
+            chargingState: chargingState
         )
     }
 }
@@ -266,5 +550,117 @@ extension TeslaMateAPI {
     }
     func getCachedCharges(carId: Int) async -> [Charge]? {
         await APICache.shared.read([Charge].self, key: "cache_charges_\(carId)")
+    }
+
+    /// POST with empty JSON body — used by telemetry configure.
+    func post<T: Decodable>(_ path: String) async throws -> T {
+        guard let url = URL(string: "\(baseURL)\(path)") else { throw ApiError.networkUnreachable("Invalid URL") }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        do {
+            let (data, resp) = try await session.data(for: req)
+            guard let http = resp as? HTTPURLResponse else { throw ApiError.serverError(0, "Not HTTP") }
+            guard (200...299).contains(http.statusCode) else {
+                throw ApiError.serverError(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+            }
+            do { return try JSONDecoder().decode(T.self, from: data) }
+            catch { throw ApiError.decodingError(error.localizedDescription) }
+        } catch let e as ApiError { throw e }
+        catch let e as URLError where e.code == .timedOut { throw ApiError.timeout }
+        catch { throw ApiError.networkUnreachable(error.localizedDescription) }
+    }
+}
+
+// MARK: - Data Readiness (mirrors Android DataReadinessModels.kt)
+
+struct DataReadinessResponse: Codable {
+    let data: DataReadiness?
+    let error: String?
+}
+
+struct DataReadiness: Codable {
+    let capabilityVersion: Int?
+    let vehicleUid: String?
+    let items: [DataReadinessItem]
+
+    func item(_ key: String) -> DataReadinessItem? {
+        items.first { $0.key == key }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case capabilityVersion = "capability_version"
+        case vehicleUid = "vehicle_uid"
+        case items
+    }
+}
+
+struct DataReadinessItem: Codable {
+    let key: String
+    let status: String
+    let source: String
+    let lastObservedAt: String?
+    let messageKey: String?
+    let action: String?
+
+    enum CodingKeys: String, CodingKey {
+        case key, status, source
+        case lastObservedAt = "last_observed_at"
+        case messageKey = "message_key"
+        case action
+    }
+}
+
+// MARK: - Telemetry Pairing (mirrors Android TelemetryPairingModels.kt)
+
+struct TelemetryPairingResponse: Codable {
+    let data: TelemetryPairingStatus?
+    let error: String?
+}
+
+struct TelemetryPairingStatus: Codable {
+    let status: String
+    let virtualKeyUrl: String?
+    let updatedAt: String?
+    let configSynced: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case virtualKeyUrl = "virtual_key_url"
+        case updatedAt = "updated_at"
+        case configSynced = "config_synced"
+    }
+}
+
+struct TelemetryConfigureResponse: Codable {
+    let data: TelemetryConfigureResult?
+    let error: String?
+}
+
+struct TelemetryConfigureResult: Codable {
+    let status: String
+}
+
+extension TeslaMateAPI {
+    /// GET api/v1/cars/{carId}/data-readiness
+    func getDataReadiness(carId: Int) async throws -> DataReadiness {
+        let resp: DataReadinessResponse = try await fetch("/api/v1/cars/\(carId)/data-readiness")
+        guard let readiness = resp.data else { throw ApiError.invalidResponse }
+        return readiness
+    }
+
+    /// GET api/v1/cars/{carId}/telemetry/pairing
+    func getTelemetryPairing(carId: Int) async throws -> TelemetryPairingStatus {
+        let resp: TelemetryPairingResponse = try await fetch("/api/v1/cars/\(carId)/telemetry/pairing")
+        guard let pairing = resp.data else { throw ApiError.invalidResponse }
+        return pairing
+    }
+
+    /// POST api/v1/cars/{carId}/telemetry/configure
+    func configureTelemetry(carId: Int) async throws -> TelemetryConfigureResult {
+        let resp: TelemetryConfigureResponse = try await post("/api/v1/cars/\(carId)/telemetry/configure")
+        guard let result = resp.data else { throw ApiError.invalidResponse }
+        return result
     }
 }
