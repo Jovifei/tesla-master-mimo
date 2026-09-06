@@ -582,15 +582,15 @@ fun DashboardScreen(
             )
             val isAmapConfigured = uiState.isAmapConfigured
             val hasGps = status.latitude != null && status.longitude != null
-            val locationText = when {
+            val locationText = locationDisplay(
+                geofence = status.geofence,
+                cachedAddress = uiState.cachedAddress,
+                latitude = status.latitude,
+                longitude = status.longitude
+            ) ?: when {
                 !isAmapConfigured -> stringResource(R.string.amap_unconfigured_prompt)
                 !hasGps -> stringResource(R.string.gps_waiting_prompt)
-                else -> locationDisplay(
-                    geofence = status.geofence,
-                    cachedAddress = uiState.cachedAddress,
-                    latitude = status.latitude,
-                    longitude = status.longitude
-                ) ?: "${status.latitude}, ${status.longitude}"
+                else -> stringResource(R.string.unknown)
             }
             val onLocationClick: () -> Unit = when {
                 !isAmapConfigured -> onNavigateToAmapSetup

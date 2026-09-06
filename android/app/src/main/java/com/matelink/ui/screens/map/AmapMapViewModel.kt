@@ -9,6 +9,7 @@ import com.matelink.data.repository.ApiResult
 import com.matelink.domain.map.AmapConfiguration
 import com.matelink.domain.map.AmapSetupState
 import com.matelink.domain.map.amapSetupState
+import com.matelink.data.local.VehicleStatusStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,7 +33,8 @@ data class AmapMapUiState(
 class AmapMapViewModel @Inject constructor(
     private val store: AmapSettingsStore,
     private val repository: TeslamateRepository,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val vehicleStatusStore: VehicleStatusStore
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AmapMapUiState())
     val uiState: StateFlow<AmapMapUiState> = _uiState.asStateFlow()
@@ -59,7 +61,7 @@ class AmapMapViewModel @Inject constructor(
     private fun loadVehiclePosition() = viewModelScope.launch {
         val carId = settingsRepository.currentCarId.first()
         val result = repository.getCarStatus(carId)
-        val status = (result as? ApiResult.Success)?.data?.status
+        val status = (result as? ApiResult.Success)?.data?.status ?: vehicleStatusStore.getCachedStatus(carId)
         val valid = AmapConfiguration.isUsableCoordinate(status?.latitude, status?.longitude)
         _uiState.value = _uiState.value.copy(latitude = status?.latitude?.takeIf { valid }, longitude = status?.longitude?.takeIf { valid })
     }

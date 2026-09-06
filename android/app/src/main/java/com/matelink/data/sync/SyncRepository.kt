@@ -319,8 +319,8 @@ class SyncRepository @Inject constructor(
 
     private suspend fun enqueueGeocoding(carId: Int) {
         try {
-            if (!allowsExternalGeocoding(connectionModeStore.current())) {
-                Log.d(TAG, "Skipping external geocoding for non-self-hosted mode")
+            if (!geocodingRepository.isExternalAllowed()) {
+                Log.d(TAG, "Skipping external geocoding: geocoding not permitted")
                 return
             }
 

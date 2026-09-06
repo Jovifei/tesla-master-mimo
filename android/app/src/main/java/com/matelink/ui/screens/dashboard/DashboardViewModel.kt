@@ -64,6 +64,7 @@ class DashboardViewModel @Inject constructor(
     private val snapshotTripEngine: com.matelink.data.sync.SnapshotTripEngine,
     private val snapshotChargeEngine: com.matelink.data.sync.SnapshotChargeEngine,
     private val amapSettingsStore: com.matelink.data.local.AmapSettingsStore,
+    private val amapReverseGeocoder: com.matelink.data.repository.AmapReverseGeocoder,
     private val vehicleContextRepository: com.matelink.data.local.VehicleContextRepository,
     private val vehicleStatusStore: com.matelink.data.local.VehicleStatusStore
 ) : ViewModel() {
@@ -74,6 +75,8 @@ class DashboardViewModel @Inject constructor(
     private var requestGeneration = 0L
 
     init {
+        val hasAmap = amapSettingsStore.currentKey().isNotBlank()
+        _uiState.update { it.copy(isAmapConfigured = hasAmap) }
         loadDashboard()
         startPolling()
         viewModelScope.launch {
@@ -157,6 +160,8 @@ class DashboardViewModel @Inject constructor(
                     else -> null
                 }
                 if (generation != requestGeneration) return@launch
+                val hasAmap = amapSettingsStore.currentKey().isNotBlank() || _uiState.value.isAmapConfigured
+                val resolvedAddress = loadCachedAddress(status)
                 _uiState.value = DashboardUiState(
                     isLoading = false,
                     car = effectiveCar,
@@ -172,8 +177,10 @@ class DashboardViewModel @Inject constructor(
                     snapshotFreshness = if (liveStatus != null) evidence.freshness else SnapshotFreshness.RECENT,
                     snapshotMixedSources = evidence.isMixed,
                     units = units,
-                    cachedAddress = loadCachedAddress(status),
-                    customPhotoFile = vehiclePhotoStore.getCustomPhotoFile(effectiveCarId)
+                    cachedAddress = resolvedAddress,
+                    customPhotoFile = vehiclePhotoStore.getCustomPhotoFile(effectiveCarId),
+                    isAmapConfigured = hasAmap,
+                    isHudDismissed = _uiState.value.isHudDismissed
                 )
 
                 launch {
@@ -205,7 +212,9 @@ class DashboardViewModel @Inject constructor(
                 _uiState.value = DashboardUiState(
                     isLoading = false,
                     error = e.message,
-                    errorKind = apiErrorKindFor(null, e.message)
+                    errorKind = apiErrorKindFor(null, e.message),
+                    isAmapConfigured = amapSettingsStore.currentKey().isNotBlank() || _uiState.value.isAmapConfigured,
+                    isHudDismissed = _uiState.value.isHudDismissed
                 )
             }
         }
@@ -345,6 +354,18 @@ class DashboardViewModel @Inject constructor(
 
     private suspend fun loadCachedAddress(status: CarStatus?): String? {
         val coordinates = usableVehicleCoordinates(status?.latitude, status?.longitude) ?: return null
+        val location = amapReverseGeocoder.reverse(coordinates.first, coordinates.second)
+        if (location != null) {
+            val addr = location.address?.trim()?.takeIf { it.isNotEmpty() }
+            if (addr != null) return addr
+            val fallback = listOfNotNull(location.city, location.regionName, location.countryName)
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .distinct()
+                .joinToString(" ")
+                .takeIf { it.isNotEmpty() }
+            if (fallback != null) return fallback
+        }
         val cache = geocodingRepository.getFromCache(coordinates.first, coordinates.second) ?: return null
         return listOfNotNull(cache.city, cache.regionName, cache.countryName)
             .map(String::trim)

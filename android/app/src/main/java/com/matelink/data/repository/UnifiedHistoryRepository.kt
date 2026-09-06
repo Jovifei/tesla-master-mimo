@@ -51,15 +51,25 @@ class UnifiedHistoryRepository @Inject constructor(
         startDate: String? = null,
         endDate: String? = null
     ): ApiResult<UnifiedHistory> {
-        val car = when (val result = teslamateRepository.getCars()) {
-            is ApiResult.Success -> result.data.firstOrNull { it.carId == remoteApiCarId }
-                ?: return ApiResult.Error("Vehicle is no longer available")
-            is ApiResult.Error -> return result
+        val carResult = teslamateRepository.getCars()
+        val car = when (carResult) {
+            is ApiResult.Success -> carResult.data.firstOrNull { it.carId == remoteApiCarId }
+            is ApiResult.Error -> null
         }
-        val context = try {
-            vehicleContextRepository.resolve(car)
-        } catch (_: HistoryIdentityUnavailableException) {
-            return historyIdentityUnavailableError()
+        val context = if (car != null) {
+            try {
+                vehicleContextRepository.resolve(car)
+            } catch (_: HistoryIdentityUnavailableException) {
+                return historyIdentityUnavailableError()
+            }
+        } else {
+            VehicleContext(
+                remoteApiCarId = remoteApiCarId,
+                stableIdentity = "cloud:fallback:car:$remoteApiCarId",
+                localHistoryCarId = if (remoteApiCarId > 0) remoteApiCarId else 1,
+                connectionSource = com.matelink.data.local.HistoryConnectionSource.CLOUD,
+                serverIdentity = "cloud"
+            )
         }
         val legacyCandidates = listOf(-1, 1, 2)
         for (legacyId in legacyCandidates) {
@@ -107,6 +117,7 @@ class UnifiedHistoryRepository @Inject constructor(
             is ApiResult.Error -> localCharges.map { it.toAnalysisChargeData() }.sortedByDescending { it.startDate }
         }
 
+        if (drives.isEmpty() && charges.isEmpty() && carResult is ApiResult.Error) return carResult
         if (drives.isEmpty() && charges.isEmpty() && remoteDrives is ApiResult.Error) return remoteDrives
         if (drives.isEmpty() && charges.isEmpty() && remoteCharges is ApiResult.Error) return remoteCharges
         return ApiResult.Success(

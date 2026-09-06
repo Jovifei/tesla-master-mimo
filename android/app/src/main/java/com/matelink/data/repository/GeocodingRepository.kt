@@ -88,7 +88,7 @@ class GeocodingRepository @Inject constructor(
         return geocodeCacheDao.get(gridLat, gridLon)
     }
 
-    private suspend fun isExternalAllowed(): Boolean {
+    suspend fun isExternalAllowed(): Boolean {
         val isAmap = amapReverseGeocoder.currentAvailability() == ChineseLocationAvailability.READY
         return allowsExternalGeocoding(connectionModeStore.current(), isAmap = isAmap)
     }
