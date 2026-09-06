@@ -1,0 +1,421 @@
+name: Temporary cloud data recovery qualification
+
+on:
+  push:
+    branches:
+      - fix/20260907-cloud-data-recovery
+    paths:
+      - .github/workflows/tmp-cloud-data-recovery.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair-and-qualify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/20260907-cloud-data-recovery
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: deploy/jourvolt-dev-mock/go.mod
+
+      - name: Apply reviewed data recovery fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'anchor missing in {path}: {old[:120]!r}')
+              if text.count(old) != 1:
+                  raise SystemExit(f'anchor not unique in {path}: {text.count(old)}')
+              p.write_text(text.replace(old, new, 1))
+
+          # 1) Fleet REST snapshots must explicitly request location_data.
+          path = 'deploy/jourvolt-dev-mock/fleet_provider.go'
+          replace_once(path,
+              'path := "/api/1/vehicles/" + url.PathEscape(vin) + "/vehicle_data"\n\tvar payload struct {',
+              'path := fleetVehicleDataPath(vin)\n\tvar payload struct {')
+          replace_once(path,
+              'func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int) (vehicleStatus, error) {',
+              'func fleetVehicleDataPath(vin string) string {\n\tquery := url.Values{}\n\tquery.Set("endpoints", "location_data")\n\treturn "/api/1/vehicles/" + url.PathEscape(vin) + "/vehicle_data?" + query.Encode()\n}\n\nfunc (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int) (vehicleStatus, error) {')
+
+          # 2) Completed local imports are incomplete summary evidence, not hidden quarantine.
+          path = 'deploy/jourvolt-dev-mock/telemetry_store.go'
+          old = '''UPDATE jourvolt_telemetry_sessions
+SET quality_state='incomplete', quality_reason='local_import_unverified'
+WHERE source='local_import' AND quality_state='quarantined'
+  AND quality_reason IN ('legacy_import', 'legacy_import_without_evidence');'''
+          new = '''UPDATE jourvolt_telemetry_sessions
+SET quality_state='incomplete', quality_reason='local_import_summary_only'
+WHERE source='local_import' AND quality_state='quarantined'
+  AND ended_at IS NOT NULL AND ended_at >= started_at;'''
+          replace_once(path, old, new)
+
+          # 3) Persist an opaque account-scoped remote-car -> local-history lookup.
+          path = 'android/app/src/main/java/com/matelink/data/local/VehicleContextStore.kt'
+          replace_once(path,
+              '''    @Synchronized
+    fun findLocalHistoryCarId(stableIdentity: String): Int? = preferences.getInt(
+        identityKey(stableIdentity),
+        Int.MIN_VALUE
+    ).takeUnless { it == Int.MIN_VALUE }
+''',
+              '''    @Synchronized
+    fun findLocalHistoryCarId(stableIdentity: String): Int? = preferences.getInt(
+        identityKey(stableIdentity),
+        Int.MIN_VALUE
+    ).takeUnless { it == Int.MIN_VALUE }
+
+    @Synchronized
+    fun rememberCloudRemoteMapping(accountNamespace: String, remoteApiCarId: Int, localHistoryCarId: Int) {
+        val account = accountNamespace.trim()
+        if (account.isEmpty() || remoteApiCarId < 0 || localHistoryCarId >= 0) return
+        check(preferences.edit().putInt(cloudRemoteKey(account, remoteApiCarId), localHistoryCarId).commit()) {
+            "unable to persist cloud vehicle history mapping"
+        }
+    }
+
+    @Synchronized
+    fun findCloudLocalHistoryCarId(accountNamespace: String, remoteApiCarId: Int): Int? {
+        val account = accountNamespace.trim()
+        if (account.isEmpty() || remoteApiCarId < 0) return null
+        return preferences.getInt(cloudRemoteKey(account, remoteApiCarId), Int.MIN_VALUE)
+            .takeUnless { it == Int.MIN_VALUE }
+    }
+
+    fun cloudRemoteOpaqueIdentity(accountNamespace: String, remoteApiCarId: Int): String =
+        "cloud-cache:${sha256Hex("${accountNamespace.trim()}:$remoteApiCarId")}" 
+''')
+          replace_once(path,
+              '    private fun identityKey(stableIdentity: String): String = "identity:${sha256Hex(stableIdentity)}"\n',
+              '    private fun identityKey(stableIdentity: String): String = "identity:${sha256Hex(stableIdentity)}"\n\n    private fun cloudRemoteKey(accountNamespace: String, remoteApiCarId: Int): String =\n        "remote:${sha256Hex("cloud:${accountNamespace.trim()}:car:$remoteApiCarId")}"\n')
+          replace_once(path,
+              '''        val context = getOrAllocate(stableIdentity, car.carId, connectionSource, serverIdentity)
+        return context
+''',
+              '''        val context = getOrAllocate(stableIdentity, car.carId, connectionSource, serverIdentity)
+        if (connectionSource == HistoryConnectionSource.CLOUD && !accountNamespace.isNullOrBlank()) {
+            rememberCloudRemoteMapping(accountNamespace, car.carId, context.localHistoryCarId)
+        }
+        return context
+''')
+
+          # 4) Allow cloud history to read the already-bound Room archive when car discovery is temporarily unavailable.
+          path = 'android/app/src/main/java/com/matelink/data/local/VehicleContextRepository.kt'
+          replace_once(path,
+              '''    suspend fun localHistoryCarIdFor(remoteApiCarId: Int): Int? {
+        val mode = connectionModeStore.mode.first() ?: ConnectionMode.SELF_HOSTED
+        val serverUrl = settingsRepository.serverUrl.first()
+        val source = if (mode == ConnectionMode.TESLA_CLOUD) {
+            HistoryConnectionSource.CLOUD
+        } else {
+            HistoryConnectionSource.SELF_HOSTED
+        }
+        if (source == HistoryConnectionSource.CLOUD) return null
+        return contextStore.findLocalHistoryCarId(
+            selfHostedVehicleStableIdentity(serverUrl, remoteApiCarId)
+        )
+    }
+''',
+              '''    suspend fun cachedContextForRemote(remoteApiCarId: Int): VehicleContext? {
+        val mode = connectionModeStore.mode.first() ?: ConnectionMode.SELF_HOSTED
+        if (mode == ConnectionMode.TESLA_CLOUD) {
+            val account = sessionStore.current()?.userId?.trim().orEmpty()
+            val localId = contextStore.findCloudLocalHistoryCarId(account, remoteApiCarId) ?: return null
+            return VehicleContext(
+                remoteApiCarId = remoteApiCarId,
+                stableIdentity = contextStore.cloudRemoteOpaqueIdentity(account, remoteApiCarId),
+                localHistoryCarId = localId,
+                connectionSource = HistoryConnectionSource.CLOUD,
+                serverIdentity = "cloud"
+            )
+        }
+        val serverUrl = settingsRepository.serverUrl.first()
+        val serverIdentity = requireSelfHostedServerIdentity(serverUrl)
+        val localId = contextStore.findLocalHistoryCarId(
+            selfHostedVehicleStableIdentity(serverUrl, remoteApiCarId)
+        ) ?: return null
+        return VehicleContext(
+            remoteApiCarId = remoteApiCarId,
+            stableIdentity = selfHostedVehicleStableIdentity(serverUrl, remoteApiCarId),
+            localHistoryCarId = localId,
+            connectionSource = HistoryConnectionSource.SELF_HOSTED,
+            serverIdentity = serverIdentity
+        )
+    }
+
+    suspend fun localHistoryCarIdFor(remoteApiCarId: Int): Int? =
+        cachedContextForRemote(remoteApiCarId)?.localHistoryCarId
+''')
+
+          path = 'android/app/src/main/java/com/matelink/data/repository/UnifiedHistoryRepository.kt'
+          replace_once(path,
+              '''        if (car == null) {
+            return when (carResult) {
+                is ApiResult.Error -> carResult
+                is ApiResult.Success -> ApiResult.Error(message = "vehicle_not_found", code = 404)
+            }
+        }
+        val context = try {
+            vehicleContextRepository.resolve(car)
+        } catch (_: HistoryIdentityUnavailableException) {
+            return historyIdentityUnavailableError()
+        }
+''',
+              '''        val context = try {
+            if (car != null) {
+                vehicleContextRepository.resolve(car)
+            } else {
+                vehicleContextRepository.cachedContextForRemote(remoteApiCarId)
+                    ?: return when (carResult) {
+                        is ApiResult.Error -> carResult
+                        is ApiResult.Success -> ApiResult.Error(message = "vehicle_not_found", code = 404)
+                    }
+            }
+        } catch (_: HistoryIdentityUnavailableException) {
+            return historyIdentityUnavailableError()
+        }
+''')
+          replace_once(path,
+              '''        val remoteDrives = teslamateRepository.getDrives(context.remoteApiCarId, startDate, endDate)
+        val remoteCharges = teslamateRepository.getCharges(context.remoteApiCarId, startDate, endDate)
+''',
+              '''        val remoteDrives: ApiResult<List<DriveData>> = if (car != null) {
+            teslamateRepository.getDrives(context.remoteApiCarId, startDate, endDate)
+        } else {
+            ApiResult.Error("vehicle_discovery_unavailable", kind = ApiErrorKind.NETWORK)
+        }
+        val remoteCharges: ApiResult<List<ChargeData>> = if (car != null) {
+            teslamateRepository.getCharges(context.remoteApiCarId, startDate, endDate)
+        } else {
+            ApiResult.Error("vehicle_discovery_unavailable", kind = ApiErrorKind.NETWORK)
+        }
+''')
+
+          # 5) Restore real SOC/range/trend presentation even when capacity health is unsupported.
+          path = 'android/app/src/main/java/com/matelink/ui/screens/battery/BatteryViewModel.kt'
+          start = '''    fun computeStats(): BatteryStats? {
+        val state = _uiState.value
+        val health = state.batteryHealth
+        val status = state.carStatus
+        if (health == null) return null
+
+        // Health/degradation requires measured capacity inputs. Live SOC/range is
+        // useful elsewhere, but must not be turned into a fabricated capacity.
+        val baseOriginalCapacity = health.maxCapacity?.takeIf { it > 0.0 } ?: return null
+        val currentCapacity = health.currentCapacity?.takeIf { it > 0.0 } ?: return null
+        val apiHealthPercent = health.batteryHealthPercentage?.takeIf { it in 0.0..100.0 }
+'''
+          replacement = '''    fun computeStats(): BatteryStats? {
+        val state = _uiState.value
+        val health = state.batteryHealth
+        val status = state.carStatus
+
+        // Capacity health remains unavailable without measured capacity inputs, but
+        // real live SOC/range and history-derived trend evidence must still render.
+        val baseOriginalCapacity = health?.maxCapacity?.takeIf { it > 0.0 }
+        val currentCapacity = health?.currentCapacity?.takeIf { it > 0.0 }
+        val hasCapacityInputs = baseOriginalCapacity != null && currentCapacity != null
+        val apiHealthPercent = health?.batteryHealthPercentage?.takeIf { it in 0.0..100.0 }
+'''
+          replace_once(path, start, replacement)
+          replace_once(path,
+              '''        val healthPercent = apiHealthPercent ?: (currentCapacity / baseOriginalCapacity) * 100.0
+
+        val originalCapacity = baseOriginalCapacity
+        val effectiveCurrentCapacity = currentCapacity
+        val lossKwh = (originalCapacity - effectiveCurrentCapacity).coerceAtLeast(0.0)
+        val lossPercent = (100.0 - healthPercent).coerceAtLeast(0.0)
+
+        // Range from API or computed
+        val rangeMetrics = BatteryRangeMetrics.from(
+            maxRangeKm = health?.maxRange,
+            currentRangeKm = health?.currentRange
+        )
+''',
+              '''        val healthPercent = when {
+            !hasCapacityInputs -> 0.0
+            apiHealthPercent != null -> apiHealthPercent
+            else -> (currentCapacity!! / baseOriginalCapacity!!) * 100.0
+        }
+
+        val originalCapacity = baseOriginalCapacity ?: 0.0
+        val effectiveCurrentCapacity = currentCapacity ?: 0.0
+        val lossKwh = if (hasCapacityInputs) (originalCapacity - effectiveCurrentCapacity).coerceAtLeast(0.0) else 0.0
+        val lossPercent = if (hasCapacityInputs) (100.0 - healthPercent).coerceAtLeast(0.0) else 0.0
+
+        // Range from API or computed
+        val rangeMetrics = BatteryRangeMetrics.from(
+            maxRangeKm = health?.maxRange,
+            currentRangeKm = health?.currentRange
+        )
+''')
+          replace_once(path,
+              '''        // Efficiency from API (Wh/km)
+        val ratedEfficiency = health.ratedEfficiency?.takeIf { it > 0.0 } ?: return null
+
+        return BatteryStats(
+''',
+              '''        // Efficiency is optional unless a capacity/degradation card needs it.
+        val ratedEfficiency = health?.ratedEfficiency?.takeIf { it > 0.0 }
+            ?: state.ratedEfficiency?.takeIf { it > 0.0 }
+            ?: 0.0
+        val hasLiveEvidence = status?.batteryLevel != null || status?.estBatteryRangeKm != null ||
+            status?.ratedBatteryRangeKm != null || status?.idealBatteryRangeKm != null
+        val hasRangeEvidence = maxRangeNew != null || maxRangeNow != null
+        if (!hasCapacityInputs && !hasLiveEvidence && !hasRangeEvidence && state.batteryTrend == null) return null
+
+        return BatteryStats(
+''')
+
+          path = 'android/app/src/main/java/com/matelink/ui/screens/battery/BatteryScreen.kt'
+          old = '''                Text(
+                    text = stringResource(R.string.battery_service_mode_desc, stats.healthPercent),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+'''
+          new = '''                Text(
+                    text = if (stats.hasCapacityEstimate) {
+                        stringResource(R.string.battery_service_mode_desc, stats.healthPercent)
+                    } else {
+                        stringResource(R.string.battery_health_unsupported)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+'''
+          replace_once(path, old, new)
+
+          # 6) Normal telemetry setup should auto-attempt configuration; the Tesla virtual-key link remains the only user security step when required.
+          path = 'android/app/src/main/java/com/matelink/ui/screens/readiness/DataReadinessViewModel.kt'
+          replace_once(path,
+              '''    /** Returning from Tesla only refreshes authoritative status; it never configures telemetry. */
+    fun onScreenResumed() {
+        pageIsActive = true
+        if (screenWasPaused) refresh()
+    }
+''',
+              '''    /** Returning from Tesla refreshes authoritative status; load() can then auto-retry configuration. */
+    fun onScreenResumed() {
+        pageIsActive = true
+        if (screenWasPaused) refresh()
+    }
+''')
+          replace_once(path,
+              '''                _uiState.value = when (readinessResult) {
+''',
+              '''                _uiState.value = when (readinessResult) {
+''')
+          anchor = '''                }
+            } catch (e: CancellationException) {
+'''
+          injection = '''                }
+                val currentPairing = _uiState.value.pairing
+                if (
+                    isCurrentLoad(generation, carId) &&
+                    shouldAutoConfigureTelemetry(currentPairing, _uiState.value.telemetryErrorCode) &&
+                    !_uiState.value.isConfiguringTelemetry &&
+                    !_uiState.value.isTelemetryActivationPending
+                ) {
+                    configureTelemetry()
+                }
+            } catch (e: CancellationException) {
+'''
+          # limit to the load() try/catch occurrence after state assignment by replacing the first occurrence after marker
+          p = Path(path); text = p.read_text(); marker = '    private fun load(carId: Int) {'; idx = text.index(marker); tail = text[idx:]
+          if anchor not in tail: raise SystemExit('load catch anchor missing')
+          tail = tail.replace(anchor, injection, 1); p.write_text(text[:idx] + tail)
+          # append pure helper before class
+          replace_once(path,
+              '''@HiltViewModel
+class DataReadinessViewModel''',
+              '''internal fun shouldAutoConfigureTelemetry(
+    pairing: TelemetryPairingStatus?,
+    errorCode: String?
+): Boolean = pairing != null &&
+    errorCode == null &&
+    pairing.configSynced != true &&
+    pairing.status.equals("pairing_required", ignoreCase = true)
+
+@HiltViewModel
+class DataReadinessViewModel''')
+
+          # Tests
+          p = Path('deploy/jourvolt-dev-mock/fleet_provider_test.go')
+          text = p.read_text()
+          text += '''\nfunc TestFleetVehicleDataPathRequestsLocationData(t *testing.T) {\n\tpath := fleetVehicleDataPath("VIN/with space")\n\tif !strings.Contains(path, "/api/1/vehicles/VIN%2Fwith%20space/vehicle_data?") {\n\t\tt.Fatalf("vehicle data path = %q", path)\n\t}\n\tif !strings.Contains(path, "endpoints=location_data") {\n\t\tt.Fatalf("location_data endpoint missing: %q", path)\n\t}\n}\n'''
+          p.write_text(text)
+
+          p = Path('deploy/jourvolt-dev-mock/telemetry_import_test.go')
+          text = p.read_text()
+          text += '''\nfunc TestTelemetrySchemaRestoresCompletedLocalImportsFromQuarantine(t *testing.T) {\n\tif !strings.Contains(telemetrySchema, "WHERE source='local_import' AND quality_state='quarantined'") {\n\t\tt.Fatal("schema must restore structurally completed local imports")\n\t}\n\tif !strings.Contains(telemetrySchema, "ended_at IS NOT NULL AND ended_at >= started_at") {\n\t\tt.Fatal("schema restoration must require a structurally completed interval")\n\t}\n\tif strings.Contains(telemetrySchema, "quality_reason IN ('legacy_import', 'legacy_import_without_evidence')") {\n\t\tt.Fatal("schema must not hide valid local imports merely because an older reason string differs")\n\t}\n}\n'''
+          p.write_text(text)
+
+          Path('android/app/src/test/java/com/matelink/ui/screens/readiness/TelemetryAutoConfigurePolicyTest.kt').write_text('''package com.matelink.ui.screens.readiness\n\nimport com.matelink.data.api.models.TelemetryPairingStatus\nimport org.junit.Assert.assertFalse\nimport org.junit.Assert.assertTrue\nimport org.junit.Test\n\nclass TelemetryAutoConfigurePolicyTest {\n    @Test fun pairingRequiredAutoAttemptsConfiguration() {\n        assertTrue(shouldAutoConfigureTelemetry(TelemetryPairingStatus(status = "pairing_required", configSynced = false), null))\n    }\n    @Test fun errorsAndSyncedStateDoNotAutoConfigure() {\n        assertFalse(shouldAutoConfigureTelemetry(TelemetryPairingStatus(status = "pairing_required", configSynced = false), "permission_required"))\n        assertFalse(shouldAutoConfigureTelemetry(TelemetryPairingStatus(status = "available", configSynced = true), null))\n        assertFalse(shouldAutoConfigureTelemetry(null, null))\n    }\n}\n''')
+          PY
+
+          cd deploy/jourvolt-dev-mock
+          gofmt -w fleet_provider.go fleet_provider_test.go telemetry_store.go telemetry_import_test.go
+          cd ../..
+
+      - name: Go qualification
+        working-directory: deploy/jourvolt-dev-mock
+        run: |
+          go test ./... -count=1
+          go vet ./...
+          go mod verify
+          go build ./...
+
+      - name: Android qualification
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest --no-daemon
+          ./gradlew :app:testReleaseUnitTest --no-daemon
+          ./gradlew :app:assembleDebug --no-daemon
+          ./gradlew :app:assembleDebugAndroidTest --no-daemon
+          ./gradlew :app:lintDebug --no-daemon
+
+      - name: Diff and secret boundary
+        shell: bash
+        run: |
+          git diff --check
+          if git diff -- . ':!*.md' | grep -E '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|Bearer [A-Za-z0-9._-]{20,}|JOURVOLT_TOKEN_KEY_BASE64=[^$]|TESLA_CLIENT_SECRET=[^$])'; then
+            echo 'sensitive literal detected' >&2
+            exit 1
+          fi
+
+      - name: Commit verified repair
+        shell: bash
+        run: |
+          git config user.name "MateLink Build"
+          git config user.email "110970864+Jovifei@users.noreply.github.com"
+          git add \
+            deploy/jourvolt-dev-mock/fleet_provider.go \
+            deploy/jourvolt-dev-mock/fleet_provider_test.go \
+            deploy/jourvolt-dev-mock/telemetry_store.go \
+            deploy/jourvolt-dev-mock/telemetry_import_test.go \
+            android/app/src/main/java/com/matelink/data/local/VehicleContextStore.kt \
+            android/app/src/main/java/com/matelink/data/local/VehicleContextRepository.kt \
+            android/app/src/main/java/com/matelink/data/repository/UnifiedHistoryRepository.kt \
+            android/app/src/main/java/com/matelink/ui/screens/battery/BatteryViewModel.kt \
+            android/app/src/main/java/com/matelink/ui/screens/battery/BatteryScreen.kt \
+            android/app/src/main/java/com/matelink/ui/screens/readiness/DataReadinessViewModel.kt \
+            android/app/src/test/java/com/matelink/ui/screens/readiness/TelemetryAutoConfigurePolicyTest.kt
+          git diff --cached --check
+          git commit -m "fix(data): recover cloud location and local history truth"
+          git push origin HEAD:fix/20260907-cloud-data-recovery
