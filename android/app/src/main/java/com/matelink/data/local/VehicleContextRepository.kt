@@ -60,19 +60,34 @@ class VehicleContextRepository @Inject constructor(
         throw HistoryIdentityUnavailableException()
     }
 
-    suspend fun localHistoryCarIdFor(remoteApiCarId: Int): Int? {
+    suspend fun cachedContextForRemote(remoteApiCarId: Int): VehicleContext? {
         val mode = connectionModeStore.mode.first() ?: ConnectionMode.SELF_HOSTED
-        val serverUrl = settingsRepository.serverUrl.first()
-        val source = if (mode == ConnectionMode.TESLA_CLOUD) {
-            HistoryConnectionSource.CLOUD
-        } else {
-            HistoryConnectionSource.SELF_HOSTED
+        if (mode == ConnectionMode.TESLA_CLOUD) {
+            val account = sessionStore.current()?.userId?.trim().orEmpty()
+            val localId = contextStore.findCloudLocalHistoryCarId(account, remoteApiCarId) ?: return null
+            return VehicleContext(
+                remoteApiCarId = remoteApiCarId,
+                stableIdentity = contextStore.cloudRemoteOpaqueIdentity(account, remoteApiCarId),
+                localHistoryCarId = localId,
+                connectionSource = HistoryConnectionSource.CLOUD,
+                serverIdentity = "cloud"
+            )
         }
-        if (source == HistoryConnectionSource.CLOUD) return null
-        return contextStore.findLocalHistoryCarId(
-            selfHostedVehicleStableIdentity(serverUrl, remoteApiCarId)
+        val serverUrl = settingsRepository.serverUrl.first()
+        val serverIdentity = requireSelfHostedServerIdentity(serverUrl)
+        val stableIdentity = selfHostedVehicleStableIdentity(serverUrl, remoteApiCarId)
+        val localId = contextStore.findLocalHistoryCarId(stableIdentity) ?: return null
+        return VehicleContext(
+            remoteApiCarId = remoteApiCarId,
+            stableIdentity = stableIdentity,
+            localHistoryCarId = localId,
+            connectionSource = HistoryConnectionSource.SELF_HOSTED,
+            serverIdentity = serverIdentity
         )
     }
+
+    suspend fun localHistoryCarIdFor(remoteApiCarId: Int): Int? =
+        cachedContextForRemote(remoteApiCarId)?.localHistoryCarId
 
     override suspend fun requireLocalHistoryCarId(remoteApiCarId: Int): Int =
         resolveRemote(remoteApiCarId).localHistoryCarId

@@ -583,3 +583,15 @@ func TestHistoryImportPostgresScopedAndIdempotent(t *testing.T) {
 }
 
 var _ = context.Background
+
+func TestTelemetrySchemaRestoresCompletedLocalImportsFromQuarantine(t *testing.T) {
+	if !strings.Contains(telemetrySchema, "WHERE source='local_import' AND quality_state='quarantined'") {
+		t.Fatal("schema must restore structurally completed local imports")
+	}
+	if !strings.Contains(telemetrySchema, "ended_at IS NOT NULL AND ended_at >= started_at") {
+		t.Fatal("schema restoration must require a structurally completed interval")
+	}
+	if strings.Contains(telemetrySchema, "quality_reason IN ('legacy_import', 'legacy_import_without_evidence')") {
+		t.Fatal("schema must not hide valid local imports merely because an older reason string differs")
+	}
+}

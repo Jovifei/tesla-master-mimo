@@ -325,7 +325,11 @@ private fun BatteryHealthContent(
                     )
                 }
                 Text(
-                    text = stringResource(R.string.battery_service_mode_desc, stats.healthPercent),
+                    text = if (stats.hasCapacityEstimate) {
+                        stringResource(R.string.battery_service_mode_desc, stats.healthPercent)
+                    } else {
+                        stringResource(R.string.battery_health_unsupported)
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

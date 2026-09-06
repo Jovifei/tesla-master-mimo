@@ -264,3 +264,13 @@ func TestFleetVehicleDataKeepsMissingLocationAndTPMSUnavailable(t *testing.T) {
 		t.Fatalf("missing TPMS warning must remain nil: %#v", status)
 	}
 }
+
+func TestFleetVehicleDataPathRequestsLocationData(t *testing.T) {
+	path := fleetVehicleDataPath("VIN/with space")
+	if !strings.Contains(path, "/api/1/vehicles/VIN%2Fwith%20space/vehicle_data?") {
+		t.Fatalf("vehicle data path = %q", path)
+	}
+	if !strings.Contains(path, "endpoints=location_data") {
+		t.Fatalf("location_data endpoint missing: %q", path)
+	}
+}

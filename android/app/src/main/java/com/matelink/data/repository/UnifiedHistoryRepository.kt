@@ -52,14 +52,16 @@ class UnifiedHistoryRepository @Inject constructor(
             is ApiResult.Success -> carResult.data.firstOrNull { it.carId == remoteApiCarId }
             is ApiResult.Error -> null
         }
-        if (car == null) {
-            return when (carResult) {
-                is ApiResult.Error -> carResult
-                is ApiResult.Success -> ApiResult.Error(message = "vehicle_not_found", code = 404)
-            }
-        }
         val context = try {
-            vehicleContextRepository.resolve(car)
+            if (car != null) {
+                vehicleContextRepository.resolve(car)
+            } else {
+                vehicleContextRepository.cachedContextForRemote(remoteApiCarId)
+                    ?: return when (carResult) {
+                        is ApiResult.Error -> carResult
+                        is ApiResult.Success -> ApiResult.Error(message = "vehicle_not_found", code = 404)
+                    }
+            }
         } catch (_: HistoryIdentityUnavailableException) {
             return historyIdentityUnavailableError()
         }
@@ -74,8 +76,16 @@ class UnifiedHistoryRepository @Inject constructor(
             chargeSummaryDao.getAllForCar(context.localHistoryCarId)
         }
 
-        val remoteDrives = teslamateRepository.getDrives(context.remoteApiCarId, startDate, endDate)
-        val remoteCharges = teslamateRepository.getCharges(context.remoteApiCarId, startDate, endDate)
+        val remoteDrives: ApiResult<List<DriveData>> = if (car != null) {
+            teslamateRepository.getDrives(context.remoteApiCarId, startDate, endDate)
+        } else {
+            ApiResult.Error("vehicle_discovery_unavailable", kind = ApiErrorKind.NETWORK)
+        }
+        val remoteCharges: ApiResult<List<ChargeData>> = if (car != null) {
+            teslamateRepository.getCharges(context.remoteApiCarId, startDate, endDate)
+        } else {
+            ApiResult.Error("vehicle_discovery_unavailable", kind = ApiErrorKind.NETWORK)
+        }
         val drives = when (remoteDrives) {
             is ApiResult.Success -> {
                 val merged = mergeDrives(remoteDrives.data.map { it.withLegacyRemoteQuality() }, localDrives.map { it.toAnalysisDriveData() })

@@ -104,9 +104,9 @@ ALTER TABLE jourvolt_telemetry_sessions ALTER COLUMN public_id SET DEFAULT nextv
 UPDATE jourvolt_telemetry_sessions SET public_id=nextval('jourvolt_telemetry_session_public_id_seq') WHERE public_id IS NULL;
 ALTER TABLE jourvolt_telemetry_sessions ALTER COLUMN public_id SET NOT NULL;
 UPDATE jourvolt_telemetry_sessions
-SET quality_state='incomplete', quality_reason='local_import_unverified'
+SET quality_state='incomplete', quality_reason='local_import_summary_only'
 WHERE source='local_import' AND quality_state='quarantined'
-  AND quality_reason IN ('legacy_import', 'legacy_import_without_evidence');
+  AND ended_at IS NOT NULL AND ended_at >= started_at;
 UPDATE jourvolt_telemetry_sessions
 SET quality_state='observed', quality_reason='legacy_telemetry_session'
 WHERE source='telemetry_mqtt' AND quality_state='incomplete'

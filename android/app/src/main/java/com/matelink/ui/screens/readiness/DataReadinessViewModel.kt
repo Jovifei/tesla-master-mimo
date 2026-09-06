@@ -41,6 +41,14 @@ data class DataReadinessUiState(
     val pairingLinkUnavailable: Boolean = false
 )
 
+internal fun shouldAutoConfigureTelemetry(
+    pairing: TelemetryPairingStatus?,
+    errorCode: String?
+): Boolean = pairing != null &&
+    errorCode == null &&
+    pairing.configSynced != true &&
+    pairing.status.equals("pairing_required", ignoreCase = true)
+
 @HiltViewModel
 class DataReadinessViewModel @Inject constructor(
     private val repository: DataReadinessDataSource,
@@ -88,7 +96,7 @@ class DataReadinessViewModel @Inject constructor(
         stopTelemetryPolling()
     }
 
-    /** Returning from Tesla only refreshes authoritative status; it never configures telemetry. */
+    /** Returning from Tesla refreshes authoritative status; load() can then auto-retry configuration. */
     fun onScreenResumed() {
         pageIsActive = true
         if (screenWasPaused) refresh()
@@ -200,6 +208,15 @@ class DataReadinessViewModel @Inject constructor(
                         isConfiguringTelemetry = previous.isConfiguringTelemetry,
                         isTelemetryActivationPending = previous.isTelemetryActivationPending && pairing?.configSynced != true
                     )
+                }
+                val currentPairing = _uiState.value.pairing
+                if (
+                    isCurrentLoad(generation, carId) &&
+                    shouldAutoConfigureTelemetry(currentPairing, _uiState.value.telemetryErrorCode) &&
+                    !_uiState.value.isConfiguringTelemetry &&
+                    !_uiState.value.isTelemetryActivationPending
+                ) {
+                    configureTelemetry()
                 }
             } catch (e: CancellationException) {
                 throw e

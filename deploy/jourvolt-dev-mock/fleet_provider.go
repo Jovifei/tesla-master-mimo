@@ -206,6 +206,12 @@ func fleetVehicleFromProvider(stored storedVehicle, providerID, displayName, sta
 	}
 }
 
+func fleetVehicleDataPath(vin string) string {
+	query := url.Values{}
+	query.Set("endpoints", "location_data")
+	return "/api/1/vehicles/" + url.PathEscape(vin) + "/vehicle_data?" + query.Encode()
+}
+
 func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int) (vehicleStatus, error) {
 	stored, err := p.store.fleetVehicle(ctx, userID, vehicleID)
 	if err != nil {
@@ -219,7 +225,7 @@ func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int
 		return vehicleStatus{}, err
 	}
 	var payload teslaVehicleDataEnvelope
-	path := "/api/1/vehicles/" + url.PathEscape(vin) + "/vehicle_data"
+	path := fleetVehicleDataPath(vin)
 	if err := p.get(ctx, userID, path, &payload); err != nil {
 		return vehicleStatus{}, err
 	}
@@ -398,7 +404,7 @@ func fleetEndpointLabel(path string) string {
 	switch {
 	case path == "/api/1/vehicles":
 		return "vehicles"
-	case strings.HasPrefix(path, "/api/1/vehicles/") && strings.HasSuffix(path, "/vehicle_data"):
+	case strings.HasPrefix(path, "/api/1/vehicles/") && strings.Contains(path, "/vehicle_data"):
 		return "vehicle_data"
 	case path == "/api/1/partner_accounts":
 		return "partner_accounts"

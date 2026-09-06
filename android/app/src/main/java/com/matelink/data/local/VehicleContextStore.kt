@@ -47,6 +47,26 @@ class VehicleContextStore @Inject constructor(
         Int.MIN_VALUE
     ).takeUnless { it == Int.MIN_VALUE }
 
+    @Synchronized
+    fun rememberCloudRemoteMapping(accountNamespace: String, remoteApiCarId: Int, localHistoryCarId: Int) {
+        val account = accountNamespace.trim()
+        if (account.isEmpty() || remoteApiCarId < 0 || localHistoryCarId >= 0) return
+        check(preferences.edit().putInt(cloudRemoteKey(account, remoteApiCarId), localHistoryCarId).commit()) {
+            "unable to persist cloud vehicle history mapping"
+        }
+    }
+
+    @Synchronized
+    fun findCloudLocalHistoryCarId(accountNamespace: String, remoteApiCarId: Int): Int? {
+        val account = accountNamespace.trim()
+        if (account.isEmpty() || remoteApiCarId < 0) return null
+        return preferences.getInt(cloudRemoteKey(account, remoteApiCarId), Int.MIN_VALUE)
+            .takeUnless { it == Int.MIN_VALUE }
+    }
+
+    fun cloudRemoteOpaqueIdentity(accountNamespace: String, remoteApiCarId: Int): String =
+        "cloud-cache:${sha256Hex("${accountNamespace.trim()}:$remoteApiCarId")}"
+
     private fun allocate(identityKey: String): Int {
         val next = preferences.getInt(NEXT_ID_KEY, -1)
         require(next in (Int.MIN_VALUE + 1)..-1) { "local history id allocator exhausted" }
@@ -72,10 +92,16 @@ class VehicleContextStore @Inject constructor(
             HistoryConnectionSource.SELF_HOSTED -> selfHostedVehicleStableIdentity(serverIdentity, car.carId)
         }
         val context = getOrAllocate(stableIdentity, car.carId, connectionSource, serverIdentity)
+        if (connectionSource == HistoryConnectionSource.CLOUD && !accountNamespace.isNullOrBlank()) {
+            rememberCloudRemoteMapping(accountNamespace, car.carId, context.localHistoryCarId)
+        }
         return context
     }
 
     private fun identityKey(stableIdentity: String): String = "identity:${sha256Hex(stableIdentity)}"
+
+    private fun cloudRemoteKey(accountNamespace: String, remoteApiCarId: Int): String =
+        "remote:${sha256Hex("cloud:${accountNamespace.trim()}:car:$remoteApiCarId")}"
 
     private companion object {
         const val NEXT_ID_KEY = "next_local_history_id"
