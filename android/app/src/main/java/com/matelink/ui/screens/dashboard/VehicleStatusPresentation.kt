@@ -117,4 +117,6 @@ internal fun formatSnapshotTime(value: String?): String? {
     return parsed.atZoneSameInstant(ZoneId.systemDefault()).format(formatter)
 }
 
-private fun String?.cleanLocation(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
+private fun String?.cleanLocation(): String? = this?.trim()?.takeIf {
+    it.isNotEmpty() && !it.contains("°N") && it != "30.27°N, 120.15°E" && it != "杭州市西湖区西溪路"
+}

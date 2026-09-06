@@ -249,13 +249,14 @@ private fun DriveCurvesContent(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(32.dp),
+                        .padding(28.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = stringResource(R.string.not_available),
+                        text = stringResource(R.string.drive_curves_no_samples),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
             }
@@ -279,10 +280,11 @@ private fun CurvesKpiOverviewCard(
         )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            val defaultStart = detail.startAddress?.takeIf { it.isNotBlank() }?.toChineseDisplayAddress()
-            val defaultEnd = detail.endAddress?.takeIf { it.isNotBlank() }?.toChineseDisplayAddress()
-            val startName = defaultStart ?: defaultEnd ?: "杭州市西湖区西溪路"
-            val endName = defaultEnd ?: defaultStart ?: "30.27°N, 120.15°E"
+            val unknownLocation = stringResource(R.string.unknown_location)
+            val defaultStart = detail.startAddress?.takeIf { it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" }?.toChineseDisplayAddress()
+            val defaultEnd = detail.endAddress?.takeIf { it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" }?.toChineseDisplayAddress()
+            val startName = defaultStart ?: defaultEnd ?: unknownLocation
+            val endName = defaultEnd ?: defaultStart ?: unknownLocation
 
             Text(
                 text = "$startName → $endName",

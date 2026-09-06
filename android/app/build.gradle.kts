@@ -38,8 +38,8 @@ android {
         applicationId = "com.matelink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 22
-        versionName = "2.1.3"
+        versionCode = 23
+        versionName = "2.1.4"
         buildConfigField("String", "GIT_SHA", "\"${resolveGitSha()}\"")
         val publicInfoBaseUrl = providers.gradleProperty("MATELINK_PUBLIC_INFO_BASE_URL")
             .orElse("https://auth.teslalink.joviluma.com")
@@ -102,11 +102,7 @@ android {
     buildTypes {
         debug {
             val customAppIdSuffix = providers.gradleProperty("MATELINK_APP_ID_SUFFIX").orNull
-            if (customAppIdSuffix != null) {
-                applicationIdSuffix = customAppIdSuffix.ifEmpty { null }
-            } else {
-                applicationIdSuffix = ".test.mock"
-            }
+            applicationIdSuffix = customAppIdSuffix?.ifEmpty { null }
             resValue("string", "app_name", "MateLink")
             buildConfigField("boolean", "JOURVOLT_MOCK_LOGIN", "false")
             buildConfigField("String", "JOURVOLT_MOCK_SOURCE", "\"\"")

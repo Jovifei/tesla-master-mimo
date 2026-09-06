@@ -29,7 +29,7 @@ enum class ChineseLocationAvailability {
 internal fun chineseLocationAvailability(settings: AmapSettings): ChineseLocationAvailability = when {
     !settings.hasKey -> ChineseLocationAvailability.KEY_NOT_CONFIGURED
     !settings.privacyAgreed -> ChineseLocationAvailability.PRIVACY_NOT_ACCEPTED
-    settings.restartRequired || !settings.mapLoaded -> ChineseLocationAvailability.RESTART_REQUIRED
+    settings.restartRequired -> ChineseLocationAvailability.RESTART_REQUIRED
     else -> ChineseLocationAvailability.READY
 }
 

@@ -438,10 +438,10 @@ private fun DateFilterChips(
     ) {
         items(
             listOf(
+                DateFilter.ALL_TIME,
                 DateFilter.LAST_7_DAYS,
                 DateFilter.LAST_30_DAYS,
-                DateFilter.LAST_90_DAYS,
-                DateFilter.ALL_TIME
+                DateFilter.LAST_90_DAYS
             )
         ) { filter ->
             FilterChip(

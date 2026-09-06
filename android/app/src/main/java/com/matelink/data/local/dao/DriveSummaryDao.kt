@@ -54,6 +54,10 @@ interface DriveSummaryDao {
     @Query("SELECT * FROM drives_summary WHERE carId = :carId ORDER BY startDate ASC")
     suspend fun getAllChronological(carId: Int): List<DriveSummary>
 
+    /** Latest drive with a non-empty endAddress to resolve last known parked location. */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND endAddress != '' ORDER BY startDate DESC LIMIT 1")
+    suspend fun getLatestWithEndAddress(carId: Int): DriveSummary?
+
     // === Quick Stats Queries ===
 
     // Total count

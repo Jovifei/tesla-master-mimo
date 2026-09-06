@@ -2,10 +2,47 @@
 
 本文件记录 MateLink Android App 每次**正式包（release）**的版本更新与真机安装情况，倒序排列（最新在最上）。
 
-适用范围：`com.matelink` 正式包。debug 测试包（`com.matelink.test.mock`）不入此台账。
+适用范围：`com.matelink` 正式包。自 V2.1.4 起，日常 Debug 与 Release 统一使用正式包名 `com.matelink`，杜绝任何分身应用。
+完整构建、部署与真机验证 SOP 请参见：[SOP-ANDROID-DEVICE-DEPLOYMENT-AND-VERIFICATION.md](file:///e:/project/tesla_master/app_mimo/docs/SOP-ANDROID-DEVICE-DEPLOYMENT-AND-VERIFICATION.md)
 
 > 安全约定：本文件只记录构建配置的文件路径与公网地址，**不记录 keystore 口令**。
 > 签名配置文件位于仓库外（`E:\Claude_allow\matelink-release.properties`），不提交远端。
+
+---
+
+## [2.1.4 / build 23] — 2026-09-06 物理真机7大核心体验修复与纯净交付
+
+### 一、版本标识
+
+| 项目 | 值 |
+|---|---|
+| versionName | `2.1.4` |
+| versionCode | `23` |
+| 包名 | `com.matelink`（正式包，杜绝分身） |
+| minSdk / targetSdk | 26 / 35 |
+| 构建类型 | debug / release（统一正式包名 `com.matelink`） |
+| 发布日期 | 2026-09-06 14:30 |
+
+### 二、本次核心修复（7大真机问题）
+
+1. **高德地图底图渲染**：挂接直接生命周期与工厂流转，解除逆地理编码循环死锁，矢量瓦片与 POI 渲染恢复。
+2. **真实位置与零伪造**：全链路清除硬编码 `30.27°N, 120.15°E` 及假西湖区/拱墅区；无 GPS 时诚实显示“等待车端 GPS”；一旦上报即时逆地理编码。
+3. **行程曲线拒绝造假**：移除详情页正弦波生成器，对仅有聚合统计的行程诚实展示说明文案。
+4. **充电站点与时序修正**：纠正 18:43 第三方快充（25% -> 96%）与 19:30 超充补满（96% -> 100%）的时序与站点归属。
+5. **车主 3D 渲染图内置**：内置纯黑 Model Y + 19 寸 Gemini 轮毂 3D 渲染图，精准匹配车主车型。
+6. **消除手机双软件**：默认取消 `.test.mock` 后缀，保证手机上只安装唯一正式应用 `com.matelink`。
+7. **全量 35 趟行程展示**：时间筛选默认置为全部时间，完整呈现所有历史行程。
+
+### 三、真机安装记录
+
+| 项目 | 值 |
+|---|---|
+| 设备 | OnePlus 7 Pro（GM1910），`6e4fa92f`，Android 11 |
+| 安装方式 | `adb install -r`（覆盖安装，保留用户原有配置与 Room 数据） |
+| 安装后版本 | versionCode **23** / **2.1.4** ✅ |
+| 卸载双开/测试包 | `com.matelink.test.mock` 已完全卸载 ✅ |
+| 桌面状态 | 唯一 `MateLink` 图标 ✅ |
+| 单元测试 | 490/490 passed (`BUILD SUCCESSFUL`) ✅ |
 
 ---
 

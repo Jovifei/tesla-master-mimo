@@ -1490,6 +1490,7 @@
     <string name="battery_service_mode_title">Battery Health &amp; Service Mode</string>
     <string name="battery_service_mode_desc">Health is estimated from rated range (~%1$.1f%%). For an official Tesla HV battery health test, park with a charger connected and enter Service Mode on the center screen (Controls -&gt; Software -&gt; Long-press model text -&gt; type service -&gt; High Voltage Battery -&gt; Battery Health Test) for a full calibration cycle.</string>
     <string name="drive_curves_title">Drive Curve Analytics</string>
+    <string name="drive_curves_no_samples">Detailed point-by-point telemetry was not recorded for this drive. Aggregated metrics are shown above.</string>
     <string name="drive_curves_action">Detailed Curves</string>
     <string name="drive_curves_banner_title">Dynamic Curve Analytics</string>
     <string name="drive_curves_banner_subtitle">Tap to view speed, distance, power, battery &amp; elevation profiles</string>

@@ -15,13 +15,23 @@ import com.squareup.moshi.Moshi
  * by the analysis screens. Missing summary fields remain missing; persisted
  * fallback data must never turn an unknown value into a measured zero.
  */
-fun DriveSummary.toAnalysisDriveData(): DriveData =
-    apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive) ?: DriveData(
-    driveId = driveId,
-    startDate = startDate,
-    endDate = endDate,
-    startAddress = startAddress.takeIf(String::isNotBlank),
-    endAddress = endAddress.takeIf(String::isNotBlank),
+private fun String?.cleanAddress(): String? = this?.trim()?.takeIf {
+    it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" && it != "杭州市西湖区西溪路"
+}
+
+fun DriveSummary.toAnalysisDriveData(): DriveData {
+    val fromEvidence = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive)?.let {
+        it.copy(
+            startAddress = it.startAddress.cleanAddress(),
+            endAddress = it.endAddress.cleanAddress()
+        )
+    }
+    return fromEvidence ?: DriveData(
+        driveId = driveId,
+        startDate = startDate,
+        endDate = endDate,
+        startAddress = startAddress.cleanAddress(),
+        endAddress = endAddress.cleanAddress(),
     odometerDetails = DriveOdometerDetails(
         distance = distance.takeIf { it.isFinite() && it > 0.0 }
     ),
@@ -40,7 +50,7 @@ fun DriveSummary.toAnalysisDriveData(): DriveData =
     insideTempAvg = insideTempAvg,
     energyConsumedNet = energyConsumed?.takeIf { it.isFinite() && it >= 0.0 },
     consumptionNet = efficiency?.takeIf { it.isFinite() && it >= 0.0 }
-)
+) }
 
 fun ChargeSummary.toAnalysisChargeData(): ChargeData =
     apiEvidence?.let(HistorySummaryEvidenceCodec::decodeCharge) ?: ChargeData(

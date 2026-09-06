@@ -148,7 +148,7 @@ class SnapshotChargeEngine @Inject constructor(
                 val estimatedCost = ((energyAdded * defaultRate) * 100.0).roundToInt() / 100.0
                 val defaultAddress = prev.endAddress?.takeIf { it.isNotBlank() }
                     ?: next.startAddress?.takeIf { it.isNotBlank() }
-                    ?: (if (isFastCharge) "超级充电站" else "充电站")
+                    ?: (if (isFastCharge) "第三方快充站" else "第三方充电站")
 
                 // Deterministic ID based on start time hash
                 val rawHash = abs((prev.endDate + next.startDate).hashCode())

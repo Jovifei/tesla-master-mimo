@@ -126,10 +126,12 @@ fun AmapNativeMapView(
                 MapsInitializer.updatePrivacyShow(context, true, true)
                 MapsInitializer.updatePrivacyAgree(context, true)
                 MapsInitializer.setApiKey(apiKey)
+                MapsInitializer.setProtocol(2)
                 AmapSdkGate.wasInitialized = true
                 MapView(context).also { view ->
                     handle.view = view
                     view.onCreate(savedState)
+                    view.onResume()
                     handle.map = view.map.apply {
                         uiSettings.isZoomControlsEnabled = true
                         setOnMapLoadedListener {
@@ -206,6 +208,9 @@ private fun destroyMap(handle: AmapMapHandle) {
     handle.loaded = false
     handle.renderedContent = null
     handle.map = null
-    handle.view?.onDestroy()
+    try {
+        handle.view?.onPause()
+        handle.view?.onDestroy()
+    } catch (_: Exception) {}
     handle.view = null
 }

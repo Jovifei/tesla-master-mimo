@@ -80,10 +80,7 @@ class VehicleStatusStore @Inject constructor(
                 pressureRl = 2.9,
                 pressureRr = 2.9
             ),
-            carGeodata = CarGeodata(
-                latitude = 30.2741,
-                longitude = 120.1551
-            )
+            carGeodata = null
         )
     }
 }

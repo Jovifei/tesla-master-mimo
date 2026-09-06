@@ -68,12 +68,12 @@ data class DriveChartData(
 )
 
 enum class DriveDateFilter(@get:StringRes val labelRes: Int, val days: Long?) {
+    ALL_TIME(R.string.filter_all_time, null),
     TODAY(R.string.filter_today, 0),
     LAST_7_DAYS(R.string.filter_last_7_days, 7),
     LAST_30_DAYS(R.string.filter_last_30_days, 30),
     LAST_90_DAYS(R.string.filter_last_90_days, 90),
     LAST_YEAR(R.string.filter_last_year, 365),
-    ALL_TIME(R.string.filter_all_time, null),
     CUSTOM(R.string.filter_custom, -1)
 }
 

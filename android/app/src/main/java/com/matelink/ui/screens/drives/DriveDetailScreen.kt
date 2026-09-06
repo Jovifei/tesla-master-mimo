@@ -382,11 +382,12 @@ private fun RouteHeaderCard(detail: DriveDetail) {
                 title = stringResource(R.string.trip)
             )
 
-            val defaultStart = detail.startAddress.takeIf { !it.isNullOrBlank() }?.toChineseDisplayAddress()
-            val defaultEnd = detail.endAddress.takeIf { !it.isNullOrBlank() }?.toChineseDisplayAddress()
+            val unknownLocation = stringResource(R.string.unknown_location)
+            val defaultStart = detail.startAddress?.takeIf { it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" }?.toChineseDisplayAddress()
+            val defaultEnd = detail.endAddress?.takeIf { it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" }?.toChineseDisplayAddress()
             RouteIndicator(
-                start = defaultStart ?: defaultEnd ?: "杭州市西湖区西溪路",
-                end = defaultEnd ?: defaultStart ?: "30.27°N, 120.15°E"
+                start = defaultStart ?: defaultEnd ?: unknownLocation,
+                end = defaultEnd ?: defaultStart ?: unknownLocation
             )
 
             HorizontalDivider(

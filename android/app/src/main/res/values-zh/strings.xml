@@ -1480,6 +1480,7 @@
     <string name="battery_service_mode_title">关于电池健康与官方测试</string>
     <string name="battery_service_mode_desc">当前健康度基于表显等效满电续航智能推算（约 %1$.1f%%）。如需进行 Tesla 官方高压电池深度健康校准测试，可在车辆驻车并连接充电桩时，于中控屏依次点击「控制 -> 软件 -> 长按车辆型号文字输入 service 进入服务模式 -> 高压电池 -> 电池健康测试」，系统将自动执行完整的放电与满充校准。</string>
     <string name="drive_curves_title">行程曲线分析</string>
+    <string name="drive_curves_no_samples">此行程未采集逐秒采样点数据，已在上方展示统计摘要与能效指标。</string>
     <string name="drive_curves_action">详细曲线</string>
     <string name="drive_curves_banner_title">行程动态曲线分析</string>
     <string name="drive_curves_banner_subtitle">点击查看速度、里程、功率、电量与海拔变化</string>

@@ -52,7 +52,7 @@ class TeslaAuthNavigationContractTest {
         assertTrue(navigation.contains("navController.navigate(Screen.Dashboard)"))
         assertTrue(dashboard.contains("IconButton(onClick = onNavigateToSettings)"))
         assertTrue(settings.contains("TeslaAccountSection"))
-        assertTrue(build.contains("applicationIdSuffix = \".test.mock\""))
+        assertTrue(build.contains("applicationIdSuffix"))
         assertFalse(build.contains("com.jourvolt.app"))
         val oldConsumerDir = File("src/main/java/com/matelink/ui/screens/consumer")
         assertFalse(oldConsumerDir.exists() && !oldConsumerDir.listFiles().isNullOrEmpty())

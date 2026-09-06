@@ -51,15 +51,30 @@ fun VehicleHeroImage(
     onResetPhotoRequested: () -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val compositorUrl = remember(model, exteriorColor, wheelType, trimBadging) {
-        CarImageResolver.getCompositorUrl(model, exteriorColor, wheelType, trimBadging)
+    val assetPath = remember(model, exteriorColor, wheelType, trimBadging) {
+        CarImageResolver.getAssetPath(model, exteriorColor, wheelType, trimBadging)
     }
-    val imageRequest = remember(compositorUrl) {
+    val hasAsset = remember(assetPath) {
+        try {
+            context.assets.open(assetPath).close()
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+    val imageSource = remember(hasAsset, assetPath, model, exteriorColor, wheelType, trimBadging) {
+        if (hasAsset) {
+            "file:///android_asset/$assetPath"
+        } else {
+            CarImageResolver.getCompositorUrl(model, exteriorColor, wheelType, trimBadging)
+        }
+    }
+    val imageRequest = remember(imageSource) {
         coil.request.ImageRequest.Builder(context)
-            .data(compositorUrl)
+            .data(imageSource)
             .crossfade(true)
             .listener(
-                onStart = { android.util.Log.i("VehicleHeroImage", "Coil start: $compositorUrl") },
+                onStart = { android.util.Log.i("VehicleHeroImage", "Coil start: $imageSource") },
                 onSuccess = { _, result -> android.util.Log.i("VehicleHeroImage", "Coil success: ${result.dataSource}") },
                 onError = { _, result -> android.util.Log.w("VehicleHeroImage", "Coil error: ${result.throwable.message}", result.throwable) }
             )

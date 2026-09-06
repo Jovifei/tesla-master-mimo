@@ -160,8 +160,8 @@ class SnapshotTripEngine @Inject constructor(
                 startDate = effectiveStartTimeIso,
                 endDate = nowIso,
                 durationMin = durationMin,
-                startAddress = effectiveStartAddress.ifBlank { resolvedAddress ?: "杭州市西湖区西溪路" },
-                endAddress = currentEndAddress.ifBlank { resolvedAddress ?: "30.27°N, 120.15°E" },
+                startAddress = effectiveStartAddress.ifBlank { resolvedAddress.orEmpty() },
+                endAddress = currentEndAddress.ifBlank { resolvedAddress.orEmpty() },
                 distance = tripDistance,
                 speedMax = newMaxSpeed,
                 speedAvg = avgSpeed,
@@ -328,13 +328,13 @@ class SnapshotTripEngine @Inject constructor(
                     updated = updated.copy(efficiency = eff, energyConsumed = kwh, energySource = "physical_model")
                     changed = true
                 }
-                val bestAddress = resolvedCurrent ?: "杭州市西湖区西溪路"
-                if (updated.startAddress.isBlank() && updated.distance > 0.0) {
-                    updated = updated.copy(startAddress = bestAddress)
+                // Purge poisoned strings
+                if (updated.startAddress.contains("30.27°N") || updated.startAddress == "杭州市西湖区西溪路") {
+                    updated = updated.copy(startAddress = resolvedCurrent.orEmpty())
                     changed = true
                 }
-                if (updated.endAddress.isBlank() && updated.distance > 0.0) {
-                    updated = updated.copy(endAddress = resolvedCurrent ?: "30.27°N, 120.15°E")
+                if (updated.endAddress.contains("30.27°N") || updated.endAddress == "杭州市西湖区西溪路") {
+                    updated = updated.copy(endAddress = resolvedCurrent.orEmpty())
                     changed = true
                 }
                 if (changed) updated else null

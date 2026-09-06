@@ -22,4 +22,14 @@ class ChineseLocationResolverTest {
             chineseLocationAvailability(AmapSettings())
         )
     }
+
+    @Test
+    fun reverseGeocodingReadyEvenBeforeMapLoaded() {
+        assertEquals(
+            ChineseLocationAvailability.READY,
+            chineseLocationAvailability(
+                AmapSettings(hasKey = true, privacyAgreed = true, mapLoaded = false)
+            )
+        )
+    }
 }
