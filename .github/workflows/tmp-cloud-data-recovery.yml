@@ -25,6 +25,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: deploy/jourvolt-dev-mock/go.mod
+      - name: Correct patch driver
+        run: python tools/tmp_cloud_data_recovery_patch_fix.py
       - name: Apply reviewed repair
         run: python tools/tmp_cloud_data_recovery_patch.py
       - name: Format Go
