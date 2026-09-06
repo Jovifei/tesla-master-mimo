@@ -10,6 +10,26 @@
 
 ---
 
+## [2.1.6 / build 25] — 2026-09-06 历史归档与位置真实性修复
+
+### 已验证
+
+- 本地历史不再在 Android 或服务端按“两天”截断；上传按服务端 200 条/类型上限分批，保留完整有效归档。
+- 服务端已部署本提交；现有 68 条 `local_import` 记录保留并转换为 `incomplete/local_import_unverified`，不会再被接口全量隐藏，也不会进入统计或曲线。
+- 空的实时 GPS 快照不会覆盖有效缓存；缓存位置只能显示为 `database_latest` 与原缓存时间，不能冒充实时 Telemetry。
+- 旧可信自托管 API 的缺失质量字段在远端边界归类为 `legacy_remote_api`；本地未验证导入仍严格排除分析。
+- Android Debug/Release JVM 各 515 项：0 failures / 0 errors；Go test/vet 通过；独立代码复审无 Critical/Important。
+- 已同签名 `adb install -r` 覆盖 OnePlus 7 Pro：`com.matelink` 2.1.6/build25，首次安装时间仍为 `2026-08-31 22:36:47`；冷启动仍进入既有车辆，不出现登录页或 FATAL。
+- APK：`app-release.apk`，SHA-256 `2619874B8A708BCD6DA8CC3B2D43E28625104F0FCEB8CE7EB0CF4FD76F2763ED`。
+
+### 真实数据边界
+
+- 当前生产 Telemetry 仍为 `awaiting_first_event`，数据库仍为 pairing/latest/route points 均为 0；因此位置页正确显示“等待车端 GPS”。
+- 旧导入摘要没有路线点、地址或速度/功率采样，不能诚实补出“未知→未知”、地图路线或曲线；电池健康接口仍由服务端明确标记 unsupported。
+- 需要 Jovi 在 Tesla 官方流程完成虚拟钥匙/Telemetry 配置，并产生一段真实驾驶和一次真实充电后，才能验收实时 GPS、起终点、路线/速度/功率曲线、充电曲线与健康趋势。
+
+---
+
 ## [2.1.5 / build 24] — 2026-09-06 数据真实性与 Fleet Telemetry 修复
 
 ### 证据状态
