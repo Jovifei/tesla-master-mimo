@@ -46,4 +46,3 @@ Do not call Telemetry complete until all are true:
 - a real drive creates a route-bearing drive session;
 - a real charge creates a charge session with measured fields;
 - the API response, PostgreSQL rows, and phone pages agree on source and timestamp.
-
