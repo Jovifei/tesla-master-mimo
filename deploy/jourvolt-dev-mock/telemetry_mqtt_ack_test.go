@@ -266,8 +266,8 @@ func TestTask1ReconnectRestoresConnectedSubscribedAndPersistenceHealth(t *testin
 		t.Fatal("connection loss must clear all MQTT readiness health")
 	}
 	options.OnConnect(client)
-	if subscriptions != 4 || !service.mqttConnected.Load() || !service.mqttSubscribed.Load() || service.mqttPersistence.Load() || service.mqttHealthy.Load() {
-		t.Fatalf("reconnect must restore connection/subscription but wait for durable persistence: subscriptions=%d connected=%t subscribed=%t persistence=%t healthy=%t", subscriptions, service.mqttConnected.Load(), service.mqttSubscribed.Load(), service.mqttPersistence.Load(), service.mqttHealthy.Load())
+	if subscriptions != 4 || !service.mqttConnected.Load() || !service.mqttSubscribed.Load() || !service.mqttPersistence.Load() || service.mqttHealthy.Load() || !service.awaitingFirstEvent.Load() {
+		t.Fatalf("reconnect must expose awaiting-first-event after infrastructure readiness: subscriptions=%d connected=%t subscribed=%t persistence=%t healthy=%t awaiting=%t", subscriptions, service.mqttConnected.Load(), service.mqttSubscribed.Load(), service.mqttPersistence.Load(), service.mqttHealthy.Load(), service.awaitingFirstEvent.Load())
 	}
 	recovered := &ackCountingMQTTMessage{topic: "jourvolt/telemetry/VIN/v/Soc", payload: []byte("42"), acknowledged: make(chan struct{}, 1)}
 	subscriber.consume = func(_ context.Context, _ string, _ []byte, _ time.Time) telemetryMQTTConsumeResult {

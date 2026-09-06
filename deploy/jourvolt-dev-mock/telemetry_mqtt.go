@@ -246,6 +246,7 @@ func (s *telemetrySubscriber) connected(client mqtt.Client) {
 			subscribed = false
 		}
 	}
+	persistenceReady := subscribed && s.service.telemetryStoreReady(context.Background())
 	s.mu.Lock()
 	if s.stopped || s.client != client || s.clientGeneration != generation || !s.clientIsConnectedLocked() {
 		s.mu.Unlock()
@@ -254,9 +255,9 @@ func (s *telemetrySubscriber) connected(client mqtt.Client) {
 	s.ackGate = subscribed
 	s.service.mqttConnected.Store(true)
 	s.service.mqttSubscribed.Store(subscribed)
-	s.service.mqttPersistence.Store(false)
+	s.service.mqttPersistence.Store(persistenceReady)
 	s.service.mqttHealthy.Store(false)
-	s.service.awaitingFirstEvent.Store(false)
+	s.service.awaitingFirstEvent.Store(persistenceReady)
 	s.mu.Unlock()
 }
 
