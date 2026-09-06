@@ -28,12 +28,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.YearMonth
 import com.matelink.util.formatMonthYear
 import com.matelink.util.formatShortNoYear
 import com.matelink.util.formatWeekLabel
-import java.time.format.DateTimeFormatter
+import com.matelink.util.parseIsoDate
 import java.util.Locale
 import java.time.temporal.ChronoUnit
 import java.time.temporal.WeekFields
@@ -521,18 +520,11 @@ class ChargesViewModel @Inject constructor(
     private fun calculateChartData(charges: List<ChargeData>, granularity: ChartGranularity, startDate: LocalDate?): List<ChargeChartData> {
         if (charges.isEmpty()) return emptyList()
 
-        val formatter = DateTimeFormatter.ISO_DATE_TIME
         val weekFields = WeekFields.of(Locale.getDefault())
 
         // Group the charges by day
         val chargesByDay = charges.mapNotNull { charge ->
-            charge.startDate?.let {
-                try {
-                    // Use of localdatetime to support the full ISO format
-                    val date = LocalDateTime.parse(it, formatter).toLocalDate()
-                    date.toEpochDay() to charge
-                } catch (e: Exception) { null }
-            }
+            charge.startDate?.let { parseIsoDate(it)?.toEpochDay()?.let { day -> day to charge } }
         }.groupBy({ it.first }, { it.second })
 
         return when (granularity) {
@@ -573,11 +565,10 @@ class ChargesViewModel @Inject constructor(
                 // Group charges by week
                 val chargesByWeek = charges.mapNotNull { charge ->
                     charge.startDate?.let { dateStr ->
-                        try {
-                            val date = LocalDateTime.parse(dateStr, formatter).toLocalDate()
+                        parseIsoDate(dateStr)?.let { date ->
                             val firstDayOfWeek = date.with(weekFields.dayOfWeek(), 1)
                             firstDayOfWeek.toEpochDay() to charge
-                        } catch (e: Exception) { null }
+                        }
                     }
                 }.groupBy({ it.first }, { it.second })
 
@@ -613,11 +604,10 @@ class ChargesViewModel @Inject constructor(
                 // Group charges by month
                 val chargesByMonth = charges.mapNotNull { charge ->
                     charge.startDate?.let { dateStr ->
-                        try {
-                            val date = LocalDateTime.parse(dateStr, formatter).toLocalDate()
+                        parseIsoDate(dateStr)?.let { date ->
                             val firstDayOfMonth = YearMonth.from(date).atDay(1)
                             firstDayOfMonth.toEpochDay() to charge
-                        } catch (e: Exception) { null }
+                        }
                     }
                 }.groupBy({ it.first }, { it.second })
 

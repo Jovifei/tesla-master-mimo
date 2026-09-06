@@ -73,4 +73,15 @@ class TaskBQualityContractTest {
         assertTrue(source.contains("getDataReadiness"))
         assertTrue(source.contains("await"))
     }
+
+    @Test
+    fun batteryHealthDoesNotInventCapacityRangeOrEfficiencyFallbacks() {
+        val source = File("src/main/java/com/matelink/ui/screens/battery/BatteryViewModel.kt").readText()
+
+        assertFalse(source.contains("?: 60.0"))
+        assertFalse(source.contains("?: 145.0"))
+        assertFalse(source.contains("?: 435.0"))
+        assertFalse(source.contains("?: 399.0"))
+        assertFalse(source.contains("else 91.7"))
+    }
 }

@@ -1,6 +1,6 @@
 # MateLink Android 构建部署、真机更新与验证标准作业程序 (SOP)
 
-> **版本**：V2.1.4 (Build 23)  
+> **版本**：V2.1.5 (Build 24)
 > **适用对象**：后续接手项目的开发者、协作 Agent 及自动化运维流水线  
 > **目标**：以高度确定性、零假设、可复制的标准流程，完成代码提交、远端推送、APK 构建、物理手机覆盖升级及完整真机验证。
 
@@ -10,10 +10,11 @@
 
 ### 1.1 核心标识与规则
 
-- **正式唯一包名**：`com.matelink`
+- **正式唯一包名**：`com.matelink`（仅 Release）
+- **隔离 Debug 包名**：`com.matelink.test.mock` / `MateLink Test`；只用于模拟器或专用测试设备，绝不覆盖车主包。
 - **绝对禁忌（最高红线）**：
   1. **严禁执行 `adb uninstall com.matelink` 或 `adb shell pm clear com.matelink`**：这会导致用户登录 Session、Token、车端绑定配置以及本地 Room 数据库历史记录永久丢失！
-  2. **严禁在正式交付中引入分身包名**（如 `com.matelink.test.mock`），手机桌面必须保持**唯一且纯净的 MateLink 图标**。
+  2. **严禁将 Debug 分身包交付或覆盖安装到车主设备**；正式交付只能使用经签名的 `com.matelink` Release。
   3. **严禁在代码或数据库中伪造数据**（如假经纬度 `30.27, 120.15`、假“西湖区西溪路/拱墅区”或者正弦波伪造时序轨迹）；无数据时必须诚实向用户呈现真实状态（如“等待车端 GPS”）。
 
 ### 1.2 物理验证机基线
@@ -76,12 +77,9 @@
   - 在 `android/app/src/main/assets/car_images/` 内置了纯黑车身（Diamond Black）+ 19寸 Gemini 轮毂的 Model Y 高清 3D 车辆渲染资产。
   - 更新 `VehicleHeroImage.kt`：优先加载本地车主对应外观资产，实现 100% 毫秒级离线渲染，真实还原车主座驾。
 
-### 2.6 问题 6：手机桌面上出现两个 MateLink 图标（双软件分身）
-- **现象**：手机桌面上出现两个 MateLink 应用，其中一个是旧的或者测试版本。
-- **根因**：`android/app/build.gradle.kts` 的 `buildTypes.debug` 曾默认设置了 `applicationIdSuffix = ".test.mock"`。运行 debug 构建时，会在手机上以 `com.matelink.test.mock` 安装分身，与正式包 `com.matelink` 并存。
-- **实现方案**：
-  - 将 `build.gradle.kts` 中的 `applicationIdSuffix` 改为仅在外部显式传入 `CUSTOM_APP_ID_SUFFIX` 时生效，日常 debug 与 release 统一使用正式包名 `com.matelink`。
-  - 手机端执行 `adb uninstall com.matelink.test.mock` 清除历史遗留分身包。
+### 2.6 包身份隔离
+- **原则**：Debug 必须保持 `.test.mock` 后缀，避免测试构建覆盖车主的 `com.matelink` 数据、登录会话和地图 Key。
+- **实施方案**：仅在 Jovi 明确批准后，用同签名 `adb install -r` 安装 Release；Debug 只允许用于隔离设备或模拟器。
 
 ### 2.7 问题 7：行程只显示部分数据，未完整展示 35 趟行程
 - **现象**：车主实际有 35 趟行程，但进入历史列表只显示了最近几趟。

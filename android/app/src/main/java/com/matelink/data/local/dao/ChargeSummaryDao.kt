@@ -21,49 +21,50 @@ interface ChargeSummaryDao {
         INSERT OR IGNORE INTO charges_summary (
             chargeId, carId, startDate, endDate, durationMin, address, latitude, longitude,
             energyAdded, energyUsed, cost, startBatteryLevel, endBatteryLevel,
-            outsideTempAvg, odometer, apiEvidence
+            outsideTempAvg, odometer, apiEvidence, qualityState, qualityReason
         )
         SELECT chargeId, :targetCarId, startDate, endDate, durationMin, address, latitude, longitude,
             energyAdded, energyUsed, cost, startBatteryLevel, endBatteryLevel,
-            outsideTempAvg, odometer, apiEvidence
+            outsideTempAvg, odometer, apiEvidence, qualityState, qualityReason
         FROM charges_summary WHERE carId = :legacyCarId
     """)
     suspend fun copyFromLegacy(legacyCarId: Int, targetCarId: Int)
 
-    @Query("SELECT * FROM charges_summary WHERE chargeId = :chargeId AND carId = :carId")
+    @Query("SELECT * FROM charges_summary WHERE chargeId = :chargeId AND carId = :carId AND qualityState != 'quarantined'")
     suspend fun get(carId: Int, chargeId: Int): ChargeSummary?
 
-    @Query("SELECT * FROM charges_summary WHERE carId = :carId ORDER BY startDate DESC")
+    @Query("SELECT * FROM charges_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
     fun observeAll(carId: Int): Flow<List<ChargeSummary>>
 
-    @Query("SELECT * FROM charges_summary WHERE carId = :carId ORDER BY startDate ASC")
+    @Query("SELECT * FROM charges_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate ASC")
     suspend fun getAllForCar(carId: Int): List<ChargeSummary>
 
     @Query("SELECT MAX(chargeId) FROM charges_summary WHERE carId = :carId")
     suspend fun getMaxChargeId(carId: Int): Int?
 
-    @Query("SELECT MAX(odometer) FROM charges_summary WHERE carId = :carId AND odometer >= 0")
+    @Query("SELECT MAX(odometer) FROM charges_summary WHERE carId = :carId AND qualityState != 'quarantined' AND odometer >= 0")
     suspend fun getMaxNonNegativeOdometer(carId: Int): Double?
 
     @Query("DELETE FROM charges_summary WHERE carId = :carId")
     suspend fun deleteAllForCar(carId: Int)
 
-    @Query("DELETE FROM charges_summary WHERE chargeId = :chargeId")
-    suspend fun deleteChargeById(chargeId: Int)
+    @Query("DELETE FROM charges_summary WHERE carId = :carId AND chargeId = :chargeId")
+    suspend fun deleteChargeById(carId: Int, chargeId: Int)
 
     // === Quick Stats Queries ===
 
     // Total count
-    @Query("SELECT COUNT(*) FROM charges_summary WHERE carId = :carId")
+    @Query("SELECT COUNT(*) FROM charges_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     suspend fun count(carId: Int): Int
 
     // Flow-based count for real-time progress updates
-    @Query("SELECT COUNT(*) FROM charges_summary WHERE carId = :carId")
+    @Query("SELECT COUNT(*) FROM charges_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     fun observeCount(carId: Int): kotlinx.coroutines.flow.Flow<Int>
 
     @Query("""
         SELECT COUNT(*) FROM charges_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
     """)
     suspend fun countInRange(carId: Int, startDate: String, endDate: String): Int
@@ -71,33 +72,36 @@ interface ChargeSummaryDao {
     @Query("""
         SELECT * FROM charges_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
         ORDER BY startDate ASC
     """)
     suspend fun getChargesInRange(carId: Int, startDate: String, endDate: String): List<ChargeSummary>
 
     // Total energy added
-    @Query("SELECT COALESCE(SUM(energyAdded), 0) FROM charges_summary WHERE carId = :carId")
+    @Query("SELECT COALESCE(SUM(energyAdded), 0) FROM charges_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     suspend fun sumEnergyAdded(carId: Int): Double
 
     @Query("""
         SELECT COALESCE(SUM(energyAdded), 0) FROM charges_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
     """)
     suspend fun sumEnergyAddedInRange(carId: Int, startDate: String, endDate: String): Double
 
     // Total cost
-    @Query("SELECT COALESCE(SUM(cost), 0) FROM charges_summary WHERE carId = :carId")
+    @Query("SELECT COALESCE(SUM(cost), 0) FROM charges_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     suspend fun sumCost(carId: Int): Double
 
     /** Number of charge records with an observed cost; zero is a valid value. */
-    @Query("SELECT COUNT(cost) FROM charges_summary WHERE carId = :carId")
+    @Query("SELECT COUNT(cost) FROM charges_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     suspend fun countWithCost(carId: Int): Int
 
     @Query("""
         SELECT COALESCE(SUM(cost), 0) FROM charges_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
     """)
     suspend fun sumCostInRange(carId: Int, startDate: String, endDate: String): Double
@@ -105,6 +109,7 @@ interface ChargeSummaryDao {
     @Query("""
         SELECT COUNT(cost) FROM charges_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
     """)
     suspend fun countWithCostInRange(carId: Int, startDate: String, endDate: String): Int
@@ -112,7 +117,7 @@ interface ChargeSummaryDao {
     // Average cost per kWh
     @Query("""
         SELECT COALESCE(SUM(cost) / NULLIF(SUM(energyAdded), 0), 0)
-        FROM charges_summary WHERE carId = :carId AND cost IS NOT NULL
+        FROM charges_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND cost IS NOT NULL
     """)
     suspend fun avgCostPerKwh(carId: Int): Double
 
@@ -121,6 +126,7 @@ interface ChargeSummaryDao {
         SELECT COALESCE(SUM(cost) / NULLIF(SUM(energyAdded), 0), 0)
         FROM charges_summary 
         WHERE carId = :carId 
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate 
         AND startDate < :endDate
         AND cost IS NOT NULL
@@ -131,6 +137,7 @@ interface ChargeSummaryDao {
     @Query("""
         SELECT * FROM charges_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         ORDER BY energyAdded DESC LIMIT 1
     """)
     suspend fun biggestCharge(carId: Int): ChargeSummary?
@@ -138,6 +145,7 @@ interface ChargeSummaryDao {
     @Query("""
         SELECT * FROM charges_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
         ORDER BY energyAdded DESC LIMIT 1
     """)
@@ -146,14 +154,14 @@ interface ChargeSummaryDao {
     // Most expensive single charge
     @Query("""
         SELECT * FROM charges_summary
-        WHERE carId = :carId AND cost IS NOT NULL
+        WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND cost IS NOT NULL
         ORDER BY cost DESC LIMIT 1
     """)
     suspend fun mostExpensiveCharge(carId: Int): ChargeSummary?
 
     @Query("""
         SELECT * FROM charges_summary
-        WHERE carId = :carId AND cost IS NOT NULL
+        WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND cost IS NOT NULL
         AND startDate >= :startDate AND startDate < :endDate
         ORDER BY cost DESC LIMIT 1
     """)
@@ -162,25 +170,25 @@ interface ChargeSummaryDao {
     // Most expensive per kWh charge
     @Query("""
         SELECT * FROM charges_summary
-        WHERE carId = :carId AND cost IS NOT NULL AND energyAdded > 0
+        WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND cost IS NOT NULL AND energyAdded > 0
         ORDER BY (cost / energyAdded) DESC LIMIT 1
     """)
     suspend fun mostExpensivePerKwhCharge(carId: Int): ChargeSummary?
 
     @Query("""
         SELECT * FROM charges_summary
-        WHERE carId = :carId AND cost IS NOT NULL AND energyAdded > 0
+        WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND cost IS NOT NULL AND energyAdded > 0
         AND startDate >= :startDate AND startDate < :endDate
         ORDER BY (cost / energyAdded) DESC LIMIT 1
     """)
     suspend fun mostExpensivePerKwhChargeInRange(carId: Int, startDate: String, endDate: String): ChargeSummary?
 
     // Average charge duration
-    @Query("SELECT AVG(durationMin) FROM charges_summary WHERE carId = :carId")
+    @Query("SELECT AVG(durationMin) FROM charges_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     suspend fun avgDuration(carId: Int): Double?
 
     // First charge date
-    @Query("SELECT MIN(startDate) FROM charges_summary WHERE carId = :carId")
+    @Query("SELECT MIN(startDate) FROM charges_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     suspend fun firstChargeDate(carId: Int): String?
 
     // === Queries for Detail Sync ===
@@ -190,6 +198,7 @@ interface ChargeSummaryDao {
         SELECT c.chargeId FROM charges_summary c
         LEFT JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
         WHERE c.carId = :carId
+        AND c.qualityState != 'quarantined'
         AND (a.chargeId IS NULL OR a.schemaVersion < :currentVersion)
         ORDER BY c.chargeId
     """)
@@ -200,6 +209,7 @@ interface ChargeSummaryDao {
         SELECT COUNT(*) FROM charges_summary c
         LEFT JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
         WHERE c.carId = :carId
+        AND c.qualityState != 'quarantined'
         AND (a.chargeId IS NULL OR a.schemaVersion < :currentVersion)
     """)
     suspend fun countUnprocessedCharges(carId: Int, currentVersion: Int): Int
@@ -210,6 +220,7 @@ interface ChargeSummaryDao {
         SELECT DISTINCT CAST(strftime('%Y', startDate) AS INTEGER) as year
         FROM charges_summary
         WHERE carId = :carId
+        AND qualityState != 'quarantined'
         ORDER BY year DESC
     """)
     suspend fun getYears(carId: Int): List<Int>
@@ -228,6 +239,7 @@ interface ChargeSummaryDao {
                 SELECT SUM(d.distance)
                 FROM drives_summary d
                 WHERE d.carId = curr.carId
+                  AND d.qualityState != 'quarantined'
                   AND d.startDate > prev.endDate
                   AND d.startDate < curr.startDate
             ), 0) as distance,
@@ -241,6 +253,8 @@ interface ChargeSummaryDao {
                 WHERE p.carId = curr.carId AND p.startDate < curr.startDate
             )
         WHERE curr.carId = :carId
+            AND curr.qualityState != 'quarantined'
+            AND prev.qualityState != 'quarantined'
         ORDER BY distance DESC
         LIMIT 1
     """)
@@ -259,6 +273,7 @@ interface ChargeSummaryDao {
                 SELECT SUM(d.distance)
                 FROM drives_summary d
                 WHERE d.carId = curr.carId
+                  AND d.qualityState != 'quarantined'
                   AND d.startDate > prev.endDate
                   AND d.startDate < curr.startDate
             ), 0) as distance,
@@ -272,6 +287,8 @@ interface ChargeSummaryDao {
                 WHERE p.carId = curr.carId AND p.startDate < curr.startDate
             )
         WHERE curr.carId = :carId
+            AND curr.qualityState != 'quarantined'
+            AND prev.qualityState != 'quarantined'
             AND prev.startDate >= :startDate
             AND curr.startDate < :endDate
         ORDER BY distance DESC
@@ -301,6 +318,8 @@ interface ChargeSummaryDao {
                 WHERE p.carId = curr.carId AND p.startDate < curr.startDate
             )
         WHERE curr.carId = :carId
+            AND curr.qualityState != 'quarantined'
+            AND prev.qualityState != 'quarantined'
         ORDER BY gapDays DESC
         LIMIT 1
     """)
@@ -321,6 +340,8 @@ interface ChargeSummaryDao {
                 WHERE p.carId = curr.carId AND p.startDate < curr.startDate
             )
         WHERE curr.carId = :carId
+            AND curr.qualityState != 'quarantined'
+            AND prev.qualityState != 'quarantined'
             AND prev.startDate >= :startDate
             AND curr.startDate < :endDate
         ORDER BY gapDays DESC
@@ -338,6 +359,7 @@ interface ChargeSummaryDao {
     @Query("""
         SELECT * FROM charges_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         ORDER BY (endBatteryLevel - startBatteryLevel) DESC
         LIMIT 1
     """)
@@ -346,6 +368,7 @@ interface ChargeSummaryDao {
     @Query("""
         SELECT * FROM charges_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
         ORDER BY (endBatteryLevel - startBatteryLevel) DESC
         LIMIT 1
@@ -364,7 +387,7 @@ interface ChargeSummaryDao {
                COALESCE(SUM(cost), 0) as totalCost,
                COUNT(*) as chargeCount
         FROM charges_summary
-        WHERE carId = :carId AND strftime('%Y', startDate) = :year
+        WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND strftime('%Y', startDate) = :year
         GROUP BY strftime('%m', startDate)
         ORDER BY month ASC
     """)

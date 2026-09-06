@@ -44,8 +44,8 @@ class DriveDetailStatsEvidenceTest {
                 odometerDetails = DriveOdometerDetails(distance = 0.0),
                 batteryDetails = DriveBatteryDetails(startBatteryLevel = 50, endBatteryLevel = 50),
                 positions = listOf(
-                    DrivePosition(speed = 0, power = 0, batteryLevel = 50, elevation = 10),
-                    DrivePosition(speed = 0, power = 0, batteryLevel = 50, elevation = 10)
+                    DrivePosition(speed = 0.0, power = 0.0, batteryLevel = 50, elevation = 10),
+                    DrivePosition(speed = 0.0, power = 0.0, batteryLevel = 50, elevation = 10)
                 )
             ),
             unavailableEnergy

@@ -23,15 +23,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.YearMonth
 import com.matelink.util.formatMonthYear
 import com.matelink.util.formatShortNoYear
 import com.matelink.util.formatWeekLabel
-import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.time.temporal.ChronoUnit
 import java.time.temporal.WeekFields
+import com.matelink.util.parseIsoDate
 import javax.inject.Inject
 
 enum class DriveChartGranularity {
@@ -377,17 +376,11 @@ class DrivesViewModel @Inject constructor(
     private fun calculateChartData(drives: List<DriveData>, granularity: DriveChartGranularity, startDate: LocalDate?): List<DriveChartData> {
         if (drives.isEmpty()) return emptyList()
 
-        val formatter = DateTimeFormatter.ISO_DATE_TIME
         val weekFields = WeekFields.of(Locale.getDefault())
 
         // Group the drives by day
         val drivesByDay = drives.mapNotNull { drive ->
-            drive.startDate?.let {
-                try {
-                    val date = LocalDateTime.parse(it, formatter).toLocalDate()
-                    date.toEpochDay() to drive
-                } catch (e: Exception) { null }
-            }
+            drive.startDate?.let { parseIsoDate(it)?.toEpochDay()?.let { day -> day to drive } }
         }.groupBy({ it.first }, { it.second })
 
         return when (granularity) {
@@ -428,11 +421,10 @@ class DrivesViewModel @Inject constructor(
                 // Group drives by week
                 val drivesByWeek = drives.mapNotNull { drive ->
                     drive.startDate?.let { dateStr ->
-                        try {
-                            val date = LocalDateTime.parse(dateStr, formatter).toLocalDate()
+                        parseIsoDate(dateStr)?.let { date ->
                             val firstDayOfWeek = date.with(weekFields.dayOfWeek(), 1)
                             firstDayOfWeek.toEpochDay() to drive
-                        } catch (e: Exception) { null }
+                        }
                     }
                 }.groupBy({ it.first }, { it.second })
 
@@ -467,11 +459,10 @@ class DrivesViewModel @Inject constructor(
                 // Group drives by month
                 val drivesByMonth = drives.mapNotNull { drive ->
                     drive.startDate?.let { dateStr ->
-                        try {
-                            val date = LocalDateTime.parse(dateStr, formatter).toLocalDate()
+                        parseIsoDate(dateStr)?.let { date ->
                             val firstDayOfMonth = YearMonth.from(date).atDay(1)
                             firstDayOfMonth.toEpochDay() to drive
-                        } catch (e: Exception) { null }
+                        }
                     }
                 }.groupBy({ it.first }, { it.second })
 

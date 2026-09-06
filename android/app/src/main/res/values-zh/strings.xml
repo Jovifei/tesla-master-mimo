@@ -652,6 +652,7 @@
     <string name="tpms_trend_conclusion_ambient">可能受环境温度影响；原因尚未确认。</string>
     <string name="tpms_trend_conclusion_highway">可能受高速行驶升温影响；原因尚未确认。</string>
     <string name="tpms_trend_conclusion_parking">可能与停车后的胎压变化有关；原因尚未确认。</string>
+    <string name="tpms_trend_conclusion_insufficient">已记录证据不足，暂无法判断趋势原因。</string>
     <string name="tpms_trend_recommendation_manual_cold_check">建议人工进行冷态检查。</string>
     <string name="temperature_trend_title">温度趋势</string>
     <string name="temperature_trend_window_7">近 7 天</string>

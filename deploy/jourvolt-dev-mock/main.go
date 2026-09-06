@@ -29,6 +29,14 @@ const (
 
 var errNotConfigured = errors.New("provider_not_configured")
 
+// Build provenance is injected by the container build (or remains explicit
+// unknown for local development). It is safe to expose and lets health checks
+// prove which source closure is running without revealing deployment secrets.
+var (
+	buildSHA  = "unknown"
+	buildTime = "unknown"
+)
+
 type store struct{ pool *pgxpool.Pool }
 
 type session struct {
@@ -263,6 +271,14 @@ type vehicleStatus struct {
 	PluggedIn               *bool
 	ChargingState           *string
 	ChargeEnergyAdded       *float64
+	ACChargingEnergyIn      *float64
+	DCChargingEnergyIn      *float64
+	ACChargingPower         *float64
+	DCChargingPower         *float64
+	ChargeAmps              *float64
+	FastChargerPresent      *bool
+	PackVoltage             *float64
+	PackCurrent             *float64
 	ChargeLimitSOC          *int
 	ChargePortDoorOpen      *bool
 	ChargerActualCurrent    *int
@@ -292,6 +308,7 @@ type vehicleStatus struct {
 	IsPreconditioning       *bool
 	ProviderIdentity        string
 	Source                  string
+	FieldSources            map[string]string
 }
 
 type mockProvider struct{}
@@ -368,7 +385,7 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/healthz" {
 		a.json(w, http.StatusOK, map[string]any{
 			"status": "ok", "mode": a.mode, "persistence": "postgres",
-			"mock_history": a.mockHistoryEnabled,
+			"mock_history": a.mockHistoryEnabled, "build_sha": buildSHA, "build_time": buildTime,
 		})
 		return
 	}
@@ -408,6 +425,10 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/v1/vehicles" {
+		if r.Method != http.MethodGet {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
 		vehicles, err := a.provider.Vehicles(r.Context(), userID)
 		if err != nil {
 			a.providerError(w, err)
@@ -505,7 +526,7 @@ func (a *app) auth(w http.ResponseWriter, r *http.Request) (string, bool) {
 func (a *app) compat(w http.ResponseWriter, r *http.Request, userID string) {
 	path := strings.TrimSuffix(r.URL.Path, "/")
 	switch {
-	case path == "/api/ping" || path == "/api/readyz":
+	case path == "/api/ping":
 		a.json(w, http.StatusOK, map[string]string{"ping": "pong"})
 	case path == "/api/matelink/v1/capabilities":
 		features := []string{"live_status"}
@@ -518,6 +539,10 @@ func (a *app) compat(w http.ResponseWriter, r *http.Request, userID string) {
 	case path == "/api/v1/globalsettings":
 		a.json(w, http.StatusOK, map[string]any{"data": map[string]any{"settings": map[string]any{"teslamate_units": map[string]string{"unit_of_length": "km", "unit_of_temperature": "C"}}}})
 	case path == "/api/v1/cars":
+		if r.Method != http.MethodGet {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
 		a.cars(w, r, userID)
 	case strings.HasPrefix(path, "/api/v1/cars/"):
 		a.carResource(w, r, userID, path)
@@ -542,6 +567,10 @@ func (a *app) adapterResource(w http.ResponseWriter, r *http.Request, userID, pa
 	}
 	switch parts[1] {
 	case "snapshot":
+		if r.Method != http.MethodGet {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
 		a.status(w, r, userID, carID, true)
 	case "standby":
 		// Cloud mode keeps history on the phone. Return a typed collecting
@@ -549,7 +578,7 @@ func (a *app) adapterResource(w http.ResponseWriter, r *http.Request, userID, pa
 		// a transport error before local history has accumulated.
 		a.json(w, http.StatusOK, map[string]any{"data": map[string]any{
 			"windows": []any{},
-			"meta": map[string]any{"availability": "collecting", "source": "local_history"},
+			"meta":    map[string]any{"availability": "collecting", "source": "local_history"},
 		}})
 	case "parked":
 		a.json(w, http.StatusOK, map[string]any{"data": nil, "error": "history_not_collected"})
@@ -564,6 +593,10 @@ func (a *app) cars(w http.ResponseWriter, r *http.Request, userID string) {
 		a.providerError(w, err)
 		return
 	}
+	a.json(w, http.StatusOK, map[string]any{"data": map[string]any{"cars": a.vehicleItems(r.Context(), userID, vehicles)}})
+}
+
+func (a *app) vehicleItems(ctx context.Context, userID string, vehicles []vehicle) []map[string]any {
 	items := make([]map[string]any, 0, len(vehicles))
 	for _, v := range vehicles {
 		driveCount, chargeCount := 0, 0
@@ -585,7 +618,7 @@ func (a *app) cars(w http.ResponseWriter, r *http.Request, userID string) {
 			"teslamate_stats": map[string]any{"total_charges": chargeCount, "total_drives": driveCount},
 		})
 	}
-	a.json(w, http.StatusOK, map[string]any{"data": map[string]any{"cars": items}})
+	return items
 }
 
 func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path string) {
@@ -603,11 +636,31 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 		return
 	}
 	if len(parts) == 1 {
-		a.cars(w, r, userID)
+		vehicles, err := a.provider.Vehicles(r.Context(), userID)
+		if err != nil {
+			a.providerError(w, err)
+			return
+		}
+		owned := make([]vehicle, 0, 1)
+		for _, vehicle := range vehicles {
+			if vehicle.ID == carID {
+				owned = append(owned, vehicle)
+				break
+			}
+		}
+		if len(owned) == 0 {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "vehicle_not_found"})
+			return
+		}
+		a.json(w, http.StatusOK, map[string]any{"data": map[string]any{"cars": a.vehicleItems(r.Context(), userID, owned)}})
 		return
 	}
 	switch parts[1] {
 	case "status":
+		if r.Method != http.MethodGet {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
 		a.status(w, r, userID, carID, false)
 	case "data-readiness":
 		if r.Method != http.MethodGet {
@@ -624,6 +677,10 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		}
 	case "charges":
+		if r.Method != http.MethodGet {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
 		if len(parts) > 2 && parts[2] == "current" {
 			a.currentCharge(w, r, userID, carID)
 		} else if a.telemetry != nil {
@@ -640,6 +697,10 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 			}})
 		}
 	case "drives":
+		if r.Method != http.MethodGet {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
 		if a.telemetry != nil {
 			a.telemetryHistory(w, r, userID, carID, "drive", parts[2:])
 		} else if len(parts) > 2 && a.hasMockHistory(userID) {
@@ -654,10 +715,18 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 			}})
 		}
 	case "battery-health":
+		if r.Method != http.MethodGet {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
 		a.json(w, http.StatusOK, map[string]any{"data": map[string]any{
 			"battery_health": nil, "meta": a.unsupportedMeta(userID),
 		}})
 	case "updates":
+		if r.Method != http.MethodGet {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
 		a.json(w, http.StatusOK, map[string]any{"data": map[string]any{"updates": []any{}}})
 	default:
 		a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
@@ -759,6 +828,10 @@ func (a *app) status(w http.ResponseWriter, r *http.Request, userID string, carI
 		"charging_details": map[string]any{
 			"plugged_in": providerStatus.PluggedIn, "charging_state": providerStatus.ChargingState,
 			"charge_energy_added": providerStatus.ChargeEnergyAdded, "charge_limit_soc": providerStatus.ChargeLimitSOC,
+			"ac_charging_energy_in": providerStatus.ACChargingEnergyIn, "dc_charging_energy_in": providerStatus.DCChargingEnergyIn,
+			"ac_charging_power": providerStatus.ACChargingPower, "dc_charging_power": providerStatus.DCChargingPower,
+			"charge_amps": providerStatus.ChargeAmps, "fast_charger_present": providerStatus.FastChargerPresent,
+			"pack_voltage": providerStatus.PackVoltage, "pack_current": providerStatus.PackCurrent,
 			"charge_port_door_open":  providerStatus.ChargePortDoorOpen,
 			"charger_actual_current": providerStatus.ChargerActualCurrent, "charger_phases": providerStatus.ChargerPhases,
 			"charger_power": providerStatus.ChargerPower, "charger_voltage": providerStatus.ChargerVoltage,
@@ -778,7 +851,7 @@ func (a *app) status(w http.ResponseWriter, r *http.Request, userID string, carI
 		a.json(w, http.StatusOK, map[string]any{"data": map[string]any{
 			"status": status, "units": units, "observed_at": providerStatus.ObservedAt.Format(time.RFC3339),
 			"source":        providerStatus.Source,
-			"field_sources": map[string]string{"battery_level": providerStatus.Source, "charging_state": providerStatus.Source},
+			"field_sources": providerStatus.FieldSources,
 		}})
 		return
 	}
@@ -852,8 +925,17 @@ func (a *app) readyz(w http.ResponseWriter, r *http.Request) {
 	if telemetry == "" {
 		telemetry = "ok"
 	}
-	a.json(w, http.StatusOK, map[string]any{
-		"status": "ok", "mode": a.mode, "persistence": "postgres", "telemetry": telemetry,
+	status := http.StatusOK
+	if telemetry != "ok" && telemetry != "awaiting_first_event" {
+		status = http.StatusServiceUnavailable
+	}
+	readyStatus := "not_ready"
+	if status == http.StatusOK {
+		readyStatus = "ok"
+	}
+	a.json(w, status, map[string]any{
+		"status": readyStatus, "mode": a.mode, "persistence": "postgres", "telemetry": telemetry,
+		"build_sha": buildSHA, "build_time": buildTime,
 	})
 }
 

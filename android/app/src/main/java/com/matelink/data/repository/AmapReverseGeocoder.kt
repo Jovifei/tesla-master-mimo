@@ -67,6 +67,7 @@ class AmapReverseGeocoder @Inject constructor(
         }
 
         val key = settingsStore.currentKey().trim().takeIf { it.isNotBlank() } ?: return null
+        val coordinate = AmapCoordinateTransformer.normalize(latitude, longitude) ?: return null
 
         return withContext(Dispatchers.IO) {
             runCatching {
@@ -78,7 +79,7 @@ class AmapReverseGeocoder @Inject constructor(
                 ServiceSettings.getInstance().setApiKey(key)
 
                 val result = GeocodeSearch(context).getFromLocation(
-                    RegeocodeQuery(LatLonPoint(latitude, longitude), 200f, GeocodeSearch.AMAP)
+                    RegeocodeQuery(LatLonPoint(coordinate.latitude, coordinate.longitude), 200f, GeocodeSearch.AMAP)
                 ) ?: return@runCatching null
 
                 val address = result.formatAddress?.trim()?.takeIf { it.isNotEmpty() }
@@ -93,11 +94,9 @@ class AmapReverseGeocoder @Inject constructor(
                     countryName = result.country?.trim()?.takeIf { it.isNotEmpty() } ?: "中国",
                     regionName = region,
                     city = result.city?.trim()?.takeIf { it.isNotEmpty() }
-                ).also {
-                    Log.i(TAG, "Successfully reverse-geocoded ($latitude, $longitude) -> ${it.address}")
-                }
+                )
             }.onFailure { e ->
-                Log.w(TAG, "Amap reverse geocoding failed for ($latitude, $longitude): ${e.message}", e)
+                Log.w(TAG, "Amap reverse geocoding failed: ${e.javaClass.simpleName}")
             }.getOrNull()
         }
     }

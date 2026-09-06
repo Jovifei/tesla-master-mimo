@@ -159,7 +159,7 @@ private fun ChargeDetailContent(
     costPresentation: ChargeDetailCostPresentation,
     units: Units?,
     currencySymbol: String,
-    isDcCharge: Boolean,
+    isDcCharge: Boolean?,
     manualTotalAmount: Double?,
     containingTrip: Pair<Long, com.matelink.domain.model.Trip>?,
     onNavigateToTripDetail: (String) -> Unit,
@@ -334,7 +334,7 @@ private fun ChargeDetailContent(
             // Shown only for AC charges
             val hasElectricalData = s.voltageMax != null || s.voltageMin != null || s.voltageAvg != null ||
                 s.currentMax != null || s.currentMin != null || s.currentAvg != null
-            if (!isDcCharge && hasElectricalData) {
+            if (isDcCharge == false && hasElectricalData) {
                 StatsSectionCard(
                     title = chargerLabel,
                     icon = Icons.Default.ElectricalServices,
@@ -435,7 +435,7 @@ private fun ChargeDetailContent(
 @Composable
 private fun LocationHeaderCard(
     detail: ChargeDetail,
-    isDcCharge: Boolean,
+    isDcCharge: Boolean?,
     costText: String,
     costSourceText: String,
     manualTotalAmount: Double?,
@@ -1005,9 +1005,17 @@ private fun ChartCard(
 }
 
 @Composable
-private fun ChargeTypeBadge(isDcCharge: Boolean) {
-    val backgroundColor = if (isDcCharge) Color(0xFFFF9800) else Color(0xFF4CAF50)
-    val text = if (isDcCharge) stringResource(R.string.charging_dc) else stringResource(R.string.charging_ac)
+private fun ChargeTypeBadge(isDcCharge: Boolean?) {
+    val backgroundColor = when (isDcCharge) {
+        true -> Color(0xFFFF9800)
+        false -> Color(0xFF4CAF50)
+        null -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val text = when (isDcCharge) {
+        true -> stringResource(R.string.charging_dc)
+        false -> stringResource(R.string.charging_ac)
+        null -> stringResource(R.string.status_unknown)
+    }
 
     Box(
         modifier = Modifier

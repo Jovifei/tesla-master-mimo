@@ -12,8 +12,6 @@ import com.matelink.data.local.entity.DriveSummary
 import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
-import com.matelink.data.sync.SnapshotChargeEngine
-import com.matelink.data.sync.SnapshotTripEngine
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -42,9 +40,7 @@ class UnifiedHistoryRepository @Inject constructor(
     private val teslamateRepository: TeslamateRepository,
     private val vehicleContextRepository: VehicleContextRepository,
     private val driveSummaryDao: DriveSummaryDao,
-    private val chargeSummaryDao: ChargeSummaryDao,
-    private val snapshotChargeEngine: SnapshotChargeEngine,
-    private val snapshotTripEngine: SnapshotTripEngine
+    private val chargeSummaryDao: ChargeSummaryDao
 ) {
     suspend fun load(
         remoteApiCarId: Int,
@@ -56,32 +52,16 @@ class UnifiedHistoryRepository @Inject constructor(
             is ApiResult.Success -> carResult.data.firstOrNull { it.carId == remoteApiCarId }
             is ApiResult.Error -> null
         }
-        val context = if (car != null) {
-            try {
-                vehicleContextRepository.resolve(car)
-            } catch (_: HistoryIdentityUnavailableException) {
-                return historyIdentityUnavailableError()
-            }
-        } else {
-            VehicleContext(
-                remoteApiCarId = remoteApiCarId,
-                stableIdentity = "cloud:fallback:car:$remoteApiCarId",
-                localHistoryCarId = if (remoteApiCarId > 0) remoteApiCarId else 1,
-                connectionSource = com.matelink.data.local.HistoryConnectionSource.CLOUD,
-                serverIdentity = "cloud"
-            )
-        }
-        val legacyCandidates = listOf(-1, 1, 2)
-        for (legacyId in legacyCandidates) {
-            if (legacyId != context.localHistoryCarId) {
-                driveSummaryDao.copyFromLegacy(legacyId, context.localHistoryCarId)
-                chargeSummaryDao.copyFromLegacy(legacyId, context.localHistoryCarId)
+        if (car == null) {
+            return when (carResult) {
+                is ApiResult.Error -> carResult
+                is ApiResult.Success -> ApiResult.Error(message = "vehicle_not_found", code = 404)
             }
         }
-        try {
-            snapshotTripEngine.consolidateFragmentedDrives(context.localHistoryCarId)
-            snapshotChargeEngine.ensureBackfillToday(context.localHistoryCarId)
-        } catch (_: Exception) {
+        val context = try {
+            vehicleContextRepository.resolve(car)
+        } catch (_: HistoryIdentityUnavailableException) {
+            return historyIdentityUnavailableError()
         }
         val localDrives = if (startDate != null && endDate != null) {
             driveSummaryDao.getDrivesInRange(context.localHistoryCarId, startDate, endDate)
@@ -173,7 +153,14 @@ private fun DriveData.mergeWith(cached: DriveData?): DriveData = cached?.let {
         outsideTempAvg = outsideTempAvg ?: it.outsideTempAvg,
         insideTempAvg = insideTempAvg ?: it.insideTempAvg,
         energyConsumedNet = energyConsumedNet ?: it.energyConsumedNet,
-        consumptionNet = consumptionNet ?: it.consumptionNet
+        consumptionNet = consumptionNet ?: it.consumptionNet,
+        source = source ?: it.source,
+        qualityState = qualityState ?: it.qualityState,
+        qualityReason = qualityReason ?: it.qualityReason,
+        startLatitude = startLatitude ?: it.startLatitude,
+        startLongitude = startLongitude ?: it.startLongitude,
+        endLatitude = endLatitude ?: it.endLatitude,
+        endLongitude = endLongitude ?: it.endLongitude
     )
 } ?: this
 
@@ -193,7 +180,10 @@ private fun ChargeData.mergeWith(cached: ChargeData?): ChargeData = cached?.let 
         outsideTempAvg = outsideTempAvg ?: it.outsideTempAvg,
         odometer = odometer ?: it.odometer,
         latitude = latitude ?: it.latitude,
-        longitude = longitude ?: it.longitude
+        longitude = longitude ?: it.longitude,
+        source = source ?: it.source,
+        qualityState = qualityState ?: it.qualityState,
+        qualityReason = qualityReason ?: it.qualityReason
     )
 } ?: this
 
@@ -259,49 +249,69 @@ private fun com.matelink.data.api.models.ChargeRange?.mergeWith(
 private fun DriveData.toLocalSummary(historyCarId: Int): DriveSummary? {
     val start = startDate ?: return null
     val end = endDate ?: return null
+    val duration = durationMin ?: return null
+    val odometer = odometerDetails ?: return null
+    val distance = odometer.distance ?: return null
+    val maxSpeed = speedMax ?: return null
+    val averageSpeed = speedAvg ?: return null
+    val maxPower = powerMax ?: return null
+    val minPower = powerMin ?: return null
+    val startBattery = batteryDetails?.startBatteryLevel ?: return null
+    val endBattery = batteryDetails.endBatteryLevel ?: return null
     return DriveSummary(
         driveId = driveId,
         carId = historyCarId,
         startDate = start,
         endDate = end,
-        durationMin = durationMin ?: 0,
+        durationMin = duration,
         startAddress = startAddress?.takeIf { !it.contains("°N") && it != "30.27°N, 120.15°E" && it != "杭州市西湖区西溪路" } ?: "",
         endAddress = endAddress?.takeIf { !it.contains("°N") && it != "30.27°N, 120.15°E" && it != "杭州市西湖区西溪路" } ?: "",
-        distance = distance ?: 0.0,
-        speedMax = speedMax ?: 0,
-        speedAvg = speedAvg?.toInt() ?: 0,
-        powerMax = powerMax ?: 0,
-        powerMin = powerMin ?: 0,
-        startBatteryLevel = startBatteryLevel ?: 0,
-        endBatteryLevel = endBatteryLevel ?: 0,
+        distance = distance,
+        speedMax = maxSpeed,
+        speedAvg = averageSpeed.toInt(),
+        powerMax = maxPower,
+        powerMin = minPower,
+        startBatteryLevel = startBattery,
+        endBatteryLevel = endBattery,
         outsideTempAvg = outsideTempAvg,
         insideTempAvg = insideTempAvg,
         energyConsumed = energyConsumedNet,
         efficiency = efficiencyWhKm,
         energySource = energyConsumedNet?.takeIf { it.isFinite() && it >= 0.0 }?.let { "api" },
-        apiEvidence = HistorySummaryEvidenceCodec.encode(this)
+        apiEvidence = HistorySummaryEvidenceCodec.encode(this),
+        qualityState = qualityState ?: "incomplete",
+        qualityReason = qualityReason ?: "remote_quality_unavailable"
     )
 }
 
 private fun ChargeData.toLocalSummary(historyCarId: Int): ChargeSummary? {
     val start = startDate ?: return null
     val end = endDate ?: return null
+    val duration = durationMin ?: return null
+    val latitudeValue = latitude ?: return null
+    val longitudeValue = longitude ?: return null
+    val energy = chargeEnergyAdded ?: return null
+    val startBattery = batteryDetails?.startBatteryLevel ?: return null
+    val endBattery = batteryDetails.endBatteryLevel ?: return null
+    val odometerValue = odometer ?: return null
     return ChargeSummary(
         chargeId = chargeId,
         carId = historyCarId,
         startDate = start,
         endDate = end,
-        durationMin = durationMin ?: 0,
+        durationMin = duration,
         address = address ?: "",
-        latitude = latitude ?: 0.0,
-        longitude = longitude ?: 0.0,
-        energyAdded = chargeEnergyAdded ?: 0.0,
+        latitude = latitudeValue,
+        longitude = longitudeValue,
+        energyAdded = energy,
         energyUsed = chargeEnergyUsed,
         cost = cost,
-        startBatteryLevel = startBatteryLevel ?: 0,
-        endBatteryLevel = endBatteryLevel ?: 0,
+        startBatteryLevel = startBattery,
+        endBatteryLevel = endBattery,
         outsideTempAvg = outsideTempAvg,
-        odometer = odometer ?: 0.0,
-        apiEvidence = HistorySummaryEvidenceCodec.encode(this)
+        odometer = odometerValue,
+        apiEvidence = HistorySummaryEvidenceCodec.encode(this),
+        qualityState = qualityState ?: "incomplete",
+        qualityReason = qualityReason ?: "remote_quality_unavailable"
     )
 }

@@ -77,6 +77,7 @@ interface AggregateDao {
     @Query("""
         SELECT MAX(maxElevation) FROM drive_detail_aggregates
         WHERE carId = :carId AND hasElevationData = 1
+        AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = drive_detail_aggregates.carId AND d.driveId = drive_detail_aggregates.driveId AND d.qualityState IN ('observed', 'derived'))
     """)
     suspend fun maxElevation(carId: Int): Int?
 
@@ -84,6 +85,7 @@ interface AggregateDao {
         SELECT MAX(maxElevation) FROM drive_detail_aggregates a
         JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId AND a.hasElevationData = 1
+        AND d.qualityState IN ('observed', 'derived')
         AND d.startDate >= :startDate AND d.startDate < :endDate
     """)
     suspend fun maxElevationInRange(carId: Int, startDate: String, endDate: String): Int?
@@ -92,6 +94,7 @@ interface AggregateDao {
     @Query("""
         SELECT a.* FROM drive_detail_aggregates a
         WHERE a.carId = :carId AND a.hasElevationData = 1
+        AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = a.carId AND d.driveId = a.driveId AND d.qualityState IN ('observed', 'derived'))
         ORDER BY a.maxElevation DESC LIMIT 1
     """)
     suspend fun driveWithMaxElevation(carId: Int): DriveDetailAggregate?
@@ -100,6 +103,7 @@ interface AggregateDao {
         SELECT a.* FROM drive_detail_aggregates a
         JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId AND a.hasElevationData = 1
+        AND d.qualityState IN ('observed', 'derived')
         AND d.startDate >= :startDate AND d.startDate < :endDate
         ORDER BY a.maxElevation DESC LIMIT 1
     """)
@@ -109,6 +113,7 @@ interface AggregateDao {
     @Query("""
         SELECT MIN(minElevation) FROM drive_detail_aggregates
         WHERE carId = :carId AND hasElevationData = 1
+        AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = drive_detail_aggregates.carId AND d.driveId = drive_detail_aggregates.driveId AND d.qualityState IN ('observed', 'derived'))
     """)
     suspend fun minElevation(carId: Int): Int?
 
@@ -116,6 +121,7 @@ interface AggregateDao {
     @Query("""
         SELECT a.* FROM drive_detail_aggregates a
         WHERE a.carId = :carId AND a.hasElevationData = 1
+        AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = a.carId AND d.driveId = a.driveId AND d.qualityState IN ('observed', 'derived'))
         ORDER BY a.minElevation ASC LIMIT 1
     """)
     suspend fun driveWithMinElevation(carId: Int): DriveDetailAggregate?
@@ -124,6 +130,7 @@ interface AggregateDao {
     @Query("""
         SELECT a.* FROM drive_detail_aggregates a
         WHERE a.carId = :carId
+        AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = a.carId AND d.driveId = a.driveId AND d.qualityState IN ('observed', 'derived'))
         AND a.elevationGain IS NOT NULL
         ORDER BY a.elevationGain DESC LIMIT 1
     """)
@@ -134,6 +141,7 @@ interface AggregateDao {
         JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId
         AND a.elevationGain IS NOT NULL
+        AND d.qualityState IN ('observed', 'derived')
         AND d.startDate >= :startDate AND d.startDate < :endDate
         ORDER BY a.elevationGain DESC LIMIT 1
     """)
@@ -145,6 +153,7 @@ interface AggregateDao {
     @Query("""
         SELECT MAX(maxOutsideTemp) FROM drive_detail_aggregates
         WHERE carId = :carId
+        AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = drive_detail_aggregates.carId AND d.driveId = drive_detail_aggregates.driveId AND d.qualityState IN ('observed', 'derived'))
     """)
     suspend fun maxOutsideTempDriving(carId: Int): Double?
 
@@ -152,6 +161,7 @@ interface AggregateDao {
         SELECT MAX(maxOutsideTemp) FROM drive_detail_aggregates a
         JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId
+        AND d.qualityState IN ('observed', 'derived')
         AND d.startDate >= :startDate AND d.startDate < :endDate
     """)
     suspend fun maxOutsideTempDrivingInRange(carId: Int, startDate: String, endDate: String): Double?
@@ -160,6 +170,7 @@ interface AggregateDao {
     @Query("""
         SELECT a.* FROM drive_detail_aggregates a
         WHERE a.carId = :carId AND a.maxOutsideTemp IS NOT NULL
+        AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = a.carId AND d.driveId = a.driveId AND d.qualityState IN ('observed', 'derived'))
         ORDER BY a.maxOutsideTemp DESC LIMIT 1
     """)
     suspend fun hottestDrive(carId: Int): DriveDetailAggregate?
@@ -168,6 +179,7 @@ interface AggregateDao {
         SELECT a.* FROM drive_detail_aggregates a
         JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId AND a.maxOutsideTemp IS NOT NULL
+        AND d.qualityState IN ('observed', 'derived')
         AND d.startDate >= :startDate AND d.startDate < :endDate
         ORDER BY a.maxOutsideTemp DESC LIMIT 1
     """)
@@ -177,6 +189,7 @@ interface AggregateDao {
     @Query("""
         SELECT MIN(minOutsideTemp) FROM drive_detail_aggregates
         WHERE carId = :carId
+        AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = drive_detail_aggregates.carId AND d.driveId = drive_detail_aggregates.driveId AND d.qualityState IN ('observed', 'derived'))
     """)
     suspend fun minOutsideTempDriving(carId: Int): Double?
 
@@ -184,6 +197,7 @@ interface AggregateDao {
     @Query("""
         SELECT a.* FROM drive_detail_aggregates a
         WHERE a.carId = :carId AND a.minOutsideTemp IS NOT NULL
+        AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = a.carId AND d.driveId = a.driveId AND d.qualityState IN ('observed', 'derived'))
         ORDER BY a.minOutsideTemp ASC LIMIT 1
     """)
     suspend fun coldestDrive(carId: Int): DriveDetailAggregate?
@@ -193,6 +207,7 @@ interface AggregateDao {
         SELECT MIN(minOutsideTemp) FROM drive_detail_aggregates a
         JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId
+        AND d.qualityState IN ('observed', 'derived')
         AND d.startDate >= :startDate AND d.startDate < :endDate
     """)
     suspend fun minOutsideTempDrivingInRange(carId: Int, startDate: String, endDate: String): Double?
@@ -201,6 +216,7 @@ interface AggregateDao {
         SELECT a.* FROM drive_detail_aggregates a
         JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId AND a.minOutsideTemp IS NOT NULL
+        AND d.qualityState IN ('observed', 'derived')
         AND d.startDate >= :startDate AND d.startDate < :endDate
         ORDER BY a.minOutsideTemp ASC LIMIT 1
     """)
@@ -211,6 +227,7 @@ interface AggregateDao {
         SELECT MAX(maxInsideTemp) FROM drive_detail_aggregates a
         JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId
+        AND d.qualityState IN ('observed', 'derived')
         AND d.startDate >= :startDate AND d.startDate < :endDate
     """)
     suspend fun maxInsideTempInRange(carId: Int, startDate: String, endDate: String): Double?
@@ -220,6 +237,7 @@ interface AggregateDao {
         SELECT MIN(minInsideTemp) FROM drive_detail_aggregates a
         JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId
+        AND d.qualityState IN ('observed', 'derived')
         AND d.startDate >= :startDate AND d.startDate < :endDate
     """)
     suspend fun minInsideTempInRange(carId: Int, startDate: String, endDate: String): Double?
@@ -234,23 +252,24 @@ interface AggregateDao {
     suspend fun minOutsideTempChargingInRange(carId: Int, startDate: String, endDate: String): Double?
 
     // Hottest cabin temperature
-    @Query("SELECT MAX(maxInsideTemp) FROM drive_detail_aggregates WHERE carId = :carId")
+    @Query("SELECT MAX(maxInsideTemp) FROM drive_detail_aggregates WHERE carId = :carId AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = drive_detail_aggregates.carId AND d.driveId = drive_detail_aggregates.driveId AND d.qualityState IN ('observed', 'derived'))")
     suspend fun maxInsideTemp(carId: Int): Double?
 
     // Coldest cabin temperature
-    @Query("SELECT MIN(minInsideTemp) FROM drive_detail_aggregates WHERE carId = :carId")
+    @Query("SELECT MIN(minInsideTemp) FROM drive_detail_aggregates WHERE carId = :carId AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = drive_detail_aggregates.carId AND d.driveId = drive_detail_aggregates.driveId AND d.qualityState IN ('observed', 'derived'))")
     suspend fun minInsideTemp(carId: Int): Double?
 
     // === Deep Stats: Temperature (Charging) ===
 
     // Hottest outside temperature while charging
-    @Query("SELECT MAX(maxOutsideTemp) FROM charge_detail_aggregates WHERE carId = :carId")
+    @Query("SELECT MAX(maxOutsideTemp) FROM charge_detail_aggregates WHERE carId = :carId AND EXISTS (SELECT 1 FROM charges_summary c WHERE c.carId = charge_detail_aggregates.carId AND c.chargeId = charge_detail_aggregates.chargeId AND c.qualityState IN ('observed', 'derived'))")
     suspend fun maxOutsideTempCharging(carId: Int): Double?
 
     @Query("""
         SELECT MAX(maxOutsideTemp) FROM charge_detail_aggregates a
         JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId
+        AND c.qualityState IN ('observed', 'derived')
         AND c.startDate >= :startDate AND c.startDate < :endDate
     """)
     suspend fun maxOutsideTempChargingInRange(carId: Int, startDate: String, endDate: String): Double?
@@ -259,6 +278,7 @@ interface AggregateDao {
     @Query("""
         SELECT a.* FROM charge_detail_aggregates a
         WHERE a.carId = :carId AND a.maxOutsideTemp IS NOT NULL
+        AND EXISTS (SELECT 1 FROM charges_summary c WHERE c.carId = a.carId AND c.chargeId = a.chargeId AND c.qualityState IN ('observed', 'derived'))
         ORDER BY a.maxOutsideTemp DESC LIMIT 1
     """)
     suspend fun hottestCharge(carId: Int): ChargeDetailAggregate?
@@ -267,19 +287,21 @@ interface AggregateDao {
         SELECT a.* FROM charge_detail_aggregates a
         JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.maxOutsideTemp IS NOT NULL
+        AND c.qualityState IN ('observed', 'derived')
         AND c.startDate >= :startDate AND c.startDate < :endDate
         ORDER BY a.maxOutsideTemp DESC LIMIT 1
     """)
     suspend fun hottestChargeInRange(carId: Int, startDate: String, endDate: String): ChargeDetailAggregate?
 
     // Coldest outside temperature while charging
-    @Query("SELECT MIN(minOutsideTemp) FROM charge_detail_aggregates WHERE carId = :carId")
+    @Query("SELECT MIN(minOutsideTemp) FROM charge_detail_aggregates WHERE carId = :carId AND EXISTS (SELECT 1 FROM charges_summary c WHERE c.carId = charge_detail_aggregates.carId AND c.chargeId = charge_detail_aggregates.chargeId AND c.qualityState IN ('observed', 'derived'))")
     suspend fun minOutsideTempCharging(carId: Int): Double?
 
     // Charge with coldest temperature
     @Query("""
         SELECT a.* FROM charge_detail_aggregates a
         WHERE a.carId = :carId AND a.minOutsideTemp IS NOT NULL
+        AND EXISTS (SELECT 1 FROM charges_summary c WHERE c.carId = a.carId AND c.chargeId = a.chargeId AND c.qualityState IN ('observed', 'derived'))
         ORDER BY a.minOutsideTemp ASC LIMIT 1
     """)
     suspend fun coldestCharge(carId: Int): ChargeDetailAggregate?
@@ -288,6 +310,7 @@ interface AggregateDao {
         SELECT a.* FROM charge_detail_aggregates a
         JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.minOutsideTemp IS NOT NULL
+        AND c.qualityState IN ('observed', 'derived')
         AND c.startDate >= :startDate AND c.startDate < :endDate
         ORDER BY a.minOutsideTemp ASC LIMIT 1
     """)
@@ -296,13 +319,14 @@ interface AggregateDao {
     // === Deep Stats: Charging Power ===
 
     // Max charge power ever achieved
-    @Query("SELECT MAX(maxChargerPower) FROM charge_detail_aggregates WHERE carId = :carId")
+    @Query("SELECT MAX(maxChargerPower) FROM charge_detail_aggregates WHERE carId = :carId AND EXISTS (SELECT 1 FROM charges_summary c WHERE c.carId = charge_detail_aggregates.carId AND c.chargeId = charge_detail_aggregates.chargeId AND c.qualityState IN ('observed', 'derived'))")
     suspend fun maxChargerPower(carId: Int): Int?
 
     @Query("""
         SELECT MAX(maxChargerPower) FROM charge_detail_aggregates a
         JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId
+        AND c.qualityState IN ('observed', 'derived')
         AND c.startDate >= :startDate AND c.startDate < :endDate
     """)
     suspend fun maxChargerPowerInRange(carId: Int, startDate: String, endDate: String): Int?
@@ -311,6 +335,7 @@ interface AggregateDao {
     @Query("""
         SELECT a.* FROM charge_detail_aggregates a
         WHERE a.carId = :carId AND a.maxChargerPower IS NOT NULL
+        AND EXISTS (SELECT 1 FROM charges_summary c WHERE c.carId = a.carId AND c.chargeId = a.chargeId AND c.qualityState IN ('observed', 'derived'))
         ORDER BY a.maxChargerPower DESC LIMIT 1
     """)
     suspend fun chargeWithMaxPower(carId: Int): ChargeDetailAggregate?
@@ -319,6 +344,7 @@ interface AggregateDao {
         SELECT a.* FROM charge_detail_aggregates a
         JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.maxChargerPower IS NOT NULL
+        AND c.qualityState IN ('observed', 'derived')
         AND c.startDate >= :startDate AND c.startDate < :endDate
         ORDER BY a.maxChargerPower DESC LIMIT 1
     """)
@@ -327,31 +353,33 @@ interface AggregateDao {
     // === Deep Stats: AC/DC Ratio ===
 
     // Count of AC charges
-    @Query("SELECT COUNT(*) FROM charge_detail_aggregates WHERE carId = :carId AND isFastCharger = 0")
+    @Query("SELECT COUNT(*) FROM charge_detail_aggregates a JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId WHERE a.carId = :carId AND a.isFastCharger = 0 AND c.qualityState IN ('observed', 'derived')")
     suspend fun countAcCharges(carId: Int): Int
 
     @Query("""
         SELECT COUNT(*) FROM charge_detail_aggregates a
         JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.isFastCharger = 0
+        AND c.qualityState IN ('observed', 'derived')
         AND c.startDate >= :startDate AND c.startDate < :endDate
     """)
     suspend fun countAcChargesInRange(carId: Int, startDate: String, endDate: String): Int
 
     // Count of DC charges
-    @Query("SELECT COUNT(*) FROM charge_detail_aggregates WHERE carId = :carId AND isFastCharger = 1")
+    @Query("SELECT COUNT(*) FROM charge_detail_aggregates a JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId WHERE a.carId = :carId AND a.isFastCharger = 1 AND c.qualityState IN ('observed', 'derived')")
     suspend fun countDcCharges(carId: Int): Int
 
     @Query("""
         SELECT COUNT(*) FROM charge_detail_aggregates a
         JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.isFastCharger = 1
+        AND c.qualityState IN ('observed', 'derived')
         AND c.startDate >= :startDate AND c.startDate < :endDate
     """)
     suspend fun countDcChargesInRange(carId: Int, startDate: String, endDate: String): Int
 
     // Get set of DC charge IDs (for UI badges)
-    @Query("SELECT chargeId FROM charge_detail_aggregates WHERE carId = :carId AND isFastCharger = 1")
+    @Query("SELECT a.chargeId FROM charge_detail_aggregates a JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId WHERE a.carId = :carId AND a.isFastCharger = 1 AND c.qualityState IN ('observed', 'derived')")
     suspend fun getDcChargeIds(carId: Int): List<Int>
 
     // Sum of energy added for AC charges (join with summary to get energyAdded)
@@ -359,6 +387,7 @@ interface AggregateDao {
         SELECT COALESCE(SUM(c.energyAdded), 0.0) FROM charge_detail_aggregates a
         JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.isFastCharger = 0
+        AND c.qualityState IN ('observed', 'derived')
     """)
     suspend fun sumAcChargeEnergy(carId: Int): Double
 
@@ -366,6 +395,7 @@ interface AggregateDao {
         SELECT COALESCE(SUM(c.energyAdded), 0.0) FROM charge_detail_aggregates a
         JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.isFastCharger = 0
+        AND c.qualityState IN ('observed', 'derived')
         AND c.startDate >= :startDate AND c.startDate < :endDate
     """)
     suspend fun sumAcChargeEnergyInRange(carId: Int, startDate: String, endDate: String): Double
@@ -375,6 +405,7 @@ interface AggregateDao {
         SELECT COALESCE(SUM(c.energyAdded), 0.0) FROM charge_detail_aggregates a
         JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.isFastCharger = 1
+        AND c.qualityState IN ('observed', 'derived')
     """)
     suspend fun sumDcChargeEnergy(carId: Int): Double
 
@@ -382,6 +413,7 @@ interface AggregateDao {
         SELECT COALESCE(SUM(c.energyAdded), 0.0) FROM charge_detail_aggregates a
         JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.isFastCharger = 1
+        AND c.qualityState IN ('observed', 'derived')
         AND c.startDate >= :startDate AND c.startDate < :endDate
     """)
     suspend fun sumDcChargeEnergyInRange(carId: Int, startDate: String, endDate: String): Double
@@ -424,6 +456,7 @@ interface AggregateDao {
     @Query("""
         SELECT COUNT(DISTINCT startCountryCode) FROM drive_detail_aggregates
         WHERE carId = :carId AND startCountryCode IS NOT NULL
+        AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = drive_detail_aggregates.carId AND d.driveId = drive_detail_aggregates.driveId AND d.qualityState IN ('observed', 'derived'))
     """)
     suspend fun countUniqueCountries(carId: Int): Int
 
@@ -453,6 +486,7 @@ interface AggregateDao {
             FROM drive_detail_aggregates a
             JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
             WHERE a.carId = :carId AND a.startCountryCode IS NOT NULL
+            AND d.qualityState IN ('observed', 'derived')
             GROUP BY a.startCountryCode
         ) drive_stats
         LEFT JOIN (
@@ -460,6 +494,7 @@ interface AggregateDao {
             FROM charge_detail_aggregates ca
             JOIN charges_summary cs ON ca.carId = cs.carId AND ca.chargeId = cs.chargeId
             WHERE ca.carId = :carId AND ca.countryCode IS NOT NULL
+            AND cs.qualityState IN ('observed', 'derived')
             GROUP BY ca.countryCode
         ) charge_stats ON drive_stats.countryCode = charge_stats.countryCode
         ORDER BY drive_stats.firstVisitDate ASC
@@ -483,6 +518,7 @@ interface AggregateDao {
             FROM drive_detail_aggregates a
             JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
             WHERE a.carId = :carId AND a.startCountryCode IS NOT NULL
+            AND d.qualityState IN ('observed', 'derived')
             AND d.startDate >= :startDate AND d.startDate < :endDate
             GROUP BY a.startCountryCode
         ) drive_stats
@@ -491,6 +527,7 @@ interface AggregateDao {
             FROM charge_detail_aggregates ca
             JOIN charges_summary cs ON ca.carId = cs.carId AND ca.chargeId = cs.chargeId
             WHERE ca.carId = :carId AND ca.countryCode IS NOT NULL
+            AND cs.qualityState IN ('observed', 'derived')
             AND cs.startDate >= :startDate AND cs.startDate < :endDate
             GROUP BY ca.countryCode
         ) charge_stats ON drive_stats.countryCode = charge_stats.countryCode
@@ -518,6 +555,7 @@ interface AggregateDao {
             FROM drive_detail_aggregates a
             JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
             WHERE a.carId = :carId AND a.startCountryCode = :countryCode AND a.startRegionName IS NOT NULL
+            AND d.qualityState IN ('observed', 'derived')
             GROUP BY a.startRegionName
         ) drive_stats
         LEFT JOIN (
@@ -525,6 +563,7 @@ interface AggregateDao {
             FROM charge_detail_aggregates ca
             JOIN charges_summary cs ON ca.carId = cs.carId AND ca.chargeId = cs.chargeId
             WHERE ca.carId = :carId AND ca.countryCode = :countryCode AND ca.regionName IS NOT NULL
+            AND cs.qualityState IN ('observed', 'derived')
             GROUP BY ca.regionName
         ) charge_stats ON drive_stats.regionName = charge_stats.regionName
         ORDER BY drive_stats.firstVisitDate ASC
@@ -548,6 +587,7 @@ interface AggregateDao {
             FROM drive_detail_aggregates a
             JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
             WHERE a.carId = :carId AND a.startCountryCode = :countryCode AND a.startRegionName IS NOT NULL
+            AND d.qualityState IN ('observed', 'derived')
             AND d.startDate >= :startDate AND d.startDate < :endDate
             GROUP BY a.startRegionName
         ) drive_stats
@@ -556,6 +596,7 @@ interface AggregateDao {
             FROM charge_detail_aggregates ca
             JOIN charges_summary cs ON ca.carId = cs.carId AND ca.chargeId = cs.chargeId
             WHERE ca.carId = :carId AND ca.countryCode = :countryCode AND ca.regionName IS NOT NULL
+            AND cs.qualityState IN ('observed', 'derived')
             AND cs.startDate >= :startDate AND cs.startDate < :endDate
             GROUP BY ca.regionName
         ) charge_stats ON drive_stats.regionName = charge_stats.regionName
@@ -567,6 +608,7 @@ interface AggregateDao {
     @Query("""
         SELECT COUNT(DISTINCT startRegionName) FROM drive_detail_aggregates
         WHERE carId = :carId AND startCountryCode = :countryCode AND startRegionName IS NOT NULL
+        AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = drive_detail_aggregates.carId AND d.driveId = drive_detail_aggregates.driveId AND d.qualityState IN ('observed', 'derived'))
     """)
     suspend fun countUniqueRegions(carId: Int, countryCode: String): Int
 
@@ -575,6 +617,7 @@ interface AggregateDao {
     @Query("""
         SELECT COUNT(DISTINCT startCity) FROM drive_detail_aggregates
         WHERE carId = :carId AND startCity IS NOT NULL
+        AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = drive_detail_aggregates.carId AND d.driveId = drive_detail_aggregates.driveId AND d.qualityState IN ('observed', 'derived'))
     """)
     suspend fun countUniqueDriveCities(carId: Int): Int
 
@@ -582,6 +625,7 @@ interface AggregateDao {
         SELECT COUNT(DISTINCT a.startCity) FROM drive_detail_aggregates a
         JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId AND a.startCity IS NOT NULL
+        AND d.qualityState IN ('observed', 'derived')
         AND d.startDate >= :startDate AND d.startDate < :endDate
     """)
     suspend fun countUniqueDriveCitiesInRange(carId: Int, startDate: String, endDate: String): Int
@@ -590,6 +634,7 @@ interface AggregateDao {
         SELECT a.startCity as city, a.startCountryCode as countryCode, COUNT(*) as driveCount
         FROM drive_detail_aggregates a
         WHERE a.carId = :carId AND a.startCity IS NOT NULL
+        AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = a.carId AND d.driveId = a.driveId AND d.qualityState IN ('observed', 'derived'))
         GROUP BY a.startCity, a.startCountryCode
         ORDER BY driveCount DESC
         LIMIT :limit
@@ -601,6 +646,7 @@ interface AggregateDao {
         FROM drive_detail_aggregates a
         JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId AND a.startCity IS NOT NULL
+        AND d.qualityState IN ('observed', 'derived')
         AND d.startDate >= :startDate AND d.startDate < :endDate
         GROUP BY a.startCity, a.startCountryCode
         ORDER BY driveCount DESC
@@ -612,6 +658,7 @@ interface AggregateDao {
         SELECT a.startRegionName as region, a.startCountryCode as countryCode, COUNT(*) as driveCount
         FROM drive_detail_aggregates a
         WHERE a.carId = :carId AND a.startRegionName IS NOT NULL
+        AND EXISTS (SELECT 1 FROM drives_summary d WHERE d.carId = a.carId AND d.driveId = a.driveId AND d.qualityState IN ('observed', 'derived'))
         GROUP BY a.startRegionName, a.startCountryCode
         ORDER BY driveCount DESC
     """)
@@ -622,12 +669,14 @@ interface AggregateDao {
     @Query("""
         SELECT COUNT(DISTINCT countryCode) FROM charge_detail_aggregates
         WHERE carId = :carId AND countryCode IS NOT NULL
+        AND EXISTS (SELECT 1 FROM charges_summary c WHERE c.carId = charge_detail_aggregates.carId AND c.chargeId = charge_detail_aggregates.chargeId AND c.qualityState IN ('observed', 'derived'))
     """)
     suspend fun countUniqueChargeCountries(carId: Int): Int
 
     @Query("""
         SELECT COUNT(DISTINCT city) FROM charge_detail_aggregates
         WHERE carId = :carId AND city IS NOT NULL
+        AND EXISTS (SELECT 1 FROM charges_summary c WHERE c.carId = charge_detail_aggregates.carId AND c.chargeId = charge_detail_aggregates.chargeId AND c.qualityState IN ('observed', 'derived'))
     """)
     suspend fun countUniqueChargeCities(carId: Int): Int
 
@@ -636,6 +685,7 @@ interface AggregateDao {
         FROM charge_detail_aggregates a
         JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId
         WHERE a.carId = :carId AND a.city IS NOT NULL
+        AND c.qualityState IN ('observed', 'derived')
         GROUP BY a.city, a.countryCode
         ORDER BY chargeCount DESC
         LIMIT :limit
@@ -649,6 +699,7 @@ interface AggregateDao {
                SUM(CASE WHEN a.isFastCharger = 0 THEN 1 ELSE 0 END) as acCount
         FROM charge_detail_aggregates a
         WHERE a.carId = :carId AND a.countryCode IS NOT NULL
+        AND EXISTS (SELECT 1 FROM charges_summary c WHERE c.carId = a.carId AND c.chargeId = a.chargeId AND c.qualityState IN ('observed', 'derived'))
         GROUP BY a.countryCode
         ORDER BY chargeCount DESC
     """)

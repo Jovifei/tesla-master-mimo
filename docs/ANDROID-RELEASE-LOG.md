@@ -2,11 +2,28 @@
 
 本文件记录 MateLink Android App 每次**正式包（release）**的版本更新与真机安装情况，倒序排列（最新在最上）。
 
-适用范围：`com.matelink` 正式包。自 V2.1.4 起，日常 Debug 与 Release 统一使用正式包名 `com.matelink`，杜绝任何分身应用。
+适用范围：Release 正式包为 `com.matelink`；Debug 固定为隔离包 `com.matelink.test.mock`，不得覆盖车主包。
 完整构建、部署与真机验证 SOP 请参见：[SOP-ANDROID-DEVICE-DEPLOYMENT-AND-VERIFICATION.md](file:///e:/project/tesla_master/app_mimo/docs/SOP-ANDROID-DEVICE-DEPLOYMENT-AND-VERIFICATION.md)
 
 > 安全约定：本文件只记录构建配置的文件路径与公网地址，**不记录 keystore 口令**。
 > 签名配置文件位于仓库外（`E:\Claude_allow\matelink-release.properties`），不提交远端。
+
+---
+
+## [2.1.5 / build 24] — 2026-09-06 数据真实性与 Fleet Telemetry 修复
+
+### 证据状态
+
+- 源码/本地门禁：Go test/vet、Android Debug/Release JVM、Debug/Release lint、Debug/AndroidTest APK 编译均通过。
+- 包边界：Debug APK 静态核对为 `com.matelink.test.mock` / `MateLink Test`；Release 仍为唯一的 `com.matelink` 候选。
+- 未执行：未生成签名 Release、未安装设备、未部署服务端、未迁移或删除生产数据、未进行 Tesla 虚拟钥匙或真实行程/充电验证。
+
+### 本次范围
+
+- Fleet Telemetry 官方枚举和单位归一化、逐字段回退、行程/充电质量状态与隔离。
+- Android 移除合成历史/曲线/假状态，地图只显示有效真实坐标并转换一次到高德坐标系。
+- 行程/充电/统计在未观测或 quarantined 数据下保持不可用，不再把未知归类为 AC/DC 或填充零值。
+- Debug 恢复隔离标识，Release 禁用备份；版本递增到 2.1.5/build 24。
 
 ---
 

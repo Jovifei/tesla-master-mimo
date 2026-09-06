@@ -1,9 +1,11 @@
 package com.matelink.data.local.entity
 
 import androidx.compose.runtime.Immutable
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.matelink.domain.history.classifyCharge
 
 /**
  * Charge summary data from /charges list endpoint.
@@ -50,5 +52,10 @@ data class ChargeSummary(
     val odometer: Double,
 
     /** Exact nullable API fields; legacy scalar columns cannot represent their provenance. */
-    val apiEvidence: String? = null
+    val apiEvidence: String? = null,
+
+    @ColumnInfo(defaultValue = "'incomplete'")
+    val qualityState: String = classifyCharge(apiEvidence, latitude, longitude, energyAdded).state.wireValue,
+    @ColumnInfo(defaultValue = "'missing_api_evidence'")
+    val qualityReason: String = classifyCharge(apiEvidence, latitude, longitude, energyAdded).reason
 )

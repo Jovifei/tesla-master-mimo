@@ -235,7 +235,7 @@ private fun FallbackMessage(message: String, modifier: Modifier = Modifier) {
 @Composable
 private fun CurrentChargeContent(
     detail: ChargeDetail,
-    isDcCharge: Boolean,
+    isDcCharge: Boolean?,
     isDcFinishedPluggedIn: Boolean = false,
     dcFinishedSince: String? = null,
     timeToFullCharge: Double?,
@@ -267,7 +267,11 @@ private fun CurrentChargeContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        val accentColor = if (isDcCharge) Color(0xFFFF9800) else Color(0xFF4CAF50)
+        val accentColor = when (isDcCharge) {
+            true -> Color(0xFFFF9800)
+            false -> Color(0xFF4CAF50)
+            null -> MaterialTheme.colorScheme.primary
+        }
 
         // Header card
         CurrentChargeHeaderCard(
@@ -335,7 +339,7 @@ private fun CurrentChargeContent(
         }
 
         // Voltage & Current combined chart (AC only)
-        if (!isDcCharge) {
+        if (isDcCharge == false) {
             val voltages = chronologicalPoints.mapNotNull { it.chargerVoltage?.toFloat() }
             val currents = chronologicalPoints.mapNotNull { it.chargerCurrent?.toFloat() }
 
@@ -490,7 +494,7 @@ internal fun CurrentChargeParametersCard(
 @Composable
 private fun CurrentChargeHeaderCard(
     detail: ChargeDetail,
-    isDcCharge: Boolean,
+    isDcCharge: Boolean?,
     accentColor: Color,
     timeToFullCharge: Double?,
     chargeLimitSoc: Int?,
@@ -716,9 +720,17 @@ private fun CurrentChargeHeaderCard(
 }
 
 @Composable
-private fun LiveChargeTypeBadge(isDcCharge: Boolean) {
-    val backgroundColor = if (isDcCharge) Color(0xFFFF9800) else Color(0xFF4CAF50)
-    val text = if (isDcCharge) stringResource(R.string.charging_dc) else stringResource(R.string.charging_ac)
+private fun LiveChargeTypeBadge(isDcCharge: Boolean?) {
+    val backgroundColor = when (isDcCharge) {
+        true -> Color(0xFFFF9800)
+        false -> Color(0xFF4CAF50)
+        null -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val text = when (isDcCharge) {
+        true -> stringResource(R.string.charging_dc)
+        false -> stringResource(R.string.charging_ac)
+        null -> stringResource(R.string.status_unknown)
+    }
 
     Box(
         modifier = Modifier

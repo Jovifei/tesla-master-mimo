@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.matelink.util.parseIsoInstant
 import javax.inject.Inject
 
 /**
@@ -200,9 +201,9 @@ class RangeViewModel @Inject constructor(
     }
 
     private fun parseDate(value: String?): java.time.LocalDate? = value?.let {
-        runCatching { java.time.OffsetDateTime.parse(it).toLocalDate() }.getOrNull()
-            ?: runCatching { java.time.LocalDateTime.parse(it).toLocalDate() }.getOrNull()
-    }
+		runCatching { java.time.LocalDate.parse(it) }.getOrNull()
+			?: parseIsoInstant(it)?.atZone(java.time.ZoneId.systemDefault())?.toLocalDate()
+	}
 
     private data class DatedRangeTrip(
         override val date: java.time.LocalDate,

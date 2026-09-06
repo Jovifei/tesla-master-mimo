@@ -34,7 +34,14 @@ data class DriveData(
     @Json(name = "outside_temp_avg") val outsideTempAvg: Double? = null,
     @Json(name = "inside_temp_avg") val insideTempAvg: Double? = null,
     @Json(name = "energy_consumed_net") val energyConsumedNet: Double? = null,
-    @Json(name = "consumption_net") val consumptionNet: Double? = null
+    @Json(name = "consumption_net") val consumptionNet: Double? = null,
+    @Json(name = "source") val source: String? = null,
+    @Json(name = "quality_state") val qualityState: String? = null,
+    @Json(name = "quality_reason") val qualityReason: String? = null,
+    @Json(name = "start_latitude") val startLatitude: Double? = null,
+    @Json(name = "start_longitude") val startLongitude: Double? = null,
+    @Json(name = "end_latitude") val endLatitude: Double? = null,
+    @Json(name = "end_longitude") val endLongitude: Double? = null
 ) {
     // Convenience accessors
     val id: Int get() = driveId
@@ -115,7 +122,14 @@ data class DriveDetail(
     @Json(name = "inside_temp_avg") val insideTempAvg: Double? = null,
     @Json(name = "energy_consumed_net") val energyConsumedNet: Double? = null,
     @Json(name = "consumption_net") val consumptionNet: Double? = null,
-    @Json(name = "drive_details") val positions: List<DrivePosition>? = null
+    @Json(name = "drive_details") val positions: List<DrivePosition>? = null,
+    @Json(name = "source") val source: String? = null,
+    @Json(name = "quality_state") val qualityState: String? = null,
+    @Json(name = "quality_reason") val qualityReason: String? = null,
+    @Json(name = "start_latitude") val startLatitude: Double? = null,
+    @Json(name = "start_longitude") val startLongitude: Double? = null,
+    @Json(name = "end_latitude") val endLatitude: Double? = null,
+    @Json(name = "end_longitude") val endLongitude: Double? = null
 ) {
     val id: Int get() = driveId
     val distance: Double? get() = odometerDetails?.distance
@@ -128,8 +142,8 @@ data class DrivePosition(
     @Json(name = "date") val date: String? = null,
     @Json(name = "latitude") val latitude: Double? = null,
     @Json(name = "longitude") val longitude: Double? = null,
-    @Json(name = "speed") val speed: Int? = null,
-    @Json(name = "power") val power: Int? = null,
+    @Json(name = "speed") val speed: Double? = null,
+    @Json(name = "power") val power: Double? = null,
     @Json(name = "battery_level") val batteryLevel: Int? = null,
     @Json(name = "elevation") val elevation: Int? = null,
     @Json(name = "climate_info") val climateInfo: DriveClimateInfo? = null,

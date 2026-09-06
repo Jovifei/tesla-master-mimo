@@ -285,13 +285,13 @@ object MockDataProvider {
         consumptionNet = 162.0,
         positions = listOf(
             DrivePosition(date = isoPast(120), latitude = 52.5200, longitude = 13.4050,
-                speed = 0, power = 0, batteryLevel = 75, elevation = 85),
+                speed = 0.0, power = 0.0, batteryLevel = 75, elevation = 85),
             DrivePosition(date = isoPast(110), latitude = 52.5100, longitude = 13.3900,
-                speed = 80, power = 120, batteryLevel = 73, elevation = 78),
+                speed = 80.0, power = 120.0, batteryLevel = 73, elevation = 78),
             DrivePosition(date = isoPast(100), latitude = 52.5000, longitude = 13.3800,
-                speed = 120, power = 180, batteryLevel = 71, elevation = 72),
+                speed = 120.0, power = 180.0, batteryLevel = 71, elevation = 72),
             DrivePosition(date = isoPast(90), latitude = 52.4900, longitude = 13.3700,
-                speed = 0, power = -15, batteryLevel = 68, elevation = 70)
+                speed = 0.0, power = -15.0, batteryLevel = 68, elevation = 70)
         )
     )
 

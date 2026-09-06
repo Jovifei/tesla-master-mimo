@@ -32,7 +32,10 @@ data class ChargeData(
     @Json(name = "outside_temp_avg") val outsideTempAvg: Double? = null,
     @Json(name = "odometer") val odometer: Double? = null,
     @Json(name = "latitude") val latitude: Double? = null,
-    @Json(name = "longitude") val longitude: Double? = null
+    @Json(name = "longitude") val longitude: Double? = null,
+    @Json(name = "source") val source: String? = null,
+    @Json(name = "quality_state") val qualityState: String? = null,
+    @Json(name = "quality_reason") val qualityReason: String? = null
 ) {
     // Convenience accessors
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
@@ -93,7 +96,18 @@ data class ChargeDetail(
     @Json(name = "latitude") val latitude: Double? = null,
     @Json(name = "longitude") val longitude: Double? = null,
     @Json(name = "charge_details") val chargePoints: List<ChargePoint>? = null,
-    @Json(name = "is_charging") val isCharging: Boolean? = null
+    @Json(name = "is_charging") val isCharging: Boolean? = null,
+    @Json(name = "source") val source: String? = null,
+    @Json(name = "quality_state") val qualityState: String? = null,
+    @Json(name = "quality_reason") val qualityReason: String? = null,
+    @Json(name = "charger_phases") val chargerPhases: Int? = null,
+    @Json(name = "charger_power") val chargerPower: Double? = null,
+    @Json(name = "charger_voltage") val chargerVoltage: Double? = null,
+    @Json(name = "charger_actual_current") val chargerActualCurrent: Double? = null,
+    @Json(name = "charge_current_request") val chargeCurrentRequest: Double? = null,
+    @Json(name = "charge_current_request_max") val chargeCurrentRequestMax: Double? = null,
+    @Json(name = "time_to_full_charge") val timeToFullCharge: Double? = null,
+    @Json(name = "fast_charger_present") val fastChargerPresent: Boolean? = null
 ) {
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel

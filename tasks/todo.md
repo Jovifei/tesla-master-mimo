@@ -2907,3 +2907,26 @@
 ## Review
 
 - 进行中：ECS 当前仅有 `jourvolt-dev-api` 与 PostgreSQL；Telemetry/MQTT/command-proxy 均未部署，4443 未监听，Telemetry TLS 文件缺失。实时 `vehicle_data` 与历史采集链路已证实分离。
+
+# 2026-09-06 数据真实性与 Telemetry 修复
+
+## 本地实施
+
+- [x] 在 `codex/matelink-data-integrity-20260906` 隔离工作树实施；没有 reset、提交、推送、部署、安装或删除真实数据。
+- [x] 规范化 Fleet Telemetry 官方枚举、英里单位、路线采样与逐字段 Fleet 回退；补齐充电电气字段。
+- [x] 移除 Android 伪造行程/充电引擎、跨车辆回退和假车辆状态；历史与统计默认隔离 quarantined 数据。
+- [x] 增加服务端/Room 质量状态、导入 trailing JSON 拒绝、China 数据日边界及 source-scoped 保留策略。
+- [x] 位置有效性、缓存回退、一次性 WGS84→GCJ02 转换、地图响应式刷新和反地理编码脱敏已补齐。
+- [x] 当前充电保留真实 Fleet 字段；未知相数不再归为 DC；无实测点不生成曲线。
+- [x] 完成 Release 包隔离、备份禁用、2.1.5/build 24 和中文资源门禁。
+
+## 本地验证
+
+- [x] Go `go test ./... -count=1`、`go vet ./...`。
+- [x] Android Debug JVM 510 项：0 failures / 0 errors / 0 skipped。
+- [x] Android Release JVM 510 项：0 failures / 0 errors / 8 skipped。
+- [x] `assembleDebug`、`assembleDebugAndroidTest`、`lintDebug`、`lintRelease`、两份 Compose config、`git diff --check`。
+
+## 外部执行门禁
+
+- [ ] Jovi 单独授权后：备份并以加性 migration 隔离生产记录、按构建 SHA 部署服务端、安装同签名 Release、完成虚拟钥匙/Telemetry 配置及一趟真实驾驶/充电验证。

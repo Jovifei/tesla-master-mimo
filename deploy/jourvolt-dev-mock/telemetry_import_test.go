@@ -170,6 +170,37 @@ func TestHistoryImportRetentionIsPerAccountNotPerVehicle(t *testing.T) {
 	}
 }
 
+func TestHistoryImportRetentionDoesNotDeleteNativeTelemetry(t *testing.T) {
+	service := newTelemetryServiceForTest("partner.example.com")
+	ref := telemetryVehicleRef{UserID: "user-a", VehicleID: 1, VINHash: "hash", ProviderVehicleID: "p1"}
+	service.memory.registerVehicle(ref)
+	nativeStart := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	service.memory.addCompletedSession(ref, telemetrySession{
+		ID: "native-old", Kind: "drive", StartAt: nativeStart,
+		EndAt: timePointer(nativeStart.Add(time.Minute)), Source: "telemetry_mqtt", QualityState: "observed",
+	})
+	a := &app{telemetry: service, provider: testProvider{vehicles: map[string][]vehicle{"user-a": {{ID: 1}}}}}
+	payload := importRequestJSON(t, []historyImportSession{
+		{SessionID: "new-1", StartedAt: rfc3339(2), EndedAt: rfc3339(2)},
+		{SessionID: "new-2", StartedAt: rfc3339(3), EndedAt: rfc3339(3)},
+		{SessionID: "new-3", StartedAt: rfc3339(4), EndedAt: rfc3339(4)},
+	}, nil)
+	recorder := httptest.NewRecorder()
+	a.carResource(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/cars/1/history/import", strings.NewReader(payload)), "user-a", "/api/v1/cars/1/history/import")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("import response = %d %s", recorder.Code, recorder.Body.String())
+	}
+	foundNative := false
+	for _, session := range service.memory.sessions("user-a", 1, "drive") {
+		if session.ID == "native-old" {
+			foundNative = true
+		}
+	}
+	if !foundNative {
+		t.Fatal("import retention removed native telemetry session")
+	}
+}
+
 func TestHistoryImportRejectsInvalidTimeRange(t *testing.T) {
 	service := newTelemetryServiceForTest("partner.example.com")
 	ref := telemetryVehicleRef{UserID: "user-a", VehicleID: 1, VINHash: "hash", ProviderVehicleID: "provider-1"}
@@ -193,6 +224,18 @@ func TestHistoryImportRequiresPost(t *testing.T) {
 	a.carResource(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/cars/1/history/import", nil), "user-a", "/api/v1/cars/1/history/import")
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("GET import response = %d, want 404", recorder.Code)
+	}
+}
+
+func TestHistoryImportRejectsTrailingJSON(t *testing.T) {
+	service := newTelemetryServiceForTest("partner.example.com")
+	service.memory.registerVehicle(telemetryVehicleRef{UserID: "user-a", VehicleID: 1, VINHash: "hash", ProviderVehicleID: "p1"})
+	a := &app{telemetry: service, provider: testProvider{vehicles: map[string][]vehicle{"user-a": {{ID: 1}}}}}
+	request := importRequestJSON(t, nil, nil) + " true"
+	recorder := httptest.NewRecorder()
+	a.carResource(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/cars/1/history/import", strings.NewReader(request)), "user-a", "/api/v1/cars/1/history/import")
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "trailing_json") {
+		t.Fatalf("trailing JSON response = %d %s", recorder.Code, recorder.Body.String())
 	}
 }
 

@@ -130,4 +130,15 @@ class HistoryUploadFilterTest {
         assertTrue(bounded.drives.isEmpty())
         assertTrue(bounded.charges.isEmpty())
     }
+
+    @Test
+    fun retentionUsesChinaDataDayAtMidnightBoundary() {
+        val drives = listOf(
+            makeSession("old", "2026-09-04T15:00:00Z"),
+            makeSession("before-midnight", "2026-09-05T15:59:00Z"),
+            makeSession("after-midnight", "2026-09-05T16:30:00Z")
+        )
+        val bounded = HistoryUploadFilter.boundToLatestTwoDataDays(drives, emptyList())
+        assertEquals(listOf("before-midnight", "after-midnight"), bounded.drives.map { it.sessionId })
+    }
 }

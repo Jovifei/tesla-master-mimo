@@ -2,7 +2,7 @@ package com.matelink.domain.analytics
 
 import java.time.Duration
 import java.time.Instant
-import java.time.OffsetDateTime
+import com.matelink.util.parseIsoInstant
 
 data class DrivePowerSample(
     val timestamp: String?,
@@ -49,5 +49,5 @@ object DriveEnergyCalculator {
     }
 
     private fun String?.toInstantOrNull(): Instant? =
-        this?.let { timestamp -> runCatching { OffsetDateTime.parse(timestamp).toInstant() }.getOrNull() }
+        this?.let { timestamp -> parseIsoInstant(timestamp) }
 }

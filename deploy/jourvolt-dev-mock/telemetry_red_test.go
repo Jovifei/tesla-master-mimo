@@ -18,11 +18,11 @@ func TestTelemetryParserAcceptsNumericAndNumericStringValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, ok := numeric.Value.(float64); !ok || got != 12.5 {
-		t.Fatalf("numeric value = %#v, want float64(12.5)", numeric.Value)
+	if got, ok := numeric.Value.(float64); !ok || got != 12.5*milesToKilometresFactor {
+		t.Fatalf("numeric value = %#v, want converted 12.5 mph", numeric.Value)
 	}
-	if got, ok := stringValue.Value.(float64); !ok || got != 12.5 {
-		t.Fatalf("numeric string value = %#v, want float64(12.5)", stringValue.Value)
+	if got, ok := stringValue.Value.(float64); !ok || got != 12.5*milesToKilometresFactor {
+		t.Fatalf("numeric string value = %#v, want converted 12.5 mph", stringValue.Value)
 	}
 	if numeric.EventID != stringValue.EventID {
 		t.Fatalf("equivalent values should have the same event identity: %q != %q", numeric.EventID, stringValue.EventID)

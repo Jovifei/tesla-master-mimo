@@ -120,9 +120,6 @@ class SyncRepository @Inject constructor(
         val historyCarId = context.localHistoryCarId
         Log.d(TAG, "Starting sync for car $historyCarId")
 
-        // Seamlessly migrate legacy unmigrated history to current context if empty
-        ensureLegacyHistoryMigrated(historyCarId)
-
         // Phase 0: Upload local history to the cloud (Tesla Cloud mode only) so a
         // re-login can sync previously-collected data back. Best-effort: a failed
         // upload must not block the cloud→local pull.
@@ -370,22 +367,6 @@ class SyncRepository @Inject constructor(
         }
     }
 
-    private suspend fun ensureLegacyHistoryMigrated(targetHistoryCarId: Int) {
-        val legacyCandidates = listOf(1, 2)
-        for (legacyId in legacyCandidates) {
-            if (legacyId == targetHistoryCarId) continue
-            val legacyDrives = driveSummaryDao.count(legacyId)
-            val legacyCharges = chargeSummaryDao.count(legacyId)
-            if (legacyDrives > 0 || legacyCharges > 0) {
-                Log.i(TAG, "Auto-migrating $legacyDrives drives, $legacyCharges charges from legacy carId $legacyId to $targetHistoryCarId")
-                driveSummaryDao.copyFromLegacy(legacyId, targetHistoryCarId)
-                chargeSummaryDao.copyFromLegacy(legacyId, targetHistoryCarId)
-                aggregateDao.copyDriveAggregatesFromLegacy(legacyId, targetHistoryCarId)
-                aggregateDao.copyChargeAggregatesFromLegacy(legacyId, targetHistoryCarId)
-            }
-        }
-    }
-
 }
 
 internal fun DriveData.toSyncSummary(carId: Int): DriveSummary? {
@@ -441,6 +422,8 @@ internal fun ChargeData.toSyncSummary(carId: Int): ChargeSummary? {
 }
 
 internal fun DriveSummary.toImportSession(kind: String): com.matelink.data.api.models.HistoryImportSession? {
+    if (qualityState != "observed" && qualityState != "derived") return null
+    if (apiEvidence.isNullOrBlank() || energySource.isNullOrBlank()) return null
     val started = normalizeImportTimestamp(startDate) ?: return null
     val ended = normalizeImportTimestamp(endDate) ?: return null
     return com.matelink.data.api.models.HistoryImportSession(
@@ -455,6 +438,8 @@ internal fun DriveSummary.toImportSession(kind: String): com.matelink.data.api.m
 }
 
 internal fun ChargeSummary.toImportSession(kind: String): com.matelink.data.api.models.HistoryImportSession? {
+    if (qualityState != "observed" && qualityState != "derived") return null
+    if (apiEvidence.isNullOrBlank()) return null
     val started = normalizeImportTimestamp(startDate) ?: return null
     val ended = normalizeImportTimestamp(endDate) ?: return null
     return com.matelink.data.api.models.HistoryImportSession(

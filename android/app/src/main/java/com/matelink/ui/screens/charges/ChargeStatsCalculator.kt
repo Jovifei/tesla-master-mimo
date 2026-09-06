@@ -2,6 +2,8 @@ package com.matelink.ui.screens.charges
 
 import com.matelink.data.api.models.ChargeDetail
 
+enum class ChargeType { AC, DC, UNKNOWN }
+
 object ChargeStatsCalculator {
 
     fun calculateStats(detail: ChargeDetail): ChargeDetailStats {
@@ -74,15 +76,28 @@ object ChargeStatsCalculator {
         )
     }
 
-    /**
-     * Detect if this is a DC charge using Teslamate's logic:
-     * DC charging has charger_phases = 0 or null (bypasses onboard charger)
-     * AC charging has charger_phases = 1 or 2 (for triphasic line)
-     */
-    fun detectDcCharge(detail: ChargeDetail): Boolean {
-        val points = detail.chargePoints ?: return false
-        val phases = points.mapNotNull { it.chargerDetails?.chargerPhases }
-        val modePhases = phases.filter { it > 0 }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
-        return modePhases == null
+    /** Resolve charging type only from explicit, non-conflicting evidence. */
+    fun detectChargeType(detail: ChargeDetail): ChargeType {
+        val points = detail.chargePoints.orEmpty()
+        val details = points.mapNotNull { it.chargerDetails }
+        val explicitFast = details.mapNotNull { it.fastChargerPresent }.distinct()
+        if (explicitFast.size > 1) return ChargeType.UNKNOWN
+        val phases = details.mapNotNull { it.chargerPhases }.distinct()
+        if (phases.any { it < 0 || it > 3 }) return ChargeType.UNKNOWN
+        if (phases.any { it == 0 } && phases.any { it > 0 }) return ChargeType.UNKNOWN
+        explicitFast.singleOrNull()?.let { explicit ->
+            if ((explicit && phases.any { it > 0 }) || (!explicit && phases.any { it == 0 })) {
+                return ChargeType.UNKNOWN
+            }
+            return if (explicit) ChargeType.DC else ChargeType.AC
+        }
+        return when {
+            phases.any { it == 0 } -> ChargeType.DC
+            phases.any { it in 1..3 } -> ChargeType.AC
+            else -> ChargeType.UNKNOWN
+        }
     }
+
+    /** Compatibility projection for legacy UI callers; UNKNOWN is never AC evidence. */
+    fun detectDcCharge(detail: ChargeDetail): Boolean = detectChargeType(detail) == ChargeType.DC
 }

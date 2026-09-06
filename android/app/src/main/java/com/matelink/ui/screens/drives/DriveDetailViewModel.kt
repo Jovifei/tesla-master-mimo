@@ -9,6 +9,7 @@ import com.matelink.data.api.models.Units
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.repository.ApiResult
+import com.matelink.data.repository.GeocodingRepository
 import com.matelink.data.local.VehicleContextRepository
 import kotlin.math.roundToInt
 import com.matelink.data.local.entity.SavedTripLeg
@@ -104,7 +105,8 @@ class DriveDetailViewModel @Inject constructor(
     private val driveSummaryDao: DriveSummaryDao,
     private val vehicleContextRepository: VehicleContextRepository,
     private val weatherRepository: WeatherRepository,
-    private val tripRepository: TripRepository
+    private val tripRepository: TripRepository,
+    private val geocodingRepository: GeocodingRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DriveDetailUiState())
@@ -140,7 +142,7 @@ class DriveDetailViewModel @Inject constructor(
 
             when (detailResult) {
                 is ApiResult.Success -> {
-                    val detail = detailResult.data
+                    val detail = enrichAddresses(detailResult.data)
                     val localHistoryCarId = vehicleContextRepository.requireLocalHistoryCarId(carId)
                     val persistedEnergy = driveSummaryDao.get(localHistoryCarId, driveId)
                     val stats = calculateDriveDetailStats(
@@ -171,8 +173,6 @@ class DriveDetailViewModel @Inject constructor(
                         vehicleContextRepository.requireLocalHistoryCarId(carId)
                     }.getOrDefault(carId)
                     val localSummary = driveSummaryDao.get(localHistoryCarId, driveId)
-                        ?: driveSummaryDao.get(-1, driveId)
-                        ?: driveSummaryDao.get(1, driveId)
                     if (localSummary != null) {
                         val synthesized = DriveDetail(
                             driveId = localSummary.driveId,
@@ -229,6 +229,21 @@ class DriveDetailViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private suspend fun enrichAddresses(detail: DriveDetail): DriveDetail {
+        suspend fun address(latitude: Double?, longitude: Double?, existing: String?): String? {
+            if (!existing.isNullOrBlank()) return existing
+            if (latitude == null || longitude == null) return null
+            return geocodingRepository.reverseGeocode(latitude, longitude)
+        }
+        val positions = detail.positions.orEmpty()
+        val first = positions.firstOrNull { it.latitude != null && it.longitude != null }
+        val last = positions.lastOrNull { it.latitude != null && it.longitude != null }
+        return detail.copy(
+            startAddress = address(detail.startLatitude ?: first?.latitude, detail.startLongitude ?: first?.longitude, detail.startAddress),
+            endAddress = address(detail.endLatitude ?: last?.latitude, detail.endLongitude ?: last?.longitude, detail.endAddress)
+        )
     }
 
     /**
@@ -288,14 +303,14 @@ internal fun calculateDriveDetailStats(
     val positions = detail.positions.orEmpty()
 
     val speeds = positions.mapNotNull { it.speed?.takeIf { value -> value >= 0 } }
-    val speedMax = speeds.maxOrNull() ?: detail.speedMax?.takeIf { it >= 0 }
-    val speedMin = speeds.minOrNull()
+    val speedMax = speeds.maxOrNull()?.roundToInt() ?: detail.speedMax?.takeIf { it >= 0 }
+    val speedMin = speeds.minOrNull()?.roundToInt()
     val speedAvg = speeds.takeIf { it.isNotEmpty() }?.average()
         ?: detail.speedAvg?.takeIf { it.isFinite() && it >= 0.0 }
 
     val powers = positions.mapNotNull { it.power }
-    val powerMax = powers.maxOrNull() ?: detail.powerMax
-    val powerMin = powers.minOrNull() ?: detail.powerMin
+    val powerMax = powers.maxOrNull()?.roundToInt() ?: detail.powerMax
+    val powerMin = powers.minOrNull()?.roundToInt() ?: detail.powerMin
     val powerAvg = powers.takeIf { it.isNotEmpty() }?.average()
 
     val elevations = positions.mapNotNull { it.elevation }

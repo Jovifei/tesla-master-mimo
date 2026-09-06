@@ -68,7 +68,7 @@ import com.matelink.data.local.entity.TpmsPressureSample
         TpmsPressureSample::class,
         LegacyHistoryArchive::class
     ],
-    version = 19,
+    version = 20,
     exportSchema = true
 )
 abstract class StatsDatabase : RoomDatabase() {
@@ -103,12 +103,12 @@ abstract class StatsDatabase : RoomDatabase() {
         /** Migration from V2 to V3: Fix isFastCharger using Teslamate's charger_phases logic */
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Teslamate logic: DC charging has charger_phases = 0 or null
-                // AC charging has charger_phases = 1, 2, or 3
+                // Only an explicit zero phase is DC. A missing phase is unknown
+                // and must not be promoted to a fast/DC classification.
                 db.execSQL("""
                     UPDATE charge_detail_aggregates
                     SET isFastCharger = CASE
-                        WHEN chargerPhases IS NULL OR chargerPhases = 0 THEN 1
+                        WHEN chargerPhases = 0 THEN 1
                         ELSE 0
                     END
                 """)
@@ -448,6 +448,51 @@ abstract class StatsDatabase : RoomDatabase() {
             }
         }
 
+        /** V20 retains every row while making provenance quality explicit and queryable. */
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `drives_summary` ADD COLUMN `qualityState` TEXT NOT NULL DEFAULT 'incomplete'")
+                db.execSQL("ALTER TABLE `drives_summary` ADD COLUMN `qualityReason` TEXT NOT NULL DEFAULT 'missing_api_evidence'")
+                db.execSQL("ALTER TABLE `charges_summary` ADD COLUMN `qualityState` TEXT NOT NULL DEFAULT 'incomplete'")
+                db.execSQL("ALTER TABLE `charges_summary` ADD COLUMN `qualityReason` TEXT NOT NULL DEFAULT 'missing_api_evidence'")
+
+                db.execSQL(
+                    "UPDATE `drives_summary` SET `qualityState` = 'observed', `qualityReason` = 'api_evidence' " +
+                        "WHERE TRIM(COALESCE(`apiEvidence`, '')) != ''"
+                )
+                db.execSQL(
+                    "UPDATE `drives_summary` SET `qualityState` = 'derived', `qualityReason` = 'power_samples' " +
+                        "WHERE LOWER(COALESCE(`energySource`, '')) = 'power_samples' " +
+                        "AND TRIM(COALESCE(`apiEvidence`, '')) != ''"
+                )
+                db.execSQL(
+                    "UPDATE `charges_summary` SET `qualityState` = 'observed', `qualityReason` = 'api_evidence' " +
+                        "WHERE TRIM(COALESCE(`apiEvidence`, '')) != ''"
+                )
+
+                val quarantinedSources = listOf(
+                    "snapshot_session",
+                    "snapshot_consolidated",
+                    "snapshot_estimate",
+                    "physical_model",
+                    "snapshot_charge",
+                    "inferred_soc_jump"
+                )
+                quarantinedSources.forEach { source ->
+                    db.execSQL(
+                        "UPDATE `drives_summary` SET `qualityState` = 'quarantined', " +
+                            "`qualityReason` = 'synthetic_provenance:$source' " +
+                            "WHERE LOWER(COALESCE(`energySource`, '') || ' ' || COALESCE(`apiEvidence`, '')) LIKE '%$source%'"
+                    )
+                    db.execSQL(
+                        "UPDATE `charges_summary` SET `qualityState` = 'quarantined', " +
+                            "`qualityReason` = 'synthetic_provenance:$source' " +
+                            "WHERE LOWER(COALESCE(`apiEvidence`, '')) LIKE '%$source%'"
+                    )
+                }
+            }
+        }
+
         private fun rebuildDriveHistoryTables(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE `drive_detail_aggregates` RENAME TO `drive_detail_aggregates_v17`")
             db.execSQL("ALTER TABLE `drives_summary` RENAME TO `drives_summary_v17`")
@@ -736,7 +781,7 @@ abstract class StatsDatabase : RoomDatabase() {
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
             MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
             MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
-            MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19
+            MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20
         )
     }
 }

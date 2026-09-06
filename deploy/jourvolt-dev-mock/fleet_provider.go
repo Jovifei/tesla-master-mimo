@@ -79,6 +79,14 @@ type teslaChargeState struct {
 	IdealBatteryRange       *float64 `json:"ideal_battery_range"`
 	ChargingState           *string  `json:"charging_state"`
 	ChargeEnergyAdded       *float64 `json:"charge_energy_added"`
+	ACChargingEnergyIn      *float64 `json:"ac_charging_energy_in"`
+	DCChargingEnergyIn      *float64 `json:"dc_charging_energy_in"`
+	ACChargingPower         *float64 `json:"ac_charging_power"`
+	DCChargingPower         *float64 `json:"dc_charging_power"`
+	ChargeAmps              *float64 `json:"charge_amps"`
+	FastChargerPresent      *bool    `json:"fast_charger_present"`
+	PackVoltage             *float64 `json:"pack_voltage"`
+	PackCurrent             *float64 `json:"pack_current"`
 	ChargeLimitSOC          *int     `json:"charge_limit_soc"`
 	ChargePortDoorOpen      *bool    `json:"charge_port_door_open"`
 	ChargerActualCurrent    *int     `json:"charger_actual_current"`
@@ -258,6 +266,14 @@ func mapTeslaVehicleStatus(data teslaVehicleData, displayName, state string) veh
 		IdealBatteryRange:       milesPointerToKilometres(data.ChargeState.IdealBatteryRange),
 		ChargingState:           data.ChargeState.ChargingState,
 		ChargeEnergyAdded:       data.ChargeState.ChargeEnergyAdded,
+		ACChargingEnergyIn:      data.ChargeState.ACChargingEnergyIn,
+		DCChargingEnergyIn:      data.ChargeState.DCChargingEnergyIn,
+		ACChargingPower:         data.ChargeState.ACChargingPower,
+		DCChargingPower:         data.ChargeState.DCChargingPower,
+		ChargeAmps:              data.ChargeState.ChargeAmps,
+		FastChargerPresent:      data.ChargeState.FastChargerPresent,
+		PackVoltage:             data.ChargeState.PackVoltage,
+		PackCurrent:             data.ChargeState.PackCurrent,
 		ChargeLimitSOC:          data.ChargeState.ChargeLimitSOC,
 		ChargePortDoorOpen:      data.ChargeState.ChargePortDoorOpen,
 		ChargerActualCurrent:    data.ChargeState.ChargerActualCurrent,

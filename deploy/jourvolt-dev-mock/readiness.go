@@ -40,10 +40,12 @@ func (a *app) dataReadiness(w http.ResponseWriter, r *http.Request, userID strin
 			return
 		}
 	}
+	driveHistoryAvailable := a.hasMockHistory(userID) || (a.telemetry != nil && a.telemetry.hasHistory(r.Context(), userID, vehicleID, "drive"))
+	chargeHistoryAvailable := a.hasMockHistory(userID) || (a.telemetry != nil && a.telemetry.hasHistory(r.Context(), userID, vehicleID, "charge"))
 	response := dataReadinessResponse{
 		CapabilityVersion: dataReadinessCapabilityVersion,
 		VehicleUID:        vehicleUID,
-		Items:             readinessItemsWithHistory(providerStatus, source, err, a.hasMockHistory(userID) || (a.telemetry != nil && a.telemetry.hasHistory(r.Context(), userID, vehicleID))),
+		Items:             readinessItemsWithHistory(providerStatus, source, err, driveHistoryAvailable, chargeHistoryAvailable),
 	}
 	if a.telemetry != nil {
 		response.Items = append(response.Items, a.telemetryReadinessForData(r.Context(), userID, vehicleID))
@@ -52,18 +54,22 @@ func (a *app) dataReadiness(w http.ResponseWriter, r *http.Request, userID strin
 }
 
 func readinessItems(status vehicleStatus, source string, providerErr error) []dataReadinessItem {
-	return readinessItemsWithHistory(status, source, providerErr, false)
+	return readinessItemsWithHistory(status, source, providerErr, false, false)
 }
 
-func readinessItemsWithHistory(status vehicleStatus, source string, providerErr error, historyAvailable bool) []dataReadinessItem {
+func readinessItemsWithHistory(status vehicleStatus, source string, providerErr error, driveHistoryAvailable bool, chargeHistoryAvailable ...bool) []dataReadinessItem {
+	chargeAvailable := driveHistoryAvailable
+	if len(chargeHistoryAvailable) > 0 {
+		chargeAvailable = chargeHistoryAvailable[0]
+	}
 	if providerErr != nil {
 		statusValue, messageKey, action := readinessError(providerErr)
 		return []dataReadinessItem{
 			{Key: "live_status", Status: statusValue, Source: source, MessageKey: messageKey, Action: action},
 			{Key: "location", Status: statusValue, Source: source, MessageKey: messageKey, Action: action},
 			{Key: "tpms", Status: statusValue, Source: source, MessageKey: messageKey, Action: action},
-			historyReadinessItemWithAvailability("drives", source, historyAvailable),
-			historyReadinessItemWithAvailability("charges", source, historyAvailable),
+			historyReadinessItemWithAvailability("drives", source, driveHistoryAvailable),
+			historyReadinessItemWithAvailability("charges", source, chargeAvailable),
 			{Key: "battery_health", Status: "unsupported", Source: source, MessageKey: "battery_health_unsupported", Action: "not_available"},
 		}
 	}
@@ -81,8 +87,8 @@ func readinessItemsWithHistory(status vehicleStatus, source string, providerErr 
 		{Key: "live_status", Status: "available", Source: source, LastObservedAt: lastObservedAt},
 		{Key: "location", Status: locationStatus, Source: source, LastObservedAt: capabilityTimestamp(locationStatus, lastObservedAt), MessageKey: locationMessage, Action: locationAction},
 		{Key: "tpms", Status: tpmsStatus, Source: source, LastObservedAt: capabilityTimestamp(tpmsStatus, lastObservedAt), MessageKey: tpmsMessage, Action: tpmsAction},
-		historyReadinessItemWithAvailability("drives", source, historyAvailable),
-		historyReadinessItemWithAvailability("charges", source, historyAvailable),
+		historyReadinessItemWithAvailability("drives", source, driveHistoryAvailable),
+		historyReadinessItemWithAvailability("charges", source, chargeAvailable),
 		{Key: "battery_health", Status: "unsupported", Source: source, MessageKey: "battery_health_unsupported", Action: "not_available"},
 	}
 }

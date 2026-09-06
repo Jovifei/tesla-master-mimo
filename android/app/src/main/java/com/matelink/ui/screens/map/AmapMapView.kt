@@ -22,7 +22,8 @@ import com.amap.api.maps.model.LatLng
 import com.amap.api.maps.model.LatLngBounds
 import com.amap.api.maps.model.MarkerOptions
 import com.amap.api.maps.model.PolylineOptions
-import com.matelink.domain.map.AmapConfiguration
+import com.matelink.data.repository.AmapCoordinateTransformer
+import com.matelink.data.repository.CoordinateSystem
 
 data class AmapMapMarker(
     val latitude: Double,
@@ -56,15 +57,12 @@ fun AmapMapView(
     onLoaded: () -> Unit,
     onFailure: () -> Unit
 ) {
-    val coordinate = if (AmapConfiguration.isUsableCoordinate(latitude, longitude)) {
-        latitude!! to longitude!!
-    } else {
-        null
-    }
+    val coordinate = AmapCoordinateTransformer.normalize(latitude, longitude)
     AmapNativeMapView(
         apiKey = apiKey,
-        center = coordinate,
-        markers = coordinate?.let { listOf(AmapMapMarker(it.first, it.second, markerTitle)) }.orEmpty(),
+        center = coordinate?.let { it.latitude to it.longitude },
+        markers = coordinate?.let { listOf(AmapMapMarker(it.latitude, it.longitude, markerTitle)) }.orEmpty(),
+        sourceCoordinateSystem = CoordinateSystem.GCJ02,
         zoom = 14f,
         onLoading = onLoading,
         onLoaded = onLoaded,
@@ -82,6 +80,7 @@ fun AmapNativeMapView(
     polylinePoints: List<Pair<Double, Double>> = emptyList(),
     polylineColor: Color = Color(0xFF0891B2),
     zoom: Float = 15f,
+    sourceCoordinateSystem: CoordinateSystem = CoordinateSystem.WGS84,
     onLoading: () -> Unit = {},
     onLoaded: () -> Unit = {},
     onFailure: () -> Unit = {}
@@ -90,9 +89,16 @@ fun AmapNativeMapView(
     val savedState = rememberSaveable { Bundle() }
     val lifecycleOwner = LocalLifecycleOwner.current
     val handle = remember { AmapMapHandle() }
-    val validCenter = center?.takeIf { AmapConfiguration.isUsableCoordinate(it.first, it.second) }
-    val validMarkers = markers.filter { AmapConfiguration.isUsableCoordinate(it.latitude, it.longitude) }
-    val validPolyline = polylinePoints.filter { AmapConfiguration.isUsableCoordinate(it.first, it.second) }
+    val validCenter = center?.let { AmapCoordinateTransformer.normalize(it.first, it.second, sourceCoordinateSystem) }
+        ?.let { it.latitude to it.longitude }
+    val validMarkers = markers.mapNotNull { marker ->
+        AmapCoordinateTransformer.normalize(marker.latitude, marker.longitude, sourceCoordinateSystem)
+            ?.let { marker.copy(latitude = it.latitude, longitude = it.longitude) }
+    }
+    val validPolyline = polylinePoints.mapNotNull { point ->
+        AmapCoordinateTransformer.normalize(point.first, point.second, sourceCoordinateSystem)
+            ?.let { it.latitude to it.longitude }
+    }
 
     handle.content = AmapMapContent(
         center = validCenter,

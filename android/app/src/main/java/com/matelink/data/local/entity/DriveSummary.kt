@@ -5,6 +5,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.matelink.domain.history.classifyDrive
 
 /**
  * Drive summary data from /drives list endpoint.
@@ -63,5 +64,10 @@ data class DriveSummary(
     val energyCoverageRatio: Double = 0.0,
 
     /** Exact nullable API fields; legacy scalar columns cannot represent their provenance. */
-    val apiEvidence: String? = null
+    val apiEvidence: String? = null,
+
+    @ColumnInfo(defaultValue = "'incomplete'")
+    val qualityState: String = classifyDrive(energySource, apiEvidence).state.wireValue,
+    @ColumnInfo(defaultValue = "'missing_api_evidence'")
+    val qualityReason: String = classifyDrive(energySource, apiEvidence).reason
 )

@@ -2,6 +2,7 @@ package com.matelink.domain.analytics
 
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
+import com.matelink.util.parseIsoInstant
 
 data class RecommendationDriveSample(
     val distanceKm: Double?,
@@ -92,6 +93,5 @@ private fun Double?.inRange(range: ClosedFloatingPointRange<Double>): Boolean =
 private fun Double?.above(limit: Double): Boolean =
     this?.takeIf { it.isFinite() }?.let { it > limit } == true
 
-private fun parseDate(value: String): LocalDate? = runCatching {
-    LocalDate.parse(value.take(10))
-}.getOrNull()
+private fun parseDate(value: String): LocalDate? = runCatching { LocalDate.parse(value) }.getOrNull()
+    ?: parseIsoInstant(value)?.atZone(java.time.ZoneId.systemDefault())?.toLocalDate()

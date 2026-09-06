@@ -59,4 +59,26 @@ class ChargeStatsCalculatorTest {
         assertNull(stats.efficiency)
         assertEquals(0, stats.durationMin)
     }
+
+    @Test
+    fun missingPhasesAreUnknownRatherThanDcOrAc() {
+        val detail = ChargeDetail(
+            chargeId = 2,
+            chargePoints = listOf(ChargePoint(chargerDetails = ChargerDetails(chargerPower = 7.0)))
+        )
+        assertEquals(ChargeType.UNKNOWN, ChargeStatsCalculator.detectChargeType(detail))
+        assertEquals(false, ChargeStatsCalculator.detectDcCharge(detail))
+    }
+
+    @Test
+    fun conflictingExplicitChargeSignalsRemainUnknown() {
+        val detail = ChargeDetail(
+            chargeId = 3,
+            chargePoints = listOf(
+                ChargePoint(chargerDetails = ChargerDetails(fastChargerPresent = true)),
+                ChargePoint(chargerDetails = ChargerDetails(chargerPhases = 2))
+            )
+        )
+        assertEquals(ChargeType.UNKNOWN, ChargeStatsCalculator.detectChargeType(detail))
+    }
 }

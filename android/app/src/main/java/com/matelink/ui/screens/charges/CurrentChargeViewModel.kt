@@ -32,7 +32,7 @@ data class CurrentChargeUiState(
     val chargeDetail: ChargeDetail? = null,
     val units: Units? = null,
     val stats: ChargeDetailStats? = null,
-    val isDcCharge: Boolean = false,
+    val isDcCharge: Boolean? = null,
     val isUnsupportedApi: Boolean = false,
     val isNotCharging: Boolean = false,
     /** Car status reports charging but the charge isn't in the API yet (TeslaMate DB lag at charge start). */
@@ -128,7 +128,13 @@ class CurrentChargeViewModel @Inject constructor(
         val chargeCurrentRequest = status?.chargeCurrentRequestValue
         val chargeCurrentRequestMax = status?.chargeCurrentRequestMaxValue
         val scheduledChargingStartTime = status?.scheduledChargingStartTime
-        val isDcChargeFromStatus = status?.chargingDetails?.chargerPhases?.let { it == 0 }
+        val isDcChargeFromStatus = status?.chargingDetails?.chargerPhases?.let { phases ->
+            when (phases) {
+                0 -> true
+                in 1..3 -> false
+                else -> null
+            }
+        }
 
         // Never preserve stale instantaneous charging values after a snapshot failure.
         _uiState.update {
@@ -172,7 +178,7 @@ class CurrentChargeViewModel @Inject constructor(
                     val detailWithChronoPoints = detail.copy(chargePoints = chronoPoints)
 
                     val stats = ChargeStatsCalculator.calculateStats(detailWithChronoPoints)
-                    val isDcCharge = isDcChargeFromStatus ?: ChargeStatsCalculator.detectDcCharge(detailWithChronoPoints)
+                    val isDcCharge = isDcChargeFromStatus ?: ChargeStatsCalculator.detectChargeType(detailWithChronoPoints).toDcFlag()
 
                     _uiState.update {
                         it.copy(
@@ -295,4 +301,10 @@ class CurrentChargeViewModel @Inject constructor(
         super.onCleared()
         refreshJob?.cancel()
     }
+}
+
+private fun ChargeType.toDcFlag(): Boolean? = when (this) {
+    ChargeType.DC -> true
+    ChargeType.AC -> false
+    ChargeType.UNKNOWN -> null
 }

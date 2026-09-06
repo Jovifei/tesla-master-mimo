@@ -82,7 +82,10 @@ fun classifyBatteryHealth(
         BatteryHealthAvailability.COLLECTING
     healthResult is ApiResult.Success && healthResult.metadata?.availability.equals("unsupported", ignoreCase = true) ->
         BatteryHealthAvailability.UNSUPPORTED
-    healthResult is ApiResult.Success -> BatteryHealthAvailability.AVAILABLE
+    healthResult is ApiResult.Success &&
+        healthResult.data.maxCapacity?.let { it > 0.0 } == true &&
+        healthResult.data.currentCapacity?.let { it > 0.0 } == true -> BatteryHealthAvailability.AVAILABLE
+    healthResult is ApiResult.Success -> BatteryHealthAvailability.UNAVAILABLE
     readinessItem != null && readinessItemStatus(readinessItem) == ReadinessItemStatus.UNSUPPORTED ->
         BatteryHealthAvailability.UNSUPPORTED
     readinessItem != null && readinessItemStatus(readinessItem) == ReadinessItemStatus.COLLECTING ->
@@ -230,23 +233,16 @@ class BatteryViewModel @Inject constructor(
                     ?.mapNotNull { it.toBatteryTrendSample() }
                     ?.let(::estimateBatteryTrend)
 
-                val isStatusAvailable = statusResult is ApiResult.Success && statusResult.data.status.batteryLevel != null
                 _uiState.update {
                     it.copy(
                         isLoading = false,
                         isRefreshing = false,
                         batteryHealth = (healthResult as? ApiResult.Success)?.data,
-                        batteryHealthAvailability = if (healthResult is ApiResult.Success) {
-                            classifyBatteryHealth(healthResult, null)
-                        } else if (isStatusAvailable) {
-                            BatteryHealthAvailability.AVAILABLE
-                        } else {
-                            classifyBatteryHealth(healthResult, null)
-                        },
+                        batteryHealthAvailability = classifyBatteryHealth(healthResult, null),
                         carStatus = (statusResult as? ApiResult.Success)?.data?.status,
                         batteryTrend = batteryTrend ?: it.batteryTrend,
                         units = (statusResult as? ApiResult.Success)?.data?.units,
-                        error = if (isStatusAvailable) null else (healthResult as? ApiResult.Error)?.message
+                        error = (healthResult as? ApiResult.Error)?.message
                     )
                 }
 
@@ -256,13 +252,7 @@ class BatteryViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         dataReadiness = readiness,
-                        batteryHealthAvailability = if (it.batteryHealth != null) {
-                            classifyBatteryHealth(healthResult, readiness?.item("battery_health"))
-                        } else if (it.carStatus?.batteryLevel != null) {
-                            BatteryHealthAvailability.AVAILABLE
-                        } else {
-                            classifyBatteryHealth(healthResult, readiness?.item("battery_health"))
-                        }
+                        batteryHealthAvailability = classifyBatteryHealth(healthResult, readiness?.item("battery_health"))
                     )
                 }
             } catch (e: CancellationException) {
@@ -289,12 +279,13 @@ class BatteryViewModel @Inject constructor(
         val state = _uiState.value
         val health = state.batteryHealth
         val status = state.carStatus
-        if (health == null && status == null && state.batteryTrend == null) return null
+        if (health == null) return null
 
-        // Use data from the battery health API or estimate from live status
-        val apiHealthPercent = health?.batteryHealthPercentage?.takeIf { it in 0.0..100.0 }
-        val baseOriginalCapacity = health?.maxCapacity?.takeIf { it > 0.0 } ?: state.originalCapacity ?: 60.0
-        val currentCapacity = health?.currentCapacity?.takeIf { it > 0.0 }
+        // Health/degradation requires measured capacity inputs. Live SOC/range is
+        // useful elsewhere, but must not be turned into a fabricated capacity.
+        val baseOriginalCapacity = health.maxCapacity?.takeIf { it > 0.0 } ?: return null
+        val currentCapacity = health.currentCapacity?.takeIf { it > 0.0 } ?: return null
+        val apiHealthPercent = health.batteryHealthPercentage?.takeIf { it in 0.0..100.0 }
 
         // Current status from CarStatus
         val batteryLevel = status?.batteryLevel ?: 0
@@ -310,18 +301,10 @@ class BatteryViewModel @Inject constructor(
             (ratedRange / batteryLevel) * 100.0
         } else null
 
-        val estimatedHealthPercent = if (rangeAt100 != null && rangeAt100 > 0) {
-            ((rangeAt100 / 435.0) * 100.0).coerceIn(75.0, 100.0)
-        } else 91.7
-
-        val healthPercent = apiHealthPercent ?: if (health != null && currentCapacity != null) {
-            (currentCapacity / baseOriginalCapacity) * 100.0
-        } else {
-            estimatedHealthPercent
-        }
+        val healthPercent = apiHealthPercent ?: (currentCapacity / baseOriginalCapacity) * 100.0
 
         val originalCapacity = baseOriginalCapacity
-        val effectiveCurrentCapacity = currentCapacity ?: (originalCapacity * (healthPercent / 100.0))
+        val effectiveCurrentCapacity = currentCapacity
         val lossKwh = (originalCapacity - effectiveCurrentCapacity).coerceAtLeast(0.0)
         val lossPercent = (100.0 - healthPercent).coerceAtLeast(0.0)
 
@@ -330,12 +313,14 @@ class BatteryViewModel @Inject constructor(
             maxRangeKm = health?.maxRange,
             currentRangeKm = health?.currentRange
         )
-        val maxRangeNew = rangeMetrics.maxRangeKm ?: 435.0
-        val maxRangeNow = rangeMetrics.currentRangeKm ?: rangeAt100 ?: 399.0
-        val rangeLoss = rangeMetrics.rangeLossKm ?: (maxRangeNew - maxRangeNow).coerceAtLeast(0.0)
+        val maxRangeNew = rangeMetrics.maxRangeKm
+        val maxRangeNow = rangeMetrics.currentRangeKm ?: rangeAt100
+        val rangeLoss = rangeMetrics.rangeLossKm ?: if (maxRangeNew != null && maxRangeNow != null) {
+            (maxRangeNew - maxRangeNow).coerceAtLeast(0.0)
+        } else null
 
         // Efficiency from API (Wh/km)
-        val ratedEfficiency = health?.ratedEfficiency?.takeIf { it > 0.0 } ?: state.ratedEfficiency ?: 145.0
+        val ratedEfficiency = health.ratedEfficiency?.takeIf { it > 0.0 } ?: return null
 
         return BatteryStats(
             currentCapacity = effectiveCurrentCapacity,

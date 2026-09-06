@@ -44,5 +44,6 @@ data class HistoryImportResponse(
 data class HistoryImportResult(
     @Json(name = "imported_drives") val importedDrives: Int = 0,
     @Json(name = "imported_charges") val importedCharges: Int = 0,
-    @Json(name = "retained_days") val retainedDays: List<String> = emptyList()
+    @Json(name = "retained_days") val retainedDays: List<String> = emptyList(),
+    @Json(name = "quarantined_count") val quarantinedCount: Int = 0
 )

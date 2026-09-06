@@ -146,6 +146,10 @@ func (s *telemetrySubscriber) start(ctx context.Context) error {
 		return err
 	}
 	s.startWorker(ctx)
+	if s.service.telemetryStoreReady(ctx) {
+		s.service.mqttPersistence.Store(true)
+		s.service.awaitingFirstEvent.Store(true)
+	}
 	s.mu.Lock()
 	if err := ctx.Err(); err != nil || s.stopped || s.client != client {
 		s.mu.Unlock()
@@ -212,6 +216,7 @@ func (s *telemetrySubscriber) connectionLost(client mqtt.Client, _ error) {
 	s.service.mqttSubscribed.Store(false)
 	s.service.mqttPersistence.Store(false)
 	s.service.mqttHealthy.Store(false)
+	s.service.awaitingFirstEvent.Store(false)
 	s.mu.Unlock()
 }
 
@@ -251,6 +256,7 @@ func (s *telemetrySubscriber) connected(client mqtt.Client) {
 	s.service.mqttSubscribed.Store(subscribed)
 	s.service.mqttPersistence.Store(false)
 	s.service.mqttHealthy.Store(false)
+	s.service.awaitingFirstEvent.Store(false)
 	s.mu.Unlock()
 }
 
@@ -283,6 +289,7 @@ func (s *telemetrySubscriber) markRetryableFailure() {
 	}
 	s.service.mqttPersistence.Store(false)
 	s.service.mqttHealthy.Store(false)
+	s.service.awaitingFirstEvent.Store(false)
 }
 
 func (s *telemetrySubscriber) markDurablePersistence() {
@@ -290,6 +297,7 @@ func (s *telemetrySubscriber) markDurablePersistence() {
 		return
 	}
 	s.service.mqttPersistence.Store(true)
+	s.service.awaitingFirstEvent.Store(false)
 	if s.service.mqttConnected.Load() && s.service.mqttSubscribed.Load() {
 		s.service.mqttHealthy.Store(true)
 	}
@@ -308,6 +316,8 @@ func (s *telemetryService) telemetryReadinessState(ctx context.Context) string {
 		return "telemetry_store_not_ready"
 	case !s.mqttPersistence.Load():
 		return "mqtt_persistence_not_ready"
+	case s.awaitingFirstEvent.Load():
+		return "awaiting_first_event"
 	default:
 		return ""
 	}

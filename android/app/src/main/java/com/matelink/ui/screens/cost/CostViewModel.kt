@@ -17,7 +17,7 @@ import com.matelink.domain.analytics.chargeTotalOverrideKey
 import com.matelink.domain.analytics.selectWindow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.LocalDate
-import java.time.OffsetDateTime
+import com.matelink.util.parseIsoInstant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -202,8 +202,8 @@ class CostViewModel @Inject constructor(
 
     private fun parseDate(charge: ChargeData): LocalDate? {
         val value = charge.startDate ?: return null
-        return runCatching { OffsetDateTime.parse(value).toLocalDate() }.getOrNull()
-            ?: runCatching { java.time.LocalDateTime.parse(value).toLocalDate() }.getOrNull()
+		return runCatching { LocalDate.parse(value) }.getOrNull()
+			?: parseIsoInstant(value)?.atZone(java.time.ZoneId.systemDefault())?.toLocalDate()
     }
 
     private data class DatedCharge(

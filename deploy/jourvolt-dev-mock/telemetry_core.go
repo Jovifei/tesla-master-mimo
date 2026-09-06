@@ -31,24 +31,37 @@ type telemetryFieldDefinition struct {
 }
 
 var telemetryFieldSpecs = map[string]telemetryFieldDefinition{
-	"VehicleSpeed":        {Name: "VehicleSpeed", Interval: 10 * time.Second, Kind: "number"},
-	"Location":            {Name: "Location", Interval: 10 * time.Second, Kind: "json"},
-	"GpsHeading":          {Name: "GpsHeading", Interval: 10 * time.Second, Kind: "number"},
-	"Soc":                 {Name: "Soc", Interval: 60 * time.Second, Kind: "number"},
-	"Odometer":            {Name: "Odometer", Interval: 60 * time.Second, Kind: "number"},
-	"EstBatteryRange":     {Name: "EstBatteryRange", Interval: 60 * time.Second, Kind: "number"},
-	"DoorState":           {Name: "DoorState", Interval: time.Second, Kind: "string"},
-	"Locked":              {Name: "Locked", Interval: time.Second, Kind: "bool"},
-	"DetailedChargeState": {Name: "DetailedChargeState", Interval: time.Second, Kind: "string"},
-	"Gear":                {Name: "Gear", Interval: time.Second, Kind: "string"},
-	"InsideTemp":          {Name: "InsideTemp", Interval: 60 * time.Second, Kind: "number"},
-	"OutsideTemp":         {Name: "OutsideTemp", Interval: 60 * time.Second, Kind: "number"},
-	"TpmsPressureFl":      {Name: "TpmsPressureFl", Interval: time.Second, Kind: "number"},
-	"TpmsPressureFr":      {Name: "TpmsPressureFr", Interval: time.Second, Kind: "number"},
-	"TpmsPressureRl":      {Name: "TpmsPressureRl", Interval: time.Second, Kind: "number"},
-	"TpmsPressureRr":      {Name: "TpmsPressureRr", Interval: time.Second, Kind: "number"},
-	"TpmsHardWarnings":    {Name: "TpmsHardWarnings", Interval: time.Second, Kind: "json"},
-	"TpmsSoftWarnings":    {Name: "TpmsSoftWarnings", Interval: time.Second, Kind: "json"},
+	"VehicleSpeed":            {Name: "VehicleSpeed", Interval: 10 * time.Second, Kind: "number"},
+	"Location":                {Name: "Location", Interval: 10 * time.Second, Kind: "json"},
+	"GpsHeading":              {Name: "GpsHeading", Interval: 10 * time.Second, Kind: "number"},
+	"Soc":                     {Name: "Soc", Interval: 60 * time.Second, Kind: "number"},
+	"Odometer":                {Name: "Odometer", Interval: 60 * time.Second, Kind: "number"},
+	"EstBatteryRange":         {Name: "EstBatteryRange", Interval: 60 * time.Second, Kind: "number"},
+	"RatedRange":              {Name: "RatedRange", Interval: 60 * time.Second, Kind: "number"},
+	"ACChargingEnergyIn":      {Name: "ACChargingEnergyIn", Interval: time.Second, Kind: "number"},
+	"DCChargingEnergyIn":      {Name: "DCChargingEnergyIn", Interval: time.Second, Kind: "number"},
+	"ACChargingPower":         {Name: "ACChargingPower", Interval: time.Second, Kind: "number"},
+	"DCChargingPower":         {Name: "DCChargingPower", Interval: time.Second, Kind: "number"},
+	"ChargeAmps":              {Name: "ChargeAmps", Interval: time.Second, Kind: "number"},
+	"ChargerPhases":           {Name: "ChargerPhases", Interval: time.Second, Kind: "number"},
+	"ChargeCurrentRequest":    {Name: "ChargeCurrentRequest", Interval: time.Second, Kind: "number"},
+	"ChargeCurrentRequestMax": {Name: "ChargeCurrentRequestMax", Interval: time.Second, Kind: "number"},
+	"TimeToFullCharge":        {Name: "TimeToFullCharge", Interval: time.Second, Kind: "number"},
+	"FastChargerPresent":      {Name: "FastChargerPresent", Interval: time.Second, Kind: "bool"},
+	"PackVoltage":             {Name: "PackVoltage", Interval: time.Second, Kind: "number"},
+	"PackCurrent":             {Name: "PackCurrent", Interval: time.Second, Kind: "number"},
+	"DoorState":               {Name: "DoorState", Interval: time.Second, Kind: "string"},
+	"Locked":                  {Name: "Locked", Interval: time.Second, Kind: "bool"},
+	"DetailedChargeState":     {Name: "DetailedChargeState", Interval: time.Second, Kind: "string"},
+	"Gear":                    {Name: "Gear", Interval: time.Second, Kind: "string"},
+	"InsideTemp":              {Name: "InsideTemp", Interval: 60 * time.Second, Kind: "number"},
+	"OutsideTemp":             {Name: "OutsideTemp", Interval: 60 * time.Second, Kind: "number"},
+	"TpmsPressureFl":          {Name: "TpmsPressureFl", Interval: time.Second, Kind: "number"},
+	"TpmsPressureFr":          {Name: "TpmsPressureFr", Interval: time.Second, Kind: "number"},
+	"TpmsPressureRl":          {Name: "TpmsPressureRl", Interval: time.Second, Kind: "number"},
+	"TpmsPressureRr":          {Name: "TpmsPressureRr", Interval: time.Second, Kind: "number"},
+	"TpmsHardWarnings":        {Name: "TpmsHardWarnings", Interval: time.Second, Kind: "json"},
+	"TpmsSoftWarnings":        {Name: "TpmsSoftWarnings", Interval: time.Second, Kind: "json"},
 }
 
 func telemetryFieldSpec(name string) (telemetryFieldDefinition, bool) {
@@ -135,6 +148,20 @@ func normalizeTelemetryValue(fieldName string, raw json.RawMessage) (any, error)
 	if len(raw) == 0 || len(raw) > maxTelemetryPayloadBytes {
 		return nil, errors.New("telemetry value is empty or oversized")
 	}
+	if spec.Name == "Gear" && raw[0] != '"' {
+		canonical, ok := canonicalGear(string(raw))
+		if !ok {
+			return nil, errors.New("telemetry gear is invalid")
+		}
+		return canonical, nil
+	}
+	if spec.Name == "DetailedChargeState" && raw[0] != '"' {
+		canonical := canonicalDetailedChargeState(string(raw))
+		if canonical == "" {
+			return nil, errors.New("telemetry charge state is invalid")
+		}
+		return canonical, nil
+	}
 	switch spec.Kind {
 	case "number":
 		if raw[0] == '"' {
@@ -145,7 +172,11 @@ func normalizeTelemetryValue(fieldName string, raw json.RawMessage) (any, error)
 			if len(text) > 128 {
 				return nil, errors.New("telemetry number string is oversized")
 			}
-			return parseFiniteNumber(text)
+			parsed, err := parseFiniteNumber(text)
+			if err != nil {
+				return nil, err
+			}
+			return normalizeTelemetryNumber(spec.Name, parsed), nil
 		}
 		var number json.Number
 		decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -153,7 +184,11 @@ func normalizeTelemetryValue(fieldName string, raw json.RawMessage) (any, error)
 		if err := decodeJSONExactly(decoder, &number); err != nil || number.String() == "" {
 			return nil, errors.New("telemetry number is invalid")
 		}
-		return parseFiniteNumber(number.String())
+		parsed, err := parseFiniteNumber(number.String())
+		if err != nil {
+			return nil, err
+		}
+		return normalizeTelemetryNumber(spec.Name, parsed), nil
 	case "bool":
 		var value bool
 		if json.Unmarshal(raw, &value) == nil {
@@ -173,6 +208,20 @@ func normalizeTelemetryValue(fieldName string, raw json.RawMessage) (any, error)
 		var value string
 		if err := json.Unmarshal(raw, &value); err != nil || len(value) > 512 {
 			return nil, errors.New("telemetry string is invalid")
+		}
+		if spec.Name == "Gear" {
+			canonical, ok := canonicalGear(value)
+			if !ok {
+				return nil, errors.New("telemetry gear is invalid")
+			}
+			return canonical, nil
+		}
+		if spec.Name == "DetailedChargeState" {
+			canonical := canonicalDetailedChargeState(value)
+			if canonical == "" {
+				return nil, errors.New("telemetry charge state is invalid")
+			}
+			return canonical, nil
 		}
 		return value, nil
 	case "json":
@@ -254,6 +303,7 @@ type telemetryLatestValue struct {
 type telemetrySnapshot struct {
 	Fields          map[string]any
 	FieldObservedAt map[string]time.Time
+	FieldSources    map[string]string
 	ObservedAt      time.Time
 	Source          string
 	EventCount      int
@@ -301,25 +351,64 @@ type telemetrySession struct {
 	EnergyAdded   *float64
 	CompletionKey string
 	Route         []telemetryRoutePoint
+	Source        string
+	QualityState  string
+	QualityReason string
+}
+
+func classifyTelemetrySession(session telemetrySession) (string, string) {
+	if session.Source == "local_import" {
+		return "quarantined", "legacy_import"
+	}
+	hasOdometer := session.OdometerStart != nil && session.OdometerEnd != nil && *session.OdometerEnd >= *session.OdometerStart
+	if session.Kind == "drive" {
+		if hasOdometer || len(session.Route) >= 2 {
+			return "observed", "telemetry_evidence"
+		}
+		return "incomplete", "missing_route_or_odometer"
+	}
+	if session.EnergyAdded != nil && *session.EnergyAdded >= 0 && !math.IsNaN(*session.EnergyAdded) && !math.IsInf(*session.EnergyAdded, 0) {
+		return "observed", "telemetry_energy_delta"
+	}
+	if len(session.Route) >= 2 {
+		return "observed", "telemetry_evidence"
+	}
+	return "incomplete", "missing_charge_measurement"
 }
 
 type telemetrySessionMachineSnapshot struct {
-	Drive         *telemetrySession
-	Charge        *telemetrySession
-	StopCandidate *time.Time
-	Seen          map[string]bool
-	LastByField   map[string]time.Time
-	Completed     []telemetrySession
+	Drive             *telemetrySession
+	Charge            *telemetrySession
+	StopCandidate     *time.Time
+	Seen              map[string]bool
+	LastByField       map[string]time.Time
+	LastSpeed         *float64
+	LastSpeedAt       time.Time
+	LastPower         *float64
+	LastPowerAt       time.Time
+	LastHeading       *float64
+	LastHeadingAt     time.Time
+	ChargeEnergyStart *float64
+	ChargeEnergyField string
+	Completed         []telemetrySession
 }
 
 type telemetrySessionMachine struct {
-	stopDebounce  time.Duration
-	drive         *telemetrySession
-	charge        *telemetrySession
-	stopCandidate *time.Time
-	seen          map[string]bool
-	lastByField   map[string]time.Time
-	completed     []telemetrySession
+	stopDebounce      time.Duration
+	drive             *telemetrySession
+	charge            *telemetrySession
+	stopCandidate     *time.Time
+	seen              map[string]bool
+	lastByField       map[string]time.Time
+	lastSpeed         *float64
+	lastSpeedAt       time.Time
+	lastPower         *float64
+	lastPowerAt       time.Time
+	lastHeading       *float64
+	lastHeadingAt     time.Time
+	chargeEnergyStart *float64
+	chargeEnergyField string
+	completed         []telemetrySession
 }
 
 func newTelemetrySessionMachine(stopDebounce time.Duration) *telemetrySessionMachine {
@@ -342,6 +431,14 @@ func newTelemetrySessionMachineFromSnapshot(debounce time.Duration, snapshot tel
 	for key, value := range snapshot.LastByField {
 		machine.lastByField[key] = value
 	}
+	machine.lastSpeed = cloneFloat(snapshot.LastSpeed)
+	machine.lastSpeedAt = snapshot.LastSpeedAt
+	machine.lastPower = cloneFloat(snapshot.LastPower)
+	machine.lastPowerAt = snapshot.LastPowerAt
+	machine.lastHeading = cloneFloat(snapshot.LastHeading)
+	machine.lastHeadingAt = snapshot.LastHeadingAt
+	machine.chargeEnergyStart = cloneFloat(snapshot.ChargeEnergyStart)
+	machine.chargeEnergyField = snapshot.ChargeEnergyField
 	machine.completed = append(machine.completed, cloneTelemetrySessions(snapshot.Completed)...)
 	return machine
 }
@@ -362,7 +459,10 @@ func (m *telemetrySessionMachine) snapshot() telemetrySessionMachineSnapshot {
 	}
 	return telemetrySessionMachineSnapshot{
 		Drive: cloneTelemetrySession(m.drive), Charge: cloneTelemetrySession(m.charge), StopCandidate: candidate,
-		Seen: seen, LastByField: lastByField, Completed: cloneTelemetrySessions(m.completed),
+		Seen: seen, LastByField: lastByField, LastSpeed: cloneFloat(m.lastSpeed), LastSpeedAt: m.lastSpeedAt,
+		LastPower: cloneFloat(m.lastPower), LastPowerAt: m.lastPowerAt, LastHeading: cloneFloat(m.lastHeading), LastHeadingAt: m.lastHeadingAt,
+		ChargeEnergyStart: cloneFloat(m.chargeEnergyStart),
+		ChargeEnergyField: m.chargeEnergyField, Completed: cloneTelemetrySessions(m.completed),
 	}
 }
 
@@ -378,9 +478,22 @@ func (m *telemetrySessionMachine) apply(event telemetrySessionEvent) {
 	m.lastByField[event.FieldName] = event.ObservedAt
 	switch event.FieldName {
 	case "Gear", "VehicleSpeed":
+		m.updateDrivingObservation(event)
 		m.applyDrive(event)
 	case "DetailedChargeState":
 		m.applyCharge(event)
+	case "ACChargingEnergyIn", "DCChargingEnergyIn":
+		m.applyChargingEnergy(event)
+	case "GpsHeading":
+		if heading, ok := numberFromJSONValue(event.Value); ok {
+			m.lastHeading = &heading
+			m.lastHeadingAt = event.ObservedAt
+		}
+	case "ACChargingPower", "DCChargingPower":
+		if power, ok := numberFromJSONValue(event.Value); ok {
+			m.lastPower = &power
+			m.lastPowerAt = event.ObservedAt
+		}
 	case "Odometer":
 		if m.drive != nil {
 			if number, ok := event.Value.(float64); ok {
@@ -392,7 +505,10 @@ func (m *telemetrySessionMachine) apply(event telemetrySessionEvent) {
 			}
 		}
 	case "Location":
-		if point, ok := routePointFromLocation(event); ok && m.drive != nil {
+		if point, ok := routePointFromLocationWithDefaults(event,
+			m.recentObservation(m.lastSpeed, m.lastSpeedAt, event.ObservedAt),
+			m.recentObservation(m.lastPower, m.lastPowerAt, event.ObservedAt),
+			m.recentObservation(m.lastHeading, m.lastHeadingAt, event.ObservedAt)); ok && m.drive != nil {
 			m.drive.Route = append(m.drive.Route, point)
 		}
 	}
@@ -402,6 +518,42 @@ func (m *telemetrySessionMachine) apply(event telemetrySessionEvent) {
 		m.complete(m.drive)
 		m.drive = nil
 		m.stopCandidate = nil
+	}
+}
+
+func (m *telemetrySessionMachine) recentObservation(value *float64, observedAt, eventAt time.Time) *float64 {
+	if value == nil || observedAt.IsZero() || eventAt.Before(observedAt) || eventAt.Sub(observedAt) > telemetryStaleAfter {
+		return nil
+	}
+	return value
+}
+
+func (m *telemetrySessionMachine) updateDrivingObservation(event telemetrySessionEvent) {
+	if event.FieldName != "VehicleSpeed" {
+		return
+	}
+	if speed, ok := numberFromJSONValue(event.Value); ok {
+		m.lastSpeed = &speed
+		m.lastSpeedAt = event.ObservedAt
+	}
+}
+
+func (m *telemetrySessionMachine) applyChargingEnergy(event telemetrySessionEvent) {
+	if m.charge == nil {
+		return
+	}
+	value, ok := numberFromJSONValue(event.Value)
+	if !ok {
+		return
+	}
+	if m.chargeEnergyField != event.FieldName || m.chargeEnergyStart == nil {
+		m.chargeEnergyStart = &value
+		m.chargeEnergyField = event.FieldName
+		return
+	}
+	delta := value - *m.chargeEnergyStart
+	if delta >= 0 && !math.IsNaN(delta) && !math.IsInf(delta, 0) {
+		m.charge.EnergyAdded = &delta
 	}
 }
 
@@ -419,7 +571,7 @@ func (m *telemetrySessionMachine) finalizeDue(now time.Time) bool {
 
 func (m *telemetrySessionMachine) applyDrive(event telemetrySessionEvent) {
 	if m.drive == nil && isDriveEvidence(event) {
-		m.drive = &telemetrySession{ID: sessionID("drive", event.ObservedAt), Kind: "drive", StartAt: event.ObservedAt}
+		m.drive = &telemetrySession{ID: sessionID("drive", event.ObservedAt), Kind: "drive", StartAt: event.ObservedAt, Source: "telemetry_mqtt"}
 		m.stopCandidate = nil
 		return
 	}
@@ -439,7 +591,9 @@ func (m *telemetrySessionMachine) applyDrive(event telemetrySessionEvent) {
 func (m *telemetrySessionMachine) applyCharge(event telemetrySessionEvent) {
 	state := strings.ToLower(strings.TrimSpace(fmt.Sprint(event.Value)))
 	if m.charge == nil && event.FieldName == "DetailedChargeState" && (state == "charging" || state == "starting") {
-		m.charge = &telemetrySession{ID: sessionID("charge", event.ObservedAt), Kind: "charge", StartAt: event.ObservedAt}
+		m.charge = &telemetrySession{ID: sessionID("charge", event.ObservedAt), Kind: "charge", StartAt: event.ObservedAt, Source: "telemetry_mqtt"}
+		m.chargeEnergyStart = nil
+		m.chargeEnergyField = ""
 		return
 	}
 	if m.charge == nil {
@@ -451,6 +605,8 @@ func (m *telemetrySessionMachine) applyCharge(event telemetrySessionEvent) {
 		m.charge.EndAt = &end
 		m.complete(m.charge)
 		m.charge = nil
+		m.chargeEnergyStart = nil
+		m.chargeEnergyField = ""
 	}
 }
 
@@ -482,6 +638,10 @@ func (m *telemetrySessionMachine) complete(session *telemetrySession) {
 	if session == nil || session.EndAt == nil {
 		return
 	}
+	if session.Source == "" {
+		session.Source = "telemetry_mqtt"
+	}
+	session.QualityState, session.QualityReason = classifyTelemetrySession(*session)
 	session.CompletionKey = sessionCompletionKey(*session)
 	m.completed = append(m.completed, *cloneTelemetrySession(session))
 }
@@ -521,20 +681,29 @@ func cloneTelemetrySessions(values []telemetrySession) []telemetrySession {
 }
 
 func routePointFromLocation(event telemetrySessionEvent) (telemetryRoutePoint, bool) {
+	return routePointFromLocationWithDefaults(event, nil, nil, nil)
+}
+
+func routePointFromLocationWithDefaults(event telemetrySessionEvent, defaultSpeed, defaultPower, defaultHeading *float64) (telemetryRoutePoint, bool) {
 	value, ok := event.Value.(map[string]any)
 	if !ok {
 		return telemetryRoutePoint{}, false
 	}
 	latitude, latOK := numberFromJSONValue(value["latitude"])
 	longitude, lonOK := numberFromJSONValue(value["longitude"])
-	if !latOK || !lonOK || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 {
+	if !latOK || !lonOK || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || (latitude == 0 && longitude == 0) {
 		return telemetryRoutePoint{}, false
 	}
-	point := telemetryRoutePoint{ObservedAt: event.ObservedAt, Latitude: latitude, Longitude: longitude}
+	point := telemetryRoutePoint{
+		ObservedAt: event.ObservedAt, Latitude: latitude, Longitude: longitude,
+		Speed: cloneFloat(defaultSpeed), Power: cloneFloat(defaultPower), Heading: cloneFloat(defaultHeading),
+	}
 	if speed, ok := numberFromJSONValue(value["speed"]); ok {
-		point.Speed = &speed
+		normalized := normalizeTelemetryNumber("VehicleSpeed", speed)
+		point.Speed = &normalized
 	} else if speed, ok := numberFromJSONValue(value["vehicle_speed"]); ok {
-		point.Speed = &speed
+		normalized := normalizeTelemetryNumber("VehicleSpeed", speed)
+		point.Speed = &normalized
 	}
 	if heading, ok := numberFromJSONValue(value["heading"]); ok {
 		point.Heading = &heading
@@ -545,6 +714,14 @@ func routePointFromLocation(event telemetrySessionEvent) (telemetryRoutePoint, b
 		point.Power = &power
 	}
 	return point, true
+}
+
+func cloneFloat(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	copyValue := *value
+	return &copyValue
 }
 
 func numberFromJSONValue(value any) (float64, bool) {
@@ -645,7 +822,12 @@ func (s *telemetryMemoryStore) ingestLocked(record telemetryRecord, stopDebounce
 			s.completed[key] = machine.completedSessions()
 		}
 		if record.FieldName == "Location" {
-			if point, ok := routePointFromLocation(telemetrySessionEvent{Value: record.Value, ObservedAt: record.ObservedAt}); ok {
+			if machine.drive != nil && len(machine.drive.Route) > 0 {
+				point := machine.drive.Route[len(machine.drive.Route)-1]
+				if point.ObservedAt.Equal(record.ObservedAt) {
+					s.routes[key] = downsampleRoutePoints(append(s.routes[key], point), 10*time.Second)
+				}
+			} else if point, ok := routePointFromLocation(telemetrySessionEvent{Value: record.Value, ObservedAt: record.ObservedAt}); ok {
 				s.routes[key] = downsampleRoutePoints(append(s.routes[key], point), 10*time.Second)
 			}
 		}
@@ -666,11 +848,13 @@ func (s *telemetryMemoryStore) latestSnapshot(userID string, vehicleID int) (tel
 	}
 	fields := make(map[string]any, len(values))
 	fieldObservedAt := make(map[string]time.Time, len(values))
+	fieldSources := make(map[string]string, len(values))
 	var observedAt time.Time
 	source := "telemetry_mqtt"
 	for field, value := range values {
 		fields[field] = value.Value
 		fieldObservedAt[field] = value.ObservedAt
+		fieldSources[field] = value.Source
 		if value.ObservedAt.After(observedAt) {
 			observedAt = value.ObservedAt
 		}
@@ -678,7 +862,7 @@ func (s *telemetryMemoryStore) latestSnapshot(userID string, vehicleID int) (tel
 			source = value.Source
 		}
 	}
-	return telemetrySnapshot{Fields: fields, FieldObservedAt: fieldObservedAt, ObservedAt: observedAt, Source: source, EventCount: len(values)}, true
+	return telemetrySnapshot{Fields: fields, FieldObservedAt: fieldObservedAt, FieldSources: fieldSources, ObservedAt: observedAt, Source: source, EventCount: len(values)}, true
 }
 
 func (s *telemetryMemoryStore) putLatest(ref telemetryVehicleRef, field string, value any, observedAt time.Time) {
@@ -840,10 +1024,10 @@ func (s *telemetryMemoryStore) retainLatestDays(userID string) []string {
 			continue
 		}
 		for _, session := range sessions {
-			if session.EndAt == nil {
+			if session.EndAt == nil || session.Source != "local_import" {
 				continue
 			}
-			daySet[session.StartAt.UTC().Format("2006-01-02")] = true
+			daySet[telemetryDataDay(session.StartAt)] = true
 		}
 	}
 	days := make([]string, 0, len(daySet))
@@ -866,7 +1050,7 @@ func (s *telemetryMemoryStore) retainLatestDays(userID string) []string {
 		}
 		filtered := sessions[:0]
 		for _, session := range sessions {
-			if session.EndAt == nil || retainedSet[session.StartAt.UTC().Format("2006-01-02")] {
+			if session.Source != "local_import" || session.EndAt == nil || retainedSet[telemetryDataDay(session.StartAt)] {
 				filtered = append(filtered, session)
 			}
 		}

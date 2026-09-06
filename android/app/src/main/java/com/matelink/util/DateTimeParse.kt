@@ -4,10 +4,10 @@ import android.content.res.Resources
 import com.matelink.R
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
 import java.time.format.FormatStyle
 import java.util.Locale
 
@@ -23,18 +23,16 @@ import java.util.Locale
  *   "2026-05-10T15:39:00+02:00" → 2026-05-10T15:39 (converted to system zone)
  *   "" or null                   → null
  */
-fun parseIsoDateTime(dateStr: String?): LocalDateTime? {
+fun parseIsoInstant(dateStr: String?): Instant? {
     if (dateStr.isNullOrBlank()) return null
-    return try {
-        try {
-            OffsetDateTime.parse(dateStr).atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime()
-        } catch (_: DateTimeParseException) {
-            LocalDateTime.parse(dateStr.replace("Z", ""))
-        }
-    } catch (_: Exception) {
-        null
+    return runCatching { Instant.parse(dateStr) }.getOrElse {
+        runCatching { OffsetDateTime.parse(dateStr).toInstant() }.getOrNull()
+            ?: runCatching { LocalDateTime.parse(dateStr).atZone(ZoneId.systemDefault()).toInstant() }.getOrNull()
     }
 }
+
+fun parseIsoDateTime(dateStr: String?): LocalDateTime? =
+    parseIsoInstant(dateStr)?.atZone(ZoneId.systemDefault())?.toLocalDateTime()
 
 /**
  * Parse an ISO-8601 datetime string to a [LocalDate], discarding the time

@@ -46,7 +46,7 @@ data class WhereWasIUiState(
     val units: Units? = null,
     // Driving-specific
     val driveId: Int? = null,
-    val speed: Int? = null,
+    val speed: Double? = null,
     val driveDistance: Double? = null,
     // Charging-specific
     val chargeId: Int? = null,

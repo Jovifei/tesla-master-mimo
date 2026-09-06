@@ -113,7 +113,7 @@ func TestTaskDRoutePointPreservesObservedTimeSpeedAndHeading(t *testing.T) {
 	point, ok := routePointFromLocation(telemetrySessionEvent{ObservedAt: time.Unix(10, 0).UTC(), Value: map[string]any{
 		"latitude": 31.2, "longitude": 121.4, "speed": 12.5, "heading": 90.0,
 	}})
-	if !ok || point.Speed == nil || *point.Speed != 12.5 || point.Heading == nil || *point.Heading != 90 || !point.ObservedAt.Equal(time.Unix(10, 0).UTC()) {
+	if !ok || point.Speed == nil || *point.Speed != 12.5*milesToKilometresFactor || point.Heading == nil || *point.Heading != 90 || !point.ObservedAt.Equal(time.Unix(10, 0).UTC()) {
 		t.Fatalf("route point = %#v", point)
 	}
 }

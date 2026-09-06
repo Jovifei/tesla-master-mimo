@@ -23,21 +23,21 @@ class DetailAggregateMapperTest {
                     latitude = 30.1,
                     longitude = 120.1,
                     elevation = 10,
-                    power = 4,
+                    power = 4.0,
                     climateInfo = DriveClimateInfo(insideTemp = 22.0, outsideTemp = 18.0, isClimateOn = true)
                 ),
                 DrivePosition(
                     latitude = 30.2,
                     longitude = 120.2,
                     elevation = 18,
-                    power = -8,
+                    power = -8.0,
                     climateInfo = DriveClimateInfo(insideTemp = 28.0, outsideTemp = 12.0, isClimateOn = false)
                 ),
                 DrivePosition(
                     latitude = 30.3,
                     longitude = 120.3,
                     elevation = 15,
-                    power = 12,
+                    power = 12.0,
                     climateInfo = DriveClimateInfo(insideTemp = 25.0, outsideTemp = 20.0, isClimateOn = true)
                 )
             )

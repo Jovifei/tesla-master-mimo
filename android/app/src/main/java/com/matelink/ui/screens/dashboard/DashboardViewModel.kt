@@ -23,6 +23,7 @@ import com.matelink.data.sync.DataSyncWorker
 import com.matelink.domain.telemetry.SnapshotFreshness
 import com.matelink.domain.telemetry.snapshotEvidence
 import com.matelink.domain.telemetry.usableVehicleCoordinates
+import com.matelink.domain.map.VehiclePositionResolver
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
@@ -61,8 +62,6 @@ class DashboardViewModel @Inject constructor(
     private val geocodingRepository: GeocodingRepository,
     private val dataReadinessStore: DataReadinessStore,
     private val vehiclePhotoStore: com.matelink.data.local.VehiclePhotoStore,
-    private val snapshotTripEngine: com.matelink.data.sync.SnapshotTripEngine,
-    private val snapshotChargeEngine: com.matelink.data.sync.SnapshotChargeEngine,
     private val amapSettingsStore: com.matelink.data.local.AmapSettingsStore,
     private val amapReverseGeocoder: com.matelink.data.repository.AmapReverseGeocoder,
     private val vehicleContextRepository: com.matelink.data.local.VehicleContextRepository,
@@ -108,32 +107,31 @@ class DashboardViewModel @Inject constructor(
                 val car = when (carsResult) {
                     is ApiResult.Success -> {
                         val cars = carsResult.data
-                        cars.find { it.carId == carId } ?: cars.firstOrNull()
+                        cars.find { it.carId == carId }
                     }
                     is ApiResult.Error -> null
                 }
 
                 val effectiveCarId = car?.carId ?: carId
-                if (car != null && car.carId != carId) {
-                    settingsRepository.setCurrentCarId(car.carId)
+                if (car == null && carsResult is ApiResult.Success) {
+                    if (generation != requestGeneration) return@launch
+                    _uiState.value = DashboardUiState(
+                        isLoading = false,
+                        error = "vehicle_not_found",
+                        errorCode = 404,
+                        errorKind = ApiErrorKind.CONFIGURATION,
+                        isAmapConfigured = amapSettingsStore.currentKey().isNotBlank() || _uiState.value.isAmapConfigured,
+                        isHudDismissed = _uiState.value.isHudDismissed
+                    )
+                    return@launch
                 }
                 val adapterResult = repository.getAdapterSnapshot(effectiveCarId)
-                val statusResult = if (adapterResult is ApiResult.Error || (adapterResult is ApiResult.Success && adapterResult.data.status.latitude == null)) {
+                val statusResult = if (adapterResult is ApiResult.Error) {
                     repository.getCarStatus(effectiveCarId)
                 } else null
                 val liveStatus = when {
                     adapterResult is ApiResult.Success -> {
-                        val base = adapterResult.data.status
-                        if (base.latitude == null && statusResult is ApiResult.Success && statusResult.data.status.latitude != null) {
-                            val legacy = statusResult.data.status
-                            base.copy(
-                                carGeodata = com.matelink.data.api.models.CarGeodata(
-                                    geofence = legacy.geofence ?: base.geofence,
-                                    latitude = legacy.latitude,
-                                    longitude = legacy.longitude
-                                )
-                            )
-                        } else base
+                        adapterResult.data.status
                     }
                     statusResult is ApiResult.Success -> statusResult.data.status
                     else -> null
@@ -142,14 +140,9 @@ class DashboardViewModel @Inject constructor(
                     val observed = (adapterResult as? ApiResult.Success)?.data?.observedAt
                     vehicleStatusStore.saveStatus(effectiveCarId, liveStatus, observed)
                 }
-                val status = liveStatus ?: vehicleStatusStore.getCachedStatus(effectiveCarId)
+                val cachedStatus = vehicleStatusStore.getCachedStatus(effectiveCarId)
+                val status = mergeUsablePosition(liveStatus, cachedStatus) ?: cachedStatus
 
-                val effectiveCar = car ?: CarData(
-                    carId = effectiveCarId,
-                    name = "Jovi大鼠标",
-                    carDetails = com.matelink.data.api.models.CarDetails(model = "Y", trimBadging = "50"),
-                    carExterior = com.matelink.data.api.models.CarExterior(exteriorColor = "DiamondBlack", wheelType = "19_gemini")
-                )
                 val units = when {
                     adapterResult is ApiResult.Success -> adapterResult.data.units
                     statusResult is ApiResult.Success -> statusResult.data.units
@@ -169,6 +162,7 @@ class DashboardViewModel @Inject constructor(
 
                 val primaryError = when {
                     carsResult is ApiResult.Error -> carsResult
+                    car == null -> ApiResult.Error(message = "vehicle_not_found", code = 404)
                     adapterResult is ApiResult.Error && statusResult is ApiResult.Error -> statusResult
                     else -> null
                 }
@@ -177,7 +171,7 @@ class DashboardViewModel @Inject constructor(
                 val resolvedAddress = loadCachedAddress(status, effectiveCarId)
                 _uiState.value = DashboardUiState(
                     isLoading = false,
-                    car = effectiveCar,
+                    car = car,
                     status = status,
                     error = if (status != null) null else primaryError?.message,
                     errorCode = if (status != null) null else primaryError?.code,
@@ -253,21 +247,9 @@ class DashboardViewModel @Inject constructor(
                             val evidence = snapshotEvidence(result.data.source, result.data.observedAt, result.data.fieldSources)
                             if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
                             var currentStatus = result.data.status
-                            if (currentStatus.latitude == null) {
-                                val legacy = repository.getCarStatus(carId)
-                                if (legacy is ApiResult.Success && legacy.data.status.latitude != null) {
-                                    val legStatus = legacy.data.status
-                                    currentStatus = currentStatus.copy(
-                                        carGeodata = com.matelink.data.api.models.CarGeodata(
-                                            geofence = legStatus.geofence ?: currentStatus.geofence,
-                                            latitude = legStatus.latitude,
-                                            longitude = legStatus.longitude
-                                        )
-                                    )
-                                }
-                            }
+                            val resolvedStatus = mergeUsablePosition(currentStatus, vehicleStatusStore.getCachedStatus(carId)) ?: currentStatus
                             _uiState.value = _uiState.value.copy(
-                                status = currentStatus,
+                                status = resolvedStatus,
                                 error = null,
                                 errorCode = null,
                                 errorKind = null,
@@ -277,24 +259,18 @@ class DashboardViewModel @Inject constructor(
                                 snapshotFreshness = evidence.freshness,
                                 snapshotMixedSources = evidence.isMixed,
                                 units = result.data.units,
-                                cachedAddress = loadCachedAddress(currentStatus, carId)
+                                cachedAddress = loadCachedAddress(resolvedStatus, carId)
                             )
-                            vehicleStatusStore.saveStatus(carId, currentStatus, result.data.observedAt)
-                            // Record snapshot for automatic trip and charge tracking
-                            try {
-                                val historyCarId = vehicleContextRepository.requireLocalHistoryCarId(carId)
-                                snapshotTripEngine.recordSnapshot(historyCarId, currentStatus)
-                                snapshotChargeEngine.recordSnapshot(historyCarId, currentStatus)
-                            } catch (_: Exception) {
-                            }
+                            vehicleStatusStore.saveStatus(carId, resolvedStatus, result.data.observedAt)
                         }
                         is ApiResult.Error -> {
                             when (val legacy = repository.getCarStatus(carId)) {
                                 is ApiResult.Success -> {
                                     if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
-                                    vehicleStatusStore.saveStatus(carId, legacy.data.status, null)
+                                    val resolvedStatus = mergeUsablePosition(legacy.data.status, vehicleStatusStore.getCachedStatus(carId)) ?: legacy.data.status
+                                    vehicleStatusStore.saveStatus(carId, resolvedStatus, null)
                                     _uiState.value = _uiState.value.copy(
-                                        status = legacy.data.status,
+                                        status = resolvedStatus,
                                         error = null,
                                         errorCode = null,
                                         errorKind = null,
@@ -304,7 +280,7 @@ class DashboardViewModel @Inject constructor(
                                         snapshotFreshness = SnapshotFreshness.HISTORY,
                                         snapshotMixedSources = false,
                                         units = legacy.data.units,
-                                        cachedAddress = loadCachedAddress(legacy.data.status, carId)
+                                        cachedAddress = loadCachedAddress(resolvedStatus, carId)
                                     )
                                 }
                                 is ApiResult.Error -> {
@@ -405,10 +381,20 @@ class DashboardViewModel @Inject constructor(
             }
         }
         val latestTrip = driveSummaryDao.getLatestWithEndAddress(carId)
-            ?: driveSummaryDao.getLatestWithEndAddress(-1)
-            ?: driveSummaryDao.getLatestWithEndAddress(1)
         return latestTrip?.endAddress?.trim()?.takeIf {
             it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" && it != "杭州市西湖区西溪路"
         }
+    }
+
+    private fun mergeUsablePosition(live: CarStatus?, cached: CarStatus?): CarStatus? {
+        if (live == null) return cached
+        val position = VehiclePositionResolver.resolve(
+            live.latitude, live.longitude, cached?.latitude, cached?.longitude
+        ) ?: return live
+        if (position.latitude == live.latitude && position.longitude == live.longitude) return live
+        return live.copy(carGeodata = (live.carGeodata ?: com.matelink.data.api.models.CarGeodata()).copy(
+            latitude = position.latitude,
+            longitude = position.longitude
+        ))
     }
 }

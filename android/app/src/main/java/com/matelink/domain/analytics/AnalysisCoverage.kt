@@ -1,9 +1,8 @@
 package com.matelink.domain.analytics
 
 import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.OffsetDateTime
 import java.time.temporal.ChronoUnit
+import com.matelink.util.parseIsoInstant
 
 data class AnalysisDriveCoverageSample(
     val distanceKm: Double?,
@@ -97,8 +96,7 @@ private fun Double?.isValidPositive(): Boolean = this?.isFinite() == true && thi
 private fun Double?.isValidNonNegative(): Boolean = this?.isFinite() == true && this >= 0.0
 
 private fun parseObservedDate(value: String?): LocalDate? {
-    if (value.isNullOrBlank()) return null
-    return runCatching { OffsetDateTime.parse(value).toLocalDate() }.getOrNull()
-        ?: runCatching { LocalDateTime.parse(value).toLocalDate() }.getOrNull()
-        ?: runCatching { LocalDate.parse(value) }.getOrNull()
+	if (value.isNullOrBlank()) return null
+	return runCatching { LocalDate.parse(value) }.getOrNull()
+		?: parseIsoInstant(value)?.atZone(java.time.ZoneId.systemDefault())?.toLocalDate()
 }

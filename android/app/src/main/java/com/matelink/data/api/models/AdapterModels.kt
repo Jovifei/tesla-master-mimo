@@ -36,7 +36,8 @@ data class ApiDataMeta(
     @Json(name = "source") val source: String? = null,
     @Json(name = "observed_at") val observedAt: String? = null,
     @Json(name = "collection_started_at") val collectionStartedAt: String? = null,
-    @Json(name = "coverage_percent") val coveragePercent: Double? = null
+    @Json(name = "coverage_percent") val coveragePercent: Double? = null,
+    @Json(name = "quarantined_count") val quarantinedCount: Int? = null
 )
 
 @JsonClass(generateAdapter = true)

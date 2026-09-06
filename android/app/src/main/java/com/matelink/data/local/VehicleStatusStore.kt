@@ -7,6 +7,8 @@ import com.squareup.moshi.Moshi
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 
 @Singleton
 class VehicleStatusStore @Inject constructor(
@@ -18,8 +20,10 @@ class VehicleStatusStore @Inject constructor(
         Context.MODE_PRIVATE
     )
     private val adapter = moshi.adapter(CarStatus::class.java)
+    private val _updates = MutableSharedFlow<Int>(extraBufferCapacity = 8)
+    val updates: SharedFlow<Int> = _updates
 
-    fun getCachedStatus(carId: Int): CarStatus {
+    fun getCachedStatus(carId: Int): CarStatus? {
         val json = prefs.getString("status_$carId", null)
         if (!json.isNullOrBlank()) {
             try {
@@ -28,7 +32,7 @@ class VehicleStatusStore @Inject constructor(
             } catch (_: Exception) {
             }
         }
-        return defaultFallbackStatus(carId)
+        return null
     }
 
     fun getCachedObservedAt(carId: Int): String? {
@@ -42,45 +46,9 @@ class VehicleStatusStore @Inject constructor(
                 .putString("status_$carId", json)
                 .putString("observed_at_$carId", observedAt)
                 .apply()
+            _updates.tryEmit(carId)
         } catch (_: Exception) {
         }
     }
 
-    private fun defaultFallbackStatus(carId: Int): CarStatus {
-        return CarStatus(
-            displayName = "Jovi大鼠标",
-            state = "asleep",
-            stateSince = null,
-            odometer = 18039.0,
-            batteryDetails = BatteryDetails(
-                batteryLevel = 84,
-                usableBatteryLevel = 84,
-                ratedBatteryRange = 338.0,
-                estBatteryRange = 320.0,
-                idealBatteryRange = 338.0
-            ),
-            climateDetails = ClimateDetails(
-                insideTemp = 33.1,
-                outsideTemp = 31.0,
-                isClimateOn = false
-            ),
-            carStatus = CarStatusDetails(
-                locked = true,
-                sentryMode = true,
-                doorsOpen = false,
-                windowsOpen = false
-            ),
-            chargingDetails = ChargingDetails(
-                pluggedIn = false,
-                chargingState = "Disconnected"
-            ),
-            tpmsDetails = TpmsDetails(
-                pressureFl = 2.9,
-                pressureFr = 2.9,
-                pressureRl = 2.9,
-                pressureRr = 2.9
-            ),
-            carGeodata = null
-        )
-    }
 }

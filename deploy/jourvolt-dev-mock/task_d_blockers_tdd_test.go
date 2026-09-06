@@ -13,6 +13,9 @@ import (
 func TestTaskDOfficialFleetTelemetryFieldSetIsExact(t *testing.T) {
 	want := map[string]struct{}{
 		"VehicleSpeed": {}, "Location": {}, "GpsHeading": {}, "Soc": {}, "Odometer": {}, "EstBatteryRange": {},
+		"RatedRange": {}, "ACChargingEnergyIn": {}, "DCChargingEnergyIn": {}, "ACChargingPower": {},
+		"DCChargingPower": {}, "ChargeAmps": {}, "ChargerPhases": {}, "ChargeCurrentRequest": {},
+		"ChargeCurrentRequestMax": {}, "TimeToFullCharge": {}, "FastChargerPresent": {}, "PackVoltage": {}, "PackCurrent": {},
 		"DoorState": {}, "Locked": {}, "DetailedChargeState": {}, "Gear": {}, "InsideTemp": {}, "OutsideTemp": {},
 		"TpmsPressureFl": {}, "TpmsPressureFr": {}, "TpmsPressureRl": {}, "TpmsPressureRr": {},
 		"TpmsHardWarnings": {}, "TpmsSoftWarnings": {},

@@ -21,7 +21,13 @@ name: jourvolt-pilot
 
 services:
   jourvolt-dev-api:
-    build: .
+    build:
+      context: .
+      args:
+        BUILD_SHA: ${JOURVOLT_BUILD_SHA:-unknown}
+        BUILD_TIME: ${JOURVOLT_BUILD_TIME:-unknown}
+    labels:
+      org.opencontainers.image.revision: ${JOURVOLT_BUILD_SHA:-unknown}
     restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://jourvolt:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD or DATABASE_URL in .env}@jourvolt-postgres:5432/jourvolt?sslmode=disable}

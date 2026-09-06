@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,6 +22,18 @@ const (
 	maxImportRoutePointsPerItem = 10000
 	maxImportTotalRoutePoints   = 100000
 )
+
+var chinaDataLocation = func() *time.Location {
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.FixedZone("Asia/Shanghai", 8*60*60)
+	}
+	return location
+}()
+
+func telemetryDataDay(value time.Time) string {
+	return value.In(chinaDataLocation).Format("2006-01-02")
+}
 
 func scopedImportedSessionID(userID string, vehicleID int, kind, clientSessionID string) string {
 	h := sha256.New()
@@ -65,9 +78,10 @@ type historyImportRoutePoint struct {
 }
 
 type historyImportResult struct {
-	ImportedDrives  int      `json:"imported_drives"`
-	ImportedCharges int      `json:"imported_charges"`
-	RetainedDays    []string `json:"retained_days"`
+	ImportedDrives   int      `json:"imported_drives"`
+	ImportedCharges  int      `json:"imported_charges"`
+	RetainedDays     []string `json:"retained_days"`
+	QuarantinedCount int      `json:"quarantined_count"`
 }
 
 // historyImportSessionValidationError describes a rejected import payload.
@@ -103,12 +117,19 @@ func validateImportRequest(req historyImportRequest) error {
 
 func importRequestFromBody(w http.ResponseWriter, r *http.Request) (historyImportRequest, error) {
 	reader := http.MaxBytesReader(w, r.Body, maxImportBodyBytes)
+	decoder := json.NewDecoder(reader)
 	var request historyImportRequest
-	if err := json.NewDecoder(reader).Decode(&request); err != nil {
+	if err := decoder.Decode(&request); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) || strings.Contains(err.Error(), "request body too large") {
 			return historyImportRequest{}, &historyImportSessionValidationError{Message: "request_body_too_large"}
 		}
+		return historyImportRequest{}, &historyImportSessionValidationError{Message: "invalid_json"}
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err == nil {
+		return historyImportRequest{}, &historyImportSessionValidationError{Message: "trailing_json"}
+	} else if !errors.Is(err, io.EOF) {
 		return historyImportRequest{}, &historyImportSessionValidationError{Message: "invalid_json"}
 	}
 	if err := validateImportRequest(request); err != nil {
@@ -142,7 +163,7 @@ func (req historyImportSession) toTelemetrySession(userID string, vehicleID int,
 		if point.Latitude == nil || point.Longitude == nil {
 			continue
 		}
-		if *point.Latitude < -90 || *point.Latitude > 90 || *point.Longitude < -180 || *point.Longitude > 180 {
+		if *point.Latitude < -90 || *point.Latitude > 90 || *point.Longitude < -180 || *point.Longitude > 180 || (*point.Latitude == 0 && *point.Longitude == 0) {
 			continue
 		}
 		observedAt := start
@@ -159,7 +180,8 @@ func (req historyImportSession) toTelemetrySession(userID string, vehicleID int,
 	return telemetrySession{
 		ID: id, Kind: kind, StartAt: start, EndAt: &end,
 		OdometerStart: req.OdometerStart, OdometerEnd: req.OdometerEnd, EnergyAdded: req.EnergyAdded,
-		Route: route,
+		Route:  route,
+		Source: "local_import", QualityState: "quarantined", QualityReason: "legacy_import",
 	}, nil
 }
 
@@ -189,7 +211,7 @@ func (s *telemetryService) importHistory(ctx context.Context, userID string, veh
 	if s.memory != nil {
 		s.memory.importSessions(userID, vehicleID, drives, charges)
 		retained := s.memory.retainLatestDays(userID)
-		return historyImportResult{ImportedDrives: len(drives), ImportedCharges: len(charges), RetainedDays: retained}, nil
+		return historyImportResult{ImportedDrives: len(drives), ImportedCharges: len(charges), RetainedDays: retained, QuarantinedCount: len(drives) + len(charges)}, nil
 	}
 	return s.importHistoryPostgres(ctx, userID, vehicleID, drives, charges)
 }
@@ -224,7 +246,7 @@ func (s *telemetryService) importHistoryPostgres(ctx context.Context, userID str
 	if err := tx.Commit(ctx); err != nil {
 		return historyImportResult{}, err
 	}
-	return historyImportResult{ImportedDrives: importedDrives, ImportedCharges: importedCharges, RetainedDays: retained}, nil
+	return historyImportResult{ImportedDrives: importedDrives, ImportedCharges: importedCharges, RetainedDays: retained, QuarantinedCount: len(drives) + len(charges)}, nil
 }
 
 func upsertImportedSessionPostgres(ctx context.Context, tx pgx.Tx, userID string, vehicleID int, session telemetrySession) error {
@@ -238,15 +260,15 @@ func upsertImportedSessionPostgres(ctx context.Context, tx pgx.Tx, userID string
 		endAt = &now
 	}
 	_, err = tx.Exec(ctx, `
-INSERT INTO jourvolt_telemetry_sessions(id, user_id, vehicle_id, kind, started_at, ended_at, odometer_start, odometer_end, energy_added, route_json, source)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, 'local_import')
+INSERT INTO jourvolt_telemetry_sessions(id, user_id, vehicle_id, kind, started_at, ended_at, odometer_start, odometer_end, energy_added, route_json, source, quality_state, quality_reason)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, 'local_import', 'quarantined', 'legacy_import')
 ON CONFLICT (id) DO UPDATE SET
     ended_at = EXCLUDED.ended_at,
     odometer_start = EXCLUDED.odometer_start,
     odometer_end = EXCLUDED.odometer_end,
     energy_added = EXCLUDED.energy_added,
     route_json = EXCLUDED.route_json,
-    source = EXCLUDED.source`,
+    source = EXCLUDED.source, quality_state = EXCLUDED.quality_state, quality_reason = EXCLUDED.quality_reason`,
 		session.ID, userID, vehicleID, session.Kind, session.StartAt, endAt,
 		session.OdometerStart, session.OdometerEnd, session.EnergyAdded, route)
 	return err
@@ -256,7 +278,7 @@ ON CONFLICT (id) DO UPDATE SET
 // account's two most recent calendar days that contain data. The window is
 // per-account: all vehicles share the same two most recent data days.
 func retainLatestDaysPostgres(ctx context.Context, tx pgx.Tx, userID string) ([]string, error) {
-	rows, err := tx.Query(ctx, `SELECT DISTINCT (started_at AT TIME ZONE 'UTC')::date AS day FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND ended_at IS NOT NULL ORDER BY day DESC`, userID)
+	rows, err := tx.Query(ctx, `SELECT DISTINCT (started_at AT TIME ZONE 'Asia/Shanghai')::date AS day FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND source='local_import' AND ended_at IS NOT NULL ORDER BY day DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +299,7 @@ func retainLatestDaysPostgres(ctx context.Context, tx pgx.Tx, userID string) ([]
 	}
 	retained := days[:2]
 	cutoff := retained[len(retained)-1] // oldest retained day
-	_, err = tx.Exec(ctx, `DELETE FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND ended_at IS NOT NULL AND (started_at AT TIME ZONE 'UTC')::date < $2::date`, userID, cutoff)
+	_, err = tx.Exec(ctx, `DELETE FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND source='local_import' AND ended_at IS NOT NULL AND (started_at AT TIME ZONE 'Asia/Shanghai')::date < $2::date`, userID, cutoff)
 	if err != nil {
 		return nil, err
 	}

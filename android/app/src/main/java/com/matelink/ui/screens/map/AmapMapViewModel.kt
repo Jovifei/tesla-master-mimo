@@ -6,7 +6,7 @@ import com.matelink.data.local.AmapSettingsStore
 import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.ApiResult
-import com.matelink.domain.map.AmapConfiguration
+import com.matelink.domain.map.VehiclePositionResolver
 import com.matelink.domain.map.AmapSetupState
 import com.matelink.domain.map.amapSetupState
 import com.matelink.data.local.VehicleStatusStore
@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -49,7 +50,21 @@ class AmapMapViewModel @Inject constructor(
                     settings.mapLoaded
                 )
                 _uiState.value = _uiState.value.copy(setupState = state, key = if (state == AmapSetupState.READY_TO_PREVIEW) store.currentKey() else "")
-                if (state == AmapSetupState.READY_TO_PREVIEW) loadVehiclePosition()
+                if (state == AmapSetupState.READY_TO_PREVIEW) loadVehiclePosition(fetch = true)
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.currentCarId.distinctUntilChanged().collectLatest { carId ->
+                if (_uiState.value.setupState == AmapSetupState.READY_TO_PREVIEW) {
+                    loadVehiclePosition(carId, fetch = true)
+                }
+            }
+        }
+        viewModelScope.launch {
+            vehicleStatusStore.updates.collectLatest { carId ->
+                if (carId == settingsRepository.currentCarId.first() && _uiState.value.setupState == AmapSetupState.READY_TO_PREVIEW) {
+                    loadVehiclePosition(carId, fetch = false)
+                }
             }
         }
     }
@@ -58,11 +73,12 @@ class AmapMapViewModel @Inject constructor(
     fun onMapLoaded() { viewModelScope.launch { store.markMapLoaded() }; _uiState.value = _uiState.value.copy(loading = false, mapLoaded = true, failed = false) }
     fun onMapFailure() { _uiState.value = _uiState.value.copy(loading = false, mapLoaded = false, failed = true) }
 
-    private fun loadVehiclePosition() = viewModelScope.launch {
-        val carId = settingsRepository.currentCarId.first()
-        val result = repository.getCarStatus(carId)
-        val status = (result as? ApiResult.Success)?.data?.status ?: vehicleStatusStore.getCachedStatus(carId)
-        val valid = AmapConfiguration.isUsableCoordinate(status?.latitude, status?.longitude)
-        _uiState.value = _uiState.value.copy(latitude = status?.latitude?.takeIf { valid }, longitude = status?.longitude?.takeIf { valid })
+    private fun loadVehiclePosition(carId: Int? = null, fetch: Boolean) = viewModelScope.launch {
+        val resolvedCarId = carId ?: settingsRepository.currentCarId.first()
+        val cached = vehicleStatusStore.getCachedStatus(resolvedCarId)
+        val result = if (fetch) repository.getCarStatus(resolvedCarId) else null
+        val status = (result as? ApiResult.Success)?.data?.status
+        val position = VehiclePositionResolver.resolve(status?.latitude, status?.longitude, cached?.latitude, cached?.longitude)
+        _uiState.value = _uiState.value.copy(latitude = position?.latitude, longitude = position?.longitude)
     }
 }

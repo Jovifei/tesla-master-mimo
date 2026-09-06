@@ -22,20 +22,22 @@ interface DriveSummaryDao {
             driveId, carId, startDate, endDate, durationMin, startAddress, endAddress,
             distance, speedMax, speedAvg, powerMax, powerMin, startBatteryLevel,
             endBatteryLevel, outsideTempAvg, insideTempAvg, energyConsumed, efficiency,
-            energySource, energyCoverageSeconds, energyCoverageRatio, apiEvidence
+            energySource, energyCoverageSeconds, energyCoverageRatio, apiEvidence,
+            qualityState, qualityReason
         )
         SELECT driveId, :targetCarId, startDate, endDate, durationMin, startAddress, endAddress,
             distance, speedMax, speedAvg, powerMax, powerMin, startBatteryLevel,
             endBatteryLevel, outsideTempAvg, insideTempAvg, energyConsumed, efficiency,
-            energySource, energyCoverageSeconds, energyCoverageRatio, apiEvidence
+            energySource, energyCoverageSeconds, energyCoverageRatio, apiEvidence,
+            qualityState, qualityReason
         FROM drives_summary WHERE carId = :legacyCarId
     """)
     suspend fun copyFromLegacy(legacyCarId: Int, targetCarId: Int)
 
-    @Query("SELECT * FROM drives_summary WHERE driveId = :driveId AND carId = :carId")
+    @Query("SELECT * FROM drives_summary WHERE driveId = :driveId AND carId = :carId AND qualityState != 'quarantined'")
     suspend fun get(carId: Int, driveId: Int): DriveSummary?
 
-    @Query("SELECT * FROM drives_summary WHERE carId = :carId ORDER BY startDate DESC")
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
     fun observeAll(carId: Int): Flow<List<DriveSummary>>
 
     @Query("SELECT MAX(driveId) FROM drives_summary WHERE carId = :carId")
@@ -44,33 +46,34 @@ interface DriveSummaryDao {
     @Query("DELETE FROM drives_summary WHERE carId = :carId")
     suspend fun deleteAllForCar(carId: Int)
 
-    @Query("DELETE FROM drives_summary WHERE driveId = :driveId")
-    suspend fun deleteDriveById(driveId: Int)
+    @Query("DELETE FROM drives_summary WHERE carId = :carId AND driveId = :driveId")
+    suspend fun deleteDriveById(carId: Int, driveId: Int)
 
-    @Query("DELETE FROM drives_summary WHERE driveId IN (:driveIds)")
-    suspend fun deleteDrivesByIds(driveIds: List<Int>)
+    @Query("DELETE FROM drives_summary WHERE carId = :carId AND driveId IN (:driveIds)")
+    suspend fun deleteDrivesByIds(carId: Int, driveIds: List<Int>)
 
     /** All drives for a car, ordered chronologically for trip detection. */
-    @Query("SELECT * FROM drives_summary WHERE carId = :carId ORDER BY startDate ASC")
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate ASC")
     suspend fun getAllChronological(carId: Int): List<DriveSummary>
 
     /** Latest drive with a non-empty endAddress to resolve last known parked location. */
-    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND endAddress != '' ORDER BY startDate DESC LIMIT 1")
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' AND endAddress != '' ORDER BY startDate DESC LIMIT 1")
     suspend fun getLatestWithEndAddress(carId: Int): DriveSummary?
 
     // === Quick Stats Queries ===
 
     // Total count
-    @Query("SELECT COUNT(*) FROM drives_summary WHERE carId = :carId")
+    @Query("SELECT COUNT(*) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     suspend fun count(carId: Int): Int
 
     // Flow-based count for real-time progress updates
-    @Query("SELECT COUNT(*) FROM drives_summary WHERE carId = :carId")
+    @Query("SELECT COUNT(*) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     fun observeCount(carId: Int): kotlinx.coroutines.flow.Flow<Int>
 
     @Query("""
         SELECT COUNT(*) FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
     """)
     suspend fun countInRange(carId: Int, startDate: String, endDate: String): Int
@@ -78,29 +81,32 @@ interface DriveSummaryDao {
     @Query("""
         SELECT * FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
         ORDER BY startDate ASC
     """)
     suspend fun getDrivesInRange(carId: Int, startDate: String, endDate: String): List<DriveSummary>
 
     // Total distance
-    @Query("SELECT COALESCE(SUM(distance), 0) FROM drives_summary WHERE carId = :carId")
+    @Query("SELECT COALESCE(SUM(distance), 0) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     suspend fun sumDistance(carId: Int): Double
 
     @Query("""
         SELECT COALESCE(SUM(distance), 0) FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
     """)
     suspend fun sumDistanceInRange(carId: Int, startDate: String, endDate: String): Double
 
     // Total energy consumed
-    @Query("SELECT COALESCE(SUM(energyConsumed), 0) FROM drives_summary WHERE carId = :carId")
+    @Query("SELECT COALESCE(SUM(energyConsumed), 0) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     suspend fun sumEnergyConsumed(carId: Int): Double
 
     @Query("""
         SELECT COALESCE(SUM(energyConsumed), 0) FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
     """)
     suspend fun sumEnergyConsumedInRange(carId: Int, startDate: String, endDate: String): Double
@@ -108,7 +114,7 @@ interface DriveSummaryDao {
     // Average efficiency
     @Query("""
         SELECT COALESCE(SUM(energyConsumed) * 1000 / NULLIF(SUM(distance), 0), 0)
-        FROM drives_summary WHERE carId = :carId
+        FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')
     """)
     suspend fun avgEfficiency(carId: Int): Double
 
@@ -116,17 +122,19 @@ interface DriveSummaryDao {
         SELECT COALESCE(SUM(energyConsumed) * 1000 / NULLIF(SUM(distance), 0), 0)
         FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
     """)
     suspend fun avgEfficiencyInRange(carId: Int, startDate: String, endDate: String): Double
 
     // Max speed ever
-    @Query("SELECT MAX(speedMax) FROM drives_summary WHERE carId = :carId")
+    @Query("SELECT MAX(speedMax) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     suspend fun maxSpeed(carId: Int): Int?
 
     @Query("""
         SELECT MAX(speedMax) FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
     """)
     suspend fun maxSpeedInRange(carId: Int, startDate: String, endDate: String): Int?
@@ -135,6 +143,7 @@ interface DriveSummaryDao {
     @Query("""
         SELECT * FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         ORDER BY distance DESC LIMIT 1
     """)
     suspend fun longestDrive(carId: Int): DriveSummary?
@@ -142,6 +151,7 @@ interface DriveSummaryDao {
     @Query("""
         SELECT * FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
         ORDER BY distance DESC LIMIT 1
     """)
@@ -151,6 +161,7 @@ interface DriveSummaryDao {
     @Query("""
         SELECT * FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         ORDER BY speedMax DESC LIMIT 1
     """)
     suspend fun fastestDrive(carId: Int): DriveSummary?
@@ -158,6 +169,7 @@ interface DriveSummaryDao {
     @Query("""
         SELECT * FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
         ORDER BY speedMax DESC LIMIT 1
     """)
@@ -166,14 +178,14 @@ interface DriveSummaryDao {
     // Best efficiency (lowest Wh/km, excluding very short drives)
     @Query("""
         SELECT * FROM drives_summary
-        WHERE carId = :carId AND efficiency > 0 AND distance > 5
+        WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND efficiency > 0 AND distance > 5
         ORDER BY efficiency ASC LIMIT 1
     """)
     suspend fun mostEfficientDrive(carId: Int): DriveSummary?
 
     @Query("""
         SELECT * FROM drives_summary
-        WHERE carId = :carId AND efficiency > 0 AND distance > 5
+        WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND efficiency > 0 AND distance > 5
         AND startDate >= :startDate AND startDate < :endDate
         ORDER BY efficiency ASC LIMIT 1
     """)
@@ -182,25 +194,25 @@ interface DriveSummaryDao {
     // Worst efficiency (highest Wh/km)
     @Query("""
         SELECT * FROM drives_summary
-        WHERE carId = :carId AND efficiency > 0 AND distance > 5
+        WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND efficiency > 0 AND distance > 5
         ORDER BY efficiency DESC LIMIT 1
     """)
     suspend fun leastEfficientDrive(carId: Int): DriveSummary?
 
     @Query("""
         SELECT * FROM drives_summary
-        WHERE carId = :carId AND efficiency > 0 AND distance > 5
+        WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND efficiency > 0 AND distance > 5
         AND startDate >= :startDate AND startDate < :endDate
         ORDER BY efficiency DESC LIMIT 1
     """)
     suspend fun leastEfficientDriveInRange(carId: Int, startDate: String, endDate: String): DriveSummary?
 
     // Average drive duration
-    @Query("SELECT AVG(durationMin) FROM drives_summary WHERE carId = :carId")
+    @Query("SELECT AVG(durationMin) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     suspend fun avgDuration(carId: Int): Double?
 
     // First drive date
-    @Query("SELECT MIN(startDate) FROM drives_summary WHERE carId = :carId")
+    @Query("SELECT MIN(startDate) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     suspend fun firstDriveDate(carId: Int): String?
 
     // Busiest day (most drives)
@@ -208,6 +220,7 @@ interface DriveSummaryDao {
         SELECT DATE(startDate) as day, COUNT(*) as count
         FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         GROUP BY DATE(startDate)
         ORDER BY count DESC LIMIT 1
     """)
@@ -217,6 +230,7 @@ interface DriveSummaryDao {
         SELECT DATE(startDate) as day, COUNT(*) as count
         FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
         GROUP BY DATE(startDate)
         ORDER BY count DESC LIMIT 1
@@ -224,10 +238,10 @@ interface DriveSummaryDao {
     suspend fun busiestDayInRange(carId: Int, startDate: String, endDate: String): BusiestDayResult?
 
     // Count of unique driving days
-    @Query("SELECT COUNT(DISTINCT DATE(startDate)) FROM drives_summary WHERE carId = :carId")
+    @Query("SELECT COUNT(DISTINCT DATE(startDate)) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     suspend fun countDrivingDays(carId: Int): Int
 
-    @Query("SELECT COUNT(DISTINCT DATE(startDate)) FROM drives_summary WHERE carId = :carId AND startDate >= :startDate AND startDate < :endDate")
+    @Query("SELECT COUNT(DISTINCT DATE(startDate)) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND startDate >= :startDate AND startDate < :endDate")
     suspend fun countDrivingDaysInRange(carId: Int, startDate: String, endDate: String): Int
 
     // Most distance in a single day
@@ -235,6 +249,7 @@ interface DriveSummaryDao {
         SELECT DATE(startDate) as day, SUM(distance) as totalDistance
         FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         GROUP BY DATE(startDate)
         ORDER BY totalDistance DESC LIMIT 1
     """)
@@ -244,6 +259,7 @@ interface DriveSummaryDao {
         SELECT DATE(startDate) as day, SUM(distance) as totalDistance
         FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
         GROUP BY DATE(startDate)
         ORDER BY totalDistance DESC LIMIT 1
@@ -257,6 +273,7 @@ interface DriveSummaryDao {
         SELECT d.driveId FROM drives_summary d
         LEFT JOIN drive_detail_aggregates a ON d.carId = a.carId AND d.driveId = a.driveId
         WHERE d.carId = :carId
+        AND d.qualityState != 'quarantined'
         AND (a.driveId IS NULL OR a.schemaVersion < :currentVersion)
         ORDER BY d.driveId
     """)
@@ -267,6 +284,7 @@ interface DriveSummaryDao {
         SELECT COUNT(*) FROM drives_summary d
         LEFT JOIN drive_detail_aggregates a ON d.carId = a.carId AND d.driveId = a.driveId
         WHERE d.carId = :carId
+        AND d.qualityState != 'quarantined'
         AND (a.driveId IS NULL OR a.schemaVersion < :currentVersion)
     """)
     suspend fun countUnprocessedDrives(carId: Int, currentVersion: Int): Int
@@ -277,6 +295,7 @@ interface DriveSummaryDao {
         SELECT DISTINCT CAST(strftime('%Y', startDate) AS INTEGER) as year
         FROM drives_summary
         WHERE carId = :carId
+        AND qualityState != 'quarantined'
         ORDER BY year DESC
     """)
     suspend fun getYears(carId: Int): List<Int>
@@ -290,6 +309,7 @@ interface DriveSummaryDao {
     @Query("""
         SELECT * FROM drives_summary
         WHERE carId = :carId
+          AND qualityState != 'quarantined'
           AND startDate > :afterDate
           AND startDate < :beforeDate
         ORDER BY startDate ASC
@@ -314,6 +334,8 @@ interface DriveSummaryDao {
                 WHERE p.carId = curr.carId AND p.startDate < curr.startDate
             )
         WHERE curr.carId = :carId
+            AND curr.qualityState != 'quarantined'
+            AND prev.qualityState != 'quarantined'
         ORDER BY gapDays DESC
         LIMIT 1
     """)
@@ -334,6 +356,8 @@ interface DriveSummaryDao {
                 WHERE p.carId = curr.carId AND p.startDate < curr.startDate
             )
         WHERE curr.carId = :carId
+            AND curr.qualityState != 'quarantined'
+            AND prev.qualityState != 'quarantined'
             AND prev.startDate >= :startDate
             AND curr.startDate < :endDate
         ORDER BY gapDays DESC
@@ -351,6 +375,7 @@ interface DriveSummaryDao {
     @Query("""
         SELECT * FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         ORDER BY (startBatteryLevel - endBatteryLevel) DESC
         LIMIT 1
     """)
@@ -359,6 +384,7 @@ interface DriveSummaryDao {
     @Query("""
         SELECT * FROM drives_summary
         WHERE carId = :carId
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
         ORDER BY (startBatteryLevel - endBatteryLevel) DESC
         LIMIT 1
@@ -376,6 +402,7 @@ interface DriveSummaryDao {
         SELECT DISTINCT DATE(startDate) as day
         FROM drives_summary
         WHERE carId = :carId
+        AND qualityState != 'quarantined'
         ORDER BY day ASC
     """)
     suspend fun getDistinctDrivingDays(carId: Int): List<String>
@@ -384,6 +411,7 @@ interface DriveSummaryDao {
         SELECT DISTINCT DATE(startDate) as day
         FROM drives_summary
         WHERE carId = :carId
+        AND qualityState != 'quarantined'
         AND startDate >= :startDate AND startDate < :endDate
         ORDER BY day ASC
     """)
@@ -397,7 +425,7 @@ interface DriveSummaryDao {
                COALESCE(SUM(energyConsumed), 0) as totalEnergy,
                COUNT(*) as driveCount
         FROM drives_summary
-        WHERE carId = :carId AND strftime('%Y', startDate) = :year
+        WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND strftime('%Y', startDate) = :year
         GROUP BY strftime('%m', startDate)
         ORDER BY month ASC
     """)

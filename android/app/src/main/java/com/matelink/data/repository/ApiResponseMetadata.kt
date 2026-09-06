@@ -11,7 +11,8 @@ data class ApiResponseMetadata(
     val source: String? = null,
     val observedAt: String? = null,
     val collectionStartedAt: String? = null,
-    val coveragePercent: Double? = null
+    val coveragePercent: Double? = null,
+    val quarantinedCount: Int? = null
 )
 
 fun ApiDataMeta.toApiResponseMetadata(): ApiResponseMetadata = ApiResponseMetadata(
@@ -19,5 +20,6 @@ fun ApiDataMeta.toApiResponseMetadata(): ApiResponseMetadata = ApiResponseMetada
     source = source,
     observedAt = observedAt,
     collectionStartedAt = collectionStartedAt,
-    coveragePercent = coveragePercent
+    coveragePercent = coveragePercent,
+    quarantinedCount = quarantinedCount
 )

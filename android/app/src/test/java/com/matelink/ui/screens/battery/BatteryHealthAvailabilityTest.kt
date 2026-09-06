@@ -31,10 +31,18 @@ class BatteryHealthAvailabilityTest {
     }
 
     @Test
-    fun successfulHealthIsTypedAsAvailable() {
+    fun emptyHealthPayloadIsUnavailableUntilCapacityIsMeasured() {
+        assertEquals(
+            BatteryHealthAvailability.UNAVAILABLE,
+            classifyBatteryHealth(ApiResult.Success(BatteryHealth()), null)
+        )
+    }
+
+    @Test
+    fun measuredCapacityHealthIsAvailable() {
         assertEquals(
             BatteryHealthAvailability.AVAILABLE,
-            classifyBatteryHealth(ApiResult.Success(BatteryHealth()), null)
+            classifyBatteryHealth(ApiResult.Success(BatteryHealth(maxCapacity = 80.0, currentCapacity = 75.0)), null)
         )
     }
 }

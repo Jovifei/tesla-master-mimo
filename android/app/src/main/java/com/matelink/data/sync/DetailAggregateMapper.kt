@@ -42,8 +42,8 @@ internal fun DriveDetail.toAggregate(carId: Int, computedAt: Long): DriveDetailA
         minInsideTemp = insideTemperatures.minOrNull(),
         maxOutsideTemp = outsideTemperatures.maxOrNull(),
         minOutsideTemp = outsideTemperatures.minOrNull(),
-        maxPower = powers.maxOrNull(),
-        minPower = powers.minOrNull(),
+        maxPower = powers.maxOrNull()?.roundToInt(),
+        minPower = powers.minOrNull()?.roundToInt(),
         climateOnPositions = positions.count { it.isClimateOn },
         positionCount = positions.size,
         startLatitude = firstCoordinate?.latitude,
@@ -59,7 +59,7 @@ internal fun ChargeDetail.toAggregate(carId: Int, computedAt: Long): ChargeDetai
     val outsideTemperatures = points.mapNotNull { it.outsideTemp }
     val isFastCharger = chargerDetails.any { details ->
         details.fastChargerPresent == true ||
-            (details.chargerPower != null && (details.chargerPhases == null || details.chargerPhases == 0))
+            (details.chargerPower != null && details.chargerPhases == 0)
     }
 
     return ChargeDetailAggregate(
