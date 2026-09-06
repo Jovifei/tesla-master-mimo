@@ -2929,4 +2929,5 @@
 
 ## 外部执行门禁
 
-- [ ] Jovi 单独授权后：备份并以加性 migration 隔离生产记录、按构建 SHA 部署服务端、安装同签名 Release、完成虚拟钥匙/Telemetry 配置及一趟真实驾驶/充电验证。
+- [x] 已用同签名 `adb install -r` 覆盖 OnePlus 7 Pro 的 Release；2.1.5/build24、首次安装时间保留、启动与进程级 FATAL 检查通过。
+- [ ] 服务器部署被 SSH 公钥认证拒绝阻塞：取得 `jourvolt@120.55.64.11` 的可用认证后，备份并以加性 migration 隔离生产记录、按构建 SHA 部署服务端，再完成虚拟钥匙/Telemetry 配置及一趟真实驾驶/充电验证。

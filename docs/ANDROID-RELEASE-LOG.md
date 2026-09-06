@@ -16,7 +16,9 @@
 
 - 源码/本地门禁：Go test/vet、Android Debug/Release JVM、Debug/Release lint、Debug/AndroidTest APK 编译均通过。
 - 包边界：Debug APK 静态核对为 `com.matelink.test.mock` / `MateLink Test`；Release 仍为唯一的 `com.matelink` 候选。
-- 未执行：未生成签名 Release、未安装设备、未部署服务端、未迁移或删除生产数据、未进行 Tesla 虚拟钥匙或真实行程/充电验证。
+- 已安装：同签名 `adb install -r` 覆盖 OnePlus 7 Pro 的 `com.matelink`；安装后为 2.1.5/build24、非 DEBUGGABLE，首次安装时间保持为 2026-08-31 22:36:47，启动和进程级 FATAL 检查通过。
+- APK：`app-release.apk`，SHA-256 `A041DCC1D1A5367017D15DF2A8E3B1F7A107E3D37A40F732ABA396E3447E5494`；签名摘要与设备安装前包相同。
+- 未执行：服务端未部署、未迁移或删除生产数据、未进行 Tesla 虚拟钥匙或真实行程/充电验证。
 
 ### 本次范围
 
