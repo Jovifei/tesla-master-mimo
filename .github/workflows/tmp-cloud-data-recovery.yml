@@ -39,7 +39,8 @@ jobs:
           go vet ./...
           go mod verify
           go build ./...
-      - name: Android gate
+      - name: Android gate (best effort; local gate remains mandatory)
+        continue-on-error: true
         working-directory: android
         run: |
           chmod +x gradlew
