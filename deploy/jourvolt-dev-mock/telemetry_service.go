@@ -852,7 +852,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		result["power_max"], result["power_min"] = nil, nil
 		result["battery_details"], result["range_ideal"], result["range_rated"] = nil, nil, nil
 		result["outside_temp_avg"], result["inside_temp_avg"] = nil, nil
-		result["energy_consumed_net"], result["consumption_net"] = nil, nil
+		result["energy_consumed_net"], result["consumption_net"] = session.EnergyAdded, nil
 		result["odometer_details"] = map[string]any{"odometer_start": session.OdometerStart, "odometer_end": session.OdometerEnd, "odometer_distance": odometerDistance(session.OdometerStart, session.OdometerEnd)}
 		route := make([]map[string]any, 0, len(session.Route))
 		for _, point := range session.Route {

@@ -5,6 +5,7 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.UnifiedHistoryRepository
 import com.matelink.data.local.VehicleContext
+import com.matelink.domain.history.isAnalysisEligible
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,13 +28,15 @@ internal fun buildPersistedHistorySnapshot(
     reason: String
 ): AnalysisHistorySnapshot? {
     if (drives.isEmpty() && charges.isEmpty()) return null
+    val eligibleDrives = drives.map { it.toAnalysisDriveData() }.filter { isAnalysisEligible(it.qualityState, it.qualityReason) }
+    val eligibleCharges = charges.map { it.toAnalysisChargeData() }.filter { isAnalysisEligible(it.qualityState, it.qualityReason) }
     return AnalysisHistorySnapshot(
-        drives = drives.map { it.toAnalysisDriveData() },
-        charges = charges.map { it.toAnalysisChargeData() },
+        drives = eligibleDrives,
+        charges = eligibleCharges,
         fetchedAt = fetchedAt,
         coverage = HistoryCoverage(
-            driveCount = drives.size,
-            chargeCount = charges.size
+            driveCount = eligibleDrives.size,
+            chargeCount = eligibleCharges.size
         ),
         freshness = HistoryFreshness.STALE,
         staleReason = reason
@@ -67,16 +70,18 @@ class AnalysisHistoryRepository @Inject constructor(
         return when (val result = historyRepository.load(carId)) {
             is ApiResult.Success -> {
                 val history = result.data
+                val eligibleDrives = history.drives.filter { isAnalysisEligible(it.qualityState, it.qualityReason) }
+                val eligibleCharges = history.charges.filter { isAnalysisEligible(it.qualityState, it.qualityReason) }
                 val snapshot = AnalysisHistorySnapshot(
-                    drives = history.drives,
-                    charges = history.charges,
+                    drives = eligibleDrives,
+                    charges = eligibleCharges,
                     fetchedAt = history.fetchedAt,
                     coverage = HistoryCoverage(
-                        driveCount = history.drives.size,
-                        chargeCount = history.charges.size,
+                        driveCount = eligibleDrives.size,
+                        chargeCount = eligibleCharges.size,
                         reason = classifyEmptyHistory(
-                            driveCount = history.drives.size,
-                            chargeCount = history.charges.size
+                            driveCount = eligibleDrives.size,
+                            chargeCount = eligibleCharges.size
                         )
                     ),
                     freshness = if (history.drivesFromRemote || history.chargesFromRemote) {

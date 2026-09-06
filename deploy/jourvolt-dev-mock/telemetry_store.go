@@ -104,10 +104,9 @@ ALTER TABLE jourvolt_telemetry_sessions ALTER COLUMN public_id SET DEFAULT nextv
 UPDATE jourvolt_telemetry_sessions SET public_id=nextval('jourvolt_telemetry_session_public_id_seq') WHERE public_id IS NULL;
 ALTER TABLE jourvolt_telemetry_sessions ALTER COLUMN public_id SET NOT NULL;
 UPDATE jourvolt_telemetry_sessions
-SET quality_state='quarantined', quality_reason='legacy_import_without_evidence'
-WHERE source='local_import' AND quality_state='incomplete'
-  AND COALESCE(jsonb_array_length(route_json), 0)=0
-  AND odometer_start IS NULL AND odometer_end IS NULL;
+SET quality_state='incomplete', quality_reason='local_import_unverified'
+WHERE source='local_import' AND quality_state='quarantined'
+  AND quality_reason IN ('legacy_import', 'legacy_import_without_evidence');
 UPDATE jourvolt_telemetry_sessions
 SET quality_state='observed', quality_reason='legacy_telemetry_session'
 WHERE source='telemetry_mqtt' AND quality_state='incomplete'

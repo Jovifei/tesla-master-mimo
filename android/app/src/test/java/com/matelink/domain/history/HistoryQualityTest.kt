@@ -88,4 +88,10 @@ class HistoryQualityTest {
         assertFalse(isAnalysisEligible("quarantined"))
         assertFalse(isAnalysisEligible("unknown"))
     }
+
+    @Test
+    fun legacyRemoteHistoryWithoutAQualityFieldRemainsEligible() {
+        assertTrue(isAnalysisEligible("incomplete", "remote_quality_unavailable"))
+        assertFalse(isAnalysisEligible("incomplete", "local_import_unverified"))
+    }
 }

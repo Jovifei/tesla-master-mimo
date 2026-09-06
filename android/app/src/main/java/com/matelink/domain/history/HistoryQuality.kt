@@ -57,6 +57,11 @@ fun isAnalysisEligible(qualityState: String): Boolean =
     qualityState == HistoryQualityState.OBSERVED.wireValue ||
         qualityState == HistoryQualityState.DERIVED.wireValue
 
+/** Older trusted APIs predate quality_state; explicit local imports never use this fallback. */
+fun isAnalysisEligible(qualityState: String?, qualityReason: String?): Boolean =
+    isAnalysisEligible(qualityState.orEmpty()) ||
+        (qualityState == HistoryQualityState.INCOMPLETE.wireValue && qualityReason == "remote_quality_unavailable")
+
 private fun quarantineReason(vararg values: String?): HistoryQuality? {
     val evidence = values.filterNotNull().joinToString(" ").lowercase()
     val source = quarantinedProvenance.firstOrNull(evidence::contains) ?: return null

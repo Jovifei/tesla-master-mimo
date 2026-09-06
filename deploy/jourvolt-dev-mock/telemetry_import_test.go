@@ -88,13 +88,58 @@ func TestHistoryImportPersistsCharge(t *testing.T) {
 	}
 }
 
-func TestHistoryImportRetainsOnlyLatestTwoDataDaysPerAccount(t *testing.T) {
+func TestHistoryImportMarksLocalHistoryIncompleteInsteadOfQuarantined(t *testing.T) {
+	session, err := (historyImportSession{
+		SessionID: "drive-local-unverified",
+		StartedAt: rfc3339(2),
+		EndedAt:   rfc3339(2),
+	}).toTelemetrySession("user-a", 1, "drive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.QualityState != "incomplete" || session.QualityReason != "local_import_unverified" {
+		t.Fatalf("local import quality = %s/%s, want incomplete/local_import_unverified", session.QualityState, session.QualityReason)
+	}
+}
+
+func TestImportedDriveRetainsItsMeasuredEnergySummary(t *testing.T) {
+	energy := 8.4
+	item := historySessionMap(telemetrySession{
+		ID: "drive-local-energy", Kind: "drive", StartAt: time.Now().UTC(), EndAt: timePointer(time.Now().UTC()),
+		EnergyAdded: &energy, Source: "local_import", QualityState: "incomplete", QualityReason: "local_import_unverified",
+	}, "drive", 0)
+	if got, ok := item["energy_consumed_net"].(*float64); !ok || got == nil || *got != energy {
+		t.Fatalf("drive energy summary = %#v, want %v", item["energy_consumed_net"], energy)
+	}
+}
+
+func TestHistoryImportKeepsAllArchivedLocalDays(t *testing.T) {
+	service := newTelemetryServiceForTest("partner.example.com")
+	ref := telemetryVehicleRef{UserID: "user-a", VehicleID: 1, VINHash: "hash", ProviderVehicleID: "provider-1"}
+	service.memory.registerVehicle(ref)
+	a := &app{telemetry: service, provider: testProvider{vehicles: map[string][]vehicle{"user-a": {{ID: 1}}}}}
+	payload := importRequestJSON(t, []historyImportSession{
+		{SessionID: "archive-d1", StartedAt: rfc3339(1), EndedAt: rfc3339(1)},
+		{SessionID: "archive-d2", StartedAt: rfc3339(2), EndedAt: rfc3339(2)},
+		{SessionID: "archive-d3", StartedAt: rfc3339(3), EndedAt: rfc3339(3)},
+	}, nil)
+	recorder := httptest.NewRecorder()
+	a.carResource(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/cars/1/history/import", strings.NewReader(payload)), "user-a", "/api/v1/cars/1/history/import")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("import response = %d %s", recorder.Code, recorder.Body.String())
+	}
+	if got := len(service.memory.sessions("user-a", 1, "drive")); got != 3 {
+		t.Fatalf("archived local sessions = %d, want 3", got)
+	}
+}
+
+func TestHistoryImportDoesNotReportOrApplyArchiveRetention(t *testing.T) {
 	service := newTelemetryServiceForTest("partner.example.com")
 	ref := telemetryVehicleRef{UserID: "user-a", VehicleID: 1, VINHash: "hash", ProviderVehicleID: "provider-1"}
 	service.memory.registerVehicle(ref)
 	a := &app{telemetry: service, provider: testProvider{vehicles: map[string][]vehicle{"user-a": {{ID: 1}}}}}
 
-	// Three distinct days of data. The account keeps only the latest two (9/3, 9/2).
+	// Three distinct days of data must remain available to the account.
 	payload := importRequestJSON(t, []historyImportSession{
 		{SessionID: "d1", StartedAt: rfc3339(1), EndedAt: rfc3339(1)},
 		{SessionID: "d2", StartedAt: rfc3339(2), EndedAt: rfc3339(2)},
@@ -110,33 +155,33 @@ func TestHistoryImportRetainsOnlyLatestTwoDataDaysPerAccount(t *testing.T) {
 		Data historyImportResult `json:"data"`
 	}
 	_ = json.Unmarshal(recorder.Body.Bytes(), &envelope)
-	if len(envelope.Data.RetainedDays) != 2 || envelope.Data.RetainedDays[0] != "2026-09-03" || envelope.Data.RetainedDays[1] != "2026-09-02" {
-		t.Fatalf("retained days = %#v", envelope.Data.RetainedDays)
+	if len(envelope.Data.RetainedDays) != 0 {
+		t.Fatalf("retained days = %#v, want no retention", envelope.Data.RetainedDays)
 	}
 
 	sessions := service.memory.sessions("user-a", 1, "drive")
-	if len(sessions) != 2 {
-		t.Fatalf("retained sessions = %d, want 2", len(sessions))
+	if len(sessions) != 3 {
+		t.Fatalf("archived sessions = %d, want 3", len(sessions))
 	}
 	seen := map[string]bool{}
 	for _, session := range sessions {
 		seen[session.ID] = true
 	}
-	expectedD2 := scopedImportedSessionID("user-a", 1, "drive", "d2")
-	expectedD3 := scopedImportedSessionID("user-a", 1, "drive", "d3")
-	if !seen[expectedD2] || !seen[expectedD3] {
-		t.Fatalf("retained session ids = %#v, want d2 and d3", seen)
+	for _, rawID := range []string{"d1", "d2", "d3"} {
+		if !seen[scopedImportedSessionID("user-a", 1, "drive", rawID)] {
+			t.Fatalf("archived session ids = %#v, missing %s", seen, rawID)
+		}
 	}
 }
 
-func TestHistoryImportRetentionIsPerAccountNotPerVehicle(t *testing.T) {
+func TestHistoryImportPreservesArchiveAcrossVehicles(t *testing.T) {
 	service := newTelemetryServiceForTest("partner.example.com")
 	// Two vehicles under the same account.
 	service.memory.registerVehicle(telemetryVehicleRef{UserID: "user-a", VehicleID: 1, VINHash: "hash1", ProviderVehicleID: "p1"})
 	service.memory.registerVehicle(telemetryVehicleRef{UserID: "user-a", VehicleID: 2, VINHash: "hash2", ProviderVehicleID: "p2"})
 	a := &app{telemetry: service, provider: testProvider{vehicles: map[string][]vehicle{"user-a": {{ID: 1}, {ID: 2}}}}}
 
-	// Vehicle 1 has day 1; vehicle 2 has day 3. Account keeps latest two (9/3, 9/1).
+	// Vehicle archives must not evict one another.
 	importVehicle := func(vehicleID int, body string) {
 		t.Helper()
 		recorder := httptest.NewRecorder()
@@ -148,7 +193,7 @@ func TestHistoryImportRetentionIsPerAccountNotPerVehicle(t *testing.T) {
 	importVehicle(1, importRequestJSON(t, []historyImportSession{{SessionID: "v1-d1", StartedAt: rfc3339(1), EndedAt: rfc3339(1)}}, nil))
 	importVehicle(2, importRequestJSON(t, []historyImportSession{{SessionID: "v2-d3", StartedAt: rfc3339(3), EndedAt: rfc3339(3)}}, nil))
 
-	// Both days are within the latest two, so both survive.
+	// Both vehicle archives survive.
 	if got := len(service.memory.sessions("user-a", 1, "drive")); got != 1 {
 		t.Fatalf("vehicle 1 sessions = %d, want 1", got)
 	}
@@ -156,7 +201,7 @@ func TestHistoryImportRetentionIsPerAccountNotPerVehicle(t *testing.T) {
 		t.Fatalf("vehicle 2 sessions = %d, want 1", got)
 	}
 
-	// Now add day 4 to vehicle 1 — day 1 should be evicted account-wide.
+	// Adding a newer record must retain the older local archive as well.
 	importVehicle(1, importRequestJSON(t, []historyImportSession{{SessionID: "v1-d4", StartedAt: rfc3339(4), EndedAt: rfc3339(4)}}, nil))
 	vehicle1 := service.memory.sessions("user-a", 1, "drive")
 	ids := map[string]bool{}
@@ -165,7 +210,7 @@ func TestHistoryImportRetentionIsPerAccountNotPerVehicle(t *testing.T) {
 	}
 	expectedV1D4 := scopedImportedSessionID("user-a", 1, "drive", "v1-d4")
 	expectedV1D1 := scopedImportedSessionID("user-a", 1, "drive", "v1-d1")
-	if !ids[expectedV1D4] || ids[expectedV1D1] {
+	if !ids[expectedV1D4] || !ids[expectedV1D1] {
 		t.Fatalf("vehicle 1 sessions after day 4 = %#v", ids)
 	}
 }

@@ -358,7 +358,7 @@ type telemetrySession struct {
 
 func classifyTelemetrySession(session telemetrySession) (string, string) {
 	if session.Source == "local_import" {
-		return "quarantined", "legacy_import"
+		return "incomplete", "local_import_unverified"
 	}
 	hasOdometer := session.OdometerStart != nil && session.OdometerEnd != nil && *session.OdometerEnd >= *session.OdometerStart
 	if session.Kind == "drive" {
@@ -1010,51 +1010,4 @@ func (s *telemetryMemoryStore) importSessions(userID string, vehicleID int, driv
 		}
 	}
 	s.completed[key] = existingSessions
-}
-
-// retainLatestDays deletes completed sessions outside the account's two most
-// recent calendar days that contain data, across all vehicles of that account.
-// It returns the retained day strings (YYYY-MM-DD, newest first).
-func (s *telemetryMemoryStore) retainLatestDays(userID string) []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	daySet := map[string]bool{}
-	for key, sessions := range s.completed {
-		if key.UserID != userID {
-			continue
-		}
-		for _, session := range sessions {
-			if session.EndAt == nil || session.Source != "local_import" {
-				continue
-			}
-			daySet[telemetryDataDay(session.StartAt)] = true
-		}
-	}
-	days := make([]string, 0, len(daySet))
-	for day := range daySet {
-		days = append(days, day)
-	}
-	sort.Strings(days)
-	// descending order (newest first)
-	for i, j := 0, len(days)-1; i < j; i, j = i+1, j-1 {
-		days[i], days[j] = days[j], days[i]
-	}
-	if len(days) <= 2 {
-		return days
-	}
-	retained := days[:2]
-	retainedSet := map[string]bool{retained[0]: true, retained[1]: true}
-	for key, sessions := range s.completed {
-		if key.UserID != userID {
-			continue
-		}
-		filtered := sessions[:0]
-		for _, session := range sessions {
-			if session.Source != "local_import" || session.EndAt == nil || retainedSet[telemetryDataDay(session.StartAt)] {
-				filtered = append(filtered, session)
-			}
-		}
-		s.completed[key] = filtered
-	}
-	return retained
 }

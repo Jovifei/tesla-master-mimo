@@ -153,7 +153,9 @@ class AnalysisHistoryRepositoryTest {
                     outsideTempAvg = 22.0,
                     insideTempAvg = 21.0,
                     energyConsumed = 2.0,
-                    efficiency = 200.0
+                    efficiency = 200.0,
+                    energySource = "api",
+                    apiEvidence = "{}"
                 )
             ),
             charges = emptyList(),

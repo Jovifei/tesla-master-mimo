@@ -23,7 +23,9 @@ fun DriveSummary.toAnalysisDriveData(): DriveData {
     val fromEvidence = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive)?.let {
         it.copy(
             startAddress = it.startAddress.cleanAddress(),
-            endAddress = it.endAddress.cleanAddress()
+            endAddress = it.endAddress.cleanAddress(),
+            qualityState = qualityState,
+            qualityReason = qualityReason
         )
     }
     return fromEvidence ?: DriveData(
@@ -49,11 +51,16 @@ fun DriveSummary.toAnalysisDriveData(): DriveData {
     outsideTempAvg = outsideTempAvg,
     insideTempAvg = insideTempAvg,
     energyConsumedNet = energyConsumed?.takeIf { it.isFinite() && it >= 0.0 },
-    consumptionNet = efficiency?.takeIf { it.isFinite() && it >= 0.0 }
+    consumptionNet = efficiency?.takeIf { it.isFinite() && it >= 0.0 },
+    qualityState = qualityState,
+    qualityReason = qualityReason
 ) }
 
 fun ChargeSummary.toAnalysisChargeData(): ChargeData =
-    apiEvidence?.let(HistorySummaryEvidenceCodec::decodeCharge) ?: ChargeData(
+    apiEvidence?.let(HistorySummaryEvidenceCodec::decodeCharge)?.copy(
+        qualityState = qualityState,
+        qualityReason = qualityReason
+    ) ?: ChargeData(
     chargeId = chargeId,
     startDate = startDate,
     endDate = endDate,
@@ -71,7 +78,9 @@ fun ChargeSummary.toAnalysisChargeData(): ChargeData =
     outsideTempAvg = outsideTempAvg,
     odometer = odometer.takeIf { it.isFinite() && it > 0.0 },
     latitude = latitude.takeIf { it.isFinite() && it != 0.0 },
-    longitude = longitude.takeIf { it.isFinite() && it != 0.0 }
+    longitude = longitude.takeIf { it.isFinite() && it != 0.0 },
+    qualityState = qualityState,
+    qualityReason = qualityReason
 )
 
 private fun isBatteryLevel(value: Int): Boolean = value in 1..100

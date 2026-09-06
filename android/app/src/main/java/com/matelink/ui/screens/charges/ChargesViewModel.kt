@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.ChargeData
+import com.matelink.domain.history.isAnalysisEligible
 import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.dao.AggregateDao
@@ -422,8 +423,10 @@ class ChargesViewModel @Inject constructor(
         val dcChargeIds = state.dcChargeIds
         val granularity = state.chartGranularity
 
-        // Filter out short charges or invalid charges where battery level had no change
-        val validCharges = allCharges.filter { charge ->
+        val visibleCharges = allCharges.filter { it.qualityState != "quarantined" }
+        // Incomplete imports remain visible, but cannot produce stats or charts.
+        val validCharges = visibleCharges.filter { charge ->
+            if (!isAnalysisEligible(charge.qualityState, charge.qualityReason)) return@filter false
             val startSoc = charge.startBatteryLevel ?: 0
             val endSoc = charge.endBatteryLevel ?: 0
             val energy = charge.chargeEnergyAdded ?: 0.0
@@ -432,10 +435,11 @@ class ChargesViewModel @Inject constructor(
         }
 
         var filteredCharges = if (showShortDrivesCharges) {
-            validCharges
+            visibleCharges
         } else {
-            validCharges.filter { charge ->
-                (charge.chargeEnergyAdded ?: 0.0) > MIN_ENERGY_KWH
+            visibleCharges.filter { charge ->
+                !isAnalysisEligible(charge.qualityState, charge.qualityReason) ||
+                    (charge.chargeEnergyAdded ?: 0.0) > MIN_ENERGY_KWH
             }
         }
 
@@ -443,7 +447,9 @@ class ChargesViewModel @Inject constructor(
         val displayCharges = when (chargeTypeFilter) {
             ChargeTypeFilter.ALL -> filteredCharges
             ChargeTypeFilter.DC -> filteredCharges.filter { it.chargeId in dcChargeIds }
-            ChargeTypeFilter.AC -> filteredCharges.filter { it.chargeId !in dcChargeIds }
+            ChargeTypeFilter.AC -> filteredCharges.filter {
+                isAnalysisEligible(it.qualityState, it.qualityReason) && it.chargeId !in dcChargeIds
+            }
         }
 
         // Apply charge type filter to all charges for summary/charts (include short charges)
@@ -454,7 +460,7 @@ class ChargesViewModel @Inject constructor(
         }
 
         // Extract unique locations from the complete set
-        val locations = allCharges.mapNotNull { it.address }.distinct().sorted()
+        val locations = visibleCharges.mapNotNull { it.address }.distinct().sorted()
         // Apply location filter to displayCharges
         val locationFilter = state.selectedLocations
         val displayChargesLocFiltered = if (locationFilter.isNotEmpty())

@@ -5,7 +5,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
-import java.time.ZoneId
 import java.time.ZoneOffset
 
 data class BoundedHistoryUpload(
@@ -14,7 +13,6 @@ data class BoundedHistoryUpload(
 )
 
 object HistoryUploadFilter {
-    private val chinaZone: ZoneId = ZoneId.of("Asia/Shanghai")
     /**
      * Extracts the UTC LocalDate for a timestamp string. Supports ISO-8601 instants,
      * offset datetimes, and local datetimes (assumed UTC). Returns null on invalid
@@ -37,41 +35,36 @@ object HistoryUploadFilter {
         }
     }
 
-    /**
-     * Restricts the uploaded sessions to the most recent two UTC calendar days that
-     * actually contain data across both drives and charges.
-     *
-     * If there are <= 2 days with data, all valid sessions are kept.
-     * If there are > 2 days with data, only sessions falling on the latest two
-     * calendar days with data are retained.
-     */
-    fun boundToLatestTwoDataDays(
+    /** Keeps the complete local archive while dropping only records with unusable timestamps. */
+    fun keepValidatedArchive(
         drives: List<HistoryImportSession>,
         charges: List<HistoryImportSession>
     ): BoundedHistoryUpload {
-        val driveDates = drives.mapNotNull { extractDataDate(it.startedAt) }
-        val chargeDates = charges.mapNotNull { extractDataDate(it.startedAt) }
-        val distinctDates = (driveDates + chargeDates).distinct().sortedDescending()
-        if (distinctDates.isEmpty()) {
-            return BoundedHistoryUpload(emptyList(), emptyList())
-        }
-        val retainedDates = distinctDates.take(2).toSet()
-
-        val filteredDrives = drives.filter {
-            val date = extractDataDate(it.startedAt)
-            date != null && date in retainedDates
-        }
-        val filteredCharges = charges.filter {
-            val date = extractDataDate(it.startedAt)
-            date != null && date in retainedDates
-        }
-        return BoundedHistoryUpload(filteredDrives, filteredCharges)
+        return BoundedHistoryUpload(
+            drives = drives.filter { extractUtcDate(it.startedAt) != null },
+            charges = charges.filter { extractUtcDate(it.startedAt) != null }
+        )
     }
 
-    private fun extractDataDate(timestamp: String?): LocalDate? {
-        if (timestamp.isNullOrBlank()) return null
-        return runCatching { Instant.parse(timestamp).atZone(chinaZone).toLocalDate() }.getOrNull()
-            ?: runCatching { OffsetDateTime.parse(timestamp).atZoneSameInstant(chinaZone).toLocalDate() }.getOrNull()
-            ?: runCatching { LocalDateTime.parse(timestamp).atZone(chinaZone).toLocalDate() }.getOrNull()
+    /** Splits a complete archive into requests accepted by the server's 200-per-kind limit. */
+    fun batchesForUpload(
+        drives: List<HistoryImportSession>,
+        charges: List<HistoryImportSession>
+    ): List<BoundedHistoryUpload> {
+        val driveBatches = drives.chunked(200)
+        val chargeBatches = charges.chunked(200)
+        val count = maxOf(driveBatches.size, chargeBatches.size)
+        return (0 until count).map { index ->
+            BoundedHistoryUpload(
+                drives = driveBatches.getOrElse(index) { emptyList() },
+                charges = chargeBatches.getOrElse(index) { emptyList() }
+            )
+        }
     }
+
+    @Deprecated("Use keepValidatedArchive to preserve the complete local archive")
+    fun boundToLatestTwoDataDays(
+        drives: List<HistoryImportSession>,
+        charges: List<HistoryImportSession>
+    ): BoundedHistoryUpload = keepValidatedArchive(drives, charges)
 }

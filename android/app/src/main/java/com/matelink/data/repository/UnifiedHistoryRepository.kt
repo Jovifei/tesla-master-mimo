@@ -78,7 +78,7 @@ class UnifiedHistoryRepository @Inject constructor(
         val remoteCharges = teslamateRepository.getCharges(context.remoteApiCarId, startDate, endDate)
         val drives = when (remoteDrives) {
             is ApiResult.Success -> {
-                val merged = mergeDrives(remoteDrives.data, localDrives.map { it.toAnalysisDriveData() })
+                val merged = mergeDrives(remoteDrives.data.map { it.withLegacyRemoteQuality() }, localDrives.map { it.toAnalysisDriveData() })
                 merged.mapNotNull { it.toLocalSummary(context.localHistoryCarId) }
                     .takeIf { it.isNotEmpty() }
                     ?.let { driveSummaryDao.upsertAll(it) }
@@ -88,7 +88,7 @@ class UnifiedHistoryRepository @Inject constructor(
         }
         val charges = when (remoteCharges) {
             is ApiResult.Success -> {
-                val merged = mergeCharges(remoteCharges.data, localCharges.map { it.toAnalysisChargeData() })
+                val merged = mergeCharges(remoteCharges.data.map { it.withLegacyRemoteQuality() }, localCharges.map { it.toAnalysisChargeData() })
                 merged.mapNotNull { it.toLocalSummary(context.localHistoryCarId) }
                     .takeIf { it.isNotEmpty() }
                     ?.let { chargeSummaryDao.upsertAll(it) }
@@ -120,19 +120,35 @@ class UnifiedHistoryRepository @Inject constructor(
 
         fun mergeDrives(remote: List<DriveData>, local: List<DriveData>): List<DriveData> {
             val localById = local.associateBy { it.driveId }
-            val merged = remote.map { it.mergeWith(localById[it.driveId]) }
-            return (merged + local.filter { cached -> remote.none { it.driveId == cached.driveId } })
+            val merged = remote.map { drive ->
+                drive.mergeWith(localById[drive.driveId] ?: local.firstOrNull { drive.sameSession(it) })
+            }
+            return (merged + local.filter { cached -> remote.none { it.driveId == cached.driveId || it.sameSession(cached) } })
                 .sortedByDescending { it.startDate }
         }
 
         fun mergeCharges(remote: List<ChargeData>, local: List<ChargeData>): List<ChargeData> {
             val localById = local.associateBy { it.chargeId }
-            val merged = remote.map { it.mergeWith(localById[it.chargeId]) }
-            return (merged + local.filter { cached -> remote.none { it.chargeId == cached.chargeId } })
+            val merged = remote.map { charge ->
+                charge.mergeWith(localById[charge.chargeId] ?: local.firstOrNull { charge.sameSession(it) })
+            }
+            return (merged + local.filter { cached -> remote.none { it.chargeId == cached.chargeId || it.sameSession(cached) } })
                 .sortedByDescending { it.startDate }
         }
     }
 }
+
+private fun DriveData.sameSession(other: DriveData): Boolean =
+    startDate != null && endDate != null && startDate == other.startDate && endDate == other.endDate
+
+private fun ChargeData.sameSession(other: ChargeData): Boolean =
+    startDate != null && endDate != null && startDate == other.startDate && endDate == other.endDate
+
+private fun DriveData.withLegacyRemoteQuality(): DriveData =
+    if (qualityState == null && source != "local_import") copy(qualityState = "observed", qualityReason = "legacy_remote_api") else this
+
+private fun ChargeData.withLegacyRemoteQuality(): ChargeData =
+    if (qualityState == null && source != "local_import") copy(qualityState = "observed", qualityReason = "legacy_remote_api") else this
 
 private fun DriveData.mergeWith(cached: DriveData?): DriveData = cached?.let {
     copy(
@@ -249,30 +265,21 @@ private fun com.matelink.data.api.models.ChargeRange?.mergeWith(
 private fun DriveData.toLocalSummary(historyCarId: Int): DriveSummary? {
     val start = startDate ?: return null
     val end = endDate ?: return null
-    val duration = durationMin ?: return null
-    val odometer = odometerDetails ?: return null
-    val distance = odometer.distance ?: return null
-    val maxSpeed = speedMax ?: return null
-    val averageSpeed = speedAvg ?: return null
-    val maxPower = powerMax ?: return null
-    val minPower = powerMin ?: return null
-    val startBattery = batteryDetails?.startBatteryLevel ?: return null
-    val endBattery = batteryDetails.endBatteryLevel ?: return null
     return DriveSummary(
         driveId = driveId,
         carId = historyCarId,
         startDate = start,
         endDate = end,
-        durationMin = duration,
+        durationMin = durationMin ?: 0,
         startAddress = startAddress?.takeIf { !it.contains("°N") && it != "30.27°N, 120.15°E" && it != "杭州市西湖区西溪路" } ?: "",
         endAddress = endAddress?.takeIf { !it.contains("°N") && it != "30.27°N, 120.15°E" && it != "杭州市西湖区西溪路" } ?: "",
-        distance = distance,
-        speedMax = maxSpeed,
-        speedAvg = averageSpeed.toInt(),
-        powerMax = maxPower,
-        powerMin = minPower,
-        startBatteryLevel = startBattery,
-        endBatteryLevel = endBattery,
+        distance = odometerDetails?.distance ?: 0.0,
+        speedMax = speedMax ?: 0,
+        speedAvg = speedAvg?.toInt() ?: 0,
+        powerMax = powerMax ?: 0,
+        powerMin = powerMin ?: 0,
+        startBatteryLevel = batteryDetails?.startBatteryLevel ?: 0,
+        endBatteryLevel = batteryDetails?.endBatteryLevel ?: 0,
         outsideTempAvg = outsideTempAvg,
         insideTempAvg = insideTempAvg,
         energyConsumed = energyConsumedNet,
@@ -287,29 +294,22 @@ private fun DriveData.toLocalSummary(historyCarId: Int): DriveSummary? {
 private fun ChargeData.toLocalSummary(historyCarId: Int): ChargeSummary? {
     val start = startDate ?: return null
     val end = endDate ?: return null
-    val duration = durationMin ?: return null
-    val latitudeValue = latitude ?: return null
-    val longitudeValue = longitude ?: return null
-    val energy = chargeEnergyAdded ?: return null
-    val startBattery = batteryDetails?.startBatteryLevel ?: return null
-    val endBattery = batteryDetails.endBatteryLevel ?: return null
-    val odometerValue = odometer ?: return null
     return ChargeSummary(
         chargeId = chargeId,
         carId = historyCarId,
         startDate = start,
         endDate = end,
-        durationMin = duration,
+        durationMin = durationMin ?: 0,
         address = address ?: "",
-        latitude = latitudeValue,
-        longitude = longitudeValue,
-        energyAdded = energy,
+        latitude = latitude ?: 0.0,
+        longitude = longitude ?: 0.0,
+        energyAdded = chargeEnergyAdded ?: 0.0,
         energyUsed = chargeEnergyUsed,
         cost = cost,
-        startBatteryLevel = startBattery,
-        endBatteryLevel = endBattery,
+        startBatteryLevel = batteryDetails?.startBatteryLevel ?: 0,
+        endBatteryLevel = batteryDetails?.endBatteryLevel ?: 0,
         outsideTempAvg = outsideTempAvg,
-        odometer = odometerValue,
+        odometer = odometer ?: 0.0,
         apiEvidence = HistorySummaryEvidenceCodec.encode(this),
         qualityState = qualityState ?: "incomplete",
         qualityReason = qualityReason ?: "remote_quality_unavailable"

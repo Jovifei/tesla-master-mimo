@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-09-06 覆盖更新必须保留会话并以真实数据验收
+
+- Pattern：`adb install -r` 的覆盖更新不等于重新安装。即使包名、签名和首次安装时间保持不变，也必须验证既有登录会话仍可用；不得把构建、健康端点或 HTTP 200 当成车辆位置、行程、曲线、充电和电池数据已经恢复的证据。
+- Prevention rule：发布前后记录 package/version/firstInstallTime，并验证会话恢复而非只验证启动；对 Telemetry 必须分别核对 pairing、MQTT 消费者、latest、route points、drive、charge 和应用呈现。缺失真实事件时明确报告 collecting，不宣称修复完成。
+
 ## 2026-09-06 计划与执行授权边界
 
 - Pattern：Jovi 在排障阶段要求先给出修复方案，代码改动须等待明确的执行授权。

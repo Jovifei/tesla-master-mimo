@@ -10,6 +10,7 @@ import com.matelink.domain.map.VehiclePositionResolver
 import com.matelink.domain.map.AmapSetupState
 import com.matelink.domain.map.amapSetupState
 import com.matelink.data.local.VehicleStatusStore
+import com.matelink.domain.telemetry.usableVehicleCoordinates
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,9 +77,18 @@ class AmapMapViewModel @Inject constructor(
     private fun loadVehiclePosition(carId: Int? = null, fetch: Boolean) = viewModelScope.launch {
         val resolvedCarId = carId ?: settingsRepository.currentCarId.first()
         val cached = vehicleStatusStore.getCachedStatus(resolvedCarId)
-        val result = if (fetch) repository.getCarStatus(resolvedCarId) else null
-        val status = (result as? ApiResult.Success)?.data?.status
-        val position = VehiclePositionResolver.resolve(status?.latitude, status?.longitude, cached?.latitude, cached?.longitude)
+        val snapshot = if (fetch) repository.getAdapterSnapshot(resolvedCarId) else null
+        val legacy = if (fetch && snapshot is ApiResult.Error) repository.getCarStatus(resolvedCarId) else null
+        val status = when {
+            snapshot is ApiResult.Success -> snapshot.data.status
+            legacy is ApiResult.Success -> legacy.data.status
+            else -> null
+        }
+        val merged = com.matelink.domain.map.mergeCarStatusPosition(status, cached)
+        if (merged != null && fetch && usableVehicleCoordinates(status?.latitude, status?.longitude) != null) {
+            vehicleStatusStore.saveStatus(resolvedCarId, merged, (snapshot as? ApiResult.Success)?.data?.observedAt)
+        }
+        val position = VehiclePositionResolver.resolve(merged?.latitude, merged?.longitude, cached?.latitude, cached?.longitude)
         _uiState.value = _uiState.value.copy(latitude = position?.latitude, longitude = position?.longitude)
     }
 }

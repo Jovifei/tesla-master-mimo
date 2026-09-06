@@ -24,6 +24,7 @@ import com.matelink.domain.telemetry.SnapshotFreshness
 import com.matelink.domain.telemetry.snapshotEvidence
 import com.matelink.domain.telemetry.usableVehicleCoordinates
 import com.matelink.domain.map.VehiclePositionResolver
+import com.matelink.domain.map.mergeCarStatusPosition
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
@@ -136,12 +137,14 @@ class DashboardViewModel @Inject constructor(
                     statusResult is ApiResult.Success -> statusResult.data.status
                     else -> null
                 }
-                if (liveStatus != null) {
-                    val observed = (adapterResult as? ApiResult.Success)?.data?.observedAt
-                    vehicleStatusStore.saveStatus(effectiveCarId, liveStatus, observed)
-                }
                 val cachedStatus = vehicleStatusStore.getCachedStatus(effectiveCarId)
-                val status = mergeUsablePosition(liveStatus, cachedStatus) ?: cachedStatus
+                val status = mergeCarStatusPosition(liveStatus, cachedStatus) ?: cachedStatus
+                val usesCachedPosition = usableVehicleCoordinates(liveStatus?.latitude, liveStatus?.longitude) == null &&
+                    usableVehicleCoordinates(cachedStatus?.latitude, cachedStatus?.longitude) != null
+                if (status != null && usableVehicleCoordinates(liveStatus?.latitude, liveStatus?.longitude) != null) {
+                    val observed = (adapterResult as? ApiResult.Success)?.data?.observedAt
+                    vehicleStatusStore.saveStatus(effectiveCarId, status, observed)
+                }
 
                 val units = when {
                     adapterResult is ApiResult.Success -> adapterResult.data.units
@@ -159,6 +162,9 @@ class DashboardViewModel @Inject constructor(
                     )
                     else -> snapshotEvidence(null, null, emptyMap())
                 }
+                val displayEvidence = if (usesCachedPosition) {
+                    snapshotEvidence("database_latest", vehicleStatusStore.getCachedObservedAt(effectiveCarId), emptyMap())
+                } else evidence
 
                 val primaryError = when {
                     carsResult is ApiResult.Error -> carsResult
@@ -176,13 +182,11 @@ class DashboardViewModel @Inject constructor(
                     error = if (status != null) null else primaryError?.message,
                     errorCode = if (status != null) null else primaryError?.code,
                     errorKind = if (status != null) null else primaryError?.kind,
-                    snapshotSource = (adapterResult as? ApiResult.Success)?.data?.source
-                        ?: if (statusResult is ApiResult.Success) "teslamate_api" else "cached",
-                    observedAt = (adapterResult as? ApiResult.Success)?.data?.observedAt
-                        ?: vehicleStatusStore.getCachedObservedAt(effectiveCarId),
-                    fieldSources = (adapterResult as? ApiResult.Success)?.data?.fieldSources.orEmpty(),
-                    snapshotFreshness = if (liveStatus != null) evidence.freshness else SnapshotFreshness.RECENT,
-                    snapshotMixedSources = evidence.isMixed,
+                    snapshotSource = displayEvidence.source ?: "cached",
+                    observedAt = displayEvidence.observedAt,
+                    fieldSources = displayEvidence.fieldSources,
+                    snapshotFreshness = if (status != null) displayEvidence.freshness else SnapshotFreshness.RECENT,
+                    snapshotMixedSources = displayEvidence.isMixed,
                     units = units,
                     cachedAddress = resolvedAddress,
                     customPhotoFile = vehiclePhotoStore.getCustomPhotoFile(effectiveCarId),
@@ -247,28 +251,38 @@ class DashboardViewModel @Inject constructor(
                             val evidence = snapshotEvidence(result.data.source, result.data.observedAt, result.data.fieldSources)
                             if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
                             var currentStatus = result.data.status
-                            val resolvedStatus = mergeUsablePosition(currentStatus, vehicleStatusStore.getCachedStatus(carId)) ?: currentStatus
+                            val cachedStatus = vehicleStatusStore.getCachedStatus(carId)
+                            val resolvedStatus = mergeCarStatusPosition(currentStatus, cachedStatus) ?: currentStatus
+                            val usesCachedPosition = usableVehicleCoordinates(currentStatus.latitude, currentStatus.longitude) == null &&
+                                usableVehicleCoordinates(cachedStatus?.latitude, cachedStatus?.longitude) != null
+                            val displayEvidence = if (usesCachedPosition) {
+                                snapshotEvidence("database_latest", vehicleStatusStore.getCachedObservedAt(carId), emptyMap())
+                            } else evidence
                             _uiState.value = _uiState.value.copy(
                                 status = resolvedStatus,
                                 error = null,
                                 errorCode = null,
                                 errorKind = null,
-                                snapshotSource = result.data.source,
-                                observedAt = result.data.observedAt,
-                                fieldSources = result.data.fieldSources,
-                                snapshotFreshness = evidence.freshness,
-                                snapshotMixedSources = evidence.isMixed,
+                                snapshotSource = displayEvidence.source,
+                                observedAt = displayEvidence.observedAt,
+                                fieldSources = displayEvidence.fieldSources,
+                                snapshotFreshness = displayEvidence.freshness,
+                                snapshotMixedSources = displayEvidence.isMixed,
                                 units = result.data.units,
                                 cachedAddress = loadCachedAddress(resolvedStatus, carId)
                             )
-                            vehicleStatusStore.saveStatus(carId, resolvedStatus, result.data.observedAt)
+                            if (usableVehicleCoordinates(currentStatus.latitude, currentStatus.longitude) != null) {
+                                vehicleStatusStore.saveStatus(carId, resolvedStatus, result.data.observedAt)
+                            }
                         }
                         is ApiResult.Error -> {
                             when (val legacy = repository.getCarStatus(carId)) {
                                 is ApiResult.Success -> {
                                     if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
-                                    val resolvedStatus = mergeUsablePosition(legacy.data.status, vehicleStatusStore.getCachedStatus(carId)) ?: legacy.data.status
-                                    vehicleStatusStore.saveStatus(carId, resolvedStatus, null)
+                                    val resolvedStatus = mergeCarStatusPosition(legacy.data.status, vehicleStatusStore.getCachedStatus(carId)) ?: legacy.data.status
+                                    if (usableVehicleCoordinates(legacy.data.status.latitude, legacy.data.status.longitude) != null) {
+                                        vehicleStatusStore.saveStatus(carId, resolvedStatus, null)
+                                    }
                                     _uiState.value = _uiState.value.copy(
                                         status = resolvedStatus,
                                         error = null,
@@ -380,21 +394,6 @@ class DashboardViewModel @Inject constructor(
                     .takeIf { it.isNotEmpty() }
             }
         }
-        val latestTrip = driveSummaryDao.getLatestWithEndAddress(carId)
-        return latestTrip?.endAddress?.trim()?.takeIf {
-            it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" && it != "杭州市西湖区西溪路"
-        }
-    }
-
-    private fun mergeUsablePosition(live: CarStatus?, cached: CarStatus?): CarStatus? {
-        if (live == null) return cached
-        val position = VehiclePositionResolver.resolve(
-            live.latitude, live.longitude, cached?.latitude, cached?.longitude
-        ) ?: return live
-        if (position.latitude == live.latitude && position.longitude == live.longitude) return live
-        return live.copy(carGeodata = (live.carGeodata ?: com.matelink.data.api.models.CarGeodata()).copy(
-            latitude = position.latitude,
-            longitude = position.longitude
-        ))
+        return null
     }
 }

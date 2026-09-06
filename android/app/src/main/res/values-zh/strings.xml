@@ -1063,19 +1063,13 @@
     <string name="settings_primary_server">主服务器</string>
     <string name="settings_report_issue">报告问题</string>
     <string name="settings_release_notes_title">本次更新</string>
-    <string name="settings_release_notes_version">MateLink 2.1.0</string>
+    <string name="settings_release_notes_version">MateLink 2.1.6</string>
     <string name="settings_release_notes_view">查看本次更新</string>
     <string name="settings_release_notes_close">知道了</string>
-    <string name="settings_release_notes_body">• 行程详情页精简重构：聚焦展示行程、速度、功率、电量核心指标，提升信息获取效率。
-• 全新推出独立「行程曲线分析」二级画面，支持速度曲线、行程距离曲线、功率输出/回收曲线、电量变化曲线及海拔曲线全维度呈现。
-• 行程面板新增一键直达曲线分析入口与图表联动游标交互。
-• 全新推出车内/车外温度变化趋势双曲线，支持近7日/30日对比与暴晒温升环境洞察。
-• 仪表盘“位置”卡片高度对齐与单行精简，视觉更加和谐对称。
-• 胎压趋势图升级右上角清晰轮位图例，横轴平滑显示采样日期。
-• 修复充电记录详情页 404 问题并提供完整充电曲线分析。
-• 统一能耗分析与费用分析为全新 Material 3 风格圆角轻质卡片。
-• 待机历史接口暂不可用时保持稳定，保守使用本机历史。
-• 彻底清除开发调试阶段残留的测试充电数据，保障数据真实性。</string>
+    <string name="settings_release_notes_body">• 本地历史上传现在保留全部有效归档，不再只上传最近两天。
+• 导入记录会作为未验证摘要显示，不再污染统计、费用或曲线。
+• 最新车辆快照为空时，不会覆盖已缓存的有效 GPS 位置。
+• 行程能耗摘要会被保留；路线、地点和曲线仍需等待车辆真实 Telemetry。</string>
     <string name="settings_resync_button">重新同步</string>
     <string name="settings_resync_confirm">确认重新同步</string>
     <string name="settings_resync_dialog_text_delete">这将删除所有本地数据。</string>

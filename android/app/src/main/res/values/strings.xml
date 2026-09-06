@@ -1073,19 +1073,13 @@
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
     <string name="settings_release_notes_title">This update</string>
-    <string name="settings_release_notes_version">MateLink 2.1.0</string>
+    <string name="settings_release_notes_version">MateLink 2.1.6</string>
     <string name="settings_release_notes_view">View update notes</string>
     <string name="settings_release_notes_close">Got it</string>
-    <string name="settings_release_notes_body">• Refactored drive details: streamlined parameters focused on trip, speed, power, and battery metrics.
-• Introduced dedicated Drive Curve Analytics screen for detailed multi-dimensional speed, distance, power, SoC, and elevation profiles.
-• Added interactive entry and synced cursor scrub on trip panel to dive into dynamic curves.
-• Added dual-curve inside and outside temperature trend curves with 7-day/30-day views and solar heat gain insights.
-• Aligned dashboard location card height with clean single-line typography.
-• Enhanced TPMS trend chart with clear top-right tire legend and sampling date axis.
-• Fixed 404 error on charge details and restored multi-dimensional charging curves.
-• Unified styling for efficiency and cost analysis cards with Material 3.
-• Standby history remains stable and uses device history conservatively when optional endpoints are unavailable.
-• Completely purged synthetic debug charge data to ensure data authenticity.</string>
+    <string name="settings_release_notes_body">• Local history uploads now preserve the complete valid archive instead of only two data days.
+• Imported records remain visible as unverified summaries and no longer alter analytics, costs, or curves.
+• A fresh empty vehicle snapshot no longer replaces a cached valid GPS position.
+• Drive energy summaries are retained; route, address, and curves remain unavailable until the vehicle sends telemetry.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>
     <string name="settings_resync_dialog_text_delete">This will delete all local data.</string>

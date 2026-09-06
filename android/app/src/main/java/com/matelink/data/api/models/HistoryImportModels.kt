@@ -5,7 +5,7 @@ import com.squareup.moshi.JsonClass
 
 /**
  * Payload for uploading previously-collected local history to the cloud.
- * The cloud persists only the latest two calendar days per account.
+ * The cloud preserves valid local summary records without treating them as telemetry observations.
  */
 @JsonClass(generateAdapter = true)
 data class HistoryImportRequest(

@@ -346,25 +346,25 @@ class SyncRepository @Inject constructor(
         }
         val allDrives = driveSummaryDao.getAllChronological(historyCarId).mapNotNull { it.toImportSession("drive") }
         val allCharges = chargeSummaryDao.getAllForCar(historyCarId).mapNotNull { it.toImportSession("charge") }
-        val bounded = HistoryUploadFilter.boundToLatestTwoDataDays(allDrives, allCharges)
+        val bounded = HistoryUploadFilter.keepValidatedArchive(allDrives, allCharges)
         if (bounded.drives.isEmpty() && bounded.charges.isEmpty()) {
-            Log.d(TAG, "No local history within upload window for car $historyCarId")
+            Log.d(TAG, "No valid local history to upload for car $historyCarId")
             return true
         }
-        val request = com.matelink.data.api.models.HistoryImportRequest(
-            drives = bounded.drives,
-            charges = bounded.charges
-        )
-        return when (val result = teslamateRepository.uploadLocalHistory(remoteApiCarId, request)) {
-            is ApiResult.Success -> {
-                Log.d(TAG, "Uploaded ${result.data.importedDrives} drives, ${result.data.importedCharges} charges for car $historyCarId")
-                true
-            }
-            is ApiResult.Error -> {
-                Log.w(TAG, "History upload failed for car $historyCarId: ${result.message}")
-                false
+        for (batch in HistoryUploadFilter.batchesForUpload(bounded.drives, bounded.charges)) {
+            val request = com.matelink.data.api.models.HistoryImportRequest(
+                drives = batch.drives,
+                charges = batch.charges
+            )
+            when (val result = teslamateRepository.uploadLocalHistory(remoteApiCarId, request)) {
+                is ApiResult.Success -> Log.d(TAG, "Uploaded ${result.data.importedDrives} drives, ${result.data.importedCharges} charges for car $historyCarId")
+                is ApiResult.Error -> {
+                    Log.w(TAG, "History upload failed for car $historyCarId: ${result.message}")
+                    return false
+                }
             }
         }
+        return true
     }
 
 }

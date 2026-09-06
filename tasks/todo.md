@@ -2930,4 +2930,30 @@
 ## 外部执行门禁
 
 - [x] 已用同签名 `adb install -r` 覆盖 OnePlus 7 Pro 的 Release；2.1.5/build24、首次安装时间保留、启动与进程级 FATAL 检查通过。
-- [ ] 服务器部署被 SSH 公钥认证拒绝阻塞：取得 `jourvolt@120.55.64.11` 的可用认证后，备份并以加性 migration 隔离生产记录、按构建 SHA 部署服务端，再完成虚拟钥匙/Telemetry 配置及一趟真实驾驶/充电验证。
+- [x] ECS 已部署 `b15960d`：`/healthz` 与 `/readyz` 均为 200，Telemetry 状态为 `awaiting_first_event`；API image `ecef7ff1…11622`。
+- [x] 生产备份：PostgreSQL custom dump `jourvolt-postgres-pre-69957e0-20260906T123147Z.dump`（48,814 bytes，SHA-256 `bdc097…b4006`，mode 600）；代码备份 `jourvolt-staging-code-pre-69957e0-20260906T123236Z.tar.gz`（361,479 bytes，SHA-256 `80d022…aab62`，mode 600）。
+- [x] 加性质量 migration 已隔离、未删除旧记录：66 drives 与 2 charges 均保留为 `local_import/quarantined`。
+- [ ] 仍待 Jovi 进行虚拟钥匙/Telemetry 配置并完成一趟真实驾驶、充电验证；在首事件前历史与地图保持 collecting/unavailable。
+
+# 2026-09-06 最后一次页面真实性整改与验收
+
+## Phase 1: 只读根因与页面证据
+
+- [ ] 对覆盖更新后的会话恢复做设备级复现：首次安装时间、数据目录身份、当前页面、登录/401/刷新日志。
+- [ ] 对 ECS 逐层核对：用户会话、车辆、Telemetry pairing、MQTT consumer、latest、event buffer、route points、drive/charge session、质量状态。
+- [ ] 建立页面矩阵：Dashboard/位置、Drives、Drive Detail、曲线、Charges、Current Charge、Charge Detail、Battery、Stats、Efficiency、Range、Cost、Reports；每页记录实际 source 与缺失语义。
+- [ ] 将 `local_import` 的真实性问题逐条分类；禁止再按 source 全量隐藏。
+
+## Phase 2: 仅在根因确认后修复
+
+- [ ] 恢复可验证的既有历史展示，同时标记证据覆盖/来源；不能把无路线历史当成伪造记录删除或隐藏。
+- [ ] 修复真实历史地址、路线和曲线的完整数据合同；缺失字段仅影响对应指标，不影响整条真实行程可见。
+- [ ] 修复覆盖升级的会话恢复路径；更新不得触发不必要登录。
+- [ ] 为电池健康区分“真实测量”“历史推导”“当前不支持”，不显示伪造默认值，也不丢失已有真实记录。
+
+## Phase 3: 发布验收（四层证据缺一不可）
+
+- [ ] Source：单元/合同测试证明每个页面的源、质量、null、日期和多车隔离。
+- [ ] Server：真实 API 与 PostgreSQL 聚合证明数据进入和输出一致。
+- [ ] Device：同签名 `adb install -r` 后 session/firstInstallTime 保留；不出现登录回归。
+- [ ] Human：Jovi 验证实际位置、今日多次行程、地址、曲线、昨日充电和电池页；没有真实事件不得标完成。

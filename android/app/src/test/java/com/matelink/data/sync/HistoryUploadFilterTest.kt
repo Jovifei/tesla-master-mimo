@@ -31,7 +31,7 @@ class HistoryUploadFilterTest {
             makeSession("c1", "2026-09-02T22:00:00Z")
         )
 
-        val bounded = HistoryUploadFilter.boundToLatestTwoDataDays(drives, charges)
+        val bounded = HistoryUploadFilter.keepValidatedArchive(drives, charges)
 
         assertEquals(3, bounded.drives.size)
         assertEquals(1, bounded.charges.size)
@@ -40,7 +40,7 @@ class HistoryUploadFilterTest {
     }
 
     @Test
-    fun spansThreeDays_onlyLatestTwoDaysRetained() {
+    fun spansThreeDays_allArchivedDaysRetained() {
         val drives = listOf(
             makeSession("d1", "2026-09-01T10:00:00Z"), // day 1 (oldest)
             makeSession("d2", "2026-09-02T10:00:00Z"), // day 2
@@ -51,15 +51,14 @@ class HistoryUploadFilterTest {
             makeSession("c2", "2026-09-03T12:00:00Z")
         )
 
-        val bounded = HistoryUploadFilter.boundToLatestTwoDataDays(drives, charges)
+        val bounded = HistoryUploadFilter.keepValidatedArchive(drives, charges)
 
-        // Only 2026-09-03 and 2026-09-02 are retained; 2026-09-01 is evicted.
-        assertEquals(listOf("d2", "d3"), bounded.drives.map { it.sessionId })
-        assertEquals(listOf("c2"), bounded.charges.map { it.sessionId })
+        assertEquals(listOf("d1", "d2", "d3"), bounded.drives.map { it.sessionId })
+        assertEquals(listOf("c1", "c2"), bounded.charges.map { it.sessionId })
     }
 
     @Test
-    fun gapsBetweenDates_retainsLatestTwoActualDataDaysNotNowMinus48h() {
+    fun gapsBetweenDates_keepsCompleteArchive() {
         // Data on Aug 1, Aug 15, Sep 1. Gap of weeks between dates.
         val drives = listOf(
             makeSession("d-aug01", "2026-08-01T10:00:00Z"),
@@ -68,14 +67,13 @@ class HistoryUploadFilterTest {
         )
         val charges = emptyList<HistoryImportSession>()
 
-        val bounded = HistoryUploadFilter.boundToLatestTwoDataDays(drives, charges)
+        val bounded = HistoryUploadFilter.keepValidatedArchive(drives, charges)
 
-        // Retains Aug 15 and Sep 1 (the two most recent calendar days with data), not strictly now - 48h.
-        assertEquals(listOf("d-aug15", "d-sep01"), bounded.drives.map { it.sessionId })
+        assertEquals(listOf("d-aug01", "d-aug15", "d-sep01"), bounded.drives.map { it.sessionId })
     }
 
     @Test
-    fun mixedDriveAndCharge_unifiesCalendarDaysAcrossBothTypes() {
+    fun mixedDriveAndCharge_keepsCompleteArchive() {
         // Drive on Day 3, Charge on Day 2, Drive on Day 1.
         val drives = listOf(
             makeSession("d1", "2026-08-10T10:00:00Z"),
@@ -85,10 +83,9 @@ class HistoryUploadFilterTest {
             makeSession("c2", "2026-08-20T10:00:00Z")
         )
 
-        val bounded = HistoryUploadFilter.boundToLatestTwoDataDays(drives, charges)
+        val bounded = HistoryUploadFilter.keepValidatedArchive(drives, charges)
 
-        // Distinct data days: 08-30, 08-20, 08-10. Top 2: 08-30 and 08-20.
-        assertEquals(listOf("d3"), bounded.drives.map { it.sessionId })
+        assertEquals(listOf("d1", "d3"), bounded.drives.map { it.sessionId })
         assertEquals(listOf("c2"), bounded.charges.map { it.sessionId })
     }
 
@@ -132,13 +129,26 @@ class HistoryUploadFilterTest {
     }
 
     @Test
-    fun retentionUsesChinaDataDayAtMidnightBoundary() {
+    fun timezoneBoundaryDoesNotDiscardArchive() {
         val drives = listOf(
             makeSession("old", "2026-09-04T15:00:00Z"),
             makeSession("before-midnight", "2026-09-05T15:59:00Z"),
             makeSession("after-midnight", "2026-09-05T16:30:00Z")
         )
-        val bounded = HistoryUploadFilter.boundToLatestTwoDataDays(drives, emptyList())
-        assertEquals(listOf("before-midnight", "after-midnight"), bounded.drives.map { it.sessionId })
+        val bounded = HistoryUploadFilter.keepValidatedArchive(drives, emptyList())
+        assertEquals(listOf("old", "before-midnight", "after-midnight"), bounded.drives.map { it.sessionId })
+    }
+
+    @Test
+    fun uploadBatchesRespectTheServerSessionLimitsWithoutDroppingArchive() {
+        val drives = (1..401).map { makeSession("d$it", "2026-09-01T10:00:00Z") }
+        val charges = (1..201).map { makeSession("c$it", "2026-09-01T10:00:00Z") }
+
+        val batches = HistoryUploadFilter.batchesForUpload(drives, charges)
+
+        assertEquals(3, batches.size)
+        assertTrue(batches.all { it.drives.size <= 200 && it.charges.size <= 200 && it.drives.size + it.charges.size <= 400 })
+        assertEquals(drives.map { it.sessionId }, batches.flatMap { it.drives }.map { it.sessionId })
+        assertEquals(charges.map { it.sessionId }, batches.flatMap { it.charges }.map { it.sessionId })
     }
 }

@@ -31,10 +31,6 @@ var chinaDataLocation = func() *time.Location {
 	return location
 }()
 
-func telemetryDataDay(value time.Time) string {
-	return value.In(chinaDataLocation).Format("2006-01-02")
-}
-
 func scopedImportedSessionID(userID string, vehicleID int, kind, clientSessionID string) string {
 	h := sha256.New()
 	h.Write([]byte(userID))
@@ -49,8 +45,7 @@ func scopedImportedSessionID(userID string, vehicleID int, kind, clientSessionID
 
 // historyImportRequest is the payload for importing previously-collected local
 // history into the cloud. The app uploads the history it already has on the
-// phone (collected while self-hosted or before switching to a cloud account),
-// and the cloud persists only the latest two calendar days per account.
+// phone (collected while self-hosted or before switching to a cloud account).
 type historyImportRequest struct {
 	Drives  []historyImportSession `json:"drives"`
 	Charges []historyImportSession `json:"charges"`
@@ -181,13 +176,11 @@ func (req historyImportSession) toTelemetrySession(userID string, vehicleID int,
 		ID: id, Kind: kind, StartAt: start, EndAt: &end,
 		OdometerStart: req.OdometerStart, OdometerEnd: req.OdometerEnd, EnergyAdded: req.EnergyAdded,
 		Route:  route,
-		Source: "local_import", QualityState: "quarantined", QualityReason: "legacy_import",
+		Source: "local_import", QualityState: "incomplete", QualityReason: "local_import_unverified",
 	}, nil
 }
 
-// importHistory persists locally-collected history into the cloud store and
-// enforces the per-account rolling retention (keep only the latest two
-// calendar days that actually have data).
+// importHistory persists locally-collected history into the cloud store.
 func (s *telemetryService) importHistory(ctx context.Context, userID string, vehicleID int, request historyImportRequest) (historyImportResult, error) {
 	if s == nil {
 		return historyImportResult{}, errors.New("telemetry_not_configured")
@@ -210,8 +203,7 @@ func (s *telemetryService) importHistory(ctx context.Context, userID string, veh
 	}
 	if s.memory != nil {
 		s.memory.importSessions(userID, vehicleID, drives, charges)
-		retained := s.memory.retainLatestDays(userID)
-		return historyImportResult{ImportedDrives: len(drives), ImportedCharges: len(charges), RetainedDays: retained, QuarantinedCount: len(drives) + len(charges)}, nil
+		return historyImportResult{ImportedDrives: len(drives), ImportedCharges: len(charges)}, nil
 	}
 	return s.importHistoryPostgres(ctx, userID, vehicleID, drives, charges)
 }
@@ -239,14 +231,10 @@ func (s *telemetryService) importHistoryPostgres(ctx context.Context, userID str
 		}
 		importedCharges++
 	}
-	retained, err := retainLatestDaysPostgres(ctx, tx, userID)
-	if err != nil {
-		return historyImportResult{}, err
-	}
 	if err := tx.Commit(ctx); err != nil {
 		return historyImportResult{}, err
 	}
-	return historyImportResult{ImportedDrives: importedDrives, ImportedCharges: importedCharges, RetainedDays: retained, QuarantinedCount: len(drives) + len(charges)}, nil
+	return historyImportResult{ImportedDrives: importedDrives, ImportedCharges: importedCharges}, nil
 }
 
 func upsertImportedSessionPostgres(ctx context.Context, tx pgx.Tx, userID string, vehicleID int, session telemetrySession) error {
@@ -261,7 +249,7 @@ func upsertImportedSessionPostgres(ctx context.Context, tx pgx.Tx, userID string
 	}
 	_, err = tx.Exec(ctx, `
 INSERT INTO jourvolt_telemetry_sessions(id, user_id, vehicle_id, kind, started_at, ended_at, odometer_start, odometer_end, energy_added, route_json, source, quality_state, quality_reason)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, 'local_import', 'quarantined', 'legacy_import')
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13)
 ON CONFLICT (id) DO UPDATE SET
     ended_at = EXCLUDED.ended_at,
     odometer_start = EXCLUDED.odometer_start,
@@ -270,40 +258,9 @@ ON CONFLICT (id) DO UPDATE SET
     route_json = EXCLUDED.route_json,
     source = EXCLUDED.source, quality_state = EXCLUDED.quality_state, quality_reason = EXCLUDED.quality_reason`,
 		session.ID, userID, vehicleID, session.Kind, session.StartAt, endAt,
-		session.OdometerStart, session.OdometerEnd, session.EnergyAdded, route)
+		session.OdometerStart, session.OdometerEnd, session.EnergyAdded, route,
+		session.Source, session.QualityState, session.QualityReason)
 	return err
-}
-
-// retainLatestDaysPostgres deletes sessions whose started_at falls outside the
-// account's two most recent calendar days that contain data. The window is
-// per-account: all vehicles share the same two most recent data days.
-func retainLatestDaysPostgres(ctx context.Context, tx pgx.Tx, userID string) ([]string, error) {
-	rows, err := tx.Query(ctx, `SELECT DISTINCT (started_at AT TIME ZONE 'Asia/Shanghai')::date AS day FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND source='local_import' AND ended_at IS NOT NULL ORDER BY day DESC`, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	days := make([]string, 0)
-	for rows.Next() {
-		var day time.Time
-		if err := rows.Scan(&day); err != nil {
-			return nil, err
-		}
-		days = append(days, day.Format("2006-01-02"))
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if len(days) <= 2 {
-		return days, nil
-	}
-	retained := days[:2]
-	cutoff := retained[len(retained)-1] // oldest retained day
-	_, err = tx.Exec(ctx, `DELETE FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND source='local_import' AND ended_at IS NOT NULL AND (started_at AT TIME ZONE 'Asia/Shanghai')::date < $2::date`, userID, cutoff)
-	if err != nil {
-		return nil, err
-	}
-	return retained, nil
 }
 
 func (a *app) historyImport(w http.ResponseWriter, r *http.Request, userID string, vehicleID int) {

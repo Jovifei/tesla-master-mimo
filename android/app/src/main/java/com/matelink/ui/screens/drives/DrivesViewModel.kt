@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.DriveData
+import com.matelink.domain.history.isAnalysisEligible
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.dao.DriveSummaryDao
@@ -326,7 +327,9 @@ class DrivesViewModel @Inject constructor(
         // First apply short drives filter
         // Tiny repositioning movements are part of the surrounding parking
         // interval, not a user-visible route.
-        val routeDrives = allDrives.filter { drive ->
+        val visibleDrives = allDrives.filter { it.qualityState != "quarantined" }
+        val routeDrives = visibleDrives.filter { drive ->
+            !isAnalysisEligible(drive.qualityState, drive.qualityReason) ||
             (drive.durationMin ?: 0) >= MIN_DURATION_MINUTES &&
                 (drive.distance ?: 0.0) >= MIN_ROUTE_DISTANCE_KM
         }
@@ -344,7 +347,7 @@ class DrivesViewModel @Inject constructor(
             val distance = drive.distance ?: 0.0
             val minOk = distanceFilter.minDistanceKm?.let { distance >= it } ?: true
             val maxOk = distanceFilter.maxDistanceKm?.let { distance < it } ?: true
-            minOk && maxOk
+            isAnalysisEligible(drive.qualityState, drive.qualityReason) && minOk && maxOk
         }
 
         // Calculate summary and chart data from filtered drives
