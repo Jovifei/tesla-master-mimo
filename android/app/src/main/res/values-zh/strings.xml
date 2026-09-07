@@ -1063,7 +1063,7 @@
     <string name="settings_primary_server">主服务器</string>
     <string name="settings_report_issue">报告问题</string>
     <string name="settings_release_notes_title">本次更新</string>
-    <string name="settings_release_notes_version">MateLink 2.1.6</string>
+    <string name="settings_release_notes_version">MateLink 2.1.7</string>
     <string name="settings_release_notes_view">查看本次更新</string>
     <string name="settings_release_notes_close">知道了</string>
     <string name="settings_release_notes_body">• 本地历史上传现在保留全部有效归档，不再只上传最近两天。

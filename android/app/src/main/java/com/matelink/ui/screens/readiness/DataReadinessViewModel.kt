@@ -44,10 +44,12 @@ data class DataReadinessUiState(
 internal fun shouldAutoConfigureTelemetry(
     pairing: TelemetryPairingStatus?,
     errorCode: String?
-): Boolean = pairing != null &&
-    errorCode == null &&
-    pairing.configSynced != true &&
-    pairing.status.equals("pairing_required", ignoreCase = true)
+): Boolean {
+    if (pairing == null || errorCode != null || pairing.configSynced == true) return false
+    if (pairing.status.equals("pairing_required", ignoreCase = true)) return true
+    return pairing.status.equals("telemetry_error", ignoreCase = true) &&
+        pairing.errorClass.equals("ca_unavailable", ignoreCase = true)
+}
 
 @HiltViewModel
 class DataReadinessViewModel @Inject constructor(

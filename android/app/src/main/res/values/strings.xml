@@ -1073,7 +1073,7 @@
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
     <string name="settings_release_notes_title">This update</string>
-    <string name="settings_release_notes_version">MateLink 2.1.6</string>
+    <string name="settings_release_notes_version">MateLink 2.1.7</string>
     <string name="settings_release_notes_view">View update notes</string>
     <string name="settings_release_notes_close">Got it</string>
     <string name="settings_release_notes_body">• Local history uploads now preserve the complete valid archive instead of only two data days.
