@@ -28,6 +28,16 @@ Telemetry configuration is currently an explicit Data Status action. The backend
 
 The configuration action must complete successfully before the vehicle can begin sending Telemetry. The server then needs one genuine vehicle event before location, route, completed charging history, and curves become available.
 
+## Why app registration is not enough
+
+Tesla separates application onboarding, user scopes, and vehicle trust:
+
+- Application registration supplies the partner application's credentials and approved use case; it does not grant every owner's vehicle access.
+- The user authorization must include `vehicle_device_data`, `vehicle_location`, and `offline_access` for the current live data, location, and refresh-token paths. A prior consent issued without `vehicle_location` can continue to work for battery/status fields while returning 403 for location.
+- Fleet Telemetry also uses a virtual key. For vehicles outside Tesla's B2B automatic-key program, Tesla requires a user with vehicle access to add the application's key in the Tesla app. This is an intentional security boundary, not an MQTT setting.
+
+References: [Tesla authentication scopes](https://developer.tesla.com/docs/fleet-api/authentication/overview), [Tesla Fleet Telemetry](https://developer.tesla.com/docs/fleet-api/fleet-telemetry), and [Tesla virtual keys](https://developer.tesla.com/docs/fleet-api/virtual-keys/developer-guide).
+
 ## Decision required for automatic configuration
 
 Automatic configuration is a product-policy change, not a map-key change. Before implementing it, review and decide:
