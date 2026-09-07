@@ -49,6 +49,15 @@ Date: 2026-09-07
 - Old imported summaries have no route points, coordinates, addresses, or speed/power samples; no curve or address is generated.
 - Battery health remains explicitly unsupported without measured capacity. Cached/live SOC and range cards are not proof of current provider freshness.
 
+### Device data-status page
+
+- `行程历史`: available, source shown as Fleet API.
+- `充电历史`: available, source shown as Fleet API.
+- `实时状态`, `位置`, `胎压`: temporarily unavailable, source shown as Fleet API.
+- `电池健康`: unsupported, with the page explaining that the current source does not provide it.
+- `Fleet Telemetry 数据采集`: temporarily unavailable.
+- No login screen or MateLink FATAL appeared during this page check.
+
 ## Telemetry UX
 
 - Auto-configure policy unit tests passed: `pairing_required` and recovered `ca_unavailable` trigger configure; permission/transport errors do not loop.
