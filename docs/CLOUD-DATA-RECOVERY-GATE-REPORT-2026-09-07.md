@@ -67,4 +67,3 @@ Date: 2026-09-07
 - No `.env` was printed or changed.
 - No VIN, token, precise coordinate, or address was included.
 - No historical, GPS, capacity, drive-curve, or charge-curve data was fabricated.
-
