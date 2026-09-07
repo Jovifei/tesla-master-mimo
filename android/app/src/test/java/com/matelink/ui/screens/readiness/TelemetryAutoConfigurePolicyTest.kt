@@ -9,7 +9,20 @@ class TelemetryAutoConfigurePolicyTest {
     @Test fun pairingRequiredAutoAttemptsConfiguration() {
         assertTrue(
             shouldAutoConfigureTelemetry(
-                TelemetryPairingStatus(status = "pairing_required", configSynced = false),
+                TelemetryPairingStatus(status = "pairing_required", configSynced = false, updatedAt = null),
+                null
+            )
+        )
+    }
+
+    @Test fun persistedPairingRequiredDoesNotHammerConfiguration() {
+        assertFalse(
+            shouldAutoConfigureTelemetry(
+                TelemetryPairingStatus(
+                    status = "pairing_required",
+                    configSynced = false,
+                    updatedAt = "2026-09-07T00:00:00Z"
+                ),
                 null
             )
         )
@@ -18,7 +31,11 @@ class TelemetryAutoConfigurePolicyTest {
     @Test fun errorsAndSyncedStateDoNotAutoConfigure() {
         assertFalse(
             shouldAutoConfigureTelemetry(
-                TelemetryPairingStatus(status = "pairing_required", configSynced = false),
+                TelemetryPairingStatus(
+                    status = "pairing_required",
+                    configSynced = false,
+                    updatedAt = "2026-09-07T00:00:00Z"
+                ),
                 "permission_required"
             )
         )

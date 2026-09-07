@@ -46,7 +46,9 @@ internal fun shouldAutoConfigureTelemetry(
     errorCode: String?
 ): Boolean {
     if (pairing == null || errorCode != null || pairing.configSynced == true) return false
-    if (pairing.status.equals("pairing_required", ignoreCase = true)) return true
+    if (pairing.status.equals("pairing_required", ignoreCase = true)) {
+        return pairing.updatedAt.isNullOrBlank()
+    }
     return pairing.status.equals("telemetry_error", ignoreCase = true) &&
         pairing.errorClass.equals("ca_unavailable", ignoreCase = true)
 }
@@ -73,6 +75,7 @@ class DataReadinessViewModel @Inject constructor(
     private var pollGeneration = 0L
     private var pageIsActive = true
     private var screenWasPaused = false
+    private var retryTelemetryAfterExternalPairing = false
 
     fun setCarId(carId: Int) {
         if (loadedCarId == carId) return
@@ -106,6 +109,11 @@ class DataReadinessViewModel @Inject constructor(
 
     fun reportPairingLinkUnavailable() {
         _uiState.value = _uiState.value.copy(pairingLinkUnavailable = true)
+    }
+
+    fun reportExternalPairingFlowLaunched() {
+        retryTelemetryAfterExternalPairing = true
+        _uiState.value = _uiState.value.copy(pairingLinkUnavailable = false)
     }
 
     fun configureTelemetry() {
@@ -212,9 +220,11 @@ class DataReadinessViewModel @Inject constructor(
                     )
                 }
                 val currentPairing = _uiState.value.pairing
+                val retryAfterExternalPairing = retryTelemetryAfterExternalPairing
+                if (retryAfterExternalPairing) retryTelemetryAfterExternalPairing = false
                 if (
                     isCurrentLoad(generation, carId) &&
-                    shouldAutoConfigureTelemetry(currentPairing, _uiState.value.telemetryErrorCode) &&
+                    (retryAfterExternalPairing || shouldAutoConfigureTelemetry(currentPairing, _uiState.value.telemetryErrorCode)) &&
                     !_uiState.value.isConfiguringTelemetry &&
                     !_uiState.value.isTelemetryActivationPending
                 ) {

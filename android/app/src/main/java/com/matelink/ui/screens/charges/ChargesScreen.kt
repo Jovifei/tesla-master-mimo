@@ -699,7 +699,8 @@ private fun ChargeItem(
         energyKwh = energy.energyKwh
     )
     val isFree = effectiveCost.source == ChargeCostSource.FREE
-    val isEstimated = effectiveCost.source == ChargeCostSource.ESTIMATE
+    // No tariff estimate is fabricated when Tesla/provider cost is absent.
+    val isEstimated = false
     val costText = when {
         isFree -> freeLabel
         effectiveCost.cost != null -> "$currencySymbol%.2f".format(effectiveCost.cost)

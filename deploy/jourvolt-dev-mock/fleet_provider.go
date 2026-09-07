@@ -190,6 +190,9 @@ func (p *fleetProvider) Vehicles(ctx context.Context, userID string) ([]vehicle,
 			}); err != nil {
 				return nil, err
 			}
+			// MQTT/broker/certificate setup is an operator concern, never an end-user
+			// workflow. Start the first safe Fleet Telemetry configure attempt here.
+			p.telemetry.maybeAutoConfigure(userID, stored.ID)
 		}
 		vehicles = append(vehicles, fleetVehicleFromProvider(
 			stored, providerID, displayName, teslaVehicle.State,
@@ -212,6 +215,27 @@ func fleetVehicleDataPath(vin string) string {
 	return "/api/1/vehicles/" + url.PathEscape(vin) + "/vehicle_data?" + query.Encode()
 }
 
+func fleetVehicleCoreDataPath(vin string) string {
+	return "/api/1/vehicles/" + url.PathEscape(vin) + "/vehicle_data"
+}
+
+func (p *fleetProvider) vehicleData(ctx context.Context, userID, vin string) (teslaVehicleDataEnvelope, bool, error) {
+	var payload teslaVehicleDataEnvelope
+	if err := p.get(ctx, userID, fleetVehicleDataPath(vin), &payload); err == nil {
+		return payload, false, nil
+	} else if !errors.Is(err, errTeslaReauthorization) {
+		return teslaVehicleDataEnvelope{}, false, err
+	}
+
+	// vehicle_location is an independent Tesla permission. A missing location
+	// grant must not turn valid vehicle_device_data into a total dashboard outage.
+	var core teslaVehicleDataEnvelope
+	if err := p.get(ctx, userID, fleetVehicleCoreDataPath(vin), &core); err != nil {
+		return teslaVehicleDataEnvelope{}, false, err
+	}
+	return core, true, nil
+}
+
 func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int) (vehicleStatus, error) {
 	stored, err := p.store.fleetVehicle(ctx, userID, vehicleID)
 	if err != nil {
@@ -224,9 +248,8 @@ func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int
 	if err != nil {
 		return vehicleStatus{}, err
 	}
-	var payload teslaVehicleDataEnvelope
-	path := fleetVehicleDataPath(vin)
-	if err := p.get(ctx, userID, path, &payload); err != nil {
+	payload, locationPermissionRequired, err := p.vehicleData(ctx, userID, vin)
+	if err != nil {
 		return vehicleStatus{}, err
 	}
 	data := payload.Response
@@ -247,6 +270,7 @@ func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int
 	}
 
 	status := mapTeslaVehicleStatus(data, displayName, state)
+	status.LocationPermissionRequired = locationPermissionRequired
 	providerIdentity, err := p.storedProviderIdentity(ctx, userID, vehicleID)
 	if err != nil {
 		return vehicleStatus{}, err

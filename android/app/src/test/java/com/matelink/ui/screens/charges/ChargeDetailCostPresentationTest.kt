@@ -23,11 +23,11 @@ class ChargeDetailCostPresentationTest {
     }
 
     @Test
-    fun missingCostWithValidEnergyIsEstimated() {
+    fun missingCostWithValidEnergyIsUnavailable() {
         val presentation = presentChargeDetailCost(teslaMateCost = null, energyKwh = 8.0)
 
-        assertEquals(ChargeDetailCostState.ESTIMATED, presentation.state)
-        assertEquals(8.8, presentation.cost ?: error("cost missing"), 0.0001)
+        assertEquals(ChargeDetailCostState.UNAVAILABLE, presentation.state)
+        assertNull(presentation.cost)
     }
 
     @Test
@@ -39,29 +39,29 @@ class ChargeDetailCostPresentationTest {
     }
 
     @Test
-    fun zeroCostWithoutExplicitFreeIsEstimated() {
+    fun zeroCostWithoutExplicitFreeIsUnavailable() {
         val presentation = presentChargeDetailCost(teslaMateCost = 0.0, energyKwh = 8.0)
 
-        assertEquals(ChargeDetailCostState.ESTIMATED, presentation.state)
-        assertEquals(8.8, presentation.cost ?: error("cost missing"), 0.0001)
+        assertEquals(ChargeDetailCostState.UNAVAILABLE, presentation.state)
+        assertNull(presentation.cost)
     }
 
     @Test
-    fun invalidCostsUseExistingEstimateRule() {
+    fun invalidCostsRemainUnavailable() {
         listOf(-1.0, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY).forEach { cost ->
             val presentation = presentChargeDetailCost(teslaMateCost = cost, energyKwh = 8.0)
 
-            assertEquals(ChargeDetailCostState.ESTIMATED, presentation.state)
-            assertEquals(8.8, presentation.cost ?: error("cost missing"), 0.0001)
+            assertEquals(ChargeDetailCostState.UNAVAILABLE, presentation.state)
+            assertNull(presentation.cost)
         }
     }
 
     @Test
-    fun trueZeroEnergyCanProduceAnEstimatedZero() {
+    fun trueZeroEnergyDoesNotInventAZeroCost() {
         val presentation = presentChargeDetailCost(teslaMateCost = null, energyKwh = 0.0)
 
-        assertEquals(ChargeDetailCostState.ESTIMATED, presentation.state)
-        assertEquals(0.0, presentation.cost ?: error("cost missing"), 0.0001)
+        assertEquals(ChargeDetailCostState.UNAVAILABLE, presentation.state)
+        assertNull(presentation.cost)
     }
 
     @Test

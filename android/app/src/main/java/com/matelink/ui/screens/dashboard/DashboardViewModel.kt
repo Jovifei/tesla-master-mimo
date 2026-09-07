@@ -33,6 +33,16 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+internal fun withCachedPositionEvidence(evidence: com.matelink.domain.telemetry.SnapshotEvidence): com.matelink.domain.telemetry.SnapshotEvidence =
+    snapshotEvidence(
+        evidence.source,
+        evidence.observedAt,
+        evidence.fieldSources + mapOf(
+            "latitude" to "database_latest",
+            "longitude" to "database_latest"
+        )
+    )
+
 data class DashboardUiState(
     val isLoading: Boolean = true,
     val car: CarData? = null,
@@ -163,7 +173,7 @@ class DashboardViewModel @Inject constructor(
                     else -> snapshotEvidence(null, null, emptyMap())
                 }
                 val displayEvidence = if (usesCachedPosition) {
-                    snapshotEvidence("database_latest", vehicleStatusStore.getCachedObservedAt(effectiveCarId), emptyMap())
+                    withCachedPositionEvidence(evidence)
                 } else evidence
 
                 val primaryError = when {
@@ -256,7 +266,7 @@ class DashboardViewModel @Inject constructor(
                             val usesCachedPosition = usableVehicleCoordinates(currentStatus.latitude, currentStatus.longitude) == null &&
                                 usableVehicleCoordinates(cachedStatus?.latitude, cachedStatus?.longitude) != null
                             val displayEvidence = if (usesCachedPosition) {
-                                snapshotEvidence("database_latest", vehicleStatusStore.getCachedObservedAt(carId), emptyMap())
+                                withCachedPositionEvidence(evidence)
                             } else evidence
                             _uiState.value = _uiState.value.copy(
                                 status = resolvedStatus,

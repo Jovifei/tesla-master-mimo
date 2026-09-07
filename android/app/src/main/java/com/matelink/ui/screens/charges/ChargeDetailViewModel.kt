@@ -99,11 +99,7 @@ internal fun presentChargeDetailCost(
         ChargeCostSource.MANUAL -> ChargeDetailCostState.MANUAL
         ChargeCostSource.FREE -> ChargeDetailCostState.FREE
         ChargeCostSource.TESLAMATE -> ChargeDetailCostState.ACTUAL
-        ChargeCostSource.ESTIMATE -> if (effectiveCost.cost != null) {
-            ChargeDetailCostState.ESTIMATED
-        } else {
-            ChargeDetailCostState.UNAVAILABLE
-        }
+        ChargeCostSource.UNAVAILABLE -> ChargeDetailCostState.UNAVAILABLE
     }
 
     return ChargeDetailCostPresentation(

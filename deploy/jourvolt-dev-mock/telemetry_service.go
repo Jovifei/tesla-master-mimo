@@ -45,6 +45,7 @@ type telemetryService struct {
 	pairingConfigTruthWriter func(context.Context, string, int, string, bool) error
 	mqttInvalid              atomic.Uint64
 	receiveSequence          atomic.Uint64
+	autoConfigure            sync.Map
 	finalizerMu              sync.Mutex
 	finalizerCancel          context.CancelFunc
 	finalizerDone            chan struct{}
@@ -75,6 +76,43 @@ INSERT INTO jourvolt_telemetry_vehicle_keys(user_id, vehicle_id, vin_hash)
 VALUES ($1, $2, $3)
 ON CONFLICT (user_id, vehicle_id) DO UPDATE SET vin_hash=EXCLUDED.vin_hash`, ref.UserID, ref.VehicleID, ref.VINHash)
 	return err
+}
+
+type telemetryAutoConfigureKey struct {
+	userID    string
+	vehicleID int
+}
+
+func shouldAutoConfigurePairing(pairing telemetryPairingResponse) bool {
+	if pairing.ConfigSynced != nil && *pairing.ConfigSynced {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(pairing.Status), "pairing_required") &&
+		strings.TrimSpace(pairing.UpdatedAt) == ""
+}
+
+func (s *telemetryService) maybeAutoConfigure(userID string, vehicleID int) {
+	if s == nil || s.config == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	pairing, err := s.pairing(ctx, userID, vehicleID)
+	cancel()
+	if err != nil || !shouldAutoConfigurePairing(pairing) {
+		return
+	}
+	key := telemetryAutoConfigureKey{userID: userID, vehicleID: vehicleID}
+	if _, loaded := s.autoConfigure.LoadOrStore(key, struct{}{}); loaded {
+		return
+	}
+	go func() {
+		defer s.autoConfigure.Delete(key)
+		configureCtx, configureCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer configureCancel()
+		// configure() persists typed pairing/error state. No provider response body,
+		// VIN, token or precise location is logged here.
+		_ = s.configure(configureCtx, userID, vehicleID)
+	}()
 }
 
 func (s *telemetryService) ingest(ctx context.Context, record telemetryRecord) (int, error) {

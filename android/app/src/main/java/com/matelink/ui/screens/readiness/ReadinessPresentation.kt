@@ -9,6 +9,7 @@ enum class ReadinessItemStatus {
     AVAILABLE,
     COLLECTING,
     WAITING_VEHICLE,
+    PERMISSION_REQUIRED,
     UNSUPPORTED,
     UNKNOWN
 }
@@ -17,6 +18,7 @@ fun readinessItemStatus(status: String): ReadinessItemStatus = when (status.trim
     "available" -> ReadinessItemStatus.AVAILABLE
     "collecting" -> ReadinessItemStatus.COLLECTING
     "waiting_vehicle" -> ReadinessItemStatus.WAITING_VEHICLE
+    "permission_required" -> ReadinessItemStatus.PERMISSION_REQUIRED
     "unsupported" -> ReadinessItemStatus.UNSUPPORTED
     else -> ReadinessItemStatus.UNKNOWN
 }
@@ -28,6 +30,7 @@ fun readinessSourceLabelRes(source: String): Int = when (source.trim().lowercase
     "mock_fixture" -> R.string.data_readiness_source_mock
     "legacy_compatibility" -> R.string.data_readiness_source_legacy
     "local_history" -> R.string.data_readiness_source_local_history
+    "telemetry_mqtt" -> R.string.telemetry_setup_title
     else -> R.string.data_readiness_source_unavailable
 }
 
@@ -38,6 +41,7 @@ fun readinessDashboardValue(item: DataReadinessItem?): String {
         ReadinessItemStatus.AVAILABLE -> stringResource(R.string.data_readiness_status_available)
         ReadinessItemStatus.COLLECTING -> stringResource(R.string.data_readiness_status_collecting)
         ReadinessItemStatus.WAITING_VEHICLE -> stringResource(R.string.data_readiness_status_waiting_vehicle)
+        ReadinessItemStatus.PERMISSION_REQUIRED -> stringResource(R.string.telemetry_setup_permission_required)
         ReadinessItemStatus.UNSUPPORTED -> stringResource(R.string.data_readiness_status_unsupported)
         ReadinessItemStatus.UNKNOWN -> stringResource(R.string.data_readiness_status_unavailable)
     }

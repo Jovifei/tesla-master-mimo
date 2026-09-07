@@ -176,8 +176,14 @@ func (o *teslaOAuth) start(ctx context.Context, consent oauthConsent) (authStart
 		state,
 		oauth2.AccessTypeOffline,
 		oauth2.SetAuthURLParam("nonce", nonce),
-		oauth2.SetAuthURLParam("prompt", "login"),
+		// Tesla owns the credential and consent UI. Existing SSO sessions may be
+		// reused; only missing scopes should force another consent step.
+		oauth2.SetAuthURLParam("prompt_missing_scopes", "true"),
 		oauth2.SetAuthURLParam("require_requested_scopes", "true"),
+		// Vehicles that require a virtual key can complete that official Tesla
+		// confirmation as part of onboarding instead of making users discover a
+		// separate infrastructure/setup screen later.
+		oauth2.SetAuthURLParam("show_keypair_step", "true"),
 	)
 	return authStart{
 		AuthorizationURL: authorizationURL,
