@@ -10,11 +10,11 @@ Date: 2026-09-07
 
 ## Confirmed not complete
 
-Production checks after the 2.1.6 deployment show:
+Production checks after the 2.1.7 deployment show:
 
 | Evidence | Value |
 | --- | --- |
-| Telemetry pairing rows | 0 |
+| Telemetry pairing rows | 1 (`telemetry_error/ca_unavailable`) |
 | Latest Telemetry rows | 0 |
 | Telemetry event-buffer rows | 0 |
 | Route-point rows | 0 |
