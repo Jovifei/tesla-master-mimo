@@ -8,6 +8,8 @@ Date: 2026-09-07
 - Repair: `847f02b362ab5c1608592af90bf76dbc286f31c5`
 - Follow-up migration: `eed9a0b`
 - Follow-up Android retry/version: `5aa349c`
+- Follow-up telemetry retry evidence: `7343d84`, `499ead2`
+- Device data-status evidence: `69f579c`
 - Branch: `fix/20260907-cloud-data-recovery`
 - Temporary CI/patch scripts were removed from the branch tip.
 
@@ -24,7 +26,7 @@ Date: 2026-09-07
 
 - Device: OnePlus 7 Pro `6e4fa92f`.
 - Package: `com.matelink`, version `2.1.7`, build `26`.
-- APK SHA-256: `7BE9F2128257B3A93ECF141DFBC09FE80E1F2E5142C440B7FCFBA06C6CB9D0C6`.
+- APK SHA-256: `98B53F0A33AF2B1601408C1885558E80BC019C309CD4BF125AF5267E2EC6D9BC` (verified from the installed package on 2026-09-07).
 - Signature matched the installed package; `adb install -r` returned `Success`.
 - `firstInstallTime` remained `2026-08-31 22:36:47`; no uninstall or data clear was performed.
 - Cold start remained in the existing account/vehicle UI with no MateLink FATAL. This proves package-data preservation, not a valid Tesla provider session.
