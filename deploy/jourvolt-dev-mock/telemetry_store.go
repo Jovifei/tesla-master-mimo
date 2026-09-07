@@ -108,6 +108,11 @@ SET quality_state='incomplete', quality_reason='local_import_summary_only'
 WHERE source='local_import' AND quality_state='quarantined'
   AND ended_at IS NOT NULL AND ended_at >= started_at;
 UPDATE jourvolt_telemetry_sessions
+SET quality_state='incomplete', quality_reason='local_import_summary_only'
+WHERE source='local_import' AND quality_state='incomplete'
+  AND quality_reason = 'local_import_unverified'
+  AND ended_at IS NOT NULL AND ended_at >= started_at;
+UPDATE jourvolt_telemetry_sessions
 SET quality_state='observed', quality_reason='legacy_telemetry_session'
 WHERE source='telemetry_mqtt' AND quality_state='incomplete'
   AND (odometer_start IS NOT NULL OR odometer_end IS NOT NULL OR COALESCE(jsonb_array_length(route_json), 0)>0 OR energy_added IS NOT NULL);
