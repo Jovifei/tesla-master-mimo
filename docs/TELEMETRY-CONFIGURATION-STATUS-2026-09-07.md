@@ -14,11 +14,13 @@ Production checks after the 2.1.7 deployment show:
 
 | Evidence | Value |
 | --- | --- |
-| Telemetry pairing rows | 1 (`telemetry_error/ca_unavailable`) |
+| Telemetry pairing rows | 1 (`telemetry_error/telemetry_error`) |
 | Latest Telemetry rows | 0 |
 | Telemetry event-buffer rows | 0 |
 | Route-point rows | 0 |
 | Readiness | `awaiting_first_event` |
+
+The public CA certificate permission was corrected from mode `600` to `644` so the non-root API process can read it. Automatic configuration then retried; the current failure is in Tesla/vehicle authorization rather than CA file access.
 
 Therefore the vehicle has not successfully started Fleet Telemetry delivery. AMap cannot display a vehicle position without a source coordinate. Existing local imports have no route points, addresses, or speed/power samples and cannot truthfully reconstruct them.
 

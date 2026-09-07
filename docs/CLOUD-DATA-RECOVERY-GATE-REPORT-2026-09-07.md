@@ -35,10 +35,11 @@ Date: 2026-09-07
 - ECS `/readyz`: HTTP 200, telemetry `awaiting_first_event`.
 - Before migration: 68 `local_import` sessions with prior local-import quality labels.
 - After migration: 68 records retained as `incomplete/local_import_summary_only`; no deletion.
-- Telemetry pairing/latest/event-buffer/route-point rows: `1 / 0 / 0 / 0`; current pairing status is `telemetry_error` with `ca_unavailable`.
+- Telemetry pairing/latest/event-buffer/route-point rows: `1 / 0 / 0 / 0`; current pairing status is `telemetry_error` with `telemetry_error`.
 - Database backup: `/home/jourvolt/backups/jourvolt-postgres-pre-eed9a0b-20260907T082900Z.dump`, SHA-256 `3b7be9bb1bfe7f11eeb7951c9ceba8ed8010fbd469758ea752c65ace45e730ee`.
 - Code backup: `/home/jourvolt/backups/jourvolt-pilot-code-pre-eed9a0b-20260907T082900Z.tar.gz`, SHA-256 `32a775a9eb9b7b10ecf4e515ce9aff402efcd32f81ee825732ae90e770e297e8`.
-- Build SHA endpoint is `unknown` because the existing Docker build injects `unknown`; deployment identity is tracked by the Git branch/commit above.
+- Runtime build SHA: `eed9a0b` (injected at deployment); source deployment is tracked by the Git branch/commit above.
+- The mounted public Telemetry CA certificate was initially mode `600`, which blocked the non-root API user; mode is now `644` and the API user can read it. No private key was changed.
 
 ## Provider and pages
 
@@ -51,7 +52,7 @@ Date: 2026-09-07
 ## Telemetry UX
 
 - Auto-configure policy unit tests passed: `pairing_required` and recovered `ca_unavailable` trigger configure; permission/transport errors do not loop.
-- Actual auto-configure: NOT VERIFIED; the existing pairing row records a prior CA failure, and provider authorization is currently 403.
+- Actual auto-configure: triggered after the CA permission fix; it now records `telemetry_error/telemetry_error` because Tesla/vehicle authorization still fails.
 - Virtual-key page: NOT OPENED.
 - `config_synced`: NOT VERIFIED.
 - First MQTT event: NO.
