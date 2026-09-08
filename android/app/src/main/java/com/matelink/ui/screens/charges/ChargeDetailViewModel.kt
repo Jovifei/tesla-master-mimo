@@ -72,7 +72,6 @@ enum class ChargeDetailCostState {
     ACTUAL,
     MANUAL,
     FREE,
-    ESTIMATED,
     UNAVAILABLE
 }
 

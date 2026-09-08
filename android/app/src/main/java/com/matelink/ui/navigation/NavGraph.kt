@@ -35,6 +35,7 @@ import androidx.navigation.toRoute
 import com.matelink.R
 import com.matelink.data.local.ConnectionMode
 import com.matelink.ui.screens.auth.TeslaLoginScreen
+import com.matelink.ui.screens.auth.TeslaLoginOnboardingState
 import com.matelink.ui.screens.auth.TeslaLoginViewModel
 import com.matelink.ui.screens.about.AboutScreen
 import com.matelink.ui.screens.battery.BatteryScreen
@@ -295,6 +296,7 @@ fun NavGraph(
     val teslaLoginViewModel: TeslaLoginViewModel = hiltViewModel()
     val isTeslaSessionAuthenticated by teslaLoginViewModel.isAuthenticated.collectAsState()
     val openDashboardAfterLogin by teslaLoginViewModel.openDashboardAfterLogin.collectAsState()
+    val postLoginOnboarding by teslaLoginViewModel.postLoginOnboarding.collectAsState()
     val revealLoginError by teslaLoginViewModel.revealLoginError.collectAsState()
     val pendingAuthorizationUrl by teslaLoginViewModel.pendingAuthorizationUrl.collectAsState()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -358,8 +360,11 @@ fun NavGraph(
             .launchUrl(context, Uri.parse(url))
     }
 
-    LaunchedEffect(openDashboardAfterLogin) {
-        if (openDashboardAfterLogin) {
+    LaunchedEffect(openDashboardAfterLogin, postLoginOnboarding) {
+        if (openDashboardAfterLogin &&
+            (postLoginOnboarding is TeslaLoginOnboardingState.Pending ||
+                postLoginOnboarding is TeslaLoginOnboardingState.Ready)
+        ) {
             suppressLoginRedirect = false
             navController.navigateToDashboardAfterTeslaAuth()
             teslaLoginViewModel.consumeDashboardAfterLogin()
@@ -433,8 +438,14 @@ fun NavGraph(
                     }
                 },
                 onLoginSuccess = {
-                    suppressLoginRedirect = false
-                    navController.navigateToDashboardAfterTeslaAuth()
+                    if (teslaLoginViewModel.postLoginOnboarding.value is TeslaLoginOnboardingState.Idle) {
+                        suppressLoginRedirect = false
+                        navController.navigateToDashboardAfterTeslaAuth()
+                    }
+                },
+                onReauthorize = {
+                    suppressLoginRedirect = true
+                    teslaLoginViewModel.reauthorize { }
                 },
                 onOpenSelfHosted = {
                     teslaLoginViewModel.openSelfHosted {

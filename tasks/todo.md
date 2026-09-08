@@ -2957,3 +2957,20 @@
 - [ ] Server：真实 API 与 PostgreSQL 聚合证明数据进入和输出一致。
 - [x] Device：同签名 `adb install -r` 后 session/firstInstallTime 保留；不出现登录回归。
 - [ ] Human：Jovi 验证实际位置、今日多次行程、地址、曲线、昨日充电和电池页；没有真实事件不得标完成。
+
+# 2026-09-07 Tesla onboarding source-integrity P0 handoff execution
+
+## Plan
+
+- [x] Reconfirm remote branch, clean isolated worktree, and exact login/pairing call chain.
+- [x] Add RED tests for post-login conditional pairing, one-time external flow, cancellation/session preservation, and return retry.
+- [x] Implement the smallest Android onboarding state/navigation change; keep Tesla credentials and operator MQTT details out of the app.
+- [x] Run Go/Android gates, diff/secret scans, and independent code review.
+- [x] Perform same-signature `adb install -r` only if the candidate passes release gates; verify first-install time and session/settings/Room preservation without reading secrets.
+- [x] Update the final gate report and push only the minimal reviewed files to `fix/20260907-onboarding-source-integrity`.
+
+## Review
+
+- PASS: active branch onboarding now gates Dashboard on post-login vehicle/pairing evaluation, persists the phase, launches only the official Tesla URL when `pairing_required`, and retries configuration once after return.
+- PASS: full Go and Android gates, same-signature device update, settings/session-preservation smoke, and independent review completed.
+- BLOCKED: real Tesla account currently returns provider `403 reauthorization`; no `config_synced=true`, MQTT event, GPS, real drive, or real charge evidence is available.

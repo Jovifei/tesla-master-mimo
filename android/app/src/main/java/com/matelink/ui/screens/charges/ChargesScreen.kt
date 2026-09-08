@@ -699,8 +699,6 @@ private fun ChargeItem(
         energyKwh = energy.energyKwh
     )
     val isFree = effectiveCost.source == ChargeCostSource.FREE
-    // No tariff estimate is fabricated when Tesla/provider cost is absent.
-    val isEstimated = false
     val costText = when {
         isFree -> freeLabel
         effectiveCost.cost != null -> "$currencySymbol%.2f".format(effectiveCost.cost)
@@ -799,21 +797,12 @@ private fun ChargeItem(
                 )
             }
 
-            if (onEditCost != null || isEstimated) {
+            if (onEditCost != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (isEstimated) {
-                        Text(
-                            text = stringResource(R.string.charge_cost_estimated),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        Spacer(Modifier.width(1.dp))
-                    }
                     onEditCost?.let { editCost ->
                         Surface(
                             modifier = Modifier.clickable(onClick = editCost),

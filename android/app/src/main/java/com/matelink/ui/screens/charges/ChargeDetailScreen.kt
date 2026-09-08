@@ -172,7 +172,6 @@ private fun ChargeDetailContent(
     val freeLabel = stringResource(R.string.charge_free)
     val actualLabel = stringResource(R.string.charge_cost_actual)
     val manualLabel = stringResource(R.string.charge_cost_manual)
-    val estimatedLabel = stringResource(R.string.charge_cost_estimated)
     val costText = when {
         costPresentation.state == ChargeDetailCostState.FREE -> freeLabel
         costPresentation.cost != null -> "$currencySymbol%.2f".format(costPresentation.cost)
@@ -182,7 +181,6 @@ private fun ChargeDetailContent(
         ChargeDetailCostState.ACTUAL -> actualLabel
         ChargeDetailCostState.MANUAL -> manualLabel
         ChargeDetailCostState.FREE -> freeLabel
-        ChargeDetailCostState.ESTIMATED -> estimatedLabel
         ChargeDetailCostState.UNAVAILABLE -> unavailableLabel
     }
     val scrollState = rememberScrollState()
