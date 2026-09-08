@@ -1,1 +1,2 @@
 deploy/jourvolt-dev-mock/*.sh text eol=lf
+deploy/jourvolt-dev-mock/fleet-telemetry/*.sh text eol=lf
