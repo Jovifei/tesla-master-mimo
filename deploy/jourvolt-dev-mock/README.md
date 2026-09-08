@@ -92,7 +92,7 @@ Tesla 配置五项必须同时存在；缺一项服务会拒绝启动。所有�
 
 Task D 将官方 `tesla/fleet-telemetry` 作为独立容器运行；JourVolt 不实现 Tesla 的 mTLS、WebSocket 或 Flatbuffers 协议。官方服务监听车辆 mTLS 入口 `4443`，状态端口 `8080` 只在 Compose 网络内暴露，并把 decoded `V`、connectivity、alerts、errors 通过内部 MQTT 发布。生产部署必须将 `TESLA_FLEET_TELEMETRY_IMAGE` 设为不可变镜像引用 `tesla/fleet-telemetry@sha256:<64_lowercase_hex_characters>`，并将同一值传给 Compose 的 `FLEET_TELEMETRY_IMAGE`；任何 mutable tag 都不得用于生产。`tesla/fleet-telemetry:v0.9.4` 可仅作为本地开发的固定 tag 示例，不得复制到生产私有配置。
 
-启用前必须在私有配置中同时填写 `TELEMETRY_MQTT_URL`、topic base、公网 host/port、vehicle-command proxy、cert/key 挂载路径和 32 字节 `TELEMETRY_VIN_HASH_KEY_BASE64`；MQTT 用户名和密码必须成对填写。任一字段不完整，API fail-closed。私钥目录由 Compose 以只读方式挂载到官方 Fleet Telemetry 容器；仓库只保存路径和无密钥配置模板。
+启用前必须在私有配置中同时填写 `TELEMETRY_MQTT_URL`、topic base、公网 host/port、vehicle-command proxy、cert/key 挂载路径和 32 字节 `TELEMETRY_VIN_HASH_KEY_BASE64`；MQTT 用户名和密码必须成对填写。任一字段不完整，API fail-closed。生产 ECS 的 `TELEMETRY_CONFIG_DIR` 必须指向共享主机 tmpfs（默认 `/dev/shm/jourvolt-fleet-telemetry-config`），由 `jourvolt` uid/gid 1000 创建为 `0700`；它同时挂载到 renderer 与 Fleet Telemetry，不能使用 Docker 每容器独立的 tmpfs named volume。私钥目录由 Compose 以只读方式挂载到官方 Fleet Telemetry 容器；仓库只保存路径和无密钥配置模板。
 
 本地拓扑可用 `docker compose --profile telemetry up -d` 检查；`jourvolt-mqtt` 没有宿主机端口，API 也不暴露 MQTT。若要替换默认 topic base，必须同步修改私有部署使用的 Fleet Telemetry `server_config.json` 中的 MQTT `topic_base`，使其与 `TELEMETRY_MQTT_TOPIC_BASE` 完全一致。
 

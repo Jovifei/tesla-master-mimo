@@ -388,3 +388,7 @@
 - Prevention rule: After `/v1/auth/exchange`, retry only unsynced, non-billing-blocked vehicles with per-vehicle in-flight deduplication. Keep ordinary vehicle discovery conservative so a missing virtual key is not hammered on every poll.
 - Pattern: Drive history summaries contain real route endpoints but no addresses; enriching only on the detail screen leaves the list misleadingly at “unknown → unknown”.
 - Prevention rule: The list may reverse-geocode only finite, non-zero observed endpoint coordinates, preserve existing provider addresses, and keep missing coordinates null.
+# 2026-09-08 Docker named-tmpfs volumes are not a shared renderer boundary
+
+- Pattern: A Compose named volume backed by the local `tmpfs` driver can be mounted as separate tmpfs instances per container; a renderer's config file may disappear from the Fleet Telemetry container even though the renderer exited successfully.
+- Prevention rule: Use one explicitly prepared host tmpfs directory (default `/dev/shm/jourvolt-fleet-telemetry-config`) bind-mounted into both containers, owned by the deploy uid/gid with mode `0700`; keep the rendered file at `0600`.
