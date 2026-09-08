@@ -10,6 +10,26 @@
 
 ---
 
+## [2.1.9 / build 28] — 2026-09-08 授权恢复重试与行程列表地址修复
+
+### 已验证
+
+- Go `go test ./... -count=1`、`go vet ./...`、`go mod verify` 通过。
+- Android Debug/Release JVM 测试通过；Release lint 0 errors（现有 warnings 保留）。
+- Release APK 已用现有 `com.matelink` 同签名证书构建并通过 `apksigner` V2 校验；真机安装等待设备重新连接。
+
+### 本次修复
+
+- `/v1/auth/exchange` 成功后，对历史 `telemetry_error`、`pairing_required`、`permission_required` 车辆触发一次去重 configure 重试。
+- 行程列表从真实首尾坐标执行高德逆地理编码；已有地址和缺失坐标保持真实语义。
+
+### 真实数据边界
+
+- 当前 ECS 尚未收到新的 Tesla MQTT 首事件；GPS、今日行程、路线/速度/功率曲线和真实充电仍需 Jovi 完成 Tesla 官方授权、虚拟钥匙配对并产生车辆事件后验收。
+- 本条记录的真机安装状态在设备连接后补录，不以 Mock 数据替代真实证据。
+
+---
+
 ## [2.1.6 / build 25] — 2026-09-06 历史归档与位置真实性修复
 
 ### 已验证

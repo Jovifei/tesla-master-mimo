@@ -379,6 +379,9 @@ func (a *app) authRoute(w http.ResponseWriter, r *http.Request) bool {
 			"expires_in":    session.ExpiresIn,
 			"user":          map[string]string{"id": session.UserID},
 		})
+		if a.telemetry != nil {
+			a.telemetry.retryAfterAuthorization(session.UserID)
+		}
 		return true
 	case strings.HasPrefix(r.URL.Path, "/v1/auth/"):
 		a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})

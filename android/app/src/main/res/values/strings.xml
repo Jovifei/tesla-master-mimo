@@ -1083,10 +1083,12 @@
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
     <string name="settings_release_notes_title">This update</string>
-    <string name="settings_release_notes_version">MateLink 2.1.8</string>
+    <string name="settings_release_notes_version">MateLink 2.1.9</string>
     <string name="settings_release_notes_view">View update notes</string>
     <string name="settings_release_notes_close">Got it</string>
-    <string name="settings_release_notes_body">• Local history uploads now preserve the complete valid archive instead of only two data days.
+<string name="settings_release_notes_body">• Re-authorizing Tesla now retries unsynced Fleet Telemetry configuration without touching verified vehicles.
+• Drive lists enrich missing endpoints from real route coordinates in the background; missing coordinates stay unavailable.
+• Local history uploads now preserve the complete valid archive instead of only two data days.
 • Imported records remain visible as unverified summaries and no longer alter analytics, costs, or curves.
 • A fresh empty vehicle snapshot no longer replaces a cached valid GPS position.
 • Drive energy summaries are retained; route, address, and curves remain unavailable until the vehicle sends telemetry.

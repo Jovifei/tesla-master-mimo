@@ -49,6 +49,7 @@ type telemetryService struct {
 	finalizerMu              sync.Mutex
 	finalizerCancel          context.CancelFunc
 	finalizerDone            chan struct{}
+	authorizationFollowup    sync.Map
 }
 
 func newTelemetryService(config *telemetryConfig, database *store) *telemetryService {
@@ -91,18 +92,47 @@ func shouldAutoConfigurePairing(pairing telemetryPairingResponse) bool {
 		strings.TrimSpace(pairing.UpdatedAt) == ""
 }
 
+func shouldRetryAfterAuthorization(pairing telemetryPairingResponse) bool {
+	if pairing.ConfigSynced != nil && *pairing.ConfigSynced {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(pairing.Status)) {
+	case "pairing_required", "telemetry_error", "permission_required":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *telemetryService) maybeAutoConfigure(userID string, vehicleID int) {
+	s.maybeAutoConfigureWithPolicy(userID, vehicleID, shouldAutoConfigurePairing, false)
+}
+
+func (s *telemetryService) maybeAutoConfigureAfterAuthorization(userID string, vehicleID int) {
+	s.maybeAutoConfigureWithPolicy(userID, vehicleID, shouldRetryAfterAuthorization, true)
+}
+
+func (s *telemetryService) maybeAutoConfigureWithPolicy(
+	userID string,
+	vehicleID int,
+	shouldConfigure func(telemetryPairingResponse) bool,
+	retryAfterGate bool,
+) {
 	if s == nil || s.config == nil {
+		return
+	}
+	key := telemetryAutoConfigureKey{userID: userID, vehicleID: vehicleID}
+	if _, loaded := s.autoConfigure.LoadOrStore(key, struct{}{}); loaded {
+		if retryAfterGate {
+			s.scheduleAuthorizationFollowup(key, userID, vehicleID)
+		}
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	pairing, err := s.pairing(ctx, userID, vehicleID)
 	cancel()
-	if err != nil || !shouldAutoConfigurePairing(pairing) {
-		return
-	}
-	key := telemetryAutoConfigureKey{userID: userID, vehicleID: vehicleID}
-	if _, loaded := s.autoConfigure.LoadOrStore(key, struct{}{}); loaded {
+	if err != nil || !shouldConfigure(pairing) {
+		s.autoConfigure.Delete(key)
 		return
 	}
 	go func() {
@@ -112,6 +142,78 @@ func (s *telemetryService) maybeAutoConfigure(userID string, vehicleID int) {
 		// configure() persists typed pairing/error state. No provider response body,
 		// VIN, token or precise location is logged here.
 		_ = s.configure(configureCtx, userID, vehicleID)
+	}()
+}
+
+func (s *telemetryService) scheduleAuthorizationFollowup(key telemetryAutoConfigureKey, userID string, vehicleID int) {
+	if _, loaded := s.authorizationFollowup.LoadOrStore(key, struct{}{}); loaded {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(25 * time.Millisecond)
+		defer ticker.Stop()
+		timeout := time.NewTimer(35 * time.Second)
+		defer timeout.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if _, active := s.autoConfigure.Load(key); !active {
+					// Release the follow-up marker before re-acquiring the configure
+					// gate. A concurrent authorization event can then register its
+					// own follow-up instead of being lost in this handoff window.
+					s.authorizationFollowup.Delete(key)
+					s.maybeAutoConfigureAfterAuthorization(userID, vehicleID)
+					return
+				}
+			case <-timeout.C:
+				s.authorizationFollowup.Delete(key)
+				return
+			}
+		}
+	}()
+}
+
+func (s *telemetryService) retryAfterAuthorization(userID string) {
+	if s == nil || strings.TrimSpace(userID) == "" {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		vehicleIDs := make([]int, 0)
+		if s.memory != nil {
+			s.memory.mu.Lock()
+			seen := make(map[int]struct{})
+			for _, refs := range s.memory.vehicles {
+				for _, ref := range refs {
+					if ref.UserID == userID {
+						if _, exists := seen[ref.VehicleID]; !exists {
+							seen[ref.VehicleID] = struct{}{}
+							vehicleIDs = append(vehicleIDs, ref.VehicleID)
+						}
+					}
+				}
+			}
+			s.memory.mu.Unlock()
+		} else if s.store != nil && s.store.pool != nil {
+			rows, err := s.store.pool.Query(ctx, `SELECT vehicle_id FROM jourvolt_telemetry_vehicle_keys WHERE user_id=$1`, userID)
+			if err != nil {
+				return
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var vehicleID int
+				if rows.Scan(&vehicleID) == nil {
+					vehicleIDs = append(vehicleIDs, vehicleID)
+				}
+			}
+			if err := rows.Err(); err != nil {
+				return
+			}
+		}
+		for _, vehicleID := range vehicleIDs {
+			s.maybeAutoConfigureAfterAuthorization(userID, vehicleID)
+		}
 	}()
 }
 

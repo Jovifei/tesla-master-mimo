@@ -10,6 +10,7 @@ import com.matelink.data.api.models.Units
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.repository.ApiResult
+import com.matelink.data.repository.GeocodingRepository
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.UnifiedHistoryRepository
 import com.matelink.domain.LocalDayBoundaries
@@ -22,7 +23,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.YearMonth
 import com.matelink.util.formatMonthYear
@@ -123,6 +128,7 @@ class DrivesViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val repository: TeslamateRepository,
     private val historyRepository: UnifiedHistoryRepository,
+    private val geocodingRepository: GeocodingRepository,
     private val settingsDataStore: SettingsDataStore,
     private val driveSummaryDao: DriveSummaryDao,
     private val savedStateHandle: SavedStateHandle
@@ -135,6 +141,8 @@ class DrivesViewModel @Inject constructor(
     private var showShortDrivesCharges: Boolean = false
     private var allDrives: List<DriveData> = emptyList()
     private var isInitialized: Boolean = false
+    private var loadJob: Job? = null
+    private var loadGeneration: Long = 0L
 
     companion object {
         private const val MIN_DURATION_MINUTES = 1
@@ -257,7 +265,9 @@ class DrivesViewModel @Inject constructor(
     private fun loadDrives(startDate: LocalDate? = null, endDate: LocalDate? = null) {
         val id = carId ?: return
 
-        viewModelScope.launch {
+        loadJob?.cancel()
+        val generation = ++loadGeneration
+        loadJob = viewModelScope.launch {
             val state = _uiState.value
             // Only show the full-screen spinner on the true initial load — i.e. when
             // we've never successfully fetched any data yet. Using state.drives (the
@@ -284,7 +294,8 @@ class DrivesViewModel @Inject constructor(
 
             when (val result = historyRepository.load(id, startDateStr, endDateStr)) {
                 is ApiResult.Success -> {
-                    allDrives = result.data.drives
+                    val remoteDrives = result.data.drives
+                    allDrives = remoteDrives
                     val localMetrics = driveSummaryDao.getAllChronological(result.data.context.localHistoryCarId).associate { summary ->
                         summary.driveId to DriveHistoryMetrics(
                             energyKwh = summary.energyConsumed,
@@ -304,6 +315,14 @@ class DrivesViewModel @Inject constructor(
                     }
 
                     applyFiltersAndUpdateState()
+
+                    val enrichedDrives = enrichDriveAddresses(remoteDrives) { latitude, longitude ->
+                        geocodingRepository.reverseGeocode(latitude, longitude)
+                    }
+                    if (generation == loadGeneration) {
+                        allDrives = enrichedDrives
+                        applyFiltersAndUpdateState()
+                    }
                 }
                 is ApiResult.Error -> {
                     _uiState.update {
@@ -499,6 +518,33 @@ class DrivesViewModel @Inject constructor(
             totalDurationMin = drives.sumOf { it.durationMin ?: 0 },
             maxSpeed = drives.mapNotNull { it.speedMax?.takeIf { speed -> speed >= 0 } }.maxOrNull(),
             sortKey = sortKey
+        )
+    }
+}
+
+internal suspend fun enrichDriveAddresses(
+    drives: List<DriveData>,
+    reverseGeocode: suspend (latitude: Double, longitude: Double) -> String?
+): List<DriveData> = withContext(Dispatchers.IO) {
+    drives.map { drive ->
+        suspend fun resolve(existing: String?, latitude: Double?, longitude: Double?): String? {
+            if (!existing.isNullOrBlank()) return existing
+            if (latitude == null || longitude == null ||
+                !latitude.isFinite() || !longitude.isFinite() ||
+                latitude !in -90.0..90.0 || longitude !in -180.0..180.0 ||
+                (latitude == 0.0 && longitude == 0.0)
+            ) return null
+            return try {
+                reverseGeocode(latitude, longitude)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        }
+        drive.copy(
+            startAddress = resolve(drive.startAddress, drive.startLatitude, drive.startLongitude),
+            endAddress = resolve(drive.endAddress, drive.endLatitude, drive.endLongitude)
         )
     }
 }

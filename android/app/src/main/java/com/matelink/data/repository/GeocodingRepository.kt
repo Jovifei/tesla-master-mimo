@@ -13,6 +13,7 @@ import com.matelink.data.local.entity.GeocodeQueueItem
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -62,8 +63,8 @@ class GeocodingRepository @Inject constructor(
     }
 
     // Legacy in-memory caches (kept for backward compatibility with reverseGeocode)
-    private val addressCache = mutableMapOf<String, String>()
-    private val locationCache = mutableMapOf<String, GeocodedLocation>()
+    private val addressCache = ConcurrentHashMap<String, String>()
+    private val locationCache = ConcurrentHashMap<String, GeocodedLocation>()
 
     /**
      * Convert coordinate to grid cell.
@@ -319,7 +320,7 @@ class GeocodingRepository @Inject constructor(
     // === Country Boundary Methods ===
 
     // Cache for country boundaries (in-memory, cleared on app restart)
-    private val boundaryCache = mutableMapOf<String, CountryBoundary>()
+    private val boundaryCache = ConcurrentHashMap<String, CountryBoundary>()
 
     /**
      * Fetch country boundary polygon from Nominatim.

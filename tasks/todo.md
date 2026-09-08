@@ -2974,3 +2974,18 @@
 - PASS: active branch onboarding now gates Dashboard on post-login vehicle/pairing evaluation, persists the phase, launches only the official Tesla URL when `pairing_required`, and retries configuration once after return.
 - PASS: full Go and Android gates, same-signature device update, settings smoke, and independent review completed; session/Room preservation is not proven because the final device session is unavailable.
 - BLOCKED: real Tesla account currently returns provider `403 reauthorization`; no `config_synced=true`, MQTT event, GPS, real drive, or real charge evidence is available.
+# 2026-09-08 OAuth reauthorization retry and drive-list address repair
+
+## Plan
+
+- [x] Trace production `telemetry_error`/`config_synced=null` behavior and confirm why a new OAuth grant did not re-run Fleet Telemetry configure.
+- [x] Add RED tests for reauthorization retry policy and list address enrichment.
+- [x] Implement the smallest fixes: trigger one deduplicated configure retry after `/v1/auth/exchange`; resolve missing drive-list addresses only from observed route endpoints.
+- [x] Run targeted and full Go/Android tests, static diff checks, and release gates.
+- [ ] Complete final diff review, commit/push, server apply, and same-signature device installation.
+
+## Review
+
+- RED confirmed the missing retry policy and missing list enrichment helper before implementation.
+- GREEN confirmed persisted `telemetry_error` retries to `config_synced=true` in memory-backed integration coverage; existing addresses and absent coordinates remain unchanged.
+- Real GPS, MQTT, route and charge evidence remain pending Jovi's Tesla authorization and virtual-key confirmation.

@@ -382,3 +382,9 @@
 
 - Pattern: OnePlus 设备曾报告 `Input dispatching timed out`，但 ANR 采样中 MateLink 主线程和工作线程均处于 `__refrigerator`，没有 Java/Kotlin 堆栈，不能据此改业务线程。
 - Prevention rule: ANR 必须同时读取 DropBox 主线程栈、进程 CPU/冻结状态和重启后复现结果；只有拿到应用栈或稳定复现后才修改代码。设备级冻结保留为 DEVICE REVIEW，不升级为应用 Bug 修复通过。
+# 2026-09-08 OAuth grant renewal must reset the data-plane retry boundary
+
+- Pattern: A valid new Tesla OAuth grant can coexist with a persisted `telemetry_error`; checking only whether a pairing row has ever been updated prevents Fleet Telemetry configure from running again.
+- Prevention rule: After `/v1/auth/exchange`, retry only unsynced, non-billing-blocked vehicles with per-vehicle in-flight deduplication. Keep ordinary vehicle discovery conservative so a missing virtual key is not hammered on every poll.
+- Pattern: Drive history summaries contain real route endpoints but no addresses; enriching only on the detail screen leaves the list misleadingly at “unknown → unknown”.
+- Prevention rule: The list may reverse-geocode only finite, non-zero observed endpoint coordinates, preserve existing provider addresses, and keep missing coordinates null.
