@@ -16,7 +16,8 @@
 
 - Go `go test ./... -count=1`、`go vet ./...`、`go mod verify` 通过。
 - Android Debug/Release JVM 测试通过；Release lint 0 errors（现有 warnings 保留）。
-- Release APK 已用现有 `com.matelink` 同签名证书构建并通过 `apksigner` V2 校验；真机安装等待设备重新连接。
+- Release APK 已用现有 `com.matelink` 同签名证书构建并通过 `apksigner` V2 校验；SHA-256 为 `D080F637A259D661B64C55DCBEA8CD68432E75EB72ABBEF9D94D54CFB37703BD`。
+- OnePlus 7 Pro（`6e4fa92f`）已执行 `adb install -r` 覆盖安装；version `2.1.9` / build `28`，`firstInstallTime=2026-08-31 22:36:47` 保持不变，证明未卸载、未清理本地数据。
 
 ### 本次修复
 
@@ -26,7 +27,7 @@
 ### 真实数据边界
 
 - 当前 ECS 尚未收到新的 Tesla MQTT 首事件；GPS、今日行程、路线/速度/功率曲线和真实充电仍需 Jovi 完成 Tesla 官方授权、虚拟钥匙配对并产生车辆事件后验收。
-- 本条记录的真机安装状态在设备连接后补录，不以 Mock 数据替代真实证据。
+- 安装后进程可启动且无 FATAL/ANR 日志；设备随后回到图案锁屏，未猜测用户图案，页面级点击验收留给 Jovi 解锁后执行。
 
 ---
 

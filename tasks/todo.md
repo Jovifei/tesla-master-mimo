@@ -2982,10 +2982,12 @@
 - [x] Add RED tests for reauthorization retry policy and list address enrichment.
 - [x] Implement the smallest fixes: trigger one deduplicated configure retry after `/v1/auth/exchange`; resolve missing drive-list addresses only from observed route endpoints.
 - [x] Run targeted and full Go/Android tests, static diff checks, and release gates.
-- [ ] Complete final diff review, commit/push, server apply, and same-signature device installation.
+- [x] Complete final diff review, commit/push, server apply, and same-signature device installation.
 
 ## Review
 
 - RED confirmed the missing retry policy and missing list enrichment helper before implementation.
 - GREEN confirmed persisted `telemetry_error` retries to `config_synced=true` in memory-backed integration coverage; existing addresses and absent coordinates remain unchanged.
 - Real GPS, MQTT, route and charge evidence remain pending Jovi's Tesla authorization and virtual-key confirmation.
+- Deployment evidence: remote API `build_sha=c95fb0a`; Fleet Telemetry/MQTT/command proxy running; shared config `0600`, uid/gid `1000:1000`; `/readyz=awaiting_first_event`.
+- Device evidence: `adb install -r` installed `com.matelink` 2.1.9/build 28 with unchanged first-install time; UI smoke is pending device unlock, not a code failure.
