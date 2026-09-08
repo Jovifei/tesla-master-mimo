@@ -344,6 +344,9 @@ func checkTelemetryTmpfsVolumeConfig(vc volumeConfig) error {
 	if !strings.Contains(oVal, "mode=0700") {
 		return fmt.Errorf("volume driver_opts.o must contain 'mode=0700', got %q", oVal)
 	}
+	if !strings.Contains(oVal, "uid=1000") || !strings.Contains(oVal, "gid=1000") {
+		return fmt.Errorf("volume driver_opts.o must assign the deploy uid/gid, got %q", oVal)
+	}
 	return nil
 }
 
@@ -361,17 +364,17 @@ func verifyTelemetryTmpfsVolume(t *testing.T, composeFile, text string) {
 
 func TestComposeNamedVolumeBlockSemantics(t *testing.T) {
 	// 1. CRLF and LF both pass
-	crlfYaml := "volumes:\r\n  fleet-telemetry-config:\r\n    driver: local\r\n    driver_opts:\r\n      type: tmpfs\r\n      device: tmpfs\r\n      o: size=1m,mode=0700\r\n"
-	lfYaml := "volumes:\n  fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      type: tmpfs\n      device: tmpfs\n      o: size=1m,mode=0700\n"
+	crlfYaml := "volumes:\r\n  fleet-telemetry-config:\r\n    driver: local\r\n    driver_opts:\r\n      type: tmpfs\r\n      device: tmpfs\r\n      o: size=1m,mode=0700,uid=1000,gid=1000\r\n"
+	lfYaml := "volumes:\n  fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      type: tmpfs\n      device: tmpfs\n      o: size=1m,mode=0700,uid=1000,gid=1000\n"
 	verifyTelemetryTmpfsVolume(t, "crlf", crlfYaml)
 	verifyTelemetryTmpfsVolume(t, "lf", lfYaml)
 
 	// 2. Attribute order changes still pass
-	reorderedYaml := "volumes:\n  fleet-telemetry-config:\n    driver_opts:\n      device: tmpfs\n      o: mode=0700,size=1m\n      type: tmpfs\n    driver: local\n"
+	reorderedYaml := "volumes:\n  fleet-telemetry-config:\n    driver_opts:\n      device: tmpfs\n      o: mode=0700,size=1m,uid=1000,gid=1000\n      type: tmpfs\n    driver: local\n"
 	verifyTelemetryTmpfsVolume(t, "reordered", reorderedYaml)
 
 	// 3. Extra legal driver_opts fields still pass
-	extraOptsYaml := "volumes:\n  fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      type: tmpfs\n      device: tmpfs\n      o: size=1m,mode=0700\n      extra_opt: some_value\n"
+	extraOptsYaml := "volumes:\n  fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      type: tmpfs\n      device: tmpfs\n      o: size=1m,mode=0700,uid=1000,gid=1000\n      extra_opt: some_value\n"
 	verifyTelemetryTmpfsVolume(t, "extra_opts", extraOptsYaml)
 
 	// 4. Missing type: tmpfs must fail
