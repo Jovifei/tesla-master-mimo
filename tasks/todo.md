@@ -2972,5 +2972,5 @@
 ## Review
 
 - PASS: active branch onboarding now gates Dashboard on post-login vehicle/pairing evaluation, persists the phase, launches only the official Tesla URL when `pairing_required`, and retries configuration once after return.
-- PASS: full Go and Android gates, same-signature device update, settings/session-preservation smoke, and independent review completed.
+- PASS: full Go and Android gates, same-signature device update, settings smoke, and independent review completed; session/Room preservation is not proven because the final device session is unavailable.
 - BLOCKED: real Tesla account currently returns provider `403 reauthorization`; no `config_synced=true`, MQTT event, GPS, real drive, or real charge evidence is available.
