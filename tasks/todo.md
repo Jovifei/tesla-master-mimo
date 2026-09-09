@@ -4,14 +4,15 @@
 
 ## Plan
 
-- [ ] Re-run final source/test/diff gates and review the exact staged file set.
-- [ ] Commit and push the reviewed branch; record the resulting SHA.
-- [ ] Back up the remote API source/config boundary, deploy the matching Go source, rebuild only the API, and verify health/readiness/build SHA without touching PostgreSQL data.
-- [ ] Build the signed Release APK from the committed source, verify package/version/signature/hash, then install with `adb install -r` only and verify data/session preservation and process health.
+- [x] Re-run final source/test/diff gates and review the exact staged file set.
+- [x] Commit and push the reviewed branch; record the resulting SHA.
+- [x] Back up the remote API source/config boundary, deploy the matching Go source, rebuild only the API, and verify health/readiness/build SHA without touching PostgreSQL data.
+- [x] Build the signed Release APK from the committed source, verify package/version/signature/hash, then install with `adb install -r` only and verify data/session preservation and process health.
 
 ## Review
 
-- Pending.
+- Review: commit `6ced331` pushed to `fix/20260907-onboarding-source-integrity`; ECS API rebuilt from that SHA with rollback directory `.rollback-6ced331-source-sync`, PostgreSQL and telemetry containers preserved; internal/public health and readiness returned fleet/postgres/ok with `awaiting_first_event`.
+- Review: signed `com.matelink` 2.1.10/build29 APK SHA-256 `45F920C6ADB6B9B971553319C6EEAFCF5453AE80CDBE49BEF0D8FC5868EC0EE5`, certificate SHA-256 `9ab144e824abf26a5941819abb06831288c36a8bfe622657e3dc9d88281fc774`; same-signature `adb install -r` preserved first install time and did not clear data. No `com.matelink` FATAL was found; device remains locked so page-level browser/OAuth/real-event checks are pending.
 
 # 2026-09-09 Telemetry data-truth repair (authorized)
 
@@ -24,7 +25,7 @@
 
 ## Review
 
-- Review: Go `test ./... -count=1`, `go vet ./...`, `go mod verify`, focused regression tests, Android Debug/Release JVM suites (526 each; Release 8 expected skips), and lintDebug/lintRelease pass. PostgreSQL integration test is skipped because `JOURVOLT_TEST_DATABASE_URL` is unset. No commit, push, deployment, or installation.
+- Review: Go `test ./... -count=1`, `go vet ./...`, `go mod verify`, focused regression tests, Android Debug/Release JVM suites (526 each; Release 8 expected skips), and lintDebug/lintRelease pass. PostgreSQL integration test is skipped because `JOURVOLT_TEST_DATABASE_URL` is unset. The later authorized commit, deployment, and installation are recorded in the release section above.
 - Review: Drive end requires Park/Neutral; charge measurements persist in memory/PostgreSQL `charge_points_json`; official config sync refresh is throttled; same-value newer observations advance freshness; live drive power/energy stays null without a dedicated Fleet field.
 
 - [x] Apple 设计系统 + 类型安全导航 + 核心页重写
@@ -3027,4 +3028,4 @@
 
 Design: enumerate HTTPS browsers with MATCH_ALL and show an in-app browser list that launches the selected explicit component for the trusted OAuth URL on every explicit login, with a localized title and existing safe external-launch error handling. This avoids the connected OnePlus returning only the default browser. Keep virtual-key deep links unchanged so Tesla app confirmation remains reachable. No server/data semantics changes are authorized by this browser task.
 
-Review: final Debug/Release JVM suites each ran 526 tests with zero failures/errors (Release 8 skips); final lintDebug/lintRelease passed. Signed Release 2.1.10 (29), com.matelink, non-debuggable, original signing certificate verified; SHA-256 9C8E283B1268A80B70756144960E1DFA3B3C74D25F8E58D3ED64494634E455F8. Build memory recovery used temporary 4 GB heap and two workers, no project JVM changes. Four focused Go auth/config/history tests passed. Independent browser review found no remaining blocker; read-only device query confirmed Chrome visibility with MATCH_ALL. Final UI/OAuth/real-event acceptance is not performed. Five source-level data findings are documented in docs/audits/2026-09-09-browser-and-telemetry-readiness.md and require separate repair authorization. No commit, push, deployment or installation this turn.
+Review: final Debug/Release JVM suites each ran 526 tests with zero failures/errors (Release 8 skips); final lintDebug/lintRelease passed. Signed Release 2.1.10 (29), com.matelink, non-debuggable, original signing certificate verified; the final installed APK SHA-256 is recorded in docs/ANDROID-RELEASE-LOG.md. Build memory recovery used temporary 4 GB heap and two workers, no project JVM changes. Four focused Go auth/config/history tests passed. Independent browser review found no remaining blocker; read-only device query confirmed Chrome visibility with MATCH_ALL. Final UI/OAuth/real-event acceptance is not performed. The five data findings were repaired under the authorized follow-up section above.

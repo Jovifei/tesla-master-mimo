@@ -10,15 +10,17 @@
 
 ---
 
-## [2.1.10 / build 29] — 2026-09-09 浏览器选择（本地候选，未安装）
+## [2.1.10 / build 29] — 2026-09-09 浏览器选择与 Telemetry 数据真实性修复
 
 - Tesla 登录改为 App 内选择浏览器；显式启动所选应用，避免默认浏览器闪退阻断登录。取消后可重新发起登录；虚拟钥匙深链与 OAuth 回调保持原流程。
 - 已构建并核验 `com.matelink` Release，非 debuggable；证书 SHA-256 与既有正式包一致：`9ab144e824abf26a5941819abb06831288c36a8bfe622657e3dc9d88281fc774`。
-- APK SHA-256：`9C8E283B1268A80B70756144960E1DFA3B3C74D25F8E58D3ED64494634E455F8`。
-- APK 位于当前工作树 `android/app/build/outputs/apk/release/app-release.apk`；本轮没有提交、推送、部署或设备安装。
+- APK SHA-256：`45F920C6ADB6B9B971553319C6EEAFCF5453AE80CDBE49BEF0D8FC5868EC0EE5`。
+- 源码提交：`6ced331`，已推送至 `fix/20260907-onboarding-source-integrity`。
+- ECS 已部署同一提交：`/healthz`、`/readyz` 内外均返回 `build_sha=6ced331`、`mode=fleet`、`persistence=postgres`、`status=ok`；现有远端源码备份位于 `/home/jourvolt/jourvolt-staging/.rollback-6ced331-source-sync`，`.env` 未读取或修改。
+- OnePlus 7 Pro（`6e4fa92f`）已用同签名 `adb install -r` 覆盖安装；version `2.1.10` / build `29`，`firstInstallTime=2026-08-31 22:36:47` 保持不变，未卸载或清理用户数据。
 - Debug/Release 各 526 项测试：0 failures / 0 errors，Release 8 项预期跳过。首次组合构建因 2 GB Gradle 堆不足停止；独立打包使用临时 4 GB 堆参数成功，未修改项目 JVM 配置。
 - 最终 `lintDebug`、`lintRelease` 均通过。
-- 实机只读查询确认 MATCH_ALL 能返回 Chrome，普通查询仅返回默认 Heytap。最终选择列表、取消重试和真实 OAuth 回流尚待设备验收。
+- 实机只读查询确认 MATCH_ALL 能返回 Chrome，普通查询仅返回默认 Heytap；安装后 `com.matelink` 进程启动存活，crash buffer 中未发现 `com.matelink` FATAL。手机仍锁屏，未猜测图案，浏览器列表点击和真实 OAuth 回流留待 Jovi 解锁后验收。
 - 数据链路源码审查见 `docs/audits/2026-09-09-browser-and-telemetry-readiness.md`；不能承诺授权后自动补齐所有曲线及历史指标。
 
 ---
