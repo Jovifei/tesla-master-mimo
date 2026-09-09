@@ -7,7 +7,7 @@ import org.junit.Test
 
 class TeslaAuthNavigationContractTest {
     @Test
-    fun officialAuthorizationUsesCustomTabAndMainAppLink() {
+    fun officialAuthorizationUsesBrowserChooserAndMainAppLink() {
         val viewModel = source("ui/screens/auth/TeslaLoginViewModel.kt")
         val manifest = File("src/main/AndroidManifest.xml").readText()
 
@@ -15,8 +15,20 @@ class TeslaAuthNavigationContractTest {
         assertTrue(viewModel.contains("isTrustedTeslaCallback"))
         assertTrue(viewModel.contains("pendingAuthorizationUrl"))
         assertFalse(viewModel.contains("FLAG_ACTIVITY_NEW_TASK"))
-        assertTrue(source("ui/navigation/NavGraph.kt").contains("CustomTabsIntent.Builder()"))
-        assertTrue(source("ui/navigation/NavGraph.kt").contains("launchUrl(context, Uri.parse(url))"))
+        val navigation = source("ui/navigation/NavGraph.kt")
+        val launcher = source("ui/components/ExternalIntent.kt")
+        assertTrue(navigation.contains("context.launchBrowserChooser(url)"))
+        assertTrue(launcher.contains("AlertDialog.Builder(this)"))
+        assertTrue(launcher.contains("Intent.ACTION_VIEW, Uri.parse(url)"))
+        assertTrue(launcher.contains("PackageManager.MATCH_ALL"))
+        assertTrue(launcher.contains("PackageManager.GET_RESOLVED_FILTER"))
+        assertTrue(launcher.contains("countDataAuthorities() == 0"))
+        assertTrue(launcher.contains("setItems(browsers.map"))
+        assertTrue(launcher.contains("setComponent(ComponentName(activity.packageName, activity.name))"))
+        assertTrue(launcher.contains("setNegativeButton(android.R.string.cancel, null)"))
+        assertTrue(launcher.contains("Intent.CATEGORY_BROWSABLE"))
+        assertTrue(launcher.contains("launchExternalIntentSafely"))
+        assertFalse(navigation.contains("CustomTabsIntent"))
         assertFalse(source("ui/screens/auth/TeslaLoginScreen.kt").contains("CustomTabsIntent"))
         assertTrue(viewModel.contains("consentStore.recordCurrent()"))
         assertTrue(viewModel.contains("termsVersion = consent.termsVersion"))

@@ -484,6 +484,9 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 	if s == nil || s.config == nil {
 		return telemetryPairingResponse{Status: "pairing_required"}, nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	status := telemetryPairing{Status: "pairing_required"}
 	if s.memory != nil {
 		if value, ok := s.memory.pairing(userID, vehicleID); ok {
@@ -503,6 +506,11 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 	if status.Status == "" {
 		status.Status = "pairing_required"
 	}
+	if pairingNeedsOfficialRefresh(status) {
+		if refreshed, ok := s.refreshPairingConfigTruth(ctx, userID, vehicleID, status); ok {
+			status = refreshed
+		}
+	}
 	response := telemetryPairingResponse{
 		Status:        status.Status,
 		VirtualKeyURL: "https://tesla.com/_ak/" + s.config.PartnerDomain,
@@ -513,6 +521,50 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 		response.UpdatedAt = status.UpdatedAt.UTC().Format(time.RFC3339)
 	}
 	return response, nil
+}
+
+func pairingNeedsOfficialRefresh(status telemetryPairing) bool {
+	if status.ConfigSynced != nil && *status.ConfigSynced {
+		return false
+	}
+	if !status.UpdatedAt.IsZero() && time.Since(status.UpdatedAt) < 5*time.Second {
+		return false
+	}
+	switch status.Status {
+	case "waiting_vehicle", "collecting", "configuring":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *telemetryService) refreshPairingConfigTruth(ctx context.Context, userID string, vehicleID int, current telemetryPairing) (telemetryPairing, bool) {
+	vin, err := s.vinForVehicle(ctx, userID, vehicleID)
+	if err != nil || vin == "" {
+		return current, false
+	}
+	configResponse, err := s.getFleetTelemetryConfig(ctx, userID, vin)
+	if err != nil || configResponse.Response.Synced == nil {
+		return current, false
+	}
+	if *configResponse.Response.Synced {
+		if err := s.setPairingConfigTruth(ctx, userID, vehicleID, "available", true); err != nil {
+			return current, false
+		}
+		current.Status = "available"
+		current.ConfigSynced = boolPointer(true)
+		current.ErrorClass = ""
+		current.UpdatedAt = time.Now().UTC()
+		return current, true
+	}
+	if err := s.setPairingConfigTruth(ctx, userID, vehicleID, "waiting_vehicle", false); err != nil {
+		return current, false
+	}
+	current.Status = "waiting_vehicle"
+	current.ConfigSynced = boolPointer(false)
+	current.ErrorClass = "sync_pending"
+	current.UpdatedAt = time.Now().UTC()
+	return current, true
 }
 
 type telemetryDesiredConfiguration struct {
@@ -992,7 +1044,14 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		result["power_max"], result["power_min"] = nil, nil
 		result["battery_details"], result["range_ideal"], result["range_rated"] = nil, nil, nil
 		result["outside_temp_avg"], result["inside_temp_avg"] = nil, nil
-		result["energy_consumed_net"], result["consumption_net"] = session.EnergyAdded, nil
+		// Fleet Telemetry currently provides no dedicated driving-energy field in
+		// this configuration. Never reuse charging energy as drive consumption.
+		if session.Source == "local_import" {
+			result["energy_consumed_net"] = session.EnergyAdded
+		} else {
+			result["energy_consumed_net"] = nil
+		}
+		result["consumption_net"] = nil
 		result["odometer_details"] = map[string]any{"odometer_start": session.OdometerStart, "odometer_end": session.OdometerEnd, "odometer_distance": odometerDistance(session.OdometerStart, session.OdometerEnd)}
 		route := make([]map[string]any, 0, len(session.Route))
 		for _, point := range session.Route {
@@ -1017,15 +1076,53 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		result["range_rated"], result["outside_temp_avg"], result["odometer"] = nil, nil, nil
 		result["latitude"], result["longitude"] = nil, nil
 		result["charge_energy_added"] = session.EnergyAdded
-		chargeDetail := map[string]any{"date": session.StartAt.UTC().Format(time.RFC3339), "charge_energy_added": session.EnergyAdded}
-		if session.EndAt != nil {
-			chargeDetail["date"] = session.EndAt.UTC().Format(time.RFC3339)
+		chargeDetails := make([]map[string]any, 0, len(session.ChargePoints))
+		var firstBattery, lastBattery *int
+		var lastPower *float64
+		var firstLatitude, firstLongitude *float64
+		for _, point := range session.ChargePoints {
+			item := map[string]any{"date": point.ObservedAt.UTC().Format(time.RFC3339)}
+			if point.BatteryLevel != nil {
+				item["battery_level"] = point.BatteryLevel
+				if firstBattery == nil {
+					firstBattery = cloneInt(point.BatteryLevel)
+				}
+				lastBattery = cloneInt(point.BatteryLevel)
+			}
+			if point.EnergyAdded != nil {
+				item["charge_energy_added"] = point.EnergyAdded
+			}
+			if point.ChargerPower != nil {
+				item["charger_details"] = map[string]any{"charger_power": point.ChargerPower}
+				lastPower = cloneFloat(point.ChargerPower)
+			}
+			if point.Latitude != nil && point.Longitude != nil {
+				item["latitude"], item["longitude"] = point.Latitude, point.Longitude
+				if firstLatitude == nil {
+					firstLatitude, firstLongitude = cloneFloat(point.Latitude), cloneFloat(point.Longitude)
+				}
+			}
+			if len(item) > 1 {
+				chargeDetails = append(chargeDetails, item)
+			}
 		}
-		if session.EnergyAdded != nil {
-			result["charge_details"] = []map[string]any{chargeDetail}
-		} else {
-			result["charge_details"] = []map[string]any{}
+		if len(chargeDetails) == 0 && session.EnergyAdded != nil {
+			chargeDetail := map[string]any{"date": session.StartAt.UTC().Format(time.RFC3339), "charge_energy_added": session.EnergyAdded}
+			if session.EndAt != nil {
+				chargeDetail["date"] = session.EndAt.UTC().Format(time.RFC3339)
+			}
+			chargeDetails = append(chargeDetails, chargeDetail)
 		}
+		if firstBattery != nil || lastBattery != nil {
+			result["battery_details"] = map[string]any{"start_battery_level": firstBattery, "end_battery_level": lastBattery}
+		}
+		if lastPower != nil {
+			result["charger_power"] = lastPower
+		}
+		if firstLatitude != nil && firstLongitude != nil {
+			result["latitude"], result["longitude"] = firstLatitude, firstLongitude
+		}
+		result["charge_details"] = chargeDetails
 	}
 	result["sequence"] = index
 	return result

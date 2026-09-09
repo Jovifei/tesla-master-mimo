@@ -2,11 +2,9 @@ package com.matelink.ui.navigation
 
 import android.Manifest
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
@@ -33,6 +31,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.matelink.R
+import com.matelink.ui.components.launchBrowserChooser
 import com.matelink.data.local.ConnectionMode
 import com.matelink.ui.screens.auth.TeslaLoginScreen
 import com.matelink.ui.screens.auth.TeslaLoginOnboardingState
@@ -354,10 +353,7 @@ fun NavGraph(
     LaunchedEffect(pendingAuthorizationUrl) {
         val url = pendingAuthorizationUrl ?: return@LaunchedEffect
         teslaLoginViewModel.consumePendingAuthorizationUrl()
-        CustomTabsIntent.Builder()
-            .setShowTitle(true)
-            .build()
-            .launchUrl(context, Uri.parse(url))
+        context.launchBrowserChooser(url)
     }
 
     LaunchedEffect(openDashboardAfterLogin, postLoginOnboarding) {

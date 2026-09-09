@@ -1,5 +1,32 @@
 # 2026-08-30 iOS Apple 重设计（分支 feature/ios-apple-redesign，禁止提交 main）
 
+# 2026-09-09 Authorized commit, deploy and device install
+
+## Plan
+
+- [ ] Re-run final source/test/diff gates and review the exact staged file set.
+- [ ] Commit and push the reviewed branch; record the resulting SHA.
+- [ ] Back up the remote API source/config boundary, deploy the matching Go source, rebuild only the API, and verify health/readiness/build SHA without touching PostgreSQL data.
+- [ ] Build the signed Release APK from the committed source, verify package/version/signature/hash, then install with `adb install -r` only and verify data/session preservation and process health.
+
+## Review
+
+- Pending.
+
+# 2026-09-09 Telemetry data-truth repair (authorized)
+
+## Plan
+
+- [x] RED: add regression tests for drive stop state, drive-power isolation, charge measurements, delayed config sync, and same-value freshness.
+- [x] GREEN: implement the smallest server-side fixes in memory and PostgreSQL paths, preserving truthful nulls where Fleet Telemetry has no supported driving-power field.
+- [x] Verify focused Go tests, full Go tests/vet, Android contract tests, and diff/secret checks.
+- [x] Review changed files and document actual data availability; do not commit, deploy, or install.
+
+## Review
+
+- Review: Go `test ./... -count=1`, `go vet ./...`, `go mod verify`, focused regression tests, Android Debug/Release JVM suites (526 each; Release 8 expected skips), and lintDebug/lintRelease pass. PostgreSQL integration test is skipped because `JOURVOLT_TEST_DATABASE_URL` is unset. No commit, push, deployment, or installation.
+- Review: Drive end requires Park/Neutral; charge measurements persist in memory/PostgreSQL `charge_points_json`; official config sync refresh is throttled; same-value newer observations advance freshness; live drive power/energy stays null without a dedicated Fleet field.
+
 - [x] Apple 设计系统 + 类型安全导航 + 核心页重写
 - [x] 车辆核心逻辑：开口告警、isCharging、详情曲线/轨迹、当前充电轮询、换车持久化（`e9666f7`）
 - [x] 列表筛选、snapshot、分析全量、Trips/TPMS/Countries/WhereWasI（`f72a4ec`）
@@ -2991,3 +3018,13 @@
 - Real GPS, MQTT, route and charge evidence remain pending Jovi's Tesla authorization and virtual-key confirmation.
 - Deployment evidence: remote API `build_sha=c95fb0a`; Fleet Telemetry/MQTT/command proxy running; shared config `0600`, uid/gid `1000:1000`; `/readyz=awaiting_first_event`.
 - Device evidence: `adb install -r` installed `com.matelink` 2.1.9/build 28 with unchanged first-install time; UI smoke is pending device unlock, not a code failure.
+# 2026-09-09 Browser selection and data-chain audit
+
+- [x] Confirm current branch, browser crash evidence, and authorized scope.
+- [x] Replace automatic OAuth browser launch with an explicit browser list; preserve callback and cancel/retry behavior.
+- [x] Verify Android auth regression tests, build and lint; review data-chain findings separately.
+- [x] Record verified outcomes and remaining real-vehicle evidence gaps.
+
+Design: enumerate HTTPS browsers with MATCH_ALL and show an in-app browser list that launches the selected explicit component for the trusted OAuth URL on every explicit login, with a localized title and existing safe external-launch error handling. This avoids the connected OnePlus returning only the default browser. Keep virtual-key deep links unchanged so Tesla app confirmation remains reachable. No server/data semantics changes are authorized by this browser task.
+
+Review: final Debug/Release JVM suites each ran 526 tests with zero failures/errors (Release 8 skips); final lintDebug/lintRelease passed. Signed Release 2.1.10 (29), com.matelink, non-debuggable, original signing certificate verified; SHA-256 9C8E283B1268A80B70756144960E1DFA3B3C74D25F8E58D3ED64494634E455F8. Build memory recovery used temporary 4 GB heap and two workers, no project JVM changes. Four focused Go auth/config/history tests passed. Independent browser review found no remaining blocker; read-only device query confirmed Chrome visibility with MATCH_ALL. Final UI/OAuth/real-event acceptance is not performed. Five source-level data findings are documented in docs/audits/2026-09-09-browser-and-telemetry-readiness.md and require separate repair authorization. No commit, push, deployment or installation this turn.

@@ -369,6 +369,25 @@ func TestTask2ConfigureOnlyPersistsExplicitFleetConfigSyncedBoolean(t *testing.T
 	}
 }
 
+func TestTelemetryPairingRefreshesDelayedOfficialSyncState(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("pairing refresh method = %s", r.Method)
+		}
+		_, _ = w.Write([]byte(`{"response":{"synced":true}}`))
+	}))
+	defer proxy.Close()
+	service := newTelemetryServiceForTest("partner.example.com")
+	service.commandProxyURL = proxy.URL
+	ref := telemetryRefWithVIN(service, "user-a", 1, "5YJ3E1EA7KF123456")
+	service.memory.registerVehicle(ref)
+	service.memory.setPairing(ref, telemetryPairing{Status: "waiting_vehicle", ConfigSynced: boolPointer(false)})
+	response, err := service.pairing(context.Background(), ref.UserID, ref.VehicleID)
+	if err != nil || response.ConfigSynced == nil || !*response.ConfigSynced || response.Status != "available" {
+		t.Fatalf("delayed sync pairing = %#v, %v", response, err)
+	}
+}
+
 func TestTelemetryConfigureCallsProxyWithDesiredIntervalsAndMapsErrorsWithoutBody(t *testing.T) {
 	var received struct {
 		Config telemetryDesiredConfiguration `json:"config"`

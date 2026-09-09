@@ -1073,10 +1073,12 @@
     <string name="settings_primary_server">主服务器</string>
     <string name="settings_report_issue">报告问题</string>
     <string name="settings_release_notes_title">本次更新</string>
-    <string name="settings_release_notes_version">MateLink 2.1.9</string>
+    <string name="settings_release_notes_version">MateLink 2.1.10</string>
+    <string name="tesla_login_choose_browser">选择浏览器登录 Tesla</string>
     <string name="settings_release_notes_view">查看本次更新</string>
     <string name="settings_release_notes_close">知道了</string>
-<string name="settings_release_notes_body">• 重新授权 Tesla 后会重试未同步的 Fleet Telemetry 配置，不会重复修改已验证车辆。
+<string name="settings_release_notes_body">• Tesla 登录现在每次都可选择浏览器；若浏览器闪退，返回后可重新选择其他浏览器。
+• 重新授权 Tesla 后会重试未同步的 Fleet Telemetry 配置，不会重复修改已验证车辆。
 • 行程列表会在后台根据真实路线坐标补全起终点；没有坐标时保持不可用。
 • 本地历史上传现在保留全部有效归档，不再只上传最近两天。
 • 导入记录会作为未验证摘要显示，不再污染统计、费用或曲线。

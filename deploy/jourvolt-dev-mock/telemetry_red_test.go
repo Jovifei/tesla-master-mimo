@@ -114,6 +114,26 @@ func TestTelemetryLatestIgnoresDuplicateAndOutOfOrderEvents(t *testing.T) {
 	}
 }
 
+func TestTelemetryLatestAdvancesFreshnessForNewerSameValue(t *testing.T) {
+	store := newTelemetryMemoryStore()
+	ref := telemetryVehicleRef{UserID: "user-a", VehicleID: 7, VINHash: keyedVINHash([]byte("key"), "vin-a"), ProviderVehicleID: "provider-7"}
+	store.registerVehicle(ref)
+	firstAt := time.Unix(200, 0).UTC()
+	secondAt := firstAt.Add(time.Minute)
+	for _, record := range []telemetryRecord{
+		{VINHash: ref.VINHash, FieldName: "Soc", Value: float64(42), ObservedAt: firstAt, EventID: "soc-1"},
+		{VINHash: ref.VINHash, FieldName: "Soc", Value: float64(42), ObservedAt: secondAt, EventID: "soc-2"},
+	} {
+		if accepted, err := store.ingest(record, defaultDriveStopDebounce); err != nil || accepted != 1 {
+			t.Fatalf("same-value observation accepted=%d err=%v", accepted, err)
+		}
+	}
+	latest, ok := store.latestSnapshot(ref.UserID, ref.VehicleID)
+	if !ok || !latest.FieldObservedAt["Soc"].Equal(secondAt) {
+		t.Fatalf("same-value freshness = %#v", latest)
+	}
+}
+
 func TestDriveSessionRestartsAndCompletesExactlyOnce(t *testing.T) {
 	start := time.Unix(1000, 0).UTC()
 	machine := newTelemetrySessionMachine(20 * time.Second)
@@ -131,6 +151,59 @@ func TestDriveSessionRestartsAndCompletesExactlyOnce(t *testing.T) {
 	}
 	if completed[0].StartAt != start || completed[0].EndAt == nil || !completed[0].EndAt.Equal(start.Add(55*time.Second)) {
 		t.Fatalf("drive session timing = %#v", completed[0])
+	}
+}
+
+func TestDriveDoesNotEndAtTrafficLightWhileGearRemainsDrive(t *testing.T) {
+	start := time.Unix(4000, 0).UTC()
+	machine := newTelemetrySessionMachine(10 * time.Second)
+	machine.apply(telemetrySessionEvent{FieldName: "Gear", Value: "D", ObservedAt: start, EventID: "gear-drive"})
+	machine.apply(telemetrySessionEvent{FieldName: "VehicleSpeed", Value: float64(20), ObservedAt: start.Add(time.Second), EventID: "speed-moving"})
+	machine.apply(telemetrySessionEvent{FieldName: "VehicleSpeed", Value: float64(0), ObservedAt: start.Add(2 * time.Second), EventID: "speed-stop"})
+	machine.apply(telemetrySessionEvent{FieldName: "VehicleSpeed", Value: float64(0), ObservedAt: start.Add(30 * time.Second), EventID: "speed-still"})
+	if completed := machine.completedSessions(); len(completed) != 0 {
+		t.Fatalf("traffic-light stop completed a drive: %#v", completed)
+	}
+	machine.apply(telemetrySessionEvent{FieldName: "Gear", Value: "P", ObservedAt: start.Add(31 * time.Second), EventID: "gear-park"})
+	if !machine.finalizeDue(start.Add(42 * time.Second)) {
+		t.Fatal("parked drive was not finalized after debounce")
+	}
+	completed := machine.completedSessions()
+	if len(completed) != 1 || completed[0].EndAt == nil || !completed[0].EndAt.Equal(start.Add(41*time.Second)) {
+		t.Fatalf("parked drive completion = %#v", completed)
+	}
+}
+
+func TestDriveRouteDoesNotUseChargingPowerAsDrivingPower(t *testing.T) {
+	start := time.Unix(5000, 0).UTC()
+	machine := newTelemetrySessionMachine(20 * time.Second)
+	machine.apply(telemetrySessionEvent{FieldName: "Gear", Value: "D", ObservedAt: start, EventID: "gear"})
+	machine.apply(telemetrySessionEvent{FieldName: "VehicleSpeed", Value: float64(12), ObservedAt: start.Add(time.Second), EventID: "speed"})
+	machine.apply(telemetrySessionEvent{FieldName: "ACChargingPower", Value: float64(11), ObservedAt: start.Add(2 * time.Second), EventID: "charge-power"})
+	machine.apply(telemetrySessionEvent{FieldName: "Location", Value: map[string]any{"latitude": 31.2, "longitude": 121.4}, ObservedAt: start.Add(3 * time.Second), EventID: "location"})
+	if machine.drive == nil || len(machine.drive.Route) != 1 || machine.drive.Route[0].Power != nil {
+		t.Fatalf("drive route attached charging power: %#v", machine.drive)
+	}
+}
+
+func TestChargeHistoryContainsObservedEnergyAndBatteryPoints(t *testing.T) {
+	start := time.Unix(6000, 0).UTC()
+	machine := newTelemetrySessionMachine(20 * time.Second)
+	machine.apply(telemetrySessionEvent{FieldName: "DetailedChargeState", Value: "charging", ObservedAt: start, EventID: "charge-start"})
+	machine.apply(telemetrySessionEvent{FieldName: "Soc", Value: float64(20), ObservedAt: start.Add(time.Second), EventID: "soc-start"})
+	machine.apply(telemetrySessionEvent{FieldName: "DCChargingEnergyIn", Value: float64(10), ObservedAt: start.Add(2 * time.Second), EventID: "energy-start"})
+	machine.apply(telemetrySessionEvent{FieldName: "DCChargingPower", Value: float64(50), ObservedAt: start.Add(3 * time.Second), EventID: "power"})
+	machine.apply(telemetrySessionEvent{FieldName: "Soc", Value: float64(40), ObservedAt: start.Add(4 * time.Second), EventID: "soc-end"})
+	machine.apply(telemetrySessionEvent{FieldName: "DCChargingEnergyIn", Value: float64(12), ObservedAt: start.Add(5 * time.Second), EventID: "energy-end"})
+	machine.apply(telemetrySessionEvent{FieldName: "DetailedChargeState", Value: "complete", ObservedAt: start.Add(6 * time.Second), EventID: "charge-end"})
+	completed := machine.completedSessions()
+	if len(completed) != 1 {
+		t.Fatalf("charge sessions = %#v", completed)
+	}
+	item := historySessionMap(completed[0], "charge", 0)
+	details, ok := item["charge_details"].([]map[string]any)
+	if !ok || len(details) < 2 {
+		t.Fatalf("charge history details = %#v", item["charge_details"])
 	}
 }
 

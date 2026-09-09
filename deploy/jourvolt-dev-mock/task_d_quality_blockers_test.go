@@ -79,8 +79,10 @@ func TestTaskDDriveFinalizerClosesPersistedCandidateOnceWithoutRedelivery(t *tes
 	service.memory.registerVehicle(ref)
 	start := time.Date(2026, time.August, 30, 9, 0, 0, 0, time.UTC)
 	for _, record := range []telemetryRecord{
+		{VINHash: ref.VINHash, FieldName: "Gear", Value: "D", ObservedAt: start, EventID: "gear-drive"},
 		{VINHash: ref.VINHash, FieldName: "VehicleSpeed", Value: float64(12), ObservedAt: start, EventID: "drive"},
-		{VINHash: ref.VINHash, FieldName: "VehicleSpeed", Value: float64(0), ObservedAt: start.Add(time.Second), EventID: "stop"},
+		{VINHash: ref.VINHash, FieldName: "Gear", Value: "P", ObservedAt: start.Add(time.Second), EventID: "gear-park"},
+		{VINHash: ref.VINHash, FieldName: "VehicleSpeed", Value: float64(0), ObservedAt: start.Add(2 * time.Second), EventID: "stop"},
 	} {
 		if accepted, err := service.ingest(context.Background(), record); err != nil || accepted != 1 {
 			t.Fatalf("ingest %+v accepted=%d err=%v", record, accepted, err)
@@ -88,7 +90,7 @@ func TestTaskDDriveFinalizerClosesPersistedCandidateOnceWithoutRedelivery(t *tes
 	}
 	// A same-value QoS1 redelivery must neither move the stored candidate nor
 	// require a different field to make the finalizer eligible.
-	if accepted, err := service.ingest(context.Background(), telemetryRecord{VINHash: ref.VINHash, FieldName: "VehicleSpeed", Value: float64(0), ObservedAt: start.Add(5 * time.Second), EventID: "stop-redelivery"}); err != nil || accepted != 0 {
+	if accepted, err := service.ingest(context.Background(), telemetryRecord{VINHash: ref.VINHash, FieldName: "VehicleSpeed", Value: float64(0), ObservedAt: start.Add(2 * time.Second), EventID: "stop-redelivery"}); err != nil || accepted != 0 {
 		t.Fatalf("same-value redelivery accepted=%d err=%v", accepted, err)
 	}
 	if completed, err := service.finalizeDue(context.Background(), start.Add(10*time.Second)); err != nil || completed != 0 {
@@ -345,7 +347,7 @@ func verifyTelemetrySharedConfigMount(t *testing.T, composeFile, text string) {
 
 func TestComposeNamedVolumeBlockSemantics(t *testing.T) {
 	for name, text := range map[string]string{
-		"ecs": "services:\n  fleet-telemetry:\n    volumes:\n      - ${TELEMETRY_CONFIG_DIR:-/dev/shm/jourvolt-fleet-telemetry-config}:/etc/fleet-telemetry:ro\n  fleet-telemetry-config:\n    volumes:\n      - ${TELEMETRY_CONFIG_DIR:-/dev/shm/jourvolt-fleet-telemetry-config}:/rendered\n",
+		"ecs":   "services:\n  fleet-telemetry:\n    volumes:\n      - ${TELEMETRY_CONFIG_DIR:-/dev/shm/jourvolt-fleet-telemetry-config}:/etc/fleet-telemetry:ro\n  fleet-telemetry-config:\n    volumes:\n      - ${TELEMETRY_CONFIG_DIR:-/dev/shm/jourvolt-fleet-telemetry-config}:/rendered\n",
 		"local": "services:\n  fleet-telemetry:\n    volumes:\n      - ${TELEMETRY_CONFIG_DIR:-./.telemetry-config}:/etc/fleet-telemetry:ro\n  fleet-telemetry-config:\n    volumes:\n      - ${TELEMETRY_CONFIG_DIR:-./.telemetry-config}:/rendered\n",
 	} {
 		if !strings.Contains(text, "TELEMETRY_CONFIG_DIR") || !strings.Contains(text, ":/rendered") || !strings.Contains(text, ":/etc/fleet-telemetry:ro") {

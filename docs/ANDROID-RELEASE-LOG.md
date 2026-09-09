@@ -10,6 +10,19 @@
 
 ---
 
+## [2.1.10 / build 29] — 2026-09-09 浏览器选择（本地候选，未安装）
+
+- Tesla 登录改为 App 内选择浏览器；显式启动所选应用，避免默认浏览器闪退阻断登录。取消后可重新发起登录；虚拟钥匙深链与 OAuth 回调保持原流程。
+- 已构建并核验 `com.matelink` Release，非 debuggable；证书 SHA-256 与既有正式包一致：`9ab144e824abf26a5941819abb06831288c36a8bfe622657e3dc9d88281fc774`。
+- APK SHA-256：`9C8E283B1268A80B70756144960E1DFA3B3C74D25F8E58D3ED64494634E455F8`。
+- APK 位于当前工作树 `android/app/build/outputs/apk/release/app-release.apk`；本轮没有提交、推送、部署或设备安装。
+- Debug/Release 各 526 项测试：0 failures / 0 errors，Release 8 项预期跳过。首次组合构建因 2 GB Gradle 堆不足停止；独立打包使用临时 4 GB 堆参数成功，未修改项目 JVM 配置。
+- 最终 `lintDebug`、`lintRelease` 均通过。
+- 实机只读查询确认 MATCH_ALL 能返回 Chrome，普通查询仅返回默认 Heytap。最终选择列表、取消重试和真实 OAuth 回流尚待设备验收。
+- 数据链路源码审查见 `docs/audits/2026-09-09-browser-and-telemetry-readiness.md`；不能承诺授权后自动补齐所有曲线及历史指标。
+
+---
+
 ## [2.1.9 / build 28] — 2026-09-08 授权恢复重试与行程列表地址修复
 
 ### 已验证
