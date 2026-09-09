@@ -1,0 +1,40 @@
+name: Data recovery isolated verification
+on:
+  push:
+    branches: [chore/20260909-data-recovery-verification]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: e83e86eb711013bc280c1534c2cc76bffd1cef8a
+          persist-credentials: false
+      - name: Export pinned source without credentials or build artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > SOURCE_SHA.txt
+          git ls-tree -r HEAD > SOURCE_TREE.txt
+          git archive --format=zip --output=source.zip HEAD
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('source.zip') as z:
+              forbidden = [n for n in z.namelist() if n.rsplit('/',1)[-1] in {'.env','local.properties'} or n.lower().endswith(('.jks','.keystore','.p12'))]
+              if forbidden: raise SystemExit('Refusing source export: private configuration paths present')
+          PY
+          sha256sum source.zip > SOURCE_ARCHIVE_SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: matelink-e83-source
+          path: |
+            source.zip
+            SOURCE_SHA.txt
+            SOURCE_TREE.txt
+            SOURCE_ARCHIVE_SHA256.txt
+          retention-days: 3
+          if-no-files-found: error
