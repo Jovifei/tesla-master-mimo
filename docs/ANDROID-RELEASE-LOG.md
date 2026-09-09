@@ -10,6 +10,17 @@
 
 ---
 
+## [2.1.11 / build 30] — 2026-09-09 阶段版本（已构建，未重复安装）
+
+- 基于已推送的 `6ced331` Telemetry 数据真实性修复和浏览器选择优化；仅更新 Android 版本号与本次更新说明。
+- 保留 Tesla 登录浏览器选择；等待车辆、Telemetry 和历史数据继续按真实证据显示，不生成合成数据。
+- 已构建并核验 `com.matelink` Release，非 debuggable；证书 SHA-256：`9ab144e824abf26a5941819abb06831288c36a8bfe622657e3dc9d88281fc774`。
+- APK SHA-256：`C86C1FD079491B85143BF0604A6C4C88F9C8AB95A932CE2BD68DCF18817B54BA`。
+- Debug/Release 各 526 项测试：0 failures / 0 errors，Release 8 项预期跳过；`lintDebug`、`lintRelease` 通过。
+- 本阶段版本已提交并推送；没有再次安装设备，设备当前仍是 2.1.10/build29。
+
+---
+
 ## [2.1.10 / build 29] — 2026-09-09 浏览器选择与 Telemetry 数据真实性修复
 
 - Tesla 登录改为 App 内选择浏览器；显式启动所选应用，避免默认浏览器闪退阻断登录。取消后可重新发起登录；虚拟钥匙深链与 OAuth 回调保持原流程。

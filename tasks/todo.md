@@ -1,5 +1,14 @@
 # 2026-08-30 iOS Apple 重设计（分支 feature/ios-apple-redesign，禁止提交 main）
 
+# 2026-09-09 Android 2.1.11 stage release
+
+## Review
+
+- [x] Version bumped to `2.1.11` / build `30`; localized release notes and version contract updated.
+- [x] Debug/Release JVM suites: 526 each, zero failures/errors; Release 8 expected skips. `lintDebug`, `lintRelease`, and signed `assembleRelease` pass.
+- [x] APK SHA-256 `C86C1FD079491B85143BF0604A6C4C88F9C8AB95A932CE2BD68DCF18817B54BA`; same production certificate verified.
+- [ ] Device install remains the prior authorized 2.1.10/build29 install; this stage bump is pushed for the next device update.
+
 # 2026-09-09 Authorized commit, deploy and device install
 
 ## Plan

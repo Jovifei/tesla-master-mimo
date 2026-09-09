@@ -1083,11 +1083,12 @@
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
     <string name="settings_release_notes_title">This update</string>
-    <string name="settings_release_notes_version">MateLink 2.1.10</string>
+    <string name="settings_release_notes_version">MateLink 2.1.11</string>
     <string name="tesla_login_choose_browser">Choose a browser for Tesla login</string>
     <string name="settings_release_notes_view">View update notes</string>
     <string name="settings_release_notes_close">Got it</string>
-<string name="settings_release_notes_body">• Tesla login now lets you choose a browser each time. If a browser crashes, return and choose another.
+<string name="settings_release_notes_body">• MateLink 2.1.11 keeps the browser chooser and presents Tesla data readiness without synthetic values.
+• Tesla login now lets you choose a browser each time. If a browser crashes, return and choose another.
 • Re-authorizing Tesla now retries unsynced Fleet Telemetry configuration without touching verified vehicles.
 • Drive lists enrich missing endpoints from real route coordinates in the background; missing coordinates stay unavailable.
 • Local history uploads now preserve the complete valid archive instead of only two data days.
