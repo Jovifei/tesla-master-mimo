@@ -8,7 +8,7 @@
 - [x] Debug/Release JVM suites: 543 each, zero failures/errors; Release 8 expected skips. `lintDebug`, `lintRelease`, Debug/AndroidTest builds, and signed `assembleRelease` pass.
 - [x] Source commit `fe27f2b` pushed; Release APK rebuilt from it, SHA-256 `98E763A01D699E43FFFC9A9C4A824B6A7FFA2DC099AA30BE2FDF5544639DA810`; same production certificate verified.
 - [x] Direct DAO/Stats review now excludes `qualityState` outside `observed`/`derived` from interval, driving-day, and recommendation evidence; contract tests cover the old-alias boundary.
-- [ ] Device install remains the prior authorized install; this candidate is not installed. ECS was not deployed. Temporary PostgreSQL was not run because Docker Linux engine is unavailable locally.
+- [x] OnePlus 7 Pro `6e4fa92f` received this Release with `adb install -r`; version `2.1.12/build31`, `firstInstallTime` preserved, Activity/process start clean, no sampled MateLink FATAL/ANR. ECS was not deployed. Temporary PostgreSQL was not run because Docker Linux engine is unavailable locally.
 
 # 2026-09-09 Authorized commit, deploy and device install
 
