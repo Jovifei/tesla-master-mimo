@@ -219,21 +219,38 @@ func fleetVehicleCoreDataPath(vin string) string {
 	return "/api/1/vehicles/" + url.PathEscape(vin) + "/vehicle_data"
 }
 
+// Core and location are independent capabilities. A successful location-only
+// response is not a complete snapshot and must never replace charge/config data.
 func (p *fleetProvider) vehicleData(ctx context.Context, userID, vin string) (teslaVehicleDataEnvelope, bool, error) {
-	var payload teslaVehicleDataEnvelope
-	if err := p.get(ctx, userID, fleetVehicleDataPath(vin), &payload); err == nil {
-		return payload, false, nil
-	} else if !errors.Is(err, errTeslaReauthorization) {
-		return teslaVehicleDataEnvelope{}, false, err
-	}
-
-	// vehicle_location is an independent Tesla permission. A missing location
-	// grant must not turn valid vehicle_device_data into a total dashboard outage.
 	var core teslaVehicleDataEnvelope
 	if err := p.get(ctx, userID, fleetVehicleCoreDataPath(vin), &core); err != nil {
 		return teslaVehicleDataEnvelope{}, false, err
 	}
-	return core, true, nil
+	var location teslaVehicleDataEnvelope
+	if err := p.get(ctx, userID, fleetVehicleDataPath(vin), &location); err != nil {
+		if ctx.Err() != nil {
+			return teslaVehicleDataEnvelope{}, false, ctx.Err()
+		}
+		// Keep usable core data even when location permission or transport fails.
+		// Do not label network failures as missing permission.
+		return core, errors.Is(err, errTeslaReauthorization), nil
+	}
+	point := location.Response.DriveState
+	if validFleetCoordinates(point.Latitude, point.Longitude) {
+		core.Response.DriveState.Latitude = point.Latitude
+		core.Response.DriveState.Longitude = point.Longitude
+		if point.Heading != nil {
+			core.Response.DriveState.Heading = point.Heading
+		}
+	}
+	return core, false, nil
+}
+
+func validFleetCoordinates(latitude, longitude *float64) bool {
+	return latitude != nil && longitude != nil &&
+		!math.IsNaN(*latitude) && !math.IsNaN(*longitude) &&
+		*latitude >= -90 && *latitude <= 90 && *longitude >= -180 && *longitude <= 180 &&
+		!(*latitude == 0 && *longitude == 0)
 }
 
 func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int) (vehicleStatus, error) {
