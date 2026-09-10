@@ -44,7 +44,7 @@ jobs:
         working-directory: candidate/deploy/jourvolt-dev-mock
         run: |
           set -euo pipefail
-          go test ./... -count=1 -json | tee "$GITHUB_WORKSPACE/reports/go-tests.json"
+          go test ./... -count=1 -json 2>&1 | tee "$GITHUB_WORKSPACE/reports/go-tests.json"
           go vet ./...
           go mod verify
           go build ./...
@@ -52,6 +52,23 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Extend Java trust with runner-installed operating-system trust anchors
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re, shutil, subprocess, tempfile
+          trust = pathlib.Path(os.environ['RUNNER_TEMP']) / 'matelink-java-cacerts'
+          shutil.copyfile(pathlib.Path(os.environ['JAVA_HOME']) / 'lib/security/cacerts', trust)
+          bundle = pathlib.Path('/etc/ssl/certs/ca-certificates.crt').read_text()
+          certs = re.findall(r'-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----', bundle, re.S)
+          if not certs: raise SystemExit('Runner OS CA bundle is empty')
+          for index, certificate in enumerate(certs):
+              with tempfile.NamedTemporaryFile(mode='w', suffix='.pem') as handle:
+                  handle.write(certificate + '\n'); handle.flush()
+                  subprocess.run(['keytool','-importcert','-noprompt','-trustcacerts','-keystore',str(trust),'-storepass','changeit','-alias',f'runner-os-{index}','-file',handle.name], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+          with open(os.environ['GITHUB_ENV'], 'a') as handle:
+              handle.write(f'JAVA_TOOL_OPTIONS=-Djavax.net.ssl.trustStore={trust}\n')
+          print(f'Added {len(certs)} runner OS trust anchors; TLS verification remains enabled')
+          PY
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
       - name: Android JVM, lint and debug build (no production signing)
@@ -60,7 +77,7 @@ jobs:
         working-directory: candidate/android
         run: |
           set -euo pipefail
-          bash gradlew :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleDebugAndroidTest --continue --no-daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' -PJOURVOLT_API_BASE_URL=https://api.teslalink.joviluma.com/ -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com -PMATELINK_PUBLIC_INFO_BASE_URL=https://auth.teslalink.joviluma.com | tee "$GITHUB_WORKSPACE/reports/android-build.log"
+          bash gradlew :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleDebugAndroidTest --continue --no-daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' -PJOURVOLT_API_BASE_URL=https://api.teslalink.joviluma.com/ -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com -PMATELINK_PUBLIC_INFO_BASE_URL=https://auth.teslalink.joviluma.com 2>&1 | tee "$GITHUB_WORKSPACE/reports/android-build.log"
       - name: Export evidence (not a production APK)
         if: always()
         uses: actions/upload-artifact@v4
