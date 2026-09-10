@@ -50,13 +50,13 @@ class TelemetryAutoConfigurePolicyTest {
     @Test fun recoveredCaConfigurationErrorRetriesAutomatically() {
         assertTrue(
             shouldAutoConfigureTelemetry(
-                TelemetryPairingStatus(status = "telemetry_error", configSynced = null, errorClass = "ca_unavailable"),
+                TelemetryPairingStatus(status = "telemetry_error", configSynced = null, errorClass = "ca_unavailable", updatedAt = "2026-01-01T00:00:00Z"),
                 null
             )
         )
         assertFalse(
             shouldAutoConfigureTelemetry(
-                TelemetryPairingStatus(status = "telemetry_error", configSynced = null, errorClass = "command_transport"),
+                TelemetryPairingStatus(status = "telemetry_error", configSynced = null, errorClass = "unsupported_hardware"),
                 null
             )
         )

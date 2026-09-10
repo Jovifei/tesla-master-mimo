@@ -158,7 +158,11 @@ fun TeslaLoginScreen(
                     icon = { CircularProgressIndicator(modifier = Modifier.size(22.dp)) },
                     text = stringResource(R.string.tesla_onboarding_checking)
                 )
-                TeslaLoginOnboardingState.Pending,
+                TeslaLoginOnboardingState.Pending -> TeslaBlockedOnboardingPanel(
+                    reason = "waiting_vehicle",
+                    onRetry = viewModel::retryTeslaOnboarding,
+                    onContinue = viewModel::continueAfterTeslaOnboarding
+                )
                 TeslaLoginOnboardingState.Ready -> Unit
                 is TeslaLoginOnboardingState.PairingRequired -> TeslaPairingOnboardingPanel(
                     virtualKeyUrl = onboarding.virtualKeyUrl,
@@ -172,6 +176,8 @@ fun TeslaLoginScreen(
                     onContinue = viewModel::continueAfterTeslaOnboarding
                 )
                 is TeslaLoginOnboardingState.Blocked -> TeslaBlockedOnboardingPanel(
+                    reason = onboarding.reason,
+                    onRetry = viewModel::retryTeslaOnboarding,
                     onContinue = viewModel::continueAfterTeslaOnboarding
                 )
             }
@@ -385,16 +391,22 @@ private fun TeslaPermissionOnboardingPanel(
 }
 
 @Composable
-private fun TeslaBlockedOnboardingPanel(onContinue: () -> Unit) {
+private fun TeslaBlockedOnboardingPanel(reason: String?, onRetry: () -> Unit, onContinue: () -> Unit) {
+    val billing = reason == "billing_blocked"
     LoginPanel(containerColor = MaterialTheme.colorScheme.errorContainer) {
         Text(
-            text = stringResource(R.string.tesla_onboarding_blocked_title),
+            text = stringResource(if (billing) R.string.tesla_onboarding_blocked_title else R.string.telemetry_setup_pending_title),
             style = MaterialTheme.typography.titleMedium
         )
         Text(
-            text = stringResource(R.string.tesla_onboarding_blocked_body),
+            text = stringResource(if (billing) R.string.tesla_onboarding_blocked_body else R.string.telemetry_setup_pending_body),
             style = MaterialTheme.typography.bodyMedium
         )
+        if (!billing) {
+            Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.telemetry_recheck))
+            }
+        }
         OutlinedButton(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.tesla_onboarding_pairing_continue))
         }

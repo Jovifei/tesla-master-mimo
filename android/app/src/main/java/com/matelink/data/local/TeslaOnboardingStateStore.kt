@@ -30,7 +30,8 @@ data class TeslaOnboardingSnapshot(
     val vehicleId: Int? = null,
     val virtualKeyUrl: String? = null,
     val launchPending: Boolean = false,
-    val retryUsed: Boolean = false
+    val retryUsed: Boolean = false,
+    val reason: String? = null
 )
 
 private val Context.teslaOnboardingDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -46,6 +47,7 @@ class TeslaOnboardingStateStore @Inject constructor(
     private val vehicleIdKey = intPreferencesKey("vehicle_id")
     private val virtualKeyUrlKey = stringPreferencesKey("virtual_key_url")
     private val launchPendingKey = booleanPreferencesKey("launch_pending")
+    private val reasonKey = stringPreferencesKey("reason")
     private val retryUsedKey = booleanPreferencesKey("retry_used")
 
     val state: Flow<TeslaOnboardingSnapshot> = context.teslaOnboardingDataStore.data.map { preferences ->
@@ -57,7 +59,8 @@ class TeslaOnboardingStateStore @Inject constructor(
             vehicleId = preferences[vehicleIdKey],
             virtualKeyUrl = preferences[virtualKeyUrlKey],
             launchPending = preferences[launchPendingKey] ?: false,
-            retryUsed = preferences[retryUsedKey] ?: false
+            retryUsed = preferences[retryUsedKey] ?: false,
+            reason = preferences[reasonKey]
         )
     }
 
@@ -75,6 +78,7 @@ class TeslaOnboardingStateStore @Inject constructor(
                     ?: preferences.remove(virtualKeyUrlKey)
                 preferences[launchPendingKey] = snapshot.launchPending
                 preferences[retryUsedKey] = snapshot.retryUsed
+                snapshot.reason?.let { preferences[reasonKey] = it } ?: preferences.remove(reasonKey)
             }
         }
     }

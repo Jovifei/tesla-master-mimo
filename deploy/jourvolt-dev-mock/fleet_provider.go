@@ -269,6 +269,9 @@ func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int
 	if err != nil {
 		return vehicleStatus{}, err
 	}
+	if p.telemetry != nil {
+		p.telemetry.maybeAutoConfigure(userID, vehicleID)
+	}
 	data := payload.Response
 	displayName := strings.TrimSpace(data.DisplayName)
 	if displayName == "" {

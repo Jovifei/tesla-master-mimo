@@ -49,8 +49,10 @@ internal fun shouldAutoConfigureTelemetry(
     if (pairing.status.equals("pairing_required", ignoreCase = true)) {
         return pairing.updatedAt.isNullOrBlank()
     }
-    return pairing.status.equals("telemetry_error", ignoreCase = true) &&
-        pairing.errorClass.equals("ca_unavailable", ignoreCase = true)
+    if (!pairing.status.equals("telemetry_error", ignoreCase = true)) return false
+    if (pairing.errorClass?.lowercase() !in setOf(null, "", "ca_unavailable", "command_transport", "telemetry_error", "rate_limited")) return false
+    val updated = runCatching { java.time.Instant.parse(pairing.updatedAt) }.getOrNull() ?: return false
+    return java.time.Duration.between(updated, java.time.Instant.now()).seconds >= 60
 }
 
 @HiltViewModel

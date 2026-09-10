@@ -1496,4 +1496,7 @@
     <string name="drive_curves_banner_title">行程动态曲线分析</string>
     <string name="drive_curves_banner_subtitle">点击查看速度、里程、功率、电量与海拔变化</string>
     <string name="distance_profile">行程距离曲线</string>
+    <string name="telemetry_setup_pending_title">已登录，持续采集尚未就绪</string>
+    <string name="telemetry_setup_pending_body">Tesla 登录会话已连接。系统会自动重试可恢复的配置错误；缺少车辆钥匙或权限时仍需您在 Tesla 官方页面确认。可以先查看已有数据，新行程必须等待真实遥测事件。</string>
+    <string name="telemetry_recheck">重新检查配置</string>
 </resources>

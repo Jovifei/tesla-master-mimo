@@ -19,10 +19,11 @@ import (
 )
 
 var (
-	errTelemetryPermission = errors.New("telemetry_permission_required")
-	errTelemetryPairing    = errors.New("telemetry_pairing_required")
-	errTelemetryBilling    = errors.New("telemetry_billing_blocked")
-	errTelemetryCommand    = errors.New("telemetry_command_failed")
+	errTelemetryPermission       = errors.New("telemetry_permission_required")
+	errTelemetryPairing          = errors.New("telemetry_pairing_required")
+	errTelemetryBilling          = errors.New("telemetry_billing_blocked")
+	errTelemetryCommand          = errors.New("telemetry_command_failed")
+	errTelemetryConfigInProgress = errors.New("telemetry_config_in_progress")
 )
 
 type telemetryService struct {
@@ -46,6 +47,7 @@ type telemetryService struct {
 	mqttInvalid              atomic.Uint64
 	receiveSequence          atomic.Uint64
 	autoConfigure            sync.Map
+	configureRequests        sync.Map
 	finalizerMu              sync.Mutex
 	finalizerCancel          context.CancelFunc
 	finalizerDone            chan struct{}
@@ -84,12 +86,32 @@ type telemetryAutoConfigureKey struct {
 	vehicleID int
 }
 
+const telemetryAutoRetryDelay = 60 * time.Second
+
 func shouldAutoConfigurePairing(pairing telemetryPairingResponse) bool {
+	return shouldAutoConfigurePairingAt(pairing, time.Now().UTC())
+}
+
+// Recovery is operator-owned: no repeated OAuth and no missing-key bypass.
+// The stored attempt time bounds retries across reads and API restarts.
+func shouldAutoConfigurePairingAt(pairing telemetryPairingResponse, now time.Time) bool {
 	if pairing.ConfigSynced != nil && *pairing.ConfigSynced {
 		return false
 	}
-	return strings.EqualFold(strings.TrimSpace(pairing.Status), "pairing_required") &&
-		strings.TrimSpace(pairing.UpdatedAt) == ""
+	status := strings.ToLower(strings.TrimSpace(pairing.Status))
+	if status == "pairing_required" {
+		return strings.TrimSpace(pairing.UpdatedAt) == ""
+	}
+	if status != "telemetry_error" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(pairing.ErrorClass)) {
+	case "", "telemetry_error", "command_transport", "ca_unavailable", "rate_limited":
+	default:
+		return false
+	}
+	updated, err := time.Parse(time.RFC3339, pairing.UpdatedAt)
+	return err == nil && now.Sub(updated) >= telemetryAutoRetryDelay
 }
 
 func shouldRetryAfterAuthorization(pairing telemetryPairingResponse) bool {
@@ -639,6 +661,11 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	key := telemetryAutoConfigureKey{userID: userID, vehicleID: vehicleID}
+	if _, loaded := s.configureRequests.LoadOrStore(key, struct{}{}); loaded {
+		return errTelemetryConfigInProgress
+	}
+	defer s.configureRequests.Delete(key)
 	s.setPairingStatus(ctx, userID, vehicleID, "configuring")
 	vin, err := s.vinForVehicle(ctx, userID, vehicleID)
 	if err != nil {
@@ -673,7 +700,11 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
 	classification := telemetryCommandErrorClass(response.StatusCode, responseBody)
 	if classification != "" {
-		_ = s.setPairingError(ctx, userID, vehicleID, classification, classification)
+		status := classification
+		if status != "permission_required" && status != "pairing_required" && status != "billing_blocked" {
+			status = "telemetry_error"
+		}
+		_ = s.setPairingError(ctx, userID, vehicleID, status, classification)
 		switch classification {
 		case "permission_required":
 			return errTelemetryPermission
@@ -698,6 +729,15 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 			}
 			if status == "pairing_required" {
 				return errTelemetryPairing
+			}
+			errorClass := "max_configs"
+			if len(skipped.UnsupportedHardware) > 0 {
+				errorClass = "unsupported_hardware"
+			} else if len(skipped.UnsupportedFirmware) > 0 {
+				errorClass = "unsupported_firmware"
+			}
+			if err := s.setPairingError(ctx, userID, vehicleID, status, errorClass); err != nil {
+				return errTelemetryCommand
 			}
 			return errTelemetryCommand
 		}
@@ -893,6 +933,12 @@ func telemetryCommandErrorClass(status int, body []byte) string {
 	}
 	if status == http.StatusNotFound || status == http.StatusConflict || bodyHasExactCode(body, "pairing_required", "vehicle_not_paired", "virtual_key_required") {
 		return "pairing_required"
+	}
+	if status == http.StatusTooManyRequests {
+		return "rate_limited"
+	}
+	if status >= 400 && status < 500 {
+		return "configuration_invalid"
 	}
 	if status < 200 || status >= 300 {
 		return "telemetry_error"

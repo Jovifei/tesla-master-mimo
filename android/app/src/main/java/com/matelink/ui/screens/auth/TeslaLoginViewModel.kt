@@ -404,8 +404,19 @@ class TeslaLoginViewModel @Inject constructor(
     fun continueAfterTeslaOnboarding() {
         when (_postLoginOnboarding.value) {
             is TeslaLoginOnboardingState.PermissionRequired,
-            is TeslaLoginOnboardingState.Blocked -> continueToDashboard()
+            is TeslaLoginOnboardingState.Blocked,
+            TeslaLoginOnboardingState.Pending -> continueToDashboard()
             else -> Unit
+        }
+    }
+
+    /** Recheck with the existing session; backend owns bounded configuration recovery. */
+    fun retryTeslaOnboarding() {
+        if (sessionStore.current() == null) return
+        val requestId = invalidateCurrentRequest()
+        requestJob?.cancel()
+        requestJob = viewModelScope.launch(Dispatchers.IO) {
+            runPostLoginOnboardingSafely(requestId)
         }
     }
 
@@ -524,7 +535,7 @@ class TeslaLoginViewModel @Inject constructor(
                 )
             }
             TeslaOnboardingPhase.BLOCKED -> {
-                _postLoginOnboarding.value = TeslaLoginOnboardingState.Blocked("billing_blocked")
+                _postLoginOnboarding.value = TeslaLoginOnboardingState.Blocked(snapshot.reason ?: "telemetry_error")
             }
             TeslaOnboardingPhase.PENDING -> {
                 _postLoginOnboarding.value = TeslaLoginOnboardingState.Checking
@@ -544,7 +555,7 @@ class TeslaLoginViewModel @Inject constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            proceedToDashboardIfCurrent(requestId)
+            publishBlocked("telemetry_error", requestId)
         }
     }
 
@@ -579,7 +590,7 @@ class TeslaLoginViewModel @Inject constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            proceedToDashboardIfCurrent(requestId)
+            publishBlocked("telemetry_error", requestId)
         }
     }
 
@@ -625,7 +636,7 @@ class TeslaLoginViewModel @Inject constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            proceedToDashboardIfCurrent(requestId)
+            publishBlocked("telemetry_error", requestId)
         }
     }
 
@@ -655,10 +666,15 @@ class TeslaLoginViewModel @Inject constructor(
                     }
                     isPermissionRequired(pairing) ->
                         publishPermissionRequired(carId, pairing.status, requestId)
-                    pairing.status.equals("billing_blocked", ignoreCase = true) ->
-                        publishBlocked(pairing.status, requestId)
+                    pairing.status.equals("billing_blocked", ignoreCase = true) ||
+                        pairing.status.equals("telemetry_error", ignoreCase = true) ||
+                        pairing.status.equals("telemetry_not_configured", ignoreCase = true) ->
+                        publishBlocked(pairing.errorClass ?: pairing.status, requestId)
                     pairing.configSynced == true -> completeOnboardingIfCurrent(requestId)
-                    else -> proceedToDashboardIfCurrent(requestId)
+                    else -> {
+                        _postLoginOnboarding.value = TeslaLoginOnboardingState.Pending
+                        persistOnboarding(TeslaOnboardingPhase.PENDING, carId)
+                    }
                 }
             }
             is ApiResult.Error -> when {
@@ -669,7 +685,7 @@ class TeslaLoginViewModel @Inject constructor(
                     _postLoginOnboarding.value = TeslaLoginOnboardingState.PairingRequired(carId, null)
                     persistOnboarding(TeslaOnboardingPhase.PAIRING_REQUIRED, carId, null)
                 }
-                else -> proceedToDashboardIfCurrent(requestId)
+                else -> publishBlocked(result.details ?: "telemetry_error", requestId)
             }
         }
     }
@@ -768,7 +784,8 @@ class TeslaLoginViewModel @Inject constructor(
             vehicleId = carId,
             virtualKeyUrl = virtualKeyUrl,
             launchPending = _teslaPairingFlowPending.value,
-            retryUsed = pairingRetryUsed
+            retryUsed = pairingRetryUsed,
+            reason = (_postLoginOnboarding.value as? TeslaLoginOnboardingState.Blocked)?.reason
         )
         onboardingPersistenceJob?.cancel()
         onboardingPersistenceJob = viewModelScope.launch(Dispatchers.IO) {
