@@ -72,3 +72,4 @@ GitHub Actions 运行 `34424303295` 与 `34424360315` 均生成相同功能源�
 - Go 新鲜 `test ./... -count=1` 为 225 个 Test 事件：212 PASS、13 SKIP、0 FAIL；`go vet ./...`、`go mod verify`、`go build ./...` 通过。13 个跳过含可选临时 PostgreSQL，因为本机 Docker Linux 引擎 named pipe 不可用；未连接 ECS/生产数据库。
 - Android 使用交接允许的命令级 `-Xmx4g`、2 workers、`--no-daemon` 完成 Debug/Release JVM、lint、Debug、AndroidTest 和 Release 构建。Debug/Release JVM 各 543 项，Release 8 项预期跳过，失败/错误均为 0。
 - 两个旧契约断言已按当前目标更新：全量历史读取后按日期过滤、未知车型返回通用占位；另补充直接 DAO/Stats 对不完整旧别名行的统计过滤契约和最小实现。版本候选为 `2.1.12/build31`，Release APK 从 `fe27f2b` 重建，SHA-256 为 `98E763A01D699E43FFFC9A9C4A824B6A7FFA2DC099AA30BE2FDF5544639DA810`，已覆盖安装到 `6e4fa92f`，ECS 尚未部署。
+- 设备只读 UI 当前显示“已登录，持续采集尚未就绪”，并提示车辆钥匙或权限仍需 Tesla 官方确认；主 Activity 启动成功，最近采样日志无 MateLink FATAL/ANR。公开 `/healthz`、`/readyz` 返回 `fleet/postgres/ok`，`telemetry=awaiting_first_event`，运行构建 `6ced331`，不等同于本分支最新代码已部署。

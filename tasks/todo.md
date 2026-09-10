@@ -9,6 +9,8 @@
 - [x] Source commit `fe27f2b` pushed; Release APK rebuilt from it, SHA-256 `98E763A01D699E43FFFC9A9C4A824B6A7FFA2DC099AA30BE2FDF5544639DA810`; same production certificate verified.
 - [x] Direct DAO/Stats review now excludes `qualityState` outside `observed`/`derived` from interval, driving-day, and recommendation evidence; contract tests cover the old-alias boundary.
 - [x] OnePlus 7 Pro `6e4fa92f` received this Release with `adb install -r`; version `2.1.12/build31`, `firstInstallTime` preserved, Activity/process start clean, no sampled MateLink FATAL/ANR. ECS was not deployed. Temporary PostgreSQL was not run because Docker Linux engine is unavailable locally.
+- [x] Read-only device UI shows `已登录，持续采集尚未就绪`; the page offers `重新检查配置` and explains that Tesla vehicle-key or permission confirmation may still be required.
+- [x] Public `/healthz` and `/readyz` remain `fleet/postgres/ok`; server reports `telemetry=awaiting_first_event` and build `6ced331`. This is a runtime snapshot, not proof that the current branch is deployed.
 
 # 2026-09-09 Authorized commit, deploy and device install
 
