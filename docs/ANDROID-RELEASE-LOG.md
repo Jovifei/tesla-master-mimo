@@ -10,6 +10,16 @@
 
 ---
 
+## [2.1.12 / build 31] — 2026-09-10 本地验证候选（未安装）
+
+- 版本从 2.1.11/build30 递增；源码提交为 `fe27f2b`（功能基线 `4e97691949ecef9a39fd135be3efb988907b0f61`），本阶段补充了不完整旧别名行的统计过滤契约与最小实现。
+- Debug/Release JVM 各 543 项：0 failures / 0 errors，Release 8 项预期跳过；`lintDebug`、`lintRelease`、`assembleDebug`、`assembleDebugAndroidTest` 和签名 `assembleRelease` 均通过。
+- Release APK：`android/app/build/outputs/apk/release/app-release.apk`；由 `fe27f2b` 重建，SHA-256：`98E763A01D699E43FFFC9A9C4A824B6A7FFA2DC099AA30BE2FDF5544639DA810`。
+- 正式证书 SHA-256：`9ab144e824abf26a5941819abb06831288c36a8bfe622657e3dc9d88281fc774`；包名保持 `com.matelink`，未安装手机。
+- 本轮没有部署 ECS；临时 PostgreSQL 因本机 Docker Linux 引擎不可用未执行，未连接生产数据库。
+
+---
+
 ## [2.1.11 / build 30] — 2026-09-09 阶段版本（已构建，未重复安装）
 
 - 基于已推送的 `6ced331` Telemetry 数据真实性修复和浏览器选择优化；仅更新 Android 版本号与本次更新说明。

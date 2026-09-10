@@ -63,3 +63,10 @@ Android 编译/JVM/lint/签名 Release、新包安装、会话与历史保留、
 ## 下一步
 
 执行 `handoff/codex/NEXT_AGENT_20260910_DATA_CHAIN_RECOVERY.md`。先 fetch 实际最新 HEAD、独立审查并运行本地门禁，再按授权执行同签名覆盖升级、保留数据部署与真实车辆验收。不要合并 main，不绕过 Tesla 用户授权。
+
+## 本地 Codex 验证附录（2026-09-10）
+
+- `git fetch --all --prune` 后，独立 worktree 快进到 `cee88304709c36c0f2f97a187203fdd90732aa21`；源码/测试/版本提交 `fe27f2b` 已推送；`4e97691949ecef9a39fd135be3efb988907b0f61` 为功能基线祖先。父目录旧 `main` 的用户未提交文件未触碰。
+- Go 新鲜 `test ./... -count=1` 为 225 个 Test 事件：212 PASS、13 SKIP、0 FAIL；`go vet ./...`、`go mod verify`、`go build ./...` 通过。13 个跳过含可选临时 PostgreSQL，因为本机 Docker Linux 引擎 named pipe 不可用；未连接 ECS/生产数据库。
+- Android 使用交接允许的命令级 `-Xmx4g`、2 workers、`--no-daemon` 完成 Debug/Release JVM、lint、Debug、AndroidTest 和 Release 构建。Debug/Release JVM 各 543 项，Release 8 项预期跳过，失败/错误均为 0。
+- 两个旧契约断言已按当前目标更新：全量历史读取后按日期过滤、未知车型返回通用占位；另补充直接 DAO/Stats 对不完整旧别名行的统计过滤契约和最小实现。版本候选为 `2.1.12/build31`，Release APK 从 `fe27f2b` 重建，SHA-256 为 `98E763A01D699E43FFFC9A9C4A824B6A7FFA2DC099AA30BE2FDF5544639DA810`，APK 尚未安装，ECS 尚未部署。
