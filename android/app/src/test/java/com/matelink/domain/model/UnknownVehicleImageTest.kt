@@ -15,6 +15,7 @@ class UnknownVehicleImageTest {
         }
     }
     @Test fun confirmedModelsStillResolveTheirOwnImage() {
+        assertTrue(CarImageResolver.getAssetPath("3", null, null).contains("/m3_"))
         assertTrue(CarImageResolver.getAssetPath("Y", null, null).contains("/my_"))
         assertTrue(CarImageResolver.getCompositorUrl("3", null, null).contains("model=m3"))
     }

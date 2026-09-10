@@ -139,8 +139,12 @@ class UnifiedHistoryRepository @Inject constructor(
             val merged = remote.map { drive ->
                 drive.mergeWith(localById[drive.driveId] ?: local.firstOrNull { drive.sameSession(it) })
             }
-            return (merged + local.filter { cached -> remote.none { it.driveId == cached.driveId || it.sameSession(cached) } })
-                .sortedByDescending { it.startDate }
+            val canonical = mutableListOf<DriveData>()
+            for (row in merged + local) {
+                val index = canonical.indexOfFirst { it.driveId == row.driveId || it.sameSession(row) }
+                if (index < 0) canonical += row else canonical[index] = canonical[index].mergeWith(row)
+            }
+            return canonical.sortedByDescending { historyTimestamp(it.startDate) }
         }
 
         fun mergeCharges(remote: List<ChargeData>, local: List<ChargeData>): List<ChargeData> {
@@ -148,8 +152,12 @@ class UnifiedHistoryRepository @Inject constructor(
             val merged = remote.map { charge ->
                 charge.mergeWith(localById[charge.chargeId] ?: local.firstOrNull { charge.sameSession(it) })
             }
-            return (merged + local.filter { cached -> remote.none { it.chargeId == cached.chargeId || it.sameSession(cached) } })
-                .sortedByDescending { it.startDate }
+            val canonical = mutableListOf<ChargeData>()
+            for (row in merged + local) {
+                val index = canonical.indexOfFirst { it.chargeId == row.chargeId || it.sameSession(row) }
+                if (index < 0) canonical += row else canonical[index] = canonical[index].mergeWith(row)
+            }
+            return canonical.sortedByDescending { historyTimestamp(it.startDate) }
         }
     }
 }

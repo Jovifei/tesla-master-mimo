@@ -1071,14 +1071,13 @@ func (s *telemetryMemoryStore) importSessions(userID string, vehicleID int, driv
 		imported := cloneTelemetrySession(&session)
 		foundIdx := -1
 		for i, existing := range existingSessions {
-			if existing.ID == imported.ID {
+			if existing.ID == imported.ID || (existing.Kind == imported.Kind && existing.StartAt.Equal(imported.StartAt)) {
 				foundIdx = i
 				break
 			}
 		}
 		if foundIdx >= 0 {
-			imported.PublicID = existingSessions[foundIdx].PublicID
-			existingSessions[foundIdx] = *imported
+			existingSessions[foundIdx] = mergeImportedSession(*imported, existingSessions[foundIdx])
 		} else {
 			if imported.PublicID <= 0 {
 				imported.PublicID = s.allocatePublicIDLocked()

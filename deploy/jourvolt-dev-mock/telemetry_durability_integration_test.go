@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestTelemetryPostgresQoS1RedeliverySurvivesRestartWithoutAdvancingOrCompletingTwice(t *testing.T) {
+func TestTelemetryPostgresReplayAndFreshSameValueSurviveRestartWithoutDuplicateCompletion(t *testing.T) {
 	dsn := os.Getenv("JOURVOLT_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("JOURVOLT_TEST_DATABASE_URL is not set")
@@ -46,7 +46,7 @@ RETURNING id`, userID, "durability-provider-"+mustRandomToken(t)).Scan(&vehicleI
 	}
 	redelivery := first
 	redelivery.EventID = "redelivery"
-	redelivery.ObservedAt = start.Add(time.Minute)
+	redelivery.ObservedAt = start // QoS1 replay retains the source observation time.
 	if accepted, err := service.ingest(ctx, redelivery); err != nil || accepted != 0 {
 		t.Fatalf("identical QoS1 redelivery accepted=%d err=%v", accepted, err)
 	}
@@ -58,6 +58,23 @@ RETURNING id`, userID, "durability-provider-"+mustRandomToken(t)).Scan(&vehicleI
 		t.Fatalf("identical redelivery advanced persisted observed_at to %s; want %s", observedAt, start)
 	}
 
+	// A new observation is not a QoS1 replay, even when the value is unchanged.
+	fresh := first
+	fresh.ObservedAt = start.Add(time.Minute)
+	fresh.EventID = "fresh-unchanged-value"
+	if accepted, err := service.ingest(ctx, fresh); err != nil || accepted != 1 {
+		t.Fatalf("fresh unchanged observation accepted=%d err=%v", accepted, err)
+	}
+	if err := database.pool.QueryRow(ctx, `SELECT observed_at FROM jourvolt_telemetry_latest WHERE user_id=$1 AND vehicle_id=$2 AND field_name='DetailedChargeState'`, userID, vehicleID).Scan(&observedAt); err != nil {
+		t.Fatal(err)
+	}
+	if !observedAt.Equal(fresh.ObservedAt) {
+		t.Fatal("fresh timestamp was not persisted")
+	}
+	if accepted, err := service.ingest(ctx, fresh); err != nil || accepted != 0 {
+		t.Fatalf("exact fresh replay accepted=%d err=%v", accepted, err)
+	}
+
 	afterRestart := &telemetryService{store: database, config: &telemetryConfig{StopDebounce: defaultDriveStopDebounce}}
 	complete := telemetryRecord{VINHash: ref.VINHash, FieldName: "DetailedChargeState", Value: "Complete", ObservedAt: start.Add(2 * time.Minute), EventID: "complete"}
 	if accepted, err := afterRestart.ingest(ctx, complete); err != nil || accepted != 1 {
@@ -65,10 +82,16 @@ RETURNING id`, userID, "durability-provider-"+mustRandomToken(t)).Scan(&vehicleI
 	}
 	completedRestart := &telemetryService{store: database, config: &telemetryConfig{StopDebounce: defaultDriveStopDebounce}}
 	complete.EventID = "complete-redelivery"
-	complete.ObservedAt = start.Add(3 * time.Minute)
+	// Exact completion replay must not advance the observation time.
 	if accepted, err := completedRestart.ingest(ctx, complete); err != nil || accepted != 0 {
 		t.Fatalf("completion QoS1 redelivery accepted=%d err=%v", accepted, err)
 	}
+	complete.ObservedAt = start.Add(3 * time.Minute)
+	complete.EventID = "fresh-completed-state"
+	if accepted, err := completedRestart.ingest(ctx, complete); err != nil || accepted != 1 {
+		t.Fatalf("fresh completed state accepted=%d err=%v", accepted, err)
+	}
+
 	var sessions int
 	var completionKey string
 	if err := database.pool.QueryRow(ctx, `SELECT count(*), coalesce(max(completion_key), '') FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND vehicle_id=$2 AND kind='charge' AND ended_at IS NOT NULL`, userID, vehicleID).Scan(&sessions, &completionKey); err != nil {

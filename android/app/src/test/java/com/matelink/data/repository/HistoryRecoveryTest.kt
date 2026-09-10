@@ -86,4 +86,13 @@ class HistoryRecoveryTest {
         assertTrue(historyInRange("2026-09-01T08:00:00+08:00", "2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"))
         assertFalse(historyInRange("2026-09-02T00:00:00Z", "2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"))
     }
+
+    @Test fun offlineAliasesAreMergedWithoutErasingTheStrongerRecord() {
+        val measured = DriveData(1, startDate = "2026-09-01T00:00:00Z", endDate = "2026-09-01T01:00:00Z",
+            energyConsumedNet = 8.0, source = "telemetry_mqtt", qualityState = "observed")
+        val alias = measured.copy(driveId = 2, energyConsumedNet = null, source = "local_import", qualityState = "incomplete")
+        val result = UnifiedHistoryRepository.mergeDrives(emptyList(), listOf(alias, measured)).single()
+        assertEquals("observed", result.qualityState)
+        assertEquals(8.0, result.energyConsumedNet!!, 0.0)
+    }
 }

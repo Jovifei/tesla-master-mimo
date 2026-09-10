@@ -44,15 +44,16 @@ class VehicleContextRepository @Inject constructor(
     suspend fun resolveAll(cars: List<CarData>): List<VehicleContext> = cars.map { resolve(it) }
 
     suspend fun resolveRemote(remoteApiCarId: Int): VehicleContext {
-        val source = connectionModeStore.mode.first() ?: ConnectionMode.SELF_HOSTED
+        val scope = captureReadScope()
         val car = when (val result = teslamateRepository.getCars()) {
             is com.matelink.data.repository.ApiResult.Success -> result.data.firstOrNull { it.carId == remoteApiCarId }
             is com.matelink.data.repository.ApiResult.Error -> null
         }
-        if (car != null) return resolve(car)
-        if (source == ConnectionMode.SELF_HOSTED) {
-            val serverUrl = settingsRepository.serverUrl.first()
-            val serverIdentity = requireSelfHostedServerIdentity(serverUrl)
+        if (captureReadScope() != scope) throw HistoryIdentityUnavailableException()
+        if (car != null) return resolve(car, scope)
+        if (scope.source == HistoryConnectionSource.SELF_HOSTED) {
+            val serverUrl = scope.serverIdentity
+            val serverIdentity = scope.serverIdentity
             return contextStore.getOrAllocate(
                 remoteApiCarId = remoteApiCarId,
                 stableIdentity = selfHostedVehicleStableIdentity(serverUrl, remoteApiCarId),

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -238,6 +239,38 @@ func (s *telemetryService) importHistoryPostgres(ctx context.Context, userID str
 }
 
 func upsertImportedSessionPostgres(ctx context.Context, tx pgx.Tx, userID string, vehicleID int, session telemetrySession) error {
+	// Serialize even the first insert for this scoped ID. No production deletion.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, scopedImportedSessionID(userID, vehicleID, session.Kind, session.StartAt.UTC().Format(time.RFC3339Nano))); err != nil {
+		return err
+	}
+	var old telemetrySession
+	var owner string
+	var car int
+	var oldRoute []byte
+	err := tx.QueryRow(ctx, `SELECT id, public_id, user_id, vehicle_id, kind, started_at, ended_at,
+        odometer_start, odometer_end, energy_added, route_json, source, quality_state, quality_reason
+        FROM jourvolt_telemetry_sessions
+        WHERE id=$1 OR (user_id=$2 AND vehicle_id=$3 AND kind=$4 AND started_at=$5)
+        ORDER BY (id=$1) DESC LIMIT 1 FOR UPDATE`, session.ID, userID, vehicleID, session.Kind, session.StartAt).Scan(
+		&old.ID, &old.PublicID, &owner, &car, &old.Kind, &old.StartAt, &old.EndAt,
+		&old.OdometerStart, &old.OdometerEnd, &old.EnergyAdded, &oldRoute, &old.Source, &old.QualityState, &old.QualityReason)
+	if err == nil {
+		if owner != userID || car != vehicleID {
+			return errors.New("history_identity_mismatch")
+		}
+		if old.Source != "local_import" || old.QualityState == "quarantined" {
+			return nil // Do not rewrite native or quarantined records from a local import.
+		}
+		if old.Kind != session.Kind || !old.StartAt.Equal(session.StartAt) {
+			return errors.New("history_session_identity_mismatch")
+		}
+		if err = json.Unmarshal(oldRoute, &old.Route); err != nil {
+			return err
+		}
+		session = mergeImportedSession(session, old)
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
 	route, err := json.Marshal(session.Route)
 	if err != nil {
 		return err
@@ -256,7 +289,13 @@ ON CONFLICT (id) DO UPDATE SET
     odometer_end = EXCLUDED.odometer_end,
     energy_added = EXCLUDED.energy_added,
     route_json = EXCLUDED.route_json,
-    source = EXCLUDED.source, quality_state = EXCLUDED.quality_state, quality_reason = EXCLUDED.quality_reason`,
+    source = EXCLUDED.source, quality_state = EXCLUDED.quality_state, quality_reason = EXCLUDED.quality_reason
+WHERE jourvolt_telemetry_sessions.user_id = EXCLUDED.user_id
+  AND jourvolt_telemetry_sessions.vehicle_id = EXCLUDED.vehicle_id
+  AND jourvolt_telemetry_sessions.kind = EXCLUDED.kind
+  AND jourvolt_telemetry_sessions.started_at = EXCLUDED.started_at
+  AND jourvolt_telemetry_sessions.source = 'local_import'
+  AND jourvolt_telemetry_sessions.quality_state <> 'quarantined'`,
 		session.ID, userID, vehicleID, session.Kind, session.StartAt, endAt,
 		session.OdometerStart, session.OdometerEnd, session.EnergyAdded, route,
 		session.Source, session.QualityState, session.QualityReason)
@@ -293,4 +332,56 @@ func (a *app) historyImport(w http.ResponseWriter, r *http.Request, userID strin
 		return
 	}
 	a.json(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// mergeImportedSession preserves absent fields and all previously received points.
+// A duplicate client ID cannot promote an import or overwrite native/quarantined evidence.
+func mergeImportedSession(incoming, cached telemetrySession) telemetrySession {
+	if cached.Source != "local_import" || cached.QualityState == "quarantined" ||
+		cached.Kind != incoming.Kind || !cached.StartAt.Equal(incoming.StartAt) {
+		return *cloneTelemetrySession(&cached)
+	}
+	merged := *cloneTelemetrySession(&incoming)
+	merged.ID = cached.ID
+	merged.PublicID = cached.PublicID
+	if merged.OdometerStart == nil {
+		merged.OdometerStart = cached.OdometerStart
+	}
+	if merged.OdometerEnd == nil {
+		merged.OdometerEnd = cached.OdometerEnd
+	}
+	if merged.EnergyAdded == nil {
+		merged.EnergyAdded = cached.EnergyAdded
+	}
+	if merged.EndAt == nil {
+		merged.EndAt = cached.EndAt
+	}
+	type pointKey struct {
+		date                string
+		latitude, longitude float64
+	}
+	points := make([]telemetryRoutePoint, 0, len(cached.Route)+len(incoming.Route))
+	indices := make(map[pointKey]int)
+	for _, point := range append(append([]telemetryRoutePoint(nil), cached.Route...), incoming.Route...) {
+		key := pointKey{point.ObservedAt.UTC().Format(time.RFC3339Nano), point.Latitude, point.Longitude}
+		if index, found := indices[key]; found {
+			old := points[index]
+			if point.Speed == nil {
+				point.Speed = old.Speed
+			}
+			if point.Power == nil {
+				point.Power = old.Power
+			}
+			if point.Heading == nil {
+				point.Heading = old.Heading
+			}
+			points[index] = point
+		} else if len(points) < maxImportRoutePointsPerItem || len(points) < len(cached.Route) {
+			indices[key] = len(points)
+			points = append(points, point)
+		}
+	}
+	sort.SliceStable(points, func(i, j int) bool { return points[i].ObservedAt.Before(points[j].ObservedAt) })
+	merged.Route = points
+	return merged
 }

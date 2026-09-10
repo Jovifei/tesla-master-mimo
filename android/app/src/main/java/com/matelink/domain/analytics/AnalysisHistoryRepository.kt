@@ -47,10 +47,7 @@ internal class AnalysisHistorySnapshotCache {
     private val snapshots = ConcurrentHashMap<String, AnalysisHistorySnapshot>()
 
     fun put(stableIdentity: String, snapshot: AnalysisHistorySnapshot) {
-        snapshots[stableIdentity] = snapshot.copy(
-            freshness = HistoryFreshness.FRESH,
-            staleReason = null
-        )
+        snapshots[stableIdentity] = snapshot
     }
 
     fun stale(stableIdentity: String, reason: String): AnalysisHistorySnapshot? =
@@ -84,12 +81,12 @@ class AnalysisHistoryRepository @Inject constructor(
                             chargeCount = eligibleCharges.size
                         )
                     ),
-                    freshness = if (history.drivesFromRemote || history.chargesFromRemote) {
+                    freshness = if (history.drivesFromRemote && history.chargesFromRemote) {
                         HistoryFreshness.FRESH
                     } else {
                         HistoryFreshness.STALE
                     },
-                    staleReason = if (history.drivesFromRemote || history.chargesFromRemote) null else "remote unavailable",
+                    staleReason = if (history.drivesFromRemote && history.chargesFromRemote) null else "remote unavailable",
                     context = history.context
                 )
                 cache.put(history.context.stableIdentity, snapshot)
