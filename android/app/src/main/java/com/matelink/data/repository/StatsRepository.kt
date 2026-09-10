@@ -31,6 +31,7 @@ import com.matelink.domain.analytics.buildRecommendations
 import com.matelink.domain.analytics.observedAggregateCostOrNull
 import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.domain.analytics.toAnalysisDriveData
+import com.matelink.domain.history.isAnalysisEligible
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
@@ -94,7 +95,9 @@ class StatsRepository @Inject constructor(
         // Rehydrate through the neutral API models before analytics so placeholder
         // zeros are not treated as observed measurements.
         val analysisDrives = drives.map { it.toAnalysisDriveData() }
+            .filter { isAnalysisEligible(it.qualityState, it.qualityReason) }
         val analysisCharges = charges.map { it.toAnalysisChargeData() }
+            .filter { isAnalysisEligible(it.qualityState, it.qualityReason) }
         val recommendations = buildRecommendations(
             buildRecommendationEvidence(
                 drives = analysisDrives.map {
