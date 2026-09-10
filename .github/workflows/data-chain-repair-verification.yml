@@ -52,10 +52,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Extend Java trust with runner-installed operating-system trust anchors
+      - name: Use runner OS trust and explicit network proxy for Java
         run: |
           python3 - <<'PY'
           import os, pathlib, re, shutil, subprocess, tempfile
+          from urllib.parse import urlparse
           trust = pathlib.Path(os.environ['RUNNER_TEMP']) / 'matelink-java-cacerts'
           shutil.copyfile(pathlib.Path(os.environ['JAVA_HOME']) / 'lib/security/cacerts', trust)
           bundle = pathlib.Path('/etc/ssl/certs/ca-certificates.crt').read_text()
@@ -65,9 +66,18 @@ jobs:
               with tempfile.NamedTemporaryFile(mode='w', suffix='.pem') as handle:
                   handle.write(certificate + '\n'); handle.flush()
                   subprocess.run(['keytool','-importcert','-noprompt','-trustcacerts','-keystore',str(trust),'-storepass','changeit','-alias',f'runner-os-{index}','-file',handle.name], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+          options = [f'-Djavax.net.ssl.trustStore={trust}']
+          proxy = next((os.environ[k] for k in ['HTTPS_PROXY','https_proxy','HTTP_PROXY','http_proxy'] if os.environ.get(k)), None)
+          if proxy:
+              parsed = urlparse(proxy)
+              if parsed.username or parsed.password: raise SystemExit('Authenticated proxy requires a private runner configuration')
+              if not parsed.hostname or not re.fullmatch(r'[A-Za-z0-9.:-]+', parsed.hostname): raise SystemExit('Invalid runner proxy host')
+              for protocol in ['http','https']:
+                  options += [f'-D{protocol}.proxyHost={parsed.hostname}', f'-D{protocol}.proxyPort={parsed.port or 80}']
+              options += ['-Dhttp.nonProxyHosts=localhost|127.*|[::1]']
           with open(os.environ['GITHUB_ENV'], 'a') as handle:
-              handle.write(f'JAVA_TOOL_OPTIONS=-Djavax.net.ssl.trustStore={trust}\n')
-          print(f'Added {len(certs)} runner OS trust anchors; TLS verification remains enabled')
+              handle.write('JAVA_TOOL_OPTIONS=' + ' '.join(options) + '\n')
+          print(f'OS trust anchors={len(certs)}, runner proxy present={bool(proxy)}; TLS verification remains enabled')
           PY
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
