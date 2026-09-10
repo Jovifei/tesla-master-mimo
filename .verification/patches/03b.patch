@@ -1,0 +1,12 @@
+diff --git a/android/app/src/main/java/com/matelink/domain/model/CarImageResolver.kt b/android/app/src/main/java/com/matelink/domain/model/CarImageResolver.kt
+--- a/android/app/src/main/java/com/matelink/domain/model/CarImageResolver.kt
++++ b/android/app/src/main/java/com/matelink/domain/model/CarImageResolver.kt
+@@ -721,7 +721,7 @@
+         val m3Highland = CarVariant("m3h", VariantResIds.M3_HIGHLAND.hashCode())
+         val m3HighlandPerf = CarVariant("m3hp", VariantResIds.M3_HIGHLAND_PERF.hashCode())
+ 
+-        return when (model?.uppercase()) {
++        return when (model?.trim()?.uppercase(Locale.ROOT)) {
+             "Y" -> {
+                 // MY-specific: PBSB (Solid Black) and PPSB (Deep Blue) are Legacy-only
+                 val isMyLegacyOnly = colorCode in MY_LEGACY_ONLY_EXTRA
