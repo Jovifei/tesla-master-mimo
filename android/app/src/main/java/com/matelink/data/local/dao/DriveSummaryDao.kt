@@ -3,11 +3,21 @@ package com.matelink.data.local.dao
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
+import androidx.room.Transaction
+import com.matelink.data.repository.mergeStoredDrive
 import com.matelink.data.local.entity.DriveSummary
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface DriveSummaryDao {
+
+    /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
+    @Transaction
+    suspend fun upsertPreservingEvidence(rows: List<DriveSummary>) {
+        rows.forEach { incoming ->
+            upsert(mergeStoredDrive(incoming, get(incoming.carId, incoming.driveId)))
+        }
+    }
 
     // === CRUD Operations ===
 

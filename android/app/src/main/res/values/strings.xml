@@ -1509,4 +1509,6 @@
     <string name="telemetry_setup_pending_body">Your Tesla session is connected. The service retries recoverable setup failures automatically. A vehicle key or missing Tesla permission still needs your confirmation. You may view existing data; new trips require actual telemetry events.</string>
     <string name="telemetry_recheck">Check setup again</string>
     <string name="vehicle_model_pending">Vehicle model not yet identified</string>
+    <string name="history_sync_cached">Cloud history could not be refreshed. Showing this device’s saved history; pull to refresh to retry.</string>
+    <string name="history_sync_partial">Only part of cloud history was restored. Saved history is preserved; pull to refresh to retry the remaining pages.</string>
 </resources>

@@ -173,7 +173,7 @@ class SyncRepository @Inject constructor(
                     }
                 }
                 },
-                persistPage = driveSummaryDao::upsertAll,
+                persistPage = driveSummaryDao::upsertPreservingEvidence,
                 onCompleted = { summaries -> notifyCompletedDriveUpdates(historyCarId, summaries) }
             ).sync()
         } catch (e: Exception) {
@@ -201,7 +201,7 @@ class SyncRepository @Inject constructor(
                             hasMore = false
                         } else {
                             val summaries = charges.mapNotNull { it.toSyncSummary(historyCarId) }
-                            chargeSummaryDao.upsertAll(summaries)
+                            chargeSummaryDao.upsertPreservingEvidence(summaries)
                             val decision = PaginationGuard.evaluate(
                                 pageSize = 50,
                                 seenIds = seenIds,
@@ -346,7 +346,7 @@ class SyncRepository @Inject constructor(
         }
         val allDrives = driveSummaryDao.getAllChronological(historyCarId).mapNotNull { it.toImportSession("drive") }
         val allCharges = chargeSummaryDao.getAllForCar(historyCarId).mapNotNull { it.toImportSession("charge") }
-        val bounded = HistoryUploadFilter.keepValidatedArchive(allDrives, allCharges)
+        val bounded = HistoryUploadFilter.boundToLatestTwoDataDays(allDrives, allCharges)
         if (bounded.drives.isEmpty() && bounded.charges.isEmpty()) {
             Log.d(TAG, "No valid local history to upload for car $historyCarId")
             return true
@@ -394,7 +394,9 @@ internal fun DriveData.toSyncSummary(carId: Int): DriveSummary? {
         energySource = energyConsumedNet?.takeIf { it > 0.0 }?.let { "api" },
         energyCoverageSeconds = 0,
         energyCoverageRatio = 0.0,
-        apiEvidence = HistorySummaryEvidenceCodec.encode(this)
+        apiEvidence = HistorySummaryEvidenceCodec.encode(this),
+        qualityState = qualityState ?: if (source == "local_import") "incomplete" else "observed",
+        qualityReason = qualityReason ?: if (source == "local_import") "local_import_unverified" else "legacy_remote_api"
     )
 }
 
@@ -417,13 +419,16 @@ internal fun ChargeData.toSyncSummary(carId: Int): ChargeSummary? {
         endBatteryLevel = endBatteryLevel ?: 0,
         outsideTempAvg = outsideTempAvg,
         odometer = odometer ?: 0.0,
-        apiEvidence = HistorySummaryEvidenceCodec.encode(this)
+        apiEvidence = HistorySummaryEvidenceCodec.encode(this),
+        qualityState = qualityState ?: if (source == "local_import") "incomplete" else "observed",
+        qualityReason = qualityReason ?: if (source == "local_import") "local_import_unverified" else "legacy_remote_api"
     )
 }
 
 internal fun DriveSummary.toImportSession(kind: String): com.matelink.data.api.models.HistoryImportSession? {
     if (qualityState != "observed" && qualityState != "derived") return null
     if (apiEvidence.isNullOrBlank() || energySource.isNullOrBlank()) return null
+    if (HistorySummaryEvidenceCodec.decodeDrive(apiEvidence)?.source in setOf("telemetry_mqtt", "local_import")) return null
     val started = normalizeImportTimestamp(startDate) ?: return null
     val ended = normalizeImportTimestamp(endDate) ?: return null
     return com.matelink.data.api.models.HistoryImportSession(
@@ -440,6 +445,7 @@ internal fun DriveSummary.toImportSession(kind: String): com.matelink.data.api.m
 internal fun ChargeSummary.toImportSession(kind: String): com.matelink.data.api.models.HistoryImportSession? {
     if (qualityState != "observed" && qualityState != "derived") return null
     if (apiEvidence.isNullOrBlank()) return null
+    if (HistorySummaryEvidenceCodec.decodeCharge(apiEvidence)?.source in setOf("telemetry_mqtt", "local_import")) return null
     val started = normalizeImportTimestamp(startDate) ?: return null
     val ended = normalizeImportTimestamp(endDate) ?: return null
     return com.matelink.data.api.models.HistoryImportSession(

@@ -8,6 +8,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
 
+internal data class HistoryReadScope(
+    val source: HistoryConnectionSource,
+    val serverIdentity: String,
+    val accountNamespace: String?
+)
+
 @Singleton
 class VehicleContextRepository @Inject constructor(
     private val contextStore: VehicleContextStore,
@@ -17,26 +23,23 @@ class VehicleContextRepository @Inject constructor(
     private val teslamateRepository: TeslamateRepository,
     private val legacyHistoryMigrationRepository: LegacyHistoryMigrationRepository
 ) : HistoryCarIdResolver, VehicleContextResolver {
-    override suspend fun resolve(car: CarData): VehicleContext {
+    internal suspend fun captureReadScope(): HistoryReadScope {
         val mode = connectionModeStore.mode.first() ?: ConnectionMode.SELF_HOSTED
-        val serverUrl = settingsRepository.serverUrl.first()
-        val source = if (mode == ConnectionMode.TESLA_CLOUD) {
-            HistoryConnectionSource.CLOUD
+        return if (mode == ConnectionMode.TESLA_CLOUD) {
+            val account = sessionStore.current()?.userId?.trim().orEmpty()
+            if (account.isEmpty()) throw HistoryIdentityUnavailableException()
+            HistoryReadScope(HistoryConnectionSource.CLOUD, "cloud", account)
         } else {
-            HistoryConnectionSource.SELF_HOSTED
+            HistoryReadScope(HistoryConnectionSource.SELF_HOSTED,
+                requireSelfHostedServerIdentity(settingsRepository.serverUrl.first()), null)
         }
-        val serverIdentity = if (source == HistoryConnectionSource.CLOUD) {
-            "cloud"
-        } else {
-            requireSelfHostedServerIdentity(serverUrl)
-        }
-        return contextStore.resolveCar(
-            car = car,
-            accountNamespace = sessionStore.current()?.userId,
-            connectionSource = source,
-            serverIdentity = serverIdentity
-        )
     }
+
+    override suspend fun resolve(car: CarData): VehicleContext = resolve(car, captureReadScope())
+
+    internal fun resolve(car: CarData, scope: HistoryReadScope): VehicleContext = contextStore.resolveCar(
+        car, scope.accountNamespace, scope.source, scope.serverIdentity
+    )
 
     suspend fun resolveAll(cars: List<CarData>): List<VehicleContext> = cars.map { resolve(it) }
 
@@ -60,30 +63,19 @@ class VehicleContextRepository @Inject constructor(
         throw HistoryIdentityUnavailableException()
     }
 
-    suspend fun cachedContextForRemote(remoteApiCarId: Int): VehicleContext? {
-        val mode = connectionModeStore.mode.first() ?: ConnectionMode.SELF_HOSTED
-        if (mode == ConnectionMode.TESLA_CLOUD) {
-            val account = sessionStore.current()?.userId?.trim().orEmpty()
+    suspend fun cachedContextForRemote(remoteApiCarId: Int): VehicleContext? =
+        cachedContextForRemote(remoteApiCarId, captureReadScope())
+
+    internal fun cachedContextForRemote(remoteApiCarId: Int, scope: HistoryReadScope): VehicleContext? {
+        if (scope.source == HistoryConnectionSource.CLOUD) {
+            val account = scope.accountNamespace.orEmpty()
             val localId = contextStore.findCloudLocalHistoryCarId(account, remoteApiCarId) ?: return null
-            return VehicleContext(
-                remoteApiCarId = remoteApiCarId,
-                stableIdentity = contextStore.cloudRemoteOpaqueIdentity(account, remoteApiCarId),
-                localHistoryCarId = localId,
-                connectionSource = HistoryConnectionSource.CLOUD,
-                serverIdentity = "cloud"
-            )
+            return VehicleContext(remoteApiCarId,
+                contextStore.cloudRemoteOpaqueIdentity(account, remoteApiCarId), localId, scope.source, scope.serverIdentity)
         }
-        val serverUrl = settingsRepository.serverUrl.first()
-        val serverIdentity = requireSelfHostedServerIdentity(serverUrl)
-        val stableIdentity = selfHostedVehicleStableIdentity(serverUrl, remoteApiCarId)
+        val stableIdentity = selfHostedVehicleStableIdentity(scope.serverIdentity, remoteApiCarId)
         val localId = contextStore.findLocalHistoryCarId(stableIdentity) ?: return null
-        return VehicleContext(
-            remoteApiCarId = remoteApiCarId,
-            stableIdentity = stableIdentity,
-            localHistoryCarId = localId,
-            connectionSource = HistoryConnectionSource.SELF_HOSTED,
-            serverIdentity = serverIdentity
-        )
+        return VehicleContext(remoteApiCarId, stableIdentity, localId, scope.source, scope.serverIdentity)
     }
 
     suspend fun localHistoryCarIdFor(remoteApiCarId: Int): Int? =

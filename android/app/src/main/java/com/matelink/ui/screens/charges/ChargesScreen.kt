@@ -160,6 +160,7 @@ fun ChargesScreen(
                 MateLinkLoadingPlaceholder(color = palette.accent)
             } else {
                 ChargesContent(
+                    historySyncWarning = uiState.historySyncWarning,
                     charges = uiState.charges,
                     dcChargeIds = uiState.dcChargeIds,
                     processedChargeIds = uiState.processedChargeIds,
@@ -216,6 +217,7 @@ fun ChargesScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChargesContent(
+    historySyncWarning: String?,
     charges: List<ChargeData>,
     dcChargeIds: Set<Int>,
     processedChargeIds: Set<Int>,
@@ -254,6 +256,7 @@ private fun ChargesContent(
     // summary, charts (conditional), history header. Adjust if items are added.
     val showFreeHint = freeSupercharging && selectedCostFilter == CostFilter.NO_COST
     val headerCount = 4 +
+        (if (historySyncWarning != null) 1 else 0) +
         (if (showFreeHint) 1 else 0) +
         (if (chartData.isNotEmpty()) 1 else 0)
 
@@ -264,6 +267,17 @@ private fun ChargesContent(
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
+        if (historySyncWarning != null) {
+            item(key = "history_sync_warning") {
+                Text(
+                    text = stringResource(if (historySyncWarning == "history_partial") R.string.history_sync_partial else R.string.history_sync_cached),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
+                )
+            }
+        }
+
         item {
             DateFilterChips(
                 selectedFilter = selectedDateFilter,

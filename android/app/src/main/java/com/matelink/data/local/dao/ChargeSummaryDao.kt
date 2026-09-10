@@ -3,11 +3,21 @@ package com.matelink.data.local.dao
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
+import androidx.room.Transaction
+import com.matelink.data.repository.mergeStoredCharge
 import com.matelink.data.local.entity.ChargeSummary
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ChargeSummaryDao {
+
+    /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
+    @Transaction
+    suspend fun upsertPreservingEvidence(rows: List<ChargeSummary>) {
+        rows.forEach { incoming ->
+            upsert(mergeStoredCharge(incoming, get(incoming.carId, incoming.chargeId)))
+        }
+    }
 
     // === CRUD Operations ===
 

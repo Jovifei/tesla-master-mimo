@@ -94,6 +94,7 @@ data class DrivesUiState(
     val chartData: List<DriveChartData> = emptyList(),
     val chartGranularity: DriveChartGranularity = DriveChartGranularity.MONTHLY,
     val error: String? = null,
+    val historySyncWarning: String? = null,
     val startDate: LocalDate? = null,
     val endDate: LocalDate? = null,
     val summary: DrivesSummary = DrivesSummary(),
@@ -310,6 +311,7 @@ class DrivesViewModel @Inject constructor(
                         it.copy(
                             chartGranularity = granularity,
                             error = null,
+                            historySyncWarning = result.data.drivesSyncError,
                             driveMetrics = localMetrics
                         )
                     }

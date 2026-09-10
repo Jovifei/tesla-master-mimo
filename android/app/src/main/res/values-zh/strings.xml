@@ -1500,4 +1500,6 @@
     <string name="telemetry_setup_pending_body">Tesla 登录会话已连接。系统会自动重试可恢复的配置错误；缺少车辆钥匙或权限时仍需您在 Tesla 官方页面确认。可以先查看已有数据，新行程必须等待真实遥测事件。</string>
     <string name="telemetry_recheck">重新检查配置</string>
     <string name="vehicle_model_pending">车型待识别</string>
+    <string name="history_sync_cached">云端历史暂未同步成功，当前显示本机保存的记录；下拉刷新可重试。</string>
+    <string name="history_sync_partial">云端历史仅恢复了一部分，本机旧记录已保留；下拉刷新可重试剩余记录。</string>
 </resources>
