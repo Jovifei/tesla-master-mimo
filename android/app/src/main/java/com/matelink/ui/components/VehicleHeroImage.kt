@@ -126,6 +126,10 @@ fun VehicleHeroImage(
                         )
                     }
                 )
+            } else if (!CarImageResolver.isKnownModel(model)) {
+                Box(Modifier.fillMaxWidth().clickable { showMenu = true }) {
+                    VehicleHeroGraphic(accent = accent, model = model)
+                }
             } else {
                 SubcomposeAsyncImage(
                     model = imageRequest,
