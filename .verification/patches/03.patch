@@ -1,0 +1,165 @@
+From 8d561f64f1f55a12e5816afda0d0dc79646b0252 Mon Sep 17 00:00:00 2001
+From: Jovifei <110970864+Jovifei@users.noreply.github.com>
+Date: Thu, 10 Sep 2026 00:33:36 +0000
+Subject: [PATCH 3/5] fix(ui): show generic placeholder for unidentified vehicles
+
+diff --git a/android/app/src/main/java/com/matelink/domain/model/CarImageResolver.kt b/android/app/src/main/java/com/matelink/domain/model/CarImageResolver.kt
+index 5e0c6b7..7fc6052 100644
+--- a/android/app/src/main/java/com/matelink/domain/model/CarImageResolver.kt
++++ b/android/app/src/main/java/com/matelink/domain/model/CarImageResolver.kt
+@@ -70,6 +70,8 @@ data class WheelOption(
+  * - "P74D" = Performance (21" Überturbine wheels, red calipers)
+  */
+ object CarImageResolver {
++    /** Unknown is not a Model 3/Y. Empty paths mean no model-specific asset. */
++    fun isKnownModel(model: String?): Boolean = model?.trim()?.uppercase(Locale.ROOT) in setOf("3", "Y", "S", "X", "CT", "CYBERTRUCK")
+ 
+     // Color code mappings (TeslamateAPI -> Compositor)
+     // Keys are normalized (lowercase, no spaces)
+@@ -285,6 +287,7 @@ object CarImageResolver {
+         wheelType: String?,
+         trimBadging: String? = null
+     ): String {
++        if (!isKnownModel(model)) return ""
+         val colorCode = mapColor(exteriorColor)
+         val modelVariant = determineModelVariant(model, colorCode, wheelType, trimBadging)
+         val resolvedColorCode = colorCode ?: DEFAULT_COLORS[modelVariant] ?: "PPSW"
+@@ -327,12 +330,13 @@ object CarImageResolver {
+      * Get the default asset path for a model when configuration is unavailable.
+      */
+     fun getDefaultAssetPath(model: String?): String {
++        if (!isKnownModel(model)) return ""
+-        val modelVariant = when (model?.uppercase()) {
++        val modelVariant = when (model?.trim()?.uppercase(Locale.ROOT)) {
+             "3" -> "m3"
+             "Y" -> "my"
+             "S" -> "ms"
+             "X" -> "mx"
+-            else -> "m3"
++            else -> "unknown"
+         }
+         val defaultColor = DEFAULT_COLORS[modelVariant] ?: "PPSW"
+         val defaultWheel = DEFAULT_WHEELS[modelVariant] ?: "W38B"
+@@ -354,7 +358,7 @@ object CarImageResolver {
+             "S" -> "ms"
+             "X" -> "mx"
+             "CT", "CYBERTRUCK" -> "ct"
+-            else -> "my"
++            else -> return ""
+         }
+         val normalizedColor = exteriorColor?.lowercase()?.replace(" ", "")?.replace("-", "")?.replace("_", "")
+         val compositorColor = when {
+@@ -402,6 +406,7 @@ object CarImageResolver {
+         trimBadging: String? = null,
+         assetExists: (String) -> Boolean
+     ): String {
++        if (!isKnownModel(model)) return ""
+         // Try exact match first
+         val exactPath = getAssetPath(model, exteriorColor, wheelType, trimBadging)
+         if (assetExists(exactPath)) return exactPath
+@@ -442,7 +447,7 @@ object CarImageResolver {
+         wheelType: String?,
+         trimBadging: String?
+     ): String {
+-        val baseModel = model?.uppercase() ?: "3"
++        val baseModel = model?.trim()?.uppercase(Locale.ROOT).orEmpty()
+         val isHighlandJuniperColor = colorCode in HIGHLAND_JUNIPER_COLORS
+ 
+         // Normalize wheel type for checking
+@@ -482,7 +487,7 @@ object CarImageResolver {
+             }
+             "S" -> "ms"
+             "X" -> "mx"
+-            else -> "m3"
++            else -> "unknown"
+         }
+     }
+ 
+diff --git a/android/app/src/main/java/com/matelink/ui/components/TelemetryPanel.kt b/android/app/src/main/java/com/matelink/ui/components/TelemetryPanel.kt
+index 1046eb7..6257da8 100644
+--- a/android/app/src/main/java/com/matelink/ui/components/TelemetryPanel.kt
++++ b/android/app/src/main/java/com/matelink/ui/components/TelemetryPanel.kt
+@@ -240,6 +240,21 @@ fun VehicleHeroGraphic(
+     val profile = remember(model, exteriorColor, wheelType, trimBadging) {
+         resolveVehicleHeroProfile(model, exteriorColor, wheelType, trimBadging)
+     }
++    if (profile.model == VehicleHeroModel.UNKNOWN) {
++        Column(
++            modifier = modifier.fillMaxWidth().height(132.dp),
++            horizontalAlignment = Alignment.CenterHorizontally,
++            verticalArrangement = Arrangement.Center
++        ) {
++            Icon(Icons.Filled.DirectionsCar, contentDescription = null, modifier = Modifier.size(52.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
++            Text(
++                androidx.compose.ui.res.stringResource(com.matelink.R.string.vehicle_model_pending),
++                style = MaterialTheme.typography.bodyMedium,
++                color = MaterialTheme.colorScheme.onSurfaceVariant
++            )
++        }
++        return
++    }
+     val body = heroPaintColor(profile.colorCode, accent)
+     val window = MaterialTheme.colorScheme.surfaceContainerHighest
+     val outline = MaterialTheme.colorScheme.outlineVariant
+diff --git a/android/app/src/main/java/com/matelink/ui/components/VehicleHeroImage.kt b/android/app/src/main/java/com/matelink/ui/components/VehicleHeroImage.kt
+index c27deb1..18821a9 100644
+--- a/android/app/src/main/java/com/matelink/ui/components/VehicleHeroImage.kt
++++ b/android/app/src/main/java/com/matelink/ui/components/VehicleHeroImage.kt
+@@ -126,6 +126,10 @@ fun VehicleHeroImage(
+                         )
+                     }
+                 )
++            } else if (!CarImageResolver.isKnownModel(model)) {
++                Box(Modifier.fillMaxWidth().clickable { showMenu = true }) {
++                    VehicleHeroGraphic(accent = accent, model = model)
++                }
+             } else {
+                 SubcomposeAsyncImage(
+                     model = imageRequest,
+diff --git a/android/app/src/main/res/values-zh/strings.xml b/android/app/src/main/res/values-zh/strings.xml
+index d7d8403..a9ad063 100644
+--- a/android/app/src/main/res/values-zh/strings.xml
++++ b/android/app/src/main/res/values-zh/strings.xml
+@@ -1499,4 +1499,5 @@
+     <string name="telemetry_setup_pending_title">已登录，持续采集尚未就绪</string>
+     <string name="telemetry_setup_pending_body">Tesla 登录会话已连接。系统会自动重试可恢复的配置错误；缺少车辆钥匙或权限时仍需您在 Tesla 官方页面确认。可以先查看已有数据，新行程必须等待真实遥测事件。</string>
+     <string name="telemetry_recheck">重新检查配置</string>
++    <string name="vehicle_model_pending">车型待识别</string>
+ </resources>
+diff --git a/android/app/src/main/res/values/strings.xml b/android/app/src/main/res/values/strings.xml
+index cbc203d..e42fd25 100644
+--- a/android/app/src/main/res/values/strings.xml
++++ b/android/app/src/main/res/values/strings.xml
+@@ -1508,4 +1508,5 @@
+     <string name="telemetry_setup_pending_title">Signed in; continuous collection is not ready</string>
+     <string name="telemetry_setup_pending_body">Your Tesla session is connected. The service retries recoverable setup failures automatically. A vehicle key or missing Tesla permission still needs your confirmation. You may view existing data; new trips require actual telemetry events.</string>
+     <string name="telemetry_recheck">Check setup again</string>
++    <string name="vehicle_model_pending">Vehicle model not yet identified</string>
+ </resources>
+diff --git a/android/app/src/test/java/com/matelink/domain/model/UnknownVehicleImageTest.kt b/android/app/src/test/java/com/matelink/domain/model/UnknownVehicleImageTest.kt
+new file mode 100644
+index 0000000..0700b7b
+--- /dev/null
++++ b/android/app/src/test/java/com/matelink/domain/model/UnknownVehicleImageTest.kt
+@@ -0,0 +1,21 @@
++package com.matelink.domain.model
++
++import org.junit.Assert.*
++import org.junit.Test
++
++class UnknownVehicleImageTest {
++    @Test fun unknownModelsNeverResolveToAnotherModel() {
++        listOf(null, "", "unknown", "future-model").forEach { model ->
++            assertFalse(CarImageResolver.isKnownModel(model))
++            assertEquals("", CarImageResolver.getAssetPath(model, null, null))
++            assertEquals("", CarImageResolver.getDefaultAssetPath(model))
++            assertEquals("", CarImageResolver.getCompositorUrl(model, null, null))
++            assertEquals("", CarImageResolver.getFallbackAssetPath(model, null, null, assetExists = { true }))
++            assertEquals(VehicleHeroModel.UNKNOWN, resolveVehicleHeroProfile(model, null, null, null).model)
++        }
++    }
++    @Test fun confirmedModelsStillResolveTheirOwnImage() {
++        assertTrue(CarImageResolver.getAssetPath("Y", null, null).contains("/my_"))
++        assertTrue(CarImageResolver.getCompositorUrl("3", null, null).contains("model=m3"))
++    }
++}

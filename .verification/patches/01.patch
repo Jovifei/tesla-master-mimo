@@ -1,0 +1,151 @@
+From 81c33ca9d18029d74ec4675b345fe1fc5264e6d0 Mon Sep 17 00:00:00 2001
+From: Jovifei <110970864+Jovifei@users.noreply.github.com>
+Date: Thu, 10 Sep 2026 00:31:35 +0000
+Subject: [PATCH 1/5] fix(fleet): merge independent core and location snapshots
+
+diff --git a/deploy/jourvolt-dev-mock/fleet_provider.go b/deploy/jourvolt-dev-mock/fleet_provider.go
+index 9e02788..fc737c9 100644
+--- a/deploy/jourvolt-dev-mock/fleet_provider.go
++++ b/deploy/jourvolt-dev-mock/fleet_provider.go
+@@ -219,21 +219,38 @@ func fleetVehicleCoreDataPath(vin string) string {
+ 	return "/api/1/vehicles/" + url.PathEscape(vin) + "/vehicle_data"
+ }
+ 
++// Core and location are independent capabilities. A successful location-only
++// response is not a complete snapshot and must never replace charge/config data.
+ func (p *fleetProvider) vehicleData(ctx context.Context, userID, vin string) (teslaVehicleDataEnvelope, bool, error) {
+-	var payload teslaVehicleDataEnvelope
+-	if err := p.get(ctx, userID, fleetVehicleDataPath(vin), &payload); err == nil {
+-		return payload, false, nil
+-	} else if !errors.Is(err, errTeslaReauthorization) {
+-		return teslaVehicleDataEnvelope{}, false, err
+-	}
+-
+-	// vehicle_location is an independent Tesla permission. A missing location
+-	// grant must not turn valid vehicle_device_data into a total dashboard outage.
+ 	var core teslaVehicleDataEnvelope
+ 	if err := p.get(ctx, userID, fleetVehicleCoreDataPath(vin), &core); err != nil {
+ 		return teslaVehicleDataEnvelope{}, false, err
+ 	}
+-	return core, true, nil
++	var location teslaVehicleDataEnvelope
++	if err := p.get(ctx, userID, fleetVehicleDataPath(vin), &location); err != nil {
++		if ctx.Err() != nil {
++			return teslaVehicleDataEnvelope{}, false, ctx.Err()
++		}
++		// Keep usable core data even when location permission or transport fails.
++		// Do not label network failures as missing permission.
++		return core, errors.Is(err, errTeslaReauthorization), nil
++	}
++	point := location.Response.DriveState
++	if validFleetCoordinates(point.Latitude, point.Longitude) {
++		core.Response.DriveState.Latitude = point.Latitude
++		core.Response.DriveState.Longitude = point.Longitude
++		if point.Heading != nil {
++			core.Response.DriveState.Heading = point.Heading
++		}
++	}
++	return core, false, nil
++}
++
++func validFleetCoordinates(latitude, longitude *float64) bool {
++	return latitude != nil && longitude != nil &&
++		!math.IsNaN(*latitude) && !math.IsNaN(*longitude) &&
++		*latitude >= -90 && *latitude <= 90 && *longitude >= -180 && *longitude <= 180 &&
++		!(*latitude == 0 && *longitude == 0)
+ }
+ 
+ func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int) (vehicleStatus, error) {
+diff --git a/deploy/jourvolt-dev-mock/fleet_snapshot_merge_test.go b/deploy/jourvolt-dev-mock/fleet_snapshot_merge_test.go
+new file mode 100644
+index 0000000..7d75cff
+--- /dev/null
++++ b/deploy/jourvolt-dev-mock/fleet_snapshot_merge_test.go
+@@ -0,0 +1,87 @@
++package main
++
++import (
++	"context"
++	"errors"
++	"net/http"
++	"net/http/httptest"
++	"testing"
++)
++
++func TestFleetLocationSuccessPreservesCoreSnapshot(t *testing.T) {
++	var paths []string
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		paths = append(paths, r.URL.RawQuery)
++		if r.URL.Query().Get("endpoints") == "location_data" {
++			_, _ = w.Write([]byte(`{"response":{"drive_state":{"latitude":30,"longitude":120,"heading":0}}}`))
++			return
++		}
++		_, _ = w.Write([]byte(`{"response":{"display_name":"Test vehicle","charge_state":{"battery_level":0,"battery_range":150},"vehicle_config":{"car_type":"modely","exterior_color":"Blue"},"vehicle_state":{"odometer":1234,"locked":false},"drive_state":{"speed":0,"power":0}}}`))
++	}))
++	defer server.Close()
++	provider := &fleetProvider{tokens: &testAccessTokens{}, client: server.Client(), baseURL: server.URL}
++	payload, needsPermission, err := provider.vehicleData(context.Background(), "user-1", "test-vehicle")
++	if err != nil || needsPermission {
++		t.Fatalf("result: %v %v", needsPermission, err)
++	}
++	got := payload.Response
++	if len(paths) != 2 || paths[0] != "" || got.VehicleConfig.CarType != "modely" || got.ChargeState.BatteryRange == nil || got.VehicleState.Odometer == nil {
++		t.Fatalf("incomplete core snapshot: %+v requests=%v", got, paths)
++	}
++	if got.ChargeState.BatteryLevel == nil || *got.ChargeState.BatteryLevel != 0 || got.DriveState.Speed == nil || *got.DriveState.Speed != 0 || got.VehicleState.Locked == nil || *got.VehicleState.Locked {
++		t.Fatal("observed zeros/false were erased by location response")
++	}
++	if got.DriveState.Latitude == nil || *got.DriveState.Latitude != 30 || got.DriveState.Heading == nil || *got.DriveState.Heading != 0 {
++		t.Fatal("location was not merged")
++	}
++}
++
++func TestFleetLocationTransportFailureKeepsCoreWithoutPermissionError(t *testing.T) {
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if r.URL.Query().Get("endpoints") == "location_data" {
++			w.WriteHeader(503)
++			return
++		}
++		_, _ = w.Write([]byte(`{"response":{"charge_state":{"battery_level":71}}}`))
++	}))
++	defer server.Close()
++	provider := &fleetProvider{tokens: &testAccessTokens{}, client: server.Client(), baseURL: server.URL}
++	payload, permission, err := provider.vehicleData(context.Background(), "user-1", "test-vehicle")
++	if err != nil || permission || payload.Response.ChargeState.BatteryLevel == nil {
++		t.Fatalf("core lost: %+v %v %v", payload, permission, err)
++	}
++}
++
++func TestFleetLocationNeverMasksCoreAuthorizationFailure(t *testing.T) {
++	requests := 0
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		requests++
++		if r.URL.Query().Get("endpoints") == "location_data" {
++			_, _ = w.Write([]byte(`{"response":{"drive_state":{"latitude":30,"longitude":120}}}`))
++			return
++		}
++		w.WriteHeader(http.StatusForbidden)
++	}))
++	defer server.Close()
++	provider := &fleetProvider{tokens: &testAccessTokens{}, client: server.Client(), baseURL: server.URL}
++	_, _, err := provider.vehicleData(context.Background(), "user-1", "test-vehicle")
++	if !errors.Is(err, errTeslaReauthorization) || requests != 1 {
++		t.Fatalf("core rejection masked: %v calls=%d", err, requests)
++	}
++}
++
++func TestFleetInvalidLocationDoesNotEraseObservedCoreCoordinates(t *testing.T) {
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if r.URL.Query().Get("endpoints") == "location_data" {
++			_, _ = w.Write([]byte(`{"response":{"drive_state":{"latitude":0,"longitude":0}}}`))
++			return
++		}
++		_, _ = w.Write([]byte(`{"response":{"drive_state":{"latitude":1,"longitude":2}}}`))
++	}))
++	defer server.Close()
++	provider := &fleetProvider{tokens: &testAccessTokens{}, client: server.Client(), baseURL: server.URL}
++	payload, _, err := provider.vehicleData(context.Background(), "user-1", "test-vehicle")
++	if err != nil || payload.Response.DriveState.Latitude == nil || *payload.Response.DriveState.Latitude != 1 {
++		t.Fatalf("valid location erased: %v", err)
++	}
++}

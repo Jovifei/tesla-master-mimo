@@ -1,0 +1,64 @@
+From abd11ed582ef1ad2b4c447c44ffc4607ff9ba475 Mon Sep 17 00:00:00 2001
+From: Jovifei <110970864+Jovifei@users.noreply.github.com>
+Date: Thu, 10 Sep 2026 00:39:30 +0000
+Subject: [PATCH 4/5] fix(data): keep verified metadata and block failed vehicle discovery
+
+diff --git a/android/app/src/main/java/com/matelink/ui/screens/auth/TeslaLoginViewModel.kt b/android/app/src/main/java/com/matelink/ui/screens/auth/TeslaLoginViewModel.kt
+index 6307f6a..2fed51d 100644
+--- a/android/app/src/main/java/com/matelink/ui/screens/auth/TeslaLoginViewModel.kt
++++ b/android/app/src/main/java/com/matelink/ui/screens/auth/TeslaLoginViewModel.kt
+@@ -569,7 +569,7 @@ class TeslaLoginViewModel @Inject constructor(
+                 if (isPermissionRequired(carsResult)) {
+                     publishPermissionRequired(null, carsResult.details, requestId)
+                 } else {
+-                    proceedToDashboardIfCurrent(requestId)
++                    publishBlocked("telemetry_error", requestId)
+                 }
+                 return
+             }
+@@ -578,7 +578,7 @@ class TeslaLoginViewModel @Inject constructor(
+         val selectedCarId = settingsRepository.currentCarId.first()
+         val car = cars.firstOrNull { it.carId == selectedCarId } ?: cars.firstOrNull()
+         if (car == null) {
+-            proceedToDashboardIfCurrent(requestId)
++            publishBlocked("vehicle_not_found", requestId)
+             return
+         }
+         publishPairingResult(requestId, car.carId, teslamateRepository.getTelemetryPairingStatus(car.carId))
+@@ -603,13 +603,14 @@ class TeslaLoginViewModel @Inject constructor(
+                 if (isPermissionRequired(carsResult)) {
+                     publishPermissionRequired(carId, carsResult.details, requestId)
+                 } else {
+-                    proceedToDashboardIfCurrent(requestId)
++                    publishBlocked("telemetry_error", requestId)
+                 }
+                 return
+             }
+         }
+-        if (!shouldPublishTeslaRequest(requestId, requestGeneration) || cars.none { it.carId == carId }) {
+-            proceedToDashboardIfCurrent(requestId)
++        if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return
++        if (cars.none { it.carId == carId }) {
++            publishBlocked("vehicle_not_found", requestId)
+             return
+         }
+         val configure = teslamateRepository.configureTelemetry(carId)
+diff --git a/deploy/jourvolt-dev-mock/oauth_store.go b/deploy/jourvolt-dev-mock/oauth_store.go
+index ee1d1bc..4ab0899 100644
+--- a/deploy/jourvolt-dev-mock/oauth_store.go
++++ b/deploy/jourvolt-dev-mock/oauth_store.go
+@@ -244,10 +244,10 @@ func (s *store) updateFleetVehicleMetadata(
+ UPDATE jourvolt_vehicles SET
+ display_name=$3,
+ state=$4,
+-model=NULLIF($5, ''),
+-trim_badging=NULLIF($6, ''),
+-exterior_color=NULLIF($7, ''),
+-wheel_type=NULLIF($8, ''),
++model=COALESCE(NULLIF($5, ''), model),
++trim_badging=COALESCE(NULLIF($6, ''), trim_badging),
++exterior_color=COALESCE(NULLIF($7, ''), exterior_color),
++wheel_type=COALESCE(NULLIF($8, ''), wheel_type),
+ updated_at=now()
+ WHERE id=$1 AND user_id=$2`, vehicleID, userID, displayName, state, model, trimBadging, exteriorColor, wheelType)
+ 	if err != nil {

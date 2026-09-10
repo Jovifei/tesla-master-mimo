@@ -1,0 +1,257 @@
+diff --git a/android/app/src/main/java/com/matelink/data/sync/HistoryUploadFilter.kt b/android/app/src/main/java/com/matelink/data/sync/HistoryUploadFilter.kt
+index f26ac1a..696188d 100644
+--- a/android/app/src/main/java/com/matelink/data/sync/HistoryUploadFilter.kt
++++ b/android/app/src/main/java/com/matelink/data/sync/HistoryUploadFilter.kt
+@@ -1,4 +1,4 @@
+-﻿package com.matelink.data.sync
++package com.matelink.data.sync
+ 
+ import com.matelink.data.api.models.HistoryImportSession
+ import java.time.Instant
+@@ -62,9 +62,19 @@ object HistoryUploadFilter {
+         }
+     }
+ 
+-    @Deprecated("Use keepValidatedArchive to preserve the complete local archive")
++    /** Regular upload window: newest two distinct observed UTC dates, not now - 48h.
++     * This filters a request only; it never deletes the phone or existing cloud archive.
++     */
+     fun boundToLatestTwoDataDays(
+         drives: List<HistoryImportSession>,
+         charges: List<HistoryImportSession>
+-    ): BoundedHistoryUpload = keepValidatedArchive(drives, charges)
++    ): BoundedHistoryUpload {
++        val valid = keepValidatedArchive(drives, charges)
++        val days = (valid.drives + valid.charges).mapNotNull { extractUtcDate(it.startedAt) }
++            .distinct().sortedDescending().take(2).toSet()
++        return BoundedHistoryUpload(
++            valid.drives.filter { extractUtcDate(it.startedAt) in days },
++            valid.charges.filter { extractUtcDate(it.startedAt) in days }
++        )
++    }
+ }
+diff --git a/android/app/src/main/java/com/matelink/data/sync/SyncRepository.kt b/android/app/src/main/java/com/matelink/data/sync/SyncRepository.kt
+index 589f2c9..d6a08f3 100644
+--- a/android/app/src/main/java/com/matelink/data/sync/SyncRepository.kt
++++ b/android/app/src/main/java/com/matelink/data/sync/SyncRepository.kt
+@@ -173,7 +173,7 @@ class SyncRepository @Inject constructor(
+                     }
+                 }
+                 },
+-                persistPage = driveSummaryDao::upsertAll,
++                persistPage = driveSummaryDao::upsertPreservingEvidence,
+                 onCompleted = { summaries -> notifyCompletedDriveUpdates(historyCarId, summaries) }
+             ).sync()
+         } catch (e: Exception) {
+@@ -201,7 +201,7 @@ class SyncRepository @Inject constructor(
+                             hasMore = false
+                         } else {
+                             val summaries = charges.mapNotNull { it.toSyncSummary(historyCarId) }
+-                            chargeSummaryDao.upsertAll(summaries)
++                            chargeSummaryDao.upsertPreservingEvidence(summaries)
+                             val decision = PaginationGuard.evaluate(
+                                 pageSize = 50,
+                                 seenIds = seenIds,
+@@ -346,7 +346,7 @@ class SyncRepository @Inject constructor(
+         }
+         val allDrives = driveSummaryDao.getAllChronological(historyCarId).mapNotNull { it.toImportSession("drive") }
+         val allCharges = chargeSummaryDao.getAllForCar(historyCarId).mapNotNull { it.toImportSession("charge") }
+-        val bounded = HistoryUploadFilter.keepValidatedArchive(allDrives, allCharges)
++        val bounded = HistoryUploadFilter.boundToLatestTwoDataDays(allDrives, allCharges)
+         if (bounded.drives.isEmpty() && bounded.charges.isEmpty()) {
+             Log.d(TAG, "No valid local history to upload for car $historyCarId")
+             return true
+@@ -394,7 +394,9 @@ internal fun DriveData.toSyncSummary(carId: Int): DriveSummary? {
+         energySource = energyConsumedNet?.takeIf { it > 0.0 }?.let { "api" },
+         energyCoverageSeconds = 0,
+         energyCoverageRatio = 0.0,
+-        apiEvidence = HistorySummaryEvidenceCodec.encode(this)
++        apiEvidence = HistorySummaryEvidenceCodec.encode(this),
++        qualityState = qualityState ?: if (source == "local_import") "incomplete" else "observed",
++        qualityReason = qualityReason ?: if (source == "local_import") "local_import_unverified" else "legacy_remote_api"
+     )
+ }
+ 
+@@ -417,13 +419,16 @@ internal fun ChargeData.toSyncSummary(carId: Int): ChargeSummary? {
+         endBatteryLevel = endBatteryLevel ?: 0,
+         outsideTempAvg = outsideTempAvg,
+         odometer = odometer ?: 0.0,
+-        apiEvidence = HistorySummaryEvidenceCodec.encode(this)
++        apiEvidence = HistorySummaryEvidenceCodec.encode(this),
++        qualityState = qualityState ?: if (source == "local_import") "incomplete" else "observed",
++        qualityReason = qualityReason ?: if (source == "local_import") "local_import_unverified" else "legacy_remote_api"
+     )
+ }
+ 
+ internal fun DriveSummary.toImportSession(kind: String): com.matelink.data.api.models.HistoryImportSession? {
+     if (qualityState != "observed" && qualityState != "derived") return null
+     if (apiEvidence.isNullOrBlank() || energySource.isNullOrBlank()) return null
++    if (HistorySummaryEvidenceCodec.decodeDrive(apiEvidence)?.source in setOf("telemetry_mqtt", "local_import")) return null
+     val started = normalizeImportTimestamp(startDate) ?: return null
+     val ended = normalizeImportTimestamp(endDate) ?: return null
+     return com.matelink.data.api.models.HistoryImportSession(
+@@ -440,6 +445,7 @@ internal fun DriveSummary.toImportSession(kind: String): com.matelink.data.api.m
+ internal fun ChargeSummary.toImportSession(kind: String): com.matelink.data.api.models.HistoryImportSession? {
+     if (qualityState != "observed" && qualityState != "derived") return null
+     if (apiEvidence.isNullOrBlank()) return null
++    if (HistorySummaryEvidenceCodec.decodeCharge(apiEvidence)?.source in setOf("telemetry_mqtt", "local_import")) return null
+     val started = normalizeImportTimestamp(startDate) ?: return null
+     val ended = normalizeImportTimestamp(endDate) ?: null
+     return com.matelink.data.api.models.HistoryImportSession(
+diff --git a/android/app/src/main/java/com/matelink/ui/screens/charges/ChargesScreen.kt b/android/app/src/main/java/com/matelink/ui/screens/charges/ChargesScreen.kt
+index 0f80efe..1256228 100644
+--- a/android/app/src/main/java/com/matelink/ui/screens/charges/ChargesScreen.kt
++++ b/android/app/src/main/java/com/matelink/ui/screens/charges/ChargesScreen.kt
+@@ -160,6 +160,7 @@ fun ChargesScreen(
+                 MateLinkLoadingPlaceholder(color = palette.accent)
+             } else {
+                 ChargesContent(
++                    historySyncWarning = uiState.historySyncWarning,
+                     charges = uiState.charges,
+                     dcChargeIds = uiState.dcChargeIds,
+                     processedChargeIds = uiState.processedChargeIds,
+@@ -216,6 +217,7 @@ fun ChargesScreen(
+ @OptIn(ExperimentalMaterial3Api::class)
+ @Composable
+ private fun ChargesContent(
++    historySyncWarning: String?,
+     charges: List<ChargeData>,
+     dcChargeIds: Set<Int>,
+     processedChargeIds: Set<Int>,
+@@ -254,6 +256,7 @@ private fun ChargesContent(
+     // summary, charts (conditional), history header. Adjust if items are added.
+     val showFreeHint = freeSupercharging && selectedCostFilter == CostFilter.NO_COST
+     val headerCount = 4 +
++        (if (historySyncWarning != null) 1 else 0) +
+         (if (showFreeHint) 1 else 0) +
+         (if (chartData.isNotEmpty()) 1 else 0)
+ 
+@@ -264,6 +267,17 @@ private fun ChargesContent(
+         contentPadding = PaddingValues(12.dp),
+         verticalArrangement = Arrangement.spacedBy(6.dp)
+     ) {
++        if (historySyncWarning != null) {
++            item(key = "history_sync_warning") {
++                Text(
++                    text = stringResource(if (historySyncWarning == "history_partial") R.string.history_sync_partial else R.string.history_sync_cached),
++                    style = MaterialTheme.typography.bodyMedium,
++                    color = MaterialTheme.colorScheme.error,
++                    modifier = Modifier.fillMaxWidth().padding(12.dp)
++                )
++            }
++        }
++
+         item {
+             DateFilterChips(
+                 selectedFilter = selectedDateFilter,
+diff --git a/android/app/src/main/java/com/matelink/ui/screens/charges/ChargesViewModel.kt b/android/app/src/main/java/com/matelink/ui/screens/charges/ChargesViewModel.kt
+index 3555263..64f3e48 100644
+--- a/android/app/src/main/java/com/matelink/ui/screens/charges/ChargesViewModel.kt
++++ b/android/app/src/main/java/com/matelink/ui/screens/charges/ChargesViewModel.kt
+@@ -99,6 +99,7 @@ data class ChargesUiState(
+     val chartData: List<ChargeChartData> = emptyList(),
+     val chartGranularity: ChartGranularity = ChartGranularity.MONTHLY,
+     val error: String? = null,
++    val historySyncWarning: String? = null,
+     val startDate: LocalDate? = null,
+     val endDate: LocalDate? = null,
+     val selectedFilter: DateFilter = DateFilter.ALL_TIME,  // Preserve filter in ViewModel
+@@ -396,7 +397,8 @@ class ChargesViewModel @Inject constructor(
+                             processedChargeIds = processedChargeIds,
+                             priceOverrides = priceOverrides,
+                             chartGranularity = granularity,
+-                            error = null
++                            error = null,
++                            historySyncWarning = result.data.chargesSyncError
+                         )
+                     }
+ 
+diff --git a/android/app/src/main/java/com/matelink/ui/screens/drives/DrivesScreen.kt b/android/app/src/main/java/com/matelink/ui/screens/drives/DrivesScreen.kt
+index 9a93be4..1a055b4 100644
+--- a/android/app/src/main/java/com/matelink/ui/screens/drives/DrivesScreen.kt
++++ b/android/app/src/main/java/com/matelink/ui/screens/drives/DrivesScreen.kt
+@@ -165,6 +165,7 @@ fun DrivesScreen(
+                 MateLinkLoadingPlaceholder(color = palette.accent)
+             } else {
+                 DrivesContent(
++                    historySyncWarning = uiState.historySyncWarning,
+                     drives = uiState.drives,
+                     chartData = uiState.chartData,
+                     chartGranularity = uiState.chartGranularity,
+@@ -192,6 +193,7 @@ fun DrivesScreen(
+ @OptIn(ExperimentalMaterial3Api::class)
+ @Composable
+ private fun DrivesContent(
++    historySyncWarning: String?,
+     drives: List<DriveData>,
+     chartData: List<DriveChartData>,
+     chartGranularity: DriveChartGranularity,
+@@ -214,7 +216,7 @@ private fun DrivesContent(
+     val historyItems = remember(drives) { buildDriveHistoryItems(drives) }
+     // Header items in this LazyColumn, in render order: date chips, distance chips,
+     // summary, charts (conditional), history header. Adjust if items are added.
+-    val headerCount = 4 + (if (chartData.isNotEmpty()) 1 else 0)
++    val headerCount = 4 + (if (chartData.isNotEmpty()) 1 else 0) + (if (historySyncWarning != null) 1 else 0)
+ 
+     Box(modifier = Modifier.fillMaxSize()) {
+     LazyColumn(
+@@ -223,6 +225,17 @@ private fun DrivesContent(
+         contentPadding = PaddingValues(12.dp),
+         verticalArrangement = Arrangement.spacedBy(6.dp)
+     ) {
++        if (historySyncWarning != null) {
++            item(key = "history_sync_warning") {
++                Text(
++                    text = stringResource(if (historySyncWarning == "history_partial") R.string.history_sync_partial else R.string.history_sync_cached),
++                    style = MaterialTheme.typography.bodyMedium,
++                    color = MaterialTheme.colorScheme.error,
++                    modifier = Modifier.fillMaxWidth().padding(12.dp)
++                )
++            }
++        }
++
+         item {
+             DateFilterChips(
+                 selectedFilter = selectedDateFilter,
+diff --git a/android/app/src/main/java/com/matelink/ui/screens/drives/DrivesViewModel.kt b/android/app/src/main/java/com/matelink/ui/screens/drives/DrivesViewModel.kt
+index f1b3b11..768ae0d 100644
+--- a/android/app/src/main/java/com/matelink/ui/screens/drives/DrivesViewModel.kt
++++ b/android/app/src/main/java/com/matelink/ui/screens/drives/DrivesViewModel.kt
+@@ -94,6 +94,7 @@ data class DrivesUiState(
+     val chartData: List<DriveChartData> = emptyList(),
+     val chartGranularity: DriveChartGranularity = DriveChartGranularity.MONTHLY,
+     val error: String? = null,
++    val historySyncWarning: String? = null,
+     val startDate: LocalDate? = null,
+     val endDate: LocalDate? = null,
+     val summary: DrivesSummary = DrivesSummary(),
+@@ -310,6 +311,7 @@ class DrivesViewModel @Inject constructor(
+                         it.copy(
+                             chartGranularity = granularity,
+                             error = null,
++                            historySyncWarning = result.data.drivesSyncError,
+                             driveMetrics = localMetrics
+                         )
+                     }
+diff --git a/android/app/src/main/res/values-zh/strings.xml b/android/app/src/main/res/values-zh/strings.xml
+index a9ad063..00154c0 100644
+--- a/android/app/src/main/res/values-zh/strings.xml
++++ b/android/app/src/main/res/values-zh/strings.xml
+@@ -1500,4 +1500,6 @@
+     <string name="telemetry_setup_pending_body">Tesla 登录会话已连接。系统会自动重试可恢复的配置错误；缺少车辆钥匙或权限时仍需您在 Tesla 官方页面确认。可以先查看已有数据，新行程必须等待真实遥测事件。</string>
+     <string name="telemetry_recheck">重新检查配置</string>
+     <string name="vehicle_model_pending">车型待识别</string>
++    <string name="history_sync_cached">云端历史暂未同步成功，当前显示本机保存的记录；下拉刷新可重试。</string>
++    <string name="history_sync_partial">云端历史仅恢复了一部分，本机旧记录已保留；下拉刷新可重试剩余记录。</string>
+ </resources>
+diff --git a/android/app/src/main/res/values/strings.xml b/android/app/src/main/res/values/strings.xml
+index e42fd25..37a5fd3 100644
+--- a/android/app/src/main/res/values/strings.xml
++++ b/android/app/src/main/res/values/strings.xml
+@@ -1509,4 +1509,6 @@
+     <string name="telemetry_setup_pending_body">Your Tesla session is connected. The service retries recoverable setup failures automatically. A vehicle key or missing Tesla permission still needs your confirmation. You may view existing data; new trips require actual telemetry events.</string>
+     <string name="telemetry_recheck">Check setup again</string>
+     <string name="vehicle_model_pending">Vehicle model not yet identified</string>
++    <string name="history_sync_cached">Cloud history could not be refreshed. Showing this device’s saved history; pull to refresh to retry.</string>
++    <string name="history_sync_partial">Only part of cloud history was restored. Saved history is preserved; pull to refresh to retry the remaining pages.</string>
+ </resources>

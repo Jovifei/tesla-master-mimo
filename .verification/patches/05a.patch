@@ -1,0 +1,214 @@
+diff --git a/android/app/src/main/java/com/matelink/data/local/VehicleContextRepository.kt b/android/app/src/main/java/com/matelink/data/local/VehicleContextRepository.kt
+index e15c50e..57fdfc8 100644
+--- a/android/app/src/main/java/com/matelink/data/local/VehicleContextRepository.kt
++++ b/android/app/src/main/java/com/matelink/data/local/VehicleContextRepository.kt
+@@ -8,6 +8,12 @@ import javax.inject.Inject
+ import javax.inject.Singleton
+ import kotlinx.coroutines.flow.first
+ 
++internal data class HistoryReadScope(
++    val source: HistoryConnectionSource,
++    val serverIdentity: String,
++    val accountNamespace: String?
++)
++
+ @Singleton
+ class VehicleContextRepository @Inject constructor(
+     private val contextStore: VehicleContextStore,
+@@ -17,27 +23,24 @@ class VehicleContextRepository @Inject constructor(
+     private val teslamateRepository: TeslamateRepository,
+     private val legacyHistoryMigrationRepository: LegacyHistoryMigrationRepository
+ ) : HistoryCarIdResolver, VehicleContextResolver {
+-    override suspend fun resolve(car: CarData): VehicleContext {
++    internal suspend fun captureReadScope(): HistoryReadScope {
+         val mode = connectionModeStore.mode.first() ?: ConnectionMode.SELF_HOSTED
+-        val serverUrl = settingsRepository.serverUrl.first()
+-        val source = if (mode == ConnectionMode.TESLA_CLOUD) {
+-            HistoryConnectionSource.CLOUD
+-        } else {
+-            HistoryConnectionSource.SELF_HOSTED
+-        }
+-        val serverIdentity = if (source == HistoryConnectionSource.CLOUD) {
+-            "cloud"
++        return if (mode == ConnectionMode.TESLA_CLOUD) {
++            val account = sessionStore.current()?.userId?.trim().orEmpty()
++            if (account.isEmpty()) throw HistoryIdentityUnavailableException()
++            HistoryReadScope(HistoryConnectionSource.CLOUD, "cloud", account)
+         } else {
+-            requireSelfHostedServerIdentity(serverUrl)
++            HistoryReadScope(HistoryConnectionSource.SELF_HOSTED,
++                requireSelfHostedServerIdentity(settingsRepository.serverUrl.first()), null)
+         }
+-        return contextStore.resolveCar(
+-            car = car,
+-            accountNamespace = sessionStore.current()?.userId,
+-            connectionSource = source,
+-            serverIdentity = serverIdentity
+-        )
+     }
+ 
++    override suspend fun resolve(car: CarData): VehicleContext = resolve(car, captureReadScope())
++
++    internal fun resolve(car: CarData, scope: HistoryReadScope): VehicleContext = contextStore.resolveCar(
++        car, scope.accountNamespace, scope.source, scope.serverIdentity
++    )
++
+     suspend fun resolveAll(cars: List<CarData>): List<VehicleContext> = cars.map { resolve(it) }
+ 
+     suspend fun resolveRemote(remoteApiCarId: Int): VehicleContext {
+@@ -60,30 +63,19 @@ class VehicleContextRepository @Inject constructor(
+         throw HistoryIdentityUnavailableException()
+     }
+ 
+-    suspend fun cachedContextForRemote(remoteApiCarId: Int): VehicleContext? {
+-        val mode = connectionModeStore.mode.first() ?: ConnectionMode.SELF_HOSTED
+-        if (mode == ConnectionMode.TESLA_CLOUD) {
+-            val account = sessionStore.current()?.userId?.trim().orEmpty()
++    suspend fun cachedContextForRemote(remoteApiCarId: Int): VehicleContext? =
++        cachedContextForRemote(remoteApiCarId, captureReadScope())
++
++    internal fun cachedContextForRemote(remoteApiCarId: Int, scope: HistoryReadScope): VehicleContext? {
++        if (scope.source == HistoryConnectionSource.CLOUD) {
++            val account = scope.accountNamespace.orEmpty()
+             val localId = contextStore.findCloudLocalHistoryCarId(account, remoteApiCarId) ?: return null
+-            return VehicleContext(
+-                remoteApiCarId = remoteApiCarId,
+-                stableIdentity = contextStore.cloudRemoteOpaqueIdentity(account, remoteApiCarId),
+-                localHistoryCarId = localId,
+-                connectionSource = HistoryConnectionSource.CLOUD,
+-                serverIdentity = "cloud"
+-            )
++            return VehicleContext(remoteApiCarId,
++                contextStore.cloudRemoteOpaqueIdentity(account, remoteApiCarId), localId, scope.source, scope.serverIdentity)
+         }
+-        val serverUrl = settingsRepository.serverUrl.first()
+-        val serverIdentity = requireSelfHostedServerIdentity(serverUrl)
+-        val stableIdentity = selfHostedVehicleStableIdentity(serverUrl, remoteApiCarId)
++        val stableIdentity = selfHostedVehicleStableIdentity(scope.serverIdentity, remoteApiCarId)
+         val localId = contextStore.findLocalHistoryCarId(stableIdentity) ?: return null
+-        return VehicleContext(
+-            remoteApiCarId = remoteApiCarId,
+-            stableIdentity = stableIdentity,
+-            localHistoryCarId = localId,
+-            connectionSource = HistoryConnectionSource.SELF_HOSTED,
+-            serverIdentity = serverIdentity
+-        )
++        return VehicleContext(remoteApiCarId, stableIdentity, localId, scope.source, scope.serverIdentity)
+     }
+ 
+     suspend fun localHistoryCarIdFor(remoteApiCarId: Int): Int? =
+diff --git a/android/app/src/main/java/com/matelink/data/local/dao/ChargeSummaryDao.kt b/android/app/src/main/java/com/matelink/data/local/dao/ChargeSummaryDao.kt
+index 3abb321..e9911a6 100644
+--- a/android/app/src/main/java/com/matelink/data/local/dao/ChargeSummaryDao.kt
++++ b/android/app/src/main/java/com/matelink/data/local/dao/ChargeSummaryDao.kt
+@@ -3,12 +3,22 @@ package com.matelink.data.local.dao
+ import androidx.room.Dao
+ import androidx.room.Query
+ import androidx.room.Upsert
++import androidx.room.Transaction
++import com.matelink.data.repository.mergeStoredCharge
+ import com.matelink.data.local.entity.ChargeSummary
+ import kotlinx.coroutines.flow.Flow
+ 
+ @Dao
+ interface ChargeSummaryDao {
+ 
++    /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
++    @Transaction
++    suspend fun upsertPreservingEvidence(rows: List<ChargeSummary>) {
++        rows.forEach { incoming ->
++            upsert(mergeStoredCharge(incoming, get(incoming.carId, incoming.chargeId)))
++        }
++    }
++
+     // === CRUD Operations ===
+ 
+     @Upsert
+diff --git a/android/app/src/main/java/com/matelink/data/local/dao/DriveSummaryDao.kt b/android/app/src/main/java/com/matelink/data/local/dao/DriveSummaryDao.kt
+index 40c8658..fff3fc1 100644
+--- a/android/app/src/main/java/com/matelink/data/local/dao/DriveSummaryDao.kt
++++ b/android/app/src/main/java/com/matelink/data/local/dao/DriveSummaryDao.kt
+@@ -3,12 +3,22 @@ package com.matelink.data.local.dao
+ import androidx.room.Dao
+ import androidx.room.Query
+ import androidx.room.Upsert
++import androidx.room.Transaction
++import com.matelink.data.repository.mergeStoredDrive
+ import com.matelink.data.local.entity.DriveSummary
+ import kotlinx.coroutines.flow.Flow
+ 
+ @Dao
+ interface DriveSummaryDao {
+ 
++    /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
++    @Transaction
++    suspend fun upsertPreservingEvidence(rows: List<DriveSummary>) {
++        rows.forEach { incoming ->
++            upsert(mergeStoredDrive(incoming, get(incoming.carId, incoming.driveId)))
++        }
++    }
++
+     // === CRUD Operations ===
+ 
+     @Upsert
+diff --git a/android/app/src/main/java/com/matelink/data/repository/HistoryPageLoader.kt b/android/app/src/main/java/com/matelink/data/repository/HistoryPageLoader.kt
+new file mode 100644
+index 0000000..89eda7a
+--- /dev/null
++++ b/android/app/src/main/java/com/matelink/data/repository/HistoryPageLoader.kt
+@@ -0,0 +1,55 @@
++package com.matelink.data.repository
++
++import java.time.Instant
++import kotlinx.coroutines.CancellationException
++
++internal data class HistoryPageLoad<T>(val items: List<T>, val error: ApiResult.Error? = null)
++
++/** Recover every available page; partial success remains partial, never an empty success. */
++internal suspend fun <T> loadHistoryPages(
++    pageSize: Int = 50,
++    maxPages: Int = 2000,
++    id: (T) -> Int,
++    fetch: suspend (Int) -> ApiResult<List<T>>
++): HistoryPageLoad<T> {
++    require(pageSize > 0 && maxPages > 0)
++    val collected = linkedMapOf<Int, T>()
++    for (page in 1..maxPages) {
++        val result = try { fetch(page) } catch (e: CancellationException) {
++            throw e
++        } catch (_: Exception) {
++            ApiResult.Error("history_remote_unavailable", kind = ApiErrorKind.NETWORK)
++        }
++        when (result) {
++            is ApiResult.Error -> return HistoryPageLoad(collected.values.toList(), result)
++            is ApiResult.Success -> {
++                val rows = result.data
++                if (rows.isEmpty()) return HistoryPageLoad(collected.values.toList())
++                val before = collected.size
++                rows.forEach { collected[id(it)] = it }
++                if (collected.size == before) return HistoryPageLoad(
++                    collected.values.toList(), ApiResult.Error("history_repeated_page", kind = ApiErrorKind.NETWORK)
++                )
++                if (rows.size < pageSize) return HistoryPageLoad(collected.values.toList())
++            }
++        }
++    }
++    return HistoryPageLoad(collected.values.toList(), ApiResult.Error("history_page_limit", kind = ApiErrorKind.NETWORK))
++}
++
++internal fun historyTimestamp(value: String?): Instant? =
++    value?.let { runCatching { Instant.parse(it) }.getOrNull() }
++
++internal fun sameHistorySession(start: String?, end: String?, otherStart: String?, otherEnd: String?): Boolean {
++    val firstStart = historyTimestamp(start) ?: return false
++    val firstEnd = historyTimestamp(end) ?: return false
++    return firstStart == historyTimestamp(otherStart) && firstEnd == historyTimestamp(otherEnd)
++}
++
++internal fun historyInRange(value: String?, start: String?, end: String?): Boolean {
++    if (start == null && end == null) return true
++    val instant = historyTimestamp(value) ?: return false
++    val from = historyTimestamp(start)
++    val until = historyTimestamp(end)
++    return (from == null || !instant.isBefore(from)) && (until == null || instant.isBefore(until))
++}

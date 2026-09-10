@@ -1,0 +1,465 @@
+From a17e70d94697112e09b12302742916e9803dcfca Mon Sep 17 00:00:00 2001
+From: Jovifei <110970864+Jovifei@users.noreply.github.com>
+Date: Thu, 10 Sep 2026 00:33:36 +0000
+Subject: [PATCH 2/5] fix(telemetry): recover transient setup failures and expose onboarding state
+
+diff --git a/android/app/src/main/java/com/matelink/data/local/TeslaOnboardingStateStore.kt b/android/app/src/main/java/com/matelink/data/local/TeslaOnboardingStateStore.kt
+index 888bc60..4b44773 100644
+--- a/android/app/src/main/java/com/matelink/data/local/TeslaOnboardingStateStore.kt
++++ b/android/app/src/main/java/com/matelink/data/local/TeslaOnboardingStateStore.kt
+@@ -30,7 +30,8 @@ data class TeslaOnboardingSnapshot(
+     val vehicleId: Int? = null,
+     val virtualKeyUrl: String? = null,
+     val launchPending: Boolean = false,
+-    val retryUsed: Boolean = false
++    val retryUsed: Boolean = false,
++    val reason: String? = null
+ )
+ 
+ private val Context.teslaOnboardingDataStore: DataStore<Preferences> by preferencesDataStore(
+@@ -46,6 +47,7 @@ class TeslaOnboardingStateStore @Inject constructor(
+     private val vehicleIdKey = intPreferencesKey("vehicle_id")
+     private val virtualKeyUrlKey = stringPreferencesKey("virtual_key_url")
+     private val launchPendingKey = booleanPreferencesKey("launch_pending")
++    private val reasonKey = stringPreferencesKey("reason")
+     private val retryUsedKey = booleanPreferencesKey("retry_used")
+ 
+     val state: Flow<TeslaOnboardingSnapshot> = context.teslaOnboardingDataStore.data.map { preferences ->
+@@ -57,7 +59,8 @@ class TeslaOnboardingStateStore @Inject constructor(
+             vehicleId = preferences[vehicleIdKey],
+             virtualKeyUrl = preferences[virtualKeyUrlKey],
+             launchPending = preferences[launchPendingKey] ?: false,
+-            retryUsed = preferences[retryUsedKey] ?: false
++            retryUsed = preferences[retryUsedKey] ?: false,
++            reason = preferences[reasonKey]
+         )
+     }
+ 
+@@ -75,6 +78,7 @@ class TeslaOnboardingStateStore @Inject constructor(
+                     ?: preferences.remove(virtualKeyUrlKey)
+                 preferences[launchPendingKey] = snapshot.launchPending
+                 preferences[retryUsedKey] = snapshot.retryUsed
++                snapshot.reason?.let { preferences[reasonKey] = it } ?: preferences.remove(reasonKey)
+             }
+         }
+     }
+diff --git a/android/app/src/main/java/com/matelink/ui/screens/auth/TeslaLoginScreen.kt b/android/app/src/main/java/com/matelink/ui/screens/auth/TeslaLoginScreen.kt
+index 2e3ec6c..04fb4a9 100644
+--- a/android/app/src/main/java/com/matelink/ui/screens/auth/TeslaLoginScreen.kt
++++ b/android/app/src/main/java/com/matelink/ui/screens/auth/TeslaLoginScreen.kt
+@@ -158,7 +158,11 @@ fun TeslaLoginScreen(
+                     icon = { CircularProgressIndicator(modifier = Modifier.size(22.dp)) },
+                     text = stringResource(R.string.tesla_onboarding_checking)
+                 )
+-                TeslaLoginOnboardingState.Pending,
++                TeslaLoginOnboardingState.Pending -> TeslaBlockedOnboardingPanel(
++                    reason = "waiting_vehicle",
++                    onRetry = viewModel::retryTeslaOnboarding,
++                    onContinue = viewModel::continueAfterTeslaOnboarding
++                )
+                 TeslaLoginOnboardingState.Ready -> Unit
+                 is TeslaLoginOnboardingState.PairingRequired -> TeslaPairingOnboardingPanel(
+                     virtualKeyUrl = onboarding.virtualKeyUrl,
+@@ -172,6 +176,8 @@ fun TeslaLoginScreen(
+                     onContinue = viewModel::continueAfterTeslaOnboarding
+                 )
+                 is TeslaLoginOnboardingState.Blocked -> TeslaBlockedOnboardingPanel(
++                    reason = onboarding.reason,
++                    onRetry = viewModel::retryTeslaOnboarding,
+                     onContinue = viewModel::continueAfterTeslaOnboarding
+                 )
+             }
+@@ -385,16 +391,22 @@ private fun TeslaPermissionOnboardingPanel(
+ }
+ 
+ @Composable
+-private fun TeslaBlockedOnboardingPanel(onContinue: () -> Unit) {
++private fun TeslaBlockedOnboardingPanel(reason: String?, onRetry: () -> Unit, onContinue: () -> Unit) {
++    val billing = reason == "billing_blocked"
+     LoginPanel(containerColor = MaterialTheme.colorScheme.errorContainer) {
+         Text(
+-            text = stringResource(R.string.tesla_onboarding_blocked_title),
++            text = stringResource(if (billing) R.string.tesla_onboarding_blocked_title else R.string.telemetry_setup_pending_title),
+             style = MaterialTheme.typography.titleMedium
+         )
+         Text(
+-            text = stringResource(R.string.tesla_onboarding_blocked_body),
++            text = stringResource(if (billing) R.string.tesla_onboarding_blocked_body else R.string.telemetry_setup_pending_body),
+             style = MaterialTheme.typography.bodyMedium
+         )
++        if (!billing) {
++            Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
++                Text(stringResource(R.string.telemetry_recheck))
++            }
++        }
+         OutlinedButton(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
+             Text(stringResource(R.string.tesla_onboarding_pairing_continue))
+         }
+diff --git a/android/app/src/main/java/com/matelink/ui/screens/auth/TeslaLoginViewModel.kt b/android/app/src/main/java/com/matelink/ui/screens/auth/TeslaLoginViewModel.kt
+index 3a853ca..6307f6a 100644
+--- a/android/app/src/main/java/com/matelink/ui/screens/auth/TeslaLoginViewModel.kt
++++ b/android/app/src/main/java/com/matelink/ui/screens/auth/TeslaLoginViewModel.kt
+@@ -404,11 +404,22 @@ class TeslaLoginViewModel @Inject constructor(
+     fun continueAfterTeslaOnboarding() {
+         when (_postLoginOnboarding.value) {
+             is TeslaLoginOnboardingState.PermissionRequired,
+-            is TeslaLoginOnboardingState.Blocked -> continueToDashboard()
++            is TeslaLoginOnboardingState.Blocked,
++            TeslaLoginOnboardingState.Pending -> continueToDashboard()
+             else -> Unit
+         }
+     }
+ 
++    /** Recheck with the existing session; backend owns bounded configuration recovery. */
++    fun retryTeslaOnboarding() {
++        if (sessionStore.current() == null) return
++        val requestId = invalidateCurrentRequest()
++        requestJob?.cancel()
++        requestJob = viewModelScope.launch(Dispatchers.IO) {
++            runPostLoginOnboardingSafely(requestId)
++        }
++    }
++
+     fun deleteAccount(onSuccess: (String?) -> Unit, onFailure: () -> Unit) {
+         val session = sessionStore.current()
+         if (session == null) {
+@@ -524,7 +535,7 @@ class TeslaLoginViewModel @Inject constructor(
+                 )
+             }
+             TeslaOnboardingPhase.BLOCKED -> {
+-                _postLoginOnboarding.value = TeslaLoginOnboardingState.Blocked("billing_blocked")
++                _postLoginOnboarding.value = TeslaLoginOnboardingState.Blocked(snapshot.reason ?: "telemetry_error")
+             }
+             TeslaOnboardingPhase.PENDING -> {
+                 _postLoginOnboarding.value = TeslaLoginOnboardingState.Checking
+@@ -544,7 +555,7 @@ class TeslaLoginViewModel @Inject constructor(
+         } catch (e: CancellationException) {
+             throw e
+         } catch (_: Exception) {
+-            proceedToDashboardIfCurrent(requestId)
++            publishBlocked("telemetry_error", requestId)
+         }
+     }
+ 
+@@ -579,7 +590,7 @@ class TeslaLoginViewModel @Inject constructor(
+         } catch (e: CancellationException) {
+             throw e
+         } catch (_: Exception) {
+-            proceedToDashboardIfCurrent(requestId)
++            publishBlocked("telemetry_error", requestId)
+         }
+     }
+ 
+@@ -625,7 +636,7 @@ class TeslaLoginViewModel @Inject constructor(
+         } catch (e: CancellationException) {
+             throw e
+         } catch (_: Exception) {
+-            proceedToDashboardIfCurrent(requestId)
++            publishBlocked("telemetry_error", requestId)
+         }
+     }
+ 
+@@ -655,10 +666,15 @@ class TeslaLoginViewModel @Inject constructor(
+                     }
+                     isPermissionRequired(pairing) ->
+                         publishPermissionRequired(carId, pairing.status, requestId)
+-                    pairing.status.equals("billing_blocked", ignoreCase = true) ->
+-                        publishBlocked(pairing.status, requestId)
++                    pairing.status.equals("billing_blocked", ignoreCase = true) ||
++                        pairing.status.equals("telemetry_error", ignoreCase = true) ||
++                        pairing.status.equals("telemetry_not_configured", ignoreCase = true) ->
++                        publishBlocked(pairing.errorClass ?: pairing.status, requestId)
+                     pairing.configSynced == true -> completeOnboardingIfCurrent(requestId)
+-                    else -> proceedToDashboardIfCurrent(requestId)
++                    else -> {
++                        _postLoginOnboarding.value = TeslaLoginOnboardingState.Pending
++                        persistOnboarding(TeslaOnboardingPhase.PENDING, carId)
++                    }
+                 }
+             }
+             is ApiResult.Error -> when {
+@@ -669,7 +685,7 @@ class TeslaLoginViewModel @Inject constructor(
+                     _postLoginOnboarding.value = TeslaLoginOnboardingState.PairingRequired(carId, null)
+                     persistOnboarding(TeslaOnboardingPhase.PAIRING_REQUIRED, carId, null)
+                 }
+-                else -> proceedToDashboardIfCurrent(requestId)
++                else -> publishBlocked(result.details ?: "telemetry_error", requestId)
+             }
+         }
+     }
+@@ -768,7 +784,8 @@ class TeslaLoginViewModel @Inject constructor(
+             vehicleId = carId,
+             virtualKeyUrl = virtualKeyUrl,
+             launchPending = _teslaPairingFlowPending.value,
+-            retryUsed = pairingRetryUsed
++            retryUsed = pairingRetryUsed,
++            reason = (_postLoginOnboarding.value as? TeslaLoginOnboardingState.Blocked)?.reason
+         )
+         onboardingPersistenceJob?.cancel()
+         onboardingPersistenceJob = viewModelScope.launch(Dispatchers.IO) {
+diff --git a/android/app/src/main/java/com/matelink/ui/screens/readiness/DataReadinessViewModel.kt b/android/app/src/main/java/com/matelink/ui/screens/readiness/DataReadinessViewModel.kt
+index 207c81e..81a3258 100644
+--- a/android/app/src/main/java/com/matelink/ui/screens/readiness/DataReadinessViewModel.kt
++++ b/android/app/src/main/java/com/matelink/ui/screens/readiness/DataReadinessViewModel.kt
+@@ -49,8 +49,10 @@ internal fun shouldAutoConfigureTelemetry(
+     if (pairing.status.equals("pairing_required", ignoreCase = true)) {
+         return pairing.updatedAt.isNullOrBlank()
+     }
+-    return pairing.status.equals("telemetry_error", ignoreCase = true) &&
+-        pairing.errorClass.equals("ca_unavailable", ignoreCase = true)
++    if (!pairing.status.equals("telemetry_error", ignoreCase = true)) return false
++    if (pairing.errorClass?.lowercase() !in setOf(null, "", "ca_unavailable", "command_transport", "telemetry_error", "rate_limited")) return false
++    val updated = runCatching { java.time.Instant.parse(pairing.updatedAt) }.getOrNull() ?: return false
++    return java.time.Duration.between(updated, java.time.Instant.now()).seconds >= 60
+ }
+ 
+ @HiltViewModel
+diff --git a/android/app/src/main/res/values-zh/strings.xml b/android/app/src/main/res/values-zh/strings.xml
+index b0b4d0f..d7d8403 100644
+--- a/android/app/src/main/res/values-zh/strings.xml
++++ b/android/app/src/main/res/values-zh/strings.xml
+@@ -1496,4 +1496,7 @@
+     <string name="drive_curves_banner_title">行程动态曲线分析</string>
+     <string name="drive_curves_banner_subtitle">点击查看速度、里程、功率、电量与海拔变化</string>
+     <string name="distance_profile">行程距离曲线</string>
++    <string name="telemetry_setup_pending_title">已登录，持续采集尚未就绪</string>
++    <string name="telemetry_setup_pending_body">Tesla 登录会话已连接。系统会自动重试可恢复的配置错误；缺少车辆钥匙或权限时仍需您在 Tesla 官方页面确认。可以先查看已有数据，新行程必须等待真实遥测事件。</string>
++    <string name="telemetry_recheck">重新检查配置</string>
+ </resources>
+diff --git a/android/app/src/main/res/values/strings.xml b/android/app/src/main/res/values/strings.xml
+index 0cee1d0..cbc203d 100644
+--- a/android/app/src/main/res/values/strings.xml
++++ b/android/app/src/main/res/values/strings.xml
+@@ -1505,4 +1505,7 @@
+     <string name="drive_curves_banner_title">Dynamic Curve Analytics</string>
+     <string name="drive_curves_banner_subtitle">Tap to view speed, distance, power, battery &amp; elevation profiles</string>
+     <string name="distance_profile">Distance Profile</string>
++    <string name="telemetry_setup_pending_title">Signed in; continuous collection is not ready</string>
++    <string name="telemetry_setup_pending_body">Your Tesla session is connected. The service retries recoverable setup failures automatically. A vehicle key or missing Tesla permission still needs your confirmation. You may view existing data; new trips require actual telemetry events.</string>
++    <string name="telemetry_recheck">Check setup again</string>
+ </resources>
+diff --git a/android/app/src/test/java/com/matelink/ui/screens/readiness/TelemetryAutoConfigurePolicyTest.kt b/android/app/src/test/java/com/matelink/ui/screens/readiness/TelemetryAutoConfigurePolicyTest.kt
+index fc138c2..1e2f201 100644
+--- a/android/app/src/test/java/com/matelink/ui/screens/readiness/TelemetryAutoConfigurePolicyTest.kt
++++ b/android/app/src/test/java/com/matelink/ui/screens/readiness/TelemetryAutoConfigurePolicyTest.kt
+@@ -50,13 +50,13 @@ class TelemetryAutoConfigurePolicyTest {
+     @Test fun recoveredCaConfigurationErrorRetriesAutomatically() {
+         assertTrue(
+             shouldAutoConfigureTelemetry(
+-                TelemetryPairingStatus(status = "telemetry_error", configSynced = null, errorClass = "ca_unavailable"),
++                TelemetryPairingStatus(status = "telemetry_error", configSynced = null, errorClass = "ca_unavailable", updatedAt = "2026-01-01T00:00:00Z"),
+                 null
+             )
+         )
+         assertFalse(
+             shouldAutoConfigureTelemetry(
+-                TelemetryPairingStatus(status = "telemetry_error", configSynced = null, errorClass = "command_transport"),
++                TelemetryPairingStatus(status = "telemetry_error", configSynced = null, errorClass = "unsupported_hardware"),
+                 null
+             )
+         )
+diff --git a/deploy/jourvolt-dev-mock/fleet_provider.go b/deploy/jourvolt-dev-mock/fleet_provider.go
+index fc737c9..b97d26b 100644
+--- a/deploy/jourvolt-dev-mock/fleet_provider.go
++++ b/deploy/jourvolt-dev-mock/fleet_provider.go
+@@ -269,6 +269,9 @@ func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int
+ 	if err != nil {
+ 		return vehicleStatus{}, err
+ 	}
++	if p.telemetry != nil {
++		p.telemetry.maybeAutoConfigure(userID, vehicleID)
++	}
+ 	data := payload.Response
+ 	displayName := strings.TrimSpace(data.DisplayName)
+ 	if displayName == "" {
+diff --git a/deploy/jourvolt-dev-mock/telemetry_http.go b/deploy/jourvolt-dev-mock/telemetry_http.go
+index 046a6f2..b569702 100644
+--- a/deploy/jourvolt-dev-mock/telemetry_http.go
++++ b/deploy/jourvolt-dev-mock/telemetry_http.go
+@@ -20,6 +20,7 @@ func (a *app) telemetryResource(w http.ResponseWriter, r *http.Request, userID s
+ 			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+ 			return
+ 		}
++		a.telemetry.maybeAutoConfigure(userID, vehicleID)
+ 		pairing, err := a.telemetry.pairing(r.Context(), userID, vehicleID)
+ 		if err != nil {
+ 			a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "telemetry_error"})
+@@ -50,6 +51,8 @@ func (a *app) telemetryResource(w http.ResponseWriter, r *http.Request, userID s
+ 
+ func telemetryConfigureError(w http.ResponseWriter, err error) {
+ 	switch {
++	case errors.Is(err, errTelemetryConfigInProgress):
++		(&app{}).json(w, http.StatusAccepted, map[string]any{"data": map[string]string{"status": "configuring"}})
+ 	case errors.Is(err, errTelemetryPermission):
+ 		writeTelemetryError(w, http.StatusForbidden, "permission_required")
+ 	case errors.Is(err, errTelemetryPairing):
+diff --git a/deploy/jourvolt-dev-mock/telemetry_recovery_test.go b/deploy/jourvolt-dev-mock/telemetry_recovery_test.go
+new file mode 100644
+index 0000000..2d767eb
+--- /dev/null
++++ b/deploy/jourvolt-dev-mock/telemetry_recovery_test.go
+@@ -0,0 +1,47 @@
++package main
++
++import (
++	"context"
++	"errors"
++	"testing"
++	"time"
++)
++
++func TestAutomaticRecoveryIsRateBoundedAndNeverBypassesTrust(t *testing.T) {
++	now := time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC)
++	old := now.Add(-2 * time.Minute).Format(time.RFC3339)
++	for _, class := range []string{"", "telemetry_error", "command_transport", "ca_unavailable", "rate_limited"} {
++		p := telemetryPairingResponse{Status: "telemetry_error", ErrorClass: class, UpdatedAt: old}
++		if !shouldAutoConfigurePairingAt(p, now) {
++			t.Fatalf("no recovery for %q", class)
++		}
++		p.UpdatedAt = now.Add(-30 * time.Second).Format(time.RFC3339)
++		if shouldAutoConfigurePairingAt(p, now) {
++			t.Fatalf("hot loop for %q", class)
++		}
++	}
++	for _, class := range []string{"unsupported_hardware", "unsupported_firmware", "max_configs", "configuration_invalid", "vehicle_identity_unavailable"} {
++		if shouldAutoConfigurePairingAt(telemetryPairingResponse{Status: "telemetry_error", ErrorClass: class, UpdatedAt: old}, now) {
++			t.Fatalf("permanent failure retried: %s", class)
++		}
++	}
++	for _, status := range []string{"pairing_required", "permission_required", "billing_blocked", "waiting_vehicle", "configuring"} {
++		if shouldAutoConfigurePairingAt(telemetryPairingResponse{Status: status, UpdatedAt: old}, now) {
++			t.Fatalf("trust/pending boundary bypassed: %s", status)
++		}
++	}
++	if shouldAutoConfigurePairingAt(telemetryPairingResponse{Status: "telemetry_error", UpdatedAt: "invalid"}, now) {
++		t.Fatal("invalid retry clock must fail closed")
++	}
++}
++
++func TestConfigureRejectsConcurrentManualAndAutomaticRequests(t *testing.T) {
++	service := newTelemetryServiceForTest("partner.example.com")
++	service.commandProxyURL = "https://proxy.example.com"
++	key := telemetryAutoConfigureKey{userID: "user-a", vehicleID: 1}
++	service.configureRequests.Store(key, struct{}{})
++	err := service.configure(context.Background(), key.userID, key.vehicleID)
++	if !errors.Is(err, errTelemetryConfigInProgress) {
++		t.Fatalf("expected in-flight result, got %v", err)
++	}
++}
+diff --git a/deploy/jourvolt-dev-mock/telemetry_service.go b/deploy/jourvolt-dev-mock/telemetry_service.go
+index 8d2e4c6..75848ac 100644
+--- a/deploy/jourvolt-dev-mock/telemetry_service.go
++++ b/deploy/jourvolt-dev-mock/telemetry_service.go
+@@ -19,10 +19,11 @@ import (
+ )
+ 
+ var (
+-	errTelemetryPermission = errors.New("telemetry_permission_required")
+-	errTelemetryPairing    = errors.New("telemetry_pairing_required")
+-	errTelemetryBilling    = errors.New("telemetry_billing_blocked")
+-	errTelemetryCommand    = errors.New("telemetry_command_failed")
++	errTelemetryPermission       = errors.New("telemetry_permission_required")
++	errTelemetryPairing          = errors.New("telemetry_pairing_required")
++	errTelemetryBilling          = errors.New("telemetry_billing_blocked")
++	errTelemetryCommand          = errors.New("telemetry_command_failed")
++	errTelemetryConfigInProgress = errors.New("telemetry_config_in_progress")
+ )
+ 
+ type telemetryService struct {
+@@ -46,6 +47,7 @@ type telemetryService struct {
+ 	mqttInvalid              atomic.Uint64
+ 	receiveSequence          atomic.Uint64
+ 	autoConfigure            sync.Map
++	configureRequests        sync.Map
+ 	finalizerMu              sync.Mutex
+ 	finalizerCancel          context.CancelFunc
+ 	finalizerDone            chan struct{}
+@@ -84,12 +86,32 @@ type telemetryAutoConfigureKey struct {
+ 	vehicleID int
+ }
+ 
++const telemetryAutoRetryDelay = 60 * time.Second
++
+ func shouldAutoConfigurePairing(pairing telemetryPairingResponse) bool {
++	return shouldAutoConfigurePairingAt(pairing, time.Now().UTC())
++}
++
++// Recovery is operator-owned: no repeated OAuth and no missing-key bypass.
++// The stored attempt time bounds retries across reads and API restarts.
++func shouldAutoConfigurePairingAt(pairing telemetryPairingResponse, now time.Time) bool {
+ 	if pairing.ConfigSynced != nil && *pairing.ConfigSynced {
+ 		return false
+ 	}
+-	return strings.EqualFold(strings.TrimSpace(pairing.Status), "pairing_required") &&
+-		strings.TrimSpace(pairing.UpdatedAt) == ""
++	status := strings.ToLower(strings.TrimSpace(pairing.Status))
++	if status == "pairing_required" {
++		return strings.TrimSpace(pairing.UpdatedAt) == ""
++	}
++	if status != "telemetry_error" {
++		return false
++	}
++	switch strings.ToLower(strings.TrimSpace(pairing.ErrorClass)) {
++	case "", "telemetry_error", "command_transport", "ca_unavailable", "rate_limited":
++	default:
++		return false
++	}
++	updated, err := time.Parse(time.RFC3339, pairing.UpdatedAt)
++	return err == nil && now.Sub(updated) >= telemetryAutoRetryDelay
+ }
+ 
+ func shouldRetryAfterAuthorization(pairing telemetryPairingResponse) bool {
+@@ -639,6 +661,11 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
+ 	if ctx == nil {
+ 		ctx = context.Background()
+ 	}
++	key := telemetryAutoConfigureKey{userID: userID, vehicleID: vehicleID}
++	if _, loaded := s.configureRequests.LoadOrStore(key, struct{}{}); loaded {
++		return errTelemetryConfigInProgress
++	}
++	defer s.configureRequests.Delete(key)
+ 	s.setPairingStatus(ctx, userID, vehicleID, "configuring")
+ 	vin, err := s.vinForVehicle(ctx, userID, vehicleID)
+ 	if err != nil {
+@@ -673,7 +700,11 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
+ 	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+ 	classification := telemetryCommandErrorClass(response.StatusCode, responseBody)
+ 	if classification != "" {
+-		_ = s.setPairingError(ctx, userID, vehicleID, classification, classification)
++		status := classification
++		if status != "permission_required" && status != "pairing_required" && status != "billing_blocked" {
++			status = "telemetry_error"
++		}
++		_ = s.setPairingError(ctx, userID, vehicleID, status, classification)
+ 		switch classification {
+ 		case "permission_required":
+ 			return errTelemetryPermission
+@@ -699,6 +730,15 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
+ 			if status == "pairing_required" {
+ 				return errTelemetryPairing
+ 			}
++			errorClass := "max_configs"
++			if len(skipped.UnsupportedHardware) > 0 {
++				errorClass = "unsupported_hardware"
++			} else if len(skipped.UnsupportedFirmware) > 0 {
++				errorClass = "unsupported_firmware"
++			}
++			if err := s.setPairingError(ctx, userID, vehicleID, status, errorClass); err != nil {
++				return errTelemetryCommand
++			}
+ 			return errTelemetryCommand
+ 		}
+ 	}
+@@ -894,6 +934,12 @@ func telemetryCommandErrorClass(status int, body []byte) string {
+ 	if status == http.StatusNotFound || status == http.StatusConflict || bodyHasExactCode(body, "pairing_required", "vehicle_not_paired", "virtual_key_required") {
+ 		return "pairing_required"
+ 	}
++	if status == http.StatusTooManyRequests {
++		return "rate_limited"
++	}
++	if status >= 400 && status < 500 {
++		return "configuration_invalid"
++	}
+ 	if status < 200 || status >= 300 {
+ 		return "telemetry_error"
+ 	}

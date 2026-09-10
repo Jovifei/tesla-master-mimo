@@ -1,0 +1,79 @@
+name: MateLink data-chain isolated verification
+on:
+  push:
+    branches: [chore/20260910-data-chain-repair-verification]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: matelink-data-chain-repair
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: matelink_test
+          POSTGRES_PASSWORD: isolated-test-only
+          POSTGRES_DB: matelink_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd 'pg_isready -U matelink_test'
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      JOURVOLT_TEST_DATABASE_URL: postgres://matelink_test:isolated-test-only@localhost:5432/matelink_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Materialize exact reviewed source and layered commits
+        run: python3 .verification/prepare.py
+      - name: Publish review-only candidate, never main or production
+        working-directory: candidate
+        run: git push origin HEAD:refs/heads/review/20260910-data-chain-repair-candidate
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache-dependency-path: candidate/deploy/jourvolt-dev-mock/go.sum
+      - name: Go tests including isolated PostgreSQL
+        id: go
+        continue-on-error: true
+        working-directory: candidate/deploy/jourvolt-dev-mock
+        run: |
+          set -euo pipefail
+          go test ./... -count=1 -json | tee "$GITHUB_WORKSPACE/reports/go-tests.json"
+          go vet ./...
+          go mod verify
+          go build ./...
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Android JVM, lint and debug build (no production signing)
+        id: android
+        continue-on-error: true
+        working-directory: candidate/android
+        run: |
+          set -euo pipefail
+          bash gradlew :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleDebugAndroidTest --continue --no-daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' -PJOURVOLT_API_BASE_URL=https://api.teslalink.joviluma.com/ -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com -PMATELINK_PUBLIC_INFO_BASE_URL=https://auth.teslalink.joviluma.com | tee "$GITHUB_WORKSPACE/reports/android-build.log"
+      - name: Export evidence (not a production APK)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-chain-repair-evidence
+          retention-days: 14
+          path: |
+            reports/
+            candidate/android/app/build/test-results/
+            candidate/android/app/build/reports/
+      - name: Require both verification layers
+        if: always()
+        env:
+          GO_OUTCOME: ${{ steps.go.outcome }}
+          ANDROID_OUTCOME: ${{ steps.android.outcome }}
+        run: test "$GO_OUTCOME" = success && test "$ANDROID_OUTCOME" = success
