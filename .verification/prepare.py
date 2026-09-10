@@ -23,12 +23,11 @@ messages = [
     'fix(ui): use generic placeholder for unidentified vehicles',
     'fix(data): preserve confirmed metadata and expose discovery failures',
     'fix(history): restore cloud archives with scoped quality-preserving merges',
+    'fix(sync): preserve cloud evidence across phone recovery and account changes',
 ]
 for index, message in enumerate(messages, 1):
     for path in sorted((ROOT / '.verification/patches').glob(f'{index:02}*.patch')):
         patch = path.read_text()
-        # Repair a transcription error in an UNCHANGED context line only.
-        # The complete resulting source is checked against expected.json below.
         if path.name == '05c.patch':
             wrong = '     val ended = normalizeImportTimestamp(endDate) ?: null\n'
             assert patch.count(wrong) == 1
@@ -43,8 +42,11 @@ for index, message in enumerate(messages, 1):
     clock = f'2026-09-10T00:00:{index:02}+00:00'
     env = dict(os.environ, GIT_AUTHOR_DATE=clock, GIT_COMMITTER_DATE=clock)
     git('-c', 'commit.gpgsign=false', 'commit', '-m', message, env=env)
+    if index == 5:
+        assert git('rev-parse', 'HEAD') == 'b2d2f4fba1a928f8d7778c3107cf673d1fd928d7'
 
 expected = json.loads((ROOT / '.verification/expected.json').read_text())
+expected.update(json.loads((ROOT / '.verification/expected-followup.json').read_text()))
 changed = set(git('diff', '--name-only', BASE).splitlines())
 assert changed == set(expected), ('Unexpected changed file set', changed.symmetric_difference(expected))
 for name, digest in expected.items():

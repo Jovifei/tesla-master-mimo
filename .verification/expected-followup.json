@@ -1,0 +1,15 @@
+{
+  "android/app/src/main/java/com/matelink/data/local/VehicleContextRepository.kt": "bf0b5d8fc47494b5d9d7610651d3a2d96f75fa4d9700529251321fbb3b049d2b",
+  "android/app/src/main/java/com/matelink/data/repository/UnifiedHistoryRepository.kt": "62a6adbdb8c4889501369f490857308deb53bd8ffd77c1e01b3ebba2dcd12c57",
+  "android/app/src/main/java/com/matelink/data/sync/SyncRepository.kt": "85242a34f633178f37012712a95d47cefebfb6bbfe30a20713e08238dc98419c",
+  "android/app/src/main/java/com/matelink/domain/analytics/AnalysisHistoryRepository.kt": "f0ca8fc4c829129f83411ff291e43f2125ffda4549c15c6c7c707d79791cc235",
+  "android/app/src/main/java/com/matelink/ui/screens/dashboard/DashboardCarMetadata.kt": "7d05ca8182b6b31c7c7e017abd4ad32ee9c5f466827151b5f23c924b350e5d1d",
+  "android/app/src/main/java/com/matelink/ui/screens/dashboard/DashboardViewModel.kt": "e38e064b0f3fdd72d8bde01ffe2eaa37ecd4d0b23cc64fd34257ab862d3b0079",
+  "android/app/src/test/java/com/matelink/data/repository/HistoryRecoveryTest.kt": "0caade9150c78c5c8cf72e948bfef54ae8ed2f58ac92e303545ed576ee72296e",
+  "android/app/src/test/java/com/matelink/domain/model/UnknownVehicleImageTest.kt": "946ee8cd21176e45db4a688f1666ede01c280c7856a8630faad4fe45792dd433",
+  "android/app/src/test/java/com/matelink/ui/screens/dashboard/DashboardCarMetadataTest.kt": "9fa389e32a0d1b1c71b9735c55aa192f1ffb0a94a526bd9b55b290f2e6a5acf9",
+  "deploy/jourvolt-dev-mock/telemetry_core.go": "aac38db3166b3163c7ebb8ebbd258b6a76cda3f2da47bd324422834d9e1d3519",
+  "deploy/jourvolt-dev-mock/telemetry_durability_integration_test.go": "31d84cb5d2aba79a9722eda97a27753d67a27344e07b2e27fbacab016e90c561",
+  "deploy/jourvolt-dev-mock/telemetry_import.go": "7bc407f563ff54ea7ae09d235886c9d4dc6994a7972d52d316a52fdc7c05f212",
+  "deploy/jourvolt-dev-mock/telemetry_import_merge_test.go": "1b253f0424c92c3ec6ef6383cd3af30d16bded9f3760e456fa8e0a72a3b62c12"
+}

@@ -1,0 +1,160 @@
+diff --git a/android/app/src/main/java/com/matelink/domain/analytics/AnalysisHistoryRepository.kt b/android/app/src/main/java/com/matelink/domain/analytics/AnalysisHistoryRepository.kt
+index 955caaf..e5bb949 100644
+--- a/android/app/src/main/java/com/matelink/domain/analytics/AnalysisHistoryRepository.kt
++++ b/android/app/src/main/java/com/matelink/domain/analytics/AnalysisHistoryRepository.kt
+@@ -47,10 +47,7 @@ internal class AnalysisHistorySnapshotCache {
+     private val snapshots = ConcurrentHashMap<String, AnalysisHistorySnapshot>()
+ 
+     fun put(stableIdentity: String, snapshot: AnalysisHistorySnapshot) {
+-        snapshots[stableIdentity] = snapshot.copy(
+-            freshness = HistoryFreshness.FRESH,
+-            staleReason = null
+-        )
++        snapshots[stableIdentity] = snapshot
+     }
+ 
+     fun stale(stableIdentity: String, reason: String): AnalysisHistorySnapshot? =
+@@ -84,12 +81,12 @@ class AnalysisHistoryRepository @Inject constructor(
+                             chargeCount = eligibleCharges.size
+                         )
+                     ),
+-                    freshness = if (history.drivesFromRemote || history.chargesFromRemote) {
++                    freshness = if (history.drivesFromRemote && history.chargesFromRemote) {
+                         HistoryFreshness.FRESH
+                     } else {
+                         HistoryFreshness.STALE
+                     },
+-                    staleReason = if (history.drivesFromRemote || history.chargesFromRemote) null else "remote unavailable",
++                    staleReason = if (history.drivesFromRemote && history.chargesFromRemote) null else "remote unavailable",
+                     context = history.context
+                 )
+                 cache.put(history.context.stableIdentity, snapshot)
+diff --git a/android/app/src/main/java/com/matelink/ui/screens/dashboard/DashboardCarMetadata.kt b/android/app/src/main/java/com/matelink/ui/screens/dashboard/DashboardCarMetadata.kt
+new file mode 100644
+index 0000000..d390ecb
+--- /dev/null
++++ b/android/app/src/main/java/com/matelink/ui/screens/dashboard/DashboardCarMetadata.kt
+@@ -0,0 +1,15 @@
++package com.matelink.ui.screens.dashboard
++
++import com.matelink.data.api.models.CarData
++
++/** A metadata refresh can enrich the selected vehicle, never change its identity. */
++internal fun refreshedDashboardCar(current: CarData?, cars: List<CarData>): CarData? {
++    if (current == null) return null
++    val candidate = cars.firstOrNull { it.carId == current.carId } ?: return current
++    if (current.vehicleUid != candidate.vehicleUid) return current
++    return current.copy(
++        name = candidate.name?.takeIf(String::isNotBlank) ?: current.name,
++        carDetails = candidate.carDetails?.takeIf { !it.model.isNullOrBlank() } ?: current.carDetails,
++        carExterior = candidate.carExterior ?: current.carExterior
++    )
++}
+diff --git a/android/app/src/main/java/com/matelink/ui/screens/dashboard/DashboardViewModel.kt b/android/app/src/main/java/com/matelink/ui/screens/dashboard/DashboardViewModel.kt
+index d3789d6..c726a10 100644
+--- a/android/app/src/main/java/com/matelink/ui/screens/dashboard/DashboardViewModel.kt
++++ b/android/app/src/main/java/com/matelink/ui/screens/dashboard/DashboardViewModel.kt
+@@ -115,7 +115,7 @@ class DashboardViewModel @Inject constructor(
+                 val carId = settingsRepository.currentCarId.first()
+ 
+                 val carsResult = repository.getCars()
+-                val car = when (carsResult) {
++                var car = when (carsResult) {
+                     is ApiResult.Success -> {
+                         val cars = carsResult.data
+                         cars.find { it.carId == carId }
+@@ -147,6 +147,15 @@ class DashboardViewModel @Inject constructor(
+                     statusResult is ApiResult.Success -> statusResult.data.status
+                     else -> null
+                 }
++                // Vehicle discovery precedes the first live fetch; configuration may
++                // only have been persisted by that fetch. Refresh metadata, not OAuth.
++                if (liveStatus != null && car?.carDetails?.model.isNullOrBlank()) {
++                    try {
++                        val refreshed = repository.getCars()
++                        if (refreshed is ApiResult.Success) car = refreshedDashboardCar(car, refreshed.data)
++                    } catch (e: CancellationException) { throw e } catch (_: Exception) { /* keep live state */ }
++                }
++                if (generation != requestGeneration) return@launch
+                 val cachedStatus = vehicleStatusStore.getCachedStatus(effectiveCarId)
+                 val status = mergeCarStatusPosition(liveStatus, cachedStatus) ?: cachedStatus
+                 val usesCachedPosition = usableVehicleCoordinates(liveStatus?.latitude, liveStatus?.longitude) == null &&
+diff --git a/android/app/src/test/java/com/matelink/data/repository/HistoryRecoveryTest.kt b/android/app/src/test/java/com/matelink/data/repository/HistoryRecoveryTest.kt
+index 7e9c2ed..0d6bfe5 100644
+--- a/android/app/src/test/java/com/matelink/data/repository/HistoryRecoveryTest.kt
++++ b/android/app/src/test/java/com/matelink/data/repository/HistoryRecoveryTest.kt
+@@ -86,4 +86,13 @@ class HistoryRecoveryTest {
+         assertTrue(historyInRange("2026-09-01T08:00:00+08:00", "2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"))
+         assertFalse(historyInRange("2026-09-02T00:00:00Z", "2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"))
+     }
++
++    @Test fun offlineAliasesAreMergedWithoutErasingTheStrongerRecord() {
++        val measured = DriveData(1, startDate = "2026-09-01T00:00:00Z", endDate = "2026-09-01T01:00:00Z",
++            energyConsumedNet = 8.0, source = "telemetry_mqtt", qualityState = "observed")
++        val alias = measured.copy(driveId = 2, energyConsumedNet = null, source = "local_import", qualityState = "incomplete")
++        val result = UnifiedHistoryRepository.mergeDrives(emptyList(), listOf(alias, measured)).single()
++        assertEquals("observed", result.qualityState)
++        assertEquals(8.0, result.energyConsumedNet!!, 0.0)
++    }
+ }
+diff --git a/android/app/src/test/java/com/matelink/domain/model/UnknownVehicleImageTest.kt b/android/app/src/test/java/com/matelink/domain/model/UnknownVehicleImageTest.kt
+index 0700b7b..fceb118 100644
+--- a/android/app/src/test/java/com/matelink/domain/model/UnknownVehicleImageTest.kt
++++ b/android/app/src/test/java/com/matelink/domain/model/UnknownVehicleImageTest.kt
+@@ -15,6 +15,7 @@ class UnknownVehicleImageTest {
+         }
+     }
+     @Test fun confirmedModelsStillResolveTheirOwnImage() {
++        assertTrue(CarImageResolver.getAssetPath("3", null, null).contains("/m3_"))
+         assertTrue(CarImageResolver.getAssetPath("Y", null, null).contains("/my_"))
+         assertTrue(CarImageResolver.getCompositorUrl("3", null, null).contains("model=m3"))
+     }
+diff --git a/android/app/src/test/java/com/matelink/ui/screens/dashboard/DashboardCarMetadataTest.kt b/android/app/src/test/java/com/matelink/ui/screens/dashboard/DashboardCarMetadataTest.kt
+new file mode 100644
+index 0000000..f3ed527
+--- /dev/null
++++ b/android/app/src/test/java/com/matelink/ui/screens/dashboard/DashboardCarMetadataTest.kt
+@@ -0,0 +1,22 @@
++package com.matelink.ui.screens.dashboard
++
++import com.matelink.data.api.models.CarData
++import com.matelink.data.api.models.CarDetails
++import org.junit.Assert.*
++import org.junit.Test
++
++class DashboardCarMetadataTest {
++    @Test fun refreshEnrichesOnlyTheSelectedVehicle() {
++        val original = CarData(1, vehicleUid = "opaque-a", name = "Saved name")
++        val fresh = original.copy(carDetails = CarDetails(model = "Y"))
++        assertEquals("Y", refreshedDashboardCar(original, listOf(fresh))?.carDetails?.model)
++        assertEquals("Saved name", refreshedDashboardCar(original, listOf(fresh.copy(name = "")))?.name)
++    }
++    @Test fun mismatchedIdentityCannotReplaceTheDashboardVehicle() {
++        val original = CarData(1, vehicleUid = "opaque-a")
++        val other = CarData(1, vehicleUid = "opaque-b", carDetails = CarDetails(model = "3"))
++        assertEquals(original, refreshedDashboardCar(original, listOf(other)))
++        assertEquals(original, refreshedDashboardCar(original, listOf(other.copy(carId = 2))))
++        assertNull(refreshedDashboardCar(null, listOf(other)))
++    }
++}
+diff --git a/deploy/jourvolt-dev-mock/telemetry_core.go b/deploy/jourvolt-dev-mock/telemetry_core.go
+index a28879e..8bcce88 100644
+--- a/deploy/jourvolt-dev-mock/telemetry_core.go
++++ b/deploy/jourvolt-dev-mock/telemetry_core.go
+@@ -1071,14 +1071,13 @@ func (s *telemetryMemoryStore) importSessions(userID string, vehicleID int, driv
+ 		imported := cloneTelemetrySession(&session)
+ 		foundIdx := -1
+ 		for i, existing := range existingSessions {
+-			if existing.ID == imported.ID {
++			if existing.ID == imported.ID || (existing.Kind == imported.Kind && existing.StartAt.Equal(imported.StartAt)) {
+ 				foundIdx = i
+ 				break
+ 			}
+ 		}
+ 		if foundIdx >= 0 {
+-			imported.PublicID = existingSessions[foundIdx].PublicID
+-			existingSessions[foundIdx] = *imported
++			existingSessions[foundIdx] = mergeImportedSession(*imported, existingSessions[foundIdx])
+ 		} else {
+ 			if imported.PublicID <= 0 {
+ 				imported.PublicID = s.allocatePublicIDLocked()
