@@ -569,7 +569,7 @@ class TeslaLoginViewModel @Inject constructor(
                 if (isPermissionRequired(carsResult)) {
                     publishPermissionRequired(null, carsResult.details, requestId)
                 } else {
-                    proceedToDashboardIfCurrent(requestId)
+                    publishBlocked("telemetry_error", requestId)
                 }
                 return
             }
@@ -578,7 +578,7 @@ class TeslaLoginViewModel @Inject constructor(
         val selectedCarId = settingsRepository.currentCarId.first()
         val car = cars.firstOrNull { it.carId == selectedCarId } ?: cars.firstOrNull()
         if (car == null) {
-            proceedToDashboardIfCurrent(requestId)
+            publishBlocked("vehicle_not_found", requestId)
             return
         }
         publishPairingResult(requestId, car.carId, teslamateRepository.getTelemetryPairingStatus(car.carId))
@@ -603,13 +603,14 @@ class TeslaLoginViewModel @Inject constructor(
                 if (isPermissionRequired(carsResult)) {
                     publishPermissionRequired(carId, carsResult.details, requestId)
                 } else {
-                    proceedToDashboardIfCurrent(requestId)
+                    publishBlocked("telemetry_error", requestId)
                 }
                 return
             }
         }
-        if (!shouldPublishTeslaRequest(requestId, requestGeneration) || cars.none { it.carId == carId }) {
-            proceedToDashboardIfCurrent(requestId)
+        if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return
+        if (cars.none { it.carId == carId }) {
+            publishBlocked("vehicle_not_found", requestId)
             return
         }
         val configure = teslamateRepository.configureTelemetry(carId)
