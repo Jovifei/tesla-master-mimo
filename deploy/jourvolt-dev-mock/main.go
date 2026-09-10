@@ -294,21 +294,23 @@ type vehicleStatus struct {
 	Heading                 *int
 	Latitude                *float64
 	Longitude               *float64
-	TPMSPressureFL          *float64
-	TPMSPressureFR          *float64
-	TPMSPressureRL          *float64
-	TPMSPressureRR          *float64
-	TPMSSoftWarningFL       *bool
-	TPMSSoftWarningFR       *bool
-	TPMSSoftWarningRL       *bool
-	TPMSSoftWarningRR       *bool
-	IsClimateOn             *bool
-	InsideTemp              *float64
-	OutsideTemp             *float64
-	IsPreconditioning       *bool
-	ProviderIdentity        string
-	Source                  string
-	FieldSources            map[string]string
+	// True when location_data authorization failed but core vehicle_data remained usable.
+	LocationPermissionRequired bool
+	TPMSPressureFL             *float64
+	TPMSPressureFR             *float64
+	TPMSPressureRL             *float64
+	TPMSPressureRR             *float64
+	TPMSSoftWarningFL          *bool
+	TPMSSoftWarningFR          *bool
+	TPMSSoftWarningRL          *bool
+	TPMSSoftWarningRR          *bool
+	IsClimateOn                *bool
+	InsideTemp                 *float64
+	OutsideTemp                *float64
+	IsPreconditioning          *bool
+	ProviderIdentity           string
+	Source                     string
+	FieldSources               map[string]string
 }
 
 type mockProvider struct{}

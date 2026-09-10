@@ -28,10 +28,7 @@ class SnapshotTripEngineTest {
     @Test
     fun testCompositorUrlFallbackForUnknown() {
         val url = CarImageResolver.getCompositorUrl(null, null, null)
-        assertTrue(url.contains("static-assets.tesla.com/v1/compositor"))
-        assertTrue(url.contains("model=my"))
-        assertTrue(url.contains("PBSB"))
-        assertTrue(url.contains("WY19B"))
+        assertEquals("", url)
     }
 
     @Test

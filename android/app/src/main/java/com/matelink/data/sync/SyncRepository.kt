@@ -1,6 +1,8 @@
 package com.matelink.data.sync
 
 import android.util.Log
+import kotlinx.coroutines.CancellationException
+import com.matelink.data.local.HistoryReadScope
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.local.dao.ChargeSummaryDao
@@ -103,6 +105,11 @@ class SyncRepository @Inject constructor(
         private const val TAG = "SyncRepository"
     }
 
+    private suspend fun requireScope(expected: HistoryReadScope) {
+        val actual = runCatching { vehicleContextRepository.captureReadScope() }.getOrNull()
+        if (actual != expected) throw CancellationException("History account or server changed")
+    }
+
     private val tripNotificationProcessor = CompletedTripNotificationProcessor(
         tripNotificationStateStore,
         tripNotificationManager
@@ -112,11 +119,13 @@ class SyncRepository @Inject constructor(
      * Sync all data for a car. Returns true if successful, false on network error.
      */
     suspend fun syncCar(carId: Int): Boolean {
+        val scope = vehicleContextRepository.captureReadScope()
         val car = when (val result = teslamateRepository.getCars()) {
             is ApiResult.Success -> result.data.firstOrNull { it.carId == carId }
             is ApiResult.Error -> null
         } ?: return false
-        val context = vehicleContextRepository.resolve(car)
+        requireScope(scope)
+        val context = vehicleContextRepository.resolve(car, scope)
         val historyCarId = context.localHistoryCarId
         Log.d(TAG, "Starting sync for car $historyCarId")
 
@@ -126,7 +135,7 @@ class SyncRepository @Inject constructor(
         if (connectionModeStore.current() == com.matelink.data.local.ConnectionMode.TESLA_CLOUD) {
             try {
                 uploadLocalHistory(context.remoteApiCarId, historyCarId)
-            } catch (e: Exception) {
+            } catch (e: CancellationException) { throw e } catch (e: Exception) {
                 Log.w(TAG, "History upload failed for car $historyCarId", e)
             }
         }
@@ -134,18 +143,19 @@ class SyncRepository @Inject constructor(
         // Phase 1: Sync summaries
         syncManager.updateSummaryProgress(historyCarId)
 
-        val drivesSynced = syncDriveSummaries(context.remoteApiCarId, historyCarId)
+        val drivesSynced = syncDriveSummaries(context.remoteApiCarId, historyCarId, scope)
         if (!drivesSynced) return false
 
-        val chargesSynced = syncChargeSummaries(context.remoteApiCarId, historyCarId)
+        val chargesSynced = syncChargeSummaries(context.remoteApiCarId, historyCarId, scope)
         if (!chargesSynced) return false
 
         syncManager.markSummariesComplete(historyCarId)
 
         // Phase 2: Sync details
-        syncDriveDetails(context.remoteApiCarId, historyCarId)
-        syncChargeDetails(context.remoteApiCarId, historyCarId)
+        syncDriveDetails(context.remoteApiCarId, historyCarId, scope)
+        syncChargeDetails(context.remoteApiCarId, historyCarId, scope)
 
+        requireScope(scope)
         // Phase 3: Enqueue geocoding for new locations
         enqueueGeocoding(historyCarId)
 
@@ -154,11 +164,14 @@ class SyncRepository @Inject constructor(
         return true
     }
 
-    private suspend fun syncDriveSummaries(remoteApiCarId: Int, historyCarId: Int): Boolean {
+    private suspend fun syncDriveSummaries(remoteApiCarId: Int, historyCarId: Int, scope: HistoryReadScope): Boolean {
         return try {
             DriveSummarySyncRunner(
                 fetchPage = { page ->
-                    when (val result = teslamateRepository.getDrives(remoteApiCarId, page = page, show = 50)) {
+                    requireScope(scope)
+                    val result = teslamateRepository.getDrives(remoteApiCarId, page = page, show = 50)
+                    requireScope(scope)
+                    when (result) {
                     is ApiResult.Success -> {
                         result.metadata?.let { historyMetadataStore.updateDrives(historyCarId, it) }
                         val drives = result.data
@@ -173,10 +186,10 @@ class SyncRepository @Inject constructor(
                     }
                 }
                 },
-                persistPage = driveSummaryDao::upsertAll,
+                persistPage = { rows -> requireScope(scope); driveSummaryDao.upsertPreservingEvidence(rows) },
                 onCompleted = { summaries -> notifyCompletedDriveUpdates(historyCarId, summaries) }
             ).sync()
-        } catch (e: Exception) {
+        } catch (e: CancellationException) { throw e } catch (e: Exception) {
             Log.e(TAG, "Error syncing drive summaries", e)
             false
         }
@@ -186,14 +199,17 @@ class SyncRepository @Inject constructor(
         tripNotificationProcessor.process(carId, summaries)
     }
 
-    private suspend fun syncChargeSummaries(remoteApiCarId: Int, historyCarId: Int): Boolean {
+    private suspend fun syncChargeSummaries(remoteApiCarId: Int, historyCarId: Int, scope: HistoryReadScope): Boolean {
         return try {
             var page = 1
             var hasMore = true
             var seenIds = emptySet<Int>()
 
             while (hasMore) {
-                when (val result = teslamateRepository.getCharges(remoteApiCarId, page = page, show = 50)) {
+                requireScope(scope)
+                    val result = teslamateRepository.getCharges(remoteApiCarId, page = page, show = 50)
+                    requireScope(scope)
+                    when (result) {
                     is ApiResult.Success -> {
                         result.metadata?.let { historyMetadataStore.updateCharges(historyCarId, it) }
                         val charges = result.data
@@ -201,7 +217,7 @@ class SyncRepository @Inject constructor(
                             hasMore = false
                         } else {
                             val summaries = charges.mapNotNull { it.toSyncSummary(historyCarId) }
-                            chargeSummaryDao.upsertAll(summaries)
+                            chargeSummaryDao.upsertPreservingEvidence(summaries)
                             val decision = PaginationGuard.evaluate(
                                 pageSize = 50,
                                 seenIds = seenIds,
@@ -219,19 +235,22 @@ class SyncRepository @Inject constructor(
                 }
             }
             true
-        } catch (e: Exception) {
+        } catch (e: CancellationException) { throw e } catch (e: Exception) {
             Log.e(TAG, "Error syncing charge summaries", e)
             false
         }
     }
 
-    private suspend fun syncDriveDetails(remoteApiCarId: Int, historyCarId: Int) {
+    private suspend fun syncDriveDetails(remoteApiCarId: Int, historyCarId: Int, scope: HistoryReadScope) {
         try {
             val unprocessedIds = driveSummaryDao.getUnprocessedDriveIds(historyCarId, com.matelink.data.local.entity.SchemaVersion.CURRENT)
             for (driveId in unprocessedIds) {
                 val summary = driveSummaryDao.get(historyCarId, driveId) ?: continue
                 try {
-                    when (val result = teslamateRepository.getDriveDetail(remoteApiCarId, summary.driveId)) {
+                    requireScope(scope)
+                    val result = teslamateRepository.getDriveDetail(remoteApiCarId, summary.driveId)
+                    requireScope(scope)
+                    when (result) {
                         is ApiResult.Success -> {
                             val detail = result.data
                             val energy = DriveEnergyResolver.resolve(
@@ -271,23 +290,26 @@ class SyncRepository @Inject constructor(
                             Log.w(TAG, "Failed to sync drive detail ${summary.driveId}: ${result.message}")
                         }
                     }
-                } catch (e: Exception) {
+                } catch (e: CancellationException) { throw e } catch (e: Exception) {
                     Log.w(TAG, "Error syncing drive detail ${summary.driveId}", e)
                 }
             }
             syncManager.markDriveDetailsComplete(historyCarId)
-        } catch (e: Exception) {
+        } catch (e: CancellationException) { throw e } catch (e: Exception) {
             Log.e(TAG, "Error in drive detail sync", e)
         }
     }
 
-    private suspend fun syncChargeDetails(remoteApiCarId: Int, historyCarId: Int) {
+    private suspend fun syncChargeDetails(remoteApiCarId: Int, historyCarId: Int, scope: HistoryReadScope) {
         try {
             val unprocessedIds = chargeSummaryDao.getUnprocessedChargeIds(historyCarId, com.matelink.data.local.entity.SchemaVersion.CURRENT)
             for (chargeId in unprocessedIds) {
                 val summary = chargeSummaryDao.get(historyCarId, chargeId) ?: continue
                 try {
-                    when (val result = teslamateRepository.getChargeDetail(remoteApiCarId, summary.chargeId)) {
+                    requireScope(scope)
+                    val result = teslamateRepository.getChargeDetail(remoteApiCarId, summary.chargeId)
+                    requireScope(scope)
+                    when (result) {
                         is ApiResult.Success -> {
                             val detail = result.data
                             chargeSummaryDao.upsert(summary.copy(
@@ -305,11 +327,11 @@ class SyncRepository @Inject constructor(
                             Log.w(TAG, "Failed to sync charge detail ${summary.chargeId}: ${result.message}")
                         }
                     }
-                } catch (e: Exception) {
+                } catch (e: CancellationException) { throw e } catch (e: Exception) {
                     Log.w(TAG, "Error syncing charge detail ${summary.chargeId}", e)
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: CancellationException) { throw e } catch (e: Exception) {
             Log.e(TAG, "Error in charge detail sync", e)
         }
     }
@@ -327,7 +349,7 @@ class SyncRepository @Inject constructor(
             if (locations.isNotEmpty()) {
                 geocodingRepository.enqueueLocationsForCar(carId, locations)
             }
-        } catch (e: Exception) {
+        } catch (e: CancellationException) { throw e } catch (e: Exception) {
             Log.w(TAG, "Error enqueuing geocoding", e)
         }
     }
@@ -340,13 +362,16 @@ class SyncRepository @Inject constructor(
      * carries summaries only — trajectories are re-collected by Fleet Telemetry.
      */
     suspend fun uploadLocalHistory(remoteApiCarId: Int, historyCarId: Int): Boolean {
+        val scope = vehicleContextRepository.captureReadScope()
         if (connectionModeStore.current() != com.matelink.data.local.ConnectionMode.TESLA_CLOUD) {
             Log.d(TAG, "Skipping history upload: not in Tesla Cloud mode")
             return true
         }
+        val mapped = vehicleContextRepository.cachedContextForRemote(remoteApiCarId, scope)
+        if (mapped?.localHistoryCarId != historyCarId) return false
         val allDrives = driveSummaryDao.getAllChronological(historyCarId).mapNotNull { it.toImportSession("drive") }
         val allCharges = chargeSummaryDao.getAllForCar(historyCarId).mapNotNull { it.toImportSession("charge") }
-        val bounded = HistoryUploadFilter.keepValidatedArchive(allDrives, allCharges)
+        val bounded = HistoryUploadFilter.boundToLatestTwoDataDays(allDrives, allCharges)
         if (bounded.drives.isEmpty() && bounded.charges.isEmpty()) {
             Log.d(TAG, "No valid local history to upload for car $historyCarId")
             return true
@@ -356,7 +381,10 @@ class SyncRepository @Inject constructor(
                 drives = batch.drives,
                 charges = batch.charges
             )
-            when (val result = teslamateRepository.uploadLocalHistory(remoteApiCarId, request)) {
+            requireScope(scope)
+            val result = teslamateRepository.uploadLocalHistory(remoteApiCarId, request)
+            requireScope(scope)
+            when (result) {
                 is ApiResult.Success -> Log.d(TAG, "Uploaded ${result.data.importedDrives} drives, ${result.data.importedCharges} charges for car $historyCarId")
                 is ApiResult.Error -> {
                     Log.w(TAG, "History upload failed for car $historyCarId: ${result.message}")
@@ -394,7 +422,9 @@ internal fun DriveData.toSyncSummary(carId: Int): DriveSummary? {
         energySource = energyConsumedNet?.takeIf { it > 0.0 }?.let { "api" },
         energyCoverageSeconds = 0,
         energyCoverageRatio = 0.0,
-        apiEvidence = HistorySummaryEvidenceCodec.encode(this)
+        apiEvidence = HistorySummaryEvidenceCodec.encode(this),
+        qualityState = qualityState ?: if (source == "local_import") "incomplete" else "observed",
+        qualityReason = qualityReason ?: if (source == "local_import") "local_import_unverified" else "legacy_remote_api"
     )
 }
 
@@ -417,13 +447,16 @@ internal fun ChargeData.toSyncSummary(carId: Int): ChargeSummary? {
         endBatteryLevel = endBatteryLevel ?: 0,
         outsideTempAvg = outsideTempAvg,
         odometer = odometer ?: 0.0,
-        apiEvidence = HistorySummaryEvidenceCodec.encode(this)
+        apiEvidence = HistorySummaryEvidenceCodec.encode(this),
+        qualityState = qualityState ?: if (source == "local_import") "incomplete" else "observed",
+        qualityReason = qualityReason ?: if (source == "local_import") "local_import_unverified" else "legacy_remote_api"
     )
 }
 
 internal fun DriveSummary.toImportSession(kind: String): com.matelink.data.api.models.HistoryImportSession? {
     if (qualityState != "observed" && qualityState != "derived") return null
     if (apiEvidence.isNullOrBlank() || energySource.isNullOrBlank()) return null
+    if (HistorySummaryEvidenceCodec.decodeDrive(apiEvidence)?.source in setOf("telemetry_mqtt", "local_import")) return null
     val started = normalizeImportTimestamp(startDate) ?: return null
     val ended = normalizeImportTimestamp(endDate) ?: return null
     return com.matelink.data.api.models.HistoryImportSession(
@@ -440,6 +473,7 @@ internal fun DriveSummary.toImportSession(kind: String): com.matelink.data.api.m
 internal fun ChargeSummary.toImportSession(kind: String): com.matelink.data.api.models.HistoryImportSession? {
     if (qualityState != "observed" && qualityState != "derived") return null
     if (apiEvidence.isNullOrBlank()) return null
+    if (HistorySummaryEvidenceCodec.decodeCharge(apiEvidence)?.source in setOf("telemetry_mqtt", "local_import")) return null
     val started = normalizeImportTimestamp(startDate) ?: return null
     val ended = normalizeImportTimestamp(endDate) ?: return null
     return com.matelink.data.api.models.HistoryImportSession(
@@ -463,7 +497,7 @@ private fun normalizeImportTimestamp(value: String): String? {
     return try {
         val instant = java.time.Instant.parse(value)
         instant.toString()
-    } catch (e: Exception) {
+    } catch (e: CancellationException) { throw e } catch (e: Exception) {
         // Fall back to OffsetDateTime parsing, then LocalDateTime assumed UTC.
         try {
             java.time.OffsetDateTime.parse(value).toInstant().toString()

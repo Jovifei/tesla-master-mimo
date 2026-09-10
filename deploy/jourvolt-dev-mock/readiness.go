@@ -42,15 +42,56 @@ func (a *app) dataReadiness(w http.ResponseWriter, r *http.Request, userID strin
 	}
 	driveHistoryAvailable := a.hasMockHistory(userID) || (a.telemetry != nil && a.telemetry.hasHistory(r.Context(), userID, vehicleID, "drive"))
 	chargeHistoryAvailable := a.hasMockHistory(userID) || (a.telemetry != nil && a.telemetry.hasHistory(r.Context(), userID, vehicleID, "charge"))
+	historyFallbackSource := source
+	if isFleetMode(a.mode) {
+		historyFallbackSource = "telemetry_mqtt"
+	}
+	items := readinessItemsWithHistory(providerStatus, source, err, driveHistoryAvailable, chargeHistoryAvailable)
+	setReadinessItemSource(items, "drives", a.historyReadinessSource(userID, vehicleID, "drive", historyFallbackSource))
+	setReadinessItemSource(items, "charges", a.historyReadinessSource(userID, vehicleID, "charge", historyFallbackSource))
 	response := dataReadinessResponse{
 		CapabilityVersion: dataReadinessCapabilityVersion,
 		VehicleUID:        vehicleUID,
-		Items:             readinessItemsWithHistory(providerStatus, source, err, driveHistoryAvailable, chargeHistoryAvailable),
+		Items:             items,
 	}
 	if a.telemetry != nil {
 		response.Items = append(response.Items, a.telemetryReadinessForData(r.Context(), userID, vehicleID))
 	}
 	a.json(w, http.StatusOK, map[string]any{"data": response})
+}
+
+func setReadinessItemSource(items []dataReadinessItem, key, source string) {
+	for index := range items {
+		if items[index].Key == key {
+			items[index].Source = source
+			return
+		}
+	}
+}
+
+func (a *app) historyReadinessSource(userID string, vehicleID int, kind, fallback string) string {
+	if a.hasMockHistory(userID) {
+		return "mock_fixture"
+	}
+	if a.telemetry == nil {
+		return fallback
+	}
+	items, _, err := a.telemetry.history(userID, vehicleID, kind)
+	if err != nil {
+		return fallback
+	}
+	for _, item := range items {
+		raw, _ := item["source"].(string)
+		switch strings.ToLower(strings.TrimSpace(raw)) {
+		case "local_import", "local_history":
+			return "local_history"
+		case "telemetry_mqtt":
+			return "telemetry_mqtt"
+		case "fleet_api":
+			return "fleet_api"
+		}
+	}
+	return fallback
 }
 
 func readinessItems(status vehicleStatus, source string, providerErr error) []dataReadinessItem {
@@ -76,7 +117,10 @@ func readinessItemsWithHistory(status vehicleStatus, source string, providerErr 
 
 	lastObservedAt := observedTimestamp(status.ObservedAt)
 	locationStatus, locationMessage, locationAction := "available", "", ""
-	if status.Latitude == nil || status.Longitude == nil {
+	switch {
+	case status.LocationPermissionRequired:
+		locationStatus, locationMessage, locationAction = "permission_required", "provider_permission_required", "reauthorize_tesla"
+	case status.Latitude == nil || status.Longitude == nil:
 		locationStatus, locationMessage, locationAction = "waiting_vehicle", "location_waiting_vehicle", "wake_vehicle"
 	}
 	tpmsStatus, tpmsMessage, tpmsAction := "available", "", ""

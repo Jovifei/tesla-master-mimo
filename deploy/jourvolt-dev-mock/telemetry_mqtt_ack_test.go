@@ -361,6 +361,10 @@ func TestTask1UnknownMappedVINIsRetryableAndUnacknowledged(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("worker did not classify unknown mapping")
 	}
+	deadline := time.Now().Add(time.Second)
+	for service.mqttHealthy.Load() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
 	if message.ackCount.Load() != 0 || service.mqttHealthy.Load() {
 		t.Fatalf("unknown mapping must remain unacknowledged and unhealthy: ack=%d healthy=%t", message.ackCount.Load(), service.mqttHealthy.Load())
 	}
@@ -485,6 +489,10 @@ func TestTask1CancelledPersistenceContextIsRetryableAndUnacknowledged(t *testing
 	case <-time.After(time.Second):
 		t.Fatal("worker did not process cancelled context")
 	}
+	deadline := time.Now().Add(time.Second)
+	for service.mqttHealthy.Load() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
 	if message.ackCount.Load() != 0 || service.mqttHealthy.Load() {
 		t.Fatalf("cancelled persistence must remain unacknowledged and unhealthy: ack=%d healthy=%t", message.ackCount.Load(), service.mqttHealthy.Load())
 	}
@@ -516,6 +524,10 @@ func TestTask1DatabasePersistenceErrorIsRetryableAndUnacknowledged(t *testing.T)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("worker did not return database persistence error")
+	}
+	deadline := time.Now().Add(time.Second)
+	for service.mqttHealthy.Load() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
 	}
 	if message.ackCount.Load() != 0 || service.mqttHealthy.Load() {
 		t.Fatalf("database persistence error must remain unacknowledged and unhealthy: ack=%d healthy=%t", message.ackCount.Load(), service.mqttHealthy.Load())

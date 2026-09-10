@@ -3,11 +3,21 @@ package com.matelink.data.local.dao
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
+import androidx.room.Transaction
+import com.matelink.data.repository.mergeStoredCharge
 import com.matelink.data.local.entity.ChargeSummary
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ChargeSummaryDao {
+
+    /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
+    @Transaction
+    suspend fun upsertPreservingEvidence(rows: List<ChargeSummary>) {
+        rows.forEach { incoming ->
+            upsert(mergeStoredCharge(incoming, get(incoming.carId, incoming.chargeId)))
+        }
+    }
 
     // === CRUD Operations ===
 
@@ -239,7 +249,7 @@ interface ChargeSummaryDao {
                 SELECT SUM(d.distance)
                 FROM drives_summary d
                 WHERE d.carId = curr.carId
-                  AND d.qualityState != 'quarantined'
+                  AND d.qualityState IN ('observed', 'derived')
                   AND d.startDate > prev.endDate
                   AND d.startDate < curr.startDate
             ), 0) as distance,
@@ -253,8 +263,8 @@ interface ChargeSummaryDao {
                 WHERE p.carId = curr.carId AND p.startDate < curr.startDate
             )
         WHERE curr.carId = :carId
-            AND curr.qualityState != 'quarantined'
-            AND prev.qualityState != 'quarantined'
+            AND curr.qualityState IN ('observed', 'derived')
+            AND prev.qualityState IN ('observed', 'derived')
         ORDER BY distance DESC
         LIMIT 1
     """)
@@ -273,7 +283,7 @@ interface ChargeSummaryDao {
                 SELECT SUM(d.distance)
                 FROM drives_summary d
                 WHERE d.carId = curr.carId
-                  AND d.qualityState != 'quarantined'
+                  AND d.qualityState IN ('observed', 'derived')
                   AND d.startDate > prev.endDate
                   AND d.startDate < curr.startDate
             ), 0) as distance,
@@ -287,8 +297,8 @@ interface ChargeSummaryDao {
                 WHERE p.carId = curr.carId AND p.startDate < curr.startDate
             )
         WHERE curr.carId = :carId
-            AND curr.qualityState != 'quarantined'
-            AND prev.qualityState != 'quarantined'
+            AND curr.qualityState IN ('observed', 'derived')
+            AND prev.qualityState IN ('observed', 'derived')
             AND prev.startDate >= :startDate
             AND curr.startDate < :endDate
         ORDER BY distance DESC
@@ -318,8 +328,8 @@ interface ChargeSummaryDao {
                 WHERE p.carId = curr.carId AND p.startDate < curr.startDate
             )
         WHERE curr.carId = :carId
-            AND curr.qualityState != 'quarantined'
-            AND prev.qualityState != 'quarantined'
+            AND curr.qualityState IN ('observed', 'derived')
+            AND prev.qualityState IN ('observed', 'derived')
         ORDER BY gapDays DESC
         LIMIT 1
     """)
@@ -340,8 +350,8 @@ interface ChargeSummaryDao {
                 WHERE p.carId = curr.carId AND p.startDate < curr.startDate
             )
         WHERE curr.carId = :carId
-            AND curr.qualityState != 'quarantined'
-            AND prev.qualityState != 'quarantined'
+            AND curr.qualityState IN ('observed', 'derived')
+            AND prev.qualityState IN ('observed', 'derived')
             AND prev.startDate >= :startDate
             AND curr.startDate < :endDate
         ORDER BY gapDays DESC

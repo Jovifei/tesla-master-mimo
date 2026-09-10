@@ -62,8 +62,9 @@ class TaskCReviewRedTest {
     @Test
     fun unifiedHistoryReadsLocalRowsWithinTheRequestedRange() {
         val source = File("src/main/java/com/matelink/data/repository/UnifiedHistoryRepository.kt").readText()
-        assertTrue(source.contains("getDrivesInRange"))
-        assertTrue(source.contains("getChargesInRange"))
+        assertTrue(source.contains("getAllChronological"))
+        assertTrue(source.contains("getAllForCar"))
+        assertTrue(source.contains("historyInRange"))
     }
 
     @Test

@@ -1,5 +1,45 @@
 # 2026-08-30 iOS Apple 重设计（分支 feature/ios-apple-redesign，禁止提交 main）
 
+# 2026-09-10 Local verification and 2.1.12 candidate
+
+## Review
+
+- [x] Version bumped to `2.1.12` / build `31`; localized release notes and version contract updated.
+- [x] Debug/Release JVM suites: 543 each, zero failures/errors; Release 8 expected skips. `lintDebug`, `lintRelease`, Debug/AndroidTest builds, and signed `assembleRelease` pass.
+- [x] Source commit `fe27f2b` pushed; Release APK rebuilt from it, SHA-256 `98E763A01D699E43FFFC9A9C4A824B6A7FFA2DC099AA30BE2FDF5544639DA810`; same production certificate verified.
+- [x] Direct DAO/Stats review now excludes `qualityState` outside `observed`/`derived` from interval, driving-day, and recommendation evidence; contract tests cover the old-alias boundary.
+- [x] OnePlus 7 Pro `6e4fa92f` received this Release with `adb install -r`; version `2.1.12/build31`, `firstInstallTime` preserved, Activity/process start clean, no sampled MateLink FATAL/ANR. ECS was not deployed. Temporary PostgreSQL was not run because Docker Linux engine is unavailable locally.
+- [x] Read-only device UI shows `已登录，持续采集尚未就绪`; the page offers `重新检查配置` and explains that Tesla vehicle-key or permission confirmation may still be required.
+- [x] Public `/healthz` and `/readyz` remain `fleet/postgres/ok`; server reports `telemetry=awaiting_first_event` and build `6ced331`. This is a runtime snapshot, not proof that the current branch is deployed.
+
+# 2026-09-09 Authorized commit, deploy and device install
+
+## Plan
+
+- [x] Re-run final source/test/diff gates and review the exact staged file set.
+- [x] Commit and push the reviewed branch; record the resulting SHA.
+- [x] Back up the remote API source/config boundary, deploy the matching Go source, rebuild only the API, and verify health/readiness/build SHA without touching PostgreSQL data.
+- [x] Build the signed Release APK from the committed source, verify package/version/signature/hash, then install with `adb install -r` only and verify data/session preservation and process health.
+
+## Review
+
+- Review: commit `6ced331` pushed to `fix/20260907-onboarding-source-integrity`; ECS API rebuilt from that SHA with rollback directory `.rollback-6ced331-source-sync`, PostgreSQL and telemetry containers preserved; internal/public health and readiness returned fleet/postgres/ok with `awaiting_first_event`.
+- Review: signed `com.matelink` 2.1.10/build29 APK SHA-256 `45F920C6ADB6B9B971553319C6EEAFCF5453AE80CDBE49BEF0D8FC5868EC0EE5`, certificate SHA-256 `9ab144e824abf26a5941819abb06831288c36a8bfe622657e3dc9d88281fc774`; same-signature `adb install -r` preserved first install time and did not clear data. No `com.matelink` FATAL was found; device remains locked so page-level browser/OAuth/real-event checks are pending.
+
+# 2026-09-09 Telemetry data-truth repair (authorized)
+
+## Plan
+
+- [x] RED: add regression tests for drive stop state, drive-power isolation, charge measurements, delayed config sync, and same-value freshness.
+- [x] GREEN: implement the smallest server-side fixes in memory and PostgreSQL paths, preserving truthful nulls where Fleet Telemetry has no supported driving-power field.
+- [x] Verify focused Go tests, full Go tests/vet, Android contract tests, and diff/secret checks.
+- [x] Review changed files and document actual data availability; do not commit, deploy, or install.
+
+## Review
+
+- Review: Go `test ./... -count=1`, `go vet ./...`, `go mod verify`, focused regression tests, Android Debug/Release JVM suites (526 each; Release 8 expected skips), and lintDebug/lintRelease pass. PostgreSQL integration test is skipped because `JOURVOLT_TEST_DATABASE_URL` is unset. The later authorized commit, deployment, and installation are recorded in the release section above.
+- Review: Drive end requires Park/Neutral; charge measurements persist in memory/PostgreSQL `charge_points_json`; official config sync refresh is throttled; same-value newer observations advance freshness; live drive power/energy stays null without a dedicated Fleet field.
+
 - [x] Apple 设计系统 + 类型安全导航 + 核心页重写
 - [x] 车辆核心逻辑：开口告警、isCharging、详情曲线/轨迹、当前充电轮询、换车持久化（`e9666f7`）
 - [x] 列表筛选、snapshot、分析全量、Trips/TPMS/Countries/WhereWasI（`f72a4ec`）
@@ -2957,3 +2997,47 @@
 - [ ] Server：真实 API 与 PostgreSQL 聚合证明数据进入和输出一致。
 - [x] Device：同签名 `adb install -r` 后 session/firstInstallTime 保留；不出现登录回归。
 - [ ] Human：Jovi 验证实际位置、今日多次行程、地址、曲线、昨日充电和电池页；没有真实事件不得标完成。
+
+# 2026-09-07 Tesla onboarding source-integrity P0 handoff execution
+
+## Plan
+
+- [x] Reconfirm remote branch, clean isolated worktree, and exact login/pairing call chain.
+- [x] Add RED tests for post-login conditional pairing, one-time external flow, cancellation/session preservation, and return retry.
+- [x] Implement the smallest Android onboarding state/navigation change; keep Tesla credentials and operator MQTT details out of the app.
+- [x] Run Go/Android gates, diff/secret scans, and independent code review.
+- [x] Perform same-signature `adb install -r` only if the candidate passes release gates; verify first-install time and session/settings/Room preservation without reading secrets.
+- [x] Update the final gate report and push only the minimal reviewed files to `fix/20260907-onboarding-source-integrity`.
+
+## Review
+
+- PASS: active branch onboarding now gates Dashboard on post-login vehicle/pairing evaluation, persists the phase, launches only the official Tesla URL when `pairing_required`, and retries configuration once after return.
+- PASS: full Go and Android gates, same-signature device update, settings smoke, and independent review completed; session/Room preservation is not proven because the final device session is unavailable.
+- BLOCKED: real Tesla account currently returns provider `403 reauthorization`; no `config_synced=true`, MQTT event, GPS, real drive, or real charge evidence is available.
+# 2026-09-08 OAuth reauthorization retry and drive-list address repair
+
+## Plan
+
+- [x] Trace production `telemetry_error`/`config_synced=null` behavior and confirm why a new OAuth grant did not re-run Fleet Telemetry configure.
+- [x] Add RED tests for reauthorization retry policy and list address enrichment.
+- [x] Implement the smallest fixes: trigger one deduplicated configure retry after `/v1/auth/exchange`; resolve missing drive-list addresses only from observed route endpoints.
+- [x] Run targeted and full Go/Android tests, static diff checks, and release gates.
+- [x] Complete final diff review, commit/push, server apply, and same-signature device installation.
+
+## Review
+
+- RED confirmed the missing retry policy and missing list enrichment helper before implementation.
+- GREEN confirmed persisted `telemetry_error` retries to `config_synced=true` in memory-backed integration coverage; existing addresses and absent coordinates remain unchanged.
+- Real GPS, MQTT, route and charge evidence remain pending Jovi's Tesla authorization and virtual-key confirmation.
+- Deployment evidence: remote API `build_sha=c95fb0a`; Fleet Telemetry/MQTT/command proxy running; shared config `0600`, uid/gid `1000:1000`; `/readyz=awaiting_first_event`.
+- Device evidence: `adb install -r` installed `com.matelink` 2.1.9/build 28 with unchanged first-install time; UI smoke is pending device unlock, not a code failure.
+# 2026-09-09 Browser selection and data-chain audit
+
+- [x] Confirm current branch, browser crash evidence, and authorized scope.
+- [x] Replace automatic OAuth browser launch with an explicit browser list; preserve callback and cancel/retry behavior.
+- [x] Verify Android auth regression tests, build and lint; review data-chain findings separately.
+- [x] Record verified outcomes and remaining real-vehicle evidence gaps.
+
+Design: enumerate HTTPS browsers with MATCH_ALL and show an in-app browser list that launches the selected explicit component for the trusted OAuth URL on every explicit login, with a localized title and existing safe external-launch error handling. This avoids the connected OnePlus returning only the default browser. Keep virtual-key deep links unchanged so Tesla app confirmation remains reachable. No server/data semantics changes are authorized by this browser task.
+
+Review: final Debug/Release JVM suites each ran 526 tests with zero failures/errors (Release 8 skips); final lintDebug/lintRelease passed. Signed Release 2.1.10 (29), com.matelink, non-debuggable, original signing certificate verified; the final installed APK SHA-256 is recorded in docs/ANDROID-RELEASE-LOG.md. Build memory recovery used temporary 4 GB heap and two workers, no project JVM changes. Four focused Go auth/config/history tests passed. Independent browser review found no remaining blocker; read-only device query confirmed Chrome visibility with MATCH_ALL. Final UI/OAuth/real-event acceptance is not performed. The five data findings were repaired under the authorized follow-up section above.

@@ -19,10 +19,11 @@ import (
 )
 
 var (
-	errTelemetryPermission = errors.New("telemetry_permission_required")
-	errTelemetryPairing    = errors.New("telemetry_pairing_required")
-	errTelemetryBilling    = errors.New("telemetry_billing_blocked")
-	errTelemetryCommand    = errors.New("telemetry_command_failed")
+	errTelemetryPermission       = errors.New("telemetry_permission_required")
+	errTelemetryPairing          = errors.New("telemetry_pairing_required")
+	errTelemetryBilling          = errors.New("telemetry_billing_blocked")
+	errTelemetryCommand          = errors.New("telemetry_command_failed")
+	errTelemetryConfigInProgress = errors.New("telemetry_config_in_progress")
 )
 
 type telemetryService struct {
@@ -45,9 +46,12 @@ type telemetryService struct {
 	pairingConfigTruthWriter func(context.Context, string, int, string, bool) error
 	mqttInvalid              atomic.Uint64
 	receiveSequence          atomic.Uint64
+	autoConfigure            sync.Map
+	configureRequests        sync.Map
 	finalizerMu              sync.Mutex
 	finalizerCancel          context.CancelFunc
 	finalizerDone            chan struct{}
+	authorizationFollowup    sync.Map
 }
 
 func newTelemetryService(config *telemetryConfig, database *store) *telemetryService {
@@ -75,6 +79,164 @@ INSERT INTO jourvolt_telemetry_vehicle_keys(user_id, vehicle_id, vin_hash)
 VALUES ($1, $2, $3)
 ON CONFLICT (user_id, vehicle_id) DO UPDATE SET vin_hash=EXCLUDED.vin_hash`, ref.UserID, ref.VehicleID, ref.VINHash)
 	return err
+}
+
+type telemetryAutoConfigureKey struct {
+	userID    string
+	vehicleID int
+}
+
+const telemetryAutoRetryDelay = 60 * time.Second
+
+func shouldAutoConfigurePairing(pairing telemetryPairingResponse) bool {
+	return shouldAutoConfigurePairingAt(pairing, time.Now().UTC())
+}
+
+// Recovery is operator-owned: no repeated OAuth and no missing-key bypass.
+// The stored attempt time bounds retries across reads and API restarts.
+func shouldAutoConfigurePairingAt(pairing telemetryPairingResponse, now time.Time) bool {
+	if pairing.ConfigSynced != nil && *pairing.ConfigSynced {
+		return false
+	}
+	status := strings.ToLower(strings.TrimSpace(pairing.Status))
+	if status == "pairing_required" {
+		return strings.TrimSpace(pairing.UpdatedAt) == ""
+	}
+	if status != "telemetry_error" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(pairing.ErrorClass)) {
+	case "", "telemetry_error", "command_transport", "ca_unavailable", "rate_limited":
+	default:
+		return false
+	}
+	updated, err := time.Parse(time.RFC3339, pairing.UpdatedAt)
+	return err == nil && now.Sub(updated) >= telemetryAutoRetryDelay
+}
+
+func shouldRetryAfterAuthorization(pairing telemetryPairingResponse) bool {
+	if pairing.ConfigSynced != nil && *pairing.ConfigSynced {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(pairing.Status)) {
+	case "pairing_required", "telemetry_error", "permission_required":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *telemetryService) maybeAutoConfigure(userID string, vehicleID int) {
+	s.maybeAutoConfigureWithPolicy(userID, vehicleID, shouldAutoConfigurePairing, false)
+}
+
+func (s *telemetryService) maybeAutoConfigureAfterAuthorization(userID string, vehicleID int) {
+	s.maybeAutoConfigureWithPolicy(userID, vehicleID, shouldRetryAfterAuthorization, true)
+}
+
+func (s *telemetryService) maybeAutoConfigureWithPolicy(
+	userID string,
+	vehicleID int,
+	shouldConfigure func(telemetryPairingResponse) bool,
+	retryAfterGate bool,
+) {
+	if s == nil || s.config == nil {
+		return
+	}
+	key := telemetryAutoConfigureKey{userID: userID, vehicleID: vehicleID}
+	if _, loaded := s.autoConfigure.LoadOrStore(key, struct{}{}); loaded {
+		if retryAfterGate {
+			s.scheduleAuthorizationFollowup(key, userID, vehicleID)
+		}
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	pairing, err := s.pairing(ctx, userID, vehicleID)
+	cancel()
+	if err != nil || !shouldConfigure(pairing) {
+		s.autoConfigure.Delete(key)
+		return
+	}
+	go func() {
+		defer s.autoConfigure.Delete(key)
+		configureCtx, configureCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer configureCancel()
+		// configure() persists typed pairing/error state. No provider response body,
+		// VIN, token or precise location is logged here.
+		_ = s.configure(configureCtx, userID, vehicleID)
+	}()
+}
+
+func (s *telemetryService) scheduleAuthorizationFollowup(key telemetryAutoConfigureKey, userID string, vehicleID int) {
+	if _, loaded := s.authorizationFollowup.LoadOrStore(key, struct{}{}); loaded {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(25 * time.Millisecond)
+		defer ticker.Stop()
+		timeout := time.NewTimer(35 * time.Second)
+		defer timeout.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if _, active := s.autoConfigure.Load(key); !active {
+					// Release the follow-up marker before re-acquiring the configure
+					// gate. A concurrent authorization event can then register its
+					// own follow-up instead of being lost in this handoff window.
+					s.authorizationFollowup.Delete(key)
+					s.maybeAutoConfigureAfterAuthorization(userID, vehicleID)
+					return
+				}
+			case <-timeout.C:
+				s.authorizationFollowup.Delete(key)
+				return
+			}
+		}
+	}()
+}
+
+func (s *telemetryService) retryAfterAuthorization(userID string) {
+	if s == nil || strings.TrimSpace(userID) == "" {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		vehicleIDs := make([]int, 0)
+		if s.memory != nil {
+			s.memory.mu.Lock()
+			seen := make(map[int]struct{})
+			for _, refs := range s.memory.vehicles {
+				for _, ref := range refs {
+					if ref.UserID == userID {
+						if _, exists := seen[ref.VehicleID]; !exists {
+							seen[ref.VehicleID] = struct{}{}
+							vehicleIDs = append(vehicleIDs, ref.VehicleID)
+						}
+					}
+				}
+			}
+			s.memory.mu.Unlock()
+		} else if s.store != nil && s.store.pool != nil {
+			rows, err := s.store.pool.Query(ctx, `SELECT vehicle_id FROM jourvolt_telemetry_vehicle_keys WHERE user_id=$1`, userID)
+			if err != nil {
+				return
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var vehicleID int
+				if rows.Scan(&vehicleID) == nil {
+					vehicleIDs = append(vehicleIDs, vehicleID)
+				}
+			}
+			if err := rows.Err(); err != nil {
+				return
+			}
+		}
+		for _, vehicleID := range vehicleIDs {
+			s.maybeAutoConfigureAfterAuthorization(userID, vehicleID)
+		}
+	}()
 }
 
 func (s *telemetryService) ingest(ctx context.Context, record telemetryRecord) (int, error) {
@@ -344,6 +506,9 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 	if s == nil || s.config == nil {
 		return telemetryPairingResponse{Status: "pairing_required"}, nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	status := telemetryPairing{Status: "pairing_required"}
 	if s.memory != nil {
 		if value, ok := s.memory.pairing(userID, vehicleID); ok {
@@ -363,6 +528,11 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 	if status.Status == "" {
 		status.Status = "pairing_required"
 	}
+	if pairingNeedsOfficialRefresh(status) {
+		if refreshed, ok := s.refreshPairingConfigTruth(ctx, userID, vehicleID, status); ok {
+			status = refreshed
+		}
+	}
 	response := telemetryPairingResponse{
 		Status:        status.Status,
 		VirtualKeyURL: "https://tesla.com/_ak/" + s.config.PartnerDomain,
@@ -373,6 +543,50 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 		response.UpdatedAt = status.UpdatedAt.UTC().Format(time.RFC3339)
 	}
 	return response, nil
+}
+
+func pairingNeedsOfficialRefresh(status telemetryPairing) bool {
+	if status.ConfigSynced != nil && *status.ConfigSynced {
+		return false
+	}
+	if !status.UpdatedAt.IsZero() && time.Since(status.UpdatedAt) < 5*time.Second {
+		return false
+	}
+	switch status.Status {
+	case "waiting_vehicle", "collecting", "configuring":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *telemetryService) refreshPairingConfigTruth(ctx context.Context, userID string, vehicleID int, current telemetryPairing) (telemetryPairing, bool) {
+	vin, err := s.vinForVehicle(ctx, userID, vehicleID)
+	if err != nil || vin == "" {
+		return current, false
+	}
+	configResponse, err := s.getFleetTelemetryConfig(ctx, userID, vin)
+	if err != nil || configResponse.Response.Synced == nil {
+		return current, false
+	}
+	if *configResponse.Response.Synced {
+		if err := s.setPairingConfigTruth(ctx, userID, vehicleID, "available", true); err != nil {
+			return current, false
+		}
+		current.Status = "available"
+		current.ConfigSynced = boolPointer(true)
+		current.ErrorClass = ""
+		current.UpdatedAt = time.Now().UTC()
+		return current, true
+	}
+	if err := s.setPairingConfigTruth(ctx, userID, vehicleID, "waiting_vehicle", false); err != nil {
+		return current, false
+	}
+	current.Status = "waiting_vehicle"
+	current.ConfigSynced = boolPointer(false)
+	current.ErrorClass = "sync_pending"
+	current.UpdatedAt = time.Now().UTC()
+	return current, true
 }
 
 type telemetryDesiredConfiguration struct {
@@ -447,6 +661,11 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	key := telemetryAutoConfigureKey{userID: userID, vehicleID: vehicleID}
+	if _, loaded := s.configureRequests.LoadOrStore(key, struct{}{}); loaded {
+		return errTelemetryConfigInProgress
+	}
+	defer s.configureRequests.Delete(key)
 	s.setPairingStatus(ctx, userID, vehicleID, "configuring")
 	vin, err := s.vinForVehicle(ctx, userID, vehicleID)
 	if err != nil {
@@ -481,7 +700,11 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
 	classification := telemetryCommandErrorClass(response.StatusCode, responseBody)
 	if classification != "" {
-		_ = s.setPairingError(ctx, userID, vehicleID, classification, classification)
+		status := classification
+		if status != "permission_required" && status != "pairing_required" && status != "billing_blocked" {
+			status = "telemetry_error"
+		}
+		_ = s.setPairingError(ctx, userID, vehicleID, status, classification)
 		switch classification {
 		case "permission_required":
 			return errTelemetryPermission
@@ -506,6 +729,15 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 			}
 			if status == "pairing_required" {
 				return errTelemetryPairing
+			}
+			errorClass := "max_configs"
+			if len(skipped.UnsupportedHardware) > 0 {
+				errorClass = "unsupported_hardware"
+			} else if len(skipped.UnsupportedFirmware) > 0 {
+				errorClass = "unsupported_firmware"
+			}
+			if err := s.setPairingError(ctx, userID, vehicleID, status, errorClass); err != nil {
+				return errTelemetryCommand
 			}
 			return errTelemetryCommand
 		}
@@ -702,6 +934,12 @@ func telemetryCommandErrorClass(status int, body []byte) string {
 	if status == http.StatusNotFound || status == http.StatusConflict || bodyHasExactCode(body, "pairing_required", "vehicle_not_paired", "virtual_key_required") {
 		return "pairing_required"
 	}
+	if status == http.StatusTooManyRequests {
+		return "rate_limited"
+	}
+	if status >= 400 && status < 500 {
+		return "configuration_invalid"
+	}
 	if status < 200 || status >= 300 {
 		return "telemetry_error"
 	}
@@ -852,7 +1090,14 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		result["power_max"], result["power_min"] = nil, nil
 		result["battery_details"], result["range_ideal"], result["range_rated"] = nil, nil, nil
 		result["outside_temp_avg"], result["inside_temp_avg"] = nil, nil
-		result["energy_consumed_net"], result["consumption_net"] = session.EnergyAdded, nil
+		// Fleet Telemetry currently provides no dedicated driving-energy field in
+		// this configuration. Never reuse charging energy as drive consumption.
+		if session.Source == "local_import" {
+			result["energy_consumed_net"] = session.EnergyAdded
+		} else {
+			result["energy_consumed_net"] = nil
+		}
+		result["consumption_net"] = nil
 		result["odometer_details"] = map[string]any{"odometer_start": session.OdometerStart, "odometer_end": session.OdometerEnd, "odometer_distance": odometerDistance(session.OdometerStart, session.OdometerEnd)}
 		route := make([]map[string]any, 0, len(session.Route))
 		for _, point := range session.Route {
@@ -877,15 +1122,53 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		result["range_rated"], result["outside_temp_avg"], result["odometer"] = nil, nil, nil
 		result["latitude"], result["longitude"] = nil, nil
 		result["charge_energy_added"] = session.EnergyAdded
-		chargeDetail := map[string]any{"date": session.StartAt.UTC().Format(time.RFC3339), "charge_energy_added": session.EnergyAdded}
-		if session.EndAt != nil {
-			chargeDetail["date"] = session.EndAt.UTC().Format(time.RFC3339)
+		chargeDetails := make([]map[string]any, 0, len(session.ChargePoints))
+		var firstBattery, lastBattery *int
+		var lastPower *float64
+		var firstLatitude, firstLongitude *float64
+		for _, point := range session.ChargePoints {
+			item := map[string]any{"date": point.ObservedAt.UTC().Format(time.RFC3339)}
+			if point.BatteryLevel != nil {
+				item["battery_level"] = point.BatteryLevel
+				if firstBattery == nil {
+					firstBattery = cloneInt(point.BatteryLevel)
+				}
+				lastBattery = cloneInt(point.BatteryLevel)
+			}
+			if point.EnergyAdded != nil {
+				item["charge_energy_added"] = point.EnergyAdded
+			}
+			if point.ChargerPower != nil {
+				item["charger_details"] = map[string]any{"charger_power": point.ChargerPower}
+				lastPower = cloneFloat(point.ChargerPower)
+			}
+			if point.Latitude != nil && point.Longitude != nil {
+				item["latitude"], item["longitude"] = point.Latitude, point.Longitude
+				if firstLatitude == nil {
+					firstLatitude, firstLongitude = cloneFloat(point.Latitude), cloneFloat(point.Longitude)
+				}
+			}
+			if len(item) > 1 {
+				chargeDetails = append(chargeDetails, item)
+			}
 		}
-		if session.EnergyAdded != nil {
-			result["charge_details"] = []map[string]any{chargeDetail}
-		} else {
-			result["charge_details"] = []map[string]any{}
+		if len(chargeDetails) == 0 && session.EnergyAdded != nil {
+			chargeDetail := map[string]any{"date": session.StartAt.UTC().Format(time.RFC3339), "charge_energy_added": session.EnergyAdded}
+			if session.EndAt != nil {
+				chargeDetail["date"] = session.EndAt.UTC().Format(time.RFC3339)
+			}
+			chargeDetails = append(chargeDetails, chargeDetail)
 		}
+		if firstBattery != nil || lastBattery != nil {
+			result["battery_details"] = map[string]any{"start_battery_level": firstBattery, "end_battery_level": lastBattery}
+		}
+		if lastPower != nil {
+			result["charger_power"] = lastPower
+		}
+		if firstLatitude != nil && firstLongitude != nil {
+			result["latitude"], result["longitude"] = firstLatitude, firstLongitude
+		}
+		result["charge_details"] = chargeDetails
 	}
 	result["sequence"] = index
 	return result

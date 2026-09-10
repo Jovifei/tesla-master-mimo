@@ -38,6 +38,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -52,6 +53,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.matelink.BuildConfig
 import com.matelink.R
 import com.matelink.ui.common.PublicInfoLinks
@@ -63,13 +67,18 @@ fun TeslaLoginScreen(
     viewModel: TeslaLoginViewModel = hiltViewModel(),
     onLoginSuccess: () -> Unit,
     onOpenSelfHosted: () -> Unit,
+    onReauthorize: () -> Unit = {},
     onNavigateBack: (() -> Unit)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val isAuthenticated by viewModel.isAuthenticated.collectAsState()
     val hasCurrentConsent by viewModel.hasCurrentConsent.collectAsState()
     val reauthorizing by viewModel.reauthorizing.collectAsState()
+    val postLoginOnboarding by viewModel.postLoginOnboarding.collectAsState()
+    val pairingFlowPending by viewModel.teslaPairingFlowPending.collectAsState()
+    val onboardingStateRestored by viewModel.onboardingStateRestored.collectAsState()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val termsUrl = PublicInfoLinks.url(
         BuildConfig.MATELINK_PUBLIC_INFO_BASE_URL,
         PublicInfoLinks.Page.TERMS
@@ -82,8 +91,19 @@ fun TeslaLoginScreen(
     var termsAccepted by rememberSaveable { mutableStateOf(false) }
     var privacyAccepted by rememberSaveable { mutableStateOf(false) }
 
-    LaunchedEffect(isAuthenticated, reauthorizing) {
-        if (isAuthenticated && !reauthorizing) onLoginSuccess()
+    LaunchedEffect(isAuthenticated, reauthorizing, postLoginOnboarding, onboardingStateRestored) {
+        if (onboardingStateRestored && isAuthenticated && !reauthorizing &&
+            postLoginOnboarding is TeslaLoginOnboardingState.Idle
+        ) {
+            onLoginSuccess()
+        }
+    }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.onTeslaPairingFlowResumed()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     LaunchedEffect(hasCurrentConsent) {
         if (hasCurrentConsent) {
@@ -119,112 +139,47 @@ fun TeslaLoginScreen(
         ) {
             LoginHeaderPanel()
 
-            LoginPanel {
-                Text(
-                    text = stringResource(R.string.tesla_login_documents_section),
-                    style = MaterialTheme.typography.titleMedium
+            val onboarding = if (isAuthenticated) postLoginOnboarding else TeslaLoginOnboardingState.Idle
+            when (onboarding) {
+                TeslaLoginOnboardingState.Idle -> LoginEntryPanels(
+                    context = context,
+                    termsUrl = termsUrl,
+                    privacyUrl = privacyUrl,
+                    termsAccepted = termsAccepted,
+                    privacyAccepted = privacyAccepted,
+                    onTermsChanged = { termsAccepted = it },
+                    onPrivacyChanged = { privacyAccepted = it },
+                    legalDocumentsConfigured = legalDocumentsConfigured,
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    onOpenSelfHosted = onOpenSelfHosted
                 )
-                Text(
-                    text = stringResource(R.string.tesla_login_documents_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                TeslaLoginOnboardingState.Checking -> LoginStatusPanel(
+                    icon = { CircularProgressIndicator(modifier = Modifier.size(22.dp)) },
+                    text = stringResource(R.string.tesla_onboarding_checking)
                 )
-                ConsentRow(
-                    checked = termsAccepted,
-                    label = stringResource(R.string.tesla_login_terms_consent),
-                    onCheckedChange = { termsAccepted = it }
+                TeslaLoginOnboardingState.Pending -> TeslaBlockedOnboardingPanel(
+                    reason = "waiting_vehicle",
+                    onRetry = viewModel::retryTeslaOnboarding,
+                    onContinue = viewModel::continueAfterTeslaOnboarding
                 )
-                DocumentButton(
-                    label = stringResource(R.string.tesla_login_view_terms),
-                    enabled = termsUrl != null,
-                    onClick = {
-                        termsUrl?.let { url ->
-                            context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                        }
-                    }
+                TeslaLoginOnboardingState.Ready -> Unit
+                is TeslaLoginOnboardingState.PairingRequired -> TeslaPairingOnboardingPanel(
+                    virtualKeyUrl = onboarding.virtualKeyUrl,
+                    context = context,
+                    pairingFlowPending = pairingFlowPending,
+                    onOpenVirtualKey = viewModel::markTeslaPairingFlowLaunched,
+                    onContinue = viewModel::continueAfterTeslaPairing
                 )
-                ConsentRow(
-                    checked = privacyAccepted,
-                    label = stringResource(R.string.tesla_login_privacy_consent),
-                    onCheckedChange = { privacyAccepted = it }
+                is TeslaLoginOnboardingState.PermissionRequired -> TeslaPermissionOnboardingPanel(
+                    onReauthorize = onReauthorize,
+                    onContinue = viewModel::continueAfterTeslaOnboarding
                 )
-                DocumentButton(
-                    label = stringResource(R.string.tesla_login_view_privacy),
-                    enabled = privacyUrl != null,
-                    onClick = {
-                        privacyUrl?.let { url ->
-                            context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                        }
-                    }
+                is TeslaLoginOnboardingState.Blocked -> TeslaBlockedOnboardingPanel(
+                    reason = onboarding.reason,
+                    onRetry = viewModel::retryTeslaOnboarding,
+                    onContinue = viewModel::continueAfterTeslaOnboarding
                 )
-            }
-
-            LoginPanel(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Filled.Cloud,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = stringResource(R.string.tesla_login_cloud_section),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.tesla_login_cloud_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Button(
-                    onClick = { viewModel.startTeslaLogin(termsAccepted, privacyAccepted) },
-                    enabled = termsAccepted && privacyAccepted && legalDocumentsConfigured &&
-                        BuildConfig.JOURVOLT_CLOUD_LOGIN && uiState !is TeslaLoginUiState.Loading,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Filled.Lock, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.tesla_login_button))
-                }
-                if (!legalDocumentsConfigured) {
-                    Text(
-                        text = stringResource(R.string.tesla_login_documents_unavailable),
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-
-            LoginPanel(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Filled.SettingsEthernet,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = stringResource(R.string.tesla_login_self_hosted),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.tesla_login_self_hosted_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedButton(
-                    onClick = onOpenSelfHosted,
-                    enabled = uiState !is TeslaLoginUiState.Loading,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.tesla_login_self_hosted_open))
-                }
             }
 
             when (val state = uiState) {
@@ -246,6 +201,214 @@ fun TeslaLoginScreen(
                 )
             }
             DebugMockLoginEntry(onLoginSuccess = onLoginSuccess)
+        }
+    }
+}
+
+@Composable
+private fun LoginEntryPanels(
+    context: android.content.Context,
+    termsUrl: String?,
+    privacyUrl: String?,
+    termsAccepted: Boolean,
+    privacyAccepted: Boolean,
+    onTermsChanged: (Boolean) -> Unit,
+    onPrivacyChanged: (Boolean) -> Unit,
+    legalDocumentsConfigured: Boolean,
+    uiState: TeslaLoginUiState,
+    viewModel: TeslaLoginViewModel,
+    onOpenSelfHosted: () -> Unit
+) {
+    LoginPanel {
+        Text(
+            text = stringResource(R.string.tesla_login_documents_section),
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = stringResource(R.string.tesla_login_documents_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        ConsentRow(
+            checked = termsAccepted,
+            label = stringResource(R.string.tesla_login_terms_consent),
+            onCheckedChange = onTermsChanged
+        )
+        DocumentButton(
+            label = stringResource(R.string.tesla_login_view_terms),
+            enabled = termsUrl != null,
+            onClick = {
+                termsUrl?.let { url ->
+                    context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                }
+            }
+        )
+        ConsentRow(
+            checked = privacyAccepted,
+            label = stringResource(R.string.tesla_login_privacy_consent),
+            onCheckedChange = onPrivacyChanged
+        )
+        DocumentButton(
+            label = stringResource(R.string.tesla_login_view_privacy),
+            enabled = privacyUrl != null,
+            onClick = {
+                privacyUrl?.let { url ->
+                    context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                }
+            }
+        )
+    }
+
+    LoginPanel(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Filled.Cloud,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = stringResource(R.string.tesla_login_cloud_section),
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
+        Text(
+            text = stringResource(R.string.tesla_login_cloud_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Button(
+            onClick = { viewModel.startTeslaLogin(termsAccepted, privacyAccepted) },
+            enabled = termsAccepted && privacyAccepted && legalDocumentsConfigured &&
+                BuildConfig.JOURVOLT_CLOUD_LOGIN && uiState !is TeslaLoginUiState.Loading,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Filled.Lock, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.tesla_login_button))
+        }
+        if (!legalDocumentsConfigured) {
+            Text(
+                text = stringResource(R.string.tesla_login_documents_unavailable),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+
+    LoginPanel(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Filled.SettingsEthernet,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = stringResource(R.string.tesla_login_self_hosted),
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
+        Text(
+            text = stringResource(R.string.tesla_login_self_hosted_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedButton(
+            onClick = onOpenSelfHosted,
+            enabled = uiState !is TeslaLoginUiState.Loading,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(stringResource(R.string.tesla_login_self_hosted_open))
+        }
+    }
+}
+
+@Composable
+private fun TeslaPairingOnboardingPanel(
+    virtualKeyUrl: String?,
+    context: android.content.Context,
+    pairingFlowPending: Boolean,
+    onOpenVirtualKey: () -> Unit,
+    onContinue: () -> Unit
+) {
+    val officialUrl = com.matelink.ui.screens.readiness.officialTeslaVirtualKeyUrlOrNull(virtualKeyUrl)
+    LoginPanel(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
+        Text(
+            text = stringResource(R.string.tesla_onboarding_pairing_title),
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = stringResource(R.string.tesla_onboarding_pairing_body),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (officialUrl != null) {
+            Button(
+                onClick = {
+                    onOpenVirtualKey()
+                    context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(officialUrl)))
+                },
+                enabled = !pairingFlowPending,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.tesla_onboarding_pairing_open))
+            }
+        } else {
+            Text(
+                text = stringResource(R.string.tesla_onboarding_pairing_link_unavailable),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        OutlinedButton(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.tesla_onboarding_pairing_continue))
+        }
+    }
+}
+
+@Composable
+private fun TeslaPermissionOnboardingPanel(
+    onReauthorize: () -> Unit,
+    onContinue: () -> Unit
+) {
+    LoginPanel(containerColor = MaterialTheme.colorScheme.errorContainer) {
+        Text(
+            text = stringResource(R.string.tesla_onboarding_permission_title),
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = stringResource(R.string.tesla_onboarding_permission_body),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Button(onClick = onReauthorize, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.tesla_onboarding_permission_action))
+        }
+        OutlinedButton(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.tesla_onboarding_pairing_continue))
+        }
+    }
+}
+
+@Composable
+private fun TeslaBlockedOnboardingPanel(reason: String?, onRetry: () -> Unit, onContinue: () -> Unit) {
+    val billing = reason == "billing_blocked"
+    LoginPanel(containerColor = MaterialTheme.colorScheme.errorContainer) {
+        Text(
+            text = stringResource(if (billing) R.string.tesla_onboarding_blocked_title else R.string.telemetry_setup_pending_title),
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = stringResource(if (billing) R.string.tesla_onboarding_blocked_body else R.string.telemetry_setup_pending_body),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        if (!billing) {
+            Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.telemetry_recheck))
+            }
+        }
+        OutlinedButton(onClick = onContinue, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.tesla_onboarding_pairing_continue))
         }
     }
 }

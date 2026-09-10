@@ -79,8 +79,10 @@ func TestTaskDDriveFinalizerClosesPersistedCandidateOnceWithoutRedelivery(t *tes
 	service.memory.registerVehicle(ref)
 	start := time.Date(2026, time.August, 30, 9, 0, 0, 0, time.UTC)
 	for _, record := range []telemetryRecord{
+		{VINHash: ref.VINHash, FieldName: "Gear", Value: "D", ObservedAt: start, EventID: "gear-drive"},
 		{VINHash: ref.VINHash, FieldName: "VehicleSpeed", Value: float64(12), ObservedAt: start, EventID: "drive"},
-		{VINHash: ref.VINHash, FieldName: "VehicleSpeed", Value: float64(0), ObservedAt: start.Add(time.Second), EventID: "stop"},
+		{VINHash: ref.VINHash, FieldName: "Gear", Value: "P", ObservedAt: start.Add(time.Second), EventID: "gear-park"},
+		{VINHash: ref.VINHash, FieldName: "VehicleSpeed", Value: float64(0), ObservedAt: start.Add(2 * time.Second), EventID: "stop"},
 	} {
 		if accepted, err := service.ingest(context.Background(), record); err != nil || accepted != 1 {
 			t.Fatalf("ingest %+v accepted=%d err=%v", record, accepted, err)
@@ -88,7 +90,7 @@ func TestTaskDDriveFinalizerClosesPersistedCandidateOnceWithoutRedelivery(t *tes
 	}
 	// A same-value QoS1 redelivery must neither move the stored candidate nor
 	// require a different field to make the finalizer eligible.
-	if accepted, err := service.ingest(context.Background(), telemetryRecord{VINHash: ref.VINHash, FieldName: "VehicleSpeed", Value: float64(0), ObservedAt: start.Add(5 * time.Second), EventID: "stop-redelivery"}); err != nil || accepted != 0 {
+	if accepted, err := service.ingest(context.Background(), telemetryRecord{VINHash: ref.VINHash, FieldName: "VehicleSpeed", Value: float64(0), ObservedAt: start.Add(2 * time.Second), EventID: "stop-redelivery"}); err != nil || accepted != 0 {
 		t.Fatalf("same-value redelivery accepted=%d err=%v", accepted, err)
 	}
 	if completed, err := service.finalizeDue(context.Background(), start.Add(10*time.Second)); err != nil || completed != 0 {
@@ -206,7 +208,7 @@ func TestTaskDComposeSeparatesAPICAFromOfficialKeyAndUsesEphemeralConfig(t *test
 		if strings.Contains(api, "TELEMETRY_CERT_DIR") || !strings.Contains(api, "TELEMETRY_CA_CHAIN_FILE") || !strings.Contains(api, ":/run/secrets/fleet/ca.pem:ro") {
 			t.Fatalf("%s API must mount only the CA chain file: %s", composeFile, api)
 		}
-		verifyTelemetryTmpfsVolume(t, composeFile, text)
+		verifyTelemetrySharedConfigMount(t, composeFile, text)
 	}
 	renderer, err := os.ReadFile("fleet-telemetry/render-server-config.sh")
 	if err != nil {
@@ -327,72 +329,30 @@ func parseVolumeBlock(block string) volumeConfig {
 	return vc
 }
 
-func checkTelemetryTmpfsVolumeConfig(vc volumeConfig) error {
-	if vc.driver != "local" {
-		return fmt.Errorf("volume driver must be 'local', got %q", vc.driver)
-	}
-	if vc.driverOpts["type"] != "tmpfs" {
-		return fmt.Errorf("volume driver_opts.type must be 'tmpfs', got %q", vc.driverOpts["type"])
-	}
-	if vc.driverOpts["device"] != "tmpfs" {
-		return fmt.Errorf("volume driver_opts.device must be 'tmpfs', got %q", vc.driverOpts["device"])
-	}
-	oVal := vc.driverOpts["o"]
-	if !strings.Contains(oVal, "size=1m") {
-		return fmt.Errorf("volume driver_opts.o must contain 'size=1m', got %q", oVal)
-	}
-	if !strings.Contains(oVal, "mode=0700") {
-		return fmt.Errorf("volume driver_opts.o must contain 'mode=0700', got %q", oVal)
-	}
-	return nil
-}
-
-func verifyTelemetryTmpfsVolume(t *testing.T, composeFile, text string) {
+func verifyTelemetrySharedConfigMount(t *testing.T, composeFile, text string) {
 	t.Helper()
-	block, err := composeNamedVolumeBlock(text, "fleet-telemetry-config")
-	if err != nil {
-		t.Fatalf("%s: %v", composeFile, err)
+	if !strings.Contains(text, "TELEMETRY_CONFIG_DIR") {
+		t.Fatalf("%s must configure a shared TELEMETRY_CONFIG_DIR bind mount", composeFile)
 	}
-	vc := parseVolumeBlock(block)
-	if err := checkTelemetryTmpfsVolumeConfig(vc); err != nil {
-		t.Fatalf("%s: %v", composeFile, err)
+	if !strings.Contains(text, ":/rendered") || !strings.Contains(text, ":/etc/fleet-telemetry:ro") {
+		t.Fatalf("%s must mount the same config directory into renderer and fleet telemetry", composeFile)
+	}
+	if strings.Contains(text, "\n  fleet-telemetry-config:\n    driver:") {
+		t.Fatalf("%s must not use a per-container tmpfs named volume", composeFile)
+	}
+	if strings.Contains(composeFile, "pilot.ecs") && !strings.Contains(text, "/dev/shm/jourvolt-fleet-telemetry-config") {
+		t.Fatalf("%s must default the shared config directory to host tmpfs", composeFile)
 	}
 }
 
 func TestComposeNamedVolumeBlockSemantics(t *testing.T) {
-	// 1. CRLF and LF both pass
-	crlfYaml := "volumes:\r\n  fleet-telemetry-config:\r\n    driver: local\r\n    driver_opts:\r\n      type: tmpfs\r\n      device: tmpfs\r\n      o: size=1m,mode=0700\r\n"
-	lfYaml := "volumes:\n  fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      type: tmpfs\n      device: tmpfs\n      o: size=1m,mode=0700\n"
-	verifyTelemetryTmpfsVolume(t, "crlf", crlfYaml)
-	verifyTelemetryTmpfsVolume(t, "lf", lfYaml)
-
-	// 2. Attribute order changes still pass
-	reorderedYaml := "volumes:\n  fleet-telemetry-config:\n    driver_opts:\n      device: tmpfs\n      o: mode=0700,size=1m\n      type: tmpfs\n    driver: local\n"
-	verifyTelemetryTmpfsVolume(t, "reordered", reorderedYaml)
-
-	// 3. Extra legal driver_opts fields still pass
-	extraOptsYaml := "volumes:\n  fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      type: tmpfs\n      device: tmpfs\n      o: size=1m,mode=0700\n      extra_opt: some_value\n"
-	verifyTelemetryTmpfsVolume(t, "extra_opts", extraOptsYaml)
-
-	// 4. Missing type: tmpfs must fail
-	missingType := "volumes:\n  fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      device: tmpfs\n      o: size=1m,mode=0700\n"
-	block, _ := composeNamedVolumeBlock(missingType, "fleet-telemetry-config")
-	if err := checkTelemetryTmpfsVolumeConfig(parseVolumeBlock(block)); err == nil {
-		t.Fatal("expected failure when driver_opts.type is missing")
-	}
-
-	// 5. Missing device: tmpfs must fail
-	missingDevice := "volumes:\n  fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      type: tmpfs\n      o: size=1m,mode=0700\n"
-	block, _ = composeNamedVolumeBlock(missingDevice, "fleet-telemetry-config")
-	if err := checkTelemetryTmpfsVolumeConfig(parseVolumeBlock(block)); err == nil {
-		t.Fatal("expected failure when driver_opts.device is missing")
-	}
-
-	// 6. Missing mode=0700 must fail
-	missingMode := "volumes:\n  fleet-telemetry-config:\n    driver: local\n    driver_opts:\n      type: tmpfs\n      device: tmpfs\n      o: size=1m\n"
-	block, _ = composeNamedVolumeBlock(missingMode, "fleet-telemetry-config")
-	if err := checkTelemetryTmpfsVolumeConfig(parseVolumeBlock(block)); err == nil {
-		t.Fatal("expected failure when mode=0700 is missing")
+	for name, text := range map[string]string{
+		"ecs":   "services:\n  fleet-telemetry:\n    volumes:\n      - ${TELEMETRY_CONFIG_DIR:-/dev/shm/jourvolt-fleet-telemetry-config}:/etc/fleet-telemetry:ro\n  fleet-telemetry-config:\n    volumes:\n      - ${TELEMETRY_CONFIG_DIR:-/dev/shm/jourvolt-fleet-telemetry-config}:/rendered\n",
+		"local": "services:\n  fleet-telemetry:\n    volumes:\n      - ${TELEMETRY_CONFIG_DIR:-./.telemetry-config}:/etc/fleet-telemetry:ro\n  fleet-telemetry-config:\n    volumes:\n      - ${TELEMETRY_CONFIG_DIR:-./.telemetry-config}:/rendered\n",
+	} {
+		if !strings.Contains(text, "TELEMETRY_CONFIG_DIR") || !strings.Contains(text, ":/rendered") || !strings.Contains(text, ":/etc/fleet-telemetry:ro") {
+			t.Fatalf("%s shared config mount contract failed: %s", name, text)
+		}
 	}
 }
 

@@ -190,6 +190,9 @@ func (p *fleetProvider) Vehicles(ctx context.Context, userID string) ([]vehicle,
 			}); err != nil {
 				return nil, err
 			}
+			// MQTT/broker/certificate setup is an operator concern, never an end-user
+			// workflow. Start the first safe Fleet Telemetry configure attempt here.
+			p.telemetry.maybeAutoConfigure(userID, stored.ID)
 		}
 		vehicles = append(vehicles, fleetVehicleFromProvider(
 			stored, providerID, displayName, teslaVehicle.State,
@@ -212,6 +215,44 @@ func fleetVehicleDataPath(vin string) string {
 	return "/api/1/vehicles/" + url.PathEscape(vin) + "/vehicle_data?" + query.Encode()
 }
 
+func fleetVehicleCoreDataPath(vin string) string {
+	return "/api/1/vehicles/" + url.PathEscape(vin) + "/vehicle_data"
+}
+
+// Core and location are independent capabilities. A successful location-only
+// response is not a complete snapshot and must never replace charge/config data.
+func (p *fleetProvider) vehicleData(ctx context.Context, userID, vin string) (teslaVehicleDataEnvelope, bool, error) {
+	var core teslaVehicleDataEnvelope
+	if err := p.get(ctx, userID, fleetVehicleCoreDataPath(vin), &core); err != nil {
+		return teslaVehicleDataEnvelope{}, false, err
+	}
+	var location teslaVehicleDataEnvelope
+	if err := p.get(ctx, userID, fleetVehicleDataPath(vin), &location); err != nil {
+		if ctx.Err() != nil {
+			return teslaVehicleDataEnvelope{}, false, ctx.Err()
+		}
+		// Keep usable core data even when location permission or transport fails.
+		// Do not label network failures as missing permission.
+		return core, errors.Is(err, errTeslaReauthorization), nil
+	}
+	point := location.Response.DriveState
+	if validFleetCoordinates(point.Latitude, point.Longitude) {
+		core.Response.DriveState.Latitude = point.Latitude
+		core.Response.DriveState.Longitude = point.Longitude
+		if point.Heading != nil {
+			core.Response.DriveState.Heading = point.Heading
+		}
+	}
+	return core, false, nil
+}
+
+func validFleetCoordinates(latitude, longitude *float64) bool {
+	return latitude != nil && longitude != nil &&
+		!math.IsNaN(*latitude) && !math.IsNaN(*longitude) &&
+		*latitude >= -90 && *latitude <= 90 && *longitude >= -180 && *longitude <= 180 &&
+		!(*latitude == 0 && *longitude == 0)
+}
+
 func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int) (vehicleStatus, error) {
 	stored, err := p.store.fleetVehicle(ctx, userID, vehicleID)
 	if err != nil {
@@ -224,10 +265,12 @@ func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int
 	if err != nil {
 		return vehicleStatus{}, err
 	}
-	var payload teslaVehicleDataEnvelope
-	path := fleetVehicleDataPath(vin)
-	if err := p.get(ctx, userID, path, &payload); err != nil {
+	payload, locationPermissionRequired, err := p.vehicleData(ctx, userID, vin)
+	if err != nil {
 		return vehicleStatus{}, err
+	}
+	if p.telemetry != nil {
+		p.telemetry.maybeAutoConfigure(userID, vehicleID)
 	}
 	data := payload.Response
 	displayName := strings.TrimSpace(data.DisplayName)
@@ -247,6 +290,7 @@ func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int
 	}
 
 	status := mapTeslaVehicleStatus(data, displayName, state)
+	status.LocationPermissionRequired = locationPermissionRequired
 	providerIdentity, err := p.storedProviderIdentity(ctx, userID, vehicleID)
 	if err != nil {
 		return vehicleStatus{}, err

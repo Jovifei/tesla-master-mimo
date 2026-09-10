@@ -70,6 +70,8 @@ data class WheelOption(
  * - "P74D" = Performance (21" Überturbine wheels, red calipers)
  */
 object CarImageResolver {
+    /** Unknown is not a Model 3/Y. Empty paths mean no model-specific asset. */
+    fun isKnownModel(model: String?): Boolean = model?.trim()?.uppercase(Locale.ROOT) in setOf("3", "Y", "S", "X", "CT", "CYBERTRUCK")
 
     // Color code mappings (TeslamateAPI -> Compositor)
     // Keys are normalized (lowercase, no spaces)
@@ -285,6 +287,7 @@ object CarImageResolver {
         wheelType: String?,
         trimBadging: String? = null
     ): String {
+        if (!isKnownModel(model)) return ""
         val colorCode = mapColor(exteriorColor)
         val modelVariant = determineModelVariant(model, colorCode, wheelType, trimBadging)
         val resolvedColorCode = colorCode ?: DEFAULT_COLORS[modelVariant] ?: "PPSW"
@@ -327,12 +330,13 @@ object CarImageResolver {
      * Get the default asset path for a model when configuration is unavailable.
      */
     fun getDefaultAssetPath(model: String?): String {
-        val modelVariant = when (model?.uppercase()) {
+        if (!isKnownModel(model)) return ""
+        val modelVariant = when (model?.trim()?.uppercase(Locale.ROOT)) {
             "3" -> "m3"
             "Y" -> "my"
             "S" -> "ms"
             "X" -> "mx"
-            else -> "m3"
+            else -> "unknown"
         }
         val defaultColor = DEFAULT_COLORS[modelVariant] ?: "PPSW"
         val defaultWheel = DEFAULT_WHEELS[modelVariant] ?: "W38B"
@@ -354,7 +358,7 @@ object CarImageResolver {
             "S" -> "ms"
             "X" -> "mx"
             "CT", "CYBERTRUCK" -> "ct"
-            else -> "my"
+            else -> return ""
         }
         val normalizedColor = exteriorColor?.lowercase()?.replace(" ", "")?.replace("-", "")?.replace("_", "")
         val compositorColor = when {
@@ -402,6 +406,7 @@ object CarImageResolver {
         trimBadging: String? = null,
         assetExists: (String) -> Boolean
     ): String {
+        if (!isKnownModel(model)) return ""
         // Try exact match first
         val exactPath = getAssetPath(model, exteriorColor, wheelType, trimBadging)
         if (assetExists(exactPath)) return exactPath
@@ -442,7 +447,7 @@ object CarImageResolver {
         wheelType: String?,
         trimBadging: String?
     ): String {
-        val baseModel = model?.uppercase() ?: "3"
+        val baseModel = model?.trim()?.uppercase(Locale.ROOT).orEmpty()
         val isHighlandJuniperColor = colorCode in HIGHLAND_JUNIPER_COLORS
 
         // Normalize wheel type for checking
@@ -482,7 +487,7 @@ object CarImageResolver {
             }
             "S" -> "ms"
             "X" -> "mx"
-            else -> "m3"
+            else -> "unknown"
         }
     }
 
@@ -716,7 +721,7 @@ object CarImageResolver {
         val m3Highland = CarVariant("m3h", VariantResIds.M3_HIGHLAND.hashCode())
         val m3HighlandPerf = CarVariant("m3hp", VariantResIds.M3_HIGHLAND_PERF.hashCode())
 
-        return when (model?.uppercase()) {
+        return when (model?.trim()?.uppercase(Locale.ROOT)) {
             "Y" -> {
                 // MY-specific: PBSB (Solid Black) and PPSB (Deep Blue) are Legacy-only
                 val isMyLegacyOnly = colorCode in MY_LEGACY_ONLY_EXTRA

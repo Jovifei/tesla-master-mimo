@@ -240,6 +240,21 @@ fun VehicleHeroGraphic(
     val profile = remember(model, exteriorColor, wheelType, trimBadging) {
         resolveVehicleHeroProfile(model, exteriorColor, wheelType, trimBadging)
     }
+    if (profile.model == VehicleHeroModel.UNKNOWN) {
+        Column(
+            modifier = modifier.fillMaxWidth().height(132.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(Icons.Filled.DirectionsCar, contentDescription = null, modifier = Modifier.size(52.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                androidx.compose.ui.res.stringResource(com.matelink.R.string.vehicle_model_pending),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        return
+    }
     val body = heroPaintColor(profile.colorCode, accent)
     val window = MaterialTheme.colorScheme.surfaceContainerHighest
     val outline = MaterialTheme.colorScheme.outlineVariant

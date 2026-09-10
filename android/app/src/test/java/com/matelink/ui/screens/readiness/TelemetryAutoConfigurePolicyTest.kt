@@ -9,7 +9,20 @@ class TelemetryAutoConfigurePolicyTest {
     @Test fun pairingRequiredAutoAttemptsConfiguration() {
         assertTrue(
             shouldAutoConfigureTelemetry(
-                TelemetryPairingStatus(status = "pairing_required", configSynced = false),
+                TelemetryPairingStatus(status = "pairing_required", configSynced = false, updatedAt = null),
+                null
+            )
+        )
+    }
+
+    @Test fun persistedPairingRequiredDoesNotHammerConfiguration() {
+        assertFalse(
+            shouldAutoConfigureTelemetry(
+                TelemetryPairingStatus(
+                    status = "pairing_required",
+                    configSynced = false,
+                    updatedAt = "2026-09-07T00:00:00Z"
+                ),
                 null
             )
         )
@@ -18,7 +31,11 @@ class TelemetryAutoConfigurePolicyTest {
     @Test fun errorsAndSyncedStateDoNotAutoConfigure() {
         assertFalse(
             shouldAutoConfigureTelemetry(
-                TelemetryPairingStatus(status = "pairing_required", configSynced = false),
+                TelemetryPairingStatus(
+                    status = "pairing_required",
+                    configSynced = false,
+                    updatedAt = "2026-09-07T00:00:00Z"
+                ),
                 "permission_required"
             )
         )
@@ -33,13 +50,13 @@ class TelemetryAutoConfigurePolicyTest {
     @Test fun recoveredCaConfigurationErrorRetriesAutomatically() {
         assertTrue(
             shouldAutoConfigureTelemetry(
-                TelemetryPairingStatus(status = "telemetry_error", configSynced = null, errorClass = "ca_unavailable"),
+                TelemetryPairingStatus(status = "telemetry_error", configSynced = null, errorClass = "ca_unavailable", updatedAt = "2026-01-01T00:00:00Z"),
                 null
             )
         )
         assertFalse(
             shouldAutoConfigureTelemetry(
-                TelemetryPairingStatus(status = "telemetry_error", configSynced = null, errorClass = "command_transport"),
+                TelemetryPairingStatus(status = "telemetry_error", configSynced = null, errorClass = "unsupported_hardware"),
                 null
             )
         )

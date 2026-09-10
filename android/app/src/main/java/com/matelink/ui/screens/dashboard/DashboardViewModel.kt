@@ -33,6 +33,16 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+internal fun withCachedPositionEvidence(evidence: com.matelink.domain.telemetry.SnapshotEvidence): com.matelink.domain.telemetry.SnapshotEvidence =
+    snapshotEvidence(
+        evidence.source,
+        evidence.observedAt,
+        evidence.fieldSources + mapOf(
+            "latitude" to "database_latest",
+            "longitude" to "database_latest"
+        )
+    )
+
 data class DashboardUiState(
     val isLoading: Boolean = true,
     val car: CarData? = null,
@@ -105,7 +115,7 @@ class DashboardViewModel @Inject constructor(
                 val carId = settingsRepository.currentCarId.first()
 
                 val carsResult = repository.getCars()
-                val car = when (carsResult) {
+                var car = when (carsResult) {
                     is ApiResult.Success -> {
                         val cars = carsResult.data
                         cars.find { it.carId == carId }
@@ -137,6 +147,15 @@ class DashboardViewModel @Inject constructor(
                     statusResult is ApiResult.Success -> statusResult.data.status
                     else -> null
                 }
+                // Vehicle discovery precedes the first live fetch; configuration may
+                // only have been persisted by that fetch. Refresh metadata, not OAuth.
+                if (liveStatus != null && car?.carDetails?.model.isNullOrBlank()) {
+                    try {
+                        val refreshed = repository.getCars()
+                        if (refreshed is ApiResult.Success) car = refreshedDashboardCar(car, refreshed.data)
+                    } catch (e: CancellationException) { throw e } catch (_: Exception) { /* keep live state */ }
+                }
+                if (generation != requestGeneration) return@launch
                 val cachedStatus = vehicleStatusStore.getCachedStatus(effectiveCarId)
                 val status = mergeCarStatusPosition(liveStatus, cachedStatus) ?: cachedStatus
                 val usesCachedPosition = usableVehicleCoordinates(liveStatus?.latitude, liveStatus?.longitude) == null &&
@@ -163,7 +182,7 @@ class DashboardViewModel @Inject constructor(
                     else -> snapshotEvidence(null, null, emptyMap())
                 }
                 val displayEvidence = if (usesCachedPosition) {
-                    snapshotEvidence("database_latest", vehicleStatusStore.getCachedObservedAt(effectiveCarId), emptyMap())
+                    withCachedPositionEvidence(evidence)
                 } else evidence
 
                 val primaryError = when {
@@ -256,7 +275,7 @@ class DashboardViewModel @Inject constructor(
                             val usesCachedPosition = usableVehicleCoordinates(currentStatus.latitude, currentStatus.longitude) == null &&
                                 usableVehicleCoordinates(cachedStatus?.latitude, cachedStatus?.longitude) != null
                             val displayEvidence = if (usesCachedPosition) {
-                                snapshotEvidence("database_latest", vehicleStatusStore.getCachedObservedAt(carId), emptyMap())
+                                withCachedPositionEvidence(evidence)
                             } else evidence
                             _uiState.value = _uiState.value.copy(
                                 status = resolvedStatus,

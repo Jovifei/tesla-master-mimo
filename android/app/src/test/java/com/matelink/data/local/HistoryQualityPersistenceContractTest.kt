@@ -79,6 +79,28 @@ class HistoryQualityPersistenceContractTest {
         ).forEach { method -> assertQueryExcludesQuarantine(source, method) }
     }
 
+    @Test
+    fun statisticalQueriesExcludeIncompleteAliasRows() {
+        val driveDao = File("src/main/java/com/matelink/data/local/dao/DriveSummaryDao.kt").readText()
+        val chargeDao = File("src/main/java/com/matelink/data/local/dao/ChargeSummaryDao.kt").readText()
+        listOf(
+            "getDrivesBetweenDates", "longestGapBetweenDrives", "longestGapBetweenDrivesInRange",
+            "getDistinctDrivingDays", "getDistinctDrivingDaysInRange"
+        ).forEach { method -> assertQueryRequiresEligibleQuality(driveDao, method) }
+        listOf(
+            "maxDistanceBetweenCharges", "maxDistanceBetweenChargesInRange",
+            "longestGapBetweenCharges", "longestGapBetweenChargesInRange"
+        ).forEach { method -> assertQueryRequiresEligibleQuality(chargeDao, method) }
+    }
+
+    @Test
+    fun statsRecommendationsFilterIncompleteHistoryBeforeBuildingEvidence() {
+        val source = File("src/main/java/com/matelink/data/repository/StatsRepository.kt").readText()
+        assertTrue(Regex("analysisDrives = drives\\.map[\\s\\S]*?filter \\{ isAnalysisEligible").containsMatchIn(source))
+        assertTrue(Regex("analysisCharges = charges\\.map[\\s\\S]*?filter \\{ isAnalysisEligible").containsMatchIn(source))
+        assertTrue(source.contains("isAnalysisEligible"))
+    }
+
     private fun assertQueryExcludesQuarantine(source: String, method: String) {
         val methodOffset = source.indexOf("fun $method(")
         assertTrue("Missing DAO method $method", methodOffset >= 0)
@@ -89,5 +111,13 @@ class HistoryQualityPersistenceContractTest {
             "$method must use an exclusion or eligible-state predicate",
             query.contains("!= 'quarantined'") || query.contains("IN ('observed', 'derived')")
         )
+    }
+
+    private fun assertQueryRequiresEligibleQuality(source: String, method: String) {
+        val methodOffset = source.indexOf("fun $method(")
+        assertTrue("Missing DAO method $method", methodOffset >= 0)
+        val queryOffset = source.lastIndexOf("@Query", methodOffset)
+        val query = source.substring(queryOffset, methodOffset)
+        assertTrue("$method must exclude incomplete alias rows", query.contains("qualityState IN ('observed', 'derived')"))
     }
 }

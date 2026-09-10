@@ -56,7 +56,7 @@ func TestTaskDQoS1RedeliveryAndRestartDoNotAdvanceLatestOrCompleteTwice(t *testi
 	if !ok {
 		t.Fatal("initial latest snapshot missing")
 	}
-	if accepted, err := store.ingest(telemetryRecord{VINHash: ref.VINHash, FieldName: "DetailedChargeState", Value: "Charging", ObservedAt: start.Add(time.Minute), EventID: "qos1-redelivery"}, defaultDriveStopDebounce); err != nil || accepted != 0 {
+	if accepted, err := store.ingest(telemetryRecord{VINHash: ref.VINHash, FieldName: "DetailedChargeState", Value: "Charging", ObservedAt: start, EventID: "qos1-redelivery"}, defaultDriveStopDebounce); err != nil || accepted != 0 {
 		t.Fatalf("identical QoS1 redelivery accepted=%d err=%v", accepted, err)
 	}
 	after, _ := store.latestSnapshot(ref.UserID, ref.VehicleID)
@@ -85,7 +85,7 @@ func TestTaskDQoS1RedeliveryAndRestartDoNotAdvanceLatestOrCompleteTwice(t *testi
 	redeliveredAfterRestart.latest[key] = persistedLatest
 	redeliveredAfterRestart.machines[key] = newTelemetrySessionMachineFromSnapshot(defaultDriveStopDebounce, persistedMachine)
 	redeliveredAfterRestart.completed[key] = restarted.completed[key]
-	if accepted, err := redeliveredAfterRestart.ingest(telemetryRecord{VINHash: ref.VINHash, FieldName: "DetailedChargeState", Value: "Complete", ObservedAt: start.Add(3 * time.Minute), EventID: "completion-qos1-redelivery"}, defaultDriveStopDebounce); err != nil || accepted != 0 {
+	if accepted, err := redeliveredAfterRestart.ingest(telemetryRecord{VINHash: ref.VINHash, FieldName: "DetailedChargeState", Value: "Complete", ObservedAt: start.Add(2 * time.Minute), EventID: "completion-qos1-redelivery"}, defaultDriveStopDebounce); err != nil || accepted != 0 {
 		t.Fatalf("completion redelivery accepted=%d err=%v", accepted, err)
 	}
 	completed := redeliveredAfterRestart.sessions(ref.UserID, ref.VehicleID, "charge")

@@ -99,6 +99,7 @@ data class ChargesUiState(
     val chartData: List<ChargeChartData> = emptyList(),
     val chartGranularity: ChartGranularity = ChartGranularity.MONTHLY,
     val error: String? = null,
+    val historySyncWarning: String? = null,
     val startDate: LocalDate? = null,
     val endDate: LocalDate? = null,
     val selectedFilter: DateFilter = DateFilter.ALL_TIME,  // Preserve filter in ViewModel
@@ -396,7 +397,8 @@ class ChargesViewModel @Inject constructor(
                             processedChargeIds = processedChargeIds,
                             priceOverrides = priceOverrides,
                             chartGranularity = granularity,
-                            error = null
+                            error = null,
+                            historySyncWarning = result.data.chargesSyncError
                         )
                     }
 

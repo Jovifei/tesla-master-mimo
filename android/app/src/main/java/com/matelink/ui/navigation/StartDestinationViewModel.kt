@@ -7,6 +7,8 @@ import com.matelink.data.local.ConnectionMode
 import com.matelink.data.local.InstanceDataStore
 import com.matelink.data.local.JourVoltSessionStore
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.TeslaOnboardingPhase
+import com.matelink.data.local.TeslaOnboardingStateStore
 import com.matelink.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +26,8 @@ class StartDestinationViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val jourVoltSessionStore: JourVoltSessionStore,
     private val instanceDataStore: InstanceDataStore,
-    private val connectionModeStore: ConnectionModeStore
+    private val connectionModeStore: ConnectionModeStore,
+    private val teslaOnboardingStateStore: TeslaOnboardingStateStore
 ) : ViewModel() {
 
     private val _startDestination = MutableStateFlow<Screen?>(null)
@@ -49,15 +52,27 @@ class StartDestinationViewModel @Inject constructor(
         viewModelScope.launch {
             val settings = settingsDataStore.settings.first()
             val instances = instanceDataStore.instances.first()
+            val session = jourVoltSessionStore.current()
+            val onboarding = teslaOnboardingStateStore.state.first()
             val mode = connectionModeStore.resolveInitial(
                 settings = settings,
                 instances = instances,
-                hasJourVoltSession = jourVoltSessionStore.current() != null
+                hasJourVoltSession = session != null
             )
+            val hasPendingOnboarding = session != null &&
+                onboarding.accountId == session.userId &&
+                onboarding.phase in setOf(
+                    TeslaOnboardingPhase.CHECKING,
+                    TeslaOnboardingPhase.PAIRING_REQUIRED,
+                    TeslaOnboardingPhase.PERMISSION_REQUIRED,
+                    TeslaOnboardingPhase.BLOCKED,
+                    TeslaOnboardingPhase.PENDING
+                )
             _connectionMode.value = mode
             _startDestination.value = when {
                 mode == ConnectionMode.SELF_HOSTED -> Screen.Dashboard
-                jourVoltSessionStore.current() != null -> Screen.Dashboard
+                hasPendingOnboarding -> Screen.TeslaLogin
+                session != null -> Screen.Dashboard
                 else -> Screen.TeslaLogin
             }
         }

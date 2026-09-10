@@ -92,6 +92,17 @@
     <string name="tesla_login_error_not_configured">此构建未配置 Tesla 云登录。</string>
     <string name="tesla_login_callback_invalid">出于安全原因，已拒绝此 Tesla 回调。</string>
     <string name="tesla_login_authorization_invalid">Tesla 授权链接无效或不是官方 Tesla 页面。</string>
+    <string name="tesla_onboarding_checking">正在检查 Tesla 车辆授权…</string>
+    <string name="tesla_onboarding_pairing_title">Tesla 还需要一次车辆确认</string>
+    <string name="tesla_onboarding_pairing_body">请在 Tesla 官方页面确认这辆车，以启用实时位置、行程和充电数据。MateLink 会自动处理数据配置，你不需要配置 MQTT、Broker 或证书。</string>
+    <string name="tesla_onboarding_pairing_open">前往 Tesla 确认车辆</string>
+    <string name="tesla_onboarding_pairing_continue">继续进入 MateLink</string>
+    <string name="tesla_onboarding_pairing_link_unavailable">Tesla 没有提供有效的确认链接，请刷新后重试。</string>
+    <string name="tesla_onboarding_permission_title">需要 Tesla 数据授权</string>
+    <string name="tesla_onboarding_permission_body">当前 Tesla 授权未包含 MateLink 所需的车辆数据。请在 Tesla 官方页面重新授权，MateLink 会保留当前登录会话。</string>
+    <string name="tesla_onboarding_permission_action">重新授权 Tesla</string>
+    <string name="tesla_onboarding_blocked_title">Tesla 数据配置暂时受阻</string>
+    <string name="tesla_onboarding_blocked_body">Tesla 报告当前无法继续采集数据。你可以先进入 MateLink，稍后再重试。</string>
     <string name="tesla_account_title">Tesla 账号</string>
     <string name="tesla_account_connected">已通过 Tesla 官方授权连接。</string>
     <string name="tesla_account_test_session">本机 Mock 测试会话，未使用 Tesla 账号。</string>
@@ -809,7 +820,6 @@
     <string name="usable_percent">可用（%1$d%%）</string>
     <string name="not_available">暂无数据</string>
     <string name="external_action_unavailable">没有可用应用打开此链接。</string>
-    <string name="charge_cost_estimated">系统估算</string>
     <string name="charge_cost_actual">实际记录</string>
     <string name="charge_cost_manual">人工总价</string>
     <string name="edit_charge_cost">修改总价</string>
@@ -1063,13 +1073,19 @@
     <string name="settings_primary_server">主服务器</string>
     <string name="settings_report_issue">报告问题</string>
     <string name="settings_release_notes_title">本次更新</string>
-    <string name="settings_release_notes_version">MateLink 2.1.7</string>
+    <string name="settings_release_notes_version">MateLink 2.1.12</string>
+    <string name="tesla_login_choose_browser">选择浏览器登录 Tesla</string>
     <string name="settings_release_notes_view">查看本次更新</string>
     <string name="settings_release_notes_close">知道了</string>
-    <string name="settings_release_notes_body">• 本地历史上传现在保留全部有效归档，不再只上传最近两天。
+<string name="settings_release_notes_body">• MateLink 2.1.12 保留浏览器选择，并按真实证据显示 Tesla 数据准备状态，不补造数值。
+• Tesla 登录现在每次都可选择浏览器；若浏览器闪退，返回后可重新选择其他浏览器。
+• 重新授权 Tesla 后会重试未同步的 Fleet Telemetry 配置，不会重复修改已验证车辆。
+• 行程列表会在后台根据真实路线坐标补全起终点；没有坐标时保持不可用。
+• 本地历史上传现在保留全部有效归档，不再只上传最近两天。
 • 导入记录会作为未验证摘要显示，不再污染统计、费用或曲线。
 • 最新车辆快照为空时，不会覆盖已缓存的有效 GPS 位置。
-• 行程能耗摘要会被保留；路线、地点和曲线仍需等待车辆真实 Telemetry。</string>
+• 行程能耗摘要会被保留；路线、地点和曲线仍需等待车辆真实 Telemetry。
+• Tesla 登录后会自动检查车辆，仅在确有需要时打开官方确认。</string>
     <string name="settings_resync_button">重新同步</string>
     <string name="settings_resync_confirm">确认重新同步</string>
     <string name="settings_resync_dialog_text_delete">这将删除所有本地数据。</string>
@@ -1480,4 +1496,10 @@
     <string name="drive_curves_banner_title">行程动态曲线分析</string>
     <string name="drive_curves_banner_subtitle">点击查看速度、里程、功率、电量与海拔变化</string>
     <string name="distance_profile">行程距离曲线</string>
+    <string name="telemetry_setup_pending_title">已登录，持续采集尚未就绪</string>
+    <string name="telemetry_setup_pending_body">Tesla 登录会话已连接。系统会自动重试可恢复的配置错误；缺少车辆钥匙或权限时仍需您在 Tesla 官方页面确认。可以先查看已有数据，新行程必须等待真实遥测事件。</string>
+    <string name="telemetry_recheck">重新检查配置</string>
+    <string name="vehicle_model_pending">车型待识别</string>
+    <string name="history_sync_cached">云端历史暂未同步成功，当前显示本机保存的记录；下拉刷新可重试。</string>
+    <string name="history_sync_partial">云端历史仅恢复了一部分，本机旧记录已保留；下拉刷新可重试剩余记录。</string>
 </resources>

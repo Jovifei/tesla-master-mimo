@@ -1,4 +1,4 @@
-﻿package com.matelink.data.sync
+package com.matelink.data.sync
 
 import com.matelink.data.api.models.HistoryImportSession
 import java.time.Instant
@@ -62,9 +62,19 @@ object HistoryUploadFilter {
         }
     }
 
-    @Deprecated("Use keepValidatedArchive to preserve the complete local archive")
+    /** Regular upload window: newest two distinct observed UTC dates, not now - 48h.
+     * This filters a request only; it never deletes the phone or existing cloud archive.
+     */
     fun boundToLatestTwoDataDays(
         drives: List<HistoryImportSession>,
         charges: List<HistoryImportSession>
-    ): BoundedHistoryUpload = keepValidatedArchive(drives, charges)
+    ): BoundedHistoryUpload {
+        val valid = keepValidatedArchive(drives, charges)
+        val days = (valid.drives + valid.charges).mapNotNull { extractUtcDate(it.startedAt) }
+            .distinct().sortedDescending().take(2).toSet()
+        return BoundedHistoryUpload(
+            valid.drives.filter { extractUtcDate(it.startedAt) in days },
+            valid.charges.filter { extractUtcDate(it.startedAt) in days }
+        )
+    }
 }

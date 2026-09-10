@@ -10,6 +10,65 @@
 
 ---
 
+## [2.1.12 / build 31] — 2026-09-10 本地验证候选（已覆盖安装）
+
+- 版本从 2.1.11/build30 递增；源码提交为 `fe27f2b`（功能基线 `4e97691949ecef9a39fd135be3efb988907b0f61`），本阶段补充了不完整旧别名行的统计过滤契约与最小实现。
+- Debug/Release JVM 各 543 项：0 failures / 0 errors，Release 8 项预期跳过；`lintDebug`、`lintRelease`、`assembleDebug`、`assembleDebugAndroidTest` 和签名 `assembleRelease` 均通过。
+- Release APK：`android/app/build/outputs/apk/release/app-release.apk`；由 `fe27f2b` 重建，SHA-256：`98E763A01D699E43FFFC9A9C4A824B6A7FFA2DC099AA30BE2FDF5544639DA810`。
+- 正式证书 SHA-256：`9ab144e824abf26a5941819abb06831288c36a8bfe622657e3dc9d88281fc774`；包名保持 `com.matelink`。
+- OnePlus 7 Pro（`6e4fa92f`）已执行同签名 `adb install -r` 覆盖安装；`versionCode=31`、`versionName=2.1.12`，`firstInstallTime=2026-08-31 22:36:47` 保持；主 Activity 启动成功，进程存活，最近 800 行日志无 MateLink FATAL/ANR。
+- 页面级 Tesla OAuth、浏览器选择、虚拟钥匙、真实 Telemetry 和历史数据仍待 Jovi 解锁手机后验收。
+- 本轮没有部署 ECS；临时 PostgreSQL 因本机 Docker Linux 引擎不可用未执行，未连接生产数据库。
+
+---
+
+## [2.1.11 / build 30] — 2026-09-09 阶段版本（已构建，未重复安装）
+
+- 基于已推送的 `6ced331` Telemetry 数据真实性修复和浏览器选择优化；仅更新 Android 版本号与本次更新说明。
+- 保留 Tesla 登录浏览器选择；等待车辆、Telemetry 和历史数据继续按真实证据显示，不生成合成数据。
+- 已构建并核验 `com.matelink` Release，非 debuggable；证书 SHA-256：`9ab144e824abf26a5941819abb06831288c36a8bfe622657e3dc9d88281fc774`。
+- APK SHA-256：`C86C1FD079491B85143BF0604A6C4C88F9C8AB95A932CE2BD68DCF18817B54BA`。
+- Debug/Release 各 526 项测试：0 failures / 0 errors，Release 8 项预期跳过；`lintDebug`、`lintRelease` 通过。
+- 本阶段版本已提交并推送；没有再次安装设备，设备当前仍是 2.1.10/build29。
+
+---
+
+## [2.1.10 / build 29] — 2026-09-09 浏览器选择与 Telemetry 数据真实性修复
+
+- Tesla 登录改为 App 内选择浏览器；显式启动所选应用，避免默认浏览器闪退阻断登录。取消后可重新发起登录；虚拟钥匙深链与 OAuth 回调保持原流程。
+- 已构建并核验 `com.matelink` Release，非 debuggable；证书 SHA-256 与既有正式包一致：`9ab144e824abf26a5941819abb06831288c36a8bfe622657e3dc9d88281fc774`。
+- APK SHA-256：`45F920C6ADB6B9B971553319C6EEAFCF5453AE80CDBE49BEF0D8FC5868EC0EE5`。
+- 源码提交：`6ced331`，已推送至 `fix/20260907-onboarding-source-integrity`。
+- ECS 已部署同一提交：`/healthz`、`/readyz` 内外均返回 `build_sha=6ced331`、`mode=fleet`、`persistence=postgres`、`status=ok`；现有远端源码备份位于 `/home/jourvolt/jourvolt-staging/.rollback-6ced331-source-sync`，`.env` 未读取或修改。
+- OnePlus 7 Pro（`6e4fa92f`）已用同签名 `adb install -r` 覆盖安装；version `2.1.10` / build `29`，`firstInstallTime=2026-08-31 22:36:47` 保持不变，未卸载或清理用户数据。
+- Debug/Release 各 526 项测试：0 failures / 0 errors，Release 8 项预期跳过。首次组合构建因 2 GB Gradle 堆不足停止；独立打包使用临时 4 GB 堆参数成功，未修改项目 JVM 配置。
+- 最终 `lintDebug`、`lintRelease` 均通过。
+- 实机只读查询确认 MATCH_ALL 能返回 Chrome，普通查询仅返回默认 Heytap；安装后 `com.matelink` 进程启动存活，crash buffer 中未发现 `com.matelink` FATAL。手机仍锁屏，未猜测图案，浏览器列表点击和真实 OAuth 回流留待 Jovi 解锁后验收。
+- 数据链路源码审查见 `docs/audits/2026-09-09-browser-and-telemetry-readiness.md`；不能承诺授权后自动补齐所有曲线及历史指标。
+
+---
+
+## [2.1.9 / build 28] — 2026-09-08 授权恢复重试与行程列表地址修复
+
+### 已验证
+
+- Go `go test ./... -count=1`、`go vet ./...`、`go mod verify` 通过。
+- Android Debug/Release JVM 测试通过；Release lint 0 errors（现有 warnings 保留）。
+- Release APK 已用现有 `com.matelink` 同签名证书构建并通过 `apksigner` V2 校验；SHA-256 为 `D080F637A259D661B64C55DCBEA8CD68432E75EB72ABBEF9D94D54CFB37703BD`。
+- OnePlus 7 Pro（`6e4fa92f`）已执行 `adb install -r` 覆盖安装；version `2.1.9` / build `28`，`firstInstallTime=2026-08-31 22:36:47` 保持不变，证明未卸载、未清理本地数据。
+
+### 本次修复
+
+- `/v1/auth/exchange` 成功后，对历史 `telemetry_error`、`pairing_required`、`permission_required` 车辆触发一次去重 configure 重试。
+- 行程列表从真实首尾坐标执行高德逆地理编码；已有地址和缺失坐标保持真实语义。
+
+### 真实数据边界
+
+- 当前 ECS 尚未收到新的 Tesla MQTT 首事件；GPS、今日行程、路线/速度/功率曲线和真实充电仍需 Jovi 完成 Tesla 官方授权、虚拟钥匙配对并产生车辆事件后验收。
+- 安装后进程可启动且无 FATAL/ANR 日志；设备随后回到图案锁屏，未猜测用户图案，页面级点击验收留给 Jovi 解锁后执行。
+
+---
+
 ## [2.1.6 / build 25] — 2026-09-06 历史归档与位置真实性修复
 
 ### 已验证

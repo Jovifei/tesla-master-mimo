@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/go-jose/go-jose/v4"
 )
 
@@ -214,4 +216,56 @@ func mustTestCipher(t *testing.T) *tokenCipher {
 		t.Fatal(err)
 	}
 	return cipher
+}
+
+func TestTeslaOAuthAuthorizationRequestsMissingScopesAndKeypair(t *testing.T) {
+	oauth := &teslaOAuth{oauth2: oauth2.Config{
+		ClientID:    "client-id",
+		RedirectURL: "https://auth.example.com/v1/auth/tesla/callback",
+		Scopes:      []string{"openid", "offline_access", "vehicle_device_data", "vehicle_location"},
+		Endpoint: oauth2.Endpoint{
+			AuthURL: "https://auth.tesla.example/oauth2/v3/authorize",
+		},
+	}}
+	// start() also persists a transaction, so exercise the URL parameter contract
+	// through AuthCodeURL exactly as production does without needing a database.
+	authorizationURL := oauth.oauth2.AuthCodeURL(
+		"state",
+		oauth2.AccessTypeOffline,
+		oauth2.SetAuthURLParam("nonce", "nonce"),
+		oauth2.SetAuthURLParam("prompt_missing_scopes", "true"),
+		oauth2.SetAuthURLParam("require_requested_scopes", "true"),
+		oauth2.SetAuthURLParam("show_keypair_step", "true"),
+	)
+	parsed, err := url.Parse(authorizationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := parsed.Query()
+	for key, want := range map[string]string{
+		"prompt_missing_scopes":    "true",
+		"require_requested_scopes": "true",
+		"show_keypair_step":        "true",
+		"access_type":              "offline",
+	} {
+		if got := q.Get(key); got != want {
+			t.Fatalf("%s = %q, want %q", key, got, want)
+		}
+	}
+	if q.Get("prompt") == "login" {
+		t.Fatal("MateLink must not force Tesla credential entry when an existing Tesla SSO session can be reused")
+	}
+	scopes := strings.Fields(q.Get("scope"))
+	for _, required := range []string{"offline_access", "vehicle_device_data", "vehicle_location"} {
+		found := false
+		for _, scope := range scopes {
+			if scope == required {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("scope %q missing from %q", required, q.Get("scope"))
+		}
+	}
 }

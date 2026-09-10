@@ -92,6 +92,17 @@
     <string name="tesla_login_error_not_configured">Tesla cloud login is not configured in this build.</string>
     <string name="tesla_login_callback_invalid">The Tesla callback was rejected for security reasons.</string>
     <string name="tesla_login_authorization_invalid">The Tesla authorization link is invalid or not an official Tesla page.</string>
+    <string name="tesla_onboarding_checking">Checking your Tesla vehicle authorization…</string>
+    <string name="tesla_onboarding_pairing_title">Tesla needs one more vehicle confirmation</string>
+    <string name="tesla_onboarding_pairing_body">Confirm this vehicle on Tesla’s official page to enable live location, drives and charging. MateLink handles the data setup; you do not need to configure MQTT, a broker or certificates.</string>
+    <string name="tesla_onboarding_pairing_open">Confirm vehicle in Tesla</string>
+    <string name="tesla_onboarding_pairing_continue">Continue to MateLink</string>
+    <string name="tesla_onboarding_pairing_link_unavailable">Tesla did not provide a valid confirmation link. Refresh and try again.</string>
+    <string name="tesla_onboarding_permission_title">Tesla permission is required</string>
+    <string name="tesla_onboarding_permission_body">The current Tesla grant does not include the vehicle data required by MateLink. Reauthorize on Tesla’s official page; your MateLink session stays signed in.</string>
+    <string name="tesla_onboarding_permission_action">Reauthorize Tesla</string>
+    <string name="tesla_onboarding_blocked_title">Tesla data setup is blocked</string>
+    <string name="tesla_onboarding_blocked_body">Tesla reported that data collection cannot continue right now. You can enter MateLink and try again later.</string>
     <string name="tesla_account_title">Tesla account</string>
     <string name="tesla_account_connected">Connected through official Tesla authorization.</string>
     <string name="tesla_account_test_session">Local mock test session. No Tesla account was used.</string>
@@ -813,7 +824,6 @@
     <string name="usable_percent">Usable (%1$d%%)</string>
     <string name="not_available">Not available</string>
     <string name="external_action_unavailable">No app is available to open this link.</string>
-    <string name="charge_cost_estimated">System estimate</string>
     <string name="charge_cost_actual">Actual record</string>
     <string name="charge_cost_manual">Manual total</string>
     <string name="edit_charge_cost">Modify total amount</string>
@@ -1073,13 +1083,19 @@
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
     <string name="settings_release_notes_title">This update</string>
-    <string name="settings_release_notes_version">MateLink 2.1.7</string>
+    <string name="settings_release_notes_version">MateLink 2.1.12</string>
+    <string name="tesla_login_choose_browser">Choose a browser for Tesla login</string>
     <string name="settings_release_notes_view">View update notes</string>
     <string name="settings_release_notes_close">Got it</string>
-    <string name="settings_release_notes_body">• Local history uploads now preserve the complete valid archive instead of only two data days.
+<string name="settings_release_notes_body">• MateLink 2.1.12 keeps the browser chooser and presents Tesla data readiness without synthetic values.
+• Tesla login now lets you choose a browser each time. If a browser crashes, return and choose another.
+• Re-authorizing Tesla now retries unsynced Fleet Telemetry configuration without touching verified vehicles.
+• Drive lists enrich missing endpoints from real route coordinates in the background; missing coordinates stay unavailable.
+• Local history uploads now preserve the complete valid archive instead of only two data days.
 • Imported records remain visible as unverified summaries and no longer alter analytics, costs, or curves.
 • A fresh empty vehicle snapshot no longer replaces a cached valid GPS position.
-• Drive energy summaries are retained; route, address, and curves remain unavailable until the vehicle sends telemetry.</string>
+• Drive energy summaries are retained; route, address, and curves remain unavailable until the vehicle sends telemetry.
+• Tesla onboarding now checks the vehicle automatically and opens the official confirmation only when required.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>
     <string name="settings_resync_dialog_text_delete">This will delete all local data.</string>
@@ -1489,4 +1505,10 @@
     <string name="drive_curves_banner_title">Dynamic Curve Analytics</string>
     <string name="drive_curves_banner_subtitle">Tap to view speed, distance, power, battery &amp; elevation profiles</string>
     <string name="distance_profile">Distance Profile</string>
+    <string name="telemetry_setup_pending_title">Signed in; continuous collection is not ready</string>
+    <string name="telemetry_setup_pending_body">Your Tesla session is connected. The service retries recoverable setup failures automatically. A vehicle key or missing Tesla permission still needs your confirmation. You may view existing data; new trips require actual telemetry events.</string>
+    <string name="telemetry_recheck">Check setup again</string>
+    <string name="vehicle_model_pending">Vehicle model not yet identified</string>
+    <string name="history_sync_cached">Cloud history could not be refreshed. Showing this device’s saved history; pull to refresh to retry.</string>
+    <string name="history_sync_partial">Only part of cloud history was restored. Saved history is preserved; pull to refresh to retry the remaining pages.</string>
 </resources>

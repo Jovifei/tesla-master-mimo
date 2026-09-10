@@ -58,6 +58,11 @@ bash ./preflight.sh --env-file .env --verify-dns --verify-app-link
 ```bash
 cd /home/jourvolt/jourvolt-staging
 
+# Fleet Telemetry 配置目录必须是两个容器共享的主机 tmpfs；不要使用
+# Docker named-volume tmpfs（每个容器会得到独立挂载，看不到渲染文件）：
+sudo install -d -o jourvolt -g jourvolt -m 0700 /dev/shm/jourvolt-fleet-telemetry-config
+sudo rm -f /dev/shm/jourvolt-fleet-telemetry-config/server_config.json
+
 # 1) 停掉旧的 mock API 容器（18090 端口让位；不动 PostgreSQL）：
 docker compose -f docker-compose.yml stop jourvolt-dev-api
 

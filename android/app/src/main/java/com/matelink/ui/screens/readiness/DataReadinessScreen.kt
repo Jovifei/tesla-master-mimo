@@ -74,6 +74,7 @@ private fun actionResFor(item: DataReadinessItem): Int? = when (item.action) {
     "keep_vehicle_connected" -> R.string.data_readiness_action_keep_vehicle_connected
     "not_available" -> R.string.data_readiness_action_not_available
     "retry_later" -> R.string.data_readiness_action_retry_later
+    "reauthorize_tesla", "pair_tesla" -> R.string.tesla_account_reauthorize
     "none" -> if (item.messageKey == "data_readiness_legacy_compatibility") {
         R.string.data_readiness_action_legacy
     } else null
@@ -85,6 +86,7 @@ private fun localizedStatus(item: DataReadinessItem): String = when (readinessIt
     ReadinessItemStatus.AVAILABLE -> stringResource(R.string.data_readiness_status_available)
     ReadinessItemStatus.COLLECTING -> stringResource(R.string.data_readiness_status_collecting)
     ReadinessItemStatus.WAITING_VEHICLE -> stringResource(R.string.data_readiness_status_waiting_vehicle)
+    ReadinessItemStatus.PERMISSION_REQUIRED -> stringResource(R.string.telemetry_setup_permission_required)
     ReadinessItemStatus.UNSUPPORTED -> stringResource(R.string.data_readiness_status_unsupported)
     ReadinessItemStatus.UNKNOWN -> stringResource(R.string.data_readiness_status_unavailable)
 }
@@ -339,6 +341,7 @@ fun DataReadinessScreen(
                         if (officialUrl == null) {
                             viewModel.reportPairingLinkUnavailable()
                         } else {
+                            viewModel.reportExternalPairingFlowLaunched()
                             context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(officialUrl)))
                         }
                     },

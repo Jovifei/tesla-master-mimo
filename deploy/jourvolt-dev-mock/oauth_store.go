@@ -244,10 +244,10 @@ func (s *store) updateFleetVehicleMetadata(
 UPDATE jourvolt_vehicles SET
 display_name=$3,
 state=$4,
-model=NULLIF($5, ''),
-trim_badging=NULLIF($6, ''),
-exterior_color=NULLIF($7, ''),
-wheel_type=NULLIF($8, ''),
+model=COALESCE(NULLIF($5, ''), model),
+trim_badging=COALESCE(NULLIF($6, ''), trim_badging),
+exterior_color=COALESCE(NULLIF($7, ''), exterior_color),
+wheel_type=COALESCE(NULLIF($8, ''), wheel_type),
 updated_at=now()
 WHERE id=$1 AND user_id=$2`, vehicleID, userID, displayName, state, model, trimBadging, exteriorColor, wheelType)
 	if err != nil {

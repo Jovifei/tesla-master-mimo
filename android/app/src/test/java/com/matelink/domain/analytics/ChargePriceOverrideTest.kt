@@ -49,7 +49,7 @@ class ChargePriceOverrideTest {
         val ac = resolveChargeCost(null, true, false, null, 10.0)
         val dc = resolveChargeCost(null, true, true, null, 10.0)
 
-        assertEquals(ChargeCostSource.ESTIMATE, ac.source)
+        assertEquals(ChargeCostSource.UNAVAILABLE, ac.source)
         assertEquals(ChargeCostSource.FREE, dc.source)
     }
 }

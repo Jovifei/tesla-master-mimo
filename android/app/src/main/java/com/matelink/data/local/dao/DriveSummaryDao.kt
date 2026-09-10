@@ -3,11 +3,21 @@ package com.matelink.data.local.dao
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
+import androidx.room.Transaction
+import com.matelink.data.repository.mergeStoredDrive
 import com.matelink.data.local.entity.DriveSummary
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface DriveSummaryDao {
+
+    /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
+    @Transaction
+    suspend fun upsertPreservingEvidence(rows: List<DriveSummary>) {
+        rows.forEach { incoming ->
+            upsert(mergeStoredDrive(incoming, get(incoming.carId, incoming.driveId)))
+        }
+    }
 
     // === CRUD Operations ===
 
@@ -309,7 +319,7 @@ interface DriveSummaryDao {
     @Query("""
         SELECT * FROM drives_summary
         WHERE carId = :carId
-          AND qualityState != 'quarantined'
+          AND qualityState IN ('observed', 'derived')
           AND startDate > :afterDate
           AND startDate < :beforeDate
         ORDER BY startDate ASC
@@ -334,8 +344,8 @@ interface DriveSummaryDao {
                 WHERE p.carId = curr.carId AND p.startDate < curr.startDate
             )
         WHERE curr.carId = :carId
-            AND curr.qualityState != 'quarantined'
-            AND prev.qualityState != 'quarantined'
+            AND curr.qualityState IN ('observed', 'derived')
+            AND prev.qualityState IN ('observed', 'derived')
         ORDER BY gapDays DESC
         LIMIT 1
     """)
@@ -356,8 +366,8 @@ interface DriveSummaryDao {
                 WHERE p.carId = curr.carId AND p.startDate < curr.startDate
             )
         WHERE curr.carId = :carId
-            AND curr.qualityState != 'quarantined'
-            AND prev.qualityState != 'quarantined'
+            AND curr.qualityState IN ('observed', 'derived')
+            AND prev.qualityState IN ('observed', 'derived')
             AND prev.startDate >= :startDate
             AND curr.startDate < :endDate
         ORDER BY gapDays DESC
@@ -402,7 +412,7 @@ interface DriveSummaryDao {
         SELECT DISTINCT DATE(startDate) as day
         FROM drives_summary
         WHERE carId = :carId
-        AND qualityState != 'quarantined'
+        AND qualityState IN ('observed', 'derived')
         ORDER BY day ASC
     """)
     suspend fun getDistinctDrivingDays(carId: Int): List<String>
@@ -411,7 +421,7 @@ interface DriveSummaryDao {
         SELECT DISTINCT DATE(startDate) as day
         FROM drives_summary
         WHERE carId = :carId
-        AND qualityState != 'quarantined'
+        AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
         ORDER BY day ASC
     """)

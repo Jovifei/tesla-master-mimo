@@ -50,8 +50,8 @@ class EffectiveChargeCostResolverTest {
             EffectiveChargeCostInput(teslaMateCost = 0.0, energyKwh = 10.0)
         )
 
-        assertEquals(11.0, result.cost!!, 0.0)
-        assertEquals(ChargeCostSource.ESTIMATE, result.source)
+        assertEquals(null, result.cost)
+        assertEquals(ChargeCostSource.UNAVAILABLE, result.source)
     }
 
     @Test
@@ -63,8 +63,8 @@ class EffectiveChargeCostResolverTest {
             )
         )
 
-        assertEquals(ChargeCostSource.ESTIMATE, result.source)
-        assertEquals(11.0, result.cost!!, 0.0001)
+        assertEquals(ChargeCostSource.UNAVAILABLE, result.source)
+        assertEquals(null, result.cost)
     }
 
     @Test
@@ -73,7 +73,7 @@ class EffectiveChargeCostResolverTest {
             EffectiveChargeCostInput(teslaMateCost = null, energyKwh = 10.0)
         )
 
-        assertEquals(11.0, result.cost!!, 0.0)
-        assertEquals(ChargeCostSource.ESTIMATE, result.source)
+        assertEquals(null, result.cost)
+        assertEquals(ChargeCostSource.UNAVAILABLE, result.source)
     }
 }

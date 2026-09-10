@@ -20,6 +20,7 @@ func (a *app) telemetryResource(w http.ResponseWriter, r *http.Request, userID s
 			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 			return
 		}
+		a.telemetry.maybeAutoConfigure(userID, vehicleID)
 		pairing, err := a.telemetry.pairing(r.Context(), userID, vehicleID)
 		if err != nil {
 			a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "telemetry_error"})
@@ -50,6 +51,8 @@ func (a *app) telemetryResource(w http.ResponseWriter, r *http.Request, userID s
 
 func telemetryConfigureError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, errTelemetryConfigInProgress):
+		(&app{}).json(w, http.StatusAccepted, map[string]any{"data": map[string]string{"status": "configuring"}})
 	case errors.Is(err, errTelemetryPermission):
 		writeTelemetryError(w, http.StatusForbidden, "permission_required")
 	case errors.Is(err, errTelemetryPairing):
