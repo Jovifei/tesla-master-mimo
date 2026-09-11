@@ -3041,3 +3041,18 @@
 Design: enumerate HTTPS browsers with MATCH_ALL and show an in-app browser list that launches the selected explicit component for the trusted OAuth URL on every explicit login, with a localized title and existing safe external-launch error handling. This avoids the connected OnePlus returning only the default browser. Keep virtual-key deep links unchanged so Tesla app confirmation remains reachable. No server/data semantics changes are authorized by this browser task.
 
 Review: final Debug/Release JVM suites each ran 526 tests with zero failures/errors (Release 8 skips); final lintDebug/lintRelease passed. Signed Release 2.1.10 (29), com.matelink, non-debuggable, original signing certificate verified; the final installed APK SHA-256 is recorded in docs/ANDROID-RELEASE-LOG.md. Build memory recovery used temporary 4 GB heap and two workers, no project JVM changes. Four focused Go auth/config/history tests passed. Independent browser review found no remaining blocker; read-only device query confirmed Chrome visibility with MATCH_ALL. Final UI/OAuth/real-event acceptance is not performed. The five data findings were repaired under the authorized follow-up section above.
+# 2026-09-11 WeChat Mini Program M0/M1
+
+## Plan
+
+- [x] Verify ZIP manifest/SHA-256, read the handoff prompt and relevant chapters, and classify remote evidence versus proposed work.
+- [x] Fetch the repository and create `feature/wechat-miniprogram` from merged `main@e9197d8`; preserve the dirty parent worktree.
+- [x] M0: record current AppID/主体/域名 and OAuth feasibility as `UNVERIFIED` where no platform credentials or two-device test exists.
+- [x] M1: add an isolated Taro/React/TypeScript WeChat client skeleton with four tabs, explicit readiness/quality states, scoped API boundary, and pure-function tests.
+- [x] M1 verification: lock dependencies, run typecheck/tests, and generate the WeChat development build without bypassing domain checks or claiming platform acceptance.
+- [x] No Tesla password handling, production identity migrations, server deployment, device data changes, or real platform registration added.
+
+## Review
+
+- M0: `AUTH_FEASIBILITY=UNVERIFIED`; AppID/主体/域名 and Android/iOS WeChat real-device authorization remain external blockers. See `docs/miniprogram/M0_FEASIBILITY_20260911.md`.
+- M1: Taro 4.2.1 development build generated; `npm run typecheck` passed; Vitest 3 files/6 tests passed. No production API or Tesla credentials are bundled.
