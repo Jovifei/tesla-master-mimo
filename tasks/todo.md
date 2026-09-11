@@ -3051,6 +3051,7 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - [x] M1: add an isolated Taro/React/TypeScript WeChat client skeleton with four tabs, explicit readiness/quality states, scoped API boundary, and pure-function tests.
 - [x] M1 verification: lock dependencies, run typecheck/tests, and generate the WeChat development build without bypassing domain checks or claiming platform acceptance.
 - [x] Deployment environment check: `dev:weapp --watch` reached `Watching...`; production API define injection was verified in `dist` with no dynamic `process.env` remaining.
+- [ ] Release security gate: current Taro lock tree reports 12 npm audit advisories (3 critical); do not publish until a compatible dependency remediation is verified.
 - [x] No Tesla password handling, production identity migrations, server deployment, device data changes, or real platform registration added.
 
 ## Review

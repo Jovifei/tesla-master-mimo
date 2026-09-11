@@ -12,6 +12,7 @@
 
 - Taro 4.2.1 + React 18.3.1 + TypeScript 5.7.3 + Webpack 5 已锁定。
 - `npm ci --dry-run --ignore-scripts`、`npm run typecheck`、Vitest 6 项测试、`npm run build:weapp` 已通过。
+- `npm run dev:weapp` 已进入 `Watching...`；用正式 API 地址构建时，产物包含固定 HTTPS host，不残留动态 `process.env`。
 - 四个 Tab 页面、车辆/状态/readiness API 适配、真实值/缺失值/质量边界和安全 README 已提交。
 - `project.config.json` 保留空 AppID；未写入 AppSecret、微信 `session_key`、Tesla token、私钥、VIN 或精确位置。
 - M0、框架 ADR 和 M1 接口契约已记录：`M0_FEASIBILITY_20260911.md`、`ADR-0001-client-framework.md`、`INTERFACE-CONTRACT-M1.md`。
@@ -42,3 +43,5 @@
 ## 当前不能提交的理由
 
 `AUTH_FEASIBILITY=UNVERIFIED`。正式 AppID/主体/域名、微信后台能力、Tesla OAuth/虚拟钥匙在两平台真机上的可行性，以及后端微信会话/账号关联接口都没有证据。M1 开发态构建通过不等于小程序已注册、可预览、可发布或已通过审核。
+
+`SECURITY_AUDIT=BLOCKED_FOR_RELEASE`。当前锁文件的 `npm audit --omit=dev --audit-level=high` 报告 12 个传递依赖漏洞（3 critical、8 moderate、1 low）；强制修复会引入 Taro 破坏性降级。发布前需要在保持 Taro 兼容的前提下升级依赖或更换构建基线，并重新执行 typecheck、test、build 和真机检查。
