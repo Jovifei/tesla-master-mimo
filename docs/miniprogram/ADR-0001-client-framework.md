@@ -25,3 +25,4 @@
 - `npm run typecheck`：PASS。
 - `npm test`：3 个测试文件、6 个纯逻辑测试 PASS。
 - `npm run build:weapp`：PASS，生成开发态 `dist/`；未做微信后台、安卓微信、苹果微信或发布态域名验收。
+- 使用 `TARO_APP_API_BASE_URL=https://api.teslalink.joviluma.com` 的构建产物包含固定 HTTPS API 地址，未残留动态 `process.env`；未配置地址时仍 fail-closed。

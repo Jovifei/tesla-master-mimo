@@ -3050,9 +3050,11 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - [x] M0: record current AppID/主体/域名 and OAuth feasibility as `UNVERIFIED` where no platform credentials or two-device test exists.
 - [x] M1: add an isolated Taro/React/TypeScript WeChat client skeleton with four tabs, explicit readiness/quality states, scoped API boundary, and pure-function tests.
 - [x] M1 verification: lock dependencies, run typecheck/tests, and generate the WeChat development build without bypassing domain checks or claiming platform acceptance.
+- [x] Deployment environment check: `dev:weapp --watch` reached `Watching...`; production API define injection was verified in `dist` with no dynamic `process.env` remaining.
 - [x] No Tesla password handling, production identity migrations, server deployment, device data changes, or real platform registration added.
 
 ## Review
 
 - M0: `AUTH_FEASIBILITY=UNVERIFIED`; AppID/主体/域名 and Android/iOS WeChat real-device authorization remain external blockers. See `docs/miniprogram/M0_FEASIBILITY_20260911.md`.
 - M1: Taro 4.2.1 development build generated; `npm run typecheck` passed; Vitest 3 files/6 tests passed. No production API or Tesla credentials are bundled.
+- Pre-application material: `docs/miniprogram/PREAPPLICATION_CHECKLIST_20260912.md`; manual WeChat主体/AppID/域名/审核 steps remain owner actions.

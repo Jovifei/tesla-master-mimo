@@ -1,5 +1,7 @@
 import { defineConfig } from '@tarojs/cli'
 
+const apiBaseUrl = process.env.TARO_APP_API_BASE_URL ?? ''
+
 export default defineConfig({
   projectName: 'matelink-wechat-miniprogram',
   date: '2026-09-11',
@@ -17,6 +19,9 @@ export default defineConfig({
     '@tarojs/plugin-framework-react',
     '@tarojs/plugin-platform-weapp',
   ],
+  defineConstants: {
+    'process.env.TARO_APP_API_BASE_URL': JSON.stringify(apiBaseUrl),
+  },
   mini: {
     postcss: {
       pxtransform: {
