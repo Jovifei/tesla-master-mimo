@@ -3043,6 +3043,16 @@ Design: enumerate HTTPS browsers with MATCH_ALL and show an in-app browser list 
 Review: final Debug/Release JVM suites each ran 526 tests with zero failures/errors (Release 8 skips); final lintDebug/lintRelease passed. Signed Release 2.1.10 (29), com.matelink, non-debuggable, original signing certificate verified; the final installed APK SHA-256 is recorded in docs/ANDROID-RELEASE-LOG.md. Build memory recovery used temporary 4 GB heap and two workers, no project JVM changes. Four focused Go auth/config/history tests passed. Independent browser review found no remaining blocker; read-only device query confirmed Chrome visibility with MATCH_ALL. Final UI/OAuth/real-event acceptance is not performed. The five data findings were repaired under the authorized follow-up section above.
 # 2026-09-11 WeChat Mini Program M0/M1
 
+# 2026-09-12 M1 Android parity audit
+
+## Review
+
+- [x] 对照 Android API/Repository/Login/Readiness/History 与小程序源码逐项审计，结论 `ANDROID_PARITY=PARTIAL`。
+- [x] 确认 P0 差异：微信会话/Tesla 绑定未实现、readiness 误读 `live_status`、行程/充电真实 API 未接入。
+- [x] 确认 P1 差异：单车、无 refresh/logout、无生命周期代次、错误分类丢失、历史合并不是证据合并。
+- [x] M1 仍只放行隔离开发构建；审计未修改业务源码。详见 `docs/miniprogram/M1_ANDROID_PARITY_AUDIT_20260912.md`。
+- [ ] 申请 AppID 前不提交体验版；取得主体/AppID/域名后进入 M2 身份绑定和授权可行性测试。
+
 ## Plan
 
 - [x] Verify ZIP manifest/SHA-256, read the handoff prompt and relevant chapters, and classify remote evidence versus proposed work.
