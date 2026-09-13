@@ -1,3 +1,5 @@
+import type { ReadinessItem } from '../services/types'
+
 export type ReadinessStatus =
   | 'available'
   | 'collecting'
@@ -7,6 +9,7 @@ export type ReadinessStatus =
   | 'telemetry_not_configured'
   | 'telemetry_error'
   | 'billing_blocked'
+  | 'unsupported'
   | 'unknown'
 
 export type ReadinessView = {
@@ -14,6 +17,10 @@ export type ReadinessView = {
   label: string
   detail: string
   ready: boolean
+  messageKey: string | null
+  action: string | null
+  source: string | null
+  lastObservedAt: string | null
 }
 
 const labels: Record<ReadinessStatus, string> = {
@@ -25,6 +32,7 @@ const labels: Record<ReadinessStatus, string> = {
   telemetry_not_configured: '尚未配置遥测',
   telemetry_error: '遥测配置异常',
   billing_blocked: '服务端计费状态阻断',
+  unsupported: '暂不支持',
   unknown: '状态未知',
 }
 
@@ -37,6 +45,7 @@ const details: Record<ReadinessStatus, string> = {
   telemetry_not_configured: '服务端尚未完成 Fleet Telemetry 配置。',
   telemetry_error: '保留错误分类，稍后可安全重试。',
   billing_blocked: '服务端报告了计费或权限阻断。',
+  unsupported: '服务端没有提供这项能力。',
   unknown: '没有足够证据判断数据是否可用。',
 }
 
@@ -46,12 +55,29 @@ export function normalizeReadinessStatus(value: unknown): ReadinessStatus {
   return normalized in labels ? normalized : 'unknown'
 }
 
-export function toReadinessView(status: unknown): ReadinessView {
+export function findReadinessItem(items: readonly ReadinessItem[], key: string): ReadinessItem | null {
+  return items.find(item => item.key === key) ?? null
+}
+
+export function readinessStatusFor(items: readonly ReadinessItem[], key = 'telemetry'): ReadinessStatus {
+  return normalizeReadinessStatus(findReadinessItem(items, key)?.status)
+}
+
+export function toReadinessView(status: unknown, item?: ReadinessItem | null): ReadinessView {
   const normalized = normalizeReadinessStatus(status)
   return {
     status: normalized,
     label: labels[normalized],
-    detail: details[normalized],
+    detail: item?.message || details[normalized],
     ready: normalized === 'available',
+    messageKey: item?.message_key ?? null,
+    action: item?.action ?? null,
+    source: item?.source ?? null,
+    lastObservedAt: item?.last_observed_at ?? null,
   }
+}
+
+export function readinessViewFor(items: readonly ReadinessItem[], key = 'telemetry'): ReadinessView {
+  const item = findReadinessItem(items, key)
+  return toReadinessView(item?.status, item)
 }

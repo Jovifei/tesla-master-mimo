@@ -1,16 +1,189 @@
-import { Text, View } from '@tarojs/components'
+import { Button, Picker, Text, View } from '@tarojs/components'
+import Taro, { useDidShow, useUnload } from '@tarojs/taro'
+import { useRef, useState } from 'react'
+import { historyRowKey, mergeHistoryByKey, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
+import { matelinkApi, ApiError } from '../../services/api'
+import { carSelectionStorageKey, type Car, type Drive, type HistoryPageMeta } from '../../services/types'
+import { readAppSession } from '../../services/session'
+import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
+
+const PAGE_SIZE = 20
+
+function errorMessage(reason: unknown): string {
+  if (reason instanceof ApiError) return reason.message
+  return reason instanceof Error ? reason.message : '无法读取行程数据'
+}
+
+function value(value: string | number | null): string {
+  return value == null || value === '' ? '暂无数据' : String(value)
+}
 
 export default function DrivesPage() {
+  const [cars, setCars] = useState<Car[]>([])
+  const [car, setCar] = useState<Car | null>(null)
+  const [items, setItems] = useState<Drive[]>([])
+  const [meta, setMeta] = useState<HistoryPageMeta | null>(null)
+  const [selected, setSelected] = useState<Drive | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const itemsRef = useRef<Drive[]>([])
+  const loadingMoreRef = useRef(false)
+  const pageRef = useRef(0)
+  const scopeRef = useRef<string | null>(null)
+  const requestVersion = useRef(0)
+
+  const loadHistory = async (nextCar: Car, version: number, append = false) => {
+    const nextPage = append ? pageRef.current + 1 : 1
+    const session = readAppSession(Taro)
+    const cacheKey = historyCacheKey('drives', session?.userId ?? null, nextCar.stableId)
+    if (!append) {
+      const cached = readHistoryCache<Drive>(Taro, cacheKey)
+      if (cached.length > 0 && version === requestVersion.current) {
+        itemsRef.current = cached
+        setItems(cached)
+        setMeta(current => current ?? { page: 1, show: PAGE_SIZE, total: null, totalPages: null, availability: 'cached', source: 'local_history', qualityState: null, qualityReason: null, hasMore: true })
+      }
+    }
+    if (append) {
+      if (loadingMoreRef.current) return
+      loadingMoreRef.current = true
+      setLoadingMore(true)
+    }
+    else setLoading(true)
+    try {
+      const result = await matelinkApi.getDrives(nextCar.id, nextPage, PAGE_SIZE)
+      if (version !== requestVersion.current) return
+      const previous = itemsRef.current
+      const merged = mergeHistoryByKey(previous, result.items, historyRowKey)
+      const sortedItems = sortHistoryByStartDate(merged.items)
+      itemsRef.current = sortedItems
+      setItems(sortedItems)
+      writeHistoryCache(Taro, cacheKey, sortedItems)
+      setMeta(result.meta)
+      pageRef.current = nextPage
+      setError(null)
+    } catch (reason) {
+      if (version !== requestVersion.current) return
+      setError(errorMessage(reason))
+      if (append && itemsRef.current.length > 0) setMeta(current => current ? { ...current, hasMore: true } : current)
+    } finally {
+      if (append) loadingMoreRef.current = false
+      if (version === requestVersion.current) {
+        setLoading(false)
+        setLoadingMore(false)
+      }
+    }
+  }
+
+  const load = async () => {
+    const version = ++requestVersion.current
+    const session = readAppSession(Taro)
+    if (!session) {
+      setCars([]); setCar(null); itemsRef.current = []; setItems([]); setMeta(null); setSelected(null); setError('请先在“我的”中完成微信登录')
+      return
+    }
+    setError(null)
+    try {
+      const nextCars = await matelinkApi.getCars()
+      if (version !== requestVersion.current) return
+      const scope = `${session.userId || 'anonymous'}:${nextCars.map(item => item.stableId).join(',')}`
+      if (scopeRef.current !== scope) {
+        scopeRef.current = scope
+        itemsRef.current = []; setItems([]); setMeta(null); setSelected(null); pageRef.current = 0
+      }
+      setCars(nextCars)
+      const stored = Taro.getStorageSync(carSelectionStorageKey(session.userId))
+      const nextCar = nextCars.find(item => item.stableId === String(stored)) ?? nextCars[0] ?? null
+      setCar(nextCar)
+      if (!nextCar) {
+        itemsRef.current = []; setItems([]); setMeta(null); setError('当前账号尚未绑定车辆')
+        return
+      }
+      Taro.setStorageSync(carSelectionStorageKey(session.userId), nextCar.stableId)
+      await loadHistory(nextCar, version)
+    } catch (reason) {
+      if (version === requestVersion.current) setError(errorMessage(reason))
+    }
+  }
+
+  useDidShow(() => { void load() })
+  useUnload(() => { requestVersion.current += 1; loadingMoreRef.current = false })
+
+  const selectCar = (event: { detail: { value: number | string } }) => {
+    const next = cars[Number(event.detail.value)]
+    const session = readAppSession(Taro)
+    if (!next || !session) return
+    Taro.setStorageSync(carSelectionStorageKey(session.userId), next.stableId)
+    setCar(next); itemsRef.current = []; setItems([]); setMeta(null); setSelected(null); pageRef.current = 0
+    const version = ++requestVersion.current
+    void loadHistory(next, version)
+  }
+
+  const loadMore = () => {
+    if (!car || loadingMore || loadingMoreRef.current || !pageCanContinue({ items, meta: meta || { page: 1, show: PAGE_SIZE, total: null, totalPages: null, availability: null, source: null, qualityState: null, qualityReason: null, hasMore: false } })) return
+    void loadHistory(car, requestVersion.current, true)
+  }
+
+  const openDetail = async (item: Drive) => {
+    if (!car) return
+    setSelected(item)
+    try {
+      const detail = await matelinkApi.getDriveDetail(car.id, item.id)
+      if (detail) setSelected(detail)
+    } catch (reason) {
+      setError(errorMessage(reason))
+    }
+  }
+
   return (
     <View className="page">
       <View className="card">
         <Text className="title">行程</Text>
-        <Text className="muted">M1 先保留分页和证据状态边界。没有车辆会话时不生成示例行程；详情与路线将在 M4 接入。</Text>
+        <Text className="muted">{car ? `${car.displayName || '当前车辆'} · ` : ''}只展示服务端返回的真实记录；缺失路线、能耗或地址会保留为暂无数据。</Text>
+        {cars.length > 1 ? (
+          <Picker mode="selector" range={cars.map(item => item.displayName || item.name || `车辆 ${item.stableId}`)} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}>
+            <View className="status"><Text className="status-label">车辆</Text><Text className="status-value">{car?.displayName || '请选择车辆'}</Text></View>
+          </Picker>
+        ) : null}
+        {meta?.availability ? <Text className="muted">历史状态：{meta.availability}{meta.source ? ` · 来源：${meta.source}` : ''}</Text> : null}
       </View>
-      <View className="card">
-        <Text className="section-title">等待账号关联</Text>
-        <Text className="muted">云端历史只按已验证账号和稳定车辆恢复，不能凭 VIN、车辆名或客户端 ID 认领。</Text>
-      </View>
+
+      {!readAppSession(Taro) ? (
+        <View className="card"><Text className="section-title">等待微信登录</Text><Text className="muted">请先在“我的”中建立会话。</Text></View>
+      ) : items.length === 0 && !loading ? (
+        <View className="card"><Text className="section-title">暂无行程</Text><Text className="muted">服务端尚未采集到可展示的行程记录，空响应不会生成示例数据。</Text></View>
+      ) : (
+        <View className="card">
+          <Text className="section-title">行程记录 {items.length ? `（${items.length}）` : ''}</Text>
+          {loading ? <Text className="muted">正在读取…</Text> : null}
+          {items.map(item => (
+            <View key={item.id} className="status" onClick={() => { void openDetail(item) }}>
+              <View>
+                <Text className="status-label">{value(item.startAddress)} → {value(item.endAddress)}</Text>
+                <Text className="muted">{value(item.startDate)} · {value(item.durationMinutes)} 分钟</Text>
+              </View>
+              <Text className="status-value">{item.distanceKm == null ? '暂无距离' : `${item.distanceKm} km`}</Text>
+            </View>
+          ))}
+          {meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
+        </View>
+      )}
+
+      {selected ? (
+        <View className="card">
+          <Text className="section-title">行程详情</Text>
+          <Text className="muted">{value(selected.startAddress)} → {value(selected.endAddress)}</Text>
+          <View className="metric-grid">
+            <View className="metric"><Text className="metric-label">距离</Text><Text className="metric-value">{selected.distanceKm == null ? '暂无数据' : `${selected.distanceKm} km`}</Text></View>
+            <View className="metric"><Text className="metric-label">能耗</Text><Text className="metric-value">{selected.energyConsumedKwh == null ? '暂无数据' : `${selected.energyConsumedKwh} kWh`}</Text></View>
+            <View className="metric"><Text className="metric-label">起始电量</Text><Text className="metric-value">{selected.startBatteryLevel == null ? '暂无数据' : `${selected.startBatteryLevel}%`}</Text></View>
+            <View className="metric"><Text className="metric-label">结束电量</Text><Text className="metric-value">{selected.endBatteryLevel == null ? '暂无数据' : `${selected.endBatteryLevel}%`}</Text></View>
+          </View>
+          {selected.qualityState ? <Text className="muted">质量：{selected.qualityState}{selected.qualityReason ? ` · ${selected.qualityReason}` : ''}</Text> : null}
+        </View>
+      ) : null}
+      {error ? <Text className="error">{error}</Text> : null}
     </View>
   )
 }

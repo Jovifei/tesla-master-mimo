@@ -1,10 +1,10 @@
 # MateLink 微信小程序人工申请前清单
 
-日期：2026-09-12
+日期：2026-09-13
 
 工程分支：`feature/wechat-miniprogram`
 
-工程提交：`3c57a0a`
+工程提交：以当前分支 HEAD 为准（M2 修订见 `M2_AUTH_AND_DATA_REPAIR_20260913.md`）。
 
 本清单只覆盖人工申请/审核前可以由本地 Codex 准备的材料。微信主体注册、AppID 申请、类目选择、实名/企业资料、平台勾选和最终提交必须由项目负责人在官方后台完成。
 
@@ -13,9 +13,9 @@
 - Taro 4.2.1 + React 18.3.1 + TypeScript 5.7.3 + Webpack 5 已锁定。
 - `npm ci --dry-run --ignore-scripts`、`npm run typecheck`、Vitest 6 项测试、`npm run build:weapp` 已通过。
 - `npm run dev:weapp` 已进入 `Watching...`；用正式 API 地址构建时，产物包含固定 HTTPS host，不残留动态 `process.env`。
-- 四个 Tab 页面、车辆/状态/readiness API 适配、真实值/缺失值/质量边界和安全 README 已提交。
+- 四个 Tab 页面、微信会话/Tesla 关联、车辆/状态/readiness、行程/充电分页与详情、真实值/缺失值/质量边界和安全 README 已提交。
 - `project.config.json` 保留空 AppID；未写入 AppSecret、微信 `session_key`、Tesla token、私钥、VIN 或精确位置。
-- M0、框架 ADR 和 M1 接口契约已记录：`M0_FEASIBILITY_20260911.md`、`ADR-0001-client-framework.md`、`INTERFACE-CONTRACT-M1.md`。
+- M0、框架 ADR、M1 审计和 M2 修订已记录：`M0_FEASIBILITY_20260911.md`、`ADR-0001-client-framework.md`、`INTERFACE-CONTRACT-M1.md`、`M2_AUTH_AND_DATA_REPAIR_20260913.md`。
 
 ## 需要 Jovi 人工完成
 
@@ -38,10 +38,11 @@
 1. 在本地私有环境填入 AppID 和已核验的 HTTPS API 地址；不提交 AppSecret 或任何 token。
 2. 重新执行 `npm ci`、`npm run typecheck`、`npm test`、`npm run build:weapp`。
 3. 将 `dist/` 导入微信开发者工具，关闭域名跳过选项，确认四个 Tab 和空数据提示正常。
-4. 只在两平台人工授权链通过后，才进入 M2 微信会话和 Tesla 绑定接口开发。
+4. 在微信开发者工具中关闭“跳过域名校验”，先验证微信会话 → Tesla OAuth → 回流 → 车辆列表，再进入两平台真机验收。
+5. 只有官方授权、虚拟钥匙（如车辆要求）、`config_synced=true`、首个 MQTT 和真实行程/充电事件均有证据时，才提交体验版审核。
 
 ## 当前不能提交的理由
 
-`AUTH_FEASIBILITY=UNVERIFIED`。正式 AppID/主体/域名、微信后台能力、Tesla OAuth/虚拟钥匙在两平台真机上的可行性，以及后端微信会话/账号关联接口都没有证据。M1 开发态构建通过不等于小程序已注册、可预览、可发布或已通过审核。
+`AUTH_FEASIBILITY=UNVERIFIED`。正式 AppID/主体/域名、微信后台能力、Tesla OAuth/虚拟钥匙在两平台真机上的可行性仍没有证据。M2 源码已具备接口和桥接实现，但本地构建不等于小程序已注册、可预览、可发布或已通过审核。
 
 `SECURITY_AUDIT=BLOCKED_FOR_RELEASE`。当前锁文件的 `npm audit --omit=dev --audit-level=high` 报告 12 个传递依赖漏洞（3 critical、8 moderate、1 low）；强制修复会引入 Taro 破坏性降级。发布前需要在保持 Taro 兼容的前提下升级依赖或更换构建基线，并重新执行 typecheck、test、build 和真机检查。

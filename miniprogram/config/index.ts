@@ -4,7 +4,7 @@ const apiBaseUrl = process.env.TARO_APP_API_BASE_URL ?? ''
 
 export default defineConfig({
   projectName: 'matelink-wechat-miniprogram',
-  date: '2026-09-11',
+  date: '2026-09-13',
   designWidth: 750,
   deviceRatio: {
     640: 2.34 / 2,

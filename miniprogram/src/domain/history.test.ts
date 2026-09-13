@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mergeHistoryByKey } from './history'
+import { historyRowKey, historyScopeKey, mergeHistoryByKey, mergeHistoryPages, sortHistoryByStartDate } from './history'
 
 describe('history merge', () => {
   it('retains local rows when the cloud page is empty', () => {
@@ -23,5 +23,45 @@ describe('history merge', () => {
       { id: 'drive-1', distance: 10 },
       { id: 'drive-2', distance: 20 },
     ])
+  })
+
+  it('merges the same telemetry session even when public ids differ and fills missing fields', () => {
+    const result = mergeHistoryByKey(
+      [{ id: 'drive-1', sessionId: 'session-1', startDate: '2026-09-13T01:00:00Z', startAddress: null, distanceKm: null }],
+      [{ id: 'drive-99', sessionId: 'session-1', startDate: '2026-09-13T01:00:00Z', startAddress: 'Home', distanceKm: 12 }],
+      historyRowKey,
+    )
+    expect(result.items).toEqual([{ id: 'drive-1', sessionId: 'session-1', startDate: '2026-09-13T01:00:00Z', startAddress: 'Home', distanceKm: 12 }])
+    expect(result.addedRemoteCount).toBe(0)
+  })
+
+  it('deduplicates rows across pages while retaining local history after an empty cloud page', () => {
+    const result = mergeHistoryPages(
+      [{ id: 'local-1', distance: null }],
+      [
+        { items: [{ id: 'remote-1', distance: 4 }], meta: { page: 1, show: 1, total: 2, totalPages: 2, availability: 'available', source: 'telemetry_mqtt', qualityState: null, qualityReason: null, hasMore: true } },
+        { items: [{ id: 'remote-1', distance: 4 }, { id: 'remote-2', distance: 8 }], meta: { page: 2, show: 1, total: 2, totalPages: 2, availability: 'available', source: 'telemetry_mqtt', qualityState: null, qualityReason: null, hasMore: false } },
+      ],
+      row => row.id,
+    )
+    expect(result.items.map(row => row.id)).toEqual(['local-1', 'remote-1', 'remote-2'])
+    expect(result.retainedLocalCount).toBe(1)
+    expect(result.receivedPages).toBe(2)
+    expect(result.complete).toBe(true)
+    expect(mergeHistoryPages(result.items, [{ items: [], meta: { page: 1, show: 20, total: 0, totalPages: 0, availability: 'collecting', source: null, qualityState: null, qualityReason: null, hasMore: false } }], row => row.id).items).toHaveLength(3)
+  })
+
+  it('keeps account and vehicle scopes separate', () => {
+    expect(historyScopeKey('user-a', 1)).not.toBe(historyScopeKey('user-b', 1))
+    expect(historyScopeKey('user-a', 1)).not.toBe(historyScopeKey('user-a', 2))
+  })
+
+  it('keeps the merged list newest first while retaining unknown dates', () => {
+    const sorted = sortHistoryByStartDate([
+      { id: 'old', startDate: '2026-09-01T00:00:00Z' },
+      { id: 'unknown', startDate: null },
+      { id: 'new', startDate: '2026-09-13T00:00:00Z' },
+    ])
+    expect(sorted.map(item => item.id)).toEqual(['new', 'old', 'unknown'])
   })
 })

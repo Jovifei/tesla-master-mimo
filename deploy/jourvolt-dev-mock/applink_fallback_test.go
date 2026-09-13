@@ -79,6 +79,28 @@ func TestApplinkFallbackPageEmptyParamsCopy(t *testing.T) {
 	}
 }
 
+func TestApplinkFallbackPageWechatBridgeDoesNotLaunchAndroidIntent(t *testing.T) {
+	a := &app{}
+	rec := httptest.NewRecorder()
+	a.applinkFallbackPage(rec, httptest.NewRequest("GET", "/oauth/callback?ticket=wechat-ticket&channel=wechat", nil))
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "wx.miniProgram.postMessage") {
+		t.Fatal("WeChat callback must post the one-time ticket to the Mini Program")
+	}
+	if strings.Contains(body, "window.location.replace(intent://") {
+		t.Fatal("WeChat callback must not launch the Android intent fallback")
+	}
+	if !strings.Contains(body, `"wechat-ticket"`) {
+		t.Fatal("WeChat ticket must be JSON encoded in the bridge payload")
+	}
+	if !strings.Contains(body, `id="manual" class="button"`) {
+		t.Fatal("WeChat bridge must leave a browser fallback visible")
+	}
+}
+
 func TestApplinkFallbackServedBeforeSessionAuth(t *testing.T) {
 	// The full ServeHTTP chain must answer /oauth/callback with the landing
 	// page (200), not the session gate (401 session_required).

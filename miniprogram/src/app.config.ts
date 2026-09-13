@@ -4,6 +4,7 @@ export default defineAppConfig({
     'pages/drives/index',
     'pages/charges/index',
     'pages/me/index',
+    'pages/auth/index',
   ],
   window: {
     navigationBarTitleText: 'MateLink',

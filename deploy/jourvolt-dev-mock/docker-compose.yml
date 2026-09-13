@@ -44,6 +44,9 @@ services:
       TELEMETRY_VIN_HASH_KEY_BASE64: ${TELEMETRY_VIN_HASH_KEY_BASE64:-}
       JOURVOLT_APP_LINK_URI: ${JOURVOLT_APP_LINK_URI:-}
       JOURVOLT_TOKEN_KEY_BASE64: ${JOURVOLT_TOKEN_KEY_BASE64:-}
+      WECHAT_APP_ID: ${WECHAT_APP_ID:-}
+      WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
+      WECHAT_SESSION_URL: ${WECHAT_SESSION_URL:-https://api.weixin.qq.com/sns/jscode2session}
     depends_on:
       jourvolt-postgres:
         condition: service_healthy

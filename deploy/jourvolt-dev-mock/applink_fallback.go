@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -21,7 +22,10 @@ type applinkView struct {
 	// IntentURL is the intent:// deep link that relaunches MateLink.
 	IntentURL template.URL
 	// ShowManual becomes true after the automatic attempt times out.
-	ShowManual bool
+	ShowManual   bool
+	WechatBridge bool
+	TicketJSON   template.JS
+	ErrorJSON    template.JS
 }
 
 // applinkFallbackPage serves the second-hop landing page for the OAuth App
@@ -36,6 +40,7 @@ func (a *app) applinkFallbackPage(w http.ResponseWriter, r *http.Request) {
 	}
 	ticket := r.URL.Query().Get("ticket")
 	errorCode := r.URL.Query().Get("error")
+	wechatBridge := r.URL.Query().Get("channel") == "wechat"
 
 	host := strings.TrimSuffix(a.appLinkHost(), "/")
 	if host == "" {
@@ -63,10 +68,13 @@ func (a *app) applinkFallbackPage(w http.ResponseWriter, r *http.Request) {
 		";S.browser_fallback_url=" + url.QueryEscape(landing) + ";end"
 
 	page := applinkView{
-		Status:     status,
-		Detail:     detail,
-		IntentURL:  template.URL(intent),
-		ShowManual: ticket != "" || errorCode != "",
+		Status:       status,
+		Detail:       detail,
+		IntentURL:    template.URL(intent),
+		ShowManual:   ticket != "" || errorCode != "",
+		WechatBridge: wechatBridge,
+		TicketJSON:   template.JS(jsonString(ticket)),
+		ErrorJSON:    template.JS(jsonString(errorCode)),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -75,6 +83,14 @@ func (a *app) applinkFallbackPage(w http.ResponseWriter, r *http.Request) {
 		// Headers are already sent; nothing useful left to do.
 		return
 	}
+}
+
+func jsonString(value string) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return `""`
+	}
+	return string(encoded)
 }
 
 // appLinkHost extracts the host from the configured App Link URI, falling
@@ -118,15 +134,33 @@ var applinkFallbackTemplate = template.Must(template.New("applink").Parse(`<!DOC
              padding: 12px 24px; border-radius: 24px; font-size: 15px; }
   .hidden { display: none; }
 </style>
+{{if .WechatBridge}}<script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>{{end}}
 </head>
 <body>
 <div class="card">
   <h1>{{.Status}}</h1>
   <p>{{.Detail}}</p>
-  <a id="manual" class="button hidden" href="{{.IntentURL}}">手动返回 MateLink</a>
+  <a id="manual" class="button{{if not .ShowManual}} hidden{{end}}" href="{{.IntentURL}}">手动返回 MateLink</a>
 </div>
 <script>
 (function () {
+  if ({{.WechatBridge}}) {
+    var payload = { ticket: {{.TicketJSON}}, error: {{.ErrorJSON}} };
+    var manual = document.getElementById("manual");
+    var revealManual = function () { if (manual) manual.classList.remove("hidden"); };
+    var sendToMiniProgram = function () {
+      if (window.wx && wx.miniProgram) {
+        wx.miniProgram.postMessage({ data: payload });
+        wx.miniProgram.navigateBack({ delta: 1 });
+      } else {
+        revealManual();
+      }
+    };
+    setTimeout(sendToMiniProgram, 100);
+    setTimeout(revealManual, 1500);
+    return;
+  }
+  {{if .WechatBridge}}{{else}}
   // Chrome may bounce back to browser_fallback_url (this very page) when the
   // app is missing or the launch is cancelled; only auto-launch once per
   // session and then leave the manual button to the user.
@@ -139,6 +173,7 @@ var applinkFallbackTemplate = template.Must(template.New("applink").Parse(`<!DOC
   setTimeout(function () {
     document.getElementById("manual").classList.remove("hidden");
   }, 1500);
+  {{end}}
 })();
 </script>
 </body>

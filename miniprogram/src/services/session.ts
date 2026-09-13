@@ -1,14 +1,24 @@
 const SESSION_KEY = 'matelink.wechat.session.v1'
+const PENDING_LINK_KEY = 'matelink.wechat.link.v1'
 
 export type AppSession = {
   accessToken: string
+  refreshToken: string | null
   expiresAt: string | null
+  userId: string | null
+  linkRequired: boolean | null
 }
 
 export function readAppSession(storage: Pick<WechatStorage, 'getStorageSync'>): AppSession | null {
   const value = storage.getStorageSync(SESSION_KEY) as Partial<AppSession> | undefined
   if (!value || typeof value.accessToken !== 'string' || value.accessToken.length === 0) return null
-  return { accessToken: value.accessToken, expiresAt: typeof value.expiresAt === 'string' ? value.expiresAt : null }
+  return {
+    accessToken: value.accessToken,
+    refreshToken: typeof value.refreshToken === 'string' && value.refreshToken.length > 0 ? value.refreshToken : null,
+    expiresAt: typeof value.expiresAt === 'string' ? value.expiresAt : null,
+    userId: typeof value.userId === 'string' && value.userId.length > 0 ? value.userId : null,
+    linkRequired: typeof value.linkRequired === 'boolean' ? value.linkRequired : null,
+  }
 }
 
 export function writeAppSession(storage: Pick<WechatStorage, 'setStorageSync'>, session: AppSession): void {
@@ -17,6 +27,7 @@ export function writeAppSession(storage: Pick<WechatStorage, 'setStorageSync'>, 
 
 export function clearAppSession(storage: Pick<WechatStorage, 'removeStorageSync'>): void {
   storage.removeStorageSync(SESSION_KEY)
+  storage.removeStorageSync(PENDING_LINK_KEY)
 }
 
 export type WechatStorage = {
@@ -24,3 +35,27 @@ export type WechatStorage = {
   setStorageSync(key: string, value: unknown): void
   removeStorageSync(key: string): void
 }
+
+export type PendingWechatLink = {
+  linkToken: string
+  expiresAt: string | null
+}
+
+export function readPendingWechatLink(storage: Pick<WechatStorage, 'getStorageSync'>): PendingWechatLink | null {
+  const value = storage.getStorageSync(PENDING_LINK_KEY) as Partial<PendingWechatLink> | undefined
+  if (!value || typeof value.linkToken !== 'string' || value.linkToken.trim() === '') return null
+  return {
+    linkToken: value.linkToken,
+    expiresAt: typeof value.expiresAt === 'string' ? value.expiresAt : null,
+  }
+}
+
+export function writePendingWechatLink(storage: Pick<WechatStorage, 'setStorageSync'>, link: PendingWechatLink): void {
+  storage.setStorageSync(PENDING_LINK_KEY, link)
+}
+
+export function clearPendingWechatLink(storage: Pick<WechatStorage, 'removeStorageSync'>): void {
+  storage.removeStorageSync(PENDING_LINK_KEY)
+}
+
+export { SESSION_KEY, PENDING_LINK_KEY }

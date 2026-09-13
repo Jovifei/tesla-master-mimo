@@ -23,8 +23,11 @@ type oauthConsent struct {
 }
 
 type authTransaction struct {
-	Nonce   string
-	Consent oauthConsent
+	Nonce               string
+	Consent             oauthConsent
+	WeChatLinkTokenHash string
+	WeChatAppID         string
+	WeChatOpenIDHash    string
 }
 
 func currentOAuthConsent(termsVersion, privacyVersion string) (oauthConsent, error) {
@@ -44,13 +47,25 @@ func (s *store) createAuthTransaction(
 	consent oauthConsent,
 	expiresAt time.Time,
 ) error {
+	return s.createAuthTransactionWithWeChat(ctx, state, transactionID, nonce, consent, expiresAt, wechatLinkInfo{})
+}
+
+func (s *store) createAuthTransactionWithWeChat(
+	ctx context.Context,
+	state, transactionID, nonce string,
+	consent oauthConsent,
+	expiresAt time.Time,
+	wechat wechatLinkInfo,
+) error {
 	_, err := s.pool.Exec(ctx, `
 INSERT INTO jourvolt_auth_transactions(
-    state_hash, transaction_hash, nonce, terms_version, privacy_version, expires_at
+    state_hash, transaction_hash, nonce, terms_version, privacy_version,
+    wechat_link_hash, wechat_app_id, wechat_openid_hash, expires_at
 )
-VALUES ($1, $2, $3, $4, $5, $6)`,
+VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), $9)`,
 		hashToken(state), hashToken(transactionID), nonce,
-		consent.TermsVersion, consent.PrivacyVersion, expiresAt)
+		consent.TermsVersion, consent.PrivacyVersion,
+		wechat.TokenHash, wechat.AppID, wechat.OpenIDHash, expiresAt)
 	return err
 }
 
@@ -60,10 +75,14 @@ func (s *store) consumeAuthState(ctx context.Context, state string) (authTransac
 UPDATE jourvolt_auth_transactions
 SET consumed_at=now()
 WHERE state_hash=$1 AND consumed_at IS NULL AND expires_at > now()
-RETURNING nonce, terms_version, privacy_version`, hashToken(state)).Scan(
+RETURNING nonce, COALESCE(terms_version, ''), COALESCE(privacy_version, ''),
+COALESCE(wechat_link_hash, ''), COALESCE(wechat_app_id, ''), COALESCE(wechat_openid_hash, '')`, hashToken(state)).Scan(
 		&transaction.Nonce,
 		&transaction.Consent.TermsVersion,
 		&transaction.Consent.PrivacyVersion,
+		&transaction.WeChatLinkTokenHash,
+		&transaction.WeChatAppID,
+		&transaction.WeChatOpenIDHash,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return authTransaction{}, errors.New("invalid_oauth_state")
@@ -73,6 +92,37 @@ RETURNING nonce, terms_version, privacy_version`, hashToken(state)).Scan(
 	}
 	if _, err := currentOAuthConsent(transaction.Consent.TermsVersion, transaction.Consent.PrivacyVersion); err != nil {
 		return authTransaction{}, errors.New("invalid_oauth_state")
+	}
+	return transaction, nil
+}
+
+func (s *store) authStateIsWeChat(ctx context.Context, state string) bool {
+	transaction, err := s.authTransactionForState(ctx, state)
+	return err == nil && transaction.WeChatLinkTokenHash != ""
+}
+
+func (s *store) authTransactionForState(ctx context.Context, state string) (authTransaction, error) {
+	if s == nil || s.pool == nil || strings.TrimSpace(state) == "" {
+		return authTransaction{}, errors.New("invalid_oauth_state")
+	}
+	var transaction authTransaction
+	err := s.pool.QueryRow(ctx, `
+SELECT nonce, COALESCE(terms_version, ''), COALESCE(privacy_version, ''),
+COALESCE(wechat_link_hash, ''), COALESCE(wechat_app_id, ''), COALESCE(wechat_openid_hash, '')
+FROM jourvolt_auth_transactions
+WHERE state_hash=$1 AND consumed_at IS NULL AND expires_at > now()`, hashToken(state)).Scan(
+		&transaction.Nonce,
+		&transaction.Consent.TermsVersion,
+		&transaction.Consent.PrivacyVersion,
+		&transaction.WeChatLinkTokenHash,
+		&transaction.WeChatAppID,
+		&transaction.WeChatOpenIDHash,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return authTransaction{}, errors.New("invalid_oauth_state")
+	}
+	if err != nil {
+		return authTransaction{}, err
 	}
 	return transaction, nil
 }
