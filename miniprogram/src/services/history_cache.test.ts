@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { historyCacheKey, readHistoryCache, writeHistoryCache } from './history_cache'
+import { HISTORY_CACHE_SCHEMA, historyCacheKey, readHistoryCache, writeHistoryCache } from './history_cache'
 
 function storage() {
   const values = new Map<string, unknown>()
@@ -19,10 +19,26 @@ describe('history cache', () => {
 
   it('round trips rows and treats malformed storage as empty', () => {
     const store = storage()
-    const key = historyCacheKey('charges', 'user-a', 'vehicle-a')
-    writeHistoryCache(store, key, [{ id: 'charge-1' }])
+    const key = historyCacheKey('charges', 'user-a', 'vehicle-a', 'https://api.example.test', 3)
+    expect(writeHistoryCache(store, key, [{ id: 'charge-1' }])).toBe(true)
     expect(readHistoryCache<{ id: string }>(store, key)).toEqual([{ id: 'charge-1' }])
+    const saved = store.values.get(key) as { schema: number; scope: string }
+    expect(saved.schema).toBe(HISTORY_CACHE_SCHEMA)
+    expect(saved.scope).toBe(key)
     store.setStorageSync(key, { items: 'not-an-array' })
     expect(readHistoryCache(store, key)).toEqual([])
+  })
+
+  it('isolates API origins and session generations', () => {
+    const a = historyCacheKey('drives', 'user-a', 'vehicle-a', 'https://api-a.example.test', 1)
+    const b = historyCacheKey('drives', 'user-a', 'vehicle-a', 'https://api-b.example.test', 1)
+    const c = historyCacheKey('drives', 'user-a', 'vehicle-a', 'https://api-a.example.test', 2)
+    expect(new Set([a, b, c]).size).toBe(3)
+  })
+
+  it('reports a storage quota failure without throwing', () => {
+    const failing = { setStorageSync: () => { throw new Error('quota') } }
+    const key = historyCacheKey('drives', 'user-a', 'vehicle-a')
+    expect(writeHistoryCache(failing, key, [{ id: 'drive-1' }])).toBe(false)
   })
 })

@@ -173,7 +173,14 @@ export type TeslaAuthorization = {
   authorization_url: string
   web_authorization_url?: string | null
   transaction_id: string | null
+  client_proof?: string | null
+  channel?: string | null
   expires_at: string | null
+}
+
+export type WechatAuthorizationStatus = {
+  status: 'pending' | 'ready' | 'claimed' | 'failed' | 'expired' | 'none' | string
+  expiresAt: string | null
 }
 
 export type Drive = {

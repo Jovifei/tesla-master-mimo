@@ -31,8 +31,17 @@ describe('history merge', () => {
       [{ id: 'drive-99', sessionId: 'session-1', startDate: '2026-09-13T01:00:00Z', startAddress: 'Home', distanceKm: 12 }],
       historyRowKey,
     )
-    expect(result.items).toEqual([{ id: 'drive-1', sessionId: 'session-1', startDate: '2026-09-13T01:00:00Z', startAddress: 'Home', distanceKm: 12 }])
+    expect(result.items).toEqual([{ id: 'drive-99', sessionId: 'session-1', startDate: '2026-09-13T01:00:00Z', startAddress: 'Home', distanceKm: 12 }])
     expect(result.addedRemoteCount).toBe(0)
+  })
+
+  it('does not downgrade observed evidence to a derived record', () => {
+    const result = mergeHistoryByKey(
+      [{ id: 'drive-1', sessionId: 'session-1', qualityState: 'observed', source: 'telemetry_mqtt', distanceKm: 20 }],
+      [{ id: 'drive-1', sessionId: 'session-1', qualityState: 'derived', source: 'fleet_api', distanceKm: 99 }],
+      historyRowKey,
+    )
+    expect(result.items[0]).toMatchObject({ qualityState: 'observed', source: 'telemetry_mqtt', distanceKm: 20 })
   })
 
   it('deduplicates rows across pages while retaining local history after an empty cloud page', () => {
