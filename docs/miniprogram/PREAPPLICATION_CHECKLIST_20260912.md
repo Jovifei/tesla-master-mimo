@@ -4,7 +4,7 @@
 
 工程分支：`feature/wechat-miniprogram`
 
-工程提交：以当前分支 HEAD 为准（M2 修订见 `M2_AUTH_AND_DATA_REPAIR_20260913.md`）。
+工程提交：以当前分支 HEAD 为准（M3 修订见 `M3_AUTH_SCOPE_REPAIR_20260913.md`）。
 
 本清单只覆盖人工申请/审核前可以由本地 Codex 准备的材料。微信主体注册、AppID 申请、类目选择、实名/企业资料、平台勾选和最终提交必须由项目负责人在官方后台完成。
 
@@ -15,7 +15,7 @@
 - `npm run dev:weapp` 已进入 `Watching...`；用正式 API 地址构建时，产物包含固定 HTTPS host，不残留动态 `process.env`。
 - 四个 Tab 页面、微信会话/Tesla 关联、车辆/状态/readiness、行程/充电分页与详情、真实值/缺失值/质量边界和安全 README 已提交。
 - `project.config.json` 保留空 AppID；未写入 AppSecret、微信 `session_key`、Tesla token、私钥、VIN 或精确位置。
-- M0、框架 ADR、M1 审计和 M2 修订已记录：`M0_FEASIBILITY_20260911.md`、`ADR-0001-client-framework.md`、`INTERFACE-CONTRACT-M1.md`、`M2_AUTH_AND_DATA_REPAIR_20260913.md`。
+- M0、框架 ADR、M1 审计、M2 和 M3 修订已记录：`M0_FEASIBILITY_20260911.md`、`ADR-0001-client-framework.md`、`INTERFACE-CONTRACT-M1.md`、`M2_AUTH_AND_DATA_REPAIR_20260913.md`、`M3_AUTH_SCOPE_REPAIR_20260913.md`。
 
 ## 需要 Jovi 人工完成
 

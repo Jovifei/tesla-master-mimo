@@ -116,12 +116,27 @@ describe('MateLink API transport', () => {
     expect(session.readAppSession(storageAdapter)).toBeNull()
   })
 
+  it('cancels a pending WeChat authorization before revoking the session', async () => {
+    const { api, session } = await modules()
+    session.writeAppSession(storageAdapter, {
+      accessToken: 'access', refreshToken: 'refresh', expiresAt: null, userId: 'user-a', linkRequired: false,
+    })
+    session.writePendingTeslaAuthorization(storageAdapter, { transactionId: 'txn-1', clientProof: 'proof-1', expiresAt: null })
+    mocks.request
+      .mockResolvedValueOnce({ statusCode: 200, data: { status: 'cancelled' }, header: {} })
+      .mockResolvedValueOnce({ statusCode: 200, data: { status: 'logged_out' }, header: {} })
+    await api.matelinkApi.logout()
+    expect(mocks.request.mock.calls[0][0].url).toContain('/v1/auth/wechat/cancel')
+    expect(mocks.request.mock.calls[1][0].url).toContain('/v1/session/logout')
+    expect(session.readPendingTeslaAuthorization(storageAdapter)).toBeNull()
+  })
+
   it('exchanges wx.login and retains a link token until Tesla authorization starts', async () => {
     const { api, session } = await modules()
     mocks.login.mockResolvedValue({ code: 'wechat-code' })
     mocks.request
       .mockResolvedValueOnce({ statusCode: 200, data: { status: 'link_required', link_token: 'short-link', expires_at: '2026-09-13T00:15:00Z' }, header: {} })
-      .mockResolvedValueOnce({ statusCode: 200, data: { authorization_url: 'https://auth.example.test/authorize', transaction_id: 'txn', expires_at: null }, header: {} })
+      .mockResolvedValueOnce({ statusCode: 200, data: { authorization_url: 'https://auth.tesla.cn/authorize', web_authorization_url: 'https://api.example.test/oauth/wechat/authorize?state=s', transaction_id: 'txn', client_proof: 'proof', expires_at: null }, header: {} })
 
     await expect(api.matelinkApi.loginWithWechat({ termsVersion: '2026-08-21', privacyVersion: '2026-08-21' })).resolves.toEqual({
       status: 'link_required',
@@ -131,9 +146,11 @@ describe('MateLink API transport', () => {
     await api.matelinkApi.startTeslaAuthorization({ termsVersion: '2026-08-21', privacyVersion: '2026-08-21' })
     expect(mocks.request.mock.calls[1][0].header).toMatchObject({
       'X-WeChat-Link-Token': 'short-link',
+      'X-WeChat-Channel': 'wechat',
       'X-JourVolt-Terms-Version': '2026-08-21',
       'X-JourVolt-Privacy-Version': '2026-08-21',
     })
+    expect(session.readPendingTeslaAuthorization(storageAdapter)).toMatchObject({ transactionId: 'txn', clientProof: 'proof' })
   })
 
   it('fails with a typed configuration error before wx.login when the base URL is absent', async () => {
@@ -150,6 +167,26 @@ describe('MateLink API transport', () => {
     mocks.request.mockResolvedValue({ statusCode: 200, data: { access_token: 'access', refresh_token: 'refresh' }, header: {} })
     await expect(api.matelinkApi.loginWithWechat({ termsVersion: '2026-08-21', privacyVersion: '2026-08-21' })).rejects.toMatchObject({ code: 'invalid_session_response' })
     expect(session.readAppSession(storageAdapter)).toBeNull()
+  })
+
+  it('rejects arbitrary HTTPS pages as authorization entries', async () => {
+    const { api } = await modules()
+    expect(api.isTrustedAuthorizationURL('https://api.example.test/oauth/wechat/authorize')).toBe(true)
+    expect(api.isTrustedAuthorizationURL('https://auth.tesla.cn/oauth2/v3/authorize')).toBe(true)
+    expect(api.isTrustedAuthorizationURL('https://evil.example.test/login')).toBe(false)
+    expect(api.isTrustedAuthorizationURL('http://auth.tesla.cn/login')).toBe(false)
+  })
+
+  it('checks and claims a ready WeChat authorization using the stored proof', async () => {
+    const { api, session } = await modules()
+    session.writePendingTeslaAuthorization(storageAdapter, { transactionId: 'txn-1', clientProof: 'proof-1', expiresAt: null })
+    mocks.request
+      .mockResolvedValueOnce({ statusCode: 200, data: { status: 'ready', expires_at: '2026-09-13T01:00:00Z' }, header: {} })
+      .mockResolvedValueOnce({ statusCode: 200, data: { access_token: 'access', refresh_token: 'refresh', expires_in: 900, user: { id: 'user-a' } }, header: {} })
+    await expect(api.matelinkApi.getWechatAuthorizationStatus()).resolves.toEqual({ status: 'ready', expiresAt: '2026-09-13T01:00:00Z' })
+    await expect(api.matelinkApi.claimWechatAuthorization('callback-ref')).resolves.toMatchObject({ accessToken: 'access', userId: 'user-a' })
+    expect(mocks.request.mock.calls[1][0].data).toEqual({ transaction_id: 'txn-1', client_proof: 'proof-1', callback_ref: 'callback-ref' })
+    expect(session.readPendingTeslaAuthorization(storageAdapter)).toBeNull()
   })
 
   it('does not use a numeric car id as a cross-account stable identity', async () => {

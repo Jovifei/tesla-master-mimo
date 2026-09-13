@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   clearAppSession,
+  clearPendingTeslaAuthorization,
   readAppSession,
   readPendingWechatLink,
+  readPendingTeslaAuthorization,
   writeAppSession,
   writePendingWechatLink,
+  writePendingTeslaAuthorization,
 } from './session'
 
 function storage() {
@@ -42,6 +45,17 @@ describe('session storage', () => {
     expect(readPendingWechatLink(store)).toEqual({ linkToken: 'link-token', expiresAt: null })
     clearAppSession(store)
     expect(readPendingWechatLink(store)).toBeNull()
+  })
+
+  it('stores only the opaque Tesla transaction proof and clears it with the session', () => {
+    const store = storage()
+    writePendingTeslaAuthorization(store, { transactionId: 'txn-1', clientProof: 'proof-1', expiresAt: null })
+    expect(readPendingTeslaAuthorization(store)).toEqual({ transactionId: 'txn-1', clientProof: 'proof-1', expiresAt: null })
+    clearPendingTeslaAuthorization(store)
+    expect(readPendingTeslaAuthorization(store)).toBeNull()
+    writePendingTeslaAuthorization(store, { transactionId: 'txn-2', clientProof: 'proof-2', expiresAt: null })
+    clearAppSession(store)
+    expect(readPendingTeslaAuthorization(store)).toBeNull()
   })
 
   it('rejects malformed sessions without an access token', () => {
