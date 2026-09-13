@@ -32,6 +32,8 @@ type authStart struct {
 	AuthorizationURL    string    `json:"authorization_url"`
 	WebAuthorizationURL string    `json:"web_authorization_url,omitempty"`
 	TransactionID       string    `json:"transaction_id"`
+	ClientProof         string    `json:"client_proof,omitempty"`
+	Channel             string    `json:"channel,omitempty"`
 	ExpiresAt           time.Time `json:"expires_at"`
 }
 
@@ -154,15 +156,23 @@ func (o *teslaOAuth) verifyIDToken(ctx context.Context, rawIDToken, callbackIssu
 }
 
 func (o *teslaOAuth) start(ctx context.Context, consent oauthConsent) (authStart, error) {
-	return o.startForWeChat(ctx, consent, "")
+	return o.startForClient(ctx, consent, "", "native", "")
 }
 
 func (o *teslaOAuth) startForWeChat(ctx context.Context, consent oauthConsent, linkToken string) (authStart, error) {
+	return o.startForClient(ctx, consent, linkToken, "wechat", "")
+}
+
+func (o *teslaOAuth) startForClient(ctx context.Context, consent oauthConsent, linkToken, channel, expectedUserID string) (authStart, error) {
 	if o == nil || o.store == nil || o.store.pool == nil {
 		return authStart{}, errors.New("store_unavailable")
 	}
 	if _, err := currentOAuthConsent(consent.TermsVersion, consent.PrivacyVersion); err != nil {
 		return authStart{}, err
+	}
+	channel = strings.TrimSpace(strings.ToLower(channel))
+	if channel != "native" && channel != "wechat" {
+		return authStart{}, errors.New("invalid_auth_channel")
 	}
 	wechat := wechatLinkInfo{}
 	if strings.TrimSpace(linkToken) != "" {
@@ -188,17 +198,26 @@ func (o *teslaOAuth) startForWeChat(ctx context.Context, consent oauthConsent, l
 		return authStart{}, err
 	}
 	expiresAt := time.Now().UTC().Add(authTransactionLifetime)
-	if err := o.store.createAuthTransactionWithWeChat(ctx, state, transactionID, nonce, consent, expiresAt, wechat); err != nil {
+	clientProof := ""
+	clientProofHash := ""
+	if channel == "wechat" {
+		clientProof, err = randomToken()
+		if err != nil {
+			return authStart{}, err
+		}
+		clientProofHash = hashToken(clientProof)
+	}
+	if err := o.store.createAuthTransactionWithClient(ctx, state, transactionID, nonce, consent, expiresAt, wechat, channel, clientProofHash, expectedUserID); err != nil {
 		return authStart{}, err
 	}
 	authorizationURL := o.authorizationURL(state, nonce)
 	webAuthorizationURL := ""
-	if wechat.TokenHash != "" {
+	if channel == "wechat" {
 		webAuthorizationURL = o.wechatAuthorizationURL(state)
 	}
 	return authStart{
 		AuthorizationURL: authorizationURL, WebAuthorizationURL: webAuthorizationURL,
-		TransactionID: transactionID, ExpiresAt: expiresAt,
+		TransactionID: transactionID, ClientProof: clientProof, Channel: channel, ExpiresAt: expiresAt,
 	}, nil
 }
 
@@ -228,24 +247,35 @@ func (o *teslaOAuth) wechatAuthorizationURL(state string) string {
 	return parsed.String()
 }
 
+type oauthCallbackResult struct {
+	Ticket      string
+	CallbackRef string
+	WeChat      bool
+}
+
 func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, error) {
+	result, err := o.callbackResult(ctx, values)
+	return result.Ticket, err
+}
+
+func (o *teslaOAuth) callbackResult(ctx context.Context, values url.Values) (oauthCallbackResult, error) {
 	if o == nil || o.store == nil || o.store.pool == nil || o.cipher == nil {
-		return "", errOAuthCallbackRejected
+		return oauthCallbackResult{}, errOAuthCallbackRejected
 	}
 	state := strings.TrimSpace(values.Get("state"))
 	if state == "" {
-		return "", errOAuthCallbackRejected
+		return oauthCallbackResult{}, errOAuthCallbackRejected
 	}
 	transaction, err := o.store.consumeAuthState(ctx, state)
 	if err != nil {
-		return "", errOAuthCallbackRejected
+		return oauthCallbackResult{}, errOAuthCallbackRejected
 	}
 	if values.Get("error") != "" {
-		return "", errOAuthCallbackRejected
+		return oauthCallbackResult{}, errOAuthCallbackRejected
 	}
 	code := strings.TrimSpace(values.Get("code"))
 	if code == "" {
-		return "", errOAuthCallbackRejected
+		return oauthCallbackResult{}, errOAuthCallbackRejected
 	}
 
 	exchangeContext := context.WithValue(ctx, oauth2.HTTPClient, o.client)
@@ -256,39 +286,61 @@ func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, e
 	)
 	if err != nil {
 		log.Printf("tesla oauth token exchange failed: %s", teslaCallbackLogError(err))
-		return "", err
+		return oauthCallbackResult{}, err
 	}
 	if token.AccessToken == "" || token.RefreshToken == "" || token.Expiry.IsZero() {
 		log.Printf("tesla oauth token incomplete: has_refresh=%t expiry_zero=%t", token.RefreshToken != "", token.Expiry.IsZero())
-		return "", errOAuthCallbackRejected
+		return oauthCallbackResult{}, errOAuthCallbackRejected
 	}
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok || rawIDToken == "" {
 		log.Printf("tesla oauth token missing id_token")
-		return "", errOAuthCallbackRejected
+		return oauthCallbackResult{}, errOAuthCallbackRejected
 	}
 	callbackIssuer := strings.TrimSpace(values.Get("issuer"))
 	idToken, err := o.verifyIDToken(exchangeContext, rawIDToken, callbackIssuer)
 	if err != nil {
 		logTeslaIDTokenVerificationFailure(callbackIssuer, rawIDToken, err)
-		return "", fmt.Errorf("tesla id_token: %w", err)
+		return oauthCallbackResult{}, fmt.Errorf("tesla id_token: %w", err)
 	}
 	var claims struct {
 		Subject string `json:"sub"`
 		Nonce   string `json:"nonce"`
 	}
 	if err := idToken.Claims(&claims); err != nil || claims.Subject == "" || claims.Nonce != transaction.Nonce {
-		return "", errOAuthCallbackRejected
+		return oauthCallbackResult{}, errOAuthCallbackRejected
 	}
 	accessCiphertext, err := o.cipher.encrypt(token.AccessToken)
 	if err != nil {
-		return "", err
+		return oauthCallbackResult{}, err
 	}
 	refreshCiphertext, err := o.cipher.encrypt(token.RefreshToken)
 	if err != nil {
-		return "", err
+		return oauthCallbackResult{}, err
 	}
-	userID, ticket, err := o.store.saveTeslaGrantAndLoginTicket(
+	if transaction.Channel == "wechat" {
+		ticket, err := randomToken()
+		if err != nil {
+			return oauthCallbackResult{}, err
+		}
+		ticketCiphertext, err := o.cipher.encrypt(ticket)
+		if err != nil {
+			return oauthCallbackResult{}, err
+		}
+		callbackRef, err := randomToken()
+		if err != nil {
+			return oauthCallbackResult{}, err
+		}
+		storedRef, err := o.store.saveTeslaGrantAndWeChatArtifact(
+			ctx, transaction, claims.Subject, accessCiphertext, refreshCiphertext,
+			transaction.Consent, token.Expiry.UTC(), ticket, ticketCiphertext, callbackRef,
+		)
+		if err != nil {
+			return oauthCallbackResult{}, err
+		}
+		return oauthCallbackResult{CallbackRef: storedRef, WeChat: true}, nil
+	}
+	_, ticket, err := o.store.saveTeslaGrantAndLoginTicket(
 		ctx,
 		claims.Subject,
 		accessCiphertext,
@@ -296,10 +348,7 @@ func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, e
 		transaction.Consent,
 		token.Expiry.UTC(),
 	)
-	if err == nil && transaction.WeChatLinkTokenHash != "" {
-		err = o.store.bindWeChatIdentityByHash(ctx, transaction.WeChatLinkTokenHash, userID)
-	}
-	return ticket, err
+	return oauthCallbackResult{Ticket: ticket}, err
 }
 
 func logTeslaIDTokenVerificationFailure(callbackIssuer, rawIDToken string, verifierErr error) {
@@ -325,6 +374,20 @@ func (o *teslaOAuth) appLink(ticket, errorCode string) string {
 	}
 	if errorCode != "" {
 		query.Set("error", errorCode)
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func (o *teslaOAuth) wechatAppLink(callbackRef, errorCode string) string {
+	parsed, err := url.Parse(o.appLink("", errorCode))
+	if err != nil {
+		return o.appLink("", errorCode)
+	}
+	query := parsed.Query()
+	query.Del("ticket")
+	if callbackRef != "" {
+		query.Set("callback_ref", callbackRef)
 	}
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
@@ -386,10 +449,26 @@ func (a *app) authRoute(w http.ResponseWriter, r *http.Request) bool {
 			return true
 		}
 		linkToken := strings.TrimSpace(r.Header.Get("X-WeChat-Link-Token"))
-		started, err := a.oauth.startForWeChat(r.Context(), consent, linkToken)
+		channel := strings.TrimSpace(strings.ToLower(r.Header.Get("X-WeChat-Channel")))
+		expectedUserID := ""
+		if channel == "wechat" && linkToken == "" {
+			var ok bool
+			expectedUserID, ok = a.auth(w, r)
+			if !ok {
+				return true
+			}
+		}
+		if channel == "" {
+			channel = "native"
+		}
+		started, err := a.oauth.startForClient(r.Context(), consent, linkToken, channel, expectedUserID)
 		if err != nil {
 			if strings.Contains(err.Error(), "wechat_link_") {
 				a.json(w, http.StatusUnauthorized, map[string]string{"error": "wechat_link_expired"})
+				return true
+			}
+			if strings.Contains(err.Error(), "wechat_identity_") {
+				a.json(w, http.StatusConflict, map[string]string{"error": "wechat_authorization_conflict"})
 				return true
 			}
 			a.json(w, http.StatusInternalServerError, map[string]string{"error": "oauth_start_failed"})
@@ -403,18 +482,18 @@ func (a *app) authRoute(w http.ResponseWriter, r *http.Request) bool {
 			return true
 		}
 		wechatFlow := a.store != nil && a.store.authStateIsWeChat(r.Context(), r.URL.Query().Get("state"))
-		ticket, err := a.oauth.callback(r.Context(), r.URL.Query())
+		result, err := a.oauth.callbackResult(r.Context(), r.URL.Query())
 		if err != nil {
 			redirect := a.oauth.appLink("", teslaAppLinkError(err))
 			if wechatFlow {
-				redirect = addAppLinkChannel(redirect, "wechat")
+				redirect = addAppLinkChannel(a.oauth.wechatAppLink("", teslaAppLinkError(err)), "wechat")
 			}
 			http.Redirect(w, r, redirect, http.StatusSeeOther)
 			return true
 		}
-		redirect := a.oauth.appLink(ticket, "")
-		if wechatFlow {
-			redirect = addAppLinkChannel(redirect, "wechat")
+		redirect := a.oauth.appLink(result.Ticket, "")
+		if result.WeChat || wechatFlow {
+			redirect = addAppLinkChannel(a.oauth.wechatAppLink(result.CallbackRef, ""), "wechat")
 		}
 		http.Redirect(w, r, redirect, http.StatusSeeOther)
 		return true
@@ -469,7 +548,7 @@ func (a *app) wechatAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	transaction, err := a.store.authTransactionForState(r.Context(), state)
-	if err != nil || transaction.WeChatLinkTokenHash == "" {
+	if err != nil || transaction.Channel != "wechat" {
 		a.json(w, http.StatusUnauthorized, map[string]string{"error": "invalid_oauth_state"})
 		return
 	}

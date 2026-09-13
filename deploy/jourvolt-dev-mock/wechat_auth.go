@@ -114,6 +114,29 @@ type wechatLinkInfo struct {
 	OpenIDHash string
 }
 
+type wechatAuthorizationRecord struct {
+	TransactionHash  string
+	Channel          string
+	ClientProofHash  string
+	ExpectedUserID   string
+	Status           string
+	ExpiresAt        time.Time
+	CallbackRefHash  string
+	TicketCiphertext string
+	CompletedUserID  string
+}
+
+type wechatAuthorizationRequest struct {
+	TransactionID string `json:"transaction_id"`
+	ClientProof   string `json:"client_proof"`
+	CallbackRef   string `json:"callback_ref"`
+}
+
+type wechatAuthorizationStatusResponse struct {
+	Status    string    `json:"status"`
+	ExpiresAt time.Time `json:"expires_at,omitempty"`
+}
+
 type wechatSessionRequest struct {
 	Code           string `json:"code"`
 	TermsVersion   string `json:"terms_version"`
@@ -191,6 +214,242 @@ func (a *app) wechatSession(w http.ResponseWriter, r *http.Request) {
 	a.json(w, http.StatusOK, wechatSessionResponse{Status: "link_required", LinkToken: linkToken, ExpiresAt: expiresAt})
 }
 
+func (a *app) wechatAuthorizationStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || a.store == nil || a.store.pool == nil {
+		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "store_unavailable"})
+		return
+	}
+	request, err := decodeWechatAuthorizationRequest(r)
+	if err != nil {
+		a.json(w, http.StatusBadRequest, map[string]string{"error": "invalid_wechat_authorization_request"})
+		return
+	}
+	record, err := a.store.wechatAuthorizationRecord(r.Context(), request.TransactionID, request.ClientProof, false)
+	if err != nil {
+		writeWechatAuthorizationError(w, err)
+		return
+	}
+	if !a.requireWechatAuthorizationOwner(w, r, record.ExpectedUserID) {
+		return
+	}
+	a.json(w, http.StatusOK, wechatAuthorizationStatusResponse{Status: record.Status, ExpiresAt: record.ExpiresAt})
+}
+
+func (a *app) wechatAuthorizationClaim(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || a.store == nil || a.store.pool == nil || a.oauth == nil || a.oauth.cipher == nil {
+		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "store_unavailable"})
+		return
+	}
+	request, err := decodeWechatAuthorizationRequest(r)
+	if err != nil {
+		a.json(w, http.StatusBadRequest, map[string]string{"error": "invalid_wechat_authorization_request"})
+		return
+	}
+	record, err := a.store.wechatAuthorizationRecord(r.Context(), request.TransactionID, request.ClientProof, false)
+	if err != nil {
+		writeWechatAuthorizationError(w, err)
+		return
+	}
+	if !a.requireWechatAuthorizationOwner(w, r, record.ExpectedUserID) {
+		return
+	}
+	claimed, err := a.store.claimWeChatAuthorization(r.Context(), request.TransactionID, request.ClientProof, request.CallbackRef, a.oauth.cipher)
+	if err != nil {
+		writeWechatAuthorizationError(w, err)
+		return
+	}
+	a.json(w, http.StatusOK, map[string]any{
+		"access_token": claimed.AccessToken, "refresh_token": claimed.RefreshToken,
+		"expires_in": claimed.ExpiresIn, "user": map[string]string{"id": claimed.UserID},
+	})
+	if a.telemetry != nil {
+		a.telemetry.retryAfterAuthorization(claimed.UserID)
+	}
+}
+
+func (a *app) wechatAuthorizationCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || a.store == nil || a.store.pool == nil {
+		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "store_unavailable"})
+		return
+	}
+	request, err := decodeWechatAuthorizationRequest(r)
+	if err != nil {
+		a.json(w, http.StatusBadRequest, map[string]string{"error": "invalid_wechat_authorization_request"})
+		return
+	}
+	record, err := a.store.wechatAuthorizationRecord(r.Context(), request.TransactionID, request.ClientProof, false)
+	if err != nil {
+		writeWechatAuthorizationError(w, err)
+		return
+	}
+	if !a.requireWechatAuthorizationOwner(w, r, record.ExpectedUserID) {
+		return
+	}
+	if err := a.store.cancelWeChatAuthorization(r.Context(), request.TransactionID, request.ClientProof); err != nil {
+		writeWechatAuthorizationError(w, err)
+		return
+	}
+	a.json(w, http.StatusOK, map[string]string{"status": "cancelled"})
+}
+
+func decodeWechatAuthorizationRequest(r *http.Request) (wechatAuthorizationRequest, error) {
+	var request wechatAuthorizationRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 16*1024)).Decode(&request); err != nil {
+		return request, err
+	}
+	request.TransactionID = strings.TrimSpace(request.TransactionID)
+	request.ClientProof = strings.TrimSpace(request.ClientProof)
+	request.CallbackRef = strings.TrimSpace(request.CallbackRef)
+	if request.TransactionID == "" || request.ClientProof == "" || len(request.TransactionID) > 256 || len(request.ClientProof) > 256 || len(request.CallbackRef) > 256 {
+		return request, errors.New("invalid_wechat_authorization_request")
+	}
+	return request, nil
+}
+
+func (a *app) requireWechatAuthorizationOwner(w http.ResponseWriter, r *http.Request, expectedUserID string) bool {
+	if expectedUserID == "" {
+		return true
+	}
+	userID, ok := a.auth(w, r)
+	if !ok {
+		return false
+	}
+	if userID != expectedUserID {
+		a.json(w, http.StatusForbidden, map[string]string{"error": "wechat_authorization_conflict"})
+		return false
+	}
+	return true
+}
+
+func writeWechatAuthorizationError(w http.ResponseWriter, err error) {
+	code := err.Error()
+	status := http.StatusUnauthorized
+	switch code {
+	case "wechat_authorization_pending":
+		status = http.StatusConflict
+	case "wechat_authorization_expired":
+		status = http.StatusGone
+	case "wechat_identity_conflict", "wechat_authorization_conflict":
+		status = http.StatusConflict
+	case "store_unavailable":
+		status = http.StatusServiceUnavailable
+	case "wechat_transaction_corrupt":
+		status = http.StatusInternalServerError
+	}
+	(&app{}).json(w, status, map[string]string{"error": code})
+}
+
+func (s *store) wechatAuthorizationRecord(ctx context.Context, transactionID, clientProof string, forUpdate bool) (wechatAuthorizationRecord, error) {
+	if s == nil || s.pool == nil {
+		return wechatAuthorizationRecord{}, errors.New("store_unavailable")
+	}
+	return queryWechatAuthorizationRecord(ctx, s.pool, transactionID, clientProof, forUpdate)
+}
+
+type queryer interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func queryWechatAuthorizationRecord(ctx context.Context, q queryer, transactionID, clientProof string, forUpdate bool) (wechatAuthorizationRecord, error) {
+	transactionID = strings.TrimSpace(transactionID)
+	clientProof = strings.TrimSpace(clientProof)
+	if transactionID == "" || clientProof == "" || len(transactionID) > 256 || len(clientProof) > 256 {
+		return wechatAuthorizationRecord{}, errors.New("wechat_authorization_invalid")
+	}
+	query := `
+SELECT transaction_hash, COALESCE(channel, 'native'), COALESCE(client_proof_hash, ''),
+COALESCE(expected_user_id, ''), COALESCE(wechat_status, 'pending'), expires_at,
+COALESCE(wechat_callback_ref_hash, ''), COALESCE(wechat_ticket_ciphertext, ''),
+COALESCE(wechat_completed_user_id, '')
+FROM jourvolt_auth_transactions
+WHERE transaction_hash=$1`
+	if forUpdate {
+		query += " FOR UPDATE"
+	}
+	var record wechatAuthorizationRecord
+	err := q.QueryRow(ctx, query, hashToken(transactionID)).Scan(
+		&record.TransactionHash, &record.Channel, &record.ClientProofHash,
+		&record.ExpectedUserID, &record.Status, &record.ExpiresAt,
+		&record.CallbackRefHash, &record.TicketCiphertext, &record.CompletedUserID,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return wechatAuthorizationRecord{}, errors.New("wechat_authorization_invalid")
+		}
+		return wechatAuthorizationRecord{}, err
+	}
+	if record.Channel != "wechat" || record.ClientProofHash != hashToken(clientProof) {
+		return wechatAuthorizationRecord{}, errors.New("wechat_authorization_invalid")
+	}
+	if record.Status != "claimed" && time.Now().UTC().After(record.ExpiresAt) {
+		return record, errors.New("wechat_authorization_expired")
+	}
+	return record, nil
+}
+
+func (s *store) claimWeChatAuthorization(ctx context.Context, transactionID, clientProof, callbackRef string, cipher *tokenCipher) (session, error) {
+	if s == nil || s.pool == nil || cipher == nil {
+		return session{}, errors.New("store_unavailable")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return session{}, err
+	}
+	defer tx.Rollback(ctx)
+	record, err := queryWechatAuthorizationRecord(ctx, tx, transactionID, clientProof, true)
+	if err != nil {
+		return session{}, err
+	}
+	if record.Status == "pending" {
+		return session{}, errors.New("wechat_authorization_pending")
+	}
+	if record.Status != "ready" {
+		return session{}, errors.New("wechat_authorization_expired")
+	}
+	if callbackRef != "" && hashToken(strings.TrimSpace(callbackRef)) != record.CallbackRefHash {
+		return session{}, errors.New("wechat_authorization_invalid")
+	}
+	ticket, err := cipher.decrypt(record.TicketCiphertext)
+	if err != nil || ticket == "" {
+		return session{}, errors.New("wechat_transaction_corrupt")
+	}
+	claimed, err := s.exchangeLoginTicketTx(ctx, tx, ticket)
+	if err != nil {
+		return session{}, err
+	}
+	commandTag, err := tx.Exec(ctx, `
+UPDATE jourvolt_auth_transactions SET wechat_status='claimed', wechat_claimed_at=now()
+WHERE transaction_hash=$1 AND wechat_status='ready'`, record.TransactionHash)
+	if err != nil {
+		return session{}, err
+	}
+	if commandTag.RowsAffected() != 1 {
+		return session{}, errors.New("wechat_authorization_invalid")
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return session{}, err
+	}
+	return claimed, nil
+}
+
+func (s *store) cancelWeChatAuthorization(ctx context.Context, transactionID, clientProof string) error {
+	if s == nil || s.pool == nil {
+		return errors.New("store_unavailable")
+	}
+	commandTag, err := s.pool.Exec(ctx, `
+UPDATE jourvolt_auth_transactions
+SET wechat_status='cancelled'
+WHERE transaction_hash=$1 AND channel='wechat' AND client_proof_hash=$2
+  AND wechat_status IN ('pending', 'ready') AND expires_at > now()`, hashToken(strings.TrimSpace(transactionID)), hashToken(strings.TrimSpace(clientProof)))
+	if err != nil {
+		return err
+	}
+	if commandTag.RowsAffected() != 1 {
+		return errors.New("wechat_authorization_invalid")
+	}
+	return nil
+}
+
 func (s *store) wechatIdentityUser(ctx context.Context, appID, openidHash string) (string, bool, error) {
 	if s == nil || s.pool == nil {
 		return "", false, errors.New("store_unavailable")
@@ -257,8 +516,15 @@ func (s *store) bindWeChatIdentityByHash(ctx context.Context, tokenHash, userID 
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if err := bindWeChatIdentityTx(ctx, tx, tokenHash, userID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func bindWeChatIdentityTx(ctx context.Context, tx pgx.Tx, tokenHash, userID string) error {
 	var info wechatLinkInfo
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 UPDATE jourvolt_wechat_link_challenges
 SET consumed_at=now()
 WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at > now()
@@ -287,8 +553,5 @@ VALUES ($1, $2, $3, now())`, info.AppID, info.OpenIDHash, userID)
 UPDATE jourvolt_wechat_identities SET user_id=$3, updated_at=now()
 WHERE app_id=$1 AND openid_hash=$2`, info.AppID, info.OpenIDHash, userID)
 	}
-	if err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+	return err
 }

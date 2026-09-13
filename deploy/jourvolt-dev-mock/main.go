@@ -76,6 +76,14 @@ CREATE TABLE IF NOT EXISTS jourvolt_auth_transactions (
     nonce TEXT NOT NULL,
     terms_version TEXT,
     privacy_version TEXT,
+    channel TEXT NOT NULL DEFAULT 'native',
+    client_proof_hash TEXT,
+    expected_user_id TEXT,
+    wechat_status TEXT NOT NULL DEFAULT 'pending',
+    wechat_callback_ref_hash TEXT,
+    wechat_ticket_ciphertext TEXT,
+    wechat_completed_user_id TEXT,
+    wechat_claimed_at TIMESTAMPTZ,
     expires_at TIMESTAMPTZ NOT NULL,
     consumed_at TIMESTAMPTZ
 );
@@ -132,7 +140,15 @@ ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS terms_version TE
 ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS privacy_version TEXT;
 ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_link_hash TEXT;
 ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_app_id TEXT;
-ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_openid_hash TEXT;`)
+ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_openid_hash TEXT;
+ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'native';
+ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS client_proof_hash TEXT;
+ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS expected_user_id TEXT;
+ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_status TEXT NOT NULL DEFAULT 'pending';
+ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_callback_ref_hash TEXT;
+ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_ticket_ciphertext TEXT;
+ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_completed_user_id TEXT;
+ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_claimed_at TIMESTAMPTZ;`)
 	if err != nil {
 		pool.Close()
 		return nil, err
@@ -431,6 +447,18 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/auth/wechat/session" {
 		a.wechatSession(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/auth/wechat/status" {
+		a.wechatAuthorizationStatus(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/auth/wechat/claim" {
+		a.wechatAuthorizationClaim(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/auth/wechat/cancel" {
+		a.wechatAuthorizationCancel(w, r)
 		return
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/oauth/wechat/authorize" {

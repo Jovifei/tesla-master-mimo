@@ -1,5 +1,6 @@
 const SESSION_KEY = 'matelink.wechat.session.v1'
 const PENDING_LINK_KEY = 'matelink.wechat.link.v1'
+const PENDING_TESLA_AUTH_KEY = 'matelink.wechat.tesla-auth.v1'
 
 export type AppSession = {
   accessToken: string
@@ -28,6 +29,7 @@ export function writeAppSession(storage: Pick<WechatStorage, 'setStorageSync'>, 
 export function clearAppSession(storage: Pick<WechatStorage, 'removeStorageSync'>): void {
   storage.removeStorageSync(SESSION_KEY)
   storage.removeStorageSync(PENDING_LINK_KEY)
+  storage.removeStorageSync(PENDING_TESLA_AUTH_KEY)
 }
 
 export type WechatStorage = {
@@ -58,4 +60,28 @@ export function clearPendingWechatLink(storage: Pick<WechatStorage, 'removeStora
   storage.removeStorageSync(PENDING_LINK_KEY)
 }
 
-export { SESSION_KEY, PENDING_LINK_KEY }
+export type PendingTeslaAuthorization = {
+  transactionId: string
+  clientProof: string
+  expiresAt: string | null
+}
+
+export function readPendingTeslaAuthorization(storage: Pick<WechatStorage, 'getStorageSync'>): PendingTeslaAuthorization | null {
+  const value = storage.getStorageSync(PENDING_TESLA_AUTH_KEY) as Partial<PendingTeslaAuthorization> | undefined
+  if (!value || typeof value.transactionId !== 'string' || value.transactionId.trim() === '' || typeof value.clientProof !== 'string' || value.clientProof.trim() === '') return null
+  return {
+    transactionId: value.transactionId,
+    clientProof: value.clientProof,
+    expiresAt: typeof value.expiresAt === 'string' ? value.expiresAt : null,
+  }
+}
+
+export function writePendingTeslaAuthorization(storage: Pick<WechatStorage, 'setStorageSync'>, pending: PendingTeslaAuthorization): void {
+  storage.setStorageSync(PENDING_TESLA_AUTH_KEY, pending)
+}
+
+export function clearPendingTeslaAuthorization(storage: Pick<WechatStorage, 'removeStorageSync'>): void {
+  storage.removeStorageSync(PENDING_TESLA_AUTH_KEY)
+}
+
+export { SESSION_KEY, PENDING_LINK_KEY, PENDING_TESLA_AUTH_KEY }
