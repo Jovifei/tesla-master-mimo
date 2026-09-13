@@ -1,9 +1,10 @@
 import { Button, Picker, Text, View } from '@tarojs/components'
-import Taro, { useDidShow, useUnload } from '@tarojs/taro'
+import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
-import { historyRowKey, mergeHistoryByKey, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
-import { matelinkApi, ApiError } from '../../services/api'
-import { carSelectionStorageKey, type Car, type Drive, type HistoryPageMeta } from '../../services/types'
+import { historyRowKey, mergeHistoryByKey, mergeHistoryPages, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
+import { createRequestScopeGate } from '../../domain/request_scope'
+import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
+import { carSelectionStorageKey, type Car, type Drive, type HistoryPage, type HistoryPageMeta } from '../../services/types'
 import { readAppSession } from '../../services/session'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 
@@ -18,6 +19,11 @@ function value(value: string | number | null): string {
   return value == null || value === '' ? '暂无数据' : String(value)
 }
 
+const emptyMeta: HistoryPageMeta = {
+  page: 1, show: PAGE_SIZE, total: null, totalPages: null, availability: null,
+  source: null, qualityState: null, qualityReason: null, hasMore: false,
+}
+
 export default function DrivesPage() {
   const [cars, setCars] = useState<Car[]>([])
   const [car, setCar] = useState<Car | null>(null)
@@ -25,114 +31,193 @@ export default function DrivesPage() {
   const [meta, setMeta] = useState<HistoryPageMeta | null>(null)
   const [selected, setSelected] = useState<Drive | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [cacheWarning, setCacheWarning] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const itemsRef = useRef<Drive[]>([])
+  const pagesRef = useRef<HistoryPage<Drive>[]>([])
   const loadingMoreRef = useRef(false)
   const pageRef = useRef(0)
-  const scopeRef = useRef<string | null>(null)
-  const requestVersion = useRef(0)
+  const lifecycleEpoch = useRef(0)
+  const scopeGate = useRef(createRequestScopeGate())
 
-  const loadHistory = async (nextCar: Car, version: number, append = false) => {
-    const nextPage = append ? pageRef.current + 1 : 1
+  const resetHistoryState = () => {
+    itemsRef.current = []
+    pagesRef.current = []
+    pageRef.current = 0
+    setItems([])
+    setMeta(null)
+    setSelected(null)
+    setCacheWarning(false)
+  }
+
+  const invalidatePage = () => {
+    lifecycleEpoch.current += 1
+    scopeGate.current.invalidate()
+    loadingMoreRef.current = false
+    setLoading(false)
+    setLoadingMore(false)
+  }
+
+  const loadHistory = async (nextCar: Car, append = false) => {
     const session = readAppSession(Taro)
-    const cacheKey = historyCacheKey('drives', session?.userId ?? null, nextCar.stableId)
+    if (!session?.userId) {
+      setError('会话缺少账号标识，请重新登录')
+      return
+    }
+    if (append && loadingMoreRef.current) return
+    const nextPage = append ? pageRef.current + 1 : 1
+    let apiOrigin: string
+    let ticket: { isCurrent: () => boolean }
+    try {
+      apiOrigin = getApiOrigin()
+      ticket = scopeGate.current.begin('history')
+    } catch (reason) {
+      setError(errorMessage(reason))
+      return
+    }
+    const cacheKey = historyCacheKey('drives', session.userId, nextCar.stableId, apiOrigin, getApiSessionGeneration())
+
     if (!append) {
-      const cached = readHistoryCache<Drive>(Taro, cacheKey)
-      if (cached.length > 0 && version === requestVersion.current) {
+      loadingMoreRef.current = false
+      itemsRef.current = []
+      pagesRef.current = []
+      pageRef.current = 0
+      if (ticket.isCurrent()) {
+        setItems([])
+        setMeta(null)
+        setSelected(null)
+        setCacheWarning(false)
+        setLoadingMore(false)
+      }
+      const cached = sortHistoryByStartDate(readHistoryCache<Drive>(Taro, cacheKey))
+      if (ticket.isCurrent() && cached.length > 0) {
         itemsRef.current = cached
         setItems(cached)
-        setMeta(current => current ?? { page: 1, show: PAGE_SIZE, total: null, totalPages: null, availability: 'cached', source: 'local_history', qualityState: null, qualityReason: null, hasMore: true })
+        setMeta({ ...emptyMeta, availability: 'cached', source: 'local_history', hasMore: true })
       }
     }
+
     if (append) {
-      if (loadingMoreRef.current) return
       loadingMoreRef.current = true
       setLoadingMore(true)
+    } else {
+      setLoading(true)
     }
-    else setLoading(true)
+
     try {
       const result = await matelinkApi.getDrives(nextCar.id, nextPage, PAGE_SIZE)
-      if (version !== requestVersion.current) return
-      const previous = itemsRef.current
-      const merged = mergeHistoryByKey(previous, result.items, historyRowKey)
+      if (!ticket.isCurrent()) return
+      const pages = append ? [...pagesRef.current, result] : [result]
+      const merged = mergeHistoryByKey(itemsRef.current, result.items, historyRowKey)
       const sortedItems = sortHistoryByStartDate(merged.items)
+      const pageState = mergeHistoryPages([], pages, historyRowKey)
+      const pageNumberValid = result.meta.page === nextPage
+      const paginationBroken = !pageNumberValid || (pages.length > 1 && !pageState.complete)
       itemsRef.current = sortedItems
+      pagesRef.current = pages
+      pageRef.current = result.meta.page
       setItems(sortedItems)
-      writeHistoryCache(Taro, cacheKey, sortedItems)
-      setMeta(result.meta)
-      pageRef.current = nextPage
-      setError(null)
+      const saved = writeHistoryCache(Taro, cacheKey, sortedItems)
+      setCacheWarning(!saved)
+      if (paginationBroken) {
+        setMeta({ ...result.meta, hasMore: false, qualityReason: result.meta.qualityReason ?? 'pagination_incomplete' })
+        setError('行程分页响应不完整，请重新加载')
+      } else {
+        setMeta(result.meta)
+        setError(null)
+      }
     } catch (reason) {
-      if (version !== requestVersion.current) return
+      if (!ticket.isCurrent()) return
       setError(errorMessage(reason))
       if (append && itemsRef.current.length > 0) setMeta(current => current ? { ...current, hasMore: true } : current)
     } finally {
-      if (append) loadingMoreRef.current = false
-      if (version === requestVersion.current) {
+      if (ticket.isCurrent()) {
         setLoading(false)
-        setLoadingMore(false)
+        if (append) {
+          loadingMoreRef.current = false
+          setLoadingMore(false)
+        }
       }
     }
   }
 
   const load = async () => {
-    const version = ++requestVersion.current
+    const pageEpoch = lifecycleEpoch.current
+    const sessionGeneration = getApiSessionGeneration()
     const session = readAppSession(Taro)
-    if (!session) {
-      setCars([]); setCar(null); itemsRef.current = []; setItems([]); setMeta(null); setSelected(null); setError('请先在“我的”中完成微信登录')
+    if (!session?.userId) {
+      invalidatePage()
+      setCars([])
+      setCar(null)
+      resetHistoryState()
+      setError('请先在“我的”中完成微信登录')
       return
     }
     setError(null)
     try {
       const nextCars = await matelinkApi.getCars()
-      if (version !== requestVersion.current) return
-      const scope = `${session.userId || 'anonymous'}:${nextCars.map(item => item.stableId).join(',')}`
-      if (scopeRef.current !== scope) {
-        scopeRef.current = scope
-        itemsRef.current = []; setItems([]); setMeta(null); setSelected(null); pageRef.current = 0
-      }
-      setCars(nextCars)
+      const current = readAppSession(Taro)
+      if (pageEpoch !== lifecycleEpoch.current || sessionGeneration !== getApiSessionGeneration() || current?.userId !== session.userId) return
       const stored = Taro.getStorageSync(carSelectionStorageKey(session.userId))
       const nextCar = nextCars.find(item => item.stableId === String(stored)) ?? nextCars[0] ?? null
-      setCar(nextCar)
+      setCars(nextCars)
       if (!nextCar) {
-        itemsRef.current = []; setItems([]); setMeta(null); setError('当前账号尚未绑定车辆')
+        scopeGate.current.invalidate()
+        setCar(null)
+        resetHistoryState()
+        setError('当前账号尚未绑定车辆')
         return
       }
+      scopeGate.current.bind({
+        accountId: session.userId,
+        stableVehicleId: nextCar.stableId,
+        apiOrigin: getApiOrigin(),
+        sessionGeneration,
+      })
       Taro.setStorageSync(carSelectionStorageKey(session.userId), nextCar.stableId)
-      await loadHistory(nextCar, version)
+      setCar(nextCar)
+      await loadHistory(nextCar)
     } catch (reason) {
-      if (version === requestVersion.current) setError(errorMessage(reason))
+      if (pageEpoch === lifecycleEpoch.current && sessionGeneration === getApiSessionGeneration()) setError(errorMessage(reason))
     }
   }
 
   useDidShow(() => { void load() })
-  useUnload(() => { requestVersion.current += 1; loadingMoreRef.current = false })
+  useDidHide(invalidatePage)
+  useUnload(invalidatePage)
 
   const selectCar = (event: { detail: { value: number | string } }) => {
     const next = cars[Number(event.detail.value)]
     const session = readAppSession(Taro)
-    if (!next || !session) return
+    if (!next || !session?.userId) return
+    try {
+      scopeGate.current.bind({ accountId: session.userId, stableVehicleId: next.stableId, apiOrigin: getApiOrigin(), sessionGeneration: getApiSessionGeneration() })
+    } catch (reason) {
+      setError(errorMessage(reason))
+      return
+    }
     Taro.setStorageSync(carSelectionStorageKey(session.userId), next.stableId)
-    setCar(next); itemsRef.current = []; setItems([]); setMeta(null); setSelected(null); pageRef.current = 0
-    const version = ++requestVersion.current
-    void loadHistory(next, version)
+    setCar(next)
+    resetHistoryState()
+    setError(null)
+    void loadHistory(next)
   }
 
   const loadMore = () => {
-    if (!car || loadingMore || loadingMoreRef.current || !pageCanContinue({ items, meta: meta || { page: 1, show: PAGE_SIZE, total: null, totalPages: null, availability: null, source: null, qualityState: null, qualityReason: null, hasMore: false } })) return
-    void loadHistory(car, requestVersion.current, true)
+    if (!car || loadingMore || loadingMoreRef.current || !pageCanContinue({ items, meta: meta || emptyMeta })) return
+    void loadHistory(car, true)
   }
 
   const openDetail = async (item: Drive) => {
     if (!car) return
-    setSelected(item)
+    const ticket = scopeGate.current.begin('detail')
+    if (ticket.isCurrent()) setSelected(item)
     try {
       const detail = await matelinkApi.getDriveDetail(car.id, item.id)
-      if (detail) setSelected(detail)
+      if (ticket.isCurrent() && detail) setSelected(detail)
     } catch (reason) {
-      setError(errorMessage(reason))
+      if (ticket.isCurrent()) setError(errorMessage(reason))
     }
   }
 
@@ -147,6 +232,7 @@ export default function DrivesPage() {
           </Picker>
         ) : null}
         {meta?.availability ? <Text className="muted">历史状态：{meta.availability}{meta.source ? ` · 来源：${meta.source}` : ''}</Text> : null}
+        {cacheWarning ? <Text className="error">在线数据已读到，但未保存到本机。</Text> : null}
       </View>
 
       {!readAppSession(Taro) ? (
@@ -158,7 +244,7 @@ export default function DrivesPage() {
           <Text className="section-title">行程记录 {items.length ? `（${items.length}）` : ''}</Text>
           {loading ? <Text className="muted">正在读取…</Text> : null}
           {items.map(item => (
-            <View key={item.id} className="status" onClick={() => { void openDetail(item) }}>
+            <View key={`${item.id}-${item.sessionId || item.startDate || ''}`} className="status" onClick={() => { void openDetail(item) }}>
               <View>
                 <Text className="status-label">{value(item.startAddress)} → {value(item.endAddress)}</Text>
                 <Text className="muted">{value(item.startDate)} · {value(item.durationMinutes)} 分钟</Text>

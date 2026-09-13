@@ -1,12 +1,13 @@
 import { Button, Picker, Text, View } from '@tarojs/components'
-import Taro, { useDidShow, useUnload } from '@tarojs/taro'
+import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 import ReadinessChecklist from '../../components/ReadinessChecklist'
 import MetricValue from '../../components/MetricValue'
 import { readinessViewFor } from '../../domain/readiness'
-import { matelinkApi, ApiError } from '../../services/api'
+import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { carSelectionStorageKey, type Car, type CarStatus, type ReadinessItem, type TelemetryPairing } from '../../services/types'
 import { readAppSession } from '../../services/session'
+import { createRequestScopeGate } from '../../domain/request_scope'
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message
@@ -31,11 +32,20 @@ export default function VehiclePage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const requestVersion = useRef(0)
+  const scopeGate = useRef(createRequestScopeGate())
+
+  const invalidatePage = () => {
+    requestVersion.current += 1
+    scopeGate.current.invalidate()
+    setLoading(false)
+  }
 
   const load = async () => {
     const version = ++requestVersion.current
+    const sessionGeneration = getApiSessionGeneration()
     const session = readAppSession(Taro)
-    if (!session) {
+    if (!session?.userId) {
+      scopeGate.current.invalidate()
       setCars([])
       setCar(null)
       setStatus(null)
@@ -48,26 +58,34 @@ export default function VehiclePage() {
     setError(null)
     try {
       const nextCars = await matelinkApi.getCars()
-      if (version !== requestVersion.current) return
+      const currentSession = readAppSession(Taro)
+      if (version !== requestVersion.current || sessionGeneration !== getApiSessionGeneration() || currentSession?.userId !== session.userId) return
       setCars(nextCars)
       const storedStableId = Taro.getStorageSync(carSelectionStorageKey(session.userId))
       const selected = nextCars.find(item => item.stableId === String(storedStableId)) ?? nextCars[0] ?? null
       setCar(selected)
       if (!selected) {
+        scopeGate.current.invalidate()
         setStatus(null)
         setReadinessItems([])
         setPairing(null)
         return
       }
+      scopeGate.current.bind({
+        accountId: session.userId,
+        stableVehicleId: selected.stableId,
+        apiOrigin: getApiOrigin(),
+        sessionGeneration,
+      })
       Taro.setStorageSync(carSelectionStorageKey(session.userId), selected.stableId)
       const [statusResult, readinessResult, pairingResult] = await Promise.allSettled([
-        matelinkApi.getCarStatus(selected.id),
-        matelinkApi.getReadiness(selected.id),
-        matelinkApi.getTelemetryPairing(selected.id),
+        (async () => { const ticket = scopeGate.current.begin('status'); const value = await matelinkApi.getCarStatus(selected.id); return { ticket, value } })(),
+        (async () => { const ticket = scopeGate.current.begin('readiness'); const value = await matelinkApi.getReadiness(selected.id); return { ticket, value } })(),
+        (async () => { const ticket = scopeGate.current.begin('pairing'); const value = await matelinkApi.getTelemetryPairing(selected.id); return { ticket, value } })(),
       ])
-      if (version !== requestVersion.current) return
-      if (statusResult.status === 'fulfilled') {
-        const nextStatus = statusResult.value
+      if (version !== requestVersion.current || sessionGeneration !== getApiSessionGeneration()) return
+      if (statusResult.status === 'fulfilled' && statusResult.value.ticket.isCurrent()) {
+        const nextStatus = statusResult.value.value
         setStatus(nextStatus)
         setCar(current => current ? {
           ...current,
@@ -77,27 +95,29 @@ export default function VehiclePage() {
           wheelType: nextStatus.wheelType ?? current.wheelType,
         } : current)
       } else setStatus(null)
-      if (readinessResult.status === 'fulfilled') setReadinessItems(readinessResult.value.items)
+      if (readinessResult.status === 'fulfilled' && readinessResult.value.ticket.isCurrent()) setReadinessItems(readinessResult.value.value.items)
       else setReadinessItems([])
-      if (pairingResult.status === 'fulfilled') setPairing(pairingResult.value)
+      if (pairingResult.status === 'fulfilled' && pairingResult.value.ticket.isCurrent()) setPairing(pairingResult.value.value)
       else setPairing(null)
       const failed = [statusResult, readinessResult, pairingResult].find(item => item.status === 'rejected')
       if (failed?.status === 'rejected') setError(messageFor(failed.reason))
     } catch (reason) {
-      if (version === requestVersion.current) setError(messageFor(reason))
+      if (version === requestVersion.current && sessionGeneration === getApiSessionGeneration()) setError(messageFor(reason))
     } finally {
-      if (version === requestVersion.current) setLoading(false)
+      if (version === requestVersion.current && sessionGeneration === getApiSessionGeneration()) setLoading(false)
     }
   }
 
   useDidShow(() => { void load() })
-  useUnload(() => { requestVersion.current += 1 })
+  useDidHide(invalidatePage)
+  useUnload(invalidatePage)
 
   const selectCar = (event: { detail: { value: number | string } }) => {
     const index = Number(event.detail.value)
     const next = cars[index]
     const session = readAppSession(Taro)
     if (!next || !session) return
+    scopeGate.current.invalidate()
     Taro.setStorageSync(carSelectionStorageKey(session.userId), next.stableId)
     setCar(next)
     setStatus(null)

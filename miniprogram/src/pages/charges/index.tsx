@@ -1,10 +1,11 @@
 import { Button, Picker, Text, View } from '@tarojs/components'
-import Taro, { useDidShow, useUnload } from '@tarojs/taro'
+import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
-import { matelinkApi, ApiError } from '../../services/api'
-import { carSelectionStorageKey, type Car, type Charge, type HistoryPageMeta } from '../../services/types'
+import { historyRowKey, mergeHistoryByKey, mergeHistoryPages, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
+import { createRequestScopeGate } from '../../domain/request_scope'
+import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
+import { carSelectionStorageKey, type Car, type Charge, type HistoryPage, type HistoryPageMeta } from '../../services/types'
 import { readAppSession } from '../../services/session'
-import { historyRowKey, mergeHistoryByKey, sortHistoryByStartDate } from '../../domain/history'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 
 const PAGE_SIZE = 20
@@ -18,6 +19,11 @@ function value(value: string | number | null): string {
   return value == null || value === '' ? '暂无数据' : String(value)
 }
 
+const emptyMeta: HistoryPageMeta = {
+  page: 1, show: PAGE_SIZE, total: null, totalPages: null, availability: null,
+  source: null, qualityState: null, qualityReason: null, hasMore: false,
+}
+
 export default function ChargesPage() {
   const [cars, setCars] = useState<Car[]>([])
   const [car, setCar] = useState<Car | null>(null)
@@ -26,125 +32,207 @@ export default function ChargesPage() {
   const [meta, setMeta] = useState<HistoryPageMeta | null>(null)
   const [selected, setSelected] = useState<Charge | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [cacheWarning, setCacheWarning] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const itemsRef = useRef<Charge[]>([])
+  const pagesRef = useRef<HistoryPage<Charge>[]>([])
   const loadingMoreRef = useRef(false)
   const pageRef = useRef(0)
-  const scopeRef = useRef<string | null>(null)
-  const requestVersion = useRef(0)
+  const lifecycleEpoch = useRef(0)
+  const scopeGate = useRef(createRequestScopeGate())
 
-  const loadHistory = async (nextCar: Car, version: number, append = false) => {
-    const nextPage = append ? pageRef.current + 1 : 1
+  const resetHistoryState = () => {
+    itemsRef.current = []
+    pagesRef.current = []
+    pageRef.current = 0
+    setItems([])
+    setMeta(null)
+    setSelected(null)
+    setCacheWarning(false)
+  }
+
+  const invalidatePage = () => {
+    lifecycleEpoch.current += 1
+    scopeGate.current.invalidate()
+    loadingMoreRef.current = false
+    setLoading(false)
+    setLoadingMore(false)
+  }
+
+  const loadHistory = async (nextCar: Car, append = false) => {
     const session = readAppSession(Taro)
-    const cacheKey = historyCacheKey('charges', session?.userId ?? null, nextCar.stableId)
+    if (!session?.userId) {
+      setError('会话缺少账号标识，请重新登录')
+      return
+    }
+    if (append && loadingMoreRef.current) return
+    const nextPage = append ? pageRef.current + 1 : 1
+    let apiOrigin: string
+    let ticket: { isCurrent: () => boolean }
+    try {
+      apiOrigin = getApiOrigin()
+      ticket = scopeGate.current.begin('history')
+    } catch (reason) {
+      setError(errorMessage(reason))
+      return
+    }
+    const cacheKey = historyCacheKey('charges', session.userId, nextCar.stableId, apiOrigin, getApiSessionGeneration())
+
     if (!append) {
-      const cached = readHistoryCache<Charge>(Taro, cacheKey)
-      if (cached.length > 0 && version === requestVersion.current) {
+      loadingMoreRef.current = false
+      itemsRef.current = []
+      pagesRef.current = []
+      pageRef.current = 0
+      if (ticket.isCurrent()) {
+        setItems([])
+        setMeta(null)
+        setSelected(null)
+        setCacheWarning(false)
+        setLoadingMore(false)
+      }
+      const cached = sortHistoryByStartDate(readHistoryCache<Charge>(Taro, cacheKey))
+      if (ticket.isCurrent() && cached.length > 0) {
         itemsRef.current = cached
         setItems(cached)
-        setMeta(current => current ?? { page: 1, show: PAGE_SIZE, total: null, totalPages: null, availability: 'cached', source: 'local_history', qualityState: null, qualityReason: null, hasMore: true })
+        setMeta({ ...emptyMeta, availability: 'cached', source: 'local_history', hasMore: true })
       }
     }
+
     if (append) {
-      if (loadingMoreRef.current) return
       loadingMoreRef.current = true
       setLoadingMore(true)
+    } else {
+      setLoading(true)
     }
-    else setLoading(true)
+
     try {
       const result = await matelinkApi.getCharges(nextCar.id, nextPage, PAGE_SIZE)
-      if (version !== requestVersion.current) return
+      if (!ticket.isCurrent()) return
+      const pages = append ? [...pagesRef.current, result] : [result]
       const merged = mergeHistoryByKey(itemsRef.current, result.items, historyRowKey)
       const sortedItems = sortHistoryByStartDate(merged.items)
+      const pageState = mergeHistoryPages([], pages, historyRowKey)
+      const pageNumberValid = result.meta.page === nextPage
+      const paginationBroken = !pageNumberValid || (pages.length > 1 && !pageState.complete)
       itemsRef.current = sortedItems
+      pagesRef.current = pages
+      pageRef.current = result.meta.page
       setItems(sortedItems)
-      writeHistoryCache(Taro, cacheKey, sortedItems)
-      setMeta(result.meta)
-      pageRef.current = nextPage
-      setError(null)
+      const saved = writeHistoryCache(Taro, cacheKey, sortedItems)
+      setCacheWarning(!saved)
+      if (paginationBroken) {
+        setMeta({ ...result.meta, hasMore: false, qualityReason: result.meta.qualityReason ?? 'pagination_incomplete' })
+        setError('充电分页响应不完整，请重新加载')
+      } else {
+        setMeta(result.meta)
+        setError(null)
+      }
     } catch (reason) {
-      if (version !== requestVersion.current) return
+      if (!ticket.isCurrent()) return
       setError(errorMessage(reason))
       if (append && itemsRef.current.length > 0) setMeta(existing => existing ? { ...existing, hasMore: true } : existing)
     } finally {
-      if (append) loadingMoreRef.current = false
-      if (version === requestVersion.current) {
+      if (ticket.isCurrent()) {
         setLoading(false)
-        setLoadingMore(false)
+        if (append) {
+          loadingMoreRef.current = false
+          setLoadingMore(false)
+        }
       }
     }
   }
 
+  const loadCurrentCharge = async (nextCar: Car) => {
+    const ticket = scopeGate.current.begin('current')
+    try {
+      const result = await matelinkApi.getCurrentCharge(nextCar.id)
+      if (ticket.isCurrent()) setCurrent(result)
+    } catch (reason) {
+      if (ticket.isCurrent()) setError(previous => previous ?? errorMessage(reason))
+    }
+  }
+
   const load = async () => {
-    const version = ++requestVersion.current
+    const pageEpoch = lifecycleEpoch.current
+    const sessionGeneration = getApiSessionGeneration()
     const session = readAppSession(Taro)
-    if (!session) {
-      setCars([]); setCar(null); itemsRef.current = []; setItems([]); setCurrent(null); setMeta(null); setSelected(null); setError('请先在“我的”中完成微信登录')
+    if (!session?.userId) {
+      invalidatePage()
+      setCars([])
+      setCar(null)
+      setCurrent(null)
+      resetHistoryState()
+      setError('请先在“我的”中完成微信登录')
       return
     }
     setError(null)
     try {
       const nextCars = await matelinkApi.getCars()
-      if (version !== requestVersion.current) return
-      const scope = `${session.userId || 'anonymous'}:${nextCars.map(item => item.stableId).join(',')}`
-      if (scopeRef.current !== scope) {
-        scopeRef.current = scope
-        itemsRef.current = []; setItems([]); setCurrent(null); setMeta(null); setSelected(null); pageRef.current = 0
-      }
-      setCars(nextCars)
+      const currentSession = readAppSession(Taro)
+      if (pageEpoch !== lifecycleEpoch.current || sessionGeneration !== getApiSessionGeneration() || currentSession?.userId !== session.userId) return
       const stored = Taro.getStorageSync(carSelectionStorageKey(session.userId))
       const nextCar = nextCars.find(item => item.stableId === String(stored)) ?? nextCars[0] ?? null
-      setCar(nextCar)
+      setCars(nextCars)
       if (!nextCar) {
-        itemsRef.current = []; setItems([]); setCurrent(null); setMeta(null); setError('当前账号尚未绑定车辆')
+        scopeGate.current.invalidate()
+        setCar(null)
+        setCurrent(null)
+        resetHistoryState()
+        setError('当前账号尚未绑定车辆')
         return
       }
+      scopeGate.current.bind({
+        accountId: session.userId,
+        stableVehicleId: nextCar.stableId,
+        apiOrigin: getApiOrigin(),
+        sessionGeneration,
+      })
       Taro.setStorageSync(carSelectionStorageKey(session.userId), nextCar.stableId)
-      const [history, currentCharge] = await Promise.allSettled([
-        loadHistory(nextCar, version),
-        matelinkApi.getCurrentCharge(nextCar.id),
-      ])
-      if (version !== requestVersion.current) return
-      if (currentCharge.status === 'fulfilled') setCurrent(currentCharge.value)
-      else setCurrent(null)
-      if (history.status === 'rejected') setError(errorMessage(history.reason))
-      if (currentCharge.status === 'rejected') setError(previous => previous ?? errorMessage(currentCharge.reason))
+      setCar(nextCar)
+      loadingMoreRef.current = false
+      await Promise.all([loadHistory(nextCar), loadCurrentCharge(nextCar)])
     } catch (reason) {
-      if (version === requestVersion.current) setError(errorMessage(reason))
+      if (pageEpoch === lifecycleEpoch.current && sessionGeneration === getApiSessionGeneration()) setError(errorMessage(reason))
     }
   }
 
   useDidShow(() => { void load() })
-  useUnload(() => { requestVersion.current += 1; loadingMoreRef.current = false })
+  useDidHide(invalidatePage)
+  useUnload(invalidatePage)
 
   const selectCar = (event: { detail: { value: number | string } }) => {
     const next = cars[Number(event.detail.value)]
     const session = readAppSession(Taro)
-    if (!next || !session) return
+    if (!next || !session?.userId) return
+    try {
+      scopeGate.current.bind({ accountId: session.userId, stableVehicleId: next.stableId, apiOrigin: getApiOrigin(), sessionGeneration: getApiSessionGeneration() })
+    } catch (reason) {
+      setError(errorMessage(reason))
+      return
+    }
     Taro.setStorageSync(carSelectionStorageKey(session.userId), next.stableId)
-    setCar(next); itemsRef.current = []; setItems([]); setCurrent(null); setMeta(null); setSelected(null); pageRef.current = 0
-    const version = ++requestVersion.current
-    void Promise.allSettled([loadHistory(next, version), matelinkApi.getCurrentCharge(next.id)]).then(([history, active]) => {
-      if (version !== requestVersion.current) return
-      if (active.status === 'fulfilled') setCurrent(active.value)
-      if (history.status === 'rejected') setError(errorMessage(history.reason))
-      if (active.status === 'rejected') setError(previous => previous ?? errorMessage(active.reason))
-    })
+    setCar(next)
+    setCurrent(null)
+    resetHistoryState()
+    setError(null)
+    void Promise.all([loadHistory(next), loadCurrentCharge(next)])
   }
 
   const loadMore = () => {
-    if (car && meta?.hasMore && !loadingMore && !loadingMoreRef.current) void loadHistory(car, requestVersion.current, true)
+    if (!car || loadingMore || loadingMoreRef.current || !pageCanContinue({ items, meta: meta || emptyMeta })) return
+    void loadHistory(car, true)
   }
 
   const openDetail = async (item: Charge) => {
     if (!car) return
-    setSelected(item)
+    const ticket = scopeGate.current.begin('detail')
+    if (ticket.isCurrent()) setSelected(item)
     try {
       const detail = await matelinkApi.getChargeDetail(car.id, item.id)
-      if (detail) setSelected(detail)
+      if (ticket.isCurrent() && detail) setSelected(detail)
     } catch (reason) {
-      setError(errorMessage(reason))
+      if (ticket.isCurrent()) setError(errorMessage(reason))
     }
   }
 
@@ -159,6 +247,7 @@ export default function ChargesPage() {
           </Picker>
         ) : null}
         {meta?.availability ? <Text className="muted">历史状态：{meta.availability}{meta.source ? ` · 来源：${meta.source}` : ''}</Text> : null}
+        {cacheWarning ? <Text className="error">在线数据已读到，但未保存到本机。</Text> : null}
       </View>
 
       {current ? (
@@ -181,7 +270,7 @@ export default function ChargesPage() {
           <Text className="section-title">充电记录 {items.length ? `（${items.length}）` : ''}</Text>
           {loading ? <Text className="muted">正在读取…</Text> : null}
           {items.map(item => (
-            <View key={item.id} className="status" onClick={() => { void openDetail(item) }}>
+            <View key={`${item.id}-${item.sessionId || item.startDate || ''}`} className="status" onClick={() => { void openDetail(item) }}>
               <View>
                 <Text className="status-label">{value(item.address)}</Text>
                 <Text className="muted">{value(item.startDate)} · {value(item.durationMinutes)} 分钟</Text>

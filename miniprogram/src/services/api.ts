@@ -15,13 +15,17 @@ import type {
   RawDrive,
   TeslaAuthorization,
   TelemetryPairing,
+  WechatAuthorizationStatus,
 } from './types'
 import {
   clearAppSession,
+  clearPendingTeslaAuthorization,
   clearPendingWechatLink,
   readAppSession,
+  readPendingTeslaAuthorization,
   readPendingWechatLink,
   writeAppSession,
+  writePendingTeslaAuthorization,
   writePendingWechatLink,
   type AppSession,
 } from './session'
@@ -52,6 +56,10 @@ const errorMessages: Record<string, string> = {
   upstream_unavailable: '上游车辆服务暂时不可用，请稍后重试',
   vehicle_not_found: '当前账号没有这辆车的访问权限',
   history_unavailable: '历史数据暂时不可用，请稍后重试',
+  wechat_authorization_pending: 'Tesla 授权尚未返回，请完成官方页面后再检查',
+  wechat_authorization_expired: 'Tesla 授权事务已过期，请重新开始授权',
+  wechat_authorization_failed: 'Tesla 授权未完成，请重新开始授权',
+  wechat_authorization_conflict: 'Tesla 账号与当前微信账号不匹配',
 }
 
 export type ApiErrorOptions = {
@@ -100,6 +108,22 @@ function isRecord(value: unknown): value is UnknownRecord {
 function requireApiBaseUrl(): string {
   if (!apiBaseUrl || !apiBaseUrl.startsWith('https://')) throw new ApiConfigurationError()
   return apiBaseUrl
+}
+
+export function getApiOrigin(): string {
+  return requireApiBaseUrl()
+}
+
+export function isTrustedAuthorizationURL(raw: string): boolean {
+  try {
+    const parsed = new URL(raw)
+    if (parsed.protocol !== 'https:') return false
+    const apiHost = new URL(requireApiBaseUrl()).hostname
+    const host = parsed.hostname.toLowerCase()
+    return host === apiHost || host === 'auth.teslalink.joviluma.com' || host === 'auth.tesla.cn' || host === 'auth.tesla.com'
+  } catch {
+    return false
+  }
 }
 
 function errorBody(value: unknown): UnknownRecord {
@@ -193,8 +217,13 @@ function normalizeSession(raw: AuthSessionResponse, previousRefreshToken: string
 }
 
 let refreshPromise: Promise<AppSession> | null = null
+let refreshOwnerEpoch = -1
+let refreshOwnerUser: string | null = null
 const ticketExchangePromises = new Map<string, Promise<AppSession>>()
 let sessionEpoch = 0
+
+// Non-secret generation for page lifecycle guards; never use tokens in cache keys.
+export function getApiSessionGeneration(): number { return sessionEpoch }
 
 function sessionChangedError(): ApiError {
   return new ApiError(errorMessages.session_changed, { code: 'session_changed' })
@@ -216,24 +245,31 @@ async function performRefresh(): Promise<AppSession> {
     data: { refresh_token: current.refreshToken },
     header: { 'Content-Type': 'application/json' },
   })
+  const latest = readAppSession(Taro)
+  // Reject old failures as well as old successes before they reach the new UI.
+  if (epoch !== sessionEpoch || !latest || latest.userId !== current.userId || latest.refreshToken !== current.refreshToken) throw sessionChangedError()
   if (response.statusCode < 200 || response.statusCode >= 300) {
     throw toApiError(response.statusCode, response.data, response.header, '会话刷新失败')
   }
-  const latest = readAppSession(Taro)
-  if (epoch !== sessionEpoch || !latest || latest.refreshToken !== current.refreshToken) throw sessionChangedError()
   const next = normalizeSession(unwrap(response.data), current.refreshToken)
   next.userId = next.userId ?? current.userId
   next.linkRequired = next.linkRequired ?? current.linkRequired
   requireSessionIdentity(next)
+  if (next.userId !== current.userId) throw sessionChangedError()
   writeAppSession(Taro, next)
   return next
 }
 
 export function refreshSession(): Promise<AppSession> {
-  if (!refreshPromise) {
-    refreshPromise = performRefresh().finally(() => {
-      refreshPromise = null
+  const ownerUser = readAppSession(Taro)?.userId ?? null
+  if (!refreshPromise || refreshOwnerEpoch !== sessionEpoch || refreshOwnerUser !== ownerUser) {
+    refreshOwnerEpoch = sessionEpoch
+    refreshOwnerUser = ownerUser
+    const next = performRefresh().finally(() => {
+      // A previous account's finally must not clear the next account's flight.
+      if (refreshPromise === next) refreshPromise = null
     })
+    refreshPromise = next
   }
   return refreshPromise
 }
@@ -241,35 +277,57 @@ export function refreshSession(): Promise<AppSession> {
 type RequestControl = { allowRefresh?: boolean }
 
 export async function requestJson<T extends TaroGeneral.IAnyObject>(path: string, options: Omit<Taro.request.Option, 'url'> = {}, control: RequestControl = {}): Promise<T> {
-  const response = await rawRequest<T>(path, {
-    ...options,
-    header: {
-      ...(options.header ?? {}),
-      ...sessionHeaders(),
-    },
-  })
-  if (response.statusCode >= 200 && response.statusCode < 300) return response.data
-
-  const failure = toApiError(response.statusCode, response.data, response.header)
-  if (response.statusCode === 401 && control.allowRefresh !== false && path !== '/v1/session/refresh') {
-    const current = readAppSession(Taro)
-    if (current?.refreshToken) {
-      try {
-        await refreshSession()
-        return requestJson<T>(path, options, { allowRefresh: false })
-      } catch (refreshError) {
-        if (refreshError instanceof ApiError && refreshError.status === 401) {
-          const latest = readAppSession(Taro)
-          if (current?.refreshToken && latest?.refreshToken === current.refreshToken) {
-            sessionEpoch += 1
-            clearAppSession(Taro)
+  const epoch = sessionEpoch
+  const ownerUser = readAppSession(Taro)?.userId ?? null
+  const assertCurrent = () => {
+    if (epoch !== sessionEpoch || (readAppSession(Taro)?.userId ?? null) !== ownerUser) throw sessionChangedError()
+  }
+  let clearedOwnSession = false
+  const attempt = async (allowRefresh: boolean): Promise<T> => {
+    assertCurrent()
+    const sentSession = readAppSession(Taro)
+    const response = await rawRequest<T>(path, {
+      ...options,
+      header: {
+        ...(options.header ?? {}),
+        ...(sentSession ? { Authorization: `Bearer ${sentSession.accessToken}` } : {}),
+      },
+    })
+    assertCurrent()
+    if (response.statusCode >= 200 && response.statusCode < 300) return response.data
+    const failure = toApiError(response.statusCode, response.data, response.header)
+    if (response.statusCode === 401 && allowRefresh && path !== '/v1/session/refresh') {
+      const current = readAppSession(Taro)
+      if (current?.refreshToken) {
+        // Another request may already have rotated this account's token.
+        if (current.accessToken !== sentSession?.accessToken) return attempt(false)
+        try {
+          await refreshSession()
+        } catch (refreshError) {
+          assertCurrent()
+          if (refreshError instanceof ApiError && refreshError.status === 401) {
+            const latest = readAppSession(Taro)
+            if (latest?.refreshToken === current.refreshToken) {
+              sessionEpoch += 1
+              clearAppSession(Taro)
+              clearedOwnSession = true
+            }
           }
+          throw refreshError
         }
-        throw refreshError
+        assertCurrent()
+        return attempt(false)
       }
     }
+    throw failure
   }
-  throw failure
+  try { return await attempt(control.allowRefresh !== false) }
+  catch (reason) {
+    // Keep a genuine refresh rejection observable after this request cleared the
+    // same expired session; otherwise never publish errors from a replaced user.
+    if (!clearedOwnSession) assertCurrent()
+    throw reason
+  }
 }
 
 function normalizeCar(raw: RawCar): Car | null {
@@ -432,6 +490,7 @@ export const matelinkApi = {
   async loginWithWechat(consent: WechatConsent): Promise<WechatLoginResult> {
     requireApiBaseUrl()
     const epoch = ++sessionEpoch
+    clearPendingTeslaAuthorization(Taro)
     try {
       await requireWechatPrivacyAuthorization()
     } catch (reason) {
@@ -478,6 +537,7 @@ export const matelinkApi = {
   async logout(): Promise<void> {
     const epoch = ++sessionEpoch
     const session = readAppSession(Taro)
+    try { await matelinkApi.cancelWechatAuthorization() } catch { /* local logout must still complete */ }
     if (!session) {
       clearAppSession(Taro)
       return
@@ -534,17 +594,76 @@ export const matelinkApi = {
       header: {
         'X-JourVolt-Terms-Version': consent.termsVersion,
         'X-JourVolt-Privacy-Version': consent.privacyVersion,
+        'X-WeChat-Channel': 'wechat',
         ...(pendingLink ? { 'X-WeChat-Link-Token': pendingLink.linkToken } : {}),
       },
     })
     const value = unwrap(response)
-    if (!stringValue(value.authorization_url)) throw new ApiError('服务端未返回 Tesla 官方授权入口', { code: 'invalid_authorization_response' })
+    if (!stringValue(value.authorization_url) || !isTrustedAuthorizationURL(value.authorization_url)) throw new ApiError('服务端未返回可信的 Tesla 官方授权入口', { code: 'invalid_authorization_response' })
+    const transactionId = stringValue(value.transaction_id)
+    const clientProof = stringValue(value.client_proof)
+    if (!transactionId || !clientProof) throw new ApiError('服务端未返回有效的授权事务凭证', { code: 'invalid_authorization_response' })
+    if (value.web_authorization_url && !isTrustedAuthorizationURL(value.web_authorization_url)) throw new ApiError('服务端未返回可信的微信授权桥接入口', { code: 'invalid_authorization_response' })
+    writePendingTeslaAuthorization(Taro, {
+      transactionId,
+      clientProof,
+      expiresAt: expiresAt(value.expires_at, null),
+    })
     return {
       authorization_url: value.authorization_url,
       web_authorization_url: value.web_authorization_url ?? null,
-      transaction_id: value.transaction_id ?? null,
+      transaction_id: transactionId,
+      client_proof: clientProof,
+      channel: 'wechat',
       expires_at: value.expires_at ?? null,
     }
+  },
+
+  async getWechatAuthorizationStatus(): Promise<WechatAuthorizationStatus> {
+    const pending = readPendingTeslaAuthorization(Taro)
+    if (!pending) return { status: 'none', expiresAt: null }
+    const response = await rawRequest<ApiEnvelope<{ status?: string; expires_at?: string | null }> | { status?: string; expires_at?: string | null }>('/v1/auth/wechat/status', {
+      method: 'POST',
+      data: { transaction_id: pending.transactionId, client_proof: pending.clientProof },
+      header: { ...sessionHeaders(), 'Content-Type': 'application/json' },
+    })
+    if (response.statusCode < 200 || response.statusCode >= 300) throw toApiError(response.statusCode, response.data, response.header, 'Tesla 授权状态查询失败')
+    const payload = unwrap(response.data)
+    return { status: stringValue(payload.status) ?? 'unknown', expiresAt: expiresAt(payload.expires_at, null) ?? pending.expiresAt }
+  },
+
+  async claimWechatAuthorization(callbackRef = ''): Promise<AppSession> {
+    const pending = readPendingTeslaAuthorization(Taro)
+    if (!pending) throw new ApiError(errorMessages.wechat_authorization_expired, { code: 'wechat_authorization_expired' })
+    const response = await rawRequest<AuthSessionResponse>('/v1/auth/wechat/claim', {
+      method: 'POST',
+      data: {
+        transaction_id: pending.transactionId,
+        client_proof: pending.clientProof,
+        ...(callbackRef.trim() ? { callback_ref: callbackRef.trim() } : {}),
+      },
+      header: { ...sessionHeaders(), 'Content-Type': 'application/json' },
+    })
+    if (response.statusCode < 200 || response.statusCode >= 300) throw toApiError(response.statusCode, response.data, response.header, 'Tesla 授权领取失败')
+    const session = requireSessionIdentity(normalizeSession(unwrap(response.data), null))
+    clearPendingTeslaAuthorization(Taro)
+    clearPendingWechatLink(Taro)
+    writeAppSession(Taro, session)
+    return session
+  },
+
+  async cancelWechatAuthorization(): Promise<void> {
+    const pending = readPendingTeslaAuthorization(Taro)
+    if (!pending) return
+    const response = await rawRequest('/v1/auth/wechat/cancel', {
+      method: 'POST',
+      data: { transaction_id: pending.transactionId, client_proof: pending.clientProof },
+      header: { ...sessionHeaders(), 'Content-Type': 'application/json' },
+    })
+    if (response.statusCode >= 300 && response.statusCode !== 401 && response.statusCode !== 410) {
+      throw toApiError(response.statusCode, response.data, response.header, '取消 Tesla 授权失败')
+    }
+    clearPendingTeslaAuthorization(Taro)
   },
 
   async exchangeTeslaTicket(ticket: string): Promise<AppSession> {
@@ -564,6 +683,7 @@ export const matelinkApi = {
       }
       if (epoch !== sessionEpoch) throw sessionChangedError()
       const session = requireSessionIdentity(normalizeSession(unwrap(response.data), null))
+      clearPendingTeslaAuthorization(Taro)
       clearPendingWechatLink(Taro)
       writeAppSession(Taro, session)
       return session
@@ -604,6 +724,8 @@ export const matelinkApi = {
 
 export function resetApiSessionForTests(): void {
   refreshPromise = null
+  refreshOwnerEpoch = -1
+  refreshOwnerUser = null
   ticketExchangePromises.clear()
   sessionEpoch = 0
 }
