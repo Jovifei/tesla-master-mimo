@@ -3,7 +3,7 @@
 日期：2026-09-14  
 工作树：`E:\temp\matelink-wechat-miniprogram`  
 基线：`bf6425d846d7bc1850892f64af20dbda3df9c3c4`  
-验证代码提交：`4a111c9`  
+验证代码提交：`73a14bc`  
 Node：`v24.18.0`；npm：`11.16.0`；Go：`go1.22.10 windows/amd64`。
 
 ## 实际执行
@@ -18,7 +18,7 @@ Node：`v24.18.0`；npm：`11.16.0`；Go：`go1.22.10 windows/amd64`。
 | 隔离依赖 `build:weapp` | PASS | `TARO_APP_API_BASE_URL=https://api.teslalink.joviluma.com` |
 | 当前依赖 `build:weapp` | PASS | Taro 4.2.1；产物 30 files |
 | 微信业务产物扫描 | PASS | 自有 JS 排除 Taro vendor 后 `URLSearchParams=0`、`new URL=0`、动态 env=0、secret/token/private-key/password markers=0；API host 1 |
-| `go test ./... -count=1` | PASS with 15 SKIP | JSON：`E:\temp\matelink-m3-evidence-20260914-go-test.json`；失败 0，跳过均为缺少 `JOURVOLT_TEST_DATABASE_URL` 的 PostgreSQL 集成路径 |
+| `go test ./... -count=1` | PASS with 15 SKIP | JSON：`E:\temp\matelink-m3-evidence-20260914-go-test.json`；失败 0，跳过均为缺少 `JOURVOLT_TEST_DATABASE_URL` 的 PostgreSQL 集成路径；新增未知授权错误不泄露内部详情用例通过 |
 | `go vet ./...` | PASS | 当前 Go 源码 |
 | `go build ./...` | PASS | 当前 Go 源码 |
 | `go mod verify` | PASS | 输出 `all modules verified` |
