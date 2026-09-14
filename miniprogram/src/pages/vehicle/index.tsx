@@ -139,15 +139,17 @@ export default function VehiclePage() {
 
   const retryTelemetry = async () => {
     if (!car) return
+    const operation = ++requestVersion.current
     setLoading(true)
     setError(null)
     try {
       await matelinkApi.configureTelemetry(car.id)
+      if (operation !== requestVersion.current) return
       await load()
     } catch (reason) {
-      setError(messageFor(reason))
+      if (operation === requestVersion.current) setError(messageFor(reason))
     } finally {
-      setLoading(false)
+      if (operation === requestVersion.current) setLoading(false)
     }
   }
 

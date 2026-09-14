@@ -2,7 +2,13 @@ import type { HistoryPage } from '../services/types'
 
 export type HistoryLoadState = 'loading' | 'partial' | 'ready' | 'cached' | 'failed'
 export type HistoryMergeResult<T> = { items: T[]; retainedLocalCount: number; addedRemoteCount: number }
-export type HistoryPagesMergeResult<T> = HistoryMergeResult<T> & { receivedPages: number; complete: boolean }
+export type HistoryPagesMergeResult<T> = HistoryMergeResult<T> & {
+  receivedPages: number
+  validPrefix: boolean
+  complete: boolean
+  hasMore: boolean
+  errorReason: string | null
+}
 
 type HistoryIdentity = { id: string; sessionId?: string | null; startDate?: string | null }
 type Row = Record<string, unknown>
@@ -127,14 +133,47 @@ export function mergeHistoryByKey<T>(localItems: readonly T[], remoteItems: read
 export function mergeHistoryPages<T>(localItems: readonly T[], pages: readonly HistoryPage<T>[], keyOf: (item: T) => string): HistoryPagesMergeResult<T> {
   const merged = mergeHistoryByKey(localItems, pages.flatMap(page => page.items), keyOf)
   const seen = new Set<string>()
-  let contiguous = true
+  let validPrefix = true
+  let errorReason: string | null = null
   pages.forEach((page, index) => {
-    if (page.meta.page !== index + 1 || (index < pages.length - 1 && !page.meta.hasMore)) contiguous = false
+    if (!validPrefix) return
+    if (page.meta.page !== index + 1) {
+      validPrefix = false
+      errorReason = 'page_number_mismatch'
+      return
+    }
+    if (index < pages.length - 1 && !pages[index].meta.hasMore) {
+      validPrefix = false
+      errorReason = 'has_more_contradiction'
+      return
+    }
     const before = seen.size
     page.items.forEach(item => seen.add(keyOf(item)))
-    if ((page.items.length > 0 && seen.size === before) || (page.items.length === 0 && page.meta.hasMore)) contiguous = false
+    if (page.items.length > 0 && seen.size === before) {
+      validPrefix = false
+      errorReason = 'repeated_page'
+      return
+    }
+    if (page.items.length === 0 && page.meta.hasMore) {
+      validPrefix = false
+      errorReason = 'empty_page_with_more'
+      return
+    }
+    if (page.meta.totalPages != null && page.meta.page < page.meta.totalPages && !page.meta.hasMore) {
+      validPrefix = false
+      errorReason = 'total_pages_contradiction'
+    }
   })
-  return { ...merged, receivedPages: pages.length, complete: Boolean(contiguous && pages.length && !pages[pages.length - 1].meta.hasMore) }
+  const lastPage = pages[pages.length - 1]
+  const hasMore = Boolean(validPrefix && lastPage?.meta.hasMore)
+  return {
+    ...merged,
+    receivedPages: pages.length,
+    validPrefix,
+    complete: Boolean(validPrefix && lastPage && !lastPage.meta.hasMore),
+    hasMore,
+    errorReason,
+  }
 }
 
 export function pageCanContinue<T>(page: HistoryPage<T> | null): boolean { return Boolean(page?.meta.hasMore) }

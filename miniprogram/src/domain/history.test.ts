@@ -65,6 +65,27 @@ describe('history merge', () => {
     expect(historyScopeKey('user-a', 1)).not.toBe(historyScopeKey('user-a', 2))
   })
 
+  it('keeps a valid intermediate prefix loadable before the final page arrives', () => {
+    const pages = [1, 2].map(page => ({
+      items: [{ id: `drive-${page}`, sessionId: `session-${page}`, startDate: `2026-09-${page.toString().padStart(2, '0')}T00:00:00Z` }],
+      meta: { page, show: 20, total: 66, totalPages: 4, availability: 'available', source: 'telemetry_mqtt', qualityState: null, qualityReason: null, hasMore: true },
+    }))
+    const result = mergeHistoryPages([], pages, historyRowKey)
+    expect(result.validPrefix).toBe(true)
+    expect(result.complete).toBe(false)
+    expect(result.hasMore).toBe(true)
+    expect(result.errorReason).toBeNull()
+  })
+
+  it('blocks a page whose metadata contradicts the remaining total', () => {
+    const result = mergeHistoryPages([], [{
+      items: [{ id: 'drive-1', sessionId: 'session-1', startDate: '2026-09-01T00:00:00Z' }],
+      meta: { page: 1, show: 20, total: 66, totalPages: 4, availability: 'available', source: 'telemetry_mqtt', qualityState: null, qualityReason: null, hasMore: false },
+    }], historyRowKey)
+    expect(result.validPrefix).toBe(false)
+    expect(result.errorReason).toBe('total_pages_contradiction')
+  })
+
   it('keeps the merged list newest first while retaining unknown dates', () => {
     const sorted = sortHistoryByStartDate([
       { id: 'old', startDate: '2026-09-01T00:00:00Z' },

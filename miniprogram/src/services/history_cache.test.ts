@@ -19,7 +19,7 @@ describe('history cache', () => {
 
   it('round trips rows and treats malformed storage as empty', () => {
     const store = storage()
-    const key = historyCacheKey('charges', 'user-a', 'vehicle-a', 'https://api.example.test', 3)
+    const key = historyCacheKey('charges', 'user-a', 'vehicle-a', 'https://api.example.test')
     expect(writeHistoryCache(store, key, [{ id: 'charge-1' }])).toBe(true)
     expect(readHistoryCache<{ id: string }>(store, key)).toEqual([{ id: 'charge-1' }])
     const saved = store.values.get(key) as { schema: number; scope: string }
@@ -29,16 +29,27 @@ describe('history cache', () => {
     expect(readHistoryCache(store, key)).toEqual([])
   })
 
-  it('isolates API origins and session generations', () => {
+  it('isolates API origins while keeping a durable key across session generations', () => {
     const a = historyCacheKey('drives', 'user-a', 'vehicle-a', 'https://api-a.example.test', 1)
     const b = historyCacheKey('drives', 'user-a', 'vehicle-a', 'https://api-b.example.test', 1)
     const c = historyCacheKey('drives', 'user-a', 'vehicle-a', 'https://api-a.example.test', 2)
-    expect(new Set([a, b, c]).size).toBe(3)
+    expect(a).toBe(c)
+    expect(a).not.toBe(b)
   })
 
   it('reports a storage quota failure without throwing', () => {
     const failing = { setStorageSync: () => { throw new Error('quota') } }
     const key = historyCacheKey('drives', 'user-a', 'vehicle-a')
     expect(writeHistoryCache(failing, key, [{ id: 'drive-1' }])).toBe(false)
+  })
+
+  it('migrates strictly scoped v2 generation keys without deleting them', () => {
+    const store = storage() as ReturnType<typeof storage> & { getStorageInfoSync: () => { keys: string[] } }
+    store.getStorageInfoSync = () => ({ keys: [...store.values.keys()] })
+    const key = historyCacheKey('drives', 'user-a', 'vehicle-a', 'https://api.example.test')
+    const legacyKey = key.replace('.v3.', '.v2.') + '.7'
+    store.setStorageSync(legacyKey, { schema: 2, scope: legacyKey, items: [{ id: 'drive-1', sessionId: 's1' }], savedAt: 'now' })
+    expect(readHistoryCache(store, key)).toEqual([{ id: 'drive-1', sessionId: 's1' }])
+    expect(store.values.has(legacyKey)).toBe(true)
   })
 })

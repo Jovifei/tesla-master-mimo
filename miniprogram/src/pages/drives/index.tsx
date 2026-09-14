@@ -76,7 +76,7 @@ export default function DrivesPage() {
       setError(errorMessage(reason))
       return
     }
-    const cacheKey = historyCacheKey('drives', session.userId, nextCar.stableId, apiOrigin, getApiSessionGeneration())
+    const cacheKey = historyCacheKey('drives', session.userId, nextCar.stableId, apiOrigin)
 
     if (!append) {
       loadingMoreRef.current = false
@@ -109,24 +109,27 @@ export default function DrivesPage() {
       const result = await matelinkApi.getDrives(nextCar.id, nextPage, PAGE_SIZE)
       if (!ticket.isCurrent()) return
       const pages = append ? [...pagesRef.current, result] : [result]
-      const merged = mergeHistoryByKey(itemsRef.current, result.items, historyRowKey)
-      const sortedItems = sortHistoryByStartDate(merged.items)
       const pageState = mergeHistoryPages([], pages, historyRowKey)
       const pageNumberValid = result.meta.page === nextPage
-      const paginationBroken = !pageNumberValid || (pages.length > 1 && !pageState.complete)
+      const paginationBroken = !pageNumberValid || !pageState.validPrefix
+      if (paginationBroken) {
+        const reason = pageState.errorReason ?? 'pagination_incomplete'
+        setMeta(current => append && current
+          ? { ...current, hasMore: true, qualityReason: current.qualityReason ?? reason }
+          : { ...result.meta, hasMore: false, qualityReason: result.meta.qualityReason ?? reason })
+        setError('行程分页响应不完整，请重新加载')
+        return
+      }
+      const merged = mergeHistoryByKey(itemsRef.current, result.items, historyRowKey)
+      const sortedItems = sortHistoryByStartDate(merged.items)
       itemsRef.current = sortedItems
       pagesRef.current = pages
       pageRef.current = result.meta.page
       setItems(sortedItems)
       const saved = writeHistoryCache(Taro, cacheKey, sortedItems)
       setCacheWarning(!saved)
-      if (paginationBroken) {
-        setMeta({ ...result.meta, hasMore: false, qualityReason: result.meta.qualityReason ?? 'pagination_incomplete' })
-        setError('行程分页响应不完整，请重新加载')
-      } else {
-        setMeta(result.meta)
-        setError(null)
-      }
+      setMeta({ ...result.meta, hasMore: pageState.hasMore })
+      setError(null)
     } catch (reason) {
       if (!ticket.isCurrent()) return
       setError(errorMessage(reason))
@@ -191,6 +194,7 @@ export default function DrivesPage() {
     const next = cars[Number(event.detail.value)]
     const session = readAppSession(Taro)
     if (!next || !session?.userId) return
+    lifecycleEpoch.current += 1
     try {
       scopeGate.current.bind({ accountId: session.userId, stableVehicleId: next.stableId, apiOrigin: getApiOrigin(), sessionGeneration: getApiSessionGeneration() })
     } catch (reason) {
