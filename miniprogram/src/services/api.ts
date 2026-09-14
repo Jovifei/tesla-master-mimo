@@ -774,5 +774,6 @@ export function resetApiSessionForTests(): void {
   refreshOwnerEpoch = -1
   refreshOwnerUser = null
   ticketExchangePromises.clear()
+  wechatClaimPromises.clear()
   sessionEpoch = 0
 }

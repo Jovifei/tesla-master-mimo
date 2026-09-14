@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -76,5 +77,16 @@ func TestWeChatAuthorizationUsesOwnedBridgeURL(t *testing.T) {
 	parsed, err := url.Parse(got)
 	if err != nil || parsed.Host != "auth.example.com" || parsed.Path != "/oauth/wechat/authorize" || parsed.Query().Get("state") != "state-value" {
 		t.Fatalf("bridge URL = %q, %v", got, err)
+	}
+}
+
+func TestWeChatAuthorizationErrorsDoNotExposeInternalDetails(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	writeWechatAuthorizationError(recorder, errors.New("pq: password authentication failed for user production"))
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", recorder.Code)
+	}
+	if strings.Contains(recorder.Body.String(), "production") || !strings.Contains(recorder.Body.String(), `"wechat_authorization_unavailable"`) {
+		t.Fatalf("response leaked internal error: %s", recorder.Body.String())
 	}
 }

@@ -1,7 +1,7 @@
 import { Button, Text, View, WebView } from '@tarojs/components'
 import Taro, { useLoad, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
-import { ApiError, isTrustedAuthorizationURL, matelinkApi } from '../../services/api'
+import { ApiError, getApiSessionGeneration, isTrustedAuthorizationURL, matelinkApi } from '../../services/api'
 import { clearPendingTeslaAuthorization } from '../../services/session'
 
 function errorMessage(reason: unknown): string {
@@ -56,10 +56,11 @@ export default function AuthPage() {
 
   const resumeAuthorization = async () => {
     const operation = ++lifecycleEpoch.current
+    const sessionGeneration = getApiSessionGeneration()
     setError(null)
     try {
       const status = await matelinkApi.getWechatAuthorizationStatus()
-      if (!pageAlive.current || operation !== lifecycleEpoch.current) return
+      if (!pageAlive.current || operation !== lifecycleEpoch.current || sessionGeneration !== getApiSessionGeneration()) return
       if (status.status === 'ready') claimAuthorization()
       else if (status.status === 'pending') setError('授权尚未回流，请完成 Tesla 官方页面后再检查')
       else if (status.status === 'expired' || status.status === 'failed' || status.status === 'cancelled') {
@@ -68,7 +69,10 @@ export default function AuthPage() {
       } else if (status.status !== 'none') setError(`授权状态：${status.status}`)
       else setError('没有待恢复的授权事务')
     } catch (reason) {
-      if (!pageAlive.current || operation !== lifecycleEpoch.current) return
+      if (!pageAlive.current || operation !== lifecycleEpoch.current || sessionGeneration !== getApiSessionGeneration()) return
+      if (reason instanceof ApiError && (reason.code === 'wechat_authorization_expired' || reason.code === 'wechat_authorization_cancelled' || reason.code === 'wechat_authorization_failed')) {
+        clearPendingTeslaAuthorization(Taro)
+      }
       setError(errorMessage(reason))
     }
   }

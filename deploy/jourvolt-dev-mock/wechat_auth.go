@@ -234,7 +234,11 @@ func (a *app) wechatAuthorizationStatus(w http.ResponseWriter, r *http.Request) 
 	if !a.requireWechatAuthorizationOwner(w, r, record.ExpectedUserID) {
 		return
 	}
-	a.json(w, http.StatusOK, wechatAuthorizationStatusResponse{Status: record.Status, ExpiresAt: record.ExpiresAt})
+	expiresAt := record.ExpiresAt
+	if record.Status == "ready" && !record.TicketExpiresAt.IsZero() && record.TicketExpiresAt.Before(expiresAt) {
+		expiresAt = record.TicketExpiresAt
+	}
+	a.json(w, http.StatusOK, wechatAuthorizationStatusResponse{Status: record.Status, ExpiresAt: expiresAt})
 }
 
 func (a *app) wechatAuthorizationClaim(w http.ResponseWriter, r *http.Request) {
@@ -324,20 +328,29 @@ func (a *app) requireWechatAuthorizationOwner(w http.ResponseWriter, r *http.Req
 }
 
 func writeWechatAuthorizationError(w http.ResponseWriter, err error) {
-	code := err.Error()
-	status := http.StatusUnauthorized
-	switch code {
+	code := "wechat_authorization_unavailable"
+	status := http.StatusServiceUnavailable
+	switch err.Error() {
+	case "wechat_authorization_invalid":
+		code = "wechat_authorization_invalid"
+		status = http.StatusUnauthorized
 	case "wechat_authorization_pending":
+		code = "wechat_authorization_pending"
 		status = http.StatusConflict
 	case "wechat_authorization_failed", "wechat_authorization_cancelled", "wechat_authorization_claimed":
+		code = err.Error()
 		status = http.StatusConflict
 	case "wechat_authorization_expired":
+		code = "wechat_authorization_expired"
 		status = http.StatusGone
 	case "wechat_identity_conflict", "wechat_authorization_conflict":
+		code = "wechat_authorization_conflict"
 		status = http.StatusConflict
 	case "store_unavailable":
+		code = "store_unavailable"
 		status = http.StatusServiceUnavailable
-	case "wechat_transaction_corrupt":
+	case "wechat_transaction_corrupt", "invalid_login_ticket":
+		code = "wechat_transaction_corrupt"
 		status = http.StatusInternalServerError
 	}
 	(&app{}).json(w, status, map[string]string{"error": code})
