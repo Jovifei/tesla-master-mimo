@@ -13,7 +13,13 @@ function errorMessage(reason: unknown): string {
 }
 
 function errorMessagesForStatus(status: string): string {
-  return status === 'expired' ? 'Tesla 授权事务已过期，请重新开始授权' : 'Tesla 授权未完成，请重新开始授权'
+  switch (status) {
+    case 'expired': return 'Tesla 授权事务已过期，请重新开始授权'
+    case 'cancelled': return 'Tesla 授权已取消，请重新开始授权'
+    case 'failed': return 'Tesla 授权未完成，请重新开始授权'
+    case 'claimed': return '授权已领取，请点击微信登录恢复会话'
+    default: return `Tesla 授权状态：${status}`
+  }
 }
 
 export default function MePage() {
@@ -44,17 +50,27 @@ export default function MePage() {
       if (operation !== operationEpoch.current || sessionGeneration !== getApiSessionGeneration()) return
       if (status.status === 'ready') {
         const nextSession = await matelinkApi.claimWechatAuthorization()
-        if (operation !== operationEpoch.current || sessionGeneration !== getApiSessionGeneration()) return
+        // claim intentionally advances the API session generation after the
+        // server has committed; the claim result itself owns the new session.
+        if (operation !== operationEpoch.current) return
         setSession(nextSession)
         setLinkRequired(Boolean(nextSession.linkRequired))
         setAuthorizationPending(false)
         Taro.showToast({ title: 'Tesla 授权成功', icon: 'success' })
-      } else if (status.status === 'expired' || status.status === 'failed') {
+      } else if (status.status === 'expired' || status.status === 'failed' || status.status === 'cancelled') {
         clearPendingTeslaAuthorization(Taro)
         setAuthorizationPending(false)
         setError(errorMessagesForStatus(status.status))
+      } else if (status.status === 'claimed') {
+        setAuthorizationPending(false)
+        setError('授权已领取，请点击微信登录恢复会话')
       }
     } catch (reason) {
+      if (operation !== operationEpoch.current || sessionGeneration !== getApiSessionGeneration()) return
+      if (reason instanceof ApiError && (reason.code === 'wechat_authorization_expired' || reason.code === 'wechat_authorization_cancelled' || reason.code === 'wechat_authorization_failed')) {
+        clearPendingTeslaAuthorization(Taro)
+        setAuthorizationPending(false)
+      }
       setError(errorMessage(reason))
     }
   }
@@ -92,7 +108,7 @@ export default function MePage() {
         Taro.showToast({ title: '请继续完成 Tesla 授权', icon: 'none' })
       }
     } catch (reason) {
-      setError(errorMessage(reason))
+      if (operation === operationEpoch.current) setError(errorMessage(reason))
     } finally {
       if (operation === operationEpoch.current) setLoading(false)
     }
@@ -113,11 +129,12 @@ export default function MePage() {
       setAuthorizationPending(true)
       const url = `/pages/auth/index?url=${encodeURIComponent(authorizationUrl)}`
       Taro.navigateTo({ url }).catch(() => {
+        if (operation !== operationEpoch.current) return
         Taro.setClipboardData({ data: authorizationUrl })
         Taro.showToast({ title: '官方入口已复制，请在浏览器打开', icon: 'none' })
       })
     } catch (reason) {
-      setError(errorMessage(reason))
+      if (operation === operationEpoch.current) setError(errorMessage(reason))
     } finally {
       if (operation === operationEpoch.current) setLoading(false)
     }
@@ -137,7 +154,7 @@ export default function MePage() {
       setAuthorizationPending(false)
       Taro.showToast({ title: '已退出登录', icon: 'success' })
     } catch (reason) {
-      setError(errorMessage(reason))
+      if (operation === operationEpoch.current) setError(errorMessage(reason))
     } finally {
       if (operation === operationEpoch.current) setLoading(false)
     }

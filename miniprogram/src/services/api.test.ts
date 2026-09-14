@@ -121,7 +121,7 @@ describe('MateLink API transport', () => {
     session.writeAppSession(storageAdapter, {
       accessToken: 'access', refreshToken: 'refresh', expiresAt: null, userId: 'user-a', linkRequired: false,
     })
-    session.writePendingTeslaAuthorization(storageAdapter, { transactionId: 'txn-1', clientProof: 'proof-1', expiresAt: null })
+    session.writePendingTeslaAuthorization(storageAdapter, { transactionId: 'txn-1', clientProof: 'proof-1', apiOrigin: 'https://api.example.test', expiresAt: null })
     mocks.request
       .mockResolvedValueOnce({ statusCode: 200, data: { status: 'cancelled' }, header: {} })
       .mockResolvedValueOnce({ statusCode: 200, data: { status: 'logged_out' }, header: {} })
@@ -150,7 +150,7 @@ describe('MateLink API transport', () => {
       'X-JourVolt-Terms-Version': '2026-08-21',
       'X-JourVolt-Privacy-Version': '2026-08-21',
     })
-    expect(session.readPendingTeslaAuthorization(storageAdapter)).toMatchObject({ transactionId: 'txn', clientProof: 'proof' })
+    expect(session.readPendingTeslaAuthorization(storageAdapter)).toMatchObject({ transactionId: 'txn', clientProof: 'proof', apiOrigin: 'https://api.example.test' })
   })
 
   it('fails with a typed configuration error before wx.login when the base URL is absent', async () => {
@@ -175,11 +175,80 @@ describe('MateLink API transport', () => {
     expect(api.isTrustedAuthorizationURL('https://auth.tesla.cn/oauth2/v3/authorize')).toBe(true)
     expect(api.isTrustedAuthorizationURL('https://evil.example.test/login')).toBe(false)
     expect(api.isTrustedAuthorizationURL('http://auth.tesla.cn/login')).toBe(false)
+    expect(api.isTrustedAuthorizationURL('https://auth.tesla.cn/oauth2//v3/authorize')).toBe(false)
+    expect(api.isTrustedAuthorizationURL('https://auth.tesla.cn:')).toBe(false)
+  })
+
+  it('rejects a delayed claim after logout instead of restoring the cleared session', async () => {
+    const { api, session } = await modules()
+    session.writeAppSession(storageAdapter, {
+      accessToken: 'access-a', refreshToken: 'refresh-a', expiresAt: null, userId: 'user-a', linkRequired: false,
+    })
+    session.writePendingTeslaAuthorization(storageAdapter, { transactionId: 'txn-a', clientProof: 'proof-a', apiOrigin: 'https://api.example.test', expiresAt: null })
+    let resolveClaim!: (value: unknown) => void
+    const delayedClaim = new Promise(resolve => { resolveClaim = resolve })
+    mocks.request.mockImplementation((options: { url: string }) => {
+      if (options.url.endsWith('/v1/auth/wechat/claim')) return delayedClaim
+      return Promise.resolve({ statusCode: 200, data: { status: 'ok' }, header: {} })
+    })
+
+    const claim = api.matelinkApi.claimWechatAuthorization()
+    for (let index = 0; index < 8 && mocks.request.mock.calls.length < 1; index += 1) await Promise.resolve()
+    await api.matelinkApi.logout()
+    resolveClaim({ statusCode: 200, data: { access_token: 'resurrected', refresh_token: 'resurrected-refresh', user: { id: 'user-a' } }, header: {} })
+
+    await expect(claim).rejects.toMatchObject({ code: 'session_changed' })
+    expect(session.readAppSession(storageAdapter)).toBeNull()
+  })
+
+  it('keeps a replacement WeChat session and captured logout token across a delayed cancel', async () => {
+    const { api, session } = await modules()
+    session.writeAppSession(storageAdapter, {
+      accessToken: 'access-a', refreshToken: 'refresh-a', expiresAt: null, userId: 'user-a', linkRequired: false,
+    })
+    session.writePendingTeslaAuthorization(storageAdapter, { transactionId: 'txn-a', clientProof: 'proof-a', apiOrigin: 'https://api.example.test', expiresAt: null })
+    let resolveCancel!: (value: unknown) => void
+    const delayedCancel = new Promise(resolve => { resolveCancel = resolve })
+    mocks.login.mockResolvedValue({ code: 'wechat-code' })
+    mocks.request.mockImplementation((options: { url: string }) => {
+      if (options.url.endsWith('/v1/auth/wechat/cancel')) return delayedCancel
+      if (options.url.endsWith('/v1/auth/wechat/session')) return Promise.resolve({ statusCode: 200, data: { access_token: 'access-b', refresh_token: 'refresh-b', user: { id: 'user-b' } }, header: {} })
+      if (options.url.endsWith('/v1/session/logout')) return Promise.resolve({ statusCode: 200, data: { status: 'logged_out' }, header: {} })
+      return Promise.resolve({ statusCode: 200, data: {}, header: {} })
+    })
+
+    const logout = api.matelinkApi.logout()
+    for (let index = 0; index < 8 && !mocks.request.mock.calls.some(call => String(call[0]?.url ?? '').endsWith('/v1/auth/wechat/cancel')); index += 1) await Promise.resolve()
+    await expect(api.matelinkApi.loginWithWechat({ termsVersion: '2026-08-21', privacyVersion: '2026-08-21' })).resolves.toMatchObject({ status: 'authenticated' })
+    resolveCancel({ statusCode: 200, data: { status: 'cancelled' }, header: {} })
+    await logout
+
+    expect(session.readAppSession(storageAdapter)?.userId).toBe('user-b')
+    const logoutCall = mocks.request.mock.calls.find(call => String(call[0]?.url ?? '').endsWith('/v1/session/logout'))
+    expect(logoutCall?.[0].header.Authorization).toBe('Bearer access-a')
+  })
+
+  it('constructs history URLs and validates authorization without URL globals', async () => {
+    const { api } = await modules()
+    const runtime = globalThis as unknown as { URL?: unknown; URLSearchParams?: unknown }
+    const originalURL = runtime.URL
+    const original = runtime.URLSearchParams
+    runtime.URL = undefined
+    runtime.URLSearchParams = undefined
+    try {
+      mocks.request.mockResolvedValue({ statusCode: 200, data: { data: { drives: [], meta: { page: 1, show: 20, total: 0, total_pages: 0 } } }, header: {} })
+      await api.matelinkApi.getDrives(11, 1, 20)
+      expect(mocks.request.mock.calls[0][0].url).toContain('/api/v1/cars/11/drives?page=1&show=20')
+      expect(api.isTrustedAuthorizationURL('https://auth.tesla.cn/oauth2/v3/authorize')).toBe(true)
+    } finally {
+      runtime.URL = originalURL
+      runtime.URLSearchParams = original
+    }
   })
 
   it('checks and claims a ready WeChat authorization using the stored proof', async () => {
     const { api, session } = await modules()
-    session.writePendingTeslaAuthorization(storageAdapter, { transactionId: 'txn-1', clientProof: 'proof-1', expiresAt: null })
+    session.writePendingTeslaAuthorization(storageAdapter, { transactionId: 'txn-1', clientProof: 'proof-1', apiOrigin: 'https://api.example.test', expiresAt: null })
     mocks.request
       .mockResolvedValueOnce({ statusCode: 200, data: { status: 'ready', expires_at: '2026-09-13T01:00:00Z' }, header: {} })
       .mockResolvedValueOnce({ statusCode: 200, data: { access_token: 'access', refresh_token: 'refresh', expires_in: 900, user: { id: 'user-a' } }, header: {} })

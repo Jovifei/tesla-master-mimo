@@ -60,6 +60,8 @@ const errorMessages: Record<string, string> = {
   wechat_authorization_expired: 'Tesla 授权事务已过期，请重新开始授权',
   wechat_authorization_failed: 'Tesla 授权未完成，请重新开始授权',
   wechat_authorization_conflict: 'Tesla 账号与当前微信账号不匹配',
+  wechat_authorization_claimed: '授权已领取，请重新登录微信恢复会话',
+  wechat_authorization_cancelled: 'Tesla 授权已取消，请重新开始授权',
 }
 
 export type ApiErrorOptions = {
@@ -115,15 +117,32 @@ export function getApiOrigin(): string {
 }
 
 export function isTrustedAuthorizationURL(raw: string): boolean {
-  try {
-    const parsed = new URL(raw)
-    if (parsed.protocol !== 'https:') return false
-    const apiHost = new URL(requireApiBaseUrl()).hostname
-    const host = parsed.hostname.toLowerCase()
-    return host === apiHost || host === 'auth.teslalink.joviluma.com' || host === 'auth.tesla.cn' || host === 'auth.tesla.com'
-  } catch {
-    return false
-  }
+  const parsed = parseHttpsURL(raw)
+  if (!parsed) return false
+  const apiHost = parseHttpsURL(requireApiBaseUrl())?.hostname
+  const owned = parsed.hostname === apiHost || parsed.hostname === 'auth.teslalink.joviluma.com'
+  const tesla = parsed.hostname === 'auth.tesla.cn' || parsed.hostname === 'auth.tesla.com'
+  if (owned) return parsed.path === '/oauth/wechat/authorize' || parsed.path === '/oauth/callback'
+  if (tesla) return parsed.path === '/oauth2/v3/authorize' || parsed.path === '/authorize'
+  return false
+}
+
+type ParsedHttpsURL = { hostname: string; path: string }
+
+function parseHttpsURL(raw: string): ParsedHttpsURL | null {
+  if (typeof raw !== 'string' || raw.trim() !== raw || !raw.startsWith('https://')) return null
+  const rest = raw.slice('https://'.length)
+  const authorityEnd = rest.search(/[/?#]/)
+  const authority = authorityEnd < 0 ? rest : rest.slice(0, authorityEnd)
+  if (!authority || authority.includes('@') || authority.includes('\\') || authority.includes(' ')) return null
+  const portIndex = authority.lastIndexOf(':')
+  const hostname = (portIndex >= 0 ? authority.slice(0, portIndex) : authority).toLowerCase()
+  const port = portIndex >= 0 ? authority.slice(portIndex + 1) : ''
+  if (!hostname || (portIndex >= 0 && !port) || (port && port !== '443') || (port && !/^\d+$/.test(port)) || !/^[a-z0-9.-]+$/.test(hostname)) return null
+  const pathStart = authorityEnd < 0 ? rest.length : authorityEnd
+  const suffix = rest.slice(pathStart)
+  const path = suffix.split(/[?#]/)[0] || '/'
+  return { hostname, path }
 }
 
 function errorBody(value: unknown): UnknownRecord {
@@ -220,6 +239,7 @@ let refreshPromise: Promise<AppSession> | null = null
 let refreshOwnerEpoch = -1
 let refreshOwnerUser: string | null = null
 const ticketExchangePromises = new Map<string, Promise<AppSession>>()
+const wechatClaimPromises = new Map<string, Promise<AppSession>>()
 let sessionEpoch = 0
 
 // Non-secret generation for page lifecycle guards; never use tokens in cache keys.
@@ -453,8 +473,8 @@ function normalizeCharge(raw: RawCharge): Charge | null {
 }
 
 function historyPath(carId: number, kind: 'drives' | 'charges', page: number, show: number): string {
-  const params = new URLSearchParams({ page: String(page), show: String(show) })
-  return `/api/v1/cars/${carId}/${kind}?${params.toString()}`
+  const params = `page=${encodeURIComponent(String(page))}&show=${encodeURIComponent(String(show))}`
+  return `/api/v1/cars/${carId}/${kind}?${params}`
 }
 
 function historyResult<T>(raw: unknown, key: 'drives' | 'charges', page: number, show: number, mapper: (item: unknown) => T | null): HistoryPage<T> {
@@ -485,6 +505,17 @@ export const JOURVOLT_PRIVACY_VERSION = '2026-08-21'
 export type WechatLoginResult =
   | { status: 'authenticated'; session: AppSession }
   | { status: 'link_required'; expiresAt: string | null }
+
+async function cancelWechatAuthorizationRecord(pending: { transactionId: string; clientProof: string }, headers: TaroGeneral.IAnyObject): Promise<void> {
+  const response = await rawRequest('/v1/auth/wechat/cancel', {
+    method: 'POST',
+    data: { transaction_id: pending.transactionId, client_proof: pending.clientProof },
+    header: { ...headers, 'Content-Type': 'application/json' },
+  })
+  if (response.statusCode >= 300 && response.statusCode !== 401 && response.statusCode !== 410) {
+    throw toApiError(response.statusCode, response.data, response.header, '取消 Tesla 授权失败')
+  }
+}
 
 export const matelinkApi = {
   async loginWithWechat(consent: WechatConsent): Promise<WechatLoginResult> {
@@ -535,23 +566,23 @@ export const matelinkApi = {
   },
 
   async logout(): Promise<void> {
-    const epoch = ++sessionEpoch
     const session = readAppSession(Taro)
-    try { await matelinkApi.cancelWechatAuthorization() } catch { /* local logout must still complete */ }
-    if (!session) {
-      clearAppSession(Taro)
-      return
+    const pending = readPendingTeslaAuthorization(Taro)
+    const capturedHeaders = session ? { Authorization: `Bearer ${session.accessToken}` } : {}
+    sessionEpoch += 1
+    clearAppSession(Taro)
+    let pendingOriginMatches = false
+    try { pendingOriginMatches = Boolean(pending && pending.apiOrigin === getApiOrigin()) } catch { pendingOriginMatches = false }
+    if (pending && pendingOriginMatches) {
+      try { await cancelWechatAuthorizationRecord(pending, capturedHeaders) } catch { /* local logout must still complete */ }
     }
-    try {
-      const response = await rawRequest('/v1/session/logout', {
-        method: 'POST',
-        header: { ...sessionHeaders(), 'Content-Type': 'application/json' },
-      })
-      if (response.statusCode >= 300 && response.statusCode !== 401) {
-        throw toApiError(response.statusCode, response.data, response.header, '退出登录失败')
-      }
-    } finally {
-      if (epoch === sessionEpoch) clearAppSession(Taro)
+    if (!session) return
+    const response = await rawRequest('/v1/session/logout', {
+      method: 'POST',
+      header: { ...capturedHeaders, 'Content-Type': 'application/json' },
+    })
+    if (response.statusCode >= 300 && response.statusCode !== 401) {
+      throw toApiError(response.statusCode, response.data, response.header, '退出登录失败')
     }
   },
 
@@ -589,6 +620,7 @@ export const matelinkApi = {
   },
 
   async startTeslaAuthorization(consent: WechatConsent): Promise<TeslaAuthorization> {
+    const apiOrigin = getApiOrigin()
     const pendingLink = readPendingWechatLink(Taro)
     const response = await requestJson<ApiEnvelope<TeslaAuthorization> | TeslaAuthorization>('/v1/auth/tesla/start', {
       header: {
@@ -607,6 +639,7 @@ export const matelinkApi = {
     writePendingTeslaAuthorization(Taro, {
       transactionId,
       clientProof,
+      apiOrigin,
       expiresAt: expiresAt(value.expires_at, null),
     })
     return {
@@ -622,6 +655,7 @@ export const matelinkApi = {
   async getWechatAuthorizationStatus(): Promise<WechatAuthorizationStatus> {
     const pending = readPendingTeslaAuthorization(Taro)
     if (!pending) return { status: 'none', expiresAt: null }
+    if (pending.apiOrigin !== getApiOrigin()) throw sessionChangedError()
     const response = await rawRequest<ApiEnvelope<{ status?: string; expires_at?: string | null }> | { status?: string; expires_at?: string | null }>('/v1/auth/wechat/status', {
       method: 'POST',
       data: { transaction_id: pending.transactionId, client_proof: pending.clientProof },
@@ -635,35 +669,48 @@ export const matelinkApi = {
   async claimWechatAuthorization(callbackRef = ''): Promise<AppSession> {
     const pending = readPendingTeslaAuthorization(Taro)
     if (!pending) throw new ApiError(errorMessages.wechat_authorization_expired, { code: 'wechat_authorization_expired' })
-    const response = await rawRequest<AuthSessionResponse>('/v1/auth/wechat/claim', {
-      method: 'POST',
-      data: {
-        transaction_id: pending.transactionId,
-        client_proof: pending.clientProof,
-        ...(callbackRef.trim() ? { callback_ref: callbackRef.trim() } : {}),
-      },
-      header: { ...sessionHeaders(), 'Content-Type': 'application/json' },
-    })
-    if (response.statusCode < 200 || response.statusCode >= 300) throw toApiError(response.statusCode, response.data, response.header, 'Tesla 授权领取失败')
-    const session = requireSessionIdentity(normalizeSession(unwrap(response.data), null))
-    clearPendingTeslaAuthorization(Taro)
-    clearPendingWechatLink(Taro)
-    writeAppSession(Taro, session)
-    return session
+    const ownerEpoch = sessionEpoch
+    const ownerUser = readAppSession(Taro)?.userId ?? null
+    const apiOrigin = getApiOrigin()
+    if (pending.apiOrigin !== apiOrigin) throw sessionChangedError()
+    const ownerKey = `${apiOrigin}|${ownerUser || 'anonymous'}|${ownerEpoch}|${pending.transactionId}`
+    const existing = wechatClaimPromises.get(ownerKey)
+    if (existing) return existing
+    const claim = (async () => {
+      const response = await rawRequest<AuthSessionResponse>('/v1/auth/wechat/claim', {
+        method: 'POST',
+        data: {
+          transaction_id: pending.transactionId,
+          client_proof: pending.clientProof,
+          ...(callbackRef.trim() ? { callback_ref: callbackRef.trim() } : {}),
+        },
+        header: { ...sessionHeaders(), 'Content-Type': 'application/json' },
+      })
+      if (response.statusCode < 200 || response.statusCode >= 300) throw toApiError(response.statusCode, response.data, response.header, 'Tesla 授权领取失败')
+      const currentPending = readPendingTeslaAuthorization(Taro)
+      if (ownerEpoch !== sessionEpoch || (readAppSession(Taro)?.userId ?? null) !== ownerUser || !currentPending || currentPending.transactionId !== pending.transactionId || currentPending.clientProof !== pending.clientProof) throw sessionChangedError()
+      const session = requireSessionIdentity(normalizeSession(unwrap(response.data), null))
+      writeAppSession(Taro, session)
+      clearPendingTeslaAuthorization(Taro)
+      clearPendingWechatLink(Taro)
+      sessionEpoch += 1
+      return session
+    })()
+    wechatClaimPromises.set(ownerKey, claim)
+    try { return await claim } finally { if (wechatClaimPromises.get(ownerKey) === claim) wechatClaimPromises.delete(ownerKey) }
   },
 
   async cancelWechatAuthorization(): Promise<void> {
     const pending = readPendingTeslaAuthorization(Taro)
     if (!pending) return
-    const response = await rawRequest('/v1/auth/wechat/cancel', {
-      method: 'POST',
-      data: { transaction_id: pending.transactionId, client_proof: pending.clientProof },
-      header: { ...sessionHeaders(), 'Content-Type': 'application/json' },
-    })
-    if (response.statusCode >= 300 && response.statusCode !== 401 && response.statusCode !== 410) {
-      throw toApiError(response.statusCode, response.data, response.header, '取消 Tesla 授权失败')
+    if (pending.apiOrigin !== getApiOrigin()) throw sessionChangedError()
+    const ownerEpoch = sessionEpoch
+    const capturedHeaders = sessionHeaders()
+    await cancelWechatAuthorizationRecord(pending, capturedHeaders)
+    if (ownerEpoch === sessionEpoch) {
+      const current = readPendingTeslaAuthorization(Taro)
+      if (current?.transactionId === pending.transactionId && current.clientProof === pending.clientProof) clearPendingTeslaAuthorization(Taro)
     }
-    clearPendingTeslaAuthorization(Taro)
   },
 
   async exchangeTeslaTicket(ticket: string): Promise<AppSession> {

@@ -82,7 +82,9 @@ CREATE TABLE IF NOT EXISTS jourvolt_auth_transactions (
     wechat_status TEXT NOT NULL DEFAULT 'pending',
     wechat_callback_ref_hash TEXT,
     wechat_ticket_ciphertext TEXT,
+    wechat_ticket_expires_at TIMESTAMPTZ,
     wechat_completed_user_id TEXT,
+    wechat_failure_code TEXT,
     wechat_claimed_at TIMESTAMPTZ,
     expires_at TIMESTAMPTZ NOT NULL,
     consumed_at TIMESTAMPTZ
@@ -147,7 +149,9 @@ ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS expected_user_id
 ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_status TEXT NOT NULL DEFAULT 'pending';
 ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_callback_ref_hash TEXT;
 ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_ticket_ciphertext TEXT;
+ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_ticket_expires_at TIMESTAMPTZ;
 ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_completed_user_id TEXT;
+ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_failure_code TEXT;
 ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_claimed_at TIMESTAMPTZ;`)
 	if err != nil {
 		pool.Close()

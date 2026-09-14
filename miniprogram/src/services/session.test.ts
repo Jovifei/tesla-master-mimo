@@ -49,11 +49,11 @@ describe('session storage', () => {
 
   it('stores only the opaque Tesla transaction proof and clears it with the session', () => {
     const store = storage()
-    writePendingTeslaAuthorization(store, { transactionId: 'txn-1', clientProof: 'proof-1', expiresAt: null })
-    expect(readPendingTeslaAuthorization(store)).toEqual({ transactionId: 'txn-1', clientProof: 'proof-1', expiresAt: null })
+    writePendingTeslaAuthorization(store, { transactionId: 'txn-1', clientProof: 'proof-1', apiOrigin: 'https://api.example.test', expiresAt: null })
+    expect(readPendingTeslaAuthorization(store)).toEqual({ transactionId: 'txn-1', clientProof: 'proof-1', apiOrigin: 'https://api.example.test', expiresAt: null })
     clearPendingTeslaAuthorization(store)
     expect(readPendingTeslaAuthorization(store)).toBeNull()
-    writePendingTeslaAuthorization(store, { transactionId: 'txn-2', clientProof: 'proof-2', expiresAt: null })
+    writePendingTeslaAuthorization(store, { transactionId: 'txn-2', clientProof: 'proof-2', apiOrigin: 'https://api.example.test', expiresAt: null })
     clearAppSession(store)
     expect(readPendingTeslaAuthorization(store)).toBeNull()
   })

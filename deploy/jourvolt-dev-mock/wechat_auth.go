@@ -123,7 +123,9 @@ type wechatAuthorizationRecord struct {
 	ExpiresAt        time.Time
 	CallbackRefHash  string
 	TicketCiphertext string
+	TicketExpiresAt  time.Time
 	CompletedUserID  string
+	FailureCode      string
 }
 
 type wechatAuthorizationRequest struct {
@@ -327,6 +329,8 @@ func writeWechatAuthorizationError(w http.ResponseWriter, err error) {
 	switch code {
 	case "wechat_authorization_pending":
 		status = http.StatusConflict
+	case "wechat_authorization_failed", "wechat_authorization_cancelled", "wechat_authorization_claimed":
+		status = http.StatusConflict
 	case "wechat_authorization_expired":
 		status = http.StatusGone
 	case "wechat_identity_conflict", "wechat_authorization_conflict":
@@ -360,7 +364,8 @@ func queryWechatAuthorizationRecord(ctx context.Context, q queryer, transactionI
 SELECT transaction_hash, COALESCE(channel, 'native'), COALESCE(client_proof_hash, ''),
 COALESCE(expected_user_id, ''), COALESCE(wechat_status, 'pending'), expires_at,
 COALESCE(wechat_callback_ref_hash, ''), COALESCE(wechat_ticket_ciphertext, ''),
-COALESCE(wechat_completed_user_id, '')
+COALESCE(wechat_ticket_expires_at, 'epoch')::timestamptz,
+COALESCE(wechat_completed_user_id, ''), COALESCE(wechat_failure_code, '')
 FROM jourvolt_auth_transactions
 WHERE transaction_hash=$1`
 	if forUpdate {
@@ -370,7 +375,8 @@ WHERE transaction_hash=$1`
 	err := q.QueryRow(ctx, query, hashToken(transactionID)).Scan(
 		&record.TransactionHash, &record.Channel, &record.ClientProofHash,
 		&record.ExpectedUserID, &record.Status, &record.ExpiresAt,
-		&record.CallbackRefHash, &record.TicketCiphertext, &record.CompletedUserID,
+		&record.CallbackRefHash, &record.TicketCiphertext, &record.TicketExpiresAt,
+		&record.CompletedUserID, &record.FailureCode,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -382,6 +388,9 @@ WHERE transaction_hash=$1`
 		return wechatAuthorizationRecord{}, errors.New("wechat_authorization_invalid")
 	}
 	if record.Status != "claimed" && time.Now().UTC().After(record.ExpiresAt) {
+		return record, errors.New("wechat_authorization_expired")
+	}
+	if record.Status == "ready" && !record.TicketExpiresAt.IsZero() && time.Now().UTC().After(record.TicketExpiresAt) {
 		return record, errors.New("wechat_authorization_expired")
 	}
 	return record, nil
@@ -402,6 +411,15 @@ func (s *store) claimWeChatAuthorization(ctx context.Context, transactionID, cli
 	}
 	if record.Status == "pending" {
 		return session{}, errors.New("wechat_authorization_pending")
+	}
+	if record.Status == "failed" {
+		return session{}, errors.New("wechat_authorization_failed")
+	}
+	if record.Status == "cancelled" {
+		return session{}, errors.New("wechat_authorization_cancelled")
+	}
+	if record.Status == "claimed" {
+		return session{}, errors.New("wechat_authorization_claimed")
 	}
 	if record.Status != "ready" {
 		return session{}, errors.New("wechat_authorization_expired")
@@ -448,6 +466,17 @@ WHERE transaction_hash=$1 AND channel='wechat' AND client_proof_hash=$2
 		return errors.New("wechat_authorization_invalid")
 	}
 	return nil
+}
+
+func (s *store) markWeChatAuthorizationFailed(ctx context.Context, state, failureCode string) error {
+	if s == nil || s.pool == nil {
+		return errors.New("store_unavailable")
+	}
+	_, err := s.pool.Exec(ctx, `
+UPDATE jourvolt_auth_transactions
+SET wechat_status='failed', wechat_failure_code=$2
+WHERE state_hash=$1 AND channel='wechat' AND wechat_status='pending'`, hashToken(strings.TrimSpace(state)), sanitizeTeslaErrorCode(failureCode))
+	return err
 }
 
 func (s *store) wechatIdentityUser(ctx context.Context, appID, openidHash string) (string, bool, error) {

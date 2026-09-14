@@ -36,6 +36,7 @@ export type WechatStorage = {
   getStorageSync(key: string): unknown
   setStorageSync(key: string, value: unknown): void
   removeStorageSync(key: string): void
+  getStorageInfoSync?: () => { keys?: string[] }
 }
 
 export type PendingWechatLink = {
@@ -63,15 +64,17 @@ export function clearPendingWechatLink(storage: Pick<WechatStorage, 'removeStora
 export type PendingTeslaAuthorization = {
   transactionId: string
   clientProof: string
+  apiOrigin: string
   expiresAt: string | null
 }
 
 export function readPendingTeslaAuthorization(storage: Pick<WechatStorage, 'getStorageSync'>): PendingTeslaAuthorization | null {
   const value = storage.getStorageSync(PENDING_TESLA_AUTH_KEY) as Partial<PendingTeslaAuthorization> | undefined
-  if (!value || typeof value.transactionId !== 'string' || value.transactionId.trim() === '' || typeof value.clientProof !== 'string' || value.clientProof.trim() === '') return null
+  if (!value || typeof value.transactionId !== 'string' || value.transactionId.trim() === '' || typeof value.clientProof !== 'string' || value.clientProof.trim() === '' || typeof value.apiOrigin !== 'string' || !value.apiOrigin.startsWith('https://')) return null
   return {
     transactionId: value.transactionId,
     clientProof: value.clientProof,
+    apiOrigin: value.apiOrigin,
     expiresAt: typeof value.expiresAt === 'string' ? value.expiresAt : null,
   }
 }

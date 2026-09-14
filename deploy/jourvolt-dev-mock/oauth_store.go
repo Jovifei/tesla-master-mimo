@@ -33,7 +33,9 @@ type authTransaction struct {
 	WeChatStatus           string
 	WeChatCallbackRefHash  string
 	WeChatTicketCiphertext string
+	WeChatTicketExpiresAt  time.Time
 	WeChatCompletedUserID  string
+	WeChatFailureCode      string
 	WeChatLinkTokenHash    string
 	WeChatAppID            string
 	WeChatOpenIDHash       string
@@ -105,7 +107,8 @@ WHERE state_hash=$1 AND consumed_at IS NULL AND expires_at > now()
 	RETURNING transaction_hash, nonce, COALESCE(terms_version, ''), COALESCE(privacy_version, ''),
 COALESCE(channel, 'native'), COALESCE(client_proof_hash, ''), COALESCE(expected_user_id, ''),
 COALESCE(wechat_status, 'pending'), COALESCE(wechat_callback_ref_hash, ''),
-COALESCE(wechat_ticket_ciphertext, ''), COALESCE(wechat_completed_user_id, ''),
+COALESCE(wechat_ticket_ciphertext, ''), COALESCE(wechat_ticket_expires_at, 'epoch')::timestamptz,
+COALESCE(wechat_completed_user_id, ''), COALESCE(wechat_failure_code, ''),
 COALESCE(wechat_link_hash, ''), COALESCE(wechat_app_id, ''), COALESCE(wechat_openid_hash, '')`, hashToken(state)).Scan(
 		&transaction.TransactionHash,
 		&transaction.Nonce,
@@ -117,7 +120,9 @@ COALESCE(wechat_link_hash, ''), COALESCE(wechat_app_id, ''), COALESCE(wechat_ope
 		&transaction.WeChatStatus,
 		&transaction.WeChatCallbackRefHash,
 		&transaction.WeChatTicketCiphertext,
+		&transaction.WeChatTicketExpiresAt,
 		&transaction.WeChatCompletedUserID,
+		&transaction.WeChatFailureCode,
 		&transaction.WeChatLinkTokenHash,
 		&transaction.WeChatAppID,
 		&transaction.WeChatOpenIDHash,
@@ -149,7 +154,8 @@ func (s *store) authTransactionForState(ctx context.Context, state string) (auth
 SELECT transaction_hash, nonce, COALESCE(terms_version, ''), COALESCE(privacy_version, ''),
 COALESCE(channel, 'native'), COALESCE(client_proof_hash, ''), COALESCE(expected_user_id, ''),
 COALESCE(wechat_status, 'pending'), COALESCE(wechat_callback_ref_hash, ''),
-COALESCE(wechat_ticket_ciphertext, ''), COALESCE(wechat_completed_user_id, ''),
+COALESCE(wechat_ticket_ciphertext, ''), COALESCE(wechat_ticket_expires_at, 'epoch')::timestamptz,
+COALESCE(wechat_completed_user_id, ''), COALESCE(wechat_failure_code, ''),
 COALESCE(wechat_link_hash, ''), COALESCE(wechat_app_id, ''), COALESCE(wechat_openid_hash, '')
 FROM jourvolt_auth_transactions
 WHERE state_hash=$1 AND consumed_at IS NULL AND expires_at > now()`, hashToken(state)).Scan(
@@ -163,7 +169,9 @@ WHERE state_hash=$1 AND consumed_at IS NULL AND expires_at > now()`, hashToken(s
 		&transaction.WeChatStatus,
 		&transaction.WeChatCallbackRefHash,
 		&transaction.WeChatTicketCiphertext,
+		&transaction.WeChatTicketExpiresAt,
 		&transaction.WeChatCompletedUserID,
+		&transaction.WeChatFailureCode,
 		&transaction.WeChatLinkTokenHash,
 		&transaction.WeChatAppID,
 		&transaction.WeChatOpenIDHash,
@@ -298,7 +306,8 @@ func (s *store) saveTeslaGrantAndWeChatArtifact(
 	commandTag, err := tx.Exec(ctx, `
 UPDATE jourvolt_auth_transactions
 SET wechat_status='ready', wechat_callback_ref_hash=$2,
-    wechat_ticket_ciphertext=$3, wechat_completed_user_id=$4
+    wechat_ticket_ciphertext=$3, wechat_ticket_expires_at=now() + interval '2 minutes',
+    wechat_completed_user_id=$4, wechat_failure_code=NULL
 WHERE transaction_hash=$1 AND channel='wechat' AND consumed_at IS NOT NULL
   AND client_proof_hash IS NOT NULL AND wechat_status='pending'`,
 		transaction.TransactionHash, hashToken(callbackRef), ticketCiphertext, userID)

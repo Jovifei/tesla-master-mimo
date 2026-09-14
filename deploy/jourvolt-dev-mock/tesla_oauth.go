@@ -484,6 +484,9 @@ func (a *app) authRoute(w http.ResponseWriter, r *http.Request) bool {
 		wechatFlow := a.store != nil && a.store.authStateIsWeChat(r.Context(), r.URL.Query().Get("state"))
 		result, err := a.oauth.callbackResult(r.Context(), r.URL.Query())
 		if err != nil {
+			if wechatFlow && a.store != nil {
+				_ = a.store.markWeChatAuthorizationFailed(r.Context(), r.URL.Query().Get("state"), teslaAppLinkError(err))
+			}
 			redirect := a.oauth.appLink("", teslaAppLinkError(err))
 			if wechatFlow {
 				redirect = addAppLinkChannel(a.oauth.wechatAppLink("", teslaAppLinkError(err)), "wechat")
