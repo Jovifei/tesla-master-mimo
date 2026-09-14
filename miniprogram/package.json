@@ -1,7 +1,7 @@
 {
   "name": "@matelink/wechat-miniprogram",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "MateLink WeChat Mini Program client",
   "scripts": {
     "build:weapp": "taro build --type weapp",
