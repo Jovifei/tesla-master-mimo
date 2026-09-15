@@ -1,7 +1,8 @@
 import { Button, Picker, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
-import { historyRowKey, mergeHistoryByKey, mergeHistoryPages, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
+import { historyRowKey, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
+import { acceptHistoryPage } from '../../domain/history_controller'
 import { createRequestScopeGate } from '../../domain/request_scope'
 import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { carSelectionStorageKey, type Car, type Drive, type HistoryPage, type HistoryPageMeta } from '../../services/types'
@@ -108,27 +109,22 @@ export default function DrivesPage() {
     try {
       const result = await matelinkApi.getDrives(nextCar.id, nextPage, PAGE_SIZE)
       if (!ticket.isCurrent()) return
-      const pages = append ? [...pagesRef.current, result] : [result]
-      const pageState = mergeHistoryPages([], pages, historyRowKey)
-      const pageNumberValid = result.meta.page === nextPage
-      const paginationBroken = !pageNumberValid || !pageState.validPrefix
-      if (paginationBroken) {
-        const reason = pageState.errorReason ?? 'pagination_incomplete'
+      const decision = acceptHistoryPage({ pages: pagesRef.current, items: itemsRef.current, page: pageRef.current }, result, nextPage, historyRowKey)
+      if (!decision.accepted) {
+        const reason = decision.errorReason ?? 'pagination_incomplete'
         setMeta(current => append && current
           ? { ...current, hasMore: true, qualityReason: current.qualityReason ?? reason }
           : { ...result.meta, hasMore: false, qualityReason: result.meta.qualityReason ?? reason })
         setError('行程分页响应不完整，请重新加载')
         return
       }
-      const merged = mergeHistoryByKey(itemsRef.current, result.items, historyRowKey)
-      const sortedItems = sortHistoryByStartDate(merged.items)
-      itemsRef.current = sortedItems
-      pagesRef.current = pages
-      pageRef.current = result.meta.page
-      setItems(sortedItems)
-      const saved = writeHistoryCache(Taro, cacheKey, sortedItems)
+      itemsRef.current = decision.state.items
+      pagesRef.current = decision.state.pages
+      pageRef.current = decision.state.page
+      setItems(decision.state.items)
+      const saved = writeHistoryCache(Taro, cacheKey, decision.state.items)
       setCacheWarning(!saved)
-      setMeta({ ...result.meta, hasMore: pageState.hasMore })
+      setMeta({ ...result.meta, hasMore: decision.hasMore })
       setError(null)
     } catch (reason) {
       if (!ticket.isCurrent()) return
