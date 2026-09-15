@@ -52,4 +52,11 @@ describe('history cache', () => {
     expect(readHistoryCache(store, key)).toEqual([{ id: 'drive-1', sessionId: 's1' }])
     expect(store.values.has(legacyKey)).toBe(true)
   })
+
+  it('does not read or write anonymous history archives', () => {
+    const store = storage()
+    const key = historyCacheKey('drives', null, 'vehicle-a', 'https://api.example.test')
+    expect(writeHistoryCache(store, key, [{ id: 'anonymous-drive' }])).toBe(false)
+    expect(readHistoryCache<{ id: string }>(store, key)).toEqual([])
+  })
 })

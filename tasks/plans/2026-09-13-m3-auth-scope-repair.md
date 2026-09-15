@@ -34,7 +34,7 @@ release security remain separate gates and must not be collapsed into PASS.
 
 - PASS: auth commits `94fcb52` and `73a14bc`, history commits `31af6e8` and `20de767` close claim/cancel/logout ownership races, terminal recovery, strict callback handling, valid-prefix pagination, durable cache identity, and vehicle/page lifecycle races; page controllers now have direct four-page regressions.
 - PASS: release gate commit `4a111c9` increments the mini program to `0.2.2`, adds a mandatory PostgreSQL gate script, and records clean-install evidence.
-- PASS: current project typecheck, Vitest 53/53, clean `npm ci` typecheck/Vitest/build, configured WeChat build, Go test/vet/build/module verification.
+- PASS: current project typecheck, Vitest 54/54, clean `npm ci` typecheck/Vitest/build, configured WeChat build, Go test/vet/build/module verification.
 - BLOCKED: Go has 15 PostgreSQL skip events without `JOURVOLT_TEST_DATABASE_URL`; production dependency audit remains 12 vulnerabilities; real WeChat/Tesla/key/MQTT/device/history recovery and production deployment remain unverified.
 
 ## Review 2026-09-15 follow-up
@@ -42,3 +42,8 @@ release security remain separate gates and must not be collapsed into PASS.
 - PASS: commit `6811d66` preserves the WeChat channel when a consumed OAuth callback is retried, prevents a duplicate callback from falling into Android intent fallback, and stops unknown authorization errors from leaking internal details.
 - PASS: page controller regressions now cover both drives and charges with four pages/66 rows, failed-page retry, repeated-page rejection, duplicate-click watermarking, empty terminal pages, and contradictory metadata.
 - BLOCKED: the current machine still has no isolated PostgreSQL DSN; dependency peer constraints prevent a safe webpack/Taro audit upgrade; real platform and Tesla gates remain external.
+
+## Review 2026-09-15 cache and dependency follow-up
+
+- PASS: anonymous history archives are fail-closed; direct Babel upgraded to `7.29.7` with clean install/typecheck/Vitest/build evidence.
+- BLOCKED: production audit is reduced to 11 findings but still contains 3 critical Taro/swiper paths and 8 moderate build-chain paths; webpack upgrade remains incompatible with the locked Taro peer.

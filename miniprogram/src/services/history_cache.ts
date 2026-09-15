@@ -24,6 +24,7 @@ export function historyCacheKey(
 }
 
 export function readHistoryCache<T>(storage: Pick<WechatStorage, 'getStorageSync' | 'setStorageSync'>, key: string): T[] {
+  if (key.includes('.anonymous.')) return []
   try {
     const value = storage.getStorageSync(key) as Partial<HistoryCache<T>> | undefined
     if (value && value.schema === HISTORY_CACHE_SCHEMA && value.scope === key && Array.isArray(value.items)) return value.items
@@ -50,6 +51,7 @@ export function readHistoryCache<T>(storage: Pick<WechatStorage, 'getStorageSync
 }
 
 export function writeHistoryCache<T>(storage: Pick<WechatStorage, 'setStorageSync'>, key: string, items: readonly T[]): boolean {
+  if (key.includes('.anonymous.')) return false
   const cache: HistoryCache<T> = { schema: HISTORY_CACHE_SCHEMA, scope: key, items: [...items], savedAt: new Date().toISOString() }
   try {
     storage.setStorageSync(key, cache)
