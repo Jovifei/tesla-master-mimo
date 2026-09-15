@@ -3,7 +3,7 @@
 日期：2026-09-15（M3.1 复审后续收口）
 工作树：`E:\temp\matelink-wechat-miniprogram`  
 基线：`bf6425d846d7bc1850892f64af20dbda3df9c3c4`  
-验证代码提交：待本轮依赖/缓存提交后更新
+验证代码提交：`5097a90`
 Node：`v24.18.0`；npm：`11.16.0`；Go：`go1.22.10 windows/amd64`。
 
 ## 实际执行
