@@ -35,7 +35,7 @@ release security remain separate gates and must not be collapsed into PASS.
 - PASS: auth commits `94fcb52` and `73a14bc`, history commits `31af6e8` and `20de767` close claim/cancel/logout ownership races, terminal recovery, strict callback handling, valid-prefix pagination, durable cache identity, and vehicle/page lifecycle races; page controllers now have direct four-page regressions.
 - PASS: release gate commit `4a111c9` increments the mini program to `0.2.2`, adds a mandatory PostgreSQL gate script, and records clean-install evidence.
 - PASS: current project typecheck, Vitest 54/54, clean `npm ci` typecheck/Vitest/build, configured WeChat build, Go test/vet/build/module verification.
-- BLOCKED: Go has 15 PostgreSQL skip events without `JOURVOLT_TEST_DATABASE_URL`; production dependency audit remains 12 vulnerabilities; real WeChat/Tesla/key/MQTT/device/history recovery and production deployment remain unverified.
+- BLOCKED: Go had 15 PostgreSQL skip events at the 2026-09-14 checkpoint; the current follow-up has 16 skips without `JOURVOLT_TEST_DATABASE_URL`; production dependency audit remains blocked at 11 vulnerabilities; real WeChat/Tesla/key/MQTT/device/history recovery and production deployment remain unverified.
 
 ## Review 2026-09-15 follow-up
 

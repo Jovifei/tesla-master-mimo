@@ -11,7 +11,7 @@
 ## 已完成的技术准备
 
 - Taro 4.2.1 + React 18.3.1 + TypeScript 5.7.3 + Webpack 5 已锁定。
-- 隔离目录实际 `npm ci --ignore-scripts`、`npm run typecheck`、Vitest 8 文件/53 项测试、`npm run build:weapp` 已通过；完整证据见 `M3_1_TEST_EVIDENCE_20260914.md`。
+- 隔离目录实际 `npm ci --ignore-scripts`、`npm run typecheck`、Vitest 8 文件/54 项测试、`npm run build:weapp` 已通过；完整证据见 `M3_1_TEST_EVIDENCE_20260914.md`。
 - `npm run dev:weapp` 已进入 `Watching...`；用正式 API 地址构建时，产物包含固定 HTTPS host，不残留动态 `process.env`。
 - 四个 Tab 页面、微信会话/Tesla 关联、车辆/状态/readiness、行程/充电分页与详情、真实值/缺失值/质量边界和安全 README 已提交。
 - `project.config.json` 保留空 AppID；未写入 AppSecret、微信 `session_key`、Tesla token、私钥、VIN 或精确位置。
@@ -45,4 +45,4 @@
 
 `AUTH_FEASIBILITY=UNVERIFIED`。正式 AppID/主体/域名、微信后台能力、Tesla OAuth/虚拟钥匙在两平台真机上的可行性仍没有证据。M2 源码已具备接口和桥接实现，但本地构建不等于小程序已注册、可预览、可发布或已通过审核。
 
-`SECURITY_AUDIT=BLOCKED_FOR_RELEASE`。当前锁文件的 `npm audit --omit=dev --json` 报告 12 个漏洞（3 critical、8 moderate、1 low），完整树为 48 个；强制修复会引入 Taro 兼容性风险。发布前需要在保持 Taro 兼容的前提下逐项处置 advisory，并重新执行 typecheck、test、build 和真机检查。
+`SECURITY_AUDIT=BLOCKED_FOR_RELEASE`。当前锁文件的 `npm audit --omit=dev --json` 报告 11 个漏洞（3 critical、8 moderate、0 low），完整树为 47 个；强制修复会引入 Taro 兼容性风险。发布前需要在保持 Taro 兼容的前提下逐项处置 advisory，并重新执行 typecheck、test、build 和真机检查。

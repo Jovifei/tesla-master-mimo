@@ -18,7 +18,7 @@ M3.1 版本：`0.2.2`
 
 ## 仍然是外部门禁
 
-PostgreSQL 集成测试需要独立测试 DSN；当前工作站没有可用隔离 PostgreSQL，因此 16 个 Go 集成测试事件为 SKIP，不能标记 PG PASS。真实 AppID、微信 request/web-view 域名、安卓微信、iOS 微信、Tesla 官方同意、虚拟钥匙、`config_synced=true`、首个真实 MQTT、真实行程/充电与换机恢复仍未验证。`npm audit` 仍有生产树 3 critical、8 moderate、1 low，发布门禁保持阻断；没有用升级破坏 Taro 的方式伪造通过。
+PostgreSQL 集成测试需要独立测试 DSN；当前工作站没有可用隔离 PostgreSQL，因此 16 个 Go 集成测试事件为 SKIP，不能标记 PG PASS。真实 AppID、微信 request/web-view 域名、安卓微信、iOS 微信、Tesla 官方同意、虚拟钥匙、`config_synced=true`、首个真实 MQTT、真实行程/充电与换机恢复仍未验证。`npm audit` 仍有生产树 3 critical、8 moderate、0 low（共 11 项），发布门禁保持阻断；没有用升级破坏 Taro 的方式伪造通过。
 
 ## 交付边界
 
