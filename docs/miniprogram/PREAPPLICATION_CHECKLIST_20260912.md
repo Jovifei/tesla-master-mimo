@@ -11,7 +11,7 @@
 ## 已完成的技术准备
 
 - Taro 4.2.1 + React 18.3.1 + TypeScript 5.7.3 + Webpack 5 已锁定。
-- 隔离目录实际 `npm ci --ignore-scripts`、`npm run typecheck`、Vitest 7 文件/48 项测试、`npm run build:weapp` 已通过；完整证据见 `M3_1_TEST_EVIDENCE_20260914.md`。
+- 隔离目录实际 `npm ci --ignore-scripts`、`npm run typecheck`、Vitest 8 文件/53 项测试、`npm run build:weapp` 已通过；完整证据见 `M3_1_TEST_EVIDENCE_20260914.md`。
 - `npm run dev:weapp` 已进入 `Watching...`；用正式 API 地址构建时，产物包含固定 HTTPS host，不残留动态 `process.env`。
 - 四个 Tab 页面、微信会话/Tesla 关联、车辆/状态/readiness、行程/充电分页与详情、真实值/缺失值/质量边界和安全 README 已提交。
 - `project.config.json` 保留空 AppID；未写入 AppSecret、微信 `session_key`、Tesla token、私钥、VIN 或精确位置。
