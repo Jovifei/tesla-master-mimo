@@ -64,6 +64,9 @@ export default function MePage() {
       } else if (status.status === 'claimed') {
         setAuthorizationPending(false)
         setError('授权已领取，请点击微信登录恢复会话')
+      } else {
+        setAuthorizationPending(false)
+        setError(errorMessagesForStatus(status.status))
       }
     } catch (reason) {
       if (operation !== operationEpoch.current || sessionGeneration !== getApiSessionGeneration()) return

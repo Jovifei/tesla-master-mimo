@@ -98,6 +98,28 @@ func TestWeChatAuthorizationClaimIsAtomicAndOneTime(t *testing.T) {
 	}
 }
 
+func TestAuthStateKeepsWeChatChannelAfterCallbackConsumesState(t *testing.T) {
+	store, ctx := openWeChatIntegrationStore(t)
+	consent, err := currentOAuthConsent(jourVoltTermsVersion, jourVoltPrivacyVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, transactionID, nonce := mustRandomToken(t), mustRandomToken(t), mustRandomToken(t)
+	proof := mustRandomToken(t)
+	if err := store.createAuthTransactionWithClient(ctx, state, transactionID, nonce, consent, time.Now().UTC().Add(time.Minute), wechatLinkInfo{}, "wechat", hashToken(proof), ""); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = store.pool.Exec(context.Background(), `DELETE FROM jourvolt_auth_transactions WHERE transaction_hash=$1`, hashToken(transactionID))
+	})
+	if _, err := store.consumeAuthState(ctx, state); err != nil {
+		t.Fatal(err)
+	}
+	if !store.authStateIsWeChat(ctx, state) {
+		t.Fatal("consumed WeChat OAuth state lost its channel")
+	}
+}
+
 func TestWeChatAuthorizationConflictRollsBackGrantAndBinding(t *testing.T) {
 	store, ctx := openWeChatIntegrationStore(t)
 	consent, err := currentOAuthConsent(jourVoltTermsVersion, jourVoltPrivacyVersion)

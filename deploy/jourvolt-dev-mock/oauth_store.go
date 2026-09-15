@@ -140,8 +140,15 @@ COALESCE(wechat_link_hash, ''), COALESCE(wechat_app_id, ''), COALESCE(wechat_ope
 }
 
 func (s *store) authStateIsWeChat(ctx context.Context, state string) bool {
-	transaction, err := s.authTransactionForState(ctx, state)
-	return err == nil && transaction.Channel == "wechat"
+	if s == nil || s.pool == nil || strings.TrimSpace(state) == "" {
+		return false
+	}
+	var channel string
+	err := s.pool.QueryRow(ctx, `
+SELECT COALESCE(channel, 'native')
+FROM jourvolt_auth_transactions
+WHERE state_hash=$1`, hashToken(state)).Scan(&channel)
+	return err == nil && strings.TrimSpace(channel) == "wechat"
 }
 
 func (s *store) authTransactionForState(ctx context.Context, state string) (authTransaction, error) {
