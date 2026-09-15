@@ -33,4 +33,4 @@ e9197d892621d8dac39b04e4221d603de2241155
 | `tmp/20260830-main-source-export` | `149b2d0a854fbb51b98e859f7887ca8302a0fb7a` | diverged | 1 | 86 |
 | `tmp/20260830-pr1-finalize-clean` | `c28e07ab1fb7d6557669651fe49e3248c04e5fdf` | diverged | 2 | 86 |
 
-当前工作分支 `feature/wechat-miniprogram` 在盘点时为 `bf6425d846d7bc1850892f64af20dbda3df9c3c4`，本轮 M3.1 变更尚未写入该快照。关系仅表示提交图，不表示补丁等价、部署状态或发布状态。
+当前工作分支 `feature/wechat-miniprogram` 在盘点时为 `bf6425d846d7bc1850892f64af20dbda3df9c3c4`；M3.1 完成后的分支 HEAD 为 `187e0a65408bad6158418b5a15ab0557c997f2ba`。关系仅表示提交图，不表示补丁等价、部署状态或发布状态。
