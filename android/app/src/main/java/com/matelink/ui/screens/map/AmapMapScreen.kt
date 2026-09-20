@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -23,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.domain.map.AmapSetupState
+import com.matelink.ui.components.MateLinkLoadingMark
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,7 +55,7 @@ fun AmapMapScreen(
                 AmapMapView(uiState.key, uiState.latitude, uiState.longitude, markerTitle, viewModel::onMapLoading, viewModel::onMapLoaded, viewModel::onMapFailure)
                 if (uiState.loading) {
                     Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator()
+                        MateLinkLoadingMark(size = 72.dp)
                         Text(stringResource(R.string.amap_loading), modifier = Modifier.padding(top = 12.dp))
                     }
                 }

@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.ui.theme.CarColorPalette
+import com.matelink.ui.components.MateLinkLoadingMark
 import com.matelink.ui.theme.SwissOutline
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -72,7 +73,7 @@ fun TimelineScreen(
                     .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(color = palette.accent)
+                MateLinkLoadingMark()
             }
         } else if (uiState.events.isEmpty()) {
             Box(

@@ -3104,3 +3104,8 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - PASS：图标资产为 256x221、约 50 KB；TypeScript、Vitest 9 文件/60 项和 WeChat build 全部通过，构建不再出现图标超大警告。
 - NOT_PERFORMED：微信开发者工具、真机截图、AppID 域名和真实数据联调。
 - PASS：已提交到 feature/wechat-miniprogram，提交为 81b6039；未 push、未部署。
+- PASS：Android 使用 MateLinkLoadingMark 接入公共全屏加载占位，并覆盖 Dashboard、天气、驻车详情、地图、Tesla 登录、年度报告、统计和时间线等主加载状态；错误、空数据和采集中状态未改写。
+- PASS：Android 公共图标资源为用户提供图案的高质量 256x221 缩放版；Debug 单测、Debug Lint、Debug assemble、Release 单测和带显式生产配置的 Release Lint 均通过。
+- NOT_PERFORMED：Release 签名 APK、真机安装、设备视觉验收；本轮没有读取签名材料，也没有触碰用户设备数据。
+- BLOCKED：交付脚本默认未向 Gradle 传 SDK 环境变量；已用检测到的 SDK 路径显式运行 Gradle，源码门禁不受影响。
+- PASS：已提交到 codex/loading-indicator，提交为 b6c23a8；未 push、未安装。

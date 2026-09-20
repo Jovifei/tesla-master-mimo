@@ -26,6 +26,7 @@ import com.matelink.data.local.dao.MonthlyDriveAggregation
 import com.matelink.data.model.Currency
 import com.matelink.domain.model.CarStats
 import com.matelink.ui.components.launchExternalIntentSafely
+import com.matelink.ui.components.MateLinkLoadingMark
 import java.io.File
 import java.io.FileOutputStream
 
@@ -87,7 +88,7 @@ fun AnnualReportPDFScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator()
+                MateLinkLoadingMark()
             }
             return@Scaffold
         }

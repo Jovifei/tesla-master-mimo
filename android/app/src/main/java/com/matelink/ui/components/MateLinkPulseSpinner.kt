@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +27,10 @@ import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -138,6 +143,41 @@ fun MateLinkPulseSpinner(
 private const val TRAIL_STEPS = 5
 
 /**
+ * The shared loading mark supplied for the MateLink product surfaces. The
+ * source artwork already contains its dark navy field, so it is shown as a
+ * compact tile and gently breathes instead of rotating the rectangular image.
+ */
+@Composable
+fun MateLinkLoadingMark(
+    modifier: Modifier = Modifier,
+    size: Dp = 110.dp,
+    pulseDurationMillis: Int = 1500,
+) {
+    val transition = rememberInfiniteTransition(label = "mateLinkLoadingMark")
+    val scale by transition.animateFloat(
+        initialValue = 0.94f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(pulseDurationMillis, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "mateLinkLoadingMarkScale",
+    )
+    Image(
+        painter = painterResource(com.matelink.R.drawable.matelink_loading_logo),
+        contentDescription = stringResource(com.matelink.R.string.loading),
+        contentScale = ContentScale.Fit,
+        modifier = modifier
+            .size(size)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                alpha = 0.92f + (scale - 0.94f) * 0.8f
+            },
+    )
+}
+
+/**
  * Debounce a boolean loading flag so a spinner only appears after the load has
  * been in-flight for at least [delayMillis]. Sub-[delayMillis] loads never
  * trigger UI — the typical case for a snappy filter switch — and only the
@@ -194,7 +234,7 @@ fun MateLinkLoadingPlaceholder(
         contentAlignment = Alignment.Center,
     ) {
         if (visible) {
-            MateLinkPulseSpinner(color = color)
+            MateLinkLoadingMark()
         }
     }
 }

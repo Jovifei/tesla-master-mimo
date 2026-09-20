@@ -48,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import com.matelink.ui.components.MateLinkLoadingMark
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -305,9 +306,7 @@ private fun EmptyState(
             modifier = Modifier.padding(32.dp)
         ) {
             if (isSyncing) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(64.dp)
-                )
+                MateLinkLoadingMark(size = 96.dp)
             } else {
                 Icon(
                     imageVector = Icons.Default.Analytics,
