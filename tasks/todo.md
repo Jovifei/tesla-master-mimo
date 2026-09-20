@@ -2907,3 +2907,20 @@
 ## Review
 
 - 进行中：ECS 当前仅有 `jourvolt-dev-api` 与 PostgreSQL；Telemetry/MQTT/command-proxy 均未部署，4443 未监听，Telemetry TLS 文件缺失。实时 `vehicle_data` 与历史采集链路已证实分离。
+# 2026-09-21 MateLink loading mark
+
+## Plan
+
+- [x] 在 Android 隔离分支和微信小程序分支核对现有主数据加载入口，保留错误、空数据和采集中状态的语义边界。
+- [x] 将用户提供的 loading 图案作为两端共享视觉资产接入公共加载组件。
+- [x] 在小程序车辆、行程、充电和授权准备状态接入加载图标，并补定向测试。
+- [x] 在 Android 公共加载组件接入加载图标，检查直接 CircularProgressIndicator 的数据加载例外。
+- [x] 运行小程序 typecheck/test/build 和 Android 定向测试/构建，分别审核两个分支的提交范围。
+
+## Review
+
+- PASS：Android 使用 MateLinkLoadingMark 接入公共全屏加载占位，并覆盖 Dashboard、天气、驻车详情、地图、Tesla 登录、年度报告、统计和时间线等主加载状态；错误、空数据和采集中状态未改写。
+- PASS：Android 公共图标资源为用户提供图案的高质量 256x221 缩放版；Debug 单测、Debug Lint、Debug assemble、Release 单测和带显式生产配置的 Release Lint 均通过。
+- NOT_PERFORMED：Release 签名 APK、真机安装、设备视觉验收；本轮没有读取签名材料，也没有触碰用户设备数据。
+- BLOCKED：交付脚本默认未向 Gradle 传 SDK 环境变量；已用检测到的 SDK 路径显式运行 Gradle，源码门禁不受影响。
+- PASS：已提交到 codex/loading-indicator，提交为 b6c23a8；未 push、未安装。

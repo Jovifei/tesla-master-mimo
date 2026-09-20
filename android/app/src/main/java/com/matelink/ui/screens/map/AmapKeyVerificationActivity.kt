@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -26,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.matelink.R
+import com.matelink.ui.components.MateLinkLoadingMark
 import com.matelink.data.local.AmapSettingsStore
 import com.matelink.ui.theme.MateLinkTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -107,7 +107,7 @@ internal fun AmapKeyVerificationContent(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            CircularProgressIndicator()
+            MateLinkLoadingMark()
             Text(stringResource(R.string.amap_verification_pending), modifier = Modifier.padding(top = 16.dp))
         }
     }

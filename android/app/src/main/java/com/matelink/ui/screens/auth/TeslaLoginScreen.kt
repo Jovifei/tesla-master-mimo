@@ -28,7 +28,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.BuildConfig
 import com.matelink.R
+import com.matelink.ui.components.MateLinkLoadingMark
 import com.matelink.ui.common.PublicInfoLinks
 import com.matelink.ui.components.launchExternalIntentSafely
 
@@ -230,7 +230,7 @@ fun TeslaLoginScreen(
             when (val state = uiState) {
                 TeslaLoginUiState.Idle -> Unit
                 TeslaLoginUiState.Loading -> LoginStatusPanel(
-                    icon = { CircularProgressIndicator(modifier = Modifier.size(22.dp)) },
+                    icon = { MateLinkLoadingMark(size = 36.dp) },
                     text = stringResource(R.string.tesla_login_loading)
                 )
                 is TeslaLoginUiState.Error -> LoginStatusPanel(

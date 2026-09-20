@@ -29,6 +29,7 @@ import com.matelink.data.local.dao.MonthlyDriveAggregation
 import com.matelink.domain.model.CarStats
 import com.matelink.domain.analytics.HistoryFreshness
 import com.matelink.ui.components.CachedHistoryBanner
+import com.matelink.ui.components.MateLinkLoadingMark
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,7 +64,7 @@ fun AnnualReportScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator()
+                MateLinkLoadingMark()
             }
             return@Scaffold
         }
