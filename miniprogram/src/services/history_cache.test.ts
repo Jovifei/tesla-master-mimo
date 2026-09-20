@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HISTORY_CACHE_SCHEMA, historyCacheKey, readHistoryCache, writeHistoryCache } from './history_cache'
+import { clearHistoryCachesForAccount, HISTORY_CACHE_SCHEMA, historyCacheKey, readHistoryCache, writeHistoryCache } from './history_cache'
 
 function storage() {
   const values = new Map<string, unknown>()
@@ -8,6 +8,7 @@ function storage() {
     getStorageSync: (key: string) => values.get(key),
     setStorageSync: (key: string, value: unknown) => values.set(key, value),
     removeStorageSync: (key: string) => values.delete(key),
+    getStorageInfoSync: () => ({ keys: [...values.keys()] }),
   }
 }
 
@@ -58,5 +59,21 @@ describe('history cache', () => {
     const key = historyCacheKey('drives', null, 'vehicle-a', 'https://api.example.test')
     expect(writeHistoryCache(store, key, [{ id: 'anonymous-drive' }])).toBe(false)
     expect(readHistoryCache<{ id: string }>(store, key)).toEqual([])
+  })
+
+  it('clears only the deleted account history across schemas and API origins', () => {
+    const store = storage()
+    const accountA = historyCacheKey('drives', 'user-a', 'vehicle-a', 'https://api-a.example.test')
+    const accountALegacy = historyCacheKey('charges', 'user-a', 'vehicle-a', 'https://api-b.example.test').replace('.v3.', '.v2.') + '.4'
+    const accountB = historyCacheKey('drives', 'user-b', 'vehicle-a', 'https://api-a.example.test')
+    store.setStorageSync(accountA, {})
+    store.setStorageSync(accountALegacy, {})
+    store.setStorageSync(accountB, {})
+
+    clearHistoryCachesForAccount(store, 'user-a')
+
+    expect(store.values.has(accountA)).toBe(false)
+    expect(store.values.has(accountALegacy)).toBe(false)
+    expect(store.values.has(accountB)).toBe(true)
   })
 })

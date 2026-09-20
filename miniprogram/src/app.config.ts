@@ -4,6 +4,7 @@ export default defineAppConfig({
     'pages/drives/index',
     'pages/charges/index',
     'pages/me/index',
+    'pages/legal/index',
     'pages/auth/index',
   ],
   window: {

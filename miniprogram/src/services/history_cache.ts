@@ -69,3 +69,17 @@ export function clearHistoryCache(storage: Pick<WechatStorage, 'removeStorageSyn
     // Clearing an optional cache is best effort.
   }
 }
+
+export function clearHistoryCachesForAccount(
+  storage: Pick<WechatStorage, 'getStorageInfoSync' | 'removeStorageSync'>,
+  userId: string,
+): void {
+  const accountSegment = `.${encodeURIComponent(userId)}.`
+  try {
+    for (const key of storage.getStorageInfoSync?.().keys ?? []) {
+      if (key.startsWith('matelink.history.v') && key.includes(accountSegment)) storage.removeStorageSync(key)
+    }
+  } catch {
+    // Server-side account deletion remains authoritative if optional local cache cleanup fails.
+  }
+}

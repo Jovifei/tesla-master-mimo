@@ -3069,3 +3069,22 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - M0: `AUTH_FEASIBILITY=UNVERIFIED`; AppID/主体/域名 and Android/iOS WeChat real-device authorization remain external blockers. See `docs/miniprogram/M0_FEASIBILITY_20260911.md`.
 - M1: Taro 4.2.1 development build generated; `npm run typecheck` passed; Vitest 3 files/6 tests passed. No production API or Tesla credentials are bundled.
 - Pre-application material: `docs/miniprogram/PREAPPLICATION_CHECKLIST_20260912.md`; manual WeChat主体/AppID/域名/审核 steps remain owner actions.
+# 2026-09-20 微信小程序申请期完善
+
+## Plan
+
+- [x] 核对隔离 worktree、现有 M3.1 门禁与小程序页面缺口，不改 AppID、凭据或真实平台配置。
+- [x] 补齐可访问的服务条款与隐私指引页面，并让登录同意操作与文档版本一致。
+- [x] 优化“我的”页的登录/授权状态层级和关键操作反馈，保持现有 MateLink 视觉体系与真实数据语义。
+- [x] 检查车辆、行程、充电页面的加载、空态、错误、来源和分页交互，只修复明确的源码缺口。
+- [x] 增加定向回归测试，运行 typecheck、Vitest、WeChat build、diff check 和产物敏感扫描。
+- [x] 审核最终差异并记录 PASS/BLOCKED/NOT_PERFORMED；提交前列出候选文件，等待 Jovi 明确确认。
+
+## Review
+
+- PASS：新增小程序原生服务条款/隐私指引页；同意版本与 API 契约共用常量；“我的”页补齐协议入口、会话状态、授权取消和双确认账号注销。
+- PASS：账号注销仅接受 Tesla 官方 HTTPS 撤销入口，服务端明确返回 `deleted` 后才清理当前会话与当前账号历史缓存；其他账号缓存保持隔离。
+- PASS：TypeScript 0 错误；Vitest 9 文件/60 项通过；WeChat build 成功；构建产物 33 文件/415007 bytes；业务产物未发现动态环境变量、URL globals、私钥或 client secret；`git diff --check` 通过。
+- BLOCKED：`npm audit --omit=dev` 仍为 3 critical/8 moderate；Taro 4.2.1 的依赖约束尚无已验证兼容升级方案。
+- NOT_PERFORMED：AppID、微信后台隐私指引/业务域名配置、开发者工具截图、Android/iOS 微信真机、真实 Tesla OAuth/Telemetry/历史数据、生产部署与发布审核。
+- Git：已在 `feature/wechat-miniprogram` 提交本轮候选文件；未 push、未部署。

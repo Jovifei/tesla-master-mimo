@@ -13,6 +13,7 @@ vi.mock('@tarojs/taro', () => ({
     getStorageSync: (key: string) => mocks.storage.get(key),
     setStorageSync: (key: string, value: unknown) => mocks.storage.set(key, value),
     removeStorageSync: (key: string) => mocks.storage.delete(key),
+    getStorageInfoSync: () => ({ keys: [...mocks.storage.keys()] }),
   },
 }))
 
@@ -173,10 +174,54 @@ describe('MateLink API transport', () => {
     const { api } = await modules()
     expect(api.isTrustedAuthorizationURL('https://api.example.test/oauth/wechat/authorize')).toBe(true)
     expect(api.isTrustedAuthorizationURL('https://auth.tesla.cn/oauth2/v3/authorize')).toBe(true)
+    expect(api.isTrustedAuthorizationURL('https://auth.tesla.cn/user/revoke/consent?revoke_client_id=client')).toBe(true)
     expect(api.isTrustedAuthorizationURL('https://evil.example.test/login')).toBe(false)
     expect(api.isTrustedAuthorizationURL('http://auth.tesla.cn/login')).toBe(false)
     expect(api.isTrustedAuthorizationURL('https://auth.tesla.cn/oauth2//v3/authorize')).toBe(false)
     expect(api.isTrustedAuthorizationURL('https://auth.tesla.cn:')).toBe(false)
+  })
+
+  it('deletes only the owning account session and accepts only a Tesla revoke URL', async () => {
+    const { api, session } = await modules()
+    session.writeAppSession(storageAdapter, {
+      accessToken: 'access', refreshToken: 'refresh', expiresAt: null, userId: 'user-a', linkRequired: false,
+    })
+    const accountCache = 'matelink.history.v3.https%3A%2F%2Fapi.example.test.user-a.vehicle-a.drives'
+    const otherCache = 'matelink.history.v3.https%3A%2F%2Fapi.example.test.user-b.vehicle-a.drives'
+    mocks.storage.set(accountCache, { items: [] })
+    mocks.storage.set(otherCache, { items: [] })
+    mocks.request.mockResolvedValue({
+      statusCode: 200,
+      data: { status: 'deleted', tesla_consent_revoke_url: 'https://auth.tesla.cn/user/revoke/consent?revoke_client_id=client' },
+      header: {},
+    })
+
+    await expect(api.matelinkApi.deleteAccount()).resolves.toEqual({
+      teslaConsentRevokeUrl: 'https://auth.tesla.cn/user/revoke/consent?revoke_client_id=client',
+    })
+    expect(mocks.request.mock.calls[0][0]).toMatchObject({
+      method: 'DELETE',
+      url: 'https://api.example.test/v1/account',
+      header: expect.objectContaining({ Authorization: 'Bearer access' }),
+    })
+    expect(session.readAppSession(storageAdapter)).toBeNull()
+    expect(mocks.storage.has(accountCache)).toBe(false)
+    expect(mocks.storage.has(otherCache)).toBe(true)
+  })
+
+  it('clears a deleted account without exposing an untrusted revoke URL', async () => {
+    const { api, session } = await modules()
+    session.writeAppSession(storageAdapter, {
+      accessToken: 'access', refreshToken: null, expiresAt: null, userId: 'user-a', linkRequired: false,
+    })
+    mocks.request.mockResolvedValue({
+      statusCode: 200,
+      data: { status: 'deleted', tesla_consent_revoke_url: 'https://evil.example.test/revoke' },
+      header: {},
+    })
+
+    await expect(api.matelinkApi.deleteAccount()).resolves.toEqual({ teslaConsentRevokeUrl: null })
+    expect(session.readAppSession(storageAdapter)).toBeNull()
   })
 
   it('rejects a delayed claim after logout instead of restoring the cleared session', async () => {

@@ -1,4 +1,6 @@
 import Taro from '@tarojs/taro'
+import { JOURVOLT_PRIVACY_VERSION, JOURVOLT_TERMS_VERSION } from '../domain/legal'
+import { clearHistoryCachesForAccount } from './history_cache'
 import type {
   ApiEnvelope,
   AuthSessionResponse,
@@ -43,6 +45,7 @@ const errorMessages: Record<string, string> = {
   wechat_link_expired: '微信关联已过期，请重新开始登录',
   invalid_link_response: '服务端未返回有效的关联凭证',
   invalid_session_response: '服务端未返回有效会话',
+  invalid_account_delete_response: '服务端未确认账号注销，请稍后重试',
   session_changed: '会话已切换，请重新读取数据',
   network_error: '网络暂时不可用，请稍后重试',
   telemetry_not_configured: '持续采集尚未配置',
@@ -62,6 +65,7 @@ const errorMessages: Record<string, string> = {
   wechat_authorization_conflict: 'Tesla 账号与当前微信账号不匹配',
   wechat_authorization_claimed: '授权已领取，请重新登录微信恢复会话',
   wechat_authorization_cancelled: 'Tesla 授权已取消，请重新开始授权',
+  account_delete_failed: '账号注销失败，请稍后重试',
 }
 
 export type ApiErrorOptions = {
@@ -123,7 +127,7 @@ export function isTrustedAuthorizationURL(raw: string): boolean {
   const owned = parsed.hostname === apiHost || parsed.hostname === 'auth.teslalink.joviluma.com'
   const tesla = parsed.hostname === 'auth.tesla.cn' || parsed.hostname === 'auth.tesla.com'
   if (owned) return parsed.path === '/oauth/wechat/authorize' || parsed.path === '/oauth/callback'
-  if (tesla) return parsed.path === '/oauth2/v3/authorize' || parsed.path === '/authorize'
+  if (tesla) return parsed.path === '/oauth2/v3/authorize' || parsed.path === '/authorize' || parsed.path === '/user/revoke/consent'
   return false
 }
 
@@ -499,8 +503,7 @@ export type WechatConsent = {
   privacyVersion: string
 }
 
-export const JOURVOLT_TERMS_VERSION = '2026-08-21'
-export const JOURVOLT_PRIVACY_VERSION = '2026-08-21'
+export { JOURVOLT_PRIVACY_VERSION, JOURVOLT_TERMS_VERSION }
 
 export type WechatLoginResult =
   | { status: 'authenticated'; session: AppSession }
@@ -584,6 +587,23 @@ export const matelinkApi = {
     if (response.statusCode >= 300 && response.statusCode !== 401) {
       throw toApiError(response.statusCode, response.data, response.header, '退出登录失败')
     }
+  },
+
+  async deleteAccount(): Promise<{ teslaConsentRevokeUrl: string | null }> {
+    const owner = readAppSession(Taro)
+    if (!owner?.userId) throw new ApiError(errorMessages.session_required, { status: 401, code: 'session_required' })
+    const response = await requestJson<{ status?: string; tesla_consent_revoke_url?: string | null }>('/v1/account', {
+      method: 'DELETE',
+      header: { 'Content-Type': 'application/json' },
+    })
+    const current = readAppSession(Taro)
+    if (!current || current.userId !== owner.userId) throw sessionChangedError()
+    if (response.status !== 'deleted') throw new ApiError(errorMessages.invalid_account_delete_response, { code: 'invalid_account_delete_response' })
+    clearHistoryCachesForAccount(Taro, owner.userId)
+    sessionEpoch += 1
+    clearAppSession(Taro)
+    const revokeUrl = stringValue(response.tesla_consent_revoke_url)
+    return { teslaConsentRevokeUrl: revokeUrl && isTrustedAuthorizationURL(revokeUrl) ? revokeUrl : null }
   },
 
   async getCars(): Promise<Car[]> {

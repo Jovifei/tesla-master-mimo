@@ -23,10 +23,11 @@ function errorMessagesForStatus(status: string): string {
 }
 
 export default function MePage() {
-  const [session, setSession] = useState<AppSession | null>(() => readAppSession(Taro))
+  const initialSession = readAppSession(Taro)
+  const [session, setSession] = useState<AppSession | null>(initialSession)
   const [linkRequired, setLinkRequired] = useState(() => Boolean(readPendingWechatLink(Taro)))
-  const [termsAccepted, setTermsAccepted] = useState(false)
-  const [privacyAccepted, setPrivacyAccepted] = useState(false)
+  const [termsAccepted, setTermsAccepted] = useState(Boolean(initialSession))
+  const [privacyAccepted, setPrivacyAccepted] = useState(Boolean(initialSession))
   const [authorizationPending, setAuthorizationPending] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -64,6 +65,9 @@ export default function MePage() {
       } else if (status.status === 'claimed') {
         setAuthorizationPending(false)
         setError('授权已领取，请点击微信登录恢复会话')
+      } else if (status.status === 'pending') {
+        setAuthorizationPending(true)
+        setError(null)
       } else {
         setAuthorizationPending(false)
         setError(errorMessagesForStatus(status.status))
@@ -81,6 +85,10 @@ export default function MePage() {
   useDidShow(() => {
     const current = readAppSession(Taro)
     setSession(current)
+    if (current) {
+      setTermsAccepted(true)
+      setPrivacyAccepted(true)
+    }
     setLinkRequired(Boolean(current?.linkRequired) || Boolean(readPendingWechatLink(Taro)))
     void resumePendingAuthorization()
   })
@@ -143,6 +151,22 @@ export default function MePage() {
     }
   }
 
+  const cancelTeslaAuthorization = async () => {
+    setLoading(true)
+    setError(null)
+    const operation = ++operationEpoch.current
+    try {
+      await matelinkApi.cancelWechatAuthorization()
+      if (operation !== operationEpoch.current) return
+      setAuthorizationPending(false)
+      Taro.showToast({ title: '本次授权已取消', icon: 'success' })
+    } catch (reason) {
+      if (operation === operationEpoch.current) setError(errorMessage(reason))
+    } finally {
+      if (operation === operationEpoch.current) setLoading(false)
+    }
+  }
+
   const logout = async () => {
     setLoading(true)
     setError(null)
@@ -163,17 +187,74 @@ export default function MePage() {
     }
   }
 
+  const deleteAccount = async () => {
+    const confirmation = await Taro.showModal({
+      title: '注销 MateLink 账号？',
+      content: '服务端账号、会话和关联车辆数据将被删除。此操作不可撤销；Tesla 官方授权需要随后单独撤销。',
+      confirmText: '确认注销',
+      confirmColor: '#b42318',
+    })
+    if (!confirmation.confirm) return
+    setLoading(true)
+    setError(null)
+    const operation = ++operationEpoch.current
+    try {
+      const result = await matelinkApi.deleteAccount()
+      if (operation !== operationEpoch.current) return
+      setSession(null)
+      setLinkRequired(false)
+      setAuthorizationPending(false)
+      setTermsAccepted(false)
+      setPrivacyAccepted(false)
+      Taro.showToast({ title: '账号已注销', icon: 'success' })
+      if (result.teslaConsentRevokeUrl) {
+        const revoke = await Taro.showModal({
+          title: '撤销 Tesla 授权',
+          content: 'MateLink 账号已删除。建议继续前往 Tesla 官方页面撤销第三方授权。',
+          confirmText: '前往 Tesla',
+        })
+        if (revoke.confirm && operation === operationEpoch.current) {
+          const url = `/pages/auth/index?url=${encodeURIComponent(result.teslaConsentRevokeUrl)}`
+          await Taro.navigateTo({ url })
+        }
+      }
+    } catch (reason) {
+      if (operation === operationEpoch.current) setError(errorMessage(reason))
+    } finally {
+      if (operation === operationEpoch.current) setLoading(false)
+    }
+  }
+
+  const openLegal = (kind: 'terms' | 'privacy') => {
+    void Taro.navigateTo({ url: `/pages/legal/index?kind=${kind}` })
+  }
+
   useDidHide(invalidatePage)
   useUnload(invalidatePage)
 
   return (
     <View className="page">
-      <View className="card">
-        <Text className="title">我的</Text>
+      <View className="card account-hero">
+        <View className="account-heading">
+          <View>
+            <Text className="eyebrow">ACCOUNT & PRIVACY</Text>
+            <Text className="title">我的</Text>
+          </View>
+          <Text className={`state-pill ${session ? 'state-pill-ready' : ''}`}>{session ? '会话已建立' : '尚未登录'}</Text>
+        </View>
         <Text className="muted">微信身份只用于建立小程序会话。Tesla 授权仍在官方页面完成，令牌只留在服务端。</Text>
+      </View>
+
+      <View className="card consent-card">
+        <Text className="section-title">授权前确认</Text>
+        <Text className="muted">请先阅读并确认以下文件。点击蓝色文字可查看完整内容。</Text>
+        <View className="legal-links">
+          <Text className="legal-link" onClick={() => openLegal('terms')}>查看服务条款</Text>
+          <Text className="legal-link" onClick={() => openLegal('privacy')}>查看隐私指引</Text>
+        </View>
         <CheckboxGroup onChange={onConsentChange}>
-          <View className="status"><Checkbox value="terms" checked={termsAccepted}>我已阅读并同意服务条款（{TERMS_VERSION}）</Checkbox></View>
-          <View className="status"><Checkbox value="privacy" checked={privacyAccepted}>我已阅读并同意隐私指引（{PRIVACY_VERSION}）</Checkbox></View>
+          <View className="consent-row"><Checkbox value="terms" checked={termsAccepted}>同意服务条款（{TERMS_VERSION}）</Checkbox></View>
+          <View className="consent-row"><Checkbox value="privacy" checked={privacyAccepted}>同意隐私指引（{PRIVACY_VERSION}）</Checkbox></View>
         </CheckboxGroup>
         {!session ? <Button className="button" loading={loading} onClick={startWechatSession}>微信登录</Button> : null}
         {session ? <Text className="muted">MateLink 会话已建立{session.expiresAt ? `，有效期至 ${session.expiresAt}` : ''}。</Text> : null}
@@ -192,11 +273,19 @@ export default function MePage() {
           <Text className="section-title">等待 Tesla 授权回流</Text>
           <Text className="muted">完成 Tesla 官方页面后返回本小程序；这里会用原授权事务安全检查并领取会话。</Text>
           <Button className="button" loading={loading} onClick={() => { void resumePendingAuthorization() }}>检查授权状态</Button>
+          <Button className="button button-secondary" disabled={loading} onClick={() => { void cancelTeslaAuthorization() }}>取消本次授权</Button>
         </View>
       ) : null}
 
-      {session && !linkRequired ? <Button className="button" loading={loading} onClick={startTeslaAuthorization}>重新授权 Tesla</Button> : null}
-      {session ? <Button className="button" loading={loading} onClick={logout}>退出登录</Button> : null}
+      {session ? (
+        <View className="card">
+          <Text className="section-title">账号管理</Text>
+          <Text className="muted">退出只结束当前会话；注销会请求服务端删除账号关联数据。</Text>
+          {!linkRequired ? <Button className="button" loading={loading} onClick={startTeslaAuthorization}>重新授权 Tesla</Button> : null}
+          <Button className="button button-secondary" disabled={loading} onClick={logout}>退出登录</Button>
+          <Button className="button button-danger" disabled={loading} onClick={() => { void deleteAccount() }}>注销账号</Button>
+        </View>
+      ) : null}
       {error ? <Text className="error">{error}</Text> : null}
     </View>
   )

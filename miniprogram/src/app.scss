@@ -112,4 +112,110 @@ button {
   border-radius: 14px;
   background: #111827;
   color: #ffffff;
+  font-weight: 600;
+}
+
+.button::after {
+  border: 0;
+}
+
+.button-secondary {
+  border: 1px solid #d7dbe2;
+  background: #ffffff;
+  color: #1f2937;
+}
+
+.button-danger {
+  border: 1px solid #f4c7c3;
+  background: #fff7f6;
+  color: #b42318;
+}
+
+.account-hero {
+  overflow: hidden;
+  background: linear-gradient(145deg, #ffffff 0%, #f4f7f9 100%);
+}
+
+.account-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.state-pill {
+  flex-shrink: 0;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: #eef0f3;
+  color: #6b7280;
+  font-size: 21px;
+}
+
+.state-pill-ready {
+  background: #e8f6ef;
+  color: #18794e;
+}
+
+.consent-card {
+  border: 1px solid #e6e9ee;
+  box-shadow: none;
+}
+
+.legal-links {
+  display: flex;
+  gap: 28px;
+  margin: 18px 0 8px;
+}
+
+.legal-link {
+  color: #1769aa;
+  font-weight: 600;
+}
+
+.consent-row {
+  padding: 16px 0;
+  border-bottom: 1px solid #eef0f3;
+}
+
+.consent-row:last-child {
+  border-bottom: 0;
+}
+
+.legal-page {
+  padding-bottom: 64px;
+}
+
+.legal-hero {
+  margin-bottom: 24px;
+  padding: 18px 4px 10px;
+}
+
+.legal-version {
+  display: inline-block;
+  margin-bottom: 18px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #eaf2f8;
+  color: #1769aa;
+  font-size: 21px;
+}
+
+.legal-section {
+  border: 1px solid #e6e9ee;
+  box-shadow: none;
+}
+
+.legal-paragraph {
+  display: block;
+  margin-top: 14px;
+  color: #374151;
+  line-height: 1.75;
+}
+
+.legal-notice {
+  padding: 8px 4px 28px;
+  color: #8a8f98;
+  font-size: 22px;
+  line-height: 1.6;
 }
