@@ -3,6 +3,7 @@ import Taro, { useLoad, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 import { ApiError, getApiSessionGeneration, isTrustedAuthorizationURL, matelinkApi } from '../../services/api'
 import { clearPendingTeslaAuthorization } from '../../services/session'
+import LoadingIndicator from '../../components/LoadingIndicator'
 
 function errorMessage(reason: unknown): string {
   if (reason instanceof ApiError) return reason.message
@@ -99,7 +100,7 @@ export default function AuthPage() {
   })
 
   if (exchanging) {
-    return <View className="page"><View className="card"><Text className="section-title">正在完成授权</Text><Text className="muted">正在用当前微信授权事务领取 MateLink 会话。</Text></View></View>
+    return <View className="page"><View className="card"><Text className="section-title">正在完成授权</Text><LoadingIndicator label="正在用当前微信授权事务领取 MateLink 会话…" /></View></View>
   }
 
   if (error || !url) {
@@ -107,7 +108,7 @@ export default function AuthPage() {
       <View className="page">
         <View className="card">
           <Text className="section-title">Tesla 官方授权</Text>
-          <Text className="error">{error || '正在准备官方授权入口…'}</Text>
+          {error ? <Text className="error">{error}</Text> : <LoadingIndicator label="正在准备官方授权入口…" compact />}
           <Button className="button" onClick={() => { void resumeAuthorization() }}>检查授权状态</Button>
           <Button className="button" onClick={() => Taro.navigateBack()}>返回</Button>
         </View>

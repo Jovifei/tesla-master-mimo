@@ -3088,3 +3088,19 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - BLOCKED：`npm audit --omit=dev` 仍为 3 critical/8 moderate；Taro 4.2.1 的依赖约束尚无已验证兼容升级方案。
 - NOT_PERFORMED：AppID、微信后台隐私指引/业务域名配置、开发者工具截图、Android/iOS 微信真机、真实 Tesla OAuth/Telemetry/历史数据、生产部署与发布审核。
 - Git：已在 `feature/wechat-miniprogram` 提交本轮候选文件；未 push、未部署。
+# 2026-09-21 MateLink loading mark
+
+## Plan
+
+- [x] 在 Android 隔离分支和微信小程序分支核对现有主数据加载入口，保留错误、空数据和采集中状态的语义边界。
+- [x] 将用户提供的 loading 图案作为两端共享视觉资产接入公共加载组件。
+- [x] 在小程序车辆、行程、充电和授权准备状态接入加载图标，并补定向测试。
+- [x] 在 Android 公共加载组件接入加载图标，检查直接 CircularProgressIndicator 的数据加载例外。
+- [x] 运行小程序 typecheck/test/build 和 Android 定向测试/构建，分别审核两个分支的提交范围。
+
+## Review
+
+- PASS：新增 LoadingIndicator，接入车辆、行程、充电和 Tesla 授权准备/领取状态；加载图标保留用户提供图案并使用轻微呼吸动画，空态、错误和不可用状态不显示为加载。
+- PASS：图标资产为 256x221、约 50 KB；TypeScript、Vitest 9 文件/60 项和 WeChat build 全部通过，构建不再出现图标超大警告。
+- NOT_PERFORMED：微信开发者工具、真机截图、AppID 域名和真实数据联调。
+- PASS：已提交到 feature/wechat-miniprogram，提交为 81b6039；未 push、未部署。

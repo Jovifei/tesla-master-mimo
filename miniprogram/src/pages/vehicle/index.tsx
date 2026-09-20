@@ -3,6 +3,7 @@ import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 import ReadinessChecklist from '../../components/ReadinessChecklist'
 import MetricValue from '../../components/MetricValue'
+import LoadingIndicator from '../../components/LoadingIndicator'
 import { readinessViewFor } from '../../domain/readiness'
 import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { carSelectionStorageKey, type Car, type CarStatus, type ReadinessItem, type TelemetryPairing } from '../../services/types'
@@ -186,7 +187,7 @@ export default function VehiclePage() {
           <Text className="section-title">{car.displayName || car.name || '车辆名称待确认'}</Text>
           <Text className="muted">车型：{car.model || '车型待识别'}{car.trim ? ` · ${car.trim}` : ''}</Text>
           {car.exteriorColor ? <Text className="muted">外观：{car.exteriorColor}</Text> : null}
-          {loading ? <Text className="muted">正在读取最新数据…</Text> : null}
+          {loading ? <LoadingIndicator label="正在读取最新数据…" compact /> : null}
           {status ? (
             <View className="metric-grid">
               <MetricValue label="状态" value={status.state} source={status.source} />

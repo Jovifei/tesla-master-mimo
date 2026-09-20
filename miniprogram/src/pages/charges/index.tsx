@@ -8,6 +8,7 @@ import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '..
 import { carSelectionStorageKey, type Car, type Charge, type HistoryPage, type HistoryPageMeta } from '../../services/types'
 import { readAppSession } from '../../services/session'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
+import LoadingIndicator from '../../components/LoadingIndicator'
 
 const PAGE_SIZE = 20
 
@@ -268,7 +269,7 @@ export default function ChargesPage() {
       ) : (
         <View className="card">
           <Text className="section-title">充电记录 {items.length ? `（${items.length}）` : ''}</Text>
-          {loading ? <Text className="muted">正在读取…</Text> : null}
+          {loading ? <LoadingIndicator label="正在读取充电记录…" compact /> : null}
           {items.map(item => (
             <View key={`${item.id}-${item.sessionId || item.startDate || ''}`} className="status" onClick={() => { void openDetail(item) }}>
               <View>

@@ -219,3 +219,40 @@ button {
   font-size: 22px;
   line-height: 1.6;
 }
+
+.loading-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 0;
+}
+
+.loading-indicator-compact {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.loading-logo {
+  width: 104px;
+  height: 90px;
+  animation: loading-mark-breathe 1.5s ease-in-out infinite alternate;
+}
+
+.loading-indicator-compact .loading-logo {
+  width: 58px;
+  height: 50px;
+}
+
+.loading-label {
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+@keyframes loading-mark-breathe {
+  from { opacity: 0.78; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
