@@ -73,11 +73,23 @@ export function clearHistoryCache(storage: Pick<WechatStorage, 'removeStorageSyn
 export function clearHistoryCachesForAccount(
   storage: Pick<WechatStorage, 'getStorageInfoSync' | 'removeStorageSync'>,
   userId: string,
+  apiOrigin: string,
 ): void {
-  const accountSegment = `.${encodeURIComponent(userId)}.`
+  if (!userId.trim() || !apiOrigin.startsWith('https://')) return
+  const owner = `${encodeURIComponent(apiOrigin)}.${encodeURIComponent(userId)}.`
   try {
     for (const key of storage.getStorageInfoSync?.().keys ?? []) {
-      if (key.startsWith('matelink.history.v') && key.includes(accountSegment)) storage.removeStorageSync(key)
+      for (const schema of [HISTORY_CACHE_SCHEMA, PREVIOUS_HISTORY_CACHE_SCHEMA]) {
+        const prefix = `matelink.history.v${schema}.${owner}`
+        if (!key.startsWith(prefix)) continue
+        // Legacy keys leave dots unescaped. Preserve ambiguous identities rather
+        // than risk deleting another account's archive.
+        const suffix = key.slice(prefix.length)
+        const valid = schema === HISTORY_CACHE_SCHEMA
+          ? /^[^.]+\.(drives|charges)$/.test(suffix)
+          : /^[^.]+\.(drives|charges)\.\d+$/.test(suffix)
+        if (valid) storage.removeStorageSync(key)
+      }
     }
   } catch {
     // Server-side account deletion remains authoritative if optional local cache cleanup fails.

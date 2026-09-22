@@ -599,7 +599,7 @@ export const matelinkApi = {
     const current = readAppSession(Taro)
     if (!current || current.userId !== owner.userId) throw sessionChangedError()
     if (response.status !== 'deleted') throw new ApiError(errorMessages.invalid_account_delete_response, { code: 'invalid_account_delete_response' })
-    clearHistoryCachesForAccount(Taro, owner.userId)
+    clearHistoryCachesForAccount(Taro, owner.userId, getApiOrigin())
     sessionEpoch += 1
     clearAppSession(Taro)
     const revokeUrl = stringValue(response.tesla_consent_revoke_url)

@@ -1,5 +1,16 @@
 # 2026-08-30 iOS Apple 重设计（分支 feature/ios-apple-redesign，禁止提交 main）
 
+## 2026-09-22 小程序完成度推进
+
+- [x] 刷新隔离分支、设备锁屏、AppID 和数据库环境状态。
+- [x] RED：注销缓存清理误删跨服务器及其他账号车辆同名缓存，两个用例失败。
+- [x] GREEN：缓存清理绑定当前 API origin 与账号前缀，只接受明确的 v2/v3 后缀；有歧义的旧键保守保留。
+- [x] 验证：typecheck、9 文件 61 项测试、WeChat build、diff check 通过。
+- [ ] 真机加载图标视觉验收：ADB 可连接，isKeyguardShowing=true，等待用户解锁。
+- [ ] PostgreSQL 集成：Docker Linux 引擎不可连接，独立测试数据库尚未就绪。
+- [ ] 发布：AppID 仍为空；真实微信授权、车辆事件和平台审核尚未完成。
+
+
 # 2026-09-10 Local verification and 2.1.12 candidate
 
 ## Review
