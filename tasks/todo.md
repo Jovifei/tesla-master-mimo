@@ -3108,5 +3108,6 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - PASS：Android 公共图标资源为用户提供图案的高质量 256x221 缩放版；正确 2.1.12 基线的 Debug 单测、Debug Lint、Debug assemble 和 Release assemble 均通过。
 - PASS：正确候选分支为 codex/loading-indicator-current，提交 155f019、7c7e5f1，已推送；正式包校验为 com.matelink、versionCode 31、非 debuggable、证书与手机一致。
 - PASS：手机 OnePlus 7 Pro 6e4fa92f 使用 adb install -r 覆盖安装成功；versionName 2.1.12、versionCode 31、firstInstallTime 2026-08-31 22:36:47 保持不变。
-- PARTIAL：启动采样无 MateLink FATAL/ANR，但手机当前锁屏，窗口停在 NotificationShade，未完成页面级视觉点击验收；未输入密码、Tesla 凭据或验证码。
+- PASS：手机解锁后启动采样进程存活，无 MateLink FATAL/ANR；行程页、充电页和更多页均可进入，真实历史摘要、筛选项、暂无数据字段和底部导航正常显示。
+- PARTIAL：请求完成很快，未在截图帧中捕获加载动画本身；用户提供的图标已随正式包安装并由公共加载组件引用。
 - NOTE：交付脚本未能从 OnePlus dumpsys 读取签名，未自动安装；已独立从手机 base.apk 与候选 APK 用 apksigner 核对证书一致后执行唯一的 adb install -r。
