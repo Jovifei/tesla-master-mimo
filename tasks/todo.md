@@ -3106,6 +3106,7 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - [x] 从用户原图提取中间连环道路标志，去掉整块背景并输出 515x273 透明素材；浅色界面使用海军蓝主体与原青色路标。
 - [x] 小程序加载标志改用透明素材，青色光点沿五段虚线轨迹连续移动。
 - [x] TypeScript 检查与 WeChat Taro build 通过。
+- [x] 重做提交 `a0ff254` 已推送到 `feature/wechat-miniprogram`。
 - [ ] 微信开发者工具与 AppID 真机视觉验收待平台信息齐备后完成。
 
 ## Plan
