@@ -3111,3 +3111,11 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - PASS：手机解锁后启动采样进程存活，无 MateLink FATAL/ANR；行程页、充电页和更多页均可进入，真实历史摘要、筛选项、暂无数据字段和底部导航正常显示。
 - PARTIAL：请求完成很快，未在截图帧中捕获加载动画本身；用户提供的图标已随正式包安装并由公共加载组件引用。
 - NOTE：交付脚本未能从 OnePlus dumpsys 读取签名，未自动安装；已独立从手机 base.apk 与候选 APK 用 apksigner 核对证书一致后执行唯一的 adb install -r。
+
+## 2026-09-23 Loading mark extraction redo
+
+- [x] 从用户原图提取中间连环道路标志，去掉整块背景并输出 515x273 透明素材；浅色界面使用海军蓝主体与原青色路标。
+- [x] Android 改为透明图标配合光点沿五段虚线轨迹移动；移除旧的 M+D 轮廓追踪实现。
+- [x] Release assemble 成功；APK 校验为 com.matelink 2.1.12/build31、原签名证书。
+- [x] 用 `adb install -r` 覆盖 OnePlus 7 Pro；首次安装时间保持，进程存活，无 FATAL/ANR。
+- [ ] App 停在需要 Tesla 授权的连接引导页；页面加载动画瞬间截图还未捕获。
