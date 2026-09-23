@@ -9,11 +9,10 @@ type Props = {
 export default function LoadingIndicator({ label = '正在加载数据…', compact = false }: Props) {
   return (
     <View className={`loading-indicator ${compact ? 'loading-indicator-compact' : ''}`}>
-      <Image
-        className="loading-logo"
-        src={loadingLogo}
-        mode="aspectFit"
-      />
+      <View className="loading-mark">
+        <Image className="loading-logo" src={loadingLogo} mode="aspectFit" />
+        <View className="loading-beacon" />
+      </View>
       <Text className="loading-label">{label}</Text>
     </View>
   )

@@ -3101,6 +3101,13 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - Git：已在 `feature/wechat-miniprogram` 提交本轮候选文件；未 push、未部署。
 # 2026-09-21 MateLink loading mark
 
+## 2026-09-23 Loading mark extraction redo
+
+- [x] 从用户原图提取中间连环道路标志，去掉整块背景并输出 515x273 透明素材；浅色界面使用海军蓝主体与原青色路标。
+- [x] 小程序加载标志改用透明素材，青色光点沿五段虚线轨迹连续移动。
+- [x] TypeScript 检查与 WeChat Taro build 通过。
+- [ ] 微信开发者工具与 AppID 真机视觉验收待平台信息齐备后完成。
+
 ## Plan
 
 - [x] 在 Android 隔离分支和微信小程序分支核对现有主数据加载入口，保留错误、空数据和采集中状态的语义边界。
