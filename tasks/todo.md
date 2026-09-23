@@ -3118,4 +3118,6 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - [x] Android 改为透明图标配合光点沿五段虚线轨迹移动；移除旧的 M+D 轮廓追踪实现。
 - [x] Release assemble 成功；APK 校验为 com.matelink 2.1.12/build31、原签名证书。
 - [x] 用 `adb install -r` 覆盖 OnePlus 7 Pro；首次安装时间保持，进程存活，无 FATAL/ANR。
-- [ ] App 停在需要 Tesla 授权的连接引导页；页面加载动画瞬间截图还未捕获。
+- [x] 最终透明图标版本 APK SHA-256：`0A6FFC7DF59D988630CB312C0104D67B72E047F9284793690C61EB871F5C4009`；签名与设备已安装包一致。
+- [x] 重做提交 `1f329da` 已推送到 `codex/loading-indicator-current`。
+- [ ] App 当前停在需要 Tesla 人工授权的连接引导页，尚未触发行程/充电页面的加载动画截图；未输入 Tesla 凭据。
