@@ -240,7 +240,7 @@ button {
   position: relative;
   flex: none;
   width: 156px;
-  aspect-ratio: 515 / 273;
+  height: 82.7px;
 }
 
 .loading-logo {
@@ -259,11 +259,12 @@ button {
   background: #ffffff;
   box-shadow: 0 0 0 4px rgba(0, 211, 250, 0.34), 0 0 12px rgba(0, 211, 250, 0.9);
   transform: translate(-50%, -50%);
-  animation: loading-road-sweep 1.35s linear infinite;
+  animation: loading-road-sweep 1.8s linear infinite;
 }
 
 .loading-indicator-compact .loading-mark {
   width: 58px;
+  height: 30.7px;
 }
 
 .loading-indicator-compact .loading-beacon {
@@ -278,9 +279,8 @@ button {
 }
 
 @keyframes loading-road-sweep {
-  0% { left: 88.7%; top: 32.2%; opacity: 0.55; }
-  24% { left: 87.4%; top: 51.3%; opacity: 1; }
-  49% { left: 80%; top: 67.4%; opacity: 0.88; }
-  72% { left: 74.5%; top: 73.3%; opacity: 1; }
-  100% { left: 65.6%; top: 79.5%; opacity: 0.6; }
+  0%, 24.99% { left: 88.7%; top: 32.2%; opacity: 1; }
+  25%, 49.99% { left: 87.6%; top: 52.4%; opacity: 1; }
+  50%, 74.99% { left: 79.6%; top: 69%; opacity: 1; }
+  75%, 100% { left: 66.2%; top: 79.1%; opacity: 1; }
 }
