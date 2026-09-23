@@ -10,9 +10,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,8 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -42,20 +42,13 @@ fun MateLinkLoadingMark(
     pulseDurationMillis: Int = 1450,
     pulseColor: Color = ROAD_CYAN,
 ) {
-    val route = remember {
-        Path().apply {
-            moveTo(457f, 88f)
-            cubicTo(462f, 132f, 444f, 160f, 414f, 184f)
-            cubicTo(389f, 204f, 365f, 216f, 338f, 216f)
-        }
-    }
-    val routeMeasure = remember(route) {
-        PathMeasure().apply { setPath(route, forceClosed = false) }
+    val dashCenters = remember {
+        listOf(Offset(457f, 88f), Offset(451f, 143f), Offset(410f, 188f), Offset(341f, 216f))
     }
     val transition = rememberInfiniteTransition(label = "mateLinkRoadPulse")
     val progress by transition.animateFloat(
         initialValue = 0f,
-        targetValue = 1f,
+        targetValue = 4f,
         animationSpec = infiniteRepeatable(
             animation = tween(pulseDurationMillis, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
@@ -63,7 +56,7 @@ fun MateLinkLoadingMark(
         label = "mateLinkRoadProgress",
     )
 
-    Box(modifier.size(width = size, height = size * (273f / 515f))) {
+    Box(modifier.width(size).aspectRatio(515f / 273f)) {
         Image(
             painter = painterResource(com.matelink.R.drawable.matelink_loading_logo),
             contentDescription = stringResource(com.matelink.R.string.loading),
@@ -74,19 +67,10 @@ fun MateLinkLoadingMark(
             val xScale = this.size.width / 515f
             val yScale = this.size.height / 273f
             scale(xScale, yScale, pivot = Offset.Zero) {
-                val distance = progress * routeMeasure.length
-                val center = routeMeasure.getPosition(distance)
-                for (step in 4 downTo 1) {
-                    val trail = routeMeasure.getPosition(
-                        (distance - step * 15f).coerceAtLeast(0f)
-                    )
-                    drawCircle(
-                        color = pulseColor.copy(alpha = 0.09f * (5 - step)),
-                        radius = 10f + step,
-                        center = trail,
-                    )
-                }
-                drawCircle(color = pulseColor.copy(alpha = 0.34f), radius = 10f, center = center)
+                val activeDash = progress.toInt().coerceIn(0, 3)
+                val center = dashCenters[activeDash]
+                drawCircle(color = pulseColor.copy(alpha = 0.22f), radius = 20f, center = center)
+                drawCircle(color = pulseColor.copy(alpha = 0.38f), radius = 13f, center = center)
                 drawCircle(color = Color.White, radius = 3.5f, center = center)
             }
         }
@@ -126,6 +110,6 @@ fun MateLinkLoadingPlaceholder(
             .then(if (visible) Modifier.background(Color.Black.copy(alpha = 0.45f)) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        if (visible) MateLinkLoadingMark(modifier = Modifier.fillMaxWidth(0.46f), pulseColor = color)
+        if (visible) MateLinkLoadingMark(size = 180.dp, pulseColor = color)
     }
 }
