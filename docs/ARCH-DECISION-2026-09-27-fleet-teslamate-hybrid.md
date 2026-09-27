@@ -54,7 +54,7 @@ TeslaMate 不作为多人共享采集器，不接收其他用户的 Tesla 授权
 4. 本地桥接只读取 TeslaMate，使用该凭据上传归档批次。
 5. Jovi 可在 App 中撤销绑定；撤销后桥接上传返回 401/403，断点不推进。
 
-当前仓库已完成归档导入接口和本地桥接的第一版，但 App 内来源绑定/凭据发放 UI 仍是下一阶段工作。因此当前不能要求 Jovi 手填 `ARCHIVE_TOKEN`，也不能把本地 `.env` 当成最终用户授权体验。
+当前仓库已完成归档导入接口、服务端来源绑定/撤销和本地桥接的第一版，但 App 内来源绑定/凭据发放 UI 与 bridge enrollment 仍是下一阶段工作。因此当前不能要求 Jovi 手填 `ARCHIVE_TOKEN`，也不能把本地 `.env` 当成最终用户授权体验。
 
 ## 3. 为什么多人必须以 Fleet API 为主
 
@@ -99,11 +99,11 @@ Tesla Fleet API 的 OAuth token、用户、车辆和 Telemetry 会话必须按�
 
 - TeslaMate 本地数据库已经恢复；最新真实行程能够通过 Adapter 到达手机。
 - 手机有效行程数量已经与源库按页面过滤口径一致。
-- `deploy/jourvolt-dev-mock` 已增加 `/api/v1/cars/{id}/history/archive/import`，按用户/车辆鉴权并保存归档来源字段。
+- `deploy/jourvolt-dev-mock` 已增加 `/api/v1/cars/{id}/history/archive/import`，按用户/车辆和可撤销 binding credential 鉴权并保存归档来源字段。
 - `deploy/teslamate-home-docker/archive-bridge` 已增加只读查询、路线/充电映射、批量上传和原子 cursor。
 - 提交 `433d761` 已推送并部署为线上 API build；文档记录提交为 `6f47867`。
 - 当前线上 `/readyz` 仍为 `fleet/postgres/ok` + `telemetry=awaiting_first_event`。这表示 Fleet Telemetry 尚未收到真实首事件。
-- 当前没有配置归档 binding credential，桥接尚未上传真实云端记录。
+- 当前没有通过 App 生成并下发归档 binding credential，桥接尚未上传真实云端记录。
 
 ## 6. 禁止再次发生的误解
 

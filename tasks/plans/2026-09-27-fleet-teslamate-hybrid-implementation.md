@@ -63,8 +63,9 @@
 
 当前实现状态：
 
-- 服务端已增加绑定表、一次性 hash 凭据、绑定创建/撤销和归档上传 Header 校验。
-- `go test ./...`、`go vet ./...` 已通过；真实 PostgreSQL 绑定往返仍待部署后执行。
+- 服务端已增加绑定表、一次性 hash 凭据、绑定创建/状态/撤销和归档上传 Header 校验。
+- 绑定版已部署到 ECS `jourvolt-pilot`，线上 build `64b5a8a`；未重启 PostgreSQL/Fleet/MQTT/Command Proxy。
+- Go 全量测试/vet 和临时 PostgreSQL 集成测试均通过；真实用户 App 调用仍待 A2。
 
 验证：
 
@@ -77,7 +78,7 @@
 
 ### A2. App 绑定界面
 
-状态：待实现。服务端接口完成后，必须先完成 App 入口，不能要求 Jovi 手工复制 token 到 `.env`。
+状态：当前下一项。服务端已完成，但必须先完成 App 入口和本地 bridge enrollment，不能要求 Jovi 手工复制 token 到 `.env`。
 
 文件范围：
 
