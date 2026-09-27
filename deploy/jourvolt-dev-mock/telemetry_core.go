@@ -341,20 +341,28 @@ type telemetrySessionEvent struct {
 }
 
 type telemetrySession struct {
-	ID            string
-	PublicID      int
-	Kind          string
-	StartAt       time.Time
-	EndAt         *time.Time
-	OdometerStart *float64
-	OdometerEnd   *float64
-	EnergyAdded   *float64
-	CompletionKey string
-	Route         []telemetryRoutePoint
-	ChargePoints  []telemetryChargePoint
-	Source        string
-	QualityState  string
-	QualityReason string
+	ID               string
+	PublicID         int
+	Kind             string
+	StartAt          time.Time
+	EndAt            *time.Time
+	OdometerStart    *float64
+	OdometerEnd      *float64
+	EnergyAdded      *float64
+	CompletionKey    string
+	Route            []telemetryRoutePoint
+	ArchiveRoute     []historyImportRoutePoint
+	ChargePoints     []telemetryChargePoint
+	Source           string
+	QualityState     string
+	QualityReason    string
+	SourceInstanceID string
+	SourceVehicleID  string
+	SourceRecordID   string
+	StartAddress     *string
+	EndAddress       *string
+	Address          *string
+	Cost             *float64
 }
 
 type telemetryChargePoint struct {
@@ -1071,7 +1079,7 @@ func (s *telemetryMemoryStore) importSessions(userID string, vehicleID int, driv
 		imported := cloneTelemetrySession(&session)
 		foundIdx := -1
 		for i, existing := range existingSessions {
-			if existing.ID == imported.ID || (existing.Kind == imported.Kind && existing.StartAt.Equal(imported.StartAt)) {
+			if existing.ID == imported.ID || (imported.Source != "teslamate_archive" && existing.Kind == imported.Kind && existing.StartAt.Equal(imported.StartAt)) {
 				foundIdx = i
 				break
 			}

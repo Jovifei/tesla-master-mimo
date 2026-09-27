@@ -673,7 +673,9 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 	case "telemetry":
 		a.telemetryResource(w, r, userID, carID, parts[2:])
 	case "history":
-		if len(parts) >= 3 && parts[2] == "import" {
+		if len(parts) >= 4 && parts[2] == "archive" && parts[3] == "import" {
+			a.historyArchiveImport(w, r, userID, carID)
+		} else if len(parts) >= 3 && parts[2] == "import" {
 			a.historyImport(w, r, userID, carID)
 		} else {
 			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})

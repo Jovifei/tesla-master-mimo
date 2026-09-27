@@ -86,6 +86,13 @@ CREATE TABLE IF NOT EXISTS jourvolt_telemetry_sessions (
     source TEXT NOT NULL DEFAULT 'telemetry_mqtt',
     quality_state TEXT NOT NULL DEFAULT 'incomplete',
     quality_reason TEXT NOT NULL DEFAULT 'missing_evidence',
+    source_instance_id TEXT,
+    source_vehicle_id TEXT,
+    source_record_id TEXT,
+    start_address TEXT,
+    end_address TEXT,
+    address TEXT,
+    cost DOUBLE PRECISION,
     UNIQUE (user_id, vehicle_id, kind, started_at)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS jourvolt_telemetry_open_session_idx ON jourvolt_telemetry_sessions(user_id, vehicle_id, kind) WHERE ended_at IS NULL;
@@ -98,6 +105,20 @@ ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS charge_energy_f
 ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS charge_points_json JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS quality_state TEXT NOT NULL DEFAULT 'incomplete';
 ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS quality_reason TEXT NOT NULL DEFAULT 'missing_evidence';
+ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS source_instance_id TEXT;
+ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS source_vehicle_id TEXT;
+ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS source_record_id TEXT;
+ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS start_address TEXT;
+ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS end_address TEXT;
+ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS cost DOUBLE PRECISION;
+ALTER TABLE jourvolt_telemetry_sessions DROP CONSTRAINT IF EXISTS jourvolt_telemetry_sessions_user_id_vehicle_id_kind_started_at_key;
+CREATE UNIQUE INDEX IF NOT EXISTS jourvolt_telemetry_sessions_native_identity_idx
+  ON jourvolt_telemetry_sessions(user_id, vehicle_id, kind, started_at)
+  WHERE source <> 'teslamate_archive';
+CREATE UNIQUE INDEX IF NOT EXISTS jourvolt_telemetry_sessions_archive_identity_idx
+  ON jourvolt_telemetry_sessions(user_id, vehicle_id, kind, source_instance_id, source_vehicle_id, source_record_id)
+  WHERE source = 'teslamate_archive';
 ALTER TABLE jourvolt_telemetry_route_points ADD COLUMN IF NOT EXISTS speed DOUBLE PRECISION;
 ALTER TABLE jourvolt_telemetry_route_points ADD COLUMN IF NOT EXISTS power DOUBLE PRECISION;
 ALTER TABLE jourvolt_telemetry_route_points ADD COLUMN IF NOT EXISTS heading DOUBLE PRECISION;
@@ -448,7 +469,7 @@ func (s *telemetryService) historyPostgres(ctx context.Context, userID string, v
 	if s.store == nil || s.store.pool == nil {
 		return nil, time.Time{}, nil
 	}
-	rows, err := s.store.pool.Query(ctx, `SELECT id, public_id, started_at, ended_at, odometer_start, odometer_end, energy_added, route_json, charge_points_json, source, quality_state, quality_reason FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND vehicle_id=$2 AND kind=$3 AND ended_at IS NOT NULL AND quality_state != 'quarantined' ORDER BY started_at DESC`, userID, vehicleID, kind)
+	rows, err := s.store.pool.Query(ctx, `SELECT id, public_id, started_at, ended_at, odometer_start, odometer_end, energy_added, route_json, charge_points_json, source, quality_state, quality_reason, source_instance_id, source_vehicle_id, source_record_id, start_address, end_address, address, cost FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND vehicle_id=$2 AND kind=$3 AND ended_at IS NOT NULL AND quality_state != 'quarantined' ORDER BY started_at DESC`, userID, vehicleID, kind)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
@@ -459,10 +480,24 @@ func (s *telemetryService) historyPostgres(ctx context.Context, userID string, v
 		var session telemetrySession
 		var routeJSON []byte
 		var chargePointsJSON []byte
-		if err := rows.Scan(&session.ID, &session.PublicID, &session.StartAt, &session.EndAt, &session.OdometerStart, &session.OdometerEnd, &session.EnergyAdded, &routeJSON, &chargePointsJSON, &session.Source, &session.QualityState, &session.QualityReason); err != nil {
+		if err := rows.Scan(&session.ID, &session.PublicID, &session.StartAt, &session.EndAt, &session.OdometerStart, &session.OdometerEnd, &session.EnergyAdded, &routeJSON, &chargePointsJSON, &session.Source, &session.QualityState, &session.QualityReason, &session.SourceInstanceID, &session.SourceVehicleID, &session.SourceRecordID, &session.StartAddress, &session.EndAddress, &session.Address, &session.Cost); err != nil {
 			return nil, time.Time{}, err
 		}
-		_ = json.Unmarshal(routeJSON, &session.Route)
+		if session.Source == "teslamate_archive" {
+			_ = json.Unmarshal(routeJSON, &session.ArchiveRoute)
+			for _, point := range session.ArchiveRoute {
+				if point.Latitude == nil || point.Longitude == nil {
+					continue
+				}
+				observedAt, err := time.Parse(time.RFC3339, point.Date)
+				if err != nil {
+					continue
+				}
+				session.Route = append(session.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading})
+			}
+		} else {
+			_ = json.Unmarshal(routeJSON, &session.Route)
+		}
 		_ = json.Unmarshal(chargePointsJSON, &session.ChargePoints)
 		result = append(result, session)
 		if startedAt.IsZero() || session.StartAt.Before(startedAt) {

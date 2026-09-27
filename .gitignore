@@ -14,6 +14,7 @@ android/.idea/
 # Local deployment secrets
 deploy/**/.env
 deploy/*.env
+deploy/teslamate-home-docker/archive-state/
 deploy/jourvolt-dev-mock/backups/
 
 # Agent tooling internals (local only, never commit)

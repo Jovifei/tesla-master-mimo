@@ -88,6 +88,31 @@ http://192.168.1.100:4000
 http://192.168.1.100:3000
 ```
 
+## 8. 个人 TeslaMate 长期云端归档（可选）
+
+归档桥接是独立的个人数据源服务，不参与 Tesla 登录，也不修改 TeslaMate。它只用 PostgreSQL 只读账号读取已完成行程、路线点、充电采样、地址和费用，再按来源实例/车辆身份分批上传到 MateLink 云端；断点只在云端返回成功后推进。
+
+先在 TeslaMate 数据库创建最小只读账号（密码不要提交到 Git）：
+
+```sql
+CREATE ROLE matelink_archive_reader LOGIN PASSWORD 'replace-with-a-strong-reader-password';
+GRANT CONNECT ON DATABASE teslamate TO matelink_archive_reader;
+GRANT USAGE ON SCHEMA public TO matelink_archive_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO matelink_archive_reader;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO matelink_archive_reader;
+```
+
+在 `.env` 中填写云端绑定产生的 `ARCHIVE_TOKEN`、目标 `ARCHIVE_VEHICLE_ID`、固定的 `ARCHIVE_SOURCE_INSTANCE_ID` 和已核验的 `ARCHIVE_SOURCE_VEHICLE_ID`，并设置 `ARCHIVE_DATABASE_URL` 使用上述只读账号。不要用车型、昵称或数字车 ID 自动绑定来源。
+
+启动归档桥接：
+
+```powershell
+docker compose --profile archive up -d matelink-archive-bridge
+docker compose logs -f matelink-archive-bridge
+```
+
+没有云端绑定凭据时不要启动该 profile；空 token 不会被当作成功，桥接失败也不会推进断点。TeslaMate 本地读取和手机自托管模式不依赖这个服务。
+
 ## 6. 外网访问建议
 
 家用主机不建议把裸 HTTP 直接暴露到公网。

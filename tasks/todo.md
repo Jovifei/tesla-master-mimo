@@ -3041,3 +3041,19 @@
 Design: enumerate HTTPS browsers with MATCH_ALL and show an in-app browser list that launches the selected explicit component for the trusted OAuth URL on every explicit login, with a localized title and existing safe external-launch error handling. This avoids the connected OnePlus returning only the default browser. Keep virtual-key deep links unchanged so Tesla app confirmation remains reachable. No server/data semantics changes are authorized by this browser task.
 
 Review: final Debug/Release JVM suites each ran 526 tests with zero failures/errors (Release 8 skips); final lintDebug/lintRelease passed. Signed Release 2.1.10 (29), com.matelink, non-debuggable, original signing certificate verified; the final installed APK SHA-256 is recorded in docs/ANDROID-RELEASE-LOG.md. Build memory recovery used temporary 4 GB heap and two workers, no project JVM changes. Four focused Go auth/config/history tests passed. Independent browser review found no remaining blocker; read-only device query confirmed Chrome visibility with MATCH_ALL. Final UI/OAuth/real-event acceptance is not performed. The five data findings were repaired under the authorized follow-up section above.
+
+## 2026-09-27 个人 TeslaMate 全量归档桥接
+
+- [x] 本机 TeslaMate 数据盘/逻辑备份与隔离恢复；源库和 Adapter 可读。
+- [x] 真机自托管刷新验收：最新真实行程到达手机，源库/手机有效行程口径一致。
+- [x] 新增云端 TeslaMate 原始来源导入契约，保留路线点、充电采样、地址、费用与来源身份；服务端按用户/车辆校验并兼容旧 `/history/import`。
+- [x] 新增本地只读桥接进程：分批、幂等来源记录、原子断点、失败重试；不读取 Tesla 登录令牌、不写源库。
+- [ ] 运行桥接的真实数据库/云端绑定上传一条新行程；当前缺正式部署和已绑定的云端归档凭据。
+- [ ] 继续 Fleet Telemetry 脱敏诊断与真实事件接管门禁；不把 TeslaMate 数据当作 Fleet PASS。
+
+### Review 2026-09-27
+
+- PASS：本机源库现有 319 条已结束行程，最新两条为 2026-09-27 08:06–08:32、09:27–10:02；Adapter 查询可读，手机刷新后显示 257 条符合页面行程门槛的记录，与源库一致。
+- PASS：服务端 Go test/vet、archive bridge Go test/vet、Compose config、bridge Docker build 通过；桥接测试覆盖只读查询、敏感错误脱敏、HTTP Authorization、原子 cursor 和 null/zero 映射。
+- PARTIAL：新增 `/history/archive/import` 仅完成源码和本地门禁，未部署到 ECS；来源身份目前由已认证用户配置的 source instance/vehicle 字段约束，尚未接入独立可撤销 binding credential。
+- PENDING：正式云端 token/binding 与生产部署后，才能上传真实新行程并核对云端落库。当前线上 `/readyz` 为 `fleet/postgres/ok`、`telemetry=awaiting_first_event`；这仍是 Fleet Telemetry 等待真实首事件，不能由 TeslaMate 归档替代。

@@ -1078,6 +1078,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 	result := map[string]any{
 		"start_date": session.StartAt.UTC().Format(time.RFC3339), "end_date": nil,
 		"source": source, "quality_state": qualityState, "quality_reason": qualityReason, "session_id": session.ID,
+		"source_instance_id": session.SourceInstanceID, "source_vehicle_id": session.SourceVehicleID, "source_record_id": session.SourceRecordID,
 	}
 	if end != nil {
 		result["end_date"] = end.UTC().Format(time.RFC3339)
@@ -1085,7 +1086,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 	}
 	if kind == "drive" {
 		result["drive_id"] = session.PublicID
-		result["start_address"], result["end_address"] = nil, nil
+		result["start_address"], result["end_address"] = session.StartAddress, session.EndAddress
 		result["duration_str"], result["speed_max"], result["speed_avg"] = nil, nil, nil
 		result["power_max"], result["power_min"] = nil, nil
 		result["battery_details"], result["range_ideal"], result["range_rated"] = nil, nil, nil
@@ -1100,11 +1101,21 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		result["consumption_net"] = nil
 		result["odometer_details"] = map[string]any{"odometer_start": session.OdometerStart, "odometer_end": session.OdometerEnd, "odometer_distance": odometerDistance(session.OdometerStart, session.OdometerEnd)}
 		route := make([]map[string]any, 0, len(session.Route))
-		for _, point := range session.Route {
-			route = append(route, map[string]any{
-				"date": point.ObservedAt.UTC().Format(time.RFC3339), "latitude": point.Latitude, "longitude": point.Longitude,
-				"speed": point.Speed, "power": point.Power, "heading": point.Heading,
-			})
+		if session.Source == "teslamate_archive" && session.ArchiveRoute != nil {
+			for _, point := range session.ArchiveRoute {
+				item := map[string]any{"date": nil, "latitude": nullableFloat(point.Latitude), "longitude": nullableFloat(point.Longitude), "speed": nullableFloat(point.Speed), "power": nullableFloat(point.Power), "heading": nullableFloat(point.Heading)}
+				if point.Date != "" {
+					item["date"] = point.Date
+				}
+				route = append(route, item)
+			}
+		} else {
+			for _, point := range session.Route {
+				route = append(route, map[string]any{
+					"date": point.ObservedAt.UTC().Format(time.RFC3339), "latitude": point.Latitude, "longitude": point.Longitude,
+					"speed": point.Speed, "power": point.Power, "heading": point.Heading,
+				})
+			}
 		}
 		result["drive_details"] = route
 		if len(session.Route) > 0 {
@@ -1117,7 +1128,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		}
 	} else {
 		result["charge_id"] = session.PublicID
-		result["address"], result["charge_energy_used"], result["cost"] = nil, nil, nil
+		result["address"], result["charge_energy_used"], result["cost"] = session.Address, nil, session.Cost
 		result["duration_str"], result["battery_details"], result["range_ideal"] = nil, nil, nil
 		result["range_rated"], result["outside_temp_avg"], result["odometer"] = nil, nil, nil
 		result["latitude"], result["longitude"] = nil, nil
@@ -1172,6 +1183,13 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 	}
 	result["sequence"] = index
 	return result
+}
+
+func nullableFloat(value *float64) any {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 func odometerDistance(start, end *float64) *float64 {
