@@ -95,6 +95,18 @@ CREATE TABLE IF NOT EXISTS jourvolt_telemetry_sessions (
     cost DOUBLE PRECISION,
     UNIQUE (user_id, vehicle_id, kind, started_at)
 );
+CREATE TABLE IF NOT EXISTS jourvolt_history_archive_bindings (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES jourvolt_users(id) ON DELETE CASCADE,
+    vehicle_id INTEGER NOT NULL REFERENCES jourvolt_vehicles(id) ON DELETE CASCADE,
+    source_instance_id TEXT NOT NULL,
+    source_vehicle_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    UNIQUE (user_id, vehicle_id, source_instance_id, source_vehicle_id)
+);
 CREATE UNIQUE INDEX IF NOT EXISTS jourvolt_telemetry_open_session_idx ON jourvolt_telemetry_sessions(user_id, vehicle_id, kind) WHERE ended_at IS NULL;
 ALTER TABLE jourvolt_telemetry_event_buffer ADD COLUMN IF NOT EXISTS receive_sequence BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE jourvolt_telemetry_latest ADD COLUMN IF NOT EXISTS receive_sequence BIGINT NOT NULL DEFAULT 0;

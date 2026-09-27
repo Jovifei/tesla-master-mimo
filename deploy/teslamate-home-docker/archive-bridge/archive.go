@@ -63,7 +63,7 @@ func (b *Bridge) importBatch(ctx context.Context, batch ArchiveBatch) error {
 	if err != nil {
 		return errors.New("archive request creation failed")
 	}
-	request.Header.Set("Authorization", "Bearer "+b.config.ArchiveToken)
+	request.Header.Set("X-MateLink-Archive-Binding", b.config.ArchiveToken)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	response, err := b.httpClient.Do(request)

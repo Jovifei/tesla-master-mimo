@@ -410,6 +410,10 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if a.authRoute(w, r) {
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/api/v1/cars/") && strings.TrimSpace(r.Header.Get("X-MateLink-Archive-Binding")) != "" {
+		a.archiveBindingResource(w, r)
+		return
+	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/session/refresh" {
 		a.refresh(w, r)
 		return
@@ -673,8 +677,12 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 	case "telemetry":
 		a.telemetryResource(w, r, userID, carID, parts[2:])
 	case "history":
-		if len(parts) >= 4 && parts[2] == "archive" && parts[3] == "import" {
-			a.historyArchiveImport(w, r, userID, carID)
+		if len(parts) >= 4 && parts[2] == "archive" && parts[3] == "bind" {
+			a.historyArchiveBind(w, r, userID, carID)
+		} else if len(parts) >= 4 && parts[2] == "archive" && parts[3] == "revoke" {
+			a.historyArchiveRevoke(w, r, userID, carID)
+		} else if len(parts) >= 4 && parts[2] == "archive" && parts[3] == "import" {
+			a.json(w, http.StatusUnauthorized, map[string]string{"error": "archive_binding_required"})
 		} else if len(parts) >= 3 && parts[2] == "import" {
 			a.historyImport(w, r, userID, carID)
 		} else {

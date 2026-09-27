@@ -43,7 +43,7 @@ func TestImportRequestURLAuthAndErrorRedaction(t *testing.T) {
 	if received.Method != http.MethodPost || received.URL.Path != wantPath {
 		t.Fatalf("request = %s %s, want POST %s", received.Method, received.URL.Path, wantPath)
 	}
-	if got := received.Header.Get("Authorization"); got != "Bearer "+token {
+	if got := received.Header.Get("X-MateLink-Archive-Binding"); got != token {
 		t.Fatalf("authorization = %q", got)
 	}
 	if got := received.Header.Get("Content-Type"); got != "application/json" {
