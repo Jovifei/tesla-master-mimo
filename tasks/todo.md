@@ -3057,3 +3057,5 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - PASS：服务端 Go test/vet、archive bridge Go test/vet、Compose config、bridge Docker build 通过；桥接测试覆盖只读查询、敏感错误脱敏、HTTP Authorization、原子 cursor 和 null/zero 映射。
 - PARTIAL：新增 `/history/archive/import` 仅完成源码和本地门禁，未部署到 ECS；来源身份目前由已认证用户配置的 source instance/vehicle 字段约束，尚未接入独立可撤销 binding credential。
 - PENDING：正式云端 token/binding 与生产部署后，才能上传真实新行程并核对云端落库。当前线上 `/readyz` 为 `fleet/postgres/ok`、`telemetry=awaiting_first_event`；这仍是 Fleet Telemetry 等待真实首事件，不能由 TeslaMate 归档替代。
+- PASS：提交 `433d761` 已推送到 `codex/teslamate-cloud-archive`；ECS 使用 `jourvolt-pilot` Compose 仅重建 `jourvolt-dev-api`，线上 `/healthz`/`/readyz` 返回 `build_sha=433d761`、`fleet/postgres/ok`，Fleet Telemetry、MQTT、Command Proxy 和 PostgreSQL 未重启；归档接口未授权请求返回 401。
+- PENDING：桥接凭据/来源绑定尚未生成，未启动本地 archive profile，未上传真实新行程；这不是失败上传，而是绑定凭据门禁尚未完成。
