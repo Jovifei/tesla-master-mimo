@@ -1,5 +1,7 @@
 # 架构决策：路线三 — Fleet API 多租户 + 手机本地历史（2026-08-28）
 
+> **历史决策提示（2026-09-27）**：本文仍然有效的部分是“多人正式产品必须使用 Fleet API 多租户”和“TeslaMate 不能作为多人共享采集器”。其中“行车历史永不上传服务器、只保存在手机”的约束已被 Jovi 明确替换为新的混合架构：Fleet Telemetry 作为多人新增数据主源；Jovi 个人 TeslaMate 仅通过显式来源绑定和只读桥接上传到云端长期归档。权威新文档见 [`docs/ARCH-DECISION-2026-09-27-fleet-teslamate-hybrid.md`](ARCH-DECISION-2026-09-27-fleet-teslamate-hybrid.md)。后续会话不得把本文件旧的“永不上传”条款当作当前最终目标。
+
 | 项 | 值 |
 | --- | --- |
 | 决策人 | Jovi |
