@@ -410,10 +410,6 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if a.authRoute(w, r) {
 		return
 	}
-	if strings.HasPrefix(r.URL.Path, "/api/v1/cars/") && strings.TrimSpace(r.Header.Get("X-MateLink-Archive-Binding")) != "" {
-		a.archiveBindingResource(w, r)
-		return
-	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/session/refresh" {
 		a.refresh(w, r)
 		return
@@ -424,6 +420,10 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodDelete && r.URL.Path == "/v1/account" {
 		a.deleteAccount(w, r)
+		return
+	}
+	if archiveImportPath(r.URL.Path) {
+		a.archiveBindingResource(w, r, "")
 		return
 	}
 	userID, ok := a.auth(w, r)
@@ -636,6 +636,10 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 	carID, err := strconv.Atoi(parts[0])
 	if err != nil {
 		a.json(w, http.StatusNotFound, map[string]string{"error": "vehicle_not_found"})
+		return
+	}
+	if archiveImportParts(parts) {
+		a.archiveBindingResource(w, r, userID)
 		return
 	}
 	if !a.requireVehicle(w, r, userID, carID) {

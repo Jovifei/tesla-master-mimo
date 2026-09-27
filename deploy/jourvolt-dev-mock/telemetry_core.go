@@ -836,16 +836,17 @@ type telemetryKey struct {
 }
 
 type telemetryMemoryStore struct {
-	mu           sync.Mutex
-	vehicles     map[string][]telemetryVehicleRef
-	latest       map[telemetryKey]map[string]telemetryLatestValue
-	events       map[string]time.Time
-	routes       map[telemetryKey][]telemetryRoutePoint
-	machines     map[telemetryKey]*telemetrySessionMachine
-	completed    map[telemetryKey][]telemetrySession
-	pairings     map[telemetryKey]telemetryPairing
-	startedAt    map[telemetryKey]time.Time
-	nextPublicID int
+	mu              sync.Mutex
+	vehicles        map[string][]telemetryVehicleRef
+	latest          map[telemetryKey]map[string]telemetryLatestValue
+	events          map[string]time.Time
+	routes          map[telemetryKey][]telemetryRoutePoint
+	machines        map[telemetryKey]*telemetrySessionMachine
+	completed       map[telemetryKey][]telemetrySession
+	pairings        map[telemetryKey]telemetryPairing
+	startedAt       map[telemetryKey]time.Time
+	archiveBindings map[string]archiveBinding
+	nextPublicID    int
 }
 
 func newTelemetryMemoryStore() *telemetryMemoryStore {
@@ -853,7 +854,8 @@ func newTelemetryMemoryStore() *telemetryMemoryStore {
 		vehicles: map[string][]telemetryVehicleRef{}, latest: map[telemetryKey]map[string]telemetryLatestValue{},
 		events: map[string]time.Time{}, routes: map[telemetryKey][]telemetryRoutePoint{},
 		machines: map[telemetryKey]*telemetrySessionMachine{}, completed: map[telemetryKey][]telemetrySession{},
-		pairings: map[telemetryKey]telemetryPairing{}, startedAt: map[telemetryKey]time.Time{}, nextPublicID: 1,
+		pairings: map[telemetryKey]telemetryPairing{}, startedAt: map[telemetryKey]time.Time{},
+		archiveBindings: map[string]archiveBinding{}, nextPublicID: 1,
 	}
 }
 

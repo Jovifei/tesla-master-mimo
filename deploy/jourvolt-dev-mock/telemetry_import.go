@@ -462,33 +462,9 @@ func (a *app) historyImport(w http.ResponseWriter, r *http.Request, userID strin
 }
 
 func (a *app) historyArchiveImport(w http.ResponseWriter, r *http.Request, userID string, vehicleID int) {
-	if r.Method != http.MethodPost {
-		a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
-		return
-	}
-	request, err := importRequestFromBody(w, r)
-	if err == nil {
-		err = validateArchiveImportRequest(request)
-	}
-	if err != nil {
-		var validationErr *historyImportSessionValidationError
-		if errors.As(err, &validationErr) {
-			status := http.StatusBadRequest
-			if validationErr.Message == "request_body_too_large" {
-				status = http.StatusRequestEntityTooLarge
-			}
-			a.json(w, status, map[string]string{"error": validationErr.Message})
-			return
-		}
-		a.json(w, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
-		return
-	}
-	result, err := a.telemetry.importHistory(r.Context(), userID, vehicleID, request)
-	if err != nil {
-		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_archive_import_failed"})
-		return
-	}
-	a.json(w, http.StatusOK, map[string]any{"data": result})
+	// Keep the archive path behind the binding-only authentication boundary even
+	// when a caller reaches this helper directly from an internal route.
+	a.archiveBindingResource(w, r, userID)
 }
 
 // mergeImportedSession preserves absent fields and all previously received points.
