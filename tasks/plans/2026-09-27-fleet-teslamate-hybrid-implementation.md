@@ -1,8 +1,8 @@
 # Fleet API 多用户主链路 + Jovi TeslaMate 个人归档实施计划
 
-日期：2026-09-27  
-依据：[`docs/ARCH-DECISION-2026-09-27-fleet-teslamate-hybrid.md`](../../docs/ARCH-DECISION-2026-09-27-fleet-teslamate-hybrid.md)  
-适用分支：`codex/teslamate-cloud-archive`  
+日期：2026-09-27
+依据：[`docs/ARCH-DECISION-2026-09-27-fleet-teslamate-hybrid.md`](../../docs/ARCH-DECISION-2026-09-27-fleet-teslamate-hybrid.md)
+适用分支：`codex/teslamate-cloud-archive`
 当前提交：`6f47867`（归档 API 已部署，绑定流程尚未完成）
 
 ## 0. 最终目标与硬边界
