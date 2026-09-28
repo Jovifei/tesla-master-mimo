@@ -960,17 +960,17 @@ func telemetryCommandErrorClass(status int, body []byte) string {
 }
 
 func safeTelemetryProxyBodyClass(body []byte) string {
+	text := strings.ToLower(string(body))
 	var payload map[string]any
-	if json.Unmarshal(body, &payload) != nil {
-		return ""
-	}
-	parts := make([]string, 0, 3)
-	for _, key := range []string{"error", "error_description", "message"} {
-		if value, ok := payload[key].(string); ok {
-			parts = append(parts, strings.ToLower(value))
+	if json.Unmarshal(body, &payload) == nil {
+		parts := make([]string, 0, 3)
+		for _, key := range []string{"error", "error_description", "message"} {
+			if value, ok := payload[key].(string); ok {
+				parts = append(parts, strings.ToLower(value))
+			}
 		}
+		text = strings.Join(parts, " ")
 	}
-	text := strings.Join(parts, " ")
 	switch {
 	case strings.Contains(text, "public key") && strings.Contains(text, "not been paired"),
 		strings.Contains(text, "virtual key") && strings.Contains(text, "required"):

@@ -299,6 +299,9 @@ func TestTelemetryProxyBadGatewayClassifiesOnlyStableSafeReasons(t *testing.T) {
 	if got := telemetryCommandErrorClass(http.StatusBadGateway, []byte(`{"error":"contains VIN 5YJ00000000000000 and secret details"}`)); got != "telemetry_error" {
 		t.Fatalf("unknown body must stay generic, got %q", got)
 	}
+	if got := telemetryCommandErrorClass(http.StatusBadGateway, []byte(`vehicle rejected request: your public key has not been paired with the vehicle`)); got != "pairing_required" {
+		t.Fatalf("plain text missing key classification = %q", got)
+	}
 }
 
 func TestTask2ConfigurePersistsOnlyOfficialConfigGETTruth(t *testing.T) {
