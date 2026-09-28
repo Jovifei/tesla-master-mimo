@@ -104,10 +104,21 @@ func (a *app) telemetryHistory(w http.ResponseWriter, r *http.Request, userID st
 	items = filterTelemetryHistoryByDate(items, r)
 	total := len(items)
 	items, page, show := paginateTelemetryHistory(items, r)
+	summarizeTelemetryHistory(items, kind)
 	meta["page"], meta["show"], meta["total"] = page, show, total
 	meta["total_pages"] = pageCount(total, show)
 	plural := kind + "s"
 	a.json(w, http.StatusOK, map[string]any{"data": map[string]any{plural: items, "meta": meta}})
+}
+
+func summarizeTelemetryHistory(items []map[string]any, kind string) {
+	detailsKey := "drive_details"
+	if kind == "charge" {
+		detailsKey = "charge_details"
+	}
+	for _, item := range items {
+		item[detailsKey] = []map[string]any{}
+	}
 }
 
 func filterTelemetryHistoryByDate(items []map[string]any, r *http.Request) []map[string]any {
