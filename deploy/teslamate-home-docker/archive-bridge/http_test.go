@@ -121,3 +121,21 @@ func TestImportRequiresACompleteServerReceipt(t *testing.T) {
 		t.Fatal("archive request succeeded without a complete import receipt")
 	}
 }
+
+func TestPollFailureReportsOnlyTheSafeBoundaryAndHttpStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"sensitive-provider-body"}`))
+	}))
+	defer server.Close()
+	config := testConfig(server.URL, filepath.Join(t.TempDir(), "cursor.json"))
+	bridge := NewBridge(config, fixtureSource{drives: []DriveRecord{{ID: 7, StartedAt: timePointer(testTime(1)), EndedAt: timePointer(testTime(2))}}})
+
+	err := bridge.PollOnce(t.Context())
+	if got := archiveFailureStage(err); got != "import_http_400" {
+		t.Fatalf("failure stage = %q, want import_http_400", got)
+	}
+	if strings.Contains(archiveFailureStage(err), "sensitive-provider-body") {
+		t.Fatal("response body leaked into safe failure stage")
+	}
+}

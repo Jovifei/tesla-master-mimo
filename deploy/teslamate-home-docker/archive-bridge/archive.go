@@ -23,6 +23,44 @@ type Bridge struct {
 	httpClient *http.Client
 }
 
+type archiveStageError struct {
+	stage string
+	err   error
+}
+
+func (e *archiveStageError) Error() string { return "archive " + e.stage + " failed" }
+func (e *archiveStageError) Unwrap() error { return e.err }
+
+type archiveHTTPStatusError struct{ status int }
+
+func (e *archiveHTTPStatusError) Error() string {
+	return fmt.Sprintf("archive import returned HTTP status %d", e.status)
+}
+
+func archiveFailureStage(err error) string {
+	if err == nil {
+		return "none"
+	}
+	var stage *archiveStageError
+	if errors.As(err, &stage) {
+		if stage.stage == "import" {
+			var status *archiveHTTPStatusError
+			if errors.As(stage.err, &status) {
+				return fmt.Sprintf("import_http_%d", status.status)
+			}
+		}
+		return stage.stage
+	}
+	return "unknown"
+}
+
+func atArchiveStage(stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &archiveStageError{stage: stage, err: err}
+}
+
 func NewBridge(config Config, source HistorySource) *Bridge {
 	return &Bridge{config: config, source: source, httpClient: &http.Client{
 		Timeout: 30 * time.Second,
@@ -35,28 +73,28 @@ func NewBridge(config Config, source HistorySource) *Bridge {
 func (b *Bridge) PollOnce(ctx context.Context) error {
 	cursor, err := loadCursor(b.config.StateFile)
 	if err != nil {
-		return err
+		return atArchiveStage("cursor_read", err)
 	}
 	cursor, err = scopeCursor(b.config, cursor)
 	if err != nil {
-		return err
+		return atArchiveStage("cursor_scope", err)
 	}
 	drives, err := b.source.FetchDrives(ctx, cursor.LastDriveID, int64(b.config.BatchSize))
 	if err != nil {
-		return err
+		return atArchiveStage("source_drives", err)
 	}
 	charges, err := b.source.FetchCharges(ctx, cursor.LastChargeID, int64(b.config.BatchSize))
 	if err != nil {
-		return err
+		return atArchiveStage("source_charges", err)
 	}
 	if len(drives) == 0 && len(charges) == 0 {
 		return nil
 	}
 	batch := buildArchiveBatch(b.config, cursor, drives, charges)
 	if err := b.importBatch(ctx, batch); err != nil {
-		return err
+		return atArchiveStage("import", err)
 	}
-	return saveCursor(b.config.StateFile, nextCursor(cursor, drives, charges))
+	return atArchiveStage("cursor_write", saveCursor(b.config.StateFile, nextCursor(cursor, drives, charges)))
 }
 
 func (b *Bridge) importBatch(ctx context.Context, batch ArchiveBatch) error {
@@ -85,7 +123,7 @@ func (b *Bridge) importBatch(ctx context.Context, batch ArchiveBatch) error {
 		return errors.New("archive import response could not be read")
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("archive import returned HTTP status %d", response.StatusCode)
+		return &archiveHTTPStatusError{status: response.StatusCode}
 	}
 	var receipt struct {
 		Data struct {
@@ -116,7 +154,7 @@ func archiveImportURL(config Config) (string, error) {
 func (b *Bridge) Run(ctx context.Context) error {
 	if err := b.PollOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		// Keep operational logs free of tokens, VINs, coordinates, and response bodies.
-		fmt.Println("archive poll failed")
+		fmt.Printf("archive poll failed stage=%s\n", archiveFailureStage(err))
 	}
 	ticker := time.NewTicker(b.config.PollInterval)
 	defer ticker.Stop()
@@ -126,7 +164,7 @@ func (b *Bridge) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			if err := b.PollOnce(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				fmt.Println("archive poll failed")
+				fmt.Printf("archive poll failed stage=%s\n", archiveFailureStage(err))
 			}
 		}
 	}
