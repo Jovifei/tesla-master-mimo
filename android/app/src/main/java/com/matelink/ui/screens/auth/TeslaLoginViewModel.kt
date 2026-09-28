@@ -416,7 +416,17 @@ class TeslaLoginViewModel @Inject constructor(
         val requestId = invalidateCurrentRequest()
         requestJob?.cancel()
         requestJob = viewModelScope.launch(Dispatchers.IO) {
-            runPostLoginOnboardingSafely(requestId)
+            if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return@launch
+            publishOnboardingChecking()
+            val carsResult = teslamateRepository.getCars()
+            val cars = (carsResult as? ApiResult.Success)?.data
+            val selectedCarId = settingsRepository.currentCarId.first()
+            val car = cars?.firstOrNull { it.carId == selectedCarId } ?: cars?.firstOrNull()
+            if (car == null) {
+                publishBlocked("vehicle_not_found", requestId)
+                return@launch
+            }
+            retryTelemetryAfterPairingSafely(requestId, car.carId)
         }
     }
 

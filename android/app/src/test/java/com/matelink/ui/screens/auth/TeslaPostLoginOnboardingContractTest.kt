@@ -67,4 +67,12 @@ class TeslaPostLoginOnboardingContractTest {
                 .contains("sessionStore.clear()")
         )
     }
+
+    @Test
+    fun explicitRecheckActuallyRetriesTelemetryConfiguration() {
+        val source = File("src/main/java/com/matelink/ui/screens/auth/TeslaLoginViewModel.kt").readText()
+        val retry = source.substringAfter("fun retryTeslaOnboarding()").substringBefore("fun deleteAccount")
+
+        assertTrue(retry.contains("retryTelemetryAfterPairingSafely"))
+    }
 }
