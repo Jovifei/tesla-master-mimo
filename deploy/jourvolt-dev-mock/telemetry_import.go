@@ -20,7 +20,7 @@ const (
 	maxImportBodyBytes          = 10 << 20 // 10 MiB
 	maxImportSessionsPerKind    = 200
 	maxImportTotalSessions      = 400
-	maxImportRoutePointsPerItem = 10000
+	maxImportRoutePointsPerItem = 50000
 	maxImportTotalRoutePoints   = 100000
 )
 
