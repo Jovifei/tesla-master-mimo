@@ -162,6 +162,9 @@ fun SettingsScreen(
                 onCurrencyChange = viewModel::updateCurrency,
                 onShowShortDrivesChargesChange = viewModel::updateShowShortDrivesCharges,
                 onMockModeChange = viewModel::updateMockMode,
+                onConnectionModeChange = { mode ->
+                    viewModel.switchConnectionMode(mode, onNavigateToDashboard)
+                },
                 onTestConnection = viewModel::testConnection,
                 onSave = {
                     viewModel.saveSettings(onNavigateToDashboard)
@@ -289,6 +292,7 @@ internal fun SettingsContent(
     onCurrencyChange: (String) -> Unit,
     onShowShortDrivesChargesChange: (Boolean) -> Unit,
     onMockModeChange: (Boolean) -> Unit = {},
+    onConnectionModeChange: (ConnectionMode) -> Unit = {},
     onTestConnection: () -> Unit,
     onSave: () -> Unit,
     onNavigateToTariffConfig: () -> Unit = {},
@@ -441,6 +445,30 @@ internal fun SettingsContent(
             testTag = "advancedNetworkSection"
         ) {
             Spacer(modifier = Modifier.height(8.dp))
+
+            val targetMode = if (uiState.connectionMode == ConnectionMode.TESLA_CLOUD) {
+                ConnectionMode.SELF_HOSTED
+            } else {
+                ConnectionMode.TESLA_CLOUD
+            }
+            Button(
+                onClick = { onConnectionModeChange(targetMode) },
+                modifier = Modifier.fillMaxWidth().testTag("connectionModeSwitch"),
+                enabled = !uiState.isSaving &&
+                    (targetMode == ConnectionMode.TESLA_CLOUD || hasExplicitServerUrl(uiState.serverUrl))
+            ) {
+                Text(
+                    stringResource(
+                        if (targetMode == ConnectionMode.TESLA_CLOUD) {
+                            R.string.settings_switch_to_cloud
+                        } else {
+                            R.string.settings_switch_to_self_hosted
+                        }
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             Text(
                 text = stringResource(

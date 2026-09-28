@@ -1073,10 +1073,12 @@
     <string name="settings_primary_server">主服务器</string>
     <string name="settings_report_issue">报告问题</string>
     <string name="settings_release_notes_title">本次更新</string>
-    <string name="settings_release_notes_version">MateLink 2.1.16</string>
+    <string name="settings_release_notes_version">MateLink 2.1.17</string>
     <string name="tesla_login_choose_browser">选择浏览器登录 Tesla</string>
     <string name="settings_release_notes_view">查看本次更新</string>
     <string name="settings_release_notes_close">知道了</string>
+    <string name="settings_switch_to_cloud">切换到 MateLink 云端</string>
+    <string name="settings_switch_to_self_hosted">切换到本地 TeslaMate</string>
 <string name="settings_release_notes_body">• 行程记录进入或恢复时自动刷新真实历史，不再要求先去仪表盘手动刷新。
 • 自托管历史与 API 使用同一服务器设置和车辆隔离作用域。
 • Fleet 配置失败显示脱敏诊断，空数据仍保持未知，不生成路线或曲线。</string>

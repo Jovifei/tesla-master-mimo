@@ -1083,10 +1083,12 @@
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
     <string name="settings_release_notes_title">This update</string>
-    <string name="settings_release_notes_version">MateLink 2.1.16</string>
+    <string name="settings_release_notes_version">MateLink 2.1.17</string>
     <string name="tesla_login_choose_browser">Choose a browser for Tesla login</string>
     <string name="settings_release_notes_view">View update notes</string>
     <string name="settings_release_notes_close">Got it</string>
+    <string name="settings_switch_to_cloud">Switch to MateLink Cloud</string>
+    <string name="settings_switch_to_self_hosted">Switch to local TeslaMate</string>
 <string name="settings_release_notes_body">• Trip history refreshes real records when the screen opens or resumes, without requiring a dashboard refresh.
 • Self-hosted history and API requests now share the same server setting and vehicle scope.
 • Fleet configuration failures expose safe diagnostics while missing data stays unknown and no routes or curves are synthesized.</string>

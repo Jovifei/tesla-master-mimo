@@ -31,10 +31,22 @@ class SettingsExperienceContractTest {
     }
 
     @Test
+    fun connectionModeCanSwitchWithoutDeletingEitherSavedConnection() {
+        val source = File("src/main/java/com/matelink/ui/screens/settings/SettingsScreen.kt").readText()
+        val viewModel = File("src/main/java/com/matelink/ui/screens/settings/SettingsViewModel.kt").readText()
+
+        assertTrue(source.contains("onConnectionModeChange"))
+        assertTrue(source.contains("settings_switch_to_cloud"))
+        assertTrue(source.contains("settings_switch_to_self_hosted"))
+        assertTrue(viewModel.contains("fun switchConnectionMode(mode: ConnectionMode"))
+        assertTrue(viewModel.contains("connectionModeStore.set(mode)"))
+    }
+
+    @Test
     fun currentReleaseShowsVersionAndLocalizedRepairNotes() {
         val gradle = File("build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 35"))
-        assertTrue(gradle.contains("versionName = \"2.1.16\""))
+        assertTrue(gradle.contains("versionCode = 36"))
+        assertTrue(gradle.contains("versionName = \"2.1.17\""))
         assertEquals(
             "本次更新",
             stringValue("values-zh", "settings_release_notes_title")
