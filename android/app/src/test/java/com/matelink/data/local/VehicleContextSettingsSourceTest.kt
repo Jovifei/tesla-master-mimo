@@ -14,4 +14,14 @@ class VehicleContextSettingsSourceTest {
         assertTrue(source.contains("settingsDataStore.settings.first().serverUrl"))
         assertFalse(source.contains("private val settingsRepository: SettingsRepository"))
     }
+
+    @Test
+    fun transientCloudVehicleDiscoveryFailureUsesThePersistedScopedMapping() {
+        val source = File("src/main/java/com/matelink/data/local/VehicleContextRepository.kt").readText()
+        val fallback = source.indexOf("cachedContextForRemote(remoteApiCarId, scope)?.let { return it }")
+        val failure = source.indexOf("throw HistoryIdentityUnavailableException()", fallback)
+
+        assertTrue(fallback >= 0)
+        assertTrue(failure > fallback)
+    }
 }

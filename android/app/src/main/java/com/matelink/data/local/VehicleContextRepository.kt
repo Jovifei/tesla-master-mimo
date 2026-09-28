@@ -50,6 +50,7 @@ class VehicleContextRepository @Inject constructor(
         }
         if (captureReadScope() != scope) throw HistoryIdentityUnavailableException()
         if (car != null) return resolve(car, scope)
+        cachedContextForRemote(remoteApiCarId, scope)?.let { return it }
         if (scope.source == HistoryConnectionSource.SELF_HOSTED) {
             val serverUrl = scope.serverIdentity
             val serverIdentity = scope.serverIdentity

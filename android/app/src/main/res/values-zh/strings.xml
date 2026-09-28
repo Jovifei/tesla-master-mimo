@@ -1073,7 +1073,7 @@
     <string name="settings_primary_server">主服务器</string>
     <string name="settings_report_issue">报告问题</string>
     <string name="settings_release_notes_title">本次更新</string>
-    <string name="settings_release_notes_version">MateLink 2.1.17</string>
+    <string name="settings_release_notes_version">MateLink 2.1.18</string>
     <string name="tesla_login_choose_browser">选择浏览器登录 Tesla</string>
     <string name="settings_release_notes_view">查看本次更新</string>
     <string name="settings_release_notes_close">知道了</string>
