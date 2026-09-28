@@ -289,6 +289,18 @@ func TestConfigureFailurePersistsSafeStageStatusAndCorrelation(t *testing.T) {
 	}
 }
 
+func TestTelemetryProxyBadGatewayClassifiesOnlyStableSafeReasons(t *testing.T) {
+	if got := telemetryCommandErrorClass(http.StatusBadGateway, []byte(`{"error":"vehicle rejected request: your public key has not been paired with the vehicle"}`)); got != "pairing_required" {
+		t.Fatalf("missing key classification = %q", got)
+	}
+	if got := telemetryCommandErrorClass(http.StatusBadGateway, []byte(`{"error":"vehicle unavailable: request timeout"}`)); got != "vehicle_unavailable" {
+		t.Fatalf("vehicle unavailable classification = %q", got)
+	}
+	if got := telemetryCommandErrorClass(http.StatusBadGateway, []byte(`{"error":"contains VIN 5YJ00000000000000 and secret details"}`)); got != "telemetry_error" {
+		t.Fatalf("unknown body must stay generic, got %q", got)
+	}
+}
+
 func TestTask2ConfigurePersistsOnlyOfficialConfigGETTruth(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

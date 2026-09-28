@@ -947,6 +947,9 @@ func telemetryCommandErrorClass(status int, body []byte) string {
 	if status == http.StatusTooManyRequests {
 		return "rate_limited"
 	}
+	if class := safeTelemetryProxyBodyClass(body); class != "" {
+		return class
+	}
 	if status >= 400 && status < 500 {
 		return "configuration_invalid"
 	}
@@ -954,6 +957,31 @@ func telemetryCommandErrorClass(status int, body []byte) string {
 		return "telemetry_error"
 	}
 	return ""
+}
+
+func safeTelemetryProxyBodyClass(body []byte) string {
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) != nil {
+		return ""
+	}
+	parts := make([]string, 0, 3)
+	for _, key := range []string{"error", "error_description", "message"} {
+		if value, ok := payload[key].(string); ok {
+			parts = append(parts, strings.ToLower(value))
+		}
+	}
+	text := strings.Join(parts, " ")
+	switch {
+	case strings.Contains(text, "public key") && strings.Contains(text, "not been paired"),
+		strings.Contains(text, "virtual key") && strings.Contains(text, "required"):
+		return "pairing_required"
+	case strings.Contains(text, "vehicle unavailable"), strings.Contains(text, "request timeout"), strings.Contains(text, "timed out"):
+		return "vehicle_unavailable"
+	case strings.Contains(text, "rate limit"):
+		return "rate_limited"
+	default:
+		return ""
+	}
 }
 
 func bodyHasExactCode(body []byte, expected ...string) bool {
