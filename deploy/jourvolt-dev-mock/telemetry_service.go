@@ -1267,6 +1267,25 @@ func (s *telemetryService) historySummaries(userID string, vehicleID int, kind s
 	return items, meta, nil
 }
 
+func (s *telemetryService) historyDetail(userID string, vehicleID int, kind string, publicID int) (map[string]any, bool, error) {
+	if s == nil {
+		return nil, false, nil
+	}
+	if s.memory != nil {
+		for _, session := range s.memory.sessions(userID, vehicleID, kind) {
+			if session.PublicID == publicID && session.QualityState != "quarantined" {
+				return historySessionMap(session, kind, 0), true, nil
+			}
+		}
+		return nil, false, nil
+	}
+	session, ok, err := s.historyDetailPostgres(context.Background(), userID, vehicleID, kind, publicID)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	return historySessionMap(session, kind, 0), true, nil
+}
+
 func historyResponse(sessions []telemetrySession, startedAt time.Time, quarantinedCount int, kind string) ([]map[string]any, map[string]any) {
 	items := make([]map[string]any, 0, len(sessions))
 	for index, session := range sessions {

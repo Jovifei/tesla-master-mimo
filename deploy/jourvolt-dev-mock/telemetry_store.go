@@ -529,6 +529,54 @@ func (s *telemetryService) historyPostgres(ctx context.Context, userID string, v
 	return result, startedAt, nil
 }
 
+func (s *telemetryService) historyDetailPostgres(ctx context.Context, userID string, vehicleID int, kind string, publicID int) (telemetrySession, bool, error) {
+	if s.store == nil || s.store.pool == nil {
+		return telemetrySession{}, false, nil
+	}
+	var session telemetrySession
+	var routeJSON, chargePointsJSON []byte
+	err := s.store.pool.QueryRow(ctx, `SELECT id, public_id, started_at, ended_at, odometer_start, odometer_end, energy_added,
+        route_json, charge_points_json, source, quality_state, quality_reason,
+        COALESCE(source_instance_id,''), COALESCE(source_vehicle_id,''), COALESCE(source_record_id,''),
+        start_address, end_address, address, cost
+        FROM jourvolt_telemetry_sessions
+        WHERE user_id=$1 AND vehicle_id=$2 AND kind=$3 AND public_id=$4
+          AND ended_at IS NOT NULL AND quality_state != 'quarantined'`, userID, vehicleID, kind, publicID).Scan(
+		&session.ID, &session.PublicID, &session.StartAt, &session.EndAt,
+		&session.OdometerStart, &session.OdometerEnd, &session.EnergyAdded,
+		&routeJSON, &chargePointsJSON, &session.Source, &session.QualityState, &session.QualityReason,
+		&session.SourceInstanceID, &session.SourceVehicleID, &session.SourceRecordID,
+		&session.StartAddress, &session.EndAddress, &session.Address, &session.Cost,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return telemetrySession{}, false, nil
+	}
+	if err != nil {
+		return telemetrySession{}, false, err
+	}
+	if session.Source == "teslamate_archive" {
+		if err := json.Unmarshal(routeJSON, &session.ArchiveRoute); err != nil {
+			return telemetrySession{}, false, err
+		}
+		for _, point := range session.ArchiveRoute {
+			if point.Latitude == nil || point.Longitude == nil {
+				continue
+			}
+			observedAt, parseErr := time.Parse(time.RFC3339, point.Date)
+			if parseErr != nil {
+				continue
+			}
+			session.Route = append(session.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading})
+		}
+	} else if err := json.Unmarshal(routeJSON, &session.Route); err != nil {
+		return telemetrySession{}, false, err
+	}
+	if err := json.Unmarshal(chargePointsJSON, &session.ChargePoints); err != nil {
+		return telemetrySession{}, false, err
+	}
+	return session, true, nil
+}
+
 func (s *telemetryService) historySummariesPostgres(ctx context.Context, userID string, vehicleID int, kind string) ([]telemetrySession, time.Time, error) {
 	if s.store == nil || s.store.pool == nil {
 		return nil, time.Time{}, nil

@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -77,25 +77,15 @@ func (a *app) telemetryHistory(w http.ResponseWriter, r *http.Request, userID st
 		a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
 	}
-	var items []map[string]any
-	var meta map[string]any
-	var err error
 	if len(parts) > 0 && parts[0] != "" {
-		items, meta, err = a.telemetry.history(userID, vehicleID, kind)
-	} else {
-		items, meta, err = a.telemetry.historySummaries(userID, vehicleID, kind)
-	}
-	if err != nil {
-		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_unavailable"})
-		return
-	}
-	if len(parts) > 0 && parts[0] != "" {
-		for _, item := range items {
-			id := item["drive_id"]
-			if kind == "charge" {
-				id = item["charge_id"]
+		publicID, parseErr := strconv.Atoi(strings.TrimSpace(parts[0]))
+		if parseErr == nil && publicID > 0 {
+			item, ok, err := a.telemetry.historyDetail(userID, vehicleID, kind, publicID)
+			if err != nil {
+				a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_unavailable"})
+				return
 			}
-			if strings.TrimSpace(parts[0]) == fmt.Sprint(id) {
+			if ok {
 				a.json(w, http.StatusOK, map[string]any{"data": map[string]any{kind: item}})
 				return
 			}
@@ -106,6 +96,11 @@ func (a *app) telemetryHistory(w http.ResponseWriter, r *http.Request, userID st
 			code = "charge_not_found"
 		}
 		a.json(w, status, map[string]string{"error": code})
+		return
+	}
+	items, meta, err := a.telemetry.historySummaries(userID, vehicleID, kind)
+	if err != nil {
+		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_unavailable"})
 		return
 	}
 	items = filterTelemetryHistoryByDate(items, r)
