@@ -1073,19 +1073,13 @@
     <string name="settings_primary_server">主服务器</string>
     <string name="settings_report_issue">报告问题</string>
     <string name="settings_release_notes_title">本次更新</string>
-    <string name="settings_release_notes_version">MateLink 2.1.12</string>
+    <string name="settings_release_notes_version">MateLink 2.1.16</string>
     <string name="tesla_login_choose_browser">选择浏览器登录 Tesla</string>
     <string name="settings_release_notes_view">查看本次更新</string>
     <string name="settings_release_notes_close">知道了</string>
-<string name="settings_release_notes_body">• MateLink 2.1.12 保留浏览器选择，并按真实证据显示 Tesla 数据准备状态，不补造数值。
-• Tesla 登录现在每次都可选择浏览器；若浏览器闪退，返回后可重新选择其他浏览器。
-• 重新授权 Tesla 后会重试未同步的 Fleet Telemetry 配置，不会重复修改已验证车辆。
-• 行程列表会在后台根据真实路线坐标补全起终点；没有坐标时保持不可用。
-• 本地历史上传现在保留全部有效归档，不再只上传最近两天。
-• 导入记录会作为未验证摘要显示，不再污染统计、费用或曲线。
-• 最新车辆快照为空时，不会覆盖已缓存的有效 GPS 位置。
-• 行程能耗摘要会被保留；路线、地点和曲线仍需等待车辆真实 Telemetry。
-• Tesla 登录后会自动检查车辆，仅在确有需要时打开官方确认。</string>
+<string name="settings_release_notes_body">• 行程记录进入或恢复时自动刷新真实历史，不再要求先去仪表盘手动刷新。
+• 自托管历史与 API 使用同一服务器设置和车辆隔离作用域。
+• Fleet 配置失败显示脱敏诊断，空数据仍保持未知，不生成路线或曲线。</string>
     <string name="settings_resync_button">重新同步</string>
     <string name="settings_resync_confirm">确认重新同步</string>
     <string name="settings_resync_dialog_text_delete">这将删除所有本地数据。</string>

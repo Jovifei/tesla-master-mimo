@@ -266,6 +266,29 @@ func TestTask2ConfigureErrorPreservesLastVerifiedConfigTruth(t *testing.T) {
 	}
 }
 
+func TestConfigureFailurePersistsSafeStageStatusAndCorrelation(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"error":"upstream_failure"}`))
+	}))
+	defer proxy.Close()
+	service := newTelemetryServiceForTest("partner.example.com")
+	service.commandProxyURL = proxy.URL
+	ref := telemetryRefWithVIN(service, "user-a", 1, "5YJ3E1EA7KF123456")
+	service.memory.registerVehicle(ref)
+
+	if err := service.configure(context.Background(), ref.UserID, ref.VehicleID); err == nil {
+		t.Fatal("configure error must be returned")
+	}
+	response, err := service.pairing(context.Background(), ref.UserID, ref.VehicleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.FailureStage != "configure_post" || response.UpstreamStatus != http.StatusBadGateway || response.CorrelationID == "" {
+		t.Fatalf("safe configure diagnostic = %#v", response)
+	}
+}
+
 func TestTask2ConfigurePersistsOnlyOfficialConfigGETTruth(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

@@ -134,3 +134,39 @@ func TestPostgresImportMergeRetainsArchiveAndProtectsNativeSession(t *testing.T)
 		t.Fatal("native evidence mutated")
 	}
 }
+
+func TestPostgresHistoryReadsLegacyRowsWithNullArchiveIdentity(t *testing.T) {
+	dsn := os.Getenv("JOURVOLT_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("JOURVOLT_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	db, err := openStore(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(db.close)
+	user := "history_null_archive_" + mustRandomToken(t)
+	if err = db.ensureUser(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.deleteUser(context.Background(), user) })
+	var car int
+	err = db.pool.QueryRow(ctx, `INSERT INTO jourvolt_vehicles(user_id,provider_vehicle_id,vin_ciphertext,display_name,state,updated_at) VALUES($1,$2,'c','Test','online',now()) RETURNING id`, user, "null-archive-"+mustRandomToken(t)).Scan(&car)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, time.September, 28, 1, 0, 0, 0, time.UTC)
+	_, err = db.pool.Exec(ctx, `INSERT INTO jourvolt_telemetry_sessions(id,user_id,vehicle_id,kind,started_at,ended_at,source,quality_state,quality_reason) VALUES($1,$2,$3,'drive',$4,$5,'telemetry_mqtt','observed','telemetry_evidence')`, "native-null-archive-"+mustRandomToken(t), user, car, start, start.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &telemetryService{store: db}
+	rows, _, err := service.historyPostgres(ctx, user, car, "drive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].SourceInstanceID != "" || rows[0].SourceVehicleID != "" || rows[0].SourceRecordID != "" {
+		t.Fatalf("legacy native history = %#v", rows)
+	}
+}

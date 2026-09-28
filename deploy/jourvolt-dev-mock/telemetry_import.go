@@ -334,7 +334,7 @@ func upsertImportedSessionPostgres(ctx context.Context, tx pgx.Tx, userID string
 	var oldChargePoints []byte
 	lookup := `SELECT id, public_id, user_id, vehicle_id, kind, started_at, ended_at,
         odometer_start, odometer_end, energy_added, route_json, charge_points_json, source, quality_state, quality_reason,
-        source_instance_id, source_vehicle_id, source_record_id, start_address, end_address, address, cost
+        COALESCE(source_instance_id,''), COALESCE(source_vehicle_id,''), COALESCE(source_record_id,''), start_address, end_address, address, cost
         FROM jourvolt_telemetry_sessions
         WHERE id=$1 OR (user_id=$2 AND vehicle_id=$3 AND kind=$4 AND started_at=$5)
 		ORDER BY (id=$1) DESC LIMIT 1 FOR UPDATE`

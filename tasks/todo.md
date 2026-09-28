@@ -1,3 +1,22 @@
+# 2026-09-28 新行程到达 App 修复（codex/trip-delivery-repair）
+
+- [x] 证明本地 TeslaMate 已产生真实新行程，定位行程页只读旧 Room 缓存且缺少主动拉取。
+- [x] RED→GREEN：行程页刷新远端历史后按车辆隔离缓存生成 Trips；远端失败保留旧缓存。
+- [x] RED→GREEN：自托管 VehicleContext 使用与 API 相同的 SettingsDataStore。
+- [x] RED→GREEN：修复云端旧约束迁移与 nullable 归档字段读取。
+- [x] RED→GREEN：增加 Fleet 配置脱敏诊断字段。
+- [x] RED→GREEN：加固 bridge HTTPS、重定向、回执、断点作用域和只读 DB 配置。
+- [ ] Android 全量 test/lint/Release、APK 签名和真机覆盖验证。
+- [ ] 提交推送并按精确 SHA 部署云端 API；核验迁移与 readiness。
+- [ ] 为已核验的单一个人车辆创建受限归档绑定，启动 bridge 并核对真实小批。
+- [ ] Fleet 真实配置重试与首事件验收；七天/三行程/一充电门禁继续保留。
+
+## Review
+
+- 当前本地和云端稳定 provider vehicle id 已脱敏比对一致，均只有一辆车。
+- 本地采集 PASS；云端 Fleet 事件仍为 0，当前 `telemetry_error` 的真实失败阶段需部署诊断后重试确认。
+- 不把 TeslaMate 归档、Mock、HTTP 200 或编译通过计作 Fleet 实车 PASS。
+
 # 2026-08-30 iOS Apple 重设计（分支 feature/ios-apple-redesign，禁止提交 main）
 
 # 2026-09-10 Local verification and 2.1.12 candidate

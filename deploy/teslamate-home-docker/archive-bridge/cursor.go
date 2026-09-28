@@ -7,6 +7,25 @@ import (
 	"path/filepath"
 )
 
+func scopeCursor(config Config, cursor Cursor) (Cursor, error) {
+	hasScope := cursor.ArchiveVehicleID != "" || cursor.SourceInstanceID != "" || cursor.SourceVehicleID != ""
+	if !hasScope {
+		if cursor.LastDriveID != 0 || cursor.LastChargeID != 0 {
+			return Cursor{}, errors.New("legacy cursor has no source scope")
+		}
+		cursor.ArchiveVehicleID = config.ArchiveVehicleID
+		cursor.SourceInstanceID = config.SourceInstanceID
+		cursor.SourceVehicleID = config.SourceVehicleID
+		return cursor, nil
+	}
+	if cursor.ArchiveVehicleID != config.ArchiveVehicleID ||
+		cursor.SourceInstanceID != config.SourceInstanceID ||
+		cursor.SourceVehicleID != config.SourceVehicleID {
+		return Cursor{}, errors.New("cursor source scope does not match configuration")
+	}
+	return cursor, nil
+}
+
 func loadCursor(path string) (Cursor, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {

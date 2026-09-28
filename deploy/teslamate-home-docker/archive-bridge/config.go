@@ -19,7 +19,7 @@ func loadConfig(getenv func(string) (string, bool)) (Config, error) {
 	}
 	config.ArchiveURL = strings.TrimRight(strings.TrimSpace(config.ArchiveURL), "/")
 	parsed, err := url.Parse(config.ArchiveURL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil {
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
 		return Config{}, envError("ARCHIVE_URL")
 	}
 	if config.ArchiveToken, err = requiredEnv(getenv, "ARCHIVE_TOKEN"); err != nil {

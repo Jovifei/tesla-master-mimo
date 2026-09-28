@@ -24,11 +24,20 @@ type Bridge struct {
 }
 
 func NewBridge(config Config, source HistorySource) *Bridge {
-	return &Bridge{config: config, source: source, httpClient: &http.Client{Timeout: 30 * time.Second}}
+	return &Bridge{config: config, source: source, httpClient: &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}}
 }
 
 func (b *Bridge) PollOnce(ctx context.Context) error {
 	cursor, err := loadCursor(b.config.StateFile)
+	if err != nil {
+		return err
+	}
+	cursor, err = scopeCursor(b.config, cursor)
 	if err != nil {
 		return err
 	}
@@ -71,9 +80,24 @@ func (b *Bridge) importBatch(ctx context.Context, batch ArchiveBatch) error {
 		return errors.New("archive request failed")
 	}
 	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, response.Body)
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, 64<<10))
+	if readErr != nil {
+		return errors.New("archive import response could not be read")
+	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("archive import returned HTTP status %d", response.StatusCode)
+	}
+	var receipt struct {
+		Data struct {
+			ImportedDrives  *int `json:"imported_drives"`
+			ImportedCharges *int `json:"imported_charges"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &receipt) != nil || receipt.Data.ImportedDrives == nil || receipt.Data.ImportedCharges == nil {
+		return errors.New("archive import receipt is incomplete")
+	}
+	if *receipt.Data.ImportedDrives != len(batch.Drives) || *receipt.Data.ImportedCharges != len(batch.Charges) {
+		return errors.New("archive import receipt does not match the submitted batch")
 	}
 	return nil
 }

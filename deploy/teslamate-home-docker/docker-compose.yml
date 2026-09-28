@@ -101,7 +101,7 @@ services:
       context: ./archive-bridge
     restart: always
     environment:
-      - DATABASE_URL=${ARCHIVE_DATABASE_URL:-postgres://teslamate:${TESLAMATE_DB_PASSWORD}@database:5432/teslamate?sslmode=disable}
+      - DATABASE_URL=${ARCHIVE_DATABASE_URL:?ARCHIVE_DATABASE_URL must use a read-only TeslaMate role}
       - ARCHIVE_URL=${ARCHIVE_URL}
       - ARCHIVE_TOKEN=${ARCHIVE_TOKEN}
       - ARCHIVE_VEHICLE_ID=${ARCHIVE_VEHICLE_ID}

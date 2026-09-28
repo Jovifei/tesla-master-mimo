@@ -75,6 +75,20 @@ class TelemetryPairingContractTest {
     }
 
     @Test
+    fun pairingEnvelopeParsesSafeConfigureDiagnostics() {
+        val responseClass = productionClass("com.matelink.data.api.models.TelemetryPairingResponse")
+        val adapter = Moshi.Builder().add(KotlinJsonAdapterFactory()).build().adapter<Any>(responseClass)
+        val response = adapter.fromJson(
+            """{"data":{"status":"telemetry_error","error_class":"telemetry_error","failure_stage":"configure_post","upstream_status":502,"correlation_id":"safe-id"}}"""
+        )!!
+        val status = getter(response, "getData")!!
+
+        assertEquals("configure_post", getter(status, "getFailureStage"))
+        assertEquals(502, getter(status, "getUpstreamStatus"))
+        assertEquals("safe-id", getter(status, "getCorrelationId"))
+    }
+
+    @Test
     fun virtualKeyUrlAllowsOnlyOfficialTeslaHttpsAkPath() {
         assertEquals(
             "https://tesla.com/_ak/partner.example.com",

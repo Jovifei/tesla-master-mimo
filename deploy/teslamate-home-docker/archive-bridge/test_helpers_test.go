@@ -12,7 +12,7 @@ import (
 
 const (
 	httpStatusServerError = http.StatusBadGateway
-	httpStatusNoContent   = http.StatusNoContent
+	httpStatusNoContent   = http.StatusOK
 )
 
 type fixtureSource struct {
@@ -51,7 +51,11 @@ func newArchiveTestServer(t *testing.T, status func(archiveTestRequest) int) *ht
 		if len(payload.Drives) != 0 {
 			request.DriveSourceRecordID = payload.Drives[0].SourceRecordID
 		}
-		w.WriteHeader(status(request))
+		responseStatus := status(request)
+		w.WriteHeader(responseStatus)
+		if responseStatus >= http.StatusOK && responseStatus < http.StatusMultipleChoices {
+			_, _ = w.Write([]byte(`{"data":{"imported_drives":1,"imported_charges":0}}`))
+		}
 	}))
 }
 

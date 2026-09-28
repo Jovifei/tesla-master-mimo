@@ -392,3 +392,7 @@
 
 - Pattern: A Compose named volume backed by the local `tmpfs` driver can be mounted as separate tmpfs instances per container; a renderer's config file may disappear from the Fleet Telemetry container even though the renderer exited successfully.
 - Prevention rule: Use one explicitly prepared host tmpfs directory (default `/dev/shm/jourvolt-fleet-telemetry-config`) bind-mounted into both containers, owned by the deploy uid/gid with mode `0700`; keep the rendered file at `0600`.
+# 2026-09-28 复用本机已有 Docker 镜像
+
+- Pattern：临时 PostgreSQL 验证第一次使用了未缓存的通用标签，触发了不必要的镜像拉取，随后立即中止。
+- Prevention：测试容器启动前先用 `docker images` 核对本机已有精确标签，优先复用已安装镜像；项目下载边界不因 Docker 测试而放宽。

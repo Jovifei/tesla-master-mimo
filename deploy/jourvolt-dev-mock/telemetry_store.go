@@ -62,6 +62,9 @@ CREATE TABLE IF NOT EXISTS jourvolt_telemetry_pairing (
     vehicle_id INTEGER NOT NULL REFERENCES jourvolt_vehicles(id) ON DELETE CASCADE,
     status TEXT NOT NULL,
     error_class TEXT NOT NULL DEFAULT '',
+	failure_stage TEXT NOT NULL DEFAULT '',
+	upstream_status INTEGER,
+	correlation_id TEXT NOT NULL DEFAULT '',
 	config_synced BOOLEAN,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, vehicle_id)
@@ -125,6 +128,7 @@ ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS end_address TEX
 ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS address TEXT;
 ALTER TABLE jourvolt_telemetry_sessions ADD COLUMN IF NOT EXISTS cost DOUBLE PRECISION;
 ALTER TABLE jourvolt_telemetry_sessions DROP CONSTRAINT IF EXISTS jourvolt_telemetry_sessions_user_id_vehicle_id_kind_started_at_key;
+ALTER TABLE jourvolt_telemetry_sessions DROP CONSTRAINT IF EXISTS jourvolt_telemetry_sessions_user_id_vehicle_id_kind_started_key;
 CREATE UNIQUE INDEX IF NOT EXISTS jourvolt_telemetry_sessions_native_identity_idx
   ON jourvolt_telemetry_sessions(user_id, vehicle_id, kind, started_at)
   WHERE source <> 'teslamate_archive';
@@ -135,6 +139,9 @@ ALTER TABLE jourvolt_telemetry_route_points ADD COLUMN IF NOT EXISTS speed DOUBL
 ALTER TABLE jourvolt_telemetry_route_points ADD COLUMN IF NOT EXISTS power DOUBLE PRECISION;
 ALTER TABLE jourvolt_telemetry_route_points ADD COLUMN IF NOT EXISTS heading DOUBLE PRECISION;
 ALTER TABLE jourvolt_telemetry_pairing ADD COLUMN IF NOT EXISTS config_synced BOOLEAN;
+ALTER TABLE jourvolt_telemetry_pairing ADD COLUMN IF NOT EXISTS failure_stage TEXT NOT NULL DEFAULT '';
+ALTER TABLE jourvolt_telemetry_pairing ADD COLUMN IF NOT EXISTS upstream_status INTEGER;
+ALTER TABLE jourvolt_telemetry_pairing ADD COLUMN IF NOT EXISTS correlation_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE jourvolt_telemetry_sessions ALTER COLUMN public_id SET DEFAULT nextval('jourvolt_telemetry_session_public_id_seq');
 UPDATE jourvolt_telemetry_sessions SET public_id=nextval('jourvolt_telemetry_session_public_id_seq') WHERE public_id IS NULL;
 ALTER TABLE jourvolt_telemetry_sessions ALTER COLUMN public_id SET NOT NULL;
@@ -481,7 +488,7 @@ func (s *telemetryService) historyPostgres(ctx context.Context, userID string, v
 	if s.store == nil || s.store.pool == nil {
 		return nil, time.Time{}, nil
 	}
-	rows, err := s.store.pool.Query(ctx, `SELECT id, public_id, started_at, ended_at, odometer_start, odometer_end, energy_added, route_json, charge_points_json, source, quality_state, quality_reason, source_instance_id, source_vehicle_id, source_record_id, start_address, end_address, address, cost FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND vehicle_id=$2 AND kind=$3 AND ended_at IS NOT NULL AND quality_state != 'quarantined' ORDER BY started_at DESC`, userID, vehicleID, kind)
+	rows, err := s.store.pool.Query(ctx, `SELECT id, public_id, started_at, ended_at, odometer_start, odometer_end, energy_added, route_json, charge_points_json, source, quality_state, quality_reason, COALESCE(source_instance_id,''), COALESCE(source_vehicle_id,''), COALESCE(source_record_id,''), start_address, end_address, address, cost FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND vehicle_id=$2 AND kind=$3 AND ended_at IS NOT NULL AND quality_state != 'quarantined' ORDER BY started_at DESC`, userID, vehicleID, kind)
 	if err != nil {
 		return nil, time.Time{}, err
 	}

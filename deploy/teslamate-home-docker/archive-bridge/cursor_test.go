@@ -80,3 +80,25 @@ func TestBridgeDoesNotAdvanceCursorUntilImportSucceeds(t *testing.T) {
 		t.Fatalf("retry source IDs = %#v, want the same ID twice", seen)
 	}
 }
+
+func TestCursorCannotBeReusedForAnotherCloudOrSourceVehicle(t *testing.T) {
+	config := testConfig("https://api.example.com", filepath.Join(t.TempDir(), "cursor.json"))
+	_, err := scopeCursor(config, Cursor{
+		LastDriveID: 42, ArchiveVehicleID: "other-cloud-car",
+		SourceInstanceID: config.SourceInstanceID, SourceVehicleID: config.SourceVehicleID,
+	})
+	if err == nil {
+		t.Fatal("cursor from another cloud vehicle was accepted")
+	}
+}
+
+func TestFreshCursorBindsToTheConfiguredScope(t *testing.T) {
+	config := testConfig("https://api.example.com", filepath.Join(t.TempDir(), "cursor.json"))
+	cursor, err := scopeCursor(config, Cursor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cursor.ArchiveVehicleID != config.ArchiveVehicleID || cursor.SourceInstanceID != config.SourceInstanceID || cursor.SourceVehicleID != config.SourceVehicleID {
+		t.Fatalf("cursor scope = %#v", cursor)
+	}
+}

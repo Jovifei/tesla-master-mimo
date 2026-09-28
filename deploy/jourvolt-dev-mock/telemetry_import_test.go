@@ -595,3 +595,9 @@ func TestTelemetrySchemaRestoresCompletedLocalImportsFromQuarantine(t *testing.T
 		t.Fatal("schema must not hide valid local imports merely because an older reason string differs")
 	}
 }
+
+func TestTelemetrySchemaDropsTheActualPostgresTruncatedStartTimeConstraint(t *testing.T) {
+	if !strings.Contains(telemetrySchema, "DROP CONSTRAINT IF EXISTS jourvolt_telemetry_sessions_user_id_vehicle_id_kind_started_key") {
+		t.Fatal("schema must drop PostgreSQL's truncated legacy start-time constraint before archive imports")
+	}
+}

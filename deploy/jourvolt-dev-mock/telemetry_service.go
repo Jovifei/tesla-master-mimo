@@ -487,19 +487,25 @@ func intPointerFromNumber(value any) *int {
 }
 
 type telemetryPairing struct {
-	Status        string
-	UpdatedAt     time.Time
-	ErrorClass    string
-	VirtualKeyURL string
-	ConfigSynced  *bool
+	Status         string
+	UpdatedAt      time.Time
+	ErrorClass     string
+	FailureStage   string
+	UpstreamStatus int
+	CorrelationID  string
+	VirtualKeyURL  string
+	ConfigSynced   *bool
 }
 
 type telemetryPairingResponse struct {
-	Status        string `json:"status"`
-	VirtualKeyURL string `json:"virtual_key_url"`
-	UpdatedAt     string `json:"updated_at,omitempty"`
-	ConfigSynced  *bool  `json:"config_synced"`
-	ErrorClass    string `json:"error_class,omitempty"`
+	Status         string `json:"status"`
+	VirtualKeyURL  string `json:"virtual_key_url"`
+	UpdatedAt      string `json:"updated_at,omitempty"`
+	ConfigSynced   *bool  `json:"config_synced"`
+	ErrorClass     string `json:"error_class,omitempty"`
+	FailureStage   string `json:"failure_stage,omitempty"`
+	UpstreamStatus int    `json:"upstream_status,omitempty"`
+	CorrelationID  string `json:"correlation_id,omitempty"`
 }
 
 func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID int) (telemetryPairingResponse, error) {
@@ -518,7 +524,7 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 		var updatedAt time.Time
 		var errorClass string
 		var configSynced *bool
-		err := s.store.pool.QueryRow(ctx, `SELECT status, updated_at, error_class, config_synced FROM jourvolt_telemetry_pairing WHERE user_id=$1 AND vehicle_id=$2`, userID, vehicleID).Scan(&status.Status, &updatedAt, &errorClass, &configSynced)
+		err := s.store.pool.QueryRow(ctx, `SELECT status, updated_at, error_class, failure_stage, COALESCE(upstream_status,0), correlation_id, config_synced FROM jourvolt_telemetry_pairing WHERE user_id=$1 AND vehicle_id=$2`, userID, vehicleID).Scan(&status.Status, &updatedAt, &errorClass, &status.FailureStage, &status.UpstreamStatus, &status.CorrelationID, &configSynced)
 		if err == nil {
 			status.UpdatedAt, status.ErrorClass, status.ConfigSynced = updatedAt, errorClass, configSynced
 		} else if !isVehicleLookupMiss(err) {
@@ -534,10 +540,13 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 		}
 	}
 	response := telemetryPairingResponse{
-		Status:        status.Status,
-		VirtualKeyURL: "https://tesla.com/_ak/" + s.config.PartnerDomain,
-		ConfigSynced:  status.ConfigSynced,
-		ErrorClass:    status.ErrorClass,
+		Status:         status.Status,
+		VirtualKeyURL:  "https://tesla.com/_ak/" + s.config.PartnerDomain,
+		ConfigSynced:   status.ConfigSynced,
+		ErrorClass:     status.ErrorClass,
+		FailureStage:   status.FailureStage,
+		UpstreamStatus: status.UpstreamStatus,
+		CorrelationID:  status.CorrelationID,
 	}
 	if !status.UpdatedAt.IsZero() {
 		response.UpdatedAt = status.UpdatedAt.UTC().Format(time.RFC3339)
@@ -666,15 +675,16 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 		return errTelemetryConfigInProgress
 	}
 	defer s.configureRequests.Delete(key)
+	correlationID, _ := randomToken()
 	s.setPairingStatus(ctx, userID, vehicleID, "configuring")
 	vin, err := s.vinForVehicle(ctx, userID, vehicleID)
 	if err != nil {
-		_ = s.setPairingError(ctx, userID, vehicleID, "telemetry_error", "vehicle_identity_unavailable")
+		_ = s.setPairingDiagnostic(ctx, userID, vehicleID, "telemetry_error", "vehicle_identity_unavailable", "vehicle_identity", 0, correlationID)
 		return errTelemetryCommand
 	}
 	ca, err := s.telemetryCA()
 	if err != nil {
-		_ = s.setPairingError(ctx, userID, vehicleID, "telemetry_error", "ca_unavailable")
+		_ = s.setPairingDiagnostic(ctx, userID, vehicleID, "telemetry_error", "ca_unavailable", "telemetry_ca", 0, correlationID)
 		return errTelemetryCommand
 	}
 	desired := desiredTelemetryConfiguration()
@@ -690,10 +700,10 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 	response, err := s.commandProxyRequest(ctx, userID, http.MethodPost, requestURL, body)
 	if err != nil {
 		if errors.Is(err, errTeslaReauthorization) {
-			_ = s.setPairingError(ctx, userID, vehicleID, "permission_required", "permission_required")
+			_ = s.setPairingDiagnostic(ctx, userID, vehicleID, "permission_required", "permission_required", "command_proxy", 0, correlationID)
 			return errTelemetryPermission
 		}
-		_ = s.setPairingError(ctx, userID, vehicleID, "telemetry_error", "command_transport")
+		_ = s.setPairingDiagnostic(ctx, userID, vehicleID, "telemetry_error", "command_transport", "command_proxy", 0, correlationID)
 		return errTelemetryCommand
 	}
 	defer response.Body.Close()
@@ -704,7 +714,7 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 		if status != "permission_required" && status != "pairing_required" && status != "billing_blocked" {
 			status = "telemetry_error"
 		}
-		_ = s.setPairingError(ctx, userID, vehicleID, status, classification)
+		_ = s.setPairingDiagnostic(ctx, userID, vehicleID, status, classification, "configure_post", response.StatusCode, correlationID)
 		switch classification {
 		case "permission_required":
 			return errTelemetryPermission
@@ -736,7 +746,7 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 			} else if len(skipped.UnsupportedFirmware) > 0 {
 				errorClass = "unsupported_firmware"
 			}
-			if err := s.setPairingError(ctx, userID, vehicleID, status, errorClass); err != nil {
+			if err := s.setPairingDiagnostic(ctx, userID, vehicleID, status, errorClass, "configure_response", response.StatusCode, correlationID); err != nil {
 				return errTelemetryCommand
 			}
 			return errTelemetryCommand
@@ -969,7 +979,7 @@ func (s *telemetryService) setPairingStatus(ctx context.Context, userID string, 
 		defer s.memory.mu.Unlock()
 		key := telemetryKey{UserID: userID, VehicleID: vehicleID}
 		pairing := s.memory.pairings[key]
-		pairing.Status, pairing.ErrorClass, pairing.UpdatedAt = status, "", time.Now().UTC()
+		pairing.Status, pairing.ErrorClass, pairing.FailureStage, pairing.UpstreamStatus, pairing.CorrelationID, pairing.UpdatedAt = status, "", "", 0, "", time.Now().UTC()
 		s.memory.pairings[key] = pairing
 		return
 	}
@@ -979,16 +989,20 @@ func (s *telemetryService) setPairingStatus(ctx context.Context, userID string, 
 	_, _ = s.store.pool.Exec(ctx, `
 INSERT INTO jourvolt_telemetry_pairing(user_id, vehicle_id, status, error_class, updated_at)
 VALUES ($1, $2, $3, '', now())
-ON CONFLICT (user_id, vehicle_id) DO UPDATE SET status=EXCLUDED.status, error_class='', updated_at=EXCLUDED.updated_at`, userID, vehicleID, status)
+ON CONFLICT (user_id, vehicle_id) DO UPDATE SET status=EXCLUDED.status, error_class='', failure_stage='', upstream_status=NULL, correlation_id='', updated_at=EXCLUDED.updated_at`, userID, vehicleID, status)
 }
 
 func (s *telemetryService) setPairingError(ctx context.Context, userID string, vehicleID int, status, errorClass string) error {
+	return s.setPairingDiagnostic(ctx, userID, vehicleID, status, errorClass, "", 0, "")
+}
+
+func (s *telemetryService) setPairingDiagnostic(ctx context.Context, userID string, vehicleID int, status, errorClass, failureStage string, upstreamStatus int, correlationID string) error {
 	if s.memory != nil {
 		s.memory.mu.Lock()
 		defer s.memory.mu.Unlock()
 		key := telemetryKey{UserID: userID, VehicleID: vehicleID}
 		pairing := s.memory.pairings[key]
-		pairing.Status, pairing.ErrorClass, pairing.UpdatedAt = status, errorClass, time.Now().UTC()
+		pairing.Status, pairing.ErrorClass, pairing.FailureStage, pairing.UpstreamStatus, pairing.CorrelationID, pairing.UpdatedAt = status, errorClass, failureStage, upstreamStatus, correlationID, time.Now().UTC()
 		s.memory.pairings[key] = pairing
 		return nil
 	}
@@ -996,9 +1010,9 @@ func (s *telemetryService) setPairingError(ctx context.Context, userID string, v
 		return nil
 	}
 	_, err := s.store.pool.Exec(ctx, `
-INSERT INTO jourvolt_telemetry_pairing(user_id, vehicle_id, status, error_class, updated_at)
-VALUES ($1, $2, $3, $4, now())
-ON CONFLICT (user_id, vehicle_id) DO UPDATE SET status=EXCLUDED.status, error_class=EXCLUDED.error_class, updated_at=EXCLUDED.updated_at`, userID, vehicleID, status, errorClass)
+INSERT INTO jourvolt_telemetry_pairing(user_id, vehicle_id, status, error_class, failure_stage, upstream_status, correlation_id, updated_at)
+VALUES ($1, $2, $3, $4, $5, NULLIF($6,0), $7, now())
+ON CONFLICT (user_id, vehicle_id) DO UPDATE SET status=EXCLUDED.status, error_class=EXCLUDED.error_class, failure_stage=EXCLUDED.failure_stage, upstream_status=EXCLUDED.upstream_status, correlation_id=EXCLUDED.correlation_id, updated_at=EXCLUDED.updated_at`, userID, vehicleID, status, errorClass, failureStage, upstreamStatus, correlationID)
 	return err
 }
 
@@ -1016,7 +1030,7 @@ func (s *telemetryService) setPairingConfigTruth(ctx context.Context, userID str
 	_, err := s.store.pool.Exec(ctx, `
 INSERT INTO jourvolt_telemetry_pairing(user_id, vehicle_id, status, config_synced, updated_at)
 VALUES ($1, $2, $3, $4, now())
-ON CONFLICT (user_id, vehicle_id) DO UPDATE SET status=EXCLUDED.status, config_synced=EXCLUDED.config_synced, updated_at=EXCLUDED.updated_at`, userID, vehicleID, status, configSynced)
+ON CONFLICT (user_id, vehicle_id) DO UPDATE SET status=EXCLUDED.status, error_class='', failure_stage='', upstream_status=NULL, correlation_id='', config_synced=EXCLUDED.config_synced, updated_at=EXCLUDED.updated_at`, userID, vehicleID, status, configSynced)
 	return err
 }
 

@@ -1083,19 +1083,13 @@
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
     <string name="settings_release_notes_title">This update</string>
-    <string name="settings_release_notes_version">MateLink 2.1.12</string>
+    <string name="settings_release_notes_version">MateLink 2.1.16</string>
     <string name="tesla_login_choose_browser">Choose a browser for Tesla login</string>
     <string name="settings_release_notes_view">View update notes</string>
     <string name="settings_release_notes_close">Got it</string>
-<string name="settings_release_notes_body">• MateLink 2.1.12 keeps the browser chooser and presents Tesla data readiness without synthetic values.
-• Tesla login now lets you choose a browser each time. If a browser crashes, return and choose another.
-• Re-authorizing Tesla now retries unsynced Fleet Telemetry configuration without touching verified vehicles.
-• Drive lists enrich missing endpoints from real route coordinates in the background; missing coordinates stay unavailable.
-• Local history uploads now preserve the complete valid archive instead of only two data days.
-• Imported records remain visible as unverified summaries and no longer alter analytics, costs, or curves.
-• A fresh empty vehicle snapshot no longer replaces a cached valid GPS position.
-• Drive energy summaries are retained; route, address, and curves remain unavailable until the vehicle sends telemetry.
-• Tesla onboarding now checks the vehicle automatically and opens the official confirmation only when required.</string>
+<string name="settings_release_notes_body">• Trip history refreshes real records when the screen opens or resumes, without requiring a dashboard refresh.
+• Self-hosted history and API requests now share the same server setting and vehicle scope.
+• Fleet configuration failures expose safe diagnostics while missing data stays unknown and no routes or curves are synthesized.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>
     <string name="settings_resync_dialog_text_delete">This will delete all local data.</string>

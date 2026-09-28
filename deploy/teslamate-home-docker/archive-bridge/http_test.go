@@ -73,3 +73,51 @@ func TestImportBatchContainsSourceEnvelope(t *testing.T) {
 		}
 	}
 }
+
+func TestImportDoesNotForwardBindingCredentialAcrossRedirects(t *testing.T) {
+	const token = "redirect-secret"
+	receivedToken := ""
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedToken = r.Header.Get("X-MateLink-Archive-Binding")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"imported_drives":0,"imported_charges":0}}`))
+	}))
+	defer target.Close()
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer redirect.Close()
+
+	config := testConfig(redirect.URL, filepath.Join(t.TempDir(), "cursor.json"))
+	config.ArchiveToken = token
+	bridge := NewBridge(config, fixtureSource{})
+	err := bridge.importBatch(t.Context(), ArchiveBatch{SourceInstanceID: "instance-1", SourceVehicleID: "8", SourceType: "teslamate", ChunkID: "chunk"})
+
+	if err == nil {
+		t.Fatal("redirected archive request unexpectedly succeeded")
+	}
+	if receivedToken != "" {
+		t.Fatal("binding credential was forwarded to a redirected origin")
+	}
+}
+
+func TestImportRequiresACompleteServerReceipt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"imported_drives":0}}`))
+	}))
+	defer server.Close()
+	config := testConfig(server.URL, filepath.Join(t.TempDir(), "cursor.json"))
+	bridge := NewBridge(config, fixtureSource{})
+
+	err := bridge.importBatch(t.Context(), ArchiveBatch{
+		SourceInstanceID: config.SourceInstanceID,
+		SourceVehicleID:  config.SourceVehicleID,
+		SourceType:       "teslamate",
+		ChunkID:          "chunk",
+		Charges:          []ArchiveCharge{{SourceRecordID: "teslamate:charging_process:1"}},
+	})
+	if err == nil {
+		t.Fatal("archive request succeeded without a complete import receipt")
+	}
+}

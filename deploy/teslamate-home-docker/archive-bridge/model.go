@@ -21,8 +21,11 @@ type Config struct {
 }
 
 type Cursor struct {
-	LastDriveID  int64 `json:"last_drive_id"`
-	LastChargeID int64 `json:"last_charge_id"`
+	LastDriveID      int64  `json:"last_drive_id"`
+	LastChargeID     int64  `json:"last_charge_id"`
+	ArchiveVehicleID string `json:"archive_vehicle_id"`
+	SourceInstanceID string `json:"source_instance_id"`
+	SourceVehicleID  string `json:"source_vehicle_id"`
 }
 
 type DriveRecord struct {
