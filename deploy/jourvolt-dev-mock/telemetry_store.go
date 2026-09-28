@@ -529,6 +529,60 @@ func (s *telemetryService) historyPostgres(ctx context.Context, userID string, v
 	return result, startedAt, nil
 }
 
+func (s *telemetryService) historySummariesPostgres(ctx context.Context, userID string, vehicleID int, kind string) ([]telemetrySession, time.Time, error) {
+	if s.store == nil || s.store.pool == nil {
+		return nil, time.Time{}, nil
+	}
+	rows, err := s.store.pool.Query(ctx, `SELECT id, public_id, started_at, ended_at, odometer_start, odometer_end, energy_added,
+        source, quality_state, quality_reason, COALESCE(source_instance_id,''), COALESCE(source_vehicle_id,''), COALESCE(source_record_id,''),
+        start_address, end_address, address, cost,
+        NULLIF(route_json->0->>'latitude','')::double precision,
+        NULLIF(route_json->0->>'longitude','')::double precision,
+        NULLIF(route_json->(jsonb_array_length(route_json)-1)->>'latitude','')::double precision,
+        NULLIF(route_json->(jsonb_array_length(route_json)-1)->>'longitude','')::double precision
+        FROM jourvolt_telemetry_sessions
+        WHERE user_id=$1 AND vehicle_id=$2 AND kind=$3 AND ended_at IS NOT NULL AND quality_state != 'quarantined'
+        ORDER BY started_at DESC`, userID, vehicleID, kind)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	defer rows.Close()
+	result := make([]telemetrySession, 0)
+	var earliest time.Time
+	for rows.Next() {
+		var session telemetrySession
+		var startLatitude, startLongitude, endLatitude, endLongitude *float64
+		if err := rows.Scan(
+			&session.ID, &session.PublicID, &session.StartAt, &session.EndAt,
+			&session.OdometerStart, &session.OdometerEnd, &session.EnergyAdded,
+			&session.Source, &session.QualityState, &session.QualityReason,
+			&session.SourceInstanceID, &session.SourceVehicleID, &session.SourceRecordID,
+			&session.StartAddress, &session.EndAddress, &session.Address, &session.Cost,
+			&startLatitude, &startLongitude, &endLatitude, &endLongitude,
+		); err != nil {
+			return nil, time.Time{}, err
+		}
+		if startLatitude != nil && startLongitude != nil {
+			session.Route = append(session.Route, telemetryRoutePoint{ObservedAt: session.StartAt, Latitude: *startLatitude, Longitude: *startLongitude})
+		}
+		if endLatitude != nil && endLongitude != nil {
+			observedAt := session.StartAt
+			if session.EndAt != nil {
+				observedAt = *session.EndAt
+			}
+			session.Route = append(session.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *endLatitude, Longitude: *endLongitude})
+		}
+		result = append(result, session)
+		if earliest.IsZero() || session.StartAt.Before(earliest) {
+			earliest = session.StartAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, err
+	}
+	return result, earliest, nil
+}
+
 func (s *telemetryService) quarantinedSessionCount(ctx context.Context, userID string, vehicleID int, kind string) (int, error) {
 	if s == nil || s.store == nil || s.store.pool == nil {
 		return 0, nil

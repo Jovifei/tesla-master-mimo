@@ -1247,6 +1247,27 @@ func (s *telemetryService) history(userID string, vehicleID int, kind string) ([
 			return nil, nil, err
 		}
 	}
+	items, meta := historyResponse(sessions, startedAt, quarantinedCount, kind)
+	return items, meta, nil
+}
+
+func (s *telemetryService) historySummaries(userID string, vehicleID int, kind string) ([]map[string]any, map[string]any, error) {
+	if s == nil || s.memory != nil {
+		return s.history(userID, vehicleID, kind)
+	}
+	sessions, startedAt, err := s.historySummariesPostgres(context.Background(), userID, vehicleID, kind)
+	if err != nil {
+		return nil, nil, err
+	}
+	quarantinedCount, err := s.quarantinedSessionCount(context.Background(), userID, vehicleID, kind)
+	if err != nil {
+		return nil, nil, err
+	}
+	items, meta := historyResponse(sessions, startedAt, quarantinedCount, kind)
+	return items, meta, nil
+}
+
+func historyResponse(sessions []telemetrySession, startedAt time.Time, quarantinedCount int, kind string) ([]map[string]any, map[string]any) {
 	items := make([]map[string]any, 0, len(sessions))
 	for index, session := range sessions {
 		items = append(items, historySessionMap(session, kind, index))
@@ -1260,7 +1281,7 @@ func (s *telemetryService) history(userID string, vehicleID int, kind string) ([
 		meta["coverage_percent"] = historyCoveragePercent(sessions)
 		meta["collection_started_at"] = startedAt.UTC().Format(time.RFC3339)
 	}
-	return items, meta, nil
+	return items, meta
 }
 
 func historySource(sessions []telemetrySession) string {

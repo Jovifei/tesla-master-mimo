@@ -77,7 +77,14 @@ func (a *app) telemetryHistory(w http.ResponseWriter, r *http.Request, userID st
 		a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
 	}
-	items, meta, err := a.telemetry.history(userID, vehicleID, kind)
+	var items []map[string]any
+	var meta map[string]any
+	var err error
+	if len(parts) > 0 && parts[0] != "" {
+		items, meta, err = a.telemetry.history(userID, vehicleID, kind)
+	} else {
+		items, meta, err = a.telemetry.historySummaries(userID, vehicleID, kind)
+	}
 	if err != nil {
 		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_unavailable"})
 		return
