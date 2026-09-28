@@ -90,11 +90,27 @@ func (b *Bridge) PollOnce(ctx context.Context) error {
 	if len(drives) == 0 && len(charges) == 0 {
 		return nil
 	}
-	batch := buildArchiveBatch(b.config, cursor, drives, charges)
-	if err := b.importBatch(ctx, batch); err != nil {
-		return atArchiveStage("import", err)
+	for _, drive := range drives {
+		batch := buildArchiveBatch(b.config, cursor, []DriveRecord{drive}, nil)
+		if err := b.importBatch(ctx, batch); err != nil {
+			return atArchiveStage("import", err)
+		}
+		cursor = nextCursor(cursor, []DriveRecord{drive}, nil)
+		if err := saveCursor(b.config.StateFile, cursor); err != nil {
+			return atArchiveStage("cursor_write", err)
+		}
 	}
-	return atArchiveStage("cursor_write", saveCursor(b.config.StateFile, nextCursor(cursor, drives, charges)))
+	for _, charge := range charges {
+		batch := buildArchiveBatch(b.config, cursor, nil, []ChargeRecord{charge})
+		if err := b.importBatch(ctx, batch); err != nil {
+			return atArchiveStage("import", err)
+		}
+		cursor = nextCursor(cursor, nil, []ChargeRecord{charge})
+		if err := saveCursor(b.config.StateFile, cursor); err != nil {
+			return atArchiveStage("cursor_write", err)
+		}
+	}
+	return nil
 }
 
 func (b *Bridge) importBatch(ctx context.Context, batch ArchiveBatch) error {

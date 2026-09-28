@@ -1,9 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -100,5 +105,39 @@ func TestFreshCursorBindsToTheConfiguredScope(t *testing.T) {
 	}
 	if cursor.ArchiveVehicleID != config.ArchiveVehicleID || cursor.SourceInstanceID != config.SourceInstanceID || cursor.SourceVehicleID != config.SourceVehicleID {
 		t.Fatalf("cursor scope = %#v", cursor)
+	}
+}
+
+func TestOnePollPublishesEachFetchedSessionAtomicallyWithoutIntervalDelays(t *testing.T) {
+	requestSizes := []int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload ArchiveBatch
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		requestSizes = append(requestSizes, len(payload.Drives)+len(payload.Charges))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"data":{"imported_drives":%d,"imported_charges":%d}}`, len(payload.Drives), len(payload.Charges))
+	}))
+	defer server.Close()
+	config := testConfig(server.URL, filepath.Join(t.TempDir(), "cursor.json"))
+	bridge := NewBridge(config, fixtureSource{drives: []DriveRecord{
+		{ID: 1, StartedAt: timePointer(testTime(1)), EndedAt: timePointer(testTime(2))},
+		{ID: 2, StartedAt: timePointer(testTime(2)), EndedAt: timePointer(testTime(3))},
+		{ID: 3, StartedAt: timePointer(testTime(3)), EndedAt: timePointer(testTime(4))},
+	}})
+
+	if err := bridge.PollOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	cursor, err := loadCursor(config.StateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cursor.LastDriveID != 3 {
+		t.Fatalf("last drive ID = %d, want 3", cursor.LastDriveID)
+	}
+	if !reflect.DeepEqual(requestSizes, []int{1, 1, 1}) {
+		t.Fatalf("atomic request sizes = %#v", requestSizes)
 	}
 }
