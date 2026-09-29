@@ -6,7 +6,7 @@
 - [x] RED→GREEN：修复云端旧约束迁移与 nullable 归档字段读取。
 - [x] RED→GREEN：增加 Fleet 配置脱敏诊断字段。
 - [x] RED→GREEN：加固 bridge HTTPS、重定向、回执、断点作用域和只读 DB 配置。
-- [ ] Android 全量 test/lint/Release、APK 签名和真机覆盖验证（2.1.18 全量通过；最终 2.1.19 定向测试、Release/R8/签名/真机通过，全量组合任务因本机 JVM 提交内存不足未完整重跑）。
+- [x] Android 全量 test/lint/Release、APK 签名和真机覆盖验证（最终 2.1.19：Debug 551、Release 551，0 失败；Release 8 项预期跳过；lintRelease、R8、签名和真机覆盖通过）。
 - [x] 提交推送并按精确 SHA 部署云端 API；核验迁移与 readiness。
 - [x] 为已核验的单一个人车辆创建受限归档绑定，启动 bridge 并完成真实全量核对。
 - [ ] Fleet 真实配置重试与首事件验收；七天/三行程/一充电门禁继续保留。
@@ -21,6 +21,7 @@
 - 云端 API 部署 `817b0c1`，健康为 `fleet/postgres/ok`；后续提交 `0039841`、`c888f68`、`817b0c1` 已依次完成代理超时、纯文本安全分类和中断恢复。
 - Fleet Telemetry 仍为 `awaiting_first_event`。实测配置先返回 `configure_post/502`，随后在 5 秒边界出现 `command_transport`；内部 DNS/TLS/CA/端口均 PASS。生产超时已扩展为 30 秒，但跨日后手机云会话需 Jovi 在 Tesla 官方页面重新授权，方可继续取得新代理结果。
 - Android 真机最终安装 2.1.19/build38，`firstInstallTime` 保持 2026-08-31 22:36:47；APK SHA-256 `2D055ACBAA02C81DB70774EC8EC26910D7D41B9E078356E5D6921F993FF7972B`，证书与已安装包一致。
+- 本机组合 Gradle 任务曾因残留 daemon 耗尽原生提交内存；停止本轮 Gradle/Kotlin daemon 后，最终 Debug/Release 全量测试与 lint 已分别独立通过。
 - 不把 TeslaMate 归档、Mock、HTTP 200 或编译通过计作 Fleet 实车 PASS。
 
 # 2026-08-30 iOS Apple 重设计（分支 feature/ios-apple-redesign，禁止提交 main）
