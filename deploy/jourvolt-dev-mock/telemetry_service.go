@@ -92,6 +92,10 @@ func shouldAutoConfigurePairing(pairing telemetryPairingResponse) bool {
 	return shouldAutoConfigurePairingAt(pairing, time.Now().UTC())
 }
 
+func isStaleConfiguringAt(pairing telemetryPairing, now time.Time, timeout time.Duration) bool {
+	return pairing.Status == "configuring" && !pairing.UpdatedAt.IsZero() && timeout > 0 && now.Sub(pairing.UpdatedAt) > timeout
+}
+
 // Recovery is operator-owned: no repeated OAuth and no missing-key bypass.
 // The stored attempt time bounds retries across reads and API restarts.
 func shouldAutoConfigurePairingAt(pairing telemetryPairingResponse, now time.Time) bool {
@@ -533,6 +537,20 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 	}
 	if status.Status == "" {
 		status.Status = "pairing_required"
+	}
+	timeout := s.config.CommandTimeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	if isStaleConfiguringAt(status, time.Now().UTC(), timeout) {
+		correlationID, _ := randomToken()
+		_ = s.setPairingDiagnostic(ctx, userID, vehicleID, "telemetry_error", "command_transport", "configuration_interrupted", 0, correlationID)
+		status.Status = "telemetry_error"
+		status.ErrorClass = "command_transport"
+		status.FailureStage = "configuration_interrupted"
+		status.UpstreamStatus = 0
+		status.CorrelationID = correlationID
+		status.UpdatedAt = time.Now().UTC()
 	}
 	if pairingNeedsOfficialRefresh(status) {
 		if refreshed, ok := s.refreshPairingConfigTruth(ctx, userID, vehicleID, status); ok {
