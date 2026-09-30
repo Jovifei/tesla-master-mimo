@@ -3,9 +3,11 @@
 - [x] 原包真机确认最新 40.6 kWh 充电与批量行程通知。
 - [x] 修复 archive bridge 状态目录落在已删除 worktree，持久目录恢复水位 338/47 并追平 336/48。
 - [x] 加入可编辑 1.14 元/kWh 默认估算、保留人工总价优先、精简通知标题路线。
-- [ ] 最终测试、Release 签名、原包覆盖安装和界面验收。
+- [x] 最终测试、Release 签名、原包覆盖安装和费用界面验收：2.1.20/build39，Debug/Release 各 556、0 失败（Release 8 跳过），lintRelease 通过。
 
 Review：Fleet 仍 configure_post/502 与 awaiting_first_event；重新登录前网络证据缺失，不宣称 token 过期已确认。长效归档状态目录为 E:/project/tesla_master/runtime/matelink-archive，旧停用桥接容器保留回退。
+
+Device：源提交 01f0d8c，同签名覆盖保持 firstInstallTime 2026-08-31 22:36:47；登录、地图与历史可见。最新充电原始 40.64 kWh，默认 1.14 时列表/详情约 ¥46.33；默认电价改为 1.00 后变为约 ¥40.64，并已恢复 1.14。单次人工 ¥50.00 优先生效，清除测试值后恢复默认估算。未清空原包数据；新真实行程通知的外观需要下一条实际行程事件。
 
 # 2026-09-28 新行程到达 App 修复（codex/trip-delivery-repair）
 
