@@ -32,12 +32,14 @@ fun resolveChargeCostFromTotal(
     freeSupercharging: Boolean,
     isDcCharge: Boolean,
     teslaMateCost: Double?,
-    energyKwh: Double?
+    energyKwh: Double?,
+    defaultPricePerKwh: Double? = null
 ): EffectiveChargeCost = EffectiveChargeCostResolver.resolve(
     EffectiveChargeCostInput(
         manualAmount = validManualChargeTotal(manualTotalAmount),
         manuallyFree = freeSupercharging && isDcCharge,
         teslaMateCost = teslaMateCost,
-        energyKwh = energyKwh?.takeIf { it.isFinite() && it >= 0.0 }
+        energyKwh = energyKwh?.takeIf { it.isFinite() && it >= 0.0 },
+        defaultPricePerKwh = defaultPricePerKwh
     )
 )

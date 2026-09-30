@@ -138,6 +138,8 @@ fun TariffConfigScreen(
         }
     ) { paddingValues ->
         TariffConfigContent(
+            defaultChargePrice = uiState.defaultChargePrice,
+            onDefaultChargePriceChange = viewModel::updateDefaultChargePrice,
             modifier = Modifier.padding(paddingValues),
             isEnabled = uiState.isEnabled,
             peakPrice = uiState.peakPrice,
@@ -162,6 +164,8 @@ fun TariffConfigScreen(
 
 @Composable
 private fun TariffConfigContent(
+    defaultChargePrice: Double = 1.14,
+    onDefaultChargePriceChange: (Double) -> Unit = {},
     modifier: Modifier = Modifier,
     isEnabled: Boolean,
     peakPrice: Double,
@@ -187,6 +191,22 @@ private fun TariffConfigContent(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
+        var defaultPriceText by remember(defaultChargePrice) { mutableStateOf(defaultChargePrice.toString()) }
+        OutlinedTextField(
+            value = defaultPriceText,
+            onValueChange = { defaultPriceText = it },
+            label = { Text(stringResource(R.string.default_charge_price)) },
+            supportingText = { Text(stringResource(R.string.default_charge_price_hint)) },
+            suffix = { Text("$currencySymbol/kWh") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        TextButton(
+            onClick = { defaultPriceText.toDoubleOrNull()?.let(onDefaultChargePriceChange) },
+            enabled = defaultPriceText.toDoubleOrNull()?.let { it.isFinite() && it >= 0.0 } == true
+        ) { Text(stringResource(R.string.settings_save)) }
+        Spacer(modifier = Modifier.height(16.dp))
         // Enable/Disable Toggle
         Card(
             modifier = Modifier.fillMaxWidth(),

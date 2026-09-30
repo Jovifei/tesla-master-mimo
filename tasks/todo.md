@@ -1,3 +1,12 @@
+# 2026-10-01 默认充电费用与重新登录同步诊断
+
+- [x] 原包真机确认最新 40.6 kWh 充电与批量行程通知。
+- [x] 修复 archive bridge 状态目录落在已删除 worktree，持久目录恢复水位 338/47 并追平 336/48。
+- [x] 加入可编辑 1.14 元/kWh 默认估算、保留人工总价优先、精简通知标题路线。
+- [ ] 最终测试、Release 签名、原包覆盖安装和界面验收。
+
+Review：Fleet 仍 configure_post/502 与 awaiting_first_event；重新登录前网络证据缺失，不宣称 token 过期已确认。长效归档状态目录为 E:/project/tesla_master/runtime/matelink-archive，旧停用桥接容器保留回退。
+
 # 2026-09-28 新行程到达 App 修复（codex/trip-delivery-repair）
 
 - [x] 证明本地 TeslaMate 已产生真实新行程，定位行程页只读旧 Room 缓存且缺少主动拉取。

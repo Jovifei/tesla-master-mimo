@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="trip_notification_metrics">%1$.1f 公里 · %2$d 分钟</string>
+    <string name="default_charge_price">默认充电电价</string>
+    <string name="default_charge_price_hint">无账单时按充电量估算，单次修改的费用优先。</string>
+    <string name="charge_cost_estimate">估算费用</string>
     <string name="amap_settings_section">地图服务</string>
     <string name="amap_settings_title">高德地图</string>
     <string name="amap_preview_title">高德地图预览</string>
@@ -1073,15 +1077,15 @@
     <string name="settings_primary_server">主服务器</string>
     <string name="settings_report_issue">报告问题</string>
     <string name="settings_release_notes_title">本次更新</string>
-    <string name="settings_release_notes_version">MateLink 2.1.19</string>
+    <string name="settings_release_notes_version">MateLink 2.1.20</string>
     <string name="tesla_login_choose_browser">选择浏览器登录 Tesla</string>
     <string name="settings_release_notes_view">查看本次更新</string>
     <string name="settings_release_notes_close">知道了</string>
     <string name="settings_switch_to_cloud">切换到 MateLink 云端</string>
     <string name="settings_switch_to_self_hosted">切换到本地 TeslaMate</string>
-<string name="settings_release_notes_body">• 行程记录进入或恢复时自动刷新真实历史，不再要求先去仪表盘手动刷新。
-• 自托管历史与 API 使用同一服务器设置和车辆隔离作用域。
-• Fleet 配置失败显示脱敏诊断，空数据仍保持未知，不生成路线或曲线。</string>
+<string name="settings_release_notes_body">• 充电费用可按默认电价估算，默认 1.14 元/度，可在电价设置中修改。
+• 单次修改总价优先，列表、摘要和详情使用一致的电价。
+• 行程通知突出里程和时长，路线地址更简洁。</string>
     <string name="settings_resync_button">重新同步</string>
     <string name="settings_resync_confirm">确认重新同步</string>
     <string name="settings_resync_dialog_text_delete">这将删除所有本地数据。</string>

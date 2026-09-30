@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="trip_notification_metrics">%1$.1f km · %2$d min</string>
+    <string name="default_charge_price">Default charging rate</string>
+    <string name="default_charge_price_hint">Used to estimate costs without a bill. Individual amounts take priority.</string>
+    <string name="charge_cost_estimate">Estimated cost</string>
     <string name="amap_settings_section">Map services</string>
     <string name="amap_settings_title">AMap</string>
     <string name="amap_preview_title">AMap preview</string>
@@ -1083,15 +1087,15 @@
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
     <string name="settings_release_notes_title">This update</string>
-    <string name="settings_release_notes_version">MateLink 2.1.19</string>
+    <string name="settings_release_notes_version">MateLink 2.1.20</string>
     <string name="tesla_login_choose_browser">Choose a browser for Tesla login</string>
     <string name="settings_release_notes_view">View update notes</string>
     <string name="settings_release_notes_close">Got it</string>
     <string name="settings_switch_to_cloud">Switch to MateLink Cloud</string>
     <string name="settings_switch_to_self_hosted">Switch to local TeslaMate</string>
-<string name="settings_release_notes_body">• Trip history refreshes real records when the screen opens or resumes, without requiring a dashboard refresh.
-• Self-hosted history and API requests now share the same server setting and vehicle scope.
-• Fleet configuration failures expose safe diagnostics while missing data stays unknown and no routes or curves are synthesized.</string>
+<string name="settings_release_notes_body">• Estimate charging costs using an editable default rate of 1.14 per kWh.
+• Individual amounts take priority; lists, summaries and details share the rate.
+• Trip notifications highlight distance and duration with shorter route addresses.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>
     <string name="settings_resync_dialog_text_delete">This will delete all local data.</string>

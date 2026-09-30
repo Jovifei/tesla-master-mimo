@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class TariffConfigUiState(
+    val defaultChargePrice: Double = 1.14,
     val isEnabled: Boolean = true,
     val peakPrice: Double = 1.0,
     val flatPrice: Double = 0.7,
@@ -36,6 +37,7 @@ class TariffConfigViewModel @Inject constructor(
         viewModelScope.launch {
             val settings = settingsDataStore.settings.first()
             _uiState.value = TariffConfigUiState(
+                defaultChargePrice = settings.defaultChargePrice,
                 isEnabled = settings.tariffEnabled,
                 peakPrice = settings.tariffPeakPrice,
                 flatPrice = settings.tariffFlatPrice,
@@ -51,6 +53,12 @@ class TariffConfigViewModel @Inject constructor(
     fun updateEnabled(enabled: Boolean) {
         _uiState.value = _uiState.value.copy(isEnabled = enabled)
         saveConfig()
+    }
+
+    fun updateDefaultChargePrice(price: Double) {
+        if (!price.isFinite() || price < 0.0) return
+        _uiState.value = _uiState.value.copy(defaultChargePrice = price)
+        viewModelScope.launch { settingsDataStore.saveDefaultChargePrice(price) }
     }
 
     fun updatePeakPrice(price: Double) {
@@ -85,6 +93,7 @@ class TariffConfigViewModel @Inject constructor(
 
     fun resetToDefaults() {
         _uiState.value = TariffConfigUiState()
+        viewModelScope.launch { settingsDataStore.saveDefaultChargePrice(1.14) }
         saveConfig()
     }
 

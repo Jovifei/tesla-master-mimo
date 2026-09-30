@@ -7,6 +7,13 @@ import org.junit.Test
 class ChargeDetailCostPresentationTest {
 
     @Test
+    fun configuredDefaultRateIsClearlyEstimated() {
+        val presentation = presentChargeDetailCost(energyKwh = 40.6, defaultPricePerKwh = 1.14)
+        assertEquals(ChargeDetailCostState.ESTIMATE, presentation.state)
+        assertEquals(46.284, presentation.cost!!, 0.00001)
+    }
+
+    @Test
     fun teslaMateCostIsActual() {
         val presentation = presentChargeDetailCost(teslaMateCost = 6.5, energyKwh = 8.0)
 

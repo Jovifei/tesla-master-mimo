@@ -45,14 +45,14 @@ class SettingsExperienceContractTest {
     @Test
     fun currentReleaseShowsVersionAndLocalizedRepairNotes() {
         val gradle = File("build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 38"))
-        assertTrue(gradle.contains("versionName = \"2.1.19\""))
+        assertTrue(gradle.contains("versionCode = 39"))
+        assertTrue(gradle.contains("versionName = \"2.1.20\""))
         assertEquals(
             "本次更新",
             stringValue("values-zh", "settings_release_notes_title")
         )
-        assertTrue(stringValue("values-zh", "settings_release_notes_body").contains("自动刷新"))
-        assertTrue(stringValue("values", "settings_release_notes_body").contains("refreshes", ignoreCase = true))
+        assertTrue(stringValue("values-zh", "settings_release_notes_body").contains("1.14"))
+        assertTrue(stringValue("values", "settings_release_notes_body").contains("1.14"))
     }
 
     private fun stringValue(directory: String, name: String): String {

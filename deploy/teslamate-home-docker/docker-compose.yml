@@ -111,7 +111,7 @@ services:
       - BATCH_SIZE=${ARCHIVE_BATCH_SIZE:-10}
       - POLL_INTERVAL=${ARCHIVE_POLL_INTERVAL:-1m}
     volumes:
-      - ./archive-state:/var/lib/matelink-archive
+      - ${ARCHIVE_STATE_DIR:-./archive-state}:/var/lib/matelink-archive
     depends_on:
       - database
 
