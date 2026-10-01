@@ -2,12 +2,13 @@
 
 - [x] 将首页、地图、桌面小组件和仍使用转圈或纯文字的整页等待态替换为共享的 MD 加载组件。
 - [x] 保留按钮提交、PDF 生成、天气卡片等局部进度指示。
-- [ ] Debug/Release 单元测试、Lint、签名 Release 构建和 APK 校验。
-- [ ] 真机同签名覆盖安装与启动观察；保留 Tesla 车主确认门禁，不代替用户确认。
+- [x] Debug/Release 单元测试、Lint、签名 Release 构建和 APK 校验。
+- [x] 指定 OnePlus 真机同签名覆盖安装及启动观察；首次安装时间不变，进程存活且无 FATAL/ANR。
+- [ ] 首页与代表性页面的 MD 动画视觉验收；当前界面停在 Tesla 确认页，待 Jovi 选择“继续进入 MateLink”或完成 Tesla 确认后观察。
 
 Plan: reuse `MateLinkLoadingPlaceholder` already used by 行程与充电页面; only replace primary full-page loading states. Keep localized status/error content and compact action spinners intact.
 
-Review: Implementation is pushed as 3250556 and the map size import fix as 535c8d0. Final test/build/device evidence will be recorded after completion.
+Review: Source commit 3250556, map import fix 535c8d0, process/delivery rule ffa49ba are pushed. Debug and Release tests each ran 561 cases, 0 failures/errors; Release skipped 8. Debug Lint 0 errors/262 warnings; Release Lint 0 errors/239 warnings. Release 2.1.22/build 41 APK passed package/signature validation (SHA-256 `65DB5DB3515808D8C44B704FAD25DF0F39AD33A0ADE4B70891F073EC2674424D`) and installed on serial 6e4fa92f via `adb install -r`; `firstInstallTime` remained `2026-08-31 22:36:47`. Launch sample: process alive, 0 FATAL, 0 ANR. Current UI is the Tesla owner-confirmation panel; no provider consent was accepted.
 
 # 2026-10-01 登录后自动车辆接入
 
