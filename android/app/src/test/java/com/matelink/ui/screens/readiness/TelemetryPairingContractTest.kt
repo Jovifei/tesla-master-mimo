@@ -334,7 +334,7 @@ class TelemetryPairingContractTest {
             override suspend fun getDataReadiness(carId: Int): ApiResult<DataReadiness> = ApiResult.Error("fixture")
             override suspend fun getTelemetryPairingStatus(carId: Int): ApiResult<TelemetryPairingStatus> {
                 reads++
-                return ApiResult.Success(TelemetryPairingStatus(status = if (reads == 1) "configuring" else "pairing_required"))
+                return ApiResult.Success(TelemetryPairingStatus(status = if (reads == 1) "configuring" else "pairing_required", updatedAt = "2026-10-01T00:00:00Z"))
             }
             override suspend fun configureTelemetry(carId: Int): ApiResult<TelemetryConfigureResult> {
                 configurations++

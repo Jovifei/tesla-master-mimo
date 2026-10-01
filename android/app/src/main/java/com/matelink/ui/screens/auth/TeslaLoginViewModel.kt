@@ -63,7 +63,8 @@ sealed interface TeslaLoginOnboardingState {
 }
 
 internal fun shouldSurfaceTeslaVirtualKey(pairing: TelemetryPairingStatus): Boolean =
-    pairing.configSynced != true && pairing.status.equals("pairing_required", ignoreCase = true)
+    pairing.configSynced != true && pairing.status.equals("pairing_required", ignoreCase = true) &&
+        !pairing.updatedAt.isNullOrBlank()
 
 @HiltViewModel
 class TeslaLoginViewModel @Inject constructor(

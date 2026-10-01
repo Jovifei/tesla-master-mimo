@@ -11,9 +11,13 @@ class TeslaPostLoginOnboardingContractTest {
     fun onlyPairingRequiredBlocksPostLoginDashboard() {
         assertTrue(
             shouldSurfaceTeslaVirtualKey(
-                TelemetryPairingStatus(status = "pairing_required", configSynced = false)
+                TelemetryPairingStatus(status = "pairing_required", configSynced = false, updatedAt = "2026-10-01T00:00:00Z")
             )
         )
+        assertFalse(shouldSurfaceTeslaVirtualKey(TelemetryPairingStatus(status = "pairing_required")))
+        assertTrue(shouldObserveAutomaticSetup(com.matelink.data.repository.ApiResult.Success(
+            TelemetryPairingStatus(status = "pairing_required")
+        )))
         assertFalse(
             shouldSurfaceTeslaVirtualKey(
                 TelemetryPairingStatus(status = "waiting_vehicle", configSynced = false)

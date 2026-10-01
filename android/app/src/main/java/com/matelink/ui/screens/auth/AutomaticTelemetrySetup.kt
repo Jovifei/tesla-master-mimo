@@ -9,6 +9,7 @@ internal fun shouldObserveAutomaticSetup(result: ApiResult<TelemetryPairingStatu
     is ApiResult.Success -> {
         val pairing = result.data
         pairing.configSynced != true && when (pairing.status.lowercase()) {
+            "pairing_required" -> pairing.updatedAt.isNullOrBlank()
             "configuring", "waiting_vehicle", "collecting", "telemetry_not_configured", "key_confirmed" -> true
             "telemetry_error" -> pairing.errorClass?.lowercase() in setOf(null, "", "telemetry_error", "command_transport", "rate_limited", "ca_unavailable")
             else -> false

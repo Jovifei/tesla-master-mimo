@@ -7,7 +7,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AutomaticTelemetrySetupTest {
-    private fun status(value: String, synced: Boolean? = null) = ApiResult.Success(TelemetryPairingStatus(status = value, configSynced = synced))
+    private fun status(value: String, synced: Boolean? = null) = ApiResult.Success(TelemetryPairingStatus(status = value, configSynced = synced, updatedAt = "2026-10-01T00:00:00Z"))
 
     @Test fun delayedConfirmationCompletesWithoutAnotherTap() = runTest {
         var reads = 0
