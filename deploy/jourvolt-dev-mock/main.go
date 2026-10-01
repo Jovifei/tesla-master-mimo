@@ -1029,6 +1029,7 @@ func main() {
 		tokenManager := &teslaTokenManager{store: store, cipher: cipher, config: teslaSettings, client: httpClient}
 		if telemetry != nil {
 			telemetry.tokens = tokenManager
+			telemetry.fleetAPIBase = teslaSettings.FleetAPIBase
 		}
 		registrar := newTeslaPartnerRegistrar(teslaSettings, httpClient)
 		if err := registrar.ensure(ctx); err != nil {
@@ -1057,6 +1058,7 @@ func main() {
 	}
 	if telemetry != nil {
 		telemetry.startFinalizer(ctx)
+		telemetry.startAutomaticSetupRecovery(ctx)
 		defer telemetry.stopFinalizer()
 	}
 	if subscriber := newTelemetrySubscriber(telemetry); subscriber != nil {

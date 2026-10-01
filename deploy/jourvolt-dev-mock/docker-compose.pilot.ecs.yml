@@ -117,6 +117,7 @@ services:
       - ${TELEMETRY_VEHICLE_COMMAND_KEY_FILE:-/srv/jourvolt-secrets/fleet-telemetry/fleet-key.pem}:/run/secrets/vehicle-command/fleet-key.pem:ro
     networks:
       - telemetry
+      - command-egress
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -188,12 +189,16 @@ networks:
   db:
     name: ${JOURVOLT_DB_NETWORK:-jourvolt-staging_default}
     external: true
-  # The telemetry network stays internal so the MQTT broker and vehicle-command
-  # proxy are never reachable from the internet. fleet-telemetry additionally
+  # MQTT stays isolated. The command proxy has a separate outbound-only bridge
+  # and no published ports; it must be able to call Tesla's public endpoints.
+  # fleet-telemetry additionally
   # attaches to `default` (non-internal) so its public 4443 port can publish for
   # inbound vehicle connections — an `internal` network has no port mappings.
   telemetry:
     internal: true
+  command-egress:
+    name: jourvolt-pilot_command_egress
+    internal: false
   default:
     name: jourvolt-pilot_default
 

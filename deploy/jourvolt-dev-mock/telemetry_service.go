@@ -27,6 +27,8 @@ var (
 )
 
 type telemetryService struct {
+	keyChecks                sync.Map
+	recoveryStarted          atomic.Bool
 	store                    *store
 	config                   *telemetryConfig
 	memory                   *telemetryMemoryStore
@@ -35,6 +37,7 @@ type telemetryService struct {
 	tokens                   fleetAccessTokens
 	caPEM                    string
 	commandProxyURL          string
+	fleetAPIBase             string
 	httpClient               *http.Client
 	started                  atomic.Bool
 	mqttConnected            atomic.Bool
@@ -103,6 +106,13 @@ func shouldAutoConfigurePairingAt(pairing telemetryPairingResponse, now time.Tim
 		return false
 	}
 	status := strings.ToLower(strings.TrimSpace(pairing.Status))
+	if status == "key_confirmed" {
+		return true
+	}
+	if status == "telemetry_not_configured" {
+		updated, err := time.Parse(time.RFC3339, pairing.UpdatedAt)
+		return pairing.UpdatedAt == "" || (err == nil && now.Sub(updated) >= telemetryAutoRetryDelay)
+	}
 	if status == "pairing_required" {
 		return strings.TrimSpace(pairing.UpdatedAt) == ""
 	}
@@ -557,6 +567,7 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 			status = refreshed
 		}
 	}
+	status = s.refreshConfirmedVehicleKey(ctx, userID, vehicleID, status)
 	response := telemetryPairingResponse{
 		Status:         status.Status,
 		VirtualKeyURL:  "https://tesla.com/_ak/" + s.config.PartnerDomain,
@@ -596,7 +607,7 @@ func (s *telemetryService) refreshPairingConfigTruth(ctx context.Context, userID
 	if err != nil || configResponse.Response.Synced == nil {
 		return current, false
 	}
-	if *configResponse.Response.Synced {
+	if *configResponse.Response.Synced && s.matchesDesiredTelemetryConfig(configResponse.Response.Config) {
 		if err := s.setPairingConfigTruth(ctx, userID, vehicleID, "available", true); err != nil {
 			return current, false
 		}
@@ -606,10 +617,14 @@ func (s *telemetryService) refreshPairingConfigTruth(ctx context.Context, userID
 		current.UpdatedAt = time.Now().UTC()
 		return current, true
 	}
-	if err := s.setPairingConfigTruth(ctx, userID, vehicleID, "waiting_vehicle", false); err != nil {
+	pendingStatus := "waiting_vehicle"
+	if *configResponse.Response.Synced {
+		pendingStatus = "telemetry_not_configured"
+	}
+	if err := s.setPairingConfigTruth(ctx, userID, vehicleID, pendingStatus, false); err != nil {
 		return current, false
 	}
-	current.Status = "waiting_vehicle"
+	current.Status = pendingStatus
 	current.ConfigSynced = boolPointer(false)
 	current.ErrorClass = "sync_pending"
 	current.UpdatedAt = time.Now().UTC()
@@ -659,6 +674,27 @@ type officialFleetTelemetryConfiguration struct {
 	CA         string                                 `json:"ca"`
 	Fields     map[string]telemetryFieldConfiguration `json:"fields"`
 	AlertTypes []string                               `json:"alert_types,omitempty"`
+}
+
+func (s *telemetryService) matchesDesiredTelemetryConfig(value any) bool {
+	if s.config == nil || value == nil {
+		return false
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return false
+	}
+	var config officialFleetTelemetryConfiguration
+	if json.Unmarshal(data, &config) != nil || config.Hostname != s.config.PublicHost || config.Port != s.config.PublicPort {
+		return false
+	}
+	for name, desired := range desiredTelemetryConfiguration().Fields {
+		field, ok := config.Fields[name]
+		if !ok || field.IntervalSeconds != desired.IntervalSeconds {
+			return false
+		}
+	}
+	return true
 }
 
 type officialFleetTelemetryConfigureRequest struct {
@@ -792,7 +828,7 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 		if configResponse.Response.Synced == nil {
 			continue
 		}
-		if *configResponse.Response.Synced {
+		if *configResponse.Response.Synced && s.matchesDesiredTelemetryConfig(configResponse.Response.Config) {
 			if err := s.setPairingConfigTruth(ctx, userID, vehicleID, "available", true); err != nil {
 				return errTelemetryCommand
 			}
@@ -957,7 +993,11 @@ func (s *telemetryService) vinForVehicle(ctx context.Context, userID string, veh
 
 func (s *telemetryService) getFleetTelemetryConfig(ctx context.Context, userID, vin string) (officialFleetTelemetryResponse, error) {
 	var result officialFleetTelemetryResponse
-	requestURL := strings.TrimRight(s.commandProxyURL, "/") + "/api/1/vehicles/" + url.PathEscape(vin) + "/fleet_telemetry_config"
+	base := s.commandProxyURL
+	if s.fleetAPIBase != "" {
+		base = s.fleetAPIBase
+	}
+	requestURL := strings.TrimRight(base, "/") + "/api/1/vehicles/" + url.PathEscape(vin) + "/fleet_telemetry_config"
 	response, err := s.commandProxyRequest(ctx, userID, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return result, err

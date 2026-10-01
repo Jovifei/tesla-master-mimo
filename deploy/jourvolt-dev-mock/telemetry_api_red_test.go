@@ -11,7 +11,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
-	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -149,7 +148,7 @@ func TestTelemetryConfigureForwardsCurrentUsersBearerTokenToCommandProxy(t *test
 		case http.MethodPost:
 			_, _ = w.Write([]byte(`{"response":{}}`))
 		case http.MethodGet:
-			_, _ = w.Write([]byte(`{"response":{"synced":true}}`))
+			_, _ = w.Write([]byte(telemetryVerifiedConfigFixture()))
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -176,7 +175,7 @@ func TestTelemetryConfigureTrustsConfiguredCAForHTTPSCommandProxy(t *testing.T) 
 		case http.MethodPost:
 			_, _ = w.Write([]byte(`{"response":{}}`))
 		case http.MethodGet:
-			_, _ = w.Write([]byte(`{"response":{"synced":true}}`))
+			_, _ = w.Write([]byte(telemetryVerifiedConfigFixture()))
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -318,7 +317,11 @@ func TestTask2ConfigurePersistsOnlyOfficialConfigGETTruth(t *testing.T) {
 					_, _ = w.Write([]byte(`{"response":{"updated_vehicles":1,"skipped_vehicles":{"missing_key":[]}}}`))
 					return
 				}
-				_, _ = w.Write([]byte(fmt.Sprintf(`{"response":{"synced":%t}}`, tc.synced)))
+				body := `{"response":{"synced":false}}`
+				if tc.synced {
+					body = telemetryVerifiedConfigFixture()
+				}
+				_, _ = w.Write([]byte(body))
 			}))
 			defer proxy.Close()
 			service := newTelemetryServiceForTest("partner.example.com")
@@ -370,7 +373,8 @@ func TestTask2ConfigureOnlyPersistsExplicitFleetConfigSyncedBoolean(t *testing.T
 		{name: "null synced stays unknown", getResponse: `{"response":{"synced":null}}`, wantSynced: nil},
 		{name: "malformed synced stays unknown", getResponse: `{"response":{"synced":"false"}}`, wantSynced: nil},
 		{name: "explicit false persists false", getResponse: `{"response":{"synced":false}}`, wantSynced: boolPointer(false)},
-		{name: "explicit true persists true", getResponse: `{"response":{"synced":true}}`, wantSynced: boolPointer(true)},
+		{name: "synced empty configuration is not ready", getResponse: `{"response":{"synced":true,"config":null}}`, wantSynced: boolPointer(false)},
+		{name: "explicit true persists true", getResponse: telemetryVerifiedConfigFixture(), wantSynced: boolPointer(true)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -412,7 +416,7 @@ func TestTelemetryPairingRefreshesDelayedOfficialSyncState(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Fatalf("pairing refresh method = %s", r.Method)
 		}
-		_, _ = w.Write([]byte(`{"response":{"synced":true}}`))
+		_, _ = w.Write([]byte(telemetryVerifiedConfigFixture()))
 	}))
 	defer proxy.Close()
 	service := newTelemetryServiceForTest("partner.example.com")

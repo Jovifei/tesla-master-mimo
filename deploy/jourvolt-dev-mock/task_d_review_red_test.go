@@ -36,7 +36,7 @@ func TestTaskDConfigureUsesOfficialFleetTelemetryConfigBodyAndPollsSynced(t *tes
 			return 200, `{"response":{"updated_vehicles":1,"skipped_vehicles":{"missing_key":[]}}}`
 		}
 		gets++
-		return 200, `{"response":{"synced":true,"config":{"hostname":"fleet.example.com"}}}`
+		return 200, telemetryVerifiedConfigFixture()
 	})
 	defer proxy.Close()
 	service := newTelemetryServiceForTest("partner.example.com")
