@@ -23,3 +23,14 @@
 - 服务端提交 781c402 已推送并部署，readyz 核验相同 build_sha，fleet/postgres/ok；代理出口已固化。
 - Fleet 真实首事件、真实行程/充电与七天观察仍待验收。TeslaMate 云归档不等于 Fleet 采集成功。
 - 用户只需在必要时点击 App 的官方入口，由车主本人确认；不提交密码/令牌，不要求编辑 .env。
+
+## 最终交付证据（2026-10-02）
+
+- App 源码 1e743bf；2.1.21 / build 40，com.matelink，非 debuggable，原签名核验通过。
+- 最终 APK SHA256：6060EF2B99BEF5B77EE85FF6692FB8889BD0E1551363353FCEF4E7CFFD4D6E77。
+- 最终完整 Debug/Release 各 561 项，零失败/错误；Release 8 跳过；Lint 0 错误、239 既存警告；签名构建成功。
+- 原 OnePlus 上仅同签名 install -r，firstInstallTime 保持 2026-08-31 22:36:47；启动样本存活、0 FATAL、0 ANR。未清数据、未卸载、未输入凭据、未点击 Tesla 授权。
+- 原手机实际选择自托管；经现有设置按钮切回云端，保留原服务器设置和会话。真机已观察首页自动确认弹窗；最终覆盖安装后停在已保存的车辆确认面板，不是要求重新登录。
+- 证据位于 E:/Claude_allow/Download/matelink-b40-final-install.json、matelink-b40-final-smoke.json、matelink-b40-final-confirmation.png。最后一次 UI XML dump 返回 null root，未使用旧 XML 作为最终证据，最终页面以新截图核验。
+- API 781c402 在线且 readyz SHA 一致；代理专用出口存在、无发布端口。测试 PostgreSQL 容器和临时服务器诊断程序已清理，生产数据库/历史未删除。
+- PENDING：由车主本人完成官方钥匙确认；确认返回后的自动配置、Fleet 首事件、真实新行程/充电和七天观察；最终模式热切换和历史详情页面复验也留到该人工门禁之后。
