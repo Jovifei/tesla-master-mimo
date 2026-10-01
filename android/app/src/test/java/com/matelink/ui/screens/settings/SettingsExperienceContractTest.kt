@@ -40,6 +40,9 @@ class SettingsExperienceContractTest {
         assertTrue(source.contains("settings_switch_to_self_hosted"))
         assertTrue(viewModel.contains("fun switchConnectionMode(mode: ConnectionMode"))
         assertTrue(viewModel.contains("connectionModeStore.set(mode)"))
+        val shell = File("src/main/java/com/matelink/ui/navigation/StartDestinationViewModel.kt").readText()
+        assertTrue(shell.contains("connectionModeStore.mode.collect"))
+        assertTrue(shell.contains("_connectionMode.value = updatedMode"))
     }
 
     @Test
