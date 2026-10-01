@@ -393,7 +393,8 @@ private fun TeslaPermissionOnboardingPanel(
 @Composable
 private fun TeslaBlockedOnboardingPanel(reason: String?, onRetry: () -> Unit, onContinue: () -> Unit) {
     val billing = reason == "billing_blocked"
-    LoginPanel(containerColor = MaterialTheme.colorScheme.errorContainer) {
+    val automatic = reason == "waiting_vehicle"
+    LoginPanel(containerColor = if (automatic) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer) {
         Text(
             text = stringResource(if (billing) R.string.tesla_onboarding_blocked_title else R.string.telemetry_setup_pending_title),
             style = MaterialTheme.typography.titleMedium
@@ -402,7 +403,7 @@ private fun TeslaBlockedOnboardingPanel(reason: String?, onRetry: () -> Unit, on
             text = stringResource(if (billing) R.string.tesla_onboarding_blocked_body else R.string.telemetry_setup_pending_body),
             style = MaterialTheme.typography.bodyMedium
         )
-        if (!billing) {
+        if (!billing && !automatic) {
             Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.telemetry_recheck))
             }

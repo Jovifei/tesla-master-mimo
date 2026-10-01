@@ -11,6 +11,7 @@ import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.DataReadinessDataSource
 import com.matelink.data.repository.LegacyHistoryMigrationEligibility
 import com.matelink.data.repository.LegacyHistoryMigrationService
+import com.matelink.ui.screens.auth.shouldObserveAutomaticSetup
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -106,7 +107,10 @@ class DataReadinessViewModel @Inject constructor(
     /** Returning from Tesla refreshes authoritative status; load() can then auto-retry configuration. */
     fun onScreenResumed() {
         pageIsActive = true
-        if (screenWasPaused) refresh()
+        if (screenWasPaused) {
+            screenWasPaused = false
+            refresh()
+        }
     }
 
     fun reportPairingLinkUnavailable() {
@@ -206,7 +210,7 @@ class DataReadinessViewModel @Inject constructor(
                         pairing = pairing,
                         telemetryErrorCode = pairingErrorCode,
                         isConfiguringTelemetry = previous.isConfiguringTelemetry,
-                        isTelemetryActivationPending = previous.isTelemetryActivationPending && pairing?.configSynced != true
+                        isTelemetryActivationPending = previous.isTelemetryActivationPending && pairing != null && shouldObserveAutomaticSetup(ApiResult.Success(pairing))
                     )
                     is ApiResult.Error -> DataReadinessUiState(
                         isLoading = false,
@@ -218,7 +222,7 @@ class DataReadinessViewModel @Inject constructor(
                         pairing = pairing,
                         telemetryErrorCode = pairingErrorCode,
                         isConfiguringTelemetry = previous.isConfiguringTelemetry,
-                        isTelemetryActivationPending = previous.isTelemetryActivationPending && pairing?.configSynced != true
+                        isTelemetryActivationPending = previous.isTelemetryActivationPending && pairing != null && shouldObserveAutomaticSetup(ApiResult.Success(pairing))
                     )
                 }
                 val currentPairing = _uiState.value.pairing
@@ -231,6 +235,9 @@ class DataReadinessViewModel @Inject constructor(
                     !_uiState.value.isTelemetryActivationPending
                 ) {
                     configureTelemetry()
+                } else if (currentPairing != null && shouldObserveAutomaticSetup(ApiResult.Success(currentPairing))) {
+                    _uiState.value = _uiState.value.copy(isTelemetryActivationPending = true)
+                    if (pageIsActive) startTelemetryPolling(carId)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -258,10 +265,10 @@ class DataReadinessViewModel @Inject constructor(
                             _uiState.value = _uiState.value.copy(
                                 pairing = result.data,
                                 telemetryErrorCode = null,
-                                isTelemetryActivationPending = result.data.configSynced != true,
+                                isTelemetryActivationPending = shouldObserveAutomaticSetup(result),
                                 pairingLinkUnavailable = false
                             )
-                            if (result.data.configSynced == true) return@withTimeout
+                            if (!shouldObserveAutomaticSetup(result)) return@withTimeout
                         }
                         is ApiResult.Error -> {
                             if (!isCurrentPoll(generation, carId)) return@withTimeout

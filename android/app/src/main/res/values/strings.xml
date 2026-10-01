@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="vehicle_setup_later">Confirm later</string>
     <string name="trip_notification_metrics">%1$.1f km · %2$d min</string>
     <string name="default_charge_price">Default charging rate</string>
     <string name="default_charge_price_hint">Used to estimate costs without a bill. Individual amounts take priority.</string>
@@ -96,9 +97,9 @@
     <string name="tesla_login_error_not_configured">Tesla cloud login is not configured in this build.</string>
     <string name="tesla_login_callback_invalid">The Tesla callback was rejected for security reasons.</string>
     <string name="tesla_login_authorization_invalid">The Tesla authorization link is invalid or not an official Tesla page.</string>
-    <string name="tesla_onboarding_checking">Checking your Tesla vehicle authorization…</string>
+    <string name="tesla_onboarding_checking">Automatically connecting your vehicle…</string>
     <string name="tesla_onboarding_pairing_title">Tesla needs one more vehicle confirmation</string>
-    <string name="tesla_onboarding_pairing_body">Confirm this vehicle on Tesla’s official page to enable live location, drives and charging. MateLink handles the data setup; you do not need to configure MQTT, a broker or certificates.</string>
+    <string name="tesla_onboarding_pairing_body">Tesla requires the vehicle owner to confirm access once for automatic trip and charging records. MateLink will continue setup automatically when you return. You can confirm later and still view your existing history.</string>
     <string name="tesla_onboarding_pairing_open">Confirm vehicle in Tesla</string>
     <string name="tesla_onboarding_pairing_continue">Continue to MateLink</string>
     <string name="tesla_onboarding_pairing_link_unavailable">Tesla did not provide a valid confirmation link. Refresh and try again.</string>
@@ -1087,15 +1088,15 @@
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
     <string name="settings_release_notes_title">This update</string>
-    <string name="settings_release_notes_version">MateLink 2.1.20</string>
+    <string name="settings_release_notes_version">MateLink 2.1.21</string>
     <string name="tesla_login_choose_browser">Choose a browser for Tesla login</string>
     <string name="settings_release_notes_view">View update notes</string>
     <string name="settings_release_notes_close">Got it</string>
     <string name="settings_switch_to_cloud">Switch to MateLink Cloud</string>
     <string name="settings_switch_to_self_hosted">Switch to local TeslaMate</string>
-<string name="settings_release_notes_body">• Estimate charging costs using an editable default rate of 1.14 per kWh.
-• Individual amounts take priority; lists, summaries and details share the rate.
-• Trip notifications highlight distance and duration with shorter route addresses.</string>
+<string name="settings_release_notes_body">• Automatic vehicle setup checks after sign-in and continues when you return from confirmation.
+• Confirmation is requested only when Tesla requires the owner’s action. Temporary service failures do not require another login.
+• Existing history and the editable 1.14 default charging rate remain available.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>
     <string name="settings_resync_dialog_text_delete">This will delete all local data.</string>
@@ -1468,7 +1469,7 @@
     <string name="data_readiness_bind_legacy_title">Verify this legacy archive?</string>
     <string name="data_readiness_bind_legacy_message">Confirm that this local history belongs to the currently selected vehicle. This records the vehicle model and archive provenance before any migration can be offered.</string>
     <string name="data_readiness_bind_legacy_confirm">Verify archive</string>
-    <string name="telemetry_setup_title">Fleet Telemetry</string>
+    <string name="telemetry_setup_title">Automatic vehicle data</string>
     <string name="telemetry_setup_pairing_required">Tesla virtual key pairing required</string>
     <string name="telemetry_setup_waiting_vehicle">Waiting for vehicle configuration</string>
     <string name="telemetry_setup_permission_required">Tesla permission required</string>
@@ -1476,7 +1477,7 @@
     <string name="telemetry_setup_error">Fleet Telemetry is temporarily unavailable</string>
     <string name="telemetry_setup_not_configured">Fleet Telemetry service is not configured</string>
     <string name="telemetry_setup_collecting">Collecting data</string>
-    <string name="telemetry_setup_available">Data collection is available</string>
+    <string name="telemetry_setup_available">Vehicle data setup confirmed</string>
     <string name="telemetry_config_sync_state">Configuration: %1$s</string>
     <string name="telemetry_config_synced">Synced</string>
     <string name="telemetry_config_pending">Pending</string>
@@ -1505,8 +1506,8 @@
     <string name="drive_curves_banner_title">Dynamic Curve Analytics</string>
     <string name="drive_curves_banner_subtitle">Tap to view speed, distance, power, battery &amp; elevation profiles</string>
     <string name="distance_profile">Distance Profile</string>
-    <string name="telemetry_setup_pending_title">Signed in; continuous collection is not ready</string>
-    <string name="telemetry_setup_pending_body">Your Tesla session is connected. The service retries recoverable setup failures automatically. A vehicle key or missing Tesla permission still needs your confirmation. You may view existing data; new trips require actual telemetry events.</string>
+    <string name="telemetry_setup_pending_title">Connecting your vehicle automatically</string>
+    <string name="telemetry_setup_pending_body">The service is checking and completing data setup. It recovers automatically when the vehicle wakes or a service becomes available. A confirmation is shown only when Tesla requires the owner’s action. Your history remains available; new records appear when actually received.</string>
     <string name="telemetry_recheck">Check setup again</string>
     <string name="vehicle_model_pending">Vehicle model not yet identified</string>
     <string name="history_sync_cached">Cloud history could not be refreshed. Showing this device’s saved history; pull to refresh to retry.</string>

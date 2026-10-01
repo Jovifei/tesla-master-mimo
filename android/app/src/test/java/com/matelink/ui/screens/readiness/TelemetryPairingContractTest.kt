@@ -325,6 +325,37 @@ class TelemetryPairingContractTest {
     }
 
     @Test
+    fun backendSetupIsObservedAndRequiredConsentIsNeverHiddenAsWaiting() = runTest {
+        Dispatchers.resetMain()
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var reads = 0
+        var configurations = 0
+        val source = object : DataReadinessDataSource {
+            override suspend fun getDataReadiness(carId: Int): ApiResult<DataReadiness> = ApiResult.Error("fixture")
+            override suspend fun getTelemetryPairingStatus(carId: Int): ApiResult<TelemetryPairingStatus> {
+                reads++
+                return ApiResult.Success(TelemetryPairingStatus(status = if (reads == 1) "configuring" else "pairing_required"))
+            }
+            override suspend fun configureTelemetry(carId: Int): ApiResult<TelemetryConfigureResult> {
+                configurations++
+                return ApiResult.Success(TelemetryConfigureResult())
+            }
+            override suspend fun getCar(carId: Int): ApiResult<CarData> = ApiResult.Error("fixture")
+            override suspend fun getCarStatus(carId: Int): ApiResult<CarStatusWithUnits> = ApiResult.Error("fixture")
+        }
+        val viewModel = DataReadinessViewModel(source, NoopVehicleContextResolver, NoopLegacyHistoryMigrationService)
+        viewModel.setCarId(1)
+        runCurrent()
+        assertEquals(2, reads)
+        assertEquals(0, configurations)
+        assertEquals("pairing_required", viewModel.uiState.value.pairing?.status)
+        assertFalse(viewModel.uiState.value.isTelemetryActivationPending)
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(2, reads)
+    }
+
+    @Test
     fun viewModelCancelsPollingOnPauseAndCarSwitchAndGuardsPolledResultsByGeneration() {
         val source = java.io.File("src/main/java/com/matelink/ui/screens/readiness/DataReadinessViewModel.kt").readText()
 
