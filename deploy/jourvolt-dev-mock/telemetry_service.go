@@ -725,7 +725,11 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 		return errTelemetryCommand
 	}
 	defer response.Body.Close()
-	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, 4096))
+	if readErr != nil {
+		_ = s.setPairingDiagnostic(ctx, userID, vehicleID, "telemetry_error", "command_transport", "response_read", response.StatusCode, correlationID)
+		return errTelemetryCommand
+	}
 	classification := telemetryCommandErrorClass(response.StatusCode, responseBody)
 	if classification != "" {
 		status := classification
@@ -830,9 +834,9 @@ func (s *telemetryService) commandProxyRequestWithToken(ctx context.Context, met
 		timeout = s.config.CommandTimeout
 	}
 	requestContext, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	req, err := http.NewRequestWithContext(requestContext, method, requestURL, strings.NewReader(string(body)))
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
@@ -840,9 +844,26 @@ func (s *telemetryService) commandProxyRequestWithToken(ctx context.Context, met
 	req.Header.Set("Accept", "application/json")
 	client, err := s.commandProxyHTTPClient(requestURL, timeout)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
-	return client.Do(req)
+	response, err := client.Do(req)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	response.Body = &telemetryResponseBody{ReadCloser: response.Body, cancel: cancel}
+	return response, nil
+}
+
+type telemetryResponseBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b *telemetryResponseBody) Close() error {
+	defer b.cancel()
+	return b.ReadCloser.Close()
 }
 
 func (s *telemetryService) commandProxyHTTPClient(requestURL string, timeout time.Duration) (*http.Client, error) {
