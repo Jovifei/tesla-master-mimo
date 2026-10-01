@@ -3,7 +3,6 @@ package com.matelink.ui.components
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,9 +52,9 @@ fun AmapMapGate(
                     viewModel::onMapLoaded,
                     viewModel::onMapFailure
                 )
-                if (state.loading) CircularProgressIndicator()
+                if (state.loading) MateLinkPulseSpinner(size = 72.dp)
             }
-            else -> CircularProgressIndicator()
+            else -> MateLinkPulseSpinner(size = 110.dp)
         }
     }
 }

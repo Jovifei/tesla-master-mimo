@@ -15,7 +15,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Thermostat
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +36,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.data.api.models.LinkedCharge
 import com.matelink.ui.components.TelemetryPanel
+import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.theme.StatusWarning
 import com.matelink.data.api.models.ParkedDetailData
 import com.matelink.util.formatCompactDateTimeRange
@@ -69,11 +69,7 @@ fun ParkedDetailScreen(
         }
     ) { padding ->
         when {
-            state.isLoading -> Column(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) { CircularProgressIndicator() }
+            state.isLoading -> MateLinkLoadingPlaceholder(modifier = Modifier.padding(padding))
             state.data != null -> ParkedDetailContent(
                 data = state.data!!,
                 modifier = Modifier.padding(padding),

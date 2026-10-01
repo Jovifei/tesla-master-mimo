@@ -1,3 +1,13 @@
+# 2026-10-02 全页面统一 MD 加载动画
+
+- [x] 将首页、地图、桌面小组件和仍使用转圈或纯文字的整页等待态替换为共享的 MD 加载组件。
+- [x] 保留按钮提交、PDF 生成、天气卡片等局部进度指示。
+- [ ] 构建签名版本并覆盖安装到真机，核对首页和代表性页面加载呈现。
+
+Plan: reuse `MateLinkLoadingPlaceholder` already used by 行程与充电页面; only replace primary full-page loading states. Keep localized status/error content and compact action spinners intact.
+
+Implementation: upgraded Android to 2.1.22 / build 41. Unit tests were not run in this request. Device update is waiting on the existing Tesla owner-confirmation step; no page was interacted with.
+
 # 2026-10-01 登录后自动车辆接入
 
 - [x] 定位线上 configure_post/502：Command Proxy 仅连接 internal 网络，补充专用出口且不开放端口；官方读取恢复 200。

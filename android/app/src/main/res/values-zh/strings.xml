@@ -1078,14 +1078,14 @@
     <string name="settings_primary_server">主服务器</string>
     <string name="settings_report_issue">报告问题</string>
     <string name="settings_release_notes_title">本次更新</string>
-    <string name="settings_release_notes_version">MateLink 2.1.21</string>
+    <string name="settings_release_notes_version">MateLink 2.1.22</string>
     <string name="tesla_login_choose_browser">选择浏览器登录 Tesla</string>
     <string name="settings_release_notes_view">查看本次更新</string>
     <string name="settings_release_notes_close">知道了</string>
     <string name="settings_switch_to_cloud">切换到 MateLink 云端</string>
     <string name="settings_switch_to_self_hosted">切换到本地 TeslaMate</string>
-<string name="settings_release_notes_body">• 登录后自动观察车辆接入进度，确认返回后自动继续。
-• 仅在 Tesla 明确要求车主确认时显示授权入口，服务暂时不可用不会要求重复登录。
+<string name="settings_release_notes_body">• 首页及各页面加载统一使用 MateLink MD 动画。
+• 登录后自动观察车辆接入进度，确认返回后自动继续。
 • 已有历史与 1.14 元/度默认电价继续保留。</string>
     <string name="settings_resync_button">重新同步</string>
     <string name="settings_resync_confirm">确认重新同步</string>

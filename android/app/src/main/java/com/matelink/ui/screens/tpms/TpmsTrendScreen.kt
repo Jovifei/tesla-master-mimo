@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.remember
 import com.matelink.R
+import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.data.local.TirePosition
 import com.matelink.domain.analytics.TpmsTrendFactor
 import java.text.SimpleDateFormat
@@ -83,14 +84,7 @@ fun TpmsTrendScreen(
         }
     ) { paddingValues ->
         if (state.isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(stringResource(R.string.loading))
-            }
+            MateLinkLoadingPlaceholder(modifier = Modifier.padding(paddingValues))
             return@Scaffold
         }
 

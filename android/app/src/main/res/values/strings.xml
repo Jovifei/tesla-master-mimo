@@ -1088,14 +1088,14 @@
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
     <string name="settings_release_notes_title">This update</string>
-    <string name="settings_release_notes_version">MateLink 2.1.21</string>
+    <string name="settings_release_notes_version">MateLink 2.1.22</string>
     <string name="tesla_login_choose_browser">Choose a browser for Tesla login</string>
     <string name="settings_release_notes_view">View update notes</string>
     <string name="settings_release_notes_close">Got it</string>
     <string name="settings_switch_to_cloud">Switch to MateLink Cloud</string>
     <string name="settings_switch_to_self_hosted">Switch to local TeslaMate</string>
-<string name="settings_release_notes_body">• Automatic vehicle setup checks after sign-in and continues when you return from confirmation.
-• Confirmation is requested only when Tesla requires the owner’s action. Temporary service failures do not require another login.
+<string name="settings_release_notes_body">• Full-page loading across MateLink now uses the shared MD animation.
+• Automatic vehicle setup checks after sign-in and continues when you return from confirmation.
 • Existing history and the editable 1.14 default charging rate remain available.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>
