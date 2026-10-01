@@ -2,12 +2,12 @@
 
 - [x] 将首页、地图、桌面小组件和仍使用转圈或纯文字的整页等待态替换为共享的 MD 加载组件。
 - [x] 保留按钮提交、PDF 生成、天气卡片等局部进度指示。
-- [x] Release 编译、Lint 与 APK 包名/版本/签名核对；未执行单元测试。
-- [ ] 真机覆盖安装及首页/代表性页面视觉验收；当前 Tesla 车主确认流程尚未完成。
+- [ ] Debug/Release 单元测试、Lint、签名 Release 构建和 APK 校验。
+- [ ] 真机同签名覆盖安装与启动观察；保留 Tesla 车主确认门禁，不代替用户确认。
 
 Plan: reuse `MateLinkLoadingPlaceholder` already used by 行程与充电页面; only replace primary full-page loading states. Keep localized status/error content and compact action spinners intact.
 
-Review: Android 2.1.22 / build 41. Release build and lint passed (0 errors, 239 existing warnings); APK package/signature verified. Unit tests were not run. APK: `E:/Claude_allow/Download/MateLink-2.1.22.apk`. Device visual acceptance awaits the existing Tesla owner-confirmation step.
+Review: Implementation is pushed as 3250556 and the map size import fix as 535c8d0. Final test/build/device evidence will be recorded after completion.
 
 # 2026-10-01 登录后自动车辆接入
 

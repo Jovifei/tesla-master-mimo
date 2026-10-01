@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-10-02 Android 交付不可停在已编译
+
+- Pattern：界面改动即使代码已推送、Release 已构建，也不算完成；漏跑单元测试、未把 APK 覆盖安装到 Jovi 的手机会让其无法验收。
+- Prevention：每次 Android 交付离开前完成 Debug/Release 单测、Lint、签名 Release、包身份/签名校验及指定真机 `adb install -r`，记录首次安装时间与启动/FATAL/ANR。遇到 Tesla 车主确认只停止在该确认，不替用户点击。
+
 ## 2026-10-01 自动接入不能把服务错误转成用户授权任务
 
 - Pattern：502 来自代理隔离网络，不能据此声称缺钥匙或要求重新登录；用户不应承担服务器参数配置。
