@@ -18,7 +18,7 @@ type historyReadBudget struct {
 	vehicles map[string]chan struct{}
 }
 
-func newHistoryReadBudget(global, perUser, perVehicle int) *historyReadBudget {
+func newHistoryReadBudget(global int) *historyReadBudget {
 	return &historyReadBudget{
 		global: make(chan struct{}, global),
 		users: make(map[string]chan struct{}),
@@ -44,19 +44,22 @@ func (b *historyReadBudget) acquire(ctx context.Context, userID, vehicleID strin
 	user := b.getScope(b.users, userID)
 	vehicle := b.getScope(b.vehicles, vehicleID)
 	locks := []chan struct{}{b.global, user, vehicle}
+	acquired := make([]chan struct{}, 0, len(locks))
 	for _, lock := range locks {
 		select {
 		case lock <- struct{}{}:
+			acquired = append(acquired, lock)
+		case <-ctx.Done():
+			for i := len(acquired)-1; i >= 0; i-- { <-acquired[i] }
+			return nil, ctx.Err()
 		default:
-			for i := range locks {
-				if i == 0 { break }
-			}
+			for i := len(acquired)-1; i >= 0; i-- { <-acquired[i] }
 			return nil, errHistoryResourceBudgetExceeded
 		}
 	}
 	return func() {
-		for i := len(locks)-1; i >= 0; i-- {
-			<-locks[i]
+		for i := len(acquired)-1; i >= 0; i-- {
+			<-acquired[i]
 		}
 	}, nil
 }
