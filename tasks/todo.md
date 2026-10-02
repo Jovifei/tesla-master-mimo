@@ -3,8 +3,10 @@
 - [x] 刷新 origin 引用，核对本地 main 落后 49 个提交，并保存其未提交计划内容。
 - [x] 在隔离集成线上合入 main、当前 charge-sync、加载动画、微信小程序分支；trip-delivery/TeslaMate 归档已随当前分支带入。
 - [x] 把被较新实现取代的旧加载与 readyz 分支作为历史祖先纳入，保留当前合并树版本；iOS 分支头已是 origin/main 的祖先，未单独合并该分支。
-- [ ] 运行 Android、Go、TeslaMate bridge、小程序相关检查并解决合并回归。
+- [x] 验证合并回归：Android Debug/Release 各 563 项通过（Release 跳过 8），Lint 0 错误；Go API test/vet、TeslaMate bridge test/vet、小程序 typecheck/61 tests/build 全通过。
 - [ ] 将验证后的集成结果推送 origin/main，再快进本地 main 并复查所有分支状态。
+
+Integration SHA: `daff79b` plus this verification record. Before push, re-fetch `origin/main` and confirm the remote has not moved.
 
 # 2026-10-02 全页面统一 MD 加载动画
 
