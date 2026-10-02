@@ -1,5 +1,16 @@
 # 2026-08-30 iOS Apple 重设计（分支 feature/ios-apple-redesign，禁止提交 main）
 
+## 2026-09-22 小程序完成度推进
+
+- [x] 刷新隔离分支、设备锁屏、AppID 和数据库环境状态。
+- [x] RED：注销缓存清理误删跨服务器及其他账号车辆同名缓存，两个用例失败。
+- [x] GREEN：缓存清理绑定当前 API origin 与账号前缀，只接受明确的 v2/v3 后缀；有歧义的旧键保守保留。
+- [x] 验证：typecheck、9 文件 61 项测试、WeChat build、diff check 通过。
+- [ ] 真机加载图标视觉验收：ADB 可连接，isKeyguardShowing=true，等待用户解锁。
+- [ ] PostgreSQL 集成：Docker Linux 引擎不可连接，独立测试数据库尚未就绪。
+- [ ] 发布：AppID 仍为空；真实微信授权、车辆事件和平台审核尚未完成。
+
+
 # 2026-09-10 Local verification and 2.1.12 candidate
 
 ## Review
@@ -3089,6 +3100,14 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - NOT_PERFORMED：AppID、微信后台隐私指引/业务域名配置、开发者工具截图、Android/iOS 微信真机、真实 Tesla OAuth/Telemetry/历史数据、生产部署与发布审核。
 - Git：已在 `feature/wechat-miniprogram` 提交本轮候选文件；未 push、未部署。
 # 2026-09-21 MateLink loading mark
+
+## 2026-09-23 Loading mark extraction redo
+
+- [x] 从用户原图提取中间连环道路标志，去掉整块背景并输出 515x273 透明素材；浅色界面使用海军蓝主体与原青色路标。
+- [x] 小程序标志固定 515:273 比例，透明底；四个路标按 1→2→3→4 逐个点亮并循环。
+- [x] TypeScript 检查与 WeChat Taro build 通过。
+- [x] 重做提交 `a0ff254` 已推送到 `feature/wechat-miniprogram`。
+- [ ] 微信开发者工具与 AppID 真机视觉验收待平台信息齐备后完成。
 
 ## Plan
 

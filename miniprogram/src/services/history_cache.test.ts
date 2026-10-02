@@ -61,7 +61,7 @@ describe('history cache', () => {
     expect(readHistoryCache<{ id: string }>(store, key)).toEqual([])
   })
 
-  it('clears only the deleted account history across schemas and API origins', () => {
+  it('clears only the deleted account history on the current API origin', () => {
     const store = storage()
     const accountA = historyCacheKey('drives', 'user-a', 'vehicle-a', 'https://api-a.example.test')
     const accountALegacy = historyCacheKey('charges', 'user-a', 'vehicle-a', 'https://api-b.example.test').replace('.v3.', '.v2.') + '.4'
@@ -70,10 +70,23 @@ describe('history cache', () => {
     store.setStorageSync(accountALegacy, {})
     store.setStorageSync(accountB, {})
 
-    clearHistoryCachesForAccount(store, 'user-a')
+    clearHistoryCachesForAccount(store, 'user-a', 'https://api-a.example.test')
 
     expect(store.values.has(accountA)).toBe(false)
-    expect(store.values.has(accountALegacy)).toBe(false)
+    expect(store.values.has(accountALegacy)).toBe(true)
     expect(store.values.has(accountB)).toBe(true)
+  })
+
+  it('preserves other accounts whose vehicle ID matches the deleted account and removes scoped v2 history', () => {
+    const store = storage()
+    const origin = 'https://api.example.test'
+    const other = historyCacheKey('drives', 'user-b', 'user-a', origin)
+    const longerAccount = historyCacheKey('drives', 'user-a.extra', 'vehicle', origin)
+    const legacy = historyCacheKey('charges', 'user-a', 'vehicle', origin).replace('.v3.', '.v2.') + '.7'
+    for (const key of [other, longerAccount, legacy]) store.setStorageSync(key, {})
+    clearHistoryCachesForAccount(store, 'user-a', origin)
+    expect(store.values.has(other)).toBe(true)
+    expect(store.values.has(longerAccount)).toBe(true)
+    expect(store.values.has(legacy)).toBe(false)
   })
 })
