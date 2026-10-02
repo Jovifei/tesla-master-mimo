@@ -3282,3 +3282,8 @@ Scope: backend source-only; no merge/deploy/deletion/TTL changes. Remote test so
 - [x] Seven genuine regressions PASS; full Go/isolated PG16 294 PASS (zero fail/skip), vet/build/mod verify PASS.
 - [x] Linux targeted history race and separate ArchiveImport race PASS.
 - Review: summary/chunk adapter e34f527 CHANGES_REQUIRED, not materialized. Decode-before-admission window remains partial. Device/production NOT_RUN for Stage2.
+- [x] Local residual decode admission fix: outer HTTP lease before body read, service admitted path avoids nested acquire; held through serialization.
+- [x] Red/green real HTTP counting-body tests: 8/8 subcases; rejected/canceled reads2 before, reads0 after; invalid payload releases and valid200.
+- [x] Final full Go/isolated PG16 306 PASS including subtests, zero fail/skip; vet/build and expanded Linux race PASS.
+- [ ] Push final decode correction, exact-SHA CI, remote independent review and actual persisted-summary implementation.
+Review: remote decode adapter adc2955 rejected as breaking entry function and leaking primitive test; local source fixes it. Large summary/chunk stage still incomplete.

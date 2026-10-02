@@ -55,7 +55,7 @@ jobs:
           JOURVOLT_RUN_LEGACY_MEMORY_BENCH: '0'
         run: |
           set -euo pipefail
-          go test -race -count=1 -run 'Test(History(MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL|ReadBudget|ResourceAdmission|HeavyBudget|Import|Archive)|ArchiveImport|TelemetryHistory)' ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-race.log"
+          go test -race -count=1 -run 'Test(History(MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL|ReadBudget|ResourceAdmission|HeavyBudget|Import|Archive|DecodeAdmission)|ArchiveImport|TelemetryHistory)' ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-race.log"
       - name: Verify mandatory PostgreSQL evidence
         run: |
           python3 - <<'PY'

@@ -477,6 +477,12 @@ func (a *app) historyArchiveImportForBinding(w http.ResponseWriter, r *http.Requ
 		a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
 	}
+	release, err := acquireHistoryHeavyBudget(r.Context(), binding.UserID, binding.VehicleID)
+	if err != nil {
+		a.historyAdmissionError(w, err)
+		return
+	}
+	defer release()
 	request, err := importRequestFromBody(w, r)
 	if err == nil {
 		err = validateArchiveImportRequest(request)
@@ -501,7 +507,7 @@ func (a *app) historyArchiveImportForBinding(w http.ResponseWriter, r *http.Requ
 		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_archive_import_failed"})
 		return
 	}
-	result, err := a.telemetry.importHistory(r.Context(), binding.UserID, binding.VehicleID, request)
+	result, err := a.telemetry.importHistoryAdmitted(r.Context(), binding.UserID, binding.VehicleID, request)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			a.json(w, http.StatusRequestTimeout, map[string]string{"error": err.Error()})
