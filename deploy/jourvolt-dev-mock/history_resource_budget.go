@@ -57,9 +57,13 @@ func (b *historyReadBudget) acquire(ctx context.Context, userID, vehicleID strin
 			return nil, errHistoryResourceBudgetExceeded
 		}
 	}
+
+	var once sync.Once
 	return func() {
-		for i := len(acquired)-1; i >= 0; i-- {
-			<-acquired[i]
-		}
+		once.Do(func() {
+			for i := len(acquired)-1; i >= 0; i-- {
+				<-acquired[i]
+			}
+		})
 	}, nil
 }
