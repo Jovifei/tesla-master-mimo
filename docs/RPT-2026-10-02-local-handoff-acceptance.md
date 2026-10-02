@@ -1,6 +1,6 @@
 # 2026-10-02 远端 OOM 修复本地接收与兼容验收
 
-状态：LOCAL_TESTS_PASS / REMOTE_SOURCE_BUILD_REVIEW_DONE；PR #11 保持 Draft，未合并、未部署。
+状态：LOCAL_TESTS_PASS / REMOTE_SOURCE_BUILD_REVIEW_DONE / DEVICE_INSTALL_SMOKE_PASS；PR #11 保持 Draft，未合并、未部署。
 
 ## 接收与身份
 
@@ -21,12 +21,14 @@
 | Android 定向回归 | 20/20 PASS | 最终完整运行另行覆盖错误状态修正 |
 | Android Debug/Release | 各564项，0失败/错误 | Debug0跳过，Release8跳过 |
 | Android Release Lint / APK | 0错误/241警告；原签名Release PASS | 最终源码 android-final2.log，未安装到手机 |
-| 生产 / 真机 | NOT_RUN | 合并、部署、安装需要单独授权 |
+| 真机覆盖安装/启动 | PASS | Jovi本轮授权本地编译和手机验证；首次安装时间不变，进程存活，0 FATAL/ANR；首页与既有登录可见 |
+| 真机业务分页/身份切换 | NOT_RUN | 合成101条为JVM测试，不冒充实机全部业务验收 |
+| 生产 | NOT_RUN | 合并和部署保持独立门禁 |
 | 2/4/8/16混合并发性能矩阵 | NOT_RUN | p95/p99、RSS、数据库CPU/IO尚未采集，不能推断生产容量 |
 
 本地大历史测试为413条行程、632055点、53条充电的合成夹具：TotalAlloc 元数据+EXISTS每操作2284B、20条摘要151896B、旧全量历史一次546324568B。此指标不是峰值RSS、整个登录请求开销或线上降幅。
 
-候选源为16a31c3加本地未提交的三个Android文件。最终差异文件 SHA256 为0EA381F1472E78FD1FAA141487D8C98800D9121308EE4641BB758F76F1714A78；APK保留2.1.22/build41作为评审候选，SHA256 CAC12269A531F7DC0FE7F19F158556B25B9504AA54CDE8733631F434DD9F22D9，证书9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774。没有宣称此包已提交、已安装或生产已更新。
+候选源为16a31c3加三个Android文件，现已提交为f06585f07efac612f22fb8be78dad041ab0d3267并推送PR #11修复分支。最终差异文件 SHA256 为0EA381F1472E78FD1FAA141487D8C98800D9121308EE4641BB758F76F1714A78；APK保留2.1.22/build41，SHA256 CAC12269A531F7DC0FE7F19F158556B25B9504AA54CDE8733631F434DD9F22D9，证书9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774。OnePlus同签名install -r通过，firstInstallTime仍2026-08-31 22:36:47；仅证明安装和启动，不代表生产API已更新。
 
 本地证据目录：E:/Claude_allow/Download/matelink-oom-local-20261002。包含Go原始JSON、Linux race、Web日志、最终Android日志、APK校验与最终兼容差异。远端同SHA CI36978859071已通过GitHub API核实success；本地输出与继承CI分开。
 
@@ -43,12 +45,12 @@
 - HistoryRecoveryTest：101条行程和101条充电分三页收齐；既有失败页、重复页、取消和数据隔离测试保留。
 - 两个界面都继续传播 CancellationException。
 
-远端已读取实际 Android diff、定向 Gradle 输出和本地 Go 日志；最终Android运行及校验已记录为第2轮输出，远端返回DONE，仅接受源码、回归、完整构建和签名校验。真机、混合并发、合并和生产仍未验收。
+远端已读取实际 Android diff、定向 Gradle 输出和本地 Go 日志；最终Android运行及校验已记录为第2轮输出，远端返回DONE，仅接受源码、回归、完整构建和签名校验。本地随后完成真机安装/启动；混合并发、完整真机业务、合并和生产仍未验收。
 
 ## 待批准的后续动作
 
 1. 最终测试/签名包检查及差异哈希已完成；远端源码/构建复审DONE。
-2. Jovi已明确GitHub为交接桥梁，授权本地修正后提交远端继续审核；提交本地兼容改动及接收记录，推送同一修复分支。单独审核合入main。
+2. Jovi已明确GitHub为交接桥梁，授权本地修正后提交远端继续审核；兼容修正已提交/推送同一修复分支。下一大阶段交远端规划、审核和主要实现；单独审核合入main。
 3. 单独授权受控部署：可恢复备份、API实际SHA、Web静态资源兼容、配套Android交付和回退；保留数据库/来源绑定/密钥/全量历史。
 4. 执行混合并发性能矩阵、上线内存/重启/502观察。Fleet首事件、真实行程/充电和长期观察保持独立。
 
