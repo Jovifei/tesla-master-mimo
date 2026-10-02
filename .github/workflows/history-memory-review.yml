@@ -1,12 +1,12 @@
 name: History memory isolated verification
 on:
   push:
-    branches: [fix/20261002-history-metadata-memory]
+    branches: [fix/20261002-history-metadata-memory, codex/history-resource-stage2-20261002]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: history-memory-review
+  group: history-memory-review-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   verify:
