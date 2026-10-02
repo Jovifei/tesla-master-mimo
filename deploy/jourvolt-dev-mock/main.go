@@ -671,16 +671,21 @@ func (a *app) cars(w http.ResponseWriter, r *http.Request, userID string) {
 func (a *app) vehicleItems(ctx context.Context, userID string, vehicles []vehicle) []map[string]any {
 	items := make([]map[string]any, 0, len(vehicles))
 	for _, v := range vehicles {
-		driveCount, chargeCount := 0, 0
+		var driveCount, chargeCount any = 0, 0
 		if a.hasMockHistory(userID) {
 			driveCount, chargeCount = len(mockDriveFixtures()), len(mockChargeFixtures())
 		}
 		if a.telemetry != nil {
-			if drives, _, err := a.telemetry.history(userID, v.ID, "drive"); err == nil {
-				driveCount = len(drives)
+			// Counts must not materialize route/charge JSON or all summaries.
+			if metadata, err := a.telemetry.historyMetadata(ctx, userID, v.ID, "drive"); err == nil {
+				driveCount = metadata.Total
+			} else {
+				driveCount = nil // unavailable is not a measured zero
 			}
-			if charges, _, err := a.telemetry.history(userID, v.ID, "charge"); err == nil {
-				chargeCount = len(charges)
+			if metadata, err := a.telemetry.historyMetadata(ctx, userID, v.ID, "charge"); err == nil {
+				chargeCount = metadata.Total
+			} else {
+				chargeCount = nil
 			}
 		}
 		items = append(items, map[string]any{

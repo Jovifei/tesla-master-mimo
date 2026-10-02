@@ -10,6 +10,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HistoryRecoveryTest {
+    @Test fun boundedPagesRecover101DrivesAndCharges() = runBlocking {
+        val drives = (1..101).map { DriveData(it) }
+        val charges = (1..101).map { ChargeData(it) }
+        val drivePages = mutableListOf<Int>()
+        val chargePages = mutableListOf<Int>()
+        val recoveredDrives = loadHistoryPages(id = DriveData::driveId) { page ->
+            drivePages += page
+            ApiResult.Success(drives.drop((page - 1) * 50).take(50))
+        }
+        val recoveredCharges = loadHistoryPages(id = ChargeData::chargeId) { page ->
+            chargePages += page
+            ApiResult.Success(charges.drop((page - 1) * 50).take(50))
+        }
+        assertEquals(drives, recoveredDrives.items)
+        assertEquals(charges, recoveredCharges.items)
+        assertEquals(listOf(1, 2, 3), drivePages)
+        assertEquals(listOf(1, 2, 3), chargePages)
+        assertNull(recoveredDrives.error)
+        assertNull(recoveredCharges.error)
+    }
+
     @Test fun everyPageIsRecoveredAndDuplicateIdsAreIdempotent() = runBlocking {
         val calls = mutableListOf<Int>()
         val result = loadHistoryPages(pageSize = 2, id = { it: Int -> it }) { page ->

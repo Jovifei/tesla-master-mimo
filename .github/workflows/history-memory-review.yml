@@ -1,0 +1,97 @@
+name: History memory isolated verification
+on:
+  push:
+    branches: [fix/20261002-history-metadata-memory]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: history-memory-review
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: matelink_test
+          POSTGRES_PASSWORD: isolated-only
+          POSTGRES_DB: matelink_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U matelink_test -d matelink_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      JOURVOLT_TEST_DATABASE_URL: postgres://matelink_test:isolated-only@localhost:5432/matelink_test?sslmode=disable
+      JOURVOLT_REQUIRE_HISTORY_PG: '1'
+      JOURVOLT_RUN_LEGACY_MEMORY_BENCH: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Record checked-out source
+        run: |
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/SOURCE_HEAD.txt
+          git archive --format=zip HEAD -o evidence/source.zip
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: deploy/jourvolt-dev-mock/go.mod
+          cache: false
+      - name: Go and isolated PostgreSQL tests
+        working-directory: deploy/jourvolt-dev-mock
+        run: |
+          set -euo pipefail
+          go test ./... -count=1 -json 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-tests.json"
+          go vet ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-vet.log"
+          go mod verify 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-mod-verify.log"
+          go build ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-build.log"
+      - name: Race regression for history queries
+        working-directory: deploy/jourvolt-dev-mock
+        env:
+          JOURVOLT_RUN_LEGACY_MEMORY_BENCH: '0'
+        run: |
+          set -euo pipefail
+          go test -race -count=1 -run 'TestHistory(MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL)' ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-race.log"
+      - name: Verify mandatory PostgreSQL evidence
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          rows=[]
+          for line in Path('evidence/go-tests.json').read_text().splitlines():
+              try: rows.append(json.loads(line))
+              except ValueError: pass
+          tests=[r for r in rows if r.get('Test')]
+          assert not [r for r in tests if r.get('Action') in ('fail','skip')], 'Skipped or failed tests'
+          for name in ('TestHistoryQueriesPostgresScopePagingAndDetail','TestHistoryQueriesPostgresLargeArchiveMemory'):
+              assert any(r.get('Test')==name and r.get('Action')=='pass' for r in tests), name
+          counts={action:sum(r.get('Action')==action for r in tests) for action in ('run','pass','fail','skip')}
+          Path('evidence/counts.json').write_text(json.dumps(counts,indent=2)+'\n')
+          print(counts)
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Web summary pagination regressions
+        working-directory: web_matelink
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types --test tests/history-pages.test.mjs 2>&1 | tee "$GITHUB_WORKSPACE/evidence/web-history-tests.log"
+      - name: Clean Web install and production build
+        timeout-minutes: 4
+        working-directory: web_matelink
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund 2>&1 | tee "$GITHUB_WORKSPACE/evidence/web-install.log"
+          npm run build 2>&1 | tee "$GITHUB_WORKSPACE/evidence/web-build.log"
+      - name: Upload actual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: history-memory-evidence
+          retention-days: 14
+          path: evidence/

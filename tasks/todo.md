@@ -1,3 +1,18 @@
+# 2026-10-02 接收远端 OOM 修复交接
+
+- [x] 读取 ZIP/Prompt，fetch 修复分支，确认 PR #11 Draft/head 16a31c3；隔离工作树接收，未重复 apply。
+- [x] 交接包 36 个哈希通过；17 个仓库文件仅 Windows 换行不同，文本一致。
+- [x] 隔离 PostgreSQL16 本地 Go 274/274 零失败/跳过；vet/mod verify/build 通过；Web 13/13、npm ci、生产构建通过。
+- [x] 服务端与多客户端独立复审，发现 Timeline/WhereWasI 单次大页请求与服务端100条上限不兼容。
+- [x] 回传远端分析并收到最小 Android 兼容修复 PLAN。
+- [x] 两个 Android 调用方复用 UnifiedHistoryRepository；101条分页回归、失败/缓存提示、取消传播及身份失败清空界面。
+- [x] 最终Debug/Release各564项0失败/错误（Release8跳过）、Lint0错误/241警告、原签名Release核验通过。
+- [x] 最终证据记录并交远端复审；返回DONE，仅源码/测试/构建/签名阶段。
+- [x] 按Jovi本轮授权提交f06585f并推送PR #11修复分支；同签名原包覆盖与真机启动通过，首页/登录可见。
+- [ ] 下一大阶段交远端主要实现，交接桥梁为GitHub；等待远端新分支和可验证交付。合入及生产部署仍独立。
+
+Review（进行中）：Windows Go -race 缺少 cgo；已在专用Linux临时容器完成本地定向race，结果PASS。交接包中的同SHA Linux CI是独立证据。主工作区及原包数据保持。此仓库为子模块，原生管理 worktree 的相对 core.worktree 解析异常；对隔离目录 Git 操作显式使用 --work-tree/GIT_WORK_TREE绑定，不改共享配置。Obsidian已通过DryRun后镜像5份远端交接文档。最终证据见 docs/RPT-2026-10-02-local-handoff-acceptance.md。
+
 # 2026-10-02 同步远端 main 并合并已交付分支
 
 ## 2026-10-02 审核入口与登录 OOM 记录
