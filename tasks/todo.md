@@ -3271,3 +3271,14 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - [ ] 对确认的代码缺陷先加回归测试，再最小修复；运行 Go/Android 测试、Lint、Release 构建和真机检查。
 - [ ] 记录 Review、提交推送、签名 APK、`adb install -r`、首次安装时间及账号/历史保留；Tesla 人工确认仍由车主完成。
 - Review：这是主工作区原有的未完成检查单。本次合并后的更新验收应以本文档顶部 2026-10-02 记录为准。
+
+## Stage2 import/archive follow-up 2026-10-02
+- [x] Read remote request e75a452; source hashes and unique patches verified.
+- [ ] Apply remote shared admission and archive status mapping; correct ordinary import mapping locally.
+- [ ] Genuine service/HTTP regression tests; isolated PostgreSQL full suite; Linux race.
+- [ ] GitHub commit and CI; remote review and summary/chunk continuation.
+Scope: backend source-only; no merge/deploy/deletion/TTL changes. Remote test source is malformed and primitive-only, so replacement requires local verification tests.
+- [x] Remote shared import admission/archive HTTP blocks applied; ordinary import status/cancellation residual fixes added.
+- [x] Seven genuine regressions PASS; full Go/isolated PG16 294 PASS (zero fail/skip), vet/build/mod verify PASS.
+- [x] Linux targeted history race and separate ArchiveImport race PASS.
+- Review: summary/chunk adapter e34f527 CHANGES_REQUIRED, not materialized. Decode-before-admission window remains partial. Device/production NOT_RUN for Stage2.

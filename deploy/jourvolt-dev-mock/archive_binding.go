@@ -503,6 +503,15 @@ func (a *app) historyArchiveImportForBinding(w http.ResponseWriter, r *http.Requ
 	}
 	result, err := a.telemetry.importHistory(r.Context(), binding.UserID, binding.VehicleID, request)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			a.json(w, http.StatusRequestTimeout, map[string]string{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, errHistoryResourceOverloaded) {
+			w.Header().Set("Retry-After", "1")
+			a.json(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+			return
+		}
 		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_archive_import_failed"})
 		return
 	}

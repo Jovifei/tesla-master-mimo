@@ -270,8 +270,16 @@ func (s *telemetryService) importHistory(ctx context.Context, userID string, veh
 	if s == nil {
 		return historyImportResult{}, errors.New("telemetry_not_configured")
 	}
+	release, err := acquireHistoryHeavyBudget(ctx, userID, vehicleID)
+	if err != nil {
+		return historyImportResult{}, err
+	}
+	defer release()
 	drives := make([]telemetrySession, 0, len(request.Drives))
 	for _, item := range request.Drives {
+		if err := ctx.Err(); err != nil {
+			return historyImportResult{}, err
+		}
 		session, err := item.toTelemetrySession(userID, vehicleID, "drive", request.Source, request.SourceInstanceID, request.SourceVehicleID)
 		if err != nil {
 			return historyImportResult{}, err
@@ -280,6 +288,9 @@ func (s *telemetryService) importHistory(ctx context.Context, userID string, veh
 	}
 	charges := make([]telemetrySession, 0, len(request.Charges))
 	for _, item := range request.Charges {
+		if err := ctx.Err(); err != nil {
+			return historyImportResult{}, err
+		}
 		session, err := item.toTelemetrySession(userID, vehicleID, "charge", request.Source, request.SourceInstanceID, request.SourceVehicleID)
 		if err != nil {
 			return historyImportResult{}, err
@@ -287,6 +298,9 @@ func (s *telemetryService) importHistory(ctx context.Context, userID string, veh
 		charges = append(charges, session)
 	}
 	if s.memory != nil {
+		if err := ctx.Err(); err != nil {
+			return historyImportResult{}, err
+		}
 		s.memory.importSessions(userID, vehicleID, drives, charges)
 		return historyImportResult{ImportedDrives: len(drives), ImportedCharges: len(charges)}, nil
 	}
@@ -450,6 +464,15 @@ func (a *app) historyImport(w http.ResponseWriter, r *http.Request, userID strin
 	request.Source, request.SourceInstanceID, request.SourceVehicleID, request.ChunkID = "", "", "", ""
 	result, err := a.telemetry.importHistory(r.Context(), userID, vehicleID, request)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			a.json(w, http.StatusRequestTimeout, map[string]string{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, errHistoryResourceOverloaded) {
+			w.Header().Set("Retry-After", "1")
+			a.json(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+			return
+		}
 		var validationErr *historyImportSessionValidationError
 		if errors.As(err, &validationErr) {
 			a.json(w, http.StatusBadRequest, map[string]string{"error": validationErr.Message})
