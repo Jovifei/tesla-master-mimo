@@ -4,9 +4,17 @@
 - [x] 在隔离集成线上合入 main、当前 charge-sync、加载动画、微信小程序分支；trip-delivery/TeslaMate 归档已随当前分支带入。
 - [x] 把被较新实现取代的旧加载与 readyz 分支作为历史祖先纳入，保留当前合并树版本；iOS 分支头已是 origin/main 的祖先，未单独合并该分支。
 - [x] 验证合并回归：Android Debug/Release 各 563 项通过（Release 跳过 8），Lint 0 错误；Go API test/vet、TeslaMate bridge test/vet、小程序 typecheck/61 tests/build 全通过。
-- [ ] 将验证后的集成结果推送 origin/main，再快进本地 main 并复查所有分支状态。
+- [x] 已推送 origin/main 并快进本地主工作区 main；本次主分支源构建基线为 f9d4eff，本地与远端一致。
 
 Integration SHA: `daff79b` plus this verification record. Before push, re-fetch `origin/main` and confirm the remote has not moved.
+
+## 2026-10-02 合并后从主目录重新构建与真机交付
+
+- [x] 在 E:/project/tesla_master/app_mimo 的 main@f9d4eff 重新运行 Debug/Release 各 563 项单测，0 失败/错误，Release 跳过 8；Release Lint 0 错误/241 警告，签名 Release 构建成功。
+- [x] com.matelink 2.1.22/build41 原签名校验通过，APK SHA256：48BD220E0EDA63BA5603DDD88925237C9E96FAA909AF5E238654247034BD5951。
+- [x] 用独立 ADB server socket tcp:localhost:15037 连接 OnePlus 6e4fa92f，绕过默认 5037 被 FlClash 进程占用；未改动网络配置。
+- [x] 同签名 adb install -r 成功，firstInstallTime 保持 2026-08-31 22:36:47。启动采样进程存活，0 FATAL、0 ANR，当前页面为 Tesla 必要车辆确认面板。
+- APK：E:/Claude_allow/Download/MateLink-main-f9d4eff-2.1.22.apk；安装/启动证据：matelink-main-f9d4eff-install.json 与 matelink-main-f9d4eff-smoke.json。
 
 # 2026-10-02 全页面统一 MD 加载动画
 

@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-10-02 主分支同步与 ADB 端口冲突
+
+- 已交付功能合并到 main 后，同步 origin/main 和主目录 checkout，并核验两端 SHA、ahead/behind 与工作区状态。
+- ADB 默认端口 5037 被其他进程占用时，先读进程归属；本次 FlClash 占用，使用进程级 ADB_SERVER_SOCKET=tcp:localhost:15037 即可连接手机，不需改代理、VPN 或停止其进程。
+
 ## 2026-10-02 Android 交付不可停在已编译
 
 - Pattern：界面改动即使代码已推送、Release 已构建，也不算完成；漏跑单元测试、未把 APK 覆盖安装到 Jovi 的手机会让其无法验收。
