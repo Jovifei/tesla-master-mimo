@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.domain.map.AmapSetupState
-import com.matelink.ui.components.MateLinkPulseSpinner
+import com.matelink.ui.components.MateLinkLoadingMark
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,7 +55,7 @@ fun AmapMapScreen(
                 AmapMapView(uiState.key, uiState.latitude, uiState.longitude, markerTitle, viewModel::onMapLoading, viewModel::onMapLoaded, viewModel::onMapFailure)
                 if (uiState.loading) {
                     Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                        MateLinkPulseSpinner(size = 72.dp)
+                        MateLinkLoadingMark(size = 72.dp)
                         Text(stringResource(R.string.amap_loading), modifier = Modifier.padding(top = 12.dp))
                     }
                 }

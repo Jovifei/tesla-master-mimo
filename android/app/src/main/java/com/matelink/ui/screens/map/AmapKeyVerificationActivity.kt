@@ -26,7 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.matelink.R
 import com.matelink.data.local.AmapSettingsStore
-import com.matelink.ui.components.MateLinkPulseSpinner
+import com.matelink.ui.components.MateLinkLoadingMark
 import com.matelink.ui.theme.MateLinkTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
@@ -107,7 +107,7 @@ internal fun AmapKeyVerificationContent(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            MateLinkPulseSpinner(size = 72.dp)
+            MateLinkLoadingMark(size = 72.dp)
             Text(stringResource(R.string.amap_verification_pending), modifier = Modifier.padding(top = 16.dp))
         }
     }

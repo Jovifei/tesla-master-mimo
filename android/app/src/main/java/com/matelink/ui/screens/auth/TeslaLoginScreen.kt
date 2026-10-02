@@ -57,7 +57,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.matelink.BuildConfig
 import com.matelink.R
-import com.matelink.ui.components.MateLinkPulseSpinner
+import com.matelink.ui.components.MateLinkLoadingMark
 import com.matelink.ui.common.PublicInfoLinks
 import com.matelink.ui.components.launchExternalIntentSafely
 
@@ -155,7 +155,7 @@ fun TeslaLoginScreen(
                     onOpenSelfHosted = onOpenSelfHosted
                 )
                 TeslaLoginOnboardingState.Checking -> LoginStatusPanel(
-                    icon = { MateLinkPulseSpinner(size = 22.dp) },
+                    icon = { MateLinkLoadingMark(size = 22.dp) },
                     text = stringResource(R.string.tesla_onboarding_checking)
                 )
                 TeslaLoginOnboardingState.Pending -> TeslaBlockedOnboardingPanel(
@@ -185,7 +185,7 @@ fun TeslaLoginScreen(
             when (val state = uiState) {
                 TeslaLoginUiState.Idle -> Unit
                 TeslaLoginUiState.Loading -> LoginStatusPanel(
-                    icon = { MateLinkPulseSpinner(size = 22.dp) },
+                    icon = { MateLinkLoadingMark(size = 22.dp) },
                     text = stringResource(R.string.tesla_login_loading)
                 )
                 is TeslaLoginUiState.Error -> LoginStatusPanel(

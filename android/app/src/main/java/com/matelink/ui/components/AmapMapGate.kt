@@ -53,9 +53,9 @@ fun AmapMapGate(
                     viewModel::onMapLoaded,
                     viewModel::onMapFailure
                 )
-                if (state.loading) MateLinkPulseSpinner(size = 72.dp)
+                if (state.loading) MateLinkLoadingMark(size = 72.dp)
             }
-            else -> MateLinkPulseSpinner(size = 110.dp)
+            else -> MateLinkLoadingMark(size = 110.dp)
         }
     }
 }
