@@ -3216,3 +3216,17 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - PENDING：正式云端 token/binding 与生产部署后，才能上传真实新行程并核对云端落库。当前线上 `/readyz` 为 `fleet/postgres/ok`、`telemetry=awaiting_first_event`；这仍是 Fleet Telemetry 等待真实首事件，不能由 TeslaMate 归档替代。
 - PASS：提交 `433d761` 已推送到 `codex/teslamate-cloud-archive`；ECS 使用 `jourvolt-pilot` Compose 仅重建 `jourvolt-dev-api`，线上 `/healthz`/`/readyz` 返回 `build_sha=433d761`、`fleet/postgres/ok`，Fleet Telemetry、MQTT、Command Proxy 和 PostgreSQL 未重启；归档接口未授权请求返回 401。
 - PENDING：桥接凭据/来源绑定尚未生成，未启动本地 archive profile，未上传真实新行程；这不是失败上传，而是绑定凭据门禁尚未完成。
+
+## 2026-09-28 主工作区本地计划快照（合并前保留）
+
+- [x] 只读核验 TeslaMate 新记录、容器、手机安装版本和云端 readiness；另存详尽检查清单至 `tasks/plans/2026-09-28-trip-delivery-repair.md`。
+- [ ] P0 对应手机安装的源码基线并定位同一行程首个断点；P1 修复经复现的刷新问题并保留账号/本地历史。
+- [ ] P2-A 归档安全绑定与真实持续上传；P2-B 并行定位 Fleet 首事件；P3 双账号、真机、3 趟行程、1 次充电与 7 天验收。
+- Review：该本地快照记载 TeslaMate 323 条已结束行程，云端 `awaiting_first_event`、bridge 未运行；实际源数据和后续代码提交另有更新，勿以此旧快照覆盖后续验收记录。
+
+## 2026-09-08 主工作区遗留 Tesla Cloud/Telemetry 交付检查单
+
+- [ ] 核验分支/差异、手机安装会话、公共 API 与 Telemetry/MQTT；沿 GPS、行程身份/数量、曲线、充电、电池数据逐层追踪。
+- [ ] 对确认的代码缺陷先加回归测试，再最小修复；运行 Go/Android 测试、Lint、Release 构建和真机检查。
+- [ ] 记录 Review、提交推送、签名 APK、`adb install -r`、首次安装时间及账号/历史保留；Tesla 人工确认仍由车主完成。
+- Review：这是主工作区原有的未完成检查单。本次合并后的更新验收应以本文档顶部 2026-10-02 记录为准。
