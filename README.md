@@ -1,5 +1,7 @@
 # Tesla MateLink MIMO
 
+当前工程审核与问题记录：[Docs 入口](docs/README.md)。审核以最新 `main` 为准；代码同步、手机安装和线上部署状态分别记录。
+
 Language / 语言: [中文](#中文) | [English](#english)
 
 ---
