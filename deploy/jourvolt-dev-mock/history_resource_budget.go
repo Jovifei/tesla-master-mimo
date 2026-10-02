@@ -9,66 +9,48 @@ import (
 var errHistoryResourceBudgetExceeded = errors.New("history_resource_budget_exceeded")
 
 // historyReadBudget bounds expensive history operations before they allocate
-// large route/detail payloads. It is intentionally independent from storage;
-// callers still decide whether the requested operation is allowed.
+// large route/detail payloads. Counters are kept in memory only while admitted
+// calls exist; completed calls release their scope entries.
 type historyReadBudget struct {
-	global chan struct{}
 	mu sync.Mutex
-	users map[string]chan struct{}
-	vehicles map[string]chan struct{}
+	limit int
+	global int
+	scopes map[string]int
 }
 
 func newHistoryReadBudget(global int) *historyReadBudget {
-	return &historyReadBudget{
-		global: make(chan struct{}, global),
-		users: make(map[string]chan struct{}),
-		vehicles: make(map[string]chan struct{}),
-	}
+	return &historyReadBudget{limit: global, scopes: make(map[string]int)}
 }
 
-func (b *historyReadBudget) getScope(m map[string]chan struct{}, key string) chan struct{} {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	v := m[key]
-	if v == nil {
-		v = make(chan struct{}, 1)
-		m[key] = v
-	}
-	return v
+func historyBudgetScopeKey(userID, vehicleID string) string {
+	return userID + "\x00" + vehicleID
 }
 
 func (b *historyReadBudget) acquire(ctx context.Context, userID, vehicleID string) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if b == nil {
-		return func(){}, nil
+		return func() {}, nil
 	}
-	user := b.getScope(b.users, userID)
-	vehicle := b.getScope(b.vehicles, vehicleID)
-	locks := []chan struct{}{b.global, user, vehicle}
-	acquired := make([]chan struct{}, 0, len(locks))
-	for _, lock := range locks {
-		select {
-		case lock <- struct{}{}:
-			acquired = append(acquired, lock)
-		case <-ctx.Done():
-			for i := len(acquired)-1; i >= 0; i-- { <-acquired[i] }
-			return nil, ctx.Err()
-		default:
-			for i := len(acquired)-1; i >= 0; i-- { <-acquired[i] }
-			return nil, errHistoryResourceBudgetExceeded
-		}
+	key := historyBudgetScopeKey(userID, vehicleID)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.global >= b.limit || b.scopes[key] >= 1 {
+		return nil, errHistoryResourceBudgetExceeded
 	}
-
-	var released bool
-	var mu sync.Mutex
+	b.global++
+	b.scopes[key]++
+	var once sync.Once
 	return func() {
-		mu.Lock()
-		defer mu.Unlock()
-		if released {
-			panic("history resource budget release called twice")
-		}
-		released = true
-		for i := len(acquired)-1; i >= 0; i-- {
-			<-acquired[i]
-		}
+		once.Do(func() {
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			b.global--
+			b.scopes[key]--
+			if b.scopes[key] == 0 {
+				delete(b.scopes, key)
+			}
+		})
 	}, nil
 }
