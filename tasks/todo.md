@@ -1,3 +1,14 @@
+# 2026-09-28 新行程到达手机修复计划
+
+- [x] 只读核验 TeslaMate 新记录、容器、手机安装版本和云端 readiness。
+- [x] 编写 `tasks/plans/2026-09-28-trip-delivery-repair.md`，区分事实、候选根因及真实验收。
+- [ ] P0 恢复安装/部署对应源码基线，定位同一行程的首个丢失边界。
+- [ ] P1 修复经复现的自动刷新问题，保留账号与本地历史。
+- [ ] P2-A 归档安全绑定与真实持续上传；P2-B 并行定位修复 Fleet 首事件链路。
+- [ ] P3 真机、双账号及七天真实采集验收。
+
+Review：本轮仅诊断和计划；本地有 323 条已结束行程，云端仍 awaiting_first_event，bridge 未运行。未进行业务修改、部署、安装或提交；详见计划中的证据边界。
+
 # 2026-08-30 iOS Apple 重设计（分支 feature/ios-apple-redesign，禁止提交 main）
 
 - [x] Apple 设计系统 + 类型安全导航 + 核心页重写
@@ -2907,3 +2918,18 @@
 ## Review
 
 - 进行中：ECS 当前仅有 `jourvolt-dev-api` 与 PostgreSQL；Telemetry/MQTT/command-proxy 均未部署，4443 未监听，Telemetry TLS 文件缺失。实时 `vehicle_data` 与历史采集链路已证实分离。
+# 2026-09-08 Tesla Cloud/Telemetry bug repair and real-device delivery (current run)
+
+## Plan
+
+- [ ] Baseline: inspect current branch/diff, device package/session, public API health, and Telemetry/MQTT evidence without modifying user data.
+- [ ] Root-cause trace: reproduce or prove the GPS, trip identity/count, curve, charging, and battery-health failures at each API/provider/storage/UI boundary.
+- [ ] RED: add focused regression tests for each confirmed code defect before changing production code.
+- [ ] GREEN: implement the smallest fixes, preserving the official Tesla authorization boundary and existing local user/session data.
+- [ ] VERIFY: run targeted tests, full Go/Android tests, lint/build, static diff review, and real-device smoke checks; record any Tesla-consent-dependent items as NOT_PERFORMED.
+- [ ] REVIEW: inspect the final diff and release configuration before commit; no mock evidence may be presented as real Tesla data.
+- [ ] DELIVERY: commit and push the verified change, build the signed `com.matelink` release, install with `adb install -r`, and verify first-install/session/data preservation.
+
+## Review
+
+- Pending until the root-cause evidence, tests, code review, remote push, and device installation are complete.
