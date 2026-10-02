@@ -73,6 +73,21 @@ jobs:
           Path('evidence/counts.json').write_text(json.dumps(counts,indent=2)+'\n')
           print(counts)
           PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Web summary pagination regressions
+        working-directory: web_matelink
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types --test tests/history-pages.test.mjs 2>&1 | tee "$GITHUB_WORKSPACE/evidence/web-history-tests.log"
+      - name: Clean Web install and production build
+        timeout-minutes: 4
+        working-directory: web_matelink
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund 2>&1 | tee "$GITHUB_WORKSPACE/evidence/web-install.log"
+          npm run build 2>&1 | tee "$GITHUB_WORKSPACE/evidence/web-build.log"
       - name: Upload actual evidence
         if: always()
         uses: actions/upload-artifact@v4
