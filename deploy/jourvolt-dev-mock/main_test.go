@@ -181,6 +181,53 @@ func TestVehicleOwnershipIsUserScoped(t *testing.T) {
 	}
 }
 
+func TestDataReadinessIncludesTelemetryWhenFleetIsNotConfigured(t *testing.T) {
+	a := &app{
+		mode: "fleet",
+		provider: testProvider{
+			vehicles: map[string][]vehicle{"user-a": {{ID: 11}}},
+			statuses: map[string]vehicleStatus{"user-a": {ObservedAt: time.Now().UTC(), Source: "fleet_api"}},
+		},
+	}
+	response := dataReadinessResponseForTest(t, a, "user-a", 11)
+	item := readinessItemsByKey(response.Data.Items)["telemetry"]
+	if item.Status != "telemetry_not_configured" || item.Action != "configure_telemetry" {
+		t.Fatalf("telemetry readiness item = %#v", item)
+	}
+}
+
+func TestStatusResponseIncludesObservationMetadataForMiniProgram(t *testing.T) {
+	observedAt := time.Date(2026, time.September, 13, 9, 0, 0, 0, time.UTC)
+	a := &app{provider: testProvider{
+		vehicles: map[string][]vehicle{"user-a": {{ID: 11}}},
+		statuses: map[string]vehicleStatus{"user-a": {ObservedAt: observedAt, Source: "telemetry_mqtt", State: "online", Model: "3", TrimBadging: "Long Range"}},
+	}}
+	recorder := httptest.NewRecorder()
+	a.carResource(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/cars/11/status", nil), "user-a", "/api/v1/cars/11/status")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status response = %d %s", recorder.Code, recorder.Body.String())
+	}
+	var envelope struct {
+		Data struct {
+			ObservedAt string `json:"observed_at"`
+			Source     string `json:"source"`
+			Status     struct {
+				Model       string `json:"model"`
+				TrimBadging string `json:"trim_badging"`
+			} `json:"status"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Data.ObservedAt != observedAt.Format(time.RFC3339) || envelope.Data.Source != "telemetry_mqtt" {
+		t.Fatalf("observation metadata = %#v", envelope.Data)
+	}
+	if envelope.Data.Status.Model != "3" || envelope.Data.Status.TrimBadging != "Long Range" {
+		t.Fatalf("vehicle metadata = %#v", envelope.Data.Status)
+	}
+}
+
 func TestVehicleOwnedPropagatesPersistenceErrors(t *testing.T) {
 	pool := canceledTestPool(t)
 	defer pool.Close()
@@ -337,7 +384,7 @@ func TestDataReadinessWaitsForMissingVehicleTelemetry(t *testing.T) {
 }
 
 func TestDataReadinessReportsPairingRequiredWithoutLeakingProviderError(t *testing.T) {
-	a := &app{provider: testProvider{
+	a := &app{mode: "fleet", provider: testProvider{
 		vehicles:    map[string][]vehicle{"user-pair": {{ID: 8}}},
 		statusError: map[string]error{"user-pair": errTeslaReauthorization},
 	}}
@@ -346,6 +393,9 @@ func TestDataReadinessReportsPairingRequiredWithoutLeakingProviderError(t *testi
 	items := readinessItemsByKey(response.Data.Items)
 	if items["live_status"].Status != "pairing_required" || items["live_status"].Action == "" {
 		t.Fatalf("pairing readiness item = %#v", items["live_status"])
+	}
+	if items["telemetry"].Status != "pairing_required" || items["telemetry"].Action != "pair_tesla" {
+		t.Fatalf("telemetry pairing readiness item = %#v", items["telemetry"])
 	}
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -18,6 +19,20 @@ func TestTeslaAppLinkErrorMapsTeslaTokenCodes(t *testing.T) {
 	}
 	if got := teslaAppLinkError(fmt.Errorf("tesla token exchange: %w", retrieve)); got != "unauthorized_client" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestTeslaOAuthFailsClosedWithoutStoreOrCipher(t *testing.T) {
+	oauth := &teslaOAuth{}
+	consent, err := currentOAuthConsent(jourVoltTermsVersion, jourVoltPrivacyVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := oauth.start(context.Background(), consent); err == nil {
+		t.Fatal("OAuth start must fail closed when the store is unavailable")
+	}
+	if _, err := oauth.callback(context.Background(), nil); !errors.Is(err, errOAuthCallbackRejected) {
+		t.Fatalf("OAuth callback error = %v, want %v", err, errOAuthCallbackRejected)
 	}
 }
 

@@ -52,6 +52,7 @@ import com.matelink.data.api.models.Units
 import com.matelink.data.local.TirePosition
 import com.matelink.data.repository.ApiErrorKind
 import com.matelink.ui.components.AmapPointView
+import com.matelink.ui.components.MateLinkLoadingMark
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.TelemetryMetricSpec
 import com.matelink.ui.components.TelemetryMetricStrip
@@ -162,7 +163,7 @@ fun DashboardScreen(
 
     if (uiState.isLoading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+            MateLinkLoadingMark()
         }
         return
     }

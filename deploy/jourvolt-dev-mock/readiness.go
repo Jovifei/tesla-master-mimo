@@ -56,6 +56,15 @@ func (a *app) dataReadiness(w http.ResponseWriter, r *http.Request, userID strin
 	}
 	if a.telemetry != nil {
 		response.Items = append(response.Items, a.telemetryReadinessForData(r.Context(), userID, vehicleID))
+	} else if isFleetMode(a.mode) {
+		item := dataReadinessItem{
+			Key: "telemetry", Status: "telemetry_not_configured", Source: "telemetry_mqtt",
+			MessageKey: "telemetry_not_configured", Action: "configure_telemetry",
+		}
+		if err != nil {
+			item.Status, item.MessageKey, item.Action = readinessError(err)
+		}
+		response.Items = append(response.Items, item)
 	}
 	a.json(w, http.StatusOK, map[string]any{"data": response})
 }

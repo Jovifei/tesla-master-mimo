@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +31,7 @@ import com.matelink.data.repository.WeatherCondition
 import com.matelink.data.repository.WeatherPoint
 import com.matelink.domain.model.UnitFormatter
 import com.matelink.ui.icons.CustomIcons
+import com.matelink.ui.components.MateLinkLoadingMark
 
 /**
  * Displays weather conditions along the drive route in a table format.
@@ -92,10 +92,7 @@ fun WeatherAlongTheWayCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp
-                        )
+                        MateLinkLoadingMark(size = 40.dp)
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = stringResource(R.string.weather_loading),

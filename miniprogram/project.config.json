@@ -1,0 +1,18 @@
+{
+  "description": "MateLink WeChat Mini Program development shell",
+  "packOptions": {
+    "ignore": []
+  },
+  "setting": {
+    "urlCheck": true,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "coverView": true
+  },
+  "compileType": "miniprogram",
+  "appid": "",
+  "projectname": "matelink-wechat-miniprogram",
+  "condition": {}
+}

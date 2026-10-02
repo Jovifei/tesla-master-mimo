@@ -77,7 +77,7 @@ import com.matelink.ui.components.BarSegment
 import com.matelink.ui.components.DateRangePickerDialog
 import com.matelink.ui.components.InteractiveBarChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
-import com.matelink.ui.components.MateLinkPulseSpinner
+import com.matelink.ui.components.MateLinkLoadingMark
 import com.matelink.ui.components.MonthScrollIndicator
 import com.matelink.ui.components.TelemetryMetricSpec
 import com.matelink.ui.components.TelemetryMetricStrip
@@ -429,7 +429,7 @@ private fun ChargesContent(
                 .background(Color.Black.copy(alpha = 0.45f)),
             contentAlignment = Alignment.Center,
         ) {
-            MateLinkPulseSpinner(color = palette.accent)
+            MateLinkLoadingMark()
         }
     }
     }

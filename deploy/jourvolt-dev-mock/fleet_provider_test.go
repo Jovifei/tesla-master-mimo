@@ -197,10 +197,14 @@ func TestFleetVehicleDataMapsToReadOnlyAndroidStatus(t *testing.T) {
 			CenterDisplayState: &centerDisplay, DriverFrontDoor: &frontDoor,
 			DriverRearDoor: &rearDoor,
 		},
+		VehicleConfig: teslaVehicleConfig{CarType: "MODEL3", TrimBadging: "Long Range", ExteriorColor: "Pearl White", WheelType: "Aero"},
 	}, "Test Model 3", "charging")
 
 	if status.DisplayName != "Test Model 3" || status.State != "charging" {
 		t.Fatalf("identity = %#v", status)
+	}
+	if status.Model != "3" || status.TrimBadging != "Long Range" || status.ExteriorColor != "Pearl White" || status.WheelType != "Aero" {
+		t.Fatalf("vehicle metadata = %#v", status)
 	}
 	if status.BatteryLevel == nil || *status.BatteryLevel != 80 {
 		t.Fatalf("battery = %#v", status.BatteryLevel)

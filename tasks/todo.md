@@ -3041,3 +3041,82 @@
 Design: enumerate HTTPS browsers with MATCH_ALL and show an in-app browser list that launches the selected explicit component for the trusted OAuth URL on every explicit login, with a localized title and existing safe external-launch error handling. This avoids the connected OnePlus returning only the default browser. Keep virtual-key deep links unchanged so Tesla app confirmation remains reachable. No server/data semantics changes are authorized by this browser task.
 
 Review: final Debug/Release JVM suites each ran 526 tests with zero failures/errors (Release 8 skips); final lintDebug/lintRelease passed. Signed Release 2.1.10 (29), com.matelink, non-debuggable, original signing certificate verified; the final installed APK SHA-256 is recorded in docs/ANDROID-RELEASE-LOG.md. Build memory recovery used temporary 4 GB heap and two workers, no project JVM changes. Four focused Go auth/config/history tests passed. Independent browser review found no remaining blocker; read-only device query confirmed Chrome visibility with MATCH_ALL. Final UI/OAuth/real-event acceptance is not performed. The five data findings were repaired under the authorized follow-up section above.
+# 2026-09-11 WeChat Mini Program M0/M1
+
+# 2026-09-12 M1 Android parity audit
+
+## Review
+
+- [x] 对照 Android API/Repository/Login/Readiness/History 与小程序源码逐项审计，结论 `ANDROID_PARITY=PARTIAL`。
+- [x] 确认 P0 差异：微信会话/Tesla 绑定未实现、readiness 误读 `live_status`、行程/充电真实 API 未接入。
+- [x] 确认 P1 差异：单车、无 refresh/logout、无生命周期代次、错误分类丢失、历史合并不是证据合并。
+- [x] M1 仍只放行隔离开发构建；审计未修改业务源码。详见 `docs/miniprogram/M1_ANDROID_PARITY_AUDIT_20260912.md`。
+- [ ] 申请 AppID 前不提交体验版；取得主体/AppID/域名后进入 M2 身份绑定和授权可行性测试。
+
+## Plan
+
+- [x] Verify ZIP manifest/SHA-256, read the handoff prompt and relevant chapters, and classify remote evidence versus proposed work.
+- [x] Fetch the repository and create `feature/wechat-miniprogram` from merged `main@e9197d8`; preserve the dirty parent worktree.
+- [x] M0: record current AppID/主体/域名 and OAuth feasibility as `UNVERIFIED` where no platform credentials or two-device test exists.
+- [x] M1: add an isolated Taro/React/TypeScript WeChat client skeleton with four tabs, explicit readiness/quality states, scoped API boundary, and pure-function tests.
+- [x] M1 verification: lock dependencies, run typecheck/tests, and generate the WeChat development build without bypassing domain checks or claiming platform acceptance.
+- [x] Deployment environment check: `dev:weapp --watch` reached `Watching...`; production API define injection was verified in `dist` with no dynamic `process.env` remaining.
+- [ ] Release security gate: current Taro lock tree reports 12 npm audit advisories (3 critical); do not publish until a compatible dependency remediation is verified.
+- [x] No Tesla password handling, production identity migrations, server deployment, device data changes, or real platform registration added.
+
+## Review
+
+- M0: `AUTH_FEASIBILITY=UNVERIFIED`; AppID/主体/域名 and Android/iOS WeChat real-device authorization remain external blockers. See `docs/miniprogram/M0_FEASIBILITY_20260911.md`.
+- M1: Taro 4.2.1 development build generated; `npm run typecheck` passed; Vitest 3 files/6 tests passed. No production API or Tesla credentials are bundled.
+- Pre-application material: `docs/miniprogram/PREAPPLICATION_CHECKLIST_20260912.md`; manual WeChat主体/AppID/域名/审核 steps remain owner actions.
+# 2026-09-20 微信小程序申请期完善
+
+## Plan
+
+- [x] 核对隔离 worktree、现有 M3.1 门禁与小程序页面缺口，不改 AppID、凭据或真实平台配置。
+- [x] 补齐可访问的服务条款与隐私指引页面，并让登录同意操作与文档版本一致。
+- [x] 优化“我的”页的登录/授权状态层级和关键操作反馈，保持现有 MateLink 视觉体系与真实数据语义。
+- [x] 检查车辆、行程、充电页面的加载、空态、错误、来源和分页交互，只修复明确的源码缺口。
+- [x] 增加定向回归测试，运行 typecheck、Vitest、WeChat build、diff check 和产物敏感扫描。
+- [x] 审核最终差异并记录 PASS/BLOCKED/NOT_PERFORMED；提交前列出候选文件，等待 Jovi 明确确认。
+
+## Review
+
+- PASS：新增小程序原生服务条款/隐私指引页；同意版本与 API 契约共用常量；“我的”页补齐协议入口、会话状态、授权取消和双确认账号注销。
+- PASS：账号注销仅接受 Tesla 官方 HTTPS 撤销入口，服务端明确返回 `deleted` 后才清理当前会话与当前账号历史缓存；其他账号缓存保持隔离。
+- PASS：TypeScript 0 错误；Vitest 9 文件/60 项通过；WeChat build 成功；构建产物 33 文件/415007 bytes；业务产物未发现动态环境变量、URL globals、私钥或 client secret；`git diff --check` 通过。
+- BLOCKED：`npm audit --omit=dev` 仍为 3 critical/8 moderate；Taro 4.2.1 的依赖约束尚无已验证兼容升级方案。
+- NOT_PERFORMED：AppID、微信后台隐私指引/业务域名配置、开发者工具截图、Android/iOS 微信真机、真实 Tesla OAuth/Telemetry/历史数据、生产部署与发布审核。
+- Git：已在 `feature/wechat-miniprogram` 提交本轮候选文件；未 push、未部署。
+# 2026-09-21 MateLink loading mark
+
+## Plan
+
+- [x] 在 Android 隔离分支和微信小程序分支核对现有主数据加载入口，保留错误、空数据和采集中状态的语义边界。
+- [x] 将用户提供的 loading 图案作为两端共享视觉资产接入公共加载组件。
+- [x] 在小程序车辆、行程、充电和授权准备状态接入加载图标，并补定向测试。
+- [x] 在 Android 公共加载组件接入加载图标，检查直接 CircularProgressIndicator 的数据加载例外。
+- [x] 运行小程序 typecheck/test/build 和 Android 定向测试/构建，分别审核两个分支的提交范围。
+
+## Review
+
+- PASS：新增 LoadingIndicator，接入车辆、行程、充电和 Tesla 授权准备/领取状态；加载图标保留用户提供图案并使用轻微呼吸动画，空态、错误和不可用状态不显示为加载。
+- PASS：图标资产为 256x221、约 50 KB；TypeScript、Vitest 9 文件/60 项和 WeChat build 全部通过，构建不再出现图标超大警告。
+- NOT_PERFORMED：微信开发者工具、真机截图、AppID 域名和真实数据联调。
+- PASS：已提交并推送到 feature/wechat-miniprogram，最终提交为 eb0788a；未部署。
+- PASS：Android 使用 MateLinkLoadingMark 接入公共全屏加载占位，并覆盖 Dashboard、天气、驻车详情、地图、Tesla 登录、年度报告、统计和时间线等主加载状态；错误、空数据和采集中状态未改写。
+- PASS：Android 公共图标资源为用户提供图案的高质量 256x221 缩放版；正确 2.1.12 基线的 Debug 单测、Debug Lint、Debug assemble 和 Release assemble 均通过。
+- PASS：正确候选分支为 codex/loading-indicator-current，提交 155f019、7c7e5f1，已推送；正式包校验为 com.matelink、versionCode 31、非 debuggable、证书与手机一致。
+- PASS：手机 OnePlus 7 Pro 6e4fa92f 使用 adb install -r 覆盖安装成功；versionName 2.1.12、versionCode 31、firstInstallTime 2026-08-31 22:36:47 保持不变。
+- PASS：手机解锁后启动采样进程存活，无 MateLink FATAL/ANR；行程页、充电页和更多页均可进入，真实历史摘要、筛选项、暂无数据字段和底部导航正常显示。
+- PARTIAL：请求完成很快，未在截图帧中捕获加载动画本身；用户提供的图标已随正式包安装并由公共加载组件引用。
+- NOTE：交付脚本未能从 OnePlus dumpsys 读取签名，未自动安装；已独立从手机 base.apk 与候选 APK 用 apksigner 核对证书一致后执行唯一的 adb install -r。
+
+## 2026-09-23 Loading mark extraction redo
+
+- [x] 从用户原图提取中间连环道路标志，去掉整块背景并输出 515x273 透明素材；浅色界面使用海军蓝主体与原青色路标。
+- [x] Android 标志比例固定为 515:273，四个路标按 1→2→3→4 逐个点亮；移除旧的 M+D 轮廓追踪实现。
+- [x] Release assemble 成功；APK 校验为 com.matelink 2.1.12/build31、原签名证书，SHA-256 `570BB70CEB6460702CAD9DA91D4BA185B183ED62E3ADE6BDC8F87DF38795480C`。
+- [x] 用 `adb install -r` 覆盖 OnePlus 7 Pro；首次安装时间保持，进程存活，无 FATAL/ANR。
+- [x] 最终透明图标提交 `1f329da` 已推送到 `codex/loading-indicator-current`。
+- [ ] App 当前停在 Tesla 连接引导页，未进入行程/充电页面捕获动画帧；未输入 Tesla 凭据。
