@@ -4,7 +4,7 @@ on:
     branches: [fix/20261002-history-metadata-memory]
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: history-memory-review
   cancel-in-progress: true
@@ -31,9 +31,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Materialize exact reviewed source
+          persist-credentials: false
+      - name: Record checked-out source
         run: |
-          if test -f .review/oom/apply.py; then python3 .review/oom/apply.py; fi
           mkdir -p evidence
           git rev-parse HEAD > evidence/SOURCE_HEAD.txt
           git archive --format=zip HEAD -o evidence/source.zip
@@ -73,10 +73,6 @@ jobs:
           Path('evidence/counts.json').write_text(json.dumps(counts,indent=2)+'\n')
           print(counts)
           PY
-      - name: Publish tested source to repair branch only
-        run: |
-          test "$GITHUB_REF" = refs/heads/fix/20261002-history-metadata-memory
-          git push origin HEAD:refs/heads/fix/20261002-history-metadata-memory
       - name: Upload actual evidence
         if: always()
         uses: actions/upload-artifact@v4
