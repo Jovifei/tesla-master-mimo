@@ -45,3 +45,16 @@ func TestConfigureRejectsConcurrentManualAndAutomaticRequests(t *testing.T) {
 		t.Fatalf("expected in-flight result, got %v", err)
 	}
 }
+
+func TestInterruptedConfiguringStateBecomesRecoverableOnlyAfterTimeout(t *testing.T) {
+	now := time.Date(2026, 9, 29, 1, 0, 0, 0, time.UTC)
+	if isStaleConfiguringAt(telemetryPairing{Status: "configuring", UpdatedAt: now.Add(-20 * time.Second)}, now, 30*time.Second) {
+		t.Fatal("active configuration was marked stale")
+	}
+	if !isStaleConfiguringAt(telemetryPairing{Status: "configuring", UpdatedAt: now.Add(-31 * time.Second)}, now, 30*time.Second) {
+		t.Fatal("interrupted configuration was not made recoverable")
+	}
+	if isStaleConfiguringAt(telemetryPairing{Status: "available", UpdatedAt: now.Add(-time.Hour)}, now, 30*time.Second) {
+		t.Fatal("non-configuring state was changed")
+	}
+}

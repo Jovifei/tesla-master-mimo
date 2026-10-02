@@ -15,7 +15,7 @@ func TestTask2ConfigureFailsClosedWhenConfigTruthPersistenceFails(t *testing.T) 
 			_, _ = w.Write([]byte(`{"response":{"updated_vehicles":1,"skipped_vehicles":{"missing_key":[]}}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"response":{"synced":true}}`))
+		_, _ = w.Write([]byte(telemetryVerifiedConfigFixture()))
 	}))
 	defer proxy.Close()
 

@@ -43,7 +43,7 @@ func TestRetryAfterAuthorizationConfiguresPersistedTelemetryError(t *testing.T) 
 		if method == "POST" {
 			return 200, `{"response":{"updated_vehicles":1,"skipped_vehicles":{"missing_key":[]}}}`
 		}
-		return 200, `{"response":{"synced":true,"config":{"hostname":"fleet.example.com"}}}`
+		return 200, telemetryVerifiedConfigFixture()
 	})
 	defer proxy.Close()
 
@@ -76,7 +76,7 @@ func TestAuthorizationRetryFollowsAnAlreadyRunningConfigureGate(t *testing.T) {
 		if method == "POST" {
 			return 200, `{"response":{"updated_vehicles":1,"skipped_vehicles":{"missing_key":[]}}}`
 		}
-		return 200, `{"response":{"synced":true,"config":{"hostname":"fleet.example.com"}}}`
+		return 200, telemetryVerifiedConfigFixture()
 	})
 	defer proxy.Close()
 

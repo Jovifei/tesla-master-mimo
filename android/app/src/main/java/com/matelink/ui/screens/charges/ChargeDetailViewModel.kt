@@ -69,6 +69,7 @@ data class ChargeDetailStats(
 )
 
 enum class ChargeDetailCostState {
+    ESTIMATE,
     ACTUAL,
     MANUAL,
     FREE,
@@ -84,17 +85,20 @@ internal fun presentChargeDetailCost(
     manualAmount: Double? = null,
     manuallyFree: Boolean = false,
     teslaMateCost: Double? = null,
-    energyKwh: Double? = null
+    energyKwh: Double? = null,
+    defaultPricePerKwh: Double? = null
 ): ChargeDetailCostPresentation {
     val effectiveCost = EffectiveChargeCostResolver.resolve(
         EffectiveChargeCostInput(
             manualAmount = manualAmount,
             manuallyFree = manuallyFree,
             teslaMateCost = teslaMateCost,
-            energyKwh = energyKwh?.takeIf { it.isFinite() && it >= 0.0 }
+            energyKwh = energyKwh?.takeIf { it.isFinite() && it >= 0.0 },
+            defaultPricePerKwh = defaultPricePerKwh
         )
     )
     val state = when (effectiveCost.source) {
+        ChargeCostSource.ESTIMATE -> ChargeDetailCostState.ESTIMATE
         ChargeCostSource.MANUAL -> ChargeDetailCostState.MANUAL
         ChargeCostSource.FREE -> ChargeDetailCostState.FREE
         ChargeCostSource.TESLAMATE -> ChargeDetailCostState.ACTUAL
@@ -123,6 +127,7 @@ class ChargeDetailViewModel @Inject constructor(
     private var carId: Int? = null
     private var chargeId: Int? = null
     private var historyCarId: Int? = null
+    private var defaultChargePrice = 1.14
 
     init {
         loadCurrency()
@@ -131,6 +136,7 @@ class ChargeDetailViewModel @Inject constructor(
     private fun loadCurrency() {
         viewModelScope.launch {
             val settings = settingsDataStore.settings.first()
+            defaultChargePrice = settings.defaultChargePrice
             val currency = Currency.findByCode(settings.currencyCode)
             _uiState.update { it.copy(currencySymbol = currency.symbol) }
         }
@@ -156,6 +162,7 @@ class ChargeDetailViewModel @Inject constructor(
         viewModelScope.launch {
             resolvedHistoryCarId.join()
             _uiState.update { it.copy(isLoading = true, error = null) }
+            defaultChargePrice = settingsDataStore.settings.first().defaultChargePrice
 
             // Fetch charge detail and units in parallel
             val detailResult = repository.getChargeDetail(carId, chargeId)
@@ -182,7 +189,8 @@ class ChargeDetailViewModel @Inject constructor(
                         manualAmount = validManualChargeTotal(manualTotalAmount),
                         manuallyFree = isExplicitlyFree && isDcCharge == true,
                         teslaMateCost = detail.cost,
-                        energyKwh = detail.chargeEnergyAdded
+                        energyKwh = detail.chargeEnergyAdded,
+                        defaultPricePerKwh = defaultChargePrice
                     )
                     _uiState.update {
                         it.copy(
@@ -231,7 +239,8 @@ class ChargeDetailViewModel @Inject constructor(
                             manualAmount = validManualChargeTotal(manualTotalAmount),
                             manuallyFree = false,
                             teslaMateCost = localDetail.cost,
-                            energyKwh = localDetail.chargeEnergyAdded
+                            energyKwh = localDetail.chargeEnergyAdded,
+                            defaultPricePerKwh = defaultChargePrice
                         )
                         _uiState.update {
                             it.copy(
@@ -279,7 +288,8 @@ class ChargeDetailViewModel @Inject constructor(
                         manualAmount = validTotal,
                         manuallyFree = state.costPresentation.state == ChargeDetailCostState.FREE,
                         teslaMateCost = detail.cost,
-                        energyKwh = detail.chargeEnergyAdded
+                        energyKwh = detail.chargeEnergyAdded,
+                        defaultPricePerKwh = defaultChargePrice
                     )
                 )
             }

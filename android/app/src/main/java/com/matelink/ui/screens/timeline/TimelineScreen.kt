@@ -24,8 +24,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
+import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.theme.CarColorPalette
-import com.matelink.ui.components.MateLinkLoadingMark
 import com.matelink.ui.theme.SwissOutline
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -67,14 +67,7 @@ fun TimelineScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         if (uiState.isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                MateLinkLoadingMark()
-            }
+            MateLinkLoadingPlaceholder(color = palette.accent, modifier = Modifier.padding(padding))
         } else if (uiState.events.isEmpty()) {
             Box(
                 modifier = Modifier

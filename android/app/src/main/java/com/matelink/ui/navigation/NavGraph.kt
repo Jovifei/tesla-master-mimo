@@ -2,6 +2,7 @@ package com.matelink.ui.navigation
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +25,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavHostController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -32,6 +37,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.matelink.R
 import com.matelink.ui.components.launchBrowserChooser
+import com.matelink.ui.components.launchExternalIntentSafely
+import com.matelink.ui.screens.readiness.officialTeslaVirtualKeyUrlOrNull
 import com.matelink.data.local.ConnectionMode
 import com.matelink.ui.screens.auth.TeslaLoginScreen
 import com.matelink.ui.screens.auth.TeslaLoginOnboardingState
@@ -294,6 +301,7 @@ fun NavGraph(
     val notificationPermissionAsked by startViewModel.notificationPermissionAsked.collectAsState()
     val teslaLoginViewModel: TeslaLoginViewModel = hiltViewModel()
     val isTeslaSessionAuthenticated by teslaLoginViewModel.isAuthenticated.collectAsState()
+    val sessionAccountId by teslaLoginViewModel.accountId.collectAsState()
     val openDashboardAfterLogin by teslaLoginViewModel.openDashboardAfterLogin.collectAsState()
     val postLoginOnboarding by teslaLoginViewModel.postLoginOnboarding.collectAsState()
     val revealLoginError by teslaLoginViewModel.revealLoginError.collectAsState()
@@ -303,6 +311,7 @@ fun NavGraph(
     var suppressLoginRedirect by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {
@@ -311,6 +320,75 @@ fun NavGraph(
 
     if (startDestination == null) {
         return // Wait for determination
+    }
+
+    LaunchedEffect(connectionMode, sessionAccountId, currentCarId) {
+        if (connectionMode == ConnectionMode.TESLA_CLOUD && isTeslaSessionAuthenticated) {
+            teslaLoginViewModel.checkVehicleSetupAutomatically(currentCarId)
+        } else teslaLoginViewModel.cancelAutomaticVehicleCheck()
+    }
+    DisposableEffect(lifecycleOwner, connectionMode, sessionAccountId, currentCarId, isTeslaSessionAuthenticated) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                teslaLoginViewModel.onTeslaPairingFlowResumed()
+                if (connectionMode == ConnectionMode.TESLA_CLOUD && isTeslaSessionAuthenticated) {
+                    teslaLoginViewModel.checkVehicleSetupAutomatically(currentCarId)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val requiredKey = postLoginOnboarding as? TeslaLoginOnboardingState.PairingRequired
+    var deferredVehicleSetup by rememberSaveable(sessionAccountId, currentCarId) { mutableStateOf(false) }
+    val deferVehicleSetup = {
+        deferredVehicleSetup = true
+        teslaLoginViewModel.continueAfterTeslaPairing()
+    }
+    if (connectionMode == ConnectionMode.TESLA_CLOUD && isTeslaSessionAuthenticated &&
+        !deferredVehicleSetup && currentRoute.contains("Dashboard") && requiredKey?.carId == currentCarId) {
+        val officialUrl = officialTeslaVirtualKeyUrlOrNull(requiredKey.virtualKeyUrl)
+        AlertDialog(
+            onDismissRequest = deferVehicleSetup,
+            title = { Text(stringResource(R.string.tesla_onboarding_pairing_title)) },
+            text = { Text(stringResource(R.string.tesla_onboarding_pairing_body)) },
+            confirmButton = {
+                TextButton(enabled = officialUrl != null, onClick = {
+                    officialUrl?.let {
+                        teslaLoginViewModel.markTeslaPairingFlowLaunched()
+                        context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(it)))
+                    }
+                }) { Text(stringResource(R.string.tesla_onboarding_pairing_open)) }
+            },
+            dismissButton = {
+                TextButton(onClick = deferVehicleSetup) {
+                    Text(stringResource(R.string.vehicle_setup_later))
+                }
+            }
+        )
+    }
+
+    val requiredPermission = postLoginOnboarding as? TeslaLoginOnboardingState.PermissionRequired
+    if (connectionMode == ConnectionMode.TESLA_CLOUD && isTeslaSessionAuthenticated &&
+        !deferredVehicleSetup && currentRoute.contains("Dashboard") && requiredPermission?.carId == currentCarId) {
+        AlertDialog(
+            onDismissRequest = deferVehicleSetup,
+            title = { Text(stringResource(R.string.tesla_onboarding_permission_title)) },
+            text = { Text(stringResource(R.string.tesla_onboarding_permission_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    suppressLoginRedirect = true
+                    teslaLoginViewModel.reauthorize {
+                        navController.navigate(Screen.TeslaLogin) { launchSingleTop = true }
+                    }
+                }) {
+                    Text(stringResource(R.string.tesla_account_reauthorize))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = deferVehicleSetup) { Text(stringResource(R.string.vehicle_setup_later)) }
+            }
+        )
     }
 
     // One-time notification permission dialog (Android 13+)

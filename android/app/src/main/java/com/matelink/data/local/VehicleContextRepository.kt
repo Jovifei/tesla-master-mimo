@@ -2,7 +2,6 @@ package com.matelink.data.local
 
 import com.matelink.data.api.models.CarData
 import com.matelink.data.repository.LegacyHistoryMigrationRepository
-import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -19,7 +18,7 @@ class VehicleContextRepository @Inject constructor(
     private val contextStore: VehicleContextStore,
     private val sessionStore: JourVoltSessionStore,
     private val connectionModeStore: ConnectionModeStore,
-    private val settingsRepository: SettingsRepository,
+    private val settingsDataStore: SettingsDataStore,
     private val teslamateRepository: TeslamateRepository,
     private val legacyHistoryMigrationRepository: LegacyHistoryMigrationRepository
 ) : HistoryCarIdResolver, VehicleContextResolver {
@@ -31,7 +30,7 @@ class VehicleContextRepository @Inject constructor(
             HistoryReadScope(HistoryConnectionSource.CLOUD, "cloud", account)
         } else {
             HistoryReadScope(HistoryConnectionSource.SELF_HOSTED,
-                requireSelfHostedServerIdentity(settingsRepository.serverUrl.first()), null)
+                requireSelfHostedServerIdentity(settingsDataStore.settings.first().serverUrl), null)
         }
     }
 
@@ -51,6 +50,7 @@ class VehicleContextRepository @Inject constructor(
         }
         if (captureReadScope() != scope) throw HistoryIdentityUnavailableException()
         if (car != null) return resolve(car, scope)
+        cachedContextForRemote(remoteApiCarId, scope)?.let { return it }
         if (scope.source == HistoryConnectionSource.SELF_HOSTED) {
             val serverUrl = scope.serverIdentity
             val serverIdentity = scope.serverIdentity

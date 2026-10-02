@@ -173,6 +173,7 @@ fun ChargesScreen(
                     selectedCostFilter = uiState.costFilter,
                     freeSupercharging = uiState.freeSupercharging,
                     priceOverrides = uiState.priceOverrides,
+                    defaultChargePrice = uiState.defaultChargePrice,
                     customStartDate = uiState.customStartDate,
                     customEndDate = uiState.customEndDate,
                     initialScrollPosition = uiState.scrollPosition,
@@ -230,6 +231,7 @@ private fun ChargesContent(
     selectedCostFilter: CostFilter,
     freeSupercharging: Boolean,
     priceOverrides: Map<Int, Double>,
+    defaultChargePrice: Double,
     customStartDate: LocalDate?,
     customEndDate: LocalDate?,
     availableLocations: List<String>,
@@ -333,6 +335,12 @@ private fun ChargesContent(
 
         item {
             SummaryCard(summary = summary, currencySymbol = currencySymbol, palette = palette)
+            Text(
+                text = stringResource(R.string.default_charge_price_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+            )
         }
 
         // Charges charts (daily/weekly/monthly based on date range) - swipeable
@@ -381,6 +389,7 @@ private fun ChargesContent(
         } else {
             items(charges, key = { it.chargeId }) { charge ->
                 ChargeItem(
+                    defaultChargePrice = defaultChargePrice,
                     charge = charge,
                     isDcCharge = when {
                         charge.chargeId in dcChargeIds -> true
@@ -685,6 +694,7 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
 
 @Composable
 private fun ChargeItem(
+    defaultChargePrice: Double,
     charge: ChargeData,
     isDcCharge: Boolean?,
     currencySymbol: String,
@@ -710,12 +720,13 @@ private fun ChargeItem(
         freeSupercharging = freeSupercharging,
         isDcCharge = isDcCharge == true,
         teslaMateCost = charge.cost,
-        energyKwh = energy.energyKwh
+        energyKwh = energy.energyKwh,
+        defaultPricePerKwh = defaultChargePrice
     )
     val isFree = effectiveCost.source == ChargeCostSource.FREE
     val costText = when {
         isFree -> freeLabel
-        effectiveCost.cost != null -> "$currencySymbol%.2f".format(effectiveCost.cost)
+        effectiveCost.cost != null -> (if (effectiveCost.source == ChargeCostSource.ESTIMATE) "≈" else "") + "$currencySymbol%.2f".format(effectiveCost.cost)
         else -> notAvailableLabel
     }
     val is24Hour = android.text.format.DateFormat.is24HourFormat(context)

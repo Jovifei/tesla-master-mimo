@@ -27,6 +27,8 @@ var (
 )
 
 type telemetryService struct {
+	keyChecks                sync.Map
+	recoveryStarted          atomic.Bool
 	store                    *store
 	config                   *telemetryConfig
 	memory                   *telemetryMemoryStore
@@ -35,6 +37,7 @@ type telemetryService struct {
 	tokens                   fleetAccessTokens
 	caPEM                    string
 	commandProxyURL          string
+	fleetAPIBase             string
 	httpClient               *http.Client
 	started                  atomic.Bool
 	mqttConnected            atomic.Bool
@@ -92,6 +95,10 @@ func shouldAutoConfigurePairing(pairing telemetryPairingResponse) bool {
 	return shouldAutoConfigurePairingAt(pairing, time.Now().UTC())
 }
 
+func isStaleConfiguringAt(pairing telemetryPairing, now time.Time, timeout time.Duration) bool {
+	return pairing.Status == "configuring" && !pairing.UpdatedAt.IsZero() && timeout > 0 && now.Sub(pairing.UpdatedAt) > timeout
+}
+
 // Recovery is operator-owned: no repeated OAuth and no missing-key bypass.
 // The stored attempt time bounds retries across reads and API restarts.
 func shouldAutoConfigurePairingAt(pairing telemetryPairingResponse, now time.Time) bool {
@@ -99,6 +106,13 @@ func shouldAutoConfigurePairingAt(pairing telemetryPairingResponse, now time.Tim
 		return false
 	}
 	status := strings.ToLower(strings.TrimSpace(pairing.Status))
+	if status == "key_confirmed" {
+		return true
+	}
+	if status == "telemetry_not_configured" {
+		updated, err := time.Parse(time.RFC3339, pairing.UpdatedAt)
+		return pairing.UpdatedAt == "" || (err == nil && now.Sub(updated) >= telemetryAutoRetryDelay)
+	}
 	if status == "pairing_required" {
 		return strings.TrimSpace(pairing.UpdatedAt) == ""
 	}
@@ -487,19 +501,25 @@ func intPointerFromNumber(value any) *int {
 }
 
 type telemetryPairing struct {
-	Status        string
-	UpdatedAt     time.Time
-	ErrorClass    string
-	VirtualKeyURL string
-	ConfigSynced  *bool
+	Status         string
+	UpdatedAt      time.Time
+	ErrorClass     string
+	FailureStage   string
+	UpstreamStatus int
+	CorrelationID  string
+	VirtualKeyURL  string
+	ConfigSynced   *bool
 }
 
 type telemetryPairingResponse struct {
-	Status        string `json:"status"`
-	VirtualKeyURL string `json:"virtual_key_url"`
-	UpdatedAt     string `json:"updated_at,omitempty"`
-	ConfigSynced  *bool  `json:"config_synced"`
-	ErrorClass    string `json:"error_class,omitempty"`
+	Status         string `json:"status"`
+	VirtualKeyURL  string `json:"virtual_key_url"`
+	UpdatedAt      string `json:"updated_at,omitempty"`
+	ConfigSynced   *bool  `json:"config_synced"`
+	ErrorClass     string `json:"error_class,omitempty"`
+	FailureStage   string `json:"failure_stage,omitempty"`
+	UpstreamStatus int    `json:"upstream_status,omitempty"`
+	CorrelationID  string `json:"correlation_id,omitempty"`
 }
 
 func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID int) (telemetryPairingResponse, error) {
@@ -518,7 +538,7 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 		var updatedAt time.Time
 		var errorClass string
 		var configSynced *bool
-		err := s.store.pool.QueryRow(ctx, `SELECT status, updated_at, error_class, config_synced FROM jourvolt_telemetry_pairing WHERE user_id=$1 AND vehicle_id=$2`, userID, vehicleID).Scan(&status.Status, &updatedAt, &errorClass, &configSynced)
+		err := s.store.pool.QueryRow(ctx, `SELECT status, updated_at, error_class, failure_stage, COALESCE(upstream_status,0), correlation_id, config_synced FROM jourvolt_telemetry_pairing WHERE user_id=$1 AND vehicle_id=$2`, userID, vehicleID).Scan(&status.Status, &updatedAt, &errorClass, &status.FailureStage, &status.UpstreamStatus, &status.CorrelationID, &configSynced)
 		if err == nil {
 			status.UpdatedAt, status.ErrorClass, status.ConfigSynced = updatedAt, errorClass, configSynced
 		} else if !isVehicleLookupMiss(err) {
@@ -528,16 +548,34 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 	if status.Status == "" {
 		status.Status = "pairing_required"
 	}
+	timeout := s.config.CommandTimeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	if isStaleConfiguringAt(status, time.Now().UTC(), timeout) {
+		correlationID, _ := randomToken()
+		_ = s.setPairingDiagnostic(ctx, userID, vehicleID, "telemetry_error", "command_transport", "configuration_interrupted", 0, correlationID)
+		status.Status = "telemetry_error"
+		status.ErrorClass = "command_transport"
+		status.FailureStage = "configuration_interrupted"
+		status.UpstreamStatus = 0
+		status.CorrelationID = correlationID
+		status.UpdatedAt = time.Now().UTC()
+	}
 	if pairingNeedsOfficialRefresh(status) {
 		if refreshed, ok := s.refreshPairingConfigTruth(ctx, userID, vehicleID, status); ok {
 			status = refreshed
 		}
 	}
+	status = s.refreshConfirmedVehicleKey(ctx, userID, vehicleID, status)
 	response := telemetryPairingResponse{
-		Status:        status.Status,
-		VirtualKeyURL: "https://tesla.com/_ak/" + s.config.PartnerDomain,
-		ConfigSynced:  status.ConfigSynced,
-		ErrorClass:    status.ErrorClass,
+		Status:         status.Status,
+		VirtualKeyURL:  "https://tesla.com/_ak/" + s.config.PartnerDomain,
+		ConfigSynced:   status.ConfigSynced,
+		ErrorClass:     status.ErrorClass,
+		FailureStage:   status.FailureStage,
+		UpstreamStatus: status.UpstreamStatus,
+		CorrelationID:  status.CorrelationID,
 	}
 	if !status.UpdatedAt.IsZero() {
 		response.UpdatedAt = status.UpdatedAt.UTC().Format(time.RFC3339)
@@ -569,7 +607,7 @@ func (s *telemetryService) refreshPairingConfigTruth(ctx context.Context, userID
 	if err != nil || configResponse.Response.Synced == nil {
 		return current, false
 	}
-	if *configResponse.Response.Synced {
+	if *configResponse.Response.Synced && s.matchesDesiredTelemetryConfig(configResponse.Response.Config) {
 		if err := s.setPairingConfigTruth(ctx, userID, vehicleID, "available", true); err != nil {
 			return current, false
 		}
@@ -579,10 +617,14 @@ func (s *telemetryService) refreshPairingConfigTruth(ctx context.Context, userID
 		current.UpdatedAt = time.Now().UTC()
 		return current, true
 	}
-	if err := s.setPairingConfigTruth(ctx, userID, vehicleID, "waiting_vehicle", false); err != nil {
+	pendingStatus := "waiting_vehicle"
+	if *configResponse.Response.Synced {
+		pendingStatus = "telemetry_not_configured"
+	}
+	if err := s.setPairingConfigTruth(ctx, userID, vehicleID, pendingStatus, false); err != nil {
 		return current, false
 	}
-	current.Status = "waiting_vehicle"
+	current.Status = pendingStatus
 	current.ConfigSynced = boolPointer(false)
 	current.ErrorClass = "sync_pending"
 	current.UpdatedAt = time.Now().UTC()
@@ -634,6 +676,27 @@ type officialFleetTelemetryConfiguration struct {
 	AlertTypes []string                               `json:"alert_types,omitempty"`
 }
 
+func (s *telemetryService) matchesDesiredTelemetryConfig(value any) bool {
+	if s.config == nil || value == nil {
+		return false
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return false
+	}
+	var config officialFleetTelemetryConfiguration
+	if json.Unmarshal(data, &config) != nil || config.Hostname != s.config.PublicHost || config.Port != s.config.PublicPort {
+		return false
+	}
+	for name, desired := range desiredTelemetryConfiguration().Fields {
+		field, ok := config.Fields[name]
+		if !ok || field.IntervalSeconds != desired.IntervalSeconds {
+			return false
+		}
+	}
+	return true
+}
+
 type officialFleetTelemetryConfigureRequest struct {
 	VINs   []string                            `json:"vins"`
 	Config officialFleetTelemetryConfiguration `json:"config"`
@@ -666,15 +729,16 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 		return errTelemetryConfigInProgress
 	}
 	defer s.configureRequests.Delete(key)
+	correlationID, _ := randomToken()
 	s.setPairingStatus(ctx, userID, vehicleID, "configuring")
 	vin, err := s.vinForVehicle(ctx, userID, vehicleID)
 	if err != nil {
-		_ = s.setPairingError(ctx, userID, vehicleID, "telemetry_error", "vehicle_identity_unavailable")
+		_ = s.setPairingDiagnostic(ctx, userID, vehicleID, "telemetry_error", "vehicle_identity_unavailable", "vehicle_identity", 0, correlationID)
 		return errTelemetryCommand
 	}
 	ca, err := s.telemetryCA()
 	if err != nil {
-		_ = s.setPairingError(ctx, userID, vehicleID, "telemetry_error", "ca_unavailable")
+		_ = s.setPairingDiagnostic(ctx, userID, vehicleID, "telemetry_error", "ca_unavailable", "telemetry_ca", 0, correlationID)
 		return errTelemetryCommand
 	}
 	desired := desiredTelemetryConfiguration()
@@ -690,21 +754,25 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 	response, err := s.commandProxyRequest(ctx, userID, http.MethodPost, requestURL, body)
 	if err != nil {
 		if errors.Is(err, errTeslaReauthorization) {
-			_ = s.setPairingError(ctx, userID, vehicleID, "permission_required", "permission_required")
+			_ = s.setPairingDiagnostic(ctx, userID, vehicleID, "permission_required", "permission_required", "command_proxy", 0, correlationID)
 			return errTelemetryPermission
 		}
-		_ = s.setPairingError(ctx, userID, vehicleID, "telemetry_error", "command_transport")
+		_ = s.setPairingDiagnostic(ctx, userID, vehicleID, "telemetry_error", "command_transport", "command_proxy", 0, correlationID)
 		return errTelemetryCommand
 	}
 	defer response.Body.Close()
-	responseBody, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+	responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, 4096))
+	if readErr != nil {
+		_ = s.setPairingDiagnostic(ctx, userID, vehicleID, "telemetry_error", "command_transport", "response_read", response.StatusCode, correlationID)
+		return errTelemetryCommand
+	}
 	classification := telemetryCommandErrorClass(response.StatusCode, responseBody)
 	if classification != "" {
 		status := classification
 		if status != "permission_required" && status != "pairing_required" && status != "billing_blocked" {
 			status = "telemetry_error"
 		}
-		_ = s.setPairingError(ctx, userID, vehicleID, status, classification)
+		_ = s.setPairingDiagnostic(ctx, userID, vehicleID, status, classification, "configure_post", response.StatusCode, correlationID)
 		switch classification {
 		case "permission_required":
 			return errTelemetryPermission
@@ -736,7 +804,7 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 			} else if len(skipped.UnsupportedFirmware) > 0 {
 				errorClass = "unsupported_firmware"
 			}
-			if err := s.setPairingError(ctx, userID, vehicleID, status, errorClass); err != nil {
+			if err := s.setPairingDiagnostic(ctx, userID, vehicleID, status, errorClass, "configure_response", response.StatusCode, correlationID); err != nil {
 				return errTelemetryCommand
 			}
 			return errTelemetryCommand
@@ -760,7 +828,7 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 		if configResponse.Response.Synced == nil {
 			continue
 		}
-		if *configResponse.Response.Synced {
+		if *configResponse.Response.Synced && s.matchesDesiredTelemetryConfig(configResponse.Response.Config) {
 			if err := s.setPairingConfigTruth(ctx, userID, vehicleID, "available", true); err != nil {
 				return errTelemetryCommand
 			}
@@ -802,9 +870,9 @@ func (s *telemetryService) commandProxyRequestWithToken(ctx context.Context, met
 		timeout = s.config.CommandTimeout
 	}
 	requestContext, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	req, err := http.NewRequestWithContext(requestContext, method, requestURL, strings.NewReader(string(body)))
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
@@ -812,9 +880,26 @@ func (s *telemetryService) commandProxyRequestWithToken(ctx context.Context, met
 	req.Header.Set("Accept", "application/json")
 	client, err := s.commandProxyHTTPClient(requestURL, timeout)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
-	return client.Do(req)
+	response, err := client.Do(req)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	response.Body = &telemetryResponseBody{ReadCloser: response.Body, cancel: cancel}
+	return response, nil
+}
+
+type telemetryResponseBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b *telemetryResponseBody) Close() error {
+	defer b.cancel()
+	return b.ReadCloser.Close()
 }
 
 func (s *telemetryService) commandProxyHTTPClient(requestURL string, timeout time.Duration) (*http.Client, error) {
@@ -908,7 +993,11 @@ func (s *telemetryService) vinForVehicle(ctx context.Context, userID string, veh
 
 func (s *telemetryService) getFleetTelemetryConfig(ctx context.Context, userID, vin string) (officialFleetTelemetryResponse, error) {
 	var result officialFleetTelemetryResponse
-	requestURL := strings.TrimRight(s.commandProxyURL, "/") + "/api/1/vehicles/" + url.PathEscape(vin) + "/fleet_telemetry_config"
+	base := s.commandProxyURL
+	if s.fleetAPIBase != "" {
+		base = s.fleetAPIBase
+	}
+	requestURL := strings.TrimRight(base, "/") + "/api/1/vehicles/" + url.PathEscape(vin) + "/fleet_telemetry_config"
 	response, err := s.commandProxyRequest(ctx, userID, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return result, err
@@ -937,6 +1026,9 @@ func telemetryCommandErrorClass(status int, body []byte) string {
 	if status == http.StatusTooManyRequests {
 		return "rate_limited"
 	}
+	if class := safeTelemetryProxyBodyClass(body); class != "" {
+		return class
+	}
 	if status >= 400 && status < 500 {
 		return "configuration_invalid"
 	}
@@ -944,6 +1036,31 @@ func telemetryCommandErrorClass(status int, body []byte) string {
 		return "telemetry_error"
 	}
 	return ""
+}
+
+func safeTelemetryProxyBodyClass(body []byte) string {
+	text := strings.ToLower(string(body))
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) == nil {
+		parts := make([]string, 0, 3)
+		for _, key := range []string{"error", "error_description", "message"} {
+			if value, ok := payload[key].(string); ok {
+				parts = append(parts, strings.ToLower(value))
+			}
+		}
+		text = strings.Join(parts, " ")
+	}
+	switch {
+	case strings.Contains(text, "public key") && strings.Contains(text, "not been paired"),
+		strings.Contains(text, "virtual key") && strings.Contains(text, "required"):
+		return "pairing_required"
+	case strings.Contains(text, "vehicle unavailable"), strings.Contains(text, "request timeout"), strings.Contains(text, "timed out"):
+		return "vehicle_unavailable"
+	case strings.Contains(text, "rate limit"):
+		return "rate_limited"
+	default:
+		return ""
+	}
 }
 
 func bodyHasExactCode(body []byte, expected ...string) bool {
@@ -969,7 +1086,7 @@ func (s *telemetryService) setPairingStatus(ctx context.Context, userID string, 
 		defer s.memory.mu.Unlock()
 		key := telemetryKey{UserID: userID, VehicleID: vehicleID}
 		pairing := s.memory.pairings[key]
-		pairing.Status, pairing.ErrorClass, pairing.UpdatedAt = status, "", time.Now().UTC()
+		pairing.Status, pairing.ErrorClass, pairing.FailureStage, pairing.UpstreamStatus, pairing.CorrelationID, pairing.UpdatedAt = status, "", "", 0, "", time.Now().UTC()
 		s.memory.pairings[key] = pairing
 		return
 	}
@@ -979,16 +1096,20 @@ func (s *telemetryService) setPairingStatus(ctx context.Context, userID string, 
 	_, _ = s.store.pool.Exec(ctx, `
 INSERT INTO jourvolt_telemetry_pairing(user_id, vehicle_id, status, error_class, updated_at)
 VALUES ($1, $2, $3, '', now())
-ON CONFLICT (user_id, vehicle_id) DO UPDATE SET status=EXCLUDED.status, error_class='', updated_at=EXCLUDED.updated_at`, userID, vehicleID, status)
+ON CONFLICT (user_id, vehicle_id) DO UPDATE SET status=EXCLUDED.status, error_class='', failure_stage='', upstream_status=NULL, correlation_id='', updated_at=EXCLUDED.updated_at`, userID, vehicleID, status)
 }
 
 func (s *telemetryService) setPairingError(ctx context.Context, userID string, vehicleID int, status, errorClass string) error {
+	return s.setPairingDiagnostic(ctx, userID, vehicleID, status, errorClass, "", 0, "")
+}
+
+func (s *telemetryService) setPairingDiagnostic(ctx context.Context, userID string, vehicleID int, status, errorClass, failureStage string, upstreamStatus int, correlationID string) error {
 	if s.memory != nil {
 		s.memory.mu.Lock()
 		defer s.memory.mu.Unlock()
 		key := telemetryKey{UserID: userID, VehicleID: vehicleID}
 		pairing := s.memory.pairings[key]
-		pairing.Status, pairing.ErrorClass, pairing.UpdatedAt = status, errorClass, time.Now().UTC()
+		pairing.Status, pairing.ErrorClass, pairing.FailureStage, pairing.UpstreamStatus, pairing.CorrelationID, pairing.UpdatedAt = status, errorClass, failureStage, upstreamStatus, correlationID, time.Now().UTC()
 		s.memory.pairings[key] = pairing
 		return nil
 	}
@@ -996,9 +1117,9 @@ func (s *telemetryService) setPairingError(ctx context.Context, userID string, v
 		return nil
 	}
 	_, err := s.store.pool.Exec(ctx, `
-INSERT INTO jourvolt_telemetry_pairing(user_id, vehicle_id, status, error_class, updated_at)
-VALUES ($1, $2, $3, $4, now())
-ON CONFLICT (user_id, vehicle_id) DO UPDATE SET status=EXCLUDED.status, error_class=EXCLUDED.error_class, updated_at=EXCLUDED.updated_at`, userID, vehicleID, status, errorClass)
+INSERT INTO jourvolt_telemetry_pairing(user_id, vehicle_id, status, error_class, failure_stage, upstream_status, correlation_id, updated_at)
+VALUES ($1, $2, $3, $4, $5, NULLIF($6,0), $7, now())
+ON CONFLICT (user_id, vehicle_id) DO UPDATE SET status=EXCLUDED.status, error_class=EXCLUDED.error_class, failure_stage=EXCLUDED.failure_stage, upstream_status=EXCLUDED.upstream_status, correlation_id=EXCLUDED.correlation_id, updated_at=EXCLUDED.updated_at`, userID, vehicleID, status, errorClass, failureStage, upstreamStatus, correlationID)
 	return err
 }
 
@@ -1016,7 +1137,7 @@ func (s *telemetryService) setPairingConfigTruth(ctx context.Context, userID str
 	_, err := s.store.pool.Exec(ctx, `
 INSERT INTO jourvolt_telemetry_pairing(user_id, vehicle_id, status, config_synced, updated_at)
 VALUES ($1, $2, $3, $4, now())
-ON CONFLICT (user_id, vehicle_id) DO UPDATE SET status=EXCLUDED.status, config_synced=EXCLUDED.config_synced, updated_at=EXCLUDED.updated_at`, userID, vehicleID, status, configSynced)
+ON CONFLICT (user_id, vehicle_id) DO UPDATE SET status=EXCLUDED.status, error_class='', failure_stage='', upstream_status=NULL, correlation_id='', config_synced=EXCLUDED.config_synced, updated_at=EXCLUDED.updated_at`, userID, vehicleID, status, configSynced)
 	return err
 }
 
@@ -1078,6 +1199,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 	result := map[string]any{
 		"start_date": session.StartAt.UTC().Format(time.RFC3339), "end_date": nil,
 		"source": source, "quality_state": qualityState, "quality_reason": qualityReason, "session_id": session.ID,
+		"source_instance_id": session.SourceInstanceID, "source_vehicle_id": session.SourceVehicleID, "source_record_id": session.SourceRecordID,
 	}
 	if end != nil {
 		result["end_date"] = end.UTC().Format(time.RFC3339)
@@ -1085,7 +1207,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 	}
 	if kind == "drive" {
 		result["drive_id"] = session.PublicID
-		result["start_address"], result["end_address"] = nil, nil
+		result["start_address"], result["end_address"] = session.StartAddress, session.EndAddress
 		result["duration_str"], result["speed_max"], result["speed_avg"] = nil, nil, nil
 		result["power_max"], result["power_min"] = nil, nil
 		result["battery_details"], result["range_ideal"], result["range_rated"] = nil, nil, nil
@@ -1100,11 +1222,21 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		result["consumption_net"] = nil
 		result["odometer_details"] = map[string]any{"odometer_start": session.OdometerStart, "odometer_end": session.OdometerEnd, "odometer_distance": odometerDistance(session.OdometerStart, session.OdometerEnd)}
 		route := make([]map[string]any, 0, len(session.Route))
-		for _, point := range session.Route {
-			route = append(route, map[string]any{
-				"date": point.ObservedAt.UTC().Format(time.RFC3339), "latitude": point.Latitude, "longitude": point.Longitude,
-				"speed": point.Speed, "power": point.Power, "heading": point.Heading,
-			})
+		if session.Source == "teslamate_archive" && session.ArchiveRoute != nil {
+			for _, point := range session.ArchiveRoute {
+				item := map[string]any{"date": nil, "latitude": nullableFloat(point.Latitude), "longitude": nullableFloat(point.Longitude), "speed": nullableFloat(point.Speed), "power": nullableFloat(point.Power), "heading": nullableFloat(point.Heading)}
+				if point.Date != "" {
+					item["date"] = point.Date
+				}
+				route = append(route, item)
+			}
+		} else {
+			for _, point := range session.Route {
+				route = append(route, map[string]any{
+					"date": point.ObservedAt.UTC().Format(time.RFC3339), "latitude": point.Latitude, "longitude": point.Longitude,
+					"speed": point.Speed, "power": point.Power, "heading": point.Heading,
+				})
+			}
 		}
 		result["drive_details"] = route
 		if len(session.Route) > 0 {
@@ -1117,7 +1249,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		}
 	} else {
 		result["charge_id"] = session.PublicID
-		result["address"], result["charge_energy_used"], result["cost"] = nil, nil, nil
+		result["address"], result["charge_energy_used"], result["cost"] = session.Address, nil, session.Cost
 		result["duration_str"], result["battery_details"], result["range_ideal"] = nil, nil, nil
 		result["range_rated"], result["outside_temp_avg"], result["odometer"] = nil, nil, nil
 		result["latitude"], result["longitude"] = nil, nil
@@ -1174,6 +1306,13 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 	return result
 }
 
+func nullableFloat(value *float64) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
 func odometerDistance(start, end *float64) *float64 {
 	if start == nil || end == nil {
 		return nil
@@ -1215,6 +1354,46 @@ func (s *telemetryService) history(userID string, vehicleID int, kind string) ([
 			return nil, nil, err
 		}
 	}
+	items, meta := historyResponse(sessions, startedAt, quarantinedCount, kind)
+	return items, meta, nil
+}
+
+func (s *telemetryService) historySummaries(userID string, vehicleID int, kind string) ([]map[string]any, map[string]any, error) {
+	if s == nil || s.memory != nil {
+		return s.history(userID, vehicleID, kind)
+	}
+	sessions, startedAt, err := s.historySummariesPostgres(context.Background(), userID, vehicleID, kind)
+	if err != nil {
+		return nil, nil, err
+	}
+	quarantinedCount, err := s.quarantinedSessionCount(context.Background(), userID, vehicleID, kind)
+	if err != nil {
+		return nil, nil, err
+	}
+	items, meta := historyResponse(sessions, startedAt, quarantinedCount, kind)
+	return items, meta, nil
+}
+
+func (s *telemetryService) historyDetail(userID string, vehicleID int, kind string, publicID int) (map[string]any, bool, error) {
+	if s == nil {
+		return nil, false, nil
+	}
+	if s.memory != nil {
+		for _, session := range s.memory.sessions(userID, vehicleID, kind) {
+			if session.PublicID == publicID && session.QualityState != "quarantined" {
+				return historySessionMap(session, kind, 0), true, nil
+			}
+		}
+		return nil, false, nil
+	}
+	session, ok, err := s.historyDetailPostgres(context.Background(), userID, vehicleID, kind, publicID)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	return historySessionMap(session, kind, 0), true, nil
+}
+
+func historyResponse(sessions []telemetrySession, startedAt time.Time, quarantinedCount int, kind string) ([]map[string]any, map[string]any) {
 	items := make([]map[string]any, 0, len(sessions))
 	for index, session := range sessions {
 		items = append(items, historySessionMap(session, kind, index))
@@ -1228,7 +1407,7 @@ func (s *telemetryService) history(userID string, vehicleID int, kind string) ([
 		meta["coverage_percent"] = historyCoveragePercent(sessions)
 		meta["collection_started_at"] = startedAt.UTC().Format(time.RFC3339)
 	}
-	return items, meta, nil
+	return items, meta
 }
 
 func historySource(sessions []telemetrySession) string {

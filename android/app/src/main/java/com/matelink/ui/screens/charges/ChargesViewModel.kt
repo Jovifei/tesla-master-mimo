@@ -84,6 +84,7 @@ data class ChargeChartData(
 )
 
 data class ChargesUiState(
+    val defaultChargePrice: Double = 1.14,
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     // Set while a filter-driven reload is in flight. Distinct from `isLoading`,
@@ -214,8 +215,12 @@ class ChargesViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         currencySymbol = currency.symbol,
+                        defaultChargePrice = settings.defaultChargePrice,
                         teslamateBaseUrl = settings.teslamateBaseUrl
                     )
+                }
+                if (allCharges.isNotEmpty() && !_uiState.value.isLoading && !_uiState.value.isRefreshing) {
+                    applyFiltersAndUpdateState()
                 }
             }
         }
@@ -713,7 +718,8 @@ class ChargesViewModel @Inject constructor(
             freeSupercharging = state.freeSupercharging,
             isDcCharge = isDcCharge,
             teslaMateCost = charge.cost,
-            energyKwh = charge.chargeEnergyAdded
+            energyKwh = charge.chargeEnergyAdded,
+            defaultPricePerKwh = state.defaultChargePrice
         ).cost
     }
 

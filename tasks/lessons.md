@@ -1,5 +1,16 @@
 # Lessons
 
+## 2026-10-02 Android 交付不可停在已编译
+
+- Pattern：界面改动即使代码已推送、Release 已构建，也不算完成；漏跑单元测试、未把 APK 覆盖安装到 Jovi 的手机会让其无法验收。
+- Prevention：每次 Android 交付离开前完成 Debug/Release 单测、Lint、签名 Release、包身份/签名校验及指定真机 `adb install -r`，记录首次安装时间与启动/FATAL/ANR。遇到 Tesla 车主确认只停止在该确认，不替用户点击。
+
+## 2026-10-01 自动接入不能把服务错误转成用户授权任务
+
+- Pattern：502 来自代理隔离网络，不能据此声称缺钥匙或要求重新登录；用户不应承担服务器参数配置。
+- Prevention：先比较受控代理/官方读取并保留错误阶段；只有官方明确缺权限/钥匙才提示本人确认。后台自动恢复，空配置和归档历史均不能冒充 Fleet 成功。
+- Build evidence：构建脚本 JSON 曾误报 PASS，原始日志实际缺 SDK。必须核验日志、APK 版本/时间和签名，不安装旧产物。
+
 ## 2026-09-06 覆盖更新必须保留会话并以真实数据验收
 
 - Pattern：`adb install -r` 的覆盖更新不等于重新安装。即使包名、签名和首次安装时间保持不变，也必须验证既有登录会话仍可用；不得把构建、健康端点或 HTTP 200 当成车辆位置、行程、曲线、充电和电池数据已经恢复的证据。
@@ -392,3 +403,7 @@
 
 - Pattern: A Compose named volume backed by the local `tmpfs` driver can be mounted as separate tmpfs instances per container; a renderer's config file may disappear from the Fleet Telemetry container even though the renderer exited successfully.
 - Prevention rule: Use one explicitly prepared host tmpfs directory (default `/dev/shm/jourvolt-fleet-telemetry-config`) bind-mounted into both containers, owned by the deploy uid/gid with mode `0700`; keep the rendered file at `0600`.
+# 2026-09-28 复用本机已有 Docker 镜像
+
+- Pattern：临时 PostgreSQL 验证第一次使用了未缓存的通用标签，触发了不必要的镜像拉取，随后立即中止。
+- Prevention：测试容器启动前先用 `docker images` 核对本机已有精确标签，优先复用已安装镜像；项目下载边界不因 Docker 测试而放宽。

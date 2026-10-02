@@ -383,6 +383,27 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun switchConnectionMode(mode: ConnectionMode, onSuccess: () -> Unit) {
+        if (_uiState.value.connectionMode == mode) {
+            onSuccess()
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSaving = true, error = null)
+            try {
+                connectionModeStore.set(mode)
+                triggerImmediateSync()
+                _uiState.value = _uiState.value.copy(connectionMode = mode, isSaving = false)
+                onSuccess()
+            } catch (_: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isSaving = false,
+                    error = context.getString(R.string.error_save_settings)
+                )
+            }
+        }
+    }
+
     fun clearTestResult() {
         _uiState.value = _uiState.value.copy(testResult = null)
     }

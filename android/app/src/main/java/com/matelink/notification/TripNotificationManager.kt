@@ -15,6 +15,7 @@ import com.matelink.MainActivity
 import com.matelink.R
 import com.matelink.data.local.CompletedTripNotifier
 import com.matelink.data.local.entity.DriveSummary
+import com.matelink.util.toChineseDisplayAddress
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.Locale
 import javax.inject.Inject
@@ -109,7 +110,8 @@ class TripNotificationManager @Inject constructor(
         val spec = buildTripNotificationSpec(
             carId = carId,
             driveId = summary.driveId,
-            title = context.getString(R.string.trip_notification_title),
+            title = context.getString(R.string.trip_notification_title) + " · " +
+                context.getString(R.string.trip_notification_metrics, summary.distance, summary.durationMin),
             body = body
         )
         val deepLink = completedTripNotificationDeepLink(carId, summary.driveId)
@@ -123,9 +125,18 @@ class TripNotificationManager @Inject constructor(
             NotificationManagerCompat.from(context).notify(
                 spec.notificationId,
                 NotificationCompat.Builder(context, spec.channelId)
-                    .setSmallIcon(R.drawable.ic_notification)
+                    .setSmallIcon(R.drawable.ic_steering_wheel)
+                    .setColor(0xFF087E96.toInt())
                     .setContentTitle(spec.title)
-                    .setContentText(spec.body)
+                    .setContentText(
+                        tripNotificationLocation(summary.startAddress.toChineseDisplayAddress().orEmpty(), unknownLocation) +
+                            " → " + tripNotificationLocation(summary.endAddress.toChineseDisplayAddress().orEmpty(), unknownLocation)
+                    )
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(
+                        tripNotificationLocation(summary.startAddress.toChineseDisplayAddress().orEmpty(), unknownLocation) +
+                            "\n↓\n" + tripNotificationLocation(summary.endAddress.toChineseDisplayAddress().orEmpty(), unknownLocation)
+                    ))
+                    .setOnlyAlertOnce(true)
                     .setPriority(spec.priority)
                     .setCategory(NotificationCompat.CATEGORY_STATUS)
                     .setAutoCancel(true)

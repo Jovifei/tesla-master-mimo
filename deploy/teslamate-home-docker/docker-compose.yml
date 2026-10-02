@@ -95,6 +95,26 @@ services:
       - mosquitto
       - teslamateapi
 
+  matelink-archive-bridge:
+    profiles: ["archive"]
+    build:
+      context: ./archive-bridge
+    restart: always
+    environment:
+      - DATABASE_URL=${ARCHIVE_DATABASE_URL:?ARCHIVE_DATABASE_URL must use a read-only TeslaMate role}
+      - ARCHIVE_URL=${ARCHIVE_URL}
+      - ARCHIVE_TOKEN=${ARCHIVE_TOKEN}
+      - ARCHIVE_VEHICLE_ID=${ARCHIVE_VEHICLE_ID}
+      - ARCHIVE_SOURCE_INSTANCE_ID=${ARCHIVE_SOURCE_INSTANCE_ID}
+      - ARCHIVE_SOURCE_VEHICLE_ID=${ARCHIVE_SOURCE_VEHICLE_ID}
+      - STATE_FILE=/var/lib/matelink-archive/state.json
+      - BATCH_SIZE=${ARCHIVE_BATCH_SIZE:-10}
+      - POLL_INTERVAL=${ARCHIVE_POLL_INTERVAL:-1m}
+    volumes:
+      - ${ARCHIVE_STATE_DIR:-./archive-state}:/var/lib/matelink-archive
+    depends_on:
+      - database
+
 volumes:
   teslamate-db:
   teslamate-grafana-data:

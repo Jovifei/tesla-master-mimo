@@ -5,6 +5,28 @@ import org.junit.Test
 
 class EffectiveChargeCostResolverTest {
 
+    @Test fun configuredRateEstimatesObservedEnergy() {
+        val result = EffectiveChargeCostResolver.resolve(EffectiveChargeCostInput(energyKwh = 40.6, defaultPricePerKwh = 1.14))
+        assertEquals(46.284, result.cost!!, 0.00001)
+        assertEquals(ChargeCostSource.ESTIMATE, result.source)
+    }
+
+    @Test fun missingEnergyCannotBeEstimated() {
+        assertEquals(null, EffectiveChargeCostResolver.resolve(EffectiveChargeCostInput(defaultPricePerKwh = 1.14)).cost)
+    }
+
+    @Test fun manualAndActualAmountsOverrideConfiguredRate() {
+        assertEquals(5.0, EffectiveChargeCostResolver.resolve(EffectiveChargeCostInput(manualAmount = 5.0, teslaMateCost = 8.0, energyKwh = 10.0, defaultPricePerKwh = 1.14)).cost!!, 0.0)
+        assertEquals(8.0, EffectiveChargeCostResolver.resolve(EffectiveChargeCostInput(teslaMateCost = 8.0, energyKwh = 10.0, defaultPricePerKwh = 1.14)).cost!!, 0.0)
+    }
+
+    @Test fun invalidRateOrEnergyStaysUnavailable() {
+        for (value in listOf(-1.0, Double.NaN, Double.POSITIVE_INFINITY)) {
+            assertEquals(null, EffectiveChargeCostResolver.resolve(EffectiveChargeCostInput(energyKwh = value, defaultPricePerKwh = 1.14)).cost)
+            assertEquals(null, EffectiveChargeCostResolver.resolve(EffectiveChargeCostInput(energyKwh = 10.0, defaultPricePerKwh = value)).cost)
+        }
+    }
+
     @Test
     fun explicitManualAmount_hasHighestPriority() {
         val result = EffectiveChargeCostResolver.resolve(

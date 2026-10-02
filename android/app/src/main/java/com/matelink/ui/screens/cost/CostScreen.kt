@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.matelink.R
+import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.domain.analytics.HistoryFreshness
 import com.matelink.ui.components.AnalysisWindowSelector
@@ -66,16 +67,7 @@ fun CostScreen(
         }
     ) { padding ->
         if (uiState.loading) {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                MetricStatusPanel(
-                    kind = MetricPanelKind.LOADING,
-                    title = stringResource(R.string.metric_state_loading_title),
-                    body = stringResource(R.string.metric_state_loading_body)
-                )
-            }
+            MateLinkLoadingPlaceholder(modifier = Modifier.padding(padding))
             return@Scaffold
         }
 

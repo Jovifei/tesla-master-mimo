@@ -28,6 +28,7 @@ import com.matelink.domain.analytics.StandbyRange
 import com.matelink.ui.components.DateRangePickerDialog
 import com.matelink.ui.components.MetricPanelKind
 import com.matelink.ui.components.MetricStatusPanel
+import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.theme.SwissOutline
 import java.time.LocalDate
@@ -63,16 +64,7 @@ fun VampireScreen(
         }
     ) { innerPadding ->
         if (uiState.isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(innerPadding),
-                contentAlignment = Alignment.Center
-            ) {
-                MetricStatusPanel(
-                    kind = MetricPanelKind.LOADING,
-                    title = stringResource(R.string.metric_state_loading_title),
-                    body = stringResource(R.string.metric_state_loading_body)
-                )
-            }
+            MateLinkLoadingPlaceholder(modifier = Modifier.padding(innerPadding))
             return@Scaffold
         }
 

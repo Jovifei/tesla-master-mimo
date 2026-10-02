@@ -134,3 +134,115 @@ func TestPostgresImportMergeRetainsArchiveAndProtectsNativeSession(t *testing.T)
 		t.Fatal("native evidence mutated")
 	}
 }
+
+func TestPostgresHistoryReadsLegacyRowsWithNullArchiveIdentity(t *testing.T) {
+	dsn := os.Getenv("JOURVOLT_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("JOURVOLT_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	db, err := openStore(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(db.close)
+	user := "history_null_archive_" + mustRandomToken(t)
+	if err = db.ensureUser(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.deleteUser(context.Background(), user) })
+	var car int
+	err = db.pool.QueryRow(ctx, `INSERT INTO jourvolt_vehicles(user_id,provider_vehicle_id,vin_ciphertext,display_name,state,updated_at) VALUES($1,$2,'c','Test','online',now()) RETURNING id`, user, "null-archive-"+mustRandomToken(t)).Scan(&car)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, time.September, 28, 1, 0, 0, 0, time.UTC)
+	_, err = db.pool.Exec(ctx, `INSERT INTO jourvolt_telemetry_sessions(id,user_id,vehicle_id,kind,started_at,ended_at,source,quality_state,quality_reason) VALUES($1,$2,$3,'drive',$4,$5,'telemetry_mqtt','observed','telemetry_evidence')`, "native-null-archive-"+mustRandomToken(t), user, car, start, start.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &telemetryService{store: db}
+	rows, _, err := service.historyPostgres(ctx, user, car, "drive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].SourceInstanceID != "" || rows[0].SourceVehicleID != "" || rows[0].SourceRecordID != "" {
+		t.Fatalf("legacy native history = %#v", rows)
+	}
+}
+
+func TestPostgresHistorySummaryReadsOnlyRouteEndpoints(t *testing.T) {
+	dsn := os.Getenv("JOURVOLT_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("JOURVOLT_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	db, err := openStore(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(db.close)
+	user := "history_summary_" + mustRandomToken(t)
+	if err = db.ensureUser(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.deleteUser(context.Background(), user) })
+	var car int
+	if err = db.pool.QueryRow(ctx, `INSERT INTO jourvolt_vehicles(user_id,provider_vehicle_id,vin_ciphertext,display_name,state,updated_at) VALUES($1,$2,'c','Test','online',now()) RETURNING id`, user, "summary-"+mustRandomToken(t)).Scan(&car); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, time.September, 28, 2, 0, 0, 0, time.UTC)
+	route, _ := json.Marshal([]historyImportRoutePoint{
+		{Date: start.Format(time.RFC3339), Latitude: floatPointer(30), Longitude: floatPointer(120)},
+		{Date: start.Add(time.Second).Format(time.RFC3339), Latitude: floatPointer(31), Longitude: floatPointer(121)},
+		{Date: start.Add(2 * time.Second).Format(time.RFC3339), Latitude: floatPointer(32), Longitude: floatPointer(122)},
+	})
+	_, err = db.pool.Exec(ctx, `INSERT INTO jourvolt_telemetry_sessions(id,user_id,vehicle_id,kind,started_at,ended_at,route_json,source,quality_state,quality_reason,source_instance_id,source_vehicle_id,source_record_id) VALUES($1,$2,$3,'drive',$4,$5,$6::jsonb,'teslamate_archive','observed','teslamate_archive','home','1','drive:1')`, "summary-route-"+mustRandomToken(t), user, car, start, start.Add(time.Minute), route)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &telemetryService{store: db}
+	rows, _, err := service.historySummariesPostgres(ctx, user, car, "drive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || len(rows[0].Route) != 2 || rows[0].Route[0].Latitude != 30 || rows[0].Route[1].Latitude != 32 || len(rows[0].ArchiveRoute) != 0 {
+		t.Fatalf("summary route = %#v", rows)
+	}
+}
+
+func TestPostgresHistoryDetailLoadsOnlyTheRequestedFullRoute(t *testing.T) {
+	dsn := os.Getenv("JOURVOLT_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("JOURVOLT_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	db, err := openStore(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(db.close)
+	user := "history_detail_" + mustRandomToken(t)
+	if err = db.ensureUser(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.deleteUser(context.Background(), user) })
+	var car int
+	if err = db.pool.QueryRow(ctx, `INSERT INTO jourvolt_vehicles(user_id,provider_vehicle_id,vin_ciphertext,display_name,state,updated_at) VALUES($1,$2,'c','Test','online',now()) RETURNING id`, user, "detail-"+mustRandomToken(t)).Scan(&car); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, time.September, 28, 3, 0, 0, 0, time.UTC)
+	route, _ := json.Marshal([]historyImportRoutePoint{{Date: start.Format(time.RFC3339), Latitude: floatPointer(30), Longitude: floatPointer(120)}, {Date: start.Add(time.Second).Format(time.RFC3339), Latitude: floatPointer(31), Longitude: floatPointer(121)}})
+	var publicID int
+	if err = db.pool.QueryRow(ctx, `INSERT INTO jourvolt_telemetry_sessions(id,user_id,vehicle_id,kind,started_at,ended_at,route_json,source,quality_state,quality_reason,source_instance_id,source_vehicle_id,source_record_id) VALUES($1,$2,$3,'drive',$4,$5,$6::jsonb,'teslamate_archive','observed','teslamate_archive','home','1','drive:2') RETURNING public_id`, "detail-route-"+mustRandomToken(t), user, car, start, start.Add(time.Minute), route).Scan(&publicID); err != nil {
+		t.Fatal(err)
+	}
+	service := &telemetryService{store: db}
+	row, ok, err := service.historyDetailPostgres(ctx, user, car, "drive", publicID)
+	if err != nil || !ok {
+		t.Fatalf("detail ok=%v err=%v", ok, err)
+	}
+	if len(row.ArchiveRoute) != 2 || len(row.Route) != 2 {
+		t.Fatalf("detail route = %#v", row)
+	}
+}

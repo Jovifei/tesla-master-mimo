@@ -28,7 +28,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,7 +57,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.matelink.BuildConfig
 import com.matelink.R
-import com.matelink.ui.components.MateLinkLoadingMark
+import com.matelink.ui.components.MateLinkPulseSpinner
 import com.matelink.ui.common.PublicInfoLinks
 import com.matelink.ui.components.launchExternalIntentSafely
 
@@ -156,7 +155,7 @@ fun TeslaLoginScreen(
                     onOpenSelfHosted = onOpenSelfHosted
                 )
                 TeslaLoginOnboardingState.Checking -> LoginStatusPanel(
-                    icon = { CircularProgressIndicator(modifier = Modifier.size(22.dp)) },
+                    icon = { MateLinkPulseSpinner(size = 22.dp) },
                     text = stringResource(R.string.tesla_onboarding_checking)
                 )
                 TeslaLoginOnboardingState.Pending -> TeslaBlockedOnboardingPanel(
@@ -186,7 +185,7 @@ fun TeslaLoginScreen(
             when (val state = uiState) {
                 TeslaLoginUiState.Idle -> Unit
                 TeslaLoginUiState.Loading -> LoginStatusPanel(
-                    icon = { MateLinkLoadingMark(size = 36.dp) },
+                    icon = { MateLinkPulseSpinner(size = 22.dp) },
                     text = stringResource(R.string.tesla_login_loading)
                 )
                 is TeslaLoginUiState.Error -> LoginStatusPanel(
@@ -394,7 +393,8 @@ private fun TeslaPermissionOnboardingPanel(
 @Composable
 private fun TeslaBlockedOnboardingPanel(reason: String?, onRetry: () -> Unit, onContinue: () -> Unit) {
     val billing = reason == "billing_blocked"
-    LoginPanel(containerColor = MaterialTheme.colorScheme.errorContainer) {
+    val automatic = reason == "waiting_vehicle"
+    LoginPanel(containerColor = if (automatic) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer) {
         Text(
             text = stringResource(if (billing) R.string.tesla_onboarding_blocked_title else R.string.telemetry_setup_pending_title),
             style = MaterialTheme.typography.titleMedium
@@ -403,7 +403,7 @@ private fun TeslaBlockedOnboardingPanel(reason: String?, onRetry: () -> Unit, on
             text = stringResource(if (billing) R.string.tesla_onboarding_blocked_body else R.string.telemetry_setup_pending_body),
             style = MaterialTheme.typography.bodyMedium
         )
-        if (!billing) {
+        if (!billing && !automatic) {
             Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.telemetry_recheck))
             }

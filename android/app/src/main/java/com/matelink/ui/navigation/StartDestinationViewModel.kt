@@ -75,6 +75,10 @@ class StartDestinationViewModel @Inject constructor(
                 session != null -> Screen.Dashboard
                 else -> Screen.TeslaLogin
             }
+            // Route changes must reach the shell without restarting or logging in again.
+            connectionModeStore.mode.collect { updatedMode ->
+                if (updatedMode != null) _connectionMode.value = updatedMode
+            }
         }
         viewModelScope.launch {
             settingsDataStore.notificationPermissionAsked.collect {

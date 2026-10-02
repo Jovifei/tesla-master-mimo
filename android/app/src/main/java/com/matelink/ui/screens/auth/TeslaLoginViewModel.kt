@@ -63,7 +63,8 @@ sealed interface TeslaLoginOnboardingState {
 }
 
 internal fun shouldSurfaceTeslaVirtualKey(pairing: TelemetryPairingStatus): Boolean =
-    pairing.configSynced != true && pairing.status.equals("pairing_required", ignoreCase = true)
+    pairing.configSynced != true && pairing.status.equals("pairing_required", ignoreCase = true) &&
+        !pairing.updatedAt.isNullOrBlank()
 
 @HiltViewModel
 class TeslaLoginViewModel @Inject constructor(
@@ -95,6 +96,8 @@ class TeslaLoginViewModel @Inject constructor(
     val isAuthenticated: StateFlow<Boolean> = sessionStore.session
         .map { it != null }
         .stateIn(viewModelScope, SharingStarted.Eagerly, sessionStore.current() != null)
+    val accountId = sessionStore.session.map { it?.userId }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, sessionStore.current()?.userId)
     val hasCurrentConsent: StateFlow<Boolean> = consentStore.consent
         .map { it?.isCurrent == true }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -109,6 +112,45 @@ class TeslaLoginViewModel @Inject constructor(
     private var onboardingPersistenceJob: Job? = null
     private var onboardingRestoreJob: Job? = null
     private var externalPairingReturnPending = false
+    private var automaticVehicleCheckJob: Job? = null
+    private val automaticVehicleCheckGeneration = AtomicLong(0)
+    private var automaticVehicleCheckTarget: Pair<String, Int>? = null
+    private var automaticVehicleCheckAt = 0L
+
+    fun cancelAutomaticVehicleCheck() {
+        automaticVehicleCheckGeneration.incrementAndGet()
+        automaticVehicleCheckJob?.cancel()
+        automaticVehicleCheckTarget = null
+    }
+
+    fun checkVehicleSetupAutomatically(carId: Int) {
+        val account = sessionStore.current()?.userId ?: return
+        if (carId <= 0 || _reauthorizing.value || requestJob?.isActive == true) return
+        val target = account to carId
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (automaticVehicleCheckTarget == target &&
+            (automaticVehicleCheckJob?.isActive == true || now - automaticVehicleCheckAt < 60_000L)) return
+        cancelAutomaticVehicleCheck()
+        automaticVehicleCheckTarget = target
+        automaticVehicleCheckAt = now
+        val generation = automaticVehicleCheckGeneration.get()
+        val requestId = requestGeneration.get()
+        fun current() = generation == automaticVehicleCheckGeneration.get() &&
+            shouldPublishTeslaRequest(requestId, requestGeneration) && sessionStore.current()?.userId == account
+        automaticVehicleCheckJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val cars = (teslamateRepository.getCars() as? ApiResult.Success)?.data ?: return@launch
+                if (!current() || cars.none { it.carId == carId }) return@launch
+                observeAutomaticSetup(
+                    initial = teslamateRepository.getTelemetryPairingStatus(carId),
+                    isCurrent = ::current,
+                    readNext = { teslamateRepository.getTelemetryPairingStatus(carId) },
+                    publish = { publishPairingResult(requestId, carId, it, navigateWhenReady = false) }
+                )
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { /* Backend recovery remains active; keep the current screen. */ }
+        }
+    }
     private val sessionCommitLock = ReentrantLock()
 
     init {
@@ -416,7 +458,17 @@ class TeslaLoginViewModel @Inject constructor(
         val requestId = invalidateCurrentRequest()
         requestJob?.cancel()
         requestJob = viewModelScope.launch(Dispatchers.IO) {
-            runPostLoginOnboardingSafely(requestId)
+            if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return@launch
+            publishOnboardingChecking()
+            val carsResult = teslamateRepository.getCars()
+            val cars = (carsResult as? ApiResult.Success)?.data
+            val selectedCarId = settingsRepository.currentCarId.first()
+            val car = cars?.firstOrNull { it.carId == selectedCarId } ?: cars?.firstOrNull()
+            if (car == null) {
+                publishBlocked("vehicle_not_found", requestId)
+                return@launch
+            }
+            retryTelemetryAfterPairingSafely(requestId, car.carId)
         }
     }
 
@@ -581,7 +633,7 @@ class TeslaLoginViewModel @Inject constructor(
             publishBlocked("vehicle_not_found", requestId)
             return
         }
-        publishPairingResult(requestId, car.carId, teslamateRepository.getTelemetryPairingStatus(car.carId))
+        observePairingSetup(requestId, car.carId)
     }
 
     private suspend fun retryTelemetryAfterPairingSafely(requestId: Long, carId: Int) {
@@ -643,13 +695,27 @@ class TeslaLoginViewModel @Inject constructor(
 
     private suspend fun refreshPairingAfterReturn(requestId: Long, carId: Int) {
         if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return
-        publishPairingResult(requestId, carId, teslamateRepository.getTelemetryPairingStatus(carId))
+        observePairingSetup(requestId, carId)
+    }
+
+    private suspend fun observePairingSetup(requestId: Long, carId: Int) {
+        val result = observeAutomaticSetup(
+            initial = teslamateRepository.getTelemetryPairingStatus(carId),
+            isCurrent = { shouldPublishTeslaRequest(requestId, requestGeneration) },
+            readNext = { teslamateRepository.getTelemetryPairingStatus(carId) },
+            publish = { publishPairingResult(requestId, carId, it) }
+        )
+        // The backend continues recovery; users can use their existing history.
+        if (shouldPublishTeslaRequest(requestId, requestGeneration) && shouldObserveAutomaticSetup(result)) {
+            continueToDashboard()
+        }
     }
 
     private fun publishPairingResult(
         requestId: Long,
         carId: Int,
-        result: ApiResult<com.matelink.data.api.models.TelemetryPairingStatus>
+        result: ApiResult<com.matelink.data.api.models.TelemetryPairingStatus>,
+        navigateWhenReady: Boolean = true
     ) {
         if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return
         when (result) {
@@ -667,11 +733,21 @@ class TeslaLoginViewModel @Inject constructor(
                     }
                     isPermissionRequired(pairing) ->
                         publishPermissionRequired(carId, pairing.status, requestId)
+                    shouldObserveAutomaticSetup(result) -> {
+                        _postLoginOnboarding.value = TeslaLoginOnboardingState.Pending
+                        persistOnboarding(TeslaOnboardingPhase.PENDING, carId)
+                    }
                     pairing.status.equals("billing_blocked", ignoreCase = true) ||
                         pairing.status.equals("telemetry_error", ignoreCase = true) ||
                         pairing.status.equals("telemetry_not_configured", ignoreCase = true) ->
                         publishBlocked(pairing.errorClass ?: pairing.status, requestId)
-                    pairing.configSynced == true -> completeOnboardingIfCurrent(requestId)
+                    pairing.configSynced == true -> {
+                        if (navigateWhenReady) completeOnboardingIfCurrent(requestId)
+                        else {
+                            _postLoginOnboarding.value = TeslaLoginOnboardingState.Ready
+                            persistOnboarding(TeslaOnboardingPhase.READY, carId)
+                        }
+                    }
                     else -> {
                         _postLoginOnboarding.value = TeslaLoginOnboardingState.Pending
                         persistOnboarding(TeslaOnboardingPhase.PENDING, carId)
@@ -680,6 +756,10 @@ class TeslaLoginViewModel @Inject constructor(
             }
             is ApiResult.Error -> when {
                 isPermissionRequired(result) -> publishPermissionRequired(carId, result.details, requestId)
+                shouldObserveAutomaticSetup(result) -> {
+                    _postLoginOnboarding.value = TeslaLoginOnboardingState.Pending
+                    persistOnboarding(TeslaOnboardingPhase.PENDING, carId)
+                }
                 result.details.equals("billing_blocked", ignoreCase = true) -> publishBlocked(result.details, requestId)
                 result.details.equals("pairing_required", ignoreCase = true) -> {
                     if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return

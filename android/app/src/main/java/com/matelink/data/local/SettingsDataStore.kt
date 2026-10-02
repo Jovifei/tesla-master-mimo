@@ -47,6 +47,7 @@ data class CarImageOverride(
 internal val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "matelink_settings")
 
 data class AppSettings(
+    val defaultChargePrice: Double = 1.14,
     val serverUrl: String = "",
     val secondaryServerUrl: String = "",
     val apiToken: String = "",
@@ -78,6 +79,12 @@ class SettingsDataStore @Inject constructor(
     @ApplicationContext private val context: Context,
     private val secureStore: SecureSettingsDataStore
 ) {
+    private val defaultChargePriceKey = stringPreferencesKey("default_charge_price")
+
+    suspend fun saveDefaultChargePrice(price: Double) {
+        require(price.isFinite() && price >= 0.0)
+        context.dataStore.edit { it[defaultChargePriceKey] = price.toString() }
+    }
     private val serverUrlKey = stringPreferencesKey("server_url")
     private val secondaryServerUrlKey = stringPreferencesKey("secondary_server_url")
     private val acceptInvalidCertsKey = booleanPreferencesKey("accept_invalid_certs")
@@ -110,6 +117,8 @@ class SettingsDataStore @Inject constructor(
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { preferences ->
         AppSettings(
+            defaultChargePrice = preferences[defaultChargePriceKey]?.toDoubleOrNull()
+                ?.takeIf { it.isFinite() && it >= 0.0 } ?: 1.14,
             serverUrl = preferences[serverUrlKey] ?: "",
             secondaryServerUrl = preferences[secondaryServerUrlKey] ?: "",
             apiToken = secureStore.getApiToken(),

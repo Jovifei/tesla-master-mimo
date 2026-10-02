@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTelemetryConfigIsOptionalButAllFieldsFailClosedWhenEnabled(t *testing.T) {
@@ -28,6 +29,9 @@ func TestTelemetryConfigIsOptionalButAllFieldsFailClosedWhenEnabled(t *testing.T
 	}
 	if config.MQTTURL != "mqtt://broker:1883" || config.TopicBase != "jourvolt/telemetry" || config.PublicPort != 4443 || len(config.VINHashKey) != 32 {
 		t.Fatalf("telemetry config = %#v", config)
+	}
+	if config.CommandTimeout != 30*time.Second {
+		t.Fatalf("command timeout = %s, want 30s", config.CommandTimeout)
 	}
 }
 

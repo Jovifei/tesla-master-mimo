@@ -86,7 +86,7 @@ func loadTelemetryConfig(getenv func(string) string) (*telemetryConfig, error) {
 		TopicBase: strings.Trim(values["TELEMETRY_MQTT_TOPIC_BASE"], "/"), PublicHost: publicHost, PublicPort: publicPort,
 		PartnerDomain: publicHost,
 		StatusPort:    8080, CommandProxyURL: commandProxyURL, CACertPath: values["TELEMETRY_CA_CERT_PATH"],
-		VINHashKey: key, CommandTimeout: 5 * time.Second, StopDebounce: defaultDriveStopDebounce, EventTTL: telemetryEventTTL,
+		VINHashKey: key, CommandTimeout: 30 * time.Second, StopDebounce: defaultDriveStopDebounce, EventTTL: telemetryEventTTL,
 	}, nil
 }
 

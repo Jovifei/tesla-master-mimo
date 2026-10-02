@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.matelink.R
+import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -84,14 +85,7 @@ fun TemperatureTrendScreen(
         }
     ) { paddingValues ->
         if (state.isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(stringResource(R.string.loading))
-            }
+            MateLinkLoadingPlaceholder(modifier = Modifier.padding(paddingValues))
             return@Scaffold
         }
 

@@ -437,8 +437,8 @@ func TestHistoryImportDefensiveLimits(t *testing.T) {
 		t.Fatalf("expected too_many_sessions error, got %s", recorder.Body.String())
 	}
 
-	// 2. Too many route points in a session (> 10000)
-	tooManyPoints := make([]historyImportRoutePoint, 10001)
+	// 2. Too many route points in a session (> 50000)
+	tooManyPoints := make([]historyImportRoutePoint, 50001)
 	for i := range tooManyPoints {
 		tooManyPoints[i] = historyImportRoutePoint{
 			Date:      rfc3339(1),
@@ -593,5 +593,24 @@ func TestTelemetrySchemaRestoresCompletedLocalImportsFromQuarantine(t *testing.T
 	}
 	if strings.Contains(telemetrySchema, "quality_reason IN ('legacy_import', 'legacy_import_without_evidence')") {
 		t.Fatal("schema must not hide valid local imports merely because an older reason string differs")
+	}
+}
+
+func TestTelemetrySchemaDropsTheActualPostgresTruncatedStartTimeConstraint(t *testing.T) {
+	if !strings.Contains(telemetrySchema, "DROP CONSTRAINT IF EXISTS jourvolt_telemetry_sessions_user_id_vehicle_id_kind_started_key") {
+		t.Fatal("schema must drop PostgreSQL's truncated legacy start-time constraint before archive imports")
+	}
+}
+
+func TestArchiveValidationAcceptsACompleteLongDriveWithoutTruncatingItsRoute(t *testing.T) {
+	longRoute := make([]historyImportRoutePoint, 30000)
+	request := historyImportRequest{Drives: []historyImportSession{{Route: longRoute}}}
+	if err := validateImportRequest(request); err != nil {
+		t.Fatalf("complete 30000-point drive rejected: %v", err)
+	}
+	tooLarge := make([]historyImportRoutePoint, 50001)
+	err := validateImportRequest(historyImportRequest{Drives: []historyImportSession{{Route: tooLarge}}})
+	if err == nil || err.Error() != "too_many_route_points" {
+		t.Fatalf("50001-point drive error = %v", err)
 	}
 }

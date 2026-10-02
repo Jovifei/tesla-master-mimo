@@ -33,7 +33,7 @@ fun telemetrySetupPresentation(
     "billing_blocked" -> TelemetrySetupPresentation.BILLING_BLOCKED
     "telemetry_not_configured" -> TelemetrySetupPresentation.TELEMETRY_NOT_CONFIGURED
     "telemetry_error" -> TelemetrySetupPresentation.TELEMETRY_ERROR
-    "waiting_vehicle" -> TelemetrySetupPresentation.WAITING_VEHICLE
+    "waiting_vehicle", "configuring" -> TelemetrySetupPresentation.WAITING_VEHICLE
     else -> when {
         configSynced == false -> TelemetrySetupPresentation.WAITING_VEHICLE
         status?.trim()?.lowercase() == "collecting" -> TelemetrySetupPresentation.COLLECTING

@@ -72,6 +72,46 @@ func TestTaskDCompletedHistoryUsesAndroidIntIDsAndNullableEvidence(t *testing.T)
 	}
 }
 
+func TestHistoryListOmitsHeavySamplesWhileDetailKeepsThem(t *testing.T) {
+	service := newTelemetryServiceForTest("partner.example.com")
+	ref := telemetryVehicleRef{UserID: "user-a", VehicleID: 1, VINHash: "summary-hash"}
+	service.memory.registerVehicle(ref)
+	start := time.Date(2026, time.September, 28, 1, 0, 0, 0, time.UTC)
+	service.memory.addCompletedSession(ref, telemetrySession{
+		ID: "route-heavy", Kind: "drive", StartAt: start, EndAt: timePointer(start.Add(time.Minute)),
+		Route: []telemetryRoutePoint{{ObservedAt: start, Latitude: 30, Longitude: 120}, {ObservedAt: start.Add(time.Second), Latitude: 31, Longitude: 121}},
+	})
+	a := &app{telemetry: service, provider: testProvider{vehicles: map[string][]vehicle{"user-a": {{ID: 1}}}}}
+
+	list := httptest.NewRecorder()
+	a.carResource(list, httptest.NewRequest(http.MethodGet, "/api/v1/cars/1/drives?page=1&show=50", nil), "user-a", "/api/v1/cars/1/drives")
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", list.Code, list.Body.String())
+	}
+	var listEnvelope struct {
+		Data struct {
+			Drives []map[string]json.RawMessage `json:"drives"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &listEnvelope); err != nil || len(listEnvelope.Data.Drives) != 1 {
+		t.Fatal(err)
+	}
+	var listPoints []json.RawMessage
+	if err := json.Unmarshal(listEnvelope.Data.Drives[0]["drive_details"], &listPoints); err != nil || len(listPoints) != 0 {
+		t.Fatalf("list route must be empty summary data, got %d points, err=%v", len(listPoints), err)
+	}
+	var publicID int
+	if err := json.Unmarshal(listEnvelope.Data.Drives[0]["drive_id"], &publicID); err != nil {
+		t.Fatal(err)
+	}
+	detail := httptest.NewRecorder()
+	detailPath := fmt.Sprintf("/api/v1/cars/1/drives/%d", publicID)
+	a.carResource(detail, httptest.NewRequest(http.MethodGet, detailPath, nil), "user-a", detailPath)
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `"drive_details":[{`) {
+		t.Fatalf("detail response=%d %s", detail.Code, detail.Body.String())
+	}
+}
+
 func TestTaskDDriveFinalizerClosesPersistedCandidateOnceWithoutRedelivery(t *testing.T) {
 	service := newTelemetryServiceForTest("partner.example.com")
 	service.config.StopDebounce = 10 * time.Second

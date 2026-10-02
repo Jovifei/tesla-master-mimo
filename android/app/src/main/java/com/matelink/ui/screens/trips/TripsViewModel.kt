@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.dao.AggregateDao
+import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.repository.UnifiedHistoryRepository
 import com.matelink.domain.TripRepository
 import com.matelink.domain.model.Trip
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -13,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import com.matelink.util.parseIsoDate
 import java.time.LocalDate
@@ -30,13 +33,16 @@ data class TripsUiState(
     val customStartDate: LocalDate? = null,
     val customEndDate: LocalDate? = null,
     val units: Units? = null,
-    val dcChargeIds: Set<Int> = emptySet()
+    val dcChargeIds: Set<Int> = emptySet(),
+    val historySyncWarning: String? = null
 )
 
 @HiltViewModel
 class TripsViewModel @Inject constructor(
     private val tripRepository: TripRepository,
     private val repository: TeslamateRepository,
+    private val historyRepository: UnifiedHistoryRepository,
+    private val vehicleContextRepository: VehicleContextRepository,
     private val tripCache: TripCache,
     private val aggregateDao: AggregateDao
 ) : ViewModel() {
@@ -47,22 +53,21 @@ class TripsViewModel @Inject constructor(
     private var carId: Int? = null
     private var allTrips: List<Trip> = emptyList()
     private var hasBeenPaused = false
+    private var loadJob: Job? = null
+    private var loadGeneration = 0L
+
+    private val historyRefresher = TripsHistoryRefresher(
+        refreshHistory = historyRepository::load,
+        resolveCachedLocalId = vehicleContextRepository::localHistoryCarIdFor,
+        loadTrips = tripRepository::getTrips,
+        loadDcChargeIds = { aggregateDao.getDcChargeIds(it).toSet() }
+    )
 
     fun setCarId(id: Int) {
         if (carId == id) return
         carId = id
         loadTrips(id)
         loadUnits(id)
-        loadDcChargeIds(id)
-    }
-
-    private fun loadDcChargeIds(id: Int) {
-        viewModelScope.launch {
-            val ids = try {
-                aggregateDao.getDcChargeIds(id).toSet()
-            } catch (e: Exception) { emptySet() }
-            _uiState.update { it.copy(dcChargeIds = ids) }
-        }
     }
 
     /** Screen went to background (user navigated to a child). */
@@ -113,14 +118,26 @@ class TripsViewModel @Inject constructor(
     }
 
     private fun loadTrips(carId: Int) {
-        viewModelScope.launch {
-            allTrips = tripRepository.getTrips(carId)
+        loadJob?.cancel()
+        val generation = ++loadGeneration
+        loadJob = viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = allTrips.isEmpty()) }
+            val refreshed = historyRefresher.refresh(carId)
+            if (generation != loadGeneration || this@TripsViewModel.carId != carId) return@launch
+            allTrips = refreshed.trips
 
             val years = allTrips.mapNotNull { parseYear(it.startDate) }
                 .distinct()
                 .sortedDescending()
 
-            _uiState.update { it.copy(isLoading = false, availableYears = years) }
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    availableYears = years,
+                    dcChargeIds = refreshed.dcChargeIds,
+                    historySyncWarning = refreshed.historySyncWarning
+                )
+            }
             applyFilter()
         }
     }

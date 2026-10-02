@@ -488,6 +488,10 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.deleteAccount(w, r)
 		return
 	}
+	if archiveImportPath(r.URL.Path) {
+		a.archiveBindingResource(w, r, "")
+		return
+	}
 	userID, ok := a.auth(w, r)
 	if !ok {
 		return
@@ -700,6 +704,10 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 		a.json(w, http.StatusNotFound, map[string]string{"error": "vehicle_not_found"})
 		return
 	}
+	if archiveImportParts(parts) {
+		a.archiveBindingResource(w, r, userID)
+		return
+	}
 	if !a.requireVehicle(w, r, userID, carID) {
 		return
 	}
@@ -739,7 +747,13 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 	case "telemetry":
 		a.telemetryResource(w, r, userID, carID, parts[2:])
 	case "history":
-		if len(parts) >= 3 && parts[2] == "import" {
+		if len(parts) >= 4 && parts[2] == "archive" && parts[3] == "bind" {
+			a.historyArchiveBind(w, r, userID, carID)
+		} else if len(parts) >= 4 && parts[2] == "archive" && parts[3] == "revoke" {
+			a.historyArchiveRevoke(w, r, userID, carID)
+		} else if len(parts) >= 4 && parts[2] == "archive" && parts[3] == "import" {
+			a.json(w, http.StatusUnauthorized, map[string]string{"error": "archive_binding_required"})
+		} else if len(parts) >= 3 && parts[2] == "import" {
 			a.historyImport(w, r, userID, carID)
 		} else {
 			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
@@ -1093,6 +1107,7 @@ func main() {
 		tokenManager := &teslaTokenManager{store: store, cipher: cipher, config: teslaSettings, client: httpClient}
 		if telemetry != nil {
 			telemetry.tokens = tokenManager
+			telemetry.fleetAPIBase = teslaSettings.FleetAPIBase
 		}
 		registrar := newTeslaPartnerRegistrar(teslaSettings, httpClient)
 		if err := registrar.ensure(ctx); err != nil {
@@ -1122,6 +1137,7 @@ func main() {
 	}
 	if telemetry != nil {
 		telemetry.startFinalizer(ctx)
+		telemetry.startAutomaticSetupRecovery(ctx)
 		defer telemetry.stopFinalizer()
 	}
 	if subscriber := newTelemetrySubscriber(telemetry); subscriber != nil {

@@ -32,11 +32,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.matelink.ui.components.MateLinkLoadingMark
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.data.api.models.LinkedCharge
 import com.matelink.ui.components.TelemetryPanel
+import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.theme.StatusWarning
 import com.matelink.data.api.models.ParkedDetailData
 import com.matelink.util.formatCompactDateTimeRange
@@ -69,11 +69,7 @@ fun ParkedDetailScreen(
         }
     ) { padding ->
         when {
-            state.isLoading -> Column(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) { MateLinkLoadingMark() }
+            state.isLoading -> MateLinkLoadingPlaceholder(modifier = Modifier.padding(padding))
             state.data != null -> ParkedDetailContent(
                 data = state.data!!,
                 modifier = Modifier.padding(padding),

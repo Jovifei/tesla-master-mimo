@@ -178,6 +178,7 @@ private fun ChargeDetailContent(
         else -> unavailableLabel
     }
     val costSourceText = when (costPresentation.state) {
+        ChargeDetailCostState.ESTIMATE -> stringResource(R.string.charge_cost_estimate)
         ChargeDetailCostState.ACTUAL -> actualLabel
         ChargeDetailCostState.MANUAL -> manualLabel
         ChargeDetailCostState.FREE -> freeLabel

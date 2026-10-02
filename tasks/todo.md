@@ -1,3 +1,62 @@
+# 2026-10-02 全页面统一 MD 加载动画
+
+- [x] 将首页、地图、桌面小组件和仍使用转圈或纯文字的整页等待态替换为共享的 MD 加载组件。
+- [x] 保留按钮提交、PDF 生成、天气卡片等局部进度指示。
+- [x] Debug/Release 单元测试、Lint、签名 Release 构建和 APK 校验。
+- [x] 指定 OnePlus 真机同签名覆盖安装及启动观察；首次安装时间不变，进程存活且无 FATAL/ANR。
+- [ ] 首页与代表性页面的 MD 动画视觉验收；当前界面停在 Tesla 确认页，待 Jovi 选择“继续进入 MateLink”或完成 Tesla 确认后观察。
+
+Plan: reuse `MateLinkLoadingPlaceholder` already used by 行程与充电页面; only replace primary full-page loading states. Keep localized status/error content and compact action spinners intact.
+
+Review: Source commit 3250556, map import fix 535c8d0, process/delivery rule ffa49ba are pushed. Debug and Release tests each ran 561 cases, 0 failures/errors; Release skipped 8. Debug Lint 0 errors/262 warnings; Release Lint 0 errors/239 warnings. Release 2.1.22/build 41 APK passed package/signature validation (SHA-256 `65DB5DB3515808D8C44B704FAD25DF0F39AD33A0ADE4B70891F073EC2674424D`) and installed on serial 6e4fa92f via `adb install -r`; `firstInstallTime` remained `2026-08-31 22:36:47`. Launch sample: process alive, 0 FATAL, 0 ANR. Current UI is the Tesla owner-confirmation panel; no provider consent was accepted.
+
+# 2026-10-01 登录后自动车辆接入
+
+- [x] 定位线上 configure_post/502：Command Proxy 仅连接 internal 网络，补充专用出口且不开放端口；官方读取恢复 200。
+- [x] 登录与恢复时自动检查和受控重试；后台按账号/车辆检查，每分钟恢复，官方明确要求时显示车主确认入口。
+- [x] 确认返回自动继续，车辆等待、服务故障和权限不足使用不同提示；空配置不能标记成功。
+- [x] 定向测试、构建、提交推送、API 部署和原包真机启动/确认入口验证；最终 App 源码 1e743bf，API 781c402。
+- [ ] 车主官方钥匙确认后验证自动继续、真实 Fleet 首事件和新行程/充电；热点模式切换实机复验留待车主确认后。
+
+Review（2026-10-02）：Debug/Release 各 561 项、0 失败/错误，Release 跳过 8；Lint 0 错误（239 既存警告）。2.1.21/40 同签名 install -r，firstInstallTime 2026-08-31 22:36:47 不变，最终启动样本 0 FATAL/ANR。手机保留云登录，已切为云端，停在官方车辆确认入口；未替用户点授权。线上 fleet/postgres/ok，仍 awaiting_first_event，不标记实车采集完成。
+
+# 2026-10-01 默认充电费用与重新登录同步诊断
+
+- [x] 原包真机确认最新 40.6 kWh 充电与批量行程通知。
+- [x] 修复 archive bridge 状态目录落在已删除 worktree，持久目录恢复水位 338/47 并追平 336/48。
+- [x] 加入可编辑 1.14 元/kWh 默认估算、保留人工总价优先、精简通知标题路线。
+- [x] 最终测试、Release 签名、原包覆盖安装和费用界面验收：2.1.20/build39，Debug/Release 各 556、0 失败（Release 8 跳过），lintRelease 通过。
+
+Review：Fleet 仍 configure_post/502 与 awaiting_first_event；重新登录前网络证据缺失，不宣称 token 过期已确认。长效归档状态目录为 E:/project/tesla_master/runtime/matelink-archive，旧停用桥接容器保留回退。
+
+Device：源提交 01f0d8c，同签名覆盖保持 firstInstallTime 2026-08-31 22:36:47；登录、地图与历史可见。最新充电原始 40.64 kWh，默认 1.14 时列表/详情约 ¥46.33；默认电价改为 1.00 后变为约 ¥40.64，并已恢复 1.14。单次人工 ¥50.00 优先生效，清除测试值后恢复默认估算。未清空原包数据；新真实行程通知的外观需要下一条实际行程事件。
+
+# 2026-09-28 新行程到达 App 修复（codex/trip-delivery-repair）
+
+- [x] 证明本地 TeslaMate 已产生真实新行程，定位行程页只读旧 Room 缓存且缺少主动拉取。
+- [x] RED→GREEN：行程页刷新远端历史后按车辆隔离缓存生成 Trips；远端失败保留旧缓存。
+- [x] RED→GREEN：自托管 VehicleContext 使用与 API 相同的 SettingsDataStore。
+- [x] RED→GREEN：修复云端旧约束迁移与 nullable 归档字段读取。
+- [x] RED→GREEN：增加 Fleet 配置脱敏诊断字段。
+- [x] RED→GREEN：加固 bridge HTTPS、重定向、回执、断点作用域和只读 DB 配置。
+- [x] Android 全量 test/lint/Release、APK 签名和真机覆盖验证（最终 2.1.19：Debug 551、Release 551，0 失败；Release 8 项预期跳过；lintRelease、R8、签名和真机覆盖通过）。
+- [x] 提交推送并按精确 SHA 部署云端 API；核验迁移与 readiness。
+- [x] 为已核验的单一个人车辆创建受限归档绑定，启动 bridge 并完成真实全量核对。
+- [ ] Fleet 真实配置重试与首事件验收；七天/三行程/一充电门禁继续保留。
+
+试点补充：真实归档在第 7 条行程复现旧单会话 10,000 点上限；源库有 9 条超限、最大 29,583 点。已用 RED→GREEN 将原子单会话上限提高到 50,000，保留 100,000 总点数和请求体限制，不截断路线。
+
+## Review
+
+- 当前本地和云端稳定 provider vehicle id 已脱敏比对一致，均只有一辆车。
+- 本地采集 PASS；云端归档与源库一致：327 条已结束行程、47 条充电、587,743 个路线点、6,880 个充电采样，bridge 每分钟持续同步。
+- 真机云模式 PASS：263 个聚合行程、最新 2026-09-28 22:04、单条详情真实速度曲线可加载；本地/云端切换保留两侧配置和登录。
+- 云端 API 部署 `817b0c1`，健康为 `fleet/postgres/ok`；后续提交 `0039841`、`c888f68`、`817b0c1` 已依次完成代理超时、纯文本安全分类和中断恢复。
+- Fleet Telemetry 仍为 `awaiting_first_event`。实测配置先返回 `configure_post/502`，随后在 5 秒边界出现 `command_transport`；内部 DNS/TLS/CA/端口均 PASS。生产超时已扩展为 30 秒，但跨日后手机云会话需 Jovi 在 Tesla 官方页面重新授权，方可继续取得新代理结果。
+- Android 真机最终安装 2.1.19/build38，`firstInstallTime` 保持 2026-08-31 22:36:47；APK SHA-256 `2D055ACBAA02C81DB70774EC8EC26910D7D41B9E078356E5D6921F993FF7972B`，证书与已安装包一致。
+- 本机组合 Gradle 任务曾因残留 daemon 耗尽原生提交内存；停止本轮 Gradle/Kotlin daemon 后，最终 Debug/Release 全量测试与 lint 已分别独立通过。
+- 不把 TeslaMate 归档、Mock、HTTP 200 或编译通过计作 Fleet 实车 PASS。
+
 # 2026-08-30 iOS Apple 重设计（分支 feature/ios-apple-redesign，禁止提交 main）
 
 ## 2026-09-22 小程序完成度推进
@@ -3139,3 +3198,21 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - [x] 用 `adb install -r` 覆盖 OnePlus 7 Pro；首次安装时间保持，进程存活，无 FATAL/ANR。
 - [x] 最终透明图标提交 `1f329da` 已推送到 `codex/loading-indicator-current`。
 - [ ] App 当前停在 Tesla 连接引导页，未进入行程/充电页面捕获动画帧；未输入 Tesla 凭据。
+
+## 2026-09-27 个人 TeslaMate 全量归档桥接
+
+- [x] 本机 TeslaMate 数据盘/逻辑备份与隔离恢复；源库和 Adapter 可读。
+- [x] 真机自托管刷新验收：最新真实行程到达手机，源库/手机有效行程口径一致。
+- [x] 新增云端 TeslaMate 原始来源导入契约，保留路线点、充电采样、地址、费用与来源身份；服务端按用户/车辆校验并兼容旧 `/history/import`。
+- [x] 新增本地只读桥接进程：分批、幂等来源记录、原子断点、失败重试；不读取 Tesla 登录令牌、不写源库。
+- [ ] 运行桥接的真实数据库/云端绑定上传一条新行程；当前缺正式部署和已绑定的云端归档凭据。
+- [ ] 继续 Fleet Telemetry 脱敏诊断与真实事件接管门禁；不把 TeslaMate 数据当作 Fleet PASS。
+
+### Review 2026-09-27
+
+- PASS：本机源库现有 319 条已结束行程，最新两条为 2026-09-27 08:06–08:32、09:27–10:02；Adapter 查询可读，手机刷新后显示 257 条符合页面行程门槛的记录，与源库一致。
+- PASS：服务端 Go test/vet、archive bridge Go test/vet、Compose config、bridge Docker build 通过；桥接测试覆盖只读查询、敏感错误脱敏、HTTP Authorization、原子 cursor 和 null/zero 映射。
+- PARTIAL：新增 `/history/archive/import` 仅完成源码和本地门禁，未部署到 ECS；来源身份目前由已认证用户配置的 source instance/vehicle 字段约束，尚未接入独立可撤销 binding credential。
+- PENDING：正式云端 token/binding 与生产部署后，才能上传真实新行程并核对云端落库。当前线上 `/readyz` 为 `fleet/postgres/ok`、`telemetry=awaiting_first_event`；这仍是 Fleet Telemetry 等待真实首事件，不能由 TeslaMate 归档替代。
+- PASS：提交 `433d761` 已推送到 `codex/teslamate-cloud-archive`；ECS 使用 `jourvolt-pilot` Compose 仅重建 `jourvolt-dev-api`，线上 `/healthz`/`/readyz` 返回 `build_sha=433d761`、`fleet/postgres/ok`，Fleet Telemetry、MQTT、Command Proxy 和 PostgreSQL 未重启；归档接口未授权请求返回 401。
+- PENDING：桥接凭据/来源绑定尚未生成，未启动本地 archive profile，未上传真实新行程；这不是失败上传，而是绑定凭据门禁尚未完成。

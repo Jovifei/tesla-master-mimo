@@ -11,9 +11,13 @@ class TeslaPostLoginOnboardingContractTest {
     fun onlyPairingRequiredBlocksPostLoginDashboard() {
         assertTrue(
             shouldSurfaceTeslaVirtualKey(
-                TelemetryPairingStatus(status = "pairing_required", configSynced = false)
+                TelemetryPairingStatus(status = "pairing_required", configSynced = false, updatedAt = "2026-10-01T00:00:00Z")
             )
         )
+        assertFalse(shouldSurfaceTeslaVirtualKey(TelemetryPairingStatus(status = "pairing_required")))
+        assertTrue(shouldObserveAutomaticSetup(com.matelink.data.repository.ApiResult.Success(
+            TelemetryPairingStatus(status = "pairing_required")
+        )))
         assertFalse(
             shouldSurfaceTeslaVirtualKey(
                 TelemetryPairingStatus(status = "waiting_vehicle", configSynced = false)
@@ -66,5 +70,13 @@ class TeslaPostLoginOnboardingContractTest {
             source.substringAfter("fun cancelReauthorization()").substringBefore("fun deleteAccount")
                 .contains("sessionStore.clear()")
         )
+    }
+
+    @Test
+    fun explicitRecheckActuallyRetriesTelemetryConfiguration() {
+        val source = File("src/main/java/com/matelink/ui/screens/auth/TeslaLoginViewModel.kt").readText()
+        val retry = source.substringAfter("fun retryTeslaOnboarding()").substringBefore("fun deleteAccount")
+
+        assertTrue(retry.contains("retryTelemetryAfterPairingSafely"))
     }
 }

@@ -105,6 +105,7 @@ services:
       - ${TELEMETRY_VEHICLE_COMMAND_KEY_FILE:-./secrets/telemetry/fleet-key.pem}:/run/secrets/vehicle-command/fleet-key.pem:ro
     networks:
       - telemetry
+      - command-egress
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -166,5 +167,7 @@ volumes:
   jourvolt-postgres:
   jourvolt-mqtt-data:
 networks:
+  command-egress:
+    internal: false
   telemetry:
     internal: true

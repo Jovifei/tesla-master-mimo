@@ -11,7 +11,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
-	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -149,7 +148,7 @@ func TestTelemetryConfigureForwardsCurrentUsersBearerTokenToCommandProxy(t *test
 		case http.MethodPost:
 			_, _ = w.Write([]byte(`{"response":{}}`))
 		case http.MethodGet:
-			_, _ = w.Write([]byte(`{"response":{"synced":true}}`))
+			_, _ = w.Write([]byte(telemetryVerifiedConfigFixture()))
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -176,7 +175,7 @@ func TestTelemetryConfigureTrustsConfiguredCAForHTTPSCommandProxy(t *testing.T) 
 		case http.MethodPost:
 			_, _ = w.Write([]byte(`{"response":{}}`))
 		case http.MethodGet:
-			_, _ = w.Write([]byte(`{"response":{"synced":true}}`))
+			_, _ = w.Write([]byte(telemetryVerifiedConfigFixture()))
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -266,6 +265,44 @@ func TestTask2ConfigureErrorPreservesLastVerifiedConfigTruth(t *testing.T) {
 	}
 }
 
+func TestConfigureFailurePersistsSafeStageStatusAndCorrelation(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"error":"upstream_failure"}`))
+	}))
+	defer proxy.Close()
+	service := newTelemetryServiceForTest("partner.example.com")
+	service.commandProxyURL = proxy.URL
+	ref := telemetryRefWithVIN(service, "user-a", 1, "5YJ3E1EA7KF123456")
+	service.memory.registerVehicle(ref)
+
+	if err := service.configure(context.Background(), ref.UserID, ref.VehicleID); err == nil {
+		t.Fatal("configure error must be returned")
+	}
+	response, err := service.pairing(context.Background(), ref.UserID, ref.VehicleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.FailureStage != "configure_post" || response.UpstreamStatus != http.StatusBadGateway || response.CorrelationID == "" {
+		t.Fatalf("safe configure diagnostic = %#v", response)
+	}
+}
+
+func TestTelemetryProxyBadGatewayClassifiesOnlyStableSafeReasons(t *testing.T) {
+	if got := telemetryCommandErrorClass(http.StatusBadGateway, []byte(`{"error":"vehicle rejected request: your public key has not been paired with the vehicle"}`)); got != "pairing_required" {
+		t.Fatalf("missing key classification = %q", got)
+	}
+	if got := telemetryCommandErrorClass(http.StatusBadGateway, []byte(`{"error":"vehicle unavailable: request timeout"}`)); got != "vehicle_unavailable" {
+		t.Fatalf("vehicle unavailable classification = %q", got)
+	}
+	if got := telemetryCommandErrorClass(http.StatusBadGateway, []byte(`{"error":"contains VIN 5YJ00000000000000 and secret details"}`)); got != "telemetry_error" {
+		t.Fatalf("unknown body must stay generic, got %q", got)
+	}
+	if got := telemetryCommandErrorClass(http.StatusBadGateway, []byte(`vehicle rejected request: your public key has not been paired with the vehicle`)); got != "pairing_required" {
+		t.Fatalf("plain text missing key classification = %q", got)
+	}
+}
+
 func TestTask2ConfigurePersistsOnlyOfficialConfigGETTruth(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -280,7 +317,11 @@ func TestTask2ConfigurePersistsOnlyOfficialConfigGETTruth(t *testing.T) {
 					_, _ = w.Write([]byte(`{"response":{"updated_vehicles":1,"skipped_vehicles":{"missing_key":[]}}}`))
 					return
 				}
-				_, _ = w.Write([]byte(fmt.Sprintf(`{"response":{"synced":%t}}`, tc.synced)))
+				body := `{"response":{"synced":false}}`
+				if tc.synced {
+					body = telemetryVerifiedConfigFixture()
+				}
+				_, _ = w.Write([]byte(body))
 			}))
 			defer proxy.Close()
 			service := newTelemetryServiceForTest("partner.example.com")
@@ -332,7 +373,8 @@ func TestTask2ConfigureOnlyPersistsExplicitFleetConfigSyncedBoolean(t *testing.T
 		{name: "null synced stays unknown", getResponse: `{"response":{"synced":null}}`, wantSynced: nil},
 		{name: "malformed synced stays unknown", getResponse: `{"response":{"synced":"false"}}`, wantSynced: nil},
 		{name: "explicit false persists false", getResponse: `{"response":{"synced":false}}`, wantSynced: boolPointer(false)},
-		{name: "explicit true persists true", getResponse: `{"response":{"synced":true}}`, wantSynced: boolPointer(true)},
+		{name: "synced empty configuration is not ready", getResponse: `{"response":{"synced":true,"config":null}}`, wantSynced: boolPointer(false)},
+		{name: "explicit true persists true", getResponse: telemetryVerifiedConfigFixture(), wantSynced: boolPointer(true)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -374,7 +416,7 @@ func TestTelemetryPairingRefreshesDelayedOfficialSyncState(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Fatalf("pairing refresh method = %s", r.Method)
 		}
-		_, _ = w.Write([]byte(`{"response":{"synced":true}}`))
+		_, _ = w.Write([]byte(telemetryVerifiedConfigFixture()))
 	}))
 	defer proxy.Close()
 	service := newTelemetryServiceForTest("partner.example.com")

@@ -33,7 +33,6 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -48,7 +47,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import com.matelink.ui.components.MateLinkLoadingMark
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -103,6 +101,7 @@ import com.matelink.domain.model.SyncPhase
 import com.matelink.domain.model.UnitFormatter
 import com.matelink.domain.model.YearFilter
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.MateLinkPulseSpinner
 import com.matelink.ui.icons.CustomIcons
 import com.matelink.ui.theme.CarColorPalette
 import com.matelink.ui.theme.CarColorPalettes
@@ -306,7 +305,7 @@ private fun EmptyState(
             modifier = Modifier.padding(32.dp)
         ) {
             if (isSyncing) {
-                MateLinkLoadingMark(size = 96.dp)
+                MateLinkPulseSpinner(color = MaterialTheme.colorScheme.primary, size = 64.dp)
             } else {
                 Icon(
                     imageVector = Icons.Default.Analytics,
@@ -2338,7 +2337,7 @@ private fun RangeRecordDialog(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
                         ) {
-                            CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                            MateLinkPulseSpinner(color = palette.accent, size = 48.dp)
                         }
                     } else if (drives.isEmpty()) {
                         Box(

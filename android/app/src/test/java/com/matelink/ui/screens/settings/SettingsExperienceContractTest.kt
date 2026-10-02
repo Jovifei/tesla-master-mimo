@@ -31,16 +31,31 @@ class SettingsExperienceContractTest {
     }
 
     @Test
+    fun connectionModeCanSwitchWithoutDeletingEitherSavedConnection() {
+        val source = File("src/main/java/com/matelink/ui/screens/settings/SettingsScreen.kt").readText()
+        val viewModel = File("src/main/java/com/matelink/ui/screens/settings/SettingsViewModel.kt").readText()
+
+        assertTrue(source.contains("onConnectionModeChange"))
+        assertTrue(source.contains("settings_switch_to_cloud"))
+        assertTrue(source.contains("settings_switch_to_self_hosted"))
+        assertTrue(viewModel.contains("fun switchConnectionMode(mode: ConnectionMode"))
+        assertTrue(viewModel.contains("connectionModeStore.set(mode)"))
+        val shell = File("src/main/java/com/matelink/ui/navigation/StartDestinationViewModel.kt").readText()
+        assertTrue(shell.contains("connectionModeStore.mode.collect"))
+        assertTrue(shell.contains("_connectionMode.value = updatedMode"))
+    }
+
+    @Test
     fun currentReleaseShowsVersionAndLocalizedRepairNotes() {
         val gradle = File("build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 31"))
-        assertTrue(gradle.contains("versionName = \"2.1.12\""))
+        assertTrue(gradle.contains("versionCode = 41"))
+        assertTrue(gradle.contains("versionName = \"2.1.22\""))
         assertEquals(
             "本次更新",
             stringValue("values-zh", "settings_release_notes_title")
         )
-        assertTrue(stringValue("values-zh", "settings_release_notes_body").contains("选择浏览器"))
-        assertTrue(stringValue("values", "settings_release_notes_body").contains("choose a browser", ignoreCase = true))
+        assertTrue(stringValue("values-zh", "settings_release_notes_body").contains("自动"))
+        assertTrue(stringValue("values", "settings_release_notes_body").contains("automatic", ignoreCase = true))
     }
 
     private fun stringValue(directory: String, name: String): String {

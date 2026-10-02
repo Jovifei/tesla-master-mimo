@@ -15,7 +15,10 @@ data class TelemetryPairingStatus(
     @Json(name = "virtual_key_url") val virtualKeyUrl: String? = null,
     @Json(name = "updated_at") val updatedAt: String? = null,
     @Json(name = "config_synced") val configSynced: Boolean? = null,
-    @Json(name = "error_class") val errorClass: String? = null
+    @Json(name = "error_class") val errorClass: String? = null,
+    @Json(name = "failure_stage") val failureStage: String? = null,
+    @Json(name = "upstream_status") val upstreamStatus: Int? = null,
+    @Json(name = "correlation_id") val correlationId: String? = null
 )
 
 @JsonClass(generateAdapter = true)
