@@ -1,0 +1,55 @@
+name: History memory isolated verification
+on:
+  push:
+    branches: [fix/20261002-history-metadata-memory]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: history-memory-review
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: matelink_test
+          POSTGRES_PASSWORD: isolated-only
+          POSTGRES_DB: matelink_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U matelink_test -d matelink_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      JOURVOLT_TEST_DATABASE_URL: postgres://matelink_test:isolated-only@localhost:5432/matelink_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Record exact source
+        run: |
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/SOURCE_HEAD.txt
+          git archive --format=zip HEAD -o evidence/source.zip
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: deploy/jourvolt-dev-mock/go.mod
+          cache: false
+      - name: Go and isolated PostgreSQL tests
+        working-directory: deploy/jourvolt-dev-mock
+        run: |
+          set -euo pipefail
+          go test ./... -count=1 -json 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-tests.json"
+          go vet ./...
+          go mod verify
+          go build ./...
+      - name: Upload source and actual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: history-memory-evidence
+          retention-days: 14
+          path: evidence/
