@@ -58,12 +58,17 @@ func (b *historyReadBudget) acquire(ctx context.Context, userID, vehicleID strin
 		}
 	}
 
-	var once sync.Once
+	var released bool
+	var mu sync.Mutex
 	return func() {
-		once.Do(func() {
-			for i := len(acquired)-1; i >= 0; i-- {
-				<-acquired[i]
-			}
-		})
+		mu.Lock()
+		defer mu.Unlock()
+		if released {
+			panic("history resource budget release called twice")
+		}
+		released = true
+		for i := len(acquired)-1; i >= 0; i-- {
+			<-acquired[i]
+		}
 	}, nil
 }
