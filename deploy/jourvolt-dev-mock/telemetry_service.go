@@ -1375,6 +1375,15 @@ func (s *telemetryService) historySummaries(userID string, vehicleID int, kind s
 }
 
 func (s *telemetryService) historyDetail(userID string, vehicleID int, kind string, publicID int) (map[string]any, bool, error) {
+	return s.historyDetailContext(context.Background(), userID, vehicleID, kind, publicID)
+}
+
+func (s *telemetryService) historyDetailContext(ctx context.Context, userID string, vehicleID int, kind string, publicID int) (map[string]any, bool, error) {
+	ctx, cancel := historyReadContext(ctx)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
 	if s == nil {
 		return nil, false, nil
 	}
@@ -1386,7 +1395,7 @@ func (s *telemetryService) historyDetail(userID string, vehicleID int, kind stri
 		}
 		return nil, false, nil
 	}
-	session, ok, err := s.historyDetailPostgres(context.Background(), userID, vehicleID, kind, publicID)
+	session, ok, err := s.historyDetailPostgres(ctx, userID, vehicleID, kind, publicID)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
@@ -1433,6 +1442,6 @@ func historyCoveragePercent(sessions []telemetrySession) float64 {
 }
 
 func (s *telemetryService) hasHistory(ctx context.Context, userID string, vehicleID int, kind string) bool {
-	items, _, err := s.history(userID, vehicleID, kind)
-	return err == nil && len(items) > 0
+	exists, err := s.historyExists(ctx, userID, vehicleID, kind)
+	return err == nil && exists
 }

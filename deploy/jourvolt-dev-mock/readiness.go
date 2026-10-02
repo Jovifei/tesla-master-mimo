@@ -40,15 +40,25 @@ func (a *app) dataReadiness(w http.ResponseWriter, r *http.Request, userID strin
 			return
 		}
 	}
-	driveHistoryAvailable := a.hasMockHistory(userID) || (a.telemetry != nil && a.telemetry.hasHistory(r.Context(), userID, vehicleID, "drive"))
-	chargeHistoryAvailable := a.hasMockHistory(userID) || (a.telemetry != nil && a.telemetry.hasHistory(r.Context(), userID, vehicleID, "charge"))
+	// One bounded metadata read per kind, reused for availability and source.
+	driveMetadata, driveHistoryErr := a.telemetry.historyMetadata(r.Context(), userID, vehicleID, "drive")
+	chargeMetadata, chargeHistoryErr := a.telemetry.historyMetadata(r.Context(), userID, vehicleID, "charge")
+	driveHistoryAvailable := a.hasMockHistory(userID) || (driveHistoryErr == nil && driveMetadata.Total > 0)
+	chargeHistoryAvailable := a.hasMockHistory(userID) || (chargeHistoryErr == nil && chargeMetadata.Total > 0)
 	historyFallbackSource := source
 	if isFleetMode(a.mode) {
 		historyFallbackSource = "telemetry_mqtt"
 	}
 	items := readinessItemsWithHistory(providerStatus, source, err, driveHistoryAvailable, chargeHistoryAvailable)
-	setReadinessItemSource(items, "drives", a.historyReadinessSource(userID, vehicleID, "drive", historyFallbackSource))
-	setReadinessItemSource(items, "charges", a.historyReadinessSource(userID, vehicleID, "charge", historyFallbackSource))
+	setReadinessItemSource(items, "drives", a.historyMetadataSource(driveMetadata, historyFallbackSource))
+	setReadinessItemSource(items, "charges", a.historyMetadataSource(chargeMetadata, historyFallbackSource))
+	if a.hasMockHistory(userID) {
+		setReadinessItemSource(items, "drives", "mock_fixture")
+		setReadinessItemSource(items, "charges", "mock_fixture")
+	} else {
+		markHistoryReadinessError(items, "drives", driveHistoryErr)
+		markHistoryReadinessError(items, "charges", chargeHistoryErr)
+	}
 	response := dataReadinessResponse{
 		CapabilityVersion: dataReadinessCapabilityVersion,
 		VehicleUID:        vehicleUID,
@@ -78,29 +88,25 @@ func setReadinessItemSource(items []dataReadinessItem, key, source string) {
 	}
 }
 
-func (a *app) historyReadinessSource(userID string, vehicleID int, kind, fallback string) string {
-	if a.hasMockHistory(userID) {
-		return "mock_fixture"
-	}
-	if a.telemetry == nil {
-		return fallback
-	}
-	items, _, err := a.telemetry.history(userID, vehicleID, kind)
-	if err != nil {
-		return fallback
-	}
-	for _, item := range items {
-		raw, _ := item["source"].(string)
-		switch strings.ToLower(strings.TrimSpace(raw)) {
-		case "local_import", "local_history":
-			return "local_history"
-		case "telemetry_mqtt":
-			return "telemetry_mqtt"
-		case "fleet_api":
-			return "fleet_api"
-		}
+// Archive availability is distinct from live Fleet Telemetry availability.
+func (a *app) historyMetadataSource(metadata historyMetadata, fallback string) string {
+	if metadata.ReadinessSource != "" {
+		return metadata.ReadinessSource
 	}
 	return fallback
+}
+
+func markHistoryReadinessError(items []dataReadinessItem, key string, err error) {
+	if err == nil {
+		return
+	}
+	for index := range items {
+		if items[index].Key == key {
+			items[index].Status = "telemetry_error"
+			items[index].MessageKey = "history_unavailable"
+			items[index].Action = "retry_later"
+		}
+	}
 }
 
 func readinessItems(status vehicleStatus, source string, providerErr error) []dataReadinessItem {
