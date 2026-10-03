@@ -373,13 +373,17 @@ func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehi
 		route, _ := json.Marshal(open.Route)
 		chargePoints, _ := json.Marshal(open.ChargePoints)
 		if previous == nil {
+			// The in-memory machine is already keyed by user/vehicle, but this
+			// table's primary key is global. Scope only newly created sessions;
+			// loaded legacy IDs and their public/completion identities stay intact.
+			open.ID = scopedSessionID("telemetry_mqtt", ref.UserID, ref.VehicleID, kind, open.StartAt.UTC().Format(time.RFC3339Nano))
 			energyStart := (*float64)(nil)
 			energyField := ""
 			if kind == "charge" {
 				energyStart, energyField = machine.chargeEnergyStart, machine.chargeEnergyField
 			}
 			qualityState, qualityReason := classifyTelemetrySession(*open)
-			if err := tx.QueryRow(ctx, `INSERT INTO jourvolt_telemetry_sessions(id, user_id, vehicle_id, kind, started_at, odometer_start, energy_added, route_json, charge_points_json, charge_energy_start, charge_energy_field, source, quality_state, quality_reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,'telemetry_mqtt',$12,$13) ON CONFLICT (id) DO UPDATE SET id=EXCLUDED.id RETURNING public_id`, open.ID, ref.UserID, ref.VehicleID, open.Kind, open.StartAt, open.OdometerStart, open.EnergyAdded, route, chargePoints, energyStart, energyField, qualityState, qualityReason).Scan(&open.PublicID); err != nil {
+			if err := tx.QueryRow(ctx, `INSERT INTO jourvolt_telemetry_sessions(id, user_id, vehicle_id, kind, started_at, odometer_start, energy_added, route_json, charge_points_json, charge_energy_start, charge_energy_field, source, quality_state, quality_reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,'telemetry_mqtt',$12,$13) ON CONFLICT (id) DO UPDATE SET id=EXCLUDED.id WHERE jourvolt_telemetry_sessions.user_id=EXCLUDED.user_id AND jourvolt_telemetry_sessions.vehicle_id=EXCLUDED.vehicle_id AND jourvolt_telemetry_sessions.kind=EXCLUDED.kind AND jourvolt_telemetry_sessions.started_at=EXCLUDED.started_at RETURNING public_id`, open.ID, ref.UserID, ref.VehicleID, open.Kind, open.StartAt, open.OdometerStart, open.EnergyAdded, route, chargePoints, energyStart, energyField, qualityState, qualityReason).Scan(&open.PublicID); err != nil {
 				return err
 			}
 			continue
