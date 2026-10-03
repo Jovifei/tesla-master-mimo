@@ -1,9 +1,12 @@
 # Native session identity and idle finalizer repair — 2026-10-03
 
-Published baseline: `ad78840f0ebef0f69fbdbd4519e261bdff673223` on draft PR #12.
-These additional fixes and the earlier qualification slice are **local only**;
-GitHub publication is blocked. No merge, deployment, production DB operation,
-credential access, raw-history deletion or retention change occurred.
+Original baseline: `ad78840f0ebef0f69fbdbd4519e261bdff673223` on draft PR #12.
+The reviewed slices were published on the existing branch on 2026-10-03:
+qualification `8b7b199`, native identity `4aebbac`, and idle finalizer `39af788`.
+The final implementation tree is `3ce7f09a38689e50c2f095424928b917823a5734`.
+[Exact-head CI for `39af788`](https://github.com/Jovifei/tesla-master-mimo/actions/runs/37114324776)
+passed. No merge, deployment, production DB operation, credential access,
+raw-history deletion or retention change occurred.
 
 ## 1. Reproduced native identity collision
 
@@ -63,8 +66,11 @@ production-size query-plan validation remain future performance work.
 Final local combined suite: **320 PASS / 0 FAIL / 0 SKIP** including subtests, with
 isolated PostgreSQL 16.2 and Go 1.22.12. Vet, build, module verification, expanded
 Linux race, formatting and diff checks pass. CI definitions now explicitly require
-native-ID/finalizer PostgreSQL tests and include both in the race gate; they have
-not run remotely for these unpublished fixes.
+native-ID/finalizer PostgreSQL tests and include both in the race gate. Exact-head
+CI for `39af788` independently passed **320 Go test/subtest records, zero failures
+or skips**, all eight synthetic resource scenarios, the expanded race/vet/build/
+module gates, **13/13 Web tests**, and the clean Web production build. The hosted
+runner measurements are separate from the original local measurement receipts.
 
 The previous eight synthetic resource scenarios remain separately identified by
 their original source/receipt hashes in the qualification report. No new claim of

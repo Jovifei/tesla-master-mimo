@@ -3321,14 +3321,15 @@ Stage2 phone acceptance occurred.
   CPU timing, identify direct-service metadata/page1 fixture and release all pool
   handles on errors; discard preliminary metrics and rerun final source
 - [x] Final independent source/evidence review: no remaining blocking issue
-- [ ] Existing-branch publication and exact-head CI for this qualification slice
+- [x] Existing-branch publication `8b7b199`; combined implementation `39af788`
+  exact-head CI run `37114324776` PASS, including all eight synthetic scenarios
 - [ ] Bounded point/chunk writes and realistic long-duration/broker/device checks
 
 Report: `docs/RPT-2026-10-03-stage2-restart-resource-qualification.md`.
 At large points/concurrency8–16 the sampled handler-driver RSS still reaches
 ~395–417MiB; no claim that the original production OOM is fully closed.
 
-## Native identity and idle-drive timer residual repair — 2026-10-03 (local only)
+## Native identity and idle-drive timer residual repair — 2026-10-03
 
 - [x] Reproduce native global-ID collision with two accounts/vehicles at identical
   session start; all 10 ingests accepted but second account has no completed history
@@ -3340,8 +3341,12 @@ At large points/concurrency8–16 the sampled handler-driver RSS still reaches
 - [x] Combined local Go/PG 320 PASS / 0 FAIL / 0 SKIP; vet/build/modverify/race PASS
 - [x] Finalizer independent signoff: repeated real-PG race, concurrent drain,
   rollback/cancellation/retry and lock-retention probes pass
-- [ ] Durable combined repair/qualification delivery package
-- [ ] Publish these local fixes only when the repository-write blocker is resolved;
-  current remote remains `ad78840` and no deployment or production recovery occurred
+- [x] Durable combined repair/qualification delivery package verified, including
+  per-file hashes and three ordered patches that reconstruct the reviewed tree
+- [x] Published `4aebbac` (identity) and `39af788` (finalizer) on the existing branch;
+  exact-head CI `37114324776`: Go320/0FAIL/0SKIP, eight scenarios, Web13/13 and
+  race/vet/build/module/clean Web build PASS
+- Boundary: draft PR12 remains stacked on PR11; no deployment or production
+  recovery occurred, and the original OOM/resource limitations remain open
 
 Report: `docs/RPT-2026-10-03-native-identity-idle-finalizer-repair.md`.

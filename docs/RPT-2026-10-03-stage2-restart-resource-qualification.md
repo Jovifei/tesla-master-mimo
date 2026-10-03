@@ -24,8 +24,13 @@ credential, deployment, raw deletion or retention policy was touched.
 Full final Go/PostgreSQL suite: **314 PASS, 0 FAIL, 0 SKIP** including subtests.
 `go vet`, build, module verification, targeted race including both new durability
 regressions, formatting and diff checks: PASS. The previous source slice's Web
-13/13 and clean production build remain unchanged; exact-head CI for this new
-qualification slice follows publication.
+13/13 and clean production build remain unchanged. The qualification was later
+published as `8b7b199`, followed by native-identity and idle-finalizer repairs.
+[Exact-head CI for the combined implementation `39af788`](https://github.com/Jovifei/tesla-master-mimo/actions/runs/37114324776)
+passed 320 Go test/subtest records (zero failures/skips), all eight synthetic
+resource scenarios, the race/vet/build/module gates, 13/13 Web tests and the clean
+Web build. The original local measurements below remain unchanged; CI runner
+measurements are separate and available in that run’s evidence artifact.
 
 ## Bounded synthetic resource matrix
 
