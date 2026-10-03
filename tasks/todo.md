@@ -3300,10 +3300,30 @@ Review: remote decode adapter adc2955 rejected as breaking entry function and le
 - [x] Five new PostgreSQL regressions; final full suite 311 PASS/0FAIL/0SKIP;
   vet/build/modverify and targeted race PASS; Web13/13 and clean build PASS
 - [x] Independent final-diff review: no blocking issue; source hashes and receipts checked
-- [ ] Existing-branch publication and exact-SHA CI
+- [x] Existing-branch publication `ad78840` and exact-SHA CI run `37096150346` PASS
 - [ ] Bounded point/chunk persistence, manifest hashes, broad restart qualification
   and 2/4/8/16 resource measurements remain open
 
 Evidence and limitations: `docs/RPT-2026-10-03-stage2-persisted-summary-validation.md`.
 No production backfill, deployment, raw-history deletion, retention change or
 Stage2 phone acceptance occurred.
+
+## Stage2 isolated process/resource qualification — 2026-10-03
+
+- [x] Actual killed helper OS process followed by a fresh process: direct-ingest
+  replay, energy baseline, original samples and one completion preserved
+- [x] Cancel after PostgreSQL UPDATE entry is observed, wait for transaction lock
+  release, prove full-row rollback and successful backfill retry
+- [x] Final local full Go/PG suite314 PASS/0FAIL/0SKIP; vet/build/modverify/race PASS
+- [x] Eight synthetic scenarios: 5,000/29,583 points × concurrency2/4/8/16; no raw
+  point loss or permit leaks; all lightweight requests succeed; expected429 at16
+- [x] Review-driven correction: explicitly flush each backend's PG stats, align
+  CPU timing, identify direct-service metadata/page1 fixture and release all pool
+  handles on errors; discard preliminary metrics and rerun final source
+- [x] Final independent source/evidence review: no remaining blocking issue
+- [ ] Existing-branch publication and exact-head CI for this qualification slice
+- [ ] Bounded point/chunk writes and realistic long-duration/broker/device checks
+
+Report: `docs/RPT-2026-10-03-stage2-restart-resource-qualification.md`.
+At large points/concurrency8–16 the sampled handler-driver RSS still reaches
+~395–417MiB; no claim that the original production OOM is fully closed.

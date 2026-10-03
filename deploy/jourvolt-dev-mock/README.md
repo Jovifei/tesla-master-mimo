@@ -288,6 +288,50 @@ completion. Summary revision tracks payload writes/backfill, not archive content
 hashes: an identical import may advance it, while deduplicated QoS1 events do not.
 
 Backfill bounds rows and duration, not the size of one legacy JSON value inside
-PostgreSQL. Bounded chunk persistence, manifest/checksum versions, full restart
-qualification, and 2/4/8/16 concurrency/RSS/database-I/O measurements remain pending.
+PostgreSQL. Bounded chunk persistence, manifest/checksum versions, broker/database restart
+qualification, and production/realistic-network/long-duration RSS and physical-I/O
+measurements remain pending. Isolated process and synthetic matrix evidence is
+described below.
 Do not delete raw history or change retention based on these summaries.
+
+### Isolated durability and resource qualification
+
+The additional `TestHistorySummaryPostgresSurvivesKilledProcess` kills a helper
+OS process only after an acknowledged synthetic telemetry commit, then uses a new
+process to replay/continue/complete the same charge. It verifies the persisted
+energy baseline, original samples and unique completion. This is direct-ingest
+event replay, not an MQTT transport/broker or database restart test.
+
+`TestHistorySummaryPostgresInFlightBackfillCancellationRollsBack` observes a
+test-only PostgreSQL UPDATE trigger's advisory lock before cancellation, waits for
+the backend transaction lock to disappear, and verifies complete row fingerprints
+are unchanged before successfully retrying. These tests require an isolated test
+database and must never target production.
+
+Linux resource qualification is opt-in; use an explicitly configured isolated
+`JOURVOLT_TEST_DATABASE_URL` and run each scenario in a fresh Go test process:
+
+```bash
+export JOURVOLT_RUN_RESOURCE_MATRIX=1
+for points in 5000 29583; do
+  export JOURVOLT_RESOURCE_POINTS="$points"
+  for concurrency in 2 4 8 16; do
+    go test -run '^$' -bench "BenchmarkHistoryResourceConcurrent/c${concurrency}$" -benchtime=1x -count=1 -v ./...
+  done
+done
+```
+
+Output records handler-driver allocation/heap/RSS/CPU, separate successful-detail
+latency, page and direct-service metadata latency, 429 counts, unchanged original
+point counts and released permits. The fixture is one session per worker with
+eight rounds; requested page20 returns one row. Metadata alone is warmed; the
+shared synthetic database cache is not reset. Responses are serialized to a
+counting discard writer, without a network transport or client. Peaks are sampled
+every 2 ms; the small sample's p95/p99 are not production SLO qualification.
+
+Every idle pooled PostgreSQL backend explicitly flushes its statistics before
+both snapshots. The reported database-wide block read/hit counters include control
+query overhead and are not physical disk I/O. Same-host PostgreSQL process-tree CPU
+is optional: set `JOURVOLT_TEST_POSTGRES_PID` to the isolated postmaster PID and
+`JOURVOLT_TEST_CLK_TCK` to `getconf CLK_TCK`; when the DB runs in a separate container
+or host, this metric remains unavailable. Never substitute zero for missing data.
