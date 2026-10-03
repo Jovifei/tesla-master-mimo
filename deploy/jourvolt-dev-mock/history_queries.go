@@ -49,13 +49,14 @@ const historyPageCountSQL = `SELECT COUNT(*) FROM jourvolt_telemetry_sessions
       AND ($4::timestamptz IS NULL OR started_at >= $4)
       AND ($5::timestamptz IS NULL OR started_at < $5)`
 
-// Apply LIMIT before extracting JSON endpoints: only this page's large values
-// may be accessed by PostgreSQL. No full route crosses the database connection.
-// Persisted endpoint columns can remove even this bounded TOAST work later.
+// Materialized rows carry independent endpoints and no payload. Legacy fallback
+// still applies LIMIT before endpoint extraction; no full route crosses the wire.
 const historyPageSQL = `WITH page AS MATERIALIZED (
     SELECT id, public_id, started_at, ended_at, odometer_start, odometer_end, energy_added,
            source, quality_state, quality_reason, source_instance_id, source_vehicle_id, source_record_id,
-           start_address, end_address, address, cost, route_json
+           start_address, end_address, address, cost, history_summary_version,
+           route_start_latitude, route_start_longitude, route_end_latitude, route_end_longitude,
+           CASE WHEN history_summary_version=1 THEN NULL::jsonb ELSE route_json END AS route_json
     FROM jourvolt_telemetry_sessions
     WHERE user_id=$1 AND vehicle_id=$2 AND kind=$3
       AND ended_at IS NOT NULL AND quality_state <> 'quarantined'
@@ -66,10 +67,7 @@ const historyPageSQL = `WITH page AS MATERIALIZED (
 SELECT id, public_id, started_at, ended_at, odometer_start, odometer_end, energy_added,
        source, quality_state, quality_reason, COALESCE(source_instance_id,''), COALESCE(source_vehicle_id,''), COALESCE(source_record_id,''),
        start_address, end_address, address, cost,
-       NULLIF(route_json->0->>'latitude','')::double precision,
-       NULLIF(route_json->0->>'longitude','')::double precision,
-       NULLIF(route_json->-1->>'latitude','')::double precision,
-       NULLIF(route_json->-1->>'longitude','')::double precision
+` + historySummaryEndpointsSQL + `
 FROM page ORDER BY started_at DESC, public_id DESC`
 
 type historyMetadata struct {

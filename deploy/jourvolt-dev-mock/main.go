@@ -1064,6 +1064,21 @@ func main() {
 	if dsn == "" {
 		dsn = "postgres://jourvolt:jourvolt@127.0.0.1:5432/jourvolt?sslmode=disable"
 	}
+	if os.Getenv("JOURVOLT_BACKFILL_HISTORY_SUMMARIES") == "1" {
+		// Maintenance assumes the upgraded schema already exists. Do not run
+		// unrelated startup migrations, provider setup or listeners for a batch.
+		pool, err := pgxpool.New(ctx, dsn)
+		if err != nil {
+			log.Fatal("history summary backfill database configuration invalid")
+		}
+		defer pool.Close()
+		count, err := backfillHistorySummaries(ctx, pool, maxHistorySummaryBackfillBatch)
+		if err != nil {
+			log.Fatalf("history summary backfill: %v", err)
+		}
+		log.Printf("history summary backfill processed=%d batch_limit=%d; inspect pending/invalid counts before another batch", count, maxHistorySummaryBackfillBatch)
+		return
+	}
 	store, err := openStore(ctx, dsn)
 	if err != nil {
 		log.Fatalf("jourvolt store: %v", err)

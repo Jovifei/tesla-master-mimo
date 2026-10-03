@@ -3287,3 +3287,23 @@ Scope: backend source-only; no merge/deploy/deletion/TTL changes. Remote test so
 - [x] Final full Go/isolated PG16 306 PASS including subtests, zero fail/skip; vet/build and expanded Linux race PASS.
 - [ ] Push final decode correction, exact-SHA CI, remote independent review and actual persisted-summary implementation.
 Review: remote decode adapter adc2955 rejected as breaking entry function and leaking primitive test; local source fixes it. Large summary/chunk stage still incomplete.
+
+## Stage2 persisted-summary slice — 2026-10-03
+
+- [x] Replace the unconnected summary-helper proposal with actual PostgreSQL
+  trigger-maintained endpoints, original sample counts, format version and write
+  revision for native/local/archive writes
+- [x] Use persisted endpoints in page/summary reads with explicit legacy fallback
+  and no null-triggered raw JSON access
+- [x] Add explicit single-batch backfill (max100, cancellation, SKIP LOCKED), retain
+  malformed originals for investigation, and document aggregate progress checks
+- [x] Five new PostgreSQL regressions; final full suite 311 PASS/0FAIL/0SKIP;
+  vet/build/modverify and targeted race PASS; Web13/13 and clean build PASS
+- [x] Independent final-diff review: no blocking issue; source hashes and receipts checked
+- [ ] Existing-branch publication and exact-SHA CI
+- [ ] Bounded point/chunk persistence, manifest hashes, broad restart qualification
+  and 2/4/8/16 resource measurements remain open
+
+Evidence and limitations: `docs/RPT-2026-10-03-stage2-persisted-summary-validation.md`.
+No production backfill, deployment, raw-history deletion, retention change or
+Stage2 phone acceptance occurred.

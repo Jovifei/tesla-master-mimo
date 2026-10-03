@@ -246,3 +246,48 @@ sudo find /srv/jourvolt-backups -maxdepth 1 -type f -name '*.dump.age' -printf '
 ```
 
 定时模板会强制执行加密归档上传；对象存储生命周期删除和恢复演练仍是独立门禁。正式启用前必须确认 `/srv/jourvolt/.env`、`/etc/jourvolt/rclone.conf` 仅对 root 和 `jourvolt` 可读、`age` 私钥位于备份目录之外，并完成一次隔离数据库恢复验证。上面的 `install` 命令要求管理员先在目标机创建并审查 `/etc/jourvolt/rclone.conf`，不会从仓库复制凭据。
+
+## PostgreSQL history summary migration (Stage 2 partial)
+
+The summary schema adds independent first/last coordinates, route/charge sample
+counts, and a summary format version and write revision. A database trigger updates
+these atomically with native telemetry, local import, and archive import payload
+writes, including writes from an older API binary. Raw JSON, source identity,
+quality, and retention remain unchanged. Lists use persisted endpoints when
+`history_summary_version=1`; legacy/unprocessed rows keep bounded-page JSON fallback.
+Native telemetry's capitalized JSON field names are supported alongside archive
+lower-case names. Known null endpoints do not trigger JSON fallback.
+
+Normal startup installs the additive schema but does not backfill history. The
+first migration still takes table DDL locks and builds the pending-row index;
+zero-downtime upgrade has not been qualified. After
+upgrading the schema, an operator can explicitly run one maintenance batch using
+the same binary and an already-configured `DATABASE_URL`:
+
+```bash
+JOURVOLT_BACKFILL_HISTORY_SUMMARIES=1 ./jourvolt-dev-api
+```
+
+Each invocation processes at most 100 unlocked rows in one atomic statement, with
+a five-second context timeout. It exits without HTTP/MQTT/provider startup or
+unrelated schema migrations. Run only against an explicitly selected, backed-up
+database during an approved maintenance window. Inspect aggregate progress before
+running another batch:
+
+```sql
+SELECT history_summary_version, count(*)
+FROM jourvolt_telemetry_sessions GROUP BY history_summary_version;
+```
+
+Version `0` is pending, `1` is materialized, and `-1` is malformed legacy JSON
+requiring investigation. Malformed rows retain their payload and existing read
+error behavior, are not silently labeled complete, and do not block later batches.
+An ordinary corrected payload write re-materializes them. A zero processed count
+can mean another worker holds row locks; inspect pending counts before concluding
+completion. Summary revision tracks payload writes/backfill, not archive content
+hashes: an identical import may advance it, while deduplicated QoS1 events do not.
+
+Backfill bounds rows and duration, not the size of one legacy JSON value inside
+PostgreSQL. Bounded chunk persistence, manifest/checksum versions, full restart
+qualification, and 2/4/8/16 concurrency/RSS/database-I/O measurements remain pending.
+Do not delete raw history or change retention based on these summaries.

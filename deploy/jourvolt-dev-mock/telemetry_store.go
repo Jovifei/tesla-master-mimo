@@ -166,7 +166,7 @@ func ensureTelemetrySchema(ctx context.Context, pool *pgxpool.Pool) error {
 	if pool == nil {
 		return errors.New("telemetry schema requires postgres")
 	}
-	_, err := pool.Exec(ctx, telemetrySchema)
+	_, err := pool.Exec(ctx, telemetrySchema+historySummarySchema)
 	return err
 }
 
@@ -584,10 +584,7 @@ func (s *telemetryService) historySummariesPostgres(ctx context.Context, userID 
 	rows, err := s.store.pool.Query(ctx, `SELECT id, public_id, started_at, ended_at, odometer_start, odometer_end, energy_added,
         source, quality_state, quality_reason, COALESCE(source_instance_id,''), COALESCE(source_vehicle_id,''), COALESCE(source_record_id,''),
         start_address, end_address, address, cost,
-        NULLIF(route_json->0->>'latitude','')::double precision,
-        NULLIF(route_json->0->>'longitude','')::double precision,
-        NULLIF(route_json->(jsonb_array_length(route_json)-1)->>'latitude','')::double precision,
-        NULLIF(route_json->(jsonb_array_length(route_json)-1)->>'longitude','')::double precision
+`+historySummaryEndpointsSQL+`
         FROM jourvolt_telemetry_sessions
         WHERE user_id=$1 AND vehicle_id=$2 AND kind=$3 AND ended_at IS NOT NULL AND quality_state != 'quarantined'
         ORDER BY started_at DESC`, userID, vehicleID, kind)
