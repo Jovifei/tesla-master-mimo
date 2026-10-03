@@ -166,7 +166,7 @@ func ensureTelemetrySchema(ctx context.Context, pool *pgxpool.Pool) error {
 	if pool == nil {
 		return errors.New("telemetry schema requires postgres")
 	}
-	_, err := pool.Exec(ctx, telemetrySchema)
+	_, err := pool.Exec(ctx, telemetrySchema+historySummarySchema+nativeShadowSchema+nativeShadowAuditSchema+nativeShadowRebuildSchema)
 	return err
 }
 
@@ -280,11 +280,12 @@ func insertDownsampledRoutePoint(ctx context.Context, tx pgx.Tx, ref telemetryVe
 }
 
 func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehicleRef, record telemetryRecord, debounce time.Duration) error {
-	rows, err := tx.Query(ctx, `SELECT id, public_id, kind, started_at, ended_at, stop_candidate_at, odometer_start, odometer_end, energy_added, charge_energy_start, charge_energy_field, route_json, charge_points_json, source, quality_state, quality_reason FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND vehicle_id=$2 AND ended_at IS NULL ORDER BY started_at FOR UPDATE`, ref.UserID, ref.VehicleID)
+	rows, err := tx.Query(ctx, `SELECT id, public_id, kind, started_at, ended_at, stop_candidate_at, odometer_start, odometer_end, energy_added, charge_energy_start, charge_energy_field, route_json, charge_points_json, source, quality_state, quality_reason, history_summary_revision FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND vehicle_id=$2 AND ended_at IS NULL ORDER BY started_at FOR UPDATE`, ref.UserID, ref.VehicleID)
 	if err != nil {
 		return err
 	}
 	snapshot := telemetrySessionMachineSnapshot{}
+	previousRevisions := make(map[string]int64)
 	for rows.Next() {
 		var id, kind string
 		var publicID int
@@ -296,13 +297,21 @@ func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehi
 		var routeJSON []byte
 		var chargePointsJSON []byte
 		var source, qualityState, qualityReason string
-		if err := rows.Scan(&id, &publicID, &kind, &startedAt, &endedAt, &stopCandidate, &odometerStart, &odometerEnd, &energyAdded, &chargeEnergyStart, &chargeEnergyField, &routeJSON, &chargePointsJSON, &source, &qualityState, &qualityReason); err != nil {
+		var revision int64
+		if err := rows.Scan(&id, &publicID, &kind, &startedAt, &endedAt, &stopCandidate, &odometerStart, &odometerEnd, &energyAdded, &chargeEnergyStart, &chargeEnergyField, &routeJSON, &chargePointsJSON, &source, &qualityState, &qualityReason, &revision); err != nil {
 			rows.Close()
 			return err
 		}
 		open := &telemetrySession{ID: id, PublicID: publicID, Kind: kind, StartAt: startedAt, EndAt: endedAt, OdometerStart: odometerStart, OdometerEnd: odometerEnd, EnergyAdded: energyAdded, Source: source, QualityState: qualityState, QualityReason: qualityReason}
-		_ = json.Unmarshal(routeJSON, &open.Route)
-		_ = json.Unmarshal(chargePointsJSON, &open.ChargePoints)
+		if err := json.Unmarshal(routeJSON, &open.Route); err != nil {
+			rows.Close()
+			return fmt.Errorf("decode existing native route: %w", err)
+		}
+		if err := json.Unmarshal(chargePointsJSON, &open.ChargePoints); err != nil {
+			rows.Close()
+			return fmt.Errorf("decode existing native charge samples: %w", err)
+		}
+		previousRevisions[id] = revision
 		if kind == "drive" {
 			snapshot.Drive = open
 		} else if kind == "charge" {
@@ -359,10 +368,19 @@ func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehi
 			if !ok {
 				continue
 			}
-			route, _ := json.Marshal(completed.Route)
-			chargePoints, _ := json.Marshal(completed.ChargePoints)
+			route, err := json.Marshal(completed.Route)
+			if err != nil {
+				return err
+			}
+			chargePoints, err := json.Marshal(completed.ChargePoints)
+			if err != nil {
+				return err
+			}
 			qualityState, qualityReason := classifyTelemetrySession(completed)
 			if _, err := tx.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET ended_at=$1, odometer_start=$2, odometer_end=$3, energy_added=$4, route_json=$5::jsonb, charge_points_json=$6::jsonb, stop_candidate_at=NULL, completion_key=$7, source='telemetry_mqtt', quality_state=$8, quality_reason=$9 WHERE id=$10 AND ended_at IS NULL`, completed.EndAt, completed.OdometerStart, completed.OdometerEnd, completed.EnergyAdded, route, chargePoints, completed.CompletionKey, qualityState, qualityReason, completed.ID); err != nil {
+				return err
+			}
+			if err := appendNativeSessionShadow(ctx, tx, ref, previous, completed, previousRevisions[previous.ID], false); err != nil {
 				return err
 			}
 			continue
@@ -370,16 +388,38 @@ func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehi
 		if open == nil {
 			continue
 		}
-		route, _ := json.Marshal(open.Route)
-		chargePoints, _ := json.Marshal(open.ChargePoints)
+		route, err := json.Marshal(open.Route)
+		if err != nil {
+			return err
+		}
+		chargePoints, err := json.Marshal(open.ChargePoints)
+		if err != nil {
+			return err
+		}
 		if previous == nil {
+			// The in-memory machine is already keyed by user/vehicle, but this
+			// table's primary key is global. Scope only newly created sessions;
+			// loaded legacy IDs and their public/completion identities stay intact.
+			open.ID = scopedSessionID("telemetry_mqtt", ref.UserID, ref.VehicleID, kind, open.StartAt.UTC().Format(time.RFC3339Nano))
 			energyStart := (*float64)(nil)
 			energyField := ""
 			if kind == "charge" {
 				energyStart, energyField = machine.chargeEnergyStart, machine.chargeEnergyField
 			}
 			qualityState, qualityReason := classifyTelemetrySession(*open)
-			if err := tx.QueryRow(ctx, `INSERT INTO jourvolt_telemetry_sessions(id, user_id, vehicle_id, kind, started_at, odometer_start, energy_added, route_json, charge_points_json, charge_energy_start, charge_energy_field, source, quality_state, quality_reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,'telemetry_mqtt',$12,$13) ON CONFLICT (id) DO UPDATE SET id=EXCLUDED.id RETURNING public_id`, open.ID, ref.UserID, ref.VehicleID, open.Kind, open.StartAt, open.OdometerStart, open.EnergyAdded, route, chargePoints, energyStart, energyField, qualityState, qualityReason).Scan(&open.PublicID); err != nil {
+			err := tx.QueryRow(ctx, `INSERT INTO jourvolt_telemetry_sessions(id, user_id, vehicle_id, kind, started_at, odometer_start, energy_added, route_json, charge_points_json, charge_energy_start, charge_energy_field, source, quality_state, quality_reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,'telemetry_mqtt',$12,$13) ON CONFLICT (id) DO NOTHING RETURNING public_id`, open.ID, ref.UserID, ref.VehicleID, open.Kind, open.StartAt, open.OdometerStart, open.EnergyAdded, route, chargePoints, energyStart, energyField, qualityState, qualityReason).Scan(&open.PublicID)
+			if errors.Is(err, pgx.ErrNoRows) {
+				// A matching concurrent/legacy creator is not proof of fresh detail
+				// coverage. Preserve its manifest; reject mismatched ownership.
+				if err := tx.QueryRow(ctx, `SELECT public_id FROM jourvolt_telemetry_sessions WHERE id=$1 AND user_id=$2 AND vehicle_id=$3 AND kind=$4 AND started_at=$5 FOR UPDATE`, open.ID, ref.UserID, ref.VehicleID, open.Kind, open.StartAt).Scan(&open.PublicID); err != nil {
+					return err
+				}
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if err := appendNativeSessionShadow(ctx, tx, ref, nil, *open, 0, true); err != nil {
 				return err
 			}
 			continue
@@ -395,6 +435,9 @@ func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehi
 		}
 		qualityState, qualityReason := classifyTelemetrySession(*open)
 		if _, err := tx.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET stop_candidate_at=$1, odometer_start=$2, odometer_end=$3, energy_added=$4, route_json=$5::jsonb, charge_points_json=$6::jsonb, charge_energy_start=$7, charge_energy_field=$8, source='telemetry_mqtt', quality_state=$9, quality_reason=$10 WHERE id=$11`, candidate, open.OdometerStart, open.OdometerEnd, open.EnergyAdded, route, chargePoints, energyStart, energyField, qualityState, qualityReason, open.ID); err != nil {
+			return err
+		}
+		if err := appendNativeSessionShadow(ctx, tx, ref, previous, *open, previousRevisions[previous.ID], false); err != nil {
 			return err
 		}
 	}
@@ -584,10 +627,7 @@ func (s *telemetryService) historySummariesPostgres(ctx context.Context, userID 
 	rows, err := s.store.pool.Query(ctx, `SELECT id, public_id, started_at, ended_at, odometer_start, odometer_end, energy_added,
         source, quality_state, quality_reason, COALESCE(source_instance_id,''), COALESCE(source_vehicle_id,''), COALESCE(source_record_id,''),
         start_address, end_address, address, cost,
-        NULLIF(route_json->0->>'latitude','')::double precision,
-        NULLIF(route_json->0->>'longitude','')::double precision,
-        NULLIF(route_json->(jsonb_array_length(route_json)-1)->>'latitude','')::double precision,
-        NULLIF(route_json->(jsonb_array_length(route_json)-1)->>'longitude','')::double precision
+`+historySummaryEndpointsSQL+`
         FROM jourvolt_telemetry_sessions
         WHERE user_id=$1 AND vehicle_id=$2 AND kind=$3 AND ended_at IS NOT NULL AND quality_state != 'quarantined'
         ORDER BY started_at DESC`, userID, vehicleID, kind)
@@ -662,6 +702,10 @@ func (s *telemetryService) openSessionPostgres(ctx context.Context, userID strin
 	return session, true, nil
 }
 
+// Each timer tick performs one bounded batch; later ticks drain remaining due
+// sessions. Row locks held by ingestion/another finalizer are retried next tick.
+const maxTelemetryFinalizeBatch = 100
+
 func (s *telemetryService) finalizeDuePostgres(ctx context.Context, now time.Time) (int, error) {
 	if s.store == nil || s.store.pool == nil {
 		return 0, nil
@@ -675,32 +719,40 @@ func (s *telemetryService) finalizeDuePostgres(ctx context.Context, now time.Tim
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT id, public_id, started_at, stop_candidate_at FROM jourvolt_telemetry_sessions WHERE kind='drive' AND ended_at IS NULL AND stop_candidate_at IS NOT NULL FOR UPDATE`)
+	rows, err := tx.Query(ctx, `SELECT id, public_id, started_at, stop_candidate_at
+        FROM jourvolt_telemetry_sessions
+        WHERE kind='drive' AND ended_at IS NULL AND stop_candidate_at <= $1
+        ORDER BY stop_candidate_at, id LIMIT $2 FOR UPDATE SKIP LOCKED`, now.Add(-debounce), maxTelemetryFinalizeBatch)
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
-	completed := 0
+	// pgx cannot execute another command until this result is consumed/closed.
+	// Materialize bounded headers only, then keep their row locks until commit.
+	due := make([]telemetrySession, 0, maxTelemetryFinalizeBatch)
 	for rows.Next() {
 		var session telemetrySession
 		var candidate time.Time
 		if err := rows.Scan(&session.ID, &session.PublicID, &session.StartAt, &candidate); err != nil {
+			rows.Close()
 			return 0, err
-		}
-		if now.Before(candidate.Add(debounce)) {
-			continue
 		}
 		end := candidate.Add(debounce)
 		session.Kind, session.EndAt = "drive", &end
+		due = append(due, session)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return 0, err
+	}
+	completed := 0
+	for _, session := range due {
 		key := sessionCompletionKey(session)
-		tag, err := tx.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET ended_at=$1, stop_candidate_at=NULL, completion_key=$2 WHERE id=$3 AND ended_at IS NULL`, end, key, session.ID)
+		tag, err := tx.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET ended_at=$1, stop_candidate_at=NULL, completion_key=$2 WHERE id=$3 AND ended_at IS NULL`, session.EndAt, key, session.ID)
 		if err != nil {
 			return 0, err
 		}
 		completed += int(tag.RowsAffected())
-	}
-	if err := rows.Err(); err != nil {
-		return 0, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, err

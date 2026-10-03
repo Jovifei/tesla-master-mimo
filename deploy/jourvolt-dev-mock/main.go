@@ -1064,6 +1064,35 @@ func main() {
 	if dsn == "" {
 		dsn = "postgres://jourvolt:jourvolt@127.0.0.1:5432/jourvolt?sslmode=disable"
 	}
+	if os.Getenv("JOURVOLT_REBUILD_NATIVE_SHADOW") == "1" {
+		if err := runNativeShadowRebuild(ctx, os.Getenv, os.Stdout); err != nil {
+			log.Fatal("native shadow rebuild failed; verify scope, source revision and generation integrity")
+		}
+		return
+	}
+	if os.Getenv("JOURVOLT_AUDIT_NATIVE_SHADOW") == "1" {
+		// Explicit maintenance only: use an already-migrated database and exit
+		// before schema startup, provider configuration or network listeners.
+		if err := runNativeShadowAudit(ctx, os.Getenv, os.Stdout); err != nil {
+			log.Fatal("native shadow comparison failed; verify scope, revisions and chunk integrity")
+		}
+		return
+	}
+	if os.Getenv("JOURVOLT_BACKFILL_HISTORY_SUMMARIES") == "1" {
+		// Maintenance assumes the upgraded schema already exists. Do not run
+		// unrelated startup migrations, provider setup or listeners for a batch.
+		pool, err := pgxpool.New(ctx, dsn)
+		if err != nil {
+			log.Fatal("history summary backfill database configuration invalid")
+		}
+		defer pool.Close()
+		count, err := backfillHistorySummaries(ctx, pool, maxHistorySummaryBackfillBatch)
+		if err != nil {
+			log.Fatalf("history summary backfill: %v", err)
+		}
+		log.Printf("history summary backfill processed=%d batch_limit=%d; inspect pending/invalid counts before another batch", count, maxHistorySummaryBackfillBatch)
+		return
+	}
 	store, err := openStore(ctx, dsn)
 	if err != nil {
 		log.Fatalf("jourvolt store: %v", err)
