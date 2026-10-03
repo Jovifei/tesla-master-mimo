@@ -3373,3 +3373,28 @@ Report: `docs/RPT-2026-10-03-native-identity-idle-finalizer-repair.md`.
 Report: `docs/RPT-2026-10-03-native-detail-shadow-chunks.md`.
 This comparison copy increases storage/write work and still accompanies whole-JSON
 native ingestion. It is not an OOM closure or a complete raw telemetry archive.
+
+
+## Bounded native-shadow comparison — 2026-10-03
+
+- [x] Add explicit maintenance-only, scoped comparison with persisted resume
+  cursor; no caller-selected offsets or automatic history repair
+- [x] Bound each invocation to 16 chunks / 4,096 samples / 1MiB payload read into Go
+  and a five-second database context; verify SHA/count/order and legacy equality
+- [x] Pin source/completion/content revisions and eligibility; mark completion
+  only at verified revisions and recheck even already-finished jobs
+- [x] Use session → manifest → cursor lock order and plain MVCC chunk reads;
+  row-DML revisions, ownership/TRUNCATE guards and cascading cursor invalidation
+- [x] Real PostgreSQL process-resume, concurrent cursor, corruption/drift,
+  failure/cancellation/retry and observed lock-order tests pass under race ×3
+- [x] Final local Go/PG353 PASS/0FAIL/0SKIP; vet/build/modverify/race and diff checks PASS
+- [x] Independent frozen-source review: no blocking issue; no extra independent
+  database run claimed for this review
+- [x] Mandatory PostgreSQL CI list includes all eight comparison tests; existing
+  race gate covers them; verify current exact-head results in PR12
+- [ ] Generation-preserving bounded rebuild for stale/legacy-prefix shadows,
+  fixed-size native state and eventual verified read-version cutover
+
+Report: `docs/RPT-2026-10-03-native-shadow-bounded-comparison.md`.
+Comparison leaves original session JSON and existing chunks unchanged. PostgreSQL
+large-value memory, production resources and the original OOM remain open.

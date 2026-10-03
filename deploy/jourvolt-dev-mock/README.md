@@ -381,3 +381,39 @@ storage/write cost and does not close the OOM issue. Native events normally appe
 one sample and therefore one chunk row. The new index/migration takes ordinary
 DDL locks. See `docs/RPT-2026-10-03-native-detail-shadow-chunks.md` for the isolated
 334-test evidence, replay/rollback/process-death coverage and remaining gates.
+
+
+### Explicit bounded native-shadow comparison
+
+`JOURVOLT_AUDIT_NATIVE_SHADOW=1` selects a one-batch maintenance command. It requires
+an explicit `DATABASE_URL` for an already-migrated database, plus
+`JOURVOLT_SHADOW_AUDIT_USER_ID`, `JOURVOLT_SHADOW_AUDIT_VEHICLE_ID` and
+`JOURVOLT_SHADOW_AUDIT_PUBLIC_ID`. Invoke the API binary once; it prints a small
+JSON progress result and exits before startup migrations, providers or listeners.
+Do not enable the summary-backfill maintenance flag at the same time.
+
+The first call starts at zero. Continue with the same scope and set
+`JOURVOLT_SHADOW_AUDIT_JOB_ID` to the returned `job_id`; the stored cursor supplies progress. Each call
+compares at most 16 chunks and 4,096 samples, reading at most 1MiB of encoded
+chunk payload into Go under a five-second database context. Equality checks bind
+that payload back to PostgreSQL, so bidirectional payload traffic can reach 2MiB
+plus overhead. Only one bounded chunk is handled at a time.
+PostgreSQL's legacy JSON detoasting/slicing remains outside these Go transfer caps.
+
+Comparison verifies each chunk's SHA/count/order and exact JSONB sample equality.
+Only completed, current native coverage from creation is eligible. Partial or
+stale shadows need a future explicit rebuild into a new generation. Original
+session data and existing chunks remain unchanged; only the audit checkpoint is
+written. A failed batch does not advance its checkpoint. Treat commit errors as
+uncertain outcomes and re-read durable progress when retrying.
+
+`verified_at_revisions=true` means comparison completed at the returned source
+and content revisions. A completed-job retry rechecks freshness. Ordinary chunk
+mutations increment the content revision; ownership moves and TRUNCATE are
+rejected. Deleting a manifest/session removes its old cursors by foreign-key
+cascade. Privileged counter resets, disabled triggers/schema replacement and
+direct cursor edits are outside the application guarantee. This is not a device
+ACK, permanent archive certificate, automatic repair or read cutover.
+
+See `docs/RPT-2026-10-03-native-shadow-bounded-comparison.md` for actual process
+resume, concurrency/cancellation/rollback tests, lock ordering and remaining work.

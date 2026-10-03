@@ -1064,6 +1064,14 @@ func main() {
 	if dsn == "" {
 		dsn = "postgres://jourvolt:jourvolt@127.0.0.1:5432/jourvolt?sslmode=disable"
 	}
+	if os.Getenv("JOURVOLT_AUDIT_NATIVE_SHADOW") == "1" {
+		// Explicit maintenance only: use an already-migrated database and exit
+		// before schema startup, provider configuration or network listeners.
+		if err := runNativeShadowAudit(ctx, os.Getenv, os.Stdout); err != nil {
+			log.Fatal("native shadow comparison failed; verify scope, revisions and chunk integrity")
+		}
+		return
+	}
 	if os.Getenv("JOURVOLT_BACKFILL_HISTORY_SUMMARIES") == "1" {
 		// Maintenance assumes the upgraded schema already exists. Do not run
 		// unrelated startup migrations, provider setup or listeners for a batch.
