@@ -288,7 +288,8 @@ completion. Summary revision tracks payload writes/backfill, not archive content
 hashes: an identical import may advance it, while deduplicated QoS1 events do not.
 
 Backfill bounds rows and duration, not the size of one legacy JSON value inside
-PostgreSQL. Bounded chunk persistence, manifest/checksum versions, broker/database restart
+PostgreSQL. Native-session shadow chunks and their encoding/checksum metadata are
+described below. General archive/chunk read cutover, broker/database restart
 qualification, and production/realistic-network/long-duration RSS and physical-I/O
 measurements remain pending. Isolated process and synthetic matrix evidence is
 described below.
@@ -335,3 +336,48 @@ query overhead and are not physical disk I/O. Same-host PostgreSQL process-tree 
 is optional: set `JOURVOLT_TEST_POSTGRES_PID` to the isolated postmaster PID and
 `JOURVOLT_TEST_CLK_TCK` to `getconf CLK_TCK`; when the DB runs in a separate container
 or host, this metric remains unavailable. Never substitute zero for missing data.
+
+
+### Native session detail shadow chunks
+
+Native PostgreSQL ingestion now appends a comparison copy of its derived route
+or charge samples to `jourvolt_telemetry_detail_shadow` and
+`jourvolt_telemetry_detail_chunks`, in the same transaction as event deduplication,
+latest values, session JSON and summary. Each JSON-array chunk is capped at 256
+samples and 65,536 encoded bytes, with SHA-256/count checks and composite tenant
+foreign keys. The ingest writer only inserts chunk rows. This is not a complete
+raw-event archive, and legacy full-detail reads remain authoritative.
+
+Newly inserted sessions can have coverage from creation. Existing sessions only
+shadow new samples and record their missing prefix; an existing zero-point
+session is also explicitly distinguished from a fresh one. A summary revision
+mismatch (including a compatible old writer or backfill) invalidates the comparison
+copy. Later native writes mark it stale and stop extending it without truncating
+legacy ingestion or silently rebuilding history.
+
+A private maintenance inspection can aggregate current state without loading
+sample arrays:
+
+```sql
+SELECT d.stale,
+       d.source_revision=s.history_summary_revision AS revision_matches,
+       d.started_with_session,
+       d.prefix_count=0 AS no_missing_prefix,
+       count(*)
+FROM jourvolt_telemetry_detail_shadow d
+JOIN jourvolt_telemetry_sessions s
+  ON (s.id,s.user_id,s.vehicle_id)=(d.session_id,d.user_id,d.vehicle_id)
+GROUP BY 1,2,3,4;
+```
+
+These flags alone do not establish a recoverable archive. Ordered chunk counts,
+hashes, decoding, supported versions and the session's completion must also be
+validated before any future read cutover or ACK. Arbitrary direct chunk changes
+are outside the ingest writer guarantee. No backfill/rebuild, deletion, retention
+change, chunk API or cold-storage deployment is enabled by this slice.
+
+Current ingestion still decodes and rewrites full session JSON; the shadow adds
+storage/write cost and does not close the OOM issue. Native events normally append
+one sample and therefore one chunk row. The new index/migration takes ordinary
+DDL locks. See `docs/RPT-2026-10-03-native-detail-shadow-chunks.md` for the isolated
+334-test evidence, replay/rollback/process-death coverage and remaining gates.

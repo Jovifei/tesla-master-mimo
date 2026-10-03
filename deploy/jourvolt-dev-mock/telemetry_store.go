@@ -166,7 +166,7 @@ func ensureTelemetrySchema(ctx context.Context, pool *pgxpool.Pool) error {
 	if pool == nil {
 		return errors.New("telemetry schema requires postgres")
 	}
-	_, err := pool.Exec(ctx, telemetrySchema+historySummarySchema)
+	_, err := pool.Exec(ctx, telemetrySchema+historySummarySchema+nativeShadowSchema)
 	return err
 }
 
@@ -280,11 +280,12 @@ func insertDownsampledRoutePoint(ctx context.Context, tx pgx.Tx, ref telemetryVe
 }
 
 func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehicleRef, record telemetryRecord, debounce time.Duration) error {
-	rows, err := tx.Query(ctx, `SELECT id, public_id, kind, started_at, ended_at, stop_candidate_at, odometer_start, odometer_end, energy_added, charge_energy_start, charge_energy_field, route_json, charge_points_json, source, quality_state, quality_reason FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND vehicle_id=$2 AND ended_at IS NULL ORDER BY started_at FOR UPDATE`, ref.UserID, ref.VehicleID)
+	rows, err := tx.Query(ctx, `SELECT id, public_id, kind, started_at, ended_at, stop_candidate_at, odometer_start, odometer_end, energy_added, charge_energy_start, charge_energy_field, route_json, charge_points_json, source, quality_state, quality_reason, history_summary_revision FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND vehicle_id=$2 AND ended_at IS NULL ORDER BY started_at FOR UPDATE`, ref.UserID, ref.VehicleID)
 	if err != nil {
 		return err
 	}
 	snapshot := telemetrySessionMachineSnapshot{}
+	previousRevisions := make(map[string]int64)
 	for rows.Next() {
 		var id, kind string
 		var publicID int
@@ -296,13 +297,21 @@ func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehi
 		var routeJSON []byte
 		var chargePointsJSON []byte
 		var source, qualityState, qualityReason string
-		if err := rows.Scan(&id, &publicID, &kind, &startedAt, &endedAt, &stopCandidate, &odometerStart, &odometerEnd, &energyAdded, &chargeEnergyStart, &chargeEnergyField, &routeJSON, &chargePointsJSON, &source, &qualityState, &qualityReason); err != nil {
+		var revision int64
+		if err := rows.Scan(&id, &publicID, &kind, &startedAt, &endedAt, &stopCandidate, &odometerStart, &odometerEnd, &energyAdded, &chargeEnergyStart, &chargeEnergyField, &routeJSON, &chargePointsJSON, &source, &qualityState, &qualityReason, &revision); err != nil {
 			rows.Close()
 			return err
 		}
 		open := &telemetrySession{ID: id, PublicID: publicID, Kind: kind, StartAt: startedAt, EndAt: endedAt, OdometerStart: odometerStart, OdometerEnd: odometerEnd, EnergyAdded: energyAdded, Source: source, QualityState: qualityState, QualityReason: qualityReason}
-		_ = json.Unmarshal(routeJSON, &open.Route)
-		_ = json.Unmarshal(chargePointsJSON, &open.ChargePoints)
+		if err := json.Unmarshal(routeJSON, &open.Route); err != nil {
+			rows.Close()
+			return fmt.Errorf("decode existing native route: %w", err)
+		}
+		if err := json.Unmarshal(chargePointsJSON, &open.ChargePoints); err != nil {
+			rows.Close()
+			return fmt.Errorf("decode existing native charge samples: %w", err)
+		}
+		previousRevisions[id] = revision
 		if kind == "drive" {
 			snapshot.Drive = open
 		} else if kind == "charge" {
@@ -359,10 +368,19 @@ func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehi
 			if !ok {
 				continue
 			}
-			route, _ := json.Marshal(completed.Route)
-			chargePoints, _ := json.Marshal(completed.ChargePoints)
+			route, err := json.Marshal(completed.Route)
+			if err != nil {
+				return err
+			}
+			chargePoints, err := json.Marshal(completed.ChargePoints)
+			if err != nil {
+				return err
+			}
 			qualityState, qualityReason := classifyTelemetrySession(completed)
 			if _, err := tx.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET ended_at=$1, odometer_start=$2, odometer_end=$3, energy_added=$4, route_json=$5::jsonb, charge_points_json=$6::jsonb, stop_candidate_at=NULL, completion_key=$7, source='telemetry_mqtt', quality_state=$8, quality_reason=$9 WHERE id=$10 AND ended_at IS NULL`, completed.EndAt, completed.OdometerStart, completed.OdometerEnd, completed.EnergyAdded, route, chargePoints, completed.CompletionKey, qualityState, qualityReason, completed.ID); err != nil {
+				return err
+			}
+			if err := appendNativeSessionShadow(ctx, tx, ref, previous, completed, previousRevisions[previous.ID], false); err != nil {
 				return err
 			}
 			continue
@@ -370,8 +388,14 @@ func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehi
 		if open == nil {
 			continue
 		}
-		route, _ := json.Marshal(open.Route)
-		chargePoints, _ := json.Marshal(open.ChargePoints)
+		route, err := json.Marshal(open.Route)
+		if err != nil {
+			return err
+		}
+		chargePoints, err := json.Marshal(open.ChargePoints)
+		if err != nil {
+			return err
+		}
 		if previous == nil {
 			// The in-memory machine is already keyed by user/vehicle, but this
 			// table's primary key is global. Scope only newly created sessions;
@@ -383,7 +407,19 @@ func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehi
 				energyStart, energyField = machine.chargeEnergyStart, machine.chargeEnergyField
 			}
 			qualityState, qualityReason := classifyTelemetrySession(*open)
-			if err := tx.QueryRow(ctx, `INSERT INTO jourvolt_telemetry_sessions(id, user_id, vehicle_id, kind, started_at, odometer_start, energy_added, route_json, charge_points_json, charge_energy_start, charge_energy_field, source, quality_state, quality_reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,'telemetry_mqtt',$12,$13) ON CONFLICT (id) DO UPDATE SET id=EXCLUDED.id WHERE jourvolt_telemetry_sessions.user_id=EXCLUDED.user_id AND jourvolt_telemetry_sessions.vehicle_id=EXCLUDED.vehicle_id AND jourvolt_telemetry_sessions.kind=EXCLUDED.kind AND jourvolt_telemetry_sessions.started_at=EXCLUDED.started_at RETURNING public_id`, open.ID, ref.UserID, ref.VehicleID, open.Kind, open.StartAt, open.OdometerStart, open.EnergyAdded, route, chargePoints, energyStart, energyField, qualityState, qualityReason).Scan(&open.PublicID); err != nil {
+			err := tx.QueryRow(ctx, `INSERT INTO jourvolt_telemetry_sessions(id, user_id, vehicle_id, kind, started_at, odometer_start, energy_added, route_json, charge_points_json, charge_energy_start, charge_energy_field, source, quality_state, quality_reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,'telemetry_mqtt',$12,$13) ON CONFLICT (id) DO NOTHING RETURNING public_id`, open.ID, ref.UserID, ref.VehicleID, open.Kind, open.StartAt, open.OdometerStart, open.EnergyAdded, route, chargePoints, energyStart, energyField, qualityState, qualityReason).Scan(&open.PublicID)
+			if errors.Is(err, pgx.ErrNoRows) {
+				// A matching concurrent/legacy creator is not proof of fresh detail
+				// coverage. Preserve its manifest; reject mismatched ownership.
+				if err := tx.QueryRow(ctx, `SELECT public_id FROM jourvolt_telemetry_sessions WHERE id=$1 AND user_id=$2 AND vehicle_id=$3 AND kind=$4 AND started_at=$5 FOR UPDATE`, open.ID, ref.UserID, ref.VehicleID, open.Kind, open.StartAt).Scan(&open.PublicID); err != nil {
+					return err
+				}
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if err := appendNativeSessionShadow(ctx, tx, ref, nil, *open, 0, true); err != nil {
 				return err
 			}
 			continue
@@ -399,6 +435,9 @@ func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehi
 		}
 		qualityState, qualityReason := classifyTelemetrySession(*open)
 		if _, err := tx.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET stop_candidate_at=$1, odometer_start=$2, odometer_end=$3, energy_added=$4, route_json=$5::jsonb, charge_points_json=$6::jsonb, charge_energy_start=$7, charge_energy_field=$8, source='telemetry_mqtt', quality_state=$9, quality_reason=$10 WHERE id=$11`, candidate, open.OdometerStart, open.OdometerEnd, open.EnergyAdded, route, chargePoints, energyStart, energyField, qualityState, qualityReason, open.ID); err != nil {
+			return err
+		}
+		if err := appendNativeSessionShadow(ctx, tx, ref, previous, *open, previousRevisions[previous.ID], false); err != nil {
 			return err
 		}
 	}

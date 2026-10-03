@@ -3350,3 +3350,26 @@ At large points/concurrency8–16 the sampled handler-driver RSS still reaches
   recovery occurred, and the original OOM/resource limitations remain open
 
 Report: `docs/RPT-2026-10-03-native-identity-idle-finalizer-repair.md`.
+
+
+## Native session detail shadow chunks — 2026-10-03
+
+- [x] Connect bounded native sample-delta writes to the real PostgreSQL ingest
+  transaction, retaining legacy JSON and full-detail reads
+- [x] Bound each chunk to 256 samples/64KiB encoded JSON; persist SHA-256, ordered
+  indices/counts and version/encoding with tenant composite foreign keys
+- [x] Prove fresh insertion before labeling creation coverage; retain explicit
+  missing prefixes for existing sessions and reject malformed legacy decode
+- [x] Detect old-writer/revision mismatch without silent rebase, retain prior
+  chunks and continue authoritative legacy ingestion
+- [x] Isolated local Go/PG334 PASS/0FAIL/0SKIP, vet/build/modverify and race PASS;
+  new boundary/scope/rollback/concurrent replay tests and actual killed-process
+  test cover chunk persistence and reconstruction
+- [x] Mandatory PostgreSQL/race CI gates include the six new native-shadow tests;
+  verify the latest exact-head result in PR12 before merge consideration
+- [ ] Bounded comparison/rebuild, fixed-size native state, read-version negotiation,
+  complete raw-event archive and realistic resource/device/production acceptance
+
+Report: `docs/RPT-2026-10-03-native-detail-shadow-chunks.md`.
+This comparison copy increases storage/write work and still accompanies whole-JSON
+native ingestion. It is not an OOM closure or a complete raw telemetry archive.

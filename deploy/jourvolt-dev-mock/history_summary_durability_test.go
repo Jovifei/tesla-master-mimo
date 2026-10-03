@@ -138,6 +138,10 @@ func TestHistorySummaryPostgresSurvivesKilledProcess(t *testing.T) {
 	if open.Version != 1 || open.ChargeCount != 1 {
 		t.Fatalf("pre-kill summary=%+v", open)
 	}
+	shadowBefore := readNativeShadowEvidence(t, s, telemetryVehicleRef{UserID: user, VehicleID: car})
+	if !shadowBefore.Started || shadowBefore.Stale || shadowBefore.Count != 1 || shadowBefore.Revision != shadowBefore.CurrentRevision {
+		t.Fatalf("pre-kill shadow=%+v", shadowBefore)
+	}
 	if err = child.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
@@ -157,6 +161,10 @@ func TestHistorySummaryPostgresSurvivesKilledProcess(t *testing.T) {
 	}
 	if sessions != 1 || completed != 1 || energy != 6 || closed.Version != 1 || closed.ChargeCount != 2 || closed.Revision <= open.Revision {
 		t.Fatalf("process recovery: sessions=%d completed=%d energy=%v summary=%+v", sessions, completed, energy, closed)
+	}
+	shadowAfter := readNativeShadowEvidence(t, s, telemetryVehicleRef{UserID: user, VehicleID: car})
+	if !shadowAfter.Started || shadowAfter.Stale || !shadowAfter.Ended || shadowAfter.Count != 2 || shadowAfter.Revision != shadowAfter.CurrentRevision || !reflect.DeepEqual(shadowAfter.Samples, shadowAfter.Legacy) || !reflect.DeepEqual(shadowAfter.Samples[:1], shadowBefore.Samples) {
+		t.Fatalf("post-restart shadow=%+v", shadowAfter)
 	}
 	t.Log("PROCESS_RESTART_EVIDENCE killed_after_commit=true fresh_os_process=true qos1_replay_no_rewrite=true completed_sessions=1 energy_baseline_preserved=true broker_restart=false")
 }
