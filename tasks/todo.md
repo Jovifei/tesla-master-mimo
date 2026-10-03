@@ -3428,3 +3428,28 @@ Original JSON, existing ingest shadows and previous generations are preserved.
 Source drift requires a new generation; selection remains conditional on current
 identity/eligibility/revisions. No production migration/backfill, cleanup, deploy
 or merge. Whole-JSON ingest/full-detail reads and the original OOM remain open.
+
+## Compact native transition contract — 2026-10-03
+
+- [x] Write and run legacy reference regressions before the new compact API;
+  preserve the original reducer as the independent differential oracle
+- [x] Add unwired versioned account/vehicle scalar state, 31 explicit timestamp
+  slots, exact sample totals and bounded per-event deltas/completion headers
+- [x] Preserve charge baseline/switching, debounce, completion ordering/identity,
+  null/zero, total-count quality and seeded legacy IDs/public IDs
+- [x] Reject unsupported fields/versions/scope and counter overflow; retain no
+  sample/history/Seen collections and keep input/output ownership independent
+- [x] Compare deterministic cases plus eight seeded 600-event traces after
+  equivalent admission; test long streams and timestamp precision/extreme duration
+- [x] Verify actual PostgreSQL duplicate/out-of-order/tenant admission separately,
+  including stale-first identity reuse and post-insert precision rejection
+- [x] Focused compact plus PostgreSQL admission regressions pass race ×3:
+  51 test/subtest records, zero failures/skips
+- [x] Full isolated Go/PG426 PASS/0FAIL/0SKIP; vet/build/modverify/expanded race PASS;
+  Web13 plus clean install/build PASS; CI requires the actual PostgreSQL admission case
+- [ ] Integrate only after reviewed ownership/source/format/version/bootstrap,
+  transaction-order and legacy-reader compatibility gates; qualify the full pipeline
+
+Report: `docs/RPT-2026-10-03-compact-native-transition.md`.
+No live writer/reader/schema change. Fixed retained state in an unwired core does
+not establish PostgreSQL resource bounds or close the original OOM incident.

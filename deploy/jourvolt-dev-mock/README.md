@@ -452,3 +452,20 @@ may change without a revision bump. Existing full-detail
 reads and live ingestion are unchanged, and the OOM issue remains open.
 See `docs/RPT-2026-10-03-native-shadow-generation-rebuild.md` for the lifecycle,
 isolated evidence, cancellation/locking tests and remaining acceptance work.
+
+### Compact transition core (not wired into ingestion)
+
+`telemetry_compact.go` is a versioned scalar/count transition core for a future
+bounded ingestion path. It holds fixed field watermarks and scalar session state,
+then emits new sample deltas and completion headers without retaining full history.
+It requires canonical events already admitted by durable scoped storage; its
+timestamp checks do not replace event-ID deduplication. Existing PostgreSQL
+ingestion and all detail reads still use their current implementation.
+
+Differential tests compare the common admitted stream against the unchanged legacy
+reducer. Separate PostgreSQL tests distinguish stale rejection before ID insertion
+from guarded timestamp-precision rejection after insertion. Future integration
+must preserve transaction ordering, ownership, typed bootstrap, full source/version
+guards, legacy identities, timestamp precision and complete-reader compatibility.
+See `docs/RPT-2026-10-03-compact-native-transition.md` for the exact contract and
+required gates. This is not an integrated pipeline memory improvement or OOM closure.
