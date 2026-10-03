@@ -3327,3 +3327,21 @@ Stage2 phone acceptance occurred.
 Report: `docs/RPT-2026-10-03-stage2-restart-resource-qualification.md`.
 At large points/concurrency8–16 the sampled handler-driver RSS still reaches
 ~395–417MiB; no claim that the original production OOM is fully closed.
+
+## Native identity and idle-drive timer residual repair — 2026-10-03 (local only)
+
+- [x] Reproduce native global-ID collision with two accounts/vehicles at identical
+  session start; all 10 ingests accepted but second account has no completed history
+- [x] Scope only new native IDs; preserve legacy IDs/public IDs and reject wrong
+  scope conflicts atomically; charge/drive/shared-VIN/legacy/replay probes pass
+- [x] Reproduce existing idle timer `conn busy` on baseline and native-only fix
+- [x] Close bounded due-header reader before UPDATE, preserve exact debounce and
+  raw/identity values, drain 100 per tick and skip/retry locked rows
+- [x] Combined local Go/PG 320 PASS / 0 FAIL / 0 SKIP; vet/build/modverify/race PASS
+- [x] Finalizer independent signoff: repeated real-PG race, concurrent drain,
+  rollback/cancellation/retry and lock-retention probes pass
+- [ ] Durable combined repair/qualification delivery package
+- [ ] Publish these local fixes only when the repository-write blocker is resolved;
+  current remote remains `ad78840` and no deployment or production recovery occurred
+
+Report: `docs/RPT-2026-10-03-native-identity-idle-finalizer-repair.md`.

@@ -663,6 +663,10 @@ func (s *telemetryService) openSessionPostgres(ctx context.Context, userID strin
 	return session, true, nil
 }
 
+// Each timer tick performs one bounded batch; later ticks drain remaining due
+// sessions. Row locks held by ingestion/another finalizer are retried next tick.
+const maxTelemetryFinalizeBatch = 100
+
 func (s *telemetryService) finalizeDuePostgres(ctx context.Context, now time.Time) (int, error) {
 	if s.store == nil || s.store.pool == nil {
 		return 0, nil
@@ -676,32 +680,40 @@ func (s *telemetryService) finalizeDuePostgres(ctx context.Context, now time.Tim
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT id, public_id, started_at, stop_candidate_at FROM jourvolt_telemetry_sessions WHERE kind='drive' AND ended_at IS NULL AND stop_candidate_at IS NOT NULL FOR UPDATE`)
+	rows, err := tx.Query(ctx, `SELECT id, public_id, started_at, stop_candidate_at
+        FROM jourvolt_telemetry_sessions
+        WHERE kind='drive' AND ended_at IS NULL AND stop_candidate_at <= $1
+        ORDER BY stop_candidate_at, id LIMIT $2 FOR UPDATE SKIP LOCKED`, now.Add(-debounce), maxTelemetryFinalizeBatch)
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
-	completed := 0
+	// pgx cannot execute another command until this result is consumed/closed.
+	// Materialize bounded headers only, then keep their row locks until commit.
+	due := make([]telemetrySession, 0, maxTelemetryFinalizeBatch)
 	for rows.Next() {
 		var session telemetrySession
 		var candidate time.Time
 		if err := rows.Scan(&session.ID, &session.PublicID, &session.StartAt, &candidate); err != nil {
+			rows.Close()
 			return 0, err
-		}
-		if now.Before(candidate.Add(debounce)) {
-			continue
 		}
 		end := candidate.Add(debounce)
 		session.Kind, session.EndAt = "drive", &end
+		due = append(due, session)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return 0, err
+	}
+	completed := 0
+	for _, session := range due {
 		key := sessionCompletionKey(session)
-		tag, err := tx.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET ended_at=$1, stop_candidate_at=NULL, completion_key=$2 WHERE id=$3 AND ended_at IS NULL`, end, key, session.ID)
+		tag, err := tx.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET ended_at=$1, stop_candidate_at=NULL, completion_key=$2 WHERE id=$3 AND ended_at IS NULL`, session.EndAt, key, session.ID)
 		if err != nil {
 			return 0, err
 		}
 		completed += int(tag.RowsAffected())
-	}
-	if err := rows.Err(); err != nil {
-		return 0, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, err
