@@ -3392,9 +3392,39 @@ native ingestion. It is not an OOM closure or a complete raw telemetry archive.
   database run claimed for this review
 - [x] Mandatory PostgreSQL CI list includes all eight comparison tests; existing
   race gate covers them; verify current exact-head results in PR12
-- [ ] Generation-preserving bounded rebuild for stale/legacy-prefix shadows,
-  fixed-size native state and eventual verified read-version cutover
+- [x] Generation-preserving bounded rebuild for stale/legacy-prefix shadows
+  (subsequent implementation and evidence below)
+- [ ] Fixed-size native state and eventual verified read-version cutover
 
 Report: `docs/RPT-2026-10-03-native-shadow-bounded-comparison.md`.
 Comparison leaves original session JSON and existing chunks unchanged. PostgreSQL
 large-value memory, production resources and the original OOM remain open.
+
+## Bounded native generation rebuild — 2026-10-03
+
+- [x] Restore the full exact-head checkout/test toolchain and review generation
+  identity, immutability, bounds and locking independently before implementation
+- [x] Add separate preserved generations from completed native source JSON;
+  pin account/vehicle/session/public/completion identity, source revision and count
+- [x] One explicit bounded build or verification phase per invocation, with
+  durable cursor, <=16 chunks, <=256 samples/64KiB UTF-8 each and five-second context
+- [x] Freeze construction before independent comparison from zero; verify
+  hashes/counts/order/JSONB equality and use a generation-bound genesis for empties
+- [x] Atomically select only a fully verified higher-ordinal generation; repeated
+  finished calls revalidate full identity/eligibility without republishing
+- [x] Guard immutable generated chunks/identity while preserving account cascade
+  semantics; acquire generation lock before chunk uniqueness arbitration
+- [x] Real PostgreSQL process/concurrency/scope/drift/bounds tests and observed
+  lock/fault/cancellation/rollback/independent-corruption tests pass under race ×3
+- [x] Final local Go/PG409 PASS/0FAIL/0SKIP; vet/build/modverify/expanded race PASS;
+  Web13 plus clean install/build PASS. Required CI list adds all twelve PG cases
+- [x] Independent source review has no blocking finding; independent isolated
+  PostgreSQL/race run passes 56 records with zero failures/skips
+- [ ] Fixed-size native ingest, versioned generation reads, full raw-event archive,
+  realistic resource/restart/device restore/ACK and production acceptance
+
+Report: `docs/RPT-2026-10-03-native-shadow-generation-rebuild.md`.
+Original JSON, existing ingest shadows and previous generations are preserved.
+Source drift requires a new generation; selection remains conditional on current
+identity/eligibility/revisions. No production migration/backfill, cleanup, deploy
+or merge. Whole-JSON ingest/full-detail reads and the original OOM remain open.

@@ -402,7 +402,7 @@ PostgreSQL's legacy JSON detoasting/slicing remains outside these Go transfer ca
 
 Comparison verifies each chunk's SHA/count/order and exact JSONB sample equality.
 Only completed, current native coverage from creation is eligible. Partial or
-stale shadows need a future explicit rebuild into a new generation. Original
+stale shadows use the separate explicit generation rebuild below. Original
 session data and existing chunks remain unchanged; only the audit checkpoint is
 written. A failed batch does not advance its checkpoint. Treat commit errors as
 uncertain outcomes and re-read durable progress when retrying.
@@ -417,3 +417,38 @@ ACK, permanent archive certificate, automatic repair or read cutover.
 
 See `docs/RPT-2026-10-03-native-shadow-bounded-comparison.md` for actual process
 resume, concurrency/cancellation/rollback tests, lock ordering and remaining work.
+
+### Explicit generation rebuild and verification
+
+For completed native histories with missing/prefix/stale ingest shadows, use
+`JOURVOLT_REBUILD_NATIVE_SHADOW=1` with an explicit `DATABASE_URL`,
+`JOURVOLT_SHADOW_REBUILD_USER_ID`, `JOURVOLT_SHADOW_REBUILD_VEHICLE_ID` and
+`JOURVOLT_SHADOW_REBUILD_PUBLIC_ID`. The database must already be migrated.
+Invoke once per batch; resume by setting `JOURVOLT_SHADOW_REBUILD_GENERATION_ID`
+to its returned `generation_id`. Mixed rebuild/comparison/backfill flags reject.
+Normal startup never scans or rebuilds history automatically.
+
+Each call performs either building or verification, with at most 16 chunks,
+256 samples/65,536 UTF-8 bytes per chunk, 1MiB payload entering Go and a shared
+five-second database context. Payload is sent back for insertion/comparison,
+so bidirectional traffic can reach 2MiB plus overhead. Oversized source slices
+are reduced inside PostgreSQL; an oversized single sample fails. PostgreSQL
+JSONB work is not bounded by these transfer caps.
+
+Build completion freezes an independent generation. Verification starts from
+zero on a later call and checks ordered counts, hashes and JSONB equality.
+Only complete verification atomically advances the scoped selection pointer,
+and a lower ordinal cannot replace a higher one. `phase=verified` can therefore
+coexist with `selected_at_revisions=false`. Repeating a finished generation
+rechecks freshness without republishing it. Every new start creates a distinct
+preserved candidate; there is no automatic cleanup.
+
+Raw JSON, ingest shadows and older generations remain unchanged. Source drift
+requires a new generation. Generated chunks and identity are immutable, while
+existing account-deletion cascades retain their semantics. A selection is valid
+at recorded revisions; future readers must revalidate full pinned identity,
+eligibility and both revisions, including timestamps/completion identity that
+may change without a revision bump. Existing full-detail
+reads and live ingestion are unchanged, and the OOM issue remains open.
+See `docs/RPT-2026-10-03-native-shadow-generation-rebuild.md` for the lifecycle,
+isolated evidence, cancellation/locking tests and remaining acceptance work.

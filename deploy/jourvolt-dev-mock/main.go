@@ -1064,6 +1064,12 @@ func main() {
 	if dsn == "" {
 		dsn = "postgres://jourvolt:jourvolt@127.0.0.1:5432/jourvolt?sslmode=disable"
 	}
+	if os.Getenv("JOURVOLT_REBUILD_NATIVE_SHADOW") == "1" {
+		if err := runNativeShadowRebuild(ctx, os.Getenv, os.Stdout); err != nil {
+			log.Fatal("native shadow rebuild failed; verify scope, source revision and generation integrity")
+		}
+		return
+	}
 	if os.Getenv("JOURVOLT_AUDIT_NATIVE_SHADOW") == "1" {
 		// Explicit maintenance only: use an already-migrated database and exit
 		// before schema startup, provider configuration or network listeners.
