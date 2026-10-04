@@ -1228,14 +1228,21 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 				if point.Date != "" {
 					item["date"] = point.Date
 				}
+				if level := observedRouteBatteryLevel(point.BatteryLevel); level != nil {
+					item["battery_level"] = *level
+				}
 				route = append(route, item)
 			}
 		} else {
 			for _, point := range session.Route {
-				route = append(route, map[string]any{
+				item := map[string]any{
 					"date": point.ObservedAt.UTC().Format(time.RFC3339), "latitude": point.Latitude, "longitude": point.Longitude,
 					"speed": point.Speed, "power": point.Power, "heading": point.Heading,
-				})
+				}
+				if level := observedRouteBatteryLevel(point.BatteryLevel); level != nil {
+					item["battery_level"] = *level
+				}
+				route = append(route, item)
 			}
 		}
 		result["drive_details"] = route

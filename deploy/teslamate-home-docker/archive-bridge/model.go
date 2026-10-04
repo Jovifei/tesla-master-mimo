@@ -41,12 +41,13 @@ type DriveRecord struct {
 }
 
 type RoutePoint struct {
-	Date      *time.Time `json:"date"`
-	Latitude  *float64   `json:"latitude"`
-	Longitude *float64   `json:"longitude"`
-	Speed     *float64   `json:"speed"`
-	Power     *float64   `json:"power"`
-	Heading   *float64   `json:"heading"`
+	Date         *time.Time `json:"date"`
+	Latitude     *float64   `json:"latitude"`
+	Longitude    *float64   `json:"longitude"`
+	Speed        *float64   `json:"speed"`
+	Power        *float64   `json:"power"`
+	Heading      *float64   `json:"heading"`
+	BatteryLevel *int       `json:"battery_level,omitempty"`
 }
 
 type ChargeRecord struct {

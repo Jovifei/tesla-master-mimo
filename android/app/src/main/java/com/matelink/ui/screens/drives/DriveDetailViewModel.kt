@@ -346,11 +346,9 @@ internal fun calculateDriveDetailStats(
     val elevationMin = elevations.minOrNull()
     val (elevationGain, elevationLoss) = calculateElevationChangeOrNull(elevations)
 
-    val batteryLevels = positions.mapNotNull { it.batteryLevel?.takeIf { value -> value in 0..100 } }
-    val batteryStart = batteryLevels.firstOrNull()
-        ?: detail.startBatteryLevel?.takeIf { it in 0..100 }
-    val batteryEnd = batteryLevels.lastOrNull()
-        ?: detail.endBatteryLevel?.takeIf { it in 0..100 }
+    val batteryEndpoints = observedDriveBatteryEndpoints(detail)
+    val batteryStart = batteryEndpoints.start
+    val batteryEnd = batteryEndpoints.end
     val batteryUsed = if (batteryStart != null && batteryEnd != null) {
         (batteryStart - batteryEnd).takeIf { it >= 0 }
     } else {

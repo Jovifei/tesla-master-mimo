@@ -310,12 +310,13 @@ type telemetrySnapshot struct {
 }
 
 type telemetryRoutePoint struct {
-	ObservedAt time.Time
-	Latitude   float64
-	Longitude  float64
-	Speed      *float64
-	Power      *float64
-	Heading    *float64
+	ObservedAt   time.Time
+	Latitude     float64
+	Longitude    float64
+	Speed        *float64
+	Power        *float64
+	Heading      *float64
+	BatteryLevel *int `json:",omitempty"`
 }
 
 func downsampleRoutePoints(points []telemetryRoutePoint, minInterval time.Duration) []telemetryRoutePoint {
@@ -737,6 +738,13 @@ func cloneTelemetrySession(value *telemetrySession) *telemetrySession {
 	}
 	copyValue := *value
 	copyValue.Route = append([]telemetryRoutePoint(nil), value.Route...)
+	for index := range copyValue.Route {
+		copyValue.Route[index].BatteryLevel = cloneInt(value.Route[index].BatteryLevel)
+	}
+	copyValue.ArchiveRoute = append([]historyImportRoutePoint(nil), value.ArchiveRoute...)
+	for index := range copyValue.ArchiveRoute {
+		copyValue.ArchiveRoute[index].BatteryLevel = cloneInt(value.ArchiveRoute[index].BatteryLevel)
+	}
 	copyValue.ChargePoints = cloneTelemetryChargePoints(value.ChargePoints)
 	return &copyValue
 }

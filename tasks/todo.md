@@ -3508,3 +3508,15 @@ legacy whole-array paths and original OOM acceptance remain open.
 - [ ] 根据实机类别修具体持续同步根因；OAuth/TPMS/metrics等独立候选保持原样，不能夹带未完成门禁的内容。
 
 经验与精确补丁身份：docs/BUG-REPAIR-2026-10-04-phone-history-stale.md。PC未登录401、当前Wi-Fi连通或单次新日期显示，都不能证明手机持续认证读取成功。
+
+# 2026-10-04 电量前向保真与逐页源链
+
+- [x] 对照新的源/云/2xx详情证据，确认SOC在桥接与类型化DTO被丢弃；开始/结束/已用百分点与充电输入kWh分开。
+- [x] Go字段链先红后绿，主分支隔离PG/race481/481、旧781+identity底座258/258；无Stage2列、无新schema，列表不读完整路线。
+- [x] 独立审查识别单点虚报0，已接入按真实时间保留未知边界的选择器；完整Android/实机门禁仍待执行。
+- [x] 形成历史页面source→存储→API→计算→widget核查表，确认最高速度/充电已用/驻车硬编码和月柱值未绘制。
+- [ ] 完成整片独立审查与原分支发布；最小API/bridge/App保护部署由明确源码清单与对应验收控制，不部署整Stage2。
+- [ ] 历史SOC补齐先生成限定两条记录的私有只读清单/备份/哈希对比/回滚方案；尚未执行，不重置游标或广泛重导。
+- [ ] 充电输入kWh、持久最高速度/SOC摘要、时长精度、月柱展示、真实驻车pair与缓存证据分别推进；44汇总与被拒scope经验保持独立。
+
+经验与核查入口：`docs/BUG-REPAIR-2026-10-04-battery-source-contract.md`、`docs/RPT-2026-10-04-history-source-audit.md`。

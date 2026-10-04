@@ -555,7 +555,7 @@ func (s *telemetryService) historyPostgres(ctx context.Context, userID string, v
 				if err != nil {
 					continue
 				}
-				session.Route = append(session.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading})
+				session.Route = append(session.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading, BatteryLevel: cloneInt(observedRouteBatteryLevel(point.BatteryLevel))})
 			}
 		} else {
 			_ = json.Unmarshal(routeJSON, &session.Route)
@@ -609,7 +609,7 @@ func (s *telemetryService) historyDetailPostgres(ctx context.Context, userID str
 			if parseErr != nil {
 				continue
 			}
-			session.Route = append(session.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading})
+			session.Route = append(session.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading, BatteryLevel: cloneInt(observedRouteBatteryLevel(point.BatteryLevel))})
 		}
 	} else if err := json.Unmarshal(routeJSON, &session.Route); err != nil {
 		return telemetrySession{}, false, err
