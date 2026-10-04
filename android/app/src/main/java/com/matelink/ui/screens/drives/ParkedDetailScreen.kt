@@ -40,7 +40,6 @@ import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.theme.StatusWarning
 import com.matelink.data.api.models.ParkedDetailData
 import com.matelink.util.formatCompactDateTimeRange
-import com.matelink.util.toChineseDisplayAddress
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,7 +95,7 @@ private fun ParkedDetailContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = data.address.toChineseDisplayAddress() ?: stringResource(R.string.unknown_location),
+            text = parkedAddressLabel(data.address) ?: stringResource(R.string.unknown_location),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )

@@ -513,7 +513,7 @@ class DrivesViewModel @Inject constructor(
                     val drivesInMonth = drivesByMonth[key] ?: emptyList()
                     result.add(
                         createChartPoint(
-                            label = firstDay.formatMonthYear(Locale.getDefault()),
+                            label = firstDay.formatMonthYear(Locale.getDefault(), includeYear = start.year != end.year),
                             sortKey = key,
                             drives = drivesInMonth
                         )

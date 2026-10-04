@@ -221,6 +221,11 @@ private fun DriveDetailContent(
     ) {
         HistoryReadNotices(localArchiveLinkPending, historySyncWarning)
 
+        // Map showing the route
+        if (!detail.positions.isNullOrEmpty()) {
+            DriveMapCard(positions = detail.positions, routeColor = routeColor)
+        }
+
         // Route header card
         RouteHeaderCard(detail = detail)
 
@@ -355,11 +360,6 @@ private fun DriveDetailContent(
                     )
                 )
             }
-        }
-
-        // Map showing the route
-        if (!detail.positions.isNullOrEmpty()) {
-            DriveMapCard(positions = detail.positions, routeColor = routeColor)
         }
 
         // Weather along the way - shown when loading or has data

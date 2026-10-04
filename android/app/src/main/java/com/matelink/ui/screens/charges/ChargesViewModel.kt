@@ -651,7 +651,7 @@ class ChargesViewModel @Inject constructor(
                     val chargesInMonth = chargesByMonth[key] ?: emptyList()
                     result.add(
                         createChargeChartPoint(
-                            label = firstDay.formatMonthYear(Locale.getDefault()),
+                            label = firstDay.formatMonthYear(Locale.getDefault(), includeYear = start.year != end.year),
                             sortKey = key,
                             charges = chargesInMonth,
                             dcChargeIds = _uiState.value.dcChargeIds

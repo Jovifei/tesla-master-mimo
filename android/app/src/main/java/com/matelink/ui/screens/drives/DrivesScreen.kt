@@ -422,8 +422,7 @@ private fun createParkedSegment(
         startDate = startDate,
         endDate = endDate,
         durationMin = durationMin,
-        location = olderDrive.endAddress?.takeIf { it.isNotBlank() }
-            ?: newerDrive.startAddress?.takeIf { it.isNotBlank() }
+        location = parkedAddressLabel(olderDrive.endAddress, newerDrive.startAddress)
     )
 }
 
