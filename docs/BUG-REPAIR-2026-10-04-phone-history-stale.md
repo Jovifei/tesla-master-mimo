@@ -1,13 +1,13 @@
 # 2026-10-04 手机历史停在旧日期：诊断与读取链修复
 
-当前状态（2026-10-04 08:10 UTC）：首次安装 42 显示新日期后，07:51 再现 history_context 读取失败。持续同步仍未闭合；43 是安全诊断和未知 SOC 缓存修复候选，需本机完整 Android 与真实复验，不能把首次成功当稳定恢复。
+当前状态（2026-10-04 09:06 UTC）：43 已完成本机完整 Android 门禁并同证书保数据升级；本轮行程/充电详情分别成功读取 2189/38 个真实样本，未知行程 SOC 不再显示 0%，充电显示 97%→100%。本轮未复现此前间歇失败，具体根因及持续同步仍未闭合，不能用成功样本抹去 07:51 的失败证据。
 
 
 ## 结论与证据边界
 
 2026-10-04 实机在“全部时间”下仍显示 10 月 1 日行程、9 月 29 日充电，并提示云端历史同步失败、当前显示本地缓存。下拉刷新及改选近 7 天均未恢复。与此同时，隔离于手机 UI 的只读核对显示源数据库、Archive Bridge 与云端有效绑定的完成记录数量和最新时间一致。因此，本次已定位到手机的认证读取/车辆发现/展示链，不能归因于 Bridge 丢失后三天的数据。
 
-目前没有取得可归属于此次请求的服务端或手机 HTTP 状态证据，尚不能断言实际失败的是 `/cars`、`/drives` 或 `/charges`，也不能断言本次修复已让真机恢复。下述门禁是已确认的源码缺陷，现场验收仍须在保留登录、历史和配置的原安装上执行。
+最初诊断没有可归属于失败请求的 HTTP 状态；后来定位到 history_context 的无 HTTP 错误，但仍未捕获具体异常类别。下述门禁是已确认的源码缺陷；后续 42 的首次成功、07:51 复发和 43 本轮详情成功分别记载，均在保留登录、历史和配置的原安装上验证。
 
 ## 现场只读核对（UTC）
 
@@ -96,6 +96,24 @@ Android **2.1.23/build42 候选**在该后端提交上冻结 38 个文件，真�
 
 独立审查冻结的11文件补丁SHA-256为67a2f61dfd218793a5a2ffa719f27b9b523b62a4cb7a06722ead1e70508d1923；manifest为5c046687c865f511c13ec18b18d8f2532f68ceb4efab1e144146e9b0d454e747。独立重新编译执行61/61便携Kotlin检查通过，包括实际Unified编排和固定错误类别；这些测试有平台/codec边界替身，不是完整Android合格证。受控旧逻辑丢typed error的16项回归有1项失败；SOC旧接线红、修后绿。
 
-PC还必须执行HistoryCachedSocTest的3项真实JSON/KSP检查及完整Gradle/Hilt/Compose/Room/Lint/R8，核正式origin、非mock、签名/APK后保数据覆盖。随后复验同正常会话中列表→行程/充电详情→返回/前台多次读取，只查看安全类别与sample count，确认未知SOC不再为0；错误分类结果决定下一修复，不无证据重复授权。
+候选的本机门禁要求执行HistoryCachedSocTest的3项真实JSON/KSP检查及完整Gradle/Hilt/Compose/Room/Lint/R8，核正式origin、非mock、签名/APK后保数据覆盖，再复验正常会话的列表/详情/返回/前台读取。这些本轮结果见下节；尚未捕获的新失败类别仍决定后续根因修复，不无证据重复授权。
 
-43保留原branch已审UI14（579c607，CI37186681916通过），但不混入尚未发布的OAuth6文件、TPMS迁移、metrics字段/曲线或持久标量投影候选。新后端、bridge、生产数据回填仍需各自明确授权。版本、发布提交、APK与持续复验结果必须分别记录，尚无新包成功结论。
+43保留原branch已审UI14（579c607，CI37186681916通过），但不混入尚未发布的OAuth6文件、TPMS迁移、metrics字段/曲线或持久标量投影候选。新后端、bridge、生产数据回填仍需各自明确授权。版本、发布提交、APK与持续复验结果分别记录，详情本轮成功不等于全部遗留问题关闭。
+
+## 08:59–09:06 UTC：43 本机完整验证与成功详情样本
+
+源码为 `7f9038acaadb0b849e97d6b3ad50178a81e8f152`，tree `ae3b74a54b061d13ed00869e61050ffe20e7bd34`。精确 [CI 37188637309](https://github.com/Jovifei/tesla-master-mimo/actions/runs/37188637309) 为 Go/PG 478、Web 13、8 个合成资源场景通过；该 CI 本身不编译 Android。
+
+本机唯一 tracked 差异是 `HistoryRefreshIntegrationContractTest.source()` 的 `.readText().replace("\r\n", "\n")`，本次原样回传。旧测试在 Windows CRLF checkout 下有两项多行字符串断言失败，生产源码没有变化；规范化后整组与完整套件通过。这是源码文本测试的跨平台修正，不应通过改 ViewModel 缩进或弱化业务断言处理。
+
+- 聚焦真实测试 24 项通过：安全异常 4、实际发现恢复 16、真实 JSON 缓存 SOC 3、详情 SOC 接线 1，零失败/跳过
+- 完整 Debug 634 通过；Release 626 通过、8 个 DEBUG 专用 fixture 跳过，零失败/错误。Hilt、Compose、Room、KSP、R8 与 APK 构建通过；两种 lint 0 errors/fatal，Debug 261 warnings、Release 241 warnings，不称警告已清零或无退化
+- 实际 APK 为 `com.matelink` 2.1.24/build43；正式 API origin、非 mock 经 APK 入口反编译核验。APK SHA-256：`62fdebca1513f411bbf26fb4cc7b4206bcb61b99c7deb6e298c660c1bc945a1e`；证书 SHA-256：`9ab144e824abf26a5941819abb06831288c36a8bfe622657e3dc9d88281fc774`
+- 08:59 UTC `adb install -r` 成功，已安装 APK hash 匹配；首装时间仍为 `2026-08-31 22:36:47`，原会话直接进入，未卸载、清数据或重授权
+- 10 月 4 日 13:58–14:11 行程：两次 `drive_detail / 2xx / success / sample_count=2189`，速度曲线卡出现，首末未知 SOC 为“暂无数据”，不再误显示 0%
+- 10 月 3 日 16:41–16:53 充电：`charge_detail / 2xx / success / sample_count=38`，SOC 97%→100%，电量与功率曲线卡出现
+- 返回、前台和正常刷新观察保留最新日期，本轮没有捕获失败类别。收尾发生额外详情切换，原列表是否恢复未确认，因此停止追加触控；不把旧 UI 快照当当前结果
+
+本机证据目录为 `tasks/android-diagnostic43-20261004/`：`VERIFIED.md`、`full-build-summary.json`、`phone-install-receipt.json`、`windows-source-contract.patch`。这些原始验收文件保存在执行电脑，不假称已随本提交上传。源码身份需写成 7f9038a 加上述测试一行，不能称未修改工作树；生产 APK 代码仍为 7f9038a。
+
+剩余：此前 history_context 间歇性 transport_or_decode 的具体原因未查明；本轮没有失败可供分型。行程旧归档缺逐点 SOC、汇总缺值/时长精度、旧本机费用关联、TPMS 与 OAuth 各自继续独立修复。此次未再部署后端、重导真实数据或启用 Stage2。

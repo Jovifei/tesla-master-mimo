@@ -3478,10 +3478,10 @@ Report: `docs/RPT-2026-10-03-compact-bootstrap-contract.md`.
 - [x] 对照源、Bridge、云端和手机现场：云端完成记录与源相符，手机全部时间仍回退旧缓存；实际失败的 HTTP 阶段尚未取得证据。
 - [x] 复核 Docs 中 10 月 1 日游标挂载故障和 10 月 2 日 API OOM 经验；此次不把健康响应或分支验证当成生产修复。
 - [x] 新增认证且只读的持久车辆历史身份接口，保留租户隔离；原分支全 Go/PG/race 478 项通过、零失败/跳过。精确 `781c4025` 加两生产文件的小补丁在全新旧 schema 上 Go/PG/race 272 项通过、零失败/跳过；不携 Stage2 schema。
-- [x] Android 2.1.23/build42 候选完成已认证 origin 历史上下文、列表/详情共同费用身份、刷新与安全错误分类；真实 Kotlin 分层回归 55 项通过，完整 Android 构建仍待本机工具链。
-- [ ] 完整 Android 测试、Lint、正式构建；保留原账号/历史/配置覆盖安装后，验收全部时间可见 10 月 4 日行程及 10 月 3 日充电。若仍失败，按请求阶段/HTTP 分类继续定位。
+- [x] Android 2.1.23/build42 候选完成已认证 origin 历史上下文、列表/详情共同费用身份、刷新与安全错误分类；分层55项通过，后续完整本机验收见下节。
+- [x] 完整 Android 测试、Lint、正式构建及原包升级见下节：首次全部时间可见新记录，07:51复发后继续43诊断；不将此勾选视为持续同步根因关闭。
 - [x] 后端六文件原分支提交 `c7eaa973`，精确 CI `37179570728` 通过（Go/PG478、Web13及既有资源场景）；与仅781基线两文件的生产候选严格区分。
-- [ ] Android 候选原分支提交、精确 CI 与本机完整构建；PR12 交接不以分层或合成测试替代真机恢复。
+- [x] Android候选原分支fed2536、447260a、579c607、7f9038a及对应精确CI/本机门禁分别留证；PR12描述仍有单独审批阻断，不能以分层测试替代真机验收。
 
 Report: `docs/BUG-REPAIR-2026-10-04-phone-history-stale.md`。未完成的 compact bridge B 候选已独立冻结，不混入此次同步修复。
 The helper does not activate scopes or improve live ingestion by itself. The
@@ -3502,7 +3502,9 @@ legacy whole-array paths and original OOM acceptance remain open.
 - [x] 保留42首次显示新日期的真实验收，补记07:51同包再现history_context/httpnone；持续恢复重新打开。
 - [x] 确认typed error在诊断端口丢失；两个详情fallback将Room占位0当实际SOC，复用证据mapper修复。
 - [x] 最小11文件源码独立审查、61便携回归通过；版本/断言/中英说明同步2.1.24/build43，无生产变更、无数据迁移。
-- [ ] 本机真实JSON/KSP三项及完整Android门禁、同证书保数据覆盖与反复详情/前台读取，取得安全错误类别。
+- [x] 7f9038a精确CI通过；本机真实JSON/KSP三项、聚焦24、Debug634、Release626/8预期跳过及完整构建通过。唯一测试差异是CRLF规范化，本次回传。
+- [x] 2.1.24/build43同证书保数据安装；行程两次2xx/2189采样、充电2xx/38采样，速度/充电曲线卡出现；未知行程SOC为暂无，充电97→100%。APK与证书身份见经验文档。
+- [ ] 本轮没有捕获新的失败类别，07:51间歇故障具体根因仍待安全诊断证据；收尾原列表恢复未确认，不宣称全部复验完成。
 - [ ] 根据实机类别修具体持续同步根因；OAuth/TPMS/metrics等独立候选保持原样，不能夹带未完成门禁的内容。
 
 经验与精确补丁身份：docs/BUG-REPAIR-2026-10-04-phone-history-stale.md。PC未登录401、当前Wi-Fi连通或单次新日期显示，都不能证明手机持续认证读取成功。

@@ -435,3 +435,4 @@
 - 错误诊断端口保留typed category，HTTP为空不能把DNS/TLS/JSON/EOF一律合并。固定枚举与安全阶段足够，禁止异常正文/响应体/URL/身份进入日志。
 - Room的非空数值占位不是API观测；离线详情复用原证据mapper，未知null和真实0单独验，不能靠Int字段是否为0判断已观测。
 - Portable测试不能替代生成JSON adapter、Room、Hilt、Compose或APK验证；版本号、源码、签名、安装与真实复验各自记录。
+- 源码文本契约测试先把CRLF规范成LF，再保留完整多行断言；Windows失败不应通过修改业务源码或降低断言处理。验收若用了这一行测试修正，记录准确构建差异并回传原分支。
