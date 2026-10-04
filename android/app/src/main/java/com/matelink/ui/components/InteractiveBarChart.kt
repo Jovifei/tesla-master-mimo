@@ -1,11 +1,14 @@
 package com.matelink.ui.components
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -17,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +33,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -61,145 +66,161 @@ fun InteractiveBarChart(
     barColor: Color = MaterialTheme.colorScheme.primary,
     labelColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     showEveryNthLabel: Int = 1,
+    showBarValues: Boolean = false,
     valueFormatter: (Double) -> String = { "%.0f".format(it) },
     yAxisFormatter: (Double) -> String = { if (it >= 1000) "%.0fk".format(it / 1000) else "%.0f".format(it) }
 ) {
     if (data.isEmpty()) return
 
     val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
     val maxValue = data.maxOfOrNull { it.value } ?: 1.0
+    val scroll = rememberScrollState()
+    val labelStyle = TextStyle(fontSize = 9.sp)
+    val valueStyle = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Medium)
+    val monthSizes = data.map { textMeasurer.measure(it.label, labelStyle).size }
+    val valueLayouts = if (showBarValues) data.map { textMeasurer.measure(it.displayValue, valueStyle) } else emptyList()
+    val axisWidth = listOf(yAxisFormatter(maxValue), yAxisFormatter(0.0)).maxOf {
+        textMeasurer.measure(it, labelStyle).size.width
+    }.toFloat()
 
-    // Reset selection when data changes to avoid IndexOutOfBoundsException
-    var selectedBarIndex by remember(data) { mutableStateOf<Int?>(null) }
-    var tooltipPosition by remember(data) { mutableStateOf(Offset.Zero) }
-    var containerWidth by remember { mutableStateOf(0f) }
+    BoxWithConstraints(modifier = modifier) {
+        val viewportWidth = with(density) { maxWidth.toPx() }
+        val geometry = with(density) {
+            barChartGeometry(
+                viewportWidth, data.size, maxOf(axisWidth, 24.dp.toPx()),
+                monthSizes.maxOf { it.width }.toFloat(),
+                valueLayouts.maxOfOrNull { it.size.width }?.toFloat() ?: 0f,
+                maxOf(monthSizes.maxOf { it.height }.toFloat(), 12.dp.toPx()),
+                valueLayouts.maxOfOrNull { it.size.height }?.toFloat() ?: 0f,
+                48.dp.toPx(), 100.dp.toPx(), 8.dp.toPx(), showBarValues
+            )
+        }
+        // Geometry changes (font scale, rotation, data) invalidate any old hit target.
+        var selectedBarIndex by remember(data, geometry) { mutableStateOf<Int?>(null) }
+        LaunchedEffect(scroll.value) { selectedBarIndex = null }
+        Box(Modifier.horizontalScroll(scroll, enabled = showBarValues)) {
+            Canvas(
+                modifier = Modifier
+                    .width(with(density) { geometry.contentWidth.toDp() })
+                    .height(with(density) { geometry.totalHeight.toDp() })
+                    .pointerInput(data, geometry) {
+                        detectTapGestures { offset ->
+                            val index = geometry.hit(offset.x, data.size)
+                            selectedBarIndex = if (selectedBarIndex == index) null else index
+                        }
+                    }
+            ) {
+                val yAxisWidth = geometry.axisWidth
+                val barWidth = geometry.columnWidth
+                val maxBarHeight = geometry.plotHeight
+                val baseline = geometry.baseline
 
-    Box(modifier = modifier) {
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .onGloballyPositioned {
-                    containerWidth = it.size.width.toFloat()}
-                .height(120.dp)
-                .pointerInput(data) {
-                    val yAxisWidth = 32.dp.toPx()
-                    detectTapGestures { offset ->
-                        if (offset.x > yAxisWidth) {
-                            val chartWidth = size.width - yAxisWidth
-                            val barWidth = chartWidth / data.size
-                            val barIndex = ((offset.x - yAxisWidth) / barWidth).toInt()
-                                .coerceIn(0, data.lastIndex)
-                            if (selectedBarIndex == barIndex) {
-                                selectedBarIndex = null
-                            } else {
-                                selectedBarIndex = barIndex
-                                tooltipPosition = Offset(
-                                    yAxisWidth + barIndex * barWidth + barWidth / 2,
-                                    offset.y
+                // Draw Y-axis labels
+                drawYAxisLabel(
+                    textMeasurer = textMeasurer,
+                    text = yAxisFormatter(maxValue),
+                    x = yAxisWidth - 4.dp.toPx(),
+                    y = geometry.plotTop,
+                    color = labelColor,
+                    alignTop = true
+                )
+
+                drawYAxisLabel(
+                    textMeasurer = textMeasurer,
+                    text = yAxisFormatter(0.0),
+                    x = yAxisWidth - 4.dp.toPx(),
+                    y = baseline,
+                    color = labelColor,
+                    alignTop = false
+                )
+
+                // Draw bars
+                data.forEachIndexed { index, barData ->
+                    val isSelected = index == selectedBarIndex
+                    val xPosition = yAxisWidth + index * barWidth + barWidth * 0.15f
+                    val barWidthRect = barWidth * 0.7f
+
+                    if (barData.segments.isNotEmpty()) {
+                        // Stacked bars
+                        var currentY = baseline
+                        barData.segments.forEach { segment ->
+                            val segmentHeight = if (maxValue > 0) {
+                                (segment.value / maxValue * maxBarHeight).toFloat()
+                            } else 0f
+
+                            if (segmentHeight > 0) {
+                                val baseColor = segment.color
+                                val currentSegmentColor = if (isSelected) baseColor.copy(alpha = 0.7f) else baseColor
+
+                                drawRect(
+                                    color = currentSegmentColor,
+                                    topLeft = Offset(
+                                        x = xPosition,
+                                        y = currentY - segmentHeight // Substract the segment height
+                                    ),
+                                    size = Size(
+                                        width = barWidthRect,
+                                        height = segmentHeight
+                                    )
                                 )
+                                // Update the "floor" for the next segment (AC or DC)
+                                currentY -= segmentHeight
                             }
                         }
-                    }
-                }
-        ) {
-            val yAxisWidth = 32.dp.toPx()
-            val chartWidth = size.width - yAxisWidth
-            val barWidth = chartWidth / data.size
-            val maxBarHeight = size.height - 20.dp.toPx()
-
-            // Draw Y-axis labels
-            drawYAxisLabel(
-                textMeasurer = textMeasurer,
-                text = yAxisFormatter(maxValue),
-                x = yAxisWidth - 4.dp.toPx(),
-                y = 0f,
-                color = labelColor,
-                alignTop = true
-            )
-
-            drawYAxisLabel(
-                textMeasurer = textMeasurer,
-                text = "0",
-                x = yAxisWidth - 4.dp.toPx(),
-                y = maxBarHeight,
-                color = labelColor,
-                alignTop = false
-            )
-
-            // Draw bars
-            data.forEachIndexed { index, barData ->
-                val isSelected = index == selectedBarIndex
-                val xPosition = yAxisWidth + index * barWidth + barWidth * 0.15f
-                val barWidthRect = barWidth * 0.7f
-
-                if (barData.segments.isNotEmpty()) {
-                    // Stacked bars
-                    var currentY = maxBarHeight // Start at the top of the chart
-                    barData.segments.forEach { segment ->
-                        val segmentHeight = if (maxValue > 0) {
-                            (segment.value / maxValue * maxBarHeight).toFloat()
+                    } else {
+                        // Non stacked bars
+                        val barHeight = if (maxValue > 0) {
+                            (barData.value / maxValue * maxBarHeight).toFloat()
                         } else 0f
 
-                        if (segmentHeight > 0) {
-                            val baseColor = segment.color
-                            val currentSegmentColor = if (isSelected) baseColor.copy(alpha = 0.7f) else baseColor
+                        if (barHeight > 0) {
+                            val baseBarColor = barData.color ?: barColor
+                            val currentBarColor = if (isSelected) baseBarColor.copy(alpha = 0.7f) else baseBarColor
 
                             drawRect(
-                                color = currentSegmentColor,
-                                topLeft = Offset(
-                                    x = xPosition,
-                                    y = currentY - segmentHeight // Substract the segment height
-                                ),
-                                size = Size(
-                                    width = barWidthRect,
-                                    height = segmentHeight
-                                )
+                                color = currentBarColor,
+                                topLeft = Offset(x = xPosition, y = baseline - barHeight),
+                                size = Size(width = barWidthRect, height = barHeight)
                             )
-                            // Update the "floor" for the next segment (AC or DC)
-                            currentY -= segmentHeight
                         }
                     }
-                } else {
-                    // Non stacked bars
-                    val barHeight = if (maxValue > 0) {
-                        (barData.value / maxValue * maxBarHeight).toFloat()
-                    } else 0f
 
-                    if (barHeight > 0) {
-                        val baseBarColor = barData.color ?: barColor
-                        val currentBarColor = if (isSelected) baseBarColor.copy(alpha = 0.7f) else baseBarColor
+                    if (showBarValues) {
+                        val layout = valueLayouts[index]
+                        val height = if (maxValue > 0) (barData.value / maxValue * maxBarHeight).toFloat() else 0f
+                        drawText(layout, color = labelColor, topLeft = Offset(
+                            geometry.center(index) - layout.size.width / 2f,
+                            baseline - height - layout.size.height - 4.dp.toPx()
+                        ))
+                    }
 
-                        drawRect(
-                            color = currentBarColor,
-                            topLeft = Offset(x = xPosition, y = maxBarHeight - barHeight),
-                            size = Size(width = barWidthRect, height = barHeight)
+                    // Draw X-axis label
+                    if (showBarValues || data.size <= 6 || index % showEveryNthLabel.coerceAtLeast(1) == 0) {
+                        drawXAxisLabel(
+                            textMeasurer = textMeasurer,
+                            text = barData.label,
+                            x = geometry.center(index),
+                            y = size.height - 2.dp.toPx(),
+                            color = labelColor
                         )
                     }
                 }
-
-                // Draw X-axis label
-                if (data.size <= 6 || index % showEveryNthLabel == 0) {
-                    drawXAxisLabel(
-                        textMeasurer = textMeasurer,
-                        text = barData.label,
-                        x = yAxisWidth + index * barWidth + barWidth / 2,
-                        y = size.height - 2.dp.toPx(),
-                        color = labelColor
-                    )
-                }
             }
+
         }
 
-        // Tooltip - with bounds check for safety
+        // Tooltip is clamped to the visible viewport, not the wider scroll content.
         var tooltipWidth by remember { mutableStateOf(0f) }
         selectedBarIndex?.takeIf { it in data.indices }?.let { index ->
             val barData = data[index]
-            // Use the container width to calculate the offset to not clip the tooltip
-            val xOffset = (tooltipPosition.x - tooltipWidth / 2)
-                .coerceIn(0f, containerWidth - tooltipWidth)
+            val xOffset = barTooltipOffset(
+                geometry.center(index), scroll.value.toFloat(), tooltipWidth, viewportWidth
+            )
 
             Box(
                 modifier = Modifier
+                    .widthIn(max = maxWidth)
                     .offset { IntOffset(xOffset.toInt(), 0) }
                     .onGloballyPositioned { coordinates ->
                         // This captures the ACTUAL size of the tooltip
@@ -261,7 +282,7 @@ fun InteractiveBarChart(
                     } else {
                         // If there are no segments, show the single value
                         Text(
-                            text = valueFormatter(barData.value),
+                            text = if (showBarValues) barData.displayValue else valueFormatter(barData.value),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.inverseOnSurface,

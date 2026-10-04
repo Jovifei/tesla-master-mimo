@@ -1,6 +1,7 @@
 package com.matelink.ui.screens.drives
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,9 +53,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -786,6 +792,11 @@ private fun DrivesChartsPager(
     palette: CarColorPalette
 ) {
     val pagerState = rememberPagerState(pageCount = { DrivesChartType.entries.size })
+    val pagerScope = rememberCoroutineScope()
+    val pageLabels = listOf(
+        stringResource(R.string.efficiency_drive_count), stringResource(R.string.duration),
+        stringResource(R.string.distance), stringResource(R.string.record_top_speed)
+    )
 
     Column {
         Card(
@@ -821,16 +832,20 @@ private fun DrivesChartsPager(
         ) {
             repeat(DrivesChartType.entries.size) { index ->
                 val isSelected = pagerState.currentPage == index
+                // A direct page control remains available while dense month bars scroll inside.
                 Box(
                     modifier = Modifier
-                        .padding(horizontal = 4.dp)
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (isSelected) palette.accent
-                            else palette.onSurfaceVariant.copy(alpha = 0.3f)
-                        )
-                )
+                        .size(48.dp)
+                        .semantics { contentDescription = pageLabels[index] }
+                        .selectable(selected = isSelected, role = Role.Tab) {
+                            pagerScope.launch { pagerState.animateScrollToPage(index) }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(
+                        if (isSelected) palette.accent else palette.onSurfaceVariant.copy(alpha = 0.3f)
+                    ))
+                }
             }
         }
     }
@@ -941,7 +956,9 @@ private fun DrivesChartPage(
         }
         val yAxisFormatter: (Double) -> String = when (chartType) {
             DrivesChartType.TIME -> { v -> formatDurationCompact(v.toInt()) }
-            else -> { v -> if (v >= 1000) "%.0fk".format(v / 1000) else "%.0f".format(v) }
+            DrivesChartType.DISTANCE -> { v -> "%.0f $distanceUnit".format(v) }
+            DrivesChartType.TOP_SPEED -> { v -> "${v.toInt()} $speedUnit" }
+            DrivesChartType.COUNT -> { v -> if (v >= 1000) "%.0fk".format(v / 1000) else "%.0f".format(v) }
         }
 
         InteractiveBarChart(
@@ -950,6 +967,7 @@ private fun DrivesChartPage(
             barColor = palette.accent,
             labelColor = palette.onSurfaceVariant,
             showEveryNthLabel = labelInterval,
+            showBarValues = granularity == DriveChartGranularity.MONTHLY,
             valueFormatter = valueFormatter,
             yAxisFormatter = yAxisFormatter
         )

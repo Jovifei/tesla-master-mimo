@@ -2,6 +2,7 @@
 
 当前审核入口：[2026-10-02 主分支、部署与待修复状态](RPT-2026-10-02-review-baseline.md)。
 
+- [10月4日月柱数值与日期范围](BUG-REPAIR-2026-10-04-monthly-chart-values.md)：常驻真实数值、最高速度标题、选定结束日和部分周；完整Android与手机视觉仍待验收。
 - [10月4日电量字段与端点](BUG-REPAIR-2026-10-04-battery-source-contract.md)：前向SOC遗漏、单点误算、旧schema验证及尚未执行的有界恢复方案。
 - [10月4日历史页面源链核查](RPT-2026-10-04-history-source-audit.md)：逐项区分真实缺测、漏传、硬编码null、筛选错误和图表展示遗漏。
 

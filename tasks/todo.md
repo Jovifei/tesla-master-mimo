@@ -3515,8 +3515,17 @@ legacy whole-array paths and original OOM acceptance remain open.
 - [x] Go字段链先红后绿，主分支隔离PG/race481/481、旧781+identity底座258/258；无Stage2列、无新schema，列表不读完整路线。
 - [x] 独立审查识别单点虚报0，已接入按真实时间保留未知边界的选择器；完整Android/实机门禁仍待执行。
 - [x] 形成历史页面source→存储→API→计算→widget核查表，确认最高速度/充电已用/驻车硬编码和月柱值未绘制。
-- [ ] 完成整片独立审查与原分支发布；最小API/bridge/App保护部署由明确源码清单与对应验收控制，不部署整Stage2。
+- [x] SOC整片独立审查并发布 bcc4b2a；精确 CI 37212816785 通过（Go/PG481、Web13），完整Android与最小API/bridge部署仍待各自验收，不部署整Stage2。
 - [ ] 历史SOC补齐先生成限定两条记录的私有只读清单/备份/哈希对比/回滚方案；尚未执行，不重置游标或广泛重导。
 - [ ] 充电输入kWh、持久最高速度/SOC摘要、时长精度、月柱展示、真实驻车pair与缓存证据分别推进；44汇总与被拒scope经验保持独立。
 
 经验与核查入口：`docs/BUG-REPAIR-2026-10-04-battery-source-contract.md`、`docs/RPT-2026-10-04-history-source-audit.md`。
+
+# 2026-10-04 月柱数值与日期范围
+
+- [x] 复现 displayValue 未绘制、自定义结束日被忽略、首个部分周丢失，明确原月速度口径是最大值。
+- [x] 接入实际分组函数和月柱数值开关，保留质量/距离筛选与 API 单位；13 日期统计、6 几何 JVM 用例通过，旧分组同 13 用例中 12 失败。
+- [ ] 完成独立源码审查、原分支发布；本机完整 Android 与密集月份/大字号/横滚/选点/图种切换仍待验证。
+- [ ] 最高速度缺失仍需持久摘要；本片不补造数据，也不包含独立被拒的44汇总或scope经验内容。
+
+经验：`docs/BUG-REPAIR-2026-10-04-monthly-chart-values.md`。源修复与已安装43、生产旧781加identity、未来部署/历史补齐分别留证。
