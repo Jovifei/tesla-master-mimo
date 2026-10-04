@@ -3478,9 +3478,10 @@ Report: `docs/RPT-2026-10-03-compact-bootstrap-contract.md`.
 - [x] 对照源、Bridge、云端和手机现场：云端完成记录与源相符，手机全部时间仍回退旧缓存；实际失败的 HTTP 阶段尚未取得证据。
 - [x] 复核 Docs 中 10 月 1 日游标挂载故障和 10 月 2 日 API OOM 经验；此次不把健康响应或分支验证当成生产修复。
 - [x] 新增认证且只读的持久车辆历史身份接口，保留租户隔离；原分支全 Go/PG/race 478 项通过、零失败/跳过。精确 `781c4025` 加两生产文件的小补丁在全新旧 schema 上 Go/PG/race 272 项通过、零失败/跳过；不携 Stage2 schema。
-- [ ] 完成 Android 车辆发现门禁、读取上下文、刷新与安全错误分类候选的实际编排回归和独立审查。
+- [x] Android 2.1.23/build42 候选完成已认证 origin 历史上下文、列表/详情共同费用身份、刷新与安全错误分类；真实 Kotlin 分层回归 55 项通过，完整 Android 构建仍待本机工具链。
 - [ ] 完整 Android 测试、Lint、正式构建；保留原账号/历史/配置覆盖安装后，验收全部时间可见 10 月 4 日行程及 10 月 3 日充电。若仍失败，按请求阶段/HTTP 分类继续定位。
-- [ ] 原分支提交、精确 CI 和 PR12 交接；不以辅助函数或合成测试替代真机恢复。
+- [x] 后端六文件原分支提交 `c7eaa973`，精确 CI `37179570728` 通过（Go/PG478、Web13及既有资源场景）；与仅781基线两文件的生产候选严格区分。
+- [ ] Android 候选原分支提交、精确 CI 与本机完整构建；PR12 交接不以分层或合成测试替代真机恢复。
 
 Report: `docs/BUG-REPAIR-2026-10-04-phone-history-stale.md`。未完成的 compact bridge B 候选已独立冻结，不混入此次同步修复。
 The helper does not activate scopes or improve live ingestion by itself. The

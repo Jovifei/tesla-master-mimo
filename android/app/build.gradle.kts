@@ -38,8 +38,8 @@ android {
         applicationId = "com.matelink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 41
-        versionName = "2.1.22"
+        versionCode = 42
+        versionName = "2.1.23"
         buildConfigField("String", "GIT_SHA", "\"${resolveGitSha()}\"")
         val publicInfoBaseUrl = providers.gradleProperty("MATELINK_PUBLIC_INFO_BASE_URL")
             .orElse("https://auth.teslalink.joviluma.com")

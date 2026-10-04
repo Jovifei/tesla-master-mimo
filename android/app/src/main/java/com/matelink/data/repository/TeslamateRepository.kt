@@ -1,5 +1,7 @@
 package com.matelink.data.repository
 
+import com.matelink.data.api.models.HistoryContextData
+import com.matelink.data.api.models.isValidFor
 import com.matelink.data.api.UrlSecurity
 import com.matelink.BuildConfig
 import com.matelink.data.api.TeslamateApi
@@ -383,6 +385,17 @@ class TeslamateRepository @Inject constructor(
             else -> "Check the TeslaMate URL and network access"
         }
         return ConnectionStepResult.Failure("$prefix: HTTP $code", hint)
+    }
+
+    suspend fun getHistoryContext(carId: Int): ApiResult<HistoryContextData> = executeWithFallback { api ->
+        val response = api.getHistoryContext(carId)
+        if (!response.isSuccessful) {
+            ApiResult.Error("History identity unavailable", response.code())
+        } else {
+            val data = response.body()?.data
+            if (data?.isValidFor(carId) == true) ApiResult.Success(data)
+            else ApiResult.Error("History identity response invalid", response.code(), kind = ApiErrorKind.INVALID_RESPONSE)
+        }
     }
 
     suspend fun getCars(): ApiResult<List<CarData>> {

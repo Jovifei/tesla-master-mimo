@@ -2,12 +2,6 @@ package com.matelink.data.local
 
 import java.security.MessageDigest
 
-/** Identifies where a vehicle's remote data comes from. */
-enum class HistoryConnectionSource {
-    CLOUD,
-    SELF_HOSTED
-}
-
 class HistoryIdentityUnavailableException : IllegalStateException(
     "Vehicle history identity is unavailable"
 )
@@ -57,3 +51,13 @@ fun requireSelfHostedServerIdentity(serverUrl: String): String {
 private fun sha256Hex(value: String): String = MessageDigest.getInstance("SHA-256")
     .digest(value.toByteArray(Charsets.UTF_8))
     .joinToString("") { "%02x".format(it) }
+
+/** New cloud namespaces are origin-bound; legacy cloud namespaces remain untouched. */
+fun cloudOriginVehicleStableIdentity(accountNamespace: String, apiOrigin: String, vehicleUid: String): String {
+    val origin = requireSelfHostedServerIdentity(apiOrigin)
+    val account = accountNamespace.trim()
+    if (account.isEmpty() || !com.matelink.data.api.models.validHistoryVehicleUid(vehicleUid)) {
+        throw HistoryIdentityUnavailableException()
+    }
+    return "cloud-origin:${sha256Hex("origin:$origin\u0000account:$account")}:vehicle:$vehicleUid"
+}

@@ -24,10 +24,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Clock
+import com.matelink.domain.history.LatestHistoryLoad
+import com.matelink.domain.history.refreshedHistoryWindow
 import java.time.LocalDate
 import java.time.YearMonth
 import com.matelink.util.formatMonthYear
@@ -95,6 +97,7 @@ data class DrivesUiState(
     val chartGranularity: DriveChartGranularity = DriveChartGranularity.MONTHLY,
     val error: String? = null,
     val historySyncWarning: String? = null,
+    val localArchiveLinkPending: Boolean = false,
     val startDate: LocalDate? = null,
     val endDate: LocalDate? = null,
     val summary: DrivesSummary = DrivesSummary(),
@@ -132,6 +135,7 @@ class DrivesViewModel @Inject constructor(
     private val geocodingRepository: GeocodingRepository,
     private val settingsDataStore: SettingsDataStore,
     private val driveSummaryDao: DriveSummaryDao,
+    private val clock: Clock,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -142,8 +146,7 @@ class DrivesViewModel @Inject constructor(
     private var showShortDrivesCharges: Boolean = false
     private var allDrives: List<DriveData> = emptyList()
     private var isInitialized: Boolean = false
-    private var loadJob: Job? = null
-    private var loadGeneration: Long = 0L
+    private val latestLoad = LatestHistoryLoad()
 
     companion object {
         private const val MIN_DURATION_MINUTES = 1
@@ -176,30 +179,29 @@ class DrivesViewModel @Inject constructor(
 
     fun setCarId(id: Int) {
         if (carId == id && isInitialized) {
-            // Already initialized with this car, don't reload
+            refresh()
             return
         }
         carId = id
         loadUnits(id)
 
-        // Only apply restored (or default) filter on first initialization. CUSTOM
-        // needs the explicit date pair — setDateFilter is a no-op for CUSTOM.
-        if (!isInitialized) {
-            isInitialized = true
-            val state = _uiState.value
-            val customStart = state.customStartDate
-            val customEnd = state.customEndDate
-            if (state.dateFilter == DriveDateFilter.CUSTOM && customStart != null && customEnd != null) {
-                setCustomDateRange(customStart, customEnd)
-            } else {
-                setDateFilter(state.dateFilter)
-            }
+        // A reused VM must not keep the previous vehicle's history.
+        allDrives = emptyList()
+        _uiState.update { it.copy(drives = emptyList(), units = null, driveMetrics = emptyMap(), chartData = emptyList(), summary = DrivesSummary(), error = null, historySyncWarning = null, localArchiveLinkPending = false) }
+        isInitialized = true
+        val state = _uiState.value
+        val customStart = state.customStartDate
+        val customEnd = state.customEndDate
+        if (state.dateFilter == DriveDateFilter.CUSTOM && customStart != null && customEnd != null) {
+            setCustomDateRange(customStart, customEnd)
+        } else {
+            setDateFilter(state.dateFilter)
         }
     }
 
     fun setDateFilter(filter: DriveDateFilter) {
         if (filter == DriveDateFilter.CUSTOM) return
-        val endDate = LocalDate.now()
+        val endDate = LocalDate.now(clock)
         val startDate = filter.days?.let { days ->
             if (days > 0) endDate.minusDays(days - 1) else endDate
         }
@@ -244,7 +246,10 @@ class DrivesViewModel @Inject constructor(
         carId?.let {
             _uiState.update { it.copy(isRefreshing = true) }
             val state = _uiState.value
-            loadDrives(state.startDate, state.endDate)
+            val window = refreshedHistoryWindow(state.dateFilter.days, state.dateFilter == DriveDateFilter.CUSTOM,
+                state.startDate, state.endDate, clock)
+            _uiState.update { it.copy(startDate = window.start, endDate = window.end) }
+            loadDrives(window.start, window.end)
         }
     }
 
@@ -256,6 +261,7 @@ class DrivesViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = repository.getCarStatus(carId)) {
                 is ApiResult.Success -> {
+                    if (this@DrivesViewModel.carId != carId) return@launch
                     _uiState.update { it.copy(units = result.data.units) }
                 }
                 is ApiResult.Error -> { /* ignore, units will default to metric */ }
@@ -266,9 +272,8 @@ class DrivesViewModel @Inject constructor(
     private fun loadDrives(startDate: LocalDate? = null, endDate: LocalDate? = null) {
         val id = carId ?: return
 
-        loadJob?.cancel()
-        val generation = ++loadGeneration
-        loadJob = viewModelScope.launch {
+        val requestZone = clock.zone
+        latestLoad.launch(viewModelScope) {
             val state = _uiState.value
             // Only show the full-screen spinner on the true initial load — i.e. when
             // we've never successfully fetched any data yet. Using state.drives (the
@@ -287,16 +292,19 @@ class DrivesViewModel @Inject constructor(
             }
 
             // Load the display setting
-            showShortDrivesCharges = settingsDataStore.showShortDrivesCharges.first()
+            val showShort = settingsDataStore.showShortDrivesCharges.first()
+            ensureCurrent()
+            showShortDrivesCharges = showShort
 
             // Local-day RFC3339 boundaries (see LocalDayBoundaries for why not UTC).
-            val startDateStr = startDate?.let { LocalDayBoundaries.startOfDay(it) }
-            val endDateStr = endDate?.let { LocalDayBoundaries.endOfDay(it) }
+            val startDateStr = startDate?.let { LocalDayBoundaries.startOfDay(it, requestZone) }
+            val endDateStr = endDate?.let { LocalDayBoundaries.endOfDay(it, requestZone) }
 
-            when (val result = historyRepository.load(id, startDateStr, endDateStr)) {
+            val result = historyRepository.load(id, startDateStr, endDateStr)
+            ensureCurrent()
+            when (result) {
                 is ApiResult.Success -> {
                     val remoteDrives = result.data.drives
-                    allDrives = remoteDrives
                     val localMetrics = driveSummaryDao.getAllChronological(result.data.context.localHistoryCarId).associate { summary ->
                         summary.driveId to DriveHistoryMetrics(
                             energyKwh = summary.energyConsumed,
@@ -305,6 +313,8 @@ class DrivesViewModel @Inject constructor(
                             coverageRatio = summary.energyCoverageRatio
                         )
                     }
+                    ensureCurrent()
+                    allDrives = remoteDrives
                     val granularity = determineGranularity(startDate, endDate)
 
                     _uiState.update {
@@ -312,6 +322,7 @@ class DrivesViewModel @Inject constructor(
                             chartGranularity = granularity,
                             error = null,
                             historySyncWarning = result.data.drivesSyncError,
+                            localArchiveLinkPending = result.data.localArchiveLinkPending,
                             driveMetrics = localMetrics
                         )
                     }
@@ -321,12 +332,15 @@ class DrivesViewModel @Inject constructor(
                     val enrichedDrives = enrichDriveAddresses(remoteDrives) { latitude, longitude ->
                         geocodingRepository.reverseGeocode(latitude, longitude)
                     }
-                    if (generation == loadGeneration) {
-                        allDrives = enrichedDrives
-                        applyFiltersAndUpdateState()
-                    }
+                    ensureCurrent()
+                    allDrives = enrichedDrives
+                    applyFiltersAndUpdateState()
                 }
                 is ApiResult.Error -> {
+                    if (result.message == com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE) {
+                        allDrives = emptyList()
+                        _uiState.update { it.copy(drives = emptyList(), units = null, driveMetrics = emptyMap(), chartData = emptyList(), summary = DrivesSummary(), localArchiveLinkPending = false, historySyncWarning = null) }
+                    }
                     _uiState.update {
                         it.copy(
                             isLoading = false,

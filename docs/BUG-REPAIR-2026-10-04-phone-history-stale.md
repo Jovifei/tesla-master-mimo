@@ -56,7 +56,13 @@
 
 新的 history-context 回归覆盖当前账号持久 UID、无 Vehicles/Status 调用、车辆行 hash 未变化、缺会话/其他账号、异常 UID 的 SQL 字节上限、严格路径和数据库取消错误。先在旧源码复现缺接口 404，再检查修复。最终后端源码的隔离 PostgreSQL 全 Go/race 为 **478/478 通过，零失败、零跳过**；receipt SHA-256 `e9b4967c28437287d75dc3d14b406d22a5eae21e23b949a9016b25b3264adcda`。另通过 vet、编译与 module verify；云工作树编译用 `-buildvcs=false` 避开工作树 VCS 探测限制，源码身份另由 manifest 固定。
 
-Android 候选的编排回归、完整构建、独立审查与原数据覆盖安装结果在候选冻结后补充。验收必须检查原全部时间页面能否显示 10-04 行程及 10-03 充电，并检查筛选、返回前台、切车、会话失效与断网后的缓存提示。若仍失败，按新的安全诊断确认实际请求阶段与 HTTP 类别继续修复。
+后端六文件已单独提交 `c7eaa973b3f3c046d977a58de3cb2c35bb88f805`，精确 [CI 37179570728](https://github.com/Jovifei/tesla-master-mimo/actions/runs/37179570728) 全部通过：Go/PG 478、Web 13、race/vet/build/modules、8 项合成资源场景及证据上传。CI 不包含完整 Android 构建，也不代表生产最小候选已上线。
+
+Android **2.1.23/build42 候选**在该后端提交上冻结 38 个文件，真实 Kotlin 分层回归 **55/55 通过**，包含实际 `UnifiedHistoryRepository.load`、单独身份解析、费用写入与返回、当前 origin 持久映射、分页/部分失败、账号/车辆/服务变化、取消和晚响应。恢复旧 cars-only 分支的受控副本在相同实际 load 回归下失败，确实未发出历史请求。全局 resolver 保持原 namespace；仅历史列表与 DriveDetail/ChargeDetail 使用共同的已验证历史上下文，避免新费用编辑在列表和详情之间分裂。切车会清除旧免费充电标记和单位。
+
+**完整 Android Gradle/Hilt/KSP/Compose 编译、Lint、APK 与真机仍待验。** 云端已解决依赖代理和 Android 工具配置目录，最终阻断为没有 Android SDK；没有接受新的 SDK 许可或冒充完整构建通过。候选源码先在原 draft 分支供有现成工具链的本机读取，只有精确 head 在本机通过完整测试/Lint/构建后才可保数据覆盖安装。
+
+现场验收必须检查原全部时间页面能否显示 10-04 行程及 10-03 充电，并检查筛选、返回前台、切车、会话失效、断网后的缓存提示，以及费用在列表编辑、详情和返回后的同一 namespace 结果。旧本机专有项的“未关联”提示不能当作删除或已完成迁移。若仍失败，按新的安全诊断确认实际请求阶段与 HTTP 类别继续修复。
 
 ## 后端部署边界
 

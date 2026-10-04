@@ -1503,4 +1503,5 @@
     <string name="vehicle_model_pending">车型待识别</string>
     <string name="history_sync_cached">云端历史暂未同步成功，当前显示本机保存的记录；下拉刷新可重试。</string>
     <string name="history_sync_partial">云端历史仅恢复了一部分，本机旧记录已保留；下拉刷新可重试剩余记录。</string>
+    <string name="history_archive_link_pending">此列表使用已验证的云端来源。原手机记录、费用修改和本地分析仍保留，暂未关联到此列表。</string>
 </resources>

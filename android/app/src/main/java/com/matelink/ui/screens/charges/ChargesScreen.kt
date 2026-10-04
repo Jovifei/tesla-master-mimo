@@ -53,6 +53,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -114,6 +115,7 @@ fun ChargesScreen(
     val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
     var priceEditTarget by remember { mutableStateOf<ChargeData?>(null) }
 
+    HistoryForegroundRefreshEffect { viewModel.refresh() }
     LaunchedEffect(carId) {
         viewModel.setCarId(carId)
     }
@@ -161,6 +163,7 @@ fun ChargesScreen(
             } else {
                 ChargesContent(
                     historySyncWarning = uiState.historySyncWarning,
+                    localArchiveLinkPending = uiState.localArchiveLinkPending,
                     charges = uiState.charges,
                     dcChargeIds = uiState.dcChargeIds,
                     processedChargeIds = uiState.processedChargeIds,
@@ -219,6 +222,7 @@ fun ChargesScreen(
 @Composable
 private fun ChargesContent(
     historySyncWarning: String?,
+    localArchiveLinkPending: Boolean,
     charges: List<ChargeData>,
     dcChargeIds: Set<Int>,
     processedChargeIds: Set<Int>,
@@ -259,6 +263,7 @@ private fun ChargesContent(
     val showFreeHint = freeSupercharging && selectedCostFilter == CostFilter.NO_COST
     val headerCount = 4 +
         (if (historySyncWarning != null) 1 else 0) +
+        (if (localArchiveLinkPending) 1 else 0) +
         (if (showFreeHint) 1 else 0) +
         (if (chartData.isNotEmpty()) 1 else 0)
 
@@ -269,10 +274,23 @@ private fun ChargesContent(
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
+        if (localArchiveLinkPending) {
+            item(key = "history_archive_link_pending") {
+                Text(
+                    text = stringResource(R.string.history_archive_link_pending),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
+                )
+            }
+        }
         if (historySyncWarning != null) {
             item(key = "history_sync_warning") {
                 Text(
-                    text = stringResource(if (historySyncWarning == "history_partial") R.string.history_sync_partial else R.string.history_sync_cached),
+                    text = stringResource(when (historySyncWarning) {
+                        "history_partial" -> R.string.history_sync_partial
+                        else -> R.string.history_sync_cached
+                    }),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.fillMaxWidth().padding(12.dp)

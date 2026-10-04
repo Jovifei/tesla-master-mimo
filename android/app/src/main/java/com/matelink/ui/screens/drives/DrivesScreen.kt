@@ -46,6 +46,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -111,6 +112,7 @@ fun DrivesScreen(
     )
 
     // Initialize ViewModel with carId (only loads data on first call)
+    HistoryForegroundRefreshEffect { viewModel.refresh() }
     LaunchedEffect(carId) {
         viewModel.setCarId(carId)
     }
@@ -166,6 +168,7 @@ fun DrivesScreen(
             } else {
                 DrivesContent(
                     historySyncWarning = uiState.historySyncWarning,
+                    localArchiveLinkPending = uiState.localArchiveLinkPending,
                     drives = uiState.drives,
                     chartData = uiState.chartData,
                     chartGranularity = uiState.chartGranularity,
@@ -194,6 +197,7 @@ fun DrivesScreen(
 @Composable
 private fun DrivesContent(
     historySyncWarning: String?,
+    localArchiveLinkPending: Boolean,
     drives: List<DriveData>,
     chartData: List<DriveChartData>,
     chartGranularity: DriveChartGranularity,
@@ -216,7 +220,7 @@ private fun DrivesContent(
     val historyItems = remember(drives) { buildDriveHistoryItems(drives) }
     // Header items in this LazyColumn, in render order: date chips, distance chips,
     // summary, charts (conditional), history header. Adjust if items are added.
-    val headerCount = 4 + (if (chartData.isNotEmpty()) 1 else 0) + (if (historySyncWarning != null) 1 else 0)
+    val headerCount = 4 + (if (chartData.isNotEmpty()) 1 else 0) + (if (historySyncWarning != null) 1 else 0) + (if (localArchiveLinkPending) 1 else 0)
 
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
@@ -225,10 +229,23 @@ private fun DrivesContent(
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
+        if (localArchiveLinkPending) {
+            item(key = "history_archive_link_pending") {
+                Text(
+                    text = stringResource(R.string.history_archive_link_pending),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
+                )
+            }
+        }
         if (historySyncWarning != null) {
             item(key = "history_sync_warning") {
                 Text(
-                    text = stringResource(if (historySyncWarning == "history_partial") R.string.history_sync_partial else R.string.history_sync_cached),
+                    text = stringResource(when (historySyncWarning) {
+                        "history_partial" -> R.string.history_sync_partial
+                        else -> R.string.history_sync_cached
+                    }),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.fillMaxWidth().padding(12.dp)
