@@ -60,9 +60,18 @@
 
 Android **2.1.23/build42 候选**在该后端提交上冻结 38 个文件，真实 Kotlin 分层回归 **55/55 通过**，包含实际 `UnifiedHistoryRepository.load`、单独身份解析、费用写入与返回、当前 origin 持久映射、分页/部分失败、账号/车辆/服务变化、取消和晚响应。恢复旧 cars-only 分支的受控副本在相同实际 load 回归下失败，确实未发出历史请求。全局 resolver 保持原 namespace；仅历史列表与 DriveDetail/ChargeDetail 使用共同的已验证历史上下文，避免新费用编辑在列表和详情之间分裂。切车会清除旧免费充电标记和单位。
 
-**完整 Android Gradle/Hilt/KSP/Compose 编译、Lint、APK 与真机仍待验。** 云端已解决依赖代理和 Android 工具配置目录，最终阻断为没有 Android SDK；没有接受新的 SDK 许可或冒充完整构建通过。候选源码先在原 draft 分支供有现成工具链的本机读取，只有精确 head 在本机通过完整测试/Lint/构建后才可保数据覆盖安装。
+## 2026-10-04 本机完整构建与原包升级验收
 
-现场验收必须检查原全部时间页面能否显示 10-04 行程及 10-03 充电，并检查筛选、返回前台、切车、会话失效、断网后的缓存提示，以及费用在列表编辑、详情和返回后的同一 namespace 结果。旧本机专有项的“未关联”提示不能当作删除或已完成迁移。若仍失败，按新的安全诊断确认实际请求阶段与 HTTP 类别继续修复。
+本机从 `fed2536874c30e03b4c858389742a75ba35ad37a` / tree `aec55c73b04b26fa8cc141cfb7976bba4e840ee0` 构建；唯一 tracked 差异为 `SettingsExperienceContractTest` 两条陈旧版本断言由 41/2.1.22 更新到 42/2.1.23，生产源码没有额外变更。本提交回传这两条断言，不能将此前 APK 的构建来源简写为未修改的 fed tree。
+
+- Debug：608 通过、零失败/错误/跳过；Release：600 通过、零失败/错误，8 项 `StateScenarioFixturesTest` 因 DEBUG 条件按预期跳过
+- KSP、Hilt、Compose、Release R8 与构建通过；Debug Lint 0 errors / 259 warnings / 9 info，Release Lint 0 errors / 240 warnings / 8 info。未证明这些 warning 数量没有退化
+- APK SHA-256：`A22D7E628FAC1BF67CA3FEBE1FEB87392F04F2B592FEEAF42550765FDEF242A7`；证书 SHA-256：`9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774`
+- 实际反编译核对 API origin 为 `https://api.teslalink.joviluma.com/`，cloud login 开启、mock 关闭；`com.matelink` 2.1.23/build42 以同证书 `adb install -r` 覆盖，`firstInstallTime` 保持 2026-08-31 22:36:47，原登录保留
+- 原全部时间页面已显示 10 月 4 日 13:58 行程、10 月 3 日 16:41–16:53 充电；重复刷新、返回和首页往返后仍在，原“同步失败/本地缓存”提示消失
+- 旧手机专属费用/本地分析的“保留但未关联”提示仍可见，未自动合并来源不明旧映射；这不是旧记录被删除
+
+此次验收确认手机停留 10 月 1 日的同步问题已恢复。新报告的充电汇总次数为 0、能量/费用缺失仍在新包复现；最高速度、SOC 采样、月标签、胎压趋势与授权回跳作为下一批缺陷分别修复，不能据本次同步恢复标记整个产品完成。快速切账号、断网和手工费用跨列表/详情的全部组合仍需各自回归，不由上述成功路径推断通过。
 
 ## 后端部署边界
 
@@ -70,4 +79,4 @@ Android **2.1.23/build42 候选**在该后端提交上冻结 38 个文件，真�
 
 在新建隔离 PostgreSQL 数据库上由该旧基线初始化 schema，旧基线全测试加新增回归的 Go/race 为 **272/272 通过，零失败、零跳过**；receipt SHA-256 `a41e46f12b48d3ccd6009e3d5994a53769747402927543b25ae8922533eedc3d`。新增测试通过 overlay 注入，Go1.22 的虚拟新文件 vet 限制使该命令显式 `-vet=off`，另对实际生产候选运行 vet、编译、module verify 均通过。数据库 `history_summary_version` 列计数为 0，没有携入 Stage2 schema。
 
-后端最小候选与原 PR 分支是两个明确的源码构建身份，发布记录必须各自记录精确 base、tree、文件 hash 和验证结果。建议最小候选使用 `BUILD_SHA=history-context-781c4025-tree-ee8d172ebe8f`。用户已批准测试通过后的现有服务小补丁部署、保留回滚和手机保数据升级；本记录尚不宣称已执行或通过现场验收。本次不包含尚在开发的 compact bridge，不进行真实事件重放或数据清理，也不将读取修复描述为整体 OOM 已关闭。
+后端最小候选与原 PR 分支是两个明确的源码构建身份，发布记录必须各自记录精确 base、tree、文件 hash 和验证结果。建议最小候选使用 `BUILD_SHA=history-context-781c4025-tree-ee8d172ebe8f`。用户已批准测试通过后的现有服务小补丁部署、保留回滚和手机保数据升级。该最小后端已于 2026-10-04 05:43 UTC 完成部署核验，实际 build 为 `history-context-781c4025-tree-ee8d172ebe8f`，精确 tree/blob/hash 匹配；本机旧基线隔离 Go/race 272 项、vet/build 通过。health/ready 200，未授权新旧路由均 401；归档数量部署前后为 357 drives / 52 charges，schema/config 未变，回滚镜像保留。整条 Stage2 分支没有部署。本次不包含尚在开发的 compact bridge，不进行真实事件重放或数据清理，也不将读取修复描述为整体 OOM 已关闭。

@@ -3486,3 +3486,13 @@ Report: `docs/RPT-2026-10-03-compact-bootstrap-contract.md`.
 Report: `docs/BUG-REPAIR-2026-10-04-phone-history-stale.md`。未完成的 compact bridge B 候选已独立冻结，不混入此次同步修复。
 The helper does not activate scopes or improve live ingestion by itself. The
 legacy whole-array paths and original OOM acceptance remain open.
+
+# 2026-10-04 原包历史同步恢复验收
+
+- [x] 回传本机仅有的两条版本测试断言修正，生产源码仍来自 fed2536 / tree aec55c7。
+- [x] Debug 608 全过；Release 600 通过、8 项预期 DEBUG 条件跳过；KSP/Hilt/Compose/R8、Debug/Release Lint 0 errors，保留 warning 数量证据。
+- [x] 同证书 2.1.23/build42 保数据升级，实际 ALL_TIME 已显示 10-04 行程、10-03 充电，刷新与返回后保留，旧同步失败缓存提示消失。
+- [x] 最小 781c4025 + history-context 两生产文件后端部署核验，回滚保留，未部署 Stage2 schema。
+- [ ] 新包仍复现充电汇总缺值；继续独立修复真实字段、统计、SOC/曲线、胎压来源与界面/授权回跳，不将本次恢复当作全部功能完成。
+
+证据与 APK/证书精确 SHA 见 `docs/BUG-REPAIR-2026-10-04-phone-history-stale.md` 的本机验收段。
