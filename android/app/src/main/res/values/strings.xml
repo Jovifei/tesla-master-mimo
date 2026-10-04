@@ -1094,9 +1094,10 @@
     <string name="settings_release_notes_close">Got it</string>
     <string name="settings_switch_to_cloud">Switch to MateLink Cloud</string>
     <string name="settings_switch_to_self_hosted">Switch to local TeslaMate</string>
-<string name="settings_release_notes_body">• Full-page loading across MateLink now uses the shared MD animation.
-• Automatic vehicle setup checks after sign-in and continues when you return from confirmation.
-• Existing history and the editable 1.14 default charging rate remain available.</string>
+<string name="settings_release_notes_body" formatted="false">• Automatic history sync now reports safe failure categories for network, TLS and JSON errors.
+• Cached details preserve unknown battery levels instead of showing 0%; observed zero remains valid.
+• Month labels, full road-stripe loading, map-first details and available Chinese parking labels are included.
+• Sustained synchronization still needs device verification. Missing curves and historical battery readings are not invented.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>
     <string name="settings_resync_dialog_text_delete">This will delete all local data.</string>

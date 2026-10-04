@@ -67,7 +67,7 @@ internal data class HistoryReadDependencies(
     val getCharges: suspend (Int, String?, String?, Int) -> ApiResult<List<ChargeData>>,
     val persistDrives: suspend (List<DriveSummary>) -> Unit,
     val persistCharges: suspend (List<ChargeSummary>) -> Unit,
-    val reportFailure: (String, Instant, Int?) -> Unit = { _, _, _ -> },
+    val reportFailure: (String, Instant, ApiResult.Error) -> Unit = { _, _, _ -> },
     val legacyLinkPending: (Int, HistoryReadScope, VehicleContext) -> Boolean = { _, _, _ -> false }
 )
 
@@ -91,8 +91,8 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         getCharges = { id, start, end, page -> teslamateRepository.getCharges(id, start, end, page = page, show = 50) },
         persistDrives = { driveSummaryDao.upsertPreservingEvidence(it) },
         persistCharges = { chargeSummaryDao.upsertPreservingEvidence(it) },
-        reportFailure = { stage, requestedAt, code ->
-            Log.w("HistorySync", "stage=$stage requested_at=$requestedAt http=${code ?: "none"} category=${historyFailureCategory(code)}")
+        reportFailure = { stage, requestedAt, error ->
+            Log.w("HistorySync", historyFailureDiagnostic(stage, requestedAt, error))
         },
         legacyLinkPending = { id, scope, context -> vehicleContextRepository.hasUnlinkedLegacyHistoryContext(id, scope, context) }
     ))
@@ -108,7 +108,7 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         } catch (_: HistoryIdentityUnavailableException) { false }
         fun recordFailure(stage: String, requestedAt: Instant, error: ApiResult.Error?) {
             if (error == null) return
-            reads.reportFailure(stage, requestedAt, error.code)
+            reads.reportFailure(stage, requestedAt, error)
         }
         suspend fun discoverCars(): ApiResult<List<CarData>> {
             val requestedAt = Instant.now()
@@ -178,7 +178,7 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         val context = resolved.context
         suspend fun scopeUnchanged() = isContextCurrent(resolved)
         fun recordFailure(stage: String, requestedAt: Instant, error: ApiResult.Error?) {
-            if (error != null) reads.reportFailure(stage, requestedAt, error.code)
+            if (error != null) reads.reportFailure(stage, requestedAt, error)
         }
         // History lists include incomplete legacy summaries. Analytics-only DAO
         // range queries must not silently hide those records on an offline phone.

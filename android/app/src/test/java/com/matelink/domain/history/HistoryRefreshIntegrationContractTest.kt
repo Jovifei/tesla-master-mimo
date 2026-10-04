@@ -35,7 +35,8 @@ class HistoryRefreshIntegrationContractTest {
         assertFalse(repository.contains("val remoteDrives = if (car != null)"))
         assertTrue(repository.contains("if (!scopeUnchanged()) return@loadHistoryPages historyIdentityUnavailableError()\n                response"))
         assertTrue(repository.contains("val canReadHistory = resolved.remoteAuthorized"))
-        assertTrue(repository.contains("requested_at=$" + "requestedAt"))
+        assertTrue(repository.contains("historyFailureDiagnostic(stage, requestedAt, error)"))
+        assertTrue(source("data/repository/HistoryDiscoveryPolicy.kt").contains("requested_at=$" + "requestedAt"))
         assertFalse(repository.contains("Log.w(\"HistorySync\", error.message"))
     }
     @Test fun vehicleContextStillScopesCachedMappingByAccountAndServer() {

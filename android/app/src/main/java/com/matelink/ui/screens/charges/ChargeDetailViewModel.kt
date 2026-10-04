@@ -24,6 +24,7 @@ import com.matelink.domain.analytics.ChargeCostSource
 import com.matelink.domain.analytics.EffectiveChargeCostInput
 import com.matelink.domain.analytics.EffectiveChargeCostResolver
 import com.matelink.domain.analytics.validManualChargeTotal
+import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.domain.model.Trip
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -250,10 +251,7 @@ class ChargeDetailViewModel @Inject constructor(
                             cost = localSummary.cost,
                             durationMin = localSummary.durationMin,
                             durationStr = "${localSummary.durationMin}m",
-                            batteryDetails = com.matelink.data.api.models.ChargeBatteryDetails(
-                                startBatteryLevel = localSummary.startBatteryLevel,
-                                endBatteryLevel = localSummary.endBatteryLevel
-                            ),
+                            batteryDetails = localSummary.toAnalysisChargeData().batteryDetails,
                             outsideTempAvg = localSummary.outsideTempAvg,
                             odometer = localSummary.odometer,
                             latitude = localSummary.latitude.takeIf { it != 0.0 },

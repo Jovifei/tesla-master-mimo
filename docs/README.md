@@ -2,6 +2,7 @@
 
 当前审核入口：[2026-10-02 主分支、部署与待修复状态](RPT-2026-10-02-review-baseline.md)。
 
+- [10月4日历史同步与详情复发](BUG-REPAIR-2026-10-04-phone-history-stale.md)：首次恢复、07:51再现、安全异常分型、未知SOC及43候选验收边界。
 - [云登录 502 与历史读取内存故障](DBG-2026-10-02-login-oom.md)：运行证据、源码风险、优化方案和验收条件。
 - [充电费用与历史同步验收](BUG-REPAIR-2026-10-01-sync-charge-cost.md)。
 - [TeslaMate 归档桥接](TESLAMATE-ARCHIVE-BRIDGE.md)。

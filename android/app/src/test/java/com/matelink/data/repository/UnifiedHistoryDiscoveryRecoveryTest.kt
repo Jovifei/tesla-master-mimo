@@ -36,6 +36,7 @@ class UnifiedHistoryDiscoveryRecoveryTest {
         val persistedDrives = mutableListOf<DriveSummary>()
         val persistedCharges = mutableListOf<ChargeSummary>()
         val diagnostics = mutableListOf<Pair<String, Int?>>()
+        val diagnosticErrors = mutableListOf<ApiResult.Error>()
         var fetchDrives: suspend (Int) -> ApiResult<List<DriveData>> = { ApiResult.Success(listOf(newDrive)) }
         var fetchCharges: suspend (Int) -> ApiResult<List<ChargeData>> = { ApiResult.Success(listOf(newCharge)) }
         var afterDrivePersist: () -> Unit = {}
@@ -51,9 +52,16 @@ class UnifiedHistoryDiscoveryRecoveryTest {
             getCharges = { id, _, _, page -> check(id == 7); chargeCalls += page; fetchCharges(page) },
             persistDrives = { rows -> persistedDrives += rows; afterDrivePersist() },
             persistCharges = { rows -> persistedCharges += rows },
-            reportFailure = { stage, _, code -> diagnostics += stage to code },
+            reportFailure = { stage, _, error -> diagnostics += stage to error.code; diagnosticErrors += error },
             legacyLinkPending = { _, _, _ -> legacyPending }
         ))
+    }
+    @Test fun identityDiagnosticPreservesTypedFailureWithoutAuthorizingHistory() = runTest {
+        val f = Fixture()
+        f.identity = ApiResult.Error("private response", kind = ApiErrorKind.INVALID_RESPONSE, safeFailure = SafeApiFailure.JSON_DATA)
+        f.repository().load(7)
+        assertEquals(SafeApiFailure.JSON_DATA, f.diagnosticErrors.single().safeFailure)
+        assertTrue(f.driveCalls.isEmpty()); assertTrue(f.chargeCalls.isEmpty())
     }
     @Test fun carsFailuresStillFetchBothHistoriesAndPersistNewRecords() = runTest {
         for (code in listOf(401, 429, 503)) {

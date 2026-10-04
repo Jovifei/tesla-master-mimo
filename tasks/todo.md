@@ -3496,3 +3496,13 @@ legacy whole-array paths and original OOM acceptance remain open.
 - [ ] 新包仍复现充电汇总缺值；继续独立修复真实字段、统计、SOC/曲线、胎压来源与界面/授权回跳，不将本次恢复当作全部功能完成。
 
 证据与 APK/证书精确 SHA 见 `docs/BUG-REPAIR-2026-10-04-phone-history-stale.md` 的本机验收段。
+
+# 2026-10-04 持续历史读取复发与43最小诊断
+
+- [x] 保留42首次显示新日期的真实验收，补记07:51同包再现history_context/httpnone；持续恢复重新打开。
+- [x] 确认typed error在诊断端口丢失；两个详情fallback将Room占位0当实际SOC，复用证据mapper修复。
+- [x] 最小11文件源码独立审查、61便携回归通过；版本/断言/中英说明同步2.1.24/build43，无生产变更、无数据迁移。
+- [ ] 本机真实JSON/KSP三项及完整Android门禁、同证书保数据覆盖与反复详情/前台读取，取得安全错误类别。
+- [ ] 根据实机类别修具体持续同步根因；OAuth/TPMS/metrics等独立候选保持原样，不能夹带未完成门禁的内容。
+
+经验与精确补丁身份：docs/BUG-REPAIR-2026-10-04-phone-history-stale.md。PC未登录401、当前Wi-Fi连通或单次新日期显示，都不能证明手机持续认证读取成功。

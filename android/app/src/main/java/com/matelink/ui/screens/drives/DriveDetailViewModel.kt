@@ -22,6 +22,7 @@ import com.matelink.data.repository.WeatherPoint
 import com.matelink.data.repository.WeatherRepository
 import com.matelink.domain.LegRef
 import com.matelink.domain.TripRepository
+import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.model.Trip
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -213,10 +214,7 @@ class DriveDetailViewModel @Inject constructor(
                             speedAvg = localSummary.speedAvg.toDouble(),
                             powerMax = localSummary.powerMax,
                             powerMin = localSummary.powerMin,
-                            batteryDetails = com.matelink.data.api.models.DriveBatteryDetails(
-                                startBatteryLevel = localSummary.startBatteryLevel,
-                                endBatteryLevel = localSummary.endBatteryLevel
-                            ),
+                            batteryDetails = localSummary.toAnalysisDriveData().batteryDetails,
                             outsideTempAvg = localSummary.outsideTempAvg,
                             insideTempAvg = localSummary.insideTempAvg,
                             energyConsumedNet = localSummary.energyConsumed,

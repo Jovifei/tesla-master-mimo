@@ -1084,9 +1084,10 @@
     <string name="settings_release_notes_close">知道了</string>
     <string name="settings_switch_to_cloud">切换到 MateLink 云端</string>
     <string name="settings_switch_to_self_hosted">切换到本地 TeslaMate</string>
-<string name="settings_release_notes_body">• 首页及各页面加载统一使用 MateLink MD 动画。
-• 登录后自动观察车辆接入进度，确认返回后自动继续。
-• 已有历史与 1.14 元/度默认电价继续保留。</string>
+<string name="settings_release_notes_body" formatted="false">• 为自动历史同步补充安全错误分类，区分网络、TLS、JSON 等失败，便于定位反复读取异常。
+• 修复缓存详情把未知电量显示为 0% 的问题；真实观测 0% 仍保留。
+• 月统计使用月份名称，完整道路条纹律动，地图优先展示，驻车地址优先已有中文。
+• 持续同步仍待本机复验；本次不补造缺失曲线或历史电量。</string>
     <string name="settings_resync_button">重新同步</string>
     <string name="settings_resync_confirm">确认重新同步</string>
     <string name="settings_resync_dialog_text_delete">这将删除所有本地数据。</string>
