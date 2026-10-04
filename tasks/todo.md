@@ -3453,3 +3453,24 @@ or merge. Whole-JSON ingest/full-detail reads and the original OOM remain open.
 Report: `docs/RPT-2026-10-03-compact-native-transition.md`.
 No live writer/reader/schema change. Fixed retained state in an unwired core does
 not establish PostgreSQL resource bounds or close the original OOM incident.
+
+## Compact PostgreSQL bootstrap gate — 2026-10-03
+
+- [x] Verify the existing active-kind uniqueness index and persisted-field limits
+  with isolated synthetic PostgreSQL; keep all source histories unchanged
+- [x] Add an unwired transaction-local owner/binding/source/version gate with
+  bounded latest metadata and predecessor observations; reject active legacy
+  sessions, unsupported/oversize data and incompatible transaction isolation
+- [x] Verify actual index columns/predicate/readiness and hold a schema lock;
+  prove ordinary unrelated ingest proceeds, index drops wait, cancellation works,
+  and predecessor reads observe commits that finished during the mapping wait
+- [x] Full isolated Go/PG461 PASS/0FAIL/0SKIP; vet/build/modverify/expanded race PASS;
+  Web13 plus clean install/build PASS; mandatory CI bootstrap/race coverage added
+- [ ] Integrate this exact gate into a durable versioned/fenced compact bridge,
+  test real ingest/timer entry points, and preserve complete legacy JSON compatibility
+- [ ] Add equivalent streamed complete-detail responses before chunk-only authority;
+  qualify full pipeline memory, database cost and restart/ACK behavior
+
+Report: `docs/RPT-2026-10-03-compact-bootstrap-contract.md`.
+The helper does not activate scopes or improve live ingestion by itself. The
+legacy whole-array paths and original OOM acceptance remain open.

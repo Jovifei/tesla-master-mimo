@@ -469,3 +469,24 @@ must preserve transaction ordering, ownership, typed bootstrap, full source/vers
 guards, legacy identities, timestamp precision and complete-reader compatibility.
 See `docs/RPT-2026-10-03-compact-native-transition.md` for the exact contract and
 required gates. This is not an integrated pipeline memory improvement or OOM closure.
+
+### Compact bootstrap gate (transaction-local, not live)
+
+`telemetry_compact_bootstrap.go` prepares a bounded version-1 predecessor only for
+an idle, correctly owned and mapped native scope. It checks the actual active-kind
+unique index, rejects unknown/oversize latest fields, and preserves the database's
+timestamp precision. Active legacy sessions require natural drain and remain intact.
+
+The caller must use READ COMMITTED and retain the same transaction through any
+future activation write. Bootstrap uses SHARE UPDATE EXCLUSIVE on the session
+table, permitting ordinary ingestion but serializing other bootstrap/maintenance
+work and potentially delaying vacuum. The five-second helper context does not
+bound a caller that keeps its transaction open afterward. This is an explicit
+activation gate, not a per-event query or an activation mechanism by itself.
+
+No production caller, schema or writer/read behavior is changed. The bounded
+fingerprint is not a durable revision or old-writer fence. The next coherent step
+is a fenced compact transaction bridge tested through actual ingest/timer entry
+points; complete streamed-reader compatibility must precede chunk-only authority.
+See `docs/RPT-2026-10-03-compact-bootstrap-contract.md` for the tests, precise lock
+contract, compatibility decisions and migration/rollback risks.
