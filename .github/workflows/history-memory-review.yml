@@ -146,8 +146,6 @@ jobs:
   android-debug:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    env:
-      GRADLE_USER_HOME: ${{ runner.temp }}/matelink-gradle
     steps:
       - uses: actions/checkout@v4
         with:
@@ -181,6 +179,8 @@ jobs:
           PY
       - name: Android Debug build, unit tests and lint
         working-directory: android
+        env:
+          GRADLE_USER_HOME: ${{ runner.temp }}/matelink-gradle
         run: |
           set -euo pipefail
           mkdir -p "$GRADLE_USER_HOME"
