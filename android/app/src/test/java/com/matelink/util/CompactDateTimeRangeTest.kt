@@ -2,8 +2,27 @@ package com.matelink.util
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.Rule
+import org.junit.rules.TestRule
+import org.junit.runners.model.Statement
+import java.util.TimeZone
 
 class CompactDateTimeRangeTest {
+    @get:Rule
+    val systemTimeZone = TestRule { base, _ ->
+        object : Statement() {
+            override fun evaluate() {
+                val original = TimeZone.getDefault()
+                try {
+                    TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"))
+                    base.evaluate()
+                } finally {
+                    TimeZone.setDefault(original)
+                }
+            }
+        }
+    }
+
     @Test
     fun sameYearOmitsYearFromEnd() {
         assertEquals(
@@ -76,6 +95,28 @@ class CompactDateTimeRangeTest {
         assertEquals(
             "2026/07/10 10:00 \u2192 07/09 09:00",
             formatCompactDateTimeRange("2026-07-10T10:00:00+08:00", "2026-07-09T09:00:00+08:00")
+        )
+    }
+
+    @Test
+    fun utcConvertsOffsetBeforeFormattingRange() {
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+        assertEquals(
+            "2026/07/09 10:52 \u2192 07/09 11:04",
+            formatCompactDateTimeRange("2026-07-09T18:52:00+08:00", "2026-07-09T19:04:00+08:00")
+        )
+    }
+
+    @Test
+    fun utcUsesLocalYearAtBothSidesOfNewYear() {
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+        assertEquals(
+            "2026/12/31 15:55 \u2192 12/31 16:05",
+            formatCompactDateTimeRange("2026-12-31T23:55:00+08:00", "2027-01-01T00:05:00+08:00")
+        )
+        assertEquals(
+            "2026/12/31 23:55 \u2192 2027/01/01 00:05",
+            formatCompactDateTimeRange("2027-01-01T07:55:00+08:00", "2027-01-01T08:05:00+08:00")
         )
     }
 }
