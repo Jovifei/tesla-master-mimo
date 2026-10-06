@@ -82,3 +82,21 @@ Go运行验证（2026-10-06续行）：
 3. 对最终源码运行Android Debug/Release测试、Moshi/KSP/Compose、lint与构建，再审中文/英文、未知字段、返回/重复进入和旧后端兼容界面
 4. 若要用于旧781生产API，另做精确底座适配与独立回归，不携带58b的Stage2变更
 5. 发布安装之后，对获准真实pair验收时间/地址/推导提示；桥接SOC和其它数据问题保持独立
+
+## 后续CI补证（基线46752da）
+
+驻车功能已在原分支提交 `46752da03b9e54cb121d847c293ca9f2ba389f61`，tree `bc9843cd30df13dd275248838e82c73089646a01`。该精确提交的[CI 37413803358](https://github.com/Jovifei/tesla-master-mimo/actions/runs/37413803358)于2026-10-06 04:30:12 UTC成功：Go/隔离PG16共525个测试事件通过、0失败/跳过，Web13/13；新驻车PG认证/范围/无JSON读取与取消用例均明确通过。该次工作流不编译Android，既有race正则也没有包含驻车专项，不能据此部署。
+
+本轮仅修改既有workflow、驻车测试、一个新资源benchmark与本说明，共4文件；应用/后端生产代码、schema、索引、正式签名及部署配置不变。
+
+- 新增明确的PG16驻车race步骤，要求三个PG测试存在且通过，任何fail/skip均失败。并发测试持有尚未提交的隐藏行程事务，运行8组真实HTTP owner/外用户/另一已绑定车辆读取；提交前owner可见原间隔，外scope不可见；提交后同一pair必须不可用。它验证受控提交屏障前后的可见性，不宣称穷尽全部并发交错
+- 新benchmark仅接受显式开关和既有localhost `matelink_test` 合成数据库。约1%/18%/91%/100%目标scope，各跑custom/generic两模式的无阻挡记录样本。PREPARE、模式设置及EXPLAIN EXECUTE固定同一连接；使用最终生产SQL常量，并记录其SHA-256
+- 每轮生成独立合成用户/车辆，清理全部相关记录；不重置全局序列或修改生产索引。查询继续使用已有5秒预算，输出只含允许的计划字段、扫描/缓冲/临时写入计数与时间，不输出原始Filter/Index Cond、数据行、连接串或token。要求8条完整PG16证据、既有两路scope索引、没有Seq Scan/Sort/临时写入；这只是固定样本门槛，scope内仍线性，优化器版本/统计仍可能改变计划
+- 并行Android job固定Ubuntu24.04，只用runner已有JDK17、Android35 platform、Build-tools34.0.0和已存在的SDK许可文件，缺失即失败。明确传入 `-Pandroid.builder.sdkDownload=false`，不运行SDK安装或许可接受流程
+- 用官方发布的SHA-256核对Gradle8.9 wrapper JAR，并在runner工作副本中仅补入官方distribution ZIP校验和，确保实际下载字节也受校验。该临时checksum配置被单独记录，不修改应用源码或已提交的wrapper配置
+- Gradle仅在构建命令作用域清空既有127.0.0.1:7890开发代理host，运行 `assembleDebug`、`testDebugUnitTest`、`lintDebug`。独立审查发现wrapper8.9会在CLI -D之后读取仓库systemProp，故单靠-D不足；该命令在独立临时GRADLE_USER_HOME中写仅含两个空proxyHost的属性文件，并用EXIT trap清理，同时保留-D保护实际Gradle阶段。不改变仓库开发代理或系统设置，不读取正式签名配置，不安装到任何设备。只上传测试/校验/lint报告，不上传签名文件或APK
+- Debug单测要求XML存在、测试数大于0、失败/错误/跳过均为0，且驻车模型和界面契约测试实际出现。源码契约或Debug构建不等于Compose视觉、Release/R8、正式签名或真机验收
+
+工具链依据：项目锁定Gradle8.9/AGP8.7.3；[AGP官方兼容表](https://developer.android.com/build/releases/agp-8-7-0-release-notes)要求JDK17、Build-tools34.0.0并支持API35。[wrapper JAR校验](https://services.gradle.org/distributions/gradle-8.9-wrapper.jar.sha256)为 `498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17`，[distribution校验](https://services.gradle.org/distributions/gradle-8.9-bin.zip.sha256)为 `d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab`。
+
+新增补证在发布后的精确HEAD完成之前保持待验证，不将配置文件存在或本地编译成功当作CI/Android已通过。即使新增CI全绿，旧781生产底座适配、Release正式包、真机与部署门禁仍须独立完成。

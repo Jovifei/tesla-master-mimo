@@ -56,6 +56,22 @@ jobs:
         run: |
           set -euo pipefail
           go test -race -count=1 -run 'Test(CompactTelemetry|NativeShadow|History(Summary|MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL|ReadBudget|ResourceAdmission|HeavyBudget|Import|Archive|DecodeAdmission)|ArchiveImport|Telemetry(PostgresCompactBootstrap|PostgresCompactAdmissionReference|History|PostgresNativeIdentity|PostgresIdleDriveFinalization|PostgresNativeShadow))' ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-race.log"
+      - name: Parked interval PostgreSQL race and commit visibility
+        working-directory: deploy/jourvolt-dev-mock
+        run: |
+          set -euo pipefail
+          go test -race -count=1 -run '^TestParkedInterval' -json ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/parked-race.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          rows=[]
+          for line in Path('../../evidence/parked-race.json').read_text().splitlines():
+              try: rows.append(json.loads(line))
+              except ValueError: pass
+          assert not [r for r in rows if r.get('Test') and r.get('Action') in ('fail','skip')]
+          for name in ('TestParkedIntervalPostgresAuthenticatedScopeAndNoPayloadDecode','TestParkedIntervalPostgresCancellationReturnsControlledError','TestParkedIntervalPostgresConcurrentCommitVisibilityAndIsolation'):
+              assert any(r.get('Test')==name and r.get('Action')=='pass' for r in rows), name
+          PY
       - name: Verify mandatory PostgreSQL evidence
         run: |
           python3 - <<'PY'
@@ -85,6 +101,25 @@ jobs:
               go test -run '^$' -bench "BenchmarkHistoryResourceConcurrent/c${concurrency}$" -benchtime=1x -count=1 -v ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/resource-p${points}-c${concurrency}.log"
             done
           done
+      - name: Parked interval PostgreSQL 16 scope plans
+        working-directory: deploy/jourvolt-dev-mock
+        env:
+          JOURVOLT_RUN_PARKED_RESOURCE_MATRIX: '1'
+        run: |
+          set -euo pipefail
+          go test -run '^$' -bench '^BenchmarkParkedIntervalResourceScope$' -benchtime=1x -count=1 -v ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/parked-resource.log"
+          python3 - <<'PY'
+          import hashlib,json,re
+          from pathlib import Path
+          marker='PARKED_RESOURCE_RESULT '
+          rows=[json.loads(line.split(marker,1)[1]) for line in Path('../../evidence/parked-resource.log').read_text().splitlines() if marker in line]
+          expected={(case,mode) for case in ('sparse','mixed','dominant','all_scope') for mode in ('custom','generic')}
+          assert len(rows)==8 and {(r['case'],r['mode']) for r in rows}==expected
+          source=re.search(r'const parkedIntervalSQL = `([^`]+)`',Path('parked_interval.go').read_text(),re.S).group(1)
+          digest=hashlib.sha256(source.encode()).hexdigest()
+          assert all(r['source_sql_sha256']==digest and r['server_version'].startswith('16') for r in rows)
+          Path('../../evidence/parked-resource-summary.json').write_text(json.dumps(rows,indent=2)+'\n')
+          PY
       - uses: actions/setup-node@v4
         with:
           node-version: '22.16.0'
@@ -107,3 +142,83 @@ jobs:
           name: history-memory-evidence
           retention-days: 14
           path: evidence/
+
+  android-debug:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GRADLE_USER_HOME: ${{ runner.temp }}/matelink-gradle
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify existing Android tools and official Gradle checksums
+        working-directory: android
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/android-evidence"
+          git rev-parse HEAD > "$GITHUB_WORKSPACE/android-evidence/SOURCE_HEAD.txt"
+          test -x "${JAVA_HOME_17_X64:?JDK 17 is required}/bin/javac"
+          test -s "${ANDROID_HOME:?Existing Android SDK is required}/platforms/android-35/android.jar"
+          test -x "$ANDROID_HOME/build-tools/34.0.0/aapt2"
+          test -s "$ANDROID_HOME/licenses/android-sdk-license"
+          "$JAVA_HOME_17_X64/bin/java" -version 2>&1 | tee "$GITHUB_WORKSPACE/android-evidence/java-version.txt"
+          printf '%s  %s\n' '498495120a03b9a6ab5d155f5de3c8f0d986a449153702fb80fc80e134484f17' 'gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('gradle/wrapper/gradle-wrapper.properties')
+          text=p.read_text()
+          expected=r'distributionUrl=https\://services.gradle.org/distributions/gradle-8.9-bin.zip'
+          assert expected in text.splitlines(), 'Unexpected Gradle distribution'
+          checksum='distributionSha256Sum=d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab'
+          existing=[line for line in text.splitlines() if line.startswith('distributionSha256Sum=')]
+          assert not existing or existing==[checksum], 'Unexpected Gradle checksum'
+          if not existing:
+              p.write_text(text.rstrip()+'\n'+checksum+'\n')
+          # This checksum-only CI working-copy edit binds the downloaded ZIP;
+          # no application source, SDK licenses, signing or proxy files change.
+          Path('../android-evidence/gradle-distribution-checksum.txt').write_text(checksum+'\n')
+          PY
+      - name: Android Debug build, unit tests and lint
+        working-directory: android
+        run: |
+          set -euo pipefail
+          mkdir -p "$GRADLE_USER_HOME"
+          test ! -e "$GRADLE_USER_HOME/gradle.properties"
+          # Wrapper 8.9 loads the repo's systemProp values after CLI -D, then
+          # loads this command's isolated user-home properties last. Remove
+          # the two-property override even if the build fails.
+          printf 'systemProp.http.proxyHost=\nsystemProp.https.proxyHost=\n' > "$GRADLE_USER_HOME/gradle.properties"
+          trap 'rm -f "$GRADLE_USER_HOME/gradle.properties"' EXIT
+          JAVA_HOME="$JAVA_HOME_17_X64" PATH="$JAVA_HOME_17_X64/bin:$PATH" \
+            bash ./gradlew --no-daemon --stacktrace \
+            -Dhttp.proxyHost= -Dhttps.proxyHost= \
+            -Pandroid.builder.sdkDownload=false \
+            :app:assembleDebug :app:testDebugUnitTest :app:lintDebug \
+            2>&1 | tee "$GITHUB_WORKSPACE/android-evidence/gradle-debug.log"
+      - name: Require actual Android unit results
+        run: |
+          python3 - <<'PY'
+          import json
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          files=list(Path('android/app/build/test-results/testDebugUnitTest').glob('TEST-*.xml'))
+          assert files, 'No Android unit results'
+          roots=[ET.parse(p).getroot() for p in files]
+          counts={key:sum(int(r.attrib.get(key,0)) for r in roots) for key in ('tests','failures','errors','skipped')}
+          assert counts['tests']>0 and not any(counts[key] for key in ('failures','errors','skipped')), counts
+          required={'com.matelink.data.api.models.ParkedDetailCompatibilityTest','com.matelink.ui.screens.drives.ParkedChargePresentationTest'}
+          assert required <= {r.attrib.get('name') for r in roots}, 'Parked Android tests missing'
+          Path('android-evidence/unit-counts.json').write_text(json.dumps(counts,indent=2)+'\n')
+          print(counts)
+          PY
+      - name: Upload Android verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-verification
+          retention-days: 7
+          path: |
+            android-evidence/
+            android/app/build/test-results/testDebugUnitTest/
+            android/app/build/reports/lint-results-debug.*

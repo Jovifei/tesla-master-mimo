@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -266,4 +267,86 @@ func TestParkedIntervalPostgresCancellationReturnsControlledError(t *testing.T) 
 	if w.Code != 503 || strings.TrimSpace(w.Body.String()) != `{"error":"parked_history_unavailable"}` {
 		t.Fatalf("cancellation contract: status=%d body=%s", w.Code, w.Body.String())
 	}
+}
+
+// Keep the writer transaction open while independent HTTP readers run. This
+// checks committed visibility and tenant isolation, not just concurrent reads.
+func TestParkedIntervalPostgresConcurrentCommitVisibilityAndIsolation(t *testing.T) {
+	s, user, car := openHistoryQueryTestDB(t)
+	ctx := context.Background()
+	older, newer := parkedTestPair()
+	for _, row := range []*telemetrySession{&older, &newer} {
+		if err := s.store.pool.QueryRow(ctx, `INSERT INTO jourvolt_telemetry_sessions
+            (id,user_id,vehicle_id,kind,started_at,ended_at,source,quality_state,source_instance_id,source_vehicle_id,source_record_id)
+            VALUES($1,$2,$3,'drive',$4,$5,'teslamate_archive','observed','concurrent-source','synthetic-car',$1) RETURNING public_id`,
+			user+row.ID, user, car, row.StartAt, row.EndAt).Scan(&row.PublicID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	foreign := user + "-foreign"
+	if err := s.store.ensureUser(ctx, foreign); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.store.deleteUser(context.Background(), foreign) })
+	ownerSession, err := s.store.createSession(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreignSession, err := s.store.createSession(ctx, foreign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var otherCar int
+	if err := s.store.pool.QueryRow(ctx, `INSERT INTO jourvolt_vehicles
+        (user_id,provider_vehicle_id,vin_ciphertext,display_name,state,updated_at)
+        VALUES($1,$2,'synthetic','Synthetic','offline',now()) RETURNING id`, user, user+"-other-car").Scan(&otherCar); err != nil {
+		t.Fatal(err)
+	}
+	a := &app{store: s.store, telemetry: s}
+	path := fmt.Sprintf("/api/matelink/v1/cars/%d/parked/%d/%d", car, older.PublicID, newer.PublicID)
+	otherPath := fmt.Sprintf("/api/matelink/v1/cars/%d/parked/%d/%d", otherCar, older.PublicID, newer.PublicID)
+	readPhase := func(wantOwnerCode int) {
+		t.Helper()
+		var group sync.WaitGroup
+		failures := make(chan string, 24)
+		for i := 0; i < 8; i++ {
+			group.Add(1)
+			go func() {
+				defer group.Done()
+				owner := historyContextRequest(a, "GET", path, ownerSession.AccessToken)
+				if owner.Code != wantOwnerCode || (wantOwnerCode == 200 && !strings.Contains(owner.Body.String(), parkedIntervalSource)) {
+					failures <- fmt.Sprintf("owner status=%d want=%d", owner.Code, wantOwnerCode)
+				}
+				other := historyContextRequest(a, "GET", path, foreignSession.AccessToken)
+				if other.Code != 404 || strings.Contains(other.Body.String(), parkedIntervalSource) {
+					failures <- fmt.Sprintf("foreign status=%d; private interval must be absent", other.Code)
+				}
+				wrongCar := historyContextRequest(a, "GET", otherPath, ownerSession.AccessToken)
+				if wrongCar.Code != 404 || strings.Contains(wrongCar.Body.String(), parkedIntervalSource) {
+					failures <- fmt.Sprintf("other vehicle status=%d; interval must be absent", wrongCar.Code)
+				}
+			}()
+		}
+		group.Wait()
+		close(failures)
+		for failure := range failures {
+			t.Error(failure)
+		}
+	}
+	tx, err := s.store.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `INSERT INTO jourvolt_telemetry_sessions
+        (id,user_id,vehicle_id,kind,started_at,ended_at,source,quality_state)
+        VALUES($1,$2,$3,'drive',$4,$5,'telemetry_mqtt','quarantined')`,
+		user+"-uncommitted-blocker", user, car, older.EndAt.Add(time.Minute), older.EndAt.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	readPhase(200) // The uncommitted hidden drive must not be visible yet.
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	readPhase(404) // The exact same pair becomes invalid after commit.
 }
