@@ -640,6 +640,12 @@ func (a *app) adapterResource(w http.ResponseWriter, r *http.Request, userID, pa
 		a.historyContext(w, r, userID, carID, path, parts)
 		return
 	}
+	if parts[1] == "parked" {
+		// Historical interval reads verify persisted owner/car scope and must
+		// never fall back to live vehicle discovery.
+		a.parkedDetail(w, r, userID, carID, path, parts)
+		return
+	}
 	if !a.requireVehicle(w, r, userID, carID) {
 		return
 	}
@@ -658,8 +664,6 @@ func (a *app) adapterResource(w http.ResponseWriter, r *http.Request, userID, pa
 			"windows": []any{},
 			"meta":    map[string]any{"availability": "collecting", "source": "local_history"},
 		}})
-	case "parked":
-		a.json(w, http.StatusOK, map[string]any{"data": nil, "error": "history_not_collected"})
 	default:
 		a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 	}

@@ -859,6 +859,13 @@
     <string name="avg_distance">平均距离</string>
     <string name="charge_details_title">充电详情</string>
     <string name="charge_free">免费</string>
+    <string name="drive_interval_title">已有行程之间的间隔</string>
+    <string name="drive_interval_partial_explanation">时间和端点来自相邻的已有行程，不代表完整驻车历史。尚无此区间的驻车电量、能耗、功率和温度观测。</string>
+    <string name="drive_interval_start_endpoint">上次行程终点：%1$s</string>
+    <string name="drive_interval_end_endpoint">下次行程起点：%1$s</string>
+    <string name="drive_interval_source">数据来源：根据已有行程推导的间隔</string>
+    <string name="drive_interval_not_confirmed">无法确认这两次行程之间的间隔。可能存在其他或重叠行程，也可能无法读取所选记录。</string>
+    <string name="drive_interval_read_unavailable">暂时无法读取历史数据，请稍后重试。</string>
     <string name="charge_parked_title">充电驻车</string>
     <string name="charge_parked_summary">该驻车时段与一条真实充电记录重叠。</string>
     <string name="charge_parked_view">查看本次充电</string>

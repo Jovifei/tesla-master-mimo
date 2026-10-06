@@ -65,7 +65,9 @@ data class ParkedDetailData(
     @Json(name = "coverage_seconds") val coverageSeconds: Long = 0,
     @Json(name = "coverage_ratio") val coverageRatio: Double = 0.0,
     @Json(name = "linked_charge") val linkedCharge: LinkedCharge? = null,
-    @Json(name = "source") val source: String
+    @Json(name = "source") val source: String,
+    @Json(name = "start_address") val startAddress: String? = null,
+    @Json(name = "end_address") val endAddress: String? = null
 )
 
 @JsonClass(generateAdapter = true)

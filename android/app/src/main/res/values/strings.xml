@@ -863,6 +863,13 @@
     <string name="avg_distance">Avg Distance</string>
     <string name="charge_details_title">Charge Details</string>
     <string name="charge_free">Free</string>
+    <string name="drive_interval_title">Interval between recorded drives</string>
+    <string name="drive_interval_partial_explanation">These times and endpoints come from adjacent recorded drives. They do not establish a complete parked history. Stationary battery, energy, power and temperature measurements are unavailable.</string>
+    <string name="drive_interval_start_endpoint">Previous drive ended at: %1$s</string>
+    <string name="drive_interval_end_endpoint">Next drive started at: %1$s</string>
+    <string name="drive_interval_source">Source: interval derived from recorded drives</string>
+    <string name="drive_interval_not_confirmed">This interval could not be confirmed. Other drives may overlap it, or the selected records may be unavailable.</string>
+    <string name="drive_interval_read_unavailable">History could not be read right now. Please try again later.</string>
     <string name="charge_parked_title">Charging while parked</string>
     <string name="charge_parked_summary">A charging session overlaps this parked period.</string>
     <string name="charge_parked_view">View this charge</string>
