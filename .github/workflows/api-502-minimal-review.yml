@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - codex/api-502-minimal-20261007
+      - codex/api-field-repair-20261007
 
 permissions:
   contents: read
