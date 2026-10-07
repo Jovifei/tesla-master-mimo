@@ -15,7 +15,8 @@ import javax.inject.Inject
 data class ParkedDetailUiState(
     val isLoading: Boolean = true,
     val data: ParkedDetailData? = null,
-    val error: String? = null
+    val error: String? = null,
+    val errorCode: Int? = null
 )
 
 @HiltViewModel
@@ -30,7 +31,7 @@ class ParkedDetailViewModel @Inject constructor(
             _uiState.value = ParkedDetailUiState(isLoading = true)
             _uiState.value = when (val result = repository.getParkedDetail(carId, olderDriveId, newerDriveId)) {
                 is ApiResult.Success -> ParkedDetailUiState(isLoading = false, data = result.data)
-                is ApiResult.Error -> ParkedDetailUiState(isLoading = false, error = result.message)
+                is ApiResult.Error -> ParkedDetailUiState(isLoading = false, error = result.message, errorCode = result.code)
             }
         }
     }

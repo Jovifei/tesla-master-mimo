@@ -46,6 +46,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
+import com.matelink.ui.components.HistoryReadNotices
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -99,6 +101,7 @@ fun ChargeDetailScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    HistoryForegroundRefreshEffect { viewModel.loadChargeDetail(carId, chargeId) }
     LaunchedEffect(carId, chargeId) {
         viewModel.loadChargeDetail(carId, chargeId)
     }
@@ -134,6 +137,8 @@ fun ChargeDetailScreen(
         } else {
             uiState.chargeDetail?.let { detail ->
                 ChargeDetailContent(
+                    localArchiveLinkPending = uiState.localArchiveLinkPending,
+                    historySyncWarning = uiState.historySyncWarning,
                     detail = detail,
                     stats = uiState.stats,
                     costPresentation = uiState.costPresentation,
@@ -154,6 +159,8 @@ fun ChargeDetailScreen(
 
 @Composable
 private fun ChargeDetailContent(
+    localArchiveLinkPending: Boolean,
+    historySyncWarning: String?,
     detail: ChargeDetail,
     stats: ChargeDetailStats?,
     costPresentation: ChargeDetailCostPresentation,
@@ -221,6 +228,7 @@ private fun ChargeDetailContent(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        HistoryReadNotices(localArchiveLinkPending, historySyncWarning)
         // Location header card
         LocationHeaderCard(
             detail = detail,

@@ -2,6 +2,12 @@ package com.matelink.data.repository
 
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.DriveData
+import com.matelink.data.local.HistoryReadScope
+import com.matelink.data.api.models.CarData
+import com.matelink.data.api.models.HistoryContextData
+import com.matelink.data.api.models.isValidFor
+import com.matelink.data.api.models.validHistoryVehicleUid
+import com.matelink.data.local.HistoryConnectionSource
 import com.matelink.data.local.HistoryIdentityUnavailableException
 import com.matelink.data.local.VehicleContext
 import com.matelink.data.local.VehicleContextRepository
@@ -12,7 +18,10 @@ import com.matelink.data.local.entity.DriveSummary
 import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.time.Instant
+import android.util.Log
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -24,7 +33,8 @@ data class UnifiedHistory(
     val chargesFromRemote: Boolean,
     val fetchedAt: Instant = Instant.now(),
     val drivesSyncError: String? = null,
-    val chargesSyncError: String? = null
+    val chargesSyncError: String? = null,
+    val localArchiveLinkPending: Boolean = false
 )
 
 internal const val HISTORY_IDENTITY_UNAVAILABLE = "history_identity_unavailable"
@@ -36,25 +46,95 @@ internal fun historyIdentityUnavailableError(): ApiResult.Error =
         kind = ApiErrorKind.CONFIGURATION
     )
 
+internal data class VerifiedHistoryReadContext(
+    val scope: HistoryReadScope,
+    val context: VehicleContext,
+    val remoteAuthorized: Boolean,
+    val identityError: ApiResult.Error?,
+    val localArchiveLinkPending: Boolean
+)
+
+/** Narrow side-effect ports allow the actual load orchestration to be tested without Android services. */
+internal data class HistoryReadDependencies(
+    val captureScope: suspend () -> HistoryReadScope,
+    val getCars: suspend () -> ApiResult<List<CarData>>,
+    val getHistoryContext: suspend (Int) -> ApiResult<HistoryContextData>,
+    val resolveCar: (CarData, HistoryReadScope) -> VehicleContext,
+    val cachedContext: (Int, HistoryReadScope) -> VehicleContext?,
+    val localDrives: suspend (Int) -> List<DriveSummary>,
+    val localCharges: suspend (Int) -> List<ChargeSummary>,
+    val getDrives: suspend (Int, String?, String?, Int) -> ApiResult<List<DriveData>>,
+    val getCharges: suspend (Int, String?, String?, Int) -> ApiResult<List<ChargeData>>,
+    val persistDrives: suspend (List<DriveSummary>) -> Unit,
+    val persistCharges: suspend (List<ChargeSummary>) -> Unit,
+    val reportFailure: (String, Instant, ApiResult.Error) -> Unit = { _, _, _ -> },
+    val legacyLinkPending: (Int, HistoryReadScope, VehicleContext) -> Boolean = { _, _, _ -> false }
+)
+
 /** One read path for remote history plus the vehicle-scoped Room cache. */
 @Singleton
-class UnifiedHistoryRepository @Inject constructor(
-    private val teslamateRepository: TeslamateRepository,
-    private val vehicleContextRepository: VehicleContextRepository,
-    private val driveSummaryDao: DriveSummaryDao,
-    private val chargeSummaryDao: ChargeSummaryDao
-) {
-    suspend fun load(
-        remoteApiCarId: Int,
-        startDate: String? = null,
-        endDate: String? = null
-    ): ApiResult<UnifiedHistory> {
-        val readScope = try { vehicleContextRepository.captureReadScope() }
+class UnifiedHistoryRepository internal constructor(private val reads: HistoryReadDependencies) {
+    @Inject constructor(
+        teslamateRepository: TeslamateRepository,
+        vehicleContextRepository: VehicleContextRepository,
+        driveSummaryDao: DriveSummaryDao,
+        chargeSummaryDao: ChargeSummaryDao
+    ) : this(HistoryReadDependencies(
+        captureScope = { vehicleContextRepository.captureReadScope() },
+        getCars = { teslamateRepository.getCars() },
+        getHistoryContext = { teslamateRepository.getHistoryContext(it) },
+        resolveCar = { car, scope -> vehicleContextRepository.resolveVerifiedHistoryCar(car, scope) },
+        cachedContext = { id, scope -> vehicleContextRepository.cachedVerifiedHistoryContext(id, scope) },
+        localDrives = { driveSummaryDao.getAllChronological(it) },
+        localCharges = { chargeSummaryDao.getAllForCar(it) },
+        getDrives = { id, start, end, page -> teslamateRepository.getDrives(id, start, end, page = page, show = 50) },
+        getCharges = { id, start, end, page -> teslamateRepository.getCharges(id, start, end, page = page, show = 50) },
+        persistDrives = { driveSummaryDao.upsertPreservingEvidence(it) },
+        persistCharges = { chargeSummaryDao.upsertPreservingEvidence(it) },
+        reportFailure = { stage, requestedAt, error ->
+            Log.w("HistorySync", historyFailureDiagnostic(stage, requestedAt, error))
+        },
+        legacyLinkPending = { id, scope, context -> vehicleContextRepository.hasUnlinkedLegacyHistoryContext(id, scope, context) }
+    ))
+
+    /** Identity-only read shared by lists and details; never loads history pages or aggregates. */
+    internal suspend fun resolveContext(remoteApiCarId: Int): ApiResult<VerifiedHistoryReadContext> {
+        currentCoroutineContext().ensureActive()
+        val readScope = try { reads.captureScope() }
             catch (_: HistoryIdentityUnavailableException) { return historyIdentityUnavailableError() }
         suspend fun scopeUnchanged(): Boolean = try {
-            vehicleContextRepository.captureReadScope() == readScope
+            currentCoroutineContext().ensureActive()
+            reads.captureScope() == readScope
         } catch (_: HistoryIdentityUnavailableException) { false }
-        val carResult = teslamateRepository.getCars()
+        fun recordFailure(stage: String, requestedAt: Instant, error: ApiResult.Error?) {
+            if (error == null) return
+            reads.reportFailure(stage, requestedAt, error)
+        }
+        suspend fun discoverCars(): ApiResult<List<CarData>> {
+            val requestedAt = Instant.now()
+            val result = reads.getCars()
+            recordFailure("cars", requestedAt, result as? ApiResult.Error)
+            return result
+        }
+        val discovered = if (readScope.source == HistoryConnectionSource.CLOUD) {
+            val requestedAt = Instant.now()
+            val result = reads.getHistoryContext(remoteApiCarId)
+            if (!scopeUnchanged()) return historyIdentityUnavailableError()
+            recordFailure("history_context", requestedAt, result as? ApiResult.Error)
+            when (result) {
+                is ApiResult.Success -> if (result.data.isValidFor(remoteApiCarId)) {
+                    ApiResult.Success(listOf(CarData(remoteApiCarId, vehicleUid = result.data.vehicleUid)))
+                } else {
+                    ApiResult.Error("history_identity_response_invalid", code = 200, kind = ApiErrorKind.INVALID_RESPONSE)
+                        .also { recordFailure("history_context", requestedAt, it) }
+                }
+                is ApiResult.Error -> if (result.code == 404) discoverCars() else result
+            }
+        } else discoverCars()
+        val carResult = if (readScope.source == HistoryConnectionSource.CLOUD && discovered is ApiResult.Success &&
+            discovered.data.any { it.carId == remoteApiCarId && !validHistoryVehicleUid(it.vehicleUid) }) {
+            ApiResult.Error("history_identity_response_invalid", kind = ApiErrorKind.INVALID_RESPONSE)
+        } else discovered
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
         val car = when (carResult) {
             is ApiResult.Success -> carResult.data.firstOrNull { it.carId == remoteApiCarId }
@@ -62,9 +142,9 @@ class UnifiedHistoryRepository @Inject constructor(
         }
         val context = try {
             if (car != null) {
-                vehicleContextRepository.resolve(car, readScope)
+                reads.resolveCar(car, readScope)
             } else {
-                vehicleContextRepository.cachedContextForRemote(remoteApiCarId, readScope)
+                reads.cachedContext(remoteApiCarId, readScope)
                     ?: return when (carResult) {
                         is ApiResult.Error -> carResult
                         is ApiResult.Success -> ApiResult.Error(message = "vehicle_not_found", code = 404)
@@ -73,23 +153,62 @@ class UnifiedHistoryRepository @Inject constructor(
         } catch (_: HistoryIdentityUnavailableException) {
             return historyIdentityUnavailableError()
         }
+        if (!scopeUnchanged()) return historyIdentityUnavailableError()
+        return ApiResult.Success(VerifiedHistoryReadContext(readScope, context, car != null,
+            carResult as? ApiResult.Error, reads.legacyLinkPending(remoteApiCarId, readScope, context)))
+    }
+
+    internal suspend fun isContextCurrent(resolved: VerifiedHistoryReadContext): Boolean {
+        currentCoroutineContext().ensureActive()
+        return try {
+            reads.captureScope() == resolved.scope &&
+                reads.cachedContext(resolved.context.remoteApiCarId, resolved.scope)?.localHistoryCarId == resolved.context.localHistoryCarId
+        } catch (_: HistoryIdentityUnavailableException) { false }
+    }
+
+    suspend fun load(
+        remoteApiCarId: Int,
+        startDate: String? = null,
+        endDate: String? = null
+    ): ApiResult<UnifiedHistory> {
+        val resolved = when (val result = resolveContext(remoteApiCarId)) {
+            is ApiResult.Error -> return result
+            is ApiResult.Success -> result.data
+        }
+        val context = resolved.context
+        suspend fun scopeUnchanged() = isContextCurrent(resolved)
+        fun recordFailure(stage: String, requestedAt: Instant, error: ApiResult.Error?) {
+            if (error != null) reads.reportFailure(stage, requestedAt, error)
+        }
         // History lists include incomplete legacy summaries. Analytics-only DAO
         // range queries must not silently hide those records on an offline phone.
-        val localDrives = driveSummaryDao.getAllChronological(context.localHistoryCarId)
+        val localDrives = reads.localDrives(context.localHistoryCarId)
             .filter { historyInRange(it.startDate, startDate, endDate) }
-        val localCharges = chargeSummaryDao.getAllForCar(context.localHistoryCarId)
+        val localCharges = reads.localCharges(context.localHistoryCarId)
             .filter { historyInRange(it.startDate, startDate, endDate) }
-        val unavailable = ApiResult.Error("vehicle_discovery_unavailable", kind = ApiErrorKind.NETWORK)
-        val remoteDrives = if (car != null) {
+        // Only a vehicle identity verified in this read authorizes remote history. Cached contexts
+        // are origin-scoped and may preserve offline display, never authorize a numeric-ID fallback.
+        val canReadHistory = resolved.remoteAuthorized
+        val unavailable = resolved.identityError
+            ?: ApiResult.Error("vehicle_discovery_unavailable", code = 404, kind = ApiErrorKind.CONFIGURATION)
+        val remoteDrives = if (canReadHistory) {
             loadHistoryPages(id = DriveData::driveId) { page ->
                 if (!scopeUnchanged()) return@loadHistoryPages historyIdentityUnavailableError()
-                teslamateRepository.getDrives(context.remoteApiCarId, startDate, endDate, page = page, show = 50)
+                val requestedAt = Instant.now()
+                val response = reads.getDrives(context.remoteApiCarId, startDate, endDate, page)
+                recordFailure("drives", requestedAt, response as? ApiResult.Error)
+                if (!scopeUnchanged()) return@loadHistoryPages historyIdentityUnavailableError()
+                response
             }
         } else HistoryPageLoad<DriveData>(emptyList(), unavailable)
-        val remoteCharges = if (car != null) {
+        val remoteCharges = if (canReadHistory) {
             loadHistoryPages(id = ChargeData::chargeId) { page ->
                 if (!scopeUnchanged()) return@loadHistoryPages historyIdentityUnavailableError()
-                teslamateRepository.getCharges(context.remoteApiCarId, startDate, endDate, page = page, show = 50)
+                val requestedAt = Instant.now()
+                val response = reads.getCharges(context.remoteApiCarId, startDate, endDate, page)
+                recordFailure("charges", requestedAt, response as? ApiResult.Error)
+                if (!scopeUnchanged()) return@loadHistoryPages historyIdentityUnavailableError()
+                response
             }
         } else HistoryPageLoad<ChargeData>(emptyList(), unavailable)
 
@@ -98,10 +217,12 @@ class UnifiedHistoryRepository @Inject constructor(
         val charges = mergeCharges(remoteCharges.items.map { it.withLegacyRemoteQuality() }, localCharges.map { it.toAnalysisChargeData() })
         // Never delete local history just because it is outside the cloud window.
         // Persist even successfully downloaded pages preceding a later failure.
-        driveSummaryDao.upsertPreservingEvidence(drives.mapNotNull { it.toLocalSummary(context.localHistoryCarId) })
-        chargeSummaryDao.upsertPreservingEvidence(charges.mapNotNull { it.toLocalSummary(context.localHistoryCarId) })
+        reads.persistDrives(drives.mapNotNull { it.toLocalSummary(context.localHistoryCarId) })
+        if (!scopeUnchanged()) return historyIdentityUnavailableError()
+        reads.persistCharges(charges.mapNotNull { it.toLocalSummary(context.localHistoryCarId) })
+        if (!scopeUnchanged()) return historyIdentityUnavailableError()
 
-        if (drives.isEmpty() && charges.isEmpty() && carResult is ApiResult.Error) return carResult
+        if (drives.isEmpty() && charges.isEmpty() && !canReadHistory) resolved.identityError?.let { return it }
         if (drives.isEmpty() && charges.isEmpty()) {
             remoteDrives.error?.let { return it }
             remoteCharges.error?.let { return it }
@@ -114,7 +235,8 @@ class UnifiedHistoryRepository @Inject constructor(
                 drivesFromRemote = remoteDrives.error == null,
                 chargesFromRemote = remoteCharges.error == null,
                 drivesSyncError = remoteDrives.error?.let { if (remoteDrives.items.isEmpty()) "history_cached" else "history_partial" },
-                chargesSyncError = remoteCharges.error?.let { if (remoteCharges.items.isEmpty()) "history_cached" else "history_partial" }
+                chargesSyncError = remoteCharges.error?.let { if (remoteCharges.items.isEmpty()) "history_cached" else "history_partial" },
+                localArchiveLinkPending = resolved.localArchiveLinkPending
             )
         )
     }

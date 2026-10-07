@@ -13,12 +13,9 @@ import javax.inject.Singleton
  * account ids, server URLs and tokens never become preference values or keys.
  */
 @Singleton
-class VehicleContextStore @Inject constructor(
-    @ApplicationContext context: Context
-) {
-    private val preferences: SharedPreferences = context.getSharedPreferences(
-        "vehicle_history_identity",
-        Context.MODE_PRIVATE
+class VehicleContextStore internal constructor(private val preferences: SharedPreferences) {
+    @Inject constructor(@ApplicationContext context: Context) : this(
+        context.getSharedPreferences("vehicle_history_identity", Context.MODE_PRIVATE)
     )
 
     @Synchronized
@@ -67,6 +64,32 @@ class VehicleContextStore @Inject constructor(
     fun cloudRemoteOpaqueIdentity(accountNamespace: String, remoteApiCarId: Int): String =
         "cloud-cache:${sha256Hex("${accountNamespace.trim()}:$remoteApiCarId")}"
 
+    /** Only written after an authenticated origin-specific vehicle identity has been resolved. */
+    @Synchronized
+    fun rememberOriginCloudRemoteMapping(accountNamespace: String, apiOrigin: String, remoteApiCarId: Int, localHistoryCarId: Int) {
+        val account = accountNamespace.trim()
+        if (account.isEmpty() || remoteApiCarId < 0 || localHistoryCarId >= 0) return
+        val origin = requireSelfHostedServerIdentity(apiOrigin)
+        check(preferences.edit().putInt(originCloudRemoteKey(account, origin, remoteApiCarId), localHistoryCarId).commit()) {
+            "unable to persist origin-scoped history mapping"
+        }
+    }
+
+    @Synchronized
+    fun findOriginCloudLocalHistoryCarId(accountNamespace: String, apiOrigin: String, remoteApiCarId: Int): Int? {
+        val account = accountNamespace.trim()
+        if (account.isEmpty() || remoteApiCarId < 0) return null
+        val origin = requireSelfHostedServerIdentity(apiOrigin)
+        return preferences.getInt(originCloudRemoteKey(account, origin, remoteApiCarId), Int.MIN_VALUE)
+            .takeUnless { it == Int.MIN_VALUE }
+    }
+
+    fun originCloudRemoteOpaqueIdentity(accountNamespace: String, apiOrigin: String, remoteApiCarId: Int): String =
+        "cloud-origin-cache:${sha256Hex("${requireSelfHostedServerIdentity(apiOrigin)}\u0000${accountNamespace.trim()}\u0000$remoteApiCarId")}"
+
+    private fun originCloudRemoteKey(account: String, origin: String, id: Int): String =
+        "remote-origin:${sha256Hex("$origin\u0000$account\u0000$id")}"
+
     private fun allocate(identityKey: String): Int {
         val next = preferences.getInt(NEXT_ID_KEY, -1)
         require(next in (Int.MIN_VALUE + 1)..-1) { "local history id allocator exhausted" }
@@ -94,6 +117,27 @@ class VehicleContextStore @Inject constructor(
         val context = getOrAllocate(stableIdentity, car.carId, connectionSource, serverIdentity)
         if (connectionSource == HistoryConnectionSource.CLOUD && !accountNamespace.isNullOrBlank()) {
             rememberCloudRemoteMapping(accountNamespace, car.carId, context.localHistoryCarId)
+        }
+        return context
+    }
+
+    /** Dedicated verified-origin namespace for the unified history read path only. */
+    fun resolveVerifiedHistoryCar(
+        car: CarData,
+        accountNamespace: String?,
+        connectionSource: HistoryConnectionSource,
+        serverIdentity: String,
+        effectiveApiOrigin: String
+    ): VehicleContext {
+        val stableIdentity = when (connectionSource) {
+            HistoryConnectionSource.CLOUD -> cloudOriginVehicleStableIdentity(
+                accountNamespace.orEmpty(), effectiveApiOrigin, car.vehicleUid.orEmpty()
+            )
+            HistoryConnectionSource.SELF_HOSTED -> selfHostedVehicleStableIdentity(serverIdentity, car.carId)
+        }
+        val context = getOrAllocate(stableIdentity, car.carId, connectionSource, serverIdentity)
+        if (connectionSource == HistoryConnectionSource.CLOUD && !accountNamespace.isNullOrBlank()) {
+            rememberOriginCloudRemoteMapping(accountNamespace, effectiveApiOrigin, car.carId, context.localHistoryCarId)
         }
         return context
     }

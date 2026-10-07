@@ -40,7 +40,6 @@ import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.theme.StatusWarning
 import com.matelink.data.api.models.ParkedDetailData
 import com.matelink.util.formatCompactDateTimeRange
-import com.matelink.util.toChineseDisplayAddress
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,7 +78,13 @@ fun ParkedDetailScreen(
                 modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
-            ) { Text(state.error ?: stringResource(R.string.not_available)) }
+            ) {
+                Text(when (state.errorCode) {
+                    404 -> stringResource(R.string.drive_interval_not_confirmed)
+                    503 -> stringResource(R.string.drive_interval_read_unavailable)
+                    else -> state.error ?: stringResource(R.string.not_available)
+                })
+            }
         }
     }
 }
@@ -91,12 +96,14 @@ private fun ParkedDetailContent(
     onNavigateToChargeDetail: (Int) -> Unit
 ) {
     val unavailable = stringResource(R.string.not_available)
+    val derivedInterval = data.source == "drive_history_interval"
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = data.address.toChineseDisplayAddress() ?: stringResource(R.string.unknown_location),
+            text = if (derivedInterval) stringResource(R.string.drive_interval_title)
+                else parkedAddressLabel(data.address) ?: stringResource(R.string.unknown_location),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
@@ -105,6 +112,14 @@ private fun ParkedDetailContent(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
+        if (derivedInterval) {
+            Text(stringResource(R.string.drive_interval_partial_explanation))
+            Text(stringResource(R.string.drive_interval_start_endpoint,
+                parkedAddressLabel(data.startAddress) ?: stringResource(R.string.unknown_location)))
+            Text(stringResource(R.string.drive_interval_end_endpoint,
+                parkedAddressLabel(data.endAddress) ?: stringResource(R.string.unknown_location)))
+        }
 
         data.linkedCharge?.let { linkedCharge ->
             ChargeParkedCard(
@@ -136,7 +151,8 @@ private fun ParkedDetailContent(
             )
         )
         Text(
-            text = "数据来源：${if (data.source == "database_latest") "TeslaMate 历史数据库" else data.source}",
+            text = if (derivedInterval) stringResource(R.string.drive_interval_source)
+                else "数据来源：${if (data.source == "database_latest") "TeslaMate 历史数据库" else data.source}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

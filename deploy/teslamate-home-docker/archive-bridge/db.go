@@ -142,7 +142,14 @@ func decodeRoute(data []byte) ([]RoutePoint, error) {
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, RoutePoint{Date: date, Latitude: latitude, Longitude: longitude, Speed: speed, Power: power, Heading: heading})
+		batteryLevel, err := rawPointer[int](item, "battery_level")
+		if err != nil {
+			return nil, err
+		}
+		if batteryLevel != nil && (*batteryLevel < 0 || *batteryLevel > 100) {
+			batteryLevel = nil
+		}
+		result = append(result, RoutePoint{Date: date, Latitude: latitude, Longitude: longitude, Speed: speed, Power: power, Heading: heading, BatteryLevel: batteryLevel})
 	}
 	return result, nil
 }

@@ -80,6 +80,17 @@ func (a *app) telemetryHistory(w http.ResponseWriter, r *http.Request, userID st
 	if len(parts) > 0 && parts[0] != "" {
 		publicID, parseErr := strconv.Atoi(strings.TrimSpace(parts[0]))
 		if parseErr == nil && publicID > 0 {
+			release, err := acquireHistoryHeavyBudget(r.Context(), userID, vehicleID)
+			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					a.json(w, http.StatusRequestTimeout, map[string]string{"error": err.Error()})
+					return
+				}
+				w.Header().Set("Retry-After", "1")
+				a.json(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+				return
+			}
+			defer release()
 			item, ok, err := a.telemetry.historyDetailContext(r.Context(), userID, vehicleID, kind, publicID)
 			if err != nil {
 				a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_unavailable"})

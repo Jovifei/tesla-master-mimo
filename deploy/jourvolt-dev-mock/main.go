@@ -634,6 +634,18 @@ func (a *app) adapterResource(w http.ResponseWriter, r *http.Request, userID, pa
 		a.json(w, http.StatusNotFound, map[string]string{"error": "vehicle_not_found"})
 		return
 	}
+	// This identity read has its own persisted ownership check. It must not use
+	// requireVehicle, whose cache-miss path calls the live Tesla provider.
+	if parts[1] == "history-context" {
+		a.historyContext(w, r, userID, carID, path, parts)
+		return
+	}
+	if parts[1] == "parked" {
+		// Historical interval reads verify persisted owner/car scope and must
+		// never fall back to live vehicle discovery.
+		a.parkedDetail(w, r, userID, carID, path, parts)
+		return
+	}
 	if !a.requireVehicle(w, r, userID, carID) {
 		return
 	}
@@ -652,8 +664,6 @@ func (a *app) adapterResource(w http.ResponseWriter, r *http.Request, userID, pa
 			"windows": []any{},
 			"meta":    map[string]any{"availability": "collecting", "source": "local_history"},
 		}})
-	case "parked":
-		a.json(w, http.StatusOK, map[string]any{"data": nil, "error": "history_not_collected"})
 	default:
 		a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 	}
@@ -1063,6 +1073,35 @@ func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		dsn = "postgres://jourvolt:jourvolt@127.0.0.1:5432/jourvolt?sslmode=disable"
+	}
+	if os.Getenv("JOURVOLT_REBUILD_NATIVE_SHADOW") == "1" {
+		if err := runNativeShadowRebuild(ctx, os.Getenv, os.Stdout); err != nil {
+			log.Fatal("native shadow rebuild failed; verify scope, source revision and generation integrity")
+		}
+		return
+	}
+	if os.Getenv("JOURVOLT_AUDIT_NATIVE_SHADOW") == "1" {
+		// Explicit maintenance only: use an already-migrated database and exit
+		// before schema startup, provider configuration or network listeners.
+		if err := runNativeShadowAudit(ctx, os.Getenv, os.Stdout); err != nil {
+			log.Fatal("native shadow comparison failed; verify scope, revisions and chunk integrity")
+		}
+		return
+	}
+	if os.Getenv("JOURVOLT_BACKFILL_HISTORY_SUMMARIES") == "1" {
+		// Maintenance assumes the upgraded schema already exists. Do not run
+		// unrelated startup migrations, provider setup or listeners for a batch.
+		pool, err := pgxpool.New(ctx, dsn)
+		if err != nil {
+			log.Fatal("history summary backfill database configuration invalid")
+		}
+		defer pool.Close()
+		count, err := backfillHistorySummaries(ctx, pool, maxHistorySummaryBackfillBatch)
+		if err != nil {
+			log.Fatalf("history summary backfill: %v", err)
+		}
+		log.Printf("history summary backfill processed=%d batch_limit=%d; inspect pending/invalid counts before another batch", count, maxHistorySummaryBackfillBatch)
+		return
 	}
 	store, err := openStore(ctx, dsn)
 	if err != nil {

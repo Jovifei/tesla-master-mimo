@@ -33,6 +33,10 @@ import retrofit2.http.Query
 
 interface TeslamateApi {
 
+    @GET("api/matelink/v1/cars/{carId}/history-context")
+    suspend fun getHistoryContext(@Path("carId") carId: Int): Response<com.matelink.data.api.models.HistoryContextResponse>
+
+
     @GET("api/matelink/v1/capabilities")
     suspend fun getAdapterCapabilities(): Response<AdapterCapabilitiesResponse>
 

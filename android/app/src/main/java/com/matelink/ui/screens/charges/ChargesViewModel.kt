@@ -10,6 +10,7 @@ import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.dao.AggregateDao
 import com.matelink.data.model.Currency
+import com.matelink.data.repository.saveVerifiedHistoryChargeCost
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.UnifiedHistoryRepository
@@ -27,7 +28,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import java.time.Clock
+import com.matelink.domain.history.LatestHistoryLoad
+import com.matelink.domain.history.refreshedHistoryWindow
 import java.time.LocalDate
 import java.time.YearMonth
 import com.matelink.util.formatMonthYear
@@ -101,6 +106,7 @@ data class ChargesUiState(
     val chartGranularity: ChartGranularity = ChartGranularity.MONTHLY,
     val error: String? = null,
     val historySyncWarning: String? = null,
+    val localArchiveLinkPending: Boolean = false,
     val startDate: LocalDate? = null,
     val endDate: LocalDate? = null,
     val selectedFilter: DateFilter = DateFilter.ALL_TIME,  // Preserve filter in ViewModel
@@ -134,6 +140,7 @@ class ChargesViewModel @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val chargeCostOverrideStore: ChargeCostOverrideStore,
     private val aggregateDao: AggregateDao,
+    private val clock: Clock,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -141,6 +148,7 @@ class ChargesViewModel @Inject constructor(
     val uiState: StateFlow<ChargesUiState> = _uiState.asStateFlow()
 
     private var carId: Int? = null
+    private val latestLoad = LatestHistoryLoad()
     private var historyCarId: Int? = null
     private var showShortDrivesCharges: Boolean = false
     private var allCharges: List<ChargeData> = emptyList()
@@ -229,14 +237,9 @@ class ChargesViewModel @Inject constructor(
     fun setCarId(id: Int) {
         if (carId != id) {
             carId = id
-            _uiState.update { state ->
-                state.copy(
-                    priceOverrides = allCharges.mapNotNull { charge ->
-                        allPriceOverrides[chargeTotalOverrideKey(historyCarId ?: id, charge.chargeId)]
-                            ?.let { charge.chargeId to it }
-                    }.toMap()
-                )
-            }
+            historyCarId = null
+            allCharges = emptyList()
+            _uiState.update { it.copy(charges = emptyList(), freeSupercharging = false, priceOverrides = emptyMap(), chartData = emptyList(), summary = ChargesSummary(), dcChargeIds = emptySet(), processedChargeIds = emptySet(), availableLocations = emptyList(), error = null, historySyncWarning = null, localArchiveLinkPending = false) }
             loadCarSettings(id)
             // Apply restored (or default) filter on first load. CUSTOM needs the
             // explicit date pair — setDateFilter is a no-op for CUSTOM.
@@ -248,13 +251,14 @@ class ChargesViewModel @Inject constructor(
             } else {
                 setDateFilter(state.selectedFilter)
             }
-        }
+        } else refresh()
     }
 
     private fun loadCarSettings(id: Int) {
         viewModelScope.launch {
             when (val result = repository.getCar(id)) {
                 is ApiResult.Success -> {
+                    if (carId != id) return@launch
                     val free = result.data.carSettings?.freeSupercharging ?: false
                     _uiState.update { it.copy(freeSupercharging = free) }
                     if (allCharges.isNotEmpty()) applyFiltersAndUpdateState()
@@ -268,7 +272,7 @@ class ChargesViewModel @Inject constructor(
 
     fun setDateFilter(filter: DateFilter) {
         if (filter == DateFilter.CUSTOM) return
-        val endDate = LocalDate.now()
+        val endDate = LocalDate.now(clock)
         val startDate = filter.days?.let { days ->
             if (days > 0) endDate.minusDays(days - 1) else endDate
         }
@@ -303,7 +307,10 @@ class ChargesViewModel @Inject constructor(
         carId?.let {
             _uiState.update { it.copy(isRefreshing = true) }
             val state = _uiState.value
-            loadCharges(state.startDate, state.endDate)
+            val window = refreshedHistoryWindow(state.selectedFilter.days, state.selectedFilter == DateFilter.CUSTOM,
+                state.startDate, state.endDate, clock)
+            _uiState.update { it.copy(startDate = window.start, endDate = window.end) }
+            loadCharges(window.start, window.end)
         }
     }
 
@@ -350,8 +357,8 @@ class ChargesViewModel @Inject constructor(
 
     private fun loadCharges(startDate: LocalDate? = null, endDate: LocalDate? = null) {
         val id = carId ?: return
-
-        viewModelScope.launch {
+        val requestZone = clock.zone
+        latestLoad.launch(viewModelScope) {
             val state = _uiState.value
             // Only show the full-screen spinner on the true initial load — i.e. when
             // we've never successfully fetched any data yet. Using state.charges (the
@@ -370,25 +377,30 @@ class ChargesViewModel @Inject constructor(
             }
 
             // Load the display setting
-            showShortDrivesCharges = settingsDataStore.showShortDrivesCharges.first()
+            val showShort = settingsDataStore.showShortDrivesCharges.first()
+            ensureCurrent()
+            showShortDrivesCharges = showShort
 
             // Local-day RFC3339 boundaries (see LocalDayBoundaries for why not UTC).
-            val startDateStr = startDate?.let { LocalDayBoundaries.startOfDay(it) }
-            val endDateStr = endDate?.let { LocalDayBoundaries.endOfDay(it) }
+            val startDateStr = startDate?.let { LocalDayBoundaries.startOfDay(it, requestZone) }
+            val endDateStr = endDate?.let { LocalDayBoundaries.endOfDay(it, requestZone) }
 
-            when (val result = historyRepository.load(id, startDateStr, endDateStr)) {
+            val result = historyRepository.load(id, startDateStr, endDateStr)
+            ensureCurrent()
+            when (result) {
                 is ApiResult.Success -> {
-                    historyCarId = result.data.context.localHistoryCarId
                     val dcChargeIds = try {
                         aggregateDao.getDcChargeIds(result.data.context.localHistoryCarId).toSet()
-                    } catch (e: Exception) {
+                    } catch (e: CancellationException) { throw e } catch (e: Exception) {
                         emptySet()
                     }
                     val processedChargeIds = try {
                         aggregateDao.getAllProcessedChargeIds(result.data.context.localHistoryCarId).toSet()
-                    } catch (e: Exception) {
+                    } catch (e: CancellationException) { throw e } catch (e: Exception) {
                         emptySet()
                     }
+                    ensureCurrent()
+                    historyCarId = result.data.context.localHistoryCarId
                     allCharges = result.data.charges
                     val priceOverrides = result.data.charges.mapNotNull { charge ->
                         allPriceOverrides[chargeTotalOverrideKey(result.data.context.localHistoryCarId, charge.chargeId)]
@@ -403,13 +415,19 @@ class ChargesViewModel @Inject constructor(
                             priceOverrides = priceOverrides,
                             chartGranularity = granularity,
                             error = null,
-                            historySyncWarning = result.data.chargesSyncError
+                            historySyncWarning = result.data.chargesSyncError,
+                            localArchiveLinkPending = result.data.localArchiveLinkPending
                         )
                     }
 
                     applyFiltersAndUpdateState()
                 }
                 is ApiResult.Error -> {
+                    if (result.message == com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE) {
+                        allCharges = emptyList()
+                        historyCarId = null
+                        _uiState.update { it.copy(charges = emptyList(), freeSupercharging = false, priceOverrides = emptyMap(), chartData = emptyList(), summary = ChargesSummary(), dcChargeIds = emptySet(), processedChargeIds = emptySet(), availableLocations = emptyList(), localArchiveLinkPending = false, historySyncWarning = null) }
+                    }
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -633,7 +651,7 @@ class ChargesViewModel @Inject constructor(
                     val chargesInMonth = chargesByMonth[key] ?: emptyList()
                     result.add(
                         createChargeChartPoint(
-                            label = firstDay.formatMonthYear(Locale.getDefault()),
+                            label = firstDay.formatMonthYear(Locale.getDefault(), includeYear = start.year != end.year),
                             sortKey = key,
                             charges = chargesInMonth,
                             dcChargeIds = _uiState.value.dcChargeIds
@@ -683,11 +701,22 @@ class ChargesViewModel @Inject constructor(
 
     fun saveManualTotalAmount(chargeId: Int, totalAmount: Double?) {
         val currentCarId = historyCarId ?: return
+        val remoteCarId = carId ?: return
         val validTotal = validManualChargeTotal(totalAmount)
         if (totalAmount != null && validTotal == null) return
 
         viewModelScope.launch {
-            chargeCostOverrideStore.save(currentCarId, chargeId, validTotal)
+            val proof = when (val result = historyRepository.resolveContext(remoteCarId)) {
+                is ApiResult.Error -> {
+                    if (carId == remoteCarId && historyCarId == currentCarId) _uiState.update { it.copy(error = result.message) }
+                    return@launch
+                }
+                is ApiResult.Success -> result.data
+            }
+            if (carId != remoteCarId || historyCarId != currentCarId ||
+                proof.context.localHistoryCarId != currentCarId || !historyRepository.isContextCurrent(proof)) return@launch
+            saveVerifiedHistoryChargeCost(proof, chargeId, validTotal,
+                historyRepository::isContextCurrent, chargeCostOverrideStore::save)
         }
     }
 

@@ -43,6 +43,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
+import com.matelink.ui.components.HistoryReadNotices
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -102,6 +104,7 @@ fun DriveDetailScreen(
     val isDarkTheme = isSystemInDarkTheme()
     val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
 
+    HistoryForegroundRefreshEffect { viewModel.loadDriveDetail(carId, driveId) }
     LaunchedEffect(carId, driveId) {
         viewModel.loadDriveDetail(carId, driveId)
     }
@@ -148,6 +151,8 @@ fun DriveDetailScreen(
         } else {
             uiState.driveDetail?.let { detail ->
                 DriveDetailContent(
+                    localArchiveLinkPending = uiState.localArchiveLinkPending,
+                    historySyncWarning = uiState.historySyncWarning,
                     detail = detail,
                     stats = uiState.stats,
                     units = uiState.units,
@@ -167,6 +172,8 @@ fun DriveDetailScreen(
 
 @Composable
 private fun DriveDetailContent(
+    localArchiveLinkPending: Boolean,
+    historySyncWarning: String?,
     detail: DriveDetail,
     stats: DriveDetailStats?,
     units: Units?,
@@ -212,6 +219,13 @@ private fun DriveDetailContent(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        HistoryReadNotices(localArchiveLinkPending, historySyncWarning)
+
+        // Map showing the route
+        if (!detail.positions.isNullOrEmpty()) {
+            DriveMapCard(positions = detail.positions, routeColor = routeColor)
+        }
+
         // Route header card
         RouteHeaderCard(detail = detail)
 
@@ -346,11 +360,6 @@ private fun DriveDetailContent(
                     )
                 )
             }
-        }
-
-        // Map showing the route
-        if (!detail.positions.isNullOrEmpty()) {
-            DriveMapCard(positions = detail.positions, routeColor = routeColor)
         }
 
         // Weather along the way - shown when loading or has data

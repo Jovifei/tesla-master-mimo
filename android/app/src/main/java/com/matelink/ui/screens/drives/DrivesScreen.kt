@@ -1,6 +1,7 @@
 package com.matelink.ui.screens.drives
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,14 +47,20 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -111,6 +118,7 @@ fun DrivesScreen(
     )
 
     // Initialize ViewModel with carId (only loads data on first call)
+    HistoryForegroundRefreshEffect { viewModel.refresh() }
     LaunchedEffect(carId) {
         viewModel.setCarId(carId)
     }
@@ -166,6 +174,7 @@ fun DrivesScreen(
             } else {
                 DrivesContent(
                     historySyncWarning = uiState.historySyncWarning,
+                    localArchiveLinkPending = uiState.localArchiveLinkPending,
                     drives = uiState.drives,
                     chartData = uiState.chartData,
                     chartGranularity = uiState.chartGranularity,
@@ -194,6 +203,7 @@ fun DrivesScreen(
 @Composable
 private fun DrivesContent(
     historySyncWarning: String?,
+    localArchiveLinkPending: Boolean,
     drives: List<DriveData>,
     chartData: List<DriveChartData>,
     chartGranularity: DriveChartGranularity,
@@ -216,7 +226,7 @@ private fun DrivesContent(
     val historyItems = remember(drives) { buildDriveHistoryItems(drives) }
     // Header items in this LazyColumn, in render order: date chips, distance chips,
     // summary, charts (conditional), history header. Adjust if items are added.
-    val headerCount = 4 + (if (chartData.isNotEmpty()) 1 else 0) + (if (historySyncWarning != null) 1 else 0)
+    val headerCount = 4 + (if (chartData.isNotEmpty()) 1 else 0) + (if (historySyncWarning != null) 1 else 0) + (if (localArchiveLinkPending) 1 else 0)
 
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
@@ -225,10 +235,23 @@ private fun DrivesContent(
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
+        if (localArchiveLinkPending) {
+            item(key = "history_archive_link_pending") {
+                Text(
+                    text = stringResource(R.string.history_archive_link_pending),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
+                )
+            }
+        }
         if (historySyncWarning != null) {
             item(key = "history_sync_warning") {
                 Text(
-                    text = stringResource(if (historySyncWarning == "history_partial") R.string.history_sync_partial else R.string.history_sync_cached),
+                    text = stringResource(when (historySyncWarning) {
+                        "history_partial" -> R.string.history_sync_partial
+                        else -> R.string.history_sync_cached
+                    }),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.fillMaxWidth().padding(12.dp)
@@ -354,7 +377,7 @@ private fun DrivesContent(
     }
 }
 
-private sealed interface DriveHistoryItem {
+internal sealed interface DriveHistoryItem {
     val key: String
     val dateForIndicator: String?
 
@@ -376,15 +399,21 @@ private sealed interface DriveHistoryItem {
     }
 }
 
-private fun buildDriveHistoryItems(drives: List<DriveData>): List<DriveHistoryItem> {
-    val routeDrives = drives.filter { (it.distance ?: 0.0) >= 0.5 }
-    if (routeDrives.isEmpty()) return emptyList()
+internal fun buildDriveHistoryItems(drives: List<DriveData>): List<DriveHistoryItem> {
+    // DrivesViewModel owns card visibility. Parking keeps its older >=0.5 km
+    // route boundary so newly visible unknown/short drives do not change parked inference.
+    if (drives.isEmpty()) return emptyList()
+    val parkingEligibleIndices = drives.indices.filter { index ->
+        drives[index].distance?.let { distance -> distance >= 0.5 } == true
+    }
+    val parkedAfterIndex = parkingEligibleIndices.zipWithNext().mapNotNull { (newerIndex, olderIndex) ->
+        createParkedSegment(drives[olderIndex], drives[newerIndex])?.let { newerIndex to it }
+    }.toMap()
+
     val items = mutableListOf<DriveHistoryItem>()
-    routeDrives.forEachIndexed { index, drive ->
+    drives.forEachIndexed { index, drive ->
         items += DriveHistoryItem.Drive(drive)
-        val olderDrive = routeDrives.getOrNull(index + 1) ?: return@forEachIndexed
-        val parked = createParkedSegment(olderDrive, drive)
-        if (parked != null) items += parked
+        parkedAfterIndex[index]?.let { items += it }
     }
     return items
 }
@@ -405,8 +434,7 @@ private fun createParkedSegment(
         startDate = startDate,
         endDate = endDate,
         durationMin = durationMin,
-        location = olderDrive.endAddress?.takeIf { it.isNotBlank() }
-            ?: newerDrive.startAddress?.takeIf { it.isNotBlank() }
+        location = parkedAddressLabel(olderDrive.endAddress, newerDrive.startAddress)
     )
 }
 
@@ -770,6 +798,11 @@ private fun DrivesChartsPager(
     palette: CarColorPalette
 ) {
     val pagerState = rememberPagerState(pageCount = { DrivesChartType.entries.size })
+    val pagerScope = rememberCoroutineScope()
+    val pageLabels = listOf(
+        stringResource(R.string.efficiency_drive_count), stringResource(R.string.duration),
+        stringResource(R.string.distance), stringResource(R.string.record_top_speed)
+    )
 
     Column {
         Card(
@@ -805,16 +838,20 @@ private fun DrivesChartsPager(
         ) {
             repeat(DrivesChartType.entries.size) { index ->
                 val isSelected = pagerState.currentPage == index
+                // A direct page control remains available while dense month bars scroll inside.
                 Box(
                     modifier = Modifier
-                        .padding(horizontal = 4.dp)
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (isSelected) palette.accent
-                            else palette.onSurfaceVariant.copy(alpha = 0.3f)
-                        )
-                )
+                        .size(48.dp)
+                        .semantics { contentDescription = pageLabels[index] }
+                        .selectable(selected = isSelected, role = Role.Tab) {
+                            pagerScope.launch { pagerState.animateScrollToPage(index) }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(
+                        if (isSelected) palette.accent else palette.onSurfaceVariant.copy(alpha = 0.3f)
+                    ))
+                }
             }
         }
     }
@@ -925,7 +962,9 @@ private fun DrivesChartPage(
         }
         val yAxisFormatter: (Double) -> String = when (chartType) {
             DrivesChartType.TIME -> { v -> formatDurationCompact(v.toInt()) }
-            else -> { v -> if (v >= 1000) "%.0fk".format(v / 1000) else "%.0f".format(v) }
+            DrivesChartType.DISTANCE -> { v -> "%.0f $distanceUnit".format(v) }
+            DrivesChartType.TOP_SPEED -> { v -> "${v.toInt()} $speedUnit" }
+            DrivesChartType.COUNT -> { v -> if (v >= 1000) "%.0fk".format(v / 1000) else "%.0f".format(v) }
         }
 
         InteractiveBarChart(
@@ -934,6 +973,7 @@ private fun DrivesChartPage(
             barColor = palette.accent,
             labelColor = palette.onSurfaceVariant,
             showEveryNthLabel = labelInterval,
+            showBarValues = granularity == DriveChartGranularity.MONTHLY,
             valueFormatter = valueFormatter,
             yAxisFormatter = yAxisFormatter
         )

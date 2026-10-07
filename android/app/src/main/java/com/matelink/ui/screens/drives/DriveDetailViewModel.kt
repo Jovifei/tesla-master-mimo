@@ -10,7 +10,11 @@ import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.GeocodingRepository
-import com.matelink.data.local.VehicleContextRepository
+import com.matelink.data.repository.UnifiedHistoryRepository
+import com.matelink.data.repository.VerifiedHistoryReadContext
+import com.matelink.data.repository.historyIdentityUnavailableError
+import com.matelink.domain.history.LatestHistoryLoad
+import kotlinx.coroutines.CancellationException
 import kotlin.math.roundToInt
 import com.matelink.data.local.entity.SavedTripLeg
 import com.matelink.data.repository.TeslamateRepository
@@ -18,6 +22,7 @@ import com.matelink.data.repository.WeatherPoint
 import com.matelink.data.repository.WeatherRepository
 import com.matelink.domain.LegRef
 import com.matelink.domain.TripRepository
+import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.model.Trip
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +34,8 @@ import javax.inject.Inject
 
 data class DriveDetailUiState(
     val isLoading: Boolean = true,
+    val localArchiveLinkPending: Boolean = false,
+    val historySyncWarning: String? = null,
     val error: String? = null,
     val driveDetail: DriveDetail? = null,
     val units: Units? = null,
@@ -103,7 +110,7 @@ internal fun presentDriveDetailEnergy(
 class DriveDetailViewModel @Inject constructor(
     private val repository: TeslamateRepository,
     private val driveSummaryDao: DriveSummaryDao,
-    private val vehicleContextRepository: VehicleContextRepository,
+    private val historyRepository: UnifiedHistoryRepository,
     private val weatherRepository: WeatherRepository,
     private val tripRepository: TripRepository,
     private val geocodingRepository: GeocodingRepository
@@ -112,28 +119,47 @@ class DriveDetailViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(DriveDetailUiState())
     val uiState: StateFlow<DriveDetailUiState> = _uiState.asStateFlow()
 
+    private val latestLoad = LatestHistoryLoad()
+    private var historyProof: VerifiedHistoryReadContext? = null
     private var carId: Int? = null
     private var driveId: Int? = null
 
     fun loadDriveDetail(carId: Int, driveId: Int) {
-        if (this.carId == carId && this.driveId == driveId && _uiState.value.driveDetail != null) {
-            return // Already loaded
-        }
-
         this.carId = carId
         this.driveId = driveId
-
-        viewModelScope.launch {
-            val containing = tripRepository.findTripContaining(carId, SavedTripLeg.TYPE_DRIVE, driveId)
+        historyProof = null
+        _uiState.value = DriveDetailUiState()
+        latestLoad.launch(viewModelScope) {
+            val resolved = when (val result = historyRepository.resolveContext(carId)) {
+                is ApiResult.Error -> {
+                    ensureCurrent()
+                    _uiState.update { it.copy(isLoading = false, error = result.message) }
+                    return@launch
+                }
+                is ApiResult.Success -> result.data
+            }
+            suspend fun checkContext() {
+                ensureCurrent()
+                if (!historyRepository.isContextCurrent(resolved)) {
+                    historyProof = null
+                    _uiState.value = DriveDetailUiState(isLoading = false, error = historyIdentityUnavailableError().message)
+                    throw CancellationException("History identity changed")
+                }
+            }
+            checkContext()
+            historyProof = resolved
+            val localHistoryCarId = resolved.context.localHistoryCarId
+            _uiState.update { it.copy(localArchiveLinkPending = resolved.localArchiveLinkPending) }
+            val containing = tripRepository.findTripContaining(localHistoryCarId, SavedTripLeg.TYPE_DRIVE, driveId)
+            checkContext()
             _uiState.update { it.copy(containingTrip = containing) }
-        }
-
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
 
             // Fetch drive detail and units in parallel
-            val detailResult = repository.getDriveDetail(carId, driveId)
-            val statusResult = repository.getCarStatus(carId)
+            val detailResult = if (resolved.remoteAuthorized) repository.getDriveDetail(carId, driveId)
+                else resolved.identityError ?: historyIdentityUnavailableError()
+            checkContext()
+            val statusResult = if (resolved.remoteAuthorized) repository.getCarStatus(carId) else historyIdentityUnavailableError()
+            checkContext()
 
             val units = when (statusResult) {
                 is ApiResult.Success -> statusResult.data.units
@@ -143,8 +169,8 @@ class DriveDetailViewModel @Inject constructor(
             when (detailResult) {
                 is ApiResult.Success -> {
                     val detail = enrichAddresses(detailResult.data)
-                    val localHistoryCarId = vehicleContextRepository.requireLocalHistoryCarId(carId)
                     val persistedEnergy = driveSummaryDao.get(localHistoryCarId, driveId)
+                    checkContext()
                     val stats = calculateDriveDetailStats(
                         detail = detail,
                         energy = presentDriveDetailEnergy(
@@ -166,13 +192,12 @@ class DriveDetailViewModel @Inject constructor(
                     }
 
                     // Fetch weather data in the background
-                    loadWeatherData(detail)
+                    loadWeatherData(detail, resolved)
                 }
                 is ApiResult.Error -> {
-                    val localHistoryCarId = runCatching {
-                        vehicleContextRepository.requireLocalHistoryCarId(carId)
-                    }.getOrDefault(carId)
+                    _uiState.update { it.copy(historySyncWarning = "history_cached") }
                     val localSummary = driveSummaryDao.get(localHistoryCarId, driveId)
+                    checkContext()
                     if (localSummary != null) {
                         val synthesized = DriveDetail(
                             driveId = localSummary.driveId,
@@ -189,10 +214,7 @@ class DriveDetailViewModel @Inject constructor(
                             speedAvg = localSummary.speedAvg.toDouble(),
                             powerMax = localSummary.powerMax,
                             powerMin = localSummary.powerMin,
-                            batteryDetails = com.matelink.data.api.models.DriveBatteryDetails(
-                                startBatteryLevel = localSummary.startBatteryLevel,
-                                endBatteryLevel = localSummary.endBatteryLevel
-                            ),
+                            batteryDetails = localSummary.toAnalysisDriveData().batteryDetails,
                             outsideTempAvg = localSummary.outsideTempAvg,
                             insideTempAvg = localSummary.insideTempAvg,
                             energyConsumedNet = localSummary.energyConsumed,
@@ -250,7 +272,7 @@ class DriveDetailViewModel @Inject constructor(
      * Loads weather data for the drive positions.
      * This runs in the background after the main drive detail is loaded.
      */
-    private fun loadWeatherData(detail: DriveDetail) {
+    private fun loadWeatherData(detail: DriveDetail, proof: VerifiedHistoryReadContext) {
         val positions = detail.positions
         val distance = detail.distance
 
@@ -259,6 +281,7 @@ class DriveDetailViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
+            if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
             _uiState.update { it.copy(isLoadingWeather = true) }
 
             try {
@@ -267,6 +290,7 @@ class DriveDetailViewModel @Inject constructor(
                     totalDistanceKm = distance
                 )
 
+                if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
                 _uiState.update {
                     it.copy(
                         weatherPoints = weatherPoints,
@@ -275,6 +299,7 @@ class DriveDetailViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 // Weather loading failed silently - it's optional data
+                if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
                 _uiState.update { it.copy(isLoadingWeather = false) }
             }
         }
@@ -286,10 +311,13 @@ class DriveDetailViewModel @Inject constructor(
 
     /** Detach this drive from its containing saved trip (auto-transitions the trip to USER_EDITED). */
     fun removeFromTrip() {
+        val proof = historyProof ?: return
         val tripId = _uiState.value.containingTrip?.first ?: return
         val drive = driveId ?: return
         viewModelScope.launch {
+            if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
             tripRepository.removeLegFromTrip(tripId, LegRef(SavedTripLeg.TYPE_DRIVE, drive))
+            if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
             _uiState.update { it.copy(containingTrip = null) }
         }
     }
@@ -318,11 +346,9 @@ internal fun calculateDriveDetailStats(
     val elevationMin = elevations.minOrNull()
     val (elevationGain, elevationLoss) = calculateElevationChangeOrNull(elevations)
 
-    val batteryLevels = positions.mapNotNull { it.batteryLevel?.takeIf { value -> value in 0..100 } }
-    val batteryStart = batteryLevels.firstOrNull()
-        ?: detail.startBatteryLevel?.takeIf { it in 0..100 }
-    val batteryEnd = batteryLevels.lastOrNull()
-        ?: detail.endBatteryLevel?.takeIf { it in 0..100 }
+    val batteryEndpoints = observedDriveBatteryEndpoints(detail)
+    val batteryStart = batteryEndpoints.start
+    val batteryEnd = batteryEndpoints.end
     val batteryUsed = if (batteryStart != null && batteryEnd != null) {
         (batteryStart - batteryEnd).takeIf { it >= 0 }
     } else {

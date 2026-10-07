@@ -6,14 +6,14 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -24,9 +24,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -34,16 +35,31 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
-/** Transparent MateLink road mark with a light travelling over its cyan lane dashes. */
+/** Pulse the original lane-stripe pixels; never move dots or redraw the brand geometry. */
 @Composable
 fun MateLinkLoadingMark(
     modifier: Modifier = Modifier,
     size: Dp = 110.dp,
     pulseDurationMillis: Int = 1450,
-    pulseColor: Color = ROAD_CYAN,
+    // Kept for source compatibility; brand lane flashes stay white in every theme.
+    @Suppress("UNUSED_PARAMETER") pulseColor: Color = Color.White,
 ) {
-    val dashCenters = remember {
-        listOf(Offset(457f, 88f), Offset(451f, 143f), Offset(410f, 188f), Offset(341f, 216f))
+    val resources = LocalContext.current.resources
+    val stripes = remember(resources) {
+        val source = BitmapFactory.decodeResource(resources, com.matelink.R.drawable.matelink_loading_logo)
+        val pixels = IntArray(source.width * source.height)
+        source.getPixels(pixels, 0, source.width, 0, 0, source.width, source.height)
+        List(4) { stripe ->
+            val mask = IntArray(pixels.size) { index ->
+                val argb = pixels[index]
+                val x = index % source.width
+                val y = index / source.width
+                if (loadingStripeIndex(argb, x, y, source.width, source.height) == stripe) {
+                    (argb and 0xff000000.toInt()) or 0x00ffffff
+                } else 0
+            }
+            Bitmap.createBitmap(mask, source.width, source.height, Bitmap.Config.ARGB_8888).asImageBitmap()
+        }.also { source.recycle() }
     }
     val transition = rememberInfiniteTransition(label = "mateLinkRoadPulse")
     val progress by transition.animateFloat(
@@ -64,20 +80,17 @@ fun MateLinkLoadingMark(
             modifier = Modifier.fillMaxSize(),
         )
         Canvas(Modifier.fillMaxSize()) {
-            val xScale = this.size.width / 515f
-            val yScale = this.size.height / 273f
-            scale(xScale, yScale, pivot = Offset.Zero) {
-                val activeDash = progress.toInt().coerceIn(0, 3)
-                val center = dashCenters[activeDash]
-                drawCircle(color = pulseColor.copy(alpha = 0.22f), radius = 20f, center = center)
-                drawCircle(color = pulseColor.copy(alpha = 0.38f), radius = 13f, center = center)
-                drawCircle(color = Color.White, radius = 3.5f, center = center)
+            stripes.forEachIndexed { index, stripe ->
+                drawImage(
+                    image = stripe,
+                    dstSize = IntSize(this.size.width.toInt(), this.size.height.toInt()),
+                    alpha = loadingStripeAlpha(progress, index),
+                )
             }
         }
     }
 }
 
-private val ROAD_CYAN = Color(0xFF00D3FA)
 
 @Composable
 fun rememberDebouncedLoading(loading: Boolean, delayMillis: Long = 200L): Boolean {

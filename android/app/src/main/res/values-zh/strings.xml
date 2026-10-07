@@ -859,6 +859,13 @@
     <string name="avg_distance">平均距离</string>
     <string name="charge_details_title">充电详情</string>
     <string name="charge_free">免费</string>
+    <string name="drive_interval_title">已有行程之间的间隔</string>
+    <string name="drive_interval_partial_explanation">时间和端点来自相邻的已有行程，不代表完整驻车历史。尚无此区间的驻车电量、能耗、功率和温度观测。</string>
+    <string name="drive_interval_start_endpoint">上次行程终点：%1$s</string>
+    <string name="drive_interval_end_endpoint">下次行程起点：%1$s</string>
+    <string name="drive_interval_source">数据来源：根据已有行程推导的间隔</string>
+    <string name="drive_interval_not_confirmed">无法确认这两次行程之间的间隔。可能存在其他或重叠行程，也可能无法读取所选记录。</string>
+    <string name="drive_interval_read_unavailable">暂时无法读取历史数据，请稍后重试。</string>
     <string name="charge_parked_title">充电驻车</string>
     <string name="charge_parked_summary">该驻车时段与一条真实充电记录重叠。</string>
     <string name="charge_parked_view">查看本次充电</string>
@@ -884,12 +891,12 @@
     <string name="chart_energy_per_day">按日充电量</string>
     <string name="chart_energy_per_month">按月充电量</string>
     <string name="chart_energy_per_week">按周充电量</string>
-    <string name="chart_speed_per_day">速度/天</string>
-    <string name="chart_speed_per_month">速度/月</string>
-    <string name="chart_speed_per_week">速度/周</string>
-    <string name="chart_time_per_day">时间/天</string>
-    <string name="chart_time_per_month">时间/月</string>
-    <string name="chart_time_per_week">时间/周</string>
+    <string name="chart_speed_per_day">每日最高速度</string>
+    <string name="chart_speed_per_month">每月最高速度</string>
+    <string name="chart_speed_per_week">每周最高速度</string>
+    <string name="chart_time_per_day">每日时长（小时:分钟）</string>
+    <string name="chart_time_per_month">每月时长（小时:分钟）</string>
+    <string name="chart_time_per_week">每周时长（小时:分钟）</string>
     <string name="collapse">收起</string>
     <string name="cost">费用</string>
     <string name="cost_filter_all">全部</string>
@@ -1084,9 +1091,10 @@
     <string name="settings_release_notes_close">知道了</string>
     <string name="settings_switch_to_cloud">切换到 MateLink 云端</string>
     <string name="settings_switch_to_self_hosted">切换到本地 TeslaMate</string>
-<string name="settings_release_notes_body">• 首页及各页面加载统一使用 MateLink MD 动画。
-• 登录后自动观察车辆接入进度，确认返回后自动继续。
-• 已有历史与 1.14 元/度默认电价继续保留。</string>
+<string name="settings_release_notes_body" formatted="false">• 为自动历史同步补充安全错误分类，区分网络、TLS、JSON 等失败，便于定位反复读取异常。
+• 修复缓存详情把未知电量显示为 0% 的问题；真实观测 0% 仍保留。
+• 月统计使用月份名称，完整道路条纹律动，地图优先展示，驻车地址优先已有中文。
+• 持续同步仍待本机复验；本次不补造缺失曲线或历史电量。</string>
     <string name="settings_resync_button">重新同步</string>
     <string name="settings_resync_confirm">确认重新同步</string>
     <string name="settings_resync_dialog_text_delete">这将删除所有本地数据。</string>
@@ -1503,4 +1511,5 @@
     <string name="vehicle_model_pending">车型待识别</string>
     <string name="history_sync_cached">云端历史暂未同步成功，当前显示本机保存的记录；下拉刷新可重试。</string>
     <string name="history_sync_partial">云端历史仅恢复了一部分，本机旧记录已保留；下拉刷新可重试剩余记录。</string>
+    <string name="history_archive_link_pending">此列表使用已验证的云端来源。原手机记录、费用修改和本地分析仍保留，暂未关联到此列表。</string>
 </resources>

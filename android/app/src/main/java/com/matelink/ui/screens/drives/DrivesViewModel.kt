@@ -24,24 +24,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Clock
+import com.matelink.domain.history.LatestHistoryLoad
+import com.matelink.domain.history.refreshedHistoryWindow
 import java.time.LocalDate
-import java.time.YearMonth
-import com.matelink.util.formatMonthYear
-import com.matelink.util.formatShortNoYear
 import com.matelink.util.formatWeekLabel
 import java.util.Locale
 import java.time.temporal.ChronoUnit
-import java.time.temporal.WeekFields
-import com.matelink.util.parseIsoDate
 import javax.inject.Inject
-
-enum class DriveChartGranularity {
-    DAILY, WEEKLY, MONTHLY
-}
 
 enum class DriveDistanceFilter(
     val maxDistanceKm: Double?,
@@ -62,15 +55,6 @@ enum class DriveDistanceFilter(
         }
     }
 }
-
-data class DriveChartData(
-    val label: String,
-    val count: Int,
-    val totalDistance: Double,
-    val totalDurationMin: Int,
-    val maxSpeed: Int?,
-    val sortKey: Long
-)
 
 enum class DriveDateFilter(@get:StringRes val labelRes: Int, val days: Long?) {
     ALL_TIME(R.string.filter_all_time, null),
@@ -95,6 +79,7 @@ data class DrivesUiState(
     val chartGranularity: DriveChartGranularity = DriveChartGranularity.MONTHLY,
     val error: String? = null,
     val historySyncWarning: String? = null,
+    val localArchiveLinkPending: Boolean = false,
     val startDate: LocalDate? = null,
     val endDate: LocalDate? = null,
     val summary: DrivesSummary = DrivesSummary(),
@@ -132,6 +117,7 @@ class DrivesViewModel @Inject constructor(
     private val geocodingRepository: GeocodingRepository,
     private val settingsDataStore: SettingsDataStore,
     private val driveSummaryDao: DriveSummaryDao,
+    private val clock: Clock,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -142,8 +128,7 @@ class DrivesViewModel @Inject constructor(
     private var showShortDrivesCharges: Boolean = false
     private var allDrives: List<DriveData> = emptyList()
     private var isInitialized: Boolean = false
-    private var loadJob: Job? = null
-    private var loadGeneration: Long = 0L
+    private val latestLoad = LatestHistoryLoad()
 
     companion object {
         private const val MIN_DURATION_MINUTES = 1
@@ -176,30 +161,29 @@ class DrivesViewModel @Inject constructor(
 
     fun setCarId(id: Int) {
         if (carId == id && isInitialized) {
-            // Already initialized with this car, don't reload
+            refresh()
             return
         }
         carId = id
         loadUnits(id)
 
-        // Only apply restored (or default) filter on first initialization. CUSTOM
-        // needs the explicit date pair — setDateFilter is a no-op for CUSTOM.
-        if (!isInitialized) {
-            isInitialized = true
-            val state = _uiState.value
-            val customStart = state.customStartDate
-            val customEnd = state.customEndDate
-            if (state.dateFilter == DriveDateFilter.CUSTOM && customStart != null && customEnd != null) {
-                setCustomDateRange(customStart, customEnd)
-            } else {
-                setDateFilter(state.dateFilter)
-            }
+        // A reused VM must not keep the previous vehicle's history.
+        allDrives = emptyList()
+        _uiState.update { it.copy(drives = emptyList(), units = null, driveMetrics = emptyMap(), chartData = emptyList(), summary = DrivesSummary(), error = null, historySyncWarning = null, localArchiveLinkPending = false) }
+        isInitialized = true
+        val state = _uiState.value
+        val customStart = state.customStartDate
+        val customEnd = state.customEndDate
+        if (state.dateFilter == DriveDateFilter.CUSTOM && customStart != null && customEnd != null) {
+            setCustomDateRange(customStart, customEnd)
+        } else {
+            setDateFilter(state.dateFilter)
         }
     }
 
     fun setDateFilter(filter: DriveDateFilter) {
         if (filter == DriveDateFilter.CUSTOM) return
-        val endDate = LocalDate.now()
+        val endDate = LocalDate.now(clock)
         val startDate = filter.days?.let { days ->
             if (days > 0) endDate.minusDays(days - 1) else endDate
         }
@@ -244,7 +228,10 @@ class DrivesViewModel @Inject constructor(
         carId?.let {
             _uiState.update { it.copy(isRefreshing = true) }
             val state = _uiState.value
-            loadDrives(state.startDate, state.endDate)
+            val window = refreshedHistoryWindow(state.dateFilter.days, state.dateFilter == DriveDateFilter.CUSTOM,
+                state.startDate, state.endDate, clock)
+            _uiState.update { it.copy(startDate = window.start, endDate = window.end) }
+            loadDrives(window.start, window.end)
         }
     }
 
@@ -256,6 +243,7 @@ class DrivesViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = repository.getCarStatus(carId)) {
                 is ApiResult.Success -> {
+                    if (this@DrivesViewModel.carId != carId) return@launch
                     _uiState.update { it.copy(units = result.data.units) }
                 }
                 is ApiResult.Error -> { /* ignore, units will default to metric */ }
@@ -266,9 +254,8 @@ class DrivesViewModel @Inject constructor(
     private fun loadDrives(startDate: LocalDate? = null, endDate: LocalDate? = null) {
         val id = carId ?: return
 
-        loadJob?.cancel()
-        val generation = ++loadGeneration
-        loadJob = viewModelScope.launch {
+        val requestZone = clock.zone
+        latestLoad.launch(viewModelScope) {
             val state = _uiState.value
             // Only show the full-screen spinner on the true initial load — i.e. when
             // we've never successfully fetched any data yet. Using state.drives (the
@@ -287,16 +274,19 @@ class DrivesViewModel @Inject constructor(
             }
 
             // Load the display setting
-            showShortDrivesCharges = settingsDataStore.showShortDrivesCharges.first()
+            val showShort = settingsDataStore.showShortDrivesCharges.first()
+            ensureCurrent()
+            showShortDrivesCharges = showShort
 
             // Local-day RFC3339 boundaries (see LocalDayBoundaries for why not UTC).
-            val startDateStr = startDate?.let { LocalDayBoundaries.startOfDay(it) }
-            val endDateStr = endDate?.let { LocalDayBoundaries.endOfDay(it) }
+            val startDateStr = startDate?.let { LocalDayBoundaries.startOfDay(it, requestZone) }
+            val endDateStr = endDate?.let { LocalDayBoundaries.endOfDay(it, requestZone) }
 
-            when (val result = historyRepository.load(id, startDateStr, endDateStr)) {
+            val result = historyRepository.load(id, startDateStr, endDateStr)
+            ensureCurrent()
+            when (result) {
                 is ApiResult.Success -> {
                     val remoteDrives = result.data.drives
-                    allDrives = remoteDrives
                     val localMetrics = driveSummaryDao.getAllChronological(result.data.context.localHistoryCarId).associate { summary ->
                         summary.driveId to DriveHistoryMetrics(
                             energyKwh = summary.energyConsumed,
@@ -305,6 +295,8 @@ class DrivesViewModel @Inject constructor(
                             coverageRatio = summary.energyCoverageRatio
                         )
                     }
+                    ensureCurrent()
+                    allDrives = remoteDrives
                     val granularity = determineGranularity(startDate, endDate)
 
                     _uiState.update {
@@ -312,6 +304,7 @@ class DrivesViewModel @Inject constructor(
                             chartGranularity = granularity,
                             error = null,
                             historySyncWarning = result.data.drivesSyncError,
+                            localArchiveLinkPending = result.data.localArchiveLinkPending,
                             driveMetrics = localMetrics
                         )
                     }
@@ -321,12 +314,15 @@ class DrivesViewModel @Inject constructor(
                     val enrichedDrives = enrichDriveAddresses(remoteDrives) { latitude, longitude ->
                         geocodingRepository.reverseGeocode(latitude, longitude)
                     }
-                    if (generation == loadGeneration) {
-                        allDrives = enrichedDrives
-                        applyFiltersAndUpdateState()
-                    }
+                    ensureCurrent()
+                    allDrives = enrichedDrives
+                    applyFiltersAndUpdateState()
                 }
                 is ApiResult.Error -> {
+                    if (result.message == com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE) {
+                        allDrives = emptyList()
+                        _uiState.update { it.copy(drives = emptyList(), units = null, driveMetrics = emptyMap(), chartData = emptyList(), summary = DrivesSummary(), localArchiveLinkPending = false, historySyncWarning = null) }
+                    }
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -373,7 +369,10 @@ class DrivesViewModel @Inject constructor(
 
         // Calculate summary and chart data from filtered drives
         val summary = calculateDrivesSummary(drivesForStats)
-        val chartData = calculateChartData(drivesForStats, granularity, state.startDate)
+        val chartData = calculateDriveChartData(
+            drivesForStats, granularity, state.startDate, state.endDate,
+            LocalDate.now(clock), clock.zone, Locale.getDefault()
+        ) { week -> formatWeekLabel(appContext.resources, week) }
 
         _uiState.update {
             it.copy(
@@ -397,131 +396,7 @@ class DrivesViewModel @Inject constructor(
         }
     }
 
-    private fun calculateChartData(drives: List<DriveData>, granularity: DriveChartGranularity, startDate: LocalDate?): List<DriveChartData> {
-        if (drives.isEmpty()) return emptyList()
 
-        val weekFields = WeekFields.of(Locale.getDefault())
-
-        // Group the drives by day
-        val drivesByDay = drives.mapNotNull { drive ->
-            drive.startDate?.let { parseIsoDate(it)?.toEpochDay()?.let { day -> day to drive } }
-        }.groupBy({ it.first }, { it.second })
-
-        return when (granularity) {
-            DriveChartGranularity.DAILY -> {
-                // DAILY ranges (today, last 7 and last 30 days)
-                // If not startDate (All Time), get the first trip, or today
-                val start = startDate ?: (drivesByDay.keys.minOrNull()?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now())
-                val end = LocalDate.now()
-                val result = mutableListOf<DriveChartData>()
-                var current = start
-                while (!current.isAfter(end)) {
-                    val key = current.toEpochDay()
-                    val drivesInDay = drivesByDay[key] ?: emptyList()
-                    result.add(
-                        createChartPoint(
-                            label = current.formatShortNoYear(Locale.getDefault()),
-                            sortKey = key,
-                            drives = drivesInDay
-                        )
-                    )
-                    current = current.plusDays(1)
-                }
-                result
-            }
-
-            DriveChartGranularity.WEEKLY -> {
-                // WEEKLY range (last 90 days = ~13 weeks)
-                val start = startDate ?: (drivesByDay.keys.minOrNull()?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now())
-                val end = LocalDate.now()
-
-                // Get first day of the week for start date
-                var weekStart = start.with(weekFields.dayOfWeek(), 1)
-                // If weekStart is before start, advance to the next week
-                if (weekStart.isBefore(start)) {
-                    weekStart = weekStart.plusWeeks(1)
-                }
-
-                // Group drives by week
-                val drivesByWeek = drives.mapNotNull { drive ->
-                    drive.startDate?.let { dateStr ->
-                        parseIsoDate(dateStr)?.let { date ->
-                            val firstDayOfWeek = date.with(weekFields.dayOfWeek(), 1)
-                            firstDayOfWeek.toEpochDay() to drive
-                        }
-                    }
-                }.groupBy({ it.first }, { it.second })
-
-                // Generate all weeks in range
-                val result = mutableListOf<DriveChartData>()
-                var currentWeek = weekStart
-                while (!currentWeek.isAfter(end)) {
-                    val key = currentWeek.toEpochDay()
-                    val drivesInWeek = drivesByWeek[key] ?: emptyList()
-                    val weekOfYear = currentWeek.get(weekFields.weekOfYear())
-                    result.add(
-                        createChartPoint(
-                            label = formatWeekLabel(appContext.resources, weekOfYear),
-                            sortKey = key,
-                            drives = drivesInWeek
-                        )
-                    )
-                    currentWeek = currentWeek.plusWeeks(1)
-                }
-                result
-            }
-
-            DriveChartGranularity.MONTHLY -> {
-                // MONTHLY range (last year = 12 months)
-                val start = startDate ?: (drivesByDay.keys.minOrNull()?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now())
-                val end = LocalDate.now()
-
-                // Get first day of month for start date
-                val monthStart = YearMonth.from(start).atDay(1)
-                val monthEnd = YearMonth.from(end)
-
-                // Group drives by month
-                val drivesByMonth = drives.mapNotNull { drive ->
-                    drive.startDate?.let { dateStr ->
-                        parseIsoDate(dateStr)?.let { date ->
-                            val firstDayOfMonth = YearMonth.from(date).atDay(1)
-                            firstDayOfMonth.toEpochDay() to drive
-                        }
-                    }
-                }.groupBy({ it.first }, { it.second })
-
-                // Generate all months in range
-                val result = mutableListOf<DriveChartData>()
-                var currentMonth = YearMonth.from(monthStart)
-                while (!currentMonth.isAfter(monthEnd)) {
-                    val firstDay = currentMonth.atDay(1)
-                    val key = firstDay.toEpochDay()
-                    val drivesInMonth = drivesByMonth[key] ?: emptyList()
-                    result.add(
-                        createChartPoint(
-                            label = firstDay.formatMonthYear(Locale.getDefault()),
-                            sortKey = key,
-                            drives = drivesInMonth
-                        )
-                    )
-                    currentMonth = currentMonth.plusMonths(1)
-                }
-                result
-            }
-        }
-    }
-
-    // Helper function to centralize chart data creation
-    private fun createChartPoint(label: String, sortKey: Long, drives: List<DriveData>): DriveChartData {
-        return DriveChartData(
-            label = label,
-            count = drives.size,
-            totalDistance = drives.sumOf { it.distance ?: 0.0 },
-            totalDurationMin = drives.sumOf { it.durationMin ?: 0 },
-            maxSpeed = drives.mapNotNull { it.speedMax?.takeIf { speed -> speed >= 0 } }.maxOrNull(),
-            sortKey = sortKey
-        )
-    }
 }
 
 internal suspend fun enrichDriveAddresses(
