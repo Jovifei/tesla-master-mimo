@@ -22,8 +22,10 @@ type boundedHistoryMetadata struct {
 }
 
 type boundedHistoryPageRow struct {
-	Session  telemetrySession
-	Sequence int
+	Session           telemetrySession
+	StartBatteryLevel *int
+	EndBatteryLevel   *int
+	Sequence          int
 }
 
 type historyContextReader struct {
@@ -132,9 +134,47 @@ SELECT s.id, s.public_id, s.started_at, s.ended_at, s.odometer_start, s.odometer
        NULLIF(s.route_json->0->>'longitude','')::double precision,
        NULLIF(s.route_json->(jsonb_array_length(s.route_json)-1)->>'latitude','')::double precision,
        NULLIF(s.route_json->(jsonb_array_length(s.route_json)-1)->>'longitude','')::double precision,
+       first_soc.level,
+       last_soc.level,
        p.sequence
 FROM page_ids p
 JOIN jourvolt_telemetry_sessions s ON s.id=p.id
+LEFT JOIN LATERAL (
+    SELECT level
+    FROM (
+        SELECT ordinality,
+               CASE WHEN raw_soc ~ '^[0-9]{1,3}$' THEN raw_soc::integer END AS level
+        FROM (
+            SELECT point.ordinality,
+                   CASE WHEN s.source='teslamate_archive'
+                        THEN point.value->>'battery_level'
+                        ELSE point.value->>'BatteryLevel'
+                   END AS raw_soc
+            FROM jsonb_array_elements(s.route_json) WITH ORDINALITY AS point(value, ordinality)
+        ) candidates
+    ) normalized
+    WHERE level BETWEEN 0 AND 100
+    ORDER BY ordinality ASC
+    LIMIT 1
+) first_soc ON true
+LEFT JOIN LATERAL (
+    SELECT level
+    FROM (
+        SELECT ordinality,
+               CASE WHEN raw_soc ~ '^[0-9]{1,3}$' THEN raw_soc::integer END AS level
+        FROM (
+            SELECT point.ordinality,
+                   CASE WHEN s.source='teslamate_archive'
+                        THEN point.value->>'battery_level'
+                        ELSE point.value->>'BatteryLevel'
+                   END AS raw_soc
+            FROM jsonb_array_elements(s.route_json) WITH ORDINALITY AS point(value, ordinality)
+        ) candidates
+    ) normalized
+    WHERE level BETWEEN 0 AND 100
+    ORDER BY ordinality DESC
+    LIMIT 1
+) last_soc ON true
 ORDER BY p.started_at DESC, p.public_id DESC
 `, userID, vehicleID, kind, boundedHistoryBoundary(start), boundedHistoryBoundary(end), limit, offset)
 	if err != nil {
@@ -155,7 +195,8 @@ ORDER BY p.started_at DESC, p.public_id DESC
 			&row.Session.Source, &row.Session.QualityState, &row.Session.QualityReason,
 			&row.Session.SourceInstanceID, &row.Session.SourceVehicleID, &row.Session.SourceRecordID,
 			&row.Session.StartAddress, &row.Session.EndAddress, &row.Session.Address, &row.Session.Cost,
-			&startLatitude, &startLongitude, &endLatitude, &endLongitude, &row.Sequence,
+			&startLatitude, &startLongitude, &endLatitude, &endLongitude,
+			&row.StartBatteryLevel, &row.EndBatteryLevel, &row.Sequence,
 		); err != nil {
 			return nil, err
 		}
@@ -203,16 +244,17 @@ func (s *telemetryService) historySourceForReadinessPostgres(ctx context.Context
 	}
 	var source string
 	err := s.store.pool.QueryRow(ctx, `
-SELECT CASE lower(btrim(source))
-         WHEN 'local_import' THEN 'local_history'
-         WHEN 'local_history' THEN 'local_history'
-         WHEN 'telemetry_mqtt' THEN 'telemetry_mqtt'
-         WHEN 'fleet_api' THEN 'fleet_api'
+SELECT CASE
+         WHEN source = '' THEN 'telemetry_mqtt'
+         WHEN lower(btrim(source)) = 'local_import' THEN 'local_history'
+         WHEN lower(btrim(source)) = 'local_history' THEN 'local_history'
+         WHEN lower(btrim(source)) = 'telemetry_mqtt' THEN 'telemetry_mqtt'
+         WHEN lower(btrim(source)) = 'fleet_api' THEN 'fleet_api'
        END
 FROM jourvolt_telemetry_sessions
 WHERE user_id=$1 AND vehicle_id=$2 AND kind=$3
   AND ended_at IS NOT NULL AND quality_state <> 'quarantined'
-  AND lower(btrim(source)) IN ('local_import','local_history','telemetry_mqtt','fleet_api')
+  AND (source = '' OR lower(btrim(source)) IN ('local_import','local_history','telemetry_mqtt','fleet_api'))
 ORDER BY started_at DESC, public_id DESC
 LIMIT 1
 `, userID, vehicleID, kind).Scan(&source)
@@ -393,7 +435,11 @@ func (s *telemetryService) historyPageContext(ctx context.Context, userID string
 		if err := readCtx.Err(); err != nil {
 			return nil, nil, 0, resolvedShow, err
 		}
-		items = append(items, historySessionMap(row.Session, kind, row.Sequence))
+		item := historySessionMap(row.Session, kind, row.Sequence)
+		if kind == "drive" {
+			item["battery_details"] = driveBatteryDetails(row.StartBatteryLevel, row.EndBatteryLevel)
+		}
+		items = append(items, item)
 	}
 	return items, resultMeta, total, resolvedShow, readCtx.Err()
 }
@@ -446,6 +492,11 @@ func (s *telemetryService) historyExistsContext(ctx context.Context, userID stri
 }
 
 func normalizeReadinessHistorySource(raw string) string {
+	// Legacy historySessionMap maps only an exact empty source to telemetry_mqtt.
+	// Whitespace-only values remain unrecognized after trimming.
+	if raw == "" {
+		return "telemetry_mqtt"
+	}
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "local_import", "local_history":
 		return "local_history"

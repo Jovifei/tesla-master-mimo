@@ -234,6 +234,185 @@ func TestBoundedHistoryPostgresListDetailTenantSourceAndCancellation(t *testing.
 	}
 }
 
+func legacyReadinessSourceFromHistoryMaps(items []map[string]any, fallback string) string {
+	for _, item := range items {
+		raw, _ := item["source"].(string)
+		switch strings.ToLower(strings.TrimSpace(raw)) {
+		case "local_import", "local_history":
+			return "local_history"
+		case "telemetry_mqtt":
+			return "telemetry_mqtt"
+		case "fleet_api":
+			return "fleet_api"
+		}
+	}
+	return fallback
+}
+
+func TestBoundedHistoryReadinessExactEmptySourceMatchesLegacyMemoryAndPostgres(t *testing.T) {
+	base := time.Date(2026, time.October, 7, 3, 0, 0, 0, time.UTC)
+	olderEnd, newerEnd := base.Add(10*time.Minute), base.Add(time.Hour+10*time.Minute)
+
+	memory := newTelemetryMemoryStore()
+	key := telemetryKey{UserID: "memory-readiness-user", VehicleID: 7}
+	memory.completed[key] = []telemetrySession{
+		{ID: "memory-new", PublicID: 2, Kind: "drive", StartAt: base.Add(time.Hour), EndAt: &newerEnd, Source: "", QualityState: "observed"},
+		{ID: "memory-old", PublicID: 1, Kind: "drive", StartAt: base, EndAt: &olderEnd, Source: "local_import", QualityState: "incomplete"},
+	}
+	memoryService := &telemetryService{memory: memory}
+	legacyItems, _, err := memoryService.history(key.UserID, key.VehicleID, "drive")
+	if err != nil { t.Fatal(err) }
+	legacySource := legacyReadinessSourceFromHistoryMaps(legacyItems, "fleet_api")
+	memorySource, ok, err := memoryService.historySourceForReadinessContext(context.Background(), key.UserID, key.VehicleID, "drive")
+	if err != nil || !ok || memorySource != legacySource || memorySource != "telemetry_mqtt" {
+		t.Fatalf("memory source=%q legacy=%q ok=%v err=%v", memorySource, legacySource, ok, err)
+	}
+
+	database := boundedHistoryTestStore(t)
+	userID, vehicleID := boundedHistoryTestTenant(t, database, "readiness-empty")
+	service := &telemetryService{store: database}
+	boundedHistoryInsertSession(t, database, userID, vehicleID, "drive", base, "local_import", "incomplete", []telemetryRoutePoint{}, "")
+	boundedHistoryInsertSession(t, database, userID, vehicleID, "drive", base.Add(time.Hour), "", "observed", []telemetryRoutePoint{}, "")
+	legacyItems, _, err = service.history(userID, vehicleID, "drive")
+	if err != nil { t.Fatal(err) }
+	legacySource = legacyReadinessSourceFromHistoryMaps(legacyItems, "fleet_api")
+	pgSource, ok, err := service.historySourceForReadinessContext(context.Background(), userID, vehicleID, "drive")
+	if err != nil || !ok || pgSource != legacySource || pgSource != "telemetry_mqtt" {
+		t.Fatalf("postgres source=%q legacy=%q ok=%v err=%v", pgSource, legacySource, ok, err)
+	}
+	meta, err := service.historyMetadataBoundedPostgres(context.Background(), userID, vehicleID, "drive")
+	if err != nil { t.Fatal(err) }
+	if meta.Source != "local_import" {
+		t.Fatalf("metadata source=%q, want legacy skip-empty local_import", meta.Source)
+	}
+}
+
+func TestBoundedHistoryDriveBatterySummaryHTTPPreservesValidZeroAndUnknown(t *testing.T) {
+	database := boundedHistoryTestStore(t)
+	userID, vehicleID := boundedHistoryTestTenant(t, database, "drive-soc")
+	service := &telemetryService{store: database}
+	api := &app{telemetry: service}
+	base := time.Date(2026, time.October, 7, 4, 0, 0, 0, time.UTC)
+
+	level80, level75 := 80, 75
+	nativeID := boundedHistoryInsertSession(t, database, userID, vehicleID, "drive", base.Add(3*time.Hour), "telemetry_mqtt", "observed", []telemetryRoutePoint{
+		{ObservedAt: base.Add(3 * time.Hour), Latitude: 31.1, Longitude: 121.1, BatteryLevel: &level80},
+		{ObservedAt: base.Add(3*time.Hour + 17*time.Minute), Latitude: 31.2, Longitude: 121.2, BatteryLevel: &level75},
+	}, "")
+	zero, level40 := 0, 40
+	archiveID := boundedHistoryInsertSession(t, database, userID, vehicleID, "drive", base.Add(2*time.Hour), "teslamate_archive", "observed", []historyImportRoutePoint{
+		{Date: base.Add(2 * time.Hour).Format(time.RFC3339), Latitude: floatPointerForHistoryTest(31.3), Longitude: floatPointerForHistoryTest(121.3), BatteryLevel: &zero},
+		{Date: base.Add(2*time.Hour + 17*time.Minute).Format(time.RFC3339), Latitude: floatPointerForHistoryTest(31.4), Longitude: floatPointerForHistoryTest(121.4), BatteryLevel: &level40},
+	}, "archive-soc-zero")
+	missingID := boundedHistoryInsertSession(t, database, userID, vehicleID, "drive", base.Add(time.Hour), "telemetry_mqtt", "observed", []telemetryRoutePoint{
+		{ObservedAt: base.Add(time.Hour), Latitude: 31.5, Longitude: 121.5},
+		{ObservedAt: base.Add(time.Hour + 17*time.Minute), Latitude: 31.6, Longitude: 121.6},
+	}, "")
+	invalidLow, invalidHigh := -1, 101
+	invalidID := boundedHistoryInsertSession(t, database, userID, vehicleID, "drive", base, "telemetry_mqtt", "observed", []telemetryRoutePoint{
+		{ObservedAt: base, Latitude: 31.7, Longitude: 121.7, BatteryLevel: &invalidLow},
+		{ObservedAt: base.Add(17 * time.Minute), Latitude: 31.8, Longitude: 121.8, BatteryLevel: &invalidHigh},
+	}, "")
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/cars/1/drives?page=1&show=10", nil)
+	api.telemetryHistory(w, r, userID, vehicleID, "drive", nil)
+	if w.Code != http.StatusOK { t.Fatalf("list status=%d body=%s", w.Code, w.Body.String()) }
+	var envelope struct {
+		Data struct {
+			Drives []map[string]any `json:"drives"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &envelope); err != nil { t.Fatal(err) }
+	byID := map[int]map[string]any{}
+	for _, drive := range envelope.Data.Drives {
+		byID[int(drive["drive_id"].(float64))] = drive
+	}
+	assertBattery := func(id int, wantStart, wantEnd any) {
+		t.Helper()
+		drive := byID[id]
+		if drive == nil { t.Fatalf("drive %d missing from list", id) }
+		if wantStart == nil && wantEnd == nil {
+			if drive["battery_details"] != nil { t.Fatalf("drive %d battery_details=%#v, want null", id, drive["battery_details"]) }
+			return
+		}
+		details, ok := drive["battery_details"].(map[string]any)
+		if !ok { t.Fatalf("drive %d battery_details=%#v", id, drive["battery_details"]) }
+		if details["start_battery_level"] != wantStart || details["end_battery_level"] != wantEnd {
+			t.Fatalf("drive %d battery_details=%#v want start=%v end=%v", id, details, wantStart, wantEnd)
+		}
+	}
+	assertBattery(nativeID, float64(80), float64(75))
+	assertBattery(archiveID, float64(0), float64(40))
+	assertBattery(missingID, nil, nil)
+	assertBattery(invalidID, nil, nil)
+
+	for _, tc := range []struct {
+		name string
+		id int
+		wantFirst float64
+		wantLast float64
+	}{
+		{name:"native", id:nativeID, wantFirst:80, wantLast:75},
+		{name:"archive_zero", id:archiveID, wantFirst:0, wantLast:40},
+	} {
+		t.Run("detail_"+tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodGet, "/api/v1/cars/1/drives/"+strconv.Itoa(tc.id), nil)
+			api.telemetryHistory(w, r, userID, vehicleID, "drive", []string{strconv.Itoa(tc.id)})
+			if w.Code != http.StatusOK { t.Fatalf("detail status=%d body=%s", w.Code, w.Body.String()) }
+			var detail struct {
+				Data struct {
+					Drive map[string]any `json:"drive"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &detail); err != nil { t.Fatal(err) }
+			points := detail.Data.Drive["drive_details"].([]any)
+			if len(points) != 2 { t.Fatalf("detail points=%#v", points) }
+			if points[0].(map[string]any)["battery_level"] != tc.wantFirst || points[1].(map[string]any)["battery_level"] != tc.wantLast {
+				t.Fatalf("detail point SOC=%#v", points)
+			}
+			details := detail.Data.Drive["battery_details"].(map[string]any)
+			if details["start_battery_level"] != tc.wantFirst || details["end_battery_level"] != tc.wantLast {
+				t.Fatalf("detail battery_details=%#v", details)
+			}
+		})
+	}
+}
+
+func TestBoundedHistoryVehicleItemsDistinguishesZeroCountsFromUnknown(t *testing.T) {
+	database := boundedHistoryTestStore(t)
+	userID, vehicleID := boundedHistoryTestTenant(t, database, "vehicle-count")
+	api := &app{telemetry: &telemetryService{store: database}}
+	vehicles := []vehicle{{ID: vehicleID, VehicleUID: "count-contract"}}
+
+	zeroItems := api.vehicleItems(context.Background(), userID, vehicles)
+	zeroStats := zeroItems[0]["teslamate_stats"].(map[string]any)
+	if zeroStats["total_drives"] != 0 || zeroStats["total_charges"] != 0 {
+		t.Fatalf("true zero stats=%#v", zeroStats)
+	}
+	if _, present := zeroStats["history_counts_status"]; present {
+		t.Fatalf("true zero unexpectedly marked unavailable: %#v", zeroStats)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	unknownItems := api.vehicleItems(ctx, userID, vehicles)
+	unknownStats := unknownItems[0]["teslamate_stats"].(map[string]any)
+	if unknownStats["total_drives"] != nil || unknownStats["total_charges"] != nil {
+		t.Fatalf("failed counts were presented as known: %#v", unknownStats)
+	}
+	if unknownStats["history_counts_status"] != "unavailable" {
+		t.Fatalf("failed count status=%#v", unknownStats)
+	}
+	encoded, err := json.Marshal(unknownItems)
+	if err != nil { t.Fatal(err) }
+	if !strings.Contains(string(encoded), `"total_drives":null`) || !strings.Contains(string(encoded), `"total_charges":null`) {
+		t.Fatalf("unknown counts JSON=%s", encoded)
+	}
+}
+
+
 func historyTestAllocatedBytes(t *testing.T, run func()) uint64 {
 	t.Helper()
 	runtime.GC()
