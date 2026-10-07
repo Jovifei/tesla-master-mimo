@@ -25,6 +25,7 @@ type boundedHistoryPageRow struct {
 	Session           telemetrySession
 	StartBatteryLevel *int
 	EndBatteryLevel   *int
+	Metrics           historySampleMetrics
 	Sequence          int
 }
 
@@ -107,6 +108,13 @@ WHERE user_id=$1 AND vehicle_id=$2 AND kind=$3
 	return count, err
 }
 
+// position is a fixed internal SQL column, never request input. Only the two
+// selected SOC scalars cross the DB connection; no array_agg of all SOC values.
+func historySOCAtPosition(position string) string {
+	point := "(CASE WHEN s.kind='charge' THEN s.charge_points_json ELSE s.route_json END)->((" + position + "-1)::integer)"
+	return "(CASE WHEN s.kind='charge' THEN COALESCE(NULLIF((" + point + ")->'BatteryLevel','null'::jsonb),(" + point + ")->'battery_level') WHEN s.source='teslamate_archive' THEN (" + point + ")->'battery_level' ELSE (" + point + ")->'BatteryLevel' END #>> '{}')::integer"
+}
+
 func (s *telemetryService) historyPagePostgresBounded(ctx context.Context, userID string, vehicleID int, kind string, start, end time.Time, limit, offset int) ([]boundedHistoryPageRow, error) {
 	if s == nil || s.store == nil || s.store.pool == nil || limit <= 0 {
 		return []boundedHistoryPageRow{}, nil
@@ -134,47 +142,36 @@ SELECT s.id, s.public_id, s.started_at, s.ended_at, s.odometer_start, s.odometer
        NULLIF(s.route_json->0->>'longitude','')::double precision,
        NULLIF(s.route_json->(jsonb_array_length(s.route_json)-1)->>'latitude','')::double precision,
        NULLIF(s.route_json->(jsonb_array_length(s.route_json)-1)->>'longitude','')::double precision,
-       first_soc.level,
-       last_soc.level,
+       `+historySOCAtPosition("observed.first_position")+`,
+       `+historySOCAtPosition("observed.last_position")+`,
+       observed.speed_max, observed.speed_avg, observed.speed_count,
+       observed.inside_temp_avg, observed.outside_temp_avg,
        p.sequence
 FROM page_ids p
 JOIN jourvolt_telemetry_sessions s ON s.id=p.id
 LEFT JOIN LATERAL (
-    SELECT level
+    SELECT MIN(ordinality) FILTER (WHERE level BETWEEN 0 AND 100) AS first_position,
+           MAX(ordinality) FILTER (WHERE level BETWEEN 0 AND 100) AS last_position,
+           MAX(speed) AS speed_max, AVG(speed) AS speed_avg, COUNT(speed) AS speed_count,
+           AVG(inside_temp) AS inside_temp_avg, AVG(outside_temp) AS outside_temp_avg
     FROM (
         SELECT ordinality,
-               CASE WHEN raw_soc ~ '^[0-9]{1,3}$' THEN raw_soc::integer END AS level
+          CASE WHEN jsonb_typeof(soc)='number' AND soc::text ~ '^[0-9]{1,3}$' THEN (soc::text)::integer END AS level,
+          CASE WHEN jsonb_typeof(speed)='number' THEN CASE WHEN (speed::text)::numeric BETWEEN 0 AND 2147483647 THEN (speed::text)::double precision END END AS speed,
+          CASE WHEN jsonb_typeof(inside_temp)='number' THEN CASE WHEN (inside_temp::text)::numeric BETWEEN -1e308 AND 1e308 THEN (inside_temp::text)::double precision END END AS inside_temp,
+          CASE WHEN jsonb_typeof(outside_temp)='number' THEN CASE WHEN (outside_temp::text)::numeric BETWEEN -1e308 AND 1e308 THEN (outside_temp::text)::double precision END END AS outside_temp
         FROM (
-            SELECT point.ordinality,
-                   CASE WHEN s.source='teslamate_archive'
-                        THEN point.value->>'battery_level'
-                        ELSE point.value->>'BatteryLevel'
-                   END AS raw_soc
-            FROM jsonb_array_elements(s.route_json) WITH ORDINALITY AS point(value, ordinality)
-        ) candidates
+          SELECT point.ordinality,
+            CASE WHEN s.kind='charge' THEN COALESCE(NULLIF(point.value->'BatteryLevel','null'::jsonb),point.value->'battery_level')
+                 WHEN s.source='teslamate_archive' THEN point.value->'battery_level' ELSE point.value->'BatteryLevel' END AS soc,
+            CASE WHEN s.kind='drive' THEN CASE WHEN s.source='teslamate_archive' THEN point.value->'speed' ELSE point.value->'Speed' END END AS speed,
+            CASE WHEN s.kind='drive' THEN COALESCE(NULLIF(point.value->'climate_info'->'inside_temp','null'::jsonb),NULLIF(point.value->'inside_temp','null'::jsonb),point.value->'InsideTemp') END AS inside_temp,
+            COALESCE(NULLIF(point.value->'climate_info'->'outside_temp','null'::jsonb),NULLIF(point.value->'outside_temp','null'::jsonb),point.value->'OutsideTemp') AS outside_temp
+          FROM jsonb_array_elements(CASE WHEN s.kind='charge' THEN s.charge_points_json ELSE s.route_json END)
+            WITH ORDINALITY AS point(value, ordinality)
+        ) raw
     ) normalized
-    WHERE level BETWEEN 0 AND 100
-    ORDER BY ordinality ASC
-    LIMIT 1
-) first_soc ON true
-LEFT JOIN LATERAL (
-    SELECT level
-    FROM (
-        SELECT ordinality,
-               CASE WHEN raw_soc ~ '^[0-9]{1,3}$' THEN raw_soc::integer END AS level
-        FROM (
-            SELECT point.ordinality,
-                   CASE WHEN s.source='teslamate_archive'
-                        THEN point.value->>'battery_level'
-                        ELSE point.value->>'BatteryLevel'
-                   END AS raw_soc
-            FROM jsonb_array_elements(s.route_json) WITH ORDINALITY AS point(value, ordinality)
-        ) candidates
-    ) normalized
-    WHERE level BETWEEN 0 AND 100
-    ORDER BY ordinality DESC
-    LIMIT 1
-) last_soc ON true
+) observed ON true
 ORDER BY p.started_at DESC, p.public_id DESC
 `, userID, vehicleID, kind, boundedHistoryBoundary(start), boundedHistoryBoundary(end), limit, offset)
 	if err != nil {
@@ -196,7 +193,9 @@ ORDER BY p.started_at DESC, p.public_id DESC
 			&row.Session.SourceInstanceID, &row.Session.SourceVehicleID, &row.Session.SourceRecordID,
 			&row.Session.StartAddress, &row.Session.EndAddress, &row.Session.Address, &row.Session.Cost,
 			&startLatitude, &startLongitude, &endLatitude, &endLongitude,
-			&row.StartBatteryLevel, &row.EndBatteryLevel, &row.Sequence,
+			&row.StartBatteryLevel, &row.EndBatteryLevel,
+			&row.Metrics.SpeedMax, &row.Metrics.SpeedAvg, &row.Metrics.SpeedCount,
+			&row.Metrics.InsideTempAvg, &row.Metrics.OutsideTempAvg, &row.Sequence,
 		); err != nil {
 			return nil, err
 		}
@@ -436,9 +435,8 @@ func (s *telemetryService) historyPageContext(ctx context.Context, userID string
 			return nil, nil, 0, resolvedShow, err
 		}
 		item := historySessionMap(row.Session, kind, row.Sequence)
-		if kind == "drive" {
-			item["battery_details"] = driveBatteryDetails(row.StartBatteryLevel, row.EndBatteryLevel)
-		}
+		item["battery_details"] = driveBatteryDetails(row.StartBatteryLevel, row.EndBatteryLevel)
+		applyHistorySampleMetrics(item, row.Metrics, kind)
 		items = append(items, item)
 	}
 	return items, resultMeta, total, resolvedShow, readCtx.Err()
