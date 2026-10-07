@@ -100,7 +100,7 @@ func floatPointerForHistoryTest(value float64) *float64 { return &value }
 func TestBoundedHistoryPostgresListDetailTenantSourceAndCancellation(t *testing.T) {
 	database := boundedHistoryTestStore(t)
 	userA, vehicleA := boundedHistoryTestTenant(t, database, "bounded-a")
-	userB, _ := boundedHistoryTestTenant(t, database, "bounded-b")
+	userB, vehicleB := boundedHistoryTestTenant(t, database, "bounded-b")
 	service := &telemetryService{store: database}
 	api := &app{telemetry: service}
 
@@ -114,7 +114,7 @@ func TestBoundedHistoryPostgresListDetailTenantSourceAndCancellation(t *testing.
 	boundedHistoryInsertSession(t, database, userA, vehicleA, "drive", base.Add(time.Hour), "local_import", "incomplete", []telemetryRoutePoint{}, "")
 	boundedHistoryInsertSession(t, database, userA, vehicleA, "drive", base, "telemetry_mqtt", "derived", []telemetryRoutePoint{}, "")
 	boundedHistoryInsertSession(t, database, userA, vehicleA, "drive", base.Add(-time.Hour), "telemetry_mqtt", "quarantined", []telemetryRoutePoint{}, "")
-	boundedHistoryInsertSession(t, database, userB, vehicleA+1000000, "drive", base.Add(3*time.Hour), "fleet_api", "observed", []telemetryRoutePoint{}, "")
+	boundedHistoryInsertSession(t, database, userB, vehicleB, "drive", base.Add(3*time.Hour), "fleet_api", "observed", []telemetryRoutePoint{}, "")
 
 	if count, err := service.historyCountContext(context.Background(), userA, vehicleA, "drive"); err != nil || count != 3 {
 		t.Fatalf("count=%d err=%v, want 3", count, err)
