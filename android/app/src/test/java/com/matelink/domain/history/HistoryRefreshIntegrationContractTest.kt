@@ -5,7 +5,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HistoryRefreshIntegrationContractTest {
-    private fun source(path: String) = File("src/main/java/com/matelink/$path").readText()
+    private fun source(path: String) = File("src/main/java/com/matelink/$path").readText().replace("\r\n", "\n")
     @Test fun bothViewModelsUseInjectedClockAndCancelSupersededHistoryLoads() {
         for (kind in listOf("drives/Drives", "charges/Charges")) {
             val source = source("ui/screens/${kind}ViewModel.kt")
