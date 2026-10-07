@@ -22,3 +22,4 @@
 API回执：E:/Claude_allow/Download/matelink-api-fields-20261007/actual-api-deployment-receipt.json。
 手机回执：E:/Claude_allow/Download/matelink-phone-fields-20261007/actual-device-install.json、apk-verification.json、phone-signed-build.log。
 合成SQLite迁移确认旧行/真实0/null保留，Room21 schema匹配；不替代用户数据库和登录会话验收。
+
