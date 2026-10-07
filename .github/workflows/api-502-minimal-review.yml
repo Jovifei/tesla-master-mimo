@@ -1,0 +1,49 @@
+name: API 502 minimal history read verification
+
+on:
+  push:
+    branches:
+      - codex/api-502-minimal-20261007
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: jourvolt_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d jourvolt_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      JOURVOLT_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/jourvolt_test?sslmode=disable
+    defaults:
+      run:
+        working-directory: deploy/jourvolt-dev-mock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: deploy/jourvolt-dev-mock/go.mod
+      - name: Verify modules
+        run: go mod verify
+      - name: Full Go and PostgreSQL suite
+        run: go test ./... -count=1
+      - name: Focused bounded history evidence
+        run: go test -run '^TestBoundedHistory' -count=1 -v
+      - name: Focused race
+        run: go test -race -run '^TestBoundedHistory' -count=1
+      - name: Vet and build
+        run: |
+          go vet ./...
+          go build ./...

@@ -1440,6 +1440,6 @@ func historyCoveragePercent(sessions []telemetrySession) float64 {
 }
 
 func (s *telemetryService) hasHistory(ctx context.Context, userID string, vehicleID int, kind string) bool {
-	items, _, err := s.history(userID, vehicleID, kind)
-	return err == nil && len(items) > 0
+	exists, err := s.historyExistsContext(ctx, userID, vehicleID, kind)
+	return err == nil && exists
 }

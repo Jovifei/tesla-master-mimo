@@ -47,8 +47,8 @@ func (a *app) dataReadiness(w http.ResponseWriter, r *http.Request, userID strin
 		historyFallbackSource = "telemetry_mqtt"
 	}
 	items := readinessItemsWithHistory(providerStatus, source, err, driveHistoryAvailable, chargeHistoryAvailable)
-	setReadinessItemSource(items, "drives", a.historyReadinessSource(userID, vehicleID, "drive", historyFallbackSource))
-	setReadinessItemSource(items, "charges", a.historyReadinessSource(userID, vehicleID, "charge", historyFallbackSource))
+	setReadinessItemSource(items, "drives", a.historyReadinessSourceContext(r.Context(), userID, vehicleID, "drive", historyFallbackSource))
+	setReadinessItemSource(items, "charges", a.historyReadinessSourceContext(r.Context(), userID, vehicleID, "charge", historyFallbackSource))
 	response := dataReadinessResponse{
 		CapabilityVersion: dataReadinessCapabilityVersion,
 		VehicleUID:        vehicleUID,
@@ -70,30 +70,22 @@ func setReadinessItemSource(items []dataReadinessItem, key, source string) {
 }
 
 func (a *app) historyReadinessSource(userID string, vehicleID int, kind, fallback string) string {
+	return a.historyReadinessSourceContext(context.Background(), userID, vehicleID, kind, fallback)
+}
+
+func (a *app) historyReadinessSourceContext(ctx context.Context, userID string, vehicleID int, kind, fallback string) string {
 	if a.hasMockHistory(userID) {
 		return "mock_fixture"
 	}
 	if a.telemetry == nil {
 		return fallback
 	}
-	items, _, err := a.telemetry.history(userID, vehicleID, kind)
-	if err != nil {
+	source, ok, err := a.telemetry.historySourceForReadinessContext(ctx, userID, vehicleID, kind)
+	if err != nil || !ok {
 		return fallback
 	}
-	for _, item := range items {
-		raw, _ := item["source"].(string)
-		switch strings.ToLower(strings.TrimSpace(raw)) {
-		case "local_import", "local_history":
-			return "local_history"
-		case "telemetry_mqtt":
-			return "telemetry_mqtt"
-		case "fleet_api":
-			return "fleet_api"
-		}
-	}
-	return fallback
+	return source
 }
-
 func readinessItems(status vehicleStatus, source string, providerErr error) []dataReadinessItem {
 	return readinessItemsWithHistory(status, source, providerErr, false, false)
 }

@@ -616,11 +616,11 @@ func (a *app) vehicleItems(ctx context.Context, userID string, vehicles []vehicl
 			driveCount, chargeCount = len(mockDriveFixtures()), len(mockChargeFixtures())
 		}
 		if a.telemetry != nil {
-			if drives, _, err := a.telemetry.history(userID, v.ID, "drive"); err == nil {
-				driveCount = len(drives)
+			if count, err := a.telemetry.historyCountContext(ctx, userID, v.ID, "drive"); err == nil {
+				driveCount = count
 			}
-			if charges, _, err := a.telemetry.history(userID, v.ID, "charge"); err == nil {
-				chargeCount = len(charges)
+			if count, err := a.telemetry.historyCountContext(ctx, userID, v.ID, "charge"); err == nil {
+				chargeCount = count
 			}
 		}
 		items = append(items, map[string]any{
