@@ -611,28 +611,42 @@ func (a *app) cars(w http.ResponseWriter, r *http.Request, userID string) {
 func (a *app) vehicleItems(ctx context.Context, userID string, vehicles []vehicle) []map[string]any {
 	items := make([]map[string]any, 0, len(vehicles))
 	for _, v := range vehicles {
-		driveCount, chargeCount := 0, 0
-		if a.hasMockHistory(userID) {
+		var driveCount any = 0
+		var chargeCount any = 0
+		driveKnown, chargeKnown := true, true
+		mockHistory := a.hasMockHistory(userID)
+		if mockHistory {
 			driveCount, chargeCount = len(mockDriveFixtures()), len(mockChargeFixtures())
 		}
 		if a.telemetry != nil {
-			if drives, _, err := a.telemetry.history(userID, v.ID, "drive"); err == nil {
-				driveCount = len(drives)
+			if count, err := a.telemetry.historyCountContext(ctx, userID, v.ID, "drive"); err == nil {
+				driveCount = count
+			} else if !mockHistory {
+				driveCount, driveKnown = nil, false
 			}
-			if charges, _, err := a.telemetry.history(userID, v.ID, "charge"); err == nil {
-				chargeCount = len(charges)
+			if count, err := a.telemetry.historyCountContext(ctx, userID, v.ID, "charge"); err == nil {
+				chargeCount = count
+			} else if !mockHistory {
+				chargeCount, chargeKnown = nil, false
 			}
+		}
+		stats := map[string]any{"total_charges": chargeCount, "total_drives": driveCount}
+		if !driveKnown || !chargeKnown {
+			status := "partial"
+			if !driveKnown && !chargeKnown {
+				status = "unavailable"
+			}
+			stats["history_counts_status"] = status
 		}
 		items = append(items, map[string]any{
 			"car_id": v.ID, "vehicle_uid": v.VehicleUID, "name": v.DisplayName,
 			"car_details":     map[string]any{"model": emptyAsNil(v.Model), "trim_badging": emptyAsNil(v.TrimBadging), "efficiency": nil},
 			"car_exterior":    map[string]any{"exterior_color": emptyAsNil(v.ExteriorColor), "wheel_type": emptyAsNil(v.WheelType)},
-			"teslamate_stats": map[string]any{"total_charges": chargeCount, "total_drives": driveCount},
+			"teslamate_stats": stats,
 		})
 	}
 	return items
 }
-
 func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path string) {
 	parts := strings.Split(strings.TrimPrefix(path, "/api/v1/cars/"), "/")
 	if len(parts) == 0 || parts[0] == "" {

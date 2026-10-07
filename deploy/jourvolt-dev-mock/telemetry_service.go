@@ -1210,7 +1210,9 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		result["start_address"], result["end_address"] = session.StartAddress, session.EndAddress
 		result["duration_str"], result["speed_max"], result["speed_avg"] = nil, nil, nil
 		result["power_max"], result["power_min"] = nil, nil
-		result["battery_details"], result["range_ideal"], result["range_rated"] = nil, nil, nil
+		startBatteryLevel, endBatteryLevel := driveBatteryBounds(session)
+		result["battery_details"] = driveBatteryDetails(startBatteryLevel, endBatteryLevel)
+		result["range_ideal"], result["range_rated"] = nil, nil
 		result["outside_temp_avg"], result["inside_temp_avg"] = nil, nil
 		// Fleet Telemetry currently provides no dedicated driving-energy field in
 		// this configuration. Never reuse charging energy as drive consumption.
@@ -1311,6 +1313,47 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 	}
 	result["sequence"] = index
 	return result
+}
+
+func driveBatteryBounds(session telemetrySession) (*int, *int) {
+	var first, last *int
+	record := func(raw *int) {
+		level := observedRouteBatteryLevel(raw)
+		if level == nil {
+			return
+		}
+		if first == nil {
+			first = cloneInt(level)
+		}
+		last = cloneInt(level)
+	}
+	if session.Source == "teslamate_archive" && session.ArchiveRoute != nil {
+		for _, point := range session.ArchiveRoute {
+			record(point.BatteryLevel)
+		}
+	} else {
+		for _, point := range session.Route {
+			record(point.BatteryLevel)
+		}
+	}
+	return first, last
+}
+
+func driveBatteryDetails(start, end *int) any {
+	if start == nil && end == nil {
+		return nil
+	}
+	details := map[string]any{
+		"start_battery_level": nil,
+		"end_battery_level":   nil,
+	}
+	if start != nil {
+		details["start_battery_level"] = *start
+	}
+	if end != nil {
+		details["end_battery_level"] = *end
+	}
+	return details
 }
 
 func nullableFloat(value *float64) any {
@@ -1440,6 +1483,6 @@ func historyCoveragePercent(sessions []telemetrySession) float64 {
 }
 
 func (s *telemetryService) hasHistory(ctx context.Context, userID string, vehicleID int, kind string) bool {
-	items, _, err := s.history(userID, vehicleID, kind)
-	return err == nil && len(items) > 0
+	exists, err := s.historyExistsContext(ctx, userID, vehicleID, kind)
+	return err == nil && exists
 }
