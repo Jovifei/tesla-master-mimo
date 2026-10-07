@@ -20,7 +20,7 @@ object DriveEnergyCalculator {
 
     fun calculate(samples: List<DrivePowerSample>): DriveEnergyResult {
         var energyKwh = 0.0
-        var coverageSeconds = 0L
+        var coverageMillis = 0L
 
         samples.zipWithNext().forEach { (start, end) ->
             val startTime = start.timestamp.toInstantOrNull()
@@ -32,19 +32,19 @@ object DriveEnergyCalculator {
                 return@forEach
             }
 
-            val intervalSeconds = Duration.between(startTime, endTime)
-                .seconds
+            val intervalMillis = Duration.between(startTime, endTime)
+                .toMillis()
                 .takeIf { it > 0L }
-                ?.coerceAtMost(MAX_INTERVAL_SECONDS)
+                ?.coerceAtMost(MAX_INTERVAL_SECONDS * 1000)
                 ?: return@forEach
 
-            coverageSeconds += intervalSeconds
-            energyKwh += ((startPower + endPower) / 2.0) * intervalSeconds / 3600.0
+            coverageMillis += intervalMillis
+            energyKwh += ((startPower + endPower) / 2.0) * intervalMillis / 3_600_000.0
         }
 
         return DriveEnergyResult(
             energyKwh = energyKwh.takeIf { it > 0.0 },
-            coverageSeconds = coverageSeconds
+            coverageSeconds = coverageMillis / 1000
         )
     }
 

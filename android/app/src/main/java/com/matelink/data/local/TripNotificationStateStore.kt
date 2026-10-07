@@ -43,7 +43,7 @@ internal fun completedTripNotificationPlan(
         .sortedBy { it.driveId }
     val latestId = completed.lastOrNull()?.driveId
     if (watermark == null) {
-        return CompletedTripNotificationPlan(toNotify = emptyList(), watermarkToSave = latestId)
+        return CompletedTripNotificationPlan(toNotify = emptyList(), watermarkToSave = latestId ?: 0)
     }
     return CompletedTripNotificationPlan(
         toNotify = completed.filter { it.driveId > watermark },

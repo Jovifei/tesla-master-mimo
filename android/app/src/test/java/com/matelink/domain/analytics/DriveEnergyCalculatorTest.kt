@@ -7,6 +7,17 @@ import org.junit.Test
 class DriveEnergyCalculatorTest {
 
     @Test
+    fun subSecondSamplesKeepTheirEnergyAndAccumulateCoverage() {
+        val result = DriveEnergyCalculator.calculate(listOf(
+            DrivePowerSample("2026-07-11T00:00:00Z", 36.0),
+            DrivePowerSample("2026-07-11T00:00:00.500Z", 36.0),
+            DrivePowerSample("2026-07-11T00:00:01Z", 36.0)
+        ))
+        assertEquals(1L, result.coverageSeconds)
+        assertEquals(0.01, result.energyKwh!!, 0.0000001)
+    }
+
+    @Test
     fun adjacentValidSamples_integratePowerWithTrapezoidRule() {
         val result = DriveEnergyCalculator.calculate(
             listOf(

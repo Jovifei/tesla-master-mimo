@@ -602,7 +602,8 @@ private fun DriveItem(
     val startCity = formattedStart ?: unknown
     val endCity = formattedEnd ?: unknown
 
-    val efficiency = metrics?.efficiencyWhKm ?: drive.efficiencyWhKm
+    val efficiency = if (metrics?.source == "power_samples" && metrics.coverageRatio < 0.9) null
+        else metrics?.efficiencyWhKm ?: drive.efficiencyWhKm
     val start = drive.startBatteryLevel
     val end = drive.endBatteryLevel
 
@@ -689,11 +690,7 @@ private fun DriveItem(
                         TelemetryMetricSpec(
                             icon = Icons.Default.BatteryStd,
                             label = stringResource(R.string.battery),
-                            value = if (start != null && start in 0..100 && end != null && end in 0..100) {
-                                "$start→$end%"
-                            } else {
-                                stringResource(R.string.not_available)
-                            },
+                            value = UnitFormatter.formatSocRange(start, end, stringResource(R.string.not_available)),
                             tint = Color(0xFFF97316)
                         )
                     ),

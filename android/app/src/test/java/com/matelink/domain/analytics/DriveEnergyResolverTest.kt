@@ -8,6 +8,17 @@ import org.junit.Test
 class DriveEnergyResolverTest {
 
     @Test
+    fun partialPowerCoverageCannotRepresentWholeDriveConsumption() {
+        val estimate = DriveEnergyResolver.resolve(null, 10.0, listOf(
+            DrivePowerSample("2026-07-11T10:00:00Z", 10.0),
+            DrivePowerSample("2026-07-11T10:00:10Z", 10.0)
+        ), durationSeconds = 600)
+        assertNull(estimate.energyKwh)
+        assertNull(estimate.efficiencyWhKm)
+        assertEquals(DriveEnergySource.UNAVAILABLE, estimate.source)
+    }
+
+    @Test
     fun apiEnergyWinsWhenTheServerProvidesIt() {
         val estimate = DriveEnergyResolver.resolve(
             apiEnergyKwh = 2.5,

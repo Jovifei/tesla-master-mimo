@@ -1,5 +1,7 @@
 package com.matelink.ui.screens.charges
 
+import com.matelink.domain.model.UnitFormatter
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -828,11 +830,7 @@ private fun ChargeItem(
                         TelemetryMetricSpec(
                             icon = Icons.Default.BatteryStd,
                             label = stringResource(R.string.battery),
-                            value = if (start != null && start in 0..100 && end != null && end in 0..100) {
-                                "$start→$end%"
-                            } else {
-                                notAvailableLabel
-                            },
+                            value = UnitFormatter.formatSocRange(start, end, notAvailableLabel),
                             tint = Color(0xFFF97316)
                         )
                     ),

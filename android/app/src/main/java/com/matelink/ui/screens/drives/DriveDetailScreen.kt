@@ -318,7 +318,7 @@ private fun DriveDetailContent(
                     StatItem(
                         energySourceLabel,
                         when (s.energy.source) {
-                            DriveDetailEnergySource.API -> stringResource(R.string.range_actual)
+                            DriveDetailEnergySource.API -> stringResource(R.string.energy_source_api_reported)
                             DriveDetailEnergySource.POWER_SAMPLES -> stringResource(R.string.range_estimated)
                             null -> notAvailableLabel
                         }

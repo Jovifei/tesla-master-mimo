@@ -700,7 +700,7 @@ private fun BatteryEnergyFlowCard(
     val dcAvgKw = if (dcDurationMin > 0) dcKwh * 60.0 / dcDurationMin else 0.0
     val acAvgKw = if (acDurationMin > 0) acKwh * 60.0 / acDurationMin else 0.0
     val usedKwh = trip.totalEnergyConsumed
-    val efficiencyWhPerDist = trip.avgEfficiency
+    val efficiencyWhPerDist = trip.avgEfficiency?.let { UnitFormatter.efficiencyDisplayValue(it, units) }
         ?: trip.totalDistance.takeIf { it > 0.0 }?.let { usedKwh * 1000.0 / it }
     val efficiencyUnit = UnitFormatter.getEfficiencyUnit(units)
 
@@ -1034,7 +1034,7 @@ private fun HorizontalEnergyFlow(
             )
             if (efficiencyWhPerDist != null) {
                 Text(
-                    text = "%.0f %s".format(efficiencyWhPerDist, efficiencyUnit),
+                    text = "%.1f %s".format(efficiencyWhPerDist, efficiencyUnit),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

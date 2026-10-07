@@ -2,6 +2,9 @@ package com.matelink.data.sync
 
 import android.util.Log
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.matelink.data.local.HistoryReadScope
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.ChargeData
@@ -99,7 +102,9 @@ class SyncRepository @Inject constructor(
     private val historyMetadataStore: HistoryMetadataStore,
     private val tripNotificationStateStore: TripNotificationStateStore,
     private val tripNotificationManager: TripNotificationManager,
-    private val vehicleContextRepository: VehicleContextRepository
+    private val vehicleContextRepository: VehicleContextRepository,
+    private val chargeEventStore: com.matelink.data.local.CompletedChargeEventStore,
+    private val chargeNotifier: com.matelink.notification.CompletedChargeNotificationManager
 ) {
     companion object {
         private const val TAG = "SyncRepository"
@@ -110,10 +115,7 @@ class SyncRepository @Inject constructor(
         if (actual != expected) throw CancellationException("History account or server changed")
     }
 
-    private val tripNotificationProcessor = CompletedTripNotificationProcessor(
-        tripNotificationStateStore,
-        tripNotificationManager
-    )
+    private val chargeDeliveryMutex = Mutex()
 
     /**
      * Sync all data for a car. Returns true if successful, false on network error.
@@ -187,7 +189,7 @@ class SyncRepository @Inject constructor(
                 }
                 },
                 persistPage = { rows -> requireScope(scope); driveSummaryDao.upsertPreservingEvidence(rows) },
-                onCompleted = { summaries -> notifyCompletedDriveUpdates(historyCarId, summaries) }
+                onCompleted = { summaries -> notifyCompletedDriveUpdates(historyCarId, remoteApiCarId, summaries, scope) }
             ).sync()
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
             Log.e(TAG, "Error syncing drive summaries", e)
@@ -195,8 +197,17 @@ class SyncRepository @Inject constructor(
         }
     }
 
-    private suspend fun notifyCompletedDriveUpdates(carId: Int, summaries: List<DriveSummary>) {
-        tripNotificationProcessor.process(carId, summaries)
+    private suspend fun notifyCompletedDriveUpdates(carId: Int,remoteCarId: Int, summaries: List<DriveSummary>, scope: HistoryReadScope) {
+        requireScope(scope)
+        chargeEventStore.record(carId,remoteCarId,summaries.filter { it.qualityState != "quarantined" }
+            .map { it.driveId to it.endDate },"drive")
+        chargeDeliveryMutex.withLock {
+            chargeEventStore.events(carId,"drive").first().filter { !it.systemConsumed }.forEach { event ->
+                requireScope(scope)
+                val summary=summaries.firstOrNull { it.driveId==event.chargeId } ?: return@forEach
+                if(tripNotificationManager.showCompletedDrive(carId,summary)) chargeEventStore.consume(carId,event.chargeId,true,"drive")
+            }
+        }
     }
 
     private suspend fun syncChargeSummaries(remoteApiCarId: Int, historyCarId: Int, scope: HistoryReadScope): Boolean {
@@ -204,6 +215,7 @@ class SyncRepository @Inject constructor(
             var page = 1
             var hasMore = true
             var seenIds = emptySet<Int>()
+            val completed = mutableListOf<ChargeSummary>()
 
             while (hasMore) {
                 requireScope(scope)
@@ -217,6 +229,7 @@ class SyncRepository @Inject constructor(
                             hasMore = false
                         } else {
                             val summaries = charges.mapNotNull { it.toSyncSummary(historyCarId) }
+                            completed += summaries
                             chargeSummaryDao.upsertPreservingEvidence(summaries)
                             val decision = PaginationGuard.evaluate(
                                 pageSize = 50,
@@ -232,6 +245,16 @@ class SyncRepository @Inject constructor(
                         Log.e(TAG, "Failed to sync charge summaries: ${result.message}")
                         return false
                     }
+                }
+            }
+            requireScope(scope)
+            chargeEventStore.record(historyCarId, remoteApiCarId, completed
+                .filter { it.qualityState != "quarantined" && runCatching { java.time.Instant.parse(it.endDate) <= java.time.Instant.now() }.getOrDefault(false) }
+                .map { it.chargeId to it.endDate })
+            chargeDeliveryMutex.withLock {
+                chargeEventStore.events(historyCarId).first().filter { !it.systemConsumed }.forEach { event ->
+                    requireScope(scope)
+                    if (chargeNotifier.show(event)) chargeEventStore.consume(historyCarId,event.chargeId,true)
                 }
             }
             true
@@ -258,7 +281,8 @@ class SyncRepository @Inject constructor(
                                 distanceKm = detail.distance ?: summary.distance,
                                 samples = detail.positions.orEmpty().map {
                                     DrivePowerSample(it.date, it.power?.toDouble())
-                                }
+                                },
+                                durationSeconds = (detail.durationMin ?: summary.durationMin).toLong() * 60
                             )
                             val coverageRatio = if ((detail.durationMin ?: summary.durationMin) > 0) {
                                 (energy.coverageSeconds.toDouble() /
@@ -275,8 +299,8 @@ class SyncRepository @Inject constructor(
                                 powerMin = detail.powerMin ?: summary.powerMin,
                                 startBatteryLevel = detail.startBatteryLevel ?: summary.startBatteryLevel,
                                 endBatteryLevel = detail.endBatteryLevel ?: summary.endBatteryLevel,
-                                energyConsumed = energy.energyKwh ?: summary.energyConsumed,
-                                efficiency = energy.efficiencyWhKm ?: summary.efficiency,
+                                energyConsumed = energy.energyKwh,
+                                efficiency = energy.efficiencyWhKm,
                                 energySource = energy.source.name.lowercase(),
                                 energyCoverageSeconds = energy.coverageSeconds,
                                 energyCoverageRatio = coverageRatio

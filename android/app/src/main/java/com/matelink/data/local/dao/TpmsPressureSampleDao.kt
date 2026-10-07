@@ -20,6 +20,6 @@ interface TpmsPressureSampleDao {
     )
     suspend fun getInRange(carId: Int, from: Long, to: Long): List<TpmsPressureSample>
 
-    @Query("DELETE FROM tpms_pressure_samples WHERE carId = :carId AND observedAt < :cutoff")
+    @Query("DELETE FROM tpms_pressure_samples WHERE provenance = 'provider_observation' AND carId = :carId AND observedAt < :cutoff")
     suspend fun deleteOlderThan(carId: Int, cutoff: Long): Int
 }
