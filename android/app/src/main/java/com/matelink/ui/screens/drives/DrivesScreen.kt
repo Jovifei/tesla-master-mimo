@@ -400,16 +400,20 @@ internal sealed interface DriveHistoryItem {
 }
 
 internal fun buildDriveHistoryItems(drives: List<DriveData>): List<DriveHistoryItem> {
-    // DrivesViewModel owns the visibility contract (quality + short-route rules).
-    // Do not re-interpret missing distance as zero or apply a second threshold here.
-    val routeDrives = drives
-    if (routeDrives.isEmpty()) return emptyList()
+    // DrivesViewModel owns card visibility. Parking keeps its older >=0.5 km
+    // route boundary so newly visible unknown/short drives do not change parked inference.
+    if (drives.isEmpty()) return emptyList()
+    val parkingEligibleIndices = drives.indices.filter { index ->
+        drives[index].distance?.let { distance -> distance >= 0.5 } == true
+    }
+    val parkedAfterIndex = parkingEligibleIndices.zipWithNext().mapNotNull { (newerIndex, olderIndex) ->
+        createParkedSegment(drives[olderIndex], drives[newerIndex])?.let { newerIndex to it }
+    }.toMap()
+
     val items = mutableListOf<DriveHistoryItem>()
-    routeDrives.forEachIndexed { index, drive ->
+    drives.forEachIndexed { index, drive ->
         items += DriveHistoryItem.Drive(drive)
-        val olderDrive = routeDrives.getOrNull(index + 1) ?: return@forEachIndexed
-        val parked = createParkedSegment(olderDrive, drive)
-        if (parked != null) items += parked
+        parkedAfterIndex[index]?.let { items += it }
     }
     return items
 }
