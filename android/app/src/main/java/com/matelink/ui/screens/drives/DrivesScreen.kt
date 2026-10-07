@@ -377,7 +377,7 @@ private fun DrivesContent(
     }
 }
 
-private sealed interface DriveHistoryItem {
+internal sealed interface DriveHistoryItem {
     val key: String
     val dateForIndicator: String?
 
@@ -399,8 +399,10 @@ private sealed interface DriveHistoryItem {
     }
 }
 
-private fun buildDriveHistoryItems(drives: List<DriveData>): List<DriveHistoryItem> {
-    val routeDrives = drives.filter { (it.distance ?: 0.0) >= 0.5 }
+internal fun buildDriveHistoryItems(drives: List<DriveData>): List<DriveHistoryItem> {
+    // DrivesViewModel owns the visibility contract (quality + short-route rules).
+    // Do not re-interpret missing distance as zero or apply a second threshold here.
+    val routeDrives = drives
     if (routeDrives.isEmpty()) return emptyList()
     val items = mutableListOf<DriveHistoryItem>()
     routeDrives.forEachIndexed { index, drive ->
