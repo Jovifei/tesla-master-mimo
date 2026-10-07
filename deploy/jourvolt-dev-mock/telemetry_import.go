@@ -83,12 +83,13 @@ type historyImportSession struct {
 }
 
 type historyImportRoutePoint struct {
-	Date      string   `json:"date"`
-	Latitude  *float64 `json:"latitude"`
-	Longitude *float64 `json:"longitude"`
-	Speed     *float64 `json:"speed"`
-	Power     *float64 `json:"power"`
-	Heading   *float64 `json:"heading"`
+	Date         string   `json:"date"`
+	Latitude     *float64 `json:"latitude"`
+	Longitude    *float64 `json:"longitude"`
+	Speed        *float64 `json:"speed"`
+	Power        *float64 `json:"power"`
+	Heading      *float64 `json:"heading"`
+	BatteryLevel *int     `json:"battery_level,omitempty"`
 }
 
 type historyImportChargePoint struct {
@@ -213,8 +214,12 @@ func (req historyImportSession) toTelemetrySession(userID string, vehicleID int,
 	if source == "teslamate" {
 		id = scopedArchiveSessionID(userID, vehicleID, kind, sourceInstanceID, sourceVehicleID, req.SourceRecordID)
 	}
-	route := make([]telemetryRoutePoint, 0, len(req.Route))
-	for _, point := range req.Route {
+	archiveRoute := append([]historyImportRoutePoint(nil), req.Route...)
+	for index := range archiveRoute {
+		archiveRoute[index].BatteryLevel = cloneInt(observedRouteBatteryLevel(archiveRoute[index].BatteryLevel))
+	}
+	route := make([]telemetryRoutePoint, 0, len(archiveRoute))
+	for _, point := range archiveRoute {
 		if point.Latitude == nil || point.Longitude == nil {
 			continue
 		}
@@ -229,19 +234,27 @@ func (req historyImportSession) toTelemetrySession(userID string, vehicleID int,
 		}
 		route = append(route, telemetryRoutePoint{
 			ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude,
-			Speed: point.Speed, Power: point.Power, Heading: point.Heading,
+			Speed: point.Speed, Power: point.Power, Heading: point.Heading, BatteryLevel: cloneInt(point.BatteryLevel),
 		})
 	}
 	return telemetrySession{
 		ID: id, Kind: kind, StartAt: start, EndAt: &end,
 		OdometerStart: req.OdometerStart, OdometerEnd: req.OdometerEnd, EnergyAdded: req.EnergyAdded,
-		Route: route, ArchiveRoute: append([]historyImportRoutePoint(nil), req.Route...), ChargePoints: importChargePoints(req.ChargePoints, start),
+		Route: route, ArchiveRoute: archiveRoute, ChargePoints: importChargePoints(req.ChargePoints, start),
 		Source:           map[bool]string{true: "teslamate_archive", false: "local_import"}[source == "teslamate"],
 		QualityState:     map[bool]string{true: "observed", false: "incomplete"}[source == "teslamate"],
 		QualityReason:    map[bool]string{true: "teslamate_archive", false: "local_import_unverified"}[source == "teslamate"],
 		SourceInstanceID: sourceInstanceID, SourceVehicleID: sourceVehicleID, SourceRecordID: req.SourceRecordID,
 		StartAddress: req.StartAddress, EndAddress: req.EndAddress, Address: req.Address, Cost: req.Cost,
 	}, nil
+}
+
+// A real observed zero is valid; invalid/missing source values remain unknown.
+func observedRouteBatteryLevel(level *int) *int {
+	if level == nil || *level < 0 || *level > 100 {
+		return nil
+	}
+	return level
 }
 
 func importChargePoints(points []historyImportChargePoint, start time.Time) []telemetryChargePoint {
@@ -369,7 +382,7 @@ func upsertImportedSessionPostgres(ctx context.Context, tx pgx.Tx, userID string
 				if parseErr != nil {
 					continue
 				}
-				old.Route = append(old.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading})
+				old.Route = append(old.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading, BatteryLevel: cloneInt(observedRouteBatteryLevel(point.BatteryLevel))})
 			}
 		} else if err = json.Unmarshal(oldRoute, &old.Route); err != nil {
 			return err
@@ -531,6 +544,9 @@ func mergeImportedSession(incoming, cached telemetrySession) telemetrySession {
 			}
 			if point.Heading == nil {
 				point.Heading = old.Heading
+			}
+			if point.BatteryLevel == nil {
+				point.BatteryLevel = cloneInt(old.BatteryLevel)
 			}
 			points[index] = point
 		} else if len(points) < maxImportRoutePointsPerItem || len(points) < len(cached.Route) {

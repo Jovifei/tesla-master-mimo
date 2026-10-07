@@ -568,6 +568,12 @@ func (a *app) adapterResource(w http.ResponseWriter, r *http.Request, userID, pa
 		a.json(w, http.StatusNotFound, map[string]string{"error": "vehicle_not_found"})
 		return
 	}
+	// This identity read has its own persisted ownership check. It must not use
+	// requireVehicle, whose cache-miss path calls the live Tesla provider.
+	if parts[1] == "history-context" {
+		a.historyContext(w, r, userID, carID, path, parts)
+		return
+	}
 	if !a.requireVehicle(w, r, userID, carID) {
 		return
 	}
