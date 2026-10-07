@@ -113,22 +113,32 @@ object UnitFormatter {
     }
 
     /**
-     * Format efficiency (Wh/km or Wh/mi).
+     * Format stored Wh/km as kWh/100km; imperial Wh/mi stays unchanged.
      * Value is already in Wh/km (metric) or Wh/mi (imperial) as returned by the API.
      */
     fun formatEfficiency(value: Double, units: Units?, decimals: Int = 1): String {
         return if (units?.isImperial == true) {
             "%.${decimals}f Wh/mi".format(value)
         } else {
-            "%.${decimals}f Wh/km".format(value)
+            "%.${decimals.coerceAtLeast(1)}f kWh/100km".format(value / 10.0)
         }
+    }
+
+    fun efficiencyDisplayValue(value: Double, units: Units?): Double =
+        if (units?.isImperial == true) value else value / 10.0
+
+    fun formatSocRange(start: Int?, end: Int?, unavailable: String): String {
+        val first = start?.takeIf { it in 0..100 }
+        val last = end?.takeIf { it in 0..100 }
+        if (first == null && last == null) return unavailable
+        return "${first?.let { "$it%" } ?: "—"} → ${last?.let { "$it%" } ?: "—"}"
     }
 
     /**
      * Get the efficiency unit label
      */
     fun getEfficiencyUnit(units: Units?): String {
-        return if (units?.isImperial == true) "Wh/mi" else "Wh/km"
+        return if (units?.isImperial == true) "Wh/mi" else "kWh/100km"
     }
 
     /**

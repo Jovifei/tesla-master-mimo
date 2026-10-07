@@ -6,6 +6,8 @@ import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.api.models.DrivePosition
 import com.matelink.data.api.models.DriveClimateInfo
 import com.matelink.data.api.models.Units
+import com.matelink.domain.analytics.DriveEnergyResolver
+import com.matelink.domain.analytics.DrivePowerSample
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.repository.ApiResult
@@ -99,7 +101,11 @@ internal fun presentDriveDetailEnergy(
 
     return DriveDetailEnergyPresentation(
         energyKwh = validEnergyKwh,
-        efficiencyWhKm = efficiencyWhKm?.takeIf { it.isFinite() && it >= 0.0 },
+        efficiencyWhKm = efficiencyWhKm?.takeIf {
+            it.isFinite() && it >= 0.0 &&
+                (source != DriveDetailEnergySource.POWER_SAMPLES ||
+                    coverageRatio?.takeIf(Double::isFinite)?.let { ratio -> ratio in 0.9..1.0 } == true)
+        },
         source = source,
         coverageSeconds = coverageSeconds?.takeIf { it >= 0L },
         coverageRatio = coverageRatio?.takeIf { it.isFinite() && it in 0.0..1.0 }
@@ -169,16 +175,23 @@ class DriveDetailViewModel @Inject constructor(
             when (detailResult) {
                 is ApiResult.Success -> {
                     val detail = enrichAddresses(detailResult.data)
-                    val persistedEnergy = driveSummaryDao.get(localHistoryCarId, driveId)
+                    val energy = DriveEnergyResolver.resolve(
+                        apiEnergyKwh = detail.energyConsumedNet,
+                        distanceKm = detail.distance,
+                        samples = detail.positions.orEmpty().map { DrivePowerSample(it.date, it.power?.toDouble()) },
+                        durationSeconds = detail.durationMin?.toLong()?.times(60) ?: 0
+                    )
                     checkContext()
                     val stats = calculateDriveDetailStats(
                         detail = detail,
                         energy = presentDriveDetailEnergy(
-                            energyKwh = persistedEnergy?.energyConsumed,
-                            efficiencyWhKm = persistedEnergy?.efficiency,
-                            energySource = persistedEnergy?.energySource,
-                            coverageSeconds = persistedEnergy?.energyCoverageSeconds,
-                            coverageRatio = persistedEnergy?.energyCoverageRatio
+                            energyKwh = energy.energyKwh,
+                            efficiencyWhKm = energy.efficiencyWhKm,
+                            energySource = energy.source.name.lowercase(),
+                            coverageSeconds = energy.coverageSeconds,
+                            coverageRatio = detail.durationMin?.takeIf { it > 0 }?.let {
+                                (energy.coverageSeconds.toDouble() / (it * 60.0)).coerceIn(0.0, 1.0)
+                            }
                         )
                     )
                     _uiState.update {

@@ -29,11 +29,14 @@ class TpmsHistoryRepository @Inject constructor(
         dao.upsert(sample.normalized().copy(carId = historyCarId))
     }
 
+    suspend fun latestVerified(historyCarId: Int, now: Long): TpmsPressureSample? =
+        dao.getInRange(historyCarId, now - THIRTY_DAYS_MS, now).filter { it.provenance == "provider_observation" }.lastOrNull()
+
     suspend fun load7DaySamples(carId: Int, now: Long = System.currentTimeMillis()): List<TpmsPressureSample> =
-        dao.getInRange(vehicleContextRepository.requireLocalHistoryCarId(carId), now - SEVEN_DAYS_MS, now + 1)
+        dao.getInRange(vehicleContextRepository.requireLocalHistoryCarId(carId), now - SEVEN_DAYS_MS, now + 1).filter { it.provenance == "provider_observation" }
 
     suspend fun load30DaySamples(carId: Int, now: Long = System.currentTimeMillis()): List<TpmsPressureSample> =
-        dao.getInRange(vehicleContextRepository.requireLocalHistoryCarId(carId), now - THIRTY_DAYS_MS, now + 1)
+        dao.getInRange(vehicleContextRepository.requireLocalHistoryCarId(carId), now - THIRTY_DAYS_MS, now + 1).filter { it.provenance == "provider_observation" }
 
     suspend fun pruneOlderThan90Days(carId: Int, now: Long = System.currentTimeMillis()): Int =
         dao.deleteOlderThan(vehicleContextRepository.requireLocalHistoryCarId(carId), now - NINETY_DAYS_MS)

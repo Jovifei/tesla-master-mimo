@@ -110,8 +110,7 @@ class TripNotificationManager @Inject constructor(
         val spec = buildTripNotificationSpec(
             carId = carId,
             driveId = summary.driveId,
-            title = context.getString(R.string.trip_notification_title) + " · " +
-                context.getString(R.string.trip_notification_metrics, summary.distance, summary.durationMin),
+            title = context.getString(R.string.trip_notification_title),
             body = body
         )
         val deepLink = completedTripNotificationDeepLink(carId, summary.driveId)
@@ -128,14 +127,8 @@ class TripNotificationManager @Inject constructor(
                     .setSmallIcon(R.drawable.ic_steering_wheel)
                     .setColor(0xFF087E96.toInt())
                     .setContentTitle(spec.title)
-                    .setContentText(
-                        tripNotificationLocation(summary.startAddress.toChineseDisplayAddress().orEmpty(), unknownLocation) +
-                            " → " + tripNotificationLocation(summary.endAddress.toChineseDisplayAddress().orEmpty(), unknownLocation)
-                    )
-                    .setStyle(NotificationCompat.BigTextStyle().bigText(
-                        tripNotificationLocation(summary.startAddress.toChineseDisplayAddress().orEmpty(), unknownLocation) +
-                            "\n↓\n" + tripNotificationLocation(summary.endAddress.toChineseDisplayAddress().orEmpty(), unknownLocation)
-                    ))
+                    .setContentText(context.getString(R.string.completed_drive_body))
+                    .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                     .setOnlyAlertOnce(true)
                     .setPriority(spec.priority)
                     .setCategory(NotificationCompat.CATEGORY_STATUS)

@@ -22,7 +22,8 @@ object DriveEnergyResolver {
     fun resolve(
         apiEnergyKwh: Double?,
         distanceKm: Double?,
-        samples: List<DrivePowerSample>
+        samples: List<DrivePowerSample>,
+        durationSeconds: Long? = null
     ): DriveEnergyEstimate {
         val apiEnergy = apiEnergyKwh?.takeIf { it.isFinite() && it > 0.0 }
         if (apiEnergy != null) {
@@ -31,7 +32,9 @@ object DriveEnergyResolver {
 
         val calculated = DriveEnergyCalculator.calculate(samples)
         val calculatedEnergy = calculated.energyKwh
-        if (calculatedEnergy != null) {
+        val coverageComplete = durationSeconds == null ||
+            (durationSeconds > 0 && calculated.coverageSeconds.toDouble() / durationSeconds >= 0.9)
+        if (calculatedEnergy != null && coverageComplete) {
             return estimate(
                 energyKwh = calculatedEnergy,
                 distanceKm = distanceKm,

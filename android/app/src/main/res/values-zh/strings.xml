@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="energy_source_api_reported">接口报告值</string>
     <string name="vehicle_setup_later">稍后确认</string>
     <string name="trip_notification_metrics">%1$.1f 公里 · %2$d 分钟</string>
     <string name="default_charge_price">默认充电电价</string>
@@ -1505,4 +1506,13 @@
     <string name="history_sync_cached">云端历史暂未同步成功，当前显示本机保存的记录；下拉刷新可重试。</string>
     <string name="history_sync_partial">云端历史仅恢复了一部分，本机旧记录已保留；下拉刷新可重试剩余记录。</string>
     <string name="history_archive_link_pending">此列表使用已验证的云端来源。原手机记录、费用修改和本地分析仍保留，暂未关联到此列表。</string>
+    <string name="completed_charge_title">充电已完成</string>
+    <string name="completed_charge_body">发现新的充电记录，可查看详情。</string>
+    <string name="completed_charge_open">查看详情</string>
+    <string name="tpms_change_title">胎压明显变化提醒</string>
+    <string name="tpms_change_body">%1$s 胎压由 %2$.2f 变为 %3$.2f bar</string>
+    <string name="completed_drive_body">新行程已同步，打开应用查看详情。</string>
+    <string name="tpms_change_help">比较连续真实观测。这是变化提示，不诊断故障，也不替代车辆警告。旧未验证记录仍保留，但不参与趋势与提醒；系统通知权限与通道设置仍生效。</string>
+    <string name="tpms_change_delta">变化幅度（bar，0.1–2.0）</string>
+    <string name="tpms_change_hours">最大间隔（小时，1–720）</string>
 </resources>

@@ -23,6 +23,7 @@ class DriveDetailEnergyPresentationTest {
         assertEquals(DriveDetailEnergySource.POWER_SAMPLES, presentation.source)
         assertEquals(180L, presentation.coverageSeconds)
         assertEquals(0.45, presentation.coverageRatio ?: error("coverage missing"), 0.0001)
+        assertNull(presentation.efficiencyWhKm)
     }
 
     @Test
