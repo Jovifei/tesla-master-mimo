@@ -1233,6 +1233,8 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 				if level := observedRouteBatteryLevel(point.BatteryLevel); level != nil {
 					item["battery_level"] = *level
 				}
+				inside, outside := importedObservedClimate(point)
+				addObservedClimate(item, inside, outside)
 				route = append(route, item)
 			}
 		} else {
@@ -1244,6 +1246,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 				if level := observedRouteBatteryLevel(point.BatteryLevel); level != nil {
 					item["battery_level"] = *level
 				}
+				addObservedClimate(item, point.InsideTemp, point.OutsideTemp)
 				route = append(route, item)
 			}
 		}
@@ -1269,12 +1272,15 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		var firstLatitude, firstLongitude *float64
 		for _, point := range session.ChargePoints {
 			item := map[string]any{"date": point.ObservedAt.UTC().Format(time.RFC3339)}
-			if point.BatteryLevel != nil {
-				item["battery_level"] = point.BatteryLevel
+			if level := observedRouteBatteryLevel(point.BatteryLevel); level != nil {
+				item["battery_level"] = *level
 				if firstBattery == nil {
-					firstBattery = cloneInt(point.BatteryLevel)
+					firstBattery = cloneInt(level)
 				}
-				lastBattery = cloneInt(point.BatteryLevel)
+				lastBattery = cloneInt(level)
+			}
+			if value := finiteHistorySample(point.OutsideTemp); value != nil {
+				item["outside_temp"] = *value
 			}
 			if point.EnergyAdded != nil {
 				item["charge_energy_added"] = point.EnergyAdded
@@ -1301,7 +1307,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 			chargeDetails = append(chargeDetails, chargeDetail)
 		}
 		if firstBattery != nil || lastBattery != nil {
-			result["battery_details"] = map[string]any{"start_battery_level": firstBattery, "end_battery_level": lastBattery}
+			result["battery_details"] = driveBatteryDetails(firstBattery, lastBattery)
 		}
 		if lastPower != nil {
 			result["charger_power"] = lastPower
@@ -1311,6 +1317,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		}
 		result["charge_details"] = chargeDetails
 	}
+	applyHistorySampleMetrics(result, sessionSampleMetrics(session, kind), kind)
 	result["sequence"] = index
 	return result
 }

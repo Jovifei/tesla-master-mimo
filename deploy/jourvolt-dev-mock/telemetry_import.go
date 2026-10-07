@@ -83,13 +83,21 @@ type historyImportSession struct {
 }
 
 type historyImportRoutePoint struct {
-	Date         string   `json:"date"`
-	Latitude     *float64 `json:"latitude"`
-	Longitude    *float64 `json:"longitude"`
-	Speed        *float64 `json:"speed"`
-	Power        *float64 `json:"power"`
-	Heading      *float64 `json:"heading"`
-	BatteryLevel *int     `json:"battery_level,omitempty"`
+	Date         string                    `json:"date"`
+	Latitude     *float64                  `json:"latitude"`
+	Longitude    *float64                  `json:"longitude"`
+	Speed        *float64                  `json:"speed"`
+	Power        *float64                  `json:"power"`
+	Heading      *float64                  `json:"heading"`
+	BatteryLevel *int                      `json:"battery_level,omitempty"`
+	InsideTemp   *float64                  `json:"inside_temp,omitempty"`
+	OutsideTemp  *float64                  `json:"outside_temp,omitempty"`
+	ClimateInfo  *historyImportClimateInfo `json:"climate_info,omitempty"`
+}
+
+type historyImportClimateInfo struct {
+	InsideTemp  *float64 `json:"inside_temp,omitempty"`
+	OutsideTemp *float64 `json:"outside_temp,omitempty"`
 }
 
 type historyImportChargePoint struct {
@@ -100,6 +108,7 @@ type historyImportChargePoint struct {
 	ChargerPower      *float64 `json:"charger_power"`
 	Latitude          *float64 `json:"latitude"`
 	Longitude         *float64 `json:"longitude"`
+	OutsideTemp       *float64 `json:"outside_temp,omitempty"`
 }
 
 type historyImportResult struct {
@@ -232,9 +241,11 @@ func (req historyImportSession) toTelemetrySession(userID string, vehicleID int,
 				observedAt = parsed
 			}
 		}
+		inside, outside := importedObservedClimate(point)
 		route = append(route, telemetryRoutePoint{
 			ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude,
 			Speed: point.Speed, Power: point.Power, Heading: point.Heading, BatteryLevel: cloneInt(point.BatteryLevel),
+			InsideTemp: cloneFloat(inside), OutsideTemp: cloneFloat(outside),
 		})
 	}
 	return telemetrySession{
@@ -273,6 +284,7 @@ func importChargePoints(points []historyImportChargePoint, start time.Time) []te
 		result = append(result, telemetryChargePoint{
 			ObservedAt: observedAt, BatteryLevel: point.BatteryLevel, EnergyAdded: energy,
 			ChargerPower: point.ChargerPower, Latitude: point.Latitude, Longitude: point.Longitude,
+			OutsideTemp: cloneFloat(finiteHistorySample(point.OutsideTemp)),
 		})
 	}
 	return result
@@ -548,6 +560,12 @@ func mergeImportedSession(incoming, cached telemetrySession) telemetrySession {
 			if point.BatteryLevel == nil {
 				point.BatteryLevel = cloneInt(old.BatteryLevel)
 			}
+			if point.InsideTemp == nil {
+				point.InsideTemp = cloneFloat(old.InsideTemp)
+			}
+			if point.OutsideTemp == nil {
+				point.OutsideTemp = cloneFloat(old.OutsideTemp)
+			}
 			points[index] = point
 		} else if len(points) < maxImportRoutePointsPerItem || len(points) < len(cached.Route) {
 			indices[key] = len(points)
@@ -570,6 +588,9 @@ func mergeImportedSession(incoming, cached telemetrySession) telemetrySession {
 			}
 			if point.ChargerPower == nil {
 				point.ChargerPower = old.ChargerPower
+			}
+			if point.OutsideTemp == nil {
+				point.OutsideTemp = cloneFloat(old.OutsideTemp)
 			}
 			if point.Latitude == nil {
 				point.Latitude = old.Latitude
