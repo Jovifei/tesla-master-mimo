@@ -4,7 +4,6 @@ from pathlib import Path
 import re
 import subprocess
 
-REPOSITORY = 'Jovifei/tesla-master-mimo'
 API = 'bb09fac04d11796ce676555dad094776cd1ef0ce'
 TOPICS = {'calls', 'cleanup', 'history_bounded_read.go', 'history_bounded_read_test.go', 'main.go',
           'readiness.go', 'telemetry_core.go', 'telemetry_http.go', 'telemetry_import.go', 'telemetry_service.go'}
@@ -16,12 +15,16 @@ def git(*args):
 
 print('SOURCE', git('rev-parse', 'HEAD').strip(), 'TOPIC', topic)
 if topic == 'calls':
-    pattern = r'DriveEnergyResolver|DriveEnergyCalculator|estimateStandbyEnergy|calculateWeightedEfficiency|energyConsumedNet|energyConsumed|energy_consumed_net|EnergyRemaining|ACChargingEnergyIn|DCChargingEnergyIn'
-    result = subprocess.run(['git', 'grep', '-l', '-E', pattern, '--', 'android/app/src/main', 'deploy/jourvolt-dev-mock'], text=True, capture_output=True)
+    pattern = r'DriveEnergyResolver.resolve|resolveDriveEnergy\(|DriveEnergyCalculator.calculate|estimateStandbyEnergy\(|calculateWeightedEfficiency\('
+    result = subprocess.run(['git', 'grep', '-n', '-E', pattern, '--', 'android/app/src/main'], text=True, capture_output=True)
     print(result.stdout)
-    print('DIRECT_CALCULATION_CALLS')
-    result = subprocess.run(['git', 'grep', '-n', '-E', r'DriveEnergyResolver.resolve|DriveEnergyCalculator.calculate|estimateStandbyEnergy\(|calculateWeightedEfficiency\(', '--', 'android/app/src/main'], text=True, capture_output=True)
-    print(result.stdout)
+    for name in ('DriveDetailScreen.kt', 'ChargeDetailScreen.kt', 'ParkedDetailScreen.kt', 'DrivesViewModel.kt', 'EfficiencyViewModel.kt'):
+        for p in Path('android/app/src/main').rglob(name):
+            lines = p.read_text().splitlines()
+            print('UI_ENERGY', str(p), 'LINES', len(lines))
+            for i, line in enumerate(lines):
+                if re.search(r'energy|Energy|efficien|Efficien|coverage|Coverage|Power', line):
+                    print(f'{i+1}: {line}')
 elif topic == 'cleanup':
     files = git('ls-files').splitlines()
     candidates = [f for f in files if any(s in f.lower() for s in ('/build/', '/node_modules/', '/dist/', '/received')) or f.endswith(('.apk', '.aab', '.zip', '.log', '.hprof'))]
@@ -37,17 +40,9 @@ else:
     tree = merged.stdout.splitlines()[0]
     assert re.fullmatch('[a-f0-9]{40}', tree)
     name = 'deploy/jourvolt-dev-mock/' + topic
-    text = git('show', tree + ':' + name)
-    lines = text.splitlines()
-    ranges = []
-    begin = None
-    for i, line in enumerate(lines):
-        if line.startswith('<<<<<<<'):
-            begin = max(0, i-4)
-        if line.startswith('>>>>>>>') and begin is not None:
-            ranges.append((begin, min(len(lines), i+5)))
-            begin = None
-    print('MERGE_EXIT', merged.returncode, 'CONFLICTS', len(ranges), 'MERGED_LINES', len(lines))
-    for a, b in ranges:
-        print('\n'.join(f'{i+1}: {lines[i]}' for i in range(a, b)))
+    print('MERGE_METADATA', merged.stdout)
+    print('OURS', git('rev-parse', 'HEAD:'+name).strip())
+    print('API', git('rev-parse', API+':'+name).strip())
+    print('MERGED', git('rev-parse', tree+':'+name).strip())
+    print(git('diff', '--no-ext-diff', '--unified=4', 'HEAD', tree, '--', name))
     print('END_REVIEW', topic)
