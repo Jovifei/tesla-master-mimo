@@ -376,6 +376,8 @@ type telemetryChargePoint struct {
 	// DCChargingEnergyIn measures battery input; ACChargingEnergyIn measures charger input.
 	BatteryCounter *float64 `json:",omitempty"`
 	ACInputCounter *float64 `json:",omitempty"`
+	// Small verified completion metadata, persisted in the existing charge JSON.
+	EnergyContract map[string]any `json:",omitempty"`
 	ChargerPower *float64
 	Latitude     *float64
 	Longitude    *float64
@@ -799,6 +801,10 @@ func cloneTelemetryChargePoints(values []telemetryChargePoint) []telemetryCharge
 		copyValue.EnergyAdded = cloneFloat(value.EnergyAdded)
 		copyValue.BatteryCounter = cloneFloat(value.BatteryCounter)
 		copyValue.ACInputCounter = cloneFloat(value.ACInputCounter)
+        if value.EnergyContract != nil {
+            copyValue.EnergyContract = make(map[string]any, len(value.EnergyContract))
+            for key, metric := range value.EnergyContract { copyValue.EnergyContract[key] = metric }
+        }
 		copyValue.ChargerPower = cloneFloat(value.ChargerPower)
 		copyValue.OutsideTemp = cloneFloat(value.OutsideTemp)
 		copyValue.Latitude = cloneFloat(value.Latitude)
