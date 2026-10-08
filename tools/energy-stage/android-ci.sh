@@ -21,6 +21,9 @@ Path('../android-evidence/CI_ENV_TRANSFORM.txt').write_text('disposable checkout
 PY
 free -m > "$root/android-evidence/RUNNER_MEMORY.txt"
 set +e
+# Existing date-format tests assert China-local presentation; make the runner explicit.
+# This only affects disposable CI and does not change the owner's timezone.
+export TZ=Asia/Shanghai
 # One JVM avoids competing Gradle/Kotlin daemons exceeding the runner memory.
 bash ./gradlew :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease \
   --no-daemon --continue --max-workers=1 \

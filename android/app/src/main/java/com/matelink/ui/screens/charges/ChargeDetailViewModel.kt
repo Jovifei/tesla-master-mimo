@@ -25,6 +25,7 @@ import com.matelink.domain.analytics.EffectiveChargeCostInput
 import com.matelink.domain.analytics.EffectiveChargeCostResolver
 import com.matelink.domain.analytics.validManualChargeTotal
 import com.matelink.domain.analytics.toAnalysisChargeData
+import com.matelink.domain.analytics.withQualifiedEnergy
 import com.matelink.domain.model.Trip
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -204,7 +205,7 @@ class ChargeDetailViewModel @Inject constructor(
 
             when (detailResult) {
                 is ApiResult.Success -> {
-                    val detail = detailResult.data
+                    val detail = detailResult.data.withQualifiedEnergy()
                     val stats = ChargeStatsCalculator.calculateStats(detail)
                     val chargeType = ChargeStatsCalculator.detectChargeType(detail)
                     val isDcCharge = chargeType.toDcFlag()
@@ -241,23 +242,27 @@ class ChargeDetailViewModel @Inject constructor(
                     if (localSummary != null) {
                         // A local summary is a bounded offline fallback only. Never
                         // fabricate an electrical trace from aggregate values.
+                        val cached = localSummary.toAnalysisChargeData()
                         val localDetail = ChargeDetail(
                             chargeId = localSummary.chargeId,
                             startDate = localSummary.startDate,
                             endDate = localSummary.endDate,
                             address = localSummary.address.ifBlank { null },
-                            chargeEnergyAdded = localSummary.energyAdded,
-                            chargeEnergyUsed = localSummary.energyUsed,
+                            chargeEnergyAdded = cached.batteryInputKwh,
+                            chargeEnergyUsed = cached.inputEnergyKwh,
                             cost = localSummary.cost,
                             durationMin = localSummary.durationMin,
                             durationStr = "${localSummary.durationMin}m",
-                            batteryDetails = localSummary.toAnalysisChargeData().batteryDetails,
+                            batteryDetails = cached.batteryDetails,
                             outsideTempAvg = localSummary.outsideTempAvg,
                             odometer = localSummary.odometer,
                             latitude = localSummary.latitude.takeIf { it != 0.0 },
                             longitude = localSummary.longitude.takeIf { it != 0.0 },
                             chargePoints = emptyList(),
-                            isCharging = false
+                            isCharging = false,
+                            source = cached.source,
+                            chargeType = cached.chargeType,
+                            energyContract = cached.energyContract
                         )
                         val stats = ChargeStatsCalculator.calculateStats(localDetail)
                         val isDcCharge = ChargeStatsCalculator.detectChargeType(localDetail).toDcFlag()
