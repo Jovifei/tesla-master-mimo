@@ -222,9 +222,20 @@ func (s *telemetryService) ingestPostgresWithMapping(ctx context.Context, record
 		if previousErr != nil && !errors.Is(previousErr, pgx.ErrNoRows) {
 			return telemetryPostgresIngestResult{}, previousErr
 		}
-		if previousErr == nil && !record.ObservedAt.After(previousObservedAt) {
-			continue
-		}
+		// Equal-time, different-value counter/mode messages are conflicting
+        // observations, not harmless duplicates. Do not replace latest with
+        // an arbitrarily ordered value; retain the event in the open session
+        // so a reset or AC/DC contradiction invalidates its completion metric.
+        // Earlier timestamps and equal-time identical values remain no-ops.
+        safetyField := record.FieldName == "DCChargingEnergyIn" ||
+            record.FieldName == "ACChargingEnergyIn" ||
+            record.FieldName == "ChargerPhases" ||
+            record.FieldName == "FastChargerPresent"
+        sameTimeSafetyConflict := safetyField && previousErr == nil &&
+            record.ObservedAt.Equal(previousObservedAt) && previousHash != valueHash
+        if previousErr == nil && !record.ObservedAt.After(previousObservedAt) && !sameTimeSafetyConflict {
+            continue
+        }
 		var inserted bool
 		err = tx.QueryRow(ctx, `
 INSERT INTO jourvolt_telemetry_event_buffer(event_id, user_id, vehicle_id, field_name, observed_at, receive_sequence, expires_at)
@@ -237,6 +248,16 @@ RETURNING true`, record.EventID, ref.UserID, ref.VehicleID, record.FieldName, re
 		if err != nil {
 			return telemetryPostgresIngestResult{}, err
 		}
+        if sameTimeSafetyConflict {
+            // The event-buffer insert above is the idempotence fence. The
+            // observation is persisted as a session point, while latest stays
+            // at its original ambiguous timestamp and value.
+            accepted++
+            if err := applyPostgresSessionEvent(ctx, tx, ref, record, s.config.StopDebounce); err != nil {
+                return telemetryPostgresIngestResult{}, err
+            }
+            continue
+        }
 		encoded, err := json.Marshal(record.Value)
 		if err != nil {
 			return telemetryPostgresIngestResult{}, err

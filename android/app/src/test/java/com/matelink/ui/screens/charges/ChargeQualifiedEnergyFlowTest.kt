@@ -47,6 +47,20 @@ class ChargeQualifiedEnergyFlowTest {
         assertEquals(0.0, ChargeStatsCalculator.calculateStats(detail).energyAdded!!, 0.0)
     }
 
+    @Test fun unverifiedACCounterCannotBecomeWholeSessionACInput() {
+        val metric = EnergyMetric(
+            valueKwh = 10.0, method = "session_counter_delta",
+            measurementPoint = "ac_charger_input", source = "telemetry_mqtt",
+            quality = "reported", startDate = start, endDate = end,
+            coverageKind = "endpoints", coverageRatio = 1.0
+        )
+        val raw = ChargeDetail(chargeId = 10, startDate = start, endDate = end,
+            chargeEnergyUsed = 10.0, chargeType = "ac",
+            energyContract = EnergyContract(acInput = metric))
+        assertNull(raw.inputEnergyKwh)
+        assertNull(ChargeStatsCalculator.calculateStats(raw).efficiency)
+    }
+
     @Test fun acInputCannotMasqueradeAsBatteryInput() {
         val acCounter = EnergyContract(batteryInput = EnergyMetric(
             valueKwh = 4.0, method = "session_counter_delta",

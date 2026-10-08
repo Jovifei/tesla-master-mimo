@@ -78,10 +78,13 @@ data class ChargeChartData(
     val totalEnergy: Double,
     val energyAc: Double,
     val energyDc: Double,
+    val energyUnknown: Double = 0.0,
     val costAc: Double,
     val costDc: Double,
+    val costUnknown: Double = 0.0,
     val countAc: Int,
     val countDc: Int,
+    val countUnknown: Int = 0,
     val totalCost: Double,
     val sortKey: Long, // For sorting (epoch day, week number, or year-month)
     val costCoverage: Int = 0,
@@ -446,6 +449,8 @@ class ChargesViewModel @Inject constructor(
         val chargeTypeFilter = state.chargeTypeFilter
         val costFilter = state.costFilter
         val dcChargeIds = state.dcChargeIds
+        val processedChargeIds = state.processedChargeIds
+        val typeOf: (ChargeData) -> ChargeType = { historyChargeType(it, dcChargeIds, processedChargeIds) }
         val granularity = state.chartGranularity
 
         val visibleCharges = allCharges.filter { it.qualityState != "quarantined" }
@@ -468,17 +473,15 @@ class ChargesViewModel @Inject constructor(
         // Apply charge type filter (AC/DC) for list display
         val displayCharges = when (chargeTypeFilter) {
             ChargeTypeFilter.ALL -> filteredCharges
-            ChargeTypeFilter.DC -> filteredCharges.filter { it.chargeId in dcChargeIds }
-            ChargeTypeFilter.AC -> filteredCharges.filter {
-                isAnalysisEligible(it.qualityState, it.qualityReason) && it.chargeId !in dcChargeIds
-            }
+            ChargeTypeFilter.DC -> filteredCharges.filter { typeOf(it) == ChargeType.DC }
+            ChargeTypeFilter.AC -> filteredCharges.filter { typeOf(it) == ChargeType.AC }
         }
 
         // Apply charge type filter to all charges for summary/charts (include short charges)
         val chargesForStats = when (chargeTypeFilter) {
             ChargeTypeFilter.ALL -> validCharges
-            ChargeTypeFilter.DC -> validCharges.filter { it.chargeId in dcChargeIds }
-            ChargeTypeFilter.AC -> validCharges.filter { it.chargeId !in dcChargeIds }
+            ChargeTypeFilter.DC -> validCharges.filter { typeOf(it) == ChargeType.DC }
+            ChargeTypeFilter.AC -> validCharges.filter { typeOf(it) == ChargeType.AC }
         }
 
         // Extract unique locations from the complete set
@@ -571,7 +574,8 @@ class ChargesViewModel @Inject constructor(
                             label = current.formatShortNoYear(Locale.getDefault()),
                             sortKey = key,
                             charges = itemsInDay,
-                            dcChargeIds = _uiState.value.dcChargeIds
+                            dcChargeIds = _uiState.value.dcChargeIds,
+                            processedChargeIds = _uiState.value.processedChargeIds
                         )
                     )
                     current = current.plusDays(1)
@@ -612,7 +616,8 @@ class ChargesViewModel @Inject constructor(
                             label = formatWeekLabel(appContext.resources, weekOfYear),
                             sortKey = key,
                             charges = chargesInWeek,
-                            dcChargeIds = _uiState.value.dcChargeIds
+                            dcChargeIds = _uiState.value.dcChargeIds,
+                            processedChargeIds = _uiState.value.processedChargeIds
                         )
                     )
                     currentWeek = currentWeek.plusWeeks(1)
@@ -651,7 +656,8 @@ class ChargesViewModel @Inject constructor(
                             label = firstDay.formatMonthYear(Locale.getDefault(), includeYear = start.year != end.year),
                             sortKey = key,
                             charges = chargesInMonth,
-                            dcChargeIds = _uiState.value.dcChargeIds
+                            dcChargeIds = _uiState.value.dcChargeIds,
+                            processedChargeIds = _uiState.value.processedChargeIds
                         )
                     )
                     currentMonth = currentMonth.plusMonths(1)
@@ -666,16 +672,25 @@ class ChargesViewModel @Inject constructor(
         label: String,
         sortKey: Long,
         charges: List<ChargeData>,
-        dcChargeIds: Set<Int>
+        dcChargeIds: Set<Int>,
+        processedChargeIds: Set<Int>
     ): ChargeChartData {
-        val dcCharges = charges.filter { it.chargeId in dcChargeIds }
+        val dcCharges = charges.filter { historyChargeType(it, dcChargeIds, processedChargeIds) == ChargeType.DC }
+        val acCharges = charges.filter { historyChargeType(it, dcChargeIds, processedChargeIds) == ChargeType.AC }
+        val unknownCharges = charges.filter { historyChargeType(it, dcChargeIds, processedChargeIds) == ChargeType.UNKNOWN }
         val energyDc = dcCharges.mapNotNull { observedChargeEnergy(it.batteryInputKwh) }.sum()
+        val energyAc = acCharges.mapNotNull { observedChargeEnergy(it.batteryInputKwh) }.sum()
+        val energyUnknown = unknownCharges.mapNotNull { observedChargeEnergy(it.batteryInputKwh) }.sum()
         val energyValues = charges.mapNotNull { observedChargeEnergy(it.batteryInputKwh) }
         val energyTotal = energyValues.sum()
         val state = _uiState.value
         val dcCosts = dcCharges.mapNotNull { effectiveCost(it, state) }
+        val acCosts = acCharges.mapNotNull { effectiveCost(it, state) }
+        val unknownCosts = unknownCharges.mapNotNull { effectiveCost(it, state) }
         val costs = charges.mapNotNull { effectiveCost(it, state) }
         val costDc = observedCostSumOrNull(dcCosts) ?: 0.0
+        val costAc = observedCostSumOrNull(acCosts) ?: 0.0
+        val costUnknown = observedCostSumOrNull(unknownCosts) ?: 0.0
         val costTotal = observedCostSumOrNull(costs) ?: 0.0
         val countDc = dcCharges.size
         val countTotal = charges.size
@@ -686,11 +701,14 @@ class ChargesViewModel @Inject constructor(
             count = countTotal,
             sortKey = sortKey,
             energyDc = energyDc,
-            energyAc = energyTotal - energyDc,
+            energyAc = energyAc,
+            energyUnknown = energyUnknown,
             costDc = costDc,
-            costAc = costTotal - costDc,
+            costAc = costAc,
+            costUnknown = costUnknown,
             countDc = countDc,
-            countAc = countTotal - countDc,
+            countAc = acCharges.size,
+            countUnknown = unknownCharges.size,
             costCoverage = costs.size,
             energyCoverage = energyValues.size
         )
@@ -738,7 +756,7 @@ class ChargesViewModel @Inject constructor(
     }
 
     private fun effectiveCost(charge: ChargeData, state: ChargesUiState): Double? {
-        val isDcCharge = charge.chargeId in state.dcChargeIds
+        val isDcCharge = historyChargeType(charge, state.dcChargeIds, state.processedChargeIds) == ChargeType.DC
         return resolveChargeCostFromTotal(
             manualTotalAmount = state.priceOverrides[charge.chargeId],
             freeSupercharging = state.freeSupercharging,
@@ -749,6 +767,31 @@ class ChargesViewModel @Inject constructor(
         ).cost
     }
 
+}
+
+/** A contract without verified mode is unknown, even if a stale local AC/DC index exists. */
+internal fun historyChargeType(
+    charge: ChargeData,
+    dcIds: Set<Int>,
+    processedIds: Set<Int>
+): ChargeType {
+    val contract = charge.energyContract
+    if (contract != null) {
+        if (contract.version != 1 ||
+            contract.chargeModeEvidence != "observed_boundary_modes_no_conflict" ||
+            (charge.chargeType != null && charge.chargeType != contract.chargeMode)) return ChargeType.UNKNOWN
+        return when (contract.chargeMode) {
+            "ac" -> ChargeType.AC
+            "dc" -> ChargeType.DC
+            else -> ChargeType.UNKNOWN
+        }
+    }
+    // Older TeslaMate records require actual aggregate evidence, not "not DC".
+    return when {
+        charge.chargeId in dcIds -> ChargeType.DC
+        charge.chargeId in processedIds -> ChargeType.AC
+        else -> ChargeType.UNKNOWN
+    }
 }
 
 internal fun observedChargeEnergy(value: Double?): Double? =

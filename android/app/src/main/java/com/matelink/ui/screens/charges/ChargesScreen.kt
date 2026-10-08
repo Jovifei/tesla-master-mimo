@@ -411,10 +411,10 @@ private fun ChargesContent(
                 ChargeItem(
                     defaultChargePrice = defaultChargePrice,
                     charge = charge,
-                    isDcCharge = when {
-                        charge.chargeId in dcChargeIds -> true
-                        charge.chargeId in processedChargeIds -> false
-                        else -> null
+                    isDcCharge = when (historyChargeType(charge, dcChargeIds, processedChargeIds)) {
+                        ChargeType.DC -> true
+                        ChargeType.AC -> false
+                        ChargeType.UNKNOWN -> null
                     },
                     currencySymbol = currencySymbol,
                     manualTotalAmount = priceOverrides[charge.chargeId],
@@ -1035,7 +1035,8 @@ private fun ChargesChartPage(
                     } else stringResource(R.string.not_available),
                     segments = listOf(
                         BarSegment(data.energyAc, palette.acColor, "AC"),
-                        BarSegment(data.energyDc, palette.dcColor, "DC")
+                        BarSegment(data.energyDc, palette.dcColor, "DC"),
+                        BarSegment(data.energyUnknown, palette.onSurfaceVariant, stringResource(R.string.not_available))
                     )
                 )
             }
@@ -1048,7 +1049,8 @@ private fun ChargesChartPage(
                     } else stringResource(R.string.not_available),
                     segments = listOf(
                         BarSegment(data.costAc, palette.acColor, "AC"),
-                        BarSegment(data.costDc, palette.dcColor, "DC")
+                        BarSegment(data.costDc, palette.dcColor, "DC"),
+                        BarSegment(data.costUnknown, palette.onSurfaceVariant, stringResource(R.string.not_available))
                     )
                 )
             }
@@ -1059,7 +1061,8 @@ private fun ChargesChartPage(
                     displayValue = data.count.toString(),
                     segments = listOf(
                         BarSegment(data.countAc.toDouble(), palette.acColor, "AC"),
-                        BarSegment(data.countDc.toDouble(), palette.dcColor, "DC")
+                        BarSegment(data.countDc.toDouble(), palette.dcColor, "DC"),
+                        BarSegment(data.countUnknown.toDouble(), palette.onSurfaceVariant, stringResource(R.string.not_available))
                     )
                 )
             }

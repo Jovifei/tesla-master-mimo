@@ -773,6 +773,18 @@ func (m *telemetrySessionMachine) complete(session *telemetrySession) {
 	if session.Source == "" {
 		session.Source = "telemetry_mqtt"
 	}
+    if session.Kind == "charge" && session.Source == "telemetry_mqtt" {
+        // The old non-null session scalar must never retain a pre-reset or
+        // partial-window delta after completion. It is a projection of the
+        // qualified whole-session battery-side counter, including valid zero.
+        contract := completedSessionEnergyContract(*session)
+        battery, _ := contract["battery_input"].(map[string]any)
+        if battery != nil && battery["quality"] == "reported" {
+            if value, ok := battery["value_kwh"].(float64); ok && isFiniteChargeCounterDelta(value) {
+                session.EnergyAdded = &value
+            } else { session.EnergyAdded = nil }
+        } else { session.EnergyAdded = nil }
+    }
 	session.QualityState, session.QualityReason = classifyTelemetrySession(*session)
 	session.CompletionKey = sessionCompletionKey(*session)
 	m.completed = append(m.completed, *cloneTelemetrySession(session))

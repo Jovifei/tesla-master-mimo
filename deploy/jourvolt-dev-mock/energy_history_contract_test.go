@@ -20,8 +20,8 @@ func TestEnergyCounterInterleavedACNeverOverridesBatteryInput(t *testing.T) {
     add("ChargerPhases",2.0,start.Add(3*time.Second),"mode-end")
     add("DetailedChargeState","complete",start.Add(3*time.Second),"close")
     sessions:=machine.completedSessions()
-    if len(sessions)!=1 || sessions[0].EnergyAdded==nil || *sessions[0].EnergyAdded!=7 {
-        t.Fatalf("battery-side delta must remain 7 despite 10 kWh AC charger input: %#v",sessions)
+    if len(sessions)!=1 || sessions[0].EnergyAdded!=nil {
+        t.Fatalf("7 kWh interior battery-side subset must not become whole-session energy: %#v",sessions)
     }
     result:=historySessionMap(sessions[0],"charge",0)
     contract,ok:=result["energy_contract"].(map[string]any)
