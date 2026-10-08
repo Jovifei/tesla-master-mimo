@@ -120,3 +120,21 @@ func completedSessionEnergyContract(session telemetrySession) map[string]any {
     }
     return contract
 }
+
+func publishChargeEnergyContract(result map[string]any, contract map[string]any) {
+    if contract == nil { return }
+    result["energy_contract"] = contract
+    // A covered subset is diagnostic, never the entire finished session.
+    result["charge_energy_added"], result["charge_energy_used"] = nil, nil
+    if battery, ok:=contract["battery_input"].(map[string]any); ok &&
+        battery["quality"]=="reported" && battery["measurement_point"]=="battery_input" {
+        result["charge_energy_added"]=battery["value_kwh"]
+    }
+    if ac, ok:=contract["ac_input"].(map[string]any); ok &&
+        ac["quality"]=="reported" && ac["measurement_point"]=="ac_charger_input" {
+        result["charge_energy_used"]=ac["value_kwh"]
+    }
+    if ac,ok:=contract["ac_input"].(map[string]any); ok && ac["covered_energy_kwh"]!=nil {
+        result["charge_type"]="ac"
+    }
+}
