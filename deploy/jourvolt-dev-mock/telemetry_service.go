@@ -1329,16 +1329,8 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		}
 		result["charge_details"] = chargeDetails
 		if source == "telemetry_mqtt" {
-			contract := completedSessionEnergyContract(session)
-			result["energy_contract"] = contract
-			if ac, ok := contract["ac_input"].(map[string]any); ok {
-				result["charge_energy_used"] = ac["value_kwh"]
-				// The official AC counter is ignored on DC charging.
-				if ac["covered_energy_kwh"] != nil {
-					result["charge_type"] = "ac"
-				}
-			}
-		}
+            publishChargeEnergyContract(result, completedSessionEnergyContract(session))
+        }
 	}
 	applyHistorySampleMetrics(result, sessionSampleMetrics(session, kind), kind)
 	result["sequence"] = index
