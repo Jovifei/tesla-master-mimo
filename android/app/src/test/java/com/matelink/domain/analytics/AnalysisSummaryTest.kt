@@ -98,13 +98,15 @@ class AnalysisSummaryTest {
                     energyAddedKwh = 30.0,
                     cost = 0.0,
                     observedAt = "2026-01-01T10:00:00",
-                    energyUsedKwh = 35.0
+                    energyUsedKwh = 35.0,
+                    acBalanceQualified = true
                 ),
                 AnalysisChargeCoverageSample(
                     energyAddedKwh = 10.0,
                     cost = null,
                     observedAt = "2026-01-02T10:00:00",
-                    energyUsedKwh = 10.0
+                    energyUsedKwh = 10.0,
+                    acBalanceQualified = true
                 ),
                 AnalysisChargeCoverageSample(
                     energyAddedKwh = 12.0,
@@ -132,7 +134,8 @@ class AnalysisSummaryTest {
                     energyAddedKwh = 30.0,
                     cost = null,
                     observedAt = "2026-01-01T10:00:00",
-                    energyUsedKwh = 29.0
+                    energyUsedKwh = 29.0,
+                    acBalanceQualified = true
                 )
             )
         )

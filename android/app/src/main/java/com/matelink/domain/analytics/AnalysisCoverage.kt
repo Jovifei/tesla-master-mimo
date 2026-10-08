@@ -14,7 +14,8 @@ data class AnalysisChargeCoverageSample(
     val energyAddedKwh: Double?,
     val cost: Double?,
     val observedAt: String?,
-    val energyUsedKwh: Double? = null
+    val energyUsedKwh: Double? = null,
+    val acBalanceQualified: Boolean = false
 )
 
 /**
@@ -70,19 +71,19 @@ fun buildAnalysisCoverage(
     val validLossSamples = charges.filter { sample ->
         val added = sample.energyAddedKwh
         val used = sample.energyUsedKwh
-        added.isValidPositive() && used.isValidPositive() && used!! >= added!!
+        sample.acBalanceQualified && added.isValidNonNegative() && used.isValidPositive() && used!! >= added!!
     }
 
     return AnalysisCoverage(
         driveRecordCount = drives.size,
-        driveDistanceSampleCount = drives.count { it.distanceKm.isValidPositive() },
-        driveEnergySampleCount = drives.count { it.energyKwh.isValidPositive() },
+        driveDistanceSampleCount = drives.count { it.distanceKm.isValidNonNegative() },
+        driveEnergySampleCount = drives.count { it.energyKwh.isValidSigned() },
         chargeRecordCount = charges.size,
-        chargeEnergySampleCount = charges.count { it.energyAddedKwh.isValidPositive() },
+        chargeEnergySampleCount = charges.count { it.energyAddedKwh.isValidNonNegative() },
         chargeCostSampleCount = charges.count { it.cost.isValidNonNegative() },
         firstObservedDate = dates.minOrNull(),
         lastObservedDate = dates.maxOrNull(),
-        chargeEnergyUsedSampleCount = charges.count { it.energyUsedKwh.isValidPositive() },
+        chargeEnergyUsedSampleCount = charges.count { it.energyUsedKwh.isValidNonNegative() },
         chargeLossSampleCount = validLossSamples.size,
         chargeEnergyUsedForLossKwh = validLossSamples.mapNotNull { it.energyUsedKwh }.sum()
             .takeIf { validLossSamples.isNotEmpty() },
@@ -92,6 +93,7 @@ fun buildAnalysisCoverage(
 }
 
 private fun Double?.isValidPositive(): Boolean = this?.isFinite() == true && this > 0.0
+private fun Double?.isValidSigned(): Boolean = this?.isFinite() == true
 
 private fun Double?.isValidNonNegative(): Boolean = this?.isFinite() == true && this >= 0.0
 
