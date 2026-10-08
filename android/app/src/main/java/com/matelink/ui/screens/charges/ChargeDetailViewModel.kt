@@ -219,7 +219,7 @@ class ChargeDetailViewModel @Inject constructor(
                         manualAmount = validManualChargeTotal(manualTotalAmount),
                         manuallyFree = isExplicitlyFree && isDcCharge == true,
                         teslaMateCost = detail.cost,
-                        energyKwh = detail.chargeEnergyAdded,
+                        energyKwh = detail.batteryInputKwh,
                         defaultPricePerKwh = defaultChargePrice
                     )
                     _uiState.update {
@@ -272,7 +272,7 @@ class ChargeDetailViewModel @Inject constructor(
                             manualAmount = validManualChargeTotal(manualTotalAmount),
                             manuallyFree = false,
                             teslaMateCost = localDetail.cost,
-                            energyKwh = localDetail.chargeEnergyAdded,
+                            energyKwh = localDetail.batteryInputKwh,
                             defaultPricePerKwh = defaultChargePrice
                         )
                         _uiState.update {
@@ -325,7 +325,7 @@ class ChargeDetailViewModel @Inject constructor(
                         manualAmount = validTotal,
                         manuallyFree = state.costPresentation.state == ChargeDetailCostState.FREE,
                         teslaMateCost = detail.cost,
-                        energyKwh = detail.chargeEnergyAdded,
+                        energyKwh = detail.batteryInputKwh,
                         defaultPricePerKwh = defaultChargePrice
                     )
                 )
