@@ -17,6 +17,7 @@ import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.domain.analytics.toAnalysisDriveData
+import com.matelink.domain.analytics.withQualifiedEnergy
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -266,7 +267,7 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
                 val index = canonical.indexOfFirst { it.driveId == row.driveId || it.sameSession(row) }
                 if (index < 0) canonical += row else canonical[index] = canonical[index].mergeWith(row)
             }
-            return canonical.sortedByDescending { historyTimestamp(it.startDate) }
+            return canonical.map { it.withQualifiedEnergy() }.sortedByDescending { historyTimestamp(it.startDate) }
         }
 
         fun mergeCharges(remote: List<ChargeData>, local: List<ChargeData>): List<ChargeData> {
@@ -279,7 +280,7 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
                 val index = canonical.indexOfFirst { it.chargeId == row.chargeId || it.sameSession(row) }
                 if (index < 0) canonical += row else canonical[index] = canonical[index].mergeWith(row)
             }
-            return canonical.sortedByDescending { historyTimestamp(it.startDate) }
+            return canonical.map { it.withQualifiedEnergy() }.sortedByDescending { historyTimestamp(it.startDate) }
         }
     }
 }
@@ -319,6 +320,7 @@ private fun DriveData.mergeWith(cached: DriveData?): DriveData = cached?.let {
         insideTempAvg = insideTempAvg ?: it.insideTempAvg,
         energyConsumedNet = energyConsumedNet ?: it.energyConsumedNet,
         consumptionNet = consumptionNet ?: it.consumptionNet,
+        energyContract = energyContract ?: it.energyContract,
         source = source ?: it.source,
         qualityState = qualityState ?: it.qualityState,
         qualityReason = qualityReason ?: it.qualityReason,
@@ -339,6 +341,8 @@ private fun ChargeData.mergeWith(cached: ChargeData?): ChargeData = cached?.let 
         address = address ?: it.address,
         chargeEnergyAdded = chargeEnergyAdded ?: it.chargeEnergyAdded,
         chargeEnergyUsed = chargeEnergyUsed ?: it.chargeEnergyUsed,
+        energyContract = energyContract ?: it.energyContract,
+        chargeType = chargeType ?: it.chargeType,
         cost = cost ?: it.cost,
         durationMin = durationMin ?: it.durationMin,
         durationStr = durationStr ?: it.durationStr,

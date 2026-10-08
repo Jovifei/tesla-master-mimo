@@ -733,7 +733,7 @@ private fun ChargeItem(
         false -> palette.acColor
         null -> MaterialTheme.colorScheme.primary
     }
-    val energy = presentChargeEnergy(charge.chargeEnergyAdded)
+    val energy = presentChargeEnergy(charge.batteryInputKwh)
 
     val effectiveCost = resolveChargeCostFromTotal(
         manualTotalAmount = manualTotalAmount,

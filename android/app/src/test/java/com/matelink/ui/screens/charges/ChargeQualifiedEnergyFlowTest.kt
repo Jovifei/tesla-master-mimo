@@ -5,6 +5,9 @@ import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.EnergyContract
 import com.matelink.data.api.models.EnergyMetric
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
+import java.io.File
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -70,5 +73,11 @@ class ChargeQualifiedEnergyFlowTest {
         ))
         assertNull(ChargeData(chargeId = 9, startDate = start, endDate = end,
             chargeEnergyAdded = 4.0, energyContract = acCounter).batteryInputKwh)
+    }
+
+    @Test fun actualChargeCardUsesQualifiedBatteryInputNotRawScalar() {
+        val screen = File("src/main/java/com/matelink/ui/screens/charges/ChargesScreen.kt").readText()
+        assertTrue(screen.contains("presentChargeEnergy(charge.batteryInputKwh)"))
+        assertFalse(screen.contains("presentChargeEnergy(charge.chargeEnergyAdded)"))
     }
 }
