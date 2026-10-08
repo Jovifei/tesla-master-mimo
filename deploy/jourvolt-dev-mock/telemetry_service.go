@@ -1216,8 +1216,20 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		result["outside_temp_avg"], result["inside_temp_avg"] = nil, nil
 		// Fleet Telemetry currently provides no dedicated driving-energy field in
 		// this configuration. Never reuse charging energy as drive consumption.
-		result["energy_consumed_net"] = nil
-		// Imported charge/input scalars cannot become driving net energy.
+		if session.Source == "local_import" {
+            // Keep the original archival scalar for older clients and backups.
+            // Its source field was ambiguously called EnergyAdded, so new apps
+            // must not promote it into an observed driving-net measurement.
+            result["energy_consumed_net"] = session.EnergyAdded
+            result["energy_contract"] = map[string]any{
+                "version": 1, "net_energy": map[string]any{
+                    "value_kwh": nil, "unit": "kWh", "source": "local_import",
+                    "quality": "unknown", "reason": "unverified_import_energy_purpose",
+                },
+            }
+        } else {
+            result["energy_consumed_net"] = nil
+        }
 		result["consumption_net"] = nil
 		if source == "telemetry_mqtt" {
 			result["energy_contract"] = completedSessionEnergyContract(session)

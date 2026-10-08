@@ -66,5 +66,6 @@ fun EnergyContract?.netValueForWindow(start: String?, end: String?): Double? =
     this?.takeIf { it.version == 1 }?.netEnergy?.takeIf { metric ->
         (metric.method == "api_reported_net" && metric.measurementPoint == "reported_net") ||
             (metric.method == "drive_power_integral" && metric.measurementPoint == "drive_power") ||
-            (metric.method == "energy_remaining_delta" && metric.measurementPoint == "nominal_battery_remaining")
+            (metric.method == "energy_remaining_delta" && metric.measurementPoint == "nominal_battery_remaining" &&
+                metric.activityEvidence == "continuous_drive_no_charging_with_valid_endpoints")
     }?.valueForWindow(start, end)
