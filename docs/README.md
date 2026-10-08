@@ -1,6 +1,6 @@
 # MateLink 工程审核与故障记录入口
 
-当前阶段入口：[能耗阶段本地签名与实机验证](ENERGY-LOCAL-DEVICE-QUALIFICATION-20261009.md)。2026-10-09：能耗候选2.1.27/build46已同签保留数据安装；真实认证历史仍遇TLS失败，main尚未合并，生产API仍是独立底座。不要将构建、安装或health200等同真实数据验收。
+当前阶段入口：[能耗最终源码实测与待确认门](ENERGY-LOCAL-FINAL-QUALIFICATION-8625D28E-20261009.md)。2026-10-09：能耗候选2.1.27/build46已同签保留数据安装；真实认证历史仍遇TLS失败，main尚未合并，生产API仍是独立底座。不要将构建、安装或health200等同真实数据验收。
 
 - [完整能耗修复范围与官方公式依据](ENERGY-REPAIR-CLEANUP-STAGE-20261008.md)。
 - [固定源码交接与根因、回滚](ENERGY-STAGE-FIXED-SHA-HANDOFF-20261009.md)。
