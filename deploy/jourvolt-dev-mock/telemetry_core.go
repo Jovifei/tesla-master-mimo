@@ -393,8 +393,15 @@ func classifyTelemetrySession(session telemetrySession) (string, string) {
 		}
 		return "incomplete", "missing_route_or_odometer"
 	}
+	if session.Source == "telemetry_mqtt" {
+        contract := completedSessionEnergyContract(session)
+        if battery, ok := contract["battery_input"].(map[string]any); ok && battery["quality"] == "reported" {
+            return "observed", "complete_battery_input_counter"
+        }
+        return "incomplete", "partial_or_missing_charge_counter"
+    }
 	if session.EnergyAdded != nil && *session.EnergyAdded >= 0 && !math.IsNaN(*session.EnergyAdded) && !math.IsInf(*session.EnergyAdded, 0) {
-		return "observed", "telemetry_energy_delta"
+		return "observed", "legacy_charge_energy_delta"
 	}
 	if len(session.Route) >= 2 {
 		return "observed", "telemetry_evidence"

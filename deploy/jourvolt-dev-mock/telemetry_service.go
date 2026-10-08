@@ -1216,12 +1216,12 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		result["outside_temp_avg"], result["inside_temp_avg"] = nil, nil
 		// Fleet Telemetry currently provides no dedicated driving-energy field in
 		// this configuration. Never reuse charging energy as drive consumption.
-		if session.Source == "local_import" {
-			result["energy_consumed_net"] = session.EnergyAdded
-		} else {
-			result["energy_consumed_net"] = nil
-		}
+		result["energy_consumed_net"] = nil
+		// Imported charge/input scalars cannot become driving net energy.
 		result["consumption_net"] = nil
+		if source == "telemetry_mqtt" {
+			result["energy_contract"] = completedSessionEnergyContract(session)
+		}
 		result["odometer_details"] = map[string]any{"odometer_start": session.OdometerStart, "odometer_end": session.OdometerEnd, "odometer_distance": odometerDistance(session.OdometerStart, session.OdometerEnd)}
 		route := make([]map[string]any, 0, len(session.Route))
 		if session.Source == "teslamate_archive" && session.ArchiveRoute != nil {
@@ -1316,6 +1316,17 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 			result["latitude"], result["longitude"] = firstLatitude, firstLongitude
 		}
 		result["charge_details"] = chargeDetails
+		if source == "telemetry_mqtt" {
+			contract := completedSessionEnergyContract(session)
+			result["energy_contract"] = contract
+			if ac, ok := contract["ac_input"].(map[string]any); ok {
+				result["charge_energy_used"] = ac["value_kwh"]
+				// The official AC counter is ignored on DC charging.
+				if ac["covered_energy_kwh"] != nil {
+					result["charge_type"] = "ac"
+				}
+			}
+		}
 	}
 	applyHistorySampleMetrics(result, sessionSampleMetrics(session, kind), kind)
 	result["sequence"] = index
