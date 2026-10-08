@@ -87,6 +87,24 @@ func chargeSessionCounterMetric(session telemetrySession, field, point string) (
     return result, &value, true
 }
 
+// A full-session charging mode needs independent mode observations at both
+// session boundaries and no contradictory intermediate observations.
+func qualifiedChargeSessionMode(session telemetrySession) string {
+    if session.EndAt == nil || !session.EndAt.After(session.StartAt) { return "" }
+    mode, startSeen, endSeen := "", false, false
+    for _, p := range session.ChargePoints {
+        if p.ChargeMode == "" { continue }
+        if (p.ChargeMode != "ac" && p.ChargeMode != "dc") ||
+            p.ObservedAt.Before(session.StartAt) || p.ObservedAt.After(*session.EndAt) { return "" }
+        if mode != "" && mode != p.ChargeMode { return "" }
+        mode = p.ChargeMode
+        if p.ObservedAt.Equal(session.StartAt) { startSeen = true }
+        if p.ObservedAt.Equal(*session.EndAt) { endSeen = true }
+    }
+    if !startSeen || !endSeen { return "" }
+    return mode
+}
+
 func completedSessionEnergyContract(session telemetrySession) map[string]any {
     if session.Source != "telemetry_mqtt" {
         return nil
@@ -103,7 +121,19 @@ func completedSessionEnergyContract(session telemetrySession) map[string]any {
     battery, batteryCovered, batteryOK := chargeSessionCounterMetric(session, "DCChargingEnergyIn", "battery_input")
     ac, acCovered, acOK := chargeSessionCounterMetric(session, "ACChargingEnergyIn", "ac_charger_input")
     contract := map[string]any{"version":1, "battery_input":battery, "ac_input":ac}
-    if batteryOK && acOK && batteryCovered != nil && acCovered != nil && *acCovered > 0 && *batteryCovered <= *acCovered {
+    mode := qualifiedChargeSessionMode(session)
+    if mode != "" {
+        contract["charge_mode"] = mode
+        contract["charge_mode_evidence"] = "observed_boundary_modes_no_conflict"
+    }
+    if mode != "ac" {
+        // Full AC input cannot be inferred from a counter in unknown/mixed/DC mode.
+        // Retain the counter's covered subset for diagnostic evidence only.
+        ac["value_kwh"], ac["coverage_ratio"] = nil, nil
+        ac["quality"], ac["reason"] = "unknown", "unverified_full_ac_session"
+        acOK = false
+    }
+    if mode == "ac" && batteryOK && acOK && batteryCovered != nil && acCovered != nil && *acCovered > 0 && *batteryCovered <= *acCovered {
         loss := *acCovered-*batteryCovered
         if math.IsNaN(loss) || math.IsInf(loss,0) {
             return contract
@@ -134,7 +164,11 @@ func publishChargeEnergyContract(result map[string]any, contract map[string]any)
         ac["quality"]=="reported" && ac["measurement_point"]=="ac_charger_input" {
         result["charge_energy_used"]=ac["value_kwh"]
     }
-    if ac,ok:=contract["ac_input"].(map[string]any); ok && ac["covered_energy_kwh"]!=nil {
-        result["charge_type"]="ac"
+    if mode, ok := contract["charge_mode"].(string); ok &&
+        contract["charge_mode_evidence"] == "observed_boundary_modes_no_conflict" &&
+        (mode == "ac" || mode == "dc") {
+        result["charge_type"] = mode
+    } else {
+        delete(result, "charge_type")
     }
 }

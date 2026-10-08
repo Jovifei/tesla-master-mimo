@@ -75,12 +75,12 @@ fun buildAnalysisSummary(
         distanceSamples > 0 && it.isFinite() && it >= 0.0
     }
     val drivingEnergy = stats.totalEnergyConsumedKwh
-        .takeIf { driveEnergySamples > 0 && it.isFinite() && it >= 0.0 }
+        ?.takeIf { driveEnergySamples > 0 && it.isFinite() }
     val chargedEnergy = stats.totalEnergyAddedKwh
-        .takeIf { chargeEnergySamples > 0 && it.isFinite() && it >= 0.0 }
+        ?.takeIf { chargeEnergySamples > 0 && it.isFinite() && it >= 0.0 }
     val efficiency = stats.avgEfficiencyWhKm
-        .takeIf {
-            distanceSamples > 0 && driveEnergySamples > 0 && it.isFinite() && it >= 0.0
+        ?.takeIf {
+            distanceSamples > 0 && driveEnergySamples > 0 && it.isFinite()
         }
     val efficiencySamples = minOf(distanceSamples, driveEnergySamples)
     val cost = stats.totalCost?.takeIf { costSamples > 0 && it.isFinite() && it >= 0.0 }
@@ -106,10 +106,10 @@ fun buildAnalysisConclusions(
     val distance = stats.totalDistanceKm.takeIf {
         distanceSamples > 0 && it.isFinite() && it >= 0.0
     }
-    val drivingEnergy = stats.totalEnergyConsumedKwh.takeIf {
-        driveEnergySamples > 0 && it.isFinite() && it >= 0.0
+    val drivingEnergy = stats.totalEnergyConsumedKwh?.takeIf {
+        driveEnergySamples > 0 && it.isFinite()
     }
-    val chargedEnergy = stats.totalEnergyAddedKwh.takeIf {
+    val chargedEnergy = stats.totalEnergyAddedKwh?.takeIf {
         chargeEnergySamples > 0 && it.isFinite() && it >= 0.0
     }
     val drivingDays = stats.totalDrivingDays?.takeIf { it > 0 }

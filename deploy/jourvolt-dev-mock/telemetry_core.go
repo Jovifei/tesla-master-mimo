@@ -376,6 +376,9 @@ type telemetryChargePoint struct {
 	// DCChargingEnergyIn measures battery input; ACChargingEnergyIn measures charger input.
 	BatteryCounter *float64 `json:",omitempty"`
 	ACInputCounter *float64 `json:",omitempty"`
+	// Mode classification is from actual FastChargerPresent/ChargerPhases events.
+	ChargeMode string `json:",omitempty"`
+	ChargeModeField string `json:",omitempty"`
 	// Small verified completion metadata, persisted in the existing charge JSON.
 	EnergyContract map[string]any `json:",omitempty"`
 	ChargerPower *float64
@@ -526,6 +529,8 @@ func (m *telemetrySessionMachine) apply(event telemetrySessionEvent) {
 		m.applyCharge(event)
 	case "ACChargingEnergyIn", "DCChargingEnergyIn":
 		m.applyChargingEnergy(event)
+	case "ChargerPhases", "FastChargerPresent":
+		m.applyChargeModeEvidence(event)
 	case "Soc":
 		m.applyChargeBatteryLevel(event)
 	case "GpsHeading":
@@ -590,6 +595,28 @@ func (m *telemetrySessionMachine) updateDrivingObservation(event telemetrySessio
 	}
 }
 
+// Only explicit provider mode fields are observations of charging type.
+// Positive ACChargingEnergyIn is not evidence of a whole-session AC mode.
+func (m *telemetrySessionMachine) applyChargeModeEvidence(event telemetrySessionEvent) {
+    if m.charge == nil { return }
+    mode := ""
+    switch event.FieldName {
+    case "FastChargerPresent":
+        explicit, ok := event.Value.(bool)
+        if !ok { return }
+        if explicit { mode = "dc" } else { mode = "ac" }
+    case "ChargerPhases":
+        phases, ok := numberFromJSONValue(event.Value)
+        if !ok || math.IsNaN(phases) || math.IsInf(phases, 0) || math.Trunc(phases) != phases { return }
+        if phases == 0 { mode = "dc" } else if phases >= 1 && phases <= 3 { mode = "ac" } else { return }
+    }
+    if mode != "" {
+        m.appendChargePoint(telemetryChargePoint{
+            ObservedAt: event.ObservedAt, ChargeMode: mode, ChargeModeField: event.FieldName,
+        })
+    }
+}
+
 func (m *telemetrySessionMachine) applyChargingEnergy(event telemetrySessionEvent) {
 	if m.charge == nil {
 		return
@@ -618,7 +645,9 @@ func (m *telemetrySessionMachine) applyChargingEnergy(event telemetrySessionEven
 	}
 	delta := value - *m.chargeEnergyStart
 	if !isFiniteChargeCounterDelta(delta) {
-		// A reset invalidates this session; never report its later partial delta.
+		// Persist the reset sample itself, including a same-timestamp reset.
+        // Recomputing after completion or database restart must see this evidence.
+        m.appendChargePoint(telemetryChargePoint{ObservedAt: event.ObservedAt, BatteryCounter: &value})
 		m.charge.EnergyAdded = nil
 		m.chargeEnergyField = "invalid_dc"
 		m.chargeEnergyStart = nil
@@ -644,7 +673,7 @@ func (m *telemetrySessionMachine) appendChargePoint(point telemetryChargePoint) 
 	if m.charge == nil || point.ObservedAt.IsZero() {
 		return
 	}
-	if point.BatteryLevel == nil && point.EnergyAdded == nil && point.BatteryCounter == nil && point.ACInputCounter == nil && point.ChargerPower == nil && point.Latitude == nil && point.OutsideTemp == nil {
+	if point.BatteryLevel == nil && point.EnergyAdded == nil && point.BatteryCounter == nil && point.ACInputCounter == nil && point.ChargeMode == "" && point.ChargerPower == nil && point.Latitude == nil && point.OutsideTemp == nil {
 		return
 	}
 	m.charge.ChargePoints = append(m.charge.ChargePoints, point)

@@ -10,7 +10,8 @@ import java.time.Instant
 data class ChargeEnergyBalance(val inputKwh: Double, val batteryKwh: Double, val lossKwh: Double, val efficiencyPercent: Double)
 
 fun qualifiedAcEnergyBalance(contract: EnergyContract?, start: String?, end: String?, chargeType: String?): ChargeEnergyBalance? {
-    if (contract?.version != 1 || chargeType != "ac") return null
+    if (contract?.version != 1 || chargeType != "ac" || contract.chargeMode != "ac" ||
+        contract.chargeModeEvidence != "observed_boundary_modes_no_conflict") return null
     val input = contract.acInput ?: return null
     val battery = contract.batteryInput ?: return null
     if (input.method != "session_counter_delta" || battery.method != "session_counter_delta" ||

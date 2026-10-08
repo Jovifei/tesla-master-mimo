@@ -77,6 +77,16 @@ object ChargeStatsCalculator {
 
     /** Resolve charging type only from explicit, non-conflicting evidence. */
     fun detectChargeType(detail: ChargeDetail): ChargeType {
+        val contract = detail.energyContract
+        val verifiedMode = if (contract?.version == 1 &&
+            contract.chargeModeEvidence == "observed_boundary_modes_no_conflict") when (contract.chargeMode) {
+            "ac" -> ChargeType.AC
+            "dc" -> ChargeType.DC
+            else -> ChargeType.UNKNOWN
+        } else ChargeType.UNKNOWN
+        if (contract != null && verifiedMode == ChargeType.UNKNOWN) return ChargeType.UNKNOWN
+        if (contract != null && detail.chargeType != null &&
+            detail.chargeType != contract.chargeMode) return ChargeType.UNKNOWN
         val points = detail.chargePoints.orEmpty()
         val details = points.mapNotNull { it.chargerDetails }
         val explicitFast = details.mapNotNull { it.fastChargerPresent }.distinct()
@@ -84,17 +94,22 @@ object ChargeStatsCalculator {
         val phases = details.mapNotNull { it.chargerPhases }.distinct()
         if (phases.any { it < 0 || it > 3 }) return ChargeType.UNKNOWN
         if (phases.any { it == 0 } && phases.any { it > 0 }) return ChargeType.UNKNOWN
-        explicitFast.singleOrNull()?.let { explicit ->
+        val inferred = if (explicitFast.isNotEmpty()) {
+            val explicit = explicitFast.single()
             if ((explicit && phases.any { it > 0 }) || (!explicit && phases.any { it == 0 })) {
                 return ChargeType.UNKNOWN
             }
-            return if (explicit) ChargeType.DC else ChargeType.AC
-        }
-        return when {
+            if (explicit) ChargeType.DC else ChargeType.AC
+        } else when {
             phases.any { it == 0 } -> ChargeType.DC
             phases.any { it in 1..3 } -> ChargeType.AC
             else -> ChargeType.UNKNOWN
         }
+        if (contract != null) {
+            if (inferred != ChargeType.UNKNOWN && inferred != verifiedMode) return ChargeType.UNKNOWN
+            return verifiedMode
+        }
+        return inferred
     }
 
     /** Compatibility projection for legacy UI callers; UNKNOWN is never AC evidence. */

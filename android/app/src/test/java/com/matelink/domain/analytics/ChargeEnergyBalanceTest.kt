@@ -11,7 +11,8 @@ class ChargeEnergyBalanceTest {
         measurementPoint = point, source = "telemetry_mqtt", quality = "reported", startDate = start, endDate = end,
         observedStartAt = start, observedEndAt = end, timeBasis = "receiver_observation", coverageKind = "endpoints", coverageRatio = 1.0)
     private fun contract(input: Double = 10.0, battery: Double = 9.0) = EnergyContract(
-        acInput = metric(input, "ac_charger_input"), batteryInput = metric(battery, "battery_input"))
+        acInput = metric(input, "ac_charger_input"), batteryInput = metric(battery, "battery_input"),
+        chargeMode = "ac", chargeModeEvidence = "observed_boundary_modes_no_conflict")
     @Test fun completeCompatibleAcCountersProduceLossAndEfficiency() {
         val result = qualifiedAcEnergyBalance(contract(), start, end, "ac")!!
         assertEquals(1.0, result.lossKwh, 0.0)
@@ -34,6 +35,12 @@ class ChargeEnergyBalanceTest {
             battery.copy(valueKwh = Double.NaN)).forEach { bad ->
             assertNull(qualifiedAcEnergyBalance(original.copy(batteryInput = bad), start, end, "ac"))
         }
+    }
+    @Test fun counterMathWithoutQualifiedACModeCannotProduceLoss() {
+        val evidence = contract()
+        assertNull(qualifiedAcEnergyBalance(evidence.copy(chargeMode = null), start, end, "ac"))
+        assertNull(qualifiedAcEnergyBalance(evidence.copy(chargeMode = "dc"), start, end, "ac"))
+        assertNull(qualifiedAcEnergyBalance(evidence.copy(chargeModeEvidence = null), start, end, "ac"))
     }
     @Test fun explicitUnknownEnergyCannotFallBackToLegacyChargeScalars() {
         val raw = ChargeData(1, startDate = start, endDate = end, chargeEnergyAdded = 10.0,

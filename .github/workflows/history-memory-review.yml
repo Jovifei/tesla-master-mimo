@@ -55,7 +55,7 @@ jobs:
           JOURVOLT_RUN_LEGACY_MEMORY_BENCH: '0'
         run: |
           set -euo pipefail
-          go test -race -count=1 -run 'Test(Energy|BoundedHistory|ChargeEnergy|Parked|CompactTelemetry|NativeShadow|History(Sample|Energy|Summary|MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL|ReadBudget|ResourceAdmission|HeavyBudget|Import|Archive|DecodeAdmission)|ArchiveImport|Telemetry(PostgresCompactBootstrap|PostgresCompactAdmissionReference|History|PostgresNativeIdentity|PostgresIdleDriveFinalization|PostgresNativeShadow))' ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-race.log"
+          go test -race -count=1 -run 'Test(Independent|Energy|BoundedHistory|ChargeEnergy|Parked|CompactTelemetry|NativeShadow|History(Sample|Energy|Summary|MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL|ReadBudget|ResourceAdmission|HeavyBudget|Import|Archive|DecodeAdmission)|ArchiveImport|Telemetry(PostgresCompactBootstrap|PostgresCompactAdmissionReference|History|PostgresNativeIdentity|PostgresIdleDriveFinalization|PostgresNativeShadow))' ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-race.log"
       - name: Verify mandatory PostgreSQL evidence
         run: |
           python3 - <<'PY'
@@ -86,6 +86,10 @@ jobs:
               'TestEnergyCounterResetInvalidatesWholeBatterySession',
               'TestEnergyCounterCompleteACWindowAndScope',
               'TestEnergyCounterSubsetAndReplayRejectFullCoverage',
+              'TestIndependentCounterResetAtFinalTimestampMustRemainUnknown',
+              'TestIndependentZeroACCounterDoesNotProveACMode',
+              'TestIndependentUnknownModeCannotPublishACBalance',
+              'TestEnergyPostgresResetReplayAndACModeScope',
           ):
               assert any(r.get('Test')==name and r.get('Action')=='pass' for r in tests), name
           counts={action:sum(r.get('Action')==action for r in tests) for action in ('run','pass','fail','skip')}

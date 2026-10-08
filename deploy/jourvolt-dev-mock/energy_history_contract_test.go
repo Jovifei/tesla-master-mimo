@@ -12,10 +12,12 @@ func TestEnergyCounterInterleavedACNeverOverridesBatteryInput(t *testing.T) {
         machine.apply(telemetrySessionEvent{FieldName:field,Value:value,ObservedAt:when,EventID:id})
     }
     add("DetailedChargeState","charging",start,"open")
+    add("ChargerPhases",2.0,start,"mode-start")
     add("ACChargingEnergyIn",40.0,start.Add(time.Second),"ac1")
     add("DCChargingEnergyIn",10.0,start.Add(time.Second),"dc1")
     add("ACChargingEnergyIn",50.0,start.Add(2*time.Second),"ac2")
     add("DCChargingEnergyIn",17.0,start.Add(2*time.Second),"dc2")
+    add("ChargerPhases",2.0,start.Add(3*time.Second),"mode-end")
     add("DetailedChargeState","complete",start.Add(3*time.Second),"close")
     sessions:=machine.completedSessions()
     if len(sessions)!=1 || sessions[0].EnergyAdded==nil || *sessions[0].EnergyAdded!=7 {
@@ -60,8 +62,8 @@ func TestEnergyCounterCompleteACWindowAndScope(t *testing.T) {
     session:=telemetrySession{
         Kind:"charge",Source:"telemetry_mqtt",StartAt:start,EndAt:&end,
         ChargePoints:[]telemetryChargePoint{
-            {ObservedAt:start, ACInputCounter:&startAC, BatteryCounter:&startDC},
-            {ObservedAt:end, ACInputCounter:&endAC, BatteryCounter:&endDC},
+            {ObservedAt:start, ACInputCounter:&startAC, BatteryCounter:&startDC, ChargeMode:"ac", ChargeModeField:"ChargerPhases"},
+            {ObservedAt:end, ACInputCounter:&endAC, BatteryCounter:&endDC, ChargeMode:"ac", ChargeModeField:"ChargerPhases"},
         },
     }
     c:=completedSessionEnergyContract(session)
@@ -71,6 +73,7 @@ func TestEnergyCounterCompleteACWindowAndScope(t *testing.T) {
         t.Fatalf("matched complete AC interval not qualified: %#v",c)
     }
     if c["ac_loss"].(map[string]any)["value_kwh"]!=1.0 {t.Fatal("AC loss wrong")}
+    if c["charge_mode"]!="ac" || c["charge_mode_evidence"]!="observed_boundary_modes_no_conflict" {t.Fatal("no qualified source-observed AC mode")}
     if c["battery_input"].(map[string]any)["time_basis"]!="collector_received_at" ||
         c["ac_input"].(map[string]any)["time_basis"]!="collector_received_at" {
         t.Fatal("MQTT collector receipt must not be labeled Tesla source sample time")

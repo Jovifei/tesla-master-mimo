@@ -32,10 +32,12 @@ func TestEnergyPostgresBoundedChargeContractSurvivesRestart(t *testing.T) {
     end:=start.Add(10*time.Minute)
     data:=[]struct{field string; value any; at time.Time}{
         {"DetailedChargeState","Charging",start},
+        {"ChargerPhases",2.0,start},
         {"DCChargingEnergyIn",100.0,start},
         {"ACChargingEnergyIn",200.0,start},
         {"DCChargingEnergyIn",108.0,end},
         {"ACChargingEnergyIn",210.0,end},
+        {"ChargerPhases",2.0,end},
         {"DetailedChargeState","Complete",end},
     }
     for i,item:=range data {
@@ -58,7 +60,7 @@ func TestEnergyPostgresBoundedChargeContractSurvivesRestart(t *testing.T) {
         }
         contract,ok:=item["energy_contract"].(map[string]any)
         if !ok {t.Fatal("missing bounded energy contract")}
-        if contract["ac_efficiency"]!=80.0 {t.Fatalf("AC efficiency: %#v",contract)}
+        if contract["ac_efficiency"]!=80.0 || contract["charge_mode"]!="ac" {t.Fatalf("AC mode/efficiency: %#v",contract)}
         metric:=contract["battery_input"].(map[string]any)
         if metric["measurement_point"]!="battery_input"||metric["quality"]!="reported"||
             metric["observed_start_at"]!=start.Format(time.RFC3339)||

@@ -13,7 +13,9 @@ data class EnergyContract(
     @Json(name = "ac_input") val acInput: EnergyMetric? = null,
     @Json(name = "stored_change") val storedChange: EnergyMetric? = null,
     @Json(name = "ac_loss") val acLoss: EnergyMetric? = null,
-    @Json(name = "ac_efficiency") val acEfficiency: Double? = null
+    @Json(name = "ac_efficiency") val acEfficiency: Double? = null,
+    @Json(name = "charge_mode") val chargeMode: String? = null,
+    @Json(name = "charge_mode_evidence") val chargeModeEvidence: String? = null
 )
 
 @JsonClass(generateAdapter = true)

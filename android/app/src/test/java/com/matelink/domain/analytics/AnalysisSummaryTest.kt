@@ -224,6 +224,26 @@ class AnalysisSummaryTest {
         assertTrue(conclusions.averageChargeEnergyKwh is MetricState.Unavailable)
     }
 
+    @Test
+    fun nullableTotalsStayUnknownAndSignedNetRecoveryIsRetained() {
+        val unknown = sampleStats().copy(
+            totalEnergyConsumedKwh = null,
+            totalEnergyAddedKwh = null,
+            avgEfficiencyWhKm = null
+        )
+        val missing = buildAnalysisSummary(unknown)
+        assertTrue(missing.drivingEnergyKwh is MetricState.Unavailable)
+        assertTrue(missing.chargedEnergyKwh is MetricState.Unavailable)
+        assertTrue(missing.efficiencyWhKm is MetricState.Unavailable)
+        assertTrue(buildAnalysisConclusions(unknown).averageChargeEnergyKwh is MetricState.Unavailable)
+        val recovered = buildAnalysisSummary(sampleStats().copy(
+            totalEnergyConsumedKwh = -0.5,
+            avgEfficiencyWhKm = -5.0
+        ))
+        assertEquals(-0.5, available(recovered.drivingEnergyKwh).value, 0.0001)
+        assertEquals(-5.0, available(recovered.efficiencyWhKm).value, 0.0001)
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun available(metric: MetricState<Double>): MetricState.Available<Double> =
         metric as MetricState.Available<Double>
