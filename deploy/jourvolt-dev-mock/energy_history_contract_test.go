@@ -71,6 +71,10 @@ func TestEnergyCounterCompleteACWindowAndScope(t *testing.T) {
         t.Fatalf("matched complete AC interval not qualified: %#v",c)
     }
     if c["ac_loss"].(map[string]any)["value_kwh"]!=1.0 {t.Fatal("AC loss wrong")}
+    if c["battery_input"].(map[string]any)["time_basis"]!="collector_received_at" ||
+        c["ac_input"].(map[string]any)["time_basis"]!="collector_received_at" {
+        t.Fatal("MQTT collector receipt must not be labeled Tesla source sample time")
+    }
     session.Kind="drive"
     if completedSessionEnergyContract(session)["net_energy"].(map[string]any)["quality"]!="unknown" {
         t.Fatal("battery input misrepresented as driving net energy")

@@ -25,7 +25,7 @@ func chargeSessionCounterMetric(session telemetrySession, field, point string) (
         "quality": "unknown", "reason": "missing_counter_bounds",
         "start_date": session.StartAt.UTC().Format(time.RFC3339), "end_date": nil,
         "observed_start_at": nil, "observed_end_at": nil,
-        "time_basis": "source_sample_time", "coverage_kind": "endpoints",
+        "time_basis": "collector_received_at", "coverage_kind": "endpoints",
         "coverage_seconds": nil, "coverage_ratio": nil, "covered_energy_kwh": nil,
     }
     if session.EndAt != nil {
@@ -114,7 +114,7 @@ func completedSessionEnergyContract(session telemetrySession) map[string]any {
             "quality":"estimated", "reason":nil,
             "start_date":battery["start_date"], "end_date":battery["end_date"],
             "observed_start_at":battery["observed_start_at"], "observed_end_at":battery["observed_end_at"],
-            "coverage_kind":"endpoints", "coverage_ratio":1.0, "time_basis":"source_sample_time",
+            "coverage_kind":"endpoints", "coverage_ratio":1.0, "time_basis":"collector_received_at",
         }
         contract["ac_efficiency"] = *batteryCovered / *acCovered * 100.0
     }
