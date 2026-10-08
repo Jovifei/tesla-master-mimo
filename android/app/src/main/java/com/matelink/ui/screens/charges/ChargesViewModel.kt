@@ -450,13 +450,10 @@ class ChargesViewModel @Inject constructor(
 
         val visibleCharges = allCharges.filter { it.qualityState != "quarantined" }
         // Incomplete imports remain visible, but cannot produce stats or charts.
+        // Eligibility is about observed source quality, not a non-zero SOC delta.
+        // A valid zero-energy session remains a session; unknown energy is not zero.
         val validCharges = visibleCharges.filter { charge ->
-            if (!isAnalysisEligible(charge.qualityState, charge.qualityReason)) return@filter false
-            val startSoc = charge.startBatteryLevel ?: 0
-            val endSoc = charge.endBatteryLevel ?: 0
-            val energy = charge.chargeEnergyAdded ?: 0.0
-            val isZeroSocDelta = (startSoc == 0 && endSoc == 0) || (startSoc > 0 && endSoc > 0 && startSoc == endSoc && energy < 0.5)
-            !isZeroSocDelta
+            isAnalysisEligible(charge.qualityState, charge.qualityReason)
         }
 
         var filteredCharges = if (showShortDrivesCharges) {
@@ -464,7 +461,7 @@ class ChargesViewModel @Inject constructor(
         } else {
             visibleCharges.filter { charge ->
                 !isAnalysisEligible(charge.qualityState, charge.qualityReason) ||
-                    (charge.chargeEnergyAdded ?: 0.0) > MIN_ENERGY_KWH
+                    (charge.batteryInputKwh?.let { it > MIN_ENERGY_KWH } ?: true)
             }
         }
 
@@ -672,8 +669,8 @@ class ChargesViewModel @Inject constructor(
         dcChargeIds: Set<Int>
     ): ChargeChartData {
         val dcCharges = charges.filter { it.chargeId in dcChargeIds }
-        val energyDc = dcCharges.mapNotNull { observedChargeEnergy(it.chargeEnergyAdded) }.sum()
-        val energyValues = charges.mapNotNull { observedChargeEnergy(it.chargeEnergyAdded) }
+        val energyDc = dcCharges.mapNotNull { observedChargeEnergy(it.batteryInputKwh) }.sum()
+        val energyValues = charges.mapNotNull { observedChargeEnergy(it.batteryInputKwh) }
         val energyTotal = energyValues.sum()
         val state = _uiState.value
         val dcCosts = dcCharges.mapNotNull { effectiveCost(it, state) }
@@ -723,7 +720,7 @@ class ChargesViewModel @Inject constructor(
     private fun calculateSummary(charges: List<ChargeData>): ChargesSummary {
         if (charges.isEmpty()) return ChargesSummary()
 
-        val energyValues = charges.mapNotNull { observedChargeEnergy(it.chargeEnergyAdded) }
+        val energyValues = charges.mapNotNull { observedChargeEnergy(it.batteryInputKwh) }
         val totalEnergy = energyValues.takeIf { it.isNotEmpty() }?.sum()
         val state = _uiState.value
         val costs = charges.mapNotNull { effectiveCost(it, state) }
@@ -747,7 +744,7 @@ class ChargesViewModel @Inject constructor(
             freeSupercharging = state.freeSupercharging,
             isDcCharge = isDcCharge,
             teslaMateCost = charge.cost,
-            energyKwh = charge.chargeEnergyAdded,
+            energyKwh = charge.batteryInputKwh,
             defaultPricePerKwh = state.defaultChargePrice
         ).cost
     }

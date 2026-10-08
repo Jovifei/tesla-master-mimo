@@ -401,7 +401,7 @@ private fun ChargeDetailContent(
             }
 
             // Cost section
-            val validEnergyKwh = detail.chargeEnergyAdded?.takeIf { it.isFinite() && it > 0.0 }
+            val validEnergyKwh = detail.batteryInputKwh?.takeIf { it.isFinite() && it > 0.0 }
             val costPerKwh = if (costPresentation.cost != null && validEnergyKwh != null) {
                 "$currencySymbol%.3f".format(costPresentation.cost / validEnergyKwh)
             } else {
@@ -520,7 +520,7 @@ private fun LocationHeaderCard(
             }
 
             // Energy added and cost summary
-            detail.chargeEnergyAdded?.let { energy ->
+            detail.batteryInputKwh?.let { energy ->
                 HorizontalDivider(
                     modifier = Modifier.padding(start = 36.dp),
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
