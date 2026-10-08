@@ -1210,7 +1210,9 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		result["start_address"], result["end_address"] = session.StartAddress, session.EndAddress
 		result["duration_str"], result["speed_max"], result["speed_avg"] = nil, nil, nil
 		result["power_max"], result["power_min"] = nil, nil
-		result["battery_details"], result["range_ideal"], result["range_rated"] = nil, nil, nil
+		startBatteryLevel, endBatteryLevel := driveBatteryBounds(session)
+		result["battery_details"] = driveBatteryDetails(startBatteryLevel, endBatteryLevel)
+		result["range_ideal"], result["range_rated"] = nil, nil
 		result["outside_temp_avg"], result["inside_temp_avg"] = nil, nil
 		// Fleet Telemetry currently provides no dedicated driving-energy field in
 		// this configuration. Never reuse charging energy as drive consumption.
@@ -1228,14 +1230,24 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 				if point.Date != "" {
 					item["date"] = point.Date
 				}
+				if level := observedRouteBatteryLevel(point.BatteryLevel); level != nil {
+					item["battery_level"] = *level
+				}
+				inside, outside := importedObservedClimate(point)
+				addObservedClimate(item, inside, outside)
 				route = append(route, item)
 			}
 		} else {
 			for _, point := range session.Route {
-				route = append(route, map[string]any{
+				item := map[string]any{
 					"date": point.ObservedAt.UTC().Format(time.RFC3339), "latitude": point.Latitude, "longitude": point.Longitude,
 					"speed": point.Speed, "power": point.Power, "heading": point.Heading,
-				})
+				}
+				if level := observedRouteBatteryLevel(point.BatteryLevel); level != nil {
+					item["battery_level"] = *level
+				}
+				addObservedClimate(item, point.InsideTemp, point.OutsideTemp)
+				route = append(route, item)
 			}
 		}
 		result["drive_details"] = route
@@ -1260,12 +1272,15 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		var firstLatitude, firstLongitude *float64
 		for _, point := range session.ChargePoints {
 			item := map[string]any{"date": point.ObservedAt.UTC().Format(time.RFC3339)}
-			if point.BatteryLevel != nil {
-				item["battery_level"] = point.BatteryLevel
+			if level := observedRouteBatteryLevel(point.BatteryLevel); level != nil {
+				item["battery_level"] = *level
 				if firstBattery == nil {
-					firstBattery = cloneInt(point.BatteryLevel)
+					firstBattery = cloneInt(level)
 				}
-				lastBattery = cloneInt(point.BatteryLevel)
+				lastBattery = cloneInt(level)
+			}
+			if value := finiteHistorySample(point.OutsideTemp); value != nil {
+				item["outside_temp"] = *value
 			}
 			if point.EnergyAdded != nil {
 				item["charge_energy_added"] = point.EnergyAdded
@@ -1292,7 +1307,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 			chargeDetails = append(chargeDetails, chargeDetail)
 		}
 		if firstBattery != nil || lastBattery != nil {
-			result["battery_details"] = map[string]any{"start_battery_level": firstBattery, "end_battery_level": lastBattery}
+			result["battery_details"] = driveBatteryDetails(firstBattery, lastBattery)
 		}
 		if lastPower != nil {
 			result["charger_power"] = lastPower
@@ -1302,8 +1317,50 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		}
 		result["charge_details"] = chargeDetails
 	}
+	applyHistorySampleMetrics(result, sessionSampleMetrics(session, kind), kind)
 	result["sequence"] = index
 	return result
+}
+
+func driveBatteryBounds(session telemetrySession) (*int, *int) {
+	var first, last *int
+	record := func(raw *int) {
+		level := observedRouteBatteryLevel(raw)
+		if level == nil {
+			return
+		}
+		if first == nil {
+			first = cloneInt(level)
+		}
+		last = cloneInt(level)
+	}
+	if session.Source == "teslamate_archive" && session.ArchiveRoute != nil {
+		for _, point := range session.ArchiveRoute {
+			record(point.BatteryLevel)
+		}
+	} else {
+		for _, point := range session.Route {
+			record(point.BatteryLevel)
+		}
+	}
+	return first, last
+}
+
+func driveBatteryDetails(start, end *int) any {
+	if start == nil && end == nil {
+		return nil
+	}
+	details := map[string]any{
+		"start_battery_level": nil,
+		"end_battery_level":   nil,
+	}
+	if start != nil {
+		details["start_battery_level"] = *start
+	}
+	if end != nil {
+		details["end_battery_level"] = *end
+	}
+	return details
 }
 
 func nullableFloat(value *float64) any {
@@ -1375,15 +1432,6 @@ func (s *telemetryService) historySummaries(userID string, vehicleID int, kind s
 }
 
 func (s *telemetryService) historyDetail(userID string, vehicleID int, kind string, publicID int) (map[string]any, bool, error) {
-	return s.historyDetailContext(context.Background(), userID, vehicleID, kind, publicID)
-}
-
-func (s *telemetryService) historyDetailContext(ctx context.Context, userID string, vehicleID int, kind string, publicID int) (map[string]any, bool, error) {
-	ctx, cancel := historyReadContext(ctx)
-	defer cancel()
-	if err := ctx.Err(); err != nil {
-		return nil, false, err
-	}
 	if s == nil {
 		return nil, false, nil
 	}
@@ -1395,7 +1443,7 @@ func (s *telemetryService) historyDetailContext(ctx context.Context, userID stri
 		}
 		return nil, false, nil
 	}
-	session, ok, err := s.historyDetailPostgres(ctx, userID, vehicleID, kind, publicID)
+	session, ok, err := s.historyDetailPostgres(context.Background(), userID, vehicleID, kind, publicID)
 	if err != nil || !ok {
 		return nil, ok, err
 	}
@@ -1442,6 +1490,6 @@ func historyCoveragePercent(sessions []telemetrySession) float64 {
 }
 
 func (s *telemetryService) hasHistory(ctx context.Context, userID string, vehicleID int, kind string) bool {
-	exists, err := s.historyExists(ctx, userID, vehicleID, kind)
+	exists, err := s.historyExistsContext(ctx, userID, vehicleID, kind)
 	return err == nil && exists
 }

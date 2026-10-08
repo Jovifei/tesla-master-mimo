@@ -80,20 +80,9 @@ func (a *app) telemetryHistory(w http.ResponseWriter, r *http.Request, userID st
 	if len(parts) > 0 && parts[0] != "" {
 		publicID, parseErr := strconv.Atoi(strings.TrimSpace(parts[0]))
 		if parseErr == nil && publicID > 0 {
-			release, err := acquireHistoryHeavyBudget(r.Context(), userID, vehicleID)
-			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-					a.json(w, http.StatusRequestTimeout, map[string]string{"error": err.Error()})
-					return
-				}
-				w.Header().Set("Retry-After", "1")
-				a.json(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
-				return
-			}
-			defer release()
 			item, ok, err := a.telemetry.historyDetailContext(r.Context(), userID, vehicleID, kind, publicID)
 			if err != nil {
-				a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_unavailable"})
+				a.telemetryHistoryReadError(w, err)
 				return
 			}
 			if ok {
@@ -109,16 +98,30 @@ func (a *app) telemetryHistory(w http.ResponseWriter, r *http.Request, userID st
 		a.json(w, status, map[string]string{"error": code})
 		return
 	}
-	options := historyPageOptionsFromRequest(r)
-	items, meta, err := a.telemetry.historyPage(r.Context(), userID, vehicleID, kind, options)
+
+	page := positiveQueryInt(r, "page", 1)
+	show := positiveQueryInt(r, "show", 0)
+	start := parseHistoryBoundary(r.URL.Query().Get("startDate"), false)
+	end := parseHistoryBoundary(r.URL.Query().Get("endDate"), true)
+	items, meta, total, resolvedShow, err := a.telemetry.historyPageContext(r.Context(), userID, vehicleID, kind, start, end, page, show)
 	if err != nil {
-		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_unavailable"})
+		a.telemetryHistoryReadError(w, err)
 		return
 	}
+	summarizeTelemetryHistory(items, kind)
+	meta["page"], meta["show"], meta["total"] = page, resolvedShow, total
+	meta["total_pages"] = pageCount(total, resolvedShow)
 	plural := kind + "s"
 	a.json(w, http.StatusOK, map[string]any{"data": map[string]any{plural: items, "meta": meta}})
 }
 
+func (a *app) telemetryHistoryReadError(w http.ResponseWriter, err error) {
+	status := http.StatusServiceUnavailable
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		status = http.StatusRequestTimeout
+	}
+	a.json(w, status, map[string]string{"error": "history_unavailable"})
+}
 func summarizeTelemetryHistory(items []map[string]any, kind string) {
 	detailsKey := "drive_details"
 	if kind == "charge" {

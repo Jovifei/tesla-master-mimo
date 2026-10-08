@@ -40,25 +40,15 @@ func (a *app) dataReadiness(w http.ResponseWriter, r *http.Request, userID strin
 			return
 		}
 	}
-	// One bounded metadata read per kind, reused for availability and source.
-	driveMetadata, driveHistoryErr := a.telemetry.historyMetadata(r.Context(), userID, vehicleID, "drive")
-	chargeMetadata, chargeHistoryErr := a.telemetry.historyMetadata(r.Context(), userID, vehicleID, "charge")
-	driveHistoryAvailable := a.hasMockHistory(userID) || (driveHistoryErr == nil && driveMetadata.Total > 0)
-	chargeHistoryAvailable := a.hasMockHistory(userID) || (chargeHistoryErr == nil && chargeMetadata.Total > 0)
+	driveHistoryAvailable := a.hasMockHistory(userID) || (a.telemetry != nil && a.telemetry.hasHistory(r.Context(), userID, vehicleID, "drive"))
+	chargeHistoryAvailable := a.hasMockHistory(userID) || (a.telemetry != nil && a.telemetry.hasHistory(r.Context(), userID, vehicleID, "charge"))
 	historyFallbackSource := source
 	if isFleetMode(a.mode) {
 		historyFallbackSource = "telemetry_mqtt"
 	}
 	items := readinessItemsWithHistory(providerStatus, source, err, driveHistoryAvailable, chargeHistoryAvailable)
-	setReadinessItemSource(items, "drives", a.historyMetadataSource(driveMetadata, historyFallbackSource))
-	setReadinessItemSource(items, "charges", a.historyMetadataSource(chargeMetadata, historyFallbackSource))
-	if a.hasMockHistory(userID) {
-		setReadinessItemSource(items, "drives", "mock_fixture")
-		setReadinessItemSource(items, "charges", "mock_fixture")
-	} else {
-		markHistoryReadinessError(items, "drives", driveHistoryErr)
-		markHistoryReadinessError(items, "charges", chargeHistoryErr)
-	}
+	setReadinessItemSource(items, "drives", a.historyReadinessSourceContext(r.Context(), userID, vehicleID, "drive", historyFallbackSource))
+	setReadinessItemSource(items, "charges", a.historyReadinessSourceContext(r.Context(), userID, vehicleID, "charge", historyFallbackSource))
 	response := dataReadinessResponse{
 		CapabilityVersion: dataReadinessCapabilityVersion,
 		VehicleUID:        vehicleUID,
@@ -66,15 +56,6 @@ func (a *app) dataReadiness(w http.ResponseWriter, r *http.Request, userID strin
 	}
 	if a.telemetry != nil {
 		response.Items = append(response.Items, a.telemetryReadinessForData(r.Context(), userID, vehicleID))
-	} else if isFleetMode(a.mode) {
-		item := dataReadinessItem{
-			Key: "telemetry", Status: "telemetry_not_configured", Source: "telemetry_mqtt",
-			MessageKey: "telemetry_not_configured", Action: "configure_telemetry",
-		}
-		if err != nil {
-			item.Status, item.MessageKey, item.Action = readinessError(err)
-		}
-		response.Items = append(response.Items, item)
 	}
 	a.json(w, http.StatusOK, map[string]any{"data": response})
 }
@@ -88,27 +69,23 @@ func setReadinessItemSource(items []dataReadinessItem, key, source string) {
 	}
 }
 
-// Archive availability is distinct from live Fleet Telemetry availability.
-func (a *app) historyMetadataSource(metadata historyMetadata, fallback string) string {
-	if metadata.ReadinessSource != "" {
-		return metadata.ReadinessSource
-	}
-	return fallback
+func (a *app) historyReadinessSource(userID string, vehicleID int, kind, fallback string) string {
+	return a.historyReadinessSourceContext(context.Background(), userID, vehicleID, kind, fallback)
 }
 
-func markHistoryReadinessError(items []dataReadinessItem, key string, err error) {
-	if err == nil {
-		return
+func (a *app) historyReadinessSourceContext(ctx context.Context, userID string, vehicleID int, kind, fallback string) string {
+	if a.hasMockHistory(userID) {
+		return "mock_fixture"
 	}
-	for index := range items {
-		if items[index].Key == key {
-			items[index].Status = "telemetry_error"
-			items[index].MessageKey = "history_unavailable"
-			items[index].Action = "retry_later"
-		}
+	if a.telemetry == nil {
+		return fallback
 	}
+	source, ok, err := a.telemetry.historySourceForReadinessContext(ctx, userID, vehicleID, kind)
+	if err != nil || !ok {
+		return fallback
+	}
+	return source
 }
-
 func readinessItems(status vehicleStatus, source string, providerErr error) []dataReadinessItem {
 	return readinessItemsWithHistory(status, source, providerErr, false, false)
 }

@@ -83,12 +83,21 @@ type historyImportSession struct {
 }
 
 type historyImportRoutePoint struct {
-	Date      string   `json:"date"`
-	Latitude  *float64 `json:"latitude"`
-	Longitude *float64 `json:"longitude"`
-	Speed     *float64 `json:"speed"`
-	Power     *float64 `json:"power"`
-	Heading   *float64 `json:"heading"`
+	Date         string                    `json:"date"`
+	Latitude     *float64                  `json:"latitude"`
+	Longitude    *float64                  `json:"longitude"`
+	Speed        *float64                  `json:"speed"`
+	Power        *float64                  `json:"power"`
+	Heading      *float64                  `json:"heading"`
+	BatteryLevel *int                      `json:"battery_level,omitempty"`
+	InsideTemp   *float64                  `json:"inside_temp,omitempty"`
+	OutsideTemp  *float64                  `json:"outside_temp,omitempty"`
+	ClimateInfo  *historyImportClimateInfo `json:"climate_info,omitempty"`
+}
+
+type historyImportClimateInfo struct {
+	InsideTemp  *float64 `json:"inside_temp,omitempty"`
+	OutsideTemp *float64 `json:"outside_temp,omitempty"`
 }
 
 type historyImportChargePoint struct {
@@ -99,6 +108,7 @@ type historyImportChargePoint struct {
 	ChargerPower      *float64 `json:"charger_power"`
 	Latitude          *float64 `json:"latitude"`
 	Longitude         *float64 `json:"longitude"`
+	OutsideTemp       *float64 `json:"outside_temp,omitempty"`
 }
 
 type historyImportResult struct {
@@ -213,8 +223,12 @@ func (req historyImportSession) toTelemetrySession(userID string, vehicleID int,
 	if source == "teslamate" {
 		id = scopedArchiveSessionID(userID, vehicleID, kind, sourceInstanceID, sourceVehicleID, req.SourceRecordID)
 	}
-	route := make([]telemetryRoutePoint, 0, len(req.Route))
-	for _, point := range req.Route {
+	archiveRoute := append([]historyImportRoutePoint(nil), req.Route...)
+	for index := range archiveRoute {
+		archiveRoute[index].BatteryLevel = cloneInt(observedRouteBatteryLevel(archiveRoute[index].BatteryLevel))
+	}
+	route := make([]telemetryRoutePoint, 0, len(archiveRoute))
+	for _, point := range archiveRoute {
 		if point.Latitude == nil || point.Longitude == nil {
 			continue
 		}
@@ -227,21 +241,31 @@ func (req historyImportSession) toTelemetrySession(userID string, vehicleID int,
 				observedAt = parsed
 			}
 		}
+		inside, outside := importedObservedClimate(point)
 		route = append(route, telemetryRoutePoint{
 			ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude,
-			Speed: point.Speed, Power: point.Power, Heading: point.Heading,
+			Speed: point.Speed, Power: point.Power, Heading: point.Heading, BatteryLevel: cloneInt(point.BatteryLevel),
+			InsideTemp: cloneFloat(inside), OutsideTemp: cloneFloat(outside),
 		})
 	}
 	return telemetrySession{
 		ID: id, Kind: kind, StartAt: start, EndAt: &end,
 		OdometerStart: req.OdometerStart, OdometerEnd: req.OdometerEnd, EnergyAdded: req.EnergyAdded,
-		Route: route, ArchiveRoute: append([]historyImportRoutePoint(nil), req.Route...), ChargePoints: importChargePoints(req.ChargePoints, start),
+		Route: route, ArchiveRoute: archiveRoute, ChargePoints: importChargePoints(req.ChargePoints, start),
 		Source:           map[bool]string{true: "teslamate_archive", false: "local_import"}[source == "teslamate"],
 		QualityState:     map[bool]string{true: "observed", false: "incomplete"}[source == "teslamate"],
 		QualityReason:    map[bool]string{true: "teslamate_archive", false: "local_import_unverified"}[source == "teslamate"],
 		SourceInstanceID: sourceInstanceID, SourceVehicleID: sourceVehicleID, SourceRecordID: req.SourceRecordID,
 		StartAddress: req.StartAddress, EndAddress: req.EndAddress, Address: req.Address, Cost: req.Cost,
 	}, nil
+}
+
+// A real observed zero is valid; invalid/missing source values remain unknown.
+func observedRouteBatteryLevel(level *int) *int {
+	if level == nil || *level < 0 || *level > 100 {
+		return nil
+	}
+	return level
 }
 
 func importChargePoints(points []historyImportChargePoint, start time.Time) []telemetryChargePoint {
@@ -260,6 +284,7 @@ func importChargePoints(points []historyImportChargePoint, start time.Time) []te
 		result = append(result, telemetryChargePoint{
 			ObservedAt: observedAt, BatteryLevel: point.BatteryLevel, EnergyAdded: energy,
 			ChargerPower: point.ChargerPower, Latitude: point.Latitude, Longitude: point.Longitude,
+			OutsideTemp: cloneFloat(finiteHistorySample(point.OutsideTemp)),
 		})
 	}
 	return result
@@ -270,24 +295,8 @@ func (s *telemetryService) importHistory(ctx context.Context, userID string, veh
 	if s == nil {
 		return historyImportResult{}, errors.New("telemetry_not_configured")
 	}
-	release, err := acquireHistoryHeavyBudget(ctx, userID, vehicleID)
-	if err != nil {
-		return historyImportResult{}, err
-	}
-	defer release()
-	return s.importHistoryAdmitted(ctx, userID, vehicleID, request)
-}
-
-// Caller holds the shared history permit through conversion and persistence.
-func (s *telemetryService) importHistoryAdmitted(ctx context.Context, userID string, vehicleID int, request historyImportRequest) (historyImportResult, error) {
-	if s == nil {
-		return historyImportResult{}, errors.New("telemetry_not_configured")
-	}
 	drives := make([]telemetrySession, 0, len(request.Drives))
 	for _, item := range request.Drives {
-		if err := ctx.Err(); err != nil {
-			return historyImportResult{}, err
-		}
 		session, err := item.toTelemetrySession(userID, vehicleID, "drive", request.Source, request.SourceInstanceID, request.SourceVehicleID)
 		if err != nil {
 			return historyImportResult{}, err
@@ -296,9 +305,6 @@ func (s *telemetryService) importHistoryAdmitted(ctx context.Context, userID str
 	}
 	charges := make([]telemetrySession, 0, len(request.Charges))
 	for _, item := range request.Charges {
-		if err := ctx.Err(); err != nil {
-			return historyImportResult{}, err
-		}
 		session, err := item.toTelemetrySession(userID, vehicleID, "charge", request.Source, request.SourceInstanceID, request.SourceVehicleID)
 		if err != nil {
 			return historyImportResult{}, err
@@ -306,9 +312,6 @@ func (s *telemetryService) importHistoryAdmitted(ctx context.Context, userID str
 		charges = append(charges, session)
 	}
 	if s.memory != nil {
-		if err := ctx.Err(); err != nil {
-			return historyImportResult{}, err
-		}
 		s.memory.importSessions(userID, vehicleID, drives, charges)
 		return historyImportResult{ImportedDrives: len(drives), ImportedCharges: len(charges)}, nil
 	}
@@ -391,7 +394,7 @@ func upsertImportedSessionPostgres(ctx context.Context, tx pgx.Tx, userID string
 				if parseErr != nil {
 					continue
 				}
-				old.Route = append(old.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading})
+				old.Route = append(old.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading, BatteryLevel: cloneInt(observedRouteBatteryLevel(point.BatteryLevel))})
 			}
 		} else if err = json.Unmarshal(oldRoute, &old.Route); err != nil {
 			return err
@@ -452,12 +455,6 @@ func (a *app) historyImport(w http.ResponseWriter, r *http.Request, userID strin
 		a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
 	}
-	release, err := acquireHistoryHeavyBudget(r.Context(), userID, vehicleID)
-	if err != nil {
-		a.historyAdmissionError(w, err)
-		return
-	}
-	defer release()
 	request, err := importRequestFromBody(w, r)
 	if err != nil {
 		var validationErr *historyImportSessionValidationError
@@ -476,17 +473,8 @@ func (a *app) historyImport(w http.ResponseWriter, r *http.Request, userID strin
 	// Archive callers must use /history/archive/import so old clients cannot
 	// change source provenance or quality semantics by adding new JSON fields.
 	request.Source, request.SourceInstanceID, request.SourceVehicleID, request.ChunkID = "", "", "", ""
-	result, err := a.telemetry.importHistoryAdmitted(r.Context(), userID, vehicleID, request)
+	result, err := a.telemetry.importHistory(r.Context(), userID, vehicleID, request)
 	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			a.json(w, http.StatusRequestTimeout, map[string]string{"error": err.Error()})
-			return
-		}
-		if errors.Is(err, errHistoryResourceOverloaded) {
-			w.Header().Set("Retry-After", "1")
-			a.json(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
-			return
-		}
 		var validationErr *historyImportSessionValidationError
 		if errors.As(err, &validationErr) {
 			a.json(w, http.StatusBadRequest, map[string]string{"error": validationErr.Message})
@@ -569,6 +557,15 @@ func mergeImportedSession(incoming, cached telemetrySession) telemetrySession {
 			if point.Heading == nil {
 				point.Heading = old.Heading
 			}
+			if point.BatteryLevel == nil {
+				point.BatteryLevel = cloneInt(old.BatteryLevel)
+			}
+			if point.InsideTemp == nil {
+				point.InsideTemp = cloneFloat(old.InsideTemp)
+			}
+			if point.OutsideTemp == nil {
+				point.OutsideTemp = cloneFloat(old.OutsideTemp)
+			}
 			points[index] = point
 		} else if len(points) < maxImportRoutePointsPerItem || len(points) < len(cached.Route) {
 			indices[key] = len(points)
@@ -591,6 +588,9 @@ func mergeImportedSession(incoming, cached telemetrySession) telemetrySession {
 			}
 			if point.ChargerPower == nil {
 				point.ChargerPower = old.ChargerPower
+			}
+			if point.OutsideTemp == nil {
+				point.OutsideTemp = cloneFloat(old.OutsideTemp)
 			}
 			if point.Latitude == nil {
 				point.Latitude = old.Latitude

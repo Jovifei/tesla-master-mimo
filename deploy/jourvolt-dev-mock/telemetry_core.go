@@ -310,12 +310,15 @@ type telemetrySnapshot struct {
 }
 
 type telemetryRoutePoint struct {
-	ObservedAt time.Time
-	Latitude   float64
-	Longitude  float64
-	Speed      *float64
-	Power      *float64
-	Heading    *float64
+	ObservedAt   time.Time
+	Latitude     float64
+	Longitude    float64
+	Speed        *float64
+	Power        *float64
+	Heading      *float64
+	BatteryLevel *int     `json:",omitempty"`
+	InsideTemp   *float64 `json:",omitempty"`
+	OutsideTemp  *float64 `json:",omitempty"`
 }
 
 func downsampleRoutePoints(points []telemetryRoutePoint, minInterval time.Duration) []telemetryRoutePoint {
@@ -372,6 +375,7 @@ type telemetryChargePoint struct {
 	ChargerPower *float64
 	Latitude     *float64
 	Longitude    *float64
+	OutsideTemp  *float64 `json:",omitempty"`
 }
 
 func classifyTelemetrySession(session telemetrySession) (string, string) {
@@ -609,7 +613,7 @@ func (m *telemetrySessionMachine) appendChargePoint(point telemetryChargePoint) 
 	if m.charge == nil || point.ObservedAt.IsZero() {
 		return
 	}
-	if point.BatteryLevel == nil && point.EnergyAdded == nil && point.ChargerPower == nil && point.Latitude == nil {
+	if point.BatteryLevel == nil && point.EnergyAdded == nil && point.ChargerPower == nil && point.Latitude == nil && point.OutsideTemp == nil {
 		return
 	}
 	m.charge.ChargePoints = append(m.charge.ChargePoints, point)
@@ -737,6 +741,23 @@ func cloneTelemetrySession(value *telemetrySession) *telemetrySession {
 	}
 	copyValue := *value
 	copyValue.Route = append([]telemetryRoutePoint(nil), value.Route...)
+	for index := range copyValue.Route {
+		copyValue.Route[index].BatteryLevel = cloneInt(value.Route[index].BatteryLevel)
+		copyValue.Route[index].InsideTemp = cloneFloat(value.Route[index].InsideTemp)
+		copyValue.Route[index].OutsideTemp = cloneFloat(value.Route[index].OutsideTemp)
+	}
+	copyValue.ArchiveRoute = append([]historyImportRoutePoint(nil), value.ArchiveRoute...)
+	for index := range copyValue.ArchiveRoute {
+		copyValue.ArchiveRoute[index].BatteryLevel = cloneInt(value.ArchiveRoute[index].BatteryLevel)
+		copyValue.ArchiveRoute[index].InsideTemp = cloneFloat(value.ArchiveRoute[index].InsideTemp)
+		copyValue.ArchiveRoute[index].OutsideTemp = cloneFloat(value.ArchiveRoute[index].OutsideTemp)
+		if value.ArchiveRoute[index].ClimateInfo != nil {
+			copyValue.ArchiveRoute[index].ClimateInfo = &historyImportClimateInfo{
+				InsideTemp:  cloneFloat(value.ArchiveRoute[index].ClimateInfo.InsideTemp),
+				OutsideTemp: cloneFloat(value.ArchiveRoute[index].ClimateInfo.OutsideTemp),
+			}
+		}
+	}
 	copyValue.ChargePoints = cloneTelemetryChargePoints(value.ChargePoints)
 	return &copyValue
 }
@@ -748,6 +769,7 @@ func cloneTelemetryChargePoints(values []telemetryChargePoint) []telemetryCharge
 		copyValue.BatteryLevel = cloneInt(value.BatteryLevel)
 		copyValue.EnergyAdded = cloneFloat(value.EnergyAdded)
 		copyValue.ChargerPower = cloneFloat(value.ChargerPower)
+		copyValue.OutsideTemp = cloneFloat(value.OutsideTemp)
 		copyValue.Latitude = cloneFloat(value.Latitude)
 		copyValue.Longitude = cloneFloat(value.Longitude)
 		result = append(result, copyValue)
