@@ -1,0 +1,38 @@
+name: Energy stage source review bundle
+on:
+  push:
+    branches: [codex/reliable-data-stage-20261007]
+    paths: [.github/workflows/energy-source-review.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Package only approved repository Git source and identities
+        run: |
+          set -euo pipefail
+          mkdir source-evidence
+          api=bb09fac04d11796ce676555dad094776cd1ef0ce
+          phone=14ca59d54ba8c470abb45d01798a23919f47bb63
+          test "$(git rev-parse "$api^{tree}")" = e06e83b2dde8ba40601f7a931821f7a6c59d360f
+          test "$(git rev-parse "$phone^{tree}")" = a4c439fd7101646b69a31f9644c8f9b5316c9647
+          git update-ref refs/heads/energy-evidence-stage HEAD
+          git update-ref refs/heads/energy-evidence-api "$api"
+          git update-ref refs/heads/energy-evidence-phone "$phone"
+          git bundle create source-evidence/approved-sources.bundle refs/heads/energy-evidence-stage refs/heads/energy-evidence-api refs/heads/energy-evidence-phone
+          git bundle verify source-evidence/approved-sources.bundle
+          for ref in HEAD "$api" "$phone"; do
+            git rev-parse "$ref" "$ref^{tree}" "$ref^"
+          done > source-evidence/SOURCE_IDENTITIES.txt
+          sha256sum source-evidence/approved-sources.bundle > source-evidence/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: energy-approved-source-bundle
+          retention-days: 7
+          path: source-evidence/
