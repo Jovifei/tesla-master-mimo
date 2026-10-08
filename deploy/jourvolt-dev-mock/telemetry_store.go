@@ -360,6 +360,11 @@ func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehi
 				continue
 			}
 			route, _ := json.Marshal(completed.Route)
+            // Existing JSON records contain a bounded energy contract at the
+            // last observation, permitting list reads without full traces.
+            if completed.Kind=="charge" && completed.Source=="telemetry_mqtt" && len(completed.ChargePoints)>0 {
+                completed.ChargePoints[len(completed.ChargePoints)-1].EnergyContract=completedSessionEnergyContract(completed)
+            }
 			chargePoints, _ := json.Marshal(completed.ChargePoints)
 			qualityState, qualityReason := classifyTelemetrySession(completed)
 			if _, err := tx.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET ended_at=$1, odometer_start=$2, odometer_end=$3, energy_added=$4, route_json=$5::jsonb, charge_points_json=$6::jsonb, stop_candidate_at=NULL, completion_key=$7, source='telemetry_mqtt', quality_state=$8, quality_reason=$9 WHERE id=$10 AND ended_at IS NULL`, completed.EndAt, completed.OdometerStart, completed.OdometerEnd, completed.EnergyAdded, route, chargePoints, completed.CompletionKey, qualityState, qualityReason, completed.ID); err != nil {
