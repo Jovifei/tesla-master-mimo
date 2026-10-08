@@ -9,6 +9,7 @@ class SyncRepositoryApiEvidenceRedTest {
     fun normalSummaryWritesPersistExactApiEvidenceBeforeRoomUpsert() {
         val source = File("src/main/java/com/matelink/data/sync/SyncRepository.kt").readText()
 
-        assertTrue(source.contains("apiEvidence = HistorySummaryEvidenceCodec.encode(this)"))
+        assertTrue(source.contains("apiEvidence = HistorySummaryEvidenceCodec.encode(normalized)"))
+        assertTrue(source.contains("val normalized = withQualifiedEnergy()"))
     }
 }
