@@ -136,6 +136,8 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
+      - name: Independent DAO SQL semantics against real Room query text
+        run: python3 tools/energy-stage/verify-energy-dao-sql.py
       - name: Isolated Debug and Release regression, lint and R8
         run: bash tools/energy-stage/android-ci.sh
       - name: Upload Android evidence (unsigned candidate only)
