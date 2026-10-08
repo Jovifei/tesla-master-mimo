@@ -141,13 +141,13 @@ SELECT s.id, s.public_id, s.started_at, s.ended_at, s.odometer_start, s.odometer
        s.start_address, s.end_address, s.address, s.cost,
        NULLIF(s.route_json->0->>'latitude','')::double precision,
        NULLIF(s.route_json->0->>'longitude','')::double precision,
-       NULLIF(s.route_json->(jsonb_array_length(s.route_json)-1)->>'latitude','')::double precision,
-       NULLIF(s.route_json->(jsonb_array_length(s.route_json)-1)->>'longitude','')::double precision,
+       NULLIF(s.route_json->(jsonb_array_length(CASE WHEN jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)-1)->>'latitude','')::double precision,
+       NULLIF(s.route_json->(jsonb_array_length(CASE WHEN jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)-1)->>'longitude','')::double precision,
        `+historySOCAtPosition("observed.first_position")+`,
        `+historySOCAtPosition("observed.last_position")+`,
        observed.speed_max, observed.speed_avg, observed.speed_count,
        observed.inside_temp_avg, observed.outside_temp_avg,
-       CASE WHEN s.kind='charge' AND s.source='telemetry_mqtt' AND jsonb_array_length(s.charge_points_json)>0
+       CASE WHEN s.kind='charge' AND s.source='telemetry_mqtt' AND jsonb_array_length(CASE WHEN jsonb_typeof(s.charge_points_json)='array' THEN s.charge_points_json ELSE '[]'::jsonb END)>0
             THEN s.charge_points_json->-1->'EnergyContract' ELSE NULL END,
        p.sequence
 FROM page_ids p
@@ -170,7 +170,7 @@ LEFT JOIN LATERAL (
             CASE WHEN s.kind='drive' THEN CASE WHEN s.source='teslamate_archive' THEN point.value->'speed' ELSE point.value->'Speed' END END AS speed,
             CASE WHEN s.kind='drive' THEN COALESCE(NULLIF(point.value->'climate_info'->'inside_temp','null'::jsonb),NULLIF(point.value->'inside_temp','null'::jsonb),point.value->'InsideTemp') END AS inside_temp,
             COALESCE(NULLIF(point.value->'climate_info'->'outside_temp','null'::jsonb),NULLIF(point.value->'outside_temp','null'::jsonb),point.value->'OutsideTemp') AS outside_temp
-          FROM jsonb_array_elements(CASE WHEN s.kind='charge' THEN s.charge_points_json ELSE s.route_json END)
+          FROM jsonb_array_elements(CASE WHEN s.kind='charge' AND jsonb_typeof(s.charge_points_json)='array' THEN s.charge_points_json WHEN s.kind<>'charge' AND jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)
             WITH ORDINALITY AS point(value, ordinality)
         ) raw
     ) normalized
