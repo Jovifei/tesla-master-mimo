@@ -44,13 +44,12 @@ object ChargeStatsCalculator {
         }
 
         // Energy stats
-        val energyAdded = detail.chargeEnergyAdded?.takeIf { it.isFinite() && it >= 0.0 }
-        val energyUsed = detail.chargeEnergyUsed?.takeIf { it.isFinite() && it >= 0.0 }
-        val efficiency = if (energyAdded != null && energyUsed != null && energyUsed > 0.0) {
-            (energyAdded / energyUsed * 100.0).takeIf { it.isFinite() && energyAdded <= energyUsed }
-        } else {
-            null
-        }
+        val energyAdded = detail.batteryInputKwh
+        val energyUsed = detail.inputEnergyKwh
+        // Two legacy scalars do not prove a shared AC measurement window.
+        val efficiency = com.matelink.domain.analytics.qualifiedAcEnergyBalance(
+            detail.energyContract, detail.startDate, detail.endDate, detail.chargeType
+        )?.efficiencyPercent
 
         return ChargeDetailStats(
             powerMax = powerMax,

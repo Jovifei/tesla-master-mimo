@@ -110,32 +110,34 @@ interface DriveSummaryDao {
     suspend fun sumDistanceInRange(carId: Int, startDate: String, endDate: String): Double
 
     // Total energy consumed
-    @Query("SELECT COALESCE(SUM(energyConsumed), 0) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
-    suspend fun sumEnergyConsumed(carId: Int): Double
+    @Query("SELECT SUM(energyConsumed) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND energyConsumed IS NOT NULL")
+    suspend fun sumEnergyConsumed(carId: Int): Double?
 
     @Query("""
-        SELECT COALESCE(SUM(energyConsumed), 0) FROM drives_summary
-        WHERE carId = :carId
+        SELECT SUM(energyConsumed) FROM drives_summary
+        WHERE carId = :carId AND energyConsumed IS NOT NULL
         AND qualityState IN ('observed', 'derived')
         AND startDate >= :startDate AND startDate < :endDate
     """)
-    suspend fun sumEnergyConsumedInRange(carId: Int, startDate: String, endDate: String): Double
+    suspend fun sumEnergyConsumedInRange(carId: Int, startDate: String, endDate: String): Double?
 
     // Average efficiency
     @Query("""
-        SELECT COALESCE(SUM(energyConsumed) * 1000 / NULLIF(SUM(distance), 0), 0)
+        SELECT SUM(energyConsumed) * 1000.0 / NULLIF(SUM(distance), 0)
         FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')
+        AND energyConsumed IS NOT NULL AND distance > 0
     """)
-    suspend fun avgEfficiency(carId: Int): Double
+    suspend fun avgEfficiency(carId: Int): Double?
 
     @Query("""
-        SELECT COALESCE(SUM(energyConsumed) * 1000 / NULLIF(SUM(distance), 0), 0)
+        SELECT SUM(energyConsumed) * 1000.0 / NULLIF(SUM(distance), 0)
         FROM drives_summary
         WHERE carId = :carId
         AND qualityState IN ('observed', 'derived')
+        AND energyConsumed IS NOT NULL AND distance > 0
         AND startDate >= :startDate AND startDate < :endDate
     """)
-    suspend fun avgEfficiencyInRange(carId: Int, startDate: String, endDate: String): Double
+    suspend fun avgEfficiencyInRange(carId: Int, startDate: String, endDate: String): Double?
 
     // Max speed ever
     @Query("SELECT MAX(speedMax) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")

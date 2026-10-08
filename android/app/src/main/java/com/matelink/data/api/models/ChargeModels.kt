@@ -41,8 +41,8 @@ data class ChargeData(
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
     val startRatedRangeKm: Double? get() = rangeRated?.startRange
     val endRatedRangeKm: Double? get() = rangeRated?.endRange
-    val batteryInputKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate)
-    val inputEnergyKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate)
+    val batteryInputKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate, "battery_input")
+    val inputEnergyKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate, "ac_charger_input")
 }
 
 @JsonClass(generateAdapter = true)
@@ -114,14 +114,20 @@ data class ChargeDetail(
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
     val currentBatteryLevel: Int? get() = batteryDetails?.currentBatteryLevel
     val currentOrEndBatteryLevel: Int? get() = currentBatteryLevel ?: endBatteryLevel
-    val batteryInputKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate)
-    val inputEnergyKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate)
+    val batteryInputKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate, "battery_input")
+    val inputEnergyKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate, "ac_charger_input")
 }
 
 /** An explicit unknown contract must never resurrect a historical scalar. */
-private fun qualifiedChargeValue(contract: EnergyContract?, metric: EnergyMetric?, legacy: Double?, start: String?, end: String?): Double? =
-    (if (contract == null) legacy else contract.takeIf { it.version == 1 }?.let { metric?.valueForWindow(start, end) })
-        ?.takeIf { it.isFinite() && it >= 0.0 }
+private fun qualifiedChargeValue(
+    contract: EnergyContract?, metric: EnergyMetric?, legacy: Double?,
+    start: String?, end: String?, purpose: String
+): Double? {
+    if (contract == null) return legacy?.takeIf { it.isFinite() && it >= 0.0 }
+    if (contract.version != 1 || metric?.method != "session_counter_delta" ||
+        metric.measurementPoint != purpose) return null
+    return metric.valueForWindow(start, end)?.takeIf { it >= 0.0 }
+}
 
 @JsonClass(generateAdapter = true)
 data class ChargePoint(

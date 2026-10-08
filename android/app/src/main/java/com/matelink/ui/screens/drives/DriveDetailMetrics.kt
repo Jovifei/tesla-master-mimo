@@ -36,8 +36,13 @@ internal fun presentDriveDetailEnergy(
     val value = energyKwh?.takeIf(Double::isFinite)?.takeIf {
         source != DriveDetailEnergySource.POWER_SAMPLES || ratio?.let { it >= 1.0 - 1e-9 } == true
     }
-    if (source == null || value == null) {
-        return DriveDetailEnergyPresentation(null, null, null, coverageSeconds?.takeIf { it >= 0L }, ratio, evidence)
+    if (source == null) {
+        return DriveDetailEnergyPresentation(null, null, null, coverageSeconds?.takeIf { it >= 0L }, null, evidence)
+    }
+    if (value == null) {
+        return DriveDetailEnergyPresentation(null, null,
+            if (source == DriveDetailEnergySource.POWER_SAMPLES) source else null,
+            coverageSeconds?.takeIf { it >= 0L }, ratio, evidence)
     }
     return DriveDetailEnergyPresentation(value, efficiencyWhKm?.takeIf(Double::isFinite), source,
         coverageSeconds?.takeIf { it >= 0L }, ratio, evidence)
@@ -76,7 +81,7 @@ internal fun calculateDriveDetailStats(detail: DriveDetail, energy: DriveDetailE
         elevationMax = elevations.maxOrNull(), elevationMin = elevations.minOrNull(),
         elevationGain = gain, elevationLoss = loss,
         batteryStart = startBattery, batteryEnd = endBattery,
-        batteryUsed = if (startBattery != null && endBattery != null) startBattery - endBattery else null,
+        batteryUsed = if (startBattery != null && endBattery != null && startBattery >= endBattery) startBattery - endBattery else null,
         energy = energy, distance = distance, durationMin = duration,
         avgSpeedFromDistance = if (distance != null && seconds != null && seconds > 0.0) (distance / seconds * 3600.0).takeIf(Double::isFinite) else null,
         outsideTempAvg = detail.outsideTempAvg?.takeIf(Double::isFinite),

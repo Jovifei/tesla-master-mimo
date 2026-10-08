@@ -317,10 +317,11 @@ private fun DriveDetailContent(
                     ),
                     StatItem(
                         energySourceLabel,
-                        when (s.energy.source) {
-                            DriveDetailEnergySource.API -> stringResource(R.string.energy_source_api_reported)
-                            DriveDetailEnergySource.POWER_SAMPLES -> stringResource(R.string.range_estimated)
-                            null -> notAvailableLabel
+                        when {
+                            s.energy.energyKwh == null -> notAvailableLabel
+                            s.energy.isEstimated -> stringResource(R.string.range_estimated)
+                            s.energy.source == DriveDetailEnergySource.API -> stringResource(R.string.energy_source_api_reported)
+                            else -> notAvailableLabel
                         }
                     ),
                     StatItem(

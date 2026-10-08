@@ -62,4 +62,8 @@ data class EnergyMetric(
 private fun energyInstant(raw: String?): Instant? = raw?.let { runCatching { Instant.parse(it) }.getOrNull() }
 
 fun EnergyContract?.netValueForWindow(start: String?, end: String?): Double? =
-    this?.takeIf { it.version == 1 }?.netEnergy?.valueForWindow(start, end)
+    this?.takeIf { it.version == 1 }?.netEnergy?.takeIf { metric ->
+        (metric.method == "api_reported_net" && metric.measurementPoint == "reported_net") ||
+            (metric.method == "drive_power_integral" && metric.measurementPoint == "drive_power") ||
+            (metric.method == "energy_remaining_delta" && metric.measurementPoint == "nominal_battery_remaining")
+    }?.valueForWindow(start, end)
