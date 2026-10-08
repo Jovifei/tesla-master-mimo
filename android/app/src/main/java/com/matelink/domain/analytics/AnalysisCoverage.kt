@@ -7,7 +7,8 @@ import com.matelink.util.parseIsoInstant
 data class AnalysisDriveCoverageSample(
     val distanceKm: Double?,
     val energyKwh: Double?,
-    val observedAt: String?
+    val observedAt: String?,
+    val energyQuality: String? = null
 )
 
 data class AnalysisChargeCoverageSample(
@@ -35,7 +36,9 @@ data class AnalysisCoverage(
     val chargeEnergyUsedSampleCount: Int = 0,
     val chargeLossSampleCount: Int = 0,
     val chargeEnergyUsedForLossKwh: Double? = null,
-    val chargeEnergyAddedForLossKwh: Double? = null
+    val chargeEnergyAddedForLossKwh: Double? = null,
+    /** A positive count means the aggregate must be labeled estimated. */
+    val driveEnergyEstimatedSampleCount: Int = 0
 ) {
     val distanceCoveragePercent: Double?
         get() = coverage(driveDistanceSampleCount, driveRecordCount)
@@ -78,6 +81,9 @@ fun buildAnalysisCoverage(
         driveRecordCount = drives.size,
         driveDistanceSampleCount = drives.count { it.distanceKm.isValidNonNegative() },
         driveEnergySampleCount = drives.count { it.energyKwh.isValidSigned() },
+        driveEnergyEstimatedSampleCount = drives.count {
+            it.energyKwh.isValidSigned() && it.energyQuality != "reported"
+        },
         chargeRecordCount = charges.size,
         chargeEnergySampleCount = charges.count { it.energyAddedKwh.isValidNonNegative() },
         chargeCostSampleCount = charges.count { it.cost.isValidNonNegative() },

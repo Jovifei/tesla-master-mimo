@@ -124,7 +124,8 @@ class StatsRepository @Inject constructor(
                 AnalysisDriveCoverageSample(
                     distanceKm = it.distance,
                     energyKwh = it.netEnergyKwh,
-                    observedAt = it.startDate
+                    observedAt = it.startDate,
+                    energyQuality = it.energyContract?.netEnergy?.quality
                 )
             },
             charges = analysisCharges.map {

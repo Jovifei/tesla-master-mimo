@@ -18,6 +18,23 @@ class AnalysisSummaryTest {
     }
 
     @Test
+    fun mixedPowerEstimateAndReportedDriveEnergyNeverShowsAsPureObservation() {
+        val coverage = buildAnalysisCoverage(
+            drives = listOf(
+                AnalysisDriveCoverageSample(10.0, 2.0, "2026-01-01", energyQuality = "reported"),
+                AnalysisDriveCoverageSample(10.0, -0.5, "2026-01-02", energyQuality = "estimated")
+            ),
+            charges = emptyList()
+        )
+        assertEquals(1, coverage.driveEnergyEstimatedSampleCount)
+        val summary = buildAnalysisSummary(sampleStats(), coverage)
+        assertEquals(MetricEvidence.ESTIMATED,
+            available(summary.drivingEnergyKwh).evidence)
+        assertEquals(MetricEvidence.ESTIMATED,
+            available(summary.efficiencyWhKm).evidence)
+    }
+
+    @Test
     fun unavailableCostIsNotRenderedAsZero() {
         val summary = buildAnalysisSummary(sampleStats().copy(totalCost = null))
 
@@ -229,16 +246,23 @@ class AnalysisSummaryTest {
 
     @Test
     fun nullableTotalsStayUnknownAndSignedNetRecoveryIsRetained() {
+        // QuickStats retains a legacy non-null charging total; only explicit
+        // coverage can prove that the legacy zero is an unavailable placeholder.
         val unknown = sampleStats().copy(
             totalEnergyConsumedKwh = null,
-            totalEnergyAddedKwh = null,
+            totalEnergyAddedKwh = 0.0,
             avgEfficiencyWhKm = null
         )
-        val missing = buildAnalysisSummary(unknown)
+        val missingCoverage = AnalysisCoverage(
+            driveRecordCount = 4, driveDistanceSampleCount = 4, driveEnergySampleCount = 0,
+            chargeRecordCount = 2, chargeEnergySampleCount = 0, chargeCostSampleCount = 0,
+            firstObservedDate = null, lastObservedDate = null
+        )
+        val missing = buildAnalysisSummary(unknown, missingCoverage)
         assertTrue(missing.drivingEnergyKwh is MetricState.Unavailable)
         assertTrue(missing.chargedEnergyKwh is MetricState.Unavailable)
         assertTrue(missing.efficiencyWhKm is MetricState.Unavailable)
-        assertTrue(buildAnalysisConclusions(unknown).averageChargeEnergyKwh is MetricState.Unavailable)
+        assertTrue(buildAnalysisConclusions(unknown, missingCoverage).averageChargeEnergyKwh is MetricState.Unavailable)
         val recovered = buildAnalysisSummary(sampleStats().copy(
             totalEnergyConsumedKwh = -0.5,
             avgEfficiencyWhKm = -5.0
