@@ -1,0 +1,15 @@
+# Local Codex fixed-SHA energy release validation prompt — 2026-10-09
+
+Receive the final immutable source SHA and actual Actions run from remote handoff / Draft PR #17. This is **independent verification**, not a request to implement business code.
+
+Only repository: Jovifei/tesla-master-mimo. Read docs/ENERGY-REPAIR-CLEANUP-STAGE-20261008.md, docs/ENERGY-STAGE-RECOVERY-20261008.md (recovery branch if needed), and docs/ENERGY-STAGE-FIXED-SHA-HANDOFF-20261009.md from the final candidate. Independently verify final HEAD/tree/parent, PR diff, source and API baseline compatibility. The Android candidate is build46; the deployed API product baseline is bb09fac04d11796ce676555dad094776cd1ef0ce. Do not conflate the two source trees.
+
+Preserve all Owner dirty edits, app data, user login, photos, backups, logs and entire vehicle history. Create clean independent checkouts/worktrees. Never reset/clean/stash Owner tree, uninstall/clear app, force downgrade, leak secrets, alter VPN/network/DNS/TTL, wake vehicle, manufacture trips, replay production events, run prod DDL or backfill old 6 SOC/7113 TPMS records.
+
+Run a complete independent matrix on disposable resources: Go all-package tests, PG16, race and resource; Android Debug and Release test, lint, R8/assemble; unit-provenance, zero/negative/null/nonfinite, weighted SQL oracle, 1ms/gap/reordered/duplicate samples, charging AC/battery counter scope/replay, parking uninterrupted interval, tenant/vehicle/source mismatch, offline/cache/cancel/restart. Record every command, exit code, pass/fail/skip, SHA, tree, software version and evidence type; don't copy old test counts. Never run Go openStore against production.
+
+Sign using locally held unchanged production signing property/key and explicit verified production API/AppLink hosts; verify same signing cert and app package com.matelink, build46 and APK SHA. With authority already granted and after local preflight PASS, perform `adb install -r` only; compare app data/login/first-install and history retained. No instrumentation on the user's data-bearing phone. Device steps need safety review before actions that can lose data.
+
+Without fabricating a natural event, inspect existing real vehicle history for precision/source/estimated labels and charge/parking UI. A genuinely new natural Fleet trip/charge, passive push delivery and second real user may remain PENDING_NATURAL/PENDING_HUMAN; do not represent TeslaMate archive or mock fixtures as these. Use read-only sources and redacted per-stage timings.
+
+Return *one consolidated evidence bundle* through GitHub in this repo: manifest, test matrix, exact source SHA/tree/parent, Actions run/job URLs and true pass/fail/skip, local signed package hash/certificate-match result, device install/data-retention outcome, live observations, safety checks, fault reproduction, rollback outcome, human gates. If any software failure exists, return its exact stack trace/classification to remote implementer without changing business code. Do not merge main, deploy the API/bridge or run history writes until all respective explicit gates are met.
