@@ -26,6 +26,7 @@ type boundedHistoryPageRow struct {
 	StartBatteryLevel *int
 	EndBatteryLevel   *int
 	Metrics           historySampleMetrics
+    EnergyContract map[string]any
 	Sequence          int
 }
 
@@ -146,6 +147,8 @@ SELECT s.id, s.public_id, s.started_at, s.ended_at, s.odometer_start, s.odometer
        `+historySOCAtPosition("observed.last_position")+`,
        observed.speed_max, observed.speed_avg, observed.speed_count,
        observed.inside_temp_avg, observed.outside_temp_avg,
+       CASE WHEN s.kind='charge' AND s.source='telemetry_mqtt' AND jsonb_array_length(s.charge_points_json)>0
+            THEN s.charge_points_json->-1->'EnergyContract' ELSE NULL END,
        p.sequence
 FROM page_ids p
 JOIN jourvolt_telemetry_sessions s ON s.id=p.id
@@ -185,6 +188,7 @@ ORDER BY p.started_at DESC, p.public_id DESC
 			return nil, err
 		}
 		var row boundedHistoryPageRow
+        var contractJSON []byte
 		var startLatitude, startLongitude, endLatitude, endLongitude *float64
 		if err := rows.Scan(
 			&row.Session.ID, &row.Session.PublicID, &row.Session.StartAt, &row.Session.EndAt,
@@ -195,11 +199,14 @@ ORDER BY p.started_at DESC, p.public_id DESC
 			&startLatitude, &startLongitude, &endLatitude, &endLongitude,
 			&row.StartBatteryLevel, &row.EndBatteryLevel,
 			&row.Metrics.SpeedMax, &row.Metrics.SpeedAvg, &row.Metrics.SpeedCount,
-			&row.Metrics.InsideTempAvg, &row.Metrics.OutsideTempAvg, &row.Sequence,
+			&row.Metrics.InsideTempAvg, &row.Metrics.OutsideTempAvg, &contractJSON, &row.Sequence,
 		); err != nil {
 			return nil, err
 		}
 		row.Session.Kind = kind
+        if len(contractJSON)>0 && string(contractJSON)!="null" {
+            if err:=json.Unmarshal(contractJSON,&row.EnergyContract); err!=nil {return nil,err}
+        }
 		if startLatitude != nil && startLongitude != nil {
 			row.Session.Route = append(row.Session.Route, telemetryRoutePoint{
 				ObservedAt: row.Session.StartAt, Latitude: *startLatitude, Longitude: *startLongitude,
@@ -435,6 +442,9 @@ func (s *telemetryService) historyPageContext(ctx context.Context, userID string
 			return nil, nil, 0, resolvedShow, err
 		}
 		item := historySessionMap(row.Session, kind, row.Sequence)
+        if kind=="charge" && row.Session.Source=="telemetry_mqtt" && row.EnergyContract!=nil {
+            publishChargeEnergyContract(item,row.EnergyContract)
+        }
 		item["battery_details"] = driveBatteryDetails(row.StartBatteryLevel, row.EndBatteryLevel)
 		applyHistorySampleMetrics(item, row.Metrics, kind)
 		items = append(items, item)
