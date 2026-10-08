@@ -1027,7 +1027,7 @@ internal fun SettingsContent(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = stringResource(R.string.settings_release_notes_version),
+                        text = stringResource(R.string.settings_release_notes_version, com.matelink.BuildConfig.VERSION_NAME),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -1083,7 +1083,7 @@ internal fun SettingsContent(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = stringResource(R.string.settings_release_notes_version),
+                        text = stringResource(R.string.settings_release_notes_version, com.matelink.BuildConfig.VERSION_NAME),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold
                     )

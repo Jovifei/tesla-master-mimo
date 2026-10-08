@@ -1089,16 +1089,16 @@
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
     <string name="settings_release_notes_title">This update</string>
-    <string name="settings_release_notes_version">MateLink 2.1.22</string>
+    <string name="settings_release_notes_version">MateLink %1$s</string>
     <string name="tesla_login_choose_browser">Choose a browser for Tesla login</string>
     <string name="settings_release_notes_view">View update notes</string>
     <string name="settings_release_notes_close">Got it</string>
     <string name="settings_switch_to_cloud">Switch to MateLink Cloud</string>
     <string name="settings_switch_to_self_hosted">Switch to local TeslaMate</string>
-<string name="settings_release_notes_body" formatted="false">• Automatic history sync now reports safe failure categories for network, TLS and JSON errors.
-• Cached details preserve unknown battery levels instead of showing 0%; observed zero remains valid.
-• Month labels, full road-stripe loading, map-first details and available Chinese parking labels are included.
-• Sustained synchronization still needs device verification. Missing curves and historical battery readings are not invented.</string>
+<string name="settings_release_notes_body" formatted="false">• Automatic history syncing and cached history now preserve validated vehicle identity and observed data evidence across refreshes.
+• Driving and charging energy display keeps real zero, signed recovery and unknown distinct; estimated values are explicitly labeled, never upgraded to measurements.
+• AC charging loss and efficiency require complete matching observed AC-only mode and counter windows; unknown or mixed-mode charging remains unavailable.
+• Parking energy, late updates and notifications retain their source and quality limits. New natural Fleet events and passive background delivery still require independent device validation.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>
     <string name="settings_resync_dialog_text_delete">This will delete all local data.</string>

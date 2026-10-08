@@ -48,14 +48,32 @@ class SettingsExperienceContractTest {
     @Test
     fun currentReleaseShowsVersionAndLocalizedRepairNotes() {
         val gradle = File("build.gradle.kts").readText()
-        assertTrue(gradle.contains("versionCode = 45"))
-        assertTrue(gradle.contains("versionName = \"2.1.26\""))
+        // The candidate has an explicit release identity, but neither release
+        // note view may hardcode a stale version independent of BuildConfig.
+        val code = Regex("versionCode\\s*=\\s*(\\d+)").find(gradle)
+            ?.groupValues?.get(1)?.toInt()
+        val version = Regex("versionName\\s*=\\s*\"([^\"]+)\"").find(gradle)
+            ?.groupValues?.get(1)
+        assertEquals(46, code)
+        assertEquals("2.1.27", version)
+        assertEquals(version, com.matelink.BuildConfig.VERSION_NAME)
+        val settings = File("src/main/java/com/matelink/ui/screens/settings/SettingsScreen.kt").readText()
+        assertEquals(2, Regex("stringResource\\(R\\.string\\.settings_release_notes_version,\\s*com\\.matelink\\.BuildConfig\\.VERSION_NAME\\)")
+            .findAll(settings).count())
+        assertEquals("MateLink %1\$s", stringValue("values", "settings_release_notes_version"))
+        assertEquals("MateLink %1\$s", stringValue("values-zh", "settings_release_notes_version"))
         assertEquals(
             "本次更新",
             stringValue("values-zh", "settings_release_notes_title")
         )
-        assertTrue(stringValue("values-zh", "settings_release_notes_body").contains("自动"))
-        assertTrue(stringValue("values", "settings_release_notes_body").contains("automatic", ignoreCase = true))
+        val zh = stringValue("values-zh", "settings_release_notes_body")
+        val en = stringValue("values", "settings_release_notes_body")
+        assertTrue(zh.contains("自动"))
+        assertTrue(zh.contains("充电") && zh.contains("未知") && zh.contains("估算"))
+        assertTrue(en.contains("automatic", ignoreCase = true))
+        assertTrue(en.contains("charging", ignoreCase = true))
+        assertTrue(en.contains("unknown", ignoreCase = true))
+        assertTrue(en.contains("estimated", ignoreCase = true))
     }
 
     private fun stringValue(directory: String, name: String): String {

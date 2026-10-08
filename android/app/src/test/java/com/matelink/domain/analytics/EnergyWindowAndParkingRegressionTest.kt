@@ -60,10 +60,23 @@ class EnergyWindowAndParkingRegressionTest {
             method = "session_counter_delta", measurementPoint = "battery_input",
             sourceField = "DCChargingEnergyIn", startDate = start, endDate = end,
             observedStartAt = start, observedEndAt = end,
-            timeBasis = "source_sample_time", coverageKind = "endpoints", coverageRatio = 1.0)
+            timeBasis = "collector_received_at", coverageKind = "endpoints", coverageRatio = 1.0)
         val input = battery.copy(valueKwh = 10.0, measurementPoint = "ac_charger_input", sourceField = "ACChargingEnergyIn")
-        val qualified = detail.copy(energyContract = EnergyContract(batteryInput = battery, acInput = input))
+        // Complete counter endpoints alone cannot establish a full AC-only
+        // session. Without explicit mode evidence, loss and efficiency stay unknown.
+        val unverified = detail.copy(energyContract = EnergyContract(batteryInput = battery, acInput = input))
+        assertNull(ChargeStatsCalculator.calculateStats(unverified).efficiency)
+        // In a distinct complete source-verified AC-only session, 8/10 = 80%.
+        val qualified = unverified.copy(energyContract = EnergyContract(
+            batteryInput = battery,
+            acInput = input,
+            chargeMode = "ac",
+            chargeModeEvidence = "observed_boundary_modes_no_conflict"
+        ))
         assertEquals(80.0, ChargeStatsCalculator.calculateStats(qualified).efficiency!!, 0.00001)
         assertNull(ChargeStatsCalculator.calculateStats(qualified.copy(chargeType = "dc")).efficiency)
+        assertNull(ChargeStatsCalculator.calculateStats(qualified.copy(
+            energyContract = qualified.energyContract!!.copy(chargeModeEvidence = null)
+        )).efficiency)
     }
 }
