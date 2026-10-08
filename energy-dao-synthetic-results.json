@@ -1,0 +1,22 @@
+{
+  "unknown_energy_distance_not_in_denominator": {
+    "actual": 20.0,
+    "expected": 200.0,
+    "pass": false
+  },
+  "all_unknown_stays_unknown": {
+    "actual": 0,
+    "expected": null,
+    "pass": false
+  },
+  "known_zero_is_valid": {
+    "actual": 100.0,
+    "expected": 100.0,
+    "pass": true
+  },
+  "net_recovery_is_valid": {
+    "actual": -50.0,
+    "expected": -50.0,
+    "pass": true
+  }
+}
