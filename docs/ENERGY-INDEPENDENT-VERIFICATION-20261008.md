@@ -12,4 +12,8 @@ APIbb09独立只读审查：native未订阅/保存EnergyRemaining或Power，arch
 
 清理：7个旧验证树可重建缓存/失败日志已移至E:/Claude_allow/Download/matelink-cleanup-recoverable-20261008，可恢复；保留旧outputs/reports/test-results与全部签名/回滚/迁移/有效测试。永久删除操作被自动审批策略阻止，未执行永久删除。逐路径移出回执cleanup-receipt.json保留本机。
 
+进一步只读确认Owner根6项缓存均未跟踪、无reparse、最新内容为10月5日，未见Java/Python指向Owner根。当前Gradle8.9 daemon状态IDLE后，将同样六项移到归档owner-root子目录，1165339366字节；旧验证树619523327字节，合计1784862693字节从工作树移出，未宣称物理磁盘释放。主目录DrivesScreen仍为原1增1减，未覆盖源码；保留outputs/reports/test-results。
+
+Obsidian本项目记录已只读核对，位于notes-personal/codex_memory/03-项目记忆/tesla-speed/tesla-master-app-mimo。最近镜像更新时间9月18日、当前进度段仍是8月29日；不将其中旧版本或旧服务模式当现在运行事实，不写全局记忆。最新仓库回执和实际测试优先。
+
 手机当前已连接，现场只读2.1.26/build45，firstInstallTime2026-08-31 22:36:47；本轮新包尚未安装。原始日志不上传。Hub读取连接拒绝，未声称本轮状态已上报。
