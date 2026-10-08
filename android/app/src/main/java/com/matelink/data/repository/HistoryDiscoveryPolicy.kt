@@ -22,5 +22,8 @@ internal fun historyFailureCategory(error: ApiResult.Error): String =
 
 internal fun historyFailureDiagnostic(stage: String, requestedAt: java.time.Instant, error: ApiResult.Error): String {
     val safeStage = stage.takeIf { it in setOf("cars", "history_context", "drives", "charges", "drive_detail", "charge_detail") } ?: "unknown"
-    return "stage=$safeStage requested_at=$requestedAt http=${error.code ?: "none"} category=${historyFailureCategory(error)}"
+    val detail = if (error.safeFailure == SafeApiFailure.TLS) {
+        error.safeTlsCause?.let { " tls_cause=${it.label}" }.orEmpty()
+    } else ""
+    return "stage=$safeStage requested_at=$requestedAt http=${error.code ?: "none"} category=${historyFailureCategory(error)}$detail"
 }

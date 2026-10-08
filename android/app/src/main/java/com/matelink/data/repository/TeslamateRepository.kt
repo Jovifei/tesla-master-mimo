@@ -72,7 +72,8 @@ sealed class ApiResult<out T> {
         val code: Int? = null,
         val details: String? = null,
         val kind: ApiErrorKind = apiErrorKindFor(code, message),
-        val safeFailure: SafeApiFailure? = null
+        val safeFailure: SafeApiFailure? = null,
+        val safeTlsCause: SafeTlsCause? = null
     ) : ApiResult<Nothing>()
 }
 
@@ -312,8 +313,11 @@ class TeslamateRepository @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                // Never put a throwable message (potentially an authenticated
+                // request URL or identity) into a connection-test UI.
+                val classified = safeApiException(e)
                 ConnectionStepResult.Warning(
-                    message = "Readiness check failed: ${e.message ?: "unknown error"}",
+                    message = "Readiness check failed: ${classified.message}",
                     hint = "Continuing with vehicle check"
                 )
             }

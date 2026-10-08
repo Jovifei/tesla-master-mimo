@@ -11,7 +11,15 @@ import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.time.Instant
+import java.security.cert.CertPathBuilderException
+import java.security.cert.CertPathValidatorException
+import java.security.cert.CertificateException
+import java.security.cert.CertificateExpiredException
+import java.security.cert.CertificateNotYetValidException
+import javax.net.ssl.SSLException
 import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
+import javax.net.ssl.SSLProtocolException
 
 class SafeApiFailureTest {
     private val secret = "https://secret.invalid/VIN?access_token=private body=private id=123"
@@ -40,6 +48,62 @@ class SafeApiFailureTest {
             }
         }
     }
+    @Test fun tlsDiagnosticDiscriminatesCausesByTypeWithoutGuessingTrustAnchorOrHost() {
+        val cases = listOf(
+            SSLHandshakeException(secret) to SafeTlsCause.HANDSHAKE_UNSPECIFIED,
+            SSLException(secret) to SafeTlsCause.TLS_UNSPECIFIED,
+            SSLProtocolException(secret) to SafeTlsCause.PROTOCOL,
+            SSLPeerUnverifiedException(secret) to SafeTlsCause.PEER_UNVERIFIED,
+            SSLHandshakeException(secret).apply {
+                initCause(CertificateExpiredException(secret))
+            } to SafeTlsCause.CERT_EXPIRED,
+            SSLHandshakeException(secret).apply {
+                initCause(CertificateNotYetValidException(secret))
+            } to SafeTlsCause.CERT_NOT_YET_VALID,
+            SSLHandshakeException(secret).apply {
+                initCause(CertPathValidatorException(secret))
+            } to SafeTlsCause.CERT_PATH_VALIDATION,
+            SSLHandshakeException(secret).apply {
+                initCause(CertPathBuilderException(secret))
+            } to SafeTlsCause.CERT_PATH_VALIDATION,
+            SSLHandshakeException(secret).apply {
+                initCause(CertificateException(secret))
+            } to SafeTlsCause.CERT_VALIDATION_OTHER
+        )
+        for ((exception, expected) in cases) {
+            val wrapped = IOException(secret, exception)
+            val error = safeApiException(wrapped)
+            assertEquals(SafeApiFailure.TLS, error.safeFailure)
+            assertEquals(ApiErrorKind.NETWORK, error.kind)
+            assertEquals(expected, error.safeTlsCause)
+            assertEquals("tls", historyFailureCategory(error))
+            val log = historyFailureDiagnostic("history_context", Instant.EPOCH, error)
+            assertTrue(log.contains("category=tls tls_cause=${expected.label}"))
+            assertEquals("Secure connection could not be established", error.message)
+            for (output in listOf(error.toString(), log)) {
+                listOf(secret, "VIN", "access_token", "secret.invalid", "private", "id=123").forEach {
+                    assertFalse(output.contains(it))
+                }
+            }
+        }
+    }
+
+    @Test fun tlsTextCannotSpoofSpecificCertificateCause() {
+        val error = safeApiException(SSLHandshakeException(
+            "PKIX validation expired trust anchor hostname " + secret))
+        assertEquals(SafeTlsCause.HANDSHAKE_UNSPECIFIED, error.safeTlsCause)
+        assertFalse(historyFailureDiagnostic("history_context", Instant.EPOCH, error).contains("cert"))
+    }
+
+    @Test fun unrelatedNetworkFailuresNeverAcquireTlsDetails() {
+        for (exception in listOf(IOException(secret), UnknownHostException(secret),
+                SocketTimeoutException(secret), IllegalArgumentException(secret))) {
+            val error = safeApiException(exception)
+            assertNull(error.safeTlsCause)
+            assertFalse(historyFailureDiagnostic("history_context", Instant.EPOCH, error).contains("tls_cause="))
+        }
+    }
+
     @Test fun specificWrappedCauseWinsAndMessageCannotSpoofClassification() {
         assertEquals(SafeApiFailure.JSON_DATA, safeApiException(IllegalArgumentException(secret, JsonDataException(secret))).safeFailure)
         assertEquals(SafeApiFailure.IO, safeApiException(IOException("JsonReader timed out SSLHandshakeException")).safeFailure)
