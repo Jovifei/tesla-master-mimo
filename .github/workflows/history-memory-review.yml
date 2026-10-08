@@ -1,7 +1,7 @@
 name: History memory isolated verification
 on:
   push:
-    branches: [fix/20261002-history-metadata-memory, codex/history-resource-stage2-20261002]
+    branches: [fix/20261002-history-metadata-memory, codex/history-resource-stage2-20261002, codex/reliable-data-stage-20261007]
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,7 +11,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
@@ -32,11 +32,31 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Record checked-out source
+      - name: Record checked-out source and compatibility inventory
         run: |
+          set -euo pipefail
           mkdir -p evidence
-          git rev-parse HEAD > evidence/SOURCE_HEAD.txt
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/SOURCE_HEAD.txt
           git archive --format=zip HEAD -o evidence/source.zip
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+          api='bb09fac04d11796ce676555dad094776cd1ef0ce'
+          p=subprocess.run(['git','merge-tree','--write-tree','HEAD',api],text=True,capture_output=True)
+          Path('evidence/base-merge-audit.txt').write_text(p.stdout+p.stderr)
+          print('BASE_MERGE_AUDIT exit='+str(p.returncode))
+          print(p.stdout+p.stderr)
+          print('ENERGY_SOURCE_INVENTORY')
+          for root in ('android/app/src/main','android/app/src/test','deploy/jourvolt-dev-mock'):
+              for path in sorted(Path(root).rglob('*')):
+                  if path.is_file() and path.suffix in ('.kt','.go','.xml') and any(s in path.name.lower() for s in ('energy','standby','parked','charge','efficiency')):
+                      print(path)
+          print('TRACKED_GENERATED_CANDIDATES')
+          files=subprocess.check_output(['git','ls-files'],text=True).splitlines()
+          for f in files:
+              if any(s in f.lower() for s in ('/build/','/node_modules/','/dist/','/received','handoff','handroff')) or f.endswith(('.apk','.aab','.zip','.log','.hprof')):
+                  print(f)
+          PY
       - uses: actions/setup-go@v5
         with:
           go-version-file: deploy/jourvolt-dev-mock/go.mod
@@ -49,13 +69,13 @@ jobs:
           go vet ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-vet.log"
           go mod verify 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-mod-verify.log"
           go build ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-build.log"
-      - name: Race regression for history queries
+      - name: Race regression for history and energy queries
         working-directory: deploy/jourvolt-dev-mock
         env:
           JOURVOLT_RUN_LEGACY_MEMORY_BENCH: '0'
         run: |
           set -euo pipefail
-          go test -race -count=1 -run 'Test(CompactTelemetry|NativeShadow|History(Summary|MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL|ReadBudget|ResourceAdmission|HeavyBudget|Import|Archive|DecodeAdmission)|ArchiveImport|Telemetry(PostgresCompactBootstrap|PostgresCompactAdmissionReference|History|PostgresNativeIdentity|PostgresIdleDriveFinalization|PostgresNativeShadow))' ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-race.log"
+          go test -race -count=1 -run 'Test(Energy|ChargeEnergy|Parked|CompactTelemetry|NativeShadow|History(Sample|Energy|Summary|MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL|ReadBudget|ResourceAdmission|HeavyBudget|Import|Archive|DecodeAdmission)|ArchiveImport|Telemetry(PostgresCompactBootstrap|PostgresCompactAdmissionReference|History|PostgresNativeIdentity|PostgresIdleDriveFinalization|PostgresNativeShadow))' ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-race.log"
       - name: Verify mandatory PostgreSQL evidence
         run: |
           python3 - <<'PY'
@@ -94,7 +114,7 @@ jobs:
           set -euo pipefail
           node --experimental-strip-types --test tests/history-pages.test.mjs 2>&1 | tee "$GITHUB_WORKSPACE/evidence/web-history-tests.log"
       - name: Clean Web install and production build
-        timeout-minutes: 4
+        timeout-minutes: 5
         working-directory: web_matelink
         run: |
           set -euo pipefail
@@ -107,3 +127,40 @@ jobs:
           name: history-memory-evidence
           retention-days: 14
           path: evidence/
+  android:
+    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Isolated Debug and Release regression, lint and R8
+        working-directory: android
+        run: |
+          set -euo pipefail
+          mkdir -p ../android-evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ > ../android-evidence/SOURCE_HEAD.txt
+          bash ./gradlew :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease --no-daemon --max-workers=2 \
+            -PJOURVOLT_API_BASE_URL=https://api.teslalink.joviluma.com/ \
+            -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com \
+            -PMATELINK_PUBLIC_INFO_BASE_URL=https://auth.teslalink.joviluma.com \
+            2>&1 | tee ../android-evidence/gradle.log
+      - name: Upload Android evidence (unsigned candidate only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: energy-stage-android-evidence
+          retention-days: 14
+          path: |
+            android-evidence/
+            android/app/build/test-results/
+            android/app/build/reports/
+            android/app/build/outputs/apk/
+            android/app/schemas/
