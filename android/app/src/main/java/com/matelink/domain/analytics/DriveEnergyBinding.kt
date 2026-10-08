@@ -14,7 +14,7 @@ fun DriveDetail.resolveDriveEnergy(): ResolvedDriveEnergy {
     if (supplied != null) {
         val metric = supplied.netEnergy
         val value = netEnergyKwh
-        val source = when {
+        val classification = when {
             value == null -> DriveEnergySource.UNAVAILABLE
             metric?.method == "drive_power_integral" -> DriveEnergySource.POWER_SAMPLES
             else -> DriveEnergySource.API
@@ -22,10 +22,12 @@ fun DriveDetail.resolveDriveEnergy(): ResolvedDriveEnergy {
         val seconds = metric?.coverageSeconds?.takeIf { it.isFinite() && it >= 0.0 }
         return ResolvedDriveEnergy(
             DriveEnergyEstimate(value, value?.let { e -> distance?.takeIf { it.isFinite() && it > 0.0 }?.let { (e / it * 1000).takeIf(Double::isFinite) } },
-                source, seconds?.toLong() ?: 0L, seconds ?: 0.0,
+                classification, seconds?.toLong() ?: 0L, seconds ?: 0.0,
                 metric?.coverageRatio?.takeIf { it.isFinite() && it in 0.0..1.0 },
                 metric?.coveredEnergyKwh?.takeIf(Double::isFinite), metric?.reason),
-            metric ?: EnergyMetric(reason = "missing_net_energy", startDate = startDate, endDate = endDate)
+            (metric ?: EnergyMetric(startDate = startDate, endDate = endDate)).let {
+                if (value == null) it.copy(valueKwh = null, quality = "unknown", reason = it.reason ?: "unqualified_energy_contract") else it
+            }
         )
     }
     val estimate = DriveEnergyResolver.resolve(energyConsumedNet, distance,
@@ -54,30 +56,44 @@ fun DriveDetail.resolveDriveEnergy(): ResolvedDriveEnergy {
     return ResolvedDriveEnergy(estimate, metric)
 }
 
-/** Scalar and JSON evidence are updated together; stale evidence cannot mask new detail energy. */
+/** Scalar and JSON evidence are updated together in the same Room upsert. */
 fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: ResolvedDriveEnergy): DriveSummary {
+    require(detail.driveId == driveId) { "history_detail_id_mismatch" }
+    val previous = toAnalysisDriveData()
+    require(previous.source == null || detail.source == null || previous.source == detail.source) { "history_detail_source_mismatch" }
     val estimate = resolved.estimate
-    val evidence = toAnalysisDriveData().copy(
+    val evidence = previous.copy(
         startDate = detail.startDate ?: startDate,
         endDate = detail.endDate ?: endDate,
-        startAddress = detail.startAddress ?: startAddress,
-        endAddress = detail.endAddress ?: endAddress,
-        odometerDetails = detail.odometerDetails ?: toAnalysisDriveData().odometerDetails,
-        batteryDetails = detail.batteryDetails ?: toAnalysisDriveData().batteryDetails,
-        outsideTempAvg = detail.outsideTempAvg ?: outsideTempAvg,
-        insideTempAvg = detail.insideTempAvg ?: insideTempAvg,
-        speedMax = detail.speedMax ?: speedMax,
+        startAddress = detail.startAddress ?: previous.startAddress,
+        endAddress = detail.endAddress ?: previous.endAddress,
+        odometerDetails = detail.odometerDetails ?: previous.odometerDetails,
+        durationMin = detail.durationMin ?: previous.durationMin,
+        batteryDetails = detail.batteryDetails ?: previous.batteryDetails,
+        outsideTempAvg = detail.outsideTempAvg ?: previous.outsideTempAvg,
+        insideTempAvg = detail.insideTempAvg ?: previous.insideTempAvg,
+        speedMax = detail.speedMax ?: previous.speedMax,
+        powerMax = detail.powerMax ?: previous.powerMax,
+        powerMin = detail.powerMin ?: previous.powerMin,
+        source = detail.source ?: previous.source,
         energyConsumedNet = estimate.energyKwh,
         consumptionNet = estimate.efficiencyWhKm,
         energyContract = detail.energyContract ?: EnergyContract(netEnergy = resolved.evidence)
     )
     return copy(
-        energyConsumed = estimate.energyKwh,
-        efficiency = estimate.efficiencyWhKm,
+        startDate = evidence.startDate ?: startDate, endDate = evidence.endDate ?: endDate,
+        durationMin = evidence.durationMin ?: durationMin,
+        startAddress = evidence.startAddress.orEmpty(), endAddress = evidence.endAddress.orEmpty(),
+        distance = evidence.distance?.takeIf { it.isFinite() && it >= 0.0 } ?: distance,
+        startBatteryLevel = evidence.startBatteryLevel ?: 0, endBatteryLevel = evidence.endBatteryLevel ?: 0,
+        outsideTempAvg = evidence.outsideTempAvg?.takeIf(Double::isFinite),
+        insideTempAvg = evidence.insideTempAvg?.takeIf(Double::isFinite),
+        speedMax = evidence.speedMax ?: speedMax, powerMax = evidence.powerMax ?: powerMax, powerMin = evidence.powerMin ?: powerMin,
+        energyConsumed = estimate.energyKwh, efficiency = estimate.efficiencyWhKm,
         energySource = estimate.source.name.lowercase(),
         energyCoverageSeconds = estimate.coverageSeconds,
         energyCoverageRatio = estimate.coverageRatio ?: 0.0,
-        apiEvidence = HistorySummaryEvidenceCodec.encodeDrive(evidence)
+        apiEvidence = HistorySummaryEvidenceCodec.encode(evidence)
     )
 }
 
@@ -93,3 +109,6 @@ fun DriveData.asCachedDetail(): DriveDetail = DriveDetail(
     startLatitude = startLatitude, startLongitude = startLongitude,
     endLatitude = endLatitude, endLongitude = endLongitude, energyContract = energyContract
 )
+
+/** Normalize legacy scalar consumers without throwing away the original provenance. */
+fun DriveData.withQualifiedEnergy(): DriveData = copy(energyConsumedNet = netEnergyKwh, consumptionNet = efficiencyWhKm)

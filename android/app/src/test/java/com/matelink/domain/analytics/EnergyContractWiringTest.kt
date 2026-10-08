@@ -16,7 +16,7 @@ class EnergyContractWiringTest {
     @Test fun apiRoomJsonAndCachedDetailPreserveSignedValuesAndProvenance() {
         listOf(0.0, -0.5, 2.0).forEach { energy ->
             val input = drive(EnergyContract(netEnergy = metric(energy)))
-            val decoded = HistorySummaryEvidenceCodec.decodeDrive(HistorySummaryEvidenceCodec.encodeDrive(input))!!
+            val decoded = HistorySummaryEvidenceCodec.decodeDrive(HistorySummaryEvidenceCodec.encode(input))!!
             assertEquals(input.energyContract, decoded.energyContract)
             assertEquals(energy, decoded.netEnergyKwh!!, 0.0)
             assertEquals(energy / 10.0 * 1000, decoded.efficiencyWhKm!!, 1e-12)
@@ -33,6 +33,7 @@ class EnergyContractWiringTest {
             assertNull(data.netEnergyKwh)
             assertNull(data.efficiencyWhKm)
             assertNull(data.asCachedDetail().resolveDriveEnergy().estimate.energyKwh)
+            assertNull(data.withQualifiedEnergy().energyConsumedNet)
         }
     }
     @Test fun wrongUnitsMeasurementPointOrWindowAreRejected() {

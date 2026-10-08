@@ -5,9 +5,7 @@ import com.squareup.moshi.JsonClass
 import kotlin.math.roundToInt
 
 @JsonClass(generateAdapter = true)
-data class ChargesResponse(
-    @Json(name = "data") val data: ChargesData? = null
-)
+data class ChargesResponse(@Json(name = "data") val data: ChargesData? = null)
 
 @JsonClass(generateAdapter = true)
 data class ChargesData(
@@ -35,13 +33,16 @@ data class ChargeData(
     @Json(name = "longitude") val longitude: Double? = null,
     @Json(name = "source") val source: String? = null,
     @Json(name = "quality_state") val qualityState: String? = null,
-    @Json(name = "quality_reason") val qualityReason: String? = null
+    @Json(name = "quality_reason") val qualityReason: String? = null,
+    @Json(name = "energy_contract") val energyContract: EnergyContract? = null,
+    @Json(name = "charge_type") val chargeType: String? = null
 ) {
-    // Convenience accessors
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
     val startRatedRangeKm: Double? get() = rangeRated?.startRange
     val endRatedRangeKm: Double? get() = rangeRated?.endRange
+    val batteryInputKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate)
+    val inputEnergyKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate)
 }
 
 @JsonClass(generateAdapter = true)
@@ -60,8 +61,6 @@ data class ChargeRange(
 @JsonClass(generateAdapter = true)
 data class ChargeDetailResponse(
     @Json(name = "data") val data: ChargeDetailData? = null,
-    // TeslamateAPI returns HTTP 200 with this error field (and no data) when
-    // there is no active charge, e.g. "No active charging in progress."
     @Json(name = "error") val error: String? = null
 )
 
@@ -107,13 +106,22 @@ data class ChargeDetail(
     @Json(name = "charge_current_request") val chargeCurrentRequest: Double? = null,
     @Json(name = "charge_current_request_max") val chargeCurrentRequestMax: Double? = null,
     @Json(name = "time_to_full_charge") val timeToFullCharge: Double? = null,
-    @Json(name = "fast_charger_present") val fastChargerPresent: Boolean? = null
+    @Json(name = "fast_charger_present") val fastChargerPresent: Boolean? = null,
+    @Json(name = "energy_contract") val energyContract: EnergyContract? = null,
+    @Json(name = "charge_type") val chargeType: String? = null
 ) {
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
     val currentBatteryLevel: Int? get() = batteryDetails?.currentBatteryLevel
     val currentOrEndBatteryLevel: Int? get() = currentBatteryLevel ?: endBatteryLevel
+    val batteryInputKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate)
+    val inputEnergyKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate)
 }
+
+/** An explicit unknown contract must never resurrect a historical scalar. */
+private fun qualifiedChargeValue(contract: EnergyContract?, metric: EnergyMetric?, legacy: Double?, start: String?, end: String?): Double? =
+    (if (contract == null) legacy else contract.takeIf { it.version == 1 }?.let { metric?.valueForWindow(start, end) })
+        ?.takeIf { it.isFinite() && it >= 0.0 }
 
 @JsonClass(generateAdapter = true)
 data class ChargePoint(
@@ -124,13 +132,12 @@ data class ChargePoint(
     @Json(name = "outside_temp") val outsideTemp: Double? = null,
     @Json(name = "battery_info") val batteryInfo: ChargeBatteryInfo? = null
 ) {
-    // Convenience accessors
     val chargerPower: Int? get() = chargerPowerValue?.roundToInt()
-    val chargerPowerValue: Double? get() = chargerDetails?.chargerPower
+    val chargerPowerValue: Double? get() = chargerDetails?.chargerPower?.takeIf(Double::isFinite)
     val chargerVoltage: Int? get() = chargerVoltageValue?.roundToInt()
-    val chargerVoltageValue: Double? get() = chargerDetails?.chargerVoltage
+    val chargerVoltageValue: Double? get() = chargerDetails?.chargerVoltage?.takeIf(Double::isFinite)
     val chargerCurrent: Int? get() = chargerCurrentValue?.roundToInt()
-    val chargerCurrentValue: Double? get() = chargerDetails?.chargerActualCurrent
+    val chargerCurrentValue: Double? get() = chargerDetails?.chargerActualCurrent?.takeIf(Double::isFinite)
 }
 
 @JsonClass(generateAdapter = true)

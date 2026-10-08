@@ -1,4 +1,4 @@
-"""Read-only stage compatibility/call-site evidence. No application or provider is run."""
+"""Read-only stage compatibility/call-site evidence. No provider or database is run."""
 import os
 from pathlib import Path
 import re
@@ -13,9 +13,13 @@ assert topic in TOPICS
 def git(*args):
     return subprocess.check_output(['git', *args], text=True)
 
+def blob(ref, name):
+    result = subprocess.run(['git', 'rev-parse', '--verify', ref + ':' + name], text=True, capture_output=True)
+    return result.stdout.strip() if result.returncode == 0 else 'ABSENT'
+
 print('SOURCE', git('rev-parse', 'HEAD').strip(), 'TOPIC', topic)
 if topic == 'calls':
-    pattern = r'DriveEnergyResolver.resolve|resolveDriveEnergy\(|DriveEnergyCalculator.calculate|estimateStandbyEnergy\(|calculateWeightedEfficiency\('
+    pattern = r'DriveEnergyResolver.resolve|resolveDriveEnergy\(|DriveEnergyCalculator.calculate|estimateStandbyEnergy\(|calculateWeightedEfficiency\(|object SchemaVersion'
     result = subprocess.run(['git', 'grep', '-n', '-E', pattern, '--', 'android/app/src/main'], text=True, capture_output=True)
     print(result.stdout)
     for name in ('DriveDetailScreen.kt', 'ChargeDetailScreen.kt', 'ParkedDetailScreen.kt', 'DrivesViewModel.kt', 'EfficiencyViewModel.kt'):
@@ -41,8 +45,8 @@ else:
     assert re.fullmatch('[a-f0-9]{40}', tree)
     name = 'deploy/jourvolt-dev-mock/' + topic
     print('MERGE_METADATA', merged.stdout)
-    print('OURS', git('rev-parse', 'HEAD:'+name).strip())
-    print('API', git('rev-parse', API+':'+name).strip())
-    print('MERGED', git('rev-parse', tree+':'+name).strip())
+    print('OURS', blob('HEAD', name))
+    print('API', blob(API, name))
+    print('MERGED', blob(tree, name))
     print(git('diff', '--no-ext-diff', '--unified=4', 'HEAD', tree, '--', name))
     print('END_REVIEW', topic)
