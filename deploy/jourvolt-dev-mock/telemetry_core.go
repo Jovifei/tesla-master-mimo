@@ -372,6 +372,10 @@ type telemetryChargePoint struct {
 	ObservedAt   time.Time
 	BatteryLevel *int
 	EnergyAdded  *float64
+	// Persisted inside existing charge_points_json: no production DDL required.
+	// DCChargingEnergyIn measures battery input; ACChargingEnergyIn measures charger input.
+	BatteryCounter *float64 `json:",omitempty"`
+	ACInputCounter *float64 `json:",omitempty"`
 	ChargerPower *float64
 	Latitude     *float64
 	Longitude    *float64
@@ -585,16 +589,34 @@ func (m *telemetrySessionMachine) applyChargingEnergy(event telemetrySessionEven
 	if !ok {
 		return
 	}
-	if m.chargeEnergyField != event.FieldName || m.chargeEnergyStart == nil {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return
+	}
+	if event.FieldName == "ACChargingEnergyIn" {
+		m.appendChargePoint(telemetryChargePoint{ObservedAt: event.ObservedAt, ACInputCounter: &value})
+		return
+	}
+	if event.FieldName != "DCChargingEnergyIn" || m.chargeEnergyField == "invalid_dc" {
+		return
+	}
+	if m.chargeEnergyField != "DCChargingEnergyIn" || m.chargeEnergyStart == nil {
+		// Existing persisted AC baselines are never reinterpreted as battery input.
 		m.chargeEnergyStart = &value
-		m.chargeEnergyField = event.FieldName
+		m.chargeEnergyField = "DCChargingEnergyIn"
+		m.charge.EnergyAdded = nil
+		m.appendChargePoint(telemetryChargePoint{ObservedAt: event.ObservedAt, BatteryCounter: &value})
 		return
 	}
 	delta := value - *m.chargeEnergyStart
-	if delta >= 0 && !math.IsNaN(delta) && !math.IsInf(delta, 0) {
-		m.charge.EnergyAdded = &delta
-		m.appendChargePoint(telemetryChargePoint{ObservedAt: event.ObservedAt, EnergyAdded: &delta})
+	if !isFiniteChargeCounterDelta(delta) {
+		// A reset invalidates this session; never report its later partial delta.
+		m.charge.EnergyAdded = nil
+		m.chargeEnergyField = "invalid_dc"
+		m.chargeEnergyStart = nil
+		return
 	}
+	m.charge.EnergyAdded = &delta
+	m.appendChargePoint(telemetryChargePoint{ObservedAt: event.ObservedAt, BatteryCounter: &value, EnergyAdded: &delta})
 }
 
 func (m *telemetrySessionMachine) applyChargeBatteryLevel(event telemetrySessionEvent) {
@@ -613,7 +635,7 @@ func (m *telemetrySessionMachine) appendChargePoint(point telemetryChargePoint) 
 	if m.charge == nil || point.ObservedAt.IsZero() {
 		return
 	}
-	if point.BatteryLevel == nil && point.EnergyAdded == nil && point.ChargerPower == nil && point.Latitude == nil && point.OutsideTemp == nil {
+	if point.BatteryLevel == nil && point.EnergyAdded == nil && point.BatteryCounter == nil && point.ACInputCounter == nil && point.ChargerPower == nil && point.Latitude == nil && point.OutsideTemp == nil {
 		return
 	}
 	m.charge.ChargePoints = append(m.charge.ChargePoints, point)
@@ -768,6 +790,8 @@ func cloneTelemetryChargePoints(values []telemetryChargePoint) []telemetryCharge
 		copyValue := value
 		copyValue.BatteryLevel = cloneInt(value.BatteryLevel)
 		copyValue.EnergyAdded = cloneFloat(value.EnergyAdded)
+		copyValue.BatteryCounter = cloneFloat(value.BatteryCounter)
+		copyValue.ACInputCounter = cloneFloat(value.ACInputCounter)
 		copyValue.ChargerPower = cloneFloat(value.ChargerPower)
 		copyValue.OutsideTemp = cloneFloat(value.OutsideTemp)
 		copyValue.Latitude = cloneFloat(value.Latitude)
