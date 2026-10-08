@@ -35,7 +35,8 @@ data class EnergyMetric(
     @Json(name = "coverage_seconds") val coverageSeconds: Double? = null,
     @Json(name = "coverage_ratio") val coverageRatio: Double? = null,
     /** Diagnostic covered-subset integral; never a substitute for whole-window value_kwh. */
-    @Json(name = "covered_energy_kwh") val coveredEnergyKwh: Double? = null
+    @Json(name = "covered_energy_kwh") val coveredEnergyKwh: Double? = null,
+    @Json(name = "activity_evidence") val activityEvidence: String? = null
 ) {
     val isEstimated: Boolean get() = quality == "estimated"
 

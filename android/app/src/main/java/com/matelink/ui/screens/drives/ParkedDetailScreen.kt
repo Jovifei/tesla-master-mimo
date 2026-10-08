@@ -122,8 +122,8 @@ private fun ParkedDetailContent(
                 "开始电量" to data.startBatteryLevel?.takeIf { it in 0..100 }?.let { "$it%" }.orUnavailable(unavailable),
                 "结束电量" to data.endBatteryLevel?.takeIf { it in 0..100 }?.let { "$it%" }.orUnavailable(unavailable),
                 "电量变化" to data.batteryDelta?.let { "$it%" }.orUnavailable(unavailable),
-                "估算能耗" to data.energyKwh?.let { "%.2f kWh".format(it) }.orUnavailable(unavailable),
-                "平均功率" to data.averagePowerKw?.let { "%.1f kW".format(it) }.orUnavailable(unavailable),
+                "电池剩余能量变化（估算）" to data.qualifiedParkedEnergyKwh?.let { "%.2f kWh".format(it) }.orUnavailable(unavailable),
+                "平均功率（估算）" to data.qualifiedAveragePowerW?.let { "%.0f W".format(it) }.orUnavailable(unavailable),
                 "峰值功率" to data.peakPowerKw?.let { "%.1f kW".format(it) }.orUnavailable(unavailable)
             )
         )
