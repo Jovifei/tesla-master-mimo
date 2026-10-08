@@ -8,7 +8,7 @@ path = Path("android/app/src/main/java/com/matelink/data/local/dao/DriveSummaryD
 source = path.read_text(encoding="utf-8")
 
 def sql_for(name):
-    pattern = re.compile(r'@Query\("""(.*?)"""\)\s*suspend fun '+name+r'\(', re.S)
+    pattern = re.compile(r'@Query\("""((?:(?!@Query\().)*?)"""\)\s*suspend fun '+name+r'\(', re.S)
     matches = pattern.findall(source)
     assert len(matches) == 1, (name, len(matches))
     return matches[0]
