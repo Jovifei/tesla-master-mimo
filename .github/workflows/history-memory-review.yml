@@ -32,31 +32,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Record checked-out source and compatibility inventory
+      - name: Record checked-out source
         run: |
-          set -euo pipefail
           mkdir -p evidence
           git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/SOURCE_HEAD.txt
           git archive --format=zip HEAD -o evidence/source.zip
-          python3 - <<'PY'
-          import subprocess
-          from pathlib import Path
-          api='bb09fac04d11796ce676555dad094776cd1ef0ce'
-          p=subprocess.run(['git','merge-tree','--write-tree','HEAD',api],text=True,capture_output=True)
-          Path('evidence/base-merge-audit.txt').write_text(p.stdout+p.stderr)
-          print('BASE_MERGE_AUDIT exit='+str(p.returncode))
-          print(p.stdout+p.stderr)
-          print('ENERGY_SOURCE_INVENTORY')
-          for root in ('android/app/src/main','android/app/src/test','deploy/jourvolt-dev-mock'):
-              for path in sorted(Path(root).rglob('*')):
-                  if path.is_file() and path.suffix in ('.kt','.go','.xml') and any(s in path.name.lower() for s in ('energy','standby','parked','charge','efficiency')):
-                      print(path)
-          print('TRACKED_GENERATED_CANDIDATES')
-          files=subprocess.check_output(['git','ls-files'],text=True).splitlines()
-          for f in files:
-              if any(s in f.lower() for s in ('/build/','/node_modules/','/dist/','/received','handoff','handroff')) or f.endswith(('.apk','.aab','.zip','.log','.hprof')):
-                  print(f)
-          PY
       - uses: actions/setup-go@v5
         with:
           go-version-file: deploy/jourvolt-dev-mock/go.mod
@@ -141,6 +121,9 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
       - name: Isolated Debug and Release regression, lint and R8
         working-directory: android
         run: |
@@ -164,3 +147,49 @@ jobs:
             android/app/build/reports/
             android/app/build/outputs/apk/
             android/app/schemas/
+  android-summary:
+    if: always() && github.ref == 'refs/heads/codex/reliable-data-stage-20261007'
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: energy-stage-android-evidence
+          path: result
+      - name: Concise build and test diagnostics
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          for p in Path('result').rglob('gradle.log'):
+              print('\n'.join(p.read_text(errors='replace').splitlines()[-70:]))
+          counts={}
+          for p in Path('result').rglob('TEST-*.xml'):
+              root=ET.parse(p).getroot()
+              variant='release' if 'Release' in str(p) else 'debug'
+              c=counts.setdefault(variant,{'tests':0,'failures':0,'errors':0,'skipped':0})
+              for k in c: c[k]+=int(root.get(k,'0'))
+              for case in root.findall('testcase'):
+                  for fail in case.findall('failure')+case.findall('error'):
+                      print('FAIL',variant,case.get('classname'),case.get('name'),fail.get('message',''))
+          print('COUNTS',counts)
+          PY
+  source-audit:
+    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007'
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        topic: [calls, cleanup, history_bounded_read.go, history_bounded_read_test.go, main.go, readiness.go, telemetry_core.go, telemetry_http.go, telemetry_import.go, telemetry_service.go]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Review source only (no provider, database or credentials)
+        env:
+          AUDIT_TOPIC: ${{ matrix.topic }}
+        run: python3 tools/energy-stage/source-audit.py
