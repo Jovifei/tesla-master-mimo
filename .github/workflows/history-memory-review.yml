@@ -1,0 +1,217 @@
+name: History memory isolated verification
+on:
+  push:
+    branches: [fix/20261002-history-metadata-memory, codex/history-resource-stage2-20261002, codex/reliable-data-stage-20261007]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: history-memory-review-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: matelink_test
+          POSTGRES_PASSWORD: isolated-only
+          POSTGRES_DB: matelink_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U matelink_test -d matelink_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      JOURVOLT_TEST_DATABASE_URL: postgres://matelink_test:isolated-only@localhost:5432/matelink_test?sslmode=disable
+      JOURVOLT_REQUIRE_HISTORY_PG: '1'
+      JOURVOLT_RUN_LEGACY_MEMORY_BENCH: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Record checked-out source
+        run: |
+          mkdir -p evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/SOURCE_HEAD.txt
+          git archive --format=zip HEAD -o evidence/source.zip
+      - name: TLS deployment policy and fail-closed offline tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tools/energy-stage -p 'test_*.py' -v 2>&1 | tee evidence/tls-unit-tests.log
+          bash tools/energy-stage/test-tls-deployment-policy.sh 2>&1 | tee evidence/tls-deployment-tests.log
+      - name: Public TLS health vantage (non-device, nonblocking)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          timeout 20s python3 tools/energy-stage/qualify-public-tls.py --live 2>&1 | tee evidence/tls-public-vantage.txt
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: deploy/jourvolt-dev-mock/go.mod
+          cache: false
+      - name: Go and isolated PostgreSQL tests
+        working-directory: deploy/jourvolt-dev-mock
+        run: |
+          set -euo pipefail
+          go test ./... -count=1 -json 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-tests.json"
+          go vet ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-vet.log"
+          go mod verify 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-mod-verify.log"
+          go build ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-build.log"
+      - name: Race regression for history and energy queries
+        working-directory: deploy/jourvolt-dev-mock
+        env:
+          JOURVOLT_RUN_LEGACY_MEMORY_BENCH: '0'
+        run: |
+          set -euo pipefail
+          go test -race -count=1 -run 'Test(Independent|Energy|BoundedHistory|ChargeEnergy|Parked|CompactTelemetry|NativeShadow|History(Sample|Energy|Summary|MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL|ReadBudget|ResourceAdmission|HeavyBudget|Import|Archive|DecodeAdmission)|ArchiveImport|Telemetry(PostgresCompactBootstrap|PostgresCompactAdmissionReference|History|PostgresNativeIdentity|PostgresIdleDriveFinalization|PostgresNativeShadow))' ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-race.log"
+      - name: Verify mandatory PostgreSQL evidence
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          rows=[]
+          for line in Path('evidence/go-tests.json').read_text().splitlines():
+              try: rows.append(json.loads(line))
+              except ValueError: pass
+          tests=[r for r in rows if r.get('Test')]
+          assert not [r for r in tests if r.get('Action') in ('fail','skip')], 'Skipped or failed tests'
+          # Deployed API bb09fac has a different (newer, approved) Go source tree
+          # than the historical Stage2 prototype. Enforce its *actual* isolated
+          # PostgreSQL, history, MQTT durability, parked and energy regressions.
+          for name in (
+              'TestBoundedHistoryPostgresListDetailTenantSourceAndCancellation',
+              'TestBoundedHistoryReadinessExactEmptySourceMatchesLegacyMemoryAndPostgres',
+              'TestBoundedHistoryDriveBatterySummaryHTTPPreservesValidZeroAndUnknown',
+              'TestBoundedHistoryPostgresSyntheticAllocationReductionAndResponseParity',
+              'TestHistorySampleMetricsPostgresPageDetailChargeSOCAndScope',
+              'TestHistorySampleMetricsPostgres200kScalarResourcesAndDeadline',
+              'TestPostgresHistoryDetailLoadsOnlyTheRequestedFullRoute',
+              'TestPostgresImportMergeRetainsArchiveAndProtectsNativeSession',
+              'TestParkedHistoryBoundsPostgresHTTPMemoryParityAndUnknown',
+              'TestParkedHistoryBoundsRejectsUnsafePairs',
+              'TestTelemetryPostgresReplayAndFreshSameValueSurviveRestartWithoutDuplicateCompletion',
+              'TestEnergyCounterInterleavedACNeverOverridesBatteryInput',
+              'TestEnergyCounterResetInvalidatesWholeBatterySession',
+              'TestEnergyCounterCompleteACWindowAndScope',
+              'TestEnergyCounterSubsetAndReplayRejectFullCoverage',
+              'TestIndependentCounterResetAtFinalTimestampMustRemainUnknown',
+              'TestIndependentZeroACCounterDoesNotProveACMode',
+              'TestIndependentUnknownModeCannotPublishACBalance',
+              'TestEnergyPostgresResetReplayAndACModeScope',
+              'TestHistorySessionMapPreservesFractionalObservedArchiveWindow',
+              'TestChargeEnergyContractAndJSONBoundaryPrecision',
+              'TestParkedArchiveAdjacentWindowPreservesFractionalEndPointsWithoutInventingEnergy',
+          ):
+              assert any(r.get('Test')==name and r.get('Action')=='pass' for r in tests), name
+          counts={action:sum(r.get('Action')==action for r in tests) for action in ('run','pass','fail','skip')}
+          Path('evidence/counts.json').write_text(json.dumps(counts,indent=2)+'\n')
+          print(counts)
+          PY
+      - name: Actual deployed API bounded-history resource regressions
+        working-directory: deploy/jourvolt-dev-mock
+        run: |
+          set -euo pipefail
+          go test -count=1 -run '^(TestBoundedHistoryPostgresSyntheticAllocationReductionAndResponseParity|TestHistorySampleMetricsPostgres200kScalarResourcesAndDeadline)$' -v ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/api-bounded-resource-tests.log"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Web summary pagination regressions
+        working-directory: web_matelink
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types --test tests/history-pages.test.mjs 2>&1 | tee "$GITHUB_WORKSPACE/evidence/web-history-tests.log"
+      - name: Clean Web install and production build
+        timeout-minutes: 5
+        working-directory: web_matelink
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund 2>&1 | tee "$GITHUB_WORKSPACE/evidence/web-install.log"
+          npm run build 2>&1 | tee "$GITHUB_WORKSPACE/evidence/web-build.log"
+      - name: Upload actual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: history-memory-evidence
+          retention-days: 14
+          path: evidence/
+  android:
+    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Independent DAO SQL semantics against real Room query text
+        run: python3 tools/energy-stage/verify-energy-dao-sql.py
+      - name: Isolated Debug and Release regression, lint and R8
+        run: bash tools/energy-stage/android-ci.sh
+      - name: Upload Android evidence (unsigned candidate only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: energy-stage-android-evidence
+          retention-days: 14
+          path: |
+            android-evidence/
+            android/app/build/test-results/
+            android/app/build/reports/
+            android/app/build/outputs/apk/
+            android/app/schemas/
+  android-summary:
+    if: always() && github.ref == 'refs/heads/codex/reliable-data-stage-20261007'
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: energy-stage-android-evidence
+          path: result
+      - name: Concise build and test diagnostics
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          for p in Path('result').rglob('gradle.log'):
+              print('\n'.join(p.read_text(errors='replace').splitlines()[-70:]))
+          counts={}
+          for p in Path('result').rglob('TEST-*.xml'):
+              root=ET.parse(p).getroot()
+              variant='release' if 'Release' in str(p) else 'debug'
+              c=counts.setdefault(variant,{'tests':0,'failures':0,'errors':0,'skipped':0})
+              for k in c: c[k]+=int(root.get(k,'0'))
+              for case in root.findall('testcase'):
+                  for fail in case.findall('failure')+case.findall('error'):
+                      print('FAIL',variant,case.get('classname'),case.get('name'),fail.get('message',''))
+          print('COUNTS',counts)
+          PY
+  source-audit:
+    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007'
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        topic: [calls, cleanup, history_bounded_read.go, history_bounded_read_test.go, main.go, readiness.go, telemetry_core.go, telemetry_http.go, telemetry_import.go, telemetry_service.go]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Review source only (no provider, database or credentials)
+        env:
+          AUDIT_TOPIC: ${{ matrix.topic }}
+        run: python3 tools/energy-stage/source-audit.py

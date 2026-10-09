@@ -10,6 +10,7 @@ import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.dao.AggregateDao
 import com.matelink.data.model.Currency
+import com.matelink.data.repository.saveVerifiedHistoryChargeCost
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.UnifiedHistoryRepository
@@ -27,7 +28,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import java.time.Clock
+import com.matelink.domain.history.LatestHistoryLoad
+import com.matelink.domain.history.refreshedHistoryWindow
 import java.time.LocalDate
 import java.time.YearMonth
 import com.matelink.util.formatMonthYear
@@ -73,10 +78,13 @@ data class ChargeChartData(
     val totalEnergy: Double,
     val energyAc: Double,
     val energyDc: Double,
+    val energyUnknown: Double = 0.0,
     val costAc: Double,
     val costDc: Double,
+    val costUnknown: Double = 0.0,
     val countAc: Int,
     val countDc: Int,
+    val countUnknown: Int = 0,
     val totalCost: Double,
     val sortKey: Long, // For sorting (epoch day, week number, or year-month)
     val costCoverage: Int = 0,
@@ -101,6 +109,7 @@ data class ChargesUiState(
     val chartGranularity: ChartGranularity = ChartGranularity.MONTHLY,
     val error: String? = null,
     val historySyncWarning: String? = null,
+    val localArchiveLinkPending: Boolean = false,
     val startDate: LocalDate? = null,
     val endDate: LocalDate? = null,
     val selectedFilter: DateFilter = DateFilter.ALL_TIME,  // Preserve filter in ViewModel
@@ -134,6 +143,7 @@ class ChargesViewModel @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val chargeCostOverrideStore: ChargeCostOverrideStore,
     private val aggregateDao: AggregateDao,
+    private val clock: Clock,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -141,6 +151,7 @@ class ChargesViewModel @Inject constructor(
     val uiState: StateFlow<ChargesUiState> = _uiState.asStateFlow()
 
     private var carId: Int? = null
+    private val latestLoad = LatestHistoryLoad()
     private var historyCarId: Int? = null
     private var showShortDrivesCharges: Boolean = false
     private var allCharges: List<ChargeData> = emptyList()
@@ -229,14 +240,9 @@ class ChargesViewModel @Inject constructor(
     fun setCarId(id: Int) {
         if (carId != id) {
             carId = id
-            _uiState.update { state ->
-                state.copy(
-                    priceOverrides = allCharges.mapNotNull { charge ->
-                        allPriceOverrides[chargeTotalOverrideKey(historyCarId ?: id, charge.chargeId)]
-                            ?.let { charge.chargeId to it }
-                    }.toMap()
-                )
-            }
+            historyCarId = null
+            allCharges = emptyList()
+            _uiState.update { it.copy(charges = emptyList(), freeSupercharging = false, priceOverrides = emptyMap(), chartData = emptyList(), summary = ChargesSummary(), dcChargeIds = emptySet(), processedChargeIds = emptySet(), availableLocations = emptyList(), error = null, historySyncWarning = null, localArchiveLinkPending = false) }
             loadCarSettings(id)
             // Apply restored (or default) filter on first load. CUSTOM needs the
             // explicit date pair — setDateFilter is a no-op for CUSTOM.
@@ -248,13 +254,14 @@ class ChargesViewModel @Inject constructor(
             } else {
                 setDateFilter(state.selectedFilter)
             }
-        }
+        } else refresh()
     }
 
     private fun loadCarSettings(id: Int) {
         viewModelScope.launch {
             when (val result = repository.getCar(id)) {
                 is ApiResult.Success -> {
+                    if (carId != id) return@launch
                     val free = result.data.carSettings?.freeSupercharging ?: false
                     _uiState.update { it.copy(freeSupercharging = free) }
                     if (allCharges.isNotEmpty()) applyFiltersAndUpdateState()
@@ -268,7 +275,7 @@ class ChargesViewModel @Inject constructor(
 
     fun setDateFilter(filter: DateFilter) {
         if (filter == DateFilter.CUSTOM) return
-        val endDate = LocalDate.now()
+        val endDate = LocalDate.now(clock)
         val startDate = filter.days?.let { days ->
             if (days > 0) endDate.minusDays(days - 1) else endDate
         }
@@ -303,7 +310,10 @@ class ChargesViewModel @Inject constructor(
         carId?.let {
             _uiState.update { it.copy(isRefreshing = true) }
             val state = _uiState.value
-            loadCharges(state.startDate, state.endDate)
+            val window = refreshedHistoryWindow(state.selectedFilter.days, state.selectedFilter == DateFilter.CUSTOM,
+                state.startDate, state.endDate, clock)
+            _uiState.update { it.copy(startDate = window.start, endDate = window.end) }
+            loadCharges(window.start, window.end)
         }
     }
 
@@ -350,8 +360,8 @@ class ChargesViewModel @Inject constructor(
 
     private fun loadCharges(startDate: LocalDate? = null, endDate: LocalDate? = null) {
         val id = carId ?: return
-
-        viewModelScope.launch {
+        val requestZone = clock.zone
+        latestLoad.launch(viewModelScope) {
             val state = _uiState.value
             // Only show the full-screen spinner on the true initial load — i.e. when
             // we've never successfully fetched any data yet. Using state.charges (the
@@ -370,25 +380,30 @@ class ChargesViewModel @Inject constructor(
             }
 
             // Load the display setting
-            showShortDrivesCharges = settingsDataStore.showShortDrivesCharges.first()
+            val showShort = settingsDataStore.showShortDrivesCharges.first()
+            ensureCurrent()
+            showShortDrivesCharges = showShort
 
             // Local-day RFC3339 boundaries (see LocalDayBoundaries for why not UTC).
-            val startDateStr = startDate?.let { LocalDayBoundaries.startOfDay(it) }
-            val endDateStr = endDate?.let { LocalDayBoundaries.endOfDay(it) }
+            val startDateStr = startDate?.let { LocalDayBoundaries.startOfDay(it, requestZone) }
+            val endDateStr = endDate?.let { LocalDayBoundaries.endOfDay(it, requestZone) }
 
-            when (val result = historyRepository.load(id, startDateStr, endDateStr)) {
+            val result = historyRepository.load(id, startDateStr, endDateStr)
+            ensureCurrent()
+            when (result) {
                 is ApiResult.Success -> {
-                    historyCarId = result.data.context.localHistoryCarId
                     val dcChargeIds = try {
                         aggregateDao.getDcChargeIds(result.data.context.localHistoryCarId).toSet()
-                    } catch (e: Exception) {
+                    } catch (e: CancellationException) { throw e } catch (e: Exception) {
                         emptySet()
                     }
                     val processedChargeIds = try {
                         aggregateDao.getAllProcessedChargeIds(result.data.context.localHistoryCarId).toSet()
-                    } catch (e: Exception) {
+                    } catch (e: CancellationException) { throw e } catch (e: Exception) {
                         emptySet()
                     }
+                    ensureCurrent()
+                    historyCarId = result.data.context.localHistoryCarId
                     allCharges = result.data.charges
                     val priceOverrides = result.data.charges.mapNotNull { charge ->
                         allPriceOverrides[chargeTotalOverrideKey(result.data.context.localHistoryCarId, charge.chargeId)]
@@ -403,13 +418,19 @@ class ChargesViewModel @Inject constructor(
                             priceOverrides = priceOverrides,
                             chartGranularity = granularity,
                             error = null,
-                            historySyncWarning = result.data.chargesSyncError
+                            historySyncWarning = result.data.chargesSyncError,
+                            localArchiveLinkPending = result.data.localArchiveLinkPending
                         )
                     }
 
                     applyFiltersAndUpdateState()
                 }
                 is ApiResult.Error -> {
+                    if (result.message == com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE) {
+                        allCharges = emptyList()
+                        historyCarId = null
+                        _uiState.update { it.copy(charges = emptyList(), freeSupercharging = false, priceOverrides = emptyMap(), chartData = emptyList(), summary = ChargesSummary(), dcChargeIds = emptySet(), processedChargeIds = emptySet(), availableLocations = emptyList(), localArchiveLinkPending = false, historySyncWarning = null) }
+                    }
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -428,17 +449,16 @@ class ChargesViewModel @Inject constructor(
         val chargeTypeFilter = state.chargeTypeFilter
         val costFilter = state.costFilter
         val dcChargeIds = state.dcChargeIds
+        val processedChargeIds = state.processedChargeIds
+        val typeOf: (ChargeData) -> ChargeType = { historyChargeType(it, dcChargeIds, processedChargeIds) }
         val granularity = state.chartGranularity
 
         val visibleCharges = allCharges.filter { it.qualityState != "quarantined" }
         // Incomplete imports remain visible, but cannot produce stats or charts.
+        // Eligibility is about observed source quality, not a non-zero SOC delta.
+        // A valid zero-energy session remains a session; unknown energy is not zero.
         val validCharges = visibleCharges.filter { charge ->
-            if (!isAnalysisEligible(charge.qualityState, charge.qualityReason)) return@filter false
-            val startSoc = charge.startBatteryLevel ?: 0
-            val endSoc = charge.endBatteryLevel ?: 0
-            val energy = charge.chargeEnergyAdded ?: 0.0
-            val isZeroSocDelta = (startSoc == 0 && endSoc == 0) || (startSoc > 0 && endSoc > 0 && startSoc == endSoc && energy < 0.5)
-            !isZeroSocDelta
+            isAnalysisEligible(charge.qualityState, charge.qualityReason)
         }
 
         var filteredCharges = if (showShortDrivesCharges) {
@@ -446,24 +466,22 @@ class ChargesViewModel @Inject constructor(
         } else {
             visibleCharges.filter { charge ->
                 !isAnalysisEligible(charge.qualityState, charge.qualityReason) ||
-                    (charge.chargeEnergyAdded ?: 0.0) > MIN_ENERGY_KWH
+                    (charge.batteryInputKwh?.let { it > MIN_ENERGY_KWH } ?: true)
             }
         }
 
         // Apply charge type filter (AC/DC) for list display
         val displayCharges = when (chargeTypeFilter) {
             ChargeTypeFilter.ALL -> filteredCharges
-            ChargeTypeFilter.DC -> filteredCharges.filter { it.chargeId in dcChargeIds }
-            ChargeTypeFilter.AC -> filteredCharges.filter {
-                isAnalysisEligible(it.qualityState, it.qualityReason) && it.chargeId !in dcChargeIds
-            }
+            ChargeTypeFilter.DC -> filteredCharges.filter { typeOf(it) == ChargeType.DC }
+            ChargeTypeFilter.AC -> filteredCharges.filter { typeOf(it) == ChargeType.AC }
         }
 
         // Apply charge type filter to all charges for summary/charts (include short charges)
         val chargesForStats = when (chargeTypeFilter) {
             ChargeTypeFilter.ALL -> validCharges
-            ChargeTypeFilter.DC -> validCharges.filter { it.chargeId in dcChargeIds }
-            ChargeTypeFilter.AC -> validCharges.filter { it.chargeId !in dcChargeIds }
+            ChargeTypeFilter.DC -> validCharges.filter { typeOf(it) == ChargeType.DC }
+            ChargeTypeFilter.AC -> validCharges.filter { typeOf(it) == ChargeType.AC }
         }
 
         // Extract unique locations from the complete set
@@ -556,7 +574,8 @@ class ChargesViewModel @Inject constructor(
                             label = current.formatShortNoYear(Locale.getDefault()),
                             sortKey = key,
                             charges = itemsInDay,
-                            dcChargeIds = _uiState.value.dcChargeIds
+                            dcChargeIds = _uiState.value.dcChargeIds,
+                            processedChargeIds = _uiState.value.processedChargeIds
                         )
                     )
                     current = current.plusDays(1)
@@ -597,7 +616,8 @@ class ChargesViewModel @Inject constructor(
                             label = formatWeekLabel(appContext.resources, weekOfYear),
                             sortKey = key,
                             charges = chargesInWeek,
-                            dcChargeIds = _uiState.value.dcChargeIds
+                            dcChargeIds = _uiState.value.dcChargeIds,
+                            processedChargeIds = _uiState.value.processedChargeIds
                         )
                     )
                     currentWeek = currentWeek.plusWeeks(1)
@@ -633,10 +653,11 @@ class ChargesViewModel @Inject constructor(
                     val chargesInMonth = chargesByMonth[key] ?: emptyList()
                     result.add(
                         createChargeChartPoint(
-                            label = firstDay.formatMonthYear(Locale.getDefault()),
+                            label = firstDay.formatMonthYear(Locale.getDefault(), includeYear = start.year != end.year),
                             sortKey = key,
                             charges = chargesInMonth,
-                            dcChargeIds = _uiState.value.dcChargeIds
+                            dcChargeIds = _uiState.value.dcChargeIds,
+                            processedChargeIds = _uiState.value.processedChargeIds
                         )
                     )
                     currentMonth = currentMonth.plusMonths(1)
@@ -651,16 +672,25 @@ class ChargesViewModel @Inject constructor(
         label: String,
         sortKey: Long,
         charges: List<ChargeData>,
-        dcChargeIds: Set<Int>
+        dcChargeIds: Set<Int>,
+        processedChargeIds: Set<Int>
     ): ChargeChartData {
-        val dcCharges = charges.filter { it.chargeId in dcChargeIds }
-        val energyDc = dcCharges.mapNotNull { observedChargeEnergy(it.chargeEnergyAdded) }.sum()
-        val energyValues = charges.mapNotNull { observedChargeEnergy(it.chargeEnergyAdded) }
+        val dcCharges = charges.filter { historyChargeType(it, dcChargeIds, processedChargeIds) == ChargeType.DC }
+        val acCharges = charges.filter { historyChargeType(it, dcChargeIds, processedChargeIds) == ChargeType.AC }
+        val unknownCharges = charges.filter { historyChargeType(it, dcChargeIds, processedChargeIds) == ChargeType.UNKNOWN }
+        val energyDc = dcCharges.mapNotNull { observedChargeEnergy(it.batteryInputKwh) }.sum()
+        val energyAc = acCharges.mapNotNull { observedChargeEnergy(it.batteryInputKwh) }.sum()
+        val energyUnknown = unknownCharges.mapNotNull { observedChargeEnergy(it.batteryInputKwh) }.sum()
+        val energyValues = charges.mapNotNull { observedChargeEnergy(it.batteryInputKwh) }
         val energyTotal = energyValues.sum()
         val state = _uiState.value
         val dcCosts = dcCharges.mapNotNull { effectiveCost(it, state) }
+        val acCosts = acCharges.mapNotNull { effectiveCost(it, state) }
+        val unknownCosts = unknownCharges.mapNotNull { effectiveCost(it, state) }
         val costs = charges.mapNotNull { effectiveCost(it, state) }
         val costDc = observedCostSumOrNull(dcCosts) ?: 0.0
+        val costAc = observedCostSumOrNull(acCosts) ?: 0.0
+        val costUnknown = observedCostSumOrNull(unknownCosts) ?: 0.0
         val costTotal = observedCostSumOrNull(costs) ?: 0.0
         val countDc = dcCharges.size
         val countTotal = charges.size
@@ -671,11 +701,14 @@ class ChargesViewModel @Inject constructor(
             count = countTotal,
             sortKey = sortKey,
             energyDc = energyDc,
-            energyAc = energyTotal - energyDc,
+            energyAc = energyAc,
+            energyUnknown = energyUnknown,
             costDc = costDc,
-            costAc = costTotal - costDc,
+            costAc = costAc,
+            costUnknown = costUnknown,
             countDc = countDc,
-            countAc = countTotal - countDc,
+            countAc = acCharges.size,
+            countUnknown = unknownCharges.size,
             costCoverage = costs.size,
             energyCoverage = energyValues.size
         )
@@ -683,18 +716,29 @@ class ChargesViewModel @Inject constructor(
 
     fun saveManualTotalAmount(chargeId: Int, totalAmount: Double?) {
         val currentCarId = historyCarId ?: return
+        val remoteCarId = carId ?: return
         val validTotal = validManualChargeTotal(totalAmount)
         if (totalAmount != null && validTotal == null) return
 
         viewModelScope.launch {
-            chargeCostOverrideStore.save(currentCarId, chargeId, validTotal)
+            val proof = when (val result = historyRepository.resolveContext(remoteCarId)) {
+                is ApiResult.Error -> {
+                    if (carId == remoteCarId && historyCarId == currentCarId) _uiState.update { it.copy(error = result.message) }
+                    return@launch
+                }
+                is ApiResult.Success -> result.data
+            }
+            if (carId != remoteCarId || historyCarId != currentCarId ||
+                proof.context.localHistoryCarId != currentCarId || !historyRepository.isContextCurrent(proof)) return@launch
+            saveVerifiedHistoryChargeCost(proof, chargeId, validTotal,
+                historyRepository::isContextCurrent, chargeCostOverrideStore::save)
         }
     }
 
     private fun calculateSummary(charges: List<ChargeData>): ChargesSummary {
         if (charges.isEmpty()) return ChargesSummary()
 
-        val energyValues = charges.mapNotNull { observedChargeEnergy(it.chargeEnergyAdded) }
+        val energyValues = charges.mapNotNull { observedChargeEnergy(it.batteryInputKwh) }
         val totalEnergy = energyValues.takeIf { it.isNotEmpty() }?.sum()
         val state = _uiState.value
         val costs = charges.mapNotNull { effectiveCost(it, state) }
@@ -712,17 +756,42 @@ class ChargesViewModel @Inject constructor(
     }
 
     private fun effectiveCost(charge: ChargeData, state: ChargesUiState): Double? {
-        val isDcCharge = charge.chargeId in state.dcChargeIds
+        val isDcCharge = historyChargeType(charge, state.dcChargeIds, state.processedChargeIds) == ChargeType.DC
         return resolveChargeCostFromTotal(
             manualTotalAmount = state.priceOverrides[charge.chargeId],
             freeSupercharging = state.freeSupercharging,
             isDcCharge = isDcCharge,
             teslaMateCost = charge.cost,
-            energyKwh = charge.chargeEnergyAdded,
+            energyKwh = charge.batteryInputKwh,
             defaultPricePerKwh = state.defaultChargePrice
         ).cost
     }
 
+}
+
+/** A contract without verified mode is unknown, even if a stale local AC/DC index exists. */
+internal fun historyChargeType(
+    charge: ChargeData,
+    dcIds: Set<Int>,
+    processedIds: Set<Int>
+): ChargeType {
+    val contract = charge.energyContract
+    if (contract != null) {
+        if (contract.version != 1 ||
+            contract.chargeModeEvidence != "observed_boundary_modes_no_conflict" ||
+            (charge.chargeType != null && charge.chargeType != contract.chargeMode)) return ChargeType.UNKNOWN
+        return when (contract.chargeMode) {
+            "ac" -> ChargeType.AC
+            "dc" -> ChargeType.DC
+            else -> ChargeType.UNKNOWN
+        }
+    }
+    // Older TeslaMate records require actual aggregate evidence, not "not DC".
+    return when {
+        charge.chargeId in dcIds -> ChargeType.DC
+        charge.chargeId in processedIds -> ChargeType.AC
+        else -> ChargeType.UNKNOWN
+    }
 }
 
 internal fun observedChargeEnergy(value: Double?): Double? =

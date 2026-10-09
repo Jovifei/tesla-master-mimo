@@ -1,5 +1,7 @@
 package com.matelink.ui.screens.charges
 
+import com.matelink.domain.model.UnitFormatter
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +55,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -114,6 +117,7 @@ fun ChargesScreen(
     val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
     var priceEditTarget by remember { mutableStateOf<ChargeData?>(null) }
 
+    HistoryForegroundRefreshEffect { viewModel.refresh() }
     LaunchedEffect(carId) {
         viewModel.setCarId(carId)
     }
@@ -161,6 +165,7 @@ fun ChargesScreen(
             } else {
                 ChargesContent(
                     historySyncWarning = uiState.historySyncWarning,
+                    localArchiveLinkPending = uiState.localArchiveLinkPending,
                     charges = uiState.charges,
                     dcChargeIds = uiState.dcChargeIds,
                     processedChargeIds = uiState.processedChargeIds,
@@ -219,6 +224,7 @@ fun ChargesScreen(
 @Composable
 private fun ChargesContent(
     historySyncWarning: String?,
+    localArchiveLinkPending: Boolean,
     charges: List<ChargeData>,
     dcChargeIds: Set<Int>,
     processedChargeIds: Set<Int>,
@@ -259,6 +265,7 @@ private fun ChargesContent(
     val showFreeHint = freeSupercharging && selectedCostFilter == CostFilter.NO_COST
     val headerCount = 4 +
         (if (historySyncWarning != null) 1 else 0) +
+        (if (localArchiveLinkPending) 1 else 0) +
         (if (showFreeHint) 1 else 0) +
         (if (chartData.isNotEmpty()) 1 else 0)
 
@@ -269,10 +276,23 @@ private fun ChargesContent(
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
+        if (localArchiveLinkPending) {
+            item(key = "history_archive_link_pending") {
+                Text(
+                    text = stringResource(R.string.history_archive_link_pending),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
+                )
+            }
+        }
         if (historySyncWarning != null) {
             item(key = "history_sync_warning") {
                 Text(
-                    text = stringResource(if (historySyncWarning == "history_partial") R.string.history_sync_partial else R.string.history_sync_cached),
+                    text = stringResource(when (historySyncWarning) {
+                        "history_partial" -> R.string.history_sync_partial
+                        else -> R.string.history_sync_cached
+                    }),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.fillMaxWidth().padding(12.dp)
@@ -391,10 +411,10 @@ private fun ChargesContent(
                 ChargeItem(
                     defaultChargePrice = defaultChargePrice,
                     charge = charge,
-                    isDcCharge = when {
-                        charge.chargeId in dcChargeIds -> true
-                        charge.chargeId in processedChargeIds -> false
-                        else -> null
+                    isDcCharge = when (historyChargeType(charge, dcChargeIds, processedChargeIds)) {
+                        ChargeType.DC -> true
+                        ChargeType.AC -> false
+                        ChargeType.UNKNOWN -> null
                     },
                     currencySymbol = currencySymbol,
                     manualTotalAmount = priceOverrides[charge.chargeId],
@@ -713,7 +733,7 @@ private fun ChargeItem(
         false -> palette.acColor
         null -> MaterialTheme.colorScheme.primary
     }
-    val energy = presentChargeEnergy(charge.chargeEnergyAdded)
+    val energy = presentChargeEnergy(charge.batteryInputKwh)
 
     val effectiveCost = resolveChargeCostFromTotal(
         manualTotalAmount = manualTotalAmount,
@@ -810,11 +830,7 @@ private fun ChargeItem(
                         TelemetryMetricSpec(
                             icon = Icons.Default.BatteryStd,
                             label = stringResource(R.string.battery),
-                            value = if (start != null && start in 0..100 && end != null && end in 0..100) {
-                                "$start→$end%"
-                            } else {
-                                notAvailableLabel
-                            },
+                            value = UnitFormatter.formatSocRange(start, end, notAvailableLabel),
                             tint = Color(0xFFF97316)
                         )
                     ),
@@ -1019,7 +1035,8 @@ private fun ChargesChartPage(
                     } else stringResource(R.string.not_available),
                     segments = listOf(
                         BarSegment(data.energyAc, palette.acColor, "AC"),
-                        BarSegment(data.energyDc, palette.dcColor, "DC")
+                        BarSegment(data.energyDc, palette.dcColor, "DC"),
+                        BarSegment(data.energyUnknown, palette.onSurfaceVariant, stringResource(R.string.not_available))
                     )
                 )
             }
@@ -1032,7 +1049,8 @@ private fun ChargesChartPage(
                     } else stringResource(R.string.not_available),
                     segments = listOf(
                         BarSegment(data.costAc, palette.acColor, "AC"),
-                        BarSegment(data.costDc, palette.dcColor, "DC")
+                        BarSegment(data.costDc, palette.dcColor, "DC"),
+                        BarSegment(data.costUnknown, palette.onSurfaceVariant, stringResource(R.string.not_available))
                     )
                 )
             }
@@ -1043,7 +1061,8 @@ private fun ChargesChartPage(
                     displayValue = data.count.toString(),
                     segments = listOf(
                         BarSegment(data.countAc.toDouble(), palette.acColor, "AC"),
-                        BarSegment(data.countDc.toDouble(), palette.dcColor, "DC")
+                        BarSegment(data.countDc.toDouble(), palette.dcColor, "DC"),
+                        BarSegment(data.countUnknown.toDouble(), palette.onSurfaceVariant, stringResource(R.string.not_available))
                     )
                 )
             }

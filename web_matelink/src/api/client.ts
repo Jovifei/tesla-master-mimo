@@ -1,4 +1,5 @@
 import mockData from '../mock_data.json';
+import { loadSummaryPages } from './history-pages';
 import { useStore } from '../store';
 import type { Car, CarStatus, Drive, Charge, BatteryHealth, SoftwareUpdate } from './types';
 
@@ -102,6 +103,25 @@ export async function testTeslaMateConnection(serverUrl: string, token: string):
   };
 }
 
+// All list/analytics callers keep their existing Promise<T[]> contract, but the
+// API receives only bounded pages. Capture the connection once for the entire read.
+async function fetchCompleteHistory<T>(carId: number, kind: 'drives' | 'charges', fixture: T[]): Promise<T[]> {
+  const initial = useStore.getState();
+  if (initial.mockMode) return delay(fixture, 150);
+  const base = getBaseUrl();
+  if (!base) throw new ApiModeError('TeslaMate server is not configured.');
+  const headers = getAuthHeaders();
+  const isCurrent = () => {
+    const current = useStore.getState();
+    return !current.mockMode && current.serverUrl === initial.serverUrl && current.apiToken === initial.apiToken;
+  };
+  return loadSummaryPages<T>(async (page, show) => {
+    const response = await fetch(`${base}/api/v1/cars/${carId}/${kind}?page=${page}&show=${show}`, { headers });
+    if (!response.ok) throw new ApiModeError(`History API returned HTTP ${response.status}.`, response.status);
+    return response.json();
+  }, kind, isCurrent);
+}
+
 export const api = {
   getCars: async (): Promise<Car[]> =>
     fetchJson('/api/v1/cars', mockData.cars as Car[], body => body?.data?.cars ?? body?.cars ?? []),
@@ -116,10 +136,10 @@ export const api = {
   },
 
   getDrives: async (carId: number): Promise<Drive[]> =>
-    fetchJson(`/api/v1/cars/${carId}/drives`, mockData.drives as Drive[], body => body?.data?.drives ?? body?.drives ?? []),
+    fetchCompleteHistory(carId, 'drives', mockData.drives as Drive[]),
 
   getCharges: async (carId: number): Promise<Charge[]> =>
-    fetchJson(`/api/v1/cars/${carId}/charges`, mockData.charges as Charge[], body => body?.data?.charges ?? body?.charges ?? []),
+    fetchCompleteHistory(carId, 'charges', mockData.charges as Charge[]),
 
   getBatteryHealth: async (carId: number): Promise<BatteryHealth[]> =>
     fetchJson(`/api/v1/cars/${carId}/battery-health`, mockData.battery_health.filter(h => h.car_id === carId) as BatteryHealth[], body => body?.data?.battery_health ?? body?.data?.batteryHealth ?? []),

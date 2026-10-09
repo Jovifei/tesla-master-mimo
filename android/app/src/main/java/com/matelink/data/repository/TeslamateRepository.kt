@@ -1,5 +1,7 @@
 package com.matelink.data.repository
 
+import com.matelink.data.api.models.HistoryContextData
+import com.matelink.data.api.models.isValidFor
 import com.matelink.data.api.UrlSecurity
 import com.matelink.BuildConfig
 import com.matelink.data.api.TeslamateApi
@@ -31,8 +33,6 @@ import com.matelink.di.TeslamateApiFactory
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.CancellationException
-import com.squareup.moshi.JsonDataException
-import com.squareup.moshi.JsonEncodingException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -71,7 +71,9 @@ sealed class ApiResult<out T> {
         val message: String,
         val code: Int? = null,
         val details: String? = null,
-        val kind: ApiErrorKind = apiErrorKindFor(code, message)
+        val kind: ApiErrorKind = apiErrorKindFor(code, message),
+        val safeFailure: SafeApiFailure? = null,
+        val safeTlsCause: SafeTlsCause? = null
     ) : ApiResult<Nothing>()
 }
 
@@ -186,17 +188,6 @@ private fun Throwable.isNetworkError(): Boolean {
             this is java.io.IOException && message?.contains("connection", ignoreCase = true) == true
 }
 
-/**
- * Checks if an exception is a JSON parsing error.
- * These errors indicate the server returned something that isn't valid JSON
- * or doesn't match the expected schema.
- */
-private fun Throwable.isJsonParsingError(): Boolean {
-    return this is JsonDataException ||
-            this is JsonEncodingException ||
-            (this is java.io.IOException && message?.contains("JsonReader", ignoreCase = true) == true)
-}
-
 @Singleton
 class TeslamateRepository @Inject constructor(
     private val apiFactory: TeslamateApiFactory,
@@ -240,24 +231,24 @@ class TeslamateRepository @Inject constructor(
     private suspend fun <T> executeWithFallback(
         apiCall: suspend (TeslamateApi) -> ApiResult<T>
     ): ApiResult<T> {
-        val settings = getSettings()
-        val mode = connectionModeStore.mode.first()
-        val serverUrl = if (mode == ConnectionMode.TESLA_CLOUD) {
-            BuildConfig.JOURVOLT_API_BASE_URL
-        } else {
-            settings.serverUrl
-        }
-        if (serverUrl.isBlank()) {
-            return ApiResult.Error("Server not configured")
-        }
-        val primaryApi = getApiForUrl(serverUrl)
-            ?: return ApiResult.Error("Server not configured")
         return try {
+            val settings = getSettings()
+            val mode = connectionModeStore.mode.first()
+            val serverUrl = if (mode == ConnectionMode.TESLA_CLOUD) {
+                BuildConfig.JOURVOLT_API_BASE_URL
+            } else {
+                settings.serverUrl
+            }
+            if (serverUrl.isBlank()) {
+                return ApiResult.Error("Server not configured")
+            }
+            val primaryApi = getApiForUrl(serverUrl)
+                ?: return ApiResult.Error("Server not configured")
             apiCall(primaryApi)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            ApiResult.Error(connectionErrorMessage(e))
+            safeApiException(e)
         }
     }
 
@@ -322,8 +313,11 @@ class TeslamateRepository @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                // Never put a throwable message (potentially an authenticated
+                // request URL or identity) into a connection-test UI.
+                val classified = safeApiException(e)
                 ConnectionStepResult.Warning(
-                    message = "Readiness check failed: ${e.message ?: "unknown error"}",
+                    message = "Readiness check failed: ${classified.message}",
                     hint = "Continuing with vehicle check"
                 )
             }
@@ -361,18 +355,10 @@ class TeslamateRepository @Inject constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: javax.net.ssl.SSLHandshakeException) {
-            ApiResult.Error("Server certificate cannot be verified")
+            safeApiException(e)
         } catch (e: Exception) {
-            ApiResult.Error(connectionErrorMessage(e))
+            safeApiException(e)
         }
-    }
-
-    private fun connectionErrorMessage(error: Exception): String = when {
-        error is SocketTimeoutException -> "Connection timed out"
-        error is ConnectException || error is UnknownHostException -> "Server is temporarily unreachable"
-        error is javax.net.ssl.SSLHandshakeException -> "Server certificate cannot be verified"
-        error.isJsonParsingError() -> "Server returned unrecognised data"
-        else -> "Server is temporarily unreachable"
     }
 
     private fun httpFailure(prefix: String, code: Int): ConnectionStepResult.Failure {
@@ -383,6 +369,17 @@ class TeslamateRepository @Inject constructor(
             else -> "Check the TeslaMate URL and network access"
         }
         return ConnectionStepResult.Failure("$prefix: HTTP $code", hint)
+    }
+
+    suspend fun getHistoryContext(carId: Int): ApiResult<HistoryContextData> = executeWithFallback { api ->
+        val response = api.getHistoryContext(carId)
+        if (!response.isSuccessful) {
+            ApiResult.Error("History identity unavailable", response.code())
+        } else {
+            val data = response.body()?.data
+            if (data?.isValidFor(carId) == true) ApiResult.Success(data)
+            else ApiResult.Error("History identity response invalid", response.code(), kind = ApiErrorKind.INVALID_RESPONSE)
+        }
     }
 
     suspend fun getCars(): ApiResult<List<CarData>> {
@@ -554,6 +551,7 @@ class TeslamateRepository @Inject constructor(
 
     suspend fun getChargeDetail(carId: Int, chargeId: Int): ApiResult<ChargeDetail> {
         if (isMockMode()) return ApiResult.Success(MockDataProvider.getChargeDetail(chargeId))
+        val requestedAt = java.time.Instant.now()
         return executeWithFallback { api ->
             try {
                 val response = api.getChargeDetail(carId, chargeId)
@@ -562,7 +560,7 @@ class TeslamateRepository @Inject constructor(
                     if (detail != null) {
                         ApiResult.Success(detail)
                     } else {
-                        ApiResult.Error("No charge detail returned")
+                        ApiResult.Error("No charge detail returned", response.code(), kind = ApiErrorKind.INVALID_RESPONSE)
                     }
                 } else {
                     ApiResult.Error("Failed to fetch charge detail: ${response.code()}", response.code())
@@ -570,6 +568,12 @@ class TeslamateRepository @Inject constructor(
             } catch (e: Exception) {
                 throw e
             }
+        }.also { result ->
+            val diagnostic = when (result) {
+                is ApiResult.Error -> historyFailureDiagnostic("charge_detail", requestedAt, result)
+                is ApiResult.Success -> "stage=charge_detail requested_at=$requestedAt http=2xx category=success sample_count=${result.data.chargePoints?.size ?: "none"}"
+            }
+            android.util.Log.i("HistorySync", diagnostic)
         }
     }
 
@@ -606,6 +610,7 @@ class TeslamateRepository @Inject constructor(
 
     suspend fun getDriveDetail(carId: Int, driveId: Int): ApiResult<DriveDetail> {
         if (isMockMode()) return ApiResult.Success(MockDataProvider.getDriveDetail(driveId))
+        val requestedAt = java.time.Instant.now()
         return executeWithFallback { api ->
             try {
                 val response = api.getDriveDetail(carId, driveId)
@@ -614,7 +619,7 @@ class TeslamateRepository @Inject constructor(
                     if (detail != null) {
                         ApiResult.Success(detail)
                     } else {
-                        ApiResult.Error("No drive detail returned")
+                        ApiResult.Error("No drive detail returned", response.code(), kind = ApiErrorKind.INVALID_RESPONSE)
                     }
                 } else {
                     ApiResult.Error("Failed to fetch drive detail: ${response.code()}", response.code())
@@ -622,6 +627,12 @@ class TeslamateRepository @Inject constructor(
             } catch (e: Exception) {
                 throw e
             }
+        }.also { result ->
+            val diagnostic = when (result) {
+                is ApiResult.Error -> historyFailureDiagnostic("drive_detail", requestedAt, result)
+                is ApiResult.Success -> "stage=drive_detail requested_at=$requestedAt http=2xx category=success sample_count=${result.data.positions?.size ?: "none"}"
+            }
+            android.util.Log.i("HistorySync", diagnostic)
         }
     }
 

@@ -14,5 +14,7 @@ data class TpmsPressureSample(
     val pressureFr: Double? = null,
     val pressureRl: Double? = null,
     val pressureRr: Double? = null,
-    val outsideTempC: Double? = null
+    val outsideTempC: Double? = null,
+    @androidx.room.ColumnInfo(defaultValue = "'legacy_unverified'")
+    val provenance: String = "legacy_unverified"
 )

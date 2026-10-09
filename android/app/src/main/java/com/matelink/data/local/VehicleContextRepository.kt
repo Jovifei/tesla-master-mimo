@@ -7,11 +7,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
 
-internal data class HistoryReadScope(
-    val source: HistoryConnectionSource,
-    val serverIdentity: String,
-    val accountNamespace: String?
-)
 
 @Singleton
 class VehicleContextRepository @Inject constructor(
@@ -25,9 +20,11 @@ class VehicleContextRepository @Inject constructor(
     internal suspend fun captureReadScope(): HistoryReadScope {
         val mode = connectionModeStore.mode.first() ?: ConnectionMode.SELF_HOSTED
         return if (mode == ConnectionMode.TESLA_CLOUD) {
-            val account = sessionStore.current()?.userId?.trim().orEmpty()
-            if (account.isEmpty()) throw HistoryIdentityUnavailableException()
-            HistoryReadScope(HistoryConnectionSource.CLOUD, "cloud", account)
+            val session = sessionStore.current() ?: throw HistoryIdentityUnavailableException()
+            val account = session.userId.trim()
+            if (account.isEmpty() || session.accessToken.isBlank()) throw HistoryIdentityUnavailableException()
+            HistoryReadScope(HistoryConnectionSource.CLOUD, "cloud", account,
+                requireSelfHostedServerIdentity(com.matelink.BuildConfig.JOURVOLT_API_BASE_URL))
         } else {
             HistoryReadScope(HistoryConnectionSource.SELF_HOSTED,
                 requireSelfHostedServerIdentity(settingsDataStore.settings.first().serverUrl), null)
@@ -77,6 +74,30 @@ class VehicleContextRepository @Inject constructor(
         val stableIdentity = selfHostedVehicleStableIdentity(scope.serverIdentity, remoteApiCarId)
         val localId = contextStore.findLocalHistoryCarId(stableIdentity) ?: return null
         return VehicleContext(remoteApiCarId, stableIdentity, localId, scope.source, scope.serverIdentity)
+    }
+
+    /** Used only by UnifiedHistoryRepository; other business data keeps its existing namespace. */
+    internal fun resolveVerifiedHistoryCar(car: CarData, scope: HistoryReadScope): VehicleContext =
+        if (scope.source == HistoryConnectionSource.CLOUD) {
+            contextStore.resolveVerifiedHistoryCar(car, scope.accountNamespace, scope.source,
+                scope.serverIdentity, scope.effectiveApiOrigin)
+        } else resolve(car, scope)
+
+    internal fun cachedVerifiedHistoryContext(remoteApiCarId: Int, scope: HistoryReadScope): VehicleContext? {
+        if (scope.source != HistoryConnectionSource.CLOUD) return cachedContextForRemote(remoteApiCarId, scope)
+        val account = scope.accountNamespace.orEmpty()
+        val localId = contextStore.findOriginCloudLocalHistoryCarId(account, scope.effectiveApiOrigin, remoteApiCarId)
+            ?: return null
+        return VehicleContext(remoteApiCarId,
+            contextStore.originCloudRemoteOpaqueIdentity(account, scope.effectiveApiOrigin, remoteApiCarId),
+            localId, scope.source, scope.serverIdentity)
+    }
+
+    /** Existence only: never import or read unknown-origin archive contents automatically. */
+    internal fun hasUnlinkedLegacyHistoryContext(remoteApiCarId: Int, scope: HistoryReadScope, context: VehicleContext): Boolean {
+        if (scope.source != HistoryConnectionSource.CLOUD) return false
+        val legacyId = contextStore.findCloudLocalHistoryCarId(scope.accountNamespace.orEmpty(), remoteApiCarId)
+        return legacyId != null && legacyId != context.localHistoryCarId
     }
 
     suspend fun localHistoryCarIdFor(remoteApiCarId: Int): Int? =

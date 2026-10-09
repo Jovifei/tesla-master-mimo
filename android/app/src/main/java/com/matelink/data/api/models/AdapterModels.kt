@@ -65,8 +65,30 @@ data class ParkedDetailData(
     @Json(name = "coverage_seconds") val coverageSeconds: Long = 0,
     @Json(name = "coverage_ratio") val coverageRatio: Double = 0.0,
     @Json(name = "linked_charge") val linkedCharge: LinkedCharge? = null,
-    @Json(name = "source") val source: String
-)
+    @Json(name = "source") val source: String,
+    @Json(name = "energy_contract") val energyContract: EnergyContract? = null
+) {
+    // Adjacent SOC is not a battery-side kWh measurement. Only explicit,
+    // source-observed endpoints with evidence of no intervening activity qualify.
+    val qualifiedParkedEnergyKwh: Double? get() {
+        val metric = energyContract?.takeIf { it.version == 1 }?.storedChange ?: return null
+        if (linkedCharge != null || source !in setOf("telemetry_mqtt", "fleet_telemetry") ||
+            metric.source != source || metric.sourceField != "EnergyRemaining" ||
+            metric.method != "energy_remaining_delta" ||
+            metric.measurementPoint != "nominal_battery_remaining" ||
+            metric.quality != "estimated" || metric.coverageKind != "endpoints" ||
+            metric.activityEvidence != "no_driving_or_charging_during_window" ||
+            metric.observedStartAt != startDate || metric.observedEndAt != endDate) return null
+        return metric.valueForWindow(startDate, endDate)
+    }
+    val qualifiedAveragePowerW: Double? get() {
+        val kwh = qualifiedParkedEnergyKwh ?: return null
+        val start = runCatching { java.time.Instant.parse(startDate) }.getOrNull() ?: return null
+        val end = runCatching { java.time.Instant.parse(endDate) }.getOrNull() ?: return null
+        val hours = java.time.Duration.between(start, end).toMillis().toDouble() / 3600000.0
+        return hours.takeIf { it > 0.0 }?.let { (kwh * 1000.0 / it).takeIf(Double::isFinite) }
+    }
+}
 
 @JsonClass(generateAdapter = true)
 data class LinkedCharge(

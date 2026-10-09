@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="energy_source_api_reported">API reported</string>
     <string name="vehicle_setup_later">Confirm later</string>
     <string name="trip_notification_metrics">%1$.1f km · %2$d min</string>
     <string name="default_charge_price">Default charging rate</string>
@@ -1088,15 +1089,16 @@
     <string name="settings_primary_server">Primary Server</string>
     <string name="settings_report_issue">Report Issue</string>
     <string name="settings_release_notes_title">This update</string>
-    <string name="settings_release_notes_version">MateLink 2.1.22</string>
+    <string name="settings_release_notes_version">MateLink %1$s</string>
     <string name="tesla_login_choose_browser">Choose a browser for Tesla login</string>
     <string name="settings_release_notes_view">View update notes</string>
     <string name="settings_release_notes_close">Got it</string>
     <string name="settings_switch_to_cloud">Switch to MateLink Cloud</string>
     <string name="settings_switch_to_self_hosted">Switch to local TeslaMate</string>
-<string name="settings_release_notes_body">• Full-page loading across MateLink now uses the shared MD animation.
-• Automatic vehicle setup checks after sign-in and continues when you return from confirmation.
-• Existing history and the editable 1.14 default charging rate remain available.</string>
+<string name="settings_release_notes_body" formatted="false">• Automatic history syncing and cached history now preserve validated vehicle identity and observed data evidence across refreshes.
+• Driving and charging energy display keeps real zero, signed recovery and unknown distinct; estimated values are explicitly labeled, never upgraded to measurements.
+• AC charging loss and efficiency require complete matching observed AC-only mode and counter windows; unknown or mixed-mode charging remains unavailable.
+• Parking energy, late updates and notifications retain their source and quality limits. New natural Fleet events and passive background delivery still require independent device validation.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>
     <string name="settings_resync_dialog_text_delete">This will delete all local data.</string>
@@ -1512,4 +1514,14 @@
     <string name="vehicle_model_pending">Vehicle model not yet identified</string>
     <string name="history_sync_cached">Cloud history could not be refreshed. Showing this device’s saved history; pull to refresh to retry.</string>
     <string name="history_sync_partial">Only part of cloud history was restored. Saved history is preserved; pull to refresh to retry the remaining pages.</string>
+    <string name="history_archive_link_pending">This list uses the verified server. Previous phone records, manual costs and local analysis are preserved but are not yet linked to this list.</string>
+    <string name="completed_charge_title">Charge completed</string>
+    <string name="completed_charge_body">A new completed charge is available.</string>
+    <string name="completed_charge_open">View details</string>
+    <string name="tpms_change_title">Significant tire pressure change</string>
+    <string name="tpms_change_body">%1$s pressure changed from %2$.2f to %3$.2f bar</string>
+    <string name="completed_drive_body">A new drive is synced. Open the app for details.</string>
+    <string name="tpms_change_help">Compares consecutive real readings. This is a change reminder, not a diagnosis or a replacement for vehicle warnings. Older unverified records are retained but excluded from trends and alerts. Android notification settings still apply.</string>
+    <string name="tpms_change_delta">Pressure change (bar, 0.1–2.0)</string>
+    <string name="tpms_change_hours">Maximum interval (hours, 1–720)</string>
 </resources>

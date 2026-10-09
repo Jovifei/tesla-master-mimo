@@ -222,9 +222,20 @@ func (s *telemetryService) ingestPostgresWithMapping(ctx context.Context, record
 		if previousErr != nil && !errors.Is(previousErr, pgx.ErrNoRows) {
 			return telemetryPostgresIngestResult{}, previousErr
 		}
-		if previousErr == nil && !record.ObservedAt.After(previousObservedAt) {
-			continue
-		}
+		// Equal-time, different-value counter/mode messages are conflicting
+        // observations, not harmless duplicates. Do not replace latest with
+        // an arbitrarily ordered value; retain the event in the open session
+        // so a reset or AC/DC contradiction invalidates its completion metric.
+        // Earlier timestamps and equal-time identical values remain no-ops.
+        safetyField := record.FieldName == "DCChargingEnergyIn" ||
+            record.FieldName == "ACChargingEnergyIn" ||
+            record.FieldName == "ChargerPhases" ||
+            record.FieldName == "FastChargerPresent"
+        sameTimeSafetyConflict := safetyField && previousErr == nil &&
+            record.ObservedAt.Equal(previousObservedAt) && previousHash != valueHash
+        if previousErr == nil && !record.ObservedAt.After(previousObservedAt) && !sameTimeSafetyConflict {
+            continue
+        }
 		var inserted bool
 		err = tx.QueryRow(ctx, `
 INSERT INTO jourvolt_telemetry_event_buffer(event_id, user_id, vehicle_id, field_name, observed_at, receive_sequence, expires_at)
@@ -237,6 +248,16 @@ RETURNING true`, record.EventID, ref.UserID, ref.VehicleID, record.FieldName, re
 		if err != nil {
 			return telemetryPostgresIngestResult{}, err
 		}
+        if sameTimeSafetyConflict {
+            // The event-buffer insert above is the idempotence fence. The
+            // observation is persisted as a session point, while latest stays
+            // at its original ambiguous timestamp and value.
+            accepted++
+            if err := applyPostgresSessionEvent(ctx, tx, ref, record, s.config.StopDebounce); err != nil {
+                return telemetryPostgresIngestResult{}, err
+            }
+            continue
+        }
 		encoded, err := json.Marshal(record.Value)
 		if err != nil {
 			return telemetryPostgresIngestResult{}, err
@@ -360,6 +381,11 @@ func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehi
 				continue
 			}
 			route, _ := json.Marshal(completed.Route)
+            // Existing JSON records contain a bounded energy contract at the
+            // last observation, permitting list reads without full traces.
+            if completed.Kind=="charge" && completed.Source=="telemetry_mqtt" && len(completed.ChargePoints)>0 {
+                completed.ChargePoints[len(completed.ChargePoints)-1].EnergyContract=completedSessionEnergyContract(completed)
+            }
 			chargePoints, _ := json.Marshal(completed.ChargePoints)
 			qualityState, qualityReason := classifyTelemetrySession(completed)
 			if _, err := tx.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET ended_at=$1, odometer_start=$2, odometer_end=$3, energy_added=$4, route_json=$5::jsonb, charge_points_json=$6::jsonb, stop_candidate_at=NULL, completion_key=$7, source='telemetry_mqtt', quality_state=$8, quality_reason=$9 WHERE id=$10 AND ended_at IS NULL`, completed.EndAt, completed.OdometerStart, completed.OdometerEnd, completed.EnergyAdded, route, chargePoints, completed.CompletionKey, qualityState, qualityReason, completed.ID); err != nil {
@@ -512,7 +538,7 @@ func (s *telemetryService) historyPostgres(ctx context.Context, userID string, v
 				if err != nil {
 					continue
 				}
-				session.Route = append(session.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading})
+				session.Route = append(session.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading, BatteryLevel: cloneInt(observedRouteBatteryLevel(point.BatteryLevel))})
 			}
 		} else {
 			_ = json.Unmarshal(routeJSON, &session.Route)
@@ -566,7 +592,7 @@ func (s *telemetryService) historyDetailPostgres(ctx context.Context, userID str
 			if parseErr != nil {
 				continue
 			}
-			session.Route = append(session.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading})
+			session.Route = append(session.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading, BatteryLevel: cloneInt(observedRouteBatteryLevel(point.BatteryLevel))})
 		}
 	} else if err := json.Unmarshal(routeJSON, &session.Route); err != nil {
 		return telemetrySession{}, false, err

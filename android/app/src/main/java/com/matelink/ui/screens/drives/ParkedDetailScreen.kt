@@ -40,7 +40,6 @@ import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.theme.StatusWarning
 import com.matelink.data.api.models.ParkedDetailData
 import com.matelink.util.formatCompactDateTimeRange
-import com.matelink.util.toChineseDisplayAddress
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,7 +78,7 @@ fun ParkedDetailScreen(
                 modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
-            ) { Text(state.error ?: stringResource(R.string.not_available)) }
+            ) { Text(parkedErrorLabel(state.error, stringResource(R.string.not_available))) }
         }
     }
 }
@@ -96,7 +95,7 @@ private fun ParkedDetailContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = data.address.toChineseDisplayAddress() ?: stringResource(R.string.unknown_location),
+            text = parkedAddressLabel(data.address) ?: stringResource(R.string.unknown_location),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
@@ -114,13 +113,17 @@ private fun ParkedDetailContent(
         }
 
         MetricBand(
-            title = "驻车消耗",
+            title = "驻车时间与电量",
             icon = Icons.Default.Bolt,
             accent = MaterialTheme.colorScheme.primary,
             entries = listOf(
+                "开始时间" to parkedBoundaryTimeLabel(data.startDate, unavailable),
+                "结束时间" to parkedBoundaryTimeLabel(data.endDate, unavailable),
+                "开始电量" to data.startBatteryLevel?.takeIf { it in 0..100 }?.let { "$it%" }.orUnavailable(unavailable),
+                "结束电量" to data.endBatteryLevel?.takeIf { it in 0..100 }?.let { "$it%" }.orUnavailable(unavailable),
                 "电量变化" to data.batteryDelta?.let { "$it%" }.orUnavailable(unavailable),
-                "估算能耗" to data.energyKwh?.let { "%.2f kWh".format(it) }.orUnavailable(unavailable),
-                "平均功率" to data.averagePowerKw?.let { "%.1f kW".format(it) }.orUnavailable(unavailable),
+                "电池剩余能量变化（估算）" to data.qualifiedParkedEnergyKwh?.let { "%.2f kWh".format(it) }.orUnavailable(unavailable),
+                "平均功率（估算）" to data.qualifiedAveragePowerW?.let { "%.0f W".format(it) }.orUnavailable(unavailable),
                 "峰值功率" to data.peakPowerKw?.let { "%.1f kW".format(it) }.orUnavailable(unavailable)
             )
         )
@@ -217,3 +220,12 @@ private fun MetricBand(
 }
 
 private fun String?.orUnavailable(fallback: String): String = this ?: fallback
+
+internal fun parkedErrorLabel(error: String?, unavailable: String): String = when (error) {
+    "history_not_collected", "history_not_connected" -> "暂无可验证的驻车详情；行程历史仍可查看"
+    else -> unavailable
+}
+
+internal fun parkedBoundaryTimeLabel(value: String?, unavailable: String): String =
+    com.matelink.util.parseIsoInstant(value)?.atZone(java.time.ZoneId.systemDefault())
+        ?.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) ?: unavailable

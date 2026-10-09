@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="energy_source_api_reported">接口报告值</string>
     <string name="vehicle_setup_later">稍后确认</string>
     <string name="trip_notification_metrics">%1$.1f 公里 · %2$d 分钟</string>
     <string name="default_charge_price">默认充电电价</string>
@@ -1078,15 +1079,16 @@
     <string name="settings_primary_server">主服务器</string>
     <string name="settings_report_issue">报告问题</string>
     <string name="settings_release_notes_title">本次更新</string>
-    <string name="settings_release_notes_version">MateLink 2.1.22</string>
+    <string name="settings_release_notes_version">MateLink %1$s</string>
     <string name="tesla_login_choose_browser">选择浏览器登录 Tesla</string>
     <string name="settings_release_notes_view">查看本次更新</string>
     <string name="settings_release_notes_close">知道了</string>
     <string name="settings_switch_to_cloud">切换到 MateLink 云端</string>
     <string name="settings_switch_to_self_hosted">切换到本地 TeslaMate</string>
-<string name="settings_release_notes_body">• 首页及各页面加载统一使用 MateLink MD 动画。
-• 登录后自动观察车辆接入进度，确认返回后自动继续。
-• 已有历史与 1.14 元/度默认电价继续保留。</string>
+<string name="settings_release_notes_body" formatted="false">• 自动历史同步与缓存刷新保留已验证的用户车辆身份、观测来源和时间边界。
+• 行驶和充电能耗区分真实零值、负净回收与未知；推算与估算明确标记，不冒充实测。
+• 充电损耗与效率仅在整段 AC 模式和计数时段均有观测证明时计算；未知或混合 AC/DC 模式保留未知。
+• 驻车能量、迟到记录与通知保留来源和质量限制；自然 Fleet 事件与后台自动送达仍需独立真机验收。</string>
     <string name="settings_resync_button">重新同步</string>
     <string name="settings_resync_confirm">确认重新同步</string>
     <string name="settings_resync_dialog_text_delete">这将删除所有本地数据。</string>
@@ -1503,4 +1505,14 @@
     <string name="vehicle_model_pending">车型待识别</string>
     <string name="history_sync_cached">云端历史暂未同步成功，当前显示本机保存的记录；下拉刷新可重试。</string>
     <string name="history_sync_partial">云端历史仅恢复了一部分，本机旧记录已保留；下拉刷新可重试剩余记录。</string>
+    <string name="history_archive_link_pending">此列表使用已验证的云端来源。原手机记录、费用修改和本地分析仍保留，暂未关联到此列表。</string>
+    <string name="completed_charge_title">充电已完成</string>
+    <string name="completed_charge_body">发现新的充电记录，可查看详情。</string>
+    <string name="completed_charge_open">查看详情</string>
+    <string name="tpms_change_title">胎压明显变化提醒</string>
+    <string name="tpms_change_body">%1$s 胎压由 %2$.2f 变为 %3$.2f bar</string>
+    <string name="completed_drive_body">新行程已同步，打开应用查看详情。</string>
+    <string name="tpms_change_help">比较连续真实观测。这是变化提示，不诊断故障，也不替代车辆警告。旧未验证记录仍保留，但不参与趋势与提醒；系统通知权限与通道设置仍生效。</string>
+    <string name="tpms_change_delta">变化幅度（bar，0.1–2.0）</string>
+    <string name="tpms_change_hours">最大间隔（小时，1–720）</string>
 </resources>

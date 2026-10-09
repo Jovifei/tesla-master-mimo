@@ -92,9 +92,14 @@ func TestTelemetrySessionTracksObservedChargeEnergyDelta(t *testing.T) {
 	machine.apply(telemetrySessionEvent{FieldName: "DCChargingEnergyIn", Value: 25.5, ObservedAt: start.Add(2 * time.Second), EventID: "energy-progress"})
 	machine.apply(telemetrySessionEvent{FieldName: "DetailedChargeState", Value: "complete", ObservedAt: start.Add(3 * time.Second), EventID: "charge-complete"})
 	completed := machine.completedSessions()
-	if len(completed) != 1 || completed[0].EnergyAdded == nil || *completed[0].EnergyAdded != 5.5 {
-		t.Fatalf("completed=%#v, want observed 5.5 kWh delta", completed)
-	}
+	if len(completed) != 1 || completed[0].EnergyAdded != nil {
+        t.Fatalf("incomplete counter window must not be published as full energy: %#v", completed)
+    }
+    metric := completedSessionEnergyContract(completed[0])["battery_input"].(map[string]any)
+    if metric["quality"] != "unknown" || metric["value_kwh"] != nil ||
+        metric["covered_energy_kwh"] != 5.5 {
+        t.Fatalf("expected diagnostic 5.5 kWh covered subset, not a reported session value: %#v", metric)
+    }
 }
 
 func TestCurrentVehicleStatusKeepsFleetPositionWhenTelemetryIsPartial(t *testing.T) {

@@ -40,8 +40,8 @@ data class QuickStats(
     // === Drives Overview ===
     val totalDrives: Int,
     val totalDistanceKm: Double,
-    val totalEnergyConsumedKwh: Double,
-    val avgEfficiencyWhKm: Double,
+    val totalEnergyConsumedKwh: Double?,
+    val avgEfficiencyWhKm: Double?,
     val maxSpeedKmh: Int?,
     val avgDriveMinutes: Double?,
     val totalDrivingDays: Int?,

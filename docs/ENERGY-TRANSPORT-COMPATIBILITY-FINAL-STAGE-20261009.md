@@ -1,0 +1,902 @@
+# 2026-10-09 TLS transport, deployed bb09 compatibility and remaining acceptance gates
+
+Status: **GitHub source/deployment-tool qualification only**. Candidate branch
+`codex/reliable-data-stage-20261007` / Draft PR17. The exact final immutable
+commit, tree, parent and completed CI run are recorded in PR17's final stage
+comment, not inferred from a moving branch or this document. This is NOT a
+production change request, physical-device PASS or authenticated-history PASS.
+
+## 1. Evidence tiers and observation timestamps
+
+- Previous product source `8625d28ecfaec920d39d8b6a56afa50e9854ae7a`;
+  Android build46/2.1.27 same-signer `install-r` retained user data and
+  passed independent local Debug719, Release719 (8 skipped), lint/R8, signed
+  APK match, bounded launch FATAL/ANR0; Actions `37825196099` all green.
+  Source: versioned local return `codex/energy-device-final-evidence-20261009@3e1962d652d5ca1d6d5ecef203f881b7cb6c3d92`
+  and PR17's 2026-10-08 19:18 UTC comment.
+- On 2026-10-08 at ~18:59 UTC / 2026-10-09 02:59 China,
+  the phone's unauthenticated validated health transiently returned HTTP200;
+  19:03:58 UTC / 03:03:58 China real authenticated app
+  `history_context` failed **before HTTP**, `category=tls`,
+  `tls_cause=certificate_path_validation`. ~19:06–19:09 UTC the
+  phone sent correct expected SNI but saw one *unexpected self-issued* peer
+  not covering the API hostname; its DER size was 433 bytes. No identities,
+  routes, raw subjects/SAN, exception or trace are published.
+  Desktop/server TLS1.2/1.3 had the intended public chain; phone's
+  expected public root exists. Public phone curl ALSO failed an independent
+  HTTPS control. These observations prove inconsistent peers/paths; they
+  do NOT locate the router/proxy/server, establish missing trust anchor, or
+  justify disabling certificate verification.
+- Scoped read-only natural-source observations at 19:02 UTC found a
+  3100-point Oct7 drive and a later 1596-point drive with source power
+  coverage and SOC observations. During TLS failure, phone values were
+  CACHE only and energy was unavailable. Not an end-to-end
+  source -> cloud -> authenticated API -> Room -> UI PASS.
+- Deployed API **remains** `bb09fac04d11796ce676555dad094776cd1ef0ce`,
+  bridge and database unchanged; Owner dirty `main@f0dcd44`
+  and all existing phone history/login unchanged.
+
+## 2. Source-route review and falsifiable hypotheses
+
+| Component | Observed source/contract | What would discriminate a cause |
+| --- | --- | --- |
+| Nginx HTTPS vhosts | `deploy/nginx/jourvolt.conf.template`: three explicit names each on IPv4/IPv6 port443 and shared active SSL include; other independently installed default vhosts are possible. No committed TLS `stream` interception was identified. | Compare **effective** active vhost/SNI selection and certificate fingerprint only with permission to read loaded Nginx config. A checked-in template is not a running config. Test separate A/AAAA paths only within an approved bounded validated probe. |
+| Deployment script | Prior `setup-root.sh` always rewrote active include to self-signed on EVERY invocation, then nginx reload BEFORE LE renewal. An operationally unsafe transient downgrade even when previously using LE. | Review authorized deployment record, before/after active include hashes and reload times; no proof this script ran during phone failure. Candidate repair retains validated LE and refuses downgrade or unknown active config. |
+| Public verification | Prior `verify-public.sh` used `curl -sk`, reported selfsigned as WARN and printed issuer. Could yield misleading PASS. | New candidate removes `-k` and treats strict certificate/hostname failure as FAIL. Do not confuse TCP or HTTP status seen after insecure negotiation with validated HTTPS. |
+| Android client | `TeslamateApiFactory` cloud-mode HTTPS, system-default OkHttp TLS trust/hostname checks, fixed configured hostname, no trust-all policy or active insecure-certificate override. Safe TLS category classifies Java exception **types**, not peer origin. | Repeat genuine authenticated read after independently obtaining environment permission. No change to TLS trust roots/CA pinning or private network settings to conceal the problem. |
+| Phone path | Correct SNI and unexpected self-issued peer on 2026-10-08, contrasted with desktop/server official chain. | Separate IPv4/IPv6/default-host/proxy/inspection vs network-vantage mismatch via authorized config receipts or a Jovi-approved bounded Wi-Fi→cellular→restore experiment; **no permission received** at this writing. |
+| Access logs | Normal Nginx access-log content read was denied. | A privileged operator could separately approve a strictly redacted, scoped read. Do not bypass permissions and do not request auth tokens/paths/VIN to match logs. |
+
+These are candidate explanations, **not established root causes**. A self-signed
+certificate of some size is insufficient to identify whose component supplied it.
+Retain any off-repo effective routing and existing business vhosts untouched.
+
+## 3. Source defects fixed and bounded verification
+
+- `deploy/scripts/tls-include-policy.sh`: pure deterministic fail-closed
+  policy for absent, selfsigned and active LE states; old LE may never
+  fall back to selfsigned. Unknown managed include is rejected.
+- `deploy/scripts/setup-root.sh`: before assigning the active include,
+  calls `qualify-nginx-le.sh` for complete server chain, notBefore/
+  notAfter, all three hostnames, current system CA and private/public
+  key equality before selecting LE. Unknown active include or invalid
+  previously active LE fails closed. `tls-nginx-transaction.sh` stages
+  four named Nginx files with exact root-only backups, performs nginx-t,
+  reload and atomic restore on any failure. `renew-qualified-reload.sh`
+  gates certbot reload on verified chain/key and intended managed
+  include; failure never selects placeholder. All are source candidates;
+  running any deployment procedure remains a separate production gate.
+- `deploy/scripts/verify-public.sh`: no insecure `curl -k`;
+  all three TLS hostnames/chain/SNI checked; expected unauthenticated
+  capabilities 401 is enforced as a hard gate (not WARN on 200/redirect);
+  `PUBLIC_IP` must be a literal valid IPv4 value; bounded sockets run
+  without shell interpolation; temporary response files are unique
+  mode-0600 `mktemp` outputs rather than guessable /tmp paths.
+- `tools/energy-stage/qualify-public-tls.py`: hardcoded approved
+  unauthenticated public API `/healthz` only plus approved other-host
+  TLS-only handshakes, normal system CA validation, hostname/SNI
+  validation and DER leaf SHA-256 equality across at most
+  **two** separate connections per named host, five-second bound each, optional
+  independently verified public peer SHA-256 assertion. Closed output
+  enum only; no response bodies, error strings, certificate details,
+  authorization header, source path, vehicle operation, provider access,
+  network change or insecure fallback. All printed PASS/FAIL applies to
+  **that process and vantage only**.
+- Offline tests: real localhost self-issued TLS rejection,
+  incorrect expected leaf fails before HTTP, two-request limit,
+  same peer acceptance, no hidden authorization, invalid-count/peer
+  input refusal, strict context and deployment-policy guards.
+  Real `tls-nginx-transaction.sh` is executed against disposable
+  Nginx/systemctl/sudo replacements for apply/no-op/failed nginx-t/
+  failed reload/symlink preservation. Real `verify-public.sh`
+  is executed with sandboxed network mocks for 401, unexpected
+  200/302/403/500/000, and injection-like IP rejection.
+  Temporary OpenSSL test CA verifies positive trusted chain and
+  negative incorrect hostname, missing chain, expired/not-yet-valid,
+  untrusted root and mismatched key; no production cert or trust change.
+  CI's optional live public vantage is a diagnostic not a fleet/device
+  acceptance criterion. Offline tests are mandatory and fail the job.
+
+### Commands — isolated/review-only, no production credentials
+
+From a **clean independent checkout of the exact final SHA**, not the
+dirty Owner tree:
+
+```bash
+git rev-parse HEAD 'HEAD^{tree}' HEAD^
+git diff --exit-code
+bash tools/energy-stage/test-tls-deployment-policy.sh
+python3 -m unittest discover -s tools/energy-stage -p 'test_*.py' -v
+# Optional explicitly bounded public health vantage, normal system TLS only:
+python3 tools/energy-stage/qualify-public-tls.py --live --samples 2
+# Only with independently verified public DER leaf fingerprint:
+# python3 tools/energy-stage/qualify-public-tls.py --live --samples 2 --expected-peer-sha256 <approved-public-leaf-sha256>
+```
+
+On Windows local verification, use Git Bash/WSL solely for the Bash
+policy tests, and a private Python environment for offline unit tests.
+These commands never require Tesla authentication. If a public-vantage
+check fails, the classified output does not reveal credentials or
+identify the failed TLS hop. HTTP200 health proves no user history.
+
+### Source-derived bb09 API compatibility (not natural provider evidence)
+
+- `main.go`, `history_context.go`, `parked_history_bounds.go`
+  source at deployed bb09 and candidate have identical route/identity
+  semantics; `GET /api/matelink/v1/cars/{id}/history-context`
+  is account/car persisted binding, not a Tesla wake/first Fleet event.
+- bb09 `telemetry_http.go` uses `data.drives[]`, `data.charges[]`,
+  `data.drive`, `data.charge`, and parked `data` wrappers; list
+  summaries intentionally omit heavy route/charge details. `start_date`
+  and `end_date` are RFC3339, nullable SOC remains nullable, observed
+  `speed_max` is rounded to an integer, observed temperatures and
+  `speed_avg` remain floating point. `energy_consumed_net` is
+  unavailable for Fleet drives without driving-energy proof, not 0.
+- Deployed bb09 does not yet publish the additive `energy_contract`.
+  Candidate Android keeps the **legacy-compatibility** scalar path only
+  for absent-contract historical TeslaMate archives or old untagged
+  self-hosted history. Deployed bb09 `telemetry_mqtt`, `fleet_api`
+  or unverified `local_import` scalars are **unknown even if numeric**:
+  the old pre-contract Fleet machine can mix AC/DC counter origin and
+  retain a stale earlier positive delta after reset. With a present contract, value
+  requires version, source, unit, method, measurement location, exact
+  window, quality and coverage; explicit unknown masks stale scalar.
+  Reported zero and negative net drive energy stay values. Power
+  integration is an **estimate** only for a fully qualified observed
+  window, never a battery-input measurement. For inferred route-power
+  integration, Fleet MQTT `telemetry_mqtt` point timestamps are
+  **collector receipt instants** and now publish
+  `time_basis=collector_received_at`; TeslaMate archive source-point
+  timestamps retain `source_sample_time`. An untagged legacy route
+  is `route_timestamp_unverified`, not fabricated Tesla sample-time.
+  This is a provenance-label correction, not a new provider measurement.
+- Charge battery input/DC counter, charger-side AC input, and stored
+  change are separate. AC balance needs boundary-matched, observed AC
+  mode and cannot be derived from an unverified/mixed counter.
+  SOC alone gives no kWh. Existing legacy Room numeric placeholders
+  must not be misrepresented as real zero; round-trip `apiEvidence`
+  preserves unknown and valid zero. Parked boundary SOC does not
+  qualify battery kWh. Unknown tariff estimate remains unknown.
+- New `DeployedBb09ConsumerCompatibilityTest` uses **synthetic JSON
+  shaped directly from bb09's source**, runs the actual Moshi response
+  models -> Room summary codec -> analysis models and charge
+  detail UI stats, plus old deployed numeric Fleet scalar rejection and
+  explicit newer unknown-contract masking. No
+  claim it exercised an authenticated production response.
+- Existing Go isolated PG16 ingest/restart/energy resource budget and
+  Android 719+ tests still apply. Running these tests at a candidate
+  SHA does not change the actual deployed API binary.
+
+## 4. Separately gated runtime environment investigation and rollback matrix
+
+**Current authorization = source/isolated CI/read-only public health only.**
+Do NOT run the following production repair steps by merely reading them.
+
+| Operation | Safe scope before approval | Additional human/environment gate | Backup / idempotence / rollback |
+| --- | --- | --- | --- |
+| Public TLS probe | Two normal TLS-validated unauthenticated `/healthz` connections on approved host. No credentials, no custom CA or insecure mode. | None for bounded public vantage; do not run unbounded repeated probes. | Read-only; no rollback; compare only `PASS/FAIL`, approved public digest, UTC timestamps and vantage labels, never raw cert/log. |
+| Inspect effective nginx/SNI routing | Review committed template and hashes. Read-only effective `nginx -T` requires an operator with existing authorized permissions; content must stay private; no raw output in PR/chat. | **Permission to access live effective config**, currently not granted. Original access log read denied; do not bypass. | Before/after SHA-256 of **redacted selected snippets only**; report public boolean facts without host-private details. |
+| Reconfigure 443 certificate | **Not performed.** Never run the old setup script. Initial scope would be only the affected managed include and named vhost; no global default, no unrelated vhost/stream. | Separate explicit Jovi approval AFTER demonstrating active config/peer mismatch and a specific change plan. | Operator first records active include/config, key pair paths and the unmodified public-chain validity in private mode-0600 directory with SHA-256 manifest. Copy active managed include and vhost with metadata. Require `nginx -t` and a verified public handshake BEFORE reload; no effective replacement for unknown/invalid state. On failure atomically restore exact backups, `nginx -t`, reload, confirm public validated peer, retain receipts. Repeat must be no-op when already correct. No private key content in logs/chat. |
+| Temporary phone Wi-Fi → cellular → restore | **Not performed**; device network remains unchanged. No alteration of CA, proxy, VPN, DNS, TTL, trust, or app data. | Exact permission from Jovi pending, with restoration acceptance. | Private before/after network-state check and restore original Wi-Fi; compare two bounded validated peer categories and normal authenticated read only as user authorizes; send only sanitized outcomes, timestamps UTC+China. |
+| Production API/DB/bridge or old SOC/TPMS history write | No execution; immutable source and isolated PG CI only. | Completely separate gate: production change approval, reviewed backups, rollback, exact scope. Old six SOC and 7113 TPMS writes remain **unapproved**. | No production DDL/deploy/backfill, no DB cleanup; maintain deployed bb09 and bridge. |
+| Device signed build/install | Previous signed device PASS applies **only** to installed 8625. The new candidate changes Android energy source qualification: exact new SHA is **not yet installed**. | Original authorized local Codex verifies full SHA, Debug/Release/lint/R8, same signer and then performs separately controlled in-place install-r without uninstall or data reset, returning one consolidated receipt; any actual network experiment still needs Jovi's separate decision. | Retain previous signed APK, account/history/cache, firstInstallTime, signing certificate; compare hashes, preserve rollback APK, ensure bounded launch, authenticate afresh only under usual granted session and return category-only failures. |
+
+Never upload raw `nginx -T`, cert subjects/SAN, phone traces, tokens,
+VIN, customer or location identifiers. Do not diagnose self-issued peer
+by changing the global trust store, accepting insecure HTTP, installing
+a user CA or applying a guessed workaround.
+
+## 5. Genuine remaining acceptance matrix and local Codex receive packet
+
+The only handoff bridge is `Jovifei/tesla-master-mimo`, Draft PR17,
+branch `codex/reliable-data-stage-20261007`. The final PR comment
+supplies **one full immutable HEAD/tree/parent and same-SHA Actions
+run/jobs/artifacts**. Local Codex receives *that exact SHA*, not a
+generic request to modify implementation files:
+
+1. Independent separate clean checkout of immutable HEAD, verify tree/
+   parent, all file hashes, source diff against phone 14ca/installed
+   source 8625 and API bb09; preserve dirty Owner `main`. Rerun
+   offline TLS, Go isolated PG16/race/vet/build, Android Debug/Release,
+   lint/R8 as appropriate. Return one **consolidated** evidence packet
+   with exact SHA, scoped PASS/FAIL and failure excerpts only. No local
+   business-code repairs. The energy-source gate changes runtime; local Codex should requalify
+   Debug/Release and do authorized same-signer in-place installation,
+   preserve existing app history/login/cache and return a consolidated
+   device receipt. Network/trust changes still require separate consent.
+2. Following **separate Jovi permission** for any phone network
+   diagnostic, record current network state privately, perform only the
+   authorized bounded comparison and restore; retry authentic existing
+   `history_context`, list and detail, charge and parking reads without
+   vehicle wake. Compare source/actual API/Room/UI values with evidence
+   for source, sample times, coverage, kWh/100km, SOC, speed,
+   temperature and cost; unavailable remains null, 0 remains 0,
+   regen negative remains signed. Distinguish cached warning from a fresh
+   authenticated response. Report UTC and China time, sanitized codes.
+3. Human Tesla login/consent/vehicle confirmation, two-user account/
+   vehicle/source isolation, first genuinely natural Fleet drive/charge,
+   30-day real observed-time TPMS/trends and meaningful alert change,
+   durable natural notifications (late IDs, first import,
+   permission/denial/recovery), long-period resource stability and
+   any old parking-energy absence **remain separate natural/human
+   gates**. TeslaMate personal archive is never Fleet first-event proof.
+4. Keep Draft PR17 and `main` unchanged until actual human/natural
+   acceptance, approved integration and backup/rollback review.
+   CI PASS, signed install, health200, archive samples or cached SOC
+   are not substitutes for authenticated natural UI acceptance.
+
+### Fixed-stage closure rule
+GitHub code/test/docs work can be marked **source-qualified** only after
+final same-SHA Actions all required jobs succeed. The unresolved phone
+transport **cannot** be marked PASS until an independently observed
+valid authenticated request through the actual phone path occurs or
+a concrete separately accepted environment gate is established. No
+production or network repair is authorized by this source-stage closure.
+
+## Appendix A — separately approved Nginx config/chain change and exact rollback
+
+**Not executed. No production permission is implied.** The phone's
+old self-issued 433-byte TLS peer is not independently traced to the
+Nginx server, proxy or a specific script. Do NOT run setup-root merely
+to troubleshoot an unknown peer. First obtain Jovi's exact scoped
+approval for read-only effective config or a reviewed change window.
+Review the current active vhost/SNI including IPv4/IPv6/default
+selection and keep other-project vhosts untouched.
+
+The candidate production-tool scope is only:
+`/etc/nginx/conf.d/jourvolt.conf`,
+`jourvolt-ssl.inc`,
+`jourvolt-ssl.le.inc`,
+`jourvolt-ssl.selfsigned.inc` and a separately qualified
+certbot deploy hook. Neither the hostname, system CA, proxy, VPN,
+network/DNS/TTL, provider credential nor product API/schema is changed.
+
+Approved operator preflight (never execute as a silent part of chat):
+1. Verify the current effective config and existing hashes privately,
+   including active include and prior approved nginx master/running
+   state; avoid printing raw `nginx -T` or certificates into CI/GitHub.
+   Snapshot four files with metadata in a root-only (0700) directory.
+2. `bash deploy/scripts/qualify-nginx-le.sh
+   /etc/letsencrypt/live/jourvolt/fullchain.pem
+   /etc/letsencrypt/live/jourvolt/privkey.pem
+   teslalink.joviluma.com api.teslalink.joviluma.com
+   auth.teslalink.joviluma.com` only succeeds for a trusted fullchain,
+   valid notBefore/notAfter, all approved hostnames and matching key.
+   Certbot `live` files may legitimately be symlinks; trust checks
+   validate their contents. Self-issued/untrusted/wrong-SAN/wrong-key
+   peer must be rejected; no `-k` or new CA is allowed.
+3. After stage config diff and owner-specific review, the actual
+   `tls-nginx-transaction.sh` installs those four managed files
+   atomically from approved, rendered sources. It first validates
+   baseline `nginx -t`, creates metadata-preserving backups, installs,
+   checks `nginx -t`, reloads, and auto-restores **exact original
+   on-disk files** and tries old-config reload on any command failure.
+   A matching existing configuration returns NOOP without reload.
+   Unknown active include, invalid prior LE, or unexpected extra
+   directive stops instead of downgrading the certificate.
+4. After a successful, **approved** reload, compare two normal
+   certificate-validated no-credential public health checks and
+   approved host/SNI peer results from the relevant vantage.
+   A public Runner PASS never proves Android TLS/authenticated history.
+   If postreload health fails, operator must revert to the exact
+   retained root-only backup, `nginx -t`, reload, verify accepted
+   peer/health again, retain a private hash matrix and report only
+   sanitized statuses. A failed rollback is an explicit STOP/operator
+   gate; do not delete backup or invent PASS.
+5. Certbot rollout is separately gated: `renew-qualified-reload.sh`
+   is a deploy hook candidate which checks the managed active LE
+   include and complete certificate trust/key before reload. This
+   does not restore Certbot's archive/live symlink history. A failed
+   Certbot issuance/renewal requires separately reviewed certificate
+   archive backup and operator decision; **never** silently repoint
+   live symlinks or use a self-signed fallback as public success.
+
+A full implementation/example path is in `deploy/scripts/setup-root.sh`
+and `deploy/scripts/tls-nginx-transaction.sh`. Source CI tests execute
+the actual transaction and public-check scripts only in a disposable
+mock namespace, including forced validation and reload failures. No
+effective production Nginx config or phone network was modified.
+
+## Appendix B — real natural fractional boundary defect and gated minimal API update
+
+The independently supplied [local precision report](https://github.com/Jovifei/tesla-master-mimo/blob/92bad8b25e458b95a41c3ac06566707464c7c87a/docs/ENERGY-NATURAL-API-PRECISION-CHANGES-REQUIRED-20261009.md)
+is on the separate evidence branch, not necessarily in this PR: natural
+sample observation on **2026-10-09T01:11:53 UTC / 09:11:53 China**
+found 3100 source points covering the fractional start/end window
+with no missing power, conflicting replay or >30s gap. The old
+deployed bb09 `historySessionMap` serializes session start/end using
+`time.RFC3339`, discarding fractional seconds, while archive route
+point `date` retains its fractions. Independent compiled-8625 JVM
+replay demonstrated a synthetic 120-second whole window COMPLETE with
+matching .417 fractions, versus old truncated boundaries leaving
+0.417 seconds uncovered and rejecting power integration. This does not
+establish a successful **authenticated phone API payload**.
+
+The candidate makes the **minimum Go serialization repair** in
+`telemetry_service.go`, `energy_history_contract.go` and adjacent-archive
+`parked_history_bounds.go`: use
+`time.RFC3339Nano` for session start/end, telemetry route/charge
+sample timestamps and energy-contract observed/window endpoints.
+Adjacent parking endpoint observations retain fractional UTC precision,
+but SOC-only parking continues to publish null kWh/averageW; no
+unsupported stored-energy attribution is added. Whole-second values
+retain their old string spelling; JSON field
+names, types, wrapper, provider source, account/car/vehicle scope,
+charges, cost, energy-metric qualifications and database schema are
+unchanged. It does NOT round sample dates or relax the Android exact
+whole-window / 30s missing-interval / null / conflicting-replay checks.
+Source-time vs collector-receipt labels remain distinct.
+
+Cross-boundary regressions: actual Go `historySessionMap` ->
+`encoding/json` tests for fractional observed drive, parked archive
+boundaries and charge counter endpoints; actual synthetic Go-shaped JSON -> Android Moshi
+`DriveDetailResponse` -> `DriveEnergyResolver` ->
+Room summary evidence -> drive detail presentation verifies a complete
+fractional window. Old rounded start/end must still yield
+`incomplete_power_coverage` and **unknown whole-window energy**.
+Matched valid 0 and negative source power remain genuine signed
+estimated intervals; missing power remains unknown.
+`DeployedBb09ConsumerCompatibilityTest` also covers Fleet positive
+and zero unqualified legacy charge scalar rejection, separate from
+personal archive compatibility. Production bb09 cannot be considered
+repaired by this commit; its old fractional-boundary response remains
+ineligible until separately approved API deployment.
+
+### Minimal prospective production API gate (not authorized here)
+
+- **Scope**: only qualified Go API image built from immutable candidate
+  source, no Android baseline overwrite, no DB DDL, no migration,
+  bridge change, historical SOC/TPMS write, Tesla authorization or
+  fleet action. All API business handler compatibility and migrations
+  must be independently source-reviewed against deployed
+  `bb09fac04d11796ce676555dad094776cd1ef0ce`.
+- **Preconditions**: Jovi's explicit, separate API rollout approval,
+  current deployed exact image digest/tag/source SHA and health/readiness
+  receipt; encrypted/least-privilege runtime config/backups privately
+  verified, PostgreSQL snapshot/checksum and original container config
+  preserved even though this intended change is serialization-only.
+  Review `docker compose config` for scope without dumping secrets.
+- **Idempotence/rollback**: stage new image separately, keep original
+  immutable image and DB backup; do not alter bridge. Run isolated Go
+  PG16, race, API contract plus negative/no-Fleet-wake route tests,
+  then bounded, authorized canary. On timeout, metric mismatch, login
+  failure, resource regression or rollback decision, restore the exact
+  prior API image/config; verify existing health/readiness and client
+  history warning. Do not restore/write DB from backup unless a
+  separately approved and justified data rollback is required.
+  Retain hashes, immutable SHA, named UTC/China timestamps, new/old
+  response schema and privacy-safe outcome flags. **No production
+  deployment has been performed in this source stage.**
+- **Acceptance**: a genuine already-authorized API→phone authenticated
+  detail read with the exact fractional start/end from the qualified
+  source, Room persist and UI estimated-energy label, plus
+  stable all-unknown and valid-zero behaviors. Fleet first events,
+  second real user and notification/TPMS gates remain independent.
+
+## Appendix C — code/test plan-to-completion comparison
+
+| Target | Candidate source-level closure | Actual environment acceptance |
+| --- | --- | --- |
+| TLS peer and SNI | CA/hostname trust, allowlisted peer comparison, bounded sanitized public probes | Phone still requires the authorized comparison; prior unexpected peer remains unattributed |
+| Safe Nginx config | Four-file transactional apply/rollback, active-LE no-downgrade, cert/key/window/CA proof, renewal validation | Not installed, no production Nginx access or change approval |
+| Public check | Unauthenticated 401 is enforced, IPv4 literal and safe tempfile guard, no `curl -k` | Actual hostname/public trust snapshots may vary by vantage |
+| Deployed bb09 energy | Legacy Fleet unproven scalar remains unavailable; explicit contract requires window and source. Personal TeslaMate separate | bb09 still deployed without additive contract and with boundary truncation |
+| Fractional precision | Go RFC3339Nano serialization + Go/JSON and Moshi/Room/UI regressions | New API image not deployed; actual natural API→phone energy remains unaccepted |
+| Source/integration | Go/PG16, race, Web, Android Debug/Release/lint/R8 and source audits must all pass **on the final SHA** | Same-signer physical install and true natural source→UI remain separate gates |
+| Preserved state | No writes to Owner/main, prod API/DB/bridge, old 6 SOC/7113 TPMS, app data or network | Jovi's phone network experiment permission remains unanswered |
+
+### Revised local Codex receive instructions
+
+Use the **full fixed immutable HEAD, tree and parent recorded in the
+last PR17 stage-delivery comment**, never `main` or a moving branch.
+Independent clean checkout, exact CI logs/artifact verification, Go
+PG16/race and targeted fractional boundary tests, Android Debug/Release
+unit/lint/R8 and source compatibility/precision tests, no implementation
+in the dirty Owner tree. Because candidate Android runtime source is
+newer than installed 8625, perform only the previously approved
+same-signer safe `adb install -r` flow **after** independent successful
+build/review; preserve rollback APK, original firstInstallTime,
+login/cache/history and source identity. Return one consolidated packet
+with actual result counts and private-only signature/APK hash evidence.
+Do not perform the Wi-Fi→cellular experiment, trust/DNS/proxy/VPN change,
+production API/bridge/DDL or natural driving/charging on our behalf.
+Authentic list/detail/parking and energy acceptance requires actual
+successful authorized responses and correct vehicle/source comparison.
+
+### Supplemental CI safety clarifications
+
+The final source recognizes preexisting legacy **comment-free** active
+LE/self-signed directives by normalized exact comparison with the
+managed fragment; any extra directive fails. Certbot's normal
+`live/` symlinks are accepted only after validating their real
+certificate and key contents. No bearer token is sent by
+`verify-public.sh`, including when an unrelated environment happens
+to contain a session token; authentication tests require the separately
+authorized device/API path. The optional public 200 health is always
+labeled `runner_vantage_only`, never accepted as Fleet or phone
+proof. All synthetic TLS certificate and mock network results are
+isolated-test evidence, not server or natural-data acceptance.
+
+## Appendix D — same-ID original history evidence recoverability repair
+
+Independent local return
+`codex/tls-5f-local-validation-20261009@679c54c94d15dc41e1c121d5614819f4cfb8ade0`
+found **actual Actions Android FAILURE** at fixed `5f5a197d`:
+HistoryRecoveryTest line71/117 used an allegedly strong 8-kWh Fleet
+scalar lacking `EnergyContract`; the Android qualification correctly
+rejects it. Both variants ran 730 tests with 2 failures; no new signed
+install was completed. This is distinct from the proven raw-cache
+persistence defect below. The old `8625d28e` signed APK remains the
+installed version.
+
+### Data contract before/after and non-destructive scope
+
+**Prior source risk (not asserted as a production erase):**
+`HistorySummaryMapper.toAnalysisDriveData()` masked unproved Fleet
+8-kWh values to `null`, but foreground history merged and persisted
+that projected DTO; `DriveSummaryDao.upsertPreservingEvidence()` used
+`mergeStoredDrive()` which decoded/projected AGAIN, potentially
+re-encoding `apiEvidence` with `null`, destroying the original
+recoverable raw scalar and original JSON during same-ID upserts.
+Background `toSyncSummary` and detail enrichment also encoded
+display projections as raw evidence. The same pattern could affect
+unqualified charge values.
+
+**Candidate repair:**
+- `toRawAnalysisDriveData` and `toRawAnalysisChargeData` are explicitly
+  *for persistence merging only*: decode the original cached JSON,
+  provenance, source, source quality, time, and nullable scalar exactly.
+  The existing `toAnalysis...` functions remain physically qualified
+  projections, masking numeric data that lacks a versioned contract.
+- `UnifiedHistoryRepository.load` merges **raw** remote/local history
+  and persists raw envelopes (without deleting any row or archive);
+  separately returns a qualified drive/charge projection to UI.
+  `mergeDrivesRaw` / `mergeChargesRaw` underlie the prior public
+  `mergeDrives` / `mergeCharges` display methods. Quarantine, tenant,
+  source quality and same-session guards remain in effect.
+- `toLocalSummary`, `SyncRepository.toSyncSummary` and actual
+  `DriveSummaryDao` / `ChargeSummaryDao` same-ID read/merge/upsert
+  preserve raw `apiEvidence` (including an old unqualified Fleet
+  8 kWh). Room analytic numeric columns use qualified values only:
+  unverified means **null**, not an observed zero, and qualified
+  zero/negative signed net energy remains valid. Existing old scalar
+  columns aren't interpreted as proof just because they contain a number.
+  Raw source bytes are retained byte-for-byte when the weaker incoming
+  record contributes no new source evidence.
+- Detail enrichment `withResolvedDriveEnergy` /
+  `withDetailEvidence` now also retain earlier original raw values
+  in the JSON when new detail has unknown energy. Explicit unknown
+  contracts mask those raw values from display/aggregation; legitimate
+  newly qualified detail values may update the analytic projection.
+  `DrivesViewModel` always derives list energy metrics from
+  `toAnalysisDriveData`, not a pre-contract Room scalar.
+- Test fixtures with strong 8 kWh now attach a synthetic
+  **source-complete estimated power-integral** contract,
+  with explicit time basis and coverage; Fleet quality `observed`
+  *by itself* is explicitly tested insufficient. The 8 kWh, source,
+  quality, deduplication, aliases, valid-zero/negative and
+  weak-unknown assertions remain. No fabricated Fleet report is claimed.
+- New deterministic `RawHistoryEvidencePersistenceTest` drives the
+  **same suspend read/merge/upsert orchestration called inside
+  @Transaction DAO** against isolated in-memory storage: original
+  same-ID raw Fleet8/JSON survives empty/weak remote and repeated
+  upsert with count/identity/source intact; projection stays unknown.
+  Covers changed weak observed row, distinct car IDs with same
+  numeric ID, valid signed measured zero/negative, explicit unknown
+  masking, raw charge zero/positive and both drive/charge detail
+  unknown enrichment. No Android device, production DB, schema
+  migration, or historical real-data write is performed.
+
+**Recoverability boundary:** An original wire scalar remains recoverable
+from the exact `apiEvidence` JSON (not repurposed as an analytics column).
+A preexisting already-overwritten `apiEvidence` cannot be recreated
+from missing data, and the candidate does **not** perform retroactive
+history repair/backfill or fabricate old source readings. Old cached
+scalar columns without sufficient provenance remain unqualified in
+UI; production counts requiring historical cleanup stay separately
+gated. Existing app data and all past trips are retained.
+
+### Remaining TLS negative branches also repaired
+
+- Existing-LE post-issuance path now invokes
+  `reload-qualified-le.sh` which separately requires
+  `nginx -t` **and** a successful reload before reporting
+  `TLS_LE_ACTIVATION=VALIDATED_RELOAD`. A failed test/reload
+  never sets activation PASS. Isolated tests invoke that real helper
+  with a faulted Nginx test, failed reload, and valid success.
+- `tls-nginx-transaction.sh` must verify **all four restored files**,
+  catch cp/rm/pending cleanup failures and avoid a false
+  `ROLLED_BACK`. If restore is incomplete, it returns
+  `ROLLBACK_REQUIRES_OPERATOR` rather than reloading invalid files.
+  Actual isolated script tests inject restore-copy and restore-removal
+  failures in addition to prior normal, invalid Nginx, reload and
+  new-warning paths. Only an independently verified exact restored
+  disk and successful reload merits ROLLED_BACK.
+- `verify-public.sh` probes each of the **four approved** private
+  ports directly against the validated literal public IPv4,
+  independently of localhost reachability; a public-only listener
+  therefore fails qualification. An injected public-only port fixture
+  must fail while a healthy 401 baseline passes. This is a bounded
+  public check with no shell injection, unbounded scan or service write.
+
+All three source fixes are **not** deployed to running Nginx. Do not
+treat synthetic fault injection, validated public health, or
+Android installation as real historical Tesla Fleet acceptance.
+
+### Final acceptance remains evidence-tiered
+
+Only the final PR17 **full HEAD/tree/parent and its completed same-SHA
+Actions run** may qualify the source stage. Independent original local
+Codex recompiles/tests/signs/installs in-place only after full verification
+and confirms no Owner dirty-worktree or phone history mutation.
+Production API (currently `bb09fac`) still requires a separately
+reviewed, idempotent, backed-up reversible deployment gate for the
+fractional-boundary serializer; there has been no API deployment.
+The phone's original intermittent wrong TLS peer is unattributed,
+Wi-Fi→cellular→restore permission is unanswered, and there is still
+no accepted fresh source→authenticated API→Room→UI natural-energy
+observation or multi-user/Fleet/TPMS/notification human acceptance.
+
+### Final raw/source consumer regression audit
+
+The recovered original receipt must not be confused with the presentation
+model. `withSafeHistoryDisplay` is now the shared frontend projection
+for both offline and freshly merged drives: synthetic raw address
+formatting remains byte-recoverable in `apiEvidence`, while a
+non-displayable address and an uncontracted Fleet energy scalar
+never become a rendered label or a numeric metric.
+`DriveSummary.toQualifiedHistoryMetrics` is the real drives-card
+consumer: it reads only the qualified cached DTO rather than old
+scalar columns. The isolated read/merge/upsert tests assert the
+same behavior through that consumer.
+
+The exact `UnifiedHistoryRepository.load` injected identity/scope
+ports have an additional regression with one old Fleet raw-8-kWh
+row and an empty remote response: the API receipt remains 8 in raw
+JSON, the returned list is unknown, and the persisted analytic
+numeric field is null. It is paired with same-ID Room transaction
+I/O-ported tests, which also cover repeated weak remote data,
+metadata, car isolation, exact raw JSON bytes, unknown detail
+enrichment and original source addresses. These are synthetic unit
+tests, **not** owner-data backfill or production Room reads.
+
+The existing-8-fixture regression now requires a valid synthetic
+whole-window power-integral contract for its *strong* row and
+explicitly removes any inherited contract from the weak aliases.
+The source-bound metric getters also reject an otherwise
+plausible counter/net contract when the record's known source
+and the measurement's source disagree. A nullable source retains
+the limited old self-hosted compatibility path; mismatched
+source is not allowed to masquerade as Fleet energy. This tightens
+provenance without changing any raw evidence or the signed-zero/
+regenerative estimates permitted by valid full-window contracts.
+
+**Important:** Previously stored raw scalar columns might remain
+numerically populated on old installations. They are never
+considered authoritative source measurements. During a normal
+successful qualified upsert, numeric **analysis** columns may
+become null while original raw scalar and bytes remain in the
+versioned `apiEvidence` JSON. This is a non-destructive
+qualification projection, not a historical deletion/backfill.
+No previously erased JSON may be recreated by guessing, and no
+new migration/schema change is proposed.
+
+The TLS remainder is separately covered by faulted existing-LE
+nginx test/reload, cp/rm rollback failure with operator-only status,
+and public-only private port tests; none of these runs against
+production Nginx. The former wrong phone peer remains unattributed,
+and real provider/Fleet and independent phone sign/install
+acceptance remain separate from fixed-source CI.
+
+**Detail-enrichment closure:** `withResolvedDriveEnergy` now
+merges from the original raw DTO (not an address-sanitized/energy-null
+UI DTO); it keeps source address bytes in JSON, while Room's
+start/end address *presentation columns* still apply established
+sanitization. `withDetailEvidence` similarly retains old raw
+charge cost/energy values in JSON while the persisted analytic cost
+and energy columns reject nonfinite/unqualified values. Synthetic
+regressions assert retained raw negative cost and synthetic source
+address alongside null display values. No user address, route,
+historical drive or production schema is edited.
+
+## Appendix E — fixed697 local changes-required closure: original vs derived receipt
+
+A separately independently executed source 697 Android run **failed**:
+Debug 741 tests/1 failure/0 skipped, Release 741/1 failure/8 skipped,
+both in `SyncRepositoryApiEvidenceRedTest`. The old file asserted a
+literal `encode(normalized)`; this is contrary to the documented
+non-destructive behavior. New regression calls the **real**
+`DriveData.toSyncSummary` and shared Room read/merge/upsert executor
+against an isolated same-ID in-memory store. Original wire Fleet scalar 8
+and its old JSON bytes remain recoverable, UI and analytic columns
+remain unknown, certified zero and negative power estimates remain
+signed, and same numeric ID for two cars stays isolated.
+
+Separately, the original 697 detail enrichment code could overwrite
+a source raw 8 kWh with a computed, genuinely qualified 1 kWh integral
+and re-encode the typed DTO, discarding unknown opaque JSON properties.
+The new source uses a **versioned, locally-owned JSON envelope** in the
+existing Room `apiEvidence` TEXT column, with **no schema migration**.
+`raw_json` is the exact originally saved source JSON byte string,
+including unknown fields. `detail_energy_contract` stores the new
+report/estimate or explicit unknown independently and is allowed into
+UI/analytics only with a matching version, source, start/end instants,
+physical method, units and full-window coverage. Optional typed
+`detail_raw_*` fields preserve newly received detail scalars as
+receipts, never as a derived battery measurement. No Tesla Fleet
+energy reading is fabricated or inferred from SOC alone.
+
+The old `HistorySummaryEvidenceCodec.decodeDrive/Charge` now unwraps
+this local versioned envelope transparently for raw archive reads, while
+`toAnalysisDriveData/ChargeData` overlays only the separately qualified
+detail sidecar. A malformed or unsupported envelope fails closed; it
+cannot restore old unproven scalar placeholders. Source 8 is NOT
+replaced by derived 1 in raw. The same-ID Room DAO merge selects the
+new wrapper when genuine detail evidence arrives, retains it on weak
+list refresh and requalifies the **numeric analysis columns** from the
+selected receipt. A previously established whole-window proof remains
+valid if a later detail contains no new energy; an explicit unknown or
+changed source/window prevents using stale proof.
+
+New source tests run a synthetic 10-second, 360-kW full-window
+integration and actual detail → wrapper → DAO upsert → offline read
+round trip. Assert source raw 8, opaque fields byte-recoverable, derived
+1 labeled `power_samples`/estimated, new explicit unknown masking,
+and no duplicate rows; charge detail tests separate raw old scalar,
+new battery-side counter contract, cost and valid zero. The versioned
+envelope is **local cache provenance**, not a production API schema,
+not real Fleet first-event proof, and not a historical migration.
+Existing individual TeslaMate records, original app data, cached
+login and full history are never bulk rewritten or cleared.
+
+### Protected listener qualification without new external probes
+
+Current `verify-public.sh` is deliberately limited to its
+**preauthorized four** bounded public probes (4000/8080/5432/1883);
+there is no new public probing of 18080/18090. Instead, the local
+`ss -lntH` snapshot is passed to
+`check-private-listeners.py`, which checks ALL protected ports:
+4000/8080/5432/1883/18080/18090. IPv4 and IPv6 wildcard, a
+specific nonloopback interface address, and unparseable protected
+listeners are failures; IPv4/IPv6 loopback and IPv4-mapped loopback
+are allowed. The utility prints **only PASS/FAIL**, not listener
+addresses. Sandbox mocked ss and direct pure-fixture tests cover
+specific public IPv4, IPv6, wildcard and permitted loopback. No
+phone/network/trust/router/proxy/DNS/TTL changes are made.
+
+The source run at 697 remains Android FAIL even though TLS/Go/PG
+298 tests, race, Web, 10 code audits and 27 TLS tests succeeded.
+Only the *last immutable candidate* and all its same-SHA Actions
+jobs/artifacts may close source qualification. Local signing/install
+belongs to the separately controlled original Codex thread after
+the remote Android job and independent tests are demonstrably PASS.
+The actual production API is still bb09 without RFC3339Nano
+deployment; the phone still runs 8625/build46 and still lacks a
+fresh, accepted authenticated history read. All actual rollout,
+network experiment and natural Fleet/multiuser/TPMS/notification
+acceptance remain separately gated.
+
+### Fail-closed local receipt migration boundary
+
+The local envelope is confined to the existing `apiEvidence`
+column and has an exact `raw_json` byte-string for the **previously
+stored** API summary JSON, plus typed, separately labeled detail
+metadata. The app cannot reconstruct unknown HTTP fields that an old
+Moshi adapter already discarded before persistence; it makes no such
+claim. An unsupported/corrupt local envelope must never fall back
+to a legacy numeric Room column as if it were a measured Fleet kWh
+or charger input. New negative tests inject malformed/future-version
+local envelopes with historic numeric 8/12 placeholders and require
+unknown. Source-absent legacy self-hosted compatibility still obeys
+its separate preexisting guard when *no* envelope is present.
+
+An archive with valid previous provider energy and a new detail
+response with a real negative regenerative net measurement retains
+the exact prior raw summary plus the new typed detail scalar and its
+physical-source-qualified sidecar. The Room analytic projection
+uses the new signed value but source JSON remains recoverable.
+These are isolated contracts, not proof of real Fleet human consent.
+
+## 2026-10-09 independently compiled behavior replay — current detail projection repair
+
+Independent fixed4bb local qualification (source evidence branch
+`codex/tls-4bb-local-validation-20261009@d11973542c3944aa68ee7237d4e7a7c3b8689664`,
+`docs/TLS-ENERGY-LOCAL-4BB01607-BEHAVIOR-CHANGES-REQUIRED-20261009.md`)
+reported GREEN fixed4bb Actions and independent signed build but
+a **real compiled-class FAIL** before installation. Its synthetic same-ID
+drive had original immutable receipt 1 km/SOC unknown and current detail
+2 km/SOC 80→70 / qualified net 1 kWh. Direct Room view computed
+500 Wh/km, while decoded offline projection reverted to 1 km/unknown
+SOC/1000 Wh/km; subsequent same-ID merge also reverted Room columns.
+The original receipt JSON was preserved correctly. Signed candidate
+was NOT installed; the phone still uses 8625/build46.
+
+### Actual current/archival contract and fault isolation
+
+The source repair extends the existing version-1 local `apiEvidence`
+envelope with an independent `detail_drive_presentation` or
+`detail_charge_presentation` and `detail_scope_car_id`, distinct from
+the **unchanged** `raw_json` bytes and separate `detail_energy_contract`.
+This is a **local cached detail presentation**, *not* a Tesla Fleet
+measurement, new server schema or new SQL column*. The presentation
+contains compact nonenergy fields only: source identity, exact
+start/end, distance/odometer, SOC (nullable, valid observed zero),
+address, speed, power maxima, temperatures, charge address/meter
+context/cost as appropriate. It excludes route point history,
+unverified raw scalar, and duplicated energy contracts.
+
+Decode and reuse require all of: the same local history car namespace,
+record ID, compatible exact source, precise start/end instants,
+matching sidecar source/window, and a version-1 envelope. The existing
+complete power-window, measurement method, unit, coverage and
+unqualified-unknown gates remain untouched. An envelope transplanted
+to another car, time or source is rejected for display/energy, not
+accepted as Fleet evidence. Legacy prior envelopes without a
+presentation remain readable with conservative raw/energy behavior.
+
+The same `mergeStoredDrive`/`mergeStoredCharge` functions called
+by actual Room `@Transaction` now determine both persisted and
+foreground `UnifiedHistoryRepository.load` projections; one
+codepath updates current distance/SOC/address/speed and recomputes
+weighted Wh/km from **current qualified energy divided by current
+distance**, never original raw distance. Weak or empty same-ID
+cloud pages preserve a prior valid current detail; a changed
+vehicle source, explicit new/unknown contract or changed precise
+window does not smuggle an old contract into new scope. Charge
+battery-side input remains separate from AC meter and SOC delta.
+Raw receipt bytes remain byte-recoverable and are not overwritten
+by detail integrals or address/speed display cleanup.
+
+Meaningful isolated tests execute:
+* exact same-ID read→merge→Room-upsert with direct, offline and
+  subsequent weak-list restore matching 2 km, SOC80→70, new
+  addresses/speed and 500 Wh/km while `raw_json` retains 1 km and
+  original unknown/opaque fields;
+* charge SOC/address/location/odometer with a genuine qualifying
+  reported-zero battery counter; old raw charge energy remains archival;
+* current detail through actual foreground history load for both
+  drives and charges; no duplicate rows or cross-car/source/window
+  projection; unknown stays unknown; signed regenerative values stay signed.
+The independent Java replay remains a separate **local execution gate**,
+not replaced by assistant-authored source tests.
+
+### Stage completion and production/API gate
+
+Continue using **only the final PR17 full immutable HEAD/tree/parent**,
+all same-SHA completed Actions jobs and artifacts, and an independent
+local receipt; do not cite green fixed4bb source CI as sufficient for
+the new code. Installed phone and production API remain unchanged
+until independent fixed-SHA signing/install and a separately gated
+minimal API rollout respectively. The API prospective change is still
+the precise Go RFC3339Nano serializer with source/identity and
+rollback checks against current deployed bb09, no DDL/DB/bridge
+migration or historical backfill. Exact old immutable image, private
+config/backups, isolated PG/race, approved scoped canary and a
+verified restore of old image/config are prerequisites to any
+future API rollout. This document does NOT authorize deployment.
+
+Jovi has already authorized eventual `main` merge **after the real
+qualification/acceptance gates**; no fresh code-stage approval is
+required, but the gate has not been satisfied by an isolated replay,
+CI, signed APK or TeslaMate archive. No main merge in this source-only
+execution. Real phone TLS peer mismatch, fresh authenticated source→
+cloud→API→Room→UI, two-user Fleet confirmation, 30-day observed
+TPMS, natural notifications and unattended resource resilience
+remain independent device/provider/human gates. Phone
+Wi-Fi→cellular→restore experiment is still unanswered; do not alter
+network, trust store, DNS, proxy, VPN or TTL without that decision.
+
+### Version-1 local detail snapshot integrity and rollback compatibility
+
+Source review after the 2a8 candidate added an additional fail-closed
+guard for both current detail snapshots: the `raw_json` member itself
+must decode to the matching original record ID/source; an envelope with
+invalid, unparseable, or cross-record raw JSON cannot authenticate a
+derived energy claim or transplant a SOC/distance/address projection.
+Together with the persisted local car namespace and exact ISO instant
+window checks, this prevents forged or corrupted local sidecars from
+being used as measurements. A synthetic deliberately damaged envelope
+test asserts the old numeric Room value is still **unknown**, not 8 kWh.
+
+The exact original raw JSON may include unrecognized non-Tesla fields
+that Moshi does not preserve on typed **re-encoding**; the new sidecar
+retains the already-persisted source JSON as an opaque string and
+never parses then overwrites it merely to store a new detail.
+New detail snapshots store no vehicle route points, identity tokens
+or authenticated response bodies outside the existing local history
+namespace.
+
+**APK rollback qualification:** A phone with a new version-1 local
+envelope must not be silently treated as semantically equivalent to
+the old 8625 APK's pre-envelope decoder. The original signed APK and
+original complete data/history are retained; an in-place rollback
+may temporarily not display newer detailed local metadata/energy,
+even while `apiEvidence` remains stored. The original local Codex
+must privately test the same-signer forward/rollback compatibility,
+without any uninstall or app-data reset, before reporting rollback
+PASS. If restoration cannot preserve the full raw history/namespace,
+stop and request a separate scoped decision rather than clearing
+or rewriting records. No automatic data conversion/backfill is
+proposed; present source qualification does NOT authorize device
+installation or production API/TLS changes.
+
+### Legacy incomplete sessions and raw-envelope parser isolation
+
+A historical drive or charge with a missing start/end boundary remains
+part of the result returned by `UnifiedHistoryRepository.load`, even
+when the unchanged Room summary table cannot store it. The source
+repair projects the persisted subset through the actual DAO merge
+and the unpersistable subset through the prior in-memory guarded view;
+it does **not** insert guessed start/end dates or treat null values as
+real zeros. Isolated tests require such rows to remain visible with
+`qualityState=incomplete`, nullable kWh, no new Room row, and the
+existing scoped account/vehicle read guard.
+
+The current detail snapshot is never valid solely because it is
+marked local version1. Its `raw_json` must actually decode to the
+matching record ID/source first; the accompanying projection must
+match the same local car namespace, source and exact observed
+start/end instants. Tests damage the original wrapped JSON while
+leaving the signed-looking detail proof intact, then require
+unavailable energy and no promotion of an old Room 8-kWh placeholder.
+No user data or API records are altered in these negative cases.
+
+
+### 2026-10-09 ef88 Android failure and exact independent d119 replay closure
+
+Actions `37887421579` at `ef88fd573f20d892e5c351ca7c86660987c4a146`
+did **not** qualify Android: Debug and Release
+`RawHistoryEvidencePersistenceTest.chargeDetailCurrentSocAddressAndQualifiedZeroSurviveSameIdRoomUpsert`
+failed after a second weak same-ID update (expected `new charge`,
+received `old charge`). The real XML reported this at test line 454.
+`verify`, isolated PostgreSQL/race/Web, 10 source audits and TLS
+were successful; overall ef88 run FAILED and must never be reported
+as full PASS.
+
+**Source root cause:** `hasTrustedHistoryEvidence` previously treated
+`qualityState=observed` as trusted even for `source=local_import`.
+The weak same-ID import therefore overwrote the source identity when
+merging two unrelated source records. The next cache upsert replaced a
+scoped, qualified Fleet detail presentation with the weaker raw
+metadata. A claimed quality string is not proof of natural
+Fleet/source identity. The repair excludes unverified local_import and
+local_history from strong source selection and refuses to combine
+known conflicting source instances. A new incoming local detail is
+admissible only when the canonical raw merge actually selected its
+own source and exact window. Incoming foreign contracts cannot revoke
+an unrelated cached valid counter or move its presentation to another
+source, namespace or clock interval. No raw archive row is deleted.
+
+**Tests:** existing regression that actually failed; synthetic
+`qualityState=observed` local_import against stored Fleet
+battery-input **valid zero** and current address/SOC; a second
+different trusted source; an unverified locally authored counter
+sidecar cannot transplant into the Fleet namespace. The new
+`IndependentD119DisplayReplayTest` uses the independent Java fixture's
+exact source JSON and detail JSON through **real Moshi models**, source
+summary serialization, `withResolvedDriveEnergy`,
+`toAnalysisDriveData`, `mergeStoredDrive`, and a second weak
+same-ID refresh. The resulting detail must remain **2 km,
+SOC 80→70, reported 1 kWh, 500 Wh/km** at direct/Room/offline
+points while the original opaque JSON retains **1 km and raw
+unqualified 8 kWh**. Separate tests cover source mismatches,
+multicar numeric-ID collisions, changed windows, qualified signed
+negative drive net, unknown/null energy and battery-side charge zero.
+
+A version-1 local wrapper without a **validated, matching scoped
+detail presentation** cannot on its own qualify energy, even when it
+contains a valid-looking detail contract. Legacy source archive
+records still follow their original explicitly qualified
+`energy_contract` or historical compatibility path when there is
+no supplemental local proof. Malformed/version-mismatched envelopes
+continue to fail closed; neither an old Room numeric placeholder
+nor an orphaned local sidecar establishes a real kWh value. Exact
+raw receipt bytes remain independently readable.
+
+This documents testable **source behavior**, not production or
+physical-device qualification. The new immutable HEAD and
+actual same-SHA Android/Go/PG/race/Web/TLS/audit job IDs and
+artifacts are recorded in PR17's final completion comment, not
+inferred from old ef88 or the moving branch. There is no fleet
+first-event, authenticated-history, TPMS, notification or two-user
+natural acceptance from these synthetic tests.

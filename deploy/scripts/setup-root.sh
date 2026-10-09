@@ -100,57 +100,77 @@ fi
 # -----------------------------------------------------------------------------
 # R1 nginx 独立配置 + 证书 include 片段
 # -----------------------------------------------------------------------------
-log "R1 写入证书 include 片段 ..."
-
-sudo tee "${NGINX_CONF_DIR}/jourvolt-ssl.selfsigned.inc" >/dev/null <<'INC'
-ssl_certificate     /etc/nginx/jourvolt-selfsigned.crt;
-ssl_certificate_key /etc/nginx/jourvolt-selfsigned.key;
-INC
-
-sudo tee "${NGINX_CONF_DIR}/jourvolt-ssl.le.inc" >/dev/null <<'INC'
-ssl_certificate     /etc/letsencrypt/live/jourvolt/fullchain.pem;
-ssl_certificate_key /etc/letsencrypt/live/jourvolt/privkey.pem;
-INC
-
-# 自签兜底证书（幂等：已存在则不再生成）
-if [[ ! -f /etc/nginx/jourvolt-selfsigned.crt || ! -f /etc/nginx/jourvolt-selfsigned.key ]]; then
-  log "生成自签占位证书（CN=jourvolt-placeholder，有效期 3650 天）..."
-  sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
-    -subj '/CN=jourvolt-placeholder' \
-    -keyout /etc/nginx/jourvolt-selfsigned.key \
-    -out    /etc/nginx/jourvolt-selfsigned.crt 2>/dev/null
-  sudo chmod 600 /etc/nginx/jourvolt-selfsigned.key
-  sudo chmod 644 /etc/nginx/jourvolt-selfsigned.crt
+log "R1 preflight and transactional Nginx config ..."
+LE_SRC="${NGINX_SRC_DIR}/jourvolt-ssl.le.inc"
+SELF_SRC="${NGINX_SRC_DIR}/jourvolt-ssl.selfsigned.inc"
+LE_CERT="/etc/letsencrypt/live/jourvolt/fullchain.pem"
+LE_KEY="/etc/letsencrypt/live/jourvolt/privkey.pem"
+[[ -f "$LE_SRC" && -f "$SELF_SRC" ]] || die "Managed TLS fragments unavailable"
+# Check the original active include against checked-in exact managed content
+# BEFORE writing the managed files. Unknown active configurations are owned by
+# the operator and are not silently overwritten.
+CURRENT_SSL_KIND=absent
+if sudo test -e "${NGINX_CONF_DIR}/jourvolt-ssl.inc"; then
+  if bash "${SCRIPT_DIR}/nginx-include-match.sh" "${NGINX_CONF_DIR}/jourvolt-ssl.inc" "$LE_SRC"; then
+    CURRENT_SSL_KIND=letsencrypt
+  elif bash "${SCRIPT_DIR}/nginx-include-match.sh" "${NGINX_CONF_DIR}/jourvolt-ssl.inc" "$SELF_SRC"; then
+    CURRENT_SSL_KIND=selfsigned
+  else
+    die "Unrecognized active TLS include; preserve for explicit review"
+  fi
 fi
-
-# 当前生效片段：默认自签（LE 签发成功后切换）
-sudo cp -a "${NGINX_CONF_DIR}/jourvolt-ssl.selfsigned.inc" "${NGINX_CONF_DIR}/jourvolt-ssl.inc"
-
-# 渲染模板（仅替换三个域名占位符）
-[[ -f "${NGINX_SRC_DIR}/jourvolt.conf.template" ]] || die "模板缺失：${NGINX_SRC_DIR}/jourvolt.conf.template"
-log "渲染 jourvolt.conf ..."
+LE_VALID=false
+if sudo test -s "$LE_CERT" && sudo test -s "$LE_KEY" &&
+   sudo bash "${SCRIPT_DIR}/qualify-nginx-le.sh" "$LE_CERT" "$LE_KEY" \
+     "$DOMAIN_SELFHOST" "$DOMAIN_API" "$DOMAIN_APPLINK" >/dev/null 2>&1; then
+  LE_VALID=true
+fi
+SSL_ACTIVE_MODE="$(bash "${SCRIPT_DIR}/tls-include-policy.sh" "$CURRENT_SSL_KIND" "$LE_VALID")" ||
+  die "Active certificate cannot be safely replaced; no live config touched"
+if [[ "$SSL_ACTIVE_MODE" == letsencrypt ]]; then
+  SSL_SOURCE="$LE_SRC"
+else
+  SSL_SOURCE="$SELF_SRC"
+  if [[ -f /etc/nginx/jourvolt-selfsigned.crt || -f /etc/nginx/jourvolt-selfsigned.key ]]; then
+    [[ -s /etc/nginx/jourvolt-selfsigned.crt && -s /etc/nginx/jourvolt-selfsigned.key ]] ||
+      die "Incomplete self-signed bootstrap pair; preserve for review"
+  else
+    # First-install bootstrap only. NEVER overwrite a previously active
+    # public certificate; this placeholder cannot be a TLS acceptance PASS.
+    sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+      -subj '/CN=jourvolt-placeholder' \
+      -keyout /etc/nginx/jourvolt-selfsigned.key \
+      -out /etc/nginx/jourvolt-selfsigned.crt >/dev/null 2>&1
+    sudo chmod 0600 /etc/nginx/jourvolt-selfsigned.key
+    sudo chmod 0644 /etc/nginx/jourvolt-selfsigned.crt
+  fi
+fi
+# Only the three approved names are accepted in rendered managed vhost config.
+for domain in "$DOMAIN_SELFHOST" "$DOMAIN_API" "$DOMAIN_APPLINK"; do
+  [[ "$domain" =~ ^[a-zA-Z0-9.-]+$ ]] || die "Invalid managed domain"
+done
+rendered="$(mktemp)"
+trap 'rm -f -- "$rendered"' EXIT
 sed -e "s/%SELFHOST%/${DOMAIN_SELFHOST}/g" \
     -e "s/%API%/${DOMAIN_API}/g" \
     -e "s/%APPLINK%/${DOMAIN_APPLINK}/g" \
-    "${NGINX_SRC_DIR}/jourvolt.conf.template" | sudo tee "${NGINX_CONF_DIR}/jourvolt.conf" >/dev/null
-
-sudo nginx -t 2>&1 | sed 's/^/[nginx -t] /'
-NGINX_T_AFTER="$(sudo nginx -t 2>&1 | grep -c 'warn' || true)"
-if (( NGINX_T_AFTER > NGINX_T_BASELINE )); then
-  die "nginx -t warning 数从 ${NGINX_T_BASELINE} 增加到 ${NGINX_T_AFTER}，中止"
-fi
-log "R1 生效：nginx -t 通过（warning ${NGINX_T_AFTER} 条，未超基线），reload nginx"
-sudo systemctl reload nginx
+    "${NGINX_SRC_DIR}/jourvolt.conf.template" > "$rendered"
+# Actual owned-file install is atomic, backed up, nginx -t checked, reloaded
+# and rolled back automatically on any failure (isolated CI tests exercise it).
+bash "${SCRIPT_DIR}/tls-nginx-transaction.sh" "$NGINX_CONF_DIR" "$rendered" \
+  "$SSL_SOURCE" "$SELF_SRC" "$LE_SRC" ||
+  die "Transactional Nginx apply failed; inspect rollback receipt privately"
+log "R1 qualified active TLS mode ${SSL_ACTIVE_MODE}"
 
 # -----------------------------------------------------------------------------
 # R2 证书签发（certbot certonly --webroot，完全不读不写 nginx 配置）
 # -----------------------------------------------------------------------------
 CERT_ISSUED='false'
 if [[ "${SKIP_CERT}" == 'true' ]]; then
-  log "SKIP_CERT=true：跳过签发，证书仍为自签占位"
+  log "SKIP_CERT=true：跳过签发，保留安全选择的证书"
 elif ! acme_email_usable; then
   log "ACME_EMAIL 未提供或为占位符（值不打印）：跳过签发；"
-  log "Let's Encrypt 签发列为待办——请提供真实联系邮箱后重跑："
+  log "Let's Encrypt 签发列为待办（已有有效证书则保留）："
   log "  ACME_EMAIL='ops@example.com' bash ./setup-root.sh"
 else
   if ! command -v certbot >/dev/null 2>&1; then
@@ -169,7 +189,7 @@ else
         -d "${DOMAIN_SELFHOST}" -d "${DOMAIN_API}" -d "${DOMAIN_APPLINK}" \
         --agree-tos -m "${ACME_EMAIL}" --no-eff-email \
         --keep-until-expiring --non-interactive \
-        --deploy-hook 'systemctl reload nginx'; then
+        --deploy-hook '/bin/true'; then
       CERT_OK='true'
       break
     fi
@@ -179,13 +199,25 @@ else
   done
 
   if [[ "$CERT_OK" == 'true' ]]; then
+    # Never activate an issued-but-unverified chain/key pair.
+    if ! sudo bash "${SCRIPT_DIR}/qualify-nginx-le.sh" "$LE_CERT" "$LE_KEY" \
+      "$DOMAIN_SELFHOST" "$DOMAIN_API" "$DOMAIN_APPLINK" >/dev/null 2>&1; then
+      die "Issued public certificate did not pass chain, time, host and key qualification"
+    fi
+    if [[ "$SSL_ACTIVE_MODE" == letsencrypt ]]; then
+      # A failed nginx -t MUST NOT short-circuit past activation and claim PASS.
+      bash "${SCRIPT_DIR}/reload-qualified-le.sh" ||
+        die "LE remained active but post-issuance validation/reload failed"
+    else
+      bash "${SCRIPT_DIR}/tls-nginx-transaction.sh" "$NGINX_CONF_DIR" "$rendered" \
+        "$LE_SRC" "$SELF_SRC" "$LE_SRC" ||
+        die "LE activation failed; previous active include restored"
+    fi
+    SSL_ACTIVE_MODE=letsencrypt
     CERT_ISSUED='true'
-    log "签发成功：切换 include 片段为 Let's Encrypt 路径并 reload"
-    sudo cp -a "${NGINX_CONF_DIR}/jourvolt-ssl.le.inc" "${NGINX_CONF_DIR}/jourvolt-ssl.inc"
-    sudo nginx -t 2>&1 | sed 's/^/[nginx -t] /'
-    sudo systemctl reload nginx
+    log "Qualified Let's Encrypt chain activated"
   else
-    warn "签发连续 ${CERTBOT_RETRIES} 次失败：保持自签兜底，443 可用但浏览器将告警"
+    warn "签发连续 ${CERTBOT_RETRIES} 次失败：保留原先证书；初装自签不得被当成通过"
     warn "待办：备案同步完成 / 邮箱就绪后重跑本脚本（幂等，已签发则 --keep-until-expiring 自动保留）"
   fi
 fi
@@ -201,15 +233,28 @@ if ! sudo diff -q "$STAR_PHOTO_BAK" "$STAR_PHOTO_CONF" >/dev/null; then
 fi
 log "护栏通过：star-photo.conf 与备份无差异"
 
+# ----------------------------------------------------------------------------- 
+# R3 Certificate renew deploy-hook: only valid public LE chain triggers reload.
+# Certbot's install/renewal runs must not silently accept a broken chain/key.
+# No private key is copied or printed; managed hooks never alter active include.
 # -----------------------------------------------------------------------------
-# R3 证书自动续期
-# -----------------------------------------------------------------------------
+RENEW_HOOK_DIR="/etc/letsencrypt/renewal-hooks/deploy"
+RENEW_HOOK="$RENEW_HOOK_DIR/matelink-qualified-reload.sh"
+sudo install -d -o root -g root -m 0755 "$RENEW_HOOK_DIR"
+# Existing nonmatching hooks are operator-owned; fail closed.
+if sudo test -e "$RENEW_HOOK" &&
+   ! sudo cmp -s "$RENEW_HOOK" "${SCRIPT_DIR}/renew-qualified-reload.sh"; then
+  die "Existing qualified TLS hook differs; preserve it for review"
+fi
+sudo install -m 0755 "${SCRIPT_DIR}/renew-qualified-reload.sh" "$RENEW_HOOK"
+sudo install -m 0755 "${SCRIPT_DIR}/qualify-nginx-le.sh" /etc/jourvolt/qualify-nginx-le.sh
+
 if sudo systemctl list-unit-files 2>/dev/null | grep -q '^certbot-renew\.timer'; then
   sudo systemctl enable --now certbot-renew.timer
   log "certbot-renew.timer 已启用"
 else
   sudo tee /etc/cron.d/jourvolt-certbot-renew >/dev/null <<'CRON'
-0 3 * * * root certbot renew --quiet --deploy-hook "systemctl reload nginx"
+0 3 * * * root certbot renew --quiet
 CRON
   log "certbot-renew.timer 不存在，已写入 /etc/cron.d/jourvolt-certbot-renew（每日 03:00）"
 fi
@@ -235,12 +280,12 @@ log "443 监听确认："
 sudo ss -lntp | grep ':443 ' || warn "443 未监听（异常，检查 nginx）"
 
 echo "=============================================================="
-if [[ "$CERT_ISSUED" == 'true' ]]; then
-  echo "SETUP_ROOT=PASS (TLS=letsencrypt)"
+if [[ "$SSL_ACTIVE_MODE" == 'letsencrypt' ]]; then
+  echo "SETUP_ROOT=PASS (TLS=letsencrypt; external trust check required)"
 elif [[ "${SKIP_CERT}" == 'true' || -z "${ACME_EMAIL}" ]]; then
-  echo "SETUP_ROOT=PASS_WITH_SELFSIGNED (TLS=pending, 原因: SKIP_CERT 或缺邮箱)"
+  echo "SETUP_ROOT=TLS_PLACEHOLDER_NOT_ACCEPTED (TLS=pending)"
 else
-  echo "SETUP_ROOT=PASS_WITH_SELFSIGNED (TLS=pending, 原因: 签发失败，重跑脚本即可)"
+  echo "SETUP_ROOT=TLS_PLACEHOLDER_NOT_ACCEPTED (TLS=pending)"
 fi
 echo "TODO(人工·阿里云控制台): 放行 443；确认 4000/8080/5432/1883/18080/18090 未放行"
 echo "=============================================================="

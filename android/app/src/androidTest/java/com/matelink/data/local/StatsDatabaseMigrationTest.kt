@@ -23,6 +23,19 @@ class StatsDatabaseMigrationTest {
         FrameworkSQLiteOpenHelperFactory()
     )
 
+    @Test fun migration20To21RetainsAndQuarantinesLegacyTpmsWithoutDeleting() {
+        val name="tpms-provenance-v20"
+        helper.createDatabase(name,20).apply {
+            execSQL("INSERT INTO tpms_pressure_samples(carId,observedAt,pressureFl) VALUES(-7,100,2.8)")
+            close()
+        }
+        val db=helper.runMigrationsAndValidate(name,21,true,StatsDatabase.MIGRATION_20_21)
+        db.query("SELECT pressureFl,provenance FROM tpms_pressure_samples WHERE carId=-7").use {
+            assertTrue(it.moveToFirst()); assertEquals(2.8,it.getDouble(0),0.0); assertEquals("legacy_unverified",it.getString(1))
+        }
+        db.close()
+    }
+
     @Test
     fun migratesV18ToV19WithoutTreatingLegacyPlaceholdersAsApiEvidence() {
         val databaseName = "legacy-v18-api-evidence"

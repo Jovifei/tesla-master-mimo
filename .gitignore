@@ -29,3 +29,11 @@ deploy/jourvolt-dev-mock/backups/
 # Binaries
 *.exe
 
+
+# Rebuildable outputs from isolated web/CI and diagnostic runs
+web_matelink/node_modules/
+web_matelink/dist/
+web_matelink/.next/
+android-evidence/
+evidence/
+*.hprof

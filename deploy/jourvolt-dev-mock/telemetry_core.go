@@ -310,12 +310,15 @@ type telemetrySnapshot struct {
 }
 
 type telemetryRoutePoint struct {
-	ObservedAt time.Time
-	Latitude   float64
-	Longitude  float64
-	Speed      *float64
-	Power      *float64
-	Heading    *float64
+	ObservedAt   time.Time
+	Latitude     float64
+	Longitude    float64
+	Speed        *float64
+	Power        *float64
+	Heading      *float64
+	BatteryLevel *int     `json:",omitempty"`
+	InsideTemp   *float64 `json:",omitempty"`
+	OutsideTemp  *float64 `json:",omitempty"`
 }
 
 func downsampleRoutePoints(points []telemetryRoutePoint, minInterval time.Duration) []telemetryRoutePoint {
@@ -369,9 +372,19 @@ type telemetryChargePoint struct {
 	ObservedAt   time.Time
 	BatteryLevel *int
 	EnergyAdded  *float64
+	// Persisted inside existing charge_points_json: no production DDL required.
+	// DCChargingEnergyIn measures battery input; ACChargingEnergyIn measures charger input.
+	BatteryCounter *float64 `json:",omitempty"`
+	ACInputCounter *float64 `json:",omitempty"`
+	// Mode classification is from actual FastChargerPresent/ChargerPhases events.
+	ChargeMode string `json:",omitempty"`
+	ChargeModeField string `json:",omitempty"`
+	// Small verified completion metadata, persisted in the existing charge JSON.
+	EnergyContract map[string]any `json:",omitempty"`
 	ChargerPower *float64
 	Latitude     *float64
 	Longitude    *float64
+	OutsideTemp  *float64 `json:",omitempty"`
 }
 
 func classifyTelemetrySession(session telemetrySession) (string, string) {
@@ -385,8 +398,15 @@ func classifyTelemetrySession(session telemetrySession) (string, string) {
 		}
 		return "incomplete", "missing_route_or_odometer"
 	}
+	if session.Source == "telemetry_mqtt" {
+        contract := completedSessionEnergyContract(session)
+        if battery, ok := contract["battery_input"].(map[string]any); ok && battery["quality"] == "reported" {
+            return "observed", "complete_battery_input_counter"
+        }
+        return "incomplete", "partial_or_missing_charge_counter"
+    }
 	if session.EnergyAdded != nil && *session.EnergyAdded >= 0 && !math.IsNaN(*session.EnergyAdded) && !math.IsInf(*session.EnergyAdded, 0) {
-		return "observed", "telemetry_energy_delta"
+		return "observed", "legacy_charge_energy_delta"
 	}
 	if len(session.Route) >= 2 {
 		return "observed", "telemetry_evidence"
@@ -509,6 +529,8 @@ func (m *telemetrySessionMachine) apply(event telemetrySessionEvent) {
 		m.applyCharge(event)
 	case "ACChargingEnergyIn", "DCChargingEnergyIn":
 		m.applyChargingEnergy(event)
+	case "ChargerPhases", "FastChargerPresent":
+		m.applyChargeModeEvidence(event)
 	case "Soc":
 		m.applyChargeBatteryLevel(event)
 	case "GpsHeading":
@@ -573,6 +595,28 @@ func (m *telemetrySessionMachine) updateDrivingObservation(event telemetrySessio
 	}
 }
 
+// Only explicit provider mode fields are observations of charging type.
+// Positive ACChargingEnergyIn is not evidence of a whole-session AC mode.
+func (m *telemetrySessionMachine) applyChargeModeEvidence(event telemetrySessionEvent) {
+    if m.charge == nil { return }
+    mode := ""
+    switch event.FieldName {
+    case "FastChargerPresent":
+        explicit, ok := event.Value.(bool)
+        if !ok { return }
+        if explicit { mode = "dc" } else { mode = "ac" }
+    case "ChargerPhases":
+        phases, ok := numberFromJSONValue(event.Value)
+        if !ok || math.IsNaN(phases) || math.IsInf(phases, 0) || math.Trunc(phases) != phases { return }
+        if phases == 0 { mode = "dc" } else if phases >= 1 && phases <= 3 { mode = "ac" } else { return }
+    }
+    if mode != "" {
+        m.appendChargePoint(telemetryChargePoint{
+            ObservedAt: event.ObservedAt, ChargeMode: mode, ChargeModeField: event.FieldName,
+        })
+    }
+}
+
 func (m *telemetrySessionMachine) applyChargingEnergy(event telemetrySessionEvent) {
 	if m.charge == nil {
 		return
@@ -581,16 +625,36 @@ func (m *telemetrySessionMachine) applyChargingEnergy(event telemetrySessionEven
 	if !ok {
 		return
 	}
-	if m.chargeEnergyField != event.FieldName || m.chargeEnergyStart == nil {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return
+	}
+	if event.FieldName == "ACChargingEnergyIn" {
+		m.appendChargePoint(telemetryChargePoint{ObservedAt: event.ObservedAt, ACInputCounter: &value})
+		return
+	}
+	if event.FieldName != "DCChargingEnergyIn" || m.chargeEnergyField == "invalid_dc" {
+		return
+	}
+	if m.chargeEnergyField != "DCChargingEnergyIn" || m.chargeEnergyStart == nil {
+		// Existing persisted AC baselines are never reinterpreted as battery input.
 		m.chargeEnergyStart = &value
-		m.chargeEnergyField = event.FieldName
+		m.chargeEnergyField = "DCChargingEnergyIn"
+		m.charge.EnergyAdded = nil
+		m.appendChargePoint(telemetryChargePoint{ObservedAt: event.ObservedAt, BatteryCounter: &value})
 		return
 	}
 	delta := value - *m.chargeEnergyStart
-	if delta >= 0 && !math.IsNaN(delta) && !math.IsInf(delta, 0) {
-		m.charge.EnergyAdded = &delta
-		m.appendChargePoint(telemetryChargePoint{ObservedAt: event.ObservedAt, EnergyAdded: &delta})
+	if !isFiniteChargeCounterDelta(delta) {
+		// Persist the reset sample itself, including a same-timestamp reset.
+        // Recomputing after completion or database restart must see this evidence.
+        m.appendChargePoint(telemetryChargePoint{ObservedAt: event.ObservedAt, BatteryCounter: &value})
+		m.charge.EnergyAdded = nil
+		m.chargeEnergyField = "invalid_dc"
+		m.chargeEnergyStart = nil
+		return
 	}
+	m.charge.EnergyAdded = &delta
+	m.appendChargePoint(telemetryChargePoint{ObservedAt: event.ObservedAt, BatteryCounter: &value, EnergyAdded: &delta})
 }
 
 func (m *telemetrySessionMachine) applyChargeBatteryLevel(event telemetrySessionEvent) {
@@ -609,7 +673,7 @@ func (m *telemetrySessionMachine) appendChargePoint(point telemetryChargePoint) 
 	if m.charge == nil || point.ObservedAt.IsZero() {
 		return
 	}
-	if point.BatteryLevel == nil && point.EnergyAdded == nil && point.ChargerPower == nil && point.Latitude == nil {
+	if point.BatteryLevel == nil && point.EnergyAdded == nil && point.BatteryCounter == nil && point.ACInputCounter == nil && point.ChargeMode == "" && point.ChargerPower == nil && point.Latitude == nil && point.OutsideTemp == nil {
 		return
 	}
 	m.charge.ChargePoints = append(m.charge.ChargePoints, point)
@@ -709,6 +773,18 @@ func (m *telemetrySessionMachine) complete(session *telemetrySession) {
 	if session.Source == "" {
 		session.Source = "telemetry_mqtt"
 	}
+    if session.Kind == "charge" && session.Source == "telemetry_mqtt" {
+        // The old non-null session scalar must never retain a pre-reset or
+        // partial-window delta after completion. It is a projection of the
+        // qualified whole-session battery-side counter, including valid zero.
+        contract := completedSessionEnergyContract(*session)
+        battery, _ := contract["battery_input"].(map[string]any)
+        if battery != nil && battery["quality"] == "reported" {
+            if value, ok := battery["value_kwh"].(float64); ok && isFiniteChargeCounterDelta(value) {
+                session.EnergyAdded = &value
+            } else { session.EnergyAdded = nil }
+        } else { session.EnergyAdded = nil }
+    }
 	session.QualityState, session.QualityReason = classifyTelemetrySession(*session)
 	session.CompletionKey = sessionCompletionKey(*session)
 	m.completed = append(m.completed, *cloneTelemetrySession(session))
@@ -737,6 +813,23 @@ func cloneTelemetrySession(value *telemetrySession) *telemetrySession {
 	}
 	copyValue := *value
 	copyValue.Route = append([]telemetryRoutePoint(nil), value.Route...)
+	for index := range copyValue.Route {
+		copyValue.Route[index].BatteryLevel = cloneInt(value.Route[index].BatteryLevel)
+		copyValue.Route[index].InsideTemp = cloneFloat(value.Route[index].InsideTemp)
+		copyValue.Route[index].OutsideTemp = cloneFloat(value.Route[index].OutsideTemp)
+	}
+	copyValue.ArchiveRoute = append([]historyImportRoutePoint(nil), value.ArchiveRoute...)
+	for index := range copyValue.ArchiveRoute {
+		copyValue.ArchiveRoute[index].BatteryLevel = cloneInt(value.ArchiveRoute[index].BatteryLevel)
+		copyValue.ArchiveRoute[index].InsideTemp = cloneFloat(value.ArchiveRoute[index].InsideTemp)
+		copyValue.ArchiveRoute[index].OutsideTemp = cloneFloat(value.ArchiveRoute[index].OutsideTemp)
+		if value.ArchiveRoute[index].ClimateInfo != nil {
+			copyValue.ArchiveRoute[index].ClimateInfo = &historyImportClimateInfo{
+				InsideTemp:  cloneFloat(value.ArchiveRoute[index].ClimateInfo.InsideTemp),
+				OutsideTemp: cloneFloat(value.ArchiveRoute[index].ClimateInfo.OutsideTemp),
+			}
+		}
+	}
 	copyValue.ChargePoints = cloneTelemetryChargePoints(value.ChargePoints)
 	return &copyValue
 }
@@ -747,7 +840,14 @@ func cloneTelemetryChargePoints(values []telemetryChargePoint) []telemetryCharge
 		copyValue := value
 		copyValue.BatteryLevel = cloneInt(value.BatteryLevel)
 		copyValue.EnergyAdded = cloneFloat(value.EnergyAdded)
+		copyValue.BatteryCounter = cloneFloat(value.BatteryCounter)
+		copyValue.ACInputCounter = cloneFloat(value.ACInputCounter)
+        if value.EnergyContract != nil {
+            copyValue.EnergyContract = make(map[string]any, len(value.EnergyContract))
+            for key, metric := range value.EnergyContract { copyValue.EnergyContract[key] = metric }
+        }
 		copyValue.ChargerPower = cloneFloat(value.ChargerPower)
+		copyValue.OutsideTemp = cloneFloat(value.OutsideTemp)
 		copyValue.Latitude = cloneFloat(value.Latitude)
 		copyValue.Longitude = cloneFloat(value.Longitude)
 		result = append(result, copyValue)

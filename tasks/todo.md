@@ -1,3 +1,18 @@
+# 2026-10-02 接收远端 OOM 修复交接
+
+- [x] 读取 ZIP/Prompt，fetch 修复分支，确认 PR #11 Draft/head 16a31c3；隔离工作树接收，未重复 apply。
+- [x] 交接包 36 个哈希通过；17 个仓库文件仅 Windows 换行不同，文本一致。
+- [x] 隔离 PostgreSQL16 本地 Go 274/274 零失败/跳过；vet/mod verify/build 通过；Web 13/13、npm ci、生产构建通过。
+- [x] 服务端与多客户端独立复审，发现 Timeline/WhereWasI 单次大页请求与服务端100条上限不兼容。
+- [x] 回传远端分析并收到最小 Android 兼容修复 PLAN。
+- [x] 两个 Android 调用方复用 UnifiedHistoryRepository；101条分页回归、失败/缓存提示、取消传播及身份失败清空界面。
+- [x] 最终Debug/Release各564项0失败/错误（Release8跳过）、Lint0错误/241警告、原签名Release核验通过。
+- [x] 最终证据记录并交远端复审；返回DONE，仅源码/测试/构建/签名阶段。
+- [x] 按Jovi本轮授权提交f06585f并推送PR #11修复分支；同签名原包覆盖与真机启动通过，首页/登录可见。
+- [ ] 下一大阶段交远端主要实现，交接桥梁为GitHub；等待远端新分支和可验证交付。合入及生产部署仍独立。
+
+Review（进行中）：Windows Go -race 缺少 cgo；已在专用Linux临时容器完成本地定向race，结果PASS。交接包中的同SHA Linux CI是独立证据。主工作区及原包数据保持。此仓库为子模块，原生管理 worktree 的相对 core.worktree 解析异常；对隔离目录 Git 操作显式使用 --work-tree/GIT_WORK_TREE绑定，不改共享配置。Obsidian已通过DryRun后镜像5份远端交接文档。最终证据见 docs/RPT-2026-10-02-local-handoff-acceptance.md。
+
 # 2026-10-02 同步远端 main 并合并已交付分支
 
 ## 2026-10-02 审核入口与登录 OOM 记录
@@ -3256,3 +3271,238 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - [ ] 对确认的代码缺陷先加回归测试，再最小修复；运行 Go/Android 测试、Lint、Release 构建和真机检查。
 - [ ] 记录 Review、提交推送、签名 APK、`adb install -r`、首次安装时间及账号/历史保留；Tesla 人工确认仍由车主完成。
 - Review：这是主工作区原有的未完成检查单。本次合并后的更新验收应以本文档顶部 2026-10-02 记录为准。
+
+## Stage2 import/archive follow-up 2026-10-02
+- [x] Read remote request e75a452; source hashes and unique patches verified.
+- [ ] Apply remote shared admission and archive status mapping; correct ordinary import mapping locally.
+- [ ] Genuine service/HTTP regression tests; isolated PostgreSQL full suite; Linux race.
+- [ ] GitHub commit and CI; remote review and summary/chunk continuation.
+Scope: backend source-only; no merge/deploy/deletion/TTL changes. Remote test source is malformed and primitive-only, so replacement requires local verification tests.
+- [x] Remote shared import admission/archive HTTP blocks applied; ordinary import status/cancellation residual fixes added.
+- [x] Seven genuine regressions PASS; full Go/isolated PG16 294 PASS (zero fail/skip), vet/build/mod verify PASS.
+- [x] Linux targeted history race and separate ArchiveImport race PASS.
+- Review: summary/chunk adapter e34f527 CHANGES_REQUIRED, not materialized. Decode-before-admission window remains partial. Device/production NOT_RUN for Stage2.
+- [x] Local residual decode admission fix: outer HTTP lease before body read, service admitted path avoids nested acquire; held through serialization.
+- [x] Red/green real HTTP counting-body tests: 8/8 subcases; rejected/canceled reads2 before, reads0 after; invalid payload releases and valid200.
+- [x] Final full Go/isolated PG16 306 PASS including subtests, zero fail/skip; vet/build and expanded Linux race PASS.
+- [ ] Push final decode correction, exact-SHA CI, remote independent review and actual persisted-summary implementation.
+Review: remote decode adapter adc2955 rejected as breaking entry function and leaking primitive test; local source fixes it. Large summary/chunk stage still incomplete.
+
+## Stage2 persisted-summary slice — 2026-10-03
+
+- [x] Replace the unconnected summary-helper proposal with actual PostgreSQL
+  trigger-maintained endpoints, original sample counts, format version and write
+  revision for native/local/archive writes
+- [x] Use persisted endpoints in page/summary reads with explicit legacy fallback
+  and no null-triggered raw JSON access
+- [x] Add explicit single-batch backfill (max100, cancellation, SKIP LOCKED), retain
+  malformed originals for investigation, and document aggregate progress checks
+- [x] Five new PostgreSQL regressions; final full suite 311 PASS/0FAIL/0SKIP;
+  vet/build/modverify and targeted race PASS; Web13/13 and clean build PASS
+- [x] Independent final-diff review: no blocking issue; source hashes and receipts checked
+- [x] Existing-branch publication `ad78840` and exact-SHA CI run `37096150346` PASS
+- [ ] Bounded point/chunk persistence, manifest hashes, broad restart qualification
+  and 2/4/8/16 resource measurements remain open
+
+Evidence and limitations: `docs/RPT-2026-10-03-stage2-persisted-summary-validation.md`.
+No production backfill, deployment, raw-history deletion, retention change or
+Stage2 phone acceptance occurred.
+
+## Stage2 isolated process/resource qualification — 2026-10-03
+
+- [x] Actual killed helper OS process followed by a fresh process: direct-ingest
+  replay, energy baseline, original samples and one completion preserved
+- [x] Cancel after PostgreSQL UPDATE entry is observed, wait for transaction lock
+  release, prove full-row rollback and successful backfill retry
+- [x] Final local full Go/PG suite314 PASS/0FAIL/0SKIP; vet/build/modverify/race PASS
+- [x] Eight synthetic scenarios: 5,000/29,583 points × concurrency2/4/8/16; no raw
+  point loss or permit leaks; all lightweight requests succeed; expected429 at16
+- [x] Review-driven correction: explicitly flush each backend's PG stats, align
+  CPU timing, identify direct-service metadata/page1 fixture and release all pool
+  handles on errors; discard preliminary metrics and rerun final source
+- [x] Final independent source/evidence review: no remaining blocking issue
+- [x] Existing-branch publication `8b7b199`; combined implementation `39af788`
+  exact-head CI run `37114324776` PASS, including all eight synthetic scenarios
+- [ ] Bounded point/chunk writes and realistic long-duration/broker/device checks
+
+Report: `docs/RPT-2026-10-03-stage2-restart-resource-qualification.md`.
+At large points/concurrency8–16 the sampled handler-driver RSS still reaches
+~395–417MiB; no claim that the original production OOM is fully closed.
+
+## Native identity and idle-drive timer residual repair — 2026-10-03
+
+- [x] Reproduce native global-ID collision with two accounts/vehicles at identical
+  session start; all 10 ingests accepted but second account has no completed history
+- [x] Scope only new native IDs; preserve legacy IDs/public IDs and reject wrong
+  scope conflicts atomically; charge/drive/shared-VIN/legacy/replay probes pass
+- [x] Reproduce existing idle timer `conn busy` on baseline and native-only fix
+- [x] Close bounded due-header reader before UPDATE, preserve exact debounce and
+  raw/identity values, drain 100 per tick and skip/retry locked rows
+- [x] Combined local Go/PG 320 PASS / 0 FAIL / 0 SKIP; vet/build/modverify/race PASS
+- [x] Finalizer independent signoff: repeated real-PG race, concurrent drain,
+  rollback/cancellation/retry and lock-retention probes pass
+- [x] Durable combined repair/qualification delivery package verified, including
+  per-file hashes and three ordered patches that reconstruct the reviewed tree
+- [x] Published `4aebbac` (identity) and `39af788` (finalizer) on the existing branch;
+  exact-head CI `37114324776`: Go320/0FAIL/0SKIP, eight scenarios, Web13/13 and
+  race/vet/build/module/clean Web build PASS
+- Boundary: draft PR12 remains stacked on PR11; no deployment or production
+  recovery occurred, and the original OOM/resource limitations remain open
+
+Report: `docs/RPT-2026-10-03-native-identity-idle-finalizer-repair.md`.
+
+
+## Native session detail shadow chunks — 2026-10-03
+
+- [x] Connect bounded native sample-delta writes to the real PostgreSQL ingest
+  transaction, retaining legacy JSON and full-detail reads
+- [x] Bound each chunk to 256 samples/64KiB encoded JSON; persist SHA-256, ordered
+  indices/counts and version/encoding with tenant composite foreign keys
+- [x] Prove fresh insertion before labeling creation coverage; retain explicit
+  missing prefixes for existing sessions and reject malformed legacy decode
+- [x] Detect old-writer/revision mismatch without silent rebase, retain prior
+  chunks and continue authoritative legacy ingestion
+- [x] Isolated local Go/PG334 PASS/0FAIL/0SKIP, vet/build/modverify and race PASS;
+  new boundary/scope/rollback/concurrent replay tests and actual killed-process
+  test cover chunk persistence and reconstruction
+- [x] Mandatory PostgreSQL/race CI gates include the six new native-shadow tests;
+  verify the latest exact-head result in PR12 before merge consideration
+- [ ] Bounded comparison/rebuild, fixed-size native state, read-version negotiation,
+  complete raw-event archive and realistic resource/device/production acceptance
+
+Report: `docs/RPT-2026-10-03-native-detail-shadow-chunks.md`.
+This comparison copy increases storage/write work and still accompanies whole-JSON
+native ingestion. It is not an OOM closure or a complete raw telemetry archive.
+
+
+## Bounded native-shadow comparison — 2026-10-03
+
+- [x] Add explicit maintenance-only, scoped comparison with persisted resume
+  cursor; no caller-selected offsets or automatic history repair
+- [x] Bound each invocation to 16 chunks / 4,096 samples / 1MiB payload read into Go
+  and a five-second database context; verify SHA/count/order and legacy equality
+- [x] Pin source/completion/content revisions and eligibility; mark completion
+  only at verified revisions and recheck even already-finished jobs
+- [x] Use session → manifest → cursor lock order and plain MVCC chunk reads;
+  row-DML revisions, ownership/TRUNCATE guards and cascading cursor invalidation
+- [x] Real PostgreSQL process-resume, concurrent cursor, corruption/drift,
+  failure/cancellation/retry and observed lock-order tests pass under race ×3
+- [x] Final local Go/PG353 PASS/0FAIL/0SKIP; vet/build/modverify/race and diff checks PASS
+- [x] Independent frozen-source review: no blocking issue; no extra independent
+  database run claimed for this review
+- [x] Mandatory PostgreSQL CI list includes all eight comparison tests; existing
+  race gate covers them; verify current exact-head results in PR12
+- [x] Generation-preserving bounded rebuild for stale/legacy-prefix shadows
+  (subsequent implementation and evidence below)
+- [ ] Fixed-size native state and eventual verified read-version cutover
+
+Report: `docs/RPT-2026-10-03-native-shadow-bounded-comparison.md`.
+Comparison leaves original session JSON and existing chunks unchanged. PostgreSQL
+large-value memory, production resources and the original OOM remain open.
+
+## Bounded native generation rebuild — 2026-10-03
+
+- [x] Restore the full exact-head checkout/test toolchain and review generation
+  identity, immutability, bounds and locking independently before implementation
+- [x] Add separate preserved generations from completed native source JSON;
+  pin account/vehicle/session/public/completion identity, source revision and count
+- [x] One explicit bounded build or verification phase per invocation, with
+  durable cursor, <=16 chunks, <=256 samples/64KiB UTF-8 each and five-second context
+- [x] Freeze construction before independent comparison from zero; verify
+  hashes/counts/order/JSONB equality and use a generation-bound genesis for empties
+- [x] Atomically select only a fully verified higher-ordinal generation; repeated
+  finished calls revalidate full identity/eligibility without republishing
+- [x] Guard immutable generated chunks/identity while preserving account cascade
+  semantics; acquire generation lock before chunk uniqueness arbitration
+- [x] Real PostgreSQL process/concurrency/scope/drift/bounds tests and observed
+  lock/fault/cancellation/rollback/independent-corruption tests pass under race ×3
+- [x] Final local Go/PG409 PASS/0FAIL/0SKIP; vet/build/modverify/expanded race PASS;
+  Web13 plus clean install/build PASS. Required CI list adds all twelve PG cases
+- [x] Independent source review has no blocking finding; independent isolated
+  PostgreSQL/race run passes 56 records with zero failures/skips
+- [ ] Fixed-size native ingest, versioned generation reads, full raw-event archive,
+  realistic resource/restart/device restore/ACK and production acceptance
+
+Report: `docs/RPT-2026-10-03-native-shadow-generation-rebuild.md`.
+Original JSON, existing ingest shadows and previous generations are preserved.
+Source drift requires a new generation; selection remains conditional on current
+identity/eligibility/revisions. No production migration/backfill, cleanup, deploy
+or merge. Whole-JSON ingest/full-detail reads and the original OOM remain open.
+
+## Compact native transition contract — 2026-10-03
+
+- [x] Write and run legacy reference regressions before the new compact API;
+  preserve the original reducer as the independent differential oracle
+- [x] Add unwired versioned account/vehicle scalar state, 31 explicit timestamp
+  slots, exact sample totals and bounded per-event deltas/completion headers
+- [x] Preserve charge baseline/switching, debounce, completion ordering/identity,
+  null/zero, total-count quality and seeded legacy IDs/public IDs
+- [x] Reject unsupported fields/versions/scope and counter overflow; retain no
+  sample/history/Seen collections and keep input/output ownership independent
+- [x] Compare deterministic cases plus eight seeded 600-event traces after
+  equivalent admission; test long streams and timestamp precision/extreme duration
+- [x] Verify actual PostgreSQL duplicate/out-of-order/tenant admission separately,
+  including stale-first identity reuse and post-insert precision rejection
+- [x] Focused compact plus PostgreSQL admission regressions pass race ×3:
+  51 test/subtest records, zero failures/skips
+- [x] Full isolated Go/PG426 PASS/0FAIL/0SKIP; vet/build/modverify/expanded race PASS;
+  Web13 plus clean install/build PASS; CI requires the actual PostgreSQL admission case
+- [ ] Integrate only after reviewed ownership/source/format/version/bootstrap,
+  transaction-order and legacy-reader compatibility gates; qualify the full pipeline
+
+Report: `docs/RPT-2026-10-03-compact-native-transition.md`.
+No live writer/reader/schema change. Fixed retained state in an unwired core does
+not establish PostgreSQL resource bounds or close the original OOM incident.
+
+## Compact PostgreSQL bootstrap gate — 2026-10-03
+
+- [x] Verify the existing active-kind uniqueness index and persisted-field limits
+  with isolated synthetic PostgreSQL; keep all source histories unchanged
+- [x] Add an unwired transaction-local owner/binding/source/version gate with
+  bounded latest metadata and predecessor observations; reject active legacy
+  sessions, unsupported/oversize data and incompatible transaction isolation
+- [x] Verify actual index columns/predicate/readiness and hold a schema lock;
+  prove ordinary unrelated ingest proceeds, index drops wait, cancellation works,
+  and predecessor reads observe commits that finished during the mapping wait
+- [x] Full isolated Go/PG461 PASS/0FAIL/0SKIP; vet/build/modverify/expanded race PASS;
+  Web13 plus clean install/build PASS; mandatory CI bootstrap/race coverage added
+- [ ] Integrate this exact gate into a durable versioned/fenced compact bridge,
+  test real ingest/timer entry points, and preserve complete legacy JSON compatibility
+- [ ] Add equivalent streamed complete-detail responses before chunk-only authority;
+  qualify full pipeline memory, database cost and restart/ACK behavior
+
+Report: `docs/RPT-2026-10-03-compact-bootstrap-contract.md`.
+
+## 2026-10-04 手机历史停在旧日期
+
+- [x] 对照源、Bridge、云端和手机现场：云端完成记录与源相符，手机全部时间仍回退旧缓存；实际失败的 HTTP 阶段尚未取得证据。
+- [x] 复核 Docs 中 10 月 1 日游标挂载故障和 10 月 2 日 API OOM 经验；此次不把健康响应或分支验证当成生产修复。
+- [x] 新增认证且只读的持久车辆历史身份接口，保留租户隔离；原分支全 Go/PG/race 478 项通过、零失败/跳过。精确 `781c4025` 加两生产文件的小补丁在全新旧 schema 上 Go/PG/race 272 项通过、零失败/跳过；不携 Stage2 schema。
+- [x] Android 2.1.23/build42 候选完成已认证 origin 历史上下文、列表/详情共同费用身份、刷新与安全错误分类；真实 Kotlin 分层回归 55 项通过，完整 Android 构建仍待本机工具链。
+- [ ] 完整 Android 测试、Lint、正式构建；保留原账号/历史/配置覆盖安装后，验收全部时间可见 10 月 4 日行程及 10 月 3 日充电。若仍失败，按请求阶段/HTTP 分类继续定位。
+- [x] 后端六文件原分支提交 `c7eaa973`，精确 CI `37179570728` 通过（Go/PG478、Web13及既有资源场景）；与仅781基线两文件的生产候选严格区分。
+- [ ] Android 候选原分支提交、精确 CI 与本机完整构建；PR12 交接不以分层或合成测试替代真机恢复。
+
+Report: `docs/BUG-REPAIR-2026-10-04-phone-history-stale.md`。未完成的 compact bridge B 候选已独立冻结，不混入此次同步修复。
+The helper does not activate scopes or improve live ingestion by itself. The
+legacy whole-array paths and original OOM acceptance remain open.
+
+# 2026-10-04 原包历史同步恢复验收
+
+- [x] 回传本机仅有的两条版本测试断言修正，生产源码仍来自 fed2536 / tree aec55c7。
+- [x] Debug 608 全过；Release 600 通过、8 项预期 DEBUG 条件跳过；KSP/Hilt/Compose/R8、Debug/Release Lint 0 errors，保留 warning 数量证据。
+- [x] 同证书 2.1.23/build42 保数据升级，实际 ALL_TIME 已显示 10-04 行程、10-03 充电，刷新与返回后保留，旧同步失败缓存提示消失。
+- [x] 最小 781c4025 + history-context 两生产文件后端部署核验，回滚保留，未部署 Stage2 schema。
+- [ ] 新包仍复现充电汇总缺值；继续独立修复真实字段、统计、SOC/曲线、胎压来源与界面/授权回跳，不将本次恢复当作全部功能完成。
+
+证据与 APK/证书精确 SHA 见 `docs/BUG-REPAIR-2026-10-04-phone-history-stale.md` 的本机验收段。
+
+# 2026-10-04 持续历史读取复发与43最小诊断
+
+- [x] 保留42首次显示新日期的真实验收，补记07:51同包再现history_context/httpnone；持续恢复重新打开。
+- [x] 确认typed error在诊断端口丢失；两个详情fallback将Room占位0当实际SOC，复用证据mapper修复。
+- [x] 最小11文件源码独立审查、61便携回归通过；版本/断言/中英说明同步2.1.24/build43，无生产变更、无数据迁移。
+- [ ] 本机真实JSON/KSP三项及完整Android门禁、同证书保数据覆盖与反复详情/前台读取，取得安全错误类别。
+- [ ] 根据实机类别修具体持续同步根因；OAuth/TPMS/metrics等独立候选保持原样，不能夹带未完成门禁的内容。
+
+经验与精确补丁身份：docs/BUG-REPAIR-2026-10-04-phone-history-stale.md。PC未登录401、当前Wi-Fi连通或单次新日期显示，都不能证明手机持续认证读取成功。

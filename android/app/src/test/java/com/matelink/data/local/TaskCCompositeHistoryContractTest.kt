@@ -17,7 +17,7 @@ class TaskCCompositeHistoryContractTest {
 
         assertTrue(entitySources.contains("primaryKeys = [\"carId\", \"driveId\"]"))
         assertTrue(entitySources.contains("primaryKeys = [\"carId\", \"chargeId\"]"))
-        assertTrue(databaseSource.contains("version = 20"))
+        assertTrue(databaseSource.contains("version = 21"))
         assertTrue(databaseSource.contains("MIGRATION_17_18"))
         assertTrue(databaseSource.contains("MIGRATION_18_19"))
         assertTrue(databaseSource.contains("MIGRATION_19_20"))

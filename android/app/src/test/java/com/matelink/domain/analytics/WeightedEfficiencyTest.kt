@@ -26,7 +26,7 @@ class WeightedEfficiencyTest {
                 EfficiencySample(distanceKm = 0.5, energyKwh = 0.2),
                 EfficiencySample(distanceKm = 10.0, energyKwh = null),
                 EfficiencySample(distanceKm = Double.NaN, energyKwh = 1.0)
-            )
+            ), minimumDistanceKm = 1.0
         )
 
         assertNull(result.efficiencyWhKm)

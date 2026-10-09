@@ -62,7 +62,9 @@ class TpmsPressureWorker @AssistedInject constructor(
     private val tpmsHistoryRepository: TpmsHistoryRepository,
     private val tpmsCustomAlertStateStore: TpmsCustomAlertStateStore,
     private val tpmsTrendNotificationManager: TpmsTrendNotificationManager,
-    private val vehicleContextRepository: VehicleContextRepository
+    private val vehicleContextRepository: VehicleContextRepository,
+    private val changeRuleStore: com.matelink.data.local.TpmsChangeRuleStore,
+    private val settingsRepository: com.matelink.data.repository.SettingsRepository
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
@@ -168,7 +170,9 @@ class TpmsPressureWorker @AssistedInject constructor(
 
         try {
             // Get list of cars
+            val readScope = vehicleContextRepository.captureReadScope()
             val carsResult = teslamateRepository.getCars()
+            if (vehicleContextRepository.captureReadScope() != readScope) return Result.retry()
             val cars = when (carsResult) {
                 is ApiResult.Success -> carsResult.data
                 is ApiResult.Error -> {
@@ -187,8 +191,9 @@ class TpmsPressureWorker @AssistedInject constructor(
             // Check each car
             for (car in cars) {
                 try {
-                    val vehicleContext = vehicleContextRepository.resolve(car)
-                    checkCarTpms(car.carId, vehicleContext.localHistoryCarId, car.displayName)
+                    if (vehicleContextRepository.captureReadScope() != readScope) return Result.retry()
+                    val vehicleContext = vehicleContextRepository.resolve(car, readScope)
+                    checkCarTpms(car.carId, vehicleContext.localHistoryCarId, car.displayName, readScope)
                 } catch (e: Exception) {
                     Log.e(TAG, "event=check_tpms_failed carId=${car.carId} category=unexpected")
                 }
@@ -214,7 +219,9 @@ class TpmsPressureWorker @AssistedInject constructor(
         }
     }
 
-    private suspend fun checkCarTpms(remoteApiCarId: Int, historyCarId: Int, carName: String) {
+    private suspend fun checkCarTpms(remoteApiCarId: Int, historyCarId: Int, carName: String, readScope: com.matelink.data.local.HistoryReadScope) {
+        if (BuildConfig.JOURVOLT_MOCK_LOGIN && settingsRepository.mockMode.first() == true) return
+        if (vehicleContextRepository.captureReadScope() != readScope) return
         // Get car status
         val statusResult = teslamateRepository.getCarStatus(remoteApiCarId)
         val status = when (statusResult) {
@@ -229,6 +236,8 @@ class TpmsPressureWorker @AssistedInject constructor(
         val outsideTempC = status.outsideTemp
 
         val profile = settingsDataStore.getTpmsAlertProfile(historyCarId)
+        if (vehicleContextRepository.captureReadScope() != readScope) return
+        val previous = tpmsHistoryRepository.latestVerified(historyCarId, System.currentTimeMillis())
 
         processSuccessfulTpmsStatus(
             carId = historyCarId,
@@ -238,7 +247,10 @@ class TpmsPressureWorker @AssistedInject constructor(
             observedAt = System.currentTimeMillis(),
             profile = profile,
             saveObservation = { sample ->
-                tpmsHistoryRepository.saveObservationForHistoryCarId(historyCarId, sample)
+                if (vehicleContextRepository.captureReadScope() != readScope) throw kotlinx.coroutines.CancellationException()
+                val verified = sample.copy(provenance = "provider_observation")
+                changeRuleStore.record(historyCarId, com.matelink.domain.analytics.pressureChanges(previous,verified,changeRuleStore.observe(historyCarId).first()))
+                tpmsHistoryRepository.saveObservationForHistoryCarId(historyCarId, verified)
             },
             pruneOlderThan90Days = { _, now ->
                 tpmsHistoryRepository.pruneOlderThan90DaysForHistoryCarId(historyCarId, now)
@@ -267,6 +279,18 @@ class TpmsPressureWorker @AssistedInject constructor(
                 tpmsTrendNotificationManager.showCustomAlert(id, alert)
             }
         )
+        if (vehicleContextRepository.captureReadScope() != readScope) return
+        if (changeRuleStore.observe(historyCarId).first().enabled) {
+            for (change in changeRuleStore.pending(historyCarId)) {
+                if (vehicleContextRepository.captureReadScope() != readScope) return
+                try {
+                    tpmsTrendNotificationManager.showPressureChange(historyCarId,change)
+                    changeRuleStore.acknowledge(historyCarId,change)
+                } catch (_: com.matelink.notification.NotificationDeliveryUnavailableException) {
+                    break
+                }
+            }
+        }
     }
 
     private fun showNotification(carId: Int, carName: String, stateChange: TpmsStateChange) {

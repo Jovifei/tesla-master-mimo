@@ -146,12 +146,12 @@ fun AnnualReportPDFScreen(
                         Text("${stringResource(R.string.pdf_report_total_drives)} ${qs.totalDrives}")
                         Text(
                             "${stringResource(R.string.pdf_report_energy_used)} " +
-                                if (hasEnergy) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh" else noData
+                                if (hasEnergy && qs.totalEnergyConsumedKwh != null) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh" else noData
                         )
                         Text("${stringResource(R.string.pdf_report_charges_label)} ${qs.totalCharges}")
                         Text(
                             "${stringResource(R.string.pdf_report_avg_efficiency)} " +
-                                if (hasDistance && hasEnergy && qs.avgEfficiencyWhKm > 0.0) {
+                                if (hasDistance && hasEnergy && (qs.avgEfficiencyWhKm ?: 0.0) > 0.0) {
                                     "${String.format(java.util.Locale.US, "%.0f", qs.avgEfficiencyWhKm)} Wh/km"
                                 } else {
                                     noData
@@ -320,13 +320,13 @@ private class PdfBuilder(private val context: Context) {
         text("${context.getString(R.string.pdf_report_total_drives)} ${qs.totalDrives}", bodyPaint)
         text(
             "${context.getString(R.string.pdf_report_energy_used)} " +
-                if (hasEnergy) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh"
+                if (hasEnergy && qs.totalEnergyConsumedKwh != null) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh"
                 else context.getString(R.string.analysis_no_records),
             bodyPaint
         )
         text(
             "${context.getString(R.string.pdf_report_avg_efficiency)} " +
-                if (hasDistance && hasEnergy && qs.avgEfficiencyWhKm > 0.0) {
+                if (hasDistance && hasEnergy && (qs.avgEfficiencyWhKm ?: 0.0) > 0.0) {
                     "${String.format(java.util.Locale.US, "%.0f", qs.avgEfficiencyWhKm)} Wh/km"
                 } else {
                     context.getString(R.string.analysis_no_records)
@@ -402,11 +402,11 @@ private class PdfBuilder(private val context: Context) {
         qs.avgDriveMinutes?.let { text("${context.getString(R.string.pdf_report_avg_drive_duration)} ${String.format(java.util.Locale.US, "%.0f", it)} min", bodyPaint) }
         qs.totalDrivingDays?.let { text("${context.getString(R.string.pdf_report_driving_days)} $it", bodyPaint) }
         qs.maxSpeedKmh?.let { text("${context.getString(R.string.pdf_report_top_speed_label)} $it km/h", bodyPaint) }
-        if (qs.avgEfficiencyWhKm > 0) {
+        if ((qs.avgEfficiencyWhKm ?: 0.0) > 0) {
             val rating = when {
-                qs.avgEfficiencyWhKm < 150 -> context.getString(R.string.annual_report_excellent)
-                qs.avgEfficiencyWhKm < 180 -> context.getString(R.string.annual_report_good)
-                qs.avgEfficiencyWhKm < 220 -> context.getString(R.string.annual_report_average)
+                (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 150 -> context.getString(R.string.annual_report_excellent)
+                (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 180 -> context.getString(R.string.annual_report_good)
+                (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 220 -> context.getString(R.string.annual_report_average)
                 else -> context.getString(R.string.annual_report_high)
             }
             text("${context.getString(R.string.pdf_report_efficiency_rating_label)} $rating", bodyPaint)
