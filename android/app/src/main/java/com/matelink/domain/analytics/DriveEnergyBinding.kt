@@ -4,6 +4,7 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.api.models.EnergyContract
 import com.matelink.data.api.models.EnergyMetric
+import com.matelink.data.api.models.legacyScalarEnergyAllowed
 import com.matelink.data.local.entity.DriveSummary
 
 /** The same path is used by foreground details and background Room enrichment. */
@@ -30,8 +31,12 @@ fun DriveDetail.resolveDriveEnergy(): ResolvedDriveEnergy {
             }
         )
     }
-    val estimate = DriveEnergyResolver.resolve(energyConsumedNet, distance,
-        positions.orEmpty().map { DrivePowerSample(it.date, it.power) },
+    // A legacy bb09 Fleet scalar lacks its entire counter/window evidence;
+    // archived observed power samples remain a separately labeled estimate.
+    val scalar = energyConsumedNet.takeIf { legacyScalarEnergyAllowed(source) }
+    val samples = if (source in setOf("local_import", "local_history")) emptyList() else positions.orEmpty()
+    val estimate = DriveEnergyResolver.resolve(scalar, distance,
+        samples.map { DrivePowerSample(it.date, it.power) },
         durationSeconds = durationMin?.toLong()?.times(60), startDate = startDate, endDate = endDate)
     val power = estimate.source == DriveEnergySource.POWER_SAMPLES || estimate.observedEnergyKwh != null
     val metric = EnergyMetric(

@@ -119,8 +119,12 @@ identify the failed TLS hop. HTTP200 health proves no user history.
   `speed_avg` remain floating point. `energy_consumed_net` is
   unavailable for Fleet drives without driving-energy proof, not 0.
 - Deployed bb09 does not yet publish the additive `energy_contract`.
-  Candidate Android keeps the **legacy-compatibility** scalar path
-  only when the contract is absent. With a present contract, value
+  Candidate Android keeps the **legacy-compatibility** scalar path only
+  for absent-contract historical TeslaMate archives or old untagged
+  self-hosted history. Deployed bb09 `telemetry_mqtt`, `fleet_api`
+  or unverified `local_import` scalars are **unknown even if numeric**:
+  the old pre-contract Fleet machine can mix AC/DC counter origin and
+  retain a stale earlier positive delta after reset. With a present contract, value
   requires version, source, unit, method, measurement location, exact
   window, quality and coverage; explicit unknown masks stale scalar.
   Reported zero and negative net drive energy stay values. Power
@@ -136,7 +140,8 @@ identify the failed TLS hop. HTTP200 health proves no user history.
 - New `DeployedBb09ConsumerCompatibilityTest` uses **synthetic JSON
   shaped directly from bb09's source**, runs the actual Moshi response
   models -> Room summary codec -> analysis models and charge
-  detail UI stats, plus explicit newer unknown-contract masking. No
+  detail UI stats, plus old deployed numeric Fleet scalar rejection and
+  explicit newer unknown-contract masking. No
   claim it exercised an authenticated production response.
 - Existing Go isolated PG16 ingest/restart/energy resource budget and
   Android 719+ tests still apply. Running these tests at a candidate
@@ -154,7 +159,7 @@ Do NOT run the following production repair steps by merely reading them.
 | Reconfigure 443 certificate | **Not performed.** Never run the old setup script. Initial scope would be only the affected managed include and named vhost; no global default, no unrelated vhost/stream. | Separate explicit Jovi approval AFTER demonstrating active config/peer mismatch and a specific change plan. | Operator first records active include/config, key pair paths and the unmodified public-chain validity in private mode-0600 directory with SHA-256 manifest. Copy active managed include and vhost with metadata. Require `nginx -t` and a verified public handshake BEFORE reload; no effective replacement for unknown/invalid state. On failure atomically restore exact backups, `nginx -t`, reload, confirm public validated peer, retain receipts. Repeat must be no-op when already correct. No private key content in logs/chat. |
 | Temporary phone Wi-Fi → cellular → restore | **Not performed**; device network remains unchanged. No alteration of CA, proxy, VPN, DNS, TTL, trust, or app data. | Exact permission from Jovi pending, with restoration acceptance. | Private before/after network-state check and restore original Wi-Fi; compare two bounded validated peer categories and normal authenticated read only as user authorizes; send only sanitized outcomes, timestamps UTC+China. |
 | Production API/DB/bridge or old SOC/TPMS history write | No execution; immutable source and isolated PG CI only. | Completely separate gate: production change approval, reviewed backups, rollback, exact scope. Old six SOC and 7113 TPMS writes remain **unapproved**. | No production DDL/deploy/backfill, no DB cleanup; maintain deployed bb09 and bridge. |
-| Device signed build/install | Previous build46 install at source 8625 already independent PASS. New source candidate's Android runtime changes must be checked against 8625 (tests only in this continuation). | Original authorized local verifier only; do not automatically reinstall a source-equivalent phone app. | Verify exact final SHA/tree and Android production source diff, rerun local tests in clean worktree, same signer; do not uninstall/clear data. Current firstInstallTime, login/cache/history retained. |
+| Device signed build/install | Previous signed device PASS applies **only** to installed 8625. The new candidate changes Android energy source qualification: exact new SHA is **not yet installed**. | Original authorized local Codex verifies full SHA, Debug/Release/lint/R8, same signer and then performs separately controlled in-place install-r without uninstall or data reset, returning one consolidated receipt; any actual network experiment still needs Jovi's separate decision. | Retain previous signed APK, account/history/cache, firstInstallTime, signing certificate; compare hashes, preserve rollback APK, ensure bounded launch, authenticate afresh only under usual granted session and return category-only failures. |
 
 Never upload raw `nginx -T`, cert subjects/SAN, phone traces, tokens,
 VIN, customer or location identifiers. Do not diagnose self-issued peer
@@ -175,8 +180,10 @@ generic request to modify implementation files:
    offline TLS, Go isolated PG16/race/vet/build, Android Debug/Release,
    lint/R8 as appropriate. Return one **consolidated** evidence packet
    with exact SHA, scoped PASS/FAIL and failure excerpts only. No local
-   business-code repairs. No new installation or network changes merely
-   because source docs/tests changed.
+   business-code repairs. The energy-source gate changes runtime; local Codex should requalify
+   Debug/Release and do authorized same-signer in-place installation,
+   preserve existing app history/login/cache and return a consolidated
+   device receipt. Network/trust changes still require separate consent.
 2. Following **separate Jovi permission** for any phone network
    diagnostic, record current network state privately, perform only the
    authorized bounded comparison and restore; retry authentic existing
@@ -205,3 +212,70 @@ transport **cannot** be marked PASS until an independently observed
 valid authenticated request through the actual phone path occurs or
 a concrete separately accepted environment gate is established. No
 production or network repair is authorized by this source-stage closure.
+
+## Appendix A — exact **approval-gated** Nginx scope, backup and rollback
+
+The following is a **nonexecuted operator procedure**, not permission
+to modify production. It is only applicable after independently proving that
+the *managed* `jourvolt-ssl.inc` selects the incorrect public leaf on a
+specific authorized TLS endpoint, and Jovi separately approves a
+change-window, Nginx access, named files and rollback. A single unexpected
+phone peer without a mapped active Nginx config is **not** that proof.
+
+Allowed scope: `/etc/nginx/conf.d/jourvolt-ssl.inc` only for an already
+installed, trusted, valid and correct LE chain; `jourvolt.conf` backup
+is comparison-only and must not be overwritten. No other
+server block, `stream`, system CA, DNS, firewall, proxy, account, database,
+token, vehicle, production API or phone network modification. Do **not**
+rerun all of `setup-root.sh` as a supposed minimal hotfix.
+
+```bash
+# CONTROLLED PRODUCTION CHANGE ONLY AFTER JOVI'S SEPARATE EXPLICIT APPROVAL.
+set -euo pipefail
+umask 077
+conf=/etc/nginx/conf.d
+# Backups are root-only and stored away from the public ACME directory.
+backup="$(sudo mktemp -d /root/jourvolt-tls-snapshot.XXXXXXXX)"
+sudo chmod 0700 "$backup"
+sudo cp -a "$conf/jourvolt.conf" "$backup/jourvolt.conf"
+sudo cp -a "$conf/jourvolt-ssl.inc" "$backup/jourvolt-ssl.inc"
+# Record hashes privately. Never paste configuration/certificate bodies.
+sudo sha256sum "$conf/jourvolt.conf" "$conf/jourvolt-ssl.inc" \
+    | sudo tee "$backup/prechange-sha256.txt" >/dev/null
+sudo cmp -s "$backup/jourvolt-ssl.inc" "$conf/jourvolt-ssl.inc"
+sudo nginx -t >/dev/null 2>&1
+
+# Reconfirm *before* approval-gated mutation:
+# 1. Active include is exactly one known managed fragment (or STOP).
+# 2. Cert/key exist, match, satisfy hostname and expiry policy (or STOP).
+# 3. Approved unrelated Nginx vhosts and routes are unchanged (or STOP).
+# 4. Public hostname TLS/health read has classified peer evidence (no -k).
+# A valid LE include that is already active means NO-OP; retain backup.
+if sudo cmp -s "$conf/jourvolt-ssl.inc" "$conf/jourvolt-ssl.le.inc"; then
+  echo 'TLS_REPAIR=NOOP_ALREADY_MANAGED_LE'
+elif sudo cmp -s "$conf/jourvolt-ssl.inc" "$conf/jourvolt-ssl.selfsigned.inc"; then
+  echo 'TLS_REPAIR=APPROVAL_AND_VERIFIED_LE_CERT_REQUIRED'
+  # With all preconditions and *separate approval* satisfied only:
+  # sudo install -o root -g root -m 0644 "$conf/jourvolt-ssl.le.inc" "$conf/jourvolt-ssl.inc.pending"
+  # sudo mv -f "$conf/jourvolt-ssl.inc.pending" "$conf/jourvolt-ssl.inc"
+  # sudo nginx -t >/dev/null 2>&1 && sudo systemctl reload nginx
+  # python3 tools/energy-stage/qualify-public-tls.py --live --samples 2
+else
+  echo 'TLS_REPAIR=STOP_UNRECOGNIZED_INCLUDE'
+  exit 1
+fi
+
+# Rollback block, to be used ONLY if an approved change has actually failed:
+# sudo cp -a "$backup/jourvolt-ssl.inc" "$conf/jourvolt-ssl.inc"
+# sudo nginx -t >/dev/null 2>&1 && sudo systemctl reload nginx
+# sudo cmp -s "$backup/jourvolt-ssl.inc" "$conf/jourvolt-ssl.inc"
+# python3 tools/energy-stage/qualify-public-tls.py --live --samples 2
+# Retain backup directory, private hash manifest, gate ticket, sanitized
+# UTC/China timestamps, before/after verified TLS result for review.
+```
+
+Stop if any precondition or verification fails; do not reinterpret an
+unrecognized include, certificate error, denied permissions or tool failure
+as permission to replace a trust chain. If an approved change does not
+restore TLS from the intended phone vantage, revert to exact file backup,
+preserve observed results and investigate the actual route instead.

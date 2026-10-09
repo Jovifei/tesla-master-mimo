@@ -93,3 +93,18 @@ API, active nginx, network/trust and original installed APK are unchanged.
 Immutable stage HEAD/tree/parent and same-SHA job evidence are supplied by the
 final PR17 comment; do not rely on an older green run or mark physical device
 or natural Tesla history accepted. Source-only CI is not production permission.
+
+**Post-bb09 compatibility correction (source candidate after 8625):** Source
+review of production bb09 `telemetry_core.go` found that the old precontract
+MQTT charge scalar can mix AC/DC origins and retain an earlier positive delta
+after a reset; the installed bb09 lacks `energy_contract` to disprove the
+whole-window claim. The new Android candidate therefore refuses unqualified
+legacy numeric energy for Fleet telemetry, Fleet API and local unverified
+imports; previously compatible personal TeslaMate archives and untagged
+legacy self-hosted responses retain their explicit compatibility path. This
+**changes Android runtime source** compared with the old signed install at
+8625. That prior independent physical-device receipt remains historically
+valid for 8625 only. Original authorized local Codex must independently
+rebuild/sign/verify exact final SHA and do a safe same-signer `install-r`
+with no app data clear or network modifications, then report fresh device
+results. No simulated/old cached UI result proves live authenticated history.

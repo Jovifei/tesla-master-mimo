@@ -118,4 +118,61 @@ class DeployedBb09ConsumerCompatibilityTest {
         assertNull(charge.inputEnergyKwh)
         assertNull(charge.withQualifiedEnergy().chargeEnergyAdded)
     }
+
+    @Test fun oldDeployedFleetCounterScalarIsNotQualifiedWholeChargeEnergy() {
+        // bb09 telemetry_core.go can leave a stale last positive delta after a
+        // reset, or change its counter origin when AC/DC field changes. Even
+        // quality_state=observed does not repair the missing full window.
+        val list = moshi.adapter(ChargesResponse::class.java).fromJson("""
+            {"data":{"charges":[{"charge_id":73,"source":"telemetry_mqtt",
+            "quality_state":"observed","start_date":"2026-10-08T02:00:00Z",
+            "end_date":"2026-10-08T02:30:00Z",
+            "charge_energy_added":12.0,"charge_energy_used":14.0}]}}
+        """.trimIndent())!!.data!!.charges!!.single()
+        assertNull(list.batteryInputKwh)
+        assertNull(list.inputEnergyKwh)
+        assertNull(list.toSyncSummary(4)!!.toAnalysisChargeData().batteryInputKwh)
+
+        val detail = moshi.adapter(ChargeDetailResponse::class.java).fromJson("""
+            {"data":{"charge":{"charge_id":73,"source":"telemetry_mqtt",
+            "quality_state":"observed","start_date":"2026-10-08T02:00:00Z",
+            "end_date":"2026-10-08T02:30:00Z",
+            "charge_energy_added":12.0,"charge_energy_used":14.0}}}
+        """.trimIndent())!!.data!!.charge!!
+        assertNull(ChargeStatsCalculator.calculateStats(detail).energyAdded)
+        assertNull(detail.withQualifiedEnergy().chargeEnergyAdded)
+
+        val historical = list.copy(source = "teslamate_archive")
+        assertEquals(12.0, historical.batteryInputKwh!!, 0.0)
+        assertEquals(0.0, historical.copy(chargeEnergyAdded = 0.0).batteryInputKwh!!, 0.0)
+    }
+
+    @Test fun oldFleetUnqualifiedDriveScalarCannotMasqueradeAsReportedNet() {
+        val raw = moshi.adapter(DriveDetailResponse::class.java).fromJson("""
+            {"data":{"drive":{"drive_id":74,"source":"telemetry_mqtt",
+            "quality_state":"observed","start_date":"2026-10-08T01:00:00Z",
+            "end_date":"2026-10-08T01:10:00Z",
+            "odometer_details":{"odometer_distance":10.0},
+            "energy_consumed_net":3.0,"drive_details":[]}}}
+        """.trimIndent())!!.data!!.drive!!
+        assertNull(raw.netEnergyKwh)
+        assertNull(raw.resolveDriveEnergy().estimate.energyKwh)
+        val unqualified = DriveData(driveId = 74, startDate = raw.startDate,
+            endDate = raw.endDate, source = raw.source,
+            odometerDetails = DriveOdometerDetails(distance = 10.0),
+            energyConsumedNet = raw.energyConsumedNet, consumptionNet = 300.0)
+        assertNull(unqualified.netEnergyKwh)
+        assertNull(unqualified.efficiencyWhKm)
+        assertNull(unqualified.withQualifiedEnergy().consumptionNet)
+        val cached = unqualified.toSyncSummary(4)!!.toAnalysisDriveData()
+        assertNull(cached.netEnergyKwh)
+        assertNull(cached.asCachedDetail().resolveDriveEnergy().estimate.energyKwh)
+        val historical = raw.copy(source = "teslamate_archive")
+        assertEquals(3.0, historical.netEnergyKwh!!, 0.0)
+        assertEquals(3.0, historical.resolveDriveEnergy().estimate.energyKwh!!, 0.0)
+        val imported = raw.copy(source = "local_import")
+        assertNull(imported.netEnergyKwh)
+        assertNull(imported.resolveDriveEnergy().estimate.energyKwh)
+    }
+
 }

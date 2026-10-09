@@ -41,8 +41,8 @@ data class ChargeData(
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
     val startRatedRangeKm: Double? get() = rangeRated?.startRange
     val endRatedRangeKm: Double? get() = rangeRated?.endRange
-    val batteryInputKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate, "battery_input")
-    val inputEnergyKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate, "ac_charger_input")
+    val batteryInputKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate, "battery_input", source)
+    val inputEnergyKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate, "ac_charger_input", source)
 }
 
 @JsonClass(generateAdapter = true)
@@ -114,16 +114,16 @@ data class ChargeDetail(
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
     val currentBatteryLevel: Int? get() = batteryDetails?.currentBatteryLevel
     val currentOrEndBatteryLevel: Int? get() = currentBatteryLevel ?: endBatteryLevel
-    val batteryInputKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate, "battery_input")
-    val inputEnergyKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate, "ac_charger_input")
+    val batteryInputKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate, "battery_input", source)
+    val inputEnergyKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate, "ac_charger_input", source)
 }
 
 /** An explicit unknown contract must never resurrect a historical scalar. */
 private fun qualifiedChargeValue(
     contract: EnergyContract?, metric: EnergyMetric?, legacy: Double?,
-    start: String?, end: String?, purpose: String
+    start: String?, end: String?, purpose: String, source: String?
 ): Double? {
-    if (contract == null) return legacy?.takeIf { it.isFinite() && it >= 0.0 }
+    if (contract == null) return legacy?.takeIf { it.isFinite() && it >= 0.0 && legacyScalarEnergyAllowed(source) }
     if (contract.version != 1 || metric?.method != "session_counter_delta" ||
         metric.measurementPoint != purpose) return null
     // AC input is not a whole-session metric in unknown or mixed AC/DC mode.

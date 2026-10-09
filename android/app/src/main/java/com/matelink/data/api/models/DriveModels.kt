@@ -50,13 +50,13 @@ data class DriveData(
     val endRatedRangeKm: Double? get() = rangeRated?.endRange
     // Explicit unknown/unsupported contracts must not fall back to an old scalar.
     val netEnergyKwh: Double? get() = if (energyContract != null) energyContract.netValueForWindow(startDate, endDate)
-        else energyConsumedNet?.takeIf(Double::isFinite)
+        else energyConsumedNet?.takeIf { it.isFinite() && legacyScalarEnergyAllowed(source) }
     val efficiencyWhKm: Double?
         get() {
             val dist = distance?.takeIf { it.isFinite() && it > 0.0 } ?: return null
             val consumed = netEnergyKwh
             if (consumed != null) return (consumed / dist * 1000.0).takeIf(Double::isFinite)
-            return if (energyContract == null) consumptionNet?.takeIf(Double::isFinite) else null
+            return if (energyContract == null && legacyScalarEnergyAllowed(source)) consumptionNet?.takeIf(Double::isFinite) else null
         }
 }
 
@@ -132,7 +132,7 @@ data class DriveDetail(
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
     val netEnergyKwh: Double? get() = if (energyContract != null) energyContract.netValueForWindow(startDate, endDate)
-        else energyConsumedNet?.takeIf(Double::isFinite)
+        else energyConsumedNet?.takeIf { it.isFinite() && legacyScalarEnergyAllowed(source) }
 }
 
 @JsonClass(generateAdapter = true)

@@ -62,6 +62,16 @@ data class EnergyMetric(
     private fun fullCoverage() = coverageRatio?.takeIf(Double::isFinite)?.let { it >= 1.0 - 1e-9 && it <= 1.0 } == true
 }
 
+/**
+ * The deployed bb09 API has no versioned counter/window contract. Its older
+ * Fleet MQTT scalar may be AC/DC mixed or stale after reset, so do NOT
+ * promote that numeric value to measured whole-session battery energy.
+ * Historical TeslaMate and pre-source-tag legacy self-hosted values retain
+ * their prior compatibility projection; neither is proof of a Fleet event.
+ */
+internal fun legacyScalarEnergyAllowed(source: String?): Boolean =
+    source == null || source == "teslamate_archive"
+
 private fun energyInstant(raw: String?): Instant? = raw?.let { runCatching { Instant.parse(it) }.getOrNull() }
 
 fun EnergyContract?.netValueForWindow(start: String?, end: String?): Double? =
