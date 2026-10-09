@@ -171,3 +171,13 @@ APK/signature, no uninstall/clear data, no network/DNS/proxy/VPN/CA
 changes. Return one consolidated exact-SHA local build/sign/install,
 UTC+China timestamped sanitized device/API/Room/UI receipt, with
 natural and human gates separate.
+
+The exact final SHA must additionally pass the malformed/future local
+receipt tests: no invalid version, truncated envelope or unknown
+`apiEvidence` may promote a previously numeric old Room placeholder
+to battery kWh. Check the
+`EnergyPersistenceRoundTripTest.detailEnergyKeepsOriginalRawAndSeparatelyPublishesQualifiedMeasurement`
+case: original source value is preserved, a later signed regenerative
+detail can be displayed only from separately qualified sidecar, and
+the typed detail value is recoverable without falsely rewriting
+the original source scalar. No Room migration or user-data reset.

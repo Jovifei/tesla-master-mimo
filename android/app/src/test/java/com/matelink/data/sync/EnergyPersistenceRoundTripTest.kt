@@ -11,10 +11,13 @@ class EnergyPersistenceRoundTripTest {
     private fun drive() = DriveData(4, startDate = start, endDate = end, source = "teslamate_archive",
         batteryDetails = DriveBatteryDetails(0, null), odometerDetails = DriveOdometerDetails(distance = 1.0),
         energyConsumedNet = 4.0)
-    @Test fun detailEnergyReplacesTheOldJsonAndScalarsTogether() {
+    @Test fun detailEnergyKeepsOriginalRawAndSeparatelyPublishesQualifiedMeasurement() {
         val old = drive().toSyncSummary(90)!!
         val detail = drive().copy(energyConsumedNet = -0.2).asCachedDetail()
         val next = old.withResolvedDriveEnergy(detail, detail.resolveDriveEnergy())
+        assertEquals(old.apiEvidence, HistorySummaryEvidenceCodec.sourceJson(next.apiEvidence))
+        assertEquals(4.0, next.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+        assertEquals(-0.2, HistorySummaryEvidenceCodec.detailRawNet(next.apiEvidence)!!, 0.0)
         val decoded = next.toAnalysisDriveData()
         assertEquals(-0.2, next.energyConsumed!!, 0.0)
         assertEquals(-0.2, decoded.netEnergyKwh!!, 0.0)

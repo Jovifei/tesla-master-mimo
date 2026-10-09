@@ -675,3 +675,24 @@ deployment; the phone still runs 8625/build46 and still lacks a
 fresh, accepted authenticated history read. All actual rollout,
 network experiment and natural Fleet/multiuser/TPMS/notification
 acceptance remain separately gated.
+
+### Fail-closed local receipt migration boundary
+
+The local envelope is confined to the existing `apiEvidence`
+column and has an exact `raw_json` byte-string for the **previously
+stored** API summary JSON, plus typed, separately labeled detail
+metadata. The app cannot reconstruct unknown HTTP fields that an old
+Moshi adapter already discarded before persistence; it makes no such
+claim. An unsupported/corrupt local envelope must never fall back
+to a legacy numeric Room column as if it were a measured Fleet kWh
+or charger input. New negative tests inject malformed/future-version
+local envelopes with historic numeric 8/12 placeholders and require
+unknown. Source-absent legacy self-hosted compatibility still obeys
+its separate preexisting guard when *no* envelope is present.
+
+An archive with valid previous provider energy and a new detail
+response with a real negative regenerative net measurement retains
+the exact prior raw summary plus the new typed detail scalar and its
+physical-source-qualified sidecar. The Room analytic projection
+uses the new signed value but source JSON remains recoverable.
+These are isolated contracts, not proof of real Fleet human consent.

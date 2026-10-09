@@ -4,6 +4,7 @@ import com.matelink.data.sync.toSyncSummary
 import com.matelink.domain.analytics.asCachedDetail
 import com.matelink.domain.analytics.resolveDriveEnergy
 import com.matelink.domain.analytics.toAnalysisDriveData
+import com.matelink.domain.analytics.toRawAnalysisDriveData
 import com.matelink.domain.analytics.withResolvedDriveEnergy
 import com.matelink.ui.screens.drives.presentDriveDetailEnergy
 import com.squareup.moshi.Moshi
@@ -60,6 +61,30 @@ class HistoryBoundaryPrecisionConsumerTest {
             restored.estimate.coverageSeconds, restored.estimate.coverageRatio, restored.evidence)
         assertTrue(ui.isEstimated)
         assertEquals(1.0 / 30.0, ui.energyKwh!!, 1e-12)
+    }
+
+    @Test fun legacyRoundedListCanRetainVerifiedNewDetailFractionalWindowWithoutGuessing() {
+        val oldList = DriveData(driveId = 7,
+            startDate = "2026-10-08T01:02:03Z",
+            endDate = "2026-10-08T01:04:03Z",
+            source = "teslamate_archive",
+            odometerDetails = DriveOdometerDetails(distance = 2.0))
+            .toSyncSummary(3)!!
+        val originalJson = oldList.apiEvidence
+        val actualPreciseDetail = drive(1.0)
+        val computed = actualPreciseDetail.resolveDriveEnergy()
+        assertEquals(1.0, computed.estimate.coverageRatio!!, 0.0)
+        val cached = oldList.withResolvedDriveEnergy(actualPreciseDetail, computed)
+        assertEquals(start, cached.startDate)
+        assertEquals(end, cached.endDate)
+        assertEquals(originalJson,
+            com.matelink.domain.analytics.HistorySummaryEvidenceCodec.sourceJson(cached.apiEvidence))
+        assertEquals("2026-10-08T01:02:03Z",
+            cached.toRawAnalysisDriveData().startDate)
+        assertEquals(1.0 / 30.0, cached.toAnalysisDriveData().netEnergyKwh!!, 1e-12)
+        assertEquals("estimated",
+            com.matelink.domain.analytics.HistorySummaryEvidenceCodec
+                .detailContract(cached.apiEvidence)?.netEnergy?.quality)
     }
 
     @Test fun roundedOldApiBoundariesFailWithoutWideningCoverage() {

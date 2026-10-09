@@ -53,8 +53,8 @@ fun DriveSummary.toRawAnalysisDriveData(): DriveData {
         batteryDetails = DriveBatteryDetails(startBatteryLevel.takeIf(::isLegacyBatteryLevel), endBatteryLevel.takeIf(::isLegacyBatteryLevel)),
         outsideTempAvg = outsideTempAvg?.takeIf(Double::isFinite), insideTempAvg = insideTempAvg?.takeIf(Double::isFinite),
         // An old local power estimate without its window/coverage evidence is not an API report.
-        energyConsumedNet = energyConsumed?.takeIf { it.isFinite() && energySource == "api" },
-        consumptionNet = efficiency?.takeIf { it.isFinite() && energySource == "api" },
+        energyConsumedNet = if (apiEvidence != null) null else energyConsumed?.takeIf { it.isFinite() && energySource == "api" },
+        consumptionNet = if (apiEvidence != null) null else efficiency?.takeIf { it.isFinite() && energySource == "api" },
         qualityState = qualityState, qualityReason = qualityReason
     )
 }
@@ -65,8 +65,8 @@ fun ChargeSummary.toRawAnalysisChargeData(): ChargeData =
         qualityState = qualityState, qualityReason = qualityReason
     ) ?: ChargeData(
         chargeId = chargeId, startDate = startDate, endDate = endDate, address = address.takeIf(String::isNotBlank),
-        chargeEnergyAdded = energyAdded.takeIf { it.isFinite() && it > 0.0 },
-        chargeEnergyUsed = energyUsed?.takeIf { it.isFinite() && it >= 0.0 },
+        chargeEnergyAdded = if (apiEvidence != null) null else energyAdded.takeIf { it.isFinite() && it > 0.0 },
+        chargeEnergyUsed = if (apiEvidence != null) null else energyUsed?.takeIf { it.isFinite() && it >= 0.0 },
         cost = cost?.takeIf { it.isFinite() && it >= 0.0 }, durationMin = durationMin.takeIf { it > 0 },
         batteryDetails = com.matelink.data.api.models.ChargeBatteryDetails(startBatteryLevel.takeIf(::isLegacyBatteryLevel), endBatteryLevel.takeIf(::isLegacyBatteryLevel)),
         outsideTempAvg = outsideTempAvg?.takeIf(Double::isFinite), odometer = odometer.takeIf { it.isFinite() && it > 0.0 },
@@ -94,15 +94,20 @@ fun DriveData.withSafeHistoryDisplay(): DriveData =
 fun DriveSummary.toAnalysisDriveData(): DriveData {
     val raw = toRawAnalysisDriveData()
     val localDetail = HistorySummaryEvidenceCodec.detailContract(apiEvidence)
+    // Bound a derived claim against the persisted precise detail window,
+    // while keeping original (possibly rounded) source JSON byte-exact.
+    val windowed = if (localDetail == null) raw else raw.copy(
+        startDate = startDate, endDate = endDate
+    )
     // A sidecar from another source or window is never an admissible proof.
     // A mismatched sidecar must also not fall back to an older raw scalar.
     val projected = if (localDetail == null) raw else {
         val metric = localDetail.netEnergy
         val safe = localDetail.version == 1 && metric != null &&
             metric.source != null && (raw.source == null || raw.source == metric.source) &&
-            sameEvidenceInstant(metric.startDate, raw.startDate) &&
-            sameEvidenceInstant(metric.endDate, raw.endDate)
-        raw.copy(energyContract = if (safe) localDetail else
+            sameEvidenceInstant(metric.startDate, startDate) &&
+            sameEvidenceInstant(metric.endDate, endDate)
+        windowed.copy(energyContract = if (safe) localDetail else
             EnergyContract(netEnergy = com.matelink.data.api.models.EnergyMetric(
                 quality = "unknown", reason = "local_detail_window_or_source_mismatch"
             )))
@@ -113,11 +118,15 @@ fun DriveSummary.toAnalysisDriveData(): DriveData {
 fun ChargeSummary.toAnalysisChargeData(): ChargeData {
     val raw = toRawAnalysisChargeData()
     val detail = HistorySummaryEvidenceCodec.detailContract(apiEvidence)
+    val windowed = if (detail == null) raw else raw.copy(
+        startDate = startDate, endDate = endDate
+    )
     val metric = detail?.batteryInput ?: detail?.acInput
     val safe = detail?.version == 1 && metric?.source != null &&
         (raw.source == null || raw.source == metric.source) &&
-        metric.startDate == raw.startDate && metric.endDate == raw.endDate
-    val projected = if (detail == null) raw else raw.copy(
+        sameEvidenceInstant(metric.startDate, startDate) &&
+        sameEvidenceInstant(metric.endDate, endDate)
+    val projected = if (detail == null) raw else windowed.copy(
         energyContract = if (safe) detail else EnergyContract(
             batteryInput = com.matelink.data.api.models.EnergyMetric(
                 quality = "unknown", reason = "local_charge_detail_window_or_source_mismatch"

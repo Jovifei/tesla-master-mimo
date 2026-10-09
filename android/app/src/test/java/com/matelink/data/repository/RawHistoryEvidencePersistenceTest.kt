@@ -137,6 +137,23 @@ class RawHistoryEvidencePersistenceTest {
         assertEquals(-0.5, rows[31 to 7]!!.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
     }
 
+    @Test fun corruptOrFutureEnvelopeNeverMakesLegacyScalarTrusted() {
+        val future = """{"_matelink_local_evidence_version":2,"raw_json":"ignored"}"""
+        val malformed = """{"_matelink_local_evidence_version":1,"raw_json":42}"""
+        for (encoded in listOf(future, malformed)) {
+            val cachedDrive = rawFleet().toSyncSummary(30)!!.copy(
+                apiEvidence = encoded, energyConsumed = 8.0,
+                efficiency = 800.0, energySource = "api")
+            assertNull(cachedDrive.toAnalysisDriveData().netEnergyKwh)
+            assertNull(cachedDrive.toRawAnalysisDriveData().energyConsumedNet)
+            val cachedCharge = ChargeData(9, startDate = start, endDate = end,
+                source = "telemetry_mqtt", chargeEnergyAdded = 12.0)
+                .toSyncSummary(30)!!.copy(apiEvidence = encoded, energyAdded = 12.0)
+            assertNull(cachedCharge.toAnalysisChargeData().batteryInputKwh)
+            assertNull(cachedCharge.toRawAnalysisChargeData().chargeEnergyAdded)
+        }
+    }
+
     @Test fun sameIdChargeUpsertKeepsUnqualifiedRawPositiveOrZeroButNotDisplayed() = runBlocking {
         for (rawValue in listOf(0.0, 12.0)) {
             val raw = ChargeData(9, startDate = start, endDate = end,
