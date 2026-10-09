@@ -205,7 +205,9 @@ else
       die "Issued public certificate did not pass chain, time, host and key qualification"
     fi
     if [[ "$SSL_ACTIVE_MODE" == letsencrypt ]]; then
-      sudo nginx -t >/dev/null 2>&1 && sudo systemctl reload nginx
+      # A failed nginx -t MUST NOT short-circuit past activation and claim PASS.
+      bash "${SCRIPT_DIR}/reload-qualified-le.sh" ||
+        die "LE remained active but post-issuance validation/reload failed"
     else
       bash "${SCRIPT_DIR}/tls-nginx-transaction.sh" "$NGINX_CONF_DIR" "$rendered" \
         "$LE_SRC" "$SELF_SRC" "$LE_SRC" ||

@@ -40,6 +40,12 @@ class ActualTlsScriptTests(unittest.TestCase):
         (self.conf / "other-project.conf").write_text("OWNER_UNTOUCHED")
         write_executable(self.bin / "sudo", """
             #!/usr/bin/env bash
+            # Fail ONLY the restore direction, never the preflight backup.
+            if [[ "${TLS_TEST_FAIL_RESTORE:-}" == "copy" && "$1" == cp &&
+                  "$2" == -a && "$4" == *".jourvolt-tls-rollback."* &&
+                  "$5" == "$TLS_TEST_CONF/"* ]]; then exit 9; fi
+            if [[ "${TLS_TEST_FAIL_RESTORE:-}" == "remove" && "$1" == rm &&
+                  "$*" == *"$TLS_TEST_CONF/jourvolt-ssl.inc"* ]]; then exit 9; fi
             exec "$@"
         """)
         write_executable(self.bin / "nginx", """
@@ -47,6 +53,7 @@ class ActualTlsScriptTests(unittest.TestCase):
             if [[ "$1" == "-v" ]]; then exit 0; fi
             [[ "$1" == "-t" ]] || exit 2
             if grep -q BROKEN "$TLS_TEST_CONF/jourvolt.conf"; then exit 1; fi
+            if [[ "${TLS_TEST_NGINX_FAIL:-}" == 1 ]]; then exit 1; fi
             if grep -q MORE_WARNINGS "$TLS_TEST_CONF/jourvolt.conf"; then
                 echo 'nginx: [warn] new overlap' >&2
             fi
@@ -56,7 +63,8 @@ class ActualTlsScriptTests(unittest.TestCase):
             #!/usr/bin/env bash
             [[ "$1" == "reload" && "$2" == "nginx" ]] || exit 2
             echo reload >> "$TLS_TEST_RELOADS"
-            if grep -q RELOAD_FAIL "$TLS_TEST_CONF/jourvolt.conf"; then exit 1; fi
+            if grep -q RELOAD_FAIL "$TLS_TEST_CONF/jourvolt.conf" ||
+                 [[ "${TLS_TEST_RELOAD_FAIL:-}" == 1 ]]; then exit 1; fi
             exit 0
         """)
         self.env = dict(os.environ)
@@ -67,12 +75,13 @@ class ActualTlsScriptTests(unittest.TestCase):
             "jourvolt.conf", "jourvolt-ssl.inc",
             "jourvolt-ssl.selfsigned.inc", "jourvolt-ssl.le.inc")]
 
-    def run_tx(self, main=None):
+    def run_tx(self, main=None, flags=None):
         if main is not None:
             self.files[0].write_text(main)
+        env = dict(self.env, **(flags or {}))
         return subprocess.run(["bash", str(TX), str(self.conf)] +
                               [str(x) for x in self.files],
-                              env=self.env, text=True, capture_output=True, timeout=12)
+                              env=env, text=True, capture_output=True, timeout=12)
 
     def assert_restored(self):
         for name in ("jourvolt.conf", "jourvolt-ssl.inc",
@@ -115,6 +124,44 @@ class ActualTlsScriptTests(unittest.TestCase):
         self.assert_restored()
         self.assertEqual(self.log.read_text().count("reload"), 2)
 
+    def test_restore_copy_failure_must_report_operator_not_false_rolled_back(self):
+        result = self.run_tx("BROKEN", {"TLS_TEST_FAIL_RESTORE": "copy"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("TLS_TRANSACTION=ROLLBACK_REQUIRES_OPERATOR", result.stdout)
+        self.assertNotIn("TLS_TRANSACTION=ROLLED_BACK", result.stdout)
+        self.assertEqual(self.log.read_text(), "")
+        self.assertEqual((self.conf / "other-project.conf").read_text(), "OWNER_UNTOUCHED")
+
+    def test_restore_remove_failure_must_report_operator_not_false_rolled_back(self):
+        (self.conf / "jourvolt-ssl.inc").unlink()
+        result = self.run_tx("BROKEN", {"TLS_TEST_FAIL_RESTORE": "remove"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("TLS_TRANSACTION=ROLLBACK_REQUIRES_OPERATOR", result.stdout)
+        self.assertNotIn("TLS_TRANSACTION=ROLLED_BACK", result.stdout)
+        self.assertEqual(self.log.read_text(), "")
+        self.assertEqual((self.conf / "other-project.conf").read_text(), "OWNER_UNTOUCHED")
+
+    def test_existing_le_postissuance_failure_cannot_claim_activation(self):
+        helper = REPO / "deploy/scripts/reload-qualified-le.sh"
+        self.assertIn("reload-qualified-le.sh", ROOT_SETUP.read_text())
+        for failflag, reason in (
+            ({"TLS_TEST_NGINX_FAIL": "1"}, "NGINX_TEST_FAILED"),
+            ({"TLS_TEST_RELOAD_FAIL": "1"}, "RELOAD_FAILED")
+        ):
+            self.log.write_text("")
+            result = subprocess.run(["bash", str(helper)],
+                capture_output=True, text=True, timeout=5,
+                env=dict(self.env, **failflag))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(reason, result.stdout)
+            self.assertNotIn("VALIDATED_RELOAD", result.stdout)
+        self.log.write_text("")
+        valid = subprocess.run(["bash", str(helper)],
+            capture_output=True, text=True, timeout=5, env=self.env)
+        self.assertEqual(valid.returncode, 0)
+        self.assertIn("TLS_LE_ACTIVATION=VALIDATED_RELOAD", valid.stdout)
+        self.assertEqual(self.log.read_text().count("reload"), 1)
+
     def test_actual_transaction_rejects_symlink_without_tampering(self):
         owned = self.conf / "jourvolt-ssl.inc"
         owned.unlink()
@@ -144,6 +191,8 @@ class ActualTlsScriptTests(unittest.TestCase):
                   exit 0 ;;
               */check-socket-port.py)
                   if [[ "${@: -1}" == "443" ]]; then exit 0; fi
+                  if [[ "$2" == "203.0.113.7" &&
+                        "${TLS_TEST_PUBLIC_ONLY_PORT:-}" == "${@: -1}" ]]; then exit 0; fi
                   exit 1 ;;
               *) exec /usr/bin/python3 "$@" ;;
             esac
@@ -173,9 +222,10 @@ class ActualTlsScriptTests(unittest.TestCase):
             printf '%s' "$code"
         """)
 
-    def run_public(self, status="401", public_ip="203.0.113.7"):
+    def run_public(self, status="401", public_ip="203.0.113.7", public_only_port=None):
         self.install_verify_fakes()
         env = dict(self.env, TLS_TEST_CAPABILITIES=status, PUBLIC_IP=public_ip,
+                   TLS_TEST_PUBLIC_ONLY_PORT=str(public_only_port or ""),
                    TMPDIR=str(self.root))
         return subprocess.run(["bash", str(VERIFY)], text=True,
                               capture_output=True, env=env, timeout=15)
@@ -192,6 +242,12 @@ class ActualTlsScriptTests(unittest.TestCase):
         self.assertEqual(offline.returncode, 1)
         self.assertIn("[FAIL]", offline.stdout)
         self.assertIn("VERIFY_PUBLIC:", offline.stdout)
+
+    def test_public_only_private_port_is_detected_without_loopback_listener(self):
+        result = self.run_public(public_only_port=4000)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("Private port unexpectedly accessible externally", result.stdout)
+        self.assertIn("VERIFY_PUBLIC:", result.stdout)
 
     def test_invalid_public_ip_rejected_before_any_network_execution(self):
         flag = self.root / "SENTINEL"

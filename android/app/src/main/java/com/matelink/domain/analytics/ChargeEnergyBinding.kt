@@ -42,17 +42,23 @@ fun ChargeDetail.withQualifiedEnergy(): ChargeDetail = copy(
 fun ChargeSummary.withDetailEvidence(detail: ChargeDetail): ChargeSummary {
     require(detail.chargeId == chargeId) { "history_detail_id_mismatch" }
     val previous = toAnalysisChargeData()
+    val rawPrevious = toRawAnalysisChargeData()
     require(previous.source == null || detail.source == null || previous.source == detail.source) { "history_detail_source_mismatch" }
     val evidence = previous.copy(
         startDate = detail.startDate ?: previous.startDate, endDate = detail.endDate ?: previous.endDate,
         address = detail.address ?: previous.address, durationMin = detail.durationMin ?: previous.durationMin,
         batteryDetails = detail.batteryDetails ?: previous.batteryDetails,
         outsideTempAvg = detail.outsideTempAvg ?: previous.outsideTempAvg,
-        chargeEnergyAdded = detail.batteryInputKwh, chargeEnergyUsed = detail.inputEnergyKwh,
-        energyContract = detail.energyContract, chargeType = detail.chargeType ?: previous.chargeType,
+        // The detail can be unknown while the stored API receipt still contains
+        // an unverified scalar. Preserve the raw value only in apiEvidence;
+        // the getters and analytic columns below keep it unavailable.
+        chargeEnergyAdded = detail.batteryInputKwh ?: rawPrevious.chargeEnergyAdded,
+        chargeEnergyUsed = detail.inputEnergyKwh ?: rawPrevious.chargeEnergyUsed,
+        energyContract = detail.energyContract ?: rawPrevious.energyContract,
+        chargeType = detail.chargeType ?: previous.chargeType,
         source = detail.source ?: previous.source,
         cost = detail.cost?.takeIf { it.isFinite() && it >= 0.0 } ?: previous.cost
-    ).withQualifiedEnergy()
+    )
     return copy(
         startDate = evidence.startDate ?: startDate, endDate = evidence.endDate ?: endDate,
         address = evidence.address.orEmpty(), durationMin = evidence.durationMin ?: durationMin,

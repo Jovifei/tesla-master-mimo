@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.DriveData
+import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.history.isAnalysisEligible
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.SettingsDataStore
@@ -306,10 +307,14 @@ class DrivesViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     val remoteDrives = result.data.drives
                     val localMetrics = driveSummaryDao.getAllChronological(result.data.context.localHistoryCarId).associate { summary ->
+                        // Old Room scalar columns may predate the evidence contract.
+                        // Never label them API measurements without qualifying the
+                        // original JSON; they remain recoverable, not displayable.
+                        val qualified = summary.toAnalysisDriveData()
                         summary.driveId to DriveHistoryMetrics(
-                            energyKwh = summary.energyConsumed,
-                            efficiencyWhKm = summary.efficiency,
-                            source = summary.energySource,
+                            energyKwh = qualified.netEnergyKwh,
+                            efficiencyWhKm = qualified.efficiencyWhKm,
+                            source = qualified.netEnergyKwh?.let { summary.energySource },
                             coverageRatio = summary.energyCoverageRatio
                         )
                     }

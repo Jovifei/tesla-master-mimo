@@ -17,6 +17,8 @@ import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.domain.analytics.toAnalysisDriveData
+import com.matelink.domain.analytics.toRawAnalysisDriveData
+import com.matelink.domain.analytics.toRawAnalysisChargeData
 import com.matelink.domain.analytics.withQualifiedEnergy
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import kotlinx.coroutines.currentCoroutineContext
@@ -214,13 +216,20 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         } else HistoryPageLoad<ChargeData>(emptyList(), unavailable)
 
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
-        val drives = mergeDrives(remoteDrives.items.map { it.withLegacyRemoteQuality() }, localDrives.map { it.toAnalysisDriveData() })
-        val charges = mergeCharges(remoteCharges.items.map { it.withLegacyRemoteQuality() }, localCharges.map { it.toAnalysisChargeData() })
+        // Keep the wire/Room archive raw while the displayed projection hides
+        // unqualified energy. Re-encoding a projected value destroys the only
+        // recoverable source scalar and can contaminate a same-ID cache upsert.
+        val rawDrives = mergeDrivesRaw(remoteDrives.items.map { it.withLegacyRemoteQuality() },
+            localDrives.map { it.toRawAnalysisDriveData() })
+        val rawCharges = mergeChargesRaw(remoteCharges.items.map { it.withLegacyRemoteQuality() },
+            localCharges.map { it.toRawAnalysisChargeData() })
+        val drives = rawDrives.map { it.withQualifiedEnergy() }
+        val charges = rawCharges.map { it.withQualifiedEnergy() }
         // Never delete local history just because it is outside the cloud window.
         // Persist even successfully downloaded pages preceding a later failure.
-        reads.persistDrives(drives.mapNotNull { it.toLocalSummary(context.localHistoryCarId) })
+        reads.persistDrives(rawDrives.mapNotNull { it.toLocalSummary(context.localHistoryCarId) })
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
-        reads.persistCharges(charges.mapNotNull { it.toLocalSummary(context.localHistoryCarId) })
+        reads.persistCharges(rawCharges.mapNotNull { it.toLocalSummary(context.localHistoryCarId) })
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
 
         if (drives.isEmpty() && charges.isEmpty() && !canReadHistory) resolved.identityError?.let { return it }
@@ -257,7 +266,11 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
             return merged
         }
 
-        fun mergeDrives(remote: List<DriveData>, local: List<DriveData>): List<DriveData> {
+        fun mergeDrives(remote: List<DriveData>, local: List<DriveData>): List<DriveData> =
+            mergeDrivesRaw(remote, local).map { it.withQualifiedEnergy() }
+
+        /** Raw wire and local provenance is retained until AFTER persistence. */
+        internal fun mergeDrivesRaw(remote: List<DriveData>, local: List<DriveData>): List<DriveData> {
             val localById = local.associateBy { it.driveId }
             val merged = remote.map { drive ->
                 drive.mergeWith(localById[drive.driveId] ?: local.firstOrNull { drive.sameSession(it) })
@@ -267,10 +280,13 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
                 val index = canonical.indexOfFirst { it.driveId == row.driveId || it.sameSession(row) }
                 if (index < 0) canonical += row else canonical[index] = canonical[index].mergeWith(row)
             }
-            return canonical.map { it.withQualifiedEnergy() }.sortedByDescending { historyTimestamp(it.startDate) }
+            return canonical.sortedByDescending { historyTimestamp(it.startDate) }
         }
 
-        fun mergeCharges(remote: List<ChargeData>, local: List<ChargeData>): List<ChargeData> {
+        fun mergeCharges(remote: List<ChargeData>, local: List<ChargeData>): List<ChargeData> =
+            mergeChargesRaw(remote, local).map { it.withQualifiedEnergy() }
+
+        internal fun mergeChargesRaw(remote: List<ChargeData>, local: List<ChargeData>): List<ChargeData> {
             val localById = local.associateBy { it.chargeId }
             val merged = remote.map { charge ->
                 charge.mergeWith(localById[charge.chargeId] ?: local.firstOrNull { charge.sameSession(it) })
@@ -280,7 +296,7 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
                 val index = canonical.indexOfFirst { it.chargeId == row.chargeId || it.sameSession(row) }
                 if (index < 0) canonical += row else canonical[index] = canonical[index].mergeWith(row)
             }
-            return canonical.map { it.withQualifiedEnergy() }.sortedByDescending { historyTimestamp(it.startDate) }
+            return canonical.sortedByDescending { historyTimestamp(it.startDate) }
         }
     }
 }
@@ -421,6 +437,7 @@ private fun com.matelink.data.api.models.ChargeRange?.mergeWith(
 internal fun DriveData.toLocalSummary(historyCarId: Int): DriveSummary? {
     val start = startDate ?: return null
     val end = endDate ?: return null
+    val qualified = withQualifiedEnergy()
     return DriveSummary(
         driveId = driveId,
         carId = historyCarId,
@@ -438,9 +455,13 @@ internal fun DriveData.toLocalSummary(historyCarId: Int): DriveSummary? {
         endBatteryLevel = batteryDetails?.endBatteryLevel ?: 0,
         outsideTempAvg = outsideTempAvg,
         insideTempAvg = insideTempAvg,
-        energyConsumed = energyConsumedNet,
-        efficiency = efficiencyWhKm,
-        energySource = energyConsumedNet?.takeIf { it.isFinite() && it >= 0.0 }?.let { "api" },
+        // Analytic columns are a qualified projection. Raw scalar/source/quality
+        // remain untouched in apiEvidence, including an unverified Fleet 8 kWh.
+        energyConsumed = qualified.energyConsumedNet,
+        efficiency = qualified.efficiencyWhKm,
+        energySource = qualified.energyConsumedNet?.let {
+            if (energyContract?.netEnergy?.method == "drive_power_integral") "power_samples" else "api"
+        },
         apiEvidence = HistorySummaryEvidenceCodec.encode(this),
         qualityState = qualityState ?: "incomplete",
         qualityReason = qualityReason ?: "remote_quality_unavailable"
@@ -450,6 +471,7 @@ internal fun DriveData.toLocalSummary(historyCarId: Int): DriveSummary? {
 internal fun ChargeData.toLocalSummary(historyCarId: Int): ChargeSummary? {
     val start = startDate ?: return null
     val end = endDate ?: return null
+    val qualified = withQualifiedEnergy()
     return ChargeSummary(
         chargeId = chargeId,
         carId = historyCarId,
@@ -459,8 +481,8 @@ internal fun ChargeData.toLocalSummary(historyCarId: Int): ChargeSummary? {
         address = address ?: "",
         latitude = latitude ?: 0.0,
         longitude = longitude ?: 0.0,
-        energyAdded = chargeEnergyAdded ?: 0.0,
-        energyUsed = chargeEnergyUsed,
+        energyAdded = qualified.batteryInputKwh ?: 0.0,
+        energyUsed = qualified.inputEnergyKwh,
         cost = cost,
         startBatteryLevel = batteryDetails?.startBatteryLevel ?: 0,
         endBatteryLevel = batteryDetails?.endBatteryLevel ?: 0,
@@ -479,8 +501,13 @@ private fun hasTrustedHistoryEvidence(quality: String?, source: String?): Boolea
 internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): DriveSummary {
     if (cached == null) return incoming
     require(incoming.carId == cached.carId && incoming.driveId == cached.driveId)
-    val data = UnifiedHistoryRepository.mergeDrives(listOf(incoming.toAnalysisDriveData()), listOf(cached.toAnalysisDriveData())).single()
-    val merged = data.toLocalSummary(incoming.carId) ?: return cached
+    val cachedRaw = cached.toRawAnalysisDriveData()
+    val data = UnifiedHistoryRepository.mergeDrivesRaw(
+        listOf(incoming.toRawAnalysisDriveData()), listOf(cachedRaw)).single()
+    val qualified = data.toLocalSummary(incoming.carId) ?: return cached
+    // If no new raw evidence was contributed, retain its original JSON bytes.
+    val merged = if (data == cachedRaw && cached.apiEvidence != null)
+        qualified.copy(apiEvidence = cached.apiEvidence) else qualified
     return if (merged.energyConsumed != null && merged.energyConsumed == cached.energyConsumed) {
         merged.copy(energySource = cached.energySource ?: merged.energySource,
             energyCoverageSeconds = cached.energyCoverageSeconds, energyCoverageRatio = cached.energyCoverageRatio)
@@ -490,6 +517,10 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
 internal fun mergeStoredCharge(incoming: ChargeSummary, cached: ChargeSummary?): ChargeSummary {
     if (cached == null) return incoming
     require(incoming.carId == cached.carId && incoming.chargeId == cached.chargeId)
-    return UnifiedHistoryRepository.mergeCharges(listOf(incoming.toAnalysisChargeData()), listOf(cached.toAnalysisChargeData()))
-        .single().toLocalSummary(incoming.carId) ?: cached
+    val cachedRaw = cached.toRawAnalysisChargeData()
+    val data = UnifiedHistoryRepository.mergeChargesRaw(
+        listOf(incoming.toRawAnalysisChargeData()), listOf(cachedRaw)).single()
+    val qualified = data.toLocalSummary(incoming.carId) ?: return cached
+    return if (data == cachedRaw && cached.apiEvidence != null)
+        qualified.copy(apiEvidence = cached.apiEvidence) else qualified
 }

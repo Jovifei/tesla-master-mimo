@@ -416,3 +416,123 @@ authorized device/API path. The optional public 200 health is always
 labeled `runner_vantage_only`, never accepted as Fleet or phone
 proof. All synthetic TLS certificate and mock network results are
 isolated-test evidence, not server or natural-data acceptance.
+
+## Appendix D — same-ID original history evidence recoverability repair
+
+Independent local return
+`codex/tls-5f-local-validation-20261009@679c54c94d15dc41e1c121d5614819f4cfb8ade0`
+found **actual Actions Android FAILURE** at fixed `5f5a197d`:
+HistoryRecoveryTest line71/117 used an allegedly strong 8-kWh Fleet
+scalar lacking `EnergyContract`; the Android qualification correctly
+rejects it. Both variants ran 730 tests with 2 failures; no new signed
+install was completed. This is distinct from the proven raw-cache
+persistence defect below. The old `8625d28e` signed APK remains the
+installed version.
+
+### Data contract before/after and non-destructive scope
+
+**Prior source risk (not asserted as a production erase):**
+`HistorySummaryMapper.toAnalysisDriveData()` masked unproved Fleet
+8-kWh values to `null`, but foreground history merged and persisted
+that projected DTO; `DriveSummaryDao.upsertPreservingEvidence()` used
+`mergeStoredDrive()` which decoded/projected AGAIN, potentially
+re-encoding `apiEvidence` with `null`, destroying the original
+recoverable raw scalar and original JSON during same-ID upserts.
+Background `toSyncSummary` and detail enrichment also encoded
+display projections as raw evidence. The same pattern could affect
+unqualified charge values.
+
+**Candidate repair:**
+- `toRawAnalysisDriveData` and `toRawAnalysisChargeData` are explicitly
+  *for persistence merging only*: decode the original cached JSON,
+  provenance, source, source quality, time, and nullable scalar exactly.
+  The existing `toAnalysis...` functions remain physically qualified
+  projections, masking numeric data that lacks a versioned contract.
+- `UnifiedHistoryRepository.load` merges **raw** remote/local history
+  and persists raw envelopes (without deleting any row or archive);
+  separately returns a qualified drive/charge projection to UI.
+  `mergeDrivesRaw` / `mergeChargesRaw` underlie the prior public
+  `mergeDrives` / `mergeCharges` display methods. Quarantine, tenant,
+  source quality and same-session guards remain in effect.
+- `toLocalSummary`, `SyncRepository.toSyncSummary` and actual
+  `DriveSummaryDao` / `ChargeSummaryDao` same-ID read/merge/upsert
+  preserve raw `apiEvidence` (including an old unqualified Fleet
+  8 kWh). Room analytic numeric columns use qualified values only:
+  unverified means **null**, not an observed zero, and qualified
+  zero/negative signed net energy remains valid. Existing old scalar
+  columns aren't interpreted as proof just because they contain a number.
+  Raw source bytes are retained byte-for-byte when the weaker incoming
+  record contributes no new source evidence.
+- Detail enrichment `withResolvedDriveEnergy` /
+  `withDetailEvidence` now also retain earlier original raw values
+  in the JSON when new detail has unknown energy. Explicit unknown
+  contracts mask those raw values from display/aggregation; legitimate
+  newly qualified detail values may update the analytic projection.
+  `DrivesViewModel` always derives list energy metrics from
+  `toAnalysisDriveData`, not a pre-contract Room scalar.
+- Test fixtures with strong 8 kWh now attach a synthetic
+  **source-complete estimated power-integral** contract,
+  with explicit time basis and coverage; Fleet quality `observed`
+  *by itself* is explicitly tested insufficient. The 8 kWh, source,
+  quality, deduplication, aliases, valid-zero/negative and
+  weak-unknown assertions remain. No fabricated Fleet report is claimed.
+- New deterministic `RawHistoryEvidencePersistenceTest` drives the
+  **same suspend read/merge/upsert orchestration called inside
+  @Transaction DAO** against isolated in-memory storage: original
+  same-ID raw Fleet8/JSON survives empty/weak remote and repeated
+  upsert with count/identity/source intact; projection stays unknown.
+  Covers changed weak observed row, distinct car IDs with same
+  numeric ID, valid signed measured zero/negative, explicit unknown
+  masking, raw charge zero/positive and both drive/charge detail
+  unknown enrichment. No Android device, production DB, schema
+  migration, or historical real-data write is performed.
+
+**Recoverability boundary:** An original wire scalar remains recoverable
+from the exact `apiEvidence` JSON (not repurposed as an analytics column).
+A preexisting already-overwritten `apiEvidence` cannot be recreated
+from missing data, and the candidate does **not** perform retroactive
+history repair/backfill or fabricate old source readings. Old cached
+scalar columns without sufficient provenance remain unqualified in
+UI; production counts requiring historical cleanup stay separately
+gated. Existing app data and all past trips are retained.
+
+### Remaining TLS negative branches also repaired
+
+- Existing-LE post-issuance path now invokes
+  `reload-qualified-le.sh` which separately requires
+  `nginx -t` **and** a successful reload before reporting
+  `TLS_LE_ACTIVATION=VALIDATED_RELOAD`. A failed test/reload
+  never sets activation PASS. Isolated tests invoke that real helper
+  with a faulted Nginx test, failed reload, and valid success.
+- `tls-nginx-transaction.sh` must verify **all four restored files**,
+  catch cp/rm/pending cleanup failures and avoid a false
+  `ROLLED_BACK`. If restore is incomplete, it returns
+  `ROLLBACK_REQUIRES_OPERATOR` rather than reloading invalid files.
+  Actual isolated script tests inject restore-copy and restore-removal
+  failures in addition to prior normal, invalid Nginx, reload and
+  new-warning paths. Only an independently verified exact restored
+  disk and successful reload merits ROLLED_BACK.
+- `verify-public.sh` probes each of the **four approved** private
+  ports directly against the validated literal public IPv4,
+  independently of localhost reachability; a public-only listener
+  therefore fails qualification. An injected public-only port fixture
+  must fail while a healthy 401 baseline passes. This is a bounded
+  public check with no shell injection, unbounded scan or service write.
+
+All three source fixes are **not** deployed to running Nginx. Do not
+treat synthetic fault injection, validated public health, or
+Android installation as real historical Tesla Fleet acceptance.
+
+### Final acceptance remains evidence-tiered
+
+Only the final PR17 **full HEAD/tree/parent and its completed same-SHA
+Actions run** may qualify the source stage. Independent original local
+Codex recompiles/tests/signs/installs in-place only after full verification
+and confirms no Owner dirty-worktree or phone history mutation.
+Production API (currently `bb09fac`) still requires a separately
+reviewed, idempotent, backed-up reversible deployment gate for the
+fractional-boundary serializer; there has been no API deployment.
+The phone's original intermittent wrong TLS peer is unattributed,
+Wi-Fi→cellular→restore permission is unanswered, and there is still
+no accepted fresh source→authenticated API→Room→UI natural-energy
+observation or multi-user/Fleet/TPMS/notification human acceptance.

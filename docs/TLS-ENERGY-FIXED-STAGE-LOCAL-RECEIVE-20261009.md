@@ -76,3 +76,39 @@ qualifier outcomes and explicit unresolved human/environment decisions.
 Label source, synthetic CI, local device, historical TeslaMate,
 production and natural Fleet evidence separately. No new microtasks or
 unrequested background work.
+
+## Additional mandatory same-ID evidence qualification (post-5f)
+
+The previous 5f run Android result is **FAIL**, regardless of its
+`android-summary` or backend green badges:
+`HistoryRecoveryTest` had two NPE fixtures assuming an uncontracted
+Fleet 8 kWh was a physically proven measurement. Remote fixes must
+retain a synthetic qualified 8 kWh power-integral contract and an
+independent uncontracted Fleet unknown test. Local testing must verify
+the new `RawHistoryEvidencePersistenceTest` and both
+`HistoryRecoveryTest` cases, on **the exact new final SHA**.
+
+The persistence safeguard is as important as the display guard:
+`apiEvidence` must retain historical raw JSON and the original scalar
+(e.g. Fleet 8 kWh) through same-ID weak/offline read-merge-upsert,
+while analytics/Room projection/UI remain `null` when unsupported.
+A pre-contract numeric Room column does not prove a Fleet measurement.
+Test exact byte retention for a weak same-ID update, verified source
+and quality, no row-count change, two cars with the same numeric ID,
+valid reported zero and signed recovery, unknown details and
+charge-source preservation. Candidate source changes both foreground
+history and background sync/detail paths; if any test fails,
+**do not install**. No historical backfill/repair is authorized.
+
+The TLS checks now also explicitly fail when existing active LE
+post-issuance `nginx -t` fails, when any of four files cannot be
+restored on rollback, or when a public-only private-port listener
+exists without loopback presence. Only source-isolated fault-injection
+tests are authorized; do not run deployment scripts against production.
+
+Go Nano precision and parking boundaries are source-qualified ONLY.
+Deployed API bb09 continues to truncate fractional boundaries and
+requires a separately approved minimum Go-image rollout with private
+existing image/config/DB backups and rollback, never implicit code-stage
+approval. The old failed intermittent phone certificate peer and
+the unanswered Wi-Fi→cellular→restore decision remain separate.

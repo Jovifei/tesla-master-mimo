@@ -13,10 +13,13 @@ private fun String?.cleanAddress(): String? = this?.trim()?.takeIf {
 }
 
 /** Rehydrate exact nullable evidence; scalar placeholders never prove a measured zero. */
-fun DriveSummary.toAnalysisDriveData(): DriveData {
+/** Raw, provenance-bearing values are NEVER normalized before a persistence merge.
+ * apiEvidence is an archive of what the endpoint returned, not a certified measurement.
+ */
+fun DriveSummary.toRawAnalysisDriveData(): DriveData {
     val fromEvidence = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive)?.takeIf { it.driveId == driveId }?.let {
         it.copy(startAddress = it.startAddress.cleanAddress(), endAddress = it.endAddress.cleanAddress(),
-            qualityState = qualityState, qualityReason = qualityReason).withQualifiedEnergy()
+            qualityState = qualityState, qualityReason = qualityReason)
     }
     return fromEvidence ?: DriveData(
         driveId = driveId, startDate = startDate, endDate = endDate,
@@ -33,10 +36,11 @@ fun DriveSummary.toAnalysisDriveData(): DriveData {
     )
 }
 
-fun ChargeSummary.toAnalysisChargeData(): ChargeData =
+/** Preserve the exact raw charge envelope independently of its UI projection. */
+fun ChargeSummary.toRawAnalysisChargeData(): ChargeData =
     apiEvidence?.let(HistorySummaryEvidenceCodec::decodeCharge)?.takeIf { it.chargeId == chargeId }?.copy(
         qualityState = qualityState, qualityReason = qualityReason
-    )?.withQualifiedEnergy() ?: ChargeData(
+    ) ?: ChargeData(
         chargeId = chargeId, startDate = startDate, endDate = endDate, address = address.takeIf(String::isNotBlank),
         chargeEnergyAdded = energyAdded.takeIf { it.isFinite() && it > 0.0 },
         chargeEnergyUsed = energyUsed?.takeIf { it.isFinite() && it >= 0.0 },
@@ -46,6 +50,15 @@ fun ChargeSummary.toAnalysisChargeData(): ChargeData =
         latitude = latitude.takeIf { it.isFinite() && it != 0.0 }, longitude = longitude.takeIf { it.isFinite() && it != 0.0 },
         qualityState = qualityState, qualityReason = qualityReason
     )
+
+/** UI and analytic consumers only see physically qualified values; the saved raw
+ * JSON, including old unverified Fleet scalars, is not modified by this view.
+ */
+fun DriveSummary.toAnalysisDriveData(): DriveData =
+    toRawAnalysisDriveData().withQualifiedEnergy()
+
+fun ChargeSummary.toAnalysisChargeData(): ChargeData =
+    toRawAnalysisChargeData().withQualifiedEnergy()
 
 private fun isLegacyBatteryLevel(value: Int): Boolean = value in 1..100
 

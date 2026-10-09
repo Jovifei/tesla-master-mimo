@@ -14,9 +14,7 @@ interface DriveSummaryDao {
     /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
     @Transaction
     suspend fun upsertPreservingEvidence(rows: List<DriveSummary>) {
-        rows.forEach { incoming ->
-            upsert(mergeStoredDrive(incoming, get(incoming.carId, incoming.driveId)))
-        }
+        persistDriveRowsWithoutEvidenceLoss(rows, ::get, ::upsert)
     }
 
     // === CRUD Operations ===
@@ -471,3 +469,19 @@ data class MonthlyDriveAggregation(
     val totalEnergy: Double,
     val driveCount: Int
 )
+
+/**
+ * This is the actual Room @Transaction read/merge/upsert orchestration, with
+ * isolated I/O ports for deterministic same-ID storage tests. No deletes,
+ * backfills or cross-vehicle numeric-ID fallbacks.
+ */
+internal suspend fun persistDriveRowsWithoutEvidenceLoss(
+    rows: List<DriveSummary>,
+    get: suspend (Int, Int) -> DriveSummary?,
+    upsert: suspend (DriveSummary) -> Unit
+) {
+    rows.forEach { incoming ->
+        upsert(mergeStoredDrive(incoming,
+            get(incoming.carId, incoming.driveId)))
+    }
+}

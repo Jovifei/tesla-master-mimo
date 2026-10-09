@@ -290,7 +290,9 @@ internal fun DriveData.toSyncSummary(carId: Int): DriveSummary? {
         energySource = normalized.netEnergyKwh?.let { if (metric?.method == "drive_power_integral") "power_samples" else "api" },
         energyCoverageSeconds = metric?.coverageSeconds?.takeIf { it.isFinite() && it >= 0.0 }?.toLong() ?: 0L,
         energyCoverageRatio = metric?.coverageRatio?.takeIf { it.isFinite() && it in 0.0..1.0 } ?: 0.0,
-        apiEvidence = HistorySummaryEvidenceCodec.encode(normalized),
+        // Store unmodified API evidence. Numeric Room columns above are
+        // qualified projections; never encode those projections as raw truth.
+        apiEvidence = HistorySummaryEvidenceCodec.encode(this),
         qualityState = qualityState ?: if (source == "local_import") "incomplete" else "observed",
         qualityReason = qualityReason ?: if (source == "local_import") "local_import_unverified" else "legacy_remote_api"
     )
@@ -305,7 +307,9 @@ internal fun ChargeData.toSyncSummary(carId: Int): ChargeSummary? {
         energyAdded = normalized.batteryInputKwh ?: 0.0, energyUsed = normalized.inputEnergyKwh, cost = normalized.cost,
         startBatteryLevel = startBatteryLevel ?: 0, endBatteryLevel = endBatteryLevel ?: 0,
         outsideTempAvg = outsideTempAvg?.takeIf(Double::isFinite), odometer = odometer ?: 0.0,
-        apiEvidence = HistorySummaryEvidenceCodec.encode(normalized),
+        // Store unmodified API evidence. Numeric Room columns above are
+        // qualified projections; never encode those projections as raw truth.
+        apiEvidence = HistorySummaryEvidenceCodec.encode(this),
         qualityState = qualityState ?: if (source == "local_import") "incomplete" else "observed",
         qualityReason = qualityReason ?: if (source == "local_import") "local_import_unverified" else "legacy_remote_api"
     )

@@ -51,17 +51,30 @@ rollback() {
     echo "TLS_TRANSACTION=APPLIED"
     return
   fi
-  if [[ -n "$pending" ]]; then sudo rm -f -- "$pending" >/dev/null 2>&1 || :; fi
+  local restored=true
+  if [[ -n "$pending" ]] && ! sudo rm -f -- "$pending" >/dev/null 2>&1; then
+    restored=false
+  fi
   # Restore exactly the four owned files, never unrelated Nginx vhosts.
+  # Don't swallow cp/rm failures; compare each restored file to its backup.
   for index in 0 1 2 3; do
     name="${names[$index]}"
     if sudo test -f "$backup/$name.absent"; then
-      sudo rm -f -- "$dest_dir/$name" || :
+      if ! sudo rm -f -- "$dest_dir/$name"; then restored=false; fi
+      if sudo test -e "$dest_dir/$name"; then restored=false; fi
     else
-      sudo cp -a -- "$backup/$name" "$dest_dir/$name" || :
+      if ! sudo cp -a -- "$backup/$name" "$dest_dir/$name"; then
+        restored=false
+      fi
+      if ! sudo cmp -s "$backup/$name" "$dest_dir/$name"; then
+        restored=false
+      fi
     fi
   done
-  if sudo nginx -t >/dev/null 2>&1 && sudo systemctl reload nginx >/dev/null 2>&1; then
+  # Reloading the old config is forbidden when disk restore is incomplete.
+  if [[ "$restored" == true ]] &&
+     sudo nginx -t >/dev/null 2>&1 &&
+     sudo systemctl reload nginx >/dev/null 2>&1; then
     echo "TLS_TRANSACTION=ROLLED_BACK"
   else
     echo "TLS_TRANSACTION=ROLLBACK_REQUIRES_OPERATOR"

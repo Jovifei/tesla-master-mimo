@@ -161,12 +161,13 @@ else
   warnk "ss 不可用，跳过本机监听检查"
 fi
 for port in 4000 8080 5432 1883; do
-  # Check only when loopback service exists; never interpolate shell code.
-  if python3 "${SCRIPT_DIR}/check-socket-port.py" 127.0.0.1 "$port" &&
-     python3 "${SCRIPT_DIR}/check-socket-port.py" "$PUBLIC_IP" "$port"; then
+  # A public-only listener is still a leak even if no loopback listener
+  # exists. Probe ONLY the explicitly approved four private ports against a
+  # validated literal PUBLIC_IP, once per port, with a bounded timeout.
+  if python3 "${SCRIPT_DIR}/check-socket-port.py" "$PUBLIC_IP" "$port"; then
     bad "Private port unexpectedly accessible externally"
   else
-    ok "Private port not exposed by paired loopback/public check"
+    ok "Private port not externally reachable"
   fi
 done
 

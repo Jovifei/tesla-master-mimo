@@ -72,6 +72,7 @@ fun DriveDetail.resolveDriveEnergy(): ResolvedDriveEnergy {
 fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: ResolvedDriveEnergy): DriveSummary {
     require(detail.driveId == driveId) { "history_detail_id_mismatch" }
     val previous = toAnalysisDriveData()
+    val rawPrevious = toRawAnalysisDriveData()
     require(previous.source == null || detail.source == null || previous.source == detail.source) { "history_detail_source_mismatch" }
     val estimate = resolved.estimate
     val evidence = previous.copy(
@@ -88,8 +89,11 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
         powerMax = detail.powerMax ?: previous.powerMax,
         powerMin = detail.powerMin ?: previous.powerMin,
         source = detail.source ?: previous.source,
-        energyConsumedNet = estimate.energyKwh,
-        consumptionNet = estimate.efficiencyWhKm,
+        // Unknown detail evidence cannot erase an earlier unverified Fleet
+        // scalar from raw apiEvidence. It remains masked by the explicit
+        // unknown energy contract and never enters numeric analytic columns.
+        energyConsumedNet = estimate.energyKwh ?: rawPrevious.energyConsumedNet,
+        consumptionNet = estimate.efficiencyWhKm ?: rawPrevious.consumptionNet,
         energyContract = detail.energyContract ?: EnergyContract(netEnergy = resolved.evidence)
     )
     return copy(
