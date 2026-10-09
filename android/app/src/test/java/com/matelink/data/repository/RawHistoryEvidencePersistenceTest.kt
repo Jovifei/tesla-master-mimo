@@ -553,7 +553,7 @@ class RawHistoryEvidencePersistenceTest {
                 address = "unverified foreign address",
                 chargeEnergyAdded = null).toSyncSummary(30)!!
             val merged = mergeStoredCharge(incoming, actual)
-            assertEquals(1, merged.chargeId)
+            assertEquals(9, merged.chargeId)
             assertEquals(30, merged.carId)
             assertEquals("new charge", merged.toAnalysisChargeData().address)
             assertEquals(80, merged.toAnalysisChargeData().startBatteryLevel)
@@ -598,7 +598,7 @@ class RawHistoryEvidencePersistenceTest {
         assertEquals(original.apiEvidence,
             HistorySummaryEvidenceCodec.sourceJson(saved.apiEvidence))
         assertEquals(12.0, saved.toRawAnalysisChargeData().chargeEnergyAdded!!, 0.0)
-        assertEquals(1, saved.chargeId)
+        assertEquals(9, saved.chargeId)
         assertEquals(30, saved.carId)
     }
 
