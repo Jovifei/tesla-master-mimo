@@ -85,7 +85,9 @@ class HistoryRecoveryTest {
 
     @Test fun incompleteCloudSummaryCannotDowngradeMeasuredLocalRecord() {
         val measured = strongMeasuredDrive(10)
-        val weak = measured.copy(energyConsumedNet = null, source = "local_import", qualityState = "incomplete")
+        val weak = measured.copy(energyConsumedNet = null, energyContract = null,
+            source = "local_import", qualityState = "incomplete")
+        assertNull(weak.netEnergyKwh)
         val result = UnifiedHistoryRepository.mergeDrives(listOf(weak), listOf(measured)).single()
         assertEquals(8.0, result.energyConsumedNet!!, 0.0)
         assertEquals("telemetry_mqtt", result.energyContract?.netEnergy?.source)
@@ -139,7 +141,9 @@ class HistoryRecoveryTest {
 
     @Test fun offlineAliasesAreMergedWithoutErasingTheStrongerRecord() {
         val measured = strongMeasuredDrive(1)
-        val alias = measured.copy(driveId = 2, energyConsumedNet = null, source = "local_import", qualityState = "incomplete")
+        val alias = measured.copy(driveId = 2, energyConsumedNet = null,
+            energyContract = null, source = "local_import", qualityState = "incomplete")
+        assertNull(alias.netEnergyKwh)
         val result = UnifiedHistoryRepository.mergeDrives(emptyList(), listOf(alias, measured)).single()
         assertEquals("observed", result.qualityState)
         assertEquals(8.0, result.energyConsumedNet!!, 0.0)

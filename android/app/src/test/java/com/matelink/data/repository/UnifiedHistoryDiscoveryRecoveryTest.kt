@@ -4,6 +4,8 @@ import com.matelink.data.api.models.CarData
 import com.matelink.data.api.models.HistoryContextData
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.ChargeData
+import com.matelink.data.sync.toSyncSummary
+import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.data.local.*
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.ChargeSummary
@@ -27,6 +29,7 @@ class UnifiedHistoryDiscoveryRecoveryTest {
         var identityCalls = 0
         var localReads = 0
         var legacyPending = false
+        var localDriveOverride: List<DriveSummary>? = null
         val oldDrive = DriveData(1, startDate = "2026-10-01T00:00:00Z", endDate = "2026-10-01T01:00:00Z", source = "teslamate_archive", qualityState = "observed")
         val newDrive = oldDrive.copy(driveId = 2, startDate = "2026-10-04T00:00:00Z", endDate = "2026-10-04T01:00:00Z")
         val oldCharge = ChargeData(1, startDate = "2026-09-29T00:00:00Z", endDate = "2026-09-29T01:00:00Z", source = "teslamate_archive", qualityState = "observed")
@@ -46,7 +49,7 @@ class UnifiedHistoryDiscoveryRecoveryTest {
             getHistoryContext = { id -> check(id == 7); identityCalls++; identity },
             resolveCar = { car, expected -> check(car.carId == 7 && car.vehicleUid == "provider-a"); check(expected == scope); cached = context; context },
             cachedContext = { id, expected -> if (id == 7 && expected == original && scope == expected) cached else null },
-            localDrives = { id -> localReads++; check(id == -7); listOf(oldDrive.toLocalSummary(id)!!) },
+            localDrives = { id -> localReads++; check(id == -7); localDriveOverride ?: listOf(oldDrive.toLocalSummary(id)!!) },
             localCharges = { id -> localReads++; check(id == -7); listOf(oldCharge.toLocalSummary(id)!!) },
             getDrives = { id, _, _, page -> check(id == 7); driveCalls += page; fetchDrives(page) },
             getCharges = { id, _, _, page -> check(id == 7); chargeCalls += page; fetchCharges(page) },
@@ -56,6 +59,33 @@ class UnifiedHistoryDiscoveryRecoveryTest {
             legacyLinkPending = { _, _, _ -> legacyPending }
         ))
     }
+    @Test fun actualOfflineHistoryLoadProjectsUnknownYetPersistsRawSourceReceipt() = runTest {
+        val f = Fixture()
+        val old = DriveData(1, startDate = "2026-10-01T00:00:00Z",
+            endDate = "2026-10-01T01:00:00Z",
+            source = "telemetry_mqtt", qualityState = "observed",
+            energyConsumedNet = 8.0)
+        val stored = old.toSyncSummary(-7)!!.copy(
+            energyConsumed = 8.0, energySource = "api")
+        val originalJson = requireNotNull(stored.apiEvidence)
+        f.localDriveOverride = listOf(stored)
+        f.fetchDrives = { ApiResult.Success(emptyList()) }
+        f.fetchCharges = { ApiResult.Success(emptyList()) }
+        val result = f.repository().load(7) as ApiResult.Success
+        assertEquals(1, result.data.drives.size)
+        assertNull(result.data.drives.single().netEnergyKwh)
+        assertNull(result.data.drives.single().energyConsumedNet)
+        assertEquals("telemetry_mqtt", result.data.drives.single().source)
+        val toPersist = f.persistedDrives.single()
+        assertEquals(-7, toPersist.carId)
+        assertEquals(1, toPersist.driveId)
+        assertNull(toPersist.energyConsumed)
+        assertEquals(originalJson, toPersist.apiEvidence)
+        assertEquals(8.0,
+            HistorySummaryEvidenceCodec.decodeDrive(toPersist.apiEvidence!!)!!.energyConsumedNet!!,
+            0.0)
+    }
+
     @Test fun identityDiagnosticPreservesTypedFailureWithoutAuthorizingHistory() = runTest {
         val f = Fixture()
         f.identity = ApiResult.Error("private response", kind = ApiErrorKind.INVALID_RESPONSE, safeFailure = SafeApiFailure.JSON_DATA)

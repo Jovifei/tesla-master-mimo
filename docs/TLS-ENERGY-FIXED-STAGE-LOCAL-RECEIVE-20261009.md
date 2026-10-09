@@ -112,3 +112,23 @@ requires a separately approved minimum Go-image rollout with private
 existing image/config/DB backups and rollback, never implicit code-stage
 approval. The old failed intermittent phone certificate peer and
 the unanswered Wi-Fi→cellular→restore decision remain separate.
+
+### Required source-receipt assertions before same-signer installation
+
+Independently verify the entire new SHA after Android CI completes,
+including `UnifiedHistoryDiscoveryRecoveryTest` raw offline load,
+`RawHistoryEvidencePersistenceTest` exact same-ID DAO-transaction
+algorithm, raw source-address preservation, card projection
+(`toQualifiedHistoryMetrics`), uncontracted Fleet 8 unknown and
+synthetic fully evidenced Fleet 8, valid measured 0 and signed negative.
+Do not strip the new regression files to make builds pass.
+`HistoryRecoveryTest` weak imported aliases must have **no inherited
+strong `EnergyContract`**, and cross-source metric mismatch must
+stay unavailable in list, detail, cache and statistics.
+
+All upstream Go/PG and TLS CI is source-level; no new Android source is
+installed until exact new final SHA Debug/Release/lint/R8 and existing
+signing identity are independently qualified. Previous installed
+`8625d28e` remains the rollback candidate without uninstall/reset.
+Production bb09 remains old and still needs a separate backed-up,
+idempotent, reversible API rollout decision for fractional boundaries.

@@ -49,7 +49,9 @@ data class DriveData(
     val startRatedRangeKm: Double? get() = rangeRated?.startRange
     val endRatedRangeKm: Double? get() = rangeRated?.endRange
     // Explicit unknown/unsupported contracts must not fall back to an old scalar.
-    val netEnergyKwh: Double? get() = if (energyContract != null) energyContract.netValueForWindow(startDate, endDate)
+    val netEnergyKwh: Double? get() = if (energyContract != null)
+        energyContract.netValueForWindow(startDate, endDate)
+            ?.takeIf { source == null || energyContract.netEnergy?.source == source }
         else energyConsumedNet?.takeIf { it.isFinite() && legacyScalarEnergyAllowed(source) }
     val efficiencyWhKm: Double?
         get() {
@@ -131,7 +133,9 @@ data class DriveDetail(
     val distance: Double? get() = odometerDetails?.distance
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
-    val netEnergyKwh: Double? get() = if (energyContract != null) energyContract.netValueForWindow(startDate, endDate)
+    val netEnergyKwh: Double? get() = if (energyContract != null)
+        energyContract.netValueForWindow(startDate, endDate)
+            ?.takeIf { source == null || energyContract.netEnergy?.source == source }
         else energyConsumedNet?.takeIf { it.isFinite() && legacyScalarEnergyAllowed(source) }
 }
 

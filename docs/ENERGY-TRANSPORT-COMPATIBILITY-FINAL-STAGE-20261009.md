@@ -536,3 +536,54 @@ The phone's original intermittent wrong TLS peer is unattributed,
 Wi-Fi→cellular→restore permission is unanswered, and there is still
 no accepted fresh source→authenticated API→Room→UI natural-energy
 observation or multi-user/Fleet/TPMS/notification human acceptance.
+
+### Final raw/source consumer regression audit
+
+The recovered original receipt must not be confused with the presentation
+model. `withSafeHistoryDisplay` is now the shared frontend projection
+for both offline and freshly merged drives: synthetic raw address
+formatting remains byte-recoverable in `apiEvidence`, while a
+non-displayable address and an uncontracted Fleet energy scalar
+never become a rendered label or a numeric metric.
+`DriveSummary.toQualifiedHistoryMetrics` is the real drives-card
+consumer: it reads only the qualified cached DTO rather than old
+scalar columns. The isolated read/merge/upsert tests assert the
+same behavior through that consumer.
+
+The exact `UnifiedHistoryRepository.load` injected identity/scope
+ports have an additional regression with one old Fleet raw-8-kWh
+row and an empty remote response: the API receipt remains 8 in raw
+JSON, the returned list is unknown, and the persisted analytic
+numeric field is null. It is paired with same-ID Room transaction
+I/O-ported tests, which also cover repeated weak remote data,
+metadata, car isolation, exact raw JSON bytes, unknown detail
+enrichment and original source addresses. These are synthetic unit
+tests, **not** owner-data backfill or production Room reads.
+
+The existing-8-fixture regression now requires a valid synthetic
+whole-window power-integral contract for its *strong* row and
+explicitly removes any inherited contract from the weak aliases.
+The source-bound metric getters also reject an otherwise
+plausible counter/net contract when the record's known source
+and the measurement's source disagree. A nullable source retains
+the limited old self-hosted compatibility path; mismatched
+source is not allowed to masquerade as Fleet energy. This tightens
+provenance without changing any raw evidence or the signed-zero/
+regenerative estimates permitted by valid full-window contracts.
+
+**Important:** Previously stored raw scalar columns might remain
+numerically populated on old installations. They are never
+considered authoritative source measurements. During a normal
+successful qualified upsert, numeric **analysis** columns may
+become null while original raw scalar and bytes remain in the
+versioned `apiEvidence` JSON. This is a non-destructive
+qualification projection, not a historical deletion/backfill.
+No previously erased JSON may be recreated by guessing, and no
+new migration/schema change is proposed.
+
+The TLS remainder is separately covered by faulted existing-LE
+nginx test/reload, cp/rm rollback failure with operator-only status,
+and public-only private port tests; none of these runs against
+production Nginx. The former wrong phone peer remains unattributed,
+and real provider/Fleet and independent phone sign/install
+acceptance remain separate from fixed-source CI.

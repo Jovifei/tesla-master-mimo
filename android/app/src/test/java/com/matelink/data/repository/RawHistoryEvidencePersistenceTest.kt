@@ -13,6 +13,7 @@ import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.sync.toSyncSummary
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
+import com.matelink.ui.screens.drives.toQualifiedHistoryMetrics
 import com.matelink.domain.analytics.withDetailEvidence
 import com.matelink.domain.analytics.withResolvedDriveEnergy
 import com.matelink.domain.analytics.resolveDriveEnergy
@@ -38,7 +39,9 @@ class RawHistoryEvidencePersistenceTest {
         qualityReason = "telemetry_evidence",
         odometerDetails = DriveOdometerDetails(distance = 10.0),
         energyConsumedNet = 8.0, consumptionNet = 800.0,
-        speedMax = 50
+        // Synthetic raw formatting may be unsuitable for display, yet the
+        // original source envelope must remain byte-recoverable.
+        startAddress = "synthetic 1°N", speedMax = 50
     )
 
     @Test fun actualSameIdDriveUpsertRetainsRawEightAcrossWeakAndOfflineRecovery() = runBlocking {
@@ -64,8 +67,12 @@ class RawHistoryEvidencePersistenceTest {
         assertNull(stored.efficiency)
         assertEquals(originalJson, stored.apiEvidence) // Raw bytes remain recoverable.
         assertEquals(8.0, stored.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+        assertEquals("synthetic 1°N", stored.toRawAnalysisDriveData().startAddress)
+        assertNull(stored.toAnalysisDriveData().startAddress)
         assertEquals(800.0, stored.toRawAnalysisDriveData().consumptionNet!!, 0.0)
         assertNull(stored.toAnalysisDriveData().netEnergyKwh)
+        assertNull(stored.toQualifiedHistoryMetrics().energyKwh)
+        assertNull(stored.toQualifiedHistoryMetrics().source)
         assertEquals("telemetry_mqtt", stored.toAnalysisDriveData().source)
         assertEquals("observed", stored.qualityState)
         assertEquals(50, stored.speedMax)
@@ -74,6 +81,7 @@ class RawHistoryEvidencePersistenceTest {
         ).single()
         assertNull(offline.energyConsumedNet)
         assertEquals("telemetry_mqtt", offline.source)
+        assertNull(offline.startAddress) // raw source formatting stays in Room only
         // Replaying a weak row must not alter the original JSON or create rows.
         save(listOf(weak))
         assertEquals(1, rows.size)
@@ -123,6 +131,8 @@ class RawHistoryEvidencePersistenceTest {
         assertEquals(2, rows.size)
         assertEquals(0.0, rows[30 to 7]!!.toAnalysisDriveData().netEnergyKwh!!, 0.0)
         assertEquals(-0.5, rows[31 to 7]!!.toAnalysisDriveData().netEnergyKwh!!, 0.0)
+        assertEquals(-0.5, rows[31 to 7]!!.toQualifiedHistoryMetrics().energyKwh!!, 0.0)
+        assertEquals("power_samples", rows[31 to 7]!!.toQualifiedHistoryMetrics().source)
         assertEquals("power_samples", rows[31 to 7]!!.energySource)
         assertEquals(-0.5, rows[31 to 7]!!.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
     }
@@ -159,6 +169,8 @@ class RawHistoryEvidencePersistenceTest {
         assertNull(enriched.energyConsumed)
         assertNull(enriched.toAnalysisDriveData().netEnergyKwh)
         assertEquals(8.0, enriched.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+        assertEquals("synthetic 1°N", enriched.toRawAnalysisDriveData().startAddress)
+        assertNull(enriched.toAnalysisDriveData().startAddress)
         assertEquals(oldRaw.source, enriched.toRawAnalysisDriveData().source)
         assertEquals("unknown", enriched.toRawAnalysisDriveData().energyContract?.netEnergy?.quality)
     }

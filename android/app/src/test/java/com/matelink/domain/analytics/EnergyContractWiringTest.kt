@@ -69,6 +69,17 @@ class EnergyContractWiringTest {
         val untagged = mqtt.copy(source = null).resolveDriveEnergy()
         assertEquals("route_timestamp_unverified", untagged.evidence.timeBasis)
     }
+    @Test fun mismatchedTripAndContractSourceDoesNotQualifyEnergy() {
+        val evidence = EnergyContract(netEnergy = metric(1.0))
+        val conflicting = drive(evidence).copy(source = "telemetry_mqtt")
+        assertNull(conflicting.netEnergyKwh)
+        assertNull(conflicting.efficiencyWhKm)
+        assertNull(conflicting.withQualifiedEnergy().energyConsumedNet)
+        assertNull(conflicting.asCachedDetail().resolveDriveEnergy().estimate.energyKwh)
+        // Source-absent legacy compatibility has a separate explicit path.
+        assertEquals(1.0, drive(evidence).netEnergyKwh!!, 0.0)
+    }
+
     @Test fun partialSamplesRemainDiagnosticNotWholeDriveConsumption() {
         val detail = DriveDetail(7, startDate = start, endDate = "2026-10-08T01:01:00Z",
             positions = listOf(DrivePosition(date = start, power = 36.0), DrivePosition(date = end, power = 36.0)))

@@ -75,6 +75,23 @@ class ChargeQualifiedEnergyFlowTest {
             chargeEnergyAdded = 4.0, energyContract = acCounter).batteryInputKwh)
     }
 
+    @Test fun crossSourceCounterContractCannotBecomeChargingEnergy() {
+        val foreign = EnergyMetric(valueKwh = 4.0,
+            method = "session_counter_delta", measurementPoint = "battery_input",
+            source = "teslamate_archive", quality = "reported",
+            startDate = start, endDate = end, coverageKind = "endpoints",
+            coverageRatio = 1.0)
+        val data = ChargeData(chargeId = 15, startDate = start, endDate = end,
+            source = "telemetry_mqtt", chargeEnergyAdded = 4.0,
+            energyContract = EnergyContract(batteryInput = foreign))
+        assertNull(data.batteryInputKwh)
+        val detail = ChargeDetail(chargeId = 15, startDate = start, endDate = end,
+            source = "telemetry_mqtt", chargeEnergyAdded = 4.0,
+            energyContract = EnergyContract(batteryInput = foreign))
+        assertNull(detail.batteryInputKwh)
+        assertNull(ChargeStatsCalculator.calculateStats(detail).energyAdded)
+    }
+
     @Test fun actualChargeCardUsesQualifiedBatteryInputNotRawScalar() {
         val screen = File("src/main/java/com/matelink/ui/screens/charges/ChargesScreen.kt").readText()
         assertTrue(screen.contains("presentChargeEnergy(charge.batteryInputKwh)"))

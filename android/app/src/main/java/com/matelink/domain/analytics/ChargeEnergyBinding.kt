@@ -41,23 +41,22 @@ fun ChargeDetail.withQualifiedEnergy(): ChargeDetail = copy(
 
 fun ChargeSummary.withDetailEvidence(detail: ChargeDetail): ChargeSummary {
     require(detail.chargeId == chargeId) { "history_detail_id_mismatch" }
-    val previous = toAnalysisChargeData()
     val rawPrevious = toRawAnalysisChargeData()
-    require(previous.source == null || detail.source == null || previous.source == detail.source) { "history_detail_source_mismatch" }
-    val evidence = previous.copy(
-        startDate = detail.startDate ?: previous.startDate, endDate = detail.endDate ?: previous.endDate,
-        address = detail.address ?: previous.address, durationMin = detail.durationMin ?: previous.durationMin,
-        batteryDetails = detail.batteryDetails ?: previous.batteryDetails,
-        outsideTempAvg = detail.outsideTempAvg ?: previous.outsideTempAvg,
+    require(rawPrevious.source == null || detail.source == null || rawPrevious.source == detail.source) { "history_detail_source_mismatch" }
+    val evidence = rawPrevious.copy(
+        startDate = detail.startDate ?: rawPrevious.startDate, endDate = detail.endDate ?: rawPrevious.endDate,
+        address = detail.address ?: rawPrevious.address, durationMin = detail.durationMin ?: rawPrevious.durationMin,
+        batteryDetails = detail.batteryDetails ?: rawPrevious.batteryDetails,
+        outsideTempAvg = detail.outsideTempAvg ?: rawPrevious.outsideTempAvg,
         // The detail can be unknown while the stored API receipt still contains
         // an unverified scalar. Preserve the raw value only in apiEvidence;
         // the getters and analytic columns below keep it unavailable.
         chargeEnergyAdded = detail.batteryInputKwh ?: rawPrevious.chargeEnergyAdded,
         chargeEnergyUsed = detail.inputEnergyKwh ?: rawPrevious.chargeEnergyUsed,
         energyContract = detail.energyContract ?: rawPrevious.energyContract,
-        chargeType = detail.chargeType ?: previous.chargeType,
-        source = detail.source ?: previous.source,
-        cost = detail.cost?.takeIf { it.isFinite() && it >= 0.0 } ?: previous.cost
+        chargeType = detail.chargeType ?: rawPrevious.chargeType,
+        source = detail.source ?: rawPrevious.source,
+        cost = detail.cost?.takeIf { it.isFinite() && it >= 0.0 } ?: rawPrevious.cost
     )
     return copy(
         startDate = evidence.startDate ?: startDate, endDate = evidence.endDate ?: endDate,

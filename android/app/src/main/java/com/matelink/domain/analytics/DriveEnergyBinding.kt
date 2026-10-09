@@ -71,24 +71,23 @@ fun DriveDetail.resolveDriveEnergy(): ResolvedDriveEnergy {
 /** Scalar and JSON evidence are updated together in the same Room upsert. */
 fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: ResolvedDriveEnergy): DriveSummary {
     require(detail.driveId == driveId) { "history_detail_id_mismatch" }
-    val previous = toAnalysisDriveData()
     val rawPrevious = toRawAnalysisDriveData()
-    require(previous.source == null || detail.source == null || previous.source == detail.source) { "history_detail_source_mismatch" }
+    require(rawPrevious.source == null || detail.source == null || rawPrevious.source == detail.source) { "history_detail_source_mismatch" }
     val estimate = resolved.estimate
-    val evidence = previous.copy(
+    val evidence = rawPrevious.copy(
         startDate = detail.startDate ?: startDate,
         endDate = detail.endDate ?: endDate,
-        startAddress = detail.startAddress ?: previous.startAddress,
-        endAddress = detail.endAddress ?: previous.endAddress,
-        odometerDetails = detail.odometerDetails ?: previous.odometerDetails,
-        durationMin = detail.durationMin ?: previous.durationMin,
-        batteryDetails = detail.batteryDetails ?: previous.batteryDetails,
-        outsideTempAvg = detail.outsideTempAvg ?: previous.outsideTempAvg,
-        insideTempAvg = detail.insideTempAvg ?: previous.insideTempAvg,
-        speedMax = detail.speedMax ?: previous.speedMax,
-        powerMax = detail.powerMax ?: previous.powerMax,
-        powerMin = detail.powerMin ?: previous.powerMin,
-        source = detail.source ?: previous.source,
+        startAddress = detail.startAddress ?: rawPrevious.startAddress,
+        endAddress = detail.endAddress ?: rawPrevious.endAddress,
+        odometerDetails = detail.odometerDetails ?: rawPrevious.odometerDetails,
+        durationMin = detail.durationMin ?: rawPrevious.durationMin,
+        batteryDetails = detail.batteryDetails ?: rawPrevious.batteryDetails,
+        outsideTempAvg = detail.outsideTempAvg ?: rawPrevious.outsideTempAvg,
+        insideTempAvg = detail.insideTempAvg ?: rawPrevious.insideTempAvg,
+        speedMax = detail.speedMax ?: rawPrevious.speedMax,
+        powerMax = detail.powerMax ?: rawPrevious.powerMax,
+        powerMin = detail.powerMin ?: rawPrevious.powerMin,
+        source = detail.source ?: rawPrevious.source,
         // Unknown detail evidence cannot erase an earlier unverified Fleet
         // scalar from raw apiEvidence. It remains masked by the explicit
         // unknown energy contract and never enters numeric analytic columns.

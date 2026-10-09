@@ -18,8 +18,9 @@ private fun String?.cleanAddress(): String? = this?.trim()?.takeIf {
  */
 fun DriveSummary.toRawAnalysisDriveData(): DriveData {
     val fromEvidence = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive)?.takeIf { it.driveId == driveId }?.let {
-        it.copy(startAddress = it.startAddress.cleanAddress(), endAddress = it.endAddress.cleanAddress(),
-            qualityState = qualityState, qualityReason = qualityReason)
+        // This is source evidence, not display text. Preserve raw addresses
+        // exactly in apiEvidence; only the view projection sanitizes labels.
+        it.copy(qualityState = qualityState, qualityReason = qualityReason)
     }
     return fromEvidence ?: DriveData(
         driveId = driveId, startDate = startDate, endDate = endDate,
@@ -54,8 +55,17 @@ fun ChargeSummary.toRawAnalysisChargeData(): ChargeData =
 /** UI and analytic consumers only see physically qualified values; the saved raw
  * JSON, including old unverified Fleet scalars, is not modified by this view.
  */
+/** Shared presentation projection for cached AND freshly downloaded trips.
+ * Never use this to create the raw Room evidence JSON.
+ */
+fun DriveData.withSafeHistoryDisplay(): DriveData =
+    withQualifiedEnergy().let {
+        it.copy(startAddress = it.startAddress.cleanAddress(),
+            endAddress = it.endAddress.cleanAddress())
+    }
+
 fun DriveSummary.toAnalysisDriveData(): DriveData =
-    toRawAnalysisDriveData().withQualifiedEnergy()
+    toRawAnalysisDriveData().withSafeHistoryDisplay()
 
 fun ChargeSummary.toAnalysisChargeData(): ChargeData =
     toRawAnalysisChargeData().withQualifiedEnergy()

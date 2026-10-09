@@ -10,6 +10,7 @@ import com.matelink.domain.history.isAnalysisEligible
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.dao.DriveSummaryDao
+import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.GeocodingRepository
 import com.matelink.data.repository.TeslamateRepository
@@ -118,6 +119,19 @@ data class DriveHistoryMetrics(
     val source: String?,
     val coverageRatio: Double
 )
+
+/** Same qualified projection used by the actual history list card.
+ * Raw precontract Room scalars are archival evidence, not UI measurements.
+ */
+internal fun DriveSummary.toQualifiedHistoryMetrics(): DriveHistoryMetrics {
+    val qualified = toAnalysisDriveData()
+    return DriveHistoryMetrics(
+        energyKwh = qualified.netEnergyKwh,
+        efficiencyWhKm = qualified.efficiencyWhKm,
+        source = qualified.netEnergyKwh?.let { energySource },
+        coverageRatio = energyCoverageRatio
+    )
+}
 
 data class DrivesSummary(
     val totalDrives: Int = 0,
@@ -307,16 +321,7 @@ class DrivesViewModel @Inject constructor(
                 is ApiResult.Success -> {
                     val remoteDrives = result.data.drives
                     val localMetrics = driveSummaryDao.getAllChronological(result.data.context.localHistoryCarId).associate { summary ->
-                        // Old Room scalar columns may predate the evidence contract.
-                        // Never label them API measurements without qualifying the
-                        // original JSON; they remain recoverable, not displayable.
-                        val qualified = summary.toAnalysisDriveData()
-                        summary.driveId to DriveHistoryMetrics(
-                            energyKwh = qualified.netEnergyKwh,
-                            efficiencyWhKm = qualified.efficiencyWhKm,
-                            source = qualified.netEnergyKwh?.let { summary.energySource },
-                            coverageRatio = summary.energyCoverageRatio
-                        )
+                        summary.driveId to summary.toQualifiedHistoryMetrics()
                     }
                     ensureCurrent()
                     allDrives = remoteDrives

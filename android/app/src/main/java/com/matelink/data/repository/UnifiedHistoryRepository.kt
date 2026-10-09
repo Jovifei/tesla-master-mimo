@@ -19,6 +19,7 @@ import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.analytics.toRawAnalysisDriveData
 import com.matelink.domain.analytics.toRawAnalysisChargeData
+import com.matelink.domain.analytics.withSafeHistoryDisplay
 import com.matelink.domain.analytics.withQualifiedEnergy
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import kotlinx.coroutines.currentCoroutineContext
@@ -223,13 +224,31 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
             localDrives.map { it.toRawAnalysisDriveData() })
         val rawCharges = mergeChargesRaw(remoteCharges.items.map { it.withLegacyRemoteQuality() },
             localCharges.map { it.toRawAnalysisChargeData() })
-        val drives = rawDrives.map { it.withQualifiedEnergy() }
+        val drives = rawDrives.map { it.withSafeHistoryDisplay() }
         val charges = rawCharges.map { it.withQualifiedEnergy() }
         // Never delete local history just because it is outside the cloud window.
         // Persist even successfully downloaded pages preceding a later failure.
-        reads.persistDrives(rawDrives.mapNotNull { it.toLocalSummary(context.localHistoryCarId) })
+        // When the result contains no stronger raw evidence than the same-ID
+        // cached row, retain that source JSON byte-for-byte, including unknown
+        // fields and old nullable values. Only numeric analysis columns change
+        // to the current qualified projection.
+        val priorDrives = localDrives.associateBy { it.driveId }
+        val driveRows = rawDrives.mapNotNull { raw ->
+            val summary = raw.toLocalSummary(context.localHistoryCarId) ?: return@mapNotNull null
+            val prior = priorDrives[raw.driveId]
+            if (prior?.apiEvidence != null && prior.toRawAnalysisDriveData() == raw)
+                summary.copy(apiEvidence = prior.apiEvidence) else summary
+        }
+        reads.persistDrives(driveRows)
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
-        reads.persistCharges(rawCharges.mapNotNull { it.toLocalSummary(context.localHistoryCarId) })
+        val priorCharges = localCharges.associateBy { it.chargeId }
+        val chargeRows = rawCharges.mapNotNull { raw ->
+            val summary = raw.toLocalSummary(context.localHistoryCarId) ?: return@mapNotNull null
+            val prior = priorCharges[raw.chargeId]
+            if (prior?.apiEvidence != null && prior.toRawAnalysisChargeData() == raw)
+                summary.copy(apiEvidence = prior.apiEvidence) else summary
+        }
+        reads.persistCharges(chargeRows)
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
 
         if (drives.isEmpty() && charges.isEmpty() && !canReadHistory) resolved.identityError?.let { return it }
@@ -267,7 +286,7 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         }
 
         fun mergeDrives(remote: List<DriveData>, local: List<DriveData>): List<DriveData> =
-            mergeDrivesRaw(remote, local).map { it.withQualifiedEnergy() }
+            mergeDrivesRaw(remote, local).map { it.withSafeHistoryDisplay() }
 
         /** Raw wire and local provenance is retained until AFTER persistence. */
         internal fun mergeDrivesRaw(remote: List<DriveData>, local: List<DriveData>): List<DriveData> {

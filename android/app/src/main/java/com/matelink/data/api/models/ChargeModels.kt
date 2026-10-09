@@ -125,7 +125,8 @@ private fun qualifiedChargeValue(
 ): Double? {
     if (contract == null) return legacy?.takeIf { it.isFinite() && it >= 0.0 && legacyScalarEnergyAllowed(source) }
     if (contract.version != 1 || metric?.method != "session_counter_delta" ||
-        metric.measurementPoint != purpose) return null
+        metric.measurementPoint != purpose ||
+        (source != null && metric.source != source)) return null
     // AC input is not a whole-session metric in unknown or mixed AC/DC mode.
     if (purpose == "ac_charger_input" && (contract.chargeMode != "ac" ||
             contract.chargeModeEvidence != "observed_boundary_modes_no_conflict")) return null
