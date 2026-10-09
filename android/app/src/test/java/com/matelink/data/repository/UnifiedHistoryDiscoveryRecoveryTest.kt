@@ -6,6 +6,13 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.sync.toSyncSummary
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
+import com.matelink.domain.analytics.withResolvedDriveEnergy
+import com.matelink.domain.analytics.resolveDriveEnergy
+import com.matelink.data.api.models.DriveDetail
+import com.matelink.data.api.models.DrivePosition
+import com.matelink.data.api.models.DriveOdometerDetails
+import com.matelink.domain.analytics.toRawAnalysisDriveData
+import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.data.local.*
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.ChargeSummary
@@ -84,6 +91,36 @@ class UnifiedHistoryDiscoveryRecoveryTest {
         assertEquals(8.0,
             HistorySummaryEvidenceCodec.decodeDrive(toPersist.apiEvidence!!)!!.energyConsumedNet!!,
             0.0)
+    }
+
+    @Test fun offlineLoadRetainsVerifiedDetailInDisplayAndOriginalFleetScalarInRawReceipt() = runTest {
+        val f = Fixture()
+        val start = "2026-10-01T00:00:00Z"
+        val end = "2026-10-01T00:00:10Z"
+        val raw = DriveData(1, startDate = start, endDate = end,
+            source = "telemetry_mqtt", qualityState = "observed",
+            energyConsumedNet = 8.0,
+            odometerDetails = DriveOdometerDetails(distance = 10.0))
+        val original = raw.toSyncSummary(-7)!!
+        val detail = DriveDetail(1, source = "telemetry_mqtt",
+            startDate = start, endDate = end,
+            odometerDetails = DriveOdometerDetails(distance = 10.0),
+            positions = listOf(DrivePosition(date = start, power = 360.0),
+                DrivePosition(date = end, power = 360.0)))
+        val enriched = original.withResolvedDriveEnergy(detail, detail.resolveDriveEnergy())
+        f.localDriveOverride = listOf(enriched)
+        f.fetchDrives = { ApiResult.Success(emptyList()) }
+        f.fetchCharges = { ApiResult.Success(emptyList()) }
+        val returned = (f.repository().load(7) as ApiResult.Success).data
+        assertEquals(1, returned.drives.size)
+        assertEquals(1.0, returned.drives.single().netEnergyKwh!!, 1e-12)
+        val persisted = f.persistedDrives.single()
+        assertEquals(1.0, persisted.toAnalysisDriveData().netEnergyKwh!!, 1e-12)
+        assertEquals(8.0, persisted.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+        assertEquals(HistorySummaryEvidenceCodec.sourceJson(original.apiEvidence),
+            HistorySummaryEvidenceCodec.sourceJson(persisted.apiEvidence))
+        assertTrue(returned.drivesFromRemote)
+        // Empty remote is still not a genuine fresh history event.
     }
 
     @Test fun identityDiagnosticPreservesTypedFailureWithoutAuthorizingHistory() = runTest {

@@ -224,8 +224,29 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
             localDrives.map { it.toRawAnalysisDriveData() })
         val rawCharges = mergeChargesRaw(remoteCharges.items.map { it.withLegacyRemoteQuality() },
             localCharges.map { it.toRawAnalysisChargeData() })
-        val drives = rawDrives.map { it.withSafeHistoryDisplay() }
-        val charges = rawCharges.map { it.withQualifiedEnergy() }
+        val cachedDrives = localDrives.associateBy { it.driveId }
+        val remoteProvenDrives = remoteDrives.items.filter { it.energyContract != null }
+            .map { it.driveId }.toSet()
+        val drives = rawDrives.map { raw ->
+            val cached = cachedDrives[raw.driveId]
+            // Existing certified local detail remains visible during offline /
+            // weak list refresh if exact source and raw receipt are unchanged.
+            // A NEW explicit remote contract takes precedence, even unknown.
+            if (cached != null && raw.driveId !in remoteProvenDrives &&
+                HistorySummaryEvidenceCodec.hasDetail(cached.apiEvidence) &&
+                raw == cached.toRawAnalysisDriveData()) cached.toAnalysisDriveData()
+            else raw.withSafeHistoryDisplay()
+        }
+        val cachedCharges = localCharges.associateBy { it.chargeId }
+        val remoteProvenCharges = remoteCharges.items.filter { it.energyContract != null }
+            .map { it.chargeId }.toSet()
+        val charges = rawCharges.map { raw ->
+            val cached = cachedCharges[raw.chargeId]
+            if (cached != null && raw.chargeId !in remoteProvenCharges &&
+                HistorySummaryEvidenceCodec.hasDetail(cached.apiEvidence) &&
+                raw == cached.toRawAnalysisChargeData()) cached.toAnalysisChargeData()
+            else raw.withQualifiedEnergy()
+        }
         // Never delete local history just because it is outside the cloud window.
         // Persist even successfully downloaded pages preceding a later failure.
         // When the result contains no stronger raw evidence than the same-ID
@@ -525,12 +546,31 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
         listOf(incoming.toRawAnalysisDriveData()), listOf(cachedRaw)).single()
     val qualified = data.toLocalSummary(incoming.carId) ?: return cached
     // If no new raw evidence was contributed, retain its original JSON bytes.
-    val merged = if (data == cachedRaw && cached.apiEvidence != null)
-        qualified.copy(apiEvidence = cached.apiEvidence) else qualified
-    return if (merged.energyConsumed != null && merged.energyConsumed == cached.energyConsumed) {
-        merged.copy(energySource = cached.energySource ?: merged.energySource,
-            energyCoverageSeconds = cached.energyCoverageSeconds, energyCoverageRatio = cached.energyCoverageRatio)
-    } else merged
+    val evidence = when {
+        // A newly qualified/explicit-unknown detail envelope is a separate
+        // receipt and must survive the subsequent same-ID Room upsert.
+        HistorySummaryEvidenceCodec.hasDetail(incoming.apiEvidence) -> incoming.apiEvidence
+        data == cachedRaw && cached.apiEvidence != null -> cached.apiEvidence
+        else -> qualified.apiEvidence
+    }
+    val merged = qualified.copy(apiEvidence = evidence)
+    // The raw decoder intentionally hides derived sidecars. Reproject ONLY
+    // now, after the exact receipt has been selected, so valid detailed
+    // estimates reach Room quick stats but raw 8 never becomes energy.
+    val display = merged.toAnalysisDriveData()
+    val energy = display.netEnergyKwh
+    val metric = display.energyContract?.netEnergy
+    return merged.copy(
+        energyConsumed = energy,
+        efficiency = display.efficiencyWhKm,
+        energySource = energy?.let {
+            if (metric?.method == "drive_power_integral") "power_samples" else "api"
+        },
+        energyCoverageSeconds = metric?.coverageSeconds
+            ?.takeIf { it.isFinite() && it >= 0.0 }?.toLong() ?: 0L,
+        energyCoverageRatio = metric?.coverageRatio
+            ?.takeIf { it.isFinite() && it in 0.0..1.0 } ?: 0.0
+    )
 }
 
 internal fun mergeStoredCharge(incoming: ChargeSummary, cached: ChargeSummary?): ChargeSummary {
@@ -540,6 +580,16 @@ internal fun mergeStoredCharge(incoming: ChargeSummary, cached: ChargeSummary?):
     val data = UnifiedHistoryRepository.mergeChargesRaw(
         listOf(incoming.toRawAnalysisChargeData()), listOf(cachedRaw)).single()
     val qualified = data.toLocalSummary(incoming.carId) ?: return cached
-    return if (data == cachedRaw && cached.apiEvidence != null)
-        qualified.copy(apiEvidence = cached.apiEvidence) else qualified
+    val evidence = when {
+        HistorySummaryEvidenceCodec.hasDetail(incoming.apiEvidence) -> incoming.apiEvidence
+        data == cachedRaw && cached.apiEvidence != null -> cached.apiEvidence
+        else -> qualified.apiEvidence
+    }
+    val merged = qualified.copy(apiEvidence = evidence)
+    val display = merged.toAnalysisChargeData()
+    return merged.copy(
+        energyAdded = display.batteryInputKwh ?: 0.0,
+        energyUsed = display.inputEnergyKwh,
+        cost = display.cost?.takeIf { it.isFinite() && it >= 0.0 }
+    )
 }

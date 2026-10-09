@@ -5,6 +5,8 @@ import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.api.models.EnergyContract
 import com.matelink.data.api.models.EnergyMetric
 import com.matelink.data.api.models.legacyScalarEnergyAllowed
+import com.matelink.data.api.models.netValueForWindow
+import com.matelink.util.parseIsoInstant
 import com.matelink.data.local.entity.DriveSummary
 
 /** The same path is used by foreground details and background Room enrichment. */
@@ -74,9 +76,44 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
     val rawPrevious = toRawAnalysisDriveData()
     require(rawPrevious.source == null || detail.source == null || rawPrevious.source == detail.source) { "history_detail_source_mismatch" }
     val estimate = resolved.estimate
+    val displayPrevious = toAnalysisDriveData()
+    val nextStart = detail.startDate ?: rawPrevious.startDate
+    val nextEnd = detail.endDate ?: rawPrevious.endDate
+    val sameWindow = parseIsoInstant(nextStart) != null &&
+        parseIsoInstant(nextStart) == parseIsoInstant(rawPrevious.startDate) &&
+        parseIsoInstant(nextEnd) == parseIsoInstant(rawPrevious.endDate)
+    // Only an earlier independently proven contract, for precisely the same
+    // source and instant window, can survive a detail with NO new energy proof.
+    // Explicit unknown detail always overrides for display, never for raw.
+    val prior = displayPrevious.energyContract
+    val carried = displayPrevious.netEnergyKwh?.takeIf {
+        detail.energyContract == null && estimate.energyKwh == null && sameWindow &&
+        prior?.netValueForWindow(nextStart, nextEnd) == it &&
+        (detail.source == null || detail.source == rawPrevious.source)
+    }
+    val detailProof = when {
+        detail.energyContract != null -> detail.energyContract
+        estimate.energyKwh != null -> EnergyContract(netEnergy = resolved.evidence)
+        carried != null && prior != null -> prior
+        else -> EnergyContract(netEnergy = resolved.evidence)
+    }
+    // A derived integral is a NEW measurement claim, not a replacement for
+    // the original raw energy_consumed_net (including unverified Fleet 8).
+    val rawReceipt = HistorySummaryEvidenceCodec.withDetail(
+        apiEvidence, rawPrevious, detailProof,
+        detail.energyConsumedNet, detail.source ?: rawPrevious.source,
+        nextStart, nextEnd
+    )
+    val proofValue = detailProof.netValueForWindow(nextStart, nextEnd)
+        ?.takeIf { rawPrevious.source == null ||
+            detailProof.netEnergy?.source == rawPrevious.source }
+    val distanceForEnergy = (detail.distance ?: rawPrevious.distance)
+        ?.takeIf { it.isFinite() && it > 0.0 }
+    val efficiencyForEnergy = proofValue?.let { e ->
+        distanceForEnergy?.let { (e / it * 1000.0).takeIf(Double::isFinite) }
+    }
     val evidence = rawPrevious.copy(
-        startDate = detail.startDate ?: startDate,
-        endDate = detail.endDate ?: endDate,
+        startDate = nextStart, endDate = nextEnd,
         startAddress = detail.startAddress ?: rawPrevious.startAddress,
         endAddress = detail.endAddress ?: rawPrevious.endAddress,
         odometerDetails = detail.odometerDetails ?: rawPrevious.odometerDetails,
@@ -87,17 +124,11 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
         speedMax = detail.speedMax ?: rawPrevious.speedMax,
         powerMax = detail.powerMax ?: rawPrevious.powerMax,
         powerMin = detail.powerMin ?: rawPrevious.powerMin,
-        source = detail.source ?: rawPrevious.source,
-        // Unknown detail evidence cannot erase an earlier unverified Fleet
-        // scalar from raw apiEvidence. It remains masked by the explicit
-        // unknown energy contract and never enters numeric analytic columns.
-        energyConsumedNet = estimate.energyKwh ?: rawPrevious.energyConsumedNet,
-        consumptionNet = estimate.efficiencyWhKm ?: rawPrevious.consumptionNet,
-        energyContract = detail.energyContract ?: EnergyContract(netEnergy = resolved.evidence)
+        source = detail.source ?: rawPrevious.source
+        // NO mutation of raw energyConsumedNet/consumptionNet/energyContract.
     )
-    // Keep raw address formatting only in apiEvidence; Room's presentation
-    // columns have always used the sanitized address projection.
     val display = evidence.withSafeHistoryDisplay()
+    val qualifiedMetric = detailProof.netEnergy
     return copy(
         startDate = evidence.startDate ?: startDate, endDate = evidence.endDate ?: endDate,
         durationMin = evidence.durationMin ?: durationMin,
@@ -107,11 +138,15 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
         outsideTempAvg = evidence.outsideTempAvg?.takeIf(Double::isFinite),
         insideTempAvg = evidence.insideTempAvg?.takeIf(Double::isFinite),
         speedMax = evidence.speedMax ?: speedMax, powerMax = evidence.powerMax ?: powerMax, powerMin = evidence.powerMin ?: powerMin,
-        energyConsumed = estimate.energyKwh, efficiency = estimate.efficiencyWhKm,
-        energySource = estimate.source.name.lowercase(),
-        energyCoverageSeconds = estimate.coverageSeconds,
-        energyCoverageRatio = estimate.coverageRatio ?: 0.0,
-        apiEvidence = HistorySummaryEvidenceCodec.encode(evidence)
+        energyConsumed = proofValue, efficiency = efficiencyForEnergy,
+        energySource = proofValue?.let {
+            if (qualifiedMetric?.method == "drive_power_integral") "power_samples" else "api"
+        },
+        energyCoverageSeconds = qualifiedMetric?.coverageSeconds
+            ?.takeIf { it.isFinite() && it >= 0.0 }?.toLong() ?: 0L,
+        energyCoverageRatio = qualifiedMetric?.coverageRatio
+            ?.takeIf { it.isFinite() && it in 0.0..1.0 } ?: 0.0,
+        apiEvidence = rawReceipt
     )
 }
 

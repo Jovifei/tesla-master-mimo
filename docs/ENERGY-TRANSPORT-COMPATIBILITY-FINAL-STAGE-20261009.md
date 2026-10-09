@@ -598,3 +598,80 @@ and energy columns reject nonfinite/unqualified values. Synthetic
 regressions assert retained raw negative cost and synthetic source
 address alongside null display values. No user address, route,
 historical drive or production schema is edited.
+
+## Appendix E — fixed697 local changes-required closure: original vs derived receipt
+
+A separately independently executed source 697 Android run **failed**:
+Debug 741 tests/1 failure/0 skipped, Release 741/1 failure/8 skipped,
+both in `SyncRepositoryApiEvidenceRedTest`. The old file asserted a
+literal `encode(normalized)`; this is contrary to the documented
+non-destructive behavior. New regression calls the **real**
+`DriveData.toSyncSummary` and shared Room read/merge/upsert executor
+against an isolated same-ID in-memory store. Original wire Fleet scalar 8
+and its old JSON bytes remain recoverable, UI and analytic columns
+remain unknown, certified zero and negative power estimates remain
+signed, and same numeric ID for two cars stays isolated.
+
+Separately, the original 697 detail enrichment code could overwrite
+a source raw 8 kWh with a computed, genuinely qualified 1 kWh integral
+and re-encode the typed DTO, discarding unknown opaque JSON properties.
+The new source uses a **versioned, locally-owned JSON envelope** in the
+existing Room `apiEvidence` TEXT column, with **no schema migration**.
+`raw_json` is the exact originally saved source JSON byte string,
+including unknown fields. `detail_energy_contract` stores the new
+report/estimate or explicit unknown independently and is allowed into
+UI/analytics only with a matching version, source, start/end instants,
+physical method, units and full-window coverage. Optional typed
+`detail_raw_*` fields preserve newly received detail scalars as
+receipts, never as a derived battery measurement. No Tesla Fleet
+energy reading is fabricated or inferred from SOC alone.
+
+The old `HistorySummaryEvidenceCodec.decodeDrive/Charge` now unwraps
+this local versioned envelope transparently for raw archive reads, while
+`toAnalysisDriveData/ChargeData` overlays only the separately qualified
+detail sidecar. A malformed or unsupported envelope fails closed; it
+cannot restore old unproven scalar placeholders. Source 8 is NOT
+replaced by derived 1 in raw. The same-ID Room DAO merge selects the
+new wrapper when genuine detail evidence arrives, retains it on weak
+list refresh and requalifies the **numeric analysis columns** from the
+selected receipt. A previously established whole-window proof remains
+valid if a later detail contains no new energy; an explicit unknown or
+changed source/window prevents using stale proof.
+
+New source tests run a synthetic 10-second, 360-kW full-window
+integration and actual detail → wrapper → DAO upsert → offline read
+round trip. Assert source raw 8, opaque fields byte-recoverable, derived
+1 labeled `power_samples`/estimated, new explicit unknown masking,
+and no duplicate rows; charge detail tests separate raw old scalar,
+new battery-side counter contract, cost and valid zero. The versioned
+envelope is **local cache provenance**, not a production API schema,
+not real Fleet first-event proof, and not a historical migration.
+Existing individual TeslaMate records, original app data, cached
+login and full history are never bulk rewritten or cleared.
+
+### Protected listener qualification without new external probes
+
+Current `verify-public.sh` is deliberately limited to its
+**preauthorized four** bounded public probes (4000/8080/5432/1883);
+there is no new public probing of 18080/18090. Instead, the local
+`ss -lntH` snapshot is passed to
+`check-private-listeners.py`, which checks ALL protected ports:
+4000/8080/5432/1883/18080/18090. IPv4 and IPv6 wildcard, a
+specific nonloopback interface address, and unparseable protected
+listeners are failures; IPv4/IPv6 loopback and IPv4-mapped loopback
+are allowed. The utility prints **only PASS/FAIL**, not listener
+addresses. Sandbox mocked ss and direct pure-fixture tests cover
+specific public IPv4, IPv6, wildcard and permitted loopback. No
+phone/network/trust/router/proxy/DNS/TTL changes are made.
+
+The source run at 697 remains Android FAIL even though TLS/Go/PG
+298 tests, race, Web, 10 code audits and 27 TLS tests succeeded.
+Only the *last immutable candidate* and all its same-SHA Actions
+jobs/artifacts may close source qualification. Local signing/install
+belongs to the separately controlled original Codex thread after
+the remote Android job and independent tests are demonstrably PASS.
+The actual production API is still bb09 without RFC3339Nano
+deployment; the phone still runs 8625/build46 and still lacks a
+fresh, accepted authenticated history read. All actual rollout,
+network experiment and natural Fleet/multiuser/TPMS/notification
+acceptance remain separately gated.

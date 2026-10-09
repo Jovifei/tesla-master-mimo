@@ -160,6 +160,34 @@ class RawHistoryEvidencePersistenceTest {
         }
     }
 
+    @Test fun missingDetailKeepsPriorProvenWindowButExplicitUnknownRevokesDisplay() {
+        val source = rawFleet()
+        val proof = EnergyContract(netEnergy = EnergyMetric(
+            valueKwh = 8.0, source = "telemetry_mqtt",
+            method = "drive_power_integral", measurementPoint = "drive_power",
+            quality = "estimated", timeBasis = "collector_received_at",
+            startDate = start, endDate = end, coverageKind = "time",
+            coverageRatio = 1.0, coverageSeconds = 1800.0
+        ))
+        val first = source.copy(energyContract = proof).toSyncSummary(30)!!
+        val missing = DriveDetail(7, startDate = start, endDate = end,
+            source = "telemetry_mqtt", positions = emptyList())
+        val kept = first.withResolvedDriveEnergy(missing, missing.resolveDriveEnergy())
+        assertEquals(8.0, kept.toAnalysisDriveData().netEnergyKwh!!, 0.0)
+        assertEquals(8.0, kept.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+        assertEquals("power_samples", kept.energySource)
+        val unknown = missing.copy(energyContract = EnergyContract(netEnergy =
+            EnergyMetric(quality = "unknown", source = "telemetry_mqtt",
+                method = "drive_power_integral", measurementPoint = "drive_power",
+                startDate = start, endDate = end)))
+        val rejected = kept.withResolvedDriveEnergy(unknown, unknown.resolveDriveEnergy())
+        assertNull(rejected.toAnalysisDriveData().netEnergyKwh)
+        assertEquals(8.0, rejected.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+        val shifted = missing.copy(endDate = "2026-10-08T01:31:00Z")
+        assertNull(first.withResolvedDriveEnergy(
+            shifted, shifted.resolveDriveEnergy()).toAnalysisDriveData().netEnergyKwh)
+    }
+
     @Test fun detailEnrichmentUnknownPreservesHistoricalRawDriveJson() {
         val first = rawFleet().toSyncSummary(30)!!
         val oldRaw = first.toRawAnalysisDriveData()
@@ -173,7 +201,10 @@ class RawHistoryEvidencePersistenceTest {
         assertNull(enriched.toAnalysisDriveData().startAddress)
         assertEquals("", enriched.startAddress) // Only presentation column is cleaned
         assertEquals(oldRaw.source, enriched.toRawAnalysisDriveData().source)
-        assertEquals("unknown", enriched.toRawAnalysisDriveData().energyContract?.netEnergy?.quality)
+        assertNull(enriched.toRawAnalysisDriveData().energyContract)
+        assertEquals("unknown",
+            HistorySummaryEvidenceCodec.detailContract(enriched.apiEvidence)?.netEnergy?.quality)
+        assertEquals(first.apiEvidence, HistorySummaryEvidenceCodec.sourceJson(enriched.apiEvidence))
     }
 
     @Test fun detailEnrichmentUnknownPreservesHistoricalRawChargeJson() {
@@ -193,6 +224,95 @@ class RawHistoryEvidencePersistenceTest {
         assertNull(enriched.toAnalysisChargeData().batteryInputKwh)
         assertNull(enriched.toAnalysisChargeData().inputEnergyKwh)
         assertEquals("telemetry_mqtt", enriched.toRawAnalysisChargeData().source)
+    }
+
+    @Test fun detailPowerIntegralKeepsOpaqueRawEightAndPersistsIndependentEstimatedOne() = runBlocking {
+        // Exact 10-second, 360 kW signed power samples yield 1 kWh. This is
+        // synthetic source physics, never provider-reported battery kWh.
+        val tinyEnd = "2026-10-08T01:00:10Z"
+        val originalData = rawFleet().copy(endDate = tinyEnd)
+        val initial = originalData.toSyncSummary(30)!!
+        val originalBytes = requireNotNull(initial.apiEvidence).dropLast(1) +
+            ""","opaque_future":{"byte_order":"keep_this_original_value"}}"""
+        val stored = initial.copy(apiEvidence = originalBytes)
+        val detail = DriveDetail(driveId = 7, startDate = start, endDate = tinyEnd,
+            source = "telemetry_mqtt", energyConsumedNet = null,
+            odometerDetails = DriveOdometerDetails(distance = 10.0),
+            positions = listOf(
+                com.matelink.data.api.models.DrivePosition(date = start, power = 360.0),
+                com.matelink.data.api.models.DrivePosition(date = tinyEnd, power = 360.0)
+            ))
+        val computed = detail.resolveDriveEnergy()
+        assertEquals(1.0, computed.estimate.energyKwh!!, 1e-12)
+        assertEquals("estimated", computed.evidence.quality)
+        val enriched = stored.withResolvedDriveEnergy(detail, computed)
+        assertEquals(originalBytes, HistorySummaryEvidenceCodec.sourceJson(enriched.apiEvidence))
+        assertEquals(8.0, enriched.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+        assertEquals(1.0, enriched.toAnalysisDriveData().netEnergyKwh!!, 1e-12)
+        assertEquals("power_samples", enriched.energySource)
+        assertEquals("estimated",
+            HistorySummaryEvidenceCodec.detailContract(enriched.apiEvidence)?.netEnergy?.quality)
+        assertNull(HistorySummaryEvidenceCodec.detailRawNet(enriched.apiEvidence))
+        val rows = mutableMapOf((30 to 7) to stored)
+        suspend fun upsert(row: DriveSummary) = persistDriveRowsWithoutEvidenceLoss(
+            listOf(row), { car, id -> rows[car to id] },
+            { saved -> rows[saved.carId to saved.driveId] = saved })
+        upsert(enriched)
+        val saved = rows[30 to 7]!!
+        assertEquals(1, rows.size)
+        assertEquals(originalBytes, HistorySummaryEvidenceCodec.sourceJson(saved.apiEvidence))
+        assertEquals(8.0, saved.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+        assertEquals(1.0, saved.toAnalysisDriveData().netEnergyKwh!!, 1e-12)
+        // Replaying a weaker old list payload cannot replace the derived
+        // sidecar or manufacture a reported energy measurement.
+        upsert(originalData.copy(energyConsumedNet = null,
+            source = "local_import", qualityState = "incomplete").toSyncSummary(30)!!)
+        assertEquals(1.0, rows[30 to 7]!!.toAnalysisDriveData().netEnergyKwh!!, 1e-12)
+        assertEquals(originalBytes, HistorySummaryEvidenceCodec.sourceJson(rows[30 to 7]!!.apiEvidence))
+        assertEquals(8.0, rows[30 to 7]!!.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+
+        val explicitUnknown = detail.copy(energyContract = EnergyContract(
+            netEnergy = EnergyMetric(quality = "unknown", source = "telemetry_mqtt",
+                method = "drive_power_integral", measurementPoint = "drive_power",
+                startDate = start, endDate = tinyEnd)
+        ))
+        val overridden = saved.withResolvedDriveEnergy(
+            explicitUnknown, explicitUnknown.resolveDriveEnergy())
+        assertNull(overridden.energyConsumed)
+        assertNull(overridden.toAnalysisDriveData().netEnergyKwh)
+        assertEquals(originalBytes, HistorySummaryEvidenceCodec.sourceJson(overridden.apiEvidence))
+    }
+
+    @Test fun chargeDetailContractHasIndependentBatteryProofAndKeepsOpaqueRawScalar() = runBlocking {
+        val raw = ChargeData(9, startDate = start, endDate = end,
+            source = "telemetry_mqtt", qualityState = "observed",
+            chargeEnergyAdded = 12.0, chargeEnergyUsed = 13.0)
+        val initial = raw.toSyncSummary(30)!!
+        val originalJson = requireNotNull(initial.apiEvidence).dropLast(1) +
+            ""","extra_source_field":{"value":"do_not_erase"}}"""
+        val stored = initial.copy(apiEvidence = originalJson)
+        val confirmed = EnergyContract(batteryInput = EnergyMetric(
+            valueKwh = 2.0, source = "telemetry_mqtt",
+            method = "session_counter_delta", measurementPoint = "battery_input",
+            quality = "reported", coverageKind = "endpoints",
+            coverageRatio = 1.0, startDate = start, endDate = end))
+        val detail = ChargeDetail(9, startDate = start, endDate = end,
+            source = "telemetry_mqtt", chargeEnergyAdded = null,
+            chargeEnergyUsed = null, energyContract = confirmed)
+        val enriched = stored.withDetailEvidence(detail)
+        assertEquals(originalJson, HistorySummaryEvidenceCodec.sourceJson(enriched.apiEvidence))
+        assertEquals(12.0, enriched.toRawAnalysisChargeData().chargeEnergyAdded!!, 0.0)
+        assertEquals(13.0, enriched.toRawAnalysisChargeData().chargeEnergyUsed!!, 0.0)
+        assertEquals(2.0, enriched.toAnalysisChargeData().batteryInputKwh!!, 0.0)
+        assertEquals(2.0, enriched.energyAdded, 0.0)
+        val rows = mutableMapOf((30 to 9) to stored)
+        persistChargeRowsWithoutEvidenceLoss(listOf(enriched),
+            { car, id -> rows[car to id] },
+            { saved -> rows[saved.carId to saved.chargeId] = saved })
+        assertEquals(1, rows.size)
+        assertEquals(originalJson, HistorySummaryEvidenceCodec.sourceJson(rows[30 to 9]!!.apiEvidence))
+        assertEquals(12.0, rows[30 to 9]!!.toRawAnalysisChargeData().chargeEnergyAdded!!, 0.0)
+        assertEquals(2.0, rows[30 to 9]!!.toAnalysisChargeData().batteryInputKwh!!, 0.0)
     }
 
     @Test fun explicitUnknownContractDoesNotEraseOlderRawScalarOrClaimItAsVerified() = runBlocking {

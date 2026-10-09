@@ -141,3 +141,33 @@ null. The actual drives-card metric consumer must remain
 source/energy-qualified even if old Room scalar columns are
 non-null. A compile, source-only artifact or green
 `android-summary` without a successful Android job is NOT PASS.
+
+## Full-stage incremental local acceptance: source697 → final immutable SHA
+
+The source697 candidate failed Android on the outdated literal-source
+`SyncRepositoryApiEvidenceRedTest`; the prior 741/741 test totals and
+Android-summary job are NOT passes. Its replacement executes the
+actual source summary serializer plus same-ID DAO transaction executor
+in isolation. Independently verify this new test and
+`RawHistoryEvidencePersistenceTest` with sidecar coverage:
+original raw8 and unknown opaque JSON properties recover byte-for-byte
+from `HistorySummaryEvidenceCodec.sourceJson(apiEvidence)`,
+the new 1-kWh example is a labeled *estimated drive-power integral*,
+not a raw Fleet receipt, and charged battery AC/DC counters remain
+physically separate. Confirm displayed unknown for raw-only old Fleet8,
+valid zero and signed regenerative negative, car namespace isolation,
+sidecar retention across weak repeat sync, and explicit unknown/wrong
+source/window invalidation. The Android Debug and Release tests must
+both compile and pass, including R8/lint; don't change assertions merely
+to make them green.
+
+The protected listener local ss classifier tests all six ports
+(including 18080/18090) but does NOT expand public socket probing beyond
+the original four allowed ports. Privileged Nginx fixes are synthetic
+CI only and require independent Jovi approval for runtime use.
+The production bb09 fractional-boundary serializer and old phone8625
+stay unchanged until separately approved deployments. Keep previous
+APK/signature, no uninstall/clear data, no network/DNS/proxy/VPN/CA
+changes. Return one consolidated exact-SHA local build/sign/install,
+UTC+China timestamped sanitized device/API/Room/UI receipt, with
+natural and human gates separate.

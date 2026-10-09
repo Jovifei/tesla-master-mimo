@@ -42,31 +42,52 @@ fun ChargeDetail.withQualifiedEnergy(): ChargeDetail = copy(
 fun ChargeSummary.withDetailEvidence(detail: ChargeDetail): ChargeSummary {
     require(detail.chargeId == chargeId) { "history_detail_id_mismatch" }
     val rawPrevious = toRawAnalysisChargeData()
-    require(rawPrevious.source == null || detail.source == null || rawPrevious.source == detail.source) { "history_detail_source_mismatch" }
-    val evidence = rawPrevious.copy(
-        startDate = detail.startDate ?: rawPrevious.startDate, endDate = detail.endDate ?: rawPrevious.endDate,
-        address = detail.address ?: rawPrevious.address, durationMin = detail.durationMin ?: rawPrevious.durationMin,
-        batteryDetails = detail.batteryDetails ?: rawPrevious.batteryDetails,
-        outsideTempAvg = detail.outsideTempAvg ?: rawPrevious.outsideTempAvg,
-        // The detail can be unknown while the stored API receipt still contains
-        // an unverified scalar. Preserve the raw value only in apiEvidence;
-        // the getters and analytic columns below keep it unavailable.
-        chargeEnergyAdded = detail.batteryInputKwh ?: rawPrevious.chargeEnergyAdded,
-        chargeEnergyUsed = detail.inputEnergyKwh ?: rawPrevious.chargeEnergyUsed,
-        energyContract = detail.energyContract ?: rawPrevious.energyContract,
-        chargeType = detail.chargeType ?: rawPrevious.chargeType,
-        source = detail.source ?: rawPrevious.source,
-        cost = detail.cost?.takeIf { it.isFinite() && it >= 0.0 } ?: rawPrevious.cost
-    )
+    val currentDisplay = toAnalysisChargeData()
+    require(rawPrevious.source == null || detail.source == null ||
+        rawPrevious.source == detail.source) { "history_detail_source_mismatch" }
+    val nextStart = detail.startDate ?: rawPrevious.startDate
+    val nextEnd = detail.endDate ?: rawPrevious.endDate
+    fun sameInstant(a: String?, b: String?): Boolean {
+        val left = a?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        val right = b?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        return left != null && left == right
+    }
+    val sameWindow = sameInstant(nextStart, rawPrevious.startDate) &&
+        sameInstant(nextEnd, rawPrevious.endDate)
+    val previouslyProven = currentDisplay.energyContract?.takeIf {
+        sameWindow && (detail.source == null || detail.source == rawPrevious.source) &&
+            (currentDisplay.batteryInputKwh != null || currentDisplay.inputEnergyKwh != null)
+    }
+    // Explicit unknown/proven provider detail wins; absence alone never
+    // downgrades a known same-source window. Neither is a raw scalar receipt.
+    val priorDetail = HistorySummaryEvidenceCodec.detailContract(apiEvidence)
+    val selectedContract = detail.energyContract ?:
+        (if (sameWindow) priorDetail ?: previouslyProven else null)
+    val sourceRecord = detail.source ?: rawPrevious.source
+    val rawReceipt = if (detail.energyContract != null ||
+        detail.chargeEnergyAdded != null || detail.chargeEnergyUsed != null ||
+        (selectedContract != null &&
+          HistorySummaryEvidenceCodec.detailContract(apiEvidence) != selectedContract)) {
+        HistorySummaryEvidenceCodec.withChargeDetail(
+            apiEvidence, rawPrevious,
+            selectedContract ?: EnergyContract(), detail.chargeEnergyAdded,
+            detail.chargeEnergyUsed, sourceRecord, nextStart, nextEnd
+        )
+    } else apiEvidence ?: HistorySummaryEvidenceCodec.encode(rawPrevious)
+    val qualified = rawPrevious.copy(
+        startDate = nextStart, endDate = nextEnd,
+        energyContract = selectedContract ?: rawPrevious.energyContract
+    ).withQualifiedEnergy()
     return copy(
-        startDate = evidence.startDate ?: startDate, endDate = evidence.endDate ?: endDate,
-        address = evidence.address.orEmpty(), durationMin = evidence.durationMin ?: durationMin,
-        energyAdded = evidence.batteryInputKwh ?: 0.0, energyUsed = evidence.inputEnergyKwh,
-        // Retain any original raw cost in apiEvidence, but never promote an
-        // unqualified negative/nonfinite value into quick-stat scalars.
-        cost = evidence.cost?.takeIf { it.isFinite() && it >= 0.0 },
-        startBatteryLevel = evidence.startBatteryLevel ?: 0,
-        endBatteryLevel = evidence.endBatteryLevel ?: 0, outsideTempAvg = evidence.outsideTempAvg?.takeIf(Double::isFinite),
-        apiEvidence = HistorySummaryEvidenceCodec.encode(evidence)
+        startDate = nextStart ?: startDate, endDate = nextEnd ?: endDate,
+        address = detail.address ?: address, durationMin = detail.durationMin ?: durationMin,
+        energyAdded = qualified.batteryInputKwh ?: 0.0,
+        energyUsed = qualified.inputEnergyKwh,
+        // Unverified cost remains in raw_json for provenance, never QuickStats.
+        cost = (detail.cost ?: rawPrevious.cost)?.takeIf { it.isFinite() && it >= 0.0 },
+        startBatteryLevel = detail.startBatteryLevel ?: startBatteryLevel,
+        endBatteryLevel = detail.endBatteryLevel ?: endBatteryLevel,
+        outsideTempAvg = detail.outsideTempAvg?.takeIf(Double::isFinite) ?: outsideTempAvg,
+        apiEvidence = rawReceipt
     )
 }

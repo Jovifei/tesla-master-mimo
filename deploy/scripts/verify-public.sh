@@ -148,17 +148,16 @@ fi
 echo "  [SKIP] Authenticated capabilities NOT_RUN (no credentials sent)"
 
 echo "=== 6. 内部端口未对外 ==="
-if command -v ss >/dev/null 2>&1; then
-  # 只取 Local Address 列（$4）判断绑定地址；不能整行 grep，否则会误匹配 peer 列
-  leak="$(ss -lntpH 2>/dev/null | awk '$4 ~ /:(4000|8080|5432|1883|18080|18090)$/ {print $4}' \
-    | grep -E '^(0\.0\.0\.0|\*|\[::\]):' || true)"
-  if [[ -z "$leak" ]]; then
-    ok "本机无 4000/8080/5432/1883/18080/18090 的对外监听（仅回环绑定）"
-  else
-    bad "发现对外监听：${leak}"
-  fi
+# Inspect ALL local listening sockets, not only wildcard binds. A service
+# bound to the known PUBLIC_IP, another interface or any nonloopback IPv6
+# address on an internal port is a failure even without loopback listening.
+# This uses a local ss snapshot, never probes extra external ports.
+if ! command -v ss >/dev/null 2>&1; then
+  bad "Local protected listener inventory unavailable"
+elif ss -lntH 2>/dev/null | python3 "${SCRIPT_DIR}/check-private-listeners.py"; then
+  ok "Protected local listeners confined to loopback IPv4/IPv6"
 else
-  warnk "ss 不可用，跳过本机监听检查"
+  bad "Nonloopback or unverified protected listener present"
 fi
 for port in 4000 8080 5432 1883; do
   # A public-only listener is still a leak even if no loopback listener

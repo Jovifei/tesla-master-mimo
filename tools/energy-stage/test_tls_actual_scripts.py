@@ -180,6 +180,20 @@ class ActualTlsScriptTests(unittest.TestCase):
         """)
         write_executable(self.bin / "ss", """
             #!/usr/bin/env bash
+            case "${TLS_TEST_SS_MODE:-empty}" in
+              loopback)
+                printf 'LISTEN 0 128 127.0.0.1:18080 0.0.0.0:*\\n'
+                printf 'LISTEN 0 128 [::1]:18090 [::]:*\\n' ;;
+              specific)
+                printf 'LISTEN 0 128 203.0.113.7:18080 0.0.0.0:*\\n' ;;
+              wildcard)
+                printf 'LISTEN 0 128 0.0.0.0:18090 0.0.0.0:*\\n' ;;
+              ipv6)
+                printf 'LISTEN 0 128 [2001:db8::9]:18090 [::]:*\\n' ;;
+              mapped)
+                printf 'LISTEN 0 128 [::ffff:127.0.0.1]:18080 [::]:*\\n' ;;
+              *) : ;;
+            esac
             exit 0
         """)
         write_executable(self.bin / "python3", """
@@ -222,11 +236,12 @@ class ActualTlsScriptTests(unittest.TestCase):
             printf '%s' "$code"
         """)
 
-    def run_public(self, status="401", public_ip="203.0.113.7", public_only_port=None):
+    def run_public(self, status="401", public_ip="203.0.113.7",
+                   public_only_port=None, ss_mode="empty"):
         self.install_verify_fakes()
         env = dict(self.env, TLS_TEST_CAPABILITIES=status, PUBLIC_IP=public_ip,
                    TLS_TEST_PUBLIC_ONLY_PORT=str(public_only_port or ""),
-                   TMPDIR=str(self.root))
+                   TLS_TEST_SS_MODE=ss_mode, TMPDIR=str(self.root))
         return subprocess.run(["bash", str(VERIFY)], text=True,
                               capture_output=True, env=env, timeout=15)
 
@@ -248,6 +263,37 @@ class ActualTlsScriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("Private port unexpectedly accessible externally", result.stdout)
         self.assertIn("VERIFY_PUBLIC:", result.stdout)
+
+    def test_local_listener_inventory_rejects_specific_ipv4_ipv6_and_wildcards(self):
+        for mode in ("specific", "wildcard", "ipv6"):
+            result = self.run_public(ss_mode=mode)
+            self.assertEqual(result.returncode, 1, (mode, result.stdout, result.stderr))
+            self.assertIn("Nonloopback or unverified protected listener present",
+                          result.stdout)
+            self.assertIn("VERIFY_PUBLIC:", result.stdout)
+        for mode in ("empty", "loopback", "mapped"):
+            result = self.run_public(ss_mode=mode)
+            self.assertEqual(result.returncode, 0, (mode, result.stdout, result.stderr))
+            self.assertIn("PRIVATE_LISTENERS=PASS", result.stdout)
+
+    def test_private_listener_classifier_reads_only_existing_local_ss_snapshot(self):
+        helper = REPO / "deploy/scripts/check-private-listeners.py"
+        fixtures = [
+            ("LISTEN 0 128 127.0.0.1:18080 0.0.0.0:*\\n", True),
+            ("LISTEN 0 128 [::1]:18090 [::]:*\\n", True),
+            ("LISTEN 0 128 [::ffff:127.0.0.1]:18090 [::]:*\\n", True),
+            ("LISTEN 0 128 203.0.113.7:18080 0.0.0.0:*\\n", False),
+            ("LISTEN 0 128 [2001:db8::9]:18090 [::]:*\\n", False),
+            ("LISTEN 0 128 0.0.0.0:5432 0.0.0.0:*\\n", False),
+            ("LISTEN 0 128 [::]:4000 [::]:*\\n", False)
+        ]
+        for listing, accepted in fixtures:
+            result = subprocess.run(["/usr/bin/python3", str(helper)], input=listing,
+                                    text=True, capture_output=True, timeout=4)
+            self.assertEqual(result.returncode, 0 if accepted else 1)
+            self.assertEqual(result.stdout.strip(),
+                             "PRIVATE_LISTENERS=" + ("PASS" if accepted else "FAIL"))
+            self.assertNotIn("203.0.113", result.stdout)
 
     def test_invalid_public_ip_rejected_before_any_network_execution(self):
         flag = self.root / "SENTINEL"
