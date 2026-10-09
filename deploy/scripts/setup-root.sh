@@ -123,8 +123,40 @@ if [[ ! -f /etc/nginx/jourvolt-selfsigned.crt || ! -f /etc/nginx/jourvolt-selfsi
   sudo chmod 644 /etc/nginx/jourvolt-selfsigned.crt
 fi
 
-# 当前生效片段：默认自签（LE 签发成功后切换）
-sudo cp -a "${NGINX_CONF_DIR}/jourvolt-ssl.selfsigned.inc" "${NGINX_CONF_DIR}/jourvolt-ssl.inc"
+# Keep an active trusted public certificate on repeat setup: never drop to
+# a placeholder while LE is installed. Review unknown fragments, fail closed.
+LE_CERT="/etc/letsencrypt/live/jourvolt/fullchain.pem"
+LE_KEY="/etc/letsencrypt/live/jourvolt/privkey.pem"
+LE_VALID=false
+if sudo test -s "$LE_CERT" && sudo test -s "$LE_KEY" && \
+   sudo openssl x509 -in "$LE_CERT" -noout -checkend 86400 >/dev/null 2>&1; then
+  LE_VALID=true
+  for domain in "$DOMAIN_SELFHOST" "$DOMAIN_API" "$DOMAIN_APPLINK"; do
+    host_check="$(sudo openssl x509 -in "$LE_CERT" -noout -checkhost "$domain" 2>/dev/null)" || LE_VALID=false
+    if [[ "$host_check" != *"does match certificate"* ]]; then LE_VALID=false; fi
+  done
+fi
+CURRENT_SSL_KIND=absent
+if sudo test -e "${NGINX_CONF_DIR}/jourvolt-ssl.inc"; then
+  if sudo cmp -s "${NGINX_CONF_DIR}/jourvolt-ssl.inc" "${NGINX_CONF_DIR}/jourvolt-ssl.le.inc"; then
+    CURRENT_SSL_KIND=letsencrypt
+  elif sudo cmp -s "${NGINX_CONF_DIR}/jourvolt-ssl.inc" "${NGINX_CONF_DIR}/jourvolt-ssl.selfsigned.inc"; then
+    CURRENT_SSL_KIND=selfsigned
+  else
+    die "TLS include is not a known managed fragment; preserve it for review"
+  fi
+fi
+SSL_ACTIVE_MODE="$(bash "${SCRIPT_DIR}/tls-include-policy.sh" "$CURRENT_SSL_KIND" "$LE_VALID")" ||
+  die "Unsafe TLS bootstrap: active include unchanged; approval required"
+if [[ "$SSL_ACTIVE_MODE" == letsencrypt ]]; then
+  SSL_SOURCE="${NGINX_CONF_DIR}/jourvolt-ssl.le.inc"
+else
+  SSL_SOURCE="${NGINX_CONF_DIR}/jourvolt-ssl.selfsigned.inc"
+fi
+if ! sudo cmp -s "$SSL_SOURCE" "${NGINX_CONF_DIR}/jourvolt-ssl.inc"; then
+  sudo cp -a "$SSL_SOURCE" "${NGINX_CONF_DIR}/jourvolt-ssl.inc"
+fi
+log "TLS bootstrap policy selected mode with no public-to-placeholder downgrade"
 
 # 渲染模板（仅替换三个域名占位符）
 [[ -f "${NGINX_SRC_DIR}/jourvolt.conf.template" ]] || die "模板缺失：${NGINX_SRC_DIR}/jourvolt.conf.template"
@@ -147,10 +179,10 @@ sudo systemctl reload nginx
 # -----------------------------------------------------------------------------
 CERT_ISSUED='false'
 if [[ "${SKIP_CERT}" == 'true' ]]; then
-  log "SKIP_CERT=true：跳过签发，证书仍为自签占位"
+  log "SKIP_CERT=true：跳过签发，保留安全选择的证书"
 elif ! acme_email_usable; then
   log "ACME_EMAIL 未提供或为占位符（值不打印）：跳过签发；"
-  log "Let's Encrypt 签发列为待办——请提供真实联系邮箱后重跑："
+  log "Let's Encrypt 签发列为待办（已有有效证书则保留）："
   log "  ACME_EMAIL='ops@example.com' bash ./setup-root.sh"
 else
   if ! command -v certbot >/dev/null 2>&1; then
@@ -182,10 +214,11 @@ else
     CERT_ISSUED='true'
     log "签发成功：切换 include 片段为 Let's Encrypt 路径并 reload"
     sudo cp -a "${NGINX_CONF_DIR}/jourvolt-ssl.le.inc" "${NGINX_CONF_DIR}/jourvolt-ssl.inc"
+    SSL_ACTIVE_MODE=letsencrypt
     sudo nginx -t 2>&1 | sed 's/^/[nginx -t] /'
     sudo systemctl reload nginx
   else
-    warn "签发连续 ${CERTBOT_RETRIES} 次失败：保持自签兜底，443 可用但浏览器将告警"
+    warn "签发连续 ${CERTBOT_RETRIES} 次失败：保留原先证书；初装自签不得被当成通过"
     warn "待办：备案同步完成 / 邮箱就绪后重跑本脚本（幂等，已签发则 --keep-until-expiring 自动保留）"
   fi
 fi
@@ -235,8 +268,8 @@ log "443 监听确认："
 sudo ss -lntp | grep ':443 ' || warn "443 未监听（异常，检查 nginx）"
 
 echo "=============================================================="
-if [[ "$CERT_ISSUED" == 'true' ]]; then
-  echo "SETUP_ROOT=PASS (TLS=letsencrypt)"
+if [[ "$SSL_ACTIVE_MODE" == 'letsencrypt' ]]; then
+  echo "SETUP_ROOT=PASS (TLS=letsencrypt; external trust check required)"
 elif [[ "${SKIP_CERT}" == 'true' || -z "${ACME_EMAIL}" ]]; then
   echo "SETUP_ROOT=PASS_WITH_SELFSIGNED (TLS=pending, 原因: SKIP_CERT 或缺邮箱)"
 else

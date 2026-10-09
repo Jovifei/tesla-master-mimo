@@ -5,7 +5,7 @@
 # 在 ECS 服务器上执行（也可从任意外部机器执行 DNS/443 部分）。
 # 检查项：
 #   1. DNS：三个域名经公共 DNS（223.5.5.5）解析到本机公网 IP
-#   2. 443 可达 + TLS 证书 issuer / 有效期
+#   2. 443 可达 + 严格 TLS 链/名称/SNI/前后 peer 一致性
 #   3. HTTP -> HTTPS 301 重定向
 #   4. 四个静态 URL（assetlinks / terms / privacy / Tesla 3p 公钥）
 #   5. /api/matelink/v1/capabilities 行为：无 token 401；带 token（可选）200
@@ -30,8 +30,9 @@ ok()   { printf '  [PASS] %s\n' "$*"; PASS=$((PASS+1)); }
 bad()  { printf '  [FAIL] %s\n' "$*"; FAIL=$((FAIL+1)); }
 warnk(){ printf '  [WARN] %s\n' "$*"; WARN=$((WARN+1)); }
 
-# curl：-k（自签兜底阶段浏览器会告警属预期；LE 签发后同样可用）
-CURL="curl -sk --max-time 15"
+# Mandatory TLS trust/hostname validation. No insecure -k for public HTTPS.
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+CURL="curl -sS --max-time 15"
 
 echo "=== 1. DNS（公共 DNS 223.5.5.5，排除本机 fake-IP）==="
 for d in "${DOMAINS[@]}"; do
@@ -61,29 +62,14 @@ for d in "${DOMAINS[@]}"; do
     break
   fi
 done
-CERT_CHECK="$(echo | openssl s_client -connect "${PUBLIC_IP}:443" \
-  -servername "${DOMAIN_SELFHOST}" 2>/dev/null | openssl x509 -noout -issuer -enddate 2>/dev/null || true)"
-if [[ -z "$CERT_CHECK" ]]; then
-  bad "无法读取证书（TLS 握手失败）"
+# Strict, bounded public-only health reads; compare validated peer across samples.
+# Emit no certificate metadata, exception text or authenticated responses.
+if [[ "$DOMAIN_API" != 'api.teslalink.joviluma.com' ]]; then
+  bad "TLS qualification target differs from approved production host"
+elif python3 "${SCRIPT_DIR}/../../tools/energy-stage/qualify-public-tls.py" --live; then
+  ok "TLS chain, hostname/SNI and verified peer consistent"
 else
-  echo "  $CERT_CHECK" | tr '\n' ' '; echo
-  if grep -q "Let's Encrypt" <<<"$CERT_CHECK"; then
-    ok "证书 issuer 为 Let's Encrypt"
-  elif grep -q 'jourvolt-placeholder' <<<"$CERT_CHECK"; then
-    warnk "证书仍为自签占位（Let's Encrypt 签发待办中，属预期内过渡状态）"
-  else
-    warnk "证书 issuer 非预期：$(grep issuer <<<"$CERT_CHECK" || true)"
-  fi
-  ENDDATE="$(grep notAfter <<<"$CERT_CHECK" | cut -d= -f2 || true)"
-  if [[ -n "$ENDDATE" ]]; then
-    END_EPOCH="$(date -d "$ENDDATE" +%s 2>/dev/null || echo 0)"
-    DAYS_LEFT=$(( (END_EPOCH - $(date +%s)) / 86400 ))
-    if (( DAYS_LEFT > 60 )); then
-      ok "证书剩余 ${DAYS_LEFT} 天（> 60 天）"
-    else
-      warnk "证书剩余 ${DAYS_LEFT} 天（LE 证书要求 > 60 天；自签为 3650 天不会触发）"
-    fi
-  fi
+  bad "TLS qualification failed; self-issued placeholder is never acceptable"
 fi
 
 echo "=== 3. HTTP -> HTTPS 301 ==="

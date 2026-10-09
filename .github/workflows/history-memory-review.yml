@@ -37,6 +37,16 @@ jobs:
           mkdir -p evidence
           git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/SOURCE_HEAD.txt
           git archive --format=zip HEAD -o evidence/source.zip
+      - name: TLS deployment policy and fail-closed offline tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tools/energy-stage -p 'test_tls_qualification.py' -v 2>&1 | tee evidence/tls-unit-tests.log
+          bash tools/energy-stage/test-tls-deployment-policy.sh 2>&1 | tee evidence/tls-deployment-tests.log
+      - name: Public TLS health vantage (non-device, nonblocking)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          python3 tools/energy-stage/qualify-public-tls.py --live 2>&1 | tee evidence/tls-public-vantage.txt
       - uses: actions/setup-go@v5
         with:
           go-version-file: deploy/jourvolt-dev-mock/go.mod
