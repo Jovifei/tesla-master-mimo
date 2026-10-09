@@ -785,3 +785,58 @@ TPMS, natural notifications and unattended resource resilience
 remain independent device/provider/human gates. Phone
 Wi-Fi→cellular→restore experiment is still unanswered; do not alter
 network, trust store, DNS, proxy, VPN or TTL without that decision.
+
+### Version-1 local detail snapshot integrity and rollback compatibility
+
+Source review after the 2a8 candidate added an additional fail-closed
+guard for both current detail snapshots: the `raw_json` member itself
+must decode to the matching original record ID/source; an envelope with
+invalid, unparseable, or cross-record raw JSON cannot authenticate a
+derived energy claim or transplant a SOC/distance/address projection.
+Together with the persisted local car namespace and exact ISO instant
+window checks, this prevents forged or corrupted local sidecars from
+being used as measurements. A synthetic deliberately damaged envelope
+test asserts the old numeric Room value is still **unknown**, not 8 kWh.
+
+The exact original raw JSON may include unrecognized non-Tesla fields
+that Moshi does not preserve on typed **re-encoding**; the new sidecar
+retains the already-persisted source JSON as an opaque string and
+never parses then overwrites it merely to store a new detail.
+New detail snapshots store no vehicle route points, identity tokens
+or authenticated response bodies outside the existing local history
+namespace.
+
+**APK rollback qualification:** A phone with a new version-1 local
+envelope must not be silently treated as semantically equivalent to
+the old 8625 APK's pre-envelope decoder. The original signed APK and
+original complete data/history are retained; an in-place rollback
+may temporarily not display newer detailed local metadata/energy,
+even while `apiEvidence` remains stored. The original local Codex
+must privately test the same-signer forward/rollback compatibility,
+without any uninstall or app-data reset, before reporting rollback
+PASS. If restoration cannot preserve the full raw history/namespace,
+stop and request a separate scoped decision rather than clearing
+or rewriting records. No automatic data conversion/backfill is
+proposed; present source qualification does NOT authorize device
+installation or production API/TLS changes.
+
+### Legacy incomplete sessions and raw-envelope parser isolation
+
+A historical drive or charge with a missing start/end boundary remains
+part of the result returned by `UnifiedHistoryRepository.load`, even
+when the unchanged Room summary table cannot store it. The source
+repair projects the persisted subset through the actual DAO merge
+and the unpersistable subset through the prior in-memory guarded view;
+it does **not** insert guessed start/end dates or treat null values as
+real zeros. Isolated tests require such rows to remain visible with
+`qualityState=incomplete`, nullable kWh, no new Room row, and the
+existing scoped account/vehicle read guard.
+
+The current detail snapshot is never valid solely because it is
+marked local version1. Its `raw_json` must actually decode to the
+matching record ID/source first; the accompanying projection must
+match the same local car namespace, source and exact observed
+start/end instants. Tests damage the original wrapped JSON while
+leaving the signed-looking detail proof intact, then require
+unavailable energy and no promotion of an old Room 8-kWh placeholder.
+No user data or API records are altered in these negative cases.

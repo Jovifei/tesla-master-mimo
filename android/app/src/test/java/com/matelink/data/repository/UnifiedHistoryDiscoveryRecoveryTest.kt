@@ -12,6 +12,7 @@ import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.api.models.DrivePosition
 import com.matelink.data.api.models.DriveOdometerDetails
 import com.matelink.domain.analytics.toRawAnalysisDriveData
+import com.matelink.domain.analytics.toRawAnalysisChargeData
 import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.analytics.withDetailEvidence
 import com.matelink.domain.analytics.toAnalysisChargeData
@@ -203,6 +204,29 @@ class UnifiedHistoryDiscoveryRecoveryTest {
         assertEquals(2.0, stored.energyAdded, 0.0)
         assertEquals(initial.apiEvidence, HistorySummaryEvidenceCodec.sourceJson(stored.apiEvidence))
         assertEquals(12.0, stored.toRawAnalysisChargeData().chargeEnergyAdded!!, 0.0)
+    }
+
+    @Test fun incompleteUnpersistableHistoricalSessionsRemainVisibleWithoutInventedEndTime() = runTest {
+        val f = Fixture()
+        f.fetchDrives = { ApiResult.Success(listOf(
+            f.newDrive.copy(endDate = null, qualityState = "incomplete")
+        )) }
+        f.fetchCharges = { ApiResult.Success(listOf(
+            f.newCharge.copy(endDate = null, qualityState = "incomplete")
+        )) }
+        val result = (f.repository().load(7) as ApiResult.Success).data
+        val incompleteDrive = result.drives.first { it.driveId == 2 }
+        val incompleteCharge = result.charges.first { it.chargeId == 2 }
+        assertNull(incompleteDrive.endDate)
+        assertNull(incompleteCharge.endDate)
+        assertEquals("incomplete", incompleteDrive.qualityState)
+        assertEquals("incomplete", incompleteCharge.qualityState)
+        assertNull(incompleteDrive.netEnergyKwh)
+        assertNull(incompleteCharge.batteryInputKwh)
+        assertFalse(f.persistedDrives.any { it.driveId == 2 })
+        assertFalse(f.persistedCharges.any { it.chargeId == 2 })
+        assertEquals(listOf(1), f.driveCalls)
+        assertEquals(listOf(1), f.chargeCalls)
     }
 
     @Test fun identityDiagnosticPreservesTypedFailureWithoutAuthorizingHistory() = runTest {

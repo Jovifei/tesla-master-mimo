@@ -239,8 +239,18 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
                 mergeStoredCharge(row, priorCharges[raw.chargeId])
             }
         }
-        val drives = driveRows.map { it.toAnalysisDriveData() }
-        val charges = chargeRows.map { it.toAnalysisChargeData() }
+        // A historic incomplete session lacking either boundary cannot be
+        // persisted into the existing Room summary schema, but MUST remain
+        // visible in this response. Do not silently drop such old rows while
+        // sharing one qualified projection with the DAO persisted subset.
+        val byDriveId = driveRows.associateBy { it.driveId }
+        val byChargeId = chargeRows.associateBy { it.chargeId }
+        val drives = rawDrives.map { raw ->
+            byDriveId[raw.driveId]?.toAnalysisDriveData() ?: raw.withSafeHistoryDisplay()
+        }
+        val charges = rawCharges.map { raw ->
+            byChargeId[raw.chargeId]?.toAnalysisChargeData() ?: raw.withQualifiedEnergy()
+        }
         // Do not delete old data when a remote page, identity or source is absent.
         reads.persistDrives(driveRows)
         if (!scopeUnchanged()) return historyIdentityUnavailableError()

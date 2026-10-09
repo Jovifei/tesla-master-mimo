@@ -30,7 +30,10 @@ or raw phone trace in the evidence return.
   No network/proxy/VPN/DNS/TTL/CA/trust changes. TLS log access denial
   is a hard boundary, no bypass.
 - Old 6 SOC / 7113 TPMS writes, production DDL, schema, bridge,
-  backfill, vehicle wake, manufactured trip and main merge NOT authorized.
+  backfill, vehicle wake and manufactured trips remain separately gated.
+  Jovi has authorized a future main merge **only after** the real
+  acceptance/qualification conditions; those conditions are not yet met,
+  and no main merge is performed in this source stage.
 
 ## Fixed-SHA local verification / artifact matrix
 
@@ -222,3 +225,24 @@ implicitly on any source green result. Production bb09, Nginx,
 bridge, DB, network, trust, old six SOC/7113 TPMS writes and phone
 Wi-Fi/cellular choice all remain unchanged unless individually
 approved under the documented exact reversible gates.
+
+### Snapshot corruption and compatibility gate
+
+Before local signed install, verify `raw_json` itself decodes to the
+same ID/source as the current detail snapshot; copying a valid
+local sidecar around a corrupt/mismatched raw record must yield
+unknown energy. Re-run the negative forged-wrapper test after
+independent compilation and repeat real-class Java behavior replay.
+The restored projection must reproduce current distance/SOC/address/
+speed and 500 Wh/km with original opaque bytes untouched.
+
+Retain the existing signed APK and original app data as rollback
+evidence; test in-place rollback **semantics** privately because the
+older 8625 code predates the extended local detail envelope and
+may not display new metadata after rollback. Do not uninstall,
+clear cache/session, overwrite account/source namespace or
+perform a destructive database rollback. A source-code-only
+rollback is not evidence that all older cache consumers can read
+the new versioned field. Report an explicit compatibility gate
+if the old APK cannot safely read the new cache. No new production
+API/DB/bridge/Nginx/network/Tesla operations are authorized.

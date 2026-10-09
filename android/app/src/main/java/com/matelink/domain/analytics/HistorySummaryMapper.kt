@@ -189,7 +189,13 @@ internal object HistorySummaryEvidenceCodec {
         value: String?, carId: Int, driveId: Int, source: String?,
         start: String?, end: String?
     ): DriveData? = envelope(value)?.let { e ->
+        // The envelope is NOT trusted if its original receipt cannot be
+        // decoded as the matching scoped record; a local wrapper is not Fleet
+        // authorization or physical energy proof.
+        val sourceRecord = runCatching { driveAdapter.fromJson(e.rawJson) }.getOrNull()
         e.detailDrivePresentation?.takeIf { p ->
+            sourceRecord != null && sourceRecord.driveId == driveId &&
+            sourceRecord.source == source &&
             e.detailScopeCarId == carId && p.driveId == driveId &&
                 p.energyConsumedNet == null && p.consumptionNet == null &&
                 p.energyContract == null && (source == null || source == p.source) &&
@@ -205,7 +211,10 @@ internal object HistorySummaryEvidenceCodec {
         value: String?, carId: Int, chargeId: Int, source: String?,
         start: String?, end: String?
     ): ChargeData? = envelope(value)?.let { e ->
+        val sourceRecord = runCatching { chargeAdapter.fromJson(e.rawJson) }.getOrNull()
         e.detailChargePresentation?.takeIf { p ->
+            sourceRecord != null && sourceRecord.chargeId == chargeId &&
+            sourceRecord.source == source &&
             e.detailScopeCarId == carId && p.chargeId == chargeId &&
                 p.chargeEnergyAdded == null && p.chargeEnergyUsed == null &&
                 p.energyContract == null && (source == null || source == p.source) &&

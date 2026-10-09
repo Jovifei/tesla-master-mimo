@@ -465,6 +465,71 @@ class RawHistoryEvidencePersistenceTest {
         catch (_: IllegalArgumentException) { }
     }
 
+    @Test fun forgedLocalSnapshotWithInvalidRawJsonCannotQualifyBatteryEnergy() {
+        val old = rawFleet().toSyncSummary(30)!!
+        val valid = EnergyContract(netEnergy = EnergyMetric(
+            valueKwh = 1.0, source = "telemetry_mqtt",
+            method = "drive_power_integral", measurementPoint = "drive_power",
+            quality = "estimated", startDate = start, endDate = end,
+            timeBasis = "collector_received_at",
+            coverageKind = "time", coverageRatio = 1.0,
+            coverageSeconds = 1800.0
+        ))
+        val detail = DriveDetail(7, startDate = start, endDate = end,
+            source = "telemetry_mqtt", energyContract = valid)
+        val good = old.withResolvedDriveEnergy(detail, detail.resolveDriveEnergy())
+        assertEquals(1.0, good.toAnalysisDriveData().netEnergyKwh!!, 0.0)
+        val wrapped = requireNotNull(good.apiEvidence)
+        val rawValue = requireNotNull(HistorySummaryEvidenceCodec.sourceJson(wrapped))
+        val escaped = com.squareup.moshi.Moshi.Builder().build()
+            .adapter(String::class.java).toJson(rawValue)
+        val invalidRaw = com.squareup.moshi.Moshi.Builder().build()
+            .adapter(String::class.java).toJson("not-json")
+        val damaged = wrapped.replace(escaped, invalidRaw)
+        assertTrue(damaged != wrapped)
+        val tampered = good.copy(apiEvidence = damaged)
+        assertNull(tampered.toAnalysisDriveData().netEnergyKwh)
+        assertNull(tampered.toRawAnalysisDriveData().energyConsumedNet)
+    }
+
+    @Test fun detailMetadataMayImproveWithoutManufacturingUnknownFleetEnergy() {
+        val endShort = "2026-10-08T01:00:10Z"
+        val raw = rawFleet().copy(endDate = endShort,
+            odometerDetails = DriveOdometerDetails(distance = 1.0),
+            batteryDetails = null, energyConsumedNet = 8.0)
+        val original = raw.toSyncSummary(30)!!
+        val detail = DriveDetail(7, startDate = start, endDate = endShort,
+            source = "telemetry_mqtt",
+            startAddress = "new safe address",
+            odometerDetails = DriveOdometerDetails(distance = 2.0),
+            batteryDetails = com.matelink.data.api.models.DriveBatteryDetails(0, null),
+            speedMax = 90, positions = emptyList())
+        val updated = original.withResolvedDriveEnergy(detail, detail.resolveDriveEnergy())
+        assertNull(updated.energyConsumed)
+        assertEquals(2.0, updated.distance, 0.0)
+        assertEquals(0, updated.startBatteryLevel)
+        val actual = updated.toAnalysisDriveData()
+        assertEquals(2.0, actual.distance!!, 0.0)
+        assertEquals(0, actual.startBatteryLevel)
+        assertNull(actual.endBatteryLevel)
+        assertEquals("new safe address", actual.startAddress)
+        assertEquals(90, actual.speedMax)
+        assertNull(actual.netEnergyKwh)
+        assertNull(actual.efficiencyWhKm)
+        assertEquals(8.0, updated.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+        assertEquals(original.apiEvidence,
+            HistorySummaryEvidenceCodec.sourceJson(updated.apiEvidence))
+        val replay = mergeStoredDrive(raw.copy(energyConsumedNet = null,
+            source = "local_import", qualityState = "incomplete").toSyncSummary(30)!!,
+            updated)
+        assertEquals(2.0, replay.toAnalysisDriveData().distance!!, 0.0)
+        assertEquals(0, replay.toAnalysisDriveData().startBatteryLevel)
+        assertNull(replay.toAnalysisDriveData().endBatteryLevel)
+        assertNull(replay.toAnalysisDriveData().netEnergyKwh)
+        assertEquals(original.apiEvidence,
+            HistorySummaryEvidenceCodec.sourceJson(replay.apiEvidence))
+    }
+
     @Test fun explicitUnknownContractDoesNotEraseOlderRawScalarOrClaimItAsVerified() = runBlocking {
         val original = rawFleet().toSyncSummary(30)!!
         val rows = mutableMapOf((30 to 7) to original)
