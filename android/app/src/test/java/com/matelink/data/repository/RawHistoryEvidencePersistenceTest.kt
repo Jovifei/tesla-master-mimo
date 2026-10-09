@@ -332,6 +332,139 @@ class RawHistoryEvidencePersistenceTest {
         assertEquals(2.0, rows[30 to 9]!!.toAnalysisChargeData().batteryInputKwh!!, 0.0)
     }
 
+    @Test fun actualCompiledDetailRoundTripRetainsDistanceSocAddressSpeedAndRawBytes() = runBlocking {
+        val detailEnd = "2026-10-08T01:00:10Z"
+        val raw = rawFleet().copy(endDate = detailEnd,
+            startAddress = "old raw", endAddress = "raw end",
+            odometerDetails = DriveOdometerDetails(distance = 1.0),
+            batteryDetails = null, speedMax = 11, energyConsumedNet = 8.0)
+        val row = raw.toSyncSummary(30)!!
+        val immutable = requireNotNull(row.apiEvidence).dropLast(1) +
+            ""","opaque":{"independent":"retain_verbatim"}}"""
+        val original = row.copy(apiEvidence = immutable)
+        val detail = DriveDetail(7, startDate = start, endDate = detailEnd,
+            source = "telemetry_mqtt", startAddress = "new address",
+            endAddress = "new destination", speedMax = 92, speedAvg = 45.0,
+            odometerDetails = DriveOdometerDetails(distance = 2.0),
+            batteryDetails = com.matelink.data.api.models.DriveBatteryDetails(80, 70),
+            positions = listOf(
+                com.matelink.data.api.models.DrivePosition(date = start, power = 360.0),
+                com.matelink.data.api.models.DrivePosition(date = detailEnd, power = 360.0)
+            ))
+        val resolved = detail.resolveDriveEnergy()
+        assertEquals(1.0, resolved.estimate.energyKwh!!, 1e-12)
+        val direct = original.withResolvedDriveEnergy(detail, resolved)
+        assertEquals(2.0, direct.distance, 0.0)
+        assertEquals(80, direct.startBatteryLevel)
+        assertEquals(70, direct.endBatteryLevel)
+        assertEquals(500.0, direct.efficiency!!, 1e-12)
+        assertEquals(92, direct.speedMax)
+        assertEquals(1.0, direct.energyConsumed!!, 1e-12)
+        fun assertDisplay(record: DriveSummary) {
+            val current = record.toAnalysisDriveData()
+            assertEquals(2.0, current.distance!!, 0.0)
+            assertEquals(80, current.startBatteryLevel)
+            assertEquals(70, current.endBatteryLevel)
+            assertEquals("new address", current.startAddress)
+            assertEquals("new destination", current.endAddress)
+            assertEquals(92, current.speedMax)
+            assertEquals(45.0, current.speedAvg!!, 0.0)
+            assertEquals(1.0, current.netEnergyKwh!!, 1e-12)
+            assertEquals(500.0, current.efficiencyWhKm!!, 1e-12)
+            assertEquals(1.0, record.energyConsumed!!, 1e-12)
+            assertEquals(2.0, record.distance, 0.0)
+            assertEquals(80, record.startBatteryLevel)
+            assertEquals(70, record.endBatteryLevel)
+            assertEquals(500.0, record.efficiency!!, 1e-12)
+            assertEquals(92, record.speedMax)
+            assertEquals(immutable, HistorySummaryEvidenceCodec.sourceJson(record.apiEvidence))
+            assertEquals(8.0, record.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+        }
+        assertDisplay(direct)
+        val rows = mutableMapOf((30 to 7) to original)
+        suspend fun save(record: DriveSummary) =
+            persistDriveRowsWithoutEvidenceLoss(
+                listOf(record), { car, id -> rows[car to id] },
+                { value -> rows[value.carId to value.driveId] = value })
+        save(direct)
+        assertDisplay(rows[30 to 7]!!)
+        // Weak same-ID refresh has no new provenance and cannot roll the
+        // qualified DETAIL metadata back to raw 1 km / unknown SOC.
+        val weak = raw.copy(energyConsumedNet = null,
+            source = "local_import", qualityState = "incomplete",
+            startAddress = null).toSyncSummary(30)!!
+        save(weak)
+        save(weak)
+        assertEquals(1, rows.size)
+        assertDisplay(rows[30 to 7]!!)
+        val misplaced = rows[30 to 7]!!.copy(carId = 31)
+        assertNull(misplaced.toAnalysisDriveData().netEnergyKwh)
+        assertEquals(1.0, misplaced.toAnalysisDriveData().distance!!, 0.0)
+        val movedWindow = rows[30 to 7]!!.copy(endDate = "2026-10-08T01:00:11Z")
+        assertNull(movedWindow.toAnalysisDriveData().netEnergyKwh)
+        assertEquals(1.0, movedWindow.toAnalysisDriveData().distance!!, 0.0)
+        assertEquals(8.0, misplaced.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+        val wrongSource = detail.copy(source = "local_import")
+        try {
+            direct.withResolvedDriveEnergy(wrongSource, wrongSource.resolveDriveEnergy())
+            fail("cross-source detail accepted")
+        } catch (_: IllegalArgumentException) { }
+    }
+
+    @Test fun chargeDetailCurrentSocAddressAndQualifiedZeroSurviveSameIdRoomUpsert() = runBlocking {
+        val raw = ChargeData(9, startDate = start, endDate = end,
+            source = "telemetry_mqtt", qualityState = "observed",
+            address = "old charge", batteryDetails = null,
+            chargeEnergyAdded = 12.0)
+        val initial = raw.toSyncSummary(30)!!
+        val original = requireNotNull(initial.apiEvidence).dropLast(1) +
+            ""","opaque":{"charger":"keep_original"}}"""
+        val row = initial.copy(apiEvidence = original)
+        val zero = EnergyContract(batteryInput = EnergyMetric(
+            valueKwh = 0.0, source = "telemetry_mqtt", quality = "reported",
+            method = "session_counter_delta", measurementPoint = "battery_input",
+            coverageKind = "endpoints", coverageRatio = 1.0,
+            startDate = start, endDate = end
+        ))
+        val detail = ChargeDetail(9, startDate = start, endDate = end,
+            source = "telemetry_mqtt", address = "new charge",
+            batteryDetails = com.matelink.data.api.models.ChargeBatteryDetails(80, 90),
+            odometer = 123.0, latitude = 2.0, longitude = 3.0,
+            energyContract = zero, cost = 0.0)
+        val enriched = row.withDetailEvidence(detail)
+        val saved = mergeStoredCharge(enriched, row)
+        val restored = saved.toAnalysisChargeData()
+        assertEquals("new charge", restored.address)
+        assertEquals(80, restored.startBatteryLevel)
+        assertEquals(90, restored.endBatteryLevel)
+        assertEquals(123.0, restored.odometer!!, 0.0)
+        assertEquals(2.0, restored.latitude!!, 0.0)
+        assertEquals(3.0, restored.longitude!!, 0.0)
+        assertEquals(0.0, restored.batteryInputKwh!!, 0.0)
+        assertEquals(0.0, restored.cost!!, 0.0)
+        assertEquals(80, saved.startBatteryLevel)
+        assertEquals(90, saved.endBatteryLevel)
+        assertEquals("new charge", saved.address)
+        assertEquals(0.0, saved.energyAdded, 0.0)
+        assertEquals(original, HistorySummaryEvidenceCodec.sourceJson(saved.apiEvidence))
+        assertEquals(12.0, saved.toRawAnalysisChargeData().chargeEnergyAdded!!, 0.0)
+        val stale = raw.copy(source = "local_import",
+            chargeEnergyAdded = null).toSyncSummary(30)!!
+        val again = mergeStoredCharge(stale, saved)
+        assertEquals("new charge", again.toAnalysisChargeData().address)
+        assertEquals(80, again.toAnalysisChargeData().startBatteryLevel)
+        assertEquals(0.0, again.toAnalysisChargeData().batteryInputKwh!!, 0.0)
+        assertEquals(original, HistorySummaryEvidenceCodec.sourceJson(again.apiEvidence))
+        val copiedCar = saved.copy(carId = 31)
+        assertNull(copiedCar.toAnalysisChargeData().batteryInputKwh)
+        assertEquals("old charge", copiedCar.toAnalysisChargeData().address)
+        val moved = saved.copy(endDate = "2026-10-08T01:31:00Z")
+        assertNull(moved.toAnalysisChargeData().batteryInputKwh)
+        val invalid = detail.copy(source = "local_import")
+        try { saved.withDetailEvidence(invalid); fail("cross-source charge detail") }
+        catch (_: IllegalArgumentException) { }
+    }
+
     @Test fun explicitUnknownContractDoesNotEraseOlderRawScalarOrClaimItAsVerified() = runBlocking {
         val original = rawFleet().toSyncSummary(30)!!
         val rows = mutableMapOf((30 to 7) to original)

@@ -181,3 +181,44 @@ case: original source value is preserved, a later signed regenerative
 detail can be displayed only from separately qualified sidecar, and
 the typed detail value is recoverable without falsely rewriting
 the original source scalar. No Room migration or user-data reset.
+
+## Full-stage 4bb independent behavior failure and new local acceptance
+
+Before this new fixed SHA, the independent local source4bb run
+successfully built and signed the release in 11m3s with Debug/Release
+748 tests/0 failures (Release 8 skip), lint0errors/R8PASS. However,
+the actual compiled standalone
+`tools/energy-stage/independent-display-replay/DisplayProjectionReplay.java`
+on evidence commit `d11973542c3944aa68ee7237d4e7a7c3b8689664`
+failed: original 1 km receipt and new 2 km/SOC80→70/1-kWh
+qualified detail decoded as 1 km/unknown/1000 Wh/km offline,
+then same-ID Room merge rolled back current metadata. This is
+**CHANGES_REQUIRED** for 4bb despite green CI. That signed 4bb APK
+was NOT installed. Existing phone installed 8625/build46 retained
+all user data/login/cache/history.
+
+Receive ONLY the final new immutable source SHA/tree/parent in
+the final PR17 handoff comment. In addition to the previous test
+matrix, run the new `RawHistoryEvidencePersistenceTest` current
+detail projection and `UnifiedHistoryDiscoveryRecoveryTest`
+real `load()` current metadata/energy regressions. Independently
+compile and execute the exact standalone Java replay against
+**new compiled classes and generated Moshi adapters**; it must report
+current 2 km, SOC 80→70, 500 Wh/km at direct/offline/next same-ID
+merge with original raw receipt bytes unchanged. Report its actual
+compile/run exit codes and fixture SHA as private sanitized evidence.
+If any projection, release, lint or R8 check fails, do not sign/install.
+
+Repeat for charge address, SOC including valid observed zero,
+odometer/lat/long, physically qualifying battery-side charge
+energy and AC counter separation, weak/unknown receipt preservation,
+two distinct car namespaces, wrong-source and wrong-window
+transplants. Never widen the whole-window threshold, manufacture
+energy from SOC or recreate already-lost unknown raw fields.
+Local Codex independently tests/builds/signs/installs only after
+all evidence is PASS; no business implementation in Owner's dirty
+tree. Main merge is authorized only after actual acceptance—not
+implicitly on any source green result. Production bb09, Nginx,
+bridge, DB, network, trust, old six SOC/7113 TPMS writes and phone
+Wi-Fi/cellular choice all remain unchanged unless individually
+approved under the documented exact reversible gates.

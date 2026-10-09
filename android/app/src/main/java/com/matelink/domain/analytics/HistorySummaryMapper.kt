@@ -31,7 +31,12 @@ internal data class LocalHistoryEvidenceEnvelope(
     @Json(name = "detail_raw_ac_kwh") val detailRawAcKwh: Double? = null,
     @Json(name = "detail_source") val detailSource: String? = null,
     @Json(name = "detail_start_date") val detailStartDate: String? = null,
-    @Json(name = "detail_end_date") val detailEndDate: String? = null
+    @Json(name = "detail_end_date") val detailEndDate: String? = null,
+    // Only typed presentation metadata; never a Tesla measurement claim.
+    // Contains no route points, energy scalar or energy contract.
+    @Json(name = "detail_scope_car_id") val detailScopeCarId: Int? = null,
+    @Json(name = "detail_drive_presentation") val detailDrivePresentation: DriveData? = null,
+    @Json(name = "detail_charge_presentation") val detailChargePresentation: ChargeData? = null
 )
 
 /** Rehydrate exact nullable evidence; scalar placeholders never prove a measured zero. */
@@ -93,43 +98,48 @@ fun DriveData.withSafeHistoryDisplay(): DriveData =
 
 fun DriveSummary.toAnalysisDriveData(): DriveData {
     val raw = toRawAnalysisDriveData()
-    val localDetail = HistorySummaryEvidenceCodec.detailContract(apiEvidence)
-    // Bound a derived claim against the persisted precise detail window,
-    // while keeping original (possibly rounded) source JSON byte-exact.
-    val windowed = if (localDetail == null) raw else raw.copy(
-        startDate = startDate, endDate = endDate
+    val hasSnapshot = HistorySummaryEvidenceCodec.hasDrivePresentation(apiEvidence)
+    val latest = HistorySummaryEvidenceCodec.drivePresentation(
+        apiEvidence, carId, driveId, raw.source, startDate, endDate
     )
-    // A sidecar from another source or window is never an admissible proof.
-    // A mismatched sidecar must also not fall back to an older raw scalar.
-    val projected = if (localDetail == null) raw else {
-        val metric = localDetail.netEnergy
-        val safe = localDetail.version == 1 && metric != null &&
-            metric.source != null && (raw.source == null || raw.source == metric.source) &&
-            sameEvidenceInstant(metric.startDate, startDate) &&
-            sameEvidenceInstant(metric.endDate, endDate)
-        windowed.copy(energyContract = if (safe) localDetail else
-            EnergyContract(netEnergy = com.matelink.data.api.models.EnergyMetric(
-                quality = "unknown", reason = "local_detail_window_or_source_mismatch"
-            )))
-    }
+    // Fail closed if a locally stored snapshot is forged, moved across cars,
+    // assigned to a different source, or for another instant window.
+    val displayed = latest ?: raw.copy(startDate = startDate, endDate = endDate)
+    val localDetail = HistorySummaryEvidenceCodec.detailContract(apiEvidence)
+    val metric = localDetail?.netEnergy
+    val safe = !hasSnapshot || latest != null
+    val verified = safe && localDetail?.version == 1 && metric?.source != null &&
+        (raw.source == null || raw.source == metric.source) &&
+        sameEvidenceInstant(metric.startDate, startDate) &&
+        sameEvidenceInstant(metric.endDate, endDate)
+    val projected = if (localDetail == null && !hasSnapshot) displayed else displayed.copy(
+        energyContract = if (verified) localDetail else EnergyContract(
+            netEnergy = com.matelink.data.api.models.EnergyMetric(
+                quality = "unknown", reason = "local_detail_scope_or_window_mismatch"
+            )
+        )
+    )
     return projected.withSafeHistoryDisplay()
 }
 
 fun ChargeSummary.toAnalysisChargeData(): ChargeData {
     val raw = toRawAnalysisChargeData()
-    val detail = HistorySummaryEvidenceCodec.detailContract(apiEvidence)
-    val windowed = if (detail == null) raw else raw.copy(
-        startDate = startDate, endDate = endDate
+    val hasSnapshot = HistorySummaryEvidenceCodec.hasChargePresentation(apiEvidence)
+    val latest = HistorySummaryEvidenceCodec.chargePresentation(
+        apiEvidence, carId, chargeId, raw.source, startDate, endDate
     )
+    val displayed = latest ?: raw.copy(startDate = startDate, endDate = endDate)
+    val detail = HistorySummaryEvidenceCodec.detailContract(apiEvidence)
     val metric = detail?.batteryInput ?: detail?.acInput
-    val safe = detail?.version == 1 && metric?.source != null &&
+    val safe = !hasSnapshot || latest != null
+    val verified = safe && detail?.version == 1 && metric?.source != null &&
         (raw.source == null || raw.source == metric.source) &&
         sameEvidenceInstant(metric.startDate, startDate) &&
         sameEvidenceInstant(metric.endDate, endDate)
-    val projected = if (detail == null) raw else windowed.copy(
-        energyContract = if (safe) detail else EnergyContract(
+    val projected = if (detail == null && !hasSnapshot) displayed else displayed.copy(
+        energyContract = if (verified) detail else EnergyContract(
             batteryInput = com.matelink.data.api.models.EnergyMetric(
-                quality = "unknown", reason = "local_charge_detail_window_or_source_mismatch"
+                quality = "unknown", reason = "local_charge_detail_scope_or_window_mismatch"
             )
         )
     )
@@ -170,6 +180,43 @@ internal object HistorySummaryEvidenceCodec {
     fun detailRawNet(value: String?): Double? = envelope(value)?.detailRawNetKwh
     fun detailRawBattery(value: String?): Double? = envelope(value)?.detailRawBatteryKwh
     fun detailRawAc(value: String?): Double? = envelope(value)?.detailRawAcKwh
+    fun hasDrivePresentation(value: String?): Boolean =
+        envelope(value)?.detailDrivePresentation != null
+    fun hasChargePresentation(value: String?): Boolean =
+        envelope(value)?.detailChargePresentation != null
+
+    fun drivePresentation(
+        value: String?, carId: Int, driveId: Int, source: String?,
+        start: String?, end: String?
+    ): DriveData? = envelope(value)?.let { e ->
+        e.detailDrivePresentation?.takeIf { p ->
+            e.detailScopeCarId == carId && p.driveId == driveId &&
+                p.energyConsumedNet == null && p.consumptionNet == null &&
+                p.energyContract == null && (source == null || source == p.source) &&
+                e.detailSource == p.source &&
+                sameEvidenceInstant(e.detailStartDate, p.startDate) &&
+                sameEvidenceInstant(e.detailEndDate, p.endDate) &&
+                sameEvidenceInstant(start, p.startDate) &&
+                sameEvidenceInstant(end, p.endDate)
+        }
+    }
+
+    fun chargePresentation(
+        value: String?, carId: Int, chargeId: Int, source: String?,
+        start: String?, end: String?
+    ): ChargeData? = envelope(value)?.let { e ->
+        e.detailChargePresentation?.takeIf { p ->
+            e.detailScopeCarId == carId && p.chargeId == chargeId &&
+                p.chargeEnergyAdded == null && p.chargeEnergyUsed == null &&
+                p.energyContract == null && (source == null || source == p.source) &&
+                e.detailSource == p.source &&
+                sameEvidenceInstant(e.detailStartDate, p.startDate) &&
+                sameEvidenceInstant(e.detailEndDate, p.endDate) &&
+                sameEvidenceInstant(start, p.startDate) &&
+                sameEvidenceInstant(end, p.endDate)
+        }
+    }
+
 
 
     /** Keep the source JSON byte-for-byte even when new detail proof is added.
@@ -177,21 +224,27 @@ internal object HistorySummaryEvidenceCodec {
      */
     fun withDetail(
         original: String?, fallbackRaw: DriveData, contract: EnergyContract,
-        detailRawNet: Double?, detailSource: String?, start: String?, end: String?
+        detailRawNet: Double?, detailSource: String?, start: String?, end: String?,
+        scopeCarId: Int, presentation: DriveData
     ): String {
         val raw = sourceJson(original) ?: encode(fallbackRaw)
         val old = envelope(original)
         return envelopeAdapter.toJson(LocalHistoryEvidenceEnvelope(
             version = 1, rawJson = raw, derivedContract = contract,
             detailRawNetKwh = detailRawNet?.takeIf(Double::isFinite) ?: old?.detailRawNetKwh,
-            detailSource = detailSource, detailStartDate = start, detailEndDate = end
+            detailSource = detailSource, detailStartDate = start, detailEndDate = end,
+            detailScopeCarId = scopeCarId,
+            detailDrivePresentation = presentation.copy(
+                energyConsumedNet = null, consumptionNet = null, energyContract = null
+            )
         ))
     }
 
     fun withChargeDetail(
         original: String?, fallbackRaw: ChargeData, contract: EnergyContract,
         rawBattery: Double?, rawAc: Double?, detailSource: String?,
-        start: String?, end: String?
+        start: String?, end: String?, scopeCarId: Int,
+        presentation: ChargeData
     ): String {
         val raw = sourceJson(original) ?: encode(fallbackRaw)
         val old = envelope(original)
@@ -200,7 +253,10 @@ internal object HistorySummaryEvidenceCodec {
             detailRawBatteryKwh = rawBattery?.takeIf(Double::isFinite) ?: old?.detailRawBatteryKwh,
             detailRawAcKwh = rawAc?.takeIf(Double::isFinite) ?: old?.detailRawAcKwh,
             detailSource = detailSource, detailStartDate = start,
-            detailEndDate = end
+            detailEndDate = end, detailScopeCarId = scopeCarId,
+            detailChargePresentation = presentation.copy(
+                chargeEnergyAdded = null, chargeEnergyUsed = null, energyContract = null
+            )
         ))
     }
 

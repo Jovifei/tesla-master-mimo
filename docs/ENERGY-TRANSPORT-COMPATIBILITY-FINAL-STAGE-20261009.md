@@ -696,3 +696,92 @@ the exact prior raw summary plus the new typed detail scalar and its
 physical-source-qualified sidecar. The Room analytic projection
 uses the new signed value but source JSON remains recoverable.
 These are isolated contracts, not proof of real Fleet human consent.
+
+## 2026-10-09 independently compiled behavior replay — current detail projection repair
+
+Independent fixed4bb local qualification (source evidence branch
+`codex/tls-4bb-local-validation-20261009@d11973542c3944aa68ee7237d4e7a7c3b8689664`,
+`docs/TLS-ENERGY-LOCAL-4BB01607-BEHAVIOR-CHANGES-REQUIRED-20261009.md`)
+reported GREEN fixed4bb Actions and independent signed build but
+a **real compiled-class FAIL** before installation. Its synthetic same-ID
+drive had original immutable receipt 1 km/SOC unknown and current detail
+2 km/SOC 80→70 / qualified net 1 kWh. Direct Room view computed
+500 Wh/km, while decoded offline projection reverted to 1 km/unknown
+SOC/1000 Wh/km; subsequent same-ID merge also reverted Room columns.
+The original receipt JSON was preserved correctly. Signed candidate
+was NOT installed; the phone still uses 8625/build46.
+
+### Actual current/archival contract and fault isolation
+
+The source repair extends the existing version-1 local `apiEvidence`
+envelope with an independent `detail_drive_presentation` or
+`detail_charge_presentation` and `detail_scope_car_id`, distinct from
+the **unchanged** `raw_json` bytes and separate `detail_energy_contract`.
+This is a **local cached detail presentation**, *not* a Tesla Fleet
+measurement, new server schema or new SQL column*. The presentation
+contains compact nonenergy fields only: source identity, exact
+start/end, distance/odometer, SOC (nullable, valid observed zero),
+address, speed, power maxima, temperatures, charge address/meter
+context/cost as appropriate. It excludes route point history,
+unverified raw scalar, and duplicated energy contracts.
+
+Decode and reuse require all of: the same local history car namespace,
+record ID, compatible exact source, precise start/end instants,
+matching sidecar source/window, and a version-1 envelope. The existing
+complete power-window, measurement method, unit, coverage and
+unqualified-unknown gates remain untouched. An envelope transplanted
+to another car, time or source is rejected for display/energy, not
+accepted as Fleet evidence. Legacy prior envelopes without a
+presentation remain readable with conservative raw/energy behavior.
+
+The same `mergeStoredDrive`/`mergeStoredCharge` functions called
+by actual Room `@Transaction` now determine both persisted and
+foreground `UnifiedHistoryRepository.load` projections; one
+codepath updates current distance/SOC/address/speed and recomputes
+weighted Wh/km from **current qualified energy divided by current
+distance**, never original raw distance. Weak or empty same-ID
+cloud pages preserve a prior valid current detail; a changed
+vehicle source, explicit new/unknown contract or changed precise
+window does not smuggle an old contract into new scope. Charge
+battery-side input remains separate from AC meter and SOC delta.
+Raw receipt bytes remain byte-recoverable and are not overwritten
+by detail integrals or address/speed display cleanup.
+
+Meaningful isolated tests execute:
+* exact same-ID read→merge→Room-upsert with direct, offline and
+  subsequent weak-list restore matching 2 km, SOC80→70, new
+  addresses/speed and 500 Wh/km while `raw_json` retains 1 km and
+  original unknown/opaque fields;
+* charge SOC/address/location/odometer with a genuine qualifying
+  reported-zero battery counter; old raw charge energy remains archival;
+* current detail through actual foreground history load for both
+  drives and charges; no duplicate rows or cross-car/source/window
+  projection; unknown stays unknown; signed regenerative values stay signed.
+The independent Java replay remains a separate **local execution gate**,
+not replaced by assistant-authored source tests.
+
+### Stage completion and production/API gate
+
+Continue using **only the final PR17 full immutable HEAD/tree/parent**,
+all same-SHA completed Actions jobs and artifacts, and an independent
+local receipt; do not cite green fixed4bb source CI as sufficient for
+the new code. Installed phone and production API remain unchanged
+until independent fixed-SHA signing/install and a separately gated
+minimal API rollout respectively. The API prospective change is still
+the precise Go RFC3339Nano serializer with source/identity and
+rollback checks against current deployed bb09, no DDL/DB/bridge
+migration or historical backfill. Exact old immutable image, private
+config/backups, isolated PG/race, approved scoped canary and a
+verified restore of old image/config are prerequisites to any
+future API rollout. This document does NOT authorize deployment.
+
+Jovi has already authorized eventual `main` merge **after the real
+qualification/acceptance gates**; no fresh code-stage approval is
+required, but the gate has not been satisfied by an isolated replay,
+CI, signed APK or TeslaMate archive. No main merge in this source-only
+execution. Real phone TLS peer mismatch, fresh authenticated source→
+cloud→API→Room→UI, two-user Fleet confirmation, 30-day observed
+TPMS, natural notifications and unattended resource resilience
+remain independent device/provider/human gates. Phone
+Wi-Fi→cellular→restore experiment is still unanswered; do not alter
+network, trust store, DNS, proxy, VPN or TTL without that decision.

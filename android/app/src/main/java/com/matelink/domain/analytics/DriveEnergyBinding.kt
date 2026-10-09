@@ -76,77 +76,87 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
     val rawPrevious = toRawAnalysisDriveData()
     require(rawPrevious.source == null || detail.source == null || rawPrevious.source == detail.source) { "history_detail_source_mismatch" }
     val estimate = resolved.estimate
-    val displayPrevious = toAnalysisDriveData()
-    val nextStart = detail.startDate ?: rawPrevious.startDate
-    val nextEnd = detail.endDate ?: rawPrevious.endDate
+    val current = toAnalysisDriveData()
+    // Room summary dates are the currently verified detail dates. Original
+    // source JSON may contain bb09's older rounded list boundaries.
+    val nextStart = detail.startDate ?: startDate
+    val nextEnd = detail.endDate ?: endDate
     val sameWindow = parseIsoInstant(nextStart) != null &&
-        parseIsoInstant(nextStart) == parseIsoInstant(rawPrevious.startDate) &&
-        parseIsoInstant(nextEnd) == parseIsoInstant(rawPrevious.endDate)
-    // Only an earlier independently proven contract, for precisely the same
-    // source and instant window, can survive a detail with NO new energy proof.
-    // Explicit unknown detail always overrides for display, never for raw.
-    val prior = displayPrevious.energyContract
-    val carried = displayPrevious.netEnergyKwh?.takeIf {
+        parseIsoInstant(nextStart) == parseIsoInstant(startDate) &&
+        parseIsoInstant(nextEnd) == parseIsoInstant(endDate)
+    val oldProof = current.energyContract
+    val carried = current.netEnergyKwh?.takeIf { v ->
         detail.energyContract == null && estimate.energyKwh == null && sameWindow &&
-        prior?.netValueForWindow(nextStart, nextEnd) == it &&
+        oldProof?.netValueForWindow(nextStart, nextEnd) == v &&
         (detail.source == null || detail.source == rawPrevious.source)
     }
-    val detailProof = when {
+    val proof = when {
         detail.energyContract != null -> detail.energyContract
         estimate.energyKwh != null -> EnergyContract(netEnergy = resolved.evidence)
-        carried != null && prior != null -> prior
+        carried != null && oldProof != null -> oldProof
         else -> EnergyContract(netEnergy = resolved.evidence)
     }
-    // A derived integral is a NEW measurement claim, not a replacement for
-    // the original raw energy_consumed_net (including unverified Fleet 8).
-    val rawReceipt = HistorySummaryEvidenceCodec.withDetail(
-        apiEvidence, rawPrevious, detailProof,
-        detail.energyConsumedNet, detail.source ?: rawPrevious.source,
-        nextStart, nextEnd
-    )
-    val proofValue = detailProof.netValueForWindow(nextStart, nextEnd)
-        ?.takeIf { rawPrevious.source == null ||
-            detailProof.netEnergy?.source == rawPrevious.source }
-    val distanceForEnergy = (detail.distance ?: rawPrevious.distance)
-        ?.takeIf { it.isFinite() && it > 0.0 }
-    val efficiencyForEnergy = proofValue?.let { e ->
-        distanceForEnergy?.let { (e / it * 1000.0).takeIf(Double::isFinite) }
-    }
-    val evidence = rawPrevious.copy(
+    // Current metadata is a separate scoped display snapshot, never a raw
+    // Tesla receipt. Explicit nulls retain genuinely unknown SOC.
+    val presentation = current.copy(
         startDate = nextStart, endDate = nextEnd,
-        startAddress = detail.startAddress ?: rawPrevious.startAddress,
-        endAddress = detail.endAddress ?: rawPrevious.endAddress,
-        odometerDetails = detail.odometerDetails ?: rawPrevious.odometerDetails,
-        durationMin = detail.durationMin ?: rawPrevious.durationMin,
-        batteryDetails = detail.batteryDetails ?: rawPrevious.batteryDetails,
-        outsideTempAvg = detail.outsideTempAvg ?: rawPrevious.outsideTempAvg,
-        insideTempAvg = detail.insideTempAvg ?: rawPrevious.insideTempAvg,
-        speedMax = detail.speedMax ?: rawPrevious.speedMax,
-        powerMax = detail.powerMax ?: rawPrevious.powerMax,
-        powerMin = detail.powerMin ?: rawPrevious.powerMin,
-        source = detail.source ?: rawPrevious.source
-        // NO mutation of raw energyConsumedNet/consumptionNet/energyContract.
+        startAddress = detail.startAddress ?: current.startAddress,
+        endAddress = detail.endAddress ?: current.endAddress,
+        odometerDetails = detail.odometerDetails ?: current.odometerDetails,
+        durationMin = detail.durationMin ?: current.durationMin,
+        durationStr = detail.durationStr ?: current.durationStr,
+        speedMax = detail.speedMax ?: current.speedMax,
+        speedAvg = detail.speedAvg ?: current.speedAvg,
+        powerMax = detail.powerMax ?: current.powerMax,
+        powerMin = detail.powerMin ?: current.powerMin,
+        batteryDetails = detail.batteryDetails ?: current.batteryDetails,
+        rangeIdeal = detail.rangeIdeal ?: current.rangeIdeal,
+        rangeRated = detail.rangeRated ?: current.rangeRated,
+        outsideTempAvg = detail.outsideTempAvg ?: current.outsideTempAvg,
+        insideTempAvg = detail.insideTempAvg ?: current.insideTempAvg,
+        startLatitude = detail.startLatitude ?: current.startLatitude,
+        startLongitude = detail.startLongitude ?: current.startLongitude,
+        endLatitude = detail.endLatitude ?: current.endLatitude,
+        endLongitude = detail.endLongitude ?: current.endLongitude,
+        source = detail.source ?: rawPrevious.source,
+        energyConsumedNet = null, consumptionNet = null, energyContract = null
     )
-    val display = evidence.withSafeHistoryDisplay()
-    val qualifiedMetric = detailProof.netEnergy
+    val receipt = HistorySummaryEvidenceCodec.withDetail(
+        apiEvidence, rawPrevious, proof, detail.energyConsumedNet,
+        presentation.source, nextStart, nextEnd, carId, presentation
+    )
+    val net = proof.netValueForWindow(nextStart, nextEnd)
+        ?.takeIf { presentation.source == null ||
+            proof.netEnergy?.source == presentation.source }
+    val distanceKm = presentation.distance?.takeIf { it.isFinite() && it > 0.0 }
+    val efficiency = net?.let { value ->
+        distanceKm?.let { (value / it * 1000.0).takeIf(Double::isFinite) }
+    }
+    val visible = presentation.withSafeHistoryDisplay()
+    val metric = proof.netEnergy
     return copy(
-        startDate = evidence.startDate ?: startDate, endDate = evidence.endDate ?: endDate,
-        durationMin = evidence.durationMin ?: durationMin,
-        startAddress = display.startAddress.orEmpty(), endAddress = display.endAddress.orEmpty(),
-        distance = evidence.distance?.takeIf { it.isFinite() && it >= 0.0 } ?: distance,
-        startBatteryLevel = evidence.startBatteryLevel ?: 0, endBatteryLevel = evidence.endBatteryLevel ?: 0,
-        outsideTempAvg = evidence.outsideTempAvg?.takeIf(Double::isFinite),
-        insideTempAvg = evidence.insideTempAvg?.takeIf(Double::isFinite),
-        speedMax = evidence.speedMax ?: speedMax, powerMax = evidence.powerMax ?: powerMax, powerMin = evidence.powerMin ?: powerMin,
-        energyConsumed = proofValue, efficiency = efficiencyForEnergy,
-        energySource = proofValue?.let {
-            if (qualifiedMetric?.method == "drive_power_integral") "power_samples" else "api"
+        startDate = nextStart ?: startDate, endDate = nextEnd ?: endDate,
+        durationMin = visible.durationMin ?: durationMin,
+        startAddress = visible.startAddress.orEmpty(),
+        endAddress = visible.endAddress.orEmpty(),
+        distance = visible.distance?.takeIf { it.isFinite() && it >= 0.0 } ?: this.distance,
+        speedMax = visible.speedMax ?: speedMax,
+        speedAvg = visible.speedAvg?.takeIf(Double::isFinite)?.toInt() ?: speedAvg,
+        powerMax = visible.powerMax ?: powerMax,
+        powerMin = visible.powerMin ?: powerMin,
+        startBatteryLevel = visible.startBatteryLevel ?: 0,
+        endBatteryLevel = visible.endBatteryLevel ?: 0,
+        outsideTempAvg = visible.outsideTempAvg?.takeIf(Double::isFinite),
+        insideTempAvg = visible.insideTempAvg?.takeIf(Double::isFinite),
+        energyConsumed = net, efficiency = efficiency,
+        energySource = net?.let {
+            if (metric?.method == "drive_power_integral") "power_samples" else "api"
         },
-        energyCoverageSeconds = qualifiedMetric?.coverageSeconds
+        energyCoverageSeconds = metric?.coverageSeconds
             ?.takeIf { it.isFinite() && it >= 0.0 }?.toLong() ?: 0L,
-        energyCoverageRatio = qualifiedMetric?.coverageRatio
+        energyCoverageRatio = metric?.coverageRatio
             ?.takeIf { it.isFinite() && it in 0.0..1.0 } ?: 0.0,
-        apiEvidence = rawReceipt
+        apiEvidence = receipt
     )
 }
 

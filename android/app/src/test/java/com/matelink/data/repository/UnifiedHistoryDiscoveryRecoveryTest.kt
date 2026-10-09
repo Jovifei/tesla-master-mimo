@@ -13,6 +13,13 @@ import com.matelink.data.api.models.DrivePosition
 import com.matelink.data.api.models.DriveOdometerDetails
 import com.matelink.domain.analytics.toRawAnalysisDriveData
 import com.matelink.domain.analytics.toAnalysisDriveData
+import com.matelink.domain.analytics.withDetailEvidence
+import com.matelink.domain.analytics.toAnalysisChargeData
+import com.matelink.data.api.models.ChargeDetail
+import com.matelink.data.api.models.DriveBatteryDetails
+import com.matelink.data.api.models.ChargeBatteryDetails
+import com.matelink.data.api.models.EnergyContract
+import com.matelink.data.api.models.EnergyMetric
 import com.matelink.data.local.*
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.ChargeSummary
@@ -37,6 +44,7 @@ class UnifiedHistoryDiscoveryRecoveryTest {
         var localReads = 0
         var legacyPending = false
         var localDriveOverride: List<DriveSummary>? = null
+        var localChargeOverride: List<ChargeSummary>? = null
         val oldDrive = DriveData(1, startDate = "2026-10-01T00:00:00Z", endDate = "2026-10-01T01:00:00Z", source = "teslamate_archive", qualityState = "observed")
         val newDrive = oldDrive.copy(driveId = 2, startDate = "2026-10-04T00:00:00Z", endDate = "2026-10-04T01:00:00Z")
         val oldCharge = ChargeData(1, startDate = "2026-09-29T00:00:00Z", endDate = "2026-09-29T01:00:00Z", source = "teslamate_archive", qualityState = "observed")
@@ -57,7 +65,7 @@ class UnifiedHistoryDiscoveryRecoveryTest {
             resolveCar = { car, expected -> check(car.carId == 7 && car.vehicleUid == "provider-a"); check(expected == scope); cached = context; context },
             cachedContext = { id, expected -> if (id == 7 && expected == original && scope == expected) cached else null },
             localDrives = { id -> localReads++; check(id == -7); localDriveOverride ?: listOf(oldDrive.toLocalSummary(id)!!) },
-            localCharges = { id -> localReads++; check(id == -7); listOf(oldCharge.toLocalSummary(id)!!) },
+            localCharges = { id -> localReads++; check(id == -7); localChargeOverride ?: listOf(oldCharge.toLocalSummary(id)!!) },
             getDrives = { id, _, _, page -> check(id == 7); driveCalls += page; fetchDrives(page) },
             getCharges = { id, _, _, page -> check(id == 7); chargeCalls += page; fetchCharges(page) },
             persistDrives = { rows -> persistedDrives += rows; afterDrivePersist() },
@@ -121,6 +129,80 @@ class UnifiedHistoryDiscoveryRecoveryTest {
             HistorySummaryEvidenceCodec.sourceJson(persisted.apiEvidence))
         assertTrue(returned.drivesFromRemote)
         // Empty remote is still not a genuine fresh history event.
+    }
+
+    @Test fun verifiedDetailPresentationSurvivesRealHistoryLoadAndWeakCloudPage() = runTest {
+        val f = Fixture()
+        val start = "2026-10-01T00:00:00Z"
+        val end = "2026-10-01T00:00:10Z"
+        val raw = DriveData(1, startDate = start, endDate = end,
+            source = "telemetry_mqtt", qualityState = "observed",
+            energyConsumedNet = 8.0,
+            odometerDetails = DriveOdometerDetails(distance = 1.0))
+        val original = raw.toSyncSummary(-7)!!
+        val detail = DriveDetail(1, source = "telemetry_mqtt",
+            startDate = start, endDate = end,
+            odometerDetails = DriveOdometerDetails(distance = 2.0),
+            batteryDetails = DriveBatteryDetails(80, 70), speedMax = 92,
+            startAddress = "current origin", endAddress = "current destination",
+            positions = listOf(DrivePosition(date = start, power = 360.0),
+                DrivePosition(date = end, power = 360.0)))
+        val enriched = original.withResolvedDriveEnergy(detail, detail.resolveDriveEnergy())
+        f.localDriveOverride = listOf(enriched)
+        f.fetchDrives = { ApiResult.Success(listOf(raw.copy(
+            energyConsumedNet = null, speedMax = 33))) }
+        f.fetchCharges = { ApiResult.Success(emptyList()) }
+        val result = (f.repository().load(7) as ApiResult.Success).data
+        val drive = result.drives.single()
+        assertEquals(2.0, drive.distance!!, 0.0)
+        assertEquals(80, drive.startBatteryLevel)
+        assertEquals(70, drive.endBatteryLevel)
+        assertEquals(92, drive.speedMax)
+        assertEquals(500.0, drive.efficiencyWhKm!!, 1e-12)
+        assertEquals(1.0, drive.netEnergyKwh!!, 1e-12)
+        assertEquals("current origin", drive.startAddress)
+        val stored = f.persistedDrives.single()
+        assertEquals(2.0, stored.distance, 0.0)
+        assertEquals(80, stored.startBatteryLevel)
+        assertEquals(70, stored.endBatteryLevel)
+        assertEquals(1.0, stored.energyConsumed!!, 1e-12)
+        assertEquals(500.0, stored.efficiency!!, 1e-12)
+        assertEquals(original.apiEvidence, HistorySummaryEvidenceCodec.sourceJson(stored.apiEvidence))
+        assertEquals(8.0, stored.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+    }
+
+    @Test fun parkedChargeMetadataRetainsCurrentBatteryAndAddressAcrossRealLoad() = runTest {
+        val f = Fixture()
+        val start = "2026-09-29T00:00:00Z"
+        val end = "2026-09-29T01:00:00Z"
+        val raw = ChargeData(1, startDate = start, endDate = end,
+            address = "old location", source = "telemetry_mqtt",
+            qualityState = "observed", chargeEnergyAdded = 12.0)
+        val initial = raw.toSyncSummary(-7)!!
+        val metric = EnergyMetric(valueKwh = 2.0, source = "telemetry_mqtt",
+            quality = "reported", method = "session_counter_delta",
+            measurementPoint = "battery_input", coverageKind = "endpoints",
+            coverageRatio = 1.0, startDate = start, endDate = end)
+        val detailed = ChargeDetail(1, startDate = start, endDate = end,
+            source = "telemetry_mqtt", address = "new location",
+            batteryDetails = ChargeBatteryDetails(80, 90),
+            energyContract = EnergyContract(batteryInput = metric))
+        f.localChargeOverride = listOf(initial.withDetailEvidence(detailed))
+        f.fetchCharges = { ApiResult.Success(listOf(raw.copy(chargeEnergyAdded = null))) }
+        f.fetchDrives = { ApiResult.Success(emptyList()) }
+        val result = (f.repository().load(7) as ApiResult.Success).data
+        val charge = result.charges.single()
+        assertEquals("new location", charge.address)
+        assertEquals(80, charge.startBatteryLevel)
+        assertEquals(90, charge.endBatteryLevel)
+        assertEquals(2.0, charge.batteryInputKwh!!, 0.0)
+        val stored = f.persistedCharges.single()
+        assertEquals("new location", stored.address)
+        assertEquals(80, stored.startBatteryLevel)
+        assertEquals(90, stored.endBatteryLevel)
+        assertEquals(2.0, stored.energyAdded, 0.0)
+        assertEquals(initial.apiEvidence, HistorySummaryEvidenceCodec.sourceJson(stored.apiEvidence))
+        assertEquals(12.0, stored.toRawAnalysisChargeData().chargeEnergyAdded!!, 0.0)
     }
 
     @Test fun identityDiagnosticPreservesTypedFailureWithoutAuthorizingHistory() = runTest {

@@ -224,51 +224,26 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
             localDrives.map { it.toRawAnalysisDriveData() })
         val rawCharges = mergeChargesRaw(remoteCharges.items.map { it.withLegacyRemoteQuality() },
             localCharges.map { it.toRawAnalysisChargeData() })
-        val cachedDrives = localDrives.associateBy { it.driveId }
-        val remoteProvenDrives = remoteDrives.items.filter { it.energyContract != null }
-            .map { it.driveId }.toSet()
-        val drives = rawDrives.map { raw ->
-            val cached = cachedDrives[raw.driveId]
-            // Existing certified local detail remains visible during offline /
-            // weak list refresh if exact source and raw receipt are unchanged.
-            // A NEW explicit remote contract takes precedence, even unknown.
-            if (cached != null && raw.driveId !in remoteProvenDrives &&
-                HistorySummaryEvidenceCodec.hasDetail(cached.apiEvidence) &&
-                raw == cached.toRawAnalysisDriveData()) cached.toAnalysisDriveData()
-            else raw.withSafeHistoryDisplay()
-        }
-        val cachedCharges = localCharges.associateBy { it.chargeId }
-        val remoteProvenCharges = remoteCharges.items.filter { it.energyContract != null }
-            .map { it.chargeId }.toSet()
-        val charges = rawCharges.map { raw ->
-            val cached = cachedCharges[raw.chargeId]
-            if (cached != null && raw.chargeId !in remoteProvenCharges &&
-                HistorySummaryEvidenceCodec.hasDetail(cached.apiEvidence) &&
-                raw == cached.toRawAnalysisChargeData()) cached.toAnalysisChargeData()
-            else raw.withQualifiedEnergy()
-        }
-        // Never delete local history just because it is outside the cloud window.
-        // Persist even successfully downloaded pages preceding a later failure.
-        // When the result contains no stronger raw evidence than the same-ID
-        // cached row, retain that source JSON byte-for-byte, including unknown
-        // fields and old nullable values. Only numeric analysis columns change
-        // to the current qualified projection.
+        // The EXACT same DAO read/merge/transaction projection that writes
+        // Room also constructs the visible list. Raw bytes remain in apiEvidence;
+        // detail metadata/energy is a separately guarded snapshot.
         val priorDrives = localDrives.associateBy { it.driveId }
         val driveRows = rawDrives.mapNotNull { raw ->
-            val summary = raw.toLocalSummary(context.localHistoryCarId) ?: return@mapNotNull null
-            val prior = priorDrives[raw.driveId]
-            if (prior?.apiEvidence != null && prior.toRawAnalysisDriveData() == raw)
-                summary.copy(apiEvidence = prior.apiEvidence) else summary
+            raw.toLocalSummary(context.localHistoryCarId)?.let { row ->
+                mergeStoredDrive(row, priorDrives[raw.driveId])
+            }
         }
-        reads.persistDrives(driveRows)
-        if (!scopeUnchanged()) return historyIdentityUnavailableError()
         val priorCharges = localCharges.associateBy { it.chargeId }
         val chargeRows = rawCharges.mapNotNull { raw ->
-            val summary = raw.toLocalSummary(context.localHistoryCarId) ?: return@mapNotNull null
-            val prior = priorCharges[raw.chargeId]
-            if (prior?.apiEvidence != null && prior.toRawAnalysisChargeData() == raw)
-                summary.copy(apiEvidence = prior.apiEvidence) else summary
+            raw.toLocalSummary(context.localHistoryCarId)?.let { row ->
+                mergeStoredCharge(row, priorCharges[raw.chargeId])
+            }
         }
+        val drives = driveRows.map { it.toAnalysisDriveData() }
+        val charges = chargeRows.map { it.toAnalysisChargeData() }
+        // Do not delete old data when a remote page, identity or source is absent.
+        reads.persistDrives(driveRows)
+        if (!scopeUnchanged()) return historyIdentityUnavailableError()
         reads.persistCharges(chargeRows)
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
 
@@ -538,32 +513,63 @@ private fun hasTrustedHistoryEvidence(quality: String?, source: String?): Boolea
     quality in setOf("observed", "derived") || (quality == null && source != "local_import")
 
 /** Shared by foreground restore and background sync; @Upsert must not downgrade evidence. */
+/** Shared by foreground recovery and background Room @Transaction. This
+ * function never mutates immutable raw receipt bytes and never copies a
+ * detail presentation across car IDs, source instances or instant windows.
+ */
 internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): DriveSummary {
     if (cached == null) return incoming
     require(incoming.carId == cached.carId && incoming.driveId == cached.driveId)
+    val inRaw = incoming.toRawAnalysisDriveData()
     val cachedRaw = cached.toRawAnalysisDriveData()
-    val data = UnifiedHistoryRepository.mergeDrivesRaw(
-        listOf(incoming.toRawAnalysisDriveData()), listOf(cachedRaw)).single()
-    val qualified = data.toLocalSummary(incoming.carId) ?: return cached
-    // If no new raw evidence was contributed, retain its original JSON bytes.
-    val evidence = when {
-        // A newly qualified/explicit-unknown detail envelope is a separate
-        // receipt and must survive the subsequent same-ID Room upsert.
-        HistorySummaryEvidenceCodec.hasDetail(incoming.apiEvidence) -> incoming.apiEvidence
-        data == cachedRaw && cached.apiEvidence != null -> cached.apiEvidence
-        else -> qualified.apiEvidence
+    val raw = UnifiedHistoryRepository.mergeDrivesRaw(listOf(inRaw), listOf(cachedRaw)).single()
+    val base = raw.toLocalSummary(incoming.carId) ?: return cached
+    val incomingSnapshot = HistorySummaryEvidenceCodec.drivePresentation(
+        incoming.apiEvidence, incoming.carId, incoming.driveId,
+        inRaw.source, incoming.startDate, incoming.endDate
+    ) != null
+    val cachedSnapshot = HistorySummaryEvidenceCodec.drivePresentation(
+        cached.apiEvidence, cached.carId, cached.driveId,
+        cachedRaw.source, cached.startDate, cached.endDate
+    ) != null
+    // New explicit source proof (including explicit unknown) takes precedence.
+    val newProof = inRaw.energyContract != null && inRaw.energyContract != cachedRaw.energyContract
+    val sameSource = raw.source == cachedRaw.source
+    val sameWindow = raw.startDate == cachedRaw.startDate && raw.endDate == cachedRaw.endDate
+    val receipt = when {
+        incomingSnapshot -> incoming.apiEvidence
+        cachedSnapshot && sameSource && sameWindow && !newProof -> cached.apiEvidence
+        raw == cachedRaw && cached.apiEvidence != null -> cached.apiEvidence
+        else -> base.apiEvidence
     }
-    val merged = qualified.copy(apiEvidence = evidence)
-    // The raw decoder intentionally hides derived sidecars. Reproject ONLY
-    // now, after the exact receipt has been selected, so valid detailed
-    // estimates reach Room quick stats but raw 8 never becomes energy.
+    val merged = base.copy(
+        apiEvidence = receipt,
+        // The detail clock may carry subsecond precision lacking in original
+        // immutable list JSON; never round or invent source sample intervals.
+        startDate = if (receipt == cached.apiEvidence) cached.startDate else incoming.startDate,
+        endDate = if (receipt == cached.apiEvidence) cached.endDate else incoming.endDate
+    )
     val display = merged.toAnalysisDriveData()
-    val energy = display.netEnergyKwh
+    val value = display.netEnergyKwh
     val metric = display.energyContract?.netEnergy
     return merged.copy(
-        energyConsumed = energy,
+        startDate = display.startDate ?: merged.startDate,
+        endDate = display.endDate ?: merged.endDate,
+        durationMin = display.durationMin ?: merged.durationMin,
+        startAddress = display.startAddress.orEmpty(),
+        endAddress = display.endAddress.orEmpty(),
+        distance = display.distance?.takeIf { it.isFinite() && it >= 0.0 } ?: merged.distance,
+        speedMax = display.speedMax ?: merged.speedMax,
+        speedAvg = display.speedAvg?.takeIf(Double::isFinite)?.toInt() ?: merged.speedAvg,
+        powerMax = display.powerMax ?: merged.powerMax,
+        powerMin = display.powerMin ?: merged.powerMin,
+        startBatteryLevel = display.startBatteryLevel ?: 0,
+        endBatteryLevel = display.endBatteryLevel ?: 0,
+        outsideTempAvg = display.outsideTempAvg?.takeIf(Double::isFinite),
+        insideTempAvg = display.insideTempAvg?.takeIf(Double::isFinite),
+        energyConsumed = value,
         efficiency = display.efficiencyWhKm,
-        energySource = energy?.let {
+        energySource = value?.let {
             if (metric?.method == "drive_power_integral") "power_samples" else "api"
         },
         energyCoverageSeconds = metric?.coverageSeconds
@@ -576,18 +582,44 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
 internal fun mergeStoredCharge(incoming: ChargeSummary, cached: ChargeSummary?): ChargeSummary {
     if (cached == null) return incoming
     require(incoming.carId == cached.carId && incoming.chargeId == cached.chargeId)
+    val inRaw = incoming.toRawAnalysisChargeData()
     val cachedRaw = cached.toRawAnalysisChargeData()
-    val data = UnifiedHistoryRepository.mergeChargesRaw(
-        listOf(incoming.toRawAnalysisChargeData()), listOf(cachedRaw)).single()
-    val qualified = data.toLocalSummary(incoming.carId) ?: return cached
-    val evidence = when {
-        HistorySummaryEvidenceCodec.hasDetail(incoming.apiEvidence) -> incoming.apiEvidence
-        data == cachedRaw && cached.apiEvidence != null -> cached.apiEvidence
-        else -> qualified.apiEvidence
+    val raw = UnifiedHistoryRepository.mergeChargesRaw(listOf(inRaw), listOf(cachedRaw)).single()
+    val base = raw.toLocalSummary(incoming.carId) ?: return cached
+    val incomingSnapshot = HistorySummaryEvidenceCodec.chargePresentation(
+        incoming.apiEvidence, incoming.carId, incoming.chargeId,
+        inRaw.source, incoming.startDate, incoming.endDate
+    ) != null
+    val cachedSnapshot = HistorySummaryEvidenceCodec.chargePresentation(
+        cached.apiEvidence, cached.carId, cached.chargeId,
+        cachedRaw.source, cached.startDate, cached.endDate
+    ) != null
+    val newProof = inRaw.energyContract != null && inRaw.energyContract != cachedRaw.energyContract
+    val sameSource = raw.source == cachedRaw.source
+    val sameWindow = raw.startDate == cachedRaw.startDate && raw.endDate == cachedRaw.endDate
+    val receipt = when {
+        incomingSnapshot -> incoming.apiEvidence
+        cachedSnapshot && sameSource && sameWindow && !newProof -> cached.apiEvidence
+        raw == cachedRaw && cached.apiEvidence != null -> cached.apiEvidence
+        else -> base.apiEvidence
     }
-    val merged = qualified.copy(apiEvidence = evidence)
+    val merged = base.copy(
+        apiEvidence = receipt,
+        startDate = if (receipt == cached.apiEvidence) cached.startDate else incoming.startDate,
+        endDate = if (receipt == cached.apiEvidence) cached.endDate else incoming.endDate
+    )
     val display = merged.toAnalysisChargeData()
     return merged.copy(
+        startDate = display.startDate ?: merged.startDate,
+        endDate = display.endDate ?: merged.endDate,
+        durationMin = display.durationMin ?: merged.durationMin,
+        address = display.address.orEmpty(),
+        latitude = display.latitude?.takeIf(Double::isFinite) ?: merged.latitude,
+        longitude = display.longitude?.takeIf(Double::isFinite) ?: merged.longitude,
+        odometer = display.odometer?.takeIf(Double::isFinite) ?: merged.odometer,
+        startBatteryLevel = display.startBatteryLevel ?: 0,
+        endBatteryLevel = display.endBatteryLevel ?: 0,
+        outsideTempAvg = display.outsideTempAvg?.takeIf(Double::isFinite),
         energyAdded = display.batteryInputKwh ?: 0.0,
         energyUsed = display.inputEnergyKwh,
         cost = display.cost?.takeIf { it.isFinite() && it >= 0.0 }
