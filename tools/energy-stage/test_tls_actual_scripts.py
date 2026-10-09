@@ -47,6 +47,9 @@ class ActualTlsScriptTests(unittest.TestCase):
             if [[ "$1" == "-v" ]]; then exit 0; fi
             [[ "$1" == "-t" ]] || exit 2
             if grep -q BROKEN "$TLS_TEST_CONF/jourvolt.conf"; then exit 1; fi
+            if grep -q MORE_WARNINGS "$TLS_TEST_CONF/jourvolt.conf"; then
+                echo 'nginx: [warn] new overlap' >&2
+            fi
             exit 0
         """)
         write_executable(self.bin / "systemctl", """
@@ -96,6 +99,14 @@ class ActualTlsScriptTests(unittest.TestCase):
         self.assert_restored()
         self.assertEqual(self.log.read_text().count("reload"), 1)
         self.assertTrue(list(self.conf.glob(".jourvolt-tls-rollback.*")))
+
+    def test_new_nginx_warning_triggers_full_rollback(self):
+        result = self.run_tx("MORE_WARNINGS")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("NEW_NGINX_WARNINGS", result.stdout)
+        self.assertIn("TLS_TRANSACTION=ROLLED_BACK", result.stdout)
+        self.assert_restored()
+        self.assertEqual(self.log.read_text().count("reload"), 1)
 
     def test_actual_transaction_reload_failure_restores_disk_and_service(self):
         result = self.run_tx("RELOAD_FAIL")
@@ -173,10 +184,14 @@ class ActualTlsScriptTests(unittest.TestCase):
         baseline = self.run_public()
         self.assertEqual(baseline.returncode, 0, baseline.stdout + baseline.stderr)
         self.assertIn("VERIFY_PUBLIC:", baseline.stdout)
-        for status in ("200", "302", "403", "500", "000"):
+        for status in ("200", "302", "403", "500"):
             result = self.run_public(status)
             self.assertEqual(result.returncode, 1, (status, result.stdout, result.stderr))
             self.assertIn("Unauthenticated capabilities", result.stdout)
+        offline = self.run_public("000")
+        self.assertEqual(offline.returncode, 1)
+        self.assertIn("[FAIL]", offline.stdout)
+        self.assertIn("VERIFY_PUBLIC:", offline.stdout)
 
     def test_invalid_public_ip_rejected_before_any_network_execution(self):
         flag = self.root / "SENTINEL"
@@ -187,10 +202,26 @@ class ActualTlsScriptTests(unittest.TestCase):
         self.assertIn("INVALID_PUBLIC_IP", result.stderr)
         self.assertNotIn("PUBLIC_IP=203", result.stdout + result.stderr)
 
+    def test_installed_commentless_tls_directives_match_but_extras_fail(self):
+        canonical = REPO / "deploy/nginx/jourvolt-ssl.le.inc"
+        active = self.conf / "jourvolt-ssl.inc"
+        active.write_text(
+            "ssl_certificate /etc/letsencrypt/live/jourvolt/fullchain.pem;\\n"
+            "ssl_certificate_key /etc/letsencrypt/live/jourvolt/privkey.pem;\\n"
+        )
+        command = ["bash", str(REPO / "deploy/scripts/nginx-include-match.sh"),
+                   str(active), str(canonical)]
+        good = subprocess.run(command, env=self.env, capture_output=True, timeout=4)
+        self.assertEqual(good.returncode, 0)
+        active.write_text(active.read_text() + "ssl_verify_client off;\\n")
+        rejected = subprocess.run(command, env=self.env, capture_output=True, timeout=4)
+        self.assertNotEqual(rejected.returncode, 0)
+
     def test_setup_integration_invokes_transaction_not_direct_active_copy(self):
         source = ROOT_SETUP.read_text()
         self.assertIn('tls-nginx-transaction.sh', source)
         self.assertIn('qualify-nginx-le.sh', source)
+        self.assertIn('nginx-include-match.sh', source)
         self.assertNotIn('sudo tee "${NGINX_CONF_DIR}/jourvolt.conf"', source)
         self.assertNotIn('sudo cp -a "${NGINX_CONF_DIR}/jourvolt-ssl.le.inc" "${NGINX_CONF_DIR}/jourvolt-ssl.inc"', source)
 

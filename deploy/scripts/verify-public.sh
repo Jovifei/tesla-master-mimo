@@ -8,12 +8,12 @@
 #   2. 443 可达 + 严格 TLS 链/名称/SNI/前后 peer 一致性
 #   3. HTTP -> HTTPS 301 重定向
 #   4. 四个静态 URL（assetlinks / terms / privacy / Tesla 3p 公钥）
-#   5. /api/matelink/v1/capabilities 行为：无 token 401；带 token（可选）200
+#   5. /api/matelink/v1/capabilities 行为：无 token 401，绝不发送 token
 #   6. 4000/8080/5432/1883/18080/18090 未对外（本机监听 + 外部连接双检）
 #
 # 环境变量：
 #   PUBLIC_IP          公网 IP（默认 120.55.64.11）
-#   MATE_LINK_API_TOKEN 可选；设置后额外校验带 token 的 capabilities 200
+#   本脚本不接受/发送凭据，认证请求验收另行授权
 #
 # 退出码：0 = 全部通过（或仅有预期内 WARN）；1 = 存在 FAIL。
 # =============================================================================
@@ -143,18 +143,9 @@ elif [[ "$code" == '502' || "$code" == '504' ]]; then
 else
   bad "Unauthenticated capabilities returned unexpected status (expected 401)"
 fi
-if [[ -n "${MATE_LINK_API_TOKEN:-}" ]]; then
-  code="$("${CURL[@]}" -o /dev/null -w '%{http_code}' \
-    "https://${DOMAIN_SELFHOST}/api/matelink/v1/capabilities" \
-    -H "Authorization: Bearer ${MATE_LINK_API_TOKEN}" 2>/dev/null || echo 000)"
-  if [[ "$code" == '200' ]]; then
-    ok "带 token -> 200"
-  else
-    bad "带 token 期望 200，实际 ${code}"
-  fi
-else
-  echo "  [SKIP] 未设置 MATE_LINK_API_TOKEN，跳过带 token 校验"
-fi
+# Public TLS qualification is credential-free by design. An authenticated
+# capabilities assertion belongs to a separately authorized device/API check.
+echo "  [SKIP] Authenticated capabilities NOT_RUN (no credentials sent)"
 
 echo "=== 6. 内部端口未对外 ==="
 if command -v ss >/dev/null 2>&1; then

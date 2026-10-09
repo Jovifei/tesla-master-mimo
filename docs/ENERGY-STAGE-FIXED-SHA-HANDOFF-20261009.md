@@ -108,3 +108,25 @@ valid for 8625 only. Original authorized local Codex must independently
 rebuild/sign/verify exact final SHA and do a safe same-signer `install-r`
 with no app data clear or network modifications, then report fresh device
 results. No simulated/old cached UI result proves live authenticated history.
+
+
+### Full remaining-stage precision and TLS closure addendum
+
+Read [the current complete transport, deployed-bb09, natural precision,
+transactional TLS and rollback ledger](ENERGY-TRANSPORT-COMPATIBILITY-FINAL-STAGE-20261009.md)
+and the [immutable-SHA local receiving contract](TLS-ENERGY-FIXED-STAGE-LOCAL-RECEIVE-20261009.md).
+The previous 29384c91 source failed to compile the new Kotlin test without
+`com.matelink.data.sync.toSyncSummary`; this failure must remain historical
+FAIL rather than being silently reclassified. A separately confirmed natural
+source 3100-point fractional window proved old bb09 whole-second session
+boundary formatting misses 0.417 seconds. Candidate Go RFC3339Nano date
+serializer/energy metric and actual Kotlin Moshi/Room/consumer regressions
+repair that source defect **only in candidate**, never in still deployed bb09.
+New TLS scripts cover privileged four-file Nginx rollback, trusted fullchain,
+validity windows/key match including normal Certbot live symlinks, explicit
+unauth 401 failure, no bearer-token public check and literal-IP-only socket
+probe, with synthetic negative tests. Network snapshot 200 is not history
+acceptance, and prior unexpected phone peer remains unattributed. All
+production deployments, phone network changes and old backfills remain
+separately gated. The final immutable SHA and same-SHA actual CI/job evidence
+must come from PR17's completed-stage comment and current Actions.

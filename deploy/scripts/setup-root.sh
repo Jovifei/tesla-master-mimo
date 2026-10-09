@@ -111,9 +111,9 @@ LE_KEY="/etc/letsencrypt/live/jourvolt/privkey.pem"
 # the operator and are not silently overwritten.
 CURRENT_SSL_KIND=absent
 if sudo test -e "${NGINX_CONF_DIR}/jourvolt-ssl.inc"; then
-  if sudo cmp -s "${NGINX_CONF_DIR}/jourvolt-ssl.inc" "$LE_SRC"; then
+  if bash "${SCRIPT_DIR}/nginx-include-match.sh" "${NGINX_CONF_DIR}/jourvolt-ssl.inc" "$LE_SRC"; then
     CURRENT_SSL_KIND=letsencrypt
-  elif sudo cmp -s "${NGINX_CONF_DIR}/jourvolt-ssl.inc" "$SELF_SRC"; then
+  elif bash "${SCRIPT_DIR}/nginx-include-match.sh" "${NGINX_CONF_DIR}/jourvolt-ssl.inc" "$SELF_SRC"; then
     CURRENT_SSL_KIND=selfsigned
   else
     die "Unrecognized active TLS include; preserve for explicit review"

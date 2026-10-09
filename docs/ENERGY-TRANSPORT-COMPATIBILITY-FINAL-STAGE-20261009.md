@@ -233,72 +233,69 @@ valid authenticated request through the actual phone path occurs or
 a concrete separately accepted environment gate is established. No
 production or network repair is authorized by this source-stage closure.
 
-## Appendix A — exact **approval-gated** Nginx scope, backup and rollback
+## Appendix A — separately approved Nginx config/chain change and exact rollback
 
-The following is a **nonexecuted operator procedure**, not permission
-to modify production. It is only applicable after independently proving that
-the *managed* `jourvolt-ssl.inc` selects the incorrect public leaf on a
-specific authorized TLS endpoint, and Jovi separately approves a
-change-window, Nginx access, named files and rollback. A single unexpected
-phone peer without a mapped active Nginx config is **not** that proof.
+**Not executed. No production permission is implied.** The phone's
+old self-issued 433-byte TLS peer is not independently traced to the
+Nginx server, proxy or a specific script. Do NOT run setup-root merely
+to troubleshoot an unknown peer. First obtain Jovi's exact scoped
+approval for read-only effective config or a reviewed change window.
+Review the current active vhost/SNI including IPv4/IPv6/default
+selection and keep other-project vhosts untouched.
 
-Allowed scope: `/etc/nginx/conf.d/jourvolt-ssl.inc` only for an already
-installed, trusted, valid and correct LE chain; `jourvolt.conf` backup
-is comparison-only and must not be overwritten. No other
-server block, `stream`, system CA, DNS, firewall, proxy, account, database,
-token, vehicle, production API or phone network modification. Do **not**
-rerun all of `setup-root.sh` as a supposed minimal hotfix.
+The candidate production-tool scope is only:
+`/etc/nginx/conf.d/jourvolt.conf`,
+`jourvolt-ssl.inc`,
+`jourvolt-ssl.le.inc`,
+`jourvolt-ssl.selfsigned.inc` and a separately qualified
+certbot deploy hook. Neither the hostname, system CA, proxy, VPN,
+network/DNS/TTL, provider credential nor product API/schema is changed.
 
-```bash
-# CONTROLLED PRODUCTION CHANGE ONLY AFTER JOVI'S SEPARATE EXPLICIT APPROVAL.
-set -euo pipefail
-umask 077
-conf=/etc/nginx/conf.d
-# Backups are root-only and stored away from the public ACME directory.
-backup="$(sudo mktemp -d /root/jourvolt-tls-snapshot.XXXXXXXX)"
-sudo chmod 0700 "$backup"
-sudo cp -a "$conf/jourvolt.conf" "$backup/jourvolt.conf"
-sudo cp -a "$conf/jourvolt-ssl.inc" "$backup/jourvolt-ssl.inc"
-# Record hashes privately. Never paste configuration/certificate bodies.
-sudo sha256sum "$conf/jourvolt.conf" "$conf/jourvolt-ssl.inc" \
-    | sudo tee "$backup/prechange-sha256.txt" >/dev/null
-sudo cmp -s "$backup/jourvolt-ssl.inc" "$conf/jourvolt-ssl.inc"
-sudo nginx -t >/dev/null 2>&1
+Approved operator preflight (never execute as a silent part of chat):
+1. Verify the current effective config and existing hashes privately,
+   including active include and prior approved nginx master/running
+   state; avoid printing raw `nginx -T` or certificates into CI/GitHub.
+   Snapshot four files with metadata in a root-only (0700) directory.
+2. `bash deploy/scripts/qualify-nginx-le.sh
+   /etc/letsencrypt/live/jourvolt/fullchain.pem
+   /etc/letsencrypt/live/jourvolt/privkey.pem
+   teslalink.joviluma.com api.teslalink.joviluma.com
+   auth.teslalink.joviluma.com` only succeeds for a trusted fullchain,
+   valid notBefore/notAfter, all approved hostnames and matching key.
+   Certbot `live` files may legitimately be symlinks; trust checks
+   validate their contents. Self-issued/untrusted/wrong-SAN/wrong-key
+   peer must be rejected; no `-k` or new CA is allowed.
+3. After stage config diff and owner-specific review, the actual
+   `tls-nginx-transaction.sh` installs those four managed files
+   atomically from approved, rendered sources. It first validates
+   baseline `nginx -t`, creates metadata-preserving backups, installs,
+   checks `nginx -t`, reloads, and auto-restores **exact original
+   on-disk files** and tries old-config reload on any command failure.
+   A matching existing configuration returns NOOP without reload.
+   Unknown active include, invalid prior LE, or unexpected extra
+   directive stops instead of downgrading the certificate.
+4. After a successful, **approved** reload, compare two normal
+   certificate-validated no-credential public health checks and
+   approved host/SNI peer results from the relevant vantage.
+   A public Runner PASS never proves Android TLS/authenticated history.
+   If postreload health fails, operator must revert to the exact
+   retained root-only backup, `nginx -t`, reload, verify accepted
+   peer/health again, retain a private hash matrix and report only
+   sanitized statuses. A failed rollback is an explicit STOP/operator
+   gate; do not delete backup or invent PASS.
+5. Certbot rollout is separately gated: `renew-qualified-reload.sh`
+   is a deploy hook candidate which checks the managed active LE
+   include and complete certificate trust/key before reload. This
+   does not restore Certbot's archive/live symlink history. A failed
+   Certbot issuance/renewal requires separately reviewed certificate
+   archive backup and operator decision; **never** silently repoint
+   live symlinks or use a self-signed fallback as public success.
 
-# Reconfirm *before* approval-gated mutation:
-# 1. Active include is exactly one known managed fragment (or STOP).
-# 2. Cert/key exist, match, satisfy hostname and expiry policy (or STOP).
-# 3. Approved unrelated Nginx vhosts and routes are unchanged (or STOP).
-# 4. Public hostname TLS/health read has classified peer evidence (no -k).
-# A valid LE include that is already active means NO-OP; retain backup.
-if sudo cmp -s "$conf/jourvolt-ssl.inc" "$conf/jourvolt-ssl.le.inc"; then
-  echo 'TLS_REPAIR=NOOP_ALREADY_MANAGED_LE'
-elif sudo cmp -s "$conf/jourvolt-ssl.inc" "$conf/jourvolt-ssl.selfsigned.inc"; then
-  echo 'TLS_REPAIR=APPROVAL_AND_VERIFIED_LE_CERT_REQUIRED'
-  # With all preconditions and *separate approval* satisfied only:
-  # sudo install -o root -g root -m 0644 "$conf/jourvolt-ssl.le.inc" "$conf/jourvolt-ssl.inc.pending"
-  # sudo mv -f "$conf/jourvolt-ssl.inc.pending" "$conf/jourvolt-ssl.inc"
-  # sudo nginx -t >/dev/null 2>&1 && sudo systemctl reload nginx
-  # python3 tools/energy-stage/qualify-public-tls.py --live --samples 2
-else
-  echo 'TLS_REPAIR=STOP_UNRECOGNIZED_INCLUDE'
-  exit 1
-fi
-
-# Rollback block, to be used ONLY if an approved change has actually failed:
-# sudo cp -a "$backup/jourvolt-ssl.inc" "$conf/jourvolt-ssl.inc"
-# sudo nginx -t >/dev/null 2>&1 && sudo systemctl reload nginx
-# sudo cmp -s "$backup/jourvolt-ssl.inc" "$conf/jourvolt-ssl.inc"
-# python3 tools/energy-stage/qualify-public-tls.py --live --samples 2
-# Retain backup directory, private hash manifest, gate ticket, sanitized
-# UTC/China timestamps, before/after verified TLS result for review.
-```
-
-Stop if any precondition or verification fails; do not reinterpret an
-unrecognized include, certificate error, denied permissions or tool failure
-as permission to replace a trust chain. If an approved change does not
-restore TLS from the intended phone vantage, revert to exact file backup,
-preserve observed results and investigate the actual route instead.
+A full implementation/example path is in `deploy/scripts/setup-root.sh`
+and `deploy/scripts/tls-nginx-transaction.sh`. Source CI tests execute
+the actual transaction and public-check scripts only in a disposable
+mock namespace, including forced validation and reload failures. No
+effective production Nginx config or phone network was modified.
 
 ## Appendix B — real natural fractional boundary defect and gated minimal API update
 
@@ -316,10 +313,14 @@ matching .417 fractions, versus old truncated boundaries leaving
 establish a successful **authenticated phone API payload**.
 
 The candidate makes the **minimum Go serialization repair** in
-`telemetry_service.go` and `energy_history_contract.go`: use
+`telemetry_service.go`, `energy_history_contract.go` and adjacent-archive
+`parked_history_bounds.go`: use
 `time.RFC3339Nano` for session start/end, telemetry route/charge
 sample timestamps and energy-contract observed/window endpoints.
-Whole-second values retain their old string spelling; JSON field
+Adjacent parking endpoint observations retain fractional UTC precision,
+but SOC-only parking continues to publish null kWh/averageW; no
+unsupported stored-energy attribution is added. Whole-second values
+retain their old string spelling; JSON field
 names, types, wrapper, provider source, account/car/vehicle scope,
 charges, cost, energy-metric qualifications and database schema are
 unchanged. It does NOT round sample dates or relax the Android exact
@@ -327,8 +328,8 @@ whole-window / 30s missing-interval / null / conflicting-replay checks.
 Source-time vs collector-receipt labels remain distinct.
 
 Cross-boundary regressions: actual Go `historySessionMap` ->
-`encoding/json` tests for fractional observed drive and charge
-counter endpoints; actual synthetic Go-shaped JSON -> Android Moshi
+`encoding/json` tests for fractional observed drive, parked archive
+boundaries and charge counter endpoints; actual synthetic Go-shaped JSON -> Android Moshi
 `DriveDetailResponse` -> `DriveEnergyResolver` ->
 Room summary evidence -> drive detail presentation verifies a complete
 fractional window. Old rounded start/end must still yield
@@ -401,3 +402,17 @@ Do not perform the Wi-Fi→cellular experiment, trust/DNS/proxy/VPN change,
 production API/bridge/DDL or natural driving/charging on our behalf.
 Authentic list/detail/parking and energy acceptance requires actual
 successful authorized responses and correct vehicle/source comparison.
+
+### Supplemental CI safety clarifications
+
+The final source recognizes preexisting legacy **comment-free** active
+LE/self-signed directives by normalized exact comparison with the
+managed fragment; any extra directive fails. Certbot's normal
+`live/` symlinks are accepted only after validating their real
+certificate and key contents. No bearer token is sent by
+`verify-public.sh`, including when an unrelated environment happens
+to contain a session token; authentication tests require the separately
+authorized device/API path. The optional public 200 health is always
+labeled `runner_vantage_only`, never accepted as Fleet or phone
+proof. All synthetic TLS certificate and mock network results are
+isolated-test evidence, not server or natural-data acceptance.

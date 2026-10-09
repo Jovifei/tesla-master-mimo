@@ -27,6 +27,7 @@ done
 if ! sudo nginx -t >/dev/null 2>&1; then
   echo "TLS_TRANSACTION=INVALID_BASELINE"; exit 1
 fi
+baseline_warnings="$(sudo nginx -t 2>&1 | grep -c 'warn' || true)"
 if [[ "$changed" -eq 0 ]]; then
   echo "TLS_TRANSACTION=NOOP"
   exit 0
@@ -78,5 +79,10 @@ for index in 0 1 2 3; do
 done
 # nginx -t cannot be bypassed by a successful TCP health response.
 sudo nginx -t >/dev/null 2>&1
+new_warnings="$(sudo nginx -t 2>&1 | grep -c 'warn' || true)"
+if (( new_warnings > baseline_warnings )); then
+  echo "TLS_TRANSACTION=NEW_NGINX_WARNINGS"
+  exit 1
+fi
 sudo systemctl reload nginx >/dev/null 2>&1
 # Keep root-only backups for independent rollback and hashing; do not print paths.

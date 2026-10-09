@@ -35,7 +35,7 @@ func parkedHistoryBoundaryData(older, newer parkedHistoryBound) map[string]any {
 	}
 	return map[string]any{
 		"older_drive_id": a.PublicID, "newer_drive_id": b.PublicID,
-		"start_date": a.EndAt.UTC().Format(time.RFC3339), "end_date": b.StartAt.UTC().Format(time.RFC3339),
+		"start_date": a.EndAt.UTC().Format(time.RFC3339Nano), "end_date": b.StartAt.UTC().Format(time.RFC3339Nano),
 		"address": a.EndAddress, "start_battery_level": nullableInt(older.EndSOC), "end_battery_level": nullableInt(newer.StartSOC),
 		"battery_delta": delta, "energy_kwh": nil, "average_power_kw": nil, "peak_power_kw": nil,
 		"inside_temp_average": nil, "outside_temp_average": nil, "linked_charge": nil,

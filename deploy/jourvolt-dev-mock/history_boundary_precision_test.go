@@ -104,3 +104,37 @@ func TestChargeEnergyContractAndJSONBoundaryPrecision(t *testing.T) {
        decoded["charge_energy_added"] != 4.0 { t.Fatal("qualified charge energy lost") }
     if contract["ac_efficiency"] != 80.0 { t.Fatal("AC balance lost") }
 }
+
+func TestParkedArchiveAdjacentWindowPreservesFractionalEndPointsWithoutInventingEnergy(t *testing.T) {
+    earlierStart := time.Date(2026, 10, 8, 1, 0, 0, 417000000, time.UTC)
+    earlierEnd := earlierStart.Add(3 * time.Minute)
+    laterStart := earlierEnd.Add(45 * time.Minute)
+    laterEnd := laterStart.Add(2 * time.Minute)
+    a0, a1, b0, b1 := 100.0, 101.0, 102.0, 103.0
+    socEnd, socNext := 80, 79
+    a := telemetrySession{
+        PublicID: 50, Kind: "drive", Source: "teslamate_archive",
+        QualityState: "observed", StartAt: earlierStart, EndAt: &earlierEnd,
+        SourceInstanceID: "synthetic_source", SourceVehicleID: "synthetic_vehicle",
+        OdometerStart: &a0, OdometerEnd: &a1,
+    }
+    b := telemetrySession{
+        PublicID: 51, Kind: "drive", Source: "teslamate_archive",
+        QualityState: "observed", StartAt: laterStart, EndAt: &laterEnd,
+        SourceInstanceID: "synthetic_source", SourceVehicleID: "synthetic_vehicle",
+        OdometerStart: &b0, OdometerEnd: &b1,
+    }
+    item := parkedHistoryBoundaryData(
+        parkedHistoryBound{Session: a, EndSOC: &socEnd},
+        parkedHistoryBound{Session: b, StartSOC: &socNext},
+    )
+    if item == nil { t.Fatal("qualified adjacent archive boundaries disappeared") }
+    if item["start_date"] != earlierEnd.Format(time.RFC3339Nano) ||
+       item["end_date"] != laterStart.Format(time.RFC3339Nano) {
+        t.Fatal("parked boundaries rounded to seconds")
+    }
+    if item["energy_kwh"] != nil || item["average_power_kw"] != nil ||
+       item["battery_delta"] != 1 {
+        t.Fatal("adjacent SOC must not invent a battery kWh measurement")
+    }
+}

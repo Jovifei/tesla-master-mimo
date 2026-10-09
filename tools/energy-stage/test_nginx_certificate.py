@@ -95,6 +95,13 @@ subjectAltName=DNS:teslalink.joviluma.com,DNS:api.teslalink.joviluma.com,DNS:aut
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout.strip(), "TLS_CERTIFICATE=VALID")
 
+    def test_certbot_live_symlinks_preserve_valid_trust_and_key(self):
+        # certbot live/ holds symlinks into the private archive directory.
+        (self.root / "live-chain.pem").symlink_to(self.root / "valid.pem")
+        (self.root / "live-key.pem").symlink_to(self.root / "leaf.key")
+        result = self.qualify("live-chain.pem", key="live-key.pem")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_wrong_hostname_is_rejected(self):
         self.assertNotEqual(self.qualify("valid.pem", hosts=(HOSTS[0], "other.example.com", HOSTS[2])).returncode, 0)
 
