@@ -66,7 +66,7 @@ done
 # Emit no certificate metadata, exception text or authenticated responses.
 if [[ "$DOMAIN_API" != 'api.teslalink.joviluma.com' ]]; then
   bad "TLS qualification target differs from approved production host"
-elif python3 "${SCRIPT_DIR}/../../tools/energy-stage/qualify-public-tls.py" --live; then
+elif timeout 20s python3 "${SCRIPT_DIR}/../../tools/energy-stage/qualify-public-tls.py" --live; then
   ok "TLS chain, hostname/SNI and verified peer consistent"
 else
   bad "TLS qualification failed; self-issued placeholder is never acceptable"

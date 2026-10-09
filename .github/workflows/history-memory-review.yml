@@ -46,7 +46,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          python3 tools/energy-stage/qualify-public-tls.py --live 2>&1 | tee evidence/tls-public-vantage.txt
+          timeout 20s python3 tools/energy-stage/qualify-public-tls.py --live 2>&1 | tee evidence/tls-public-vantage.txt
       - uses: actions/setup-go@v5
         with:
           go-version-file: deploy/jourvolt-dev-mock/go.mod

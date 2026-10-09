@@ -15,7 +15,9 @@ choice letsencrypt true letsencrypt
 if bash "$policy" letsencrypt false >/dev/null 2>&1; then exit 1; fi
 if bash "$policy" unknown true >/dev/null 2>&1; then exit 1; fi
 if bash "$policy" selfsigned unknown >/dev/null 2>&1; then exit 1; fi
-bash -n "$root/deploy/scripts/setup-root.sh" "$root/deploy/scripts/verify-public.sh" "$policy"
+for script in "$root/deploy/scripts/setup-root.sh" "$root/deploy/scripts/verify-public.sh" "$policy"; do
+  bash -n "$script"
+done
 # Guard both integration points; a test of an orphan helper is not sufficient.
 grep -Fq 'tls-include-policy.sh' "$root/deploy/scripts/setup-root.sh"
 grep -Fq 'qualify-public-tls.py" --live' "$root/deploy/scripts/verify-public.sh"

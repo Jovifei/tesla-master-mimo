@@ -10,7 +10,7 @@ import tempfile
 import threading
 import unittest
 
-FILE = Path(__file__).with_name("qualify_public_tls.py")
+FILE = Path(__file__).with_name("qualify-public-tls.py")
 spec = importlib.util.spec_from_file_location("qualification", FILE)
 qual = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(qual)
@@ -84,12 +84,14 @@ class TlsQualificationTests(unittest.TestCase):
             srv.settimeout(3)
             port = srv.getsockname()[1]
             completed = []
+            sni_seen = []
             def server():
                 try:
                     sock, _ = srv.accept()
                     with sock:
                         server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
                         server_ctx.load_cert_chain(crt, key)
+                        server_ctx.set_servername_callback(lambda tls_socket, name, tls_context: sni_seen.append(name))
                         try:
                             with server_ctx.wrap_socket(sock, server_side=True):
                                 pass
@@ -108,6 +110,7 @@ class TlsQualificationTests(unittest.TestCase):
                         pass
             t.join(timeout=4)
             self.assertTrue(completed)
+            self.assertEqual(sni_seen, [qual.HOST])
 
 
 if __name__ == "__main__":

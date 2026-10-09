@@ -1,6 +1,8 @@
 # MateLink 工程审核与故障记录入口
 
-当前审核入口：[2026-10-02 主分支、部署与待修复状态](RPT-2026-10-02-review-baseline.md)。
+当前阶段入口：[能耗传输、部署TLS与已部署bb09兼容性终审](ENERGY-TRANSPORT-COMPATIBILITY-FINAL-STAGE-20261009.md)；[旧设备签名实测、认证TLS待确认门](ENERGY-TLS-DEVICE-DIAGNOSTIC-20261009.md)。源码CI通过不代表手机认证或Fleet自然数据通过。
+
+历史审核入口：[2026-10-02 主分支、部署与待修复状态](RPT-2026-10-02-review-baseline.md)。
 
 - [10月4日历史同步与详情复发](BUG-REPAIR-2026-10-04-phone-history-stale.md)：首次恢复、07:51再现、安全异常分型、未知SOC及43候选验收边界。
 - [云登录 502 与历史读取内存故障](DBG-2026-10-02-login-oom.md)：运行证据、源码风险、优化方案和验收条件。

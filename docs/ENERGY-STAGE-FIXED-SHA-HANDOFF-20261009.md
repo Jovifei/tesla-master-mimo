@@ -75,3 +75,21 @@ The final HEAD must have one *finished* Actions run with all jobs SUCCESS: Go fu
 
 ## Android 11 authenticated-history TLS qualification gate (2026-10-09)
 See `docs/ENERGY-LOCAL-DEVICE-QUALIFICATION-20261009.md` for the actual signed installed build46 evidence and `docs/ENERGY-TLS-DEVICE-DIAGNOSTIC-20261009.md` for the full safe type-code map, independent verification command matrix and acceptance gate. The exact source of four `history_context http=none category=tls` failures remains **unknown**; public server health and desktop certificate-chain verification do not rule out phone-specific TLS, route or client environment issues. The additive source change leaves platform system trust, hostname checks, cloud HTTPS selection, session refresh and data ownership untouched. Only fixed-size Java exception *types* reach the optional `tls_cause` value (no throwable messages/certificates/URLs/tokens), and the generic user message no longer wrongly assumes certificate failure. This handoff is **not authenticated-history PASS**. The matching-signer re-install and real scoped API history test must be rerun against the final source SHA, with a short privacy-redacted `HistorySync` observation and actual UI result, before considering `main` merge. Do not repair certificate validation by trusting user CAs, insecure HTTP or changing VPN/proxy/DNS.
+
+
+## 2026-10-09 TLS transport continuation (source only)
+
+The installed device receipt above remains true for source 8625d28e but its
+next-stage TLS qualifier is in
+[ENERGY-TRANSPORT-COMPATIBILITY-FINAL-STAGE-20261009.md](ENERGY-TRANSPORT-COMPATIBILITY-FINAL-STAGE-20261009.md).
+A repeat `setup-root.sh` could previously drop an active Let's Encrypt
+certificate to a self-signed placeholder before reload; insecure
+`verify-public.sh` could conceal it with curl `-k`. The new candidate fixes
+these source-level deployment-tool defects and adds strict, redacted bounded
+TLS qualification plus bb09 consumer-source compatibility tests. **No evidence
+shows these defects caused the phone's Oct8 unexpected peer**. The production
+API, active nginx, network/trust and original installed APK are unchanged.
+
+Immutable stage HEAD/tree/parent and same-SHA job evidence are supplied by the
+final PR17 comment; do not rely on an older green run or mark physical device
+or natural Tesla history accepted. Source-only CI is not production permission.
