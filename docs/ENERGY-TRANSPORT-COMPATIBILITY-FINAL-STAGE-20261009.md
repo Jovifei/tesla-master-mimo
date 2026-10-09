@@ -840,3 +840,63 @@ start/end instants. Tests damage the original wrapped JSON while
 leaving the signed-looking detail proof intact, then require
 unavailable energy and no promotion of an old Room 8-kWh placeholder.
 No user data or API records are altered in these negative cases.
+
+
+### 2026-10-09 ef88 Android failure and exact independent d119 replay closure
+
+Actions `37887421579` at `ef88fd573f20d892e5c351ca7c86660987c4a146`
+did **not** qualify Android: Debug and Release
+`RawHistoryEvidencePersistenceTest.chargeDetailCurrentSocAddressAndQualifiedZeroSurviveSameIdRoomUpsert`
+failed after a second weak same-ID update (expected `new charge`,
+received `old charge`). The real XML reported this at test line 454.
+`verify`, isolated PostgreSQL/race/Web, 10 source audits and TLS
+were successful; overall ef88 run FAILED and must never be reported
+as full PASS.
+
+**Source root cause:** `hasTrustedHistoryEvidence` previously treated
+`qualityState=observed` as trusted even for `source=local_import`.
+The weak same-ID import therefore overwrote the source identity when
+merging two unrelated source records. The next cache upsert replaced a
+scoped, qualified Fleet detail presentation with the weaker raw
+metadata. A claimed quality string is not proof of natural
+Fleet/source identity. The repair excludes unverified local_import and
+local_history from strong source selection and refuses to combine
+known conflicting source instances. A new incoming local detail is
+admissible only when the canonical raw merge actually selected its
+own source and exact window. Incoming foreign contracts cannot revoke
+an unrelated cached valid counter or move its presentation to another
+source, namespace or clock interval. No raw archive row is deleted.
+
+**Tests:** existing regression that actually failed; synthetic
+`qualityState=observed` local_import against stored Fleet
+battery-input **valid zero** and current address/SOC; a second
+different trusted source; an unverified locally authored counter
+sidecar cannot transplant into the Fleet namespace. The new
+`IndependentD119DisplayReplayTest` uses the independent Java fixture's
+exact source JSON and detail JSON through **real Moshi models**, source
+summary serialization, `withResolvedDriveEnergy`,
+`toAnalysisDriveData`, `mergeStoredDrive`, and a second weak
+same-ID refresh. The resulting detail must remain **2 km,
+SOC 80→70, reported 1 kWh, 500 Wh/km** at direct/Room/offline
+points while the original opaque JSON retains **1 km and raw
+unqualified 8 kWh**. Separate tests cover source mismatches,
+multicar numeric-ID collisions, changed windows, qualified signed
+negative drive net, unknown/null energy and battery-side charge zero.
+
+A version-1 local wrapper without a **validated, matching scoped
+detail presentation** cannot on its own qualify energy, even when it
+contains a valid-looking detail contract. Legacy source archive
+records still follow their original explicitly qualified
+`energy_contract` or historical compatibility path when there is
+no supplemental local proof. Malformed/version-mismatched envelopes
+continue to fail closed; neither an old Room numeric placeholder
+nor an orphaned local sidecar establishes a real kWh value. Exact
+raw receipt bytes remain independently readable.
+
+This documents testable **source behavior**, not production or
+physical-device qualification. The new immutable HEAD and
+actual same-SHA Android/Go/PG/race/Web/TLS/audit job IDs and
+artifacts are recorded in PR17's final completion comment, not
+inferred from old ef88 or the moving branch. There is no fleet
+first-event, authenticated-history, TPMS, notification or two-user
+natural acceptance from these synthetic tests.

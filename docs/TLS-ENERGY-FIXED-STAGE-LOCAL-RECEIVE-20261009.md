@@ -246,3 +246,38 @@ rollback is not evidence that all older cache consumers can read
 the new versioned field. Report an explicit compatibility gate
 if the old APK cannot safely read the new cache. No new production
 API/DB/bridge/Nginx/network/Tesla operations are authorized.
+
+
+### Final stage local receive — original d119 parity and source identity
+
+Do not use ef88 as a passing baseline: its Android Debug/Release
+failed a genuine same-ID weak-import regression although backend
+tests and source audits passed. Independently verify the *last*
+fixed full HEAD/tree/parent and PR17 completed same-SHA jobs before
+signing. From a clean checkout run the exact class-equivalent
+`IndependentD119DisplayReplayTest` plus the supplied **independent**
+Java `DisplayProjectionReplay.java` at
+`codex/tls-4bb-local-validation-20261009@d11973542c3944aa68ee7237d4e7a7c3b8689664`
+against newly compiled real Kotlin classes/Moshi adapters. Require
+Java compile=0/run=0 and all displayed values stable through
+direct enrichment, offline decode, same-ID DAO upsert and weak
+repeat. Never interpret a Java fixture pass as natural Tesla or
+authenticated app history.
+
+Also verify the historical failing charge test now accepts only
+the qualified Fleet sidecar after a weak `local_import` row
+(which may deceptively carry `qualityState=observed`).
+A foreign source's otherwise well-formed energy metric is not
+authority to merge into the Fleet record. Check original JSON
+bytes, 0-vs-null, signed regenerative power, exact windows and
+two distinct car namespaces. No business code implementation is
+assigned to local Codex: it independently checks/tests/builds/signs,
+performs only an authorized same-signer `install -r` *after*
+source CI is fully green, verifies first-install/session/cache
+preservation and returns one consolidated real-device receipt.
+Physical-device authenticated data and production bb09 Nano/TLS
+rollout remain separate explicit qualification gates. A rollback
+to original 8625 must be tested for existing-data semantics
+without clearing, reinstalling from scratch, or editing a live
+account/source record. Jovi's prior main-merge authorization
+applies only when acceptance prerequisites genuinely hold.

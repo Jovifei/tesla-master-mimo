@@ -530,6 +530,103 @@ class RawHistoryEvidencePersistenceTest {
             HistorySummaryEvidenceCodec.sourceJson(replay.apiEvidence))
     }
 
+    @Test fun observedLocalImportAndOtherSourceCannotOverwriteQualifiedSameIdCharge() {
+        val raw = ChargeData(9, startDate = start, endDate = end,
+            source = "telemetry_mqtt", qualityState = "observed",
+            address = "old charge", chargeEnergyAdded = 12.0)
+        val original = raw.toSyncSummary(30)!!
+        val proof = EnergyContract(batteryInput = EnergyMetric(
+            valueKwh = 0.0, source = "telemetry_mqtt", quality = "reported",
+            method = "session_counter_delta", measurementPoint = "battery_input",
+            startDate = start, endDate = end,
+            coverageKind = "endpoints", coverageRatio = 1.0))
+        val detail = ChargeDetail(9, startDate = start, endDate = end,
+            source = "telemetry_mqtt", address = "new charge",
+            batteryDetails = com.matelink.data.api.models.ChargeBatteryDetails(80, 90),
+            energyContract = proof)
+        val actual = mergeStoredCharge(original.withDetailEvidence(detail), original)
+        for (foreign in listOf("local_import", "teslamate_archive")) {
+            // Even an import erroneously marked "observed" does not prove
+            // the same source instance. Never merge numeric IDs across sources.
+            val incoming = raw.copy(
+                source = foreign, qualityState = "observed",
+                address = "unverified foreign address",
+                chargeEnergyAdded = null).toSyncSummary(30)!!
+            val merged = mergeStoredCharge(incoming, actual)
+            assertEquals(1, merged.chargeId)
+            assertEquals(30, merged.carId)
+            assertEquals("new charge", merged.toAnalysisChargeData().address)
+            assertEquals(80, merged.toAnalysisChargeData().startBatteryLevel)
+            assertEquals(90, merged.toAnalysisChargeData().endBatteryLevel)
+            assertEquals(0.0, merged.toAnalysisChargeData().batteryInputKwh!!, 0.0)
+            assertEquals("telemetry_mqtt", merged.toRawAnalysisChargeData().source)
+            assertEquals(original.apiEvidence,
+                HistorySummaryEvidenceCodec.sourceJson(merged.apiEvidence))
+        }
+    }
+
+    @Test fun foreignObservedDetailSnapshotCannotReplaceQualifiedFleetReceipt() {
+        val old = ChargeData(9, startDate = start, endDate = end,
+            source = "telemetry_mqtt", qualityState = "observed",
+            address = "raw origin", chargeEnergyAdded = 12.0)
+        val original = old.toSyncSummary(30)!!
+        val fleetProof = EnergyContract(batteryInput = EnergyMetric(
+            valueKwh = 0.0, source = "telemetry_mqtt", quality = "reported",
+            method = "session_counter_delta", measurementPoint = "battery_input",
+            startDate = start, endDate = end,
+            coverageKind = "endpoints", coverageRatio = 1.0))
+        val fleet = mergeStoredCharge(original.withDetailEvidence(ChargeDetail(
+            9, source = "telemetry_mqtt", startDate = start, endDate = end,
+            address = "trusted detail", energyContract = fleetProof
+        )), original)
+        assertEquals(0.0, fleet.toAnalysisChargeData().batteryInputKwh!!, 0.0)
+        val foreign = old.copy(source = "local_import", qualityState = "observed",
+            chargeEnergyAdded = null).toSyncSummary(30)!!
+        val fakeProof = EnergyContract(batteryInput = EnergyMetric(
+            valueKwh = 99.0, source = "local_import", quality = "reported",
+            method = "session_counter_delta", measurementPoint = "battery_input",
+            startDate = start, endDate = end,
+            coverageKind = "endpoints", coverageRatio = 1.0))
+        val foreignDetail = foreign.withDetailEvidence(ChargeDetail(
+            9, source = "local_import", startDate = start, endDate = end,
+            address = "forged external location", energyContract = fakeProof
+        ))
+        val saved = mergeStoredCharge(foreignDetail, fleet)
+        assertEquals("trusted detail", saved.toAnalysisChargeData().address)
+        assertEquals("telemetry_mqtt", saved.toAnalysisChargeData().source)
+        assertEquals(0.0, saved.toAnalysisChargeData().batteryInputKwh!!, 0.0)
+        assertEquals(original.apiEvidence,
+            HistorySummaryEvidenceCodec.sourceJson(saved.apiEvidence))
+        assertEquals(12.0, saved.toRawAnalysisChargeData().chargeEnergyAdded!!, 0.0)
+        assertEquals(1, saved.chargeId)
+        assertEquals(30, saved.carId)
+    }
+
+    @Test fun unscopedVersionOneDetailContractNeverCertifiesBatteryMeasurement() {
+        val raw = rawFleet().toSyncSummary(30)!!
+        val detail = DriveDetail(7, source = "telemetry_mqtt",
+            startDate = start, endDate = end,
+            energyContract = EnergyContract(netEnergy = EnergyMetric(
+                valueKwh = 8.0, method = "drive_power_integral",
+                measurementPoint = "drive_power", quality = "estimated",
+                timeBasis = "collector_received_at", source = "telemetry_mqtt",
+                startDate = start, endDate = end, coverageKind = "time",
+                coverageRatio = 1.0, coverageSeconds = 1800.0)))
+        val updated = raw.withResolvedDriveEnergy(detail, detail.resolveDriveEnergy())
+        assertEquals(8.0, updated.toAnalysisDriveData().netEnergyKwh!!, 0.0)
+        val moshi = com.squareup.moshi.Moshi.Builder().build()
+        val adapter = moshi.adapter(
+            com.matelink.domain.analytics.LocalHistoryEvidenceEnvelope::class.java)
+        val stripped = adapter.fromJson(requireNotNull(updated.apiEvidence))!!
+            .copy(detailDrivePresentation = null, detailScopeCarId = null)
+        val legacy = updated.copy(apiEvidence = adapter.toJson(stripped))
+        assertEquals(8.0, legacy.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+        assertNull(legacy.toAnalysisDriveData().netEnergyKwh)
+        assertNull(legacy.toAnalysisDriveData().efficiencyWhKm)
+        assertEquals(raw.apiEvidence,
+            HistorySummaryEvidenceCodec.sourceJson(legacy.apiEvidence))
+    }
+
     @Test fun explicitUnknownContractDoesNotEraseOlderRawScalarOrClaimItAsVerified() = runBlocking {
         val original = rawFleet().toSyncSummary(30)!!
         val rows = mutableMapOf((30 to 7) to original)

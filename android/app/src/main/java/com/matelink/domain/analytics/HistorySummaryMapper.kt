@@ -107,7 +107,10 @@ fun DriveSummary.toAnalysisDriveData(): DriveData {
     val displayed = latest ?: raw.copy(startDate = startDate, endDate = endDate)
     val localDetail = HistorySummaryEvidenceCodec.detailContract(apiEvidence)
     val metric = localDetail?.netEnergy
-    val safe = !hasSnapshot || latest != null
+    // A local detail claim requires the same raw receipt, car namespace,
+// source and window. Legacy v1 without a scoped presentation remains
+// readable as raw data, but its orphaned claim cannot certify energy.
+val safe = latest != null
     val verified = safe && localDetail?.version == 1 && metric?.source != null &&
         (raw.source == null || raw.source == metric.source) &&
         sameEvidenceInstant(metric.startDate, startDate) &&
@@ -131,7 +134,10 @@ fun ChargeSummary.toAnalysisChargeData(): ChargeData {
     val displayed = latest ?: raw.copy(startDate = startDate, endDate = endDate)
     val detail = HistorySummaryEvidenceCodec.detailContract(apiEvidence)
     val metric = detail?.batteryInput ?: detail?.acInput
-    val safe = !hasSnapshot || latest != null
+    // A local detail claim requires the same raw receipt, car namespace,
+// source and window. Legacy v1 without a scoped presentation remains
+// readable as raw data, but its orphaned claim cannot certify energy.
+val safe = latest != null
     val verified = safe && detail?.version == 1 && metric?.source != null &&
         (raw.source == null || raw.source == metric.source) &&
         sameEvidenceInstant(metric.startDate, startDate) &&

@@ -340,6 +340,12 @@ private fun ChargeData.withLegacyRemoteQuality(): ChargeData =
 
 private fun DriveData.mergeWith(cached: DriveData?): DriveData = cached?.let {
     if (qualityState == "quarantined") return this
+    // Record ID alone cannot join different source instances. A local import
+    // retains archival provenance even if it claims quality="observed".
+    if (source != null && it.source != null && source != it.source) {
+        return if (hasTrustedHistoryEvidence(qualityState, source) &&
+            !hasTrustedHistoryEvidence(it.qualityState, it.source)) this else it
+    }
     if (hasTrustedHistoryEvidence(it.qualityState, it.source) && !hasTrustedHistoryEvidence(qualityState, source)) return it.copy(driveId = driveId)
     if (hasTrustedHistoryEvidence(qualityState, source) && !hasTrustedHistoryEvidence(it.qualityState, it.source)) return this
     copy(
@@ -374,6 +380,12 @@ private fun DriveData.mergeWith(cached: DriveData?): DriveData = cached?.let {
 
 private fun ChargeData.mergeWith(cached: ChargeData?): ChargeData = cached?.let {
     if (qualityState == "quarantined") return this
+    // Record ID alone cannot join different source instances. A local import
+    // retains archival provenance even if it claims quality="observed".
+    if (source != null && it.source != null && source != it.source) {
+        return if (hasTrustedHistoryEvidence(qualityState, source) &&
+            !hasTrustedHistoryEvidence(it.qualityState, it.source)) this else it
+    }
     if (hasTrustedHistoryEvidence(it.qualityState, it.source) && !hasTrustedHistoryEvidence(qualityState, source)) return it.copy(chargeId = chargeId)
     if (hasTrustedHistoryEvidence(qualityState, source) && !hasTrustedHistoryEvidence(it.qualityState, it.source)) return this
     copy(
@@ -520,7 +532,8 @@ internal fun ChargeData.toLocalSummary(historyCarId: Int): ChargeSummary? {
 }
 
 private fun hasTrustedHistoryEvidence(quality: String?, source: String?): Boolean =
-    quality in setOf("observed", "derived") || (quality == null && source != "local_import")
+    source !in setOf("local_import", "local_history") &&
+        (quality in setOf("observed", "derived") || quality == null)
 
 /** Shared by foreground restore and background sync; @Upsert must not downgrade evidence. */
 /** Shared by foreground recovery and background Room @Transaction. This
@@ -543,11 +556,17 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
         cachedRaw.source, cached.startDate, cached.endDate
     ) != null
     // New explicit source proof (including explicit unknown) takes precedence.
-    val newProof = inRaw.energyContract != null && inRaw.energyContract != cachedRaw.energyContract
+    // Only proof admitted into the canonical scoped source can supersede
+    // existing detail. An observed-looking local import from another source
+    // is not allowed to revoke or transplant a Fleet measurement.
+    val newProof = raw.energyContract != null &&
+        raw.energyContract != cachedRaw.energyContract && inRaw.source == raw.source
     val sameSource = raw.source == cachedRaw.source
     val sameWindow = raw.startDate == cachedRaw.startDate && raw.endDate == cachedRaw.endDate
     val receipt = when {
-        incomingSnapshot -> incoming.apiEvidence
+        incomingSnapshot && raw.source == inRaw.source &&
+            raw.startDate == inRaw.startDate && raw.endDate == inRaw.endDate ->
+            incoming.apiEvidence
         cachedSnapshot && sameSource && sameWindow && !newProof -> cached.apiEvidence
         raw == cachedRaw && cached.apiEvidence != null -> cached.apiEvidence
         else -> base.apiEvidence
@@ -604,11 +623,17 @@ internal fun mergeStoredCharge(incoming: ChargeSummary, cached: ChargeSummary?):
         cached.apiEvidence, cached.carId, cached.chargeId,
         cachedRaw.source, cached.startDate, cached.endDate
     ) != null
-    val newProof = inRaw.energyContract != null && inRaw.energyContract != cachedRaw.energyContract
+    // Only proof admitted into the canonical scoped source can supersede
+    // existing detail. An observed-looking local import from another source
+    // is not allowed to revoke or transplant a Fleet measurement.
+    val newProof = raw.energyContract != null &&
+        raw.energyContract != cachedRaw.energyContract && inRaw.source == raw.source
     val sameSource = raw.source == cachedRaw.source
     val sameWindow = raw.startDate == cachedRaw.startDate && raw.endDate == cachedRaw.endDate
     val receipt = when {
-        incomingSnapshot -> incoming.apiEvidence
+        incomingSnapshot && raw.source == inRaw.source &&
+            raw.startDate == inRaw.startDate && raw.endDate == inRaw.endDate ->
+            incoming.apiEvidence
         cachedSnapshot && sameSource && sameWindow && !newProof -> cached.apiEvidence
         raw == cachedRaw && cached.apiEvidence != null -> cached.apiEvidence
         else -> base.apiEvidence
