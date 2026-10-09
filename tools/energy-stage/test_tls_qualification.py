@@ -71,6 +71,56 @@ class TlsQualificationTests(unittest.TestCase):
         self.assertEqual(qual.sanitized_error(ValueError("token=PRIVATE")), "UNEXPECTED_FAILURE")
         self.assertEqual(qual.main([]), 2)
 
+    def test_health_non200_does_not_count_as_transport_pass(self):
+        class Response:
+            status = 503
+            def close(self): pass
+        class Fake:
+            def __init__(self, host, timeout, context): self.sock = self
+            def connect(self): pass
+            def getpeercert(self, binary_form=False): return b"synthetic-leaf"
+            def request(self, method, path): self.method, self.path = method, path
+            def getresponse(self): return Response()
+            def close(self): pass
+        with self.assertRaisesRegex(qual.QualificationFailure, "HEALTH_STATUS"):
+            qual.qualify(sample_count=1, connection_factory=Fake)
+
+    def test_peer_switch_stops_second_http_request(self):
+        values = iter((b"first-peer", b"different-peer"))
+        requests = []
+        class Response:
+            status = 200
+            def close(self): pass
+        class Fake:
+            def __init__(self, host, timeout, context): self.sock = self
+            def connect(self): pass
+            def getpeercert(self, binary_form=False): return next(values)
+            def request(self, method, path): requests.append((method, path))
+            def getresponse(self): return Response()
+            def close(self): pass
+        with self.assertRaisesRegex(qual.QualificationFailure, "PEER_CHANGED"):
+            qual.qualify(sample_count=2, connection_factory=Fake)
+        self.assertEqual(requests, [("GET", "/healthz")])
+
+    def test_other_approved_hostname_has_sni_validation_but_no_http(self):
+        selected = []
+        class Fake:
+            def __init__(self, host, timeout, context):
+                selected.append((host, context.check_hostname))
+                self.sock = self
+            def connect(self): pass
+            def getpeercert(self, binary_form=False): return b"fixture-leaf"
+            def request(self, method, path): raise AssertionError("unexpected HTTP request")
+            def close(self): pass
+        hostname = "auth.teslalink.joviluma.com"
+        self.assertEqual(qual.qualify(sample_count=2, host=hostname,
+                                      tls_only=True, connection_factory=Fake), 2)
+        self.assertEqual(selected, [(hostname, True), (hostname, True)])
+        with self.assertRaises(qual.QualificationFailure):
+            qual.qualify(host="unapproved.example.com", tls_only=True)
+        with self.assertRaises(qual.QualificationFailure):
+            qual.qualify(host=hostname, tls_only=False)
+
     def test_actual_selfissued_local_peer_rejected_by_tls_context(self):
         with tempfile.TemporaryDirectory() as td:
             crt, key = str(Path(td) / "temporary.crt"), str(Path(td) / "temporary.key")

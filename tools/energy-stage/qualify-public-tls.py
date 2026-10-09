@@ -14,6 +14,7 @@ import ssl
 import sys
 
 HOST = "api.teslalink.joviluma.com"
+HOSTS = ("teslalink.joviluma.com", HOST, "auth.teslalink.joviluma.com")
 HEALTH_PATH = "/healthz"
 TIMEOUT_SECONDS = 5
 ALLOWED_COUNTS = (1, 2)
@@ -39,17 +40,18 @@ def check_expected_peer(actual, expected):
         raise QualificationFailure("UNEXPECTED_PEER")
 
 
-def qualify(expected_peer=None, sample_count=2, connection_factory=None):
-    if sample_count not in ALLOWED_COUNTS:
+def qualify(expected_peer=None, sample_count=2, connection_factory=None,
+            host=HOST, tls_only=False):
+    if sample_count not in ALLOWED_COUNTS or host not in HOSTS or (host != HOST and not tls_only):
         raise QualificationFailure("POLICY")
     if expected_peer is not None and not re.fullmatch(r"[0-9a-f]{64}", expected_peer):
         raise QualificationFailure("POLICY")
     factory = connection_factory or http.client.HTTPSConnection
     first_peer = None
     for _ in range(sample_count):
-        connection = factory(HOST, timeout=TIMEOUT_SECONDS, context=secure_context())
+        connection = factory(host, timeout=TIMEOUT_SECONDS, context=secure_context())
         try:
-            # HTTPSConnection uses HOST as both the TCP target and TLS SNI.
+            # HTTPSConnection uses the approved host as both TCP target and TLS SNI.
             # secure_context verifies trusted chain, validity and HOST identity.
             connection.connect()
             certificate = connection.sock.getpeercert(binary_form=True)
@@ -60,13 +62,15 @@ def qualify(expected_peer=None, sample_count=2, connection_factory=None):
             if first_peer is not None and peer != first_peer:
                 raise QualificationFailure("PEER_CHANGED")
             first_peer = peer
-            # Only the public, non-authenticated health endpoint is allowed.
-            connection.request("GET", HEALTH_PATH)
-            response = connection.getresponse()
-            status = response.status
-            response.close()
-            if status != 200:
-                raise QualificationFailure("HEALTH_STATUS")
+            # The API is the only host with an HTTP health response contract.
+            # App-link and adapter host checks only verify public TLS identity.
+            if not tls_only:
+                connection.request("GET", HEALTH_PATH)
+                response = connection.getresponse()
+                status = response.status
+                response.close()
+                if status != 200:
+                    raise QualificationFailure("HEALTH_STATUS")
         finally:
             connection.close()
     return sample_count
@@ -91,12 +95,15 @@ def main(argv=None):
     parser.add_argument("--live", action="store_true", help="Explicitly perform bounded public health reads")
     parser.add_argument("--expected-peer-sha256", help="Optional independently approved public DER leaf digest")
     parser.add_argument("--samples", type=int, default=2, choices=ALLOWED_COUNTS)
+    parser.add_argument("--host", choices=HOSTS, default=HOST)
+    parser.add_argument("--tls-only", action="store_true", help="Validate TLS for non-API public hosts; no HTTP request")
     args = parser.parse_args(argv)
     if not args.live:
         print("TLS_QUALIFICATION=NOT_RUN reason=LIVE_REQUIRED")
         return 2
     try:
-        count = qualify(args.expected_peer_sha256, args.samples)
+        count = qualify(args.expected_peer_sha256, args.samples,
+                        host=args.host, tls_only=args.tls_only)
     except Exception as exc:
         print("TLS_QUALIFICATION=FAIL reason=" + sanitized_error(exc))
         return 1

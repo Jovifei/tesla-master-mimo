@@ -32,7 +32,20 @@ warnk(){ printf '  [WARN] %s\n' "$*"; WARN=$((WARN+1)); }
 
 # Mandatory TLS trust/hostname validation. No insecure -k for public HTTPS.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-CURL="curl -sS --max-time 15"
+CURL=(curl -sS --max-time 15 --max-filesize 16384)
+if ! python3 - "$PUBLIC_IP" <<'PY'
+import ipaddress, sys
+try:
+    value = ipaddress.IPv4Address(sys.argv[1])
+    assert str(value) == sys.argv[1]
+except (ValueError, AssertionError):
+    sys.exit(2)
+PY
+then
+  echo "VERIFY_PUBLIC=INVALID_PUBLIC_IP" >&2
+  exit 2
+fi
+
 
 echo "=== 1. DNS（公共 DNS 223.5.5.5，排除本机 fake-IP）==="
 for d in "${DOMAINS[@]}"; do
@@ -53,28 +66,35 @@ for d in "${DOMAINS[@]}"; do
   fi
 done
 
-echo "=== 2. 443 可达 + 证书 ==="
-for d in "${DOMAINS[@]}"; do
-  if timeout 8 bash -c "echo > /dev/tcp/${PUBLIC_IP}/443" 2>/dev/null; then
-    ok "TCP 443 可达（${PUBLIC_IP}）"
+echo "=== 2. Bounded public TLS and socket qualification ==="
+if python3 "${SCRIPT_DIR}/check-socket-port.py" "$PUBLIC_IP" 443; then
+  ok "TCP 443 reachable at configured public address"
+else
+  bad "TCP 443 unreachable at configured public address"
+fi
+# Each named TLS peer is verified with normal system CA, hostname and SNI.
+# The API additionally requires two validated unauthenticated health 200s.
+for hostname in "$DOMAIN_SELFHOST" "$DOMAIN_API" "$DOMAIN_APPLINK"; do
+  if [[ "$hostname" == "$DOMAIN_API" ]]; then
+    if timeout 20s python3 "${SCRIPT_DIR}/../../tools/energy-stage/qualify-public-tls.py" \
+         --live --host "$hostname" --samples 2; then
+      ok "API validated peer and bounded public health"
+    else
+      bad "API peer/health validation failed"
+    fi
   else
-    bad "TCP 443 不可达（检查 nginx reload / 安全组 R6）"
-    break
+    if timeout 20s python3 "${SCRIPT_DIR}/../../tools/energy-stage/qualify-public-tls.py" \
+         --live --host "$hostname" --tls-only --samples 2; then
+      ok "Public TLS hostname and chain validated"
+    else
+      bad "Public TLS hostname/chain validation failed"
+    fi
   fi
 done
-# Strict, bounded public-only health reads; compare validated peer across samples.
-# Emit no certificate metadata, exception text or authenticated responses.
-if [[ "$DOMAIN_API" != 'api.teslalink.joviluma.com' ]]; then
-  bad "TLS qualification target differs from approved production host"
-elif timeout 20s python3 "${SCRIPT_DIR}/../../tools/energy-stage/qualify-public-tls.py" --live; then
-  ok "TLS chain, hostname/SNI and verified peer consistent"
-else
-  bad "TLS qualification failed; self-issued placeholder is never acceptable"
-fi
 
 echo "=== 3. HTTP -> HTTPS 301 ==="
 for d in "${DOMAINS[@]}"; do
-  code="$($CURL -o /dev/null -w '%{http_code}' "http://${d}/" 2>/dev/null || echo 000)"
+  code="$("${CURL[@]}" -o /dev/null -w '%{http_code}' "http://${d}/" 2>/dev/null || echo 000)"
   if [[ "$code" == '301' ]]; then
     ok "http://${d}/ -> 301"
   else
@@ -84,9 +104,11 @@ done
 
 echo "=== 4. 静态 URL（auth 主机）==="
 check_url() { # $1=url $2=期望内容关键词（可空）
-  local url="$1" keyword="$2" body code
-  code="$($CURL -o /tmp/verify-body.$$ -w '%{http_code}' "$url" 2>/dev/null || echo 000)"
-  body="$(cat /tmp/verify-body.$$ 2>/dev/null || true)"; rm -f /tmp/verify-body.$$
+  local url="$1" keyword="$2" body code file
+  file="$(mktemp)" || { bad "Secure temporary output unavailable"; return; }
+  code="$("${CURL[@]}" -o "$file" -w '%{http_code}' "$url" 2>/dev/null || echo 000)"
+  body="$(cat "$file" 2>/dev/null || true)"
+  rm -f -- "$file"
   if [[ "$code" == '200' ]]; then
     if [[ -z "$keyword" || "$body" == *"$keyword"* ]]; then
       ok "200 ${url}"
@@ -110,7 +132,7 @@ fi
 check_url "https://${DOMAIN_APPLINK}/download/" 'MateLink'
 
 echo "=== 5. capabilities 端点行为（https://${DOMAIN_SELFHOST}）==="
-code="$($CURL -o /dev/null -w '%{http_code}' \
+code="$("${CURL[@]}" -o /dev/null -w '%{http_code}' \
   "https://${DOMAIN_SELFHOST}/api/matelink/v1/capabilities" 2>/dev/null || echo 000)"
 if [[ "$code" == '401' ]]; then
   ok "无 token -> 401（鉴权生效，反代链路通）"
@@ -119,10 +141,10 @@ elif [[ "$code" == '000' ]]; then
 elif [[ "$code" == '502' || "$code" == '504' ]]; then
   bad "502/504：nginx 反代不通，检查 127.0.0.1:18080 上 Adapter 是否在跑"
 else
-  warnk "无 token 期望 401，实际 ${code}（需人工复核）"
+  bad "Unauthenticated capabilities returned unexpected status (expected 401)"
 fi
 if [[ -n "${MATE_LINK_API_TOKEN:-}" ]]; then
-  code="$($CURL -o /dev/null -w '%{http_code}' \
+  code="$("${CURL[@]}" -o /dev/null -w '%{http_code}' \
     "https://${DOMAIN_SELFHOST}/api/matelink/v1/capabilities" \
     -H "Authorization: Bearer ${MATE_LINK_API_TOKEN}" 2>/dev/null || echo 000)"
   if [[ "$code" == '200' ]]; then
@@ -148,11 +170,12 @@ else
   warnk "ss 不可用，跳过本机监听检查"
 fi
 for port in 4000 8080 5432 1883; do
-  if timeout 4 bash -c "echo > /dev/tcp/127.0.0.1/${port}" 2>/dev/null && \
-     timeout 4 bash -c "exec 3<>/dev/tcp/${PUBLIC_IP}/${port}" 2>/dev/null; then
-    bad "端口 ${port} 对 ${PUBLIC_IP} 可建立连接（不应放行）"
+  # Check only when loopback service exists; never interpolate shell code.
+  if python3 "${SCRIPT_DIR}/check-socket-port.py" 127.0.0.1 "$port" &&
+     python3 "${SCRIPT_DIR}/check-socket-port.py" "$PUBLIC_IP" "$port"; then
+    bad "Private port unexpectedly accessible externally"
   else
-    ok "端口 ${port} 公网不可达（预期）"
+    ok "Private port not exposed by paired loopback/public check"
   fi
 done
 

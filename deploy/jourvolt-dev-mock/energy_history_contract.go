@@ -23,13 +23,13 @@ func chargeSessionCounterMetric(session telemetrySession, field, point string) (
         "value_kwh": nil, "unit": "kWh", "method": "session_counter_delta",
         "measurement_point": point, "source": "telemetry_mqtt", "source_field": field,
         "quality": "unknown", "reason": "missing_counter_bounds",
-        "start_date": session.StartAt.UTC().Format(time.RFC3339), "end_date": nil,
+        "start_date": session.StartAt.UTC().Format(time.RFC3339Nano), "end_date": nil,
         "observed_start_at": nil, "observed_end_at": nil,
         "time_basis": "collector_received_at", "coverage_kind": "endpoints",
         "coverage_seconds": nil, "coverage_ratio": nil, "covered_energy_kwh": nil,
     }
     if session.EndAt != nil {
-        result["end_date"] = session.EndAt.UTC().Format(time.RFC3339)
+        result["end_date"] = session.EndAt.UTC().Format(time.RFC3339Nano)
     }
     if session.Source != "telemetry_mqtt" || session.EndAt == nil || !session.EndAt.After(session.StartAt) {
         result["reason"] = "unverified_or_open_session"
@@ -70,8 +70,8 @@ func chargeSessionCounterMetric(session telemetrySession, field, point string) (
         return result, nil, false
     }
     value := delta
-    result["observed_start_at"] = first.observedAt.UTC().Format(time.RFC3339)
-    result["observed_end_at"] = last.observedAt.UTC().Format(time.RFC3339)
+    result["observed_start_at"] = first.observedAt.UTC().Format(time.RFC3339Nano)
+    result["observed_end_at"] = last.observedAt.UTC().Format(time.RFC3339Nano)
     result["covered_energy_kwh"] = delta
     result["coverage_seconds"] = last.observedAt.Sub(first.observedAt).Seconds()
     // An interior counter span does not prove a complete charging session.

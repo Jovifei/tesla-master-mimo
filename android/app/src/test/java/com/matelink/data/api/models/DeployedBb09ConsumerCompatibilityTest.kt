@@ -1,6 +1,7 @@
 package com.matelink.data.api.models
 
 import com.matelink.domain.analytics.*
+import com.matelink.data.sync.toSyncSummary
 import com.matelink.ui.screens.charges.ChargeStatsCalculator
 import com.squareup.moshi.Moshi
 import org.junit.Assert.*
@@ -145,6 +146,29 @@ class DeployedBb09ConsumerCompatibilityTest {
         val historical = list.copy(source = "teslamate_archive")
         assertEquals(12.0, historical.batteryInputKwh!!, 0.0)
         assertEquals(0.0, historical.copy(chargeEnergyAdded = 0.0).batteryInputKwh!!, 0.0)
+    }
+
+    @Test fun fleetOldScalarPositiveAndZeroNeverBecomesVerifiedEnergy() {
+        for (unqualified in listOf(0.0, 12.5)) {
+            val item = ChargeData(
+                chargeId = 90, source = "telemetry_mqtt",
+                startDate = "2026-10-08T00:00:00Z",
+                endDate = "2026-10-08T00:30:00Z",
+                chargeEnergyAdded = unqualified, chargeEnergyUsed = unqualified,
+                qualityState = "observed"
+            )
+            assertNull(item.batteryInputKwh)
+            assertNull(item.inputEnergyKwh)
+            val fromRoom = item.toSyncSummary(4)!!.toAnalysisChargeData()
+            assertNull(fromRoom.batteryInputKwh)
+            assertNull(fromRoom.inputEnergyKwh)
+            val displayed = ChargeDetail(
+                chargeId = 90, source = "telemetry_mqtt",
+                startDate = item.startDate, endDate = item.endDate,
+                chargeEnergyAdded = unqualified, chargeEnergyUsed = unqualified
+            )
+            assertNull(ChargeStatsCalculator.calculateStats(displayed).energyAdded)
+        }
     }
 
     @Test fun oldFleetUnqualifiedDriveScalarCannotMasqueradeAsReportedNet() {

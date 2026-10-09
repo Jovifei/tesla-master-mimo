@@ -1197,12 +1197,12 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		qualityReason = source
 	}
 	result := map[string]any{
-		"start_date": session.StartAt.UTC().Format(time.RFC3339), "end_date": nil,
+		"start_date": session.StartAt.UTC().Format(time.RFC3339Nano), "end_date": nil,
 		"source": source, "quality_state": qualityState, "quality_reason": qualityReason, "session_id": session.ID,
 		"source_instance_id": session.SourceInstanceID, "source_vehicle_id": session.SourceVehicleID, "source_record_id": session.SourceRecordID,
 	}
 	if end != nil {
-		result["end_date"] = end.UTC().Format(time.RFC3339)
+		result["end_date"] = end.UTC().Format(time.RFC3339Nano)
 		result["duration_min"] = int(end.Sub(session.StartAt).Minutes())
 	}
 	if kind == "drive" {
@@ -1252,7 +1252,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		} else {
 			for _, point := range session.Route {
 				item := map[string]any{
-					"date": point.ObservedAt.UTC().Format(time.RFC3339), "latitude": point.Latitude, "longitude": point.Longitude,
+					"date": point.ObservedAt.UTC().Format(time.RFC3339Nano), "latitude": point.Latitude, "longitude": point.Longitude,
 					"speed": point.Speed, "power": point.Power, "heading": point.Heading,
 				}
 				if level := observedRouteBatteryLevel(point.BatteryLevel); level != nil {
@@ -1283,7 +1283,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		var lastPower *float64
 		var firstLatitude, firstLongitude *float64
 		for _, point := range session.ChargePoints {
-			item := map[string]any{"date": point.ObservedAt.UTC().Format(time.RFC3339)}
+			item := map[string]any{"date": point.ObservedAt.UTC().Format(time.RFC3339Nano)}
 			if level := observedRouteBatteryLevel(point.BatteryLevel); level != nil {
 				item["battery_level"] = *level
 				if firstBattery == nil {
@@ -1312,9 +1312,9 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 			}
 		}
 		if len(chargeDetails) == 0 && session.EnergyAdded != nil {
-			chargeDetail := map[string]any{"date": session.StartAt.UTC().Format(time.RFC3339), "charge_energy_added": session.EnergyAdded}
+			chargeDetail := map[string]any{"date": session.StartAt.UTC().Format(time.RFC3339Nano), "charge_energy_added": session.EnergyAdded}
 			if session.EndAt != nil {
-				chargeDetail["date"] = session.EndAt.UTC().Format(time.RFC3339)
+				chargeDetail["date"] = session.EndAt.UTC().Format(time.RFC3339Nano)
 			}
 			chargeDetails = append(chargeDetails, chargeDetail)
 		}

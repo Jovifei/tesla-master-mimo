@@ -40,7 +40,7 @@ jobs:
       - name: TLS deployment policy and fail-closed offline tests
         run: |
           set -euo pipefail
-          python3 -m unittest discover -s tools/energy-stage -p 'test_tls_qualification.py' -v 2>&1 | tee evidence/tls-unit-tests.log
+          python3 -m unittest discover -s tools/energy-stage -p 'test_*.py' -v 2>&1 | tee evidence/tls-unit-tests.log
           bash tools/energy-stage/test-tls-deployment-policy.sh 2>&1 | tee evidence/tls-deployment-tests.log
       - name: Public TLS health vantage (non-device, nonblocking)
         continue-on-error: true
@@ -100,6 +100,8 @@ jobs:
               'TestIndependentZeroACCounterDoesNotProveACMode',
               'TestIndependentUnknownModeCannotPublishACBalance',
               'TestEnergyPostgresResetReplayAndACModeScope',
+              'TestHistorySessionMapPreservesFractionalObservedArchiveWindow',
+              'TestChargeEnergyContractAndJSONBoundaryPrecision',
           ):
               assert any(r.get('Test')==name and r.get('Action')=='pass' for r in tests), name
           counts={action:sum(r.get('Action')==action for r in tests) for action in ('run','pass','fail','skip')}

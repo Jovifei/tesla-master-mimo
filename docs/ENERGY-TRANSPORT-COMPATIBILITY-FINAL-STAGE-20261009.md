@@ -57,20 +57,26 @@ Retain any off-repo effective routing and existing business vhosts untouched.
   policy for absent, selfsigned and active LE states; old LE may never
   fall back to selfsigned. Unknown managed include is rejected.
 - `deploy/scripts/setup-root.sh`: before assigning the active include,
-  verifies an existing LE fullchain/private-key pair is nonempty,
-  expiry exceeds 24h and all three expected hostnames match. Keeps
-  valid LE through `SKIP_CERT`, absent ACME email or failed renewal;
-  invalid active LE and unrecognized custom includes fail closed. Nginx
-  reload is still separately gated by the deploying operator. The source
-  repair does not assert installed server config, and no production
-  deployment was attempted.
-- `deploy/scripts/verify-public.sh`: removes insecure `curl -k`
-  from ordinary public self-test and a selfsigned-WARN success path;
-  a certificate-invalid public peer is a FAIL, not success.
+  calls `qualify-nginx-le.sh` for complete server chain, notBefore/
+  notAfter, all three hostnames, current system CA and private/public
+  key equality before selecting LE. Unknown active include or invalid
+  previously active LE fails closed. `tls-nginx-transaction.sh` stages
+  four named Nginx files with exact root-only backups, performs nginx-t,
+  reload and atomic restore on any failure. `renew-qualified-reload.sh`
+  gates certbot reload on verified chain/key and intended managed
+  include; failure never selects placeholder. All are source candidates;
+  running any deployment procedure remains a separate production gate.
+- `deploy/scripts/verify-public.sh`: no insecure `curl -k`;
+  all three TLS hostnames/chain/SNI checked; expected unauthenticated
+  capabilities 401 is enforced as a hard gate (not WARN on 200/redirect);
+  `PUBLIC_IP` must be a literal valid IPv4 value; bounded sockets run
+  without shell interpolation; temporary response files are unique
+  mode-0600 `mktemp` outputs rather than guessable /tmp paths.
 - `tools/energy-stage/qualify-public-tls.py`: hardcoded approved
-  unauthenticated public `/healthz` only, normal system CA validation,
-  hostname/SNI validation and DER leaf SHA-256 equality across at most
-  **two** separate connections, five-second bound each, optional
+  unauthenticated public API `/healthz` only plus approved other-host
+  TLS-only handshakes, normal system CA validation, hostname/SNI
+  validation and DER leaf SHA-256 equality across at most
+  **two** separate connections per named host, five-second bound each, optional
   independently verified public peer SHA-256 assertion. Closed output
   enum only; no response bodies, error strings, certificate details,
   authorization header, source path, vehicle operation, provider access,
@@ -80,6 +86,14 @@ Retain any off-repo effective routing and existing business vhosts untouched.
   incorrect expected leaf fails before HTTP, two-request limit,
   same peer acceptance, no hidden authorization, invalid-count/peer
   input refusal, strict context and deployment-policy guards.
+  Real `tls-nginx-transaction.sh` is executed against disposable
+  Nginx/systemctl/sudo replacements for apply/no-op/failed nginx-t/
+  failed reload/symlink preservation. Real `verify-public.sh`
+  is executed with sandboxed network mocks for 401, unexpected
+  200/302/403/500/000, and injection-like IP rejection.
+  Temporary OpenSSL test CA verifies positive trusted chain and
+  negative incorrect hostname, missing chain, expired/not-yet-valid,
+  untrusted root and mismatched key; no production cert or trust change.
   CI's optional live public vantage is a diagnostic not a fleet/device
   acceptance criterion. Offline tests are mandatory and fail the job.
 
@@ -92,7 +106,7 @@ dirty Owner tree:
 git rev-parse HEAD 'HEAD^{tree}' HEAD^
 git diff --exit-code
 bash tools/energy-stage/test-tls-deployment-policy.sh
-python3 -m unittest discover -s tools/energy-stage -p 'test_tls_qualification.py' -v
+python3 -m unittest discover -s tools/energy-stage -p 'test_*.py' -v
 # Optional explicitly bounded public health vantage, normal system TLS only:
 python3 tools/energy-stage/qualify-public-tls.py --live --samples 2
 # Only with independently verified public DER leaf fingerprint:
@@ -285,3 +299,105 @@ unrecognized include, certificate error, denied permissions or tool failure
 as permission to replace a trust chain. If an approved change does not
 restore TLS from the intended phone vantage, revert to exact file backup,
 preserve observed results and investigate the actual route instead.
+
+## Appendix B — real natural fractional boundary defect and gated minimal API update
+
+The independently supplied [local precision report](https://github.com/Jovifei/tesla-master-mimo/blob/92bad8b25e458b95a41c3ac06566707464c7c87a/docs/ENERGY-NATURAL-API-PRECISION-CHANGES-REQUIRED-20261009.md)
+is on the separate evidence branch, not necessarily in this PR: natural
+sample observation on **2026-10-09T01:11:53 UTC / 09:11:53 China**
+found 3100 source points covering the fractional start/end window
+with no missing power, conflicting replay or >30s gap. The old
+deployed bb09 `historySessionMap` serializes session start/end using
+`time.RFC3339`, discarding fractional seconds, while archive route
+point `date` retains its fractions. Independent compiled-8625 JVM
+replay demonstrated a synthetic 120-second whole window COMPLETE with
+matching .417 fractions, versus old truncated boundaries leaving
+0.417 seconds uncovered and rejecting power integration. This does not
+establish a successful **authenticated phone API payload**.
+
+The candidate makes the **minimum Go serialization repair** in
+`telemetry_service.go` and `energy_history_contract.go`: use
+`time.RFC3339Nano` for session start/end, telemetry route/charge
+sample timestamps and energy-contract observed/window endpoints.
+Whole-second values retain their old string spelling; JSON field
+names, types, wrapper, provider source, account/car/vehicle scope,
+charges, cost, energy-metric qualifications and database schema are
+unchanged. It does NOT round sample dates or relax the Android exact
+whole-window / 30s missing-interval / null / conflicting-replay checks.
+Source-time vs collector-receipt labels remain distinct.
+
+Cross-boundary regressions: actual Go `historySessionMap` ->
+`encoding/json` tests for fractional observed drive and charge
+counter endpoints; actual synthetic Go-shaped JSON -> Android Moshi
+`DriveDetailResponse` -> `DriveEnergyResolver` ->
+Room summary evidence -> drive detail presentation verifies a complete
+fractional window. Old rounded start/end must still yield
+`incomplete_power_coverage` and **unknown whole-window energy**.
+Matched valid 0 and negative source power remain genuine signed
+estimated intervals; missing power remains unknown.
+`DeployedBb09ConsumerCompatibilityTest` also covers Fleet positive
+and zero unqualified legacy charge scalar rejection, separate from
+personal archive compatibility. Production bb09 cannot be considered
+repaired by this commit; its old fractional-boundary response remains
+ineligible until separately approved API deployment.
+
+### Minimal prospective production API gate (not authorized here)
+
+- **Scope**: only qualified Go API image built from immutable candidate
+  source, no Android baseline overwrite, no DB DDL, no migration,
+  bridge change, historical SOC/TPMS write, Tesla authorization or
+  fleet action. All API business handler compatibility and migrations
+  must be independently source-reviewed against deployed
+  `bb09fac04d11796ce676555dad094776cd1ef0ce`.
+- **Preconditions**: Jovi's explicit, separate API rollout approval,
+  current deployed exact image digest/tag/source SHA and health/readiness
+  receipt; encrypted/least-privilege runtime config/backups privately
+  verified, PostgreSQL snapshot/checksum and original container config
+  preserved even though this intended change is serialization-only.
+  Review `docker compose config` for scope without dumping secrets.
+- **Idempotence/rollback**: stage new image separately, keep original
+  immutable image and DB backup; do not alter bridge. Run isolated Go
+  PG16, race, API contract plus negative/no-Fleet-wake route tests,
+  then bounded, authorized canary. On timeout, metric mismatch, login
+  failure, resource regression or rollback decision, restore the exact
+  prior API image/config; verify existing health/readiness and client
+  history warning. Do not restore/write DB from backup unless a
+  separately approved and justified data rollback is required.
+  Retain hashes, immutable SHA, named UTC/China timestamps, new/old
+  response schema and privacy-safe outcome flags. **No production
+  deployment has been performed in this source stage.**
+- **Acceptance**: a genuine already-authorized API→phone authenticated
+  detail read with the exact fractional start/end from the qualified
+  source, Room persist and UI estimated-energy label, plus
+  stable all-unknown and valid-zero behaviors. Fleet first events,
+  second real user and notification/TPMS gates remain independent.
+
+## Appendix C — code/test plan-to-completion comparison
+
+| Target | Candidate source-level closure | Actual environment acceptance |
+| --- | --- | --- |
+| TLS peer and SNI | CA/hostname trust, allowlisted peer comparison, bounded sanitized public probes | Phone still requires the authorized comparison; prior unexpected peer remains unattributed |
+| Safe Nginx config | Four-file transactional apply/rollback, active-LE no-downgrade, cert/key/window/CA proof, renewal validation | Not installed, no production Nginx access or change approval |
+| Public check | Unauthenticated 401 is enforced, IPv4 literal and safe tempfile guard, no `curl -k` | Actual hostname/public trust snapshots may vary by vantage |
+| Deployed bb09 energy | Legacy Fleet unproven scalar remains unavailable; explicit contract requires window and source. Personal TeslaMate separate | bb09 still deployed without additive contract and with boundary truncation |
+| Fractional precision | Go RFC3339Nano serialization + Go/JSON and Moshi/Room/UI regressions | New API image not deployed; actual natural API→phone energy remains unaccepted |
+| Source/integration | Go/PG16, race, Web, Android Debug/Release/lint/R8 and source audits must all pass **on the final SHA** | Same-signer physical install and true natural source→UI remain separate gates |
+| Preserved state | No writes to Owner/main, prod API/DB/bridge, old 6 SOC/7113 TPMS, app data or network | Jovi's phone network experiment permission remains unanswered |
+
+### Revised local Codex receive instructions
+
+Use the **full fixed immutable HEAD, tree and parent recorded in the
+last PR17 stage-delivery comment**, never `main` or a moving branch.
+Independent clean checkout, exact CI logs/artifact verification, Go
+PG16/race and targeted fractional boundary tests, Android Debug/Release
+unit/lint/R8 and source compatibility/precision tests, no implementation
+in the dirty Owner tree. Because candidate Android runtime source is
+newer than installed 8625, perform only the previously approved
+same-signer safe `adb install -r` flow **after** independent successful
+build/review; preserve rollback APK, original firstInstallTime,
+login/cache/history and source identity. Return one consolidated packet
+with actual result counts and private-only signature/APK hash evidence.
+Do not perform the Wi-Fi→cellular experiment, trust/DNS/proxy/VPN change,
+production API/bridge/DDL or natural driving/charging on our behalf.
+Authentic list/detail/parking and energy acceptance requires actual
+successful authorized responses and correct vehicle/source comparison.
