@@ -1,0 +1,17 @@
+# Consolidated remaining-stage local CHANGES_REQUIRED — 2026-10-09
+
+Fixed intermediate source29384c91ad13e2b75da22db5e8eaaef9bc331769. This is the same complete stage, not three microtasks. Existing8625 signed build46 remains installed; no new failed version installed, no production/network/data writes.
+
+## Actual compilation failure
+- Exact Actions37867534150 Android job113617876074 FAILURE; both compileDebugUnitTestKotlin and compileReleaseUnitTestKotlin fail. Backend/source-audit success is not overall PASS.
+- Independent local same-source compile of both tasks with --continue: actual exit1, BUILD FAILED in1m40s. Unit execution, new signed R8/install NOT_RUN.
+- DeployedBb09ConsumerCompatibilityTest.kt lines33,53,57,134,167: unresolved reference toSyncSummary, reproduced in Debug and Release.
+- Native artifact reference was obtained but local ZIP download returnedHTTP403; full job summary was readable. Local compile supplied the concrete errors without credentials/network bypass. Do not hide compiler errors or disable new meaningful tests.
+
+## Full source/qualification return, all required before final delivery
+- Retain good oldFleet/local_import unproven-scalar guards, true0/signed drive recovery, archive compatibility and collector-receipt timestamp labeling. Read-only2004 reviewPASS has explicit limits: directFleet charge positive/0 tests still needed; syntheticFleet positive drive fixture is defensive, not a realbb09 response. Actual phone8625 lacks these new runtime guards; finalAPK provenance is required.
+- TLS deployment/qualification4-hazard package at codex/energy-device-final-evidence-20261009@14a6fce, docs/TLS-STAGE-CHANGES-REQUIRED-3DD44E31-20261009.md: transactional config rollback, actual certificate/key/window/chain qualification, stated auth401 contract must not WARN200+exit0, PUBLIC_IP shell interpolation validation/removal. Exercise the actual scripts and meaningful positive/negative matrix, not just selector/grep tests.
+- Real natural-source boundary precision and actual product-class replay at that branch@92bad8b, docs/ENERGY-NATURAL-API-PRECISION-CHANGES-REQUIRED-20261009.md plus independent-boundary-replay/BoundaryPrecisionReplay.java.3100full-source points serialize via deployedbb09 second-only session boundaries while samples retainfractions: missing0.417seconds, strictcomplete=false; no null/conflict/gap. Compiled8625 JVM replayexit0 proves fractional vs rounded-window behavior. Repair full serializer→contract→Moshi→consumer chain and regression, no completeness weakening/invented intervals; separately qualify any minimal API deployment plan, no production write from this finding.
+- Currenthost-vs-oldfailed-peer and parent contract context at eab3911. No attribution of oldEC433 to script-generatedRSA or currenthost cert. Network experiment permission remains unanswered; source work continues independently.
+
+Remote owns the entire remaining actual repair, tests/CI repair, review and immutable GitHub handoff. Do not end after only fixing an import/date line. Local only requalifies complete candidate, signs/installs safely, verifies actual authenticated natural fields and returns one evidence bundle. Existing oldsource CI/install counts are not newcandidate acceptance. MainDraft until actual gates, originalOwnerdirty/data protected. New sameProject chat6ac835bf identity verified; transport timeout ended its reply, preserve committed progress and resume there without new initialization or another chat.
