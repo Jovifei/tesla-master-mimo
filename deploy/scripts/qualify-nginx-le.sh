@@ -5,7 +5,10 @@
 set -Eeuo pipefail
 [[ "$#" -eq 5 ]] || { echo "TLS_CERTIFICATE=INVALID_ARGS"; exit 2; }
 chain="$1"; key="$2"; shift 2
-# Certbot /etc/letsencrypt/live entries are normally symlinks into archive.\n# Accept only existing nonempty content; trusted chain, dates, SAN and key are\n# independently verified below without ever printing private contents.\nif [[ ! -s "$chain" || ! -s "$key" ]]; then
+# Certbot /etc/letsencrypt/live entries are normally symlinks into archive.
+# Accept only existing nonempty content; trusted chain, dates, SAN and key are
+# independently verified below without ever printing private contents.
+if [[ ! -s "$chain" || ! -s "$key" ]]; then
   echo "TLS_CERTIFICATE=INVALID"
   exit 1
 fi

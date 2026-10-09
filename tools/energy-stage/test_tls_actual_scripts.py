@@ -206,14 +206,14 @@ class ActualTlsScriptTests(unittest.TestCase):
         canonical = REPO / "deploy/nginx/jourvolt-ssl.le.inc"
         active = self.conf / "jourvolt-ssl.inc"
         active.write_text(
-            "ssl_certificate /etc/letsencrypt/live/jourvolt/fullchain.pem;\\n"
-            "ssl_certificate_key /etc/letsencrypt/live/jourvolt/privkey.pem;\\n"
+            "ssl_certificate /etc/letsencrypt/live/jourvolt/fullchain.pem;\n"
+            "ssl_certificate_key /etc/letsencrypt/live/jourvolt/privkey.pem;\n"
         )
         command = ["bash", str(REPO / "deploy/scripts/nginx-include-match.sh"),
                    str(active), str(canonical)]
         good = subprocess.run(command, env=self.env, capture_output=True, timeout=4)
         self.assertEqual(good.returncode, 0)
-        active.write_text(active.read_text() + "ssl_verify_client off;\\n")
+        active.write_text(active.read_text() + "ssl_verify_client off;\n")
         rejected = subprocess.run(command, env=self.env, capture_output=True, timeout=4)
         self.assertNotEqual(rejected.returncode, 0)
 
