@@ -587,3 +587,14 @@ and public-only private port tests; none of these runs against
 production Nginx. The former wrong phone peer remains unattributed,
 and real provider/Fleet and independent phone sign/install
 acceptance remain separate from fixed-source CI.
+
+**Detail-enrichment closure:** `withResolvedDriveEnergy` now
+merges from the original raw DTO (not an address-sanitized/energy-null
+UI DTO); it keeps source address bytes in JSON, while Room's
+start/end address *presentation columns* still apply established
+sanitization. `withDetailEvidence` similarly retains old raw
+charge cost/energy values in JSON while the persisted analytic cost
+and energy columns reject nonfinite/unqualified values. Synthetic
+regressions assert retained raw negative cost and synthetic source
+address alongside null display values. No user address, route,
+historical drive or production schema is edited.

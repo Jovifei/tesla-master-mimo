@@ -171,6 +171,7 @@ class RawHistoryEvidencePersistenceTest {
         assertEquals(8.0, enriched.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
         assertEquals("synthetic 1°N", enriched.toRawAnalysisDriveData().startAddress)
         assertNull(enriched.toAnalysisDriveData().startAddress)
+        assertEquals("", enriched.startAddress) // Only presentation column is cleaned
         assertEquals(oldRaw.source, enriched.toRawAnalysisDriveData().source)
         assertEquals("unknown", enriched.toRawAnalysisDriveData().energyContract?.netEnergy?.quality)
     }
@@ -178,7 +179,8 @@ class RawHistoryEvidencePersistenceTest {
     @Test fun detailEnrichmentUnknownPreservesHistoricalRawChargeJson() {
         val raw = ChargeData(9, startDate = start, endDate = end,
             source = "telemetry_mqtt", qualityState = "observed",
-            chargeEnergyAdded = 12.0, chargeEnergyUsed = 13.0)
+            chargeEnergyAdded = 12.0, chargeEnergyUsed = 13.0,
+            cost = -5.0)
         val first = raw.toSyncSummary(30)!!
         val detail = ChargeDetail(chargeId = 9, source = "telemetry_mqtt",
             startDate = start, endDate = end,
@@ -186,6 +188,8 @@ class RawHistoryEvidencePersistenceTest {
         val enriched = first.withDetailEvidence(detail)
         assertEquals(12.0, enriched.toRawAnalysisChargeData().chargeEnergyAdded!!, 0.0)
         assertEquals(13.0, enriched.toRawAnalysisChargeData().chargeEnergyUsed!!, 0.0)
+        assertEquals(-5.0, enriched.toRawAnalysisChargeData().cost!!, 0.0)
+        assertNull(enriched.cost) // Raw negative cost is not a verified charge price.
         assertNull(enriched.toAnalysisChargeData().batteryInputKwh)
         assertNull(enriched.toAnalysisChargeData().inputEnergyKwh)
         assertEquals("telemetry_mqtt", enriched.toRawAnalysisChargeData().source)

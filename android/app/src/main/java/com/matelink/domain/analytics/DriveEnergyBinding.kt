@@ -95,10 +95,13 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
         consumptionNet = estimate.efficiencyWhKm ?: rawPrevious.consumptionNet,
         energyContract = detail.energyContract ?: EnergyContract(netEnergy = resolved.evidence)
     )
+    // Keep raw address formatting only in apiEvidence; Room's presentation
+    // columns have always used the sanitized address projection.
+    val display = evidence.withSafeHistoryDisplay()
     return copy(
         startDate = evidence.startDate ?: startDate, endDate = evidence.endDate ?: endDate,
         durationMin = evidence.durationMin ?: durationMin,
-        startAddress = evidence.startAddress.orEmpty(), endAddress = evidence.endAddress.orEmpty(),
+        startAddress = display.startAddress.orEmpty(), endAddress = display.endAddress.orEmpty(),
         distance = evidence.distance?.takeIf { it.isFinite() && it >= 0.0 } ?: distance,
         startBatteryLevel = evidence.startBatteryLevel ?: 0, endBatteryLevel = evidence.endBatteryLevel ?: 0,
         outsideTempAvg = evidence.outsideTempAvg?.takeIf(Double::isFinite),

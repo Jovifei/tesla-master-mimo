@@ -132,3 +132,12 @@ signing identity are independently qualified. Previous installed
 `8625d28e` remains the rollback candidate without uninstall/reset.
 Production bb09 remains old and still needs a separate backed-up,
 idempotent, reversible API rollout decision for fractional boundaries.
+
+**Additional local review evidence:** confirm the same-ID
+history detail-enrichment checks preserve the raw source address
+and original raw cost in `apiEvidence`, but leave the visible
+address cleared when invalid and the unqualified cost scalar
+null. The actual drives-card metric consumer must remain
+source/energy-qualified even if old Room scalar columns are
+non-null. A compile, source-only artifact or green
+`android-summary` without a successful Android job is NOT PASS.

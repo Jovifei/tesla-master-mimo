@@ -62,7 +62,10 @@ fun ChargeSummary.withDetailEvidence(detail: ChargeDetail): ChargeSummary {
         startDate = evidence.startDate ?: startDate, endDate = evidence.endDate ?: endDate,
         address = evidence.address.orEmpty(), durationMin = evidence.durationMin ?: durationMin,
         energyAdded = evidence.batteryInputKwh ?: 0.0, energyUsed = evidence.inputEnergyKwh,
-        cost = evidence.cost, startBatteryLevel = evidence.startBatteryLevel ?: 0,
+        // Retain any original raw cost in apiEvidence, but never promote an
+        // unqualified negative/nonfinite value into quick-stat scalars.
+        cost = evidence.cost?.takeIf { it.isFinite() && it >= 0.0 },
+        startBatteryLevel = evidence.startBatteryLevel ?: 0,
         endBatteryLevel = evidence.endBatteryLevel ?: 0, outsideTempAvg = evidence.outsideTempAvg?.takeIf(Double::isFinite),
         apiEvidence = HistorySummaryEvidenceCodec.encode(evidence)
     )
