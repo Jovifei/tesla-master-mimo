@@ -52,6 +52,23 @@ class EnergyContractWiringTest {
         assertEquals(DriveEnergySource.POWER_SAMPLES, cached.estimate.source)
         assertEquals(first.evidence, cached.evidence)
     }
+    @Test fun inferredPowerEstimateKeepsActualTimestampProvenanceBySource() {
+        val points = listOf(DrivePosition(date = start, power = 36.0),
+            DrivePosition(date = end, power = 36.0))
+        val mqtt = DriveDetail(19, startDate = start, endDate = end,
+            source = "telemetry_mqtt", positions = points)
+        val mqttEnergy = mqtt.resolveDriveEnergy()
+        assertEquals(DriveEnergySource.POWER_SAMPLES, mqttEnergy.estimate.source)
+        assertEquals(0.1, mqttEnergy.estimate.energyKwh!!, 1e-12)
+        assertEquals("collector_received_at", mqttEnergy.evidence.timeBasis)
+        assertEquals("estimated", mqttEnergy.evidence.quality)
+        assertEquals("telemetry_mqtt", mqttEnergy.evidence.source)
+        val archive = mqtt.copy(source = "teslamate_archive").resolveDriveEnergy()
+        assertEquals("source_sample_time", archive.evidence.timeBasis)
+        assertEquals("estimated", archive.evidence.quality)
+        val untagged = mqtt.copy(source = null).resolveDriveEnergy()
+        assertEquals("route_timestamp_unverified", untagged.evidence.timeBasis)
+    }
     @Test fun partialSamplesRemainDiagnosticNotWholeDriveConsumption() {
         val detail = DriveDetail(7, startDate = start, endDate = "2026-10-08T01:01:00Z",
             positions = listOf(DrivePosition(date = start, power = 36.0), DrivePosition(date = end, power = 36.0)))

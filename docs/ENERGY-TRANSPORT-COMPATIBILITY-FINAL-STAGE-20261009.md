@@ -129,7 +129,13 @@ identify the failed TLS hop. HTTP200 health proves no user history.
   window, quality and coverage; explicit unknown masks stale scalar.
   Reported zero and negative net drive energy stay values. Power
   integration is an **estimate** only for a fully qualified observed
-  window, never a battery-input measurement.
+  window, never a battery-input measurement. For inferred route-power
+  integration, Fleet MQTT `telemetry_mqtt` point timestamps are
+  **collector receipt instants** and now publish
+  `time_basis=collector_received_at`; TeslaMate archive source-point
+  timestamps retain `source_sample_time`. An untagged legacy route
+  is `route_timestamp_unverified`, not fabricated Tesla sample-time.
+  This is a provenance-label correction, not a new provider measurement.
 - Charge battery input/DC counter, charger-side AC input, and stored
   change are separate. AC balance needs boundary-matched, observed AC
   mode and cannot be derived from an unverified/mixed counter.

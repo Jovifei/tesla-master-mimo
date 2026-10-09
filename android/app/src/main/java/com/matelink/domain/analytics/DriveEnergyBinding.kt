@@ -52,7 +52,14 @@ fun DriveDetail.resolveDriveEnergy(): ResolvedDriveEnergy {
         },
         reason = estimate.qualityReason,
         startDate = startDate, endDate = endDate,
-        timeBasis = if (power) "source_sample_time" else "source_report",
+        // MQTT route timestamps are collector receipt instants; archived
+        // TeslaMate points carry their recorded source sample instants.
+        timeBasis = when {
+            !power -> "source_report"
+            source == "telemetry_mqtt" -> "collector_received_at"
+            source == "teslamate_archive" -> "source_sample_time"
+            else -> "route_timestamp_unverified"
+        },
         coverageKind = if (power) "time" else "provider_report",
         coverageSeconds = if (power) estimate.coverageSecondsExact else null,
         coverageRatio = estimate.coverageRatio,
