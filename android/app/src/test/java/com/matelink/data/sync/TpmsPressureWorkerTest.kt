@@ -561,6 +561,10 @@ class TpmsPressureWorkerTest {
 
         override suspend fun upsert(sample: TpmsPressureSample) { saved += sample }
         override suspend fun upsertAll(samples: List<TpmsPressureSample>) = Unit
+        override suspend fun getAt(carId: Int, at: Long): TpmsPressureSample? =
+            saved.lastOrNull { it.carId == carId && it.observedAt == at }
+        override suspend fun latestPerWheel(carId: Int, from: Long, before: Long): List<TpmsPressureSample> =
+            saved.filter { it.carId == carId && it.observedAt in from until before }
         override suspend fun getInRange(carId: Int, from: Long, to: Long): List<TpmsPressureSample> = emptyList()
         override suspend fun deleteOlderThan(carId: Int, cutoff: Long): Int = 0
     }

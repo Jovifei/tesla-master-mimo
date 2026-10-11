@@ -15,7 +15,7 @@ class TpmsHistoryRepository @Inject constructor(
     constructor(dao: TpmsPressureSampleDao) : this(dao, LegacyHistoryCarIdResolver)
 
     suspend fun saveObservation(sample: TpmsPressureSample) {
-        dao.upsert(sample.normalized())
+        dao.upsertMergingObservation(sample.normalized())
     }
     suspend fun saveObservation(remoteApiCarId: Int, sample: TpmsPressureSample) {
         val normalized = sample.normalized()
@@ -26,8 +26,11 @@ class TpmsHistoryRepository @Inject constructor(
     }
 
     suspend fun saveObservationForHistoryCarId(historyCarId: Int, sample: TpmsPressureSample) {
-        dao.upsert(sample.normalized().copy(carId = historyCarId))
+        dao.upsertMergingObservation(sample.normalized().copy(carId = historyCarId))
     }
+
+    suspend fun latestVerifiedPerWheel(historyCarId: Int, before: Long, windowHours: Int): List<TpmsPressureSample> =
+        dao.latestPerWheel(historyCarId, before - windowHours.toLong() * 3_600_000L, before)
 
     suspend fun latestVerified(historyCarId: Int, now: Long): TpmsPressureSample? =
         dao.getInRange(historyCarId, now - THIRTY_DAYS_MS, now).filter { it.provenance == "provider_observation" }.lastOrNull()
@@ -57,4 +60,18 @@ class TpmsHistoryRepository @Inject constructor(
         const val THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1_000L
         const val NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1_000L
     }
+}
+
+/** Never rewrite a legacy-unverified receipt or clear another wheel at one timestamp. */
+internal fun mergeTpmsSampleAtSameInstant(previous: TpmsPressureSample?, incoming: TpmsPressureSample): TpmsPressureSample {
+    if (previous == null) return incoming
+    if (previous.carId != incoming.carId || previous.observedAt != incoming.observedAt ||
+        previous.provenance != incoming.provenance) return previous
+    return previous.copy(
+        pressureFl = previous.pressureFl ?: incoming.pressureFl,
+        pressureFr = previous.pressureFr ?: incoming.pressureFr,
+        pressureRl = previous.pressureRl ?: incoming.pressureRl,
+        pressureRr = previous.pressureRr ?: incoming.pressureRr,
+        outsideTempC = previous.outsideTempC ?: incoming.outsideTempC
+    )
 }

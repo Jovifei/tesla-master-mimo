@@ -44,6 +44,7 @@ import com.matelink.notification.ensureTpmsNotificationChannel
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -194,8 +195,10 @@ class TpmsPressureWorker @AssistedInject constructor(
                     if (vehicleContextRepository.captureReadScope() != readScope) return Result.retry()
                     val vehicleContext = vehicleContextRepository.resolve(car, readScope)
                     checkCarTpms(car.carId, vehicleContext.localHistoryCarId, car.displayName, readScope)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    Log.e(TAG, "event=check_tpms_failed carId=${car.carId} category=unexpected")
+                    Log.e(TAG, "event=check_tpms_failed category=unexpected")
                 }
             }
 
@@ -207,6 +210,8 @@ class TpmsPressureWorker @AssistedInject constructor(
             }
 
             return Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "event=tpms_worker_failed category=unexpected")
 
@@ -237,20 +242,27 @@ class TpmsPressureWorker @AssistedInject constructor(
 
         val profile = settingsDataStore.getTpmsAlertProfile(historyCarId)
         if (vehicleContextRepository.captureReadScope() != readScope) return
-        val previous = tpmsHistoryRepository.latestVerified(historyCarId, System.currentTimeMillis())
-
-        processSuccessfulTpmsStatus(
+        val now = System.currentTimeMillis()
+        val observations = verifiedTpmsSamples(historyCarId, tpmsDetails, now)
+        // Old deployed API provides no pressure-specific times. Its repeated
+        // cached snapshot cannot count as a new measured or collector observation.
+        if (observations.isNotEmpty()) processSuccessfulTpmsStatus(
             carId = historyCarId,
             carName = carName,
-            tpmsDetails = tpmsDetails,
-            outsideTempC = outsideTempC,
-            observedAt = System.currentTimeMillis(),
+            tpmsDetails = requireNotNull(tpmsDetails).onlyVerifiedWheels(observations),
+            outsideTempC = null, // climate sample has no matching TPMS field timestamp
+            observedAt = observations.last().observedAt,
             profile = profile,
-            saveObservation = { sample ->
-                if (vehicleContextRepository.captureReadScope() != readScope) throw kotlinx.coroutines.CancellationException()
-                val verified = sample.copy(provenance = "provider_observation")
-                changeRuleStore.record(historyCarId, com.matelink.domain.analytics.pressureChanges(previous,verified,changeRuleStore.observe(historyCarId).first()))
-                tpmsHistoryRepository.saveObservationForHistoryCarId(historyCarId, verified)
+            saveObservation = { _ ->
+                val rule = changeRuleStore.observe(historyCarId).first()
+                for (verified in observations) {
+                    if (vehicleContextRepository.captureReadScope() != readScope) throw CancellationException()
+                    val previous = tpmsHistoryRepository.latestVerifiedPerWheel(
+                        historyCarId, verified.observedAt, rule.windowHours)
+                    changeRuleStore.record(historyCarId,
+                        com.matelink.domain.analytics.pressureChangesAcrossWheels(previous, verified, rule))
+                    tpmsHistoryRepository.saveObservationForHistoryCarId(historyCarId, verified)
+                }
             },
             pruneOlderThan90Days = { _, now ->
                 tpmsHistoryRepository.pruneOlderThan90DaysForHistoryCarId(historyCarId, now)

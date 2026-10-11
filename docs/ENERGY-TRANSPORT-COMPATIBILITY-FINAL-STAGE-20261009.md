@@ -963,3 +963,19 @@ trip/charge/TPMS and permission-restoration notifications remain separate
 independent human/device gates. Existing API bb09, phone 8625 and
 privately held rollback packages remain unchanged; the earlier PR17
 receiving matrix applies, with this patch's tests added.
+
+## 2026-10-11 TPMS time-basis repair added to full-stage source
+
+Additional Go and Android candidate code now publishes per-wheel
+`collector_received_at` TPMS observation times only from verified
+field-scoped MQTT receptions; a generic phone poll/status timestamp is
+not a Tesla tire sensor reading. Unit `bar`, pressure source and
+time basis are explicit. The Android worker rejects unknown source,
+unit, future and missing times, merges same-timestamp wheel fragments,
+keeps verified zero and prior legacy-unverified data, and compares
+meaningful deltas using each wheel's last verified prior time.
+The old deployed bb09 does not have this additive contract. No
+auto-backfill, schema/write, vehicle wake, deployment or user gate
+acceptance follows from green CI; see
+`NOTIFICATION-JOURNAL-STAGE-LOCAL-RECEIVE-20261011.md` for exact
+independent verification/rollback matrix.

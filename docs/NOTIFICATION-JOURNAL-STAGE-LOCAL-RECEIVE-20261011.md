@@ -54,3 +54,60 @@ Then record only legitimate already-authorized normal history reads / naturally 
 | Main merge / release | NOT performed; Draft remains | CI/source alone does not open genuine device/provider/human acceptance gates |
 
 Return one GitHub packet containing full SHA/tree/parent, actual job/artifact evidence and counts, local compile/test/sign/install/data-preservation results, independent original Java replay exit code, real authenticated history/notification/TPMS outcomes, unresolved human/environment gates and rollback review. No repeated per-file tasks and no new chat/task. Remote final comment must supply actual completed same-SHA results rather than placeholders or inherited green badges.
+
+## 2026-10-11 full-stage TPMS source/receipt closure — qualification contract
+
+Root cause: old Go `/status` returned pressures but not each wheel's
+observation time. Android treated every new phone poll as a genuinely new
+`provider_observation`, even when the pressure was a repeated cached
+status. This could create synthetic-looking 30-day points or spurious
+meaningful-pressure-change alerts. No production/history backfill or
+deletion has been performed.
+
+The revised source contract adds `pressure_unit=bar` and
+`source=telemetry_mqtt` / `time_basis=collector_received_at` only when
+the backend has actual field-scoped MQTT collector receipt instants,
+plus each pressure wheel's separate `tpms_pressure_XX_observed_at`.
+A later unrelated SOC event cannot change a wheel's evidence time.
+This timestamp is **not** Tesla's tire sensor measurement time. Official
+Tesla Fleet telemetry documentation explicitly notes timezone issues
+with the last-seen TPMS sensor timestamps. We do not invent a
+conversion, Tesla sampling instant or vehicle wake.
+
+The live Android Worker now checks explicit source/unit/time, rejects
+unqualified old API and future/stale timestamps, keeps actual zero,
+writes one scoped partial wheel row per distinct timestamp, merges
+simultaneous partial rows without erasing old values, and compares
+each wheel with its own prior verified reading within the alert window.
+An unverified legacy row never upgrades to a Fleet point. Unknown
+ambient-temperature observation alignment stays unavailable. Missing
+fresh pressure evidence never generates a fresh custom pressure alert.
+Tesla warning flags remain gated behind a complete verified pressure
+set in this candidate. No Room schema/DDL, legacy TPMS write, app
+data clearing, log reset or production API change.
+
+### Same-SHA local acceptance additions
+
+Independently qualify the final SHA's Go
+`TestTPMSFieldScopedCollectorReceiptsAndNoGlobalTimestampPromotion` and
+`TestTPMSUnknownFleetTimestampImportAndStaleSnapshotFailClosed`;
+Android `TpmsObservationEvidenceTest`, worker/state/30-day trends,
+`TpmsProvenanceSourceContractTest`, the unchanged d119 standalone
+Java replay, full Debug/Release unit XML, both lint variants, R8,
+and all other existing fixed-stage resource/recovery/TLS/PG16/Web
+checks. Verify synthetic different-field-timestamp, bad time, source
+switch, 0 bar, legacy-vs-qualified same-ID, future record, and same-wheel
+change cases. Keep local work in a separate clean checkout; preserve
+original keystore and only use same-signer `adb install -r` after
+independent gates. Do not run tests with production database credentials.
+
+The deployed API `bb09fac` cannot provide this new TPMS timestamp
+contract. Until an independently approved reversible candidate API
+rollout, naturally sampled TPMS source→API→Phone trends remain
+**NOT ACCEPTED** even if current CI is all green. Back up unchanged
+deployed image/config/schema state, use reviewed no-DDL candidate
+publication, verify field names and non-wake status paths, and roll
+back to the prior image/config if necessary; this is a PLAN, not
+authorization to deploy. Human natural Fleet first events, two users,
+permissions/notifications and full phone TLS delivery remain
+independent gates. No old 6-SOC or 7113-point TPMS repair performed.

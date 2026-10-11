@@ -358,7 +358,7 @@ func (s *telemetryService) mergeOrFallback(ctx context.Context, ref telemetryVeh
 }
 
 func mergeFreshTelemetryStatus(base vehicleStatus, snapshot telemetrySnapshot, now time.Time) vehicleStatus {
-	fresh := telemetrySnapshot{Fields: make(map[string]any), FieldObservedAt: make(map[string]time.Time), Source: snapshot.Source}
+	fresh := telemetrySnapshot{Fields: make(map[string]any), FieldObservedAt: make(map[string]time.Time), FieldSources: make(map[string]string), Source: snapshot.Source}
 	for field, value := range snapshot.Fields {
 		observedAt := snapshot.ObservedAt
 		if valueObservedAt, ok := snapshot.FieldObservedAt[field]; ok {
@@ -369,6 +369,7 @@ func mergeFreshTelemetryStatus(base vehicleStatus, snapshot telemetrySnapshot, n
 		}
 		fresh.Fields[field] = value
 		fresh.FieldObservedAt[field] = observedAt
+		if source := snapshot.FieldSources[field]; source != "" { fresh.FieldSources[field] = source } else { fresh.FieldSources[field] = snapshot.Source }
 		if observedAt.After(fresh.ObservedAt) {
 			fresh.ObservedAt = observedAt
 		}
@@ -389,6 +390,17 @@ func mergeTelemetryStatus(base vehicleStatus, snapshot telemetrySnapshot) vehicl
 	}
 	for field, value := range snapshot.Fields {
 		setTelemetryStatusField(&merged, field, value)
+		switch field {
+		case "TpmsPressureFl", "TpmsPressureFr", "TpmsPressureRl", "TpmsPressureRr":
+			if snapshot.FieldSources[field]=="telemetry_mqtt" && !snapshot.FieldObservedAt[field].IsZero() {
+				if merged.TPMSFieldObservedAt==nil {
+					merged.TPMSFieldObservedAt=make(map[string]time.Time)
+					merged.TPMSFieldSources=make(map[string]string)
+				}
+				merged.TPMSFieldObservedAt[field]=snapshot.FieldObservedAt[field]
+				merged.TPMSFieldSources[field]="telemetry_mqtt"
+			}
+		}
 	}
 	return merged
 }

@@ -271,5 +271,13 @@ data class TpmsDetails(
     @Json(name = "tpms_soft_warning_fl") val warningFl: Boolean? = null,
     @Json(name = "tpms_soft_warning_fr") val warningFr: Boolean? = null,
     @Json(name = "tpms_soft_warning_rl") val warningRl: Boolean? = null,
-    @Json(name = "tpms_soft_warning_rr") val warningRr: Boolean? = null
+    @Json(name = "tpms_soft_warning_rr") val warningRr: Boolean? = null,
+    // Collector-receipt evidence is explicitly NOT a Tesla sensor timestamp.
+    @Json(name = "pressure_unit") val pressureUnit: String? = null,
+    @Json(name = "source") val pressureSource: String? = null,
+    @Json(name = "time_basis") val pressureTimeBasis: String? = null,
+    @Json(name = "tpms_pressure_fl_observed_at") val pressureObservedAtFl: String? = null,
+    @Json(name = "tpms_pressure_fr_observed_at") val pressureObservedAtFr: String? = null,
+    @Json(name = "tpms_pressure_rl_observed_at") val pressureObservedAtRl: String? = null,
+    @Json(name = "tpms_pressure_rr_observed_at") val pressureObservedAtRr: String? = null
 )

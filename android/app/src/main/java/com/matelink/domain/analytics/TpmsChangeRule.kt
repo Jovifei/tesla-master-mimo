@@ -20,3 +20,24 @@ fun pressureChanges(previous: TpmsPressureSample?, current: TpmsPressureSample, 
         else TpmsPressureChange(wheel,a,b,current.observedAt)
     }
 }
+
+/** Wheel-local previous observed time; unrelated wheel rows cannot hide a pressure change. */
+fun pressureChangesAcrossWheels(
+    previous: List<TpmsPressureSample>, current: TpmsPressureSample, rule: TpmsChangeRule
+): List<TpmsPressureChange> {
+    if (!rule.enabled || !rule.valid || current.provenance != "provider_observation") return emptyList()
+    val currentValues = listOf(current.pressureFl,current.pressureFr,current.pressureRl,current.pressureRr)
+    return TirePosition.entries.mapIndexedNotNull { index, wheel ->
+        val value = currentValues[index]?.takeIf { it.isFinite() && it > 0 } ?: return@mapIndexedNotNull null
+        val before = previous.asSequence().filter {
+            it.carId == current.carId && it.provenance == "provider_observation" &&
+                it.observedAt < current.observedAt &&
+                current.observedAt - it.observedAt <= rule.windowHours * 3600000L
+        }.mapNotNull { row ->
+            val reading = when (index) {0->row.pressureFl;1->row.pressureFr;2->row.pressureRl;else->row.pressureRr}
+            reading?.takeIf { it.isFinite() && it > 0 }?.let { row.observedAt to it }
+        }.maxByOrNull { it.first }?.second
+        if (before == null || abs(value-before)+1e-9 < rule.deltaBar) null
+        else TpmsPressureChange(wheel,before,value,current.observedAt)
+    }
+}

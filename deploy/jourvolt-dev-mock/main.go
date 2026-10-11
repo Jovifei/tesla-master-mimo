@@ -300,6 +300,8 @@ type vehicleStatus struct {
 	TPMSPressureFR             *float64
 	TPMSPressureRL             *float64
 	TPMSPressureRR             *float64
+	TPMSFieldObservedAt        map[string]time.Time
+	TPMSFieldSources           map[string]string
 	TPMSSoftWarningFL          *bool
 	TPMSSoftWarningFR          *bool
 	TPMSSoftWarningRL          *bool
@@ -884,6 +886,9 @@ func (a *app) status(w http.ResponseWriter, r *http.Request, userID string, carI
 			"tpms_soft_warning_rl": providerStatus.TPMSSoftWarningRL, "tpms_soft_warning_rr": providerStatus.TPMSSoftWarningRR,
 		},
 	}
+	for key, value := range tpmsPressureEvidence(providerStatus) {
+		status["tpms_details"].(map[string]any)[key] = value
+	}
 	units := map[string]string{"unit_of_length": "km", "unit_of_pressure": "bar", "unit_of_temperature": "C"}
 	if snapshot {
 		a.json(w, http.StatusOK, map[string]any{"data": map[string]any{
@@ -1098,4 +1103,28 @@ func main() {
 	if err := serveJourVolt(ctx, addr, a); err != nil {
 		log.Fatal(fmt.Errorf("listen: %w", err))
 	}
+}
+
+// Additive field-specific collector evidence. These are MQTT receipt instants,
+// not raw Tesla tire-sensor timestamps or a guessed global status poll time.
+func tpmsPressureEvidence(status vehicleStatus) map[string]any {
+    result := map[string]any{"pressure_unit":"bar"}
+    fields := []struct{ field, wire string; value *float64 }{
+        {"TpmsPressureFl","tpms_pressure_fl_observed_at",status.TPMSPressureFL},
+        {"TpmsPressureFr","tpms_pressure_fr_observed_at",status.TPMSPressureFR},
+        {"TpmsPressureRl","tpms_pressure_rl_observed_at",status.TPMSPressureRL},
+        {"TpmsPressureRr","tpms_pressure_rr_observed_at",status.TPMSPressureRR},
+    }
+    qualified := false
+    for _, item := range fields {
+        at := status.TPMSFieldObservedAt[item.field]
+        if item.value==nil || at.IsZero() || status.TPMSFieldSources[item.field]!="telemetry_mqtt" { continue }
+        result[item.wire]=at.UTC().Format(time.RFC3339Nano)
+        qualified=true
+    }
+    if qualified {
+        result["source"]="telemetry_mqtt"
+        result["time_basis"]="collector_received_at"
+    }
+    return result
 }
