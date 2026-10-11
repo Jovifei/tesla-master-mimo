@@ -360,16 +360,28 @@ func (s *telemetryService) mergeOrFallback(ctx context.Context, ref telemetryVeh
 func mergeFreshTelemetryStatus(base vehicleStatus, snapshot telemetrySnapshot, now time.Time) vehicleStatus {
 	fresh := telemetrySnapshot{Fields: make(map[string]any), FieldObservedAt: make(map[string]time.Time), FieldSources: make(map[string]string), Source: snapshot.Source}
 	for field, value := range snapshot.Fields {
-		observedAt := snapshot.ObservedAt
-		if valueObservedAt, ok := snapshot.FieldObservedAt[field]; ok {
-			observedAt = valueObservedAt
+		observedAt, hasFieldClock := snapshot.FieldObservedAt[field]
+		isPressure := field == "TpmsPressureFl" || field == "TpmsPressureFr" ||
+			field == "TpmsPressureRl" || field == "TpmsPressureRr"
+		// TPMS needs its own persisted collector receipt time and source.
+		// Never fall back to the global mixed-field snapshot timestamp or
+		// source: those may belong to SOC, location or an old imported value.
+		if isPressure && (!hasFieldClock || snapshot.FieldSources[field] != "telemetry_mqtt") {
+			continue
+		}
+		if !hasFieldClock {
+			observedAt = snapshot.ObservedAt // legacy non-pressure compatibility only
 		}
 		if observedAt.IsZero() || observedAt.Before(now.Add(-telemetryStaleAfter)) || observedAt.After(now.Add(time.Minute)) {
 			continue
 		}
 		fresh.Fields[field] = value
 		fresh.FieldObservedAt[field] = observedAt
-		if source := snapshot.FieldSources[field]; source != "" { fresh.FieldSources[field] = source } else { fresh.FieldSources[field] = snapshot.Source }
+		if source := snapshot.FieldSources[field]; source != "" {
+			fresh.FieldSources[field] = source
+		} else if !isPressure {
+			fresh.FieldSources[field] = snapshot.Source
+		}
 		if observedAt.After(fresh.ObservedAt) {
 			fresh.ObservedAt = observedAt
 		}

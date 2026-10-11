@@ -40,3 +40,32 @@ func TestTPMSUnknownFleetTimestampImportAndStaleSnapshotFailClosed(t *testing.T)
    if got:=tpmsPressureEvidence(candidate);got["source"]!=nil {t.Fatal("wrong source or stale pressure verified")}
  }
 }
+
+func TestTPMSCannotInheritSnapshotWideTimeOrSourceFromFreshSOC(t *testing.T) {
+    now:=time.Date(2026,10,11,1,0,0,0,time.UTC)
+    value:=2.8
+    base:=vehicleStatus{Source:"fleet_api",TPMSPressureFL:&value}
+    for _,tc:=range []struct {
+        name string
+        fieldTimes map[string]time.Time
+        fieldSources map[string]string
+    }{
+        {"no_per_wheel_time",map[string]time.Time{"Soc":now},map[string]string{"TpmsPressureFl":"telemetry_mqtt","Soc":"telemetry_mqtt"}},
+        {"no_per_wheel_source",map[string]time.Time{"TpmsPressureFl":now,"Soc":now},map[string]string{"Soc":"telemetry_mqtt"}},
+    } {
+        t.Run(tc.name,func(t *testing.T) {
+            merged:=mergeFreshTelemetryStatus(base,telemetrySnapshot{
+                Fields:map[string]any{"TpmsPressureFl":2.9,"Soc":80.0},
+                FieldObservedAt:tc.fieldTimes,FieldSources:tc.fieldSources,
+                ObservedAt:now,Source:"telemetry_mqtt",
+            },now)
+            got:=tpmsPressureEvidence(merged)
+            if got["source"]!=nil || got["time_basis"]!=nil {
+                t.Fatalf("unproven wheel acquired source/clock from SOC: %v",got)
+            }
+            if merged.TPMSPressureFL==nil || *merged.TPMSPressureFL!=value {
+                t.Fatal("base provider wheel was rewritten by an unproven receipt")
+            }
+        })
+    }
+}
