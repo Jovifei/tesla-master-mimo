@@ -123,6 +123,29 @@ class TpmsPressureSampleDaoAndroidTest {
     }
 
     @Test
+    fun verifiedCollectorSQLSkipsPollTimeAndLegacyRowsWithoutAppSideFiltering() = runBlocking {
+        val v2 = TPMS_VERIFIED_COLLECTOR
+        dao.upsertAll(listOf(
+            TpmsPressureSample(1, 100L, pressureFl=2.4, provenance="legacy_unverified"),
+            TpmsPressureSample(1, 200L, pressureFl=2.5, provenance="provider_observation"),
+            TpmsPressureSample(1, 300L, pressureFl=0.0, provenance=v2),
+            TpmsPressureSample(2, 350L, pressureFl=3.0, provenance=v2),
+            TpmsPressureSample(1, 400L, pressureFr=2.7, provenance=v2),
+            TpmsPressureSample(1, 500L, pressureFl=2.8, provenance=v2)
+        ))
+        assertEquals(listOf(300L,400L),
+            dao.getVerifiedCollectorInRange(1,200L,500L).map { it.observedAt })
+        val repo = TpmsHistoryRepository(dao)
+        assertEquals(listOf(300L,400L,500L),
+            repo.load30DaySamples(1,500L).map { it.observedAt })
+        assertEquals(0.0,repo.load7DaySamples(1,500L).first().pressureFl!!,0.0)
+        assertEquals(listOf(300L,400L,500L),
+            dao.getInRange(1,300L,501L).map { it.observedAt })
+        assertEquals(listOf(100L,200L,300L,400L,500L),
+            dao.getInRange(1,0L,501L).map { it.observedAt })
+    }
+
+    @Test
     fun repositoryFiltersNonFiniteObservationsAndLoadsSevenAndThirtyDayWindows() = runBlocking {
         val repository = TpmsHistoryRepository(dao)
         val now = 30L * 24 * 60 * 60 * 1_000

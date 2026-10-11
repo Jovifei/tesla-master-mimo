@@ -3,6 +3,7 @@ package com.matelink.domain.analytics
 import com.matelink.data.local.TirePosition
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.TpmsPressureSample
+import com.matelink.data.local.entity.TPMS_VERIFIED_COLLECTOR
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -26,6 +27,42 @@ class TpmsTrendAnalyzerTest {
         assertEquals(listOf(2.8, null), result.series[TirePosition.RL]?.map { it.pressureBar })
         assertEquals(listOf(null, 2.9), result.series[TirePosition.RR]?.map { it.pressureBar })
         assertNull(result.deltas[TirePosition.RL])
+    }
+
+    @Test
+    fun v2PerWheelReceiptsUseTheirActualTimesWithoutFalseNullGapsOrLegacyPromotion() {
+        val rows = listOf(
+            sample(1_000, fl = 2.5).copy(provenance=TPMS_VERIFIED_COLLECTOR),
+            sample(1_500, fr = 2.8).copy(provenance=TPMS_VERIFIED_COLLECTOR),
+            sample(2_000, fl = 0.0).copy(provenance=TPMS_VERIFIED_COLLECTOR),
+            sample(2_500, fr = 2.7).copy(provenance=TPMS_VERIFIED_COLLECTOR)
+        )
+        val result = analyzer.analyze(rows, emptyList())
+        assertEquals(listOf(1_000L,2_000L), result.series.getValue(TirePosition.FL).map { it.observedAt })
+        assertEquals(listOf(2.5,0.0), result.series.getValue(TirePosition.FL).map { it.pressureBar })
+        assertEquals(listOf(1_500L,2_500L), result.series.getValue(TirePosition.FR).map { it.observedAt })
+        assertEquals(listOf(2.8,2.7), result.series.getValue(TirePosition.FR).map { it.pressureBar })
+        assertTrue(result.series.getValue(TirePosition.RL).isEmpty())
+        assertTrue(result.series.getValue(TirePosition.RR).isEmpty())
+        assertEquals(4,result.coverage.sampleCount)
+        assertEquals(2,result.coverage.coverageByWheel[TirePosition.FL])
+        assertEquals(2,result.coverage.coverageByWheel[TirePosition.FR])
+        assertEquals(-2.5,result.deltas[TirePosition.FL]!!,0.0)
+        assertEquals(listOf(TpmsTrendFactor.INSUFFICIENT_EVIDENCE),
+            result.possibleFactors.map { it.factor })
+    }
+
+    @Test
+    fun mixedLegacySamplesRetainExplicitNullButNeverCreateAdditionalV2WheelPoints() {
+        val rows = listOf(
+            sample(1_000, fl=2.5).copy(provenance=TPMS_VERIFIED_COLLECTOR),
+            sample(1_500, fr=2.7).copy(provenance=TPMS_VERIFIED_COLLECTOR),
+            sample(2_000, fr=null),
+            sample(2_500, fl=2.6).copy(provenance=TPMS_VERIFIED_COLLECTOR)
+        )
+        val result=analyzer.analyze(rows, emptyList())
+        assertEquals(listOf(2.5,null,2.6),result.series.getValue(TirePosition.FL).map { it.pressureBar })
+        assertEquals(listOf(2.7,null),result.series.getValue(TirePosition.FR).map { it.pressureBar })
     }
 
     @Test

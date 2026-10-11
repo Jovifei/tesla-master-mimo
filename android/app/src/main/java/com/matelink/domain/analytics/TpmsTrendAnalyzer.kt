@@ -3,6 +3,7 @@ package com.matelink.domain.analytics
 import com.matelink.data.local.TirePosition
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.TpmsPressureSample
+import com.matelink.data.local.entity.TPMS_VERIFIED_COLLECTOR
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -39,11 +40,21 @@ class TpmsTrendAnalyzer {
         drives: List<DriveSummary>
     ): TpmsTrendAnalysis {
         val ordered = samples.sortedBy { it.observedAt }
+        // A V2 collector receipt can carry one wheel only. Other wheels were
+        // not observed at that instant: omit their absent points rather than
+        // drawing false gaps in 7/30-day pressure curves. For legacy/raw
+        // callers explicit null samples retain their historic semantics.
+        fun wheelPoints(value: (TpmsPressureSample) -> Double?): List<TpmsPressurePoint> =
+            ordered.mapNotNull { sample ->
+                val pressure = value(sample).finiteOrNull()
+                if (sample.provenance == TPMS_VERIFIED_COLLECTOR && pressure == null) null
+                else TpmsPressurePoint(sample.observedAt, pressure)
+            }
         val series = linkedMapOf(
-            TirePosition.FL to ordered.map { TpmsPressurePoint(it.observedAt, it.pressureFl.finiteOrNull()) },
-            TirePosition.FR to ordered.map { TpmsPressurePoint(it.observedAt, it.pressureFr.finiteOrNull()) },
-            TirePosition.RL to ordered.map { TpmsPressurePoint(it.observedAt, it.pressureRl.finiteOrNull()) },
-            TirePosition.RR to ordered.map { TpmsPressurePoint(it.observedAt, it.pressureRr.finiteOrNull()) }
+            TirePosition.FL to wheelPoints { it.pressureFl },
+            TirePosition.FR to wheelPoints { it.pressureFr },
+            TirePosition.RL to wheelPoints { it.pressureRl },
+            TirePosition.RR to wheelPoints { it.pressureRr }
         )
         val coverage = TpmsCoverage(
             sampleCount = ordered.size,

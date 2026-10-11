@@ -68,6 +68,18 @@ interface TpmsPressureSampleDao {
     )
     suspend fun getInRange(carId: Int, from: Long, to: Long): List<TpmsPressureSample>
 
+    /** Read only source-qualified collector receipts through the Room index,
+     * rather than loading potentially thousands of historical poll-time rows
+     * into app memory and dropping them afterwards.
+     */
+    @Query("""
+        SELECT * FROM tpms_pressure_samples
+        WHERE carId = :carId AND provenance = 'collector_received_verified'
+          AND observedAt >= :from AND observedAt < :to
+        ORDER BY observedAt ASC
+    """)
+    suspend fun getVerifiedCollectorInRange(carId: Int, from: Long, to: Long): List<TpmsPressureSample>
+
     /** Historical caller preserved; do NOT call to prune pre-v2 receipts. */
     @Query("DELETE FROM tpms_pressure_samples WHERE provenance = 'provider_observation' AND carId = :carId AND observedAt < :cutoff")
     suspend fun deleteOlderThan(carId: Int, cutoff: Long): Int

@@ -146,3 +146,23 @@ collector receipt**, without fabricating a new reading. The appended
 pure synthetic test and disposable SQLite/Room Android instrumentation
 cover repeated snapshot, new wheel fragment, same-instant conflict,
 legacy collision, valid zero, and no silent history mutation.
+
+### Per-wheel 30-day chart and bounded V2 Room query acceptance
+
+A proper field-scoped MQTT receipt can include FL at one timestamp
+and FR one second later. New `TpmsTrendAnalyzer` skips only absent
+**V2** wheel fields, so the unseen FR at FL time is not a synthetic
+null/chart break. Legitimate observed zero remains a plotted zero, and
+legacy explicit-null behavior is unchanged for standalone historical
+callers. Pressure factor hypotheses requiring all four wheels do not
+run on partial unrelated events. V2 metrics retain accurate per-wheel
+coverage/counts and no invented temperature correlation.
+
+Seven- and thirty-day repository reads now use indexed Room
+`getVerifiedCollectorInRange(carId,from,to)` with source+time filters
+in SQL. They never materialize the large prior poll-time/
+legacy-unverified history before filtering in Kotlin, and do not
+prune/upgrade the legacy archive. The disposable Room instrumentation
+asserts car, provenance, bound inclusivity/exclusivity, and source-only
+loads, independently of the Java analyzer test asserting timestamps,
+no fake breaks, 0 bar and limited factor evidence. No DDL.

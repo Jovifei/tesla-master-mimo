@@ -565,6 +565,9 @@ class TpmsPressureWorkerTest {
             saved.lastOrNull { it.carId == carId && it.observedAt == at }
         override suspend fun latestPerWheel(carId: Int, from: Long, before: Long): List<TpmsPressureSample> =
             saved.filter { it.carId == carId && it.observedAt in from until before }
+        override suspend fun getVerifiedCollectorInRange(carId: Int, from: Long, to: Long): List<TpmsPressureSample> =
+            saved.filter { it.carId == carId && it.observedAt >= from && it.observedAt < to &&
+                it.provenance == com.matelink.data.local.entity.TPMS_VERIFIED_COLLECTOR }
         override suspend fun getInRange(carId: Int, from: Long, to: Long): List<TpmsPressureSample> = emptyList()
         override suspend fun deleteOlderThan(carId: Int, cutoff: Long): Int = 0
         override suspend fun deleteOlderCollectorThan(carId: Int, cutoff: Long): Int = 0
