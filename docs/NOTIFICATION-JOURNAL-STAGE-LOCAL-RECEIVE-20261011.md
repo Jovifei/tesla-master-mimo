@@ -179,3 +179,16 @@ state transitions are not constructed from unrelated per-wheel times;
 a complete same-timestamp observed set remains eligible. Old or
 unqualified samples still cannot wake vehicles, trigger natural
 pressure notifications, or become new Fleet measurements.
+
+### TPMS claim cancellation is never a swallowed delivery failure
+
+The worker's original `processSuccessfulTpmsStatus` seam had caught
+`CancellationException` as a generic failed notification and could
+continue after an account/work cancellation. New claim handling releases
+the scoped in-flight Tesla/custom alert lease within
+`NonCancellable`, propagates the original cancellation, and never
+treats it as a successful notification or new measurement. Existing
+non-cancellation delivery-failure retry remains unchanged. Added
+synthetic regression for both Tesla and custom pressure transitions
+including recovery on the next legitimate run; no device injection,
+reset, provider action or production write.

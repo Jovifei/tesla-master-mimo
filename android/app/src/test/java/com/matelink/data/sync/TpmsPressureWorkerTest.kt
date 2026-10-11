@@ -15,6 +15,7 @@ import com.matelink.data.repository.TpmsStateChange
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -358,6 +359,39 @@ class TpmsPressureWorkerTest {
 
         assertEquals(2, attempts)
         assertEquals(null, store.state(TirePosition.FL).pending)
+    }
+
+    @Test
+    fun cancellationOfCustomDeliveryReleasesClaimAndPropagatesToWorker() = runBlocking {
+        val store = AtomicCustomClaimStore()
+        var cancelled = false
+        try {
+            processSuccessfulWithStore(store, TpmsDetails(pressureFl=2.5), onNotify={
+                throw CancellationException("synthetic_scope_switch")
+            })
+        } catch (_: CancellationException) { cancelled = true }
+        assertTrue(cancelled)
+        var delivered = 0
+        processSuccessfulWithStore(store, TpmsDetails(pressureFl=2.5), onNotify={delivered++})
+        assertEquals(1,delivered)
+        assertEquals(1,store.claimsCommitted)
+        assertEquals(null,store.state(TirePosition.FL).pending)
+    }
+
+    @Test
+    fun cancellationOfTeslaDeliveryCannotCommitOrSwallowAStateTransition() = runBlocking {
+        val store = AtomicCustomClaimStore()
+        val tesla = TeslaWarningState()
+        val pressure = TpmsDetails(warningFl=true,warningFr=false,warningRl=false,warningRr=false)
+        var cancelled = false
+        try {
+            processWithStore(store,pressure,tesla,
+                onTesla={throw CancellationException("synthetic_account_switch")},onCustom={})
+        } catch (_: CancellationException) { cancelled=true }
+        assertTrue(cancelled)
+        var delivered=0
+        processWithStore(store,pressure,tesla,onTesla={delivered++},onCustom={})
+        assertEquals(1,delivered)
     }
 
     @Test

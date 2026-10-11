@@ -45,6 +45,8 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
@@ -470,6 +472,13 @@ internal suspend fun processSuccessfulTpmsStatus(
             notifyTesla(carId, carName, teslaClaim.change)
             commitTeslaStateChange?.invoke(carId, teslaClaim)
                 ?: updateTeslaState(carId, tpmsDetails)
+        } catch (cancelled: CancellationException) {
+            // A superseded car/account job is not a failed notification delivery.
+            // Always relinquish the in-flight claim and propagate cancellation.
+            try {
+                withContext(NonCancellable) { releaseTeslaStateChange?.invoke(carId, teslaClaim) }
+            } catch (_: Exception) { /* lease expiry remains an independent recovery path */ }
+            throw cancelled
         } catch (_: Exception) {
             releaseTeslaStateChange?.invoke(carId, teslaClaim)
         }
@@ -484,6 +493,11 @@ internal suspend fun processSuccessfulTpmsStatus(
             try {
                 notifyCustom(carId, carName, alert)
                 commitCustomAlert(carId, claim)
+            } catch (cancelled: CancellationException) {
+                try {
+                    withContext(NonCancellable) { releaseCustomAlert(carId, claim) }
+                } catch (_: Exception) { /* lease expiry remains an independent recovery path */ }
+                throw cancelled
             } catch (_: Exception) {
                 releaseCustomAlert(carId, claim)
             }
