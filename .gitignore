@@ -11,6 +11,9 @@ android/keys/
 # IDE-local project metadata
 android/.idea/
 
+# Local-only configuration and sensitive info (never commit)
+docs/LOCAL-CONFIG.md
+
 # Local deployment secrets
 deploy/**/.env
 deploy/*.env

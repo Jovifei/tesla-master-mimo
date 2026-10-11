@@ -161,6 +161,14 @@ ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS wechat_claimed_a
 		pool.Close()
 		return nil, err
 	}
+	if err := ensureInviteSchema(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	if err := ensureSummarySchema(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
 	return &store{pool: pool}, nil
 }
 
@@ -476,6 +484,14 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if a.authRoute(w, r) {
 		return
 	}
+	if (r.Method == http.MethodPost || r.Method == http.MethodGet) && (r.URL.Path == "/v1/auth/invite/validate" || r.URL.Path == "/api/v1/auth/validate-invite") {
+		a.validateInvite(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && (r.URL.Path == "/v1/auth/invite/claim" || r.URL.Path == "/api/v1/auth/claim-invite") {
+		a.claimInvite(w, r)
+		return
+	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/session/refresh" {
 		a.refresh(w, r)
 		return
@@ -746,6 +762,8 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 		a.dataReadiness(w, r, userID, carID)
 	case "telemetry":
 		a.telemetryResource(w, r, userID, carID, parts[2:])
+	case "summaries":
+		a.summariesResource(w, r, userID, carID, parts[2:])
 	case "history":
 		if len(parts) >= 4 && parts[2] == "archive" && parts[3] == "bind" {
 			a.historyArchiveBind(w, r, userID, carID)

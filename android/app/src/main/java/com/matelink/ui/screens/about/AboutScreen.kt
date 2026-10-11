@@ -120,10 +120,18 @@ fun AboutScreen(onNavigateBack: () -> Unit) {
                 }
             }
             Text(
+                text = stringResource(R.string.about_trademark_disclaimer),
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.muted,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+            )
+            Text(
                 text = stringResource(R.string.about_footer),
                 style = MaterialTheme.typography.bodySmall,
                 color = palette.muted,
-                modifier = Modifier.padding(top = 8.dp)
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
     }

@@ -292,11 +292,12 @@
     <string name="about_tech_web">Web - TypeScript - React - Vite</string>
     <string name="about_data_source">数据来源</string>
     <string name="about_data_source_self_hosted">需要自托管 TeslaMate + 兼容 TeslaMateApi 的 API。</string>
-    <string name="about_data_source_no_tesla">不连接官方 Tesla API</string>
+    <string name="about_data_source_no_tesla">通过 Tesla 官方 Fleet API 授权连接，遵循 Tesla 开发者使用条款</string>
     <string name="about_data_source_no_collection">不收集用户数据</string>
     <string name="about_links">相关链接</string>
     <string name="about_link_github">GitHub: Jovifei/Tesla_MateLink</string>
     <string name="about_link_license">许可协议: MIT</string>
+    <string name="about_trademark_disclaimer">MateLink 为独立第三方应用，与 Tesla, Inc. 无关联或授权关系。Tesla 及相关产品名称为 Tesla, Inc. 的商标。</string>
     <string name="about_footer">版权所有 2026 JoviF - 为 Tesla 车主打造</string>
     <string name="notification_permission_title">通知权限</string>
     <string name="notification_permission_message">允许通知以获取充电、哨兵、胎压和软件更新提醒。</string>

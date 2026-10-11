@@ -724,7 +724,7 @@ private fun ParkedItem(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.drive_history_parked_at, item.location ?: unknown),
+                    text = stringResource(R.string.drive_history_parked_at, item.location.toChineseDisplayAddress() ?: unknown),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium
                 )

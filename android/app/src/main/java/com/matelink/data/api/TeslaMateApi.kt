@@ -142,4 +142,35 @@ interface TeslamateApi {
 
     @GET("api/v1/globalsettings")
     suspend fun getGlobalSettings(): Response<GlobalSettingsResponse>
+
+    @POST("v1/auth/invite/validate")
+    suspend fun validateInvite(
+        @Body request: com.matelink.data.api.models.ValidateInviteRequest
+    ): Response<com.matelink.data.api.models.ValidateInviteResponse>
+
+    @POST("api/v1/cars/{carId}/summaries/trips")
+    suspend fun uploadTripSummaries(
+        @Path("carId") carId: Int,
+        @Body request: com.matelink.data.api.models.TripSummariesUploadRequest
+    ): Response<com.matelink.data.api.models.SummariesUploadResponse>
+
+    @GET("api/v1/cars/{carId}/summaries/trips")
+    suspend fun getTripSummaries(
+        @Path("carId") carId: Int,
+        @Query("after") after: String? = null,
+        @Query("limit") limit: Int? = null
+    ): Response<com.matelink.data.api.models.TripSummariesResponse>
+
+    @POST("api/v1/cars/{carId}/summaries/charges")
+    suspend fun uploadChargeSummaries(
+        @Path("carId") carId: Int,
+        @Body request: com.matelink.data.api.models.ChargeSummariesUploadRequest
+    ): Response<com.matelink.data.api.models.SummariesUploadResponse>
+
+    @GET("api/v1/cars/{carId}/summaries/charges")
+    suspend fun getChargeSummaries(
+        @Path("carId") carId: Int,
+        @Query("after") after: String? = null,
+        @Query("limit") limit: Int? = null
+    ): Response<com.matelink.data.api.models.ChargeSummariesResponse>
 }

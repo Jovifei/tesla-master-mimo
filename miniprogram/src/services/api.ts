@@ -787,6 +787,28 @@ export const matelinkApi = {
     const response = await requestJson<ApiEnvelope<{ charge?: RawCharge | null }> | { charge?: RawCharge | null }>(`/api/v1/cars/${carId}/charges/current`)
     return detailResult(response, 'charge', value => value ? normalizeCharge(value as RawCharge) : null)
   },
+
+  async validateInviteCode(code: string): Promise<{ valid: boolean; code?: string; remaining?: number; reason?: string }> {
+    const response = await requestJson<{ valid: boolean; code?: string; remaining?: number; reason?: string }>(
+      '/v1/auth/invite/validate',
+      {
+        method: 'POST',
+        data: { code: code.trim().toUpperCase() },
+      },
+    )
+    return response.data
+  },
+
+  async claimInviteCode(code: string, clientType = 'miniprogram'): Promise<{ success: boolean; code?: string; error?: string }> {
+    const response = await requestJson<{ success: boolean; code?: string; error?: string }>(
+      '/v1/auth/invite/claim',
+      {
+        method: 'POST',
+        data: { code: code.trim().toUpperCase(), client_type: clientType },
+      },
+    )
+    return response.data
+  },
 }
 
 export function resetApiSessionForTests(): void {

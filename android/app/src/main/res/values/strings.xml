@@ -292,11 +292,12 @@
     <string name="about_tech_web">Web - TypeScript - React - Vite</string>
     <string name="about_data_source">Data Source</string>
     <string name="about_data_source_self_hosted">Requires self-hosted TeslaMate + TeslaMateApi-compatible API.</string>
-    <string name="about_data_source_no_tesla">Does not connect to the official Tesla API.</string>
+    <string name="about_data_source_no_tesla">Connects via authorized Tesla official Fleet API, adhering to Tesla Developer Terms of Use.</string>
     <string name="about_data_source_no_collection">Does not collect user data.</string>
     <string name="about_links">Links</string>
     <string name="about_link_github">GitHub: Jovifei/Tesla_MateLink</string>
     <string name="about_link_license">License: MIT</string>
+    <string name="about_trademark_disclaimer">MateLink is an independent third-party application and is not affiliated with or endorsed by Tesla, Inc. Tesla and related product names are trademarks of Tesla, Inc.</string>
     <string name="about_footer">Copyright 2026 JoviF - Made for Tesla owners</string>
     <string name="notification_permission_title">Notification Permission</string>
     <string name="notification_permission_message">Allow notifications for charging, sentry, TPMS, and software update alerts.</string>
