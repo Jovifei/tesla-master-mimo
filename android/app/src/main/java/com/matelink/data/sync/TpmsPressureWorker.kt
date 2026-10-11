@@ -238,8 +238,6 @@ class TpmsPressureWorker @AssistedInject constructor(
         }
 
         val tpmsDetails = status.tpmsDetails
-        val outsideTempC = status.outsideTemp
-
         val profile = settingsDataStore.getTpmsAlertProfile(historyCarId)
         if (vehicleContextRepository.captureReadScope() != readScope) return
         val now = System.currentTimeMillis()
@@ -295,6 +293,9 @@ class TpmsPressureWorker @AssistedInject constructor(
         if (changeRuleStore.observe(historyCarId).first().enabled) {
             for (change in changeRuleStore.pending(historyCarId)) {
                 if (vehicleContextRepository.captureReadScope() != readScope) return
+                // A pending legacy poll-time alert has no qualified collector receipt.
+                // Preserve its old preference but never deliver it as natural Fleet proof.
+                if (!tpmsHistoryRepository.verifiesChange(historyCarId, change)) continue
                 try {
                     tpmsTrendNotificationManager.showPressureChange(historyCarId,change)
                     changeRuleStore.acknowledge(historyCarId,change)

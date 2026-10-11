@@ -1,6 +1,7 @@
 package com.matelink.domain.analytics
 
 import com.matelink.data.local.entity.TpmsPressureSample
+import com.matelink.data.local.entity.TPMS_VERIFIED_COLLECTOR
 import com.matelink.data.local.TirePosition
 import kotlin.math.abs
 
@@ -25,12 +26,12 @@ fun pressureChanges(previous: TpmsPressureSample?, current: TpmsPressureSample, 
 fun pressureChangesAcrossWheels(
     previous: List<TpmsPressureSample>, current: TpmsPressureSample, rule: TpmsChangeRule
 ): List<TpmsPressureChange> {
-    if (!rule.enabled || !rule.valid || current.provenance != "provider_observation") return emptyList()
+    if (!rule.enabled || !rule.valid || current.provenance != TPMS_VERIFIED_COLLECTOR) return emptyList()
     val currentValues = listOf(current.pressureFl,current.pressureFr,current.pressureRl,current.pressureRr)
     return TirePosition.entries.mapIndexedNotNull { index, wheel ->
         val value = currentValues[index]?.takeIf { it.isFinite() && it > 0 } ?: return@mapIndexedNotNull null
         val before = previous.asSequence().filter {
-            it.carId == current.carId && it.provenance == "provider_observation" &&
+            it.carId == current.carId && it.provenance == TPMS_VERIFIED_COLLECTOR &&
                 it.observedAt < current.observedAt &&
                 current.observedAt - it.observedAt <= rule.windowHours * 3600000L
         }.mapNotNull { row ->

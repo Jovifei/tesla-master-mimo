@@ -4,6 +4,9 @@ import com.matelink.data.local.dao.TpmsPressureSampleDao
 import com.matelink.data.local.HistoryCarIdResolver
 import com.matelink.data.local.LegacyHistoryCarIdResolver
 import com.matelink.data.local.entity.TpmsPressureSample
+import com.matelink.data.local.entity.TPMS_VERIFIED_COLLECTOR
+import com.matelink.domain.analytics.TpmsPressureChange
+import com.matelink.data.local.TirePosition
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -32,20 +35,33 @@ class TpmsHistoryRepository @Inject constructor(
     suspend fun latestVerifiedPerWheel(historyCarId: Int, before: Long, windowHours: Int): List<TpmsPressureSample> =
         dao.latestPerWheel(historyCarId, before - windowHours.toLong() * 3_600_000L, before)
 
+    /** Refuse to deliver old queued pressure changes without exact V2 receipt. */
+    suspend fun verifiesChange(historyCarId: Int, change: TpmsPressureChange): Boolean {
+        val row = dao.getAt(historyCarId, change.observedAt) ?: return false
+        if (row.provenance != TPMS_VERIFIED_COLLECTOR) return false
+        val received = when (change.wheel) {
+            TirePosition.FL -> row.pressureFl
+            TirePosition.FR -> row.pressureFr
+            TirePosition.RL -> row.pressureRl
+            TirePosition.RR -> row.pressureRr
+        }
+        return received?.takeIf { it.isFinite() } == change.after
+    }
+
     suspend fun latestVerified(historyCarId: Int, now: Long): TpmsPressureSample? =
-        dao.getInRange(historyCarId, now - THIRTY_DAYS_MS, now).filter { it.provenance == "provider_observation" }.lastOrNull()
+        dao.getInRange(historyCarId, now - THIRTY_DAYS_MS, now).filter { it.provenance == TPMS_VERIFIED_COLLECTOR }.lastOrNull()
 
     suspend fun load7DaySamples(carId: Int, now: Long = System.currentTimeMillis()): List<TpmsPressureSample> =
-        dao.getInRange(vehicleContextRepository.requireLocalHistoryCarId(carId), now - SEVEN_DAYS_MS, now + 1).filter { it.provenance == "provider_observation" }
+        dao.getInRange(vehicleContextRepository.requireLocalHistoryCarId(carId), now - SEVEN_DAYS_MS, now + 1).filter { it.provenance == TPMS_VERIFIED_COLLECTOR }
 
     suspend fun load30DaySamples(carId: Int, now: Long = System.currentTimeMillis()): List<TpmsPressureSample> =
-        dao.getInRange(vehicleContextRepository.requireLocalHistoryCarId(carId), now - THIRTY_DAYS_MS, now + 1).filter { it.provenance == "provider_observation" }
+        dao.getInRange(vehicleContextRepository.requireLocalHistoryCarId(carId), now - THIRTY_DAYS_MS, now + 1).filter { it.provenance == TPMS_VERIFIED_COLLECTOR }
 
     suspend fun pruneOlderThan90Days(carId: Int, now: Long = System.currentTimeMillis()): Int =
-        dao.deleteOlderThan(vehicleContextRepository.requireLocalHistoryCarId(carId), now - NINETY_DAYS_MS)
+        dao.deleteOlderCollectorThan(vehicleContextRepository.requireLocalHistoryCarId(carId), now - NINETY_DAYS_MS)
 
     suspend fun pruneOlderThan90DaysForHistoryCarId(historyCarId: Int, now: Long): Int =
-        dao.deleteOlderThan(historyCarId, now - NINETY_DAYS_MS)
+        dao.deleteOlderCollectorThan(historyCarId, now - NINETY_DAYS_MS)
 
     private fun TpmsPressureSample.normalized() = copy(
         pressureFl = pressureFl?.takeIf { it.isFinite() },

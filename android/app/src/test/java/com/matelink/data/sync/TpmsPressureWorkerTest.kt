@@ -567,5 +567,6 @@ class TpmsPressureWorkerTest {
             saved.filter { it.carId == carId && it.observedAt in from until before }
         override suspend fun getInRange(carId: Int, from: Long, to: Long): List<TpmsPressureSample> = emptyList()
         override suspend fun deleteOlderThan(carId: Int, cutoff: Long): Int = 0
+        override suspend fun deleteOlderCollectorThan(carId: Int, cutoff: Long): Int = 0
     }
 }

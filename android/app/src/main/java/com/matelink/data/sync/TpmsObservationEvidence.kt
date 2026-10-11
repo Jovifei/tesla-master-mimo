@@ -2,6 +2,7 @@ package com.matelink.data.sync
 
 import com.matelink.data.api.models.TpmsDetails
 import com.matelink.data.local.entity.TpmsPressureSample
+import com.matelink.data.local.entity.TPMS_VERIFIED_COLLECTOR
 import java.time.Instant
 
 private const val THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000
@@ -17,7 +18,7 @@ internal fun verifiedTpmsSamples(carId: Int, details: TpmsDetails?, now: Long): 
         val pressure = value?.takeIf { it.isFinite() && it in 0.0..15.0 } ?: return
         val at = timestamp?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() } ?: return
         if (at <= 0 || at > now || at < now - THIRTY_DAYS_MS) return
-        val current = byTime[at] ?: TpmsPressureSample(carId,at,provenance="provider_observation")
+        val current = byTime[at] ?: TpmsPressureSample(carId,at,provenance=TPMS_VERIFIED_COLLECTOR)
         byTime[at] = f(current,pressure)
     }
     add(details.pressureFl, details.pressureObservedAtFl){s,v->s.copy(pressureFl=v)}

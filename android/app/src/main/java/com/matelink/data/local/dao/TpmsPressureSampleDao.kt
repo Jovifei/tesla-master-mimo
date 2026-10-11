@@ -27,23 +27,23 @@ interface TpmsPressureSampleDao {
     // At most four prior wheel-bearing rows (bounded regardless of history size).
     @Query("""
         SELECT * FROM tpms_pressure_samples
-        WHERE carId = :carId AND provenance = 'provider_observation'
+        WHERE carId = :carId AND provenance = 'collector_received_verified'
         AND observedAt >= :from AND observedAt < :before
         AND observedAt IN (
           SELECT MAX(observedAt) FROM tpms_pressure_samples
-            WHERE carId = :carId AND provenance = 'provider_observation'
+            WHERE carId = :carId AND provenance = 'collector_received_verified'
             AND observedAt >= :from AND observedAt < :before AND pressureFl IS NOT NULL
           UNION
           SELECT MAX(observedAt) FROM tpms_pressure_samples
-            WHERE carId = :carId AND provenance = 'provider_observation'
+            WHERE carId = :carId AND provenance = 'collector_received_verified'
             AND observedAt >= :from AND observedAt < :before AND pressureFr IS NOT NULL
           UNION
           SELECT MAX(observedAt) FROM tpms_pressure_samples
-            WHERE carId = :carId AND provenance = 'provider_observation'
+            WHERE carId = :carId AND provenance = 'collector_received_verified'
             AND observedAt >= :from AND observedAt < :before AND pressureRl IS NOT NULL
           UNION
           SELECT MAX(observedAt) FROM tpms_pressure_samples
-            WHERE carId = :carId AND provenance = 'provider_observation'
+            WHERE carId = :carId AND provenance = 'collector_received_verified'
             AND observedAt >= :from AND observedAt < :before AND pressureRr IS NOT NULL
         ) ORDER BY observedAt ASC
     """)
@@ -56,6 +56,10 @@ interface TpmsPressureSampleDao {
     )
     suspend fun getInRange(carId: Int, from: Long, to: Long): List<TpmsPressureSample>
 
+    /** Historical caller preserved; do NOT call to prune pre-v2 receipts. */
     @Query("DELETE FROM tpms_pressure_samples WHERE provenance = 'provider_observation' AND carId = :carId AND observedAt < :cutoff")
     suspend fun deleteOlderThan(carId: Int, cutoff: Long): Int
+
+    @Query("DELETE FROM tpms_pressure_samples WHERE provenance = 'collector_received_verified' AND carId = :carId AND observedAt < :cutoff")
+    suspend fun deleteOlderCollectorThan(carId: Int, cutoff: Long): Int
 }

@@ -3,6 +3,7 @@ package com.matelink.data.sync
 import com.matelink.data.api.models.TpmsDetails
 import com.matelink.data.local.TirePosition
 import com.matelink.data.local.entity.TpmsPressureSample
+import com.matelink.data.local.entity.TPMS_VERIFIED_COLLECTOR
 import com.matelink.data.repository.mergeTpmsSampleAtSameInstant
 import com.matelink.domain.analytics.TpmsChangeRule
 import com.matelink.domain.analytics.pressureChangesAcrossWheels
@@ -33,7 +34,7 @@ class TpmsObservationEvidenceTest {
         assertEquals(Instant.parse(second).toEpochMilli(),rows[1].observedAt)
         assertEquals(2.7,rows[1].pressureFr!!,0.0)
         assertNull(rows[1].pressureFl)
-        assertEquals("provider_observation",rows[0].provenance)
+        assertEquals(TPMS_VERIFIED_COLLECTOR,rows[0].provenance)
         assertNull(parsed.onlyVerifiedWheels(rows).warningFl)
         assertNull(parsed.onlyVerifiedWheels(rows).pressureRr)
     }
@@ -48,24 +49,27 @@ class TpmsObservationEvidenceTest {
             pressureObservedAtFr=null,pressureObservedAtRl=null),now).isEmpty())
     }
     @Test fun sameInstantMergesPartialWheelsWithoutPromotingLegacyOrOverwritingZero() {
-        val first=TpmsPressureSample(-7,1000,pressureFl=0.0,provenance="provider_observation")
-        val extra=TpmsPressureSample(-7,1000,pressureFr=2.8,provenance="provider_observation")
+        val first=TpmsPressureSample(-7,1000,pressureFl=0.0,provenance=TPMS_VERIFIED_COLLECTOR)
+        val extra=TpmsPressureSample(-7,1000,pressureFr=2.8,provenance=TPMS_VERIFIED_COLLECTOR)
         val merged=mergeTpmsSampleAtSameInstant(first,extra)
         assertEquals(0.0,merged.pressureFl!!,0.0)
         assertEquals(2.8,merged.pressureFr!!,0.0)
         assertEquals(merged,mergeTpmsSampleAtSameInstant(merged,extra))
         val legacy=TpmsPressureSample(-7,1000,pressureFl=9.0,provenance="legacy_unverified")
         assertEquals(legacy,mergeTpmsSampleAtSameInstant(legacy,first))
+        val oldPoll=first.copy(provenance="provider_observation")
+        assertEquals(oldPoll,mergeTpmsSampleAtSameInstant(oldPoll,first))
         assertEquals(first,mergeTpmsSampleAtSameInstant(first,first.copy(carId=-8)))
     }
     @Test fun partialWheelChangeUsesItsOwnLatestVerifiedPrevious() {
         val history=listOf(
-            TpmsPressureSample(-7,1000,pressureFl=2.8,provenance="provider_observation"),
-            TpmsPressureSample(-7,2000,pressureFr=3.0,provenance="provider_observation"),
-            TpmsPressureSample(-8,3000,pressureFl=4.0,provenance="provider_observation"),
-            TpmsPressureSample(-7,3200,pressureFl=1.0,provenance="legacy_unverified")
+            TpmsPressureSample(-7,1000,pressureFl=2.8,provenance=TPMS_VERIFIED_COLLECTOR),
+            TpmsPressureSample(-7,2000,pressureFr=3.0,provenance=TPMS_VERIFIED_COLLECTOR),
+            TpmsPressureSample(-8,3000,pressureFl=4.0,provenance=TPMS_VERIFIED_COLLECTOR),
+            TpmsPressureSample(-7,3200,pressureFl=1.0,provenance="legacy_unverified"),
+            TpmsPressureSample(-7,3300,pressureFl=9.0,provenance="provider_observation")
         )
-        val current=TpmsPressureSample(-7,4000,pressureFl=2.4,provenance="provider_observation")
+        val current=TpmsPressureSample(-7,4000,pressureFl=2.4,provenance=TPMS_VERIFIED_COLLECTOR)
         val changes=pressureChangesAcrossWheels(history,current,TpmsChangeRule(deltaBar=0.3))
         assertEquals(1,changes.size)
         assertEquals(TirePosition.FL,changes.single().wheel)

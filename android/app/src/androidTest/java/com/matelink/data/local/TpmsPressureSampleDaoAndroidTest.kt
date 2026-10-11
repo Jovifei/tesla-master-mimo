@@ -4,10 +4,12 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.matelink.data.local.entity.TpmsPressureSample
+import com.matelink.data.local.entity.TPMS_VERIFIED_COLLECTOR
 import com.matelink.data.repository.TpmsHistoryRepository
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -81,11 +83,33 @@ class TpmsPressureSampleDaoAndroidTest {
     }
 
     @Test
+    fun v2CollectorReceiptAndPendingOldPollEvidenceRemainSeparate() = runBlocking {
+        val repo = TpmsHistoryRepository(dao)
+        val observedAt = 5_000L
+        dao.upsert(TpmsPressureSample(1, observedAt, pressureFl = 5.0, provenance = "provider_observation"))
+        repo.saveObservationForHistoryCarId(1, TpmsPressureSample(1, observedAt,
+            pressureFr = 2.8, provenance = TPMS_VERIFIED_COLLECTOR))
+        assertEquals("provider_observation", dao.getAt(1,observedAt)!!.provenance)
+        assertEquals(5.0, dao.getAt(1,observedAt)!!.pressureFl!!, 0.0)
+        assertEquals(1,dao.getInRange(1,observedAt,observedAt+1).size)
+        assertEquals(0,repo.load30DaySamples(1,observedAt).size)
+        val later = observedAt+10
+        repo.saveObservationForHistoryCarId(1, TpmsPressureSample(1,later,
+            pressureFl = 2.5, provenance = TPMS_VERIFIED_COLLECTOR))
+        assertEquals(1,repo.load30DaySamples(1,later).size)
+        val evidence = com.matelink.domain.analytics.TpmsPressureChange(
+            TirePosition.FL, 2.8, 2.5, later)
+        assertTrue(repo.verifiesChange(1,evidence))
+        assertEquals(false,repo.verifiesChange(1,evidence.copy(observedAt=observedAt)))
+    }
+
+    @Test
     fun repositoryFiltersNonFiniteObservationsAndLoadsSevenAndThirtyDayWindows() = runBlocking {
         val repository = TpmsHistoryRepository(dao)
         val now = 30L * 24 * 60 * 60 * 1_000
-        repository.saveObservation(TpmsPressureSample(1, now, pressureFl = 0.0, pressureFr = Double.NaN))
-        repository.saveObservation(TpmsPressureSample(1, now - 29L * 24 * 60 * 60 * 1_000, pressureFl = 2.5))
+        repository.saveObservation(TpmsPressureSample(1, now, pressureFl = 0.0, pressureFr = Double.NaN, provenance = TPMS_VERIFIED_COLLECTOR))
+        repository.saveObservation(TpmsPressureSample(1, now - 29L * 24 * 60 * 60 * 1_000, pressureFl = 2.5, provenance = TPMS_VERIFIED_COLLECTOR))
+        repository.saveObservation(TpmsPressureSample(1, now - 3L * 24 * 60 * 60 * 1_000, pressureFl = 8.0, provenance = "provider_observation"))
 
         assertEquals(1, repository.load7DaySamples(1, now).size)
         assertEquals(2, repository.load30DaySamples(1, now).size)

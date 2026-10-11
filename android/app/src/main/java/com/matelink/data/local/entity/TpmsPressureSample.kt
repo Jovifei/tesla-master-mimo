@@ -2,6 +2,9 @@ package com.matelink.data.local.entity
 
 import androidx.room.Entity
 
+/** V2 collector receipt, distinct from historical poll-time provider_observation rows. */
+const val TPMS_VERIFIED_COLLECTOR = "collector_received_verified"
+
 /** A point-in-time TPMS observation. Unavailable wheels remain null. */
 @Entity(
     tableName = "tpms_pressure_samples",

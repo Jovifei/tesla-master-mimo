@@ -111,3 +111,22 @@ back to the prior image/config if necessary; this is a PLAN, not
 authorization to deploy. Human natural Fleet first events, two users,
 permissions/notifications and full phone TLS delivery remain
 independent gates. No old 6-SOC or 7113-point TPMS repair performed.
+
+### Legacy provenance quarantine correction (same implementation stage)
+
+Older Android binaries wrote local polling time as `provider_observation`.
+Those previously persisted rows are **retained** but excluded from this
+new certified collector-time trend and notification path. Only new
+`collector_received_verified` receipts with exact wheel-specific
+Go MQTT collector timestamps qualify for new 7/30-day trends,
+pressure deltas, retryable notification evidence and scoped pruning.
+A pre-existing queued pressure alert must match a current exact V2
+receipt/time/wheel/after-pressure or it cannot be delivered. Legacy
+DataStore pending keys and Room rows are not deleted or rewritten.
+This avoids using an incorrect legacy timestamp as the "before" side
+of a new natural pressure-change claim.
+
+Same-SHA Android tests must prove strict legacy-poll versus V2 split,
+source/window/car/zero/late/wrong-wheel behavior, no historical rewrites,
+and the Room `latestPerWheel` bounded query / same-instant partial merge
+via independent instrumentation on a disposable database only.
