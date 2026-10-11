@@ -281,3 +281,22 @@ to original 8625 must be tested for existing-data semantics
 without clearing, reinstalling from scratch, or editing a live
 account/source record. Jovi's prior main-merge authorization
 applies only when acceptance prerequisites genuinely hold.
+
+
+### Exact independent replay parity in final same-SHA CI
+
+The final source includes the original d119 Java fixture **unchanged**,
+reusing Git blob `4e4252aa30803a83c171af22ae9fea61ec332323`
+as `android/app/src/test/java/DisplayProjectionReplay.java`.
+The `DisplayProjectionReplayTest` JUnit wrapper executes its original
+`main` method through actual Debug/Release compiled Kotlin classes.
+For source qualification inspect the **real Android job** and both
+TEST XML suites; the Kotlin `IndependentD119DisplayReplayTest`
+and actual independent-Java replay must both pass, with all expected
+metadata and energy denominator unchanged. The local original Codex
+still independently compiles/runs its separate fixture from
+validation ref `d11973542c3944aa68ee7237d4e7a7c3b8689664`
+in a clean checkout, records actual exit codes/source identities,
+then handles the authorized same-signer device workflow only after
+full source CI is green. CI assertions and a local signed APK are
+not natural Fleet or authenticated phone history acceptance.

@@ -900,3 +900,30 @@ artifacts are recorded in PR17's final completion comment, not
 inferred from old ef88 or the moving branch. There is no fleet
 first-event, authenticated-history, TPMS, notification or two-user
 natural acceptance from these synthetic tests.
+
+
+### Follow-up verification: original independently supplied Java replay in Actions
+
+The original `d11973542c3944aa68ee7237d4e7a7c3b8689664`
+`tools/energy-stage/independent-display-replay/DisplayProjectionReplay.java`
+has Git blob **`4e4252aa30803a83c171af22ae9fea61ec332323`**.
+The final candidate adds that exact **unmodified blob** as
+`android/app/src/test/java/DisplayProjectionReplay.java` and a
+small JUnit `DisplayProjectionReplayTest` adapter. This runs the
+original, independently authored Java/Moshi fixture against the
+actual compiled Debug AND Release app test classpaths within the
+existing Android Actions job, in addition to
+`IndependentD119DisplayReplayTest` (the Kotlin-consumer equivalent).
+
+Expected synthetic assertions are exactly: original raw JSON
+`1 km / SOC unavailable / unqualified old Fleet 8 kWh` retained
+byte-identically, while new valid detail `2 km, SOC80→70,
+qualified 1 kWh, efficiency 500 Wh/km` survives direct Room row,
+offline `toAnalysisDriveData` and `mergeStoredDrive` same-ID
+return. A genuinely failing Java replay fails the real Android job,
+not merely an informational helper. No source history is manufactured
+and this verification uses no provider, credentials, vehicle or
+production API. The independent local Codex must still repeat its
+own clean-compile/replay and full signed-device checks on the final
+immutable HEAD; a remote test does not substitute for physical
+installation or authenticated natural Fleet data acceptance.
