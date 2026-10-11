@@ -6,49 +6,44 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import org.json.JSONArray
-import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private val Context.chargeEvents by preferencesDataStore("completed_charge_events")
-/** One durable event; Android delivery and foreground acknowledgement are independent. */
+
+/**
+ * Durable independent system/app acknowledgements. v2 keys never reinterpret or
+ * delete old unscoped JSON: an origin/account change establishes its own silent
+ * full-sync baseline. No Room migration or history rewrite is involved.
+ */
 @Singleton
 class CompletedChargeEventStore @Inject constructor(@ApplicationContext private val context: Context) {
-    private val mutex = Mutex()
-    private fun key(carId: Int, kind: String) = stringPreferencesKey("vehicle_${carId}_$kind")
+    private fun key(carId: Int, kind: String, scopeKey: String) =
+        stringPreferencesKey("completion_v2_${carId}_${kind}_$scopeKey")
     val changes get() = context.chargeEvents.data
-    fun events(carId: Int, kind: String = "charge") = changes.map { decode(it[key(carId,kind)]).events }
-    suspend fun record(carId: Int, remoteCarId: Int, completed: List<Pair<Int, String>>, kind: String = "charge") = mutex.withLock {
+
+    internal fun events(carId: Int, scopeKey: String, kind: String = "charge") = changes.map {
+        CompletionJournalCodec.decode(it[key(carId, kind, scopeKey)], System.currentTimeMillis()).events
+            .filter { e -> e.carId == carId && e.kind == kind && e.scopeKey == scopeKey }
+    }
+
+    internal suspend fun record(
+        carId: Int, remoteCarId: Int, completed: List<CompletionReceipt>, scopeKey: String,
+        kind: String = "charge"
+    ) {
         context.chargeEvents.edit { prefs ->
-            val previous=decode(prefs[key(carId,kind)])
-            prefs[key(carId,kind)] = encode(advanceCompletionState(previous,carId,remoteCarId,kind,completed))
+            val key = key(carId, kind, scopeKey)
+            prefs[key] = CompletionJournalCodec.record(prefs[key], carId, remoteCarId, kind,
+                scopeKey, completed, System.currentTimeMillis())
         }
     }
-    suspend fun consume(carId: Int, id: Int, system: Boolean, kind: String = "charge") = mutex.withLock {
+
+    internal suspend fun consume(event: CompletedChargeEvent, system: Boolean) {
+        val scopeKey = event.scopeKey ?: return
         context.chargeEvents.edit { prefs ->
-            val previous=decode(prefs[key(carId,kind)])
-            prefs[key(carId,kind)] = encode(previous.copy(events=consumeCompletionEvent(previous.events,id,system)))
+            val key = key(event.carId, event.kind, scopeKey)
+            val raw = prefs[key] ?: return@edit
+            prefs[key] = CompletionJournalCodec.consume(raw, event, system, System.currentTimeMillis())
         }
     }
-    private fun decode(raw: String?): CompletionState {
-        if(raw==null) return CompletionState(null,java.time.Instant.now().toEpochMilli(),emptyList())
-        val obj=JSONObject(raw)
-        val rows=obj.getJSONArray("events")
-        val events=(0 until rows.length()).map { i -> rows.getJSONObject(i).let {
-            CompletedChargeEvent(it.getInt("car"),it.getInt("remote"),it.getInt("id"),it.getString("end"),
-                it.optBoolean("system"),it.optBoolean("app"),it.optString("kind","charge"))
-        } }
-        val seen=obj.getJSONArray("seen")
-        return CompletionState(obj.getInt("baseline"),obj.getLong("cutoff"),events,(0 until seen.length()).map { seen.getInt(it) }.toSet())
-    }
-    private fun encode(state: CompletionState): String = JSONObject().apply {
-        put("baseline",state.baseline ?: 0); put("cutoff",state.cutoff);put("seen",JSONArray(state.seen.sorted()))
-        put("events",JSONArray().apply { state.events.forEach { e -> put(JSONObject().apply {
-            put("car",e.carId);put("remote",e.remoteCarId);put("id",e.chargeId);put("end",e.endDate)
-            put("kind",e.kind);put("system",e.systemConsumed);put("app",e.appConsumed)
-        }) } })
-    }.toString()
 }

@@ -1,18 +1,14 @@
 package com.matelink.data.sync
 
 import com.matelink.data.local.CompletedChargeEvent
+import com.matelink.data.local.CompletionReceipt
 import com.matelink.data.local.HistoryConnectionSource
 import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import java.time.Instant
 
-/**
- * Notification receipts are not Fleet first-event proof. Only a complete
- * observed source record, with an actual past endpoint, can publish one.
- * Legacy self-hosted API rows may omit source; a cloud import/archive cannot
- * impersonate a new natural Fleet drive or charge.
- */
+/** Session completion and physical energy qualification are independent claims. */
 internal fun eligibleCompletedPublication(
     kind: String, quality: String, rawQuality: String?, rawReason: String?, rawSource: String?,
     connectionSource: HistoryConnectionSource, start: String?, end: String?,
@@ -23,9 +19,6 @@ internal fun eligibleCompletedPublication(
     if (connectionSource == HistoryConnectionSource.CLOUD &&
         (rawSource !in setOf("telemetry_mqtt", "fleet_api") || rawQuality == null)) return false
     val observed = quality == "observed" && (rawQuality == null || rawQuality == "observed")
-    // A completed Fleet charge may have an unknown/incomplete energy counter:
-    // completion is evidenced by the real session boundary, NOT by kWh.
-    // Do not loosen drive proof or unverified/unknown-source imports.
     val chargeWithUnknownEnergy = kind == "charge" && quality == "incomplete" &&
         rawQuality == "incomplete" &&
         ((rawSource == "telemetry_mqtt" && rawReason == "partial_or_missing_charge_counter") ||
@@ -36,37 +29,43 @@ internal fun eligibleCompletedPublication(
     return started.isBefore(ended) && !ended.isAfter(now)
 }
 
-internal fun DriveSummary.canPublishCompletion(
+internal fun DriveSummary.completionReceipt(
     source: HistoryConnectionSource, now: Instant = Instant.now()
-): Boolean {
-    val raw = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive) ?: return false
-    return raw.driveId == driveId && eligibleCompletedPublication(
-        "drive", qualityState, raw.qualityState, raw.qualityReason, raw.source, source, raw.startDate, raw.endDate, now
-    )
+): CompletionReceipt? {
+    val raw = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive) ?: return null
+    if (raw.driveId != driveId || !eligibleCompletedPublication("drive", qualityState,
+            raw.qualityState, raw.qualityReason, raw.source, source, raw.startDate, raw.endDate, now)) return null
+    return CompletionReceipt(driveId, requireNotNull(raw.startDate), requireNotNull(raw.endDate), raw.source)
 }
 
-internal fun ChargeSummary.canPublishCompletion(
+internal fun ChargeSummary.completionReceipt(
     source: HistoryConnectionSource, now: Instant = Instant.now()
-): Boolean {
-    val raw = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeCharge) ?: return false
-    return raw.chargeId == chargeId && eligibleCompletedPublication(
-        "charge", qualityState, raw.qualityState, raw.qualityReason, raw.source, source, raw.startDate, raw.endDate, now
-    )
+): CompletionReceipt? {
+    val raw = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeCharge) ?: return null
+    if (raw.chargeId != chargeId || !eligibleCompletedPublication("charge", qualityState,
+            raw.qualityState, raw.qualityReason, raw.source, source, raw.startDate, raw.endDate, now)) return null
+    return CompletionReceipt(chargeId, requireNotNull(raw.startDate), requireNotNull(raw.endDate), raw.source)
 }
 
-private fun sameCompletionInstant(eventTime: String, sourceTime: String?): Boolean {
-    val event = runCatching { Instant.parse(eventTime) }.getOrNull() ?: return false
-    val source = sourceTime?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return false
-    return event == source
+internal fun DriveSummary.canPublishCompletion(source: HistoryConnectionSource, now: Instant = Instant.now()) =
+    completionReceipt(source, now) != null
+internal fun ChargeSummary.canPublishCompletion(source: HistoryConnectionSource, now: Instant = Instant.now()) =
+    completionReceipt(source, now) != null
+
+private fun sameCompletionInstant(a: String?, b: String?): Boolean {
+    val first = a?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return false
+    val second = b?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return false
+    return first == second
 }
 
-/** Prevent reusing a pending numeric event for a different source session. */
-internal fun CompletedChargeEvent.matchesDrive(summary: DriveSummary): Boolean =
-    kind == "drive" && carId == summary.carId && chargeId == summary.driveId &&
-        sameCompletionInstant(endDate, summary.apiEvidence
-            ?.let(HistorySummaryEvidenceCodec::decodeDrive)?.endDate)
-
-internal fun CompletedChargeEvent.matchesCharge(summary: ChargeSummary): Boolean =
-    kind == "charge" && carId == summary.carId && chargeId == summary.chargeId &&
-        sameCompletionInstant(endDate, summary.apiEvidence
-            ?.let(HistorySummaryEvidenceCodec::decodeCharge)?.endDate)
+/** ID alone, an old unscoped event or a current display projection proves no receipt. */
+internal fun CompletedChargeEvent.matchesDrive(summary: DriveSummary): Boolean {
+    val raw = summary.apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive) ?: return false
+    return kind == "drive" && carId == summary.carId && chargeId == summary.driveId && raw.driveId == chargeId &&
+        source == raw.source && sameCompletionInstant(startDate, raw.startDate) && sameCompletionInstant(endDate, raw.endDate)
+}
+internal fun CompletedChargeEvent.matchesCharge(summary: ChargeSummary): Boolean {
+    val raw = summary.apiEvidence?.let(HistorySummaryEvidenceCodec::decodeCharge) ?: return false
+    return kind == "charge" && carId == summary.carId && chargeId == summary.chargeId && raw.chargeId == chargeId &&
+        source == raw.source && sameCompletionInstant(startDate, raw.startDate) && sameCompletionInstant(endDate, raw.endDate)
+}

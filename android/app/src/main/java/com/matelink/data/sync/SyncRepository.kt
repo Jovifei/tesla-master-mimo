@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.matelink.data.local.HistoryReadScope
+import com.matelink.data.local.completionScopeKey
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.local.dao.ChargeSummaryDao
@@ -16,7 +17,6 @@ import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.local.TripNotificationStateStore
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.ChargeSummary
-import com.matelink.domain.analytics.PaginationGuard
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.domain.analytics.resolveDriveEnergy
 import com.matelink.domain.analytics.withResolvedDriveEnergy
@@ -29,41 +29,44 @@ import com.matelink.notification.TripNotificationManager
 import javax.inject.Inject
 import javax.inject.Singleton
 
-internal class DriveSummarySyncAccumulator {
-    private var seenIds = emptySet<Int>()
+internal class DriveSummarySyncAccumulator(private val guard: CompletionPageGuard = CompletionPageGuard()) {
     private val collectedSummaries = mutableListOf<DriveSummary>()
     val summaries: List<DriveSummary> get() = collectedSummaries
+    var completed: Boolean = false
+        private set
     fun addPage(pageIds: List<Int>, pageSummaries: List<DriveSummary>): Boolean {
         collectedSummaries += pageSummaries
-        val decision = PaginationGuard.evaluate(pageSize = 50, seenIds = seenIds, pageIds = pageIds)
-        seenIds = decision.seenIds
-        return !decision.stop
+        val decision = guard.accept(pageIds)
+        completed = decision == CompletionPageDecision.COMPLETE
+        return decision == CompletionPageDecision.CONTINUE
     }
 }
 internal sealed interface DriveSummaryPageResult {
     data class Success(val sourceIds: List<Int>, val summaries: List<DriveSummary>) : DriveSummaryPageResult
     data object Failure : DriveSummaryPageResult
 }
-/** Completion publication remains behind the full-page success boundary. */
+/** Only a successful terminal page, not a repeated page/budget stop, publishes completion. */
 internal class DriveSummarySyncRunner(
     private val fetchPage: suspend (page: Int) -> DriveSummaryPageResult,
     private val persistPage: suspend (List<DriveSummary>) -> Unit,
-    private val onCompleted: suspend (List<DriveSummary>) -> Unit
+    private val onCompleted: suspend (List<DriveSummary>) -> Unit,
+    private val maxPages: Int = 1000
 ) {
     suspend fun sync(): Boolean {
-        val accumulator = DriveSummarySyncAccumulator()
+        val accumulator = DriveSummarySyncAccumulator(CompletionPageGuard(maxPages = maxPages))
         var page = 1
         while (true) {
             when (val result = fetchPage(page)) {
                 DriveSummaryPageResult.Failure -> return false
                 is DriveSummaryPageResult.Success -> {
-                    if (result.sourceIds.isEmpty()) break
-                    persistPage(result.summaries)
+                    if (result.sourceIds.isEmpty() && result.summaries.isNotEmpty()) return false
+                    if (result.summaries.isNotEmpty()) persistPage(result.summaries)
                     if (!accumulator.addPage(result.sourceIds, result.summaries)) break
                     page++
                 }
             }
         }
+        if (!accumulator.completed) return false
         onCompleted(accumulator.summaries)
         return true
     }
@@ -88,7 +91,8 @@ class SyncRepository @Inject constructor(
     companion object { private const val TAG = "SyncRepository" }
     private val chargeDeliveryMutex = Mutex()
     private suspend fun requireScope(expected: HistoryReadScope) {
-        val actual = runCatching { vehicleContextRepository.captureReadScope() }.getOrNull()
+        val actual = try { vehicleContextRepository.captureReadScope() }
+        catch (e: CancellationException) { throw e } catch (_: Exception) { null }
         if (actual != expected) throw CancellationException("History account or server changed")
     }
     suspend fun syncCar(carId: Int): Boolean {
@@ -143,29 +147,25 @@ class SyncRepository @Inject constructor(
     private suspend fun notifyCompletedDriveUpdates(carId: Int, remoteCarId: Int, summaries: List<DriveSummary>, scope: HistoryReadScope) {
         requireScope(scope)
         val now = java.time.Instant.now()
-        val eligible = summaries.filter { it.canPublishCompletion(scope.source, now) }
-        chargeEventStore.record(carId, remoteCarId, eligible.map { it.driveId to it.endDate }, "drive")
+        val key = completionScopeKey(scope, carId, remoteCarId)
+        chargeEventStore.record(carId, remoteCarId,
+            summaries.mapNotNull { it.completionReceipt(scope.source, now) }, key, "drive")
         chargeDeliveryMutex.withLock {
-            chargeEventStore.events(carId, "drive").first().filter { !it.systemConsumed }.forEach { event ->
-                requireScope(scope)
-                if (event.carId != carId || event.remoteCarId != remoteCarId) return@forEach
-                // Permission denial can defer delivery beyond the current API page.
-                // Re-read only this vehicle's scoped, persisted evidence when needed.
-                val summary = eligible.firstOrNull { it.driveId == event.chargeId }
-                    ?: driveSummaryDao.get(carId, event.chargeId) ?: return@forEach
-                requireScope(scope)
-                if (!summary.canPublishCompletion(scope.source, now) || !event.matchesDrive(summary)) return@forEach
-                if (tripNotificationManager.showCompletedDrive(carId, summary)) {
-                    requireScope(scope)
-                    chargeEventStore.consume(carId, event.chargeId, true, "drive")
-                }
-            }
+            deliverPendingCompletions(
+                events = chargeEventStore.events(carId, key, "drive").first(),
+                scopeStillCurrent = { requireScope(scope); true },
+                resolve = { event -> resolvePendingCompletion(event, carId, remoteCarId, key,
+                    { requireScope(scope); true }, { driveSummaryDao.get(carId, event.chargeId) },
+                    { it.canPublishCompletion(scope.source, now) && event.matchesDrive(it) }) },
+                post = { _, row -> tripNotificationManager.showCompletedDrive(carId, row) },
+                acknowledge = { event -> chargeEventStore.consume(event, true) }
+            )
         }
     }
     private suspend fun syncChargeSummaries(remoteApiCarId: Int, historyCarId: Int, scope: HistoryReadScope): Boolean {
         return try {
             var page = 1
-            var seenIds = emptySet<Int>()
+            val guard = CompletionPageGuard()
             val completed = mutableListOf<ChargeSummary>()
             while (true) {
                 requireScope(scope)
@@ -175,34 +175,36 @@ class SyncRepository @Inject constructor(
                     is ApiResult.Success -> {
                         result.metadata?.let { historyMetadataStore.updateCharges(historyCarId, it) }
                         val charges = result.data
-                        if (charges.isEmpty()) break
                         val summaries = charges.mapNotNull { it.toSyncSummary(historyCarId) }
                         completed += summaries
-                        chargeSummaryDao.upsertPreservingEvidence(summaries)
-                        val decision = PaginationGuard.evaluate(pageSize = 50, seenIds = seenIds, pageIds = charges.map { it.chargeId })
-                        seenIds = decision.seenIds
-                        if (decision.stop) break
-                        page++
+                        if (summaries.isNotEmpty()) chargeSummaryDao.upsertPreservingEvidence(summaries)
+                        when (guard.accept(charges.map { it.chargeId })) {
+                            CompletionPageDecision.COMPLETE -> break
+                            CompletionPageDecision.INCOMPLETE -> {
+                                Log.w(TAG, "event=charge_page_walk_incomplete")
+                                return false
+                            }
+                            CompletionPageDecision.CONTINUE -> page++
+                        }
                     }
                     is ApiResult.Error -> return false
                 }
             }
             requireScope(scope)
             val now = java.time.Instant.now()
+            val key = completionScopeKey(scope, historyCarId, remoteApiCarId)
             chargeEventStore.record(historyCarId, remoteApiCarId,
-                completed.filter { it.canPublishCompletion(scope.source, now) }.map { it.chargeId to it.endDate })
+                completed.mapNotNull { it.completionReceipt(scope.source, now) }, key)
             chargeDeliveryMutex.withLock {
-                chargeEventStore.events(historyCarId).first().filter { !it.systemConsumed }.forEach { event ->
-                    requireScope(scope)
-                    if (event.carId != historyCarId || event.remoteCarId != remoteApiCarId) return@forEach
-                    val summary = chargeSummaryDao.get(historyCarId, event.chargeId) ?: return@forEach
-                    requireScope(scope)
-                    if (!summary.canPublishCompletion(scope.source, now) || !event.matchesCharge(summary)) return@forEach
-                    if (chargeNotifier.show(event)) {
-                        requireScope(scope)
-                        chargeEventStore.consume(historyCarId, event.chargeId, true)
-                    }
-                }
+                deliverPendingCompletions(
+                    events = chargeEventStore.events(historyCarId, key).first(),
+                    scopeStillCurrent = { requireScope(scope); true },
+                    resolve = { event -> resolvePendingCompletion(event, historyCarId, remoteApiCarId, key,
+                        { requireScope(scope); true }, { chargeSummaryDao.get(historyCarId, event.chargeId) },
+                        { it.canPublishCompletion(scope.source, now) && event.matchesCharge(it) }) },
+                    post = { event, _ -> chargeNotifier.show(event) },
+                    acknowledge = { event -> chargeEventStore.consume(event, true) }
+                )
             }
             true
         } catch (e: CancellationException) { throw e } catch (_: Exception) {
