@@ -30,4 +30,10 @@ class CompletionRuntimeWiringTest {
         val inbox = manager.substringAfter("internal fun completedTripInboxIntent").substringBefore("internal fun tripNotificationId")
         assertFalse(inbox.contains("putExtra"));assertFalse(inbox.contains("drive_detail"))
     }
+    @Test fun backgroundWorkerPropagatesCancellationAtEveryCatchBoundary() {
+        val worker = source("com/matelink/data/sync/DataSyncWorker.kt")
+        val guarded = Regex("catch \\(e: CancellationException\\) \\{\\s*throw e\\s*} catch \\(e: Exception\\)")
+        assertEquals(3, guarded.findAll(worker).count())
+        assertEquals(3, Regex("catch \\(e: Exception\\)").findAll(worker).count())
+    }
 }
