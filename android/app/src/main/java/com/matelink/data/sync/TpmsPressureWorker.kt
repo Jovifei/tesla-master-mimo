@@ -263,12 +263,17 @@ class TpmsPressureWorker @AssistedInject constructor(
         }
         // No unsourced poll-time values may form Tesla/custom alert claims.
         // An existing qualified receipt can still retry a permission-denied claim.
-        if (accepted.isNotEmpty()) processSuccessfulTpmsStatus(
+        // Evaluate each already-persisted collector instant independently:
+        // a pressure value from FL one minute ago must not be re-dated with
+        // FR's later receipt, nor suppress FL's custom threshold transition.
+        for (acceptedSample in accepted) {
+            if (vehicleContextRepository.captureReadScope() != readScope) throw CancellationException()
+            processSuccessfulTpmsStatus(
             carId = historyCarId,
             carName = carName,
-            tpmsDetails = requireNotNull(tpmsDetails).onlyVerifiedWheels(accepted),
+            tpmsDetails = requireNotNull(tpmsDetails).onlyVerifiedWheels(listOf(acceptedSample)),
             outsideTempC = null, // climate sample has no matching TPMS field timestamp
-            observedAt = accepted.last().observedAt,
+            observedAt = acceptedSample.observedAt,
             profile = profile,
             saveObservation = { _ -> /* persisted before claim, never before provenance check */ },
             pruneOlderThan90Days = { _, now ->
@@ -298,6 +303,7 @@ class TpmsPressureWorker @AssistedInject constructor(
                 tpmsTrendNotificationManager.showCustomAlert(id, alert)
             }
         )
+        }
         if (vehicleContextRepository.captureReadScope() != readScope) return
         if (changeRuleStore.observe(historyCarId).first().enabled) {
             for (change in changeRuleStore.pending(historyCarId)) {

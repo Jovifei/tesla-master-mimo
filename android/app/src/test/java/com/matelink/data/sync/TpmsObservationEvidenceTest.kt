@@ -39,6 +39,22 @@ class TpmsObservationEvidenceTest {
         assertNull(parsed.onlyVerifiedWheels(rows).warningFl)
         assertNull(parsed.onlyVerifiedWheels(rows).pressureRr)
     }
+    @Test fun perWheelAlertEvaluationNeverAssignsAnEarlierWheelToTheLaterWheelTime() {
+        val raw=evidence()
+        val rows=verifiedTpmsSamples(-7,raw,now)
+        val firstSlice=raw.onlyVerifiedWheels(listOf(rows[0]))
+        val secondSlice=raw.onlyVerifiedWheels(listOf(rows[1]))
+        assertEquals(2.5,firstSlice.pressureFl!!,0.0)
+        assertEquals(0.0,firstSlice.pressureRl!!,0.0)
+        assertNull(firstSlice.pressureFr)
+        assertNull(secondSlice.pressureFl)
+        assertNull(secondSlice.pressureRl)
+        assertEquals(2.7,secondSlice.pressureFr!!,0.0)
+        assertNull(firstSlice.warningFl)
+        assertNull(secondSlice.warningFl)
+        assertEquals(listOf(Instant.parse(first).toEpochMilli(), Instant.parse(second).toEpochMilli()),
+            rows.map { it.observedAt })
+    }
     @Test fun oldAPIArchiveBadUnitAndUntrustedFutureTimeCannotInventTrend() {
         assertTrue(verifiedTpmsSamples(-7,TpmsDetails(pressureFl=2.5),now).isEmpty())
         assertTrue(verifiedTpmsSamples(-7,evidence().copy(pressureSource="local_import"),now).isEmpty())

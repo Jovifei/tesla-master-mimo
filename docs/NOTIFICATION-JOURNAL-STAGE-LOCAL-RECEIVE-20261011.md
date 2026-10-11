@@ -166,3 +166,16 @@ prune/upgrade the legacy archive. The disposable Room instrumentation
 asserts car, provenance, bound inclusivity/exclusivity, and source-only
 loads, independently of the Java analyzer test asserting timestamps,
 no fake breaks, 0 bar and limited factor evidence. No DDL.
+
+### Same-instant TPMS alert evaluation (no cross-wheel time substitution)
+
+The worker publishes custom-wheel threshold claims per independently
+verified, persisted collector timestamp slice, in chronological order.
+Previously a set of FL/FR events at different instants could be
+recombined into one synthetic observation at the latest FR time; the
+earlier FL alert might not be independently processed. Now each
+time-qualified slice is checked independently. Tesla-wide soft warning
+state transitions are not constructed from unrelated per-wheel times;
+a complete same-timestamp observed set remains eligible. Old or
+unqualified samples still cannot wake vehicles, trigger natural
+pressure notifications, or become new Fleet measurements.
