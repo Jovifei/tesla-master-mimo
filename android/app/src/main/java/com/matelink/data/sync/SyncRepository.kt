@@ -142,13 +142,23 @@ class SyncRepository @Inject constructor(
     }
     private suspend fun notifyCompletedDriveUpdates(carId: Int, remoteCarId: Int, summaries: List<DriveSummary>, scope: HistoryReadScope) {
         requireScope(scope)
-        chargeEventStore.record(carId, remoteCarId, summaries.filter { it.qualityState != "quarantined" }
-            .map { it.driveId to it.endDate }, "drive")
+        val now = java.time.Instant.now()
+        val eligible = summaries.filter { it.canPublishCompletion(scope.source, now) }
+        chargeEventStore.record(carId, remoteCarId, eligible.map { it.driveId to it.endDate }, "drive")
         chargeDeliveryMutex.withLock {
             chargeEventStore.events(carId, "drive").first().filter { !it.systemConsumed }.forEach { event ->
                 requireScope(scope)
-                val summary = summaries.firstOrNull { it.driveId == event.chargeId } ?: return@forEach
-                if (tripNotificationManager.showCompletedDrive(carId, summary)) chargeEventStore.consume(carId, event.chargeId, true, "drive")
+                if (event.carId != carId || event.remoteCarId != remoteCarId) return@forEach
+                // Permission denial can defer delivery beyond the current API page.
+                // Re-read only this vehicle's scoped, persisted evidence when needed.
+                val summary = eligible.firstOrNull { it.driveId == event.chargeId }
+                    ?: driveSummaryDao.get(carId, event.chargeId) ?: return@forEach
+                requireScope(scope)
+                if (!summary.canPublishCompletion(scope.source, now) || !event.matchesDrive(summary)) return@forEach
+                if (tripNotificationManager.showCompletedDrive(carId, summary)) {
+                    requireScope(scope)
+                    chargeEventStore.consume(carId, event.chargeId, true, "drive")
+                }
             }
         }
     }
@@ -178,13 +188,20 @@ class SyncRepository @Inject constructor(
                 }
             }
             requireScope(scope)
-            chargeEventStore.record(historyCarId, remoteApiCarId, completed.filter {
-                it.qualityState != "quarantined" && runCatching { java.time.Instant.parse(it.endDate) <= java.time.Instant.now() }.getOrDefault(false)
-            }.map { it.chargeId to it.endDate })
+            val now = java.time.Instant.now()
+            chargeEventStore.record(historyCarId, remoteApiCarId,
+                completed.filter { it.canPublishCompletion(scope.source, now) }.map { it.chargeId to it.endDate })
             chargeDeliveryMutex.withLock {
                 chargeEventStore.events(historyCarId).first().filter { !it.systemConsumed }.forEach { event ->
                     requireScope(scope)
-                    if (chargeNotifier.show(event)) chargeEventStore.consume(historyCarId, event.chargeId, true)
+                    if (event.carId != historyCarId || event.remoteCarId != remoteApiCarId) return@forEach
+                    val summary = chargeSummaryDao.get(historyCarId, event.chargeId) ?: return@forEach
+                    requireScope(scope)
+                    if (!summary.canPublishCompletion(scope.source, now) || !event.matchesCharge(summary)) return@forEach
+                    if (chargeNotifier.show(event)) {
+                        requireScope(scope)
+                        chargeEventStore.consume(historyCarId, event.chargeId, true)
+                    }
                 }
             }
             true

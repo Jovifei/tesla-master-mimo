@@ -927,3 +927,36 @@ production API. The independent local Codex must still repeat its
 own clean-compile/replay and full signed-device checks on the final
 immutable HEAD; a remote test does not substitute for physical
 installation or authenticated natural Fleet data acceptance.
+
+## 2026-10-11 further source repair candidate — natural completion publication
+
+This additional code patch repairs the **active** `CompletedChargeEventStore` path,
+not the obsolete watermark-only trip test helper. Actual `SyncRepository`
+full-page callbacks now require original persisted source evidence, observed
+quality, past ordered start/end instants, correct scope/source and matching
+persistent event end times **before recording or sending** a drive/charge
+notification. Unverified local import/archive cannot be announced as a new
+Fleet first event. Source truth and current qualified UI projection remain
+separate. Pending denied-permission trips can be retried against the same
+vehicle's Room summary after a later successful bounded full sync, without
+cross-car/ID fallback. Existing foreground/system acknowledgements remain
+independent; failed notification delivery never consumes the system event.
+
+`advanceCompletionState` no longer remembers malformed/future completions
+as already seen, so a later valid end time for the same ID can publish. It
+does not store *pre-cutoff* historical imported IDs in the durable seen set,
+preventing an initial 20k-record synthetic archive from bloating DataStore.
+It still accepts legitimate lower-ID late completions after the baseline
+time, with duplicate suppression. Existing JSON persistence keys and Room
+schema are unchanged; no migration, production writes, vehicle action,
+authorization bypass, deletion or backfill.
+
+Acceptance for this patch requires both actual Android variants' new
+`CompletionPublicationPolicyTest` and expanded `CompletionStateTest`,
+original d119 replay, Debug/Release/lint/R8 and all Go/PG/TLS/Web/ten audits
+at the *new exact SHA*. This is a **source-only improvement**. Same-cert
+phone installation, authenticated API→Room→UI, natural Fleet multi-account
+trip/charge/TPMS and permission-restoration notifications remain separate
+independent human/device gates. Existing API bb09, phone 8625 and
+privately held rollback packages remain unchanged; the earlier PR17
+receiving matrix applies, with this patch's tests added.

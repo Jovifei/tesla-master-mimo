@@ -43,4 +43,40 @@ class CompletionStateTest {
   val c=advanceCompletionState(initial,-7,1,"drive",listOf(1 to fresh)).events.single()
   assertNotEquals(a,b);assertNotEquals(a,c)
  }
+
+ @Test fun futureOrMalformedCompletionIsNotSeenAndSameIdCanBeCorrectedLater() {
+  val t=java.time.Instant.parse("2026-10-07T05:10:00Z").toEpochMilli()
+  val initialized=CompletionState(0,cutoff,emptyList())
+  val invalid=advanceCompletionState(initialized,-7,1,"charge",
+    listOf(21 to "invalid",22 to "2026-10-07T05:20:00Z",23 to "2026-10-07T05:10:01Z"),t)
+  assertTrue(invalid.events.isEmpty())
+  assertTrue(invalid.seen.isEmpty())
+  assertEquals(0,invalid.baseline)
+  val corrected=advanceCompletionState(invalid,-7,1,"charge",
+    listOf(22 to "2026-10-07T05:08:00Z",21 to "2026-10-07T05:09:00Z"),t)
+  assertEquals(listOf(22,21),corrected.events.map { it.chargeId })
+  assertEquals(setOf(21,22),corrected.seen)
+  assertEquals(22,corrected.baseline)
+ }
+ @Test fun preBaselineLargeArchiveIsNotStoredInSeenAndLowerLateNaturalIdStillNotifies() {
+  val t=java.time.Instant.parse("2026-10-07T05:10:00Z").toEpochMilli()
+  val baseline=advanceCompletionState(CompletionState(null,cutoff,emptyList()),-7,1,"drive",
+    (1..20000).map { it to "2026-10-01T05:00:00Z" },t)
+  assertEquals(20000,baseline.baseline)
+  assertTrue(baseline.events.isEmpty())
+  assertTrue(baseline.seen.isEmpty())
+  val late=advanceCompletionState(baseline,-7,1,"drive",listOf(5 to "2026-10-07T05:09:00Z"),t)
+  assertEquals(listOf(5),late.events.map { it.chargeId })
+  val again=advanceCompletionState(late,-7,1,"drive",listOf(5 to "2026-10-07T05:09:00Z"),t)
+  assertEquals(1,again.events.size)
+  assertEquals(setOf(5),again.seen)
+ }
+ @Test fun obsoleteLegacySeenIdsCanCompactOnlyWhenTheirFullPageTimeIsBeforeCutoff() {
+  val t=java.time.Instant.parse("2026-10-07T05:10:00Z").toEpochMilli()
+  val old=CompletionState(100,cutoff,emptyList(),setOf(1,2,99))
+  val repaired=advanceCompletionState(old,-7,1,"drive",
+    listOf(1 to "2026-10-01T05:00:00Z",2 to "2026-10-01T05:00:00Z",99 to "2026-10-07T05:08:00Z"),t)
+  assertEquals(setOf(99),repaired.seen)
+  assertTrue(repaired.events.isEmpty())
+ }
 }
