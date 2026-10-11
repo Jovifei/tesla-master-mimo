@@ -32,6 +32,23 @@ class TpmsHistoryRepository @Inject constructor(
         dao.upsertMergingObservation(sample.normalized().copy(carId = historyCarId))
     }
 
+    /** Does not fabricate a new event on repeated polling with identical source time. */
+    suspend fun insertNovelVerifiedForHistoryCarId(historyCarId: Int, sample: TpmsPressureSample): TpmsPressureSample? =
+        dao.insertNovelCollectorObservation(sample.normalized().copy(carId = historyCarId))
+
+    /** Previously saved source evidence may retry permission-denied alerts,
+     * but only when every non-null candidate wheel exactly matches the receipt.
+     */
+    suspend fun hasMatchingVerifiedCollectorReceipt(historyCarId: Int, sample: TpmsPressureSample): Boolean {
+        val previous = dao.getAt(historyCarId, sample.observedAt) ?: return false
+        if (previous.provenance != TPMS_VERIFIED_COLLECTOR || sample.provenance != TPMS_VERIFIED_COLLECTOR) return false
+        val incoming = listOf(sample.pressureFl,sample.pressureFr,sample.pressureRl,sample.pressureRr)
+        val existing = listOf(previous.pressureFl,previous.pressureFr,previous.pressureRl,previous.pressureRr)
+        return incoming.any { it != null } && incoming.indices.all { i ->
+            incoming[i] == null || incoming[i] == existing[i]
+        }
+    }
+
     suspend fun latestVerifiedPerWheel(historyCarId: Int, before: Long, windowHours: Int): List<TpmsPressureSample> =
         dao.latestPerWheel(historyCarId, before - windowHours.toLong() * 3_600_000L, before)
 
@@ -90,4 +107,27 @@ internal fun mergeTpmsSampleAtSameInstant(previous: TpmsPressureSample?, incomin
         pressureRr = previous.pressureRr ?: incoming.pressureRr,
         outsideTempC = previous.outsideTempC ?: incoming.outsideTempC
     )
+}
+
+/** Only the first actual wheel reading at this exact collector instant is new.
+ * A retry or same-instant conflicting value does NOT create another event.
+ * Legacy unverified/poll-time rows remain untouched.
+ */
+internal fun novelTpmsSampleAtSameInstant(
+    previous: TpmsPressureSample?, incoming: TpmsPressureSample
+): TpmsPressureSample? {
+    if (incoming.provenance != TPMS_VERIFIED_COLLECTOR) return null
+    if (previous != null && (previous.carId != incoming.carId ||
+        previous.observedAt != incoming.observedAt || previous.provenance != incoming.provenance)) return null
+    val newRows = incoming.copy(
+        pressureFl = incoming.pressureFl.takeIf { previous?.pressureFl == null },
+        pressureFr = incoming.pressureFr.takeIf { previous?.pressureFr == null },
+        pressureRl = incoming.pressureRl.takeIf { previous?.pressureRl == null },
+        pressureRr = incoming.pressureRr.takeIf { previous?.pressureRr == null },
+        outsideTempC = null
+    )
+    return newRows.takeIf {
+        it.pressureFl != null || it.pressureFr != null ||
+            it.pressureRl != null || it.pressureRr != null
+    }
 }

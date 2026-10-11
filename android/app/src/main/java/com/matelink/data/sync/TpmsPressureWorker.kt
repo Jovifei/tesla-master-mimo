@@ -242,26 +242,35 @@ class TpmsPressureWorker @AssistedInject constructor(
         if (vehicleContextRepository.captureReadScope() != readScope) return
         val now = System.currentTimeMillis()
         val observations = verifiedTpmsSamples(historyCarId, tpmsDetails, now)
-        // Old deployed API provides no pressure-specific times. Its repeated
-        // cached snapshot cannot count as a new measured or collector observation.
-        if (observations.isNotEmpty()) processSuccessfulTpmsStatus(
+        val accepted = mutableListOf<TpmsPressureSample>()
+        if (observations.isNotEmpty()) {
+            val rule = changeRuleStore.observe(historyCarId).first()
+            for (candidate in observations) {
+                if (vehicleContextRepository.captureReadScope() != readScope) throw CancellationException()
+                // Room transaction returns only genuinely novel wheel fields;
+                // a repeated same-timestamp poll can retry a claim, not rearm one.
+                val novel = tpmsHistoryRepository.insertNovelVerifiedForHistoryCarId(historyCarId, candidate)
+                if (novel != null) {
+                    val previous = tpmsHistoryRepository.latestVerifiedPerWheel(
+                        historyCarId, novel.observedAt, rule.windowHours)
+                    changeRuleStore.record(historyCarId,
+                        com.matelink.domain.analytics.pressureChangesAcrossWheels(previous, novel, rule))
+                }
+                if (tpmsHistoryRepository.hasMatchingVerifiedCollectorReceipt(historyCarId, candidate)) {
+                    accepted += candidate
+                }
+            }
+        }
+        // No unsourced poll-time values may form Tesla/custom alert claims.
+        // An existing qualified receipt can still retry a permission-denied claim.
+        if (accepted.isNotEmpty()) processSuccessfulTpmsStatus(
             carId = historyCarId,
             carName = carName,
-            tpmsDetails = requireNotNull(tpmsDetails).onlyVerifiedWheels(observations),
+            tpmsDetails = requireNotNull(tpmsDetails).onlyVerifiedWheels(accepted),
             outsideTempC = null, // climate sample has no matching TPMS field timestamp
-            observedAt = observations.last().observedAt,
+            observedAt = accepted.last().observedAt,
             profile = profile,
-            saveObservation = { _ ->
-                val rule = changeRuleStore.observe(historyCarId).first()
-                for (verified in observations) {
-                    if (vehicleContextRepository.captureReadScope() != readScope) throw CancellationException()
-                    val previous = tpmsHistoryRepository.latestVerifiedPerWheel(
-                        historyCarId, verified.observedAt, rule.windowHours)
-                    changeRuleStore.record(historyCarId,
-                        com.matelink.domain.analytics.pressureChangesAcrossWheels(previous, verified, rule))
-                    tpmsHistoryRepository.saveObservationForHistoryCarId(historyCarId, verified)
-                }
-            },
+            saveObservation = { _ -> /* persisted before claim, never before provenance check */ },
             pruneOlderThan90Days = { _, now ->
                 tpmsHistoryRepository.pruneOlderThan90DaysForHistoryCarId(historyCarId, now)
             },

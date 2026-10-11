@@ -11,6 +11,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -101,6 +102,24 @@ class TpmsPressureSampleDaoAndroidTest {
             TirePosition.FL, 2.8, 2.5, later)
         assertTrue(repo.verifiesChange(1,evidence))
         assertEquals(false,repo.verifiesChange(1,evidence.copy(observedAt=observedAt)))
+    }
+
+
+    @Test
+    fun transactionAdmitsOnlyNewWheelAndKeepsSameTimestampRawReceipt() = runBlocking {
+        val repository = TpmsHistoryRepository(dao)
+        val at = 12_345L
+        val first = TpmsPressureSample(1,at,pressureFl=2.5,provenance=TPMS_VERIFIED_COLLECTOR)
+        val second = TpmsPressureSample(1,at,pressureFr=2.8,provenance=TPMS_VERIFIED_COLLECTOR)
+        assertNotNull(repository.insertNovelVerifiedForHistoryCarId(1,first))
+        assertNull(repository.insertNovelVerifiedForHistoryCarId(1,first))
+        assertNotNull(repository.insertNovelVerifiedForHistoryCarId(1,second))
+        assertNull(repository.insertNovelVerifiedForHistoryCarId(1,second))
+        val combined = dao.getAt(1,at)!!
+        assertEquals(2.5,combined.pressureFl!!,0.0)
+        assertEquals(2.8,combined.pressureFr!!,0.0)
+        assertEquals(1,dao.getInRange(1,at,at+1).size)
+        assertEquals(TPMS_VERIFIED_COLLECTOR,combined.provenance)
     }
 
     @Test

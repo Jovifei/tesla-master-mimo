@@ -5,6 +5,7 @@ import androidx.room.Query
 import androidx.room.Upsert
 import androidx.room.Transaction
 import com.matelink.data.repository.mergeTpmsSampleAtSameInstant
+import com.matelink.data.repository.novelTpmsSampleAtSameInstant
 import com.matelink.data.local.entity.TpmsPressureSample
 
 @Dao
@@ -22,6 +23,17 @@ interface TpmsPressureSampleDao {
     suspend fun upsertMergingObservation(sample: TpmsPressureSample) {
         val previous = getAt(sample.carId, sample.observedAt)
         upsert(mergeTpmsSampleAtSameInstant(previous, sample))
+    }
+
+    /** Atomic evidence admission: only genuinely new wheels at this exact
+     * collector instant can trigger a new pressure-change event.
+     */
+    @Transaction
+    suspend fun insertNovelCollectorObservation(sample: TpmsPressureSample): TpmsPressureSample? {
+        val existing = getAt(sample.carId, sample.observedAt)
+        val novel = novelTpmsSampleAtSameInstant(existing, sample) ?: return null
+        upsert(mergeTpmsSampleAtSameInstant(existing, sample))
+        return novel
     }
 
     // At most four prior wheel-bearing rows (bounded regardless of history size).

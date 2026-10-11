@@ -5,6 +5,7 @@ import com.matelink.data.local.TirePosition
 import com.matelink.data.local.entity.TpmsPressureSample
 import com.matelink.data.local.entity.TPMS_VERIFIED_COLLECTOR
 import com.matelink.data.repository.mergeTpmsSampleAtSameInstant
+import com.matelink.data.repository.novelTpmsSampleAtSameInstant
 import com.matelink.domain.analytics.TpmsChangeRule
 import com.matelink.domain.analytics.pressureChangesAcrossWheels
 import com.squareup.moshi.Moshi
@@ -61,6 +62,26 @@ class TpmsObservationEvidenceTest {
         assertEquals(oldPoll,mergeTpmsSampleAtSameInstant(oldPoll,first))
         assertEquals(first,mergeTpmsSampleAtSameInstant(first,first.copy(carId=-8)))
     }
+
+    @Test fun newCollectorFieldIsAdmittedOnlyOncePerTimestampAndWheel() {
+        val one=TpmsPressureSample(-7,1000,pressureFl=2.5,provenance=TPMS_VERIFIED_COLLECTOR)
+        val repeat=one.copy(pressureFl=2.5)
+        val conflict=one.copy(pressureFl=2.7)
+        val secondWheel=one.copy(pressureFl=null,pressureFr=2.8)
+        assertEquals(one,novelTpmsSampleAtSameInstant(null,one))
+        assertNull(novelTpmsSampleAtSameInstant(one,repeat))
+        assertNull(novelTpmsSampleAtSameInstant(one,conflict))
+        assertEquals(secondWheel,novelTpmsSampleAtSameInstant(one,secondWheel))
+        val merged=mergeTpmsSampleAtSameInstant(one,secondWheel)
+        assertEquals(2.5,merged.pressureFl!!,0.0)
+        assertEquals(2.8,merged.pressureFr!!,0.0)
+        assertNull(novelTpmsSampleAtSameInstant(merged,secondWheel))
+        assertNull(novelTpmsSampleAtSameInstant(
+            one.copy(provenance="provider_observation"),one))
+        assertNull(novelTpmsSampleAtSameInstant(
+            one.copy(carId=-8),one))
+    }
+
     @Test fun partialWheelChangeUsesItsOwnLatestVerifiedPrevious() {
         val history=listOf(
             TpmsPressureSample(-7,1000,pressureFl=2.8,provenance=TPMS_VERIFIED_COLLECTOR),

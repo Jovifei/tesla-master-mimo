@@ -130,3 +130,19 @@ Same-SHA Android tests must prove strict legacy-poll versus V2 split,
 source/window/car/zero/late/wrong-wheel behavior, no historical rewrites,
 and the Room `latestPerWheel` bounded query / same-instant partial merge
 via independent instrumentation on a disposable database only.
+
+### Notification retry versus new TPMS observation transaction
+
+The TPMS Worker now calls the actual Room
+`insertNovelCollectorObservation` transaction before constructing a
+pressure-change reminder. Same `carId+observedAt` and already-present
+wheel measurements return null rather than rearming an acknowledged
+pressure alert. A distinct newly arrived wheel in the same millisecond
+is merged without deleting an earlier wheel's value; a conflicting
+same-timestamp value never overrides the original source receipt.
+Legacy provenance collision fails closed. A denied system/custom
+notification may retry **only from the already saved, exact V2
+collector receipt**, without fabricating a new reading. The appended
+pure synthetic test and disposable SQLite/Room Android instrumentation
+cover repeated snapshot, new wheel fragment, same-instant conflict,
+legacy collision, valid zero, and no silent history mutation.
