@@ -1,0 +1,57 @@
+name: Persistent recovery execution runner
+
+on:
+  push:
+    branches: [codex/persistent-recovery-execution-20261011]
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: matelink_test
+          POSTGRES_PASSWORD: isolated-only
+          POSTGRES_DB: matelink_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U matelink_test -d matelink_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      JOURVOLT_TEST_DATABASE_URL: postgres://matelink_test:isolated-only@localhost:5432/matelink_test?sslmode=disable
+      JOURVOLT_REQUIRE_HISTORY_PG: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Record candidate source identity
+        run: |
+          mkdir -p persistent-recovery-evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ | tee persistent-recovery-evidence/SOURCE_HEAD.txt
+          git status --short | tee persistent-recovery-evidence/GIT_STATUS.txt
+          git --version | tee persistent-recovery-evidence/GIT_VERSION.txt
+
+      - name: Verify recovery source layout
+        run: |
+          set -euo pipefail
+          test -f android/app/src/main/java/com/matelink/data/sync/SyncRepository.kt
+          test -f android/app/src/main/java/com/matelink/data/sync/TpmsPressureWorker.kt
+          test -f android/app/src/main/java/com/matelink/data/local/VehicleContextRepository.kt
+          test -f deploy/jourvolt-dev-mock/go.mod
+
+      - name: Upload execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: persistent-recovery-execution-evidence
+          path: persistent-recovery-evidence/
