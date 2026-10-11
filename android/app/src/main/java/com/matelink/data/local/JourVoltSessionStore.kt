@@ -20,27 +20,21 @@ data class JourVoltSession(
 
 /** Stores only JourVolt session credentials; Tesla credentials never enter Android. */
 @Singleton
-class JourVoltSessionStore @Inject constructor(
-    @ApplicationContext context: Context
-) {
-    private val masterKey = MasterKey.Builder(context)
-        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-        .build()
-
-    private val prefs: SharedPreferences = EncryptedSharedPreferences.create(
-        context,
-        "jourvolt_session_secure",
-        masterKey,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+class JourVoltSessionStore internal constructor(private val prefs: SharedPreferences) {
+    @Inject constructor(@ApplicationContext context: Context) : this(sessionPreferences(context))
 
     private val _session = MutableStateFlow(read())
+    @Volatile private var identityGeneration = 0L
     val session: StateFlow<JourVoltSession?> = _session.asStateFlow()
 
-    fun current(): JourVoltSession? = _session.value
+    @Synchronized fun current(): JourVoltSession? = _session.value
 
-    fun save(accessToken: String, refreshToken: String, expiresInSeconds: Long, userId: String) {
+    /** Session and generation are read under the same monitor used by save/clear. */
+    @Synchronized internal fun identitySnapshot(): Pair<JourVoltSession?, Long> = _session.value to identityGeneration
+    internal fun currentIdentityGeneration(): Long = identityGeneration
+
+    @Synchronized fun save(accessToken: String, refreshToken: String, expiresInSeconds: Long, userId: String) {
+        identityGeneration++
         val session = JourVoltSession(
             accessToken = accessToken,
             refreshToken = refreshToken,
@@ -56,7 +50,8 @@ class JourVoltSessionStore @Inject constructor(
         _session.value = session
     }
 
-    fun clear() {
+    @Synchronized fun clear() {
+        identityGeneration++
         prefs.edit().clear().apply()
         _session.value = null
     }
@@ -78,4 +73,11 @@ class JourVoltSessionStore @Inject constructor(
         const val KEY_USER = "user_id"
         const val KEY_EXPIRES = "expires_at"
     }
+}
+
+private fun sessionPreferences(context: Context): SharedPreferences {
+    val masterKey = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+    return EncryptedSharedPreferences.create(context, "jourvolt_session_secure", masterKey,
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
 }

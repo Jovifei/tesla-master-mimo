@@ -2,11 +2,16 @@ package com.matelink.ui.screens.timeline
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.content.Context
+import com.matelink.R
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.DriveData
+import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.SettingsRepository
-import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.repository.UnifiedHistoryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -52,7 +57,8 @@ data class TimelineUiState(
 
 @HiltViewModel
 class TimelineViewModel @Inject constructor(
-    private val repository: TeslamateRepository,
+    @ApplicationContext private val appContext: Context,
+    private val repository: UnifiedHistoryRepository,
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
@@ -73,26 +79,30 @@ class TimelineViewModel @Inject constructor(
             try {
                 val carId = settingsRepository.currentCarId.first()
 
-                val drivesResult = repository.getDrives(carId)
-                val chargesResult = repository.getCharges(carId)
-
-                val drives = when (drivesResult) {
-                    is com.matelink.data.repository.ApiResult.Success -> drivesResult.data
-                    is com.matelink.data.repository.ApiResult.Error -> emptyList()
-                }
-                val charges = when (chargesResult) {
-                    is com.matelink.data.repository.ApiResult.Success -> chargesResult.data
-                    is com.matelink.data.repository.ApiResult.Error -> emptyList()
+                val history = when (val result = repository.load(carId)) {
+                    is ApiResult.Success -> result.data
+                    is ApiResult.Error -> {
+                        _uiState.value = TimelineUiState(
+                            isLoading = false, error = appContext.getString(R.string.error_loading_data)
+                        )
+                        return@launch
+                    }
                 }
 
-                val events = mergeTimeline(drives, charges)
+                val events = mergeTimeline(history.drives, history.charges)
                 val grouped = events.groupBy { it.date }
+                val warning = history.drivesSyncError ?: history.chargesSyncError
 
                 _uiState.value = TimelineUiState(
                     isLoading = false,
                     events = events,
-                    groupedEvents = grouped
+                    groupedEvents = grouped,
+                    error = warning?.let {
+                        appContext.getString(if (it == "history_partial") R.string.history_sync_partial else R.string.history_sync_cached)
+                    }
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.value = TimelineUiState(
                     isLoading = false,

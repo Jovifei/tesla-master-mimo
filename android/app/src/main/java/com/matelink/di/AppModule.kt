@@ -15,6 +15,10 @@ import javax.inject.Singleton
 object AppModule {
 
     @Provides
+    fun provideClock(): java.time.Clock = com.matelink.domain.history.CurrentLocalClock()
+
+
+    @Provides
     @Singleton
     fun provideChargingNotificationManager(
         @ApplicationContext context: Context

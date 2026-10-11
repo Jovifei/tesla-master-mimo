@@ -23,6 +23,7 @@ class DriveDetailEnergyPresentationTest {
         assertEquals(DriveDetailEnergySource.POWER_SAMPLES, presentation.source)
         assertEquals(180L, presentation.coverageSeconds)
         assertEquals(0.45, presentation.coverageRatio ?: error("coverage missing"), 0.0001)
+        assertNull(presentation.efficiencyWhKm)
     }
 
     @Test
@@ -51,12 +52,19 @@ class DriveDetailEnergyPresentationTest {
 
     @Test
     fun invalidEnergyIsUnavailable() {
-        listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, -1.0).forEach { energyKwh ->
+        listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY).forEach { energyKwh ->
             val presentation = presentDriveDetailEnergy(energyKwh, 160.0, "api", 0L, 0.0)
 
             assertNull(presentation.energyKwh)
             assertNull(presentation.source)
         }
+    }
+
+    @Test
+    fun validNegativeRecoveryEnergyStaysAvailable() {
+        val value = presentDriveDetailEnergy(-1.0, -100.0, "api", 0L, 0.0)
+        assertEquals(-1.0, value.energyKwh!!, 0.0)
+        assertEquals(DriveDetailEnergySource.API, value.source)
     }
 
     @Test

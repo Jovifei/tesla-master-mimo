@@ -6,6 +6,7 @@ import com.matelink.data.local.TpmsState
 import com.matelink.data.local.TpmsStateDataStore
 import com.matelink.data.local.HistoryCarIdResolver
 import com.matelink.data.local.LegacyHistoryCarIdResolver
+import com.matelink.data.sync.verifiedTpmsWarnings
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -43,8 +44,9 @@ class TpmsStateRepository @Inject constructor(
         historyCarId: Int,
         currentTpms: TpmsDetails?
     ): TpmsStateChange? {
-        if (currentTpms == null || !currentTpms.hasCompleteSoftWarningFields()) return null
-        return tpmsStateChange(tpmsStateDataStore.getState(historyCarId), currentTpms.toTpmsState())
+        if (currentTpms == null || !currentTpms.hasAnySoftWarningField()) return null
+        val previous = tpmsStateDataStore.getState(historyCarId)
+        return tpmsStateChange(previous, currentTpms.mergeWarnings(previous))
     }
 
     suspend fun claimStateChange(
@@ -62,10 +64,26 @@ class TpmsStateRepository @Inject constructor(
         currentTpms: TpmsDetails?,
         now: Long = System.currentTimeMillis()
     ): TpmsStateChangeClaimResult {
-        if (currentTpms == null || !currentTpms.hasCompleteSoftWarningFields()) {
+        if (currentTpms == null || !currentTpms.hasAnySoftWarningField()) {
             return TpmsStateChangeClaimResult.NoTransition
         }
-        return when (val result = tpmsStateDataStore.claimStateChange(historyCarId, currentTpms.toTpmsState(), now)) {
+        val qualifiedReceiptTimes = buildMap {
+            verifiedTpmsWarnings(currentTpms, now).forEach { receipt ->
+                val warnings = listOf(receipt.details.warningFl, receipt.details.warningFr,
+                    receipt.details.warningRl, receipt.details.warningRr)
+                TirePosition.entries.forEachIndexed { index, wheel ->
+                    if (warnings[index] != null) put(wheel, receipt.observedAt)
+                }
+            }
+        }
+        // Qualified input may contain an independently stale wheel. Do not
+        // promote that field using another wheel's valid receipt timestamp.
+        fun supplied(wheel: TirePosition, value: Boolean?): Boolean? =
+            value.takeIf { qualifiedReceiptTimes.isEmpty() || wheel in qualifiedReceiptTimes }
+        return when (val result = tpmsStateDataStore.claimPartialStateChange(historyCarId,
+            supplied(TirePosition.FL, currentTpms.warningFl), supplied(TirePosition.FR, currentTpms.warningFr),
+            supplied(TirePosition.RL, currentTpms.warningRl), supplied(TirePosition.RR, currentTpms.warningRr),
+            now, qualifiedReceiptTimes)) {
             TpmsStateDataStore.TpmsStateDataStoreClaimResult.NoTransition ->
                 TpmsStateChangeClaimResult.NoTransition
             TpmsStateDataStore.TpmsStateDataStoreClaimResult.InFlight ->
@@ -96,6 +114,9 @@ class TpmsStateRepository @Inject constructor(
         )
     }
 
+    suspend fun isClaimCurrentForHistoryCarId(historyCarId: Int, claim: TpmsStateChangeClaim): Boolean =
+        tpmsStateDataStore.isClaimCurrent(historyCarId, claim.token, claim.nextState)
+
     suspend fun releaseStateChange(carId: Int, claim: TpmsStateChangeClaim) {
         releaseStateChangeForHistoryCarId(historyId(carId), claim)
     }
@@ -116,8 +137,9 @@ class TpmsStateRepository @Inject constructor(
     }
 
     suspend fun updateStateForHistoryCarId(historyCarId: Int, tpms: TpmsDetails?) {
-        if (tpms == null || !tpms.hasCompleteSoftWarningFields()) return
-        tpmsStateDataStore.saveState(historyCarId, tpms.toTpmsState().copy(lastCheckedAt = System.currentTimeMillis()))
+        if (tpms == null || !tpms.hasAnySoftWarningField()) return
+        tpmsStateDataStore.savePartialState(historyCarId,
+            tpms.warningFl, tpms.warningFr, tpms.warningRl, tpms.warningRr, System.currentTimeMillis())
     }
 
     suspend fun getState(carId: Int): TpmsState = tpmsStateDataStore.getState(historyId(carId))
@@ -142,8 +164,8 @@ class TpmsStateRepository @Inject constructor(
     }
 }
 
-private fun TpmsDetails.hasCompleteSoftWarningFields(): Boolean =
-    warningFl != null && warningFr != null && warningRl != null && warningRr != null
+private fun TpmsDetails.hasAnySoftWarningField(): Boolean =
+    warningFl != null || warningFr != null || warningRl != null || warningRr != null
 
 internal fun tpmsStateChange(previous: TpmsState, current: TpmsState): TpmsStateChange? {
     return when {
@@ -158,9 +180,9 @@ internal fun tpmsStateChange(previous: TpmsState, current: TpmsState): TpmsState
     }
 }
 
-private fun TpmsDetails.toTpmsState(): TpmsState = TpmsState(
-    warningFl = warningFl == true,
-    warningFr = warningFr == true,
-    warningRl = warningRl == true,
-    warningRr = warningRr == true
+private fun TpmsDetails.mergeWarnings(previous: TpmsState): TpmsState = previous.copy(
+    warningFl = warningFl ?: previous.warningFl,
+    warningFr = warningFr ?: previous.warningFr,
+    warningRl = warningRl ?: previous.warningRl,
+    warningRr = warningRr ?: previous.warningRr
 )

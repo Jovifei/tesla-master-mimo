@@ -3,6 +3,9 @@ package com.matelink.data.local.dao
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
+import androidx.room.Transaction
+import com.matelink.data.repository.mergeTpmsSampleAtSameInstant
+import com.matelink.data.repository.novelTpmsSampleAtSameInstant
 import com.matelink.data.local.entity.TpmsPressureSample
 
 @Dao
@@ -13,6 +16,51 @@ interface TpmsPressureSampleDao {
     @Upsert
     suspend fun upsertAll(samples: List<TpmsPressureSample>)
 
+    @Query("SELECT * FROM tpms_pressure_samples WHERE carId = :carId AND observedAt = :at LIMIT 1")
+    suspend fun getAt(carId: Int, at: Long): TpmsPressureSample?
+
+    @Transaction
+    suspend fun upsertMergingObservation(sample: TpmsPressureSample) {
+        val previous = getAt(sample.carId, sample.observedAt)
+        upsert(mergeTpmsSampleAtSameInstant(previous, sample))
+    }
+
+    /** Atomic evidence admission: only genuinely new wheels at this exact
+     * collector instant can trigger a new pressure-change event.
+     */
+    @Transaction
+    suspend fun insertNovelCollectorObservation(sample: TpmsPressureSample): TpmsPressureSample? {
+        val existing = getAt(sample.carId, sample.observedAt)
+        val novel = novelTpmsSampleAtSameInstant(existing, sample) ?: return null
+        upsert(mergeTpmsSampleAtSameInstant(existing, sample))
+        return novel
+    }
+
+    // At most four prior wheel-bearing rows (bounded regardless of history size).
+    @Query("""
+        SELECT * FROM tpms_pressure_samples
+        WHERE carId = :carId AND provenance = 'collector_received_verified'
+        AND observedAt >= :from AND observedAt < :before
+        AND observedAt IN (
+          SELECT MAX(observedAt) FROM tpms_pressure_samples
+            WHERE carId = :carId AND provenance = 'collector_received_verified'
+            AND observedAt >= :from AND observedAt < :before AND pressureFl IS NOT NULL
+          UNION
+          SELECT MAX(observedAt) FROM tpms_pressure_samples
+            WHERE carId = :carId AND provenance = 'collector_received_verified'
+            AND observedAt >= :from AND observedAt < :before AND pressureFr IS NOT NULL
+          UNION
+          SELECT MAX(observedAt) FROM tpms_pressure_samples
+            WHERE carId = :carId AND provenance = 'collector_received_verified'
+            AND observedAt >= :from AND observedAt < :before AND pressureRl IS NOT NULL
+          UNION
+          SELECT MAX(observedAt) FROM tpms_pressure_samples
+            WHERE carId = :carId AND provenance = 'collector_received_verified'
+            AND observedAt >= :from AND observedAt < :before AND pressureRr IS NOT NULL
+        ) ORDER BY observedAt ASC
+    """)
+    suspend fun latestPerWheel(carId: Int, from: Long, before: Long): List<TpmsPressureSample>
+
     @Query(
         "SELECT * FROM tpms_pressure_samples " +
             "WHERE carId = :carId AND observedAt >= :from AND observedAt < :to " +
@@ -20,6 +68,22 @@ interface TpmsPressureSampleDao {
     )
     suspend fun getInRange(carId: Int, from: Long, to: Long): List<TpmsPressureSample>
 
-    @Query("DELETE FROM tpms_pressure_samples WHERE carId = :carId AND observedAt < :cutoff")
+    /** Read only source-qualified collector receipts through the Room index,
+     * rather than loading potentially thousands of historical poll-time rows
+     * into app memory and dropping them afterwards.
+     */
+    @Query("""
+        SELECT * FROM tpms_pressure_samples
+        WHERE carId = :carId AND provenance = 'collector_received_verified'
+          AND observedAt >= :from AND observedAt < :to
+        ORDER BY observedAt ASC
+    """)
+    suspend fun getVerifiedCollectorInRange(carId: Int, from: Long, to: Long): List<TpmsPressureSample>
+
+    /** Historical caller preserved; do NOT call to prune pre-v2 receipts. */
+    @Query("DELETE FROM tpms_pressure_samples WHERE provenance = 'provider_observation' AND carId = :carId AND observedAt < :cutoff")
     suspend fun deleteOlderThan(carId: Int, cutoff: Long): Int
+
+    @Query("DELETE FROM tpms_pressure_samples WHERE provenance = 'collector_received_verified' AND carId = :carId AND observedAt < :cutoff")
+    suspend fun deleteOlderCollectorThan(carId: Int, cutoff: Long): Int
 }

@@ -1,0 +1,23 @@
+{
+  "pressure_unit": "bar",
+  "source": "telemetry_mqtt",
+  "time_basis": "collector_received_at",
+  "tpms_pressure_fl": 0.0,
+  "tpms_pressure_fr": 2.5,
+  "tpms_pressure_rl": 2.5,
+  "tpms_pressure_rr": 2.5,
+  "tpms_pressure_fl_observed_at": "2026-10-11T03:59:00Z",
+  "tpms_pressure_fr_observed_at": "2026-10-11T03:59:01Z",
+  "tpms_pressure_rl_observed_at": "2026-10-11T03:59:02Z",
+  "tpms_pressure_rr_observed_at": "2026-10-11T03:59:03Z",
+  "tpms_soft_warning_fl": true,
+  "tpms_soft_warning_fr": false,
+  "tpms_soft_warning_rl": false,
+  "tpms_soft_warning_rr": false,
+  "warning_source": "telemetry_mqtt",
+  "warning_time_basis": "collector_received_at",
+  "tpms_soft_warning_fl_observed_at": "2026-10-11T03:59:05Z",
+  "tpms_soft_warning_fr_observed_at": "2026-10-11T03:59:05Z",
+  "tpms_soft_warning_rl_observed_at": "2026-10-11T03:59:05Z",
+  "tpms_soft_warning_rr_observed_at": "2026-10-11T03:59:05Z"
+}

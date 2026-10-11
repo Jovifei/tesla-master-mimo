@@ -2,6 +2,8 @@ package com.matelink.data.repository
 
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.DriveData
+import com.matelink.data.api.models.EnergyContract
+import com.matelink.data.api.models.EnergyMetric
 import com.matelink.data.api.models.HistoryImportSession
 import com.matelink.data.sync.HistoryUploadFilter
 import kotlinx.coroutines.CancellationException
@@ -10,6 +12,45 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HistoryRecoveryTest {
+
+    /** Synthetic source-proven whole-window power integral (not claimed as Fleet
+     * provider-reported net energy). Quality of the trip alone is insufficient.
+     */
+    private fun strongMeasuredDrive(id: Int): DriveData {
+        val start = "2026-09-01T00:00:00Z"
+        val end = "2026-09-01T01:00:00Z"
+        val proof = EnergyContract(netEnergy = EnergyMetric(
+            valueKwh = 8.0, method = "drive_power_integral",
+            measurementPoint = "drive_power", source = "telemetry_mqtt",
+            quality = "estimated", timeBasis = "collector_received_at",
+            coverageKind = "time", coverageRatio = 1.0,
+            coverageSeconds = 3600.0, startDate = start, endDate = end
+        ))
+        return DriveData(id, startDate = start, endDate = end,
+            energyConsumedNet = 8.0, energyContract = proof,
+            source = "telemetry_mqtt", qualityState = "observed")
+    }
+    @Test fun boundedPagesRecover101DrivesAndCharges() = runBlocking {
+        val drives = (1..101).map { DriveData(it) }
+        val charges = (1..101).map { ChargeData(it) }
+        val drivePages = mutableListOf<Int>()
+        val chargePages = mutableListOf<Int>()
+        val recoveredDrives = loadHistoryPages(id = DriveData::driveId) { page ->
+            drivePages += page
+            ApiResult.Success(drives.drop((page - 1) * 50).take(50))
+        }
+        val recoveredCharges = loadHistoryPages(id = ChargeData::chargeId) { page ->
+            chargePages += page
+            ApiResult.Success(charges.drop((page - 1) * 50).take(50))
+        }
+        assertEquals(drives, recoveredDrives.items)
+        assertEquals(charges, recoveredCharges.items)
+        assertEquals(listOf(1, 2, 3), drivePages)
+        assertEquals(listOf(1, 2, 3), chargePages)
+        assertNull(recoveredDrives.error)
+        assertNull(recoveredCharges.error)
+    }
+
     @Test fun everyPageIsRecoveredAndDuplicateIdsAreIdempotent() = runBlocking {
         val calls = mutableListOf<Int>()
         val result = loadHistoryPages(pageSize = 2, id = { it: Int -> it }) { page ->
@@ -43,13 +84,24 @@ class HistoryRecoveryTest {
     }
 
     @Test fun incompleteCloudSummaryCannotDowngradeMeasuredLocalRecord() {
-        val measured = DriveData(10, startDate = "2026-09-01T00:00:00Z", endDate = "2026-09-01T01:00:00Z",
-            energyConsumedNet = 8.0, source = "telemetry_mqtt", qualityState = "observed")
-        val weak = measured.copy(energyConsumedNet = null, source = "local_import", qualityState = "incomplete")
+        val measured = strongMeasuredDrive(10)
+        val weak = measured.copy(energyConsumedNet = null, energyContract = null,
+            source = "local_import", qualityState = "incomplete")
+        assertNull(weak.netEnergyKwh)
         val result = UnifiedHistoryRepository.mergeDrives(listOf(weak), listOf(measured)).single()
         assertEquals(8.0, result.energyConsumedNet!!, 0.0)
+        assertEquals("telemetry_mqtt", result.energyContract?.netEnergy?.source)
         assertEquals("observed", result.qualityState)
         assertEquals("telemetry_mqtt", result.source)
+    }
+
+    @Test fun uncontractedObservedFleetScalarNeverBecomesMeasuredEnergy() {
+        val raw = strongMeasuredDrive(11).copy(energyContract = null)
+        val merged = UnifiedHistoryRepository.mergeDrives(emptyList(), listOf(raw)).single()
+        assertEquals("observed", merged.qualityState)
+        assertEquals("telemetry_mqtt", merged.source)
+        assertNull(merged.energyConsumedNet)
+        assertNull(merged.netEnergyKwh)
     }
 
     @Test fun measuredRemoteDoesNotLaunderUnverifiedLocalFields() {
@@ -88,9 +140,10 @@ class HistoryRecoveryTest {
     }
 
     @Test fun offlineAliasesAreMergedWithoutErasingTheStrongerRecord() {
-        val measured = DriveData(1, startDate = "2026-09-01T00:00:00Z", endDate = "2026-09-01T01:00:00Z",
-            energyConsumedNet = 8.0, source = "telemetry_mqtt", qualityState = "observed")
-        val alias = measured.copy(driveId = 2, energyConsumedNet = null, source = "local_import", qualityState = "incomplete")
+        val measured = strongMeasuredDrive(1)
+        val alias = measured.copy(driveId = 2, energyConsumedNet = null,
+            energyContract = null, source = "local_import", qualityState = "incomplete")
+        assertNull(alias.netEnergyKwh)
         val result = UnifiedHistoryRepository.mergeDrives(emptyList(), listOf(alias, measured)).single()
         assertEquals("observed", result.qualityState)
         assertEquals(8.0, result.energyConsumedNet!!, 0.0)

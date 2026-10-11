@@ -1,63 +1,53 @@
 package com.matelink.domain.analytics
 
-enum class DriveEnergySource {
-    API,
-    POWER_SAMPLES,
-    UNAVAILABLE
-}
+enum class DriveEnergySource { API, POWER_SAMPLES, UNAVAILABLE }
 
 data class DriveEnergyEstimate(
     val energyKwh: Double?,
     val efficiencyWhKm: Double?,
     val source: DriveEnergySource,
-    val coverageSeconds: Long = 0L
+    val coverageSeconds: Long = 0L,
+    val coverageSecondsExact: Double = coverageSeconds.toDouble(),
+    val coverageRatio: Double? = null,
+    /** Covered-subset integral is diagnostic only when whole-window energy is unknown. */
+    val observedEnergyKwh: Double? = null,
+    val qualityReason: String? = null
 )
 
-/**
- * Uses server-provided energy when available, otherwise estimates consumption from
- * TeslaMate's time-series power samples. Missing source data remains unknown.
- */
+/** API-reported net energy is not automatically a measured battery counter. */
 object DriveEnergyResolver {
-
     fun resolve(
         apiEnergyKwh: Double?,
         distanceKm: Double?,
-        samples: List<DrivePowerSample>
+        samples: List<DrivePowerSample>,
+        durationSeconds: Long? = null,
+        startDate: String? = null,
+        endDate: String? = null
     ): DriveEnergyEstimate {
-        val apiEnergy = apiEnergyKwh?.takeIf { it.isFinite() && it > 0.0 }
-        if (apiEnergy != null) {
-            return estimate(apiEnergy, distanceKm, DriveEnergySource.API)
+        // Zero and negative net recovery are legitimate reported values.
+        apiEnergyKwh?.takeIf(Double::isFinite)?.let { energy ->
+            return DriveEnergyEstimate(energy, efficiency(energy, distanceKm), DriveEnergySource.API,
+                qualityReason = "api_reported_net_energy")
         }
-
-        val calculated = DriveEnergyCalculator.calculate(samples)
-        val calculatedEnergy = calculated.energyKwh
-        if (calculatedEnergy != null) {
-            return estimate(
-                energyKwh = calculatedEnergy,
-                distanceKm = distanceKm,
-                source = DriveEnergySource.POWER_SAMPLES,
-                coverageSeconds = calculated.coverageSeconds
-            )
-        }
-
+        val calculated = DriveEnergyCalculator.calculate(samples, startDate, endDate)
+        val denominator = calculated.windowSeconds ?: durationSeconds?.takeIf { it > 0L }?.toDouble()
+        val coverage = denominator?.let { (calculated.coverageSecondsExact / it).takeIf(Double::isFinite) }
+        // A rounded duration, or the first/last available samples, cannot invent
+        // the missing start/end of a drive. Partial integrals remain diagnostic.
+        val energy = calculated.energyKwh?.takeIf { calculated.complete }
         return DriveEnergyEstimate(
-            energyKwh = null,
-            efficiencyWhKm = null,
-            source = DriveEnergySource.UNAVAILABLE
+            energyKwh = energy,
+            efficiencyWhKm = energy?.let { efficiency(it, distanceKm) },
+            source = if (energy == null) DriveEnergySource.UNAVAILABLE else DriveEnergySource.POWER_SAMPLES,
+            coverageSeconds = calculated.coverageSeconds,
+            coverageSecondsExact = calculated.coverageSecondsExact,
+            coverageRatio = coverage,
+            observedEnergyKwh = calculated.energyKwh,
+            qualityReason = calculated.qualityReason
         )
     }
 
-    private fun estimate(
-        energyKwh: Double,
-        distanceKm: Double?,
-        source: DriveEnergySource,
-        coverageSeconds: Long = 0L
-    ): DriveEnergyEstimate = DriveEnergyEstimate(
-        energyKwh = energyKwh,
-        efficiencyWhKm = distanceKm
-            ?.takeIf { it.isFinite() && it > 0.0 }
-            ?.let { energyKwh * 1000.0 / it },
-        source = source,
-        coverageSeconds = coverageSeconds
-    )
+    private fun efficiency(energyKwh: Double, distanceKm: Double?): Double? =
+        distanceKm?.takeIf { it.isFinite() && it > 0.0 }
+            ?.let { (energyKwh / it * 1000.0).takeIf(Double::isFinite) }
 }

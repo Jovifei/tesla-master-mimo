@@ -83,6 +83,7 @@ internal fun TpmsSettingsContent(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            TpmsChangeSettingsCard(uiState.tpmsCarId)
             TpmsAlertProfileCard(
                 uiState = uiState,
                 onTargetChange = onTargetChange,

@@ -1341,7 +1341,7 @@ private fun QuickStatsDrivesCard(
             )
             StatItem(
                 label = stringResource(R.string.stats_energy_used),
-                value = if (hasEnergy) formatEnergy(quickStats.totalEnergyConsumedKwh) else noData,
+                value = if (hasEnergy) quickStats.totalEnergyConsumedKwh?.let(::formatEnergy) ?: noData else noData,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -1349,8 +1349,8 @@ private fun QuickStatsDrivesCard(
         Row(modifier = Modifier.fillMaxWidth()) {
             StatItem(
                 label = stringResource(R.string.stats_avg_efficiency),
-                value = if (hasDistance && hasEnergy && quickStats.avgEfficiencyWhKm > 0.0) {
-                    UnitFormatter.formatEfficiency(quickStats.avgEfficiencyWhKm, units, 0)
+                value = if (hasDistance && hasEnergy) {
+                    quickStats.avgEfficiencyWhKm?.let { UnitFormatter.formatEfficiency(it, units, 0) } ?: noData
                 } else noData,
                 modifier = Modifier.weight(1f)
             )

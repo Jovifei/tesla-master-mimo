@@ -14,9 +14,7 @@ interface ChargeSummaryDao {
     /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
     @Transaction
     suspend fun upsertPreservingEvidence(rows: List<ChargeSummary>) {
-        rows.forEach { incoming ->
-            upsert(mergeStoredCharge(incoming, get(incoming.carId, incoming.chargeId)))
-        }
+        persistChargeRowsWithoutEvidenceLoss(rows, ::get, ::upsert)
     }
 
     // === CRUD Operations ===
@@ -432,3 +430,19 @@ data class MonthlyChargeAggregation(
     val totalCost: Double,
     val chargeCount: Int
 )
+
+/**
+ * This is the actual Room @Transaction read/merge/upsert orchestration, with
+ * isolated I/O ports for deterministic same-ID storage tests. No deletes,
+ * backfills or cross-vehicle numeric-ID fallbacks.
+ */
+internal suspend fun persistChargeRowsWithoutEvidenceLoss(
+    rows: List<ChargeSummary>,
+    get: suspend (Int, Int) -> ChargeSummary?,
+    upsert: suspend (ChargeSummary) -> Unit
+) {
+    rows.forEach { incoming ->
+        upsert(mergeStoredCharge(incoming,
+            get(incoming.carId, incoming.chargeId)))
+    }
+}

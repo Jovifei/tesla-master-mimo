@@ -71,6 +71,25 @@ class ChargeStatsCalculatorTest {
     }
 
     @Test
+    fun fleetModeRequiresContractProofAndCannotConflictWithDetails() {
+        val proof = com.matelink.data.api.models.EnergyContract(
+            chargeMode = "ac", chargeModeEvidence = "observed_boundary_modes_no_conflict"
+        )
+        assertEquals(ChargeType.AC, ChargeStatsCalculator.detectChargeType(
+            ChargeDetail(chargeId = 7, chargeType = "ac", energyContract = proof)
+        ))
+        assertEquals(ChargeType.UNKNOWN, ChargeStatsCalculator.detectChargeType(
+            ChargeDetail(chargeId = 7, chargeType = "ac", energyContract = proof.copy(chargeMode = null))
+        ))
+        assertEquals(ChargeType.UNKNOWN, ChargeStatsCalculator.detectChargeType(
+            ChargeDetail(chargeId = 7, chargeType = "ac", energyContract = proof,
+                chargePoints = listOf(ChargePoint(
+                    chargerDetails = ChargerDetails(fastChargerPresent = true)))
+            )
+        ))
+    }
+
+    @Test
     fun conflictingExplicitChargeSignalsRemainUnknown() {
         val detail = ChargeDetail(
             chargeId = 3,

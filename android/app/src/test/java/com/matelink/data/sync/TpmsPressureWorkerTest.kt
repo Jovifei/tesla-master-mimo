@@ -15,6 +15,7 @@ import com.matelink.data.repository.TpmsStateChange
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -361,6 +362,39 @@ class TpmsPressureWorkerTest {
     }
 
     @Test
+    fun cancellationOfCustomDeliveryReleasesClaimAndPropagatesToWorker() = runBlocking {
+        val store = AtomicCustomClaimStore()
+        var cancelled = false
+        try {
+            processSuccessfulWithStore(store, TpmsDetails(pressureFl=2.5), onNotify={
+                throw CancellationException("synthetic_scope_switch")
+            })
+        } catch (_: CancellationException) { cancelled = true }
+        assertTrue(cancelled)
+        var delivered = 0
+        processSuccessfulWithStore(store, TpmsDetails(pressureFl=2.5), onNotify={delivered++})
+        assertEquals(1,delivered)
+        assertEquals(1,store.claimsCommitted)
+        assertEquals(null,store.state(TirePosition.FL).pending)
+    }
+
+    @Test
+    fun cancellationOfTeslaDeliveryCannotCommitOrSwallowAStateTransition() = runBlocking {
+        val store = AtomicCustomClaimStore()
+        val tesla = TeslaWarningState()
+        val pressure = TpmsDetails(warningFl=true,warningFr=false,warningRl=false,warningRr=false)
+        var cancelled = false
+        try {
+            processWithStore(store,pressure,tesla,
+                onTesla={throw CancellationException("synthetic_account_switch")},onCustom={})
+        } catch (_: CancellationException) { cancelled=true }
+        assertTrue(cancelled)
+        var delivered=0
+        processWithStore(store,pressure,tesla,onTesla={delivered++},onCustom={})
+        assertEquals(1,delivered)
+    }
+
+    @Test
     fun concurrentRunsClaimOneCustomNotificationPerCarAndWheel() = runBlocking {
         val store = AtomicCustomClaimStore()
         val first = async { processSuccessfulWithStore(store, TpmsDetails(pressureFl = 2.5), onNotify = {}) }
@@ -561,7 +595,15 @@ class TpmsPressureWorkerTest {
 
         override suspend fun upsert(sample: TpmsPressureSample) { saved += sample }
         override suspend fun upsertAll(samples: List<TpmsPressureSample>) = Unit
+        override suspend fun getAt(carId: Int, at: Long): TpmsPressureSample? =
+            saved.lastOrNull { it.carId == carId && it.observedAt == at }
+        override suspend fun latestPerWheel(carId: Int, from: Long, before: Long): List<TpmsPressureSample> =
+            saved.filter { it.carId == carId && it.observedAt in from until before }
+        override suspend fun getVerifiedCollectorInRange(carId: Int, from: Long, to: Long): List<TpmsPressureSample> =
+            saved.filter { it.carId == carId && it.observedAt >= from && it.observedAt < to &&
+                it.provenance == com.matelink.data.local.entity.TPMS_VERIFIED_COLLECTOR }
         override suspend fun getInRange(carId: Int, from: Long, to: Long): List<TpmsPressureSample> = emptyList()
         override suspend fun deleteOlderThan(carId: Int, cutoff: Long): Int = 0
+        override suspend fun deleteOlderCollectorThan(carId: Int, cutoff: Long): Int = 0
     }
 }

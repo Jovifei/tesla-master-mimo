@@ -20,6 +20,8 @@ import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.local.DataReadinessStore
 import com.matelink.data.sync.DataSyncWorker
+import java.time.Clock
+import com.matelink.domain.telemetry.failedSnapshotFreshness
 import com.matelink.domain.telemetry.SnapshotFreshness
 import com.matelink.domain.telemetry.snapshotEvidence
 import com.matelink.domain.telemetry.usableVehicleCoordinates
@@ -77,7 +79,8 @@ class DashboardViewModel @Inject constructor(
     private val amapReverseGeocoder: com.matelink.data.repository.AmapReverseGeocoder,
     private val vehicleContextRepository: com.matelink.data.local.VehicleContextRepository,
     private val vehicleStatusStore: com.matelink.data.local.VehicleStatusStore,
-    private val driveSummaryDao: com.matelink.data.local.dao.DriveSummaryDao
+    private val driveSummaryDao: com.matelink.data.local.dao.DriveSummaryDao,
+    private val clock: Clock
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -204,7 +207,7 @@ class DashboardViewModel @Inject constructor(
                     snapshotSource = displayEvidence.source ?: "cached",
                     observedAt = displayEvidence.observedAt,
                     fieldSources = displayEvidence.fieldSources,
-                    snapshotFreshness = if (status != null) displayEvidence.freshness else SnapshotFreshness.RECENT,
+                    snapshotFreshness = if (status != null) displayEvidence.freshness else SnapshotFreshness.UNAVAILABLE,
                     snapshotMixedSources = displayEvidence.isMixed,
                     units = units,
                     cachedAddress = resolvedAddress,
@@ -262,8 +265,8 @@ class DashboardViewModel @Inject constructor(
                     else -> 10000L
                 }
                 delay(delayMs)
+                val generation = requestGeneration
                 try {
-                    val generation = requestGeneration
                     val carId = settingsRepository.currentCarId.first()
                     when (val result = repository.getAdapterSnapshot(carId)) {
                         is ApiResult.Success -> {
@@ -318,9 +321,12 @@ class DashboardViewModel @Inject constructor(
                                 }
                                 is ApiResult.Error -> {
                                     if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
-                                    _uiState.value = _uiState.value.copy(
-                                        snapshotFreshness = SnapshotFreshness.RECENT
-                                    )
+                                    _uiState.update { current -> current.copy(
+                                        snapshotFreshness = failedSnapshotFreshness(current.observedAt, current.status != null, clock.instant()),
+                                        error = legacy.message,
+                                        errorCode = legacy.code,
+                                        errorKind = legacy.kind
+                                    ) }
                                 }
                             }
                         }
@@ -328,7 +334,12 @@ class DashboardViewModel @Inject constructor(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    // Silently fail on polling errors
+                    if (generation != requestGeneration) continue
+                    _uiState.update { current -> current.copy(
+                        snapshotFreshness = failedSnapshotFreshness(current.observedAt, current.status != null, clock.instant()),
+                        error = e.message,
+                        errorKind = apiErrorKindFor(null, e.message)
+                    ) }
                 }
             }
         }

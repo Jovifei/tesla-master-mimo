@@ -181,26 +181,6 @@ fun LocalDateTime.formatEditorial(
 }
 
 /**
- * Format a [LocalDate] as a compact chart label.
- *
- * Uses "MMM yy" for most locales. For Chinese (zh), uses "M月 d日"
- * (month+day) since an abbreviated year number is ambiguous in Chinese
- * without the year-context prefix.
- *
- * Examples for 2026-05-10:
- *   en-US: "May 26"
- *   zh-CN: "5月 10日"
- *   it-IT: "mag 26"
- *   es-ES: "may 26"
- *   ca-ES: "maig 26"
- */
-fun LocalDate.formatMonthYear(locale: Locale = Locale.getDefault()): String =
-    if (locale.language == "zh")
-        this.format(DateTimeFormatter.ofPattern("M月 d日", locale))
-    else
-        this.format(DateTimeFormatter.ofPattern("MMM yy", locale))
-
-/**
  * Format a week-of-year number as a locale-aware chart label.
  *
  * The label text comes from the `chart_week_label` string resource, so it is

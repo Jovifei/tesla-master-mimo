@@ -44,6 +44,13 @@ import com.matelink.notification.ensureTpmsNotificationChannel
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.TimeUnit
 
 /**
@@ -62,7 +69,9 @@ class TpmsPressureWorker @AssistedInject constructor(
     private val tpmsHistoryRepository: TpmsHistoryRepository,
     private val tpmsCustomAlertStateStore: TpmsCustomAlertStateStore,
     private val tpmsTrendNotificationManager: TpmsTrendNotificationManager,
-    private val vehicleContextRepository: VehicleContextRepository
+    private val vehicleContextRepository: VehicleContextRepository,
+    private val changeRuleStore: com.matelink.data.local.TpmsChangeRuleStore,
+    private val settingsRepository: com.matelink.data.repository.SettingsRepository
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
@@ -168,7 +177,9 @@ class TpmsPressureWorker @AssistedInject constructor(
 
         try {
             // Get list of cars
+            val readScope = vehicleContextRepository.captureReadScope()
             val carsResult = teslamateRepository.getCars()
+            if (vehicleContextRepository.captureReadScope() != readScope) return Result.retry()
             val cars = when (carsResult) {
                 is ApiResult.Success -> carsResult.data
                 is ApiResult.Error -> {
@@ -181,16 +192,24 @@ class TpmsPressureWorker @AssistedInject constructor(
                 Log.d(TAG, "No cars found")
                 return Result.success()
             }
+            if (cars.groupingBy { it.carId }.eachCount().any { it.value > 1 }) return Result.retry()
 
             Log.d(TAG, "Checking TPMS for ${cars.size} cars")
 
             // Check each car
             for (car in cars) {
                 try {
-                    val vehicleContext = vehicleContextRepository.resolve(car)
-                    checkCarTpms(car.carId, vehicleContext.localHistoryCarId, car.displayName)
+                    if (vehicleContextRepository.captureReadScope() != readScope) return Result.retry()
+                    val verifiedCar = vehicleContextRepository.discoverHistoryCar(car.carId,readScope) ?: continue
+                    if (readScope.source == com.matelink.data.local.HistoryConnectionSource.CLOUD &&
+                        verifiedCar.vehicleUid != car.vehicleUid) return Result.retry()
+                    val vehicleContext = vehicleContextRepository.resolveVerifiedHistoryCar(verifiedCar, readScope)
+                    if (!vehicleContextRepository.isHistoryContextCurrent(readScope,vehicleContext)) return Result.retry()
+                    checkCarTpms(vehicleContext, car.displayName, readScope)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    Log.e(TAG, "event=check_tpms_failed carId=${car.carId} category=unexpected")
+                    Log.e(TAG, "event=check_tpms_failed category=unexpected")
                 }
             }
 
@@ -202,6 +221,8 @@ class TpmsPressureWorker @AssistedInject constructor(
             }
 
             return Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "event=tpms_worker_failed category=unexpected")
 
@@ -214,59 +235,103 @@ class TpmsPressureWorker @AssistedInject constructor(
         }
     }
 
-    private suspend fun checkCarTpms(remoteApiCarId: Int, historyCarId: Int, carName: String) {
-        // Get car status
-        val statusResult = teslamateRepository.getCarStatus(remoteApiCarId)
-        val status = when (statusResult) {
-            is ApiResult.Success -> statusResult.data.status
-            is ApiResult.Error -> {
-                Log.e(TAG, "event=fetch_status_failed carId=$historyCarId category=api_error")
-                return
+    private suspend fun checkCarTpms(
+        vehicle: com.matelink.data.local.VehicleContext,
+        carName: String,
+        readScope: com.matelink.data.local.HistoryReadScope
+    ) {
+        fun ensureScopeNow() {
+            if (!vehicleContextRepository.isHistoryContextCurrentNow(readScope,vehicle)) {
+                throw CancellationException("TPMS source context superseded")
             }
         }
-
-        val tpmsDetails = status.tpmsDetails
-        val outsideTempC = status.outsideTemp
-
-        val profile = settingsDataStore.getTpmsAlertProfile(historyCarId)
-
-        processSuccessfulTpmsStatus(
-            carId = historyCarId,
-            carName = carName,
-            tpmsDetails = tpmsDetails,
-            outsideTempC = outsideTempC,
-            observedAt = System.currentTimeMillis(),
-            profile = profile,
-            saveObservation = { sample ->
-                tpmsHistoryRepository.saveObservationForHistoryCarId(historyCarId, sample)
-            },
-            pruneOlderThan90Days = { _, now ->
-                tpmsHistoryRepository.pruneOlderThan90DaysForHistoryCarId(historyCarId, now)
-            },
-            detectTeslaStateChange = { _, details ->
-                tpmsStateRepository.detectStateChangeForHistoryCarId(historyCarId, details)
-            },
-            updateTeslaState = { _, details ->
-                tpmsStateRepository.updateStateForHistoryCarId(historyCarId, details)
-            },
-            resetCustomState = tpmsCustomAlertStateStore::resetForProfile,
-            claimCustomAlerts = tpmsCustomAlertStateStore::claimAlerts,
-            commitCustomAlert = tpmsCustomAlertStateStore::commitClaim,
-            releaseCustomAlert = tpmsCustomAlertStateStore::releaseClaim,
-            claimTeslaStateChange = { _, details, now ->
-                tpmsStateRepository.claimStateChangeForHistoryCarId(historyCarId, details, now)
-            },
-            commitTeslaStateChange = { _, claim ->
-                tpmsStateRepository.commitStateChangeForHistoryCarId(historyCarId, claim)
-            },
-            releaseTeslaStateChange = { _, claim ->
-                tpmsStateRepository.releaseStateChangeForHistoryCarId(historyCarId, claim)
-            },
-            notifyTesla = ::showNotification,
-            notifyCustom = { id, _, alert ->
-                tpmsTrendNotificationManager.showCustomAlert(id, alert)
+        suspend fun ensureScope() {
+            currentCoroutineContext().ensureActive()
+            if (!vehicleContextRepository.isHistoryContextCurrent(readScope,vehicle)) {
+                throw CancellationException("TPMS source context superseded")
             }
-        )
+        }
+        ensureScope()
+        if (BuildConfig.JOURVOLT_MOCK_LOGIN && settingsRepository.mockMode.first() == true) return
+        ensureScope()
+        val historyCarId=vehicle.localHistoryCarId
+        // Durable intent recovery does not depend on a new status response.
+        recoverTpmsAdmissionIntents(historyCarId,tpmsHistoryRepository,changeRuleStore,::ensureScope)
+        ensureScope()
+        val statusResult=teslamateRepository.getCarStatus(vehicle.remoteApiCarId)
+        ensureScope()
+        val details=when(statusResult) {
+            is ApiResult.Success -> statusResult.data.status.tpmsDetails
+            is ApiResult.Error -> null
+        }
+        val profile=settingsDataStore.getTpmsAlertProfile(historyCarId)
+        ensureScope()
+        val executionNow=System.currentTimeMillis()
+        val rule=changeRuleStore.observe(historyCarId).first()
+        ensureScope()
+        for(candidate in verifiedTpmsSamples(historyCarId,details,executionNow)) {
+            ensureScope()
+            admitTpmsObservation(historyCarId,candidate,rule,tpmsHistoryRepository,changeRuleStore,::ensureScope)
+        }
+        for(observation in verifiedTpmsWarnings(details,executionNow)) {
+            ensureScope()
+            changeRuleStore.rememberVerifiedWarning(historyCarId,observation.details,observation.observedAt)
+        }
+
+        suspend fun process(evidence:com.matelink.data.api.models.TpmsDetails?,at:Long,defer:Boolean):TpmsStateChangeClaimResult =
+            processSuccessfulTpmsStatus(
+                carId=historyCarId,carName=carName,tpmsDetails=evidence,observedAt=at,profile=profile,
+                saveObservation={ _ -> },
+                pruneOlderThan90Days={ _, _ ->
+                    ensureScope(); tpmsHistoryRepository.pruneOlderThan90DaysForHistoryCarId(historyCarId,executionNow)
+                },
+                detectTeslaStateChange={ _, d -> tpmsStateRepository.detectStateChangeForHistoryCarId(historyCarId,d) },
+                updateTeslaState={ _, d -> tpmsStateRepository.updateStateForHistoryCarId(historyCarId,d) },
+                resetCustomState=tpmsCustomAlertStateStore::resetForProfile,
+                claimCustomAlerts=tpmsCustomAlertStateStore::claimAlerts,
+                commitCustomAlert=tpmsCustomAlertStateStore::commitClaim,
+                releaseCustomAlert=tpmsCustomAlertStateStore::releaseClaim,
+                claimTeslaStateChange={ _, d, now -> tpmsStateRepository.claimStateChangeForHistoryCarId(historyCarId,d,now) },
+                commitTeslaStateChange={ _, c -> tpmsStateRepository.commitStateChangeForHistoryCarId(historyCarId,c) },
+                releaseTeslaStateChange={ _, c -> tpmsStateRepository.releaseStateChangeForHistoryCarId(historyCarId,c) },
+                notifyTesla=::showNotification,
+                notifyCustom={ id, _, alert -> tpmsTrendNotificationManager.showCustomAlert(id,alert) },
+                executionNow=executionNow,deferCustomAlerts=defer,ensureCurrent=::ensureScope,
+                validateCustomClaim=tpmsCustomAlertStateStore::isClaimCurrent,
+                validateTeslaClaim=tpmsStateRepository::isClaimCurrentForHistoryCarId,
+                ensureSourceCurrent=::ensureScopeNow
+            )
+
+        // Merge the latest independent warning receipts before notification. Each
+        // nullable wheel retains its own metadata, including explicit false.
+        val warning=changeRuleStore.verifiedWarningSnapshot(historyCarId,executionNow)
+        ensureScope()
+        val warningTimes=verifiedTpmsWarnings(warning,executionNow)
+        val teslaResult=if(warningTimes.isNotEmpty()) process(warning,warningTimes.last().observedAt,true)
+            else TpmsStateChangeClaimResult.NoTransition
+        val defer=teslaResult !is TpmsStateChangeClaimResult.NoTransition
+        val receipts=changeRuleStore.verifiedPressureReceipts(historyCarId,executionNow)
+        ensureScope()
+        for(sample in receipts) {
+            ensureScope()
+            if (!tpmsHistoryRepository.hasMatchingVerifiedCollectorReceipt(historyCarId,sample)) continue
+            ensureScope()
+            val time=java.time.Instant.ofEpochMilli(sample.observedAt).toString()
+            process(com.matelink.data.api.models.TpmsDetails(
+                pressureFl=sample.pressureFl,pressureFr=sample.pressureFr,pressureRl=sample.pressureRl,pressureRr=sample.pressureRr,
+                pressureUnit="bar",pressureSource="telemetry_mqtt",pressureTimeBasis="collector_received_at",
+                pressureObservedAtFl=time.takeIf { sample.pressureFl!=null },pressureObservedAtFr=time.takeIf { sample.pressureFr!=null },
+                pressureObservedAtRl=time.takeIf { sample.pressureRl!=null },pressureObservedAtRr=time.takeIf { sample.pressureRr!=null }
+            ),sample.observedAt,defer)
+        }
+        // The pending store carries its own qualified original receipt. No new
+        // Room observation is created by this permission/restart recovery pass.
+        process(null,executionNow,defer)
+        ensureScope()
+        if(changeRuleStore.observe(historyCarId).first().enabled) {
+            drainTpmsPressureChanges(historyCarId,tpmsHistoryRepository,changeRuleStore,executionNow,
+                ::ensureScope,::ensureScopeNow) { change -> tpmsTrendNotificationManager.showPressureChange(historyCarId,change) }
+        }
     }
 
     private fun showNotification(carId: Int, carName: String, stateChange: TpmsStateChange) {
@@ -362,8 +427,15 @@ internal suspend fun processSuccessfulTpmsStatus(
     notifyCustom: (Int, String, TpmsCustomAlert) -> Unit,
     claimTeslaStateChange: (suspend (Int, com.matelink.data.api.models.TpmsDetails?, Long) -> TpmsStateChangeClaimResult)? = null,
     commitTeslaStateChange: (suspend (Int, TpmsStateChangeClaim) -> Unit)? = null,
-    releaseTeslaStateChange: (suspend (Int, TpmsStateChangeClaim) -> Unit)? = null
-) {
+    releaseTeslaStateChange: (suspend (Int, TpmsStateChangeClaim) -> Unit)? = null,
+    executionNow: Long = System.currentTimeMillis(),
+    deferCustomAlerts: Boolean = false,
+    ensureCurrent: suspend () -> Unit = { currentCoroutineContext().ensureActive() },
+    validateCustomClaim:suspend (Int,TpmsCustomAlertClaim)->Boolean={ _, _ -> true },
+    validateTeslaClaim:suspend (Int,TpmsStateChangeClaim)->Boolean={ _, _ -> true },
+    ensureSourceCurrent: () -> Unit = {}
+): TpmsStateChangeClaimResult {
+    ensureCurrent()
     val sample = TpmsPressureSample(
         carId = carId,
         observedAt = observedAt,
@@ -376,9 +448,11 @@ internal suspend fun processSuccessfulTpmsStatus(
     saveObservation(sample)
     pruneOlderThan90Days(carId, observedAt)
 
-    val hasCompleteTeslaObservation = tpmsDetails.hasCompleteSoftWarningFields()
+    val hasCompleteTeslaObservation = tpmsDetails.hasCompleteSoftWarningFields() ||
+        (claimTeslaStateChange != null && verifiedTpmsWarnings(tpmsDetails,executionNow).isNotEmpty())
+    ensureCurrent()
     val teslaClaimResult = if (hasCompleteTeslaObservation) {
-        claimTeslaStateChange?.invoke(carId, tpmsDetails, observedAt)
+        claimTeslaStateChange?.invoke(carId, tpmsDetails, executionNow)
             ?: detectTeslaStateChange(carId, tpmsDetails)?.let { change ->
                 TpmsStateChangeClaimResult.Claimed(
                     TpmsStateChangeClaim(change, requireNotNull(tpmsDetails).toLegacyTpmsState())
@@ -401,28 +475,47 @@ internal suspend fun processSuccessfulTpmsStatus(
 
     val profileFingerprint = profile?.tpmsCustomAlertFingerprint() ?: DISABLED_PROFILE_FINGERPRINT
     resetCustomState(carId, profileFingerprint)
+    val qualified = verifiedTpmsSamples(carId,tpmsDetails,executionNow).filter { it.observedAt == observedAt }
     val customObservations = profile
         ?.takeIf { it.isEnabledAndValid() }
-        ?.let { TpmsCustomAlertEvaluator().observe(it, tpmsDetails) }
+        ?.let { TpmsCustomAlertEvaluator().observe(it, tpmsDetails).mapValues { (wheel,observation) ->
+            val proven = qualified.any { sample -> when(wheel) {
+                TirePosition.FL -> sample.pressureFl; TirePosition.FR -> sample.pressureFr
+                TirePosition.RL -> sample.pressureRl; TirePosition.RR -> sample.pressureRr
+            } != null }
+            observation.copy(observedAt=observedAt,qualifiedReceipt=proven)
+        } }
         ?: emptyMap()
     val customClaims = claimCustomAlerts(
         carId,
         profileFingerprint,
         customObservations,
-        teslaClaimResult !is TpmsStateChangeClaimResult.NoTransition,
-        observedAt
+        deferCustomAlerts || teslaClaimResult !is TpmsStateChangeClaimResult.NoTransition,
+        executionNow
     )
 
     if (teslaClaimResult is TpmsStateChangeClaimResult.Claimed && teslaClaim != null) {
         try {
+            ensureCurrent()
+            if(!validateTeslaClaim(carId,teslaClaim)) return teslaClaimResult
+            ensureSourceCurrent()
+            currentCoroutineContext().ensureActive()
             notifyTesla(carId, carName, teslaClaim.change)
+            ensureCurrent()
             commitTeslaStateChange?.invoke(carId, teslaClaim)
                 ?: updateTeslaState(carId, tpmsDetails)
+        } catch (cancelled: CancellationException) {
+            // A superseded car/account job is not a failed notification delivery.
+            // Always relinquish the in-flight claim and propagate cancellation.
+            try {
+                withContext(NonCancellable) { releaseTeslaStateChange?.invoke(carId, teslaClaim) }
+            } catch (_: Exception) { /* lease expiry remains an independent recovery path */ }
+            throw cancelled
         } catch (_: Exception) {
             releaseTeslaStateChange?.invoke(carId, teslaClaim)
         }
     } else {
-        customClaims.forEach { claim ->
+        for ((index,claim) in customClaims.withIndex()) {
             val alert = TpmsCustomAlert(
                 wheel = claim.wheel,
                 state = claim.state,
@@ -430,13 +523,27 @@ internal suspend fun processSuccessfulTpmsStatus(
                 thresholdBar = claim.thresholdBar
             )
             try {
+                ensureCurrent()
+                if(!validateCustomClaim(carId,claim)) continue
+                ensureSourceCurrent()
+                currentCoroutineContext().ensureActive()
                 notifyCustom(carId, carName, alert)
+                ensureCurrent()
                 commitCustomAlert(carId, claim)
+            } catch (cancelled: CancellationException) {
+                withContext(NonCancellable) {
+                    customClaims.drop(index).forEach { unconsumed ->
+                        try { releaseCustomAlert(carId, unconsumed) }
+                        catch (_:Exception) { /* token lease expiry remains a recovery path */ }
+                    }
+                }
+                throw cancelled
             } catch (_: Exception) {
                 releaseCustomAlert(carId, claim)
             }
         }
     }
+    return teslaClaimResult
 }
 
 private fun com.matelink.data.api.models.TpmsDetails.toLegacyTpmsState() =
@@ -448,3 +555,103 @@ private fun com.matelink.data.api.models.TpmsDetails.toLegacyTpmsState() =
     )
 
 private const val DISABLED_PROFILE_FINGERPRINT = "disabled"
+private val tpmsAdmissionMutex = Mutex()
+
+/** Admission seam shared by the worker and fault-injection tests. */
+internal suspend fun admitTpmsObservation(
+    historyCarId: Int,
+    candidate: TpmsPressureSample,
+    rule: com.matelink.domain.analytics.TpmsChangeRule,
+    history: TpmsHistoryRepository,
+    changeRules: com.matelink.data.local.TpmsChangeRuleStore,
+    ensureCurrent: suspend () -> Unit = { currentCoroutineContext().ensureActive() },
+    executionNow: Long = System.currentTimeMillis()
+) {
+    require(candidate.carId==historyCarId)
+    if(!com.matelink.data.local.validReceiptTime(candidate.observedAt,executionNow)) return
+    tpmsAdmissionMutex.withLock {
+    ensureCurrent(); changeRules.pruneExpiredRecovery(historyCarId,executionNow)
+    recoverTpmsAdmissionIntentsLocked(historyCarId,history,changeRules,ensureCurrent,executionNow)
+    ensureCurrent()
+    val novel=history.novelVerifiedCandidateForHistoryCarId(historyCarId,candidate) ?: return
+    ensureCurrent()
+    val previous=history.latestVerifiedPerWheel(historyCarId,novel.observedAt,rule.windowHours)
+    ensureCurrent()
+    val intent=changeRules.beginIntent(com.matelink.data.local.TpmsAdmissionIntent(novel,
+        com.matelink.domain.analytics.pressureChangesAcrossWheels(previous,novel,rule),rule))
+    if(intent==null) {
+        // A late older reading may populate history but cannot rearm an alert
+        // behind the fixed wheel watermark. No active intent is discarded.
+        ensureCurrent(); history.insertNovelVerifiedForHistoryCarId(historyCarId,novel)
+        return
+    }
+    ensureCurrent()
+    history.insertNovelVerifiedForHistoryCarId(historyCarId,intent.sample)
+    ensureCurrent()
+    if(history.hasMatchingVerifiedCollectorReceipt(historyCarId,intent.sample)) {
+        ensureCurrent(); changeRules.promoteMatchedIntent(intent)
+    }
+    }
+}
+
+internal suspend fun recoverTpmsAdmissionIntents(
+    historyCarId:Int,history:TpmsHistoryRepository,changeRules:com.matelink.data.local.TpmsChangeRuleStore,
+    ensureCurrent:suspend ()->Unit={ currentCoroutineContext().ensureActive() },
+    executionNow:Long=System.currentTimeMillis()
+) {
+    tpmsAdmissionMutex.withLock {
+        ensureCurrent(); changeRules.pruneExpiredRecovery(historyCarId,executionNow)
+        recoverTpmsAdmissionIntentsLocked(historyCarId,history,changeRules,ensureCurrent,executionNow)
+    }
+}
+
+private suspend fun recoverTpmsAdmissionIntentsLocked(
+    historyCarId:Int,history:TpmsHistoryRepository,changeRules:com.matelink.data.local.TpmsChangeRuleStore,
+    ensureCurrent:suspend ()->Unit,executionNow:Long
+) {
+    ensureCurrent()
+    val intents=changeRules.recoveryIntents(historyCarId)
+    for(intent in intents) {
+        if(!com.matelink.data.local.validReceiptTime(intent.sample.observedAt,executionNow)) continue
+        ensureCurrent(); history.insertNovelVerifiedForHistoryCarId(historyCarId,intent.sample)
+        ensureCurrent()
+        if(history.hasMatchingVerifiedCollectorReceipt(historyCarId,intent.sample)) {
+            ensureCurrent(); changeRules.promoteMatchedIntent(intent)
+        }
+    }
+}
+
+/** Token-claimed delivery prevents overlapping periodic/immediate workers double-sending. */
+internal suspend fun drainTpmsPressureChanges(
+    historyCarId:Int,history:TpmsHistoryRepository,changeRules:com.matelink.data.local.TpmsChangeRuleStore,
+    executionNow:Long,ensureCurrent:suspend ()->Unit={ currentCoroutineContext().ensureActive() },
+    ensureSourceCurrent: () -> Unit = {},
+    notify:suspend (com.matelink.domain.analytics.TpmsPressureChange)->Unit
+) {
+    ensureCurrent()
+    for(change in changeRules.pending(historyCarId)) {
+        ensureCurrent()
+        if(!history.verifiesChange(historyCarId,change)) continue
+        ensureCurrent()
+        val claim=changeRules.claimPending(historyCarId,change,executionNow) ?: continue
+        try {
+            ensureCurrent()
+            if(!changeRules.isClaimCurrent(historyCarId,claim)) continue
+            ensureSourceCurrent()
+            currentCoroutineContext().ensureActive()
+            notify(change)
+            ensureCurrent(); changeRules.acknowledgeClaim(historyCarId,claim)
+        } catch(cancelled:CancellationException) {
+            try {
+                withContext(NonCancellable) { changeRules.releaseClaim(historyCarId,claim) }
+            } catch(_:Exception) { /* Preserve cancellation; token lease expiry recovers a failed release. */ }
+            throw cancelled
+        } catch(_:NotificationDeliveryUnavailableException) {
+            changeRules.releaseClaim(historyCarId,claim)
+            return
+        } catch(failed:Exception) {
+            changeRules.releaseClaim(historyCarId,claim)
+            throw failed
+        }
+    }
+}

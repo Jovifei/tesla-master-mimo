@@ -1,231 +1,108 @@
 package com.matelink.domain.analytics
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
+import org.junit.Assert.*
 import org.junit.Test
 
 class DriveEnergyResolverTest {
+    private val start = "2026-07-11T10:00:00Z"
+    private val end = "2026-07-11T10:00:10Z"
+    private fun rows(power: Double) = listOf(DrivePowerSample(start, power), DrivePowerSample(end, power))
+    private fun estimate(api: Double? = null, power: Double = 4.0, distance: Double? = 1.0) =
+        DriveEnergyResolver.resolve(api, distance, rows(power), startDate = start, endDate = end)
 
-    @Test
-    fun apiEnergyWinsWhenTheServerProvidesIt() {
-        val estimate = DriveEnergyResolver.resolve(
-            apiEnergyKwh = 2.5,
-            distanceKm = 10.0,
-            samples = listOf(
-                DrivePowerSample("2026-07-11T10:00:00Z", 10.0),
-                DrivePowerSample("2026-07-11T10:00:10Z", 10.0)
-            )
-        )
-
-        assertEquals(2.5, estimate.energyKwh!!, 0.0001)
-        assertEquals(250.0, estimate.efficiencyWhKm!!, 0.0001)
-        assertEquals(DriveEnergySource.API, estimate.source)
+    @Test fun partialPowerCoverageCannotRepresentWholeDriveConsumption() {
+        val result = DriveEnergyResolver.resolve(null, 10.0, rows(10.0), durationSeconds = 600,
+            startDate = start, endDate = "2026-07-11T10:10:00Z")
+        assertNull(result.energyKwh)
+        assertNull(result.efficiencyWhKm)
+        assertEquals(10.0 / 600, result.coverageRatio!!, 1e-12)
+        assertNotNull(result.observedEnergyKwh)
     }
-
-    @Test
-    fun powerSamplesProvideAnEstimateWhenApiEnergyIsMissing() {
-        val estimate = DriveEnergyResolver.resolve(
-            apiEnergyKwh = null,
-            distanceKm = 1.0,
-            samples = listOf(
-                DrivePowerSample("2026-07-11T10:00:00Z", 4.0),
-                DrivePowerSample("2026-07-11T10:00:10Z", 4.0)
-            )
-        )
-
-        assertEquals(4.0 * 10.0 / 3600.0, estimate.energyKwh!!, 0.0001)
-        assertEquals(4.0 * 10.0 * 1000.0 / 3600.0, estimate.efficiencyWhKm!!, 0.0001)
-        assertEquals(DriveEnergySource.POWER_SAMPLES, estimate.source)
-        assertEquals(10L, estimate.coverageSeconds)
-    }
-
-    @Test
-    fun unavailableEnergyStaysUnknownInsteadOfBecomingZero() {
-        val estimate = DriveEnergyResolver.resolve(
-            apiEnergyKwh = null,
-            distanceKm = 1.0,
-            samples = emptyList()
-        )
-
-        assertNull(estimate.energyKwh)
-        assertNull(estimate.efficiencyWhKm)
-        assertEquals(DriveEnergySource.UNAVAILABLE, estimate.source)
-    }
-
-    @Test
-    fun negativeApiEnergyFallsBackToValidPowerSamples() {
-        val estimate = DriveEnergyResolver.resolve(
-            apiEnergyKwh = -1.0,
-            distanceKm = 1.0,
-            samples = constantPowerSamples(powerKw = 4.0, endSeconds = 10)
-        )
-
-        assertEquals(4.0 * 10.0 / 3600.0, estimate.energyKwh!!, 0.0000001)
-        assertEquals(DriveEnergySource.POWER_SAMPLES, estimate.source)
-        assertEquals(10L, estimate.coverageSeconds)
-        assertFinite(estimate)
-    }
-
-    @Test
-    fun nonFiniteApiEnergyFallsBackToValidPowerSamples() {
-        listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY).forEach { apiEnergy ->
-            val estimate = DriveEnergyResolver.resolve(
-                apiEnergyKwh = apiEnergy,
-                distanceKm = 1.0,
-                samples = constantPowerSamples(powerKw = 4.0, endSeconds = 10)
-            )
-
-            assertEquals(4.0 * 10.0 / 3600.0, estimate.energyKwh!!, 0.0000001)
-            assertEquals(DriveEnergySource.POWER_SAMPLES, estimate.source)
-            assertEquals(10L, estimate.coverageSeconds)
-            assertFinite(estimate)
+    @Test fun apiEnergyWinsIncludingZeroAndNegativeNetRecovery() {
+        listOf(2.5, 0.0, -1.0).forEach { api ->
+            val result = estimate(api)
+            assertEquals(api, result.energyKwh!!, 0.0)
+            assertEquals(api * 1000, result.efficiencyWhKm!!, 1e-12)
+            assertEquals(DriveEnergySource.API, result.source)
+            assertNull(result.coverageRatio)
         }
     }
-
-    @Test
-    fun partialSamplesKeepOnlyContiguousValidCoverage() {
-        val estimate = DriveEnergyResolver.resolve(
-            apiEnergyKwh = null,
-            distanceKm = 1.0,
-            samples = listOf(
-                DrivePowerSample("2026-07-11T10:00:00Z", 4.0),
-                DrivePowerSample("2026-07-11T10:00:10Z", 4.0),
-                DrivePowerSample("2026-07-11T10:00:20Z", null),
-                DrivePowerSample("2026-07-11T10:00:30Z", 4.0)
-            )
-        )
-
-        assertEquals(4.0 * 10.0 / 3600.0, estimate.energyKwh!!, 0.0000001)
-        assertEquals(DriveEnergySource.POWER_SAMPLES, estimate.source)
-        assertEquals(10L, estimate.coverageSeconds)
-        assertFinite(estimate)
+    @Test fun completePowerWindowProvidesAnEstimateWhenApiEnergyIsMissing() {
+        val result = estimate()
+        assertEquals(40.0 / 3600, result.energyKwh!!, 1e-12)
+        assertEquals(DriveEnergySource.POWER_SAMPLES, result.source)
+        assertEquals(1.0, result.coverageRatio!!, 1e-12)
     }
-
-    @Test
-    fun continuousValidSamplesAccumulateCompleteReachableCoverage() {
-        val estimate = DriveEnergyResolver.resolve(
-            apiEnergyKwh = null,
-            distanceKm = 1.0,
-            samples = listOf(
-                DrivePowerSample("2026-07-11T10:00:00Z", 2.0),
-                DrivePowerSample("2026-07-11T10:00:10Z", 4.0),
-                DrivePowerSample("2026-07-11T10:00:20Z", 6.0)
-            )
-        )
-
-        assertEquals(80.0 / 3600.0, estimate.energyKwh!!, 0.0000001)
-        assertEquals(DriveEnergySource.POWER_SAMPLES, estimate.source)
-        assertEquals(20L, estimate.coverageSeconds)
-        assertFinite(estimate)
+    @Test fun unknownDriveBoundariesRemainUnknownEvenWithRoundedDuration() {
+        val result = DriveEnergyResolver.resolve(null, 1.0, rows(4.0), durationSeconds = 10)
+        assertNull(result.energyKwh)
+        assertEquals("missing_window", result.qualityReason)
+        assertNotNull(result.observedEnergyKwh)
     }
-
-    @Test
-    fun nonFiniteSamplePowerDoesNotInflateCoverage() {
-        listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY).forEach { invalidPower ->
-            val estimate = DriveEnergyResolver.resolve(
-                apiEnergyKwh = null,
-                distanceKm = 1.0,
-                samples = listOf(
-                    DrivePowerSample("2026-07-11T10:00:00Z", 4.0),
-                    DrivePowerSample("2026-07-11T10:00:10Z", 4.0),
-                    DrivePowerSample("2026-07-11T10:00:20Z", invalidPower)
-                )
-            )
-
-            assertEquals(4.0 * 10.0 / 3600.0, estimate.energyKwh!!, 0.0000001)
-            assertEquals(DriveEnergySource.POWER_SAMPLES, estimate.source)
-            assertEquals(10L, estimate.coverageSeconds)
-            assertFinite(estimate)
+    @Test fun unavailableEnergyStaysUnknownInsteadOfBecomingZero() {
+        val result = DriveEnergyResolver.resolve(null, 1.0, emptyList(), startDate = start, endDate = end)
+        assertNull(result.energyKwh)
+        assertNull(result.efficiencyWhKm)
+        assertEquals(DriveEnergySource.UNAVAILABLE, result.source)
+    }
+    @Test fun nonFiniteApiEnergyOnlyFallsBackToCompletePowerWindow() {
+        listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY).forEach { bad ->
+            assertEquals(DriveEnergySource.POWER_SAMPLES, estimate(bad).source)
+            assertNull(DriveEnergyResolver.resolve(bad, 1.0, rows(4.0)).energyKwh)
         }
     }
-
-    @Test
-    fun nonPositiveSampleEnergyDoesNotBecomeNegativeOrAvailable() {
-        val estimate = DriveEnergyResolver.resolve(
-            apiEnergyKwh = null,
-            distanceKm = 1.0,
-            samples = constantPowerSamples(powerKw = -4.0, endSeconds = 10)
-        )
-
-        assertNull(estimate.energyKwh)
-        assertNull(estimate.efficiencyWhKm)
-        assertEquals(DriveEnergySource.UNAVAILABLE, estimate.source)
-        assertEquals(0L, estimate.coverageSeconds)
-    }
-
-    @Test
-    fun invalidDistanceDoesNotProduceNonFiniteEfficiency() {
-        listOf(0.0, -1.0, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY).forEach { distance ->
-            val estimate = DriveEnergyResolver.resolve(
-                apiEnergyKwh = 1.0,
-                distanceKm = distance,
-                samples = emptyList()
-            )
-
-            assertEquals(1.0, estimate.energyKwh!!, 0.0000001)
-            assertNull(estimate.efficiencyWhKm)
-            assertEquals(DriveEnergySource.API, estimate.source)
-            assertEquals(0L, estimate.coverageSeconds)
+    @Test fun nullOrNonFinitePowerCannotBeInterpolatedOver() {
+        listOf(null, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY).forEach { bad ->
+            val result = DriveEnergyResolver.resolve(null, 1.0, rows(4.0) + DrivePowerSample("2026-07-11T10:00:20Z", bad),
+                startDate = start, endDate = "2026-07-11T10:00:20Z")
+            assertNull(result.energyKwh)
+            assertEquals(10L, result.coverageSeconds)
+            assertEquals(0.5, result.coverageRatio!!, 1e-12)
         }
     }
-
-    @Test
-    fun longSampleIntervalsAreCappedAtThirtySeconds() {
-        val estimate = DriveEnergyResolver.resolve(
-            apiEnergyKwh = null,
-            distanceKm = 1.0,
-            samples = listOf(
-                DrivePowerSample("2026-07-11T10:00:00Z", 6.0),
-                DrivePowerSample("2026-07-11T10:01:00Z", 6.0)
-            )
-        )
-
-        assertEquals(6.0 * 30.0 / 3600.0, estimate.energyKwh!!, 0.0000001)
-        assertEquals(DriveEnergySource.POWER_SAMPLES, estimate.source)
-        assertEquals(30L, estimate.coverageSeconds)
-        assertFinite(estimate)
+    @Test fun continuousTrapezoidsAccumulateTheWholeWindow() {
+        val result = DriveEnergyResolver.resolve(null, 1.0, listOf(DrivePowerSample(start, 2.0),
+            DrivePowerSample(end, 4.0), DrivePowerSample("2026-07-11T10:00:20Z", 6.0)),
+            startDate = start, endDate = "2026-07-11T10:00:20Z")
+        assertEquals(80.0 / 3600, result.energyKwh!!, 1e-12)
+        assertEquals(20L, result.coverageSeconds)
     }
-
-    @Test
-    fun reversedTimestampsDoNotCreateNegativeCoverage() {
-        val estimate = DriveEnergyResolver.resolve(
-            apiEnergyKwh = null,
-            distanceKm = 1.0,
-            samples = listOf(
-                DrivePowerSample("2026-07-11T10:00:10Z", 4.0),
-                DrivePowerSample("2026-07-11T10:00:00Z", 4.0)
-            )
-        )
-
-        assertNull(estimate.energyKwh)
-        assertNull(estimate.efficiencyWhKm)
-        assertEquals(DriveEnergySource.UNAVAILABLE, estimate.source)
-        assertEquals(0L, estimate.coverageSeconds)
+    @Test fun zeroAndNegativePowerIntegralsRemainAvailableEstimates() {
+        listOf(0.0, -4.0).forEach { p ->
+            val result = estimate(power = p)
+            assertEquals(p * 10 / 3600, result.energyKwh!!, 1e-12)
+            assertEquals(DriveEnergySource.POWER_SAMPLES, result.source)
+        }
     }
-
-    @Test
-    fun resolveIsDeterministicForTheSameSyntheticInput() {
-        val samples = listOf(
-            DrivePowerSample("2026-07-11T10:00:00Z", 3.0),
-            DrivePowerSample("2026-07-11T10:00:10Z", 5.0),
-            DrivePowerSample("2026-07-11T10:00:20Z", 7.0)
-        )
-
-        val first = DriveEnergyResolver.resolve(null, 2.0, samples)
-        val second = DriveEnergyResolver.resolve(null, 2.0, samples)
-
-        assertEquals(first, second)
-        assertFinite(first)
+    @Test fun invalidDistanceDoesNotProduceEfficiency() {
+        listOf(null, 0.0, -1.0, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY).forEach { distance ->
+            val result = estimate(api = 1.0, distance = distance)
+            assertEquals(1.0, result.energyKwh!!, 0.0)
+            assertNull(result.efficiencyWhKm)
+        }
     }
-
-    private fun constantPowerSamples(powerKw: Double, endSeconds: Int): List<DrivePowerSample> = listOf(
-        DrivePowerSample("2026-07-11T10:00:00Z", powerKw),
-        DrivePowerSample("2026-07-11T10:00:${endSeconds.toString().padStart(2, '0')}Z", powerKw)
-    )
-
-    private fun assertFinite(estimate: DriveEnergyEstimate) {
-        estimate.energyKwh?.let { assertTrue(it.isFinite()) }
-        estimate.efficiencyWhKm?.let { assertTrue(it.isFinite()) }
+    @Test fun longSampleGapsDoNotBecomeThirtySecondsOfEnergy() {
+        val result = DriveEnergyResolver.resolve(null, 1.0, listOf(DrivePowerSample(start, 6.0),
+            DrivePowerSample("2026-07-11T10:01:00Z", 6.0)), startDate = start, endDate = "2026-07-11T10:01:00Z")
+        assertNull(result.energyKwh)
+        assertEquals(0L, result.coverageSeconds)
+    }
+    @Test fun unorderedReplayedSamplesHaveTheSameResultWithoutExtraCoverage() {
+        val a = estimate()
+        val b = DriveEnergyResolver.resolve(null, 1.0, rows(4.0).reversed() + rows(4.0), startDate = start, endDate = end)
+        assertEquals(a, b)
+    }
+    @Test fun fractionalCoverageMustNotBeRoundedIntoMissingTime() {
+        val finish = "2026-07-11T10:00:00.5Z"
+        val result = DriveEnergyResolver.resolve(null, 1.0, listOf(DrivePowerSample(start, 36.0), DrivePowerSample(finish, 36.0)), startDate = start, endDate = finish)
+        assertEquals(0.005, result.energyKwh!!, 1e-12)
+        assertEquals(0L, result.coverageSeconds)
+        assertEquals(0.5, result.coverageSecondsExact, 1e-12)
+        assertEquals(1.0, result.coverageRatio!!, 1e-12)
+    }
+    @Test fun reportUnitsAreWhPerKmNotKwhPer100Km() {
+        val result = estimate(api = 2.0, distance = 10.0)
+        assertEquals(200.0, result.efficiencyWhKm!!, 1e-12)
+        assertEquals(20.0, result.efficiencyWhKm!! / 10.0, 1e-12)
     }
 }

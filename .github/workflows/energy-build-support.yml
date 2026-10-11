@@ -1,0 +1,35 @@
+name: Energy isolated build support
+on:
+  push:
+    branches: [codex/reliable-data-stage-20261007]
+    paths: [.github/workflows/energy-build-support.yml]
+permissions:
+  contents: read
+jobs:
+  dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: deploy/jourvolt-dev-mock/go.mod
+          cache: false
+      - name: Verify and package only this checkout's public pinned Go modules
+        working-directory: deploy/jourvolt-dev-mock
+        run: |
+          set -euo pipefail
+          go mod download
+          go mod verify
+          mkdir -p "$GITHUB_WORKSPACE/build-support"
+          git rev-parse HEAD > "$GITHUB_WORKSPACE/build-support/SOURCE_HEAD.txt"
+          cp go.mod go.sum "$GITHUB_WORKSPACE/build-support/"
+          tar -czf "$GITHUB_WORKSPACE/build-support/go-modules.tgz" -C "$(go env GOPATH)" pkg/mod
+          sha256sum "$GITHUB_WORKSPACE/build-support/go-modules.tgz" > "$GITHUB_WORKSPACE/build-support/SHA256SUMS"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: energy-go-build-support
+          retention-days: 7
+          path: build-support/

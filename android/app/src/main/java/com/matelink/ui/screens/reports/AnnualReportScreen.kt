@@ -187,12 +187,12 @@ private fun LegacyHonestAnnualSummarySection(
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SummaryCard(
             title = stringResource(R.string.stats_energy_used),
-            value = if (qs.totalDrives > 0) String.format("%,.1f kWh", qs.totalEnergyConsumedKwh) else noData,
+            value = if (qs.totalEnergyConsumedKwh != null) String.format("%,.1f kWh", qs.totalEnergyConsumedKwh) else noData,
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
             title = stringResource(R.string.stats_avg_efficiency),
-            value = if (qs.totalDrives > 0 && qs.avgEfficiencyWhKm > 0) String.format("%.0f Wh/km", qs.avgEfficiencyWhKm) else noData,
+            value = if (qs.totalDrives > 0 && (qs.avgEfficiencyWhKm ?: 0.0) > 0) String.format("%.0f Wh/km", qs.avgEfficiencyWhKm) else noData,
             modifier = Modifier.weight(1f)
         )
     }
@@ -266,12 +266,12 @@ private fun HonestAnnualSummarySection(
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SummaryCard(
             title = stringResource(R.string.stats_energy_used),
-            value = if (hasDrivingEnergy) String.format(Locale.getDefault(), "%,.1f kWh", qs.totalEnergyConsumedKwh) else noData,
+            value = if (hasDrivingEnergy && qs.totalEnergyConsumedKwh != null) String.format(Locale.getDefault(), "%,.1f kWh", qs.totalEnergyConsumedKwh) else noData,
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
             title = stringResource(R.string.stats_avg_efficiency),
-            value = if (hasDistance && hasDrivingEnergy && qs.avgEfficiencyWhKm > 0) String.format(Locale.getDefault(), "%.0f Wh/km", qs.avgEfficiencyWhKm) else noData,
+            value = if (hasDistance && hasDrivingEnergy && (qs.avgEfficiencyWhKm ?: 0.0) > 0) String.format(Locale.getDefault(), "%.0f Wh/km", qs.avgEfficiencyWhKm) else noData,
             modifier = Modifier.weight(1f)
         )
     }
@@ -348,12 +348,12 @@ private fun AnnualSummarySection(
     ) {
         SummaryCard(
             title = stringResource(R.string.stats_energy_used),
-            value = if (qs.totalDrives > 0) String.format("%,.1f kWh", qs.totalEnergyConsumedKwh) else stringResource(R.string.analysis_no_records),
+            value = if (qs.totalEnergyConsumedKwh != null) String.format("%,.1f kWh", qs.totalEnergyConsumedKwh) else stringResource(R.string.analysis_no_records),
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
             title = stringResource(R.string.stats_avg_efficiency),
-            value = if (qs.totalDrives > 0 && qs.avgEfficiencyWhKm > 0) String.format("%.0f Wh/km", qs.avgEfficiencyWhKm) else stringResource(R.string.analysis_no_records),
+            value = if (qs.totalDrives > 0 && (qs.avgEfficiencyWhKm ?: 0.0) > 0) String.format("%.0f Wh/km", qs.avgEfficiencyWhKm) else stringResource(R.string.analysis_no_records),
             modifier = Modifier.weight(1f)
         )
     }
@@ -656,11 +656,11 @@ private fun DrivingHabitsSection(stats: CarStats) {
             }
 
             // Efficiency rating
-            if (qs.avgEfficiencyWhKm > 0) {
+            if ((qs.avgEfficiencyWhKm ?: 0.0) > 0) {
                 val rating = when {
-                    qs.avgEfficiencyWhKm < 150 -> stringResource(R.string.annual_report_excellent)
-                    qs.avgEfficiencyWhKm < 180 -> stringResource(R.string.annual_report_good)
-                    qs.avgEfficiencyWhKm < 220 -> stringResource(R.string.annual_report_average)
+                    (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 150 -> stringResource(R.string.annual_report_excellent)
+                    (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 180 -> stringResource(R.string.annual_report_good)
+                    (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 220 -> stringResource(R.string.annual_report_average)
                     else -> stringResource(R.string.annual_report_high)
                 }
                 HabitRow(stringResource(R.string.annual_report_efficiency_rating), rating)

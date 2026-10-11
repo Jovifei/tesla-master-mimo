@@ -486,6 +486,12 @@ fun NavGraph(
         }
     }
 
+    if (!currentRoute.contains("TeslaLogin")) {
+        com.matelink.ui.components.CompletedChargePrompt(
+            currentCarId, "$connectionMode/$sessionAccountId/$isTeslaSessionAuthenticated",
+            onDetail = { kind,id -> if(kind=="drive") navController.navigate(Screen.DriveDetail(currentCarId,id)) else navController.navigate(Screen.ChargeDetail(currentCarId,id)) }
+        )
+    }
     Scaffold(
         bottomBar = {
             if (!currentRoute.contains("TeslaLogin")) {

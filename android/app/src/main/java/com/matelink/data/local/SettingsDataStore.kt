@@ -13,6 +13,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -75,15 +77,26 @@ data class AppSettings(
 }
 
 @Singleton
-class SettingsDataStore @Inject constructor(
-    @ApplicationContext private val context: Context,
-    private val secureStore: SecureSettingsDataStore
+class SettingsDataStore internal constructor(
+    private val backingDataStore: DataStore<Preferences>,
+    private val secureStore: SecureSettingsDataStore,
+    private val languagePrefs: SharedPreferences
 ) {
+    @Inject constructor(@ApplicationContext context: Context, secureStore: SecureSettingsDataStore) : this(
+        context.dataStore, secureStore, context.getSharedPreferences("matelink_language", Context.MODE_PRIVATE)
+    )
+    private val identityMutex = Mutex()
+    @Volatile private var identityGeneration = 0L
+    internal fun currentIdentityGeneration(): Long = identityGeneration
+
+    /** URL and its process generation are captured under the same lock as connection mutations. */
+    internal suspend fun historyIdentitySnapshot(readServerUrl: suspend () -> String): Pair<String, Long> =
+        identityMutex.withLock { readServerUrl() to identityGeneration }
     private val defaultChargePriceKey = stringPreferencesKey("default_charge_price")
 
     suspend fun saveDefaultChargePrice(price: Double) {
         require(price.isFinite() && price >= 0.0)
-        context.dataStore.edit { it[defaultChargePriceKey] = price.toString() }
+        backingDataStore.edit { it[defaultChargePriceKey] = price.toString() }
     }
     private val serverUrlKey = stringPreferencesKey("server_url")
     private val secondaryServerUrlKey = stringPreferencesKey("secondary_server_url")
@@ -107,15 +120,11 @@ class SettingsDataStore @Inject constructor(
     private val tariffValleyRangesKey = stringPreferencesKey("tariff_valley_ranges")
     private val tpmsAlertProfilesKey = stringPreferencesKey("tpms_alert_profiles")
 
-    /** SharedPreferences for language code — shared with MateLinkApplication for early reads. */
-    private val languagePrefs: SharedPreferences =
-        context.getSharedPreferences("matelink_language", Context.MODE_PRIVATE)
-
-    val notificationPermissionAsked: Flow<Boolean> = context.dataStore.data.map { preferences ->
+    val notificationPermissionAsked: Flow<Boolean> = backingDataStore.data.map { preferences ->
         preferences[notificationPermissionAskedKey] ?: false
     }
 
-    val settings: Flow<AppSettings> = context.dataStore.data.map { preferences ->
+    val settings: Flow<AppSettings> = backingDataStore.data.map { preferences ->
         AppSettings(
             defaultChargePrice = preferences[defaultChargePriceKey]?.toDoubleOrNull()
                 ?.takeIf { it.isFinite() && it >= 0.0 } ?: 1.14,
@@ -144,33 +153,33 @@ class SettingsDataStore @Inject constructor(
         emit(languagePrefs.getString("language_code", "") ?: "")
     }
 
-    val showShortDrivesCharges: Flow<Boolean> = context.dataStore.data.map { preferences ->
+    val showShortDrivesCharges: Flow<Boolean> = backingDataStore.data.map { preferences ->
         preferences[showShortDrivesChargesKey] ?: false
     }
 
     /**
      * Flow of car image overrides, keyed by car ID.
      */
-    val carImageOverrides: Flow<Map<Int, CarImageOverride>> = context.dataStore.data.map { preferences ->
+    val carImageOverrides: Flow<Map<Int, CarImageOverride>> = backingDataStore.data.map { preferences ->
         val jsonString = preferences[carImageOverridesKey] ?: "{}"
         parseOverridesJson(jsonString)
     }
 
-    val chargePriceOverrides: Flow<Map<String, Double>> = context.dataStore.data.map { preferences ->
+    val chargePriceOverrides: Flow<Map<String, Double>> = backingDataStore.data.map { preferences ->
         parseChargePriceOverrides(preferences[chargePriceOverridesKey] ?: "{}")
     }
 
     /** Manual total amount (¥) overrides, keyed by car ID and charge ID. */
-    val chargeTotalOverrides: Flow<Map<String, Double>> = context.dataStore.data.map { preferences ->
+    val chargeTotalOverrides: Flow<Map<String, Double>> = backingDataStore.data.map { preferences ->
         parseChargePriceOverrides(preferences[chargeTotalOverridesKey] ?: "{}")
     }
 
     /** Whether the legacy JSON total overrides have been copied into Room. */
-    val chargeTotalOverridesMigrated: Flow<Boolean> = context.dataStore.data.map { preferences ->
+    val chargeTotalOverridesMigrated: Flow<Boolean> = backingDataStore.data.map { preferences ->
         preferences[chargeTotalOverridesMigratedKey] ?: false
     }
 
-    val tpmsAlertProfiles: Flow<Map<Int, TpmsAlertProfile>> = context.dataStore.data.map { preferences ->
+    val tpmsAlertProfiles: Flow<Map<Int, TpmsAlertProfile>> = backingDataStore.data.map { preferences ->
         parseTpmsAlertProfiles(preferences[tpmsAlertProfilesKey] ?: "{}")
     }
 
@@ -260,8 +269,9 @@ class SettingsDataStore @Inject constructor(
         httpBasicAuthPassword: String,
         acceptInvalidCerts: Boolean,
         currencyCode: String
-    ) {
-        context.dataStore.edit { preferences ->
+    ): Unit = identityMutex.withLock {
+        identityGeneration++
+        backingDataStore.edit { preferences ->
             preferences[serverUrlKey] = serverUrl
             preferences[secondaryServerUrlKey] = secondaryServerUrl
             preferences[acceptInvalidCertsKey] = acceptInvalidCerts
@@ -273,37 +283,41 @@ class SettingsDataStore @Inject constructor(
     }
 
     /** Saves the two user-facing connection values without rewriting legacy advanced settings. */
-    suspend fun saveConnectionSettings(serverUrl: String, apiToken: String, currencyCode: String) {
-        context.dataStore.edit { preferences ->
+    suspend fun saveConnectionSettings(serverUrl: String, apiToken: String, currencyCode: String): Unit = identityMutex.withLock {
+        identityGeneration++
+        backingDataStore.edit { preferences ->
             preferences[serverUrlKey] = serverUrl
             preferences[currencyCodeKey] = currencyCode
         }
         secureStore.setApiToken(apiToken)
     }
 
-    suspend fun saveHttpBasicAuth(username: String, password: String) {
+    suspend fun saveHttpBasicAuth(username: String, password: String): Unit = identityMutex.withLock {
+        identityGeneration++
         secureStore.setHttpBasicUsername(username)
         secureStore.setHttpBasicPassword(password)
     }
 
-    suspend fun saveServerUrl(url: String) {
-        context.dataStore.edit { preferences ->
+    suspend fun saveServerUrl(url: String): Unit = identityMutex.withLock {
+        identityGeneration++
+        backingDataStore.edit { preferences ->
             preferences[serverUrlKey] = url
         }
     }
 
-    suspend fun saveApiToken(token: String) {
+    suspend fun saveApiToken(token: String): Unit = identityMutex.withLock {
+        identityGeneration++
         secureStore.setApiToken(token)
     }
 
     suspend fun saveCurrency(currencyCode: String) {
-        context.dataStore.edit { preferences ->
+        backingDataStore.edit { preferences ->
             preferences[currencyCodeKey] = currencyCode
         }
     }
 
     suspend fun saveShowShortDrivesCharges(show: Boolean) {
-        context.dataStore.edit { preferences ->
+        backingDataStore.edit { preferences ->
             preferences[showShortDrivesChargesKey] = show
         }
     }
@@ -313,13 +327,13 @@ class SettingsDataStore @Inject constructor(
     }
 
     suspend fun saveTeslamateBaseUrl(url: String) {
-        context.dataStore.edit { preferences ->
+        backingDataStore.edit { preferences ->
             preferences[teslamateBaseUrlKey] = url
         }
     }
 
     suspend fun saveLastSelectedCarId(carId: Int) {
-        context.dataStore.edit { preferences ->
+        backingDataStore.edit { preferences ->
             preferences[lastSelectedCarIdKey] = carId
         }
     }
@@ -331,7 +345,7 @@ class SettingsDataStore @Inject constructor(
      * @param override The override to save, or null to clear
      */
     suspend fun saveCarImageOverride(carId: Int, override: CarImageOverride?) {
-        context.dataStore.edit { preferences ->
+        backingDataStore.edit { preferences ->
             val currentJson = preferences[carImageOverridesKey] ?: "{}"
             val currentMap = parseOverridesJson(currentJson).toMutableMap()
 
@@ -346,7 +360,7 @@ class SettingsDataStore @Inject constructor(
     }
 
     suspend fun saveChargePriceOverride(key: String, pricePerKwh: Double?) {
-        context.dataStore.edit { preferences ->
+        backingDataStore.edit { preferences ->
             val overrides = parseChargePriceOverrides(
                 preferences[chargePriceOverridesKey] ?: "{}"
             ).toMutableMap()
@@ -360,7 +374,7 @@ class SettingsDataStore @Inject constructor(
     }
 
     suspend fun saveChargeTotalOverride(key: String, totalAmount: Double?) {
-        context.dataStore.edit { preferences ->
+        backingDataStore.edit { preferences ->
             val overrides = parseChargePriceOverrides(
                 preferences[chargeTotalOverridesKey] ?: "{}"
             ).toMutableMap()
@@ -375,14 +389,14 @@ class SettingsDataStore @Inject constructor(
 
     /** Mark the legacy total override JSON as migrated and remove the old copy. */
     suspend fun markChargeTotalOverridesMigrated() {
-        context.dataStore.edit { preferences ->
+        backingDataStore.edit { preferences ->
             preferences.remove(chargeTotalOverridesKey)
             preferences[chargeTotalOverridesMigratedKey] = true
         }
     }
 
     suspend fun saveNotificationPermissionAsked() {
-        context.dataStore.edit { preferences ->
+        backingDataStore.edit { preferences ->
             preferences[notificationPermissionAskedKey] = true
         }
     }
@@ -396,7 +410,7 @@ class SettingsDataStore @Inject constructor(
         flatRanges: String,
         valleyRanges: String
     ) {
-        context.dataStore.edit { preferences ->
+        backingDataStore.edit { preferences ->
             preferences[tariffEnabledKey] = enabled
             preferences[tariffPeakPriceKey] = peakPrice.toString()
             preferences[tariffFlatPriceKey] = flatPrice.toString()
@@ -416,7 +430,7 @@ class SettingsDataStore @Inject constructor(
     /** Save only a finite, strictly ordered profile; invalid profiles can never enable alerts. */
     suspend fun saveTpmsAlertProfile(carId: Int, profile: TpmsAlertProfile) {
         require(profile.isValid) { "TPMS alert bounds must satisfy 0 < low < target < high" }
-        context.dataStore.edit { preferences ->
+        backingDataStore.edit { preferences ->
             val profiles = parseTpmsAlertProfiles(preferences[tpmsAlertProfilesKey] ?: "{}").toMutableMap()
             profiles[carId] = profile
             preferences[tpmsAlertProfilesKey] = tpmsAlertProfilesToJson(profiles)
@@ -424,15 +438,16 @@ class SettingsDataStore @Inject constructor(
     }
 
     suspend fun clearTpmsAlertProfile(carId: Int) {
-        context.dataStore.edit { preferences ->
+        backingDataStore.edit { preferences ->
             val profiles = parseTpmsAlertProfiles(preferences[tpmsAlertProfilesKey] ?: "{}").toMutableMap()
             profiles.remove(carId)
             preferences[tpmsAlertProfilesKey] = tpmsAlertProfilesToJson(profiles)
         }
     }
 
-    suspend fun clearSettings() {
-        context.dataStore.edit { preferences ->
+    suspend fun clearSettings(): Unit = identityMutex.withLock {
+        identityGeneration++
+        backingDataStore.edit { preferences ->
             preferences.clear()
         }
     }

@@ -108,6 +108,19 @@ internal class NotificationDeliveryUnavailableException(
 class TpmsTrendNotificationManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    fun showPressureChange(carId: Int, change: com.matelink.domain.analytics.TpmsPressureChange) {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) throw NotificationDeliveryUnavailableException()
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) throw NotificationDeliveryUnavailableException()
+        ensureTpmsNotificationChannel(context)
+        val manager=context.getSystemService(NotificationManager::class.java)
+        if(manager.getNotificationChannel(TpmsPressureWorker.CHANNEL_ID)?.importance==NotificationManager.IMPORTANCE_NONE) throw NotificationDeliveryUnavailableException()
+        val id=0x60000000 or ((carId.toLong()*1000003+change.wheel.ordinal) and 0x0fffffff).toInt()
+        val body=context.getString(R.string.tpms_change_body,context.getString(wheelString(change.wheel)),change.before,change.after)
+        runCatching { NotificationManagerCompat.from(context).notify(id,NotificationCompat.Builder(context,TpmsPressureWorker.CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification).setContentTitle(context.getString(R.string.tpms_change_title))
+            .setContentText(body).setOnlyAlertOnce(false).setPriority(NotificationCompat.PRIORITY_HIGH).setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setAutoCancel(true).build()) }
+            .getOrElse { throw NotificationDeliveryUnavailableException(it) }
+    }
     fun showCustomAlert(carId: Int, alert: TpmsCustomAlert) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(

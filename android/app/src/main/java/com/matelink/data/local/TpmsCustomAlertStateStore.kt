@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -48,7 +49,9 @@ data class TpmsCustomWheelObservation(
     val observed: Boolean,
     val state: TpmsCustomPressureState?,
     val observedPressureBar: Double?,
-    val thresholdBar: Double?
+    val thresholdBar: Double?,
+    val observedAt: Long = 0L,
+    val qualifiedReceipt: Boolean = false
 )
 
 data class TpmsCustomWheelState(
@@ -56,7 +59,9 @@ data class TpmsCustomWheelState(
     val pending: TpmsCustomPendingAlert? = null,
     val claim: TpmsCustomPendingAlert? = null,
     val claimStartedAt: Long = 0L,
-    val claimToken: String? = null
+    val claimToken: String? = null,
+    val observedAt: Long = 0L,
+    val qualifiedReceipt: Boolean = false
 )
 
 private val Context.tpmsCustomAlertDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -65,11 +70,12 @@ private val Context.tpmsCustomAlertDataStore: DataStore<Preferences> by preferen
 
 /** Persistent custom-alert state kept separate from Tesla soft-warning state. */
 @Singleton
-class TpmsCustomAlertStateStore @Inject constructor(
-    @ApplicationContext private val context: Context
+class TpmsCustomAlertStateStore internal constructor(
+    private val dataStore: DataStore<Preferences>
 ) {
+    @Inject constructor(@ApplicationContext context: Context) : this(context.tpmsCustomAlertDataStore)
     suspend fun getStates(carId: Int): Map<TirePosition, TpmsCustomWheelState> {
-        val preferences = context.tpmsCustomAlertDataStore.data.first()
+        val preferences = dataStore.data.first()
         return TirePosition.values().mapNotNull { wheel ->
             val state = preferences[stateKey(carId, wheel)]?.let { value ->
                 runCatching { TpmsCustomPressureState.valueOf(value) }.getOrNull()
@@ -89,7 +95,9 @@ class TpmsCustomAlertStateStore @Inject constructor(
                 claimStartedAt = preferences[claimStartedAtKey(carId, wheel)] ?: 0L,
                 claimToken = claim?.let {
                     preferences[claimTokenKey(carId, wheel)]?.takeIf(String::isNotBlank)
-                }
+                },
+                observedAt = preferences[receiptKey(carId,wheel)] ?: 0L,
+                qualifiedReceipt = preferences[qualifiedKey(carId,wheel)] ?: false
             )
         }.toMap()
     }
@@ -98,7 +106,7 @@ class TpmsCustomAlertStateStore @Inject constructor(
         carId: Int,
         states: Map<TirePosition, TpmsCustomWheelState>
     ) {
-        context.tpmsCustomAlertDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             TirePosition.values().forEach { wheel ->
                 preferences.remove(stateKey(carId, wheel))
                 preferences.remove(pendingObservedKey(carId, wheel))
@@ -107,8 +115,12 @@ class TpmsCustomAlertStateStore @Inject constructor(
                 preferences.remove(claimThresholdKey(carId, wheel))
                 preferences.remove(claimStartedAtKey(carId, wheel))
                 preferences.remove(claimTokenKey(carId, wheel))
+                preferences.remove(receiptKey(carId,wheel))
+                preferences.remove(qualifiedKey(carId,wheel))
                 states[wheel]?.let { state ->
                     preferences[stateKey(carId, wheel)] = state.state.name
+                    preferences[receiptKey(carId,wheel)] = state.observedAt
+                    preferences[qualifiedKey(carId,wheel)] = state.qualifiedReceipt
                     finiteTpmsCustomPendingAlert(
                         state.pending?.observedPressureBar,
                         state.pending?.thresholdBar
@@ -133,7 +145,7 @@ class TpmsCustomAlertStateStore @Inject constructor(
     }
 
     suspend fun resetForProfile(carId: Int, fingerprint: String) {
-        context.tpmsCustomAlertDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             if (preferences[profileFingerprintKey(carId)] != fingerprint) {
                 clearCarState(preferences, carId)
                 preferences[profileFingerprintKey(carId)] = fingerprint
@@ -150,7 +162,7 @@ class TpmsCustomAlertStateStore @Inject constructor(
         now: Long
     ): List<TpmsCustomAlertClaim> {
         val claims = mutableListOf<TpmsCustomAlertClaim>()
-        context.tpmsCustomAlertDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             if (preferences[profileFingerprintKey(carId)] != fingerprint) {
                 clearCarState(preferences, carId)
                 preferences[profileFingerprintKey(carId)] = fingerprint
@@ -158,6 +170,18 @@ class TpmsCustomAlertStateStore @Inject constructor(
 
             observations.forEach { (wheel, observation) ->
                 if (!observation.observed) return@forEach
+                if (observation.qualifiedReceipt) {
+                    if (!validReceiptTime(observation.observedAt, now)) return@forEach
+                    val lastReceipt = preferences[lastReceiptKey(carId,wheel)] ?: 0L
+                    if (observation.observedAt < lastReceipt) return@forEach
+                    val lastValue = preferences[lastValueKey(carId,wheel)]
+                    if (observation.observedAt == lastReceipt && lastValue != null &&
+                        lastValue != observation.observedPressureBar) return@forEach
+                    preferences[lastReceiptKey(carId,wheel)] = observation.observedAt
+                    observation.observedPressureBar?.takeIf { it.isFinite() }?.let {
+                        preferences[lastValueKey(carId,wheel)] = it
+                    }
+                }
                 if (observation.state == null) {
                     clearWheelState(preferences, carId, wheel)
                     return@forEach
@@ -177,17 +201,21 @@ class TpmsCustomAlertStateStore @Inject constructor(
                 var next = if (transition) {
                     TpmsCustomWheelState(
                         state = observation.state,
-                        pending = pendingObservation
+                        pending = pendingObservation,
+                        observedAt = observation.observedAt,
+                        qualifiedReceipt = observation.qualifiedReceipt
                     )
                 } else {
                     previous.copy(state = observation.state)
                 }
 
-                if (!defer && next.pending != null) {
+                val originalReceiptEligible = !observation.qualifiedReceipt ||
+                    (next.qualifiedReceipt && validReceiptTime(next.observedAt,now))
+                if (!defer && next.pending != null && originalReceiptEligible) {
                     val pending = next.pending
                     val claimIsLive = next.claim == pending &&
                         !next.claimToken.isNullOrBlank() &&
-                        now - next.claimStartedAt < CLAIM_LEASE_MS
+                        liveLease(next.claimStartedAt, now)
                     if (!claimIsLive) {
                         val token = UUID.randomUUID().toString()
                         next = next.copy(claim = pending, claimStartedAt = now, claimToken = token)
@@ -202,6 +230,18 @@ class TpmsCustomAlertStateStore @Inject constructor(
                 }
                 writeState(preferences, carId, wheel, next)
             }
+
+            // Unknown API fields cannot rearm alerts. Only original qualified
+            // durable evidence can be consumed independently of a fresh poll.
+            if (!defer) TirePosition.entries.filter { observations[it]?.observed != true }.forEach { wheel ->
+                val state = readState(preferences,carId,wheel) ?: return@forEach
+                val pending = state.pending ?: return@forEach
+                if (!state.qualifiedReceipt || !validReceiptTime(state.observedAt,now)) return@forEach
+                if (state.claim == pending && !state.claimToken.isNullOrBlank() && liveLease(state.claimStartedAt,now)) return@forEach
+                val token = UUID.randomUUID().toString()
+                writeState(preferences,carId,wheel,state.copy(claim=pending,claimStartedAt=now,claimToken=token))
+                claims += TpmsCustomAlertClaim(wheel,state.state,pending.observedPressureBar,pending.thresholdBar,token)
+            }
         }
         return claims
     }
@@ -210,7 +250,7 @@ class TpmsCustomAlertStateStore @Inject constructor(
         if (finiteTpmsCustomPendingAlert(claim.observedPressureBar, claim.thresholdBar) == null) {
             return
         }
-        context.tpmsCustomAlertDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val current = readState(preferences, carId, claim.wheel)
             val expected = TpmsCustomPendingAlert(claim.observedPressureBar, claim.thresholdBar)
             if (current?.claim == expected && current.state == claim.state &&
@@ -230,7 +270,7 @@ class TpmsCustomAlertStateStore @Inject constructor(
         if (finiteTpmsCustomPendingAlert(claim.observedPressureBar, claim.thresholdBar) == null) {
             return
         }
-        context.tpmsCustomAlertDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val current = readState(preferences, carId, claim.wheel)
             val expected = TpmsCustomPendingAlert(claim.observedPressureBar, claim.thresholdBar)
             if (current?.claim == expected && current.state == claim.state &&
@@ -244,6 +284,13 @@ class TpmsCustomAlertStateStore @Inject constructor(
                 )
             }
         }
+    }
+
+    internal suspend fun isClaimCurrent(carId:Int,claim:TpmsCustomAlertClaim):Boolean {
+        val current=readState(dataStore.data.first(),carId,claim.wheel) ?: return false
+        val expected=TpmsCustomPendingAlert(claim.observedPressureBar,claim.thresholdBar)
+        return current.claim==expected && current.pending==expected && current.state==claim.state &&
+            current.claimToken==claim.token && claim.token.isNotBlank()
     }
 
     private fun stateKey(carId: Int, wheel: TirePosition) =
@@ -270,6 +317,11 @@ class TpmsCustomAlertStateStore @Inject constructor(
     private fun profileFingerprintKey(carId: Int) =
         stringPreferencesKey("tpms_custom_profile_${carId}")
 
+    private fun receiptKey(carId:Int,wheel:TirePosition)=longPreferencesKey("tpms_custom_receipt_${carId}_${wheel.name}")
+    private fun qualifiedKey(carId:Int,wheel:TirePosition)=booleanPreferencesKey("tpms_custom_qualified_${carId}_${wheel.name}")
+    private fun lastReceiptKey(carId:Int,wheel:TirePosition)=longPreferencesKey("tpms_custom_last_receipt_${carId}_${wheel.name}")
+    private fun lastValueKey(carId:Int,wheel:TirePosition)=doublePreferencesKey("tpms_custom_last_value_${carId}_${wheel.name}")
+
     private fun readState(
         preferences: Preferences,
         carId: Int,
@@ -287,7 +339,9 @@ class TpmsCustomAlertStateStore @Inject constructor(
             claimStartedAt = preferences[claimStartedAtKey(carId, wheel)] ?: 0L,
             claimToken = finiteTpmsCustomPendingAlert(claimObserved, claimThreshold)?.let {
                 preferences[claimTokenKey(carId, wheel)]?.takeIf(String::isNotBlank)
-            }
+            },
+            observedAt = preferences[receiptKey(carId,wheel)] ?: 0L,
+            qualifiedReceipt = preferences[qualifiedKey(carId,wheel)] ?: false
         )
     }
 
@@ -304,6 +358,8 @@ class TpmsCustomAlertStateStore @Inject constructor(
         preferences.remove(claimStartedAtKey(carId, wheel))
         preferences.remove(claimTokenKey(carId, wheel))
         preferences[stateKey(carId, wheel)] = state.state.name
+        preferences[receiptKey(carId,wheel)] = state.observedAt
+        preferences[qualifiedKey(carId,wheel)] = state.qualifiedReceipt
         state.pending?.takeIf {
             it.observedPressureBar.isFinite() && it.thresholdBar.isFinite()
         }?.let { pending ->
@@ -334,13 +390,19 @@ class TpmsCustomAlertStateStore @Inject constructor(
         preferences.remove(claimThresholdKey(carId, wheel))
         preferences.remove(claimStartedAtKey(carId, wheel))
         preferences.remove(claimTokenKey(carId, wheel))
+        preferences.remove(receiptKey(carId,wheel))
+        preferences.remove(qualifiedKey(carId,wheel))
     }
 
     private fun clearCarState(
         preferences: MutablePreferences,
         carId: Int
     ) {
-        TirePosition.values().forEach { wheel -> clearWheelState(preferences, carId, wheel) }
+        TirePosition.values().forEach { wheel ->
+            clearWheelState(preferences, carId, wheel)
+            preferences.remove(lastReceiptKey(carId,wheel))
+            preferences.remove(lastValueKey(carId,wheel))
+        }
     }
 
     private companion object {

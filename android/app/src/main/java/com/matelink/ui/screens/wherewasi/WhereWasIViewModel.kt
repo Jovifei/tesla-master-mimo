@@ -11,6 +11,7 @@ import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.GeocodedLocation
 import com.matelink.data.repository.GeocodingRepository
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.repository.UnifiedHistoryRepository
 import com.matelink.data.repository.WeatherCondition
 import com.matelink.domain.LocalDayBoundaries
 import android.content.Context
@@ -18,6 +19,7 @@ import com.matelink.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -66,6 +68,7 @@ data class WhereWasIUiState(
 class WhereWasIViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val repository: TeslamateRepository,
+    private val historyRepository: UnifiedHistoryRepository,
     private val geocodingRepository: GeocodingRepository,
     private val openMeteoApi: OpenMeteoApi
 ) : ViewModel() {
@@ -98,19 +101,29 @@ class WhereWasIViewModel @Inject constructor(
                 val dayStart = LocalDayBoundaries.startOfDay(targetDate)
                 val dayEnd = LocalDayBoundaries.endOfDay(targetDate)
 
-                // Fetch drives, charges, and units in parallel
-                val drivesDeferred = async { repository.getDrives(carId, dayStart, dayEnd) }
-                val chargesDeferred = async { repository.getCharges(carId, dayStart, dayEnd) }
+                // Resolve complete, vehicle-scoped history before inferring the activity.
+                val historyDeferred = async { historyRepository.load(carId, dayStart, dayEnd) }
                 val statusDeferred = async { repository.getCarStatus(carId) }
 
-                val drives = when (val r = drivesDeferred.await()) {
-                    is ApiResult.Success -> r.data
-                    is ApiResult.Error -> emptyList()
+                val history = when (val result = historyDeferred.await()) {
+                    is ApiResult.Success -> result.data
+                    is ApiResult.Error -> {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false, error = appContext.getString(R.string.error_loading_data)
+                        )
+                        return@launch
+                    }
                 }
-                val charges = when (val r = chargesDeferred.await()) {
-                    is ApiResult.Success -> r.data
-                    is ApiResult.Error -> emptyList()
+                val warning = history.drivesSyncError ?: history.chargesSyncError
+                if (warning != null) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = appContext.getString(if (warning == "history_partial") R.string.history_sync_partial else R.string.history_sync_cached)
+                    )
+                    return@launch
                 }
+                val drives = history.drives
+                val charges = history.charges
                 val units = when (val r = statusDeferred.await()) {
                     is ApiResult.Success -> r.data.units
                     is ApiResult.Error -> null
@@ -125,6 +138,8 @@ class WhereWasIViewModel @Inject constructor(
                     activeCharge != null -> handleCharging(carId, activeCharge, targetTime, units)
                     else -> handleParked(carId, drives, charges, targetTime, units, dayStart)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading where-was-i data", e)
                 _uiState.value = WhereWasIUiState(isLoading = false, error = e.message)

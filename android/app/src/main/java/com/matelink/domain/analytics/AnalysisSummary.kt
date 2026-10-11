@@ -75,20 +75,25 @@ fun buildAnalysisSummary(
         distanceSamples > 0 && it.isFinite() && it >= 0.0
     }
     val drivingEnergy = stats.totalEnergyConsumedKwh
-        .takeIf { driveEnergySamples > 0 && it.isFinite() && it >= 0.0 }
+        ?.takeIf { driveEnergySamples > 0 && it.isFinite() }
     val chargedEnergy = stats.totalEnergyAddedKwh
-        .takeIf { chargeEnergySamples > 0 && it.isFinite() && it >= 0.0 }
+        ?.takeIf { chargeEnergySamples > 0 && it.isFinite() && it >= 0.0 }
     val efficiency = stats.avgEfficiencyWhKm
-        .takeIf {
-            distanceSamples > 0 && driveEnergySamples > 0 && it.isFinite() && it >= 0.0
+        ?.takeIf {
+            distanceSamples > 0 && driveEnergySamples > 0 && it.isFinite()
         }
     val efficiencySamples = minOf(distanceSamples, driveEnergySamples)
     val cost = stats.totalCost?.takeIf { costSamples > 0 && it.isFinite() && it >= 0.0 }
 
     return AnalysisSummary(
         distanceKm = distance.toObserved(MetricSource.TESLAMATE, distanceSamples),
-        drivingEnergyKwh = drivingEnergy.toObserved(MetricSource.TESLAMATE, driveEnergySamples),
-        efficiencyWhKm = efficiency.toDerived(MetricSource.LOCAL_CALCULATION, efficiencySamples),
+        drivingEnergyKwh = drivingEnergy.toDriveEnergyMetric(driveEnergySamples,
+            coverage?.driveEnergyEstimatedSampleCount ?: 0),
+        efficiencyWhKm = efficiency.toDerived(
+            MetricSource.LOCAL_CALCULATION, efficiencySamples,
+            if ((coverage?.driveEnergyEstimatedSampleCount ?: 0) > 0)
+                MetricEvidence.ESTIMATED else MetricEvidence.DERIVED
+        ),
         chargedEnergyKwh = chargedEnergy.toObserved(MetricSource.TESLAMATE, chargeEnergySamples),
         totalCost = cost.toObserved(MetricSource.TESLAMATE, costSamples),
         sourceRecordCount = driveCount + chargeCount
@@ -106,10 +111,10 @@ fun buildAnalysisConclusions(
     val distance = stats.totalDistanceKm.takeIf {
         distanceSamples > 0 && it.isFinite() && it >= 0.0
     }
-    val drivingEnergy = stats.totalEnergyConsumedKwh.takeIf {
-        driveEnergySamples > 0 && it.isFinite() && it >= 0.0
+    val drivingEnergy = stats.totalEnergyConsumedKwh?.takeIf {
+        driveEnergySamples > 0 && it.isFinite()
     }
-    val chargedEnergy = stats.totalEnergyAddedKwh.takeIf {
+    val chargedEnergy = stats.totalEnergyAddedKwh?.takeIf {
         chargeEnergySamples > 0 && it.isFinite() && it >= 0.0
     }
     val drivingDays = stats.totalDrivingDays?.takeIf { it > 0 }
@@ -177,6 +182,18 @@ fun buildAnalysisConclusions(
     )
 }
 
+private fun Double?.toDriveEnergyMetric(
+    sampleCount: Int,
+    estimatedCount: Int
+): MetricState<Double> = this?.let {
+    MetricState.Available(
+        value = it,
+        evidence = if (estimatedCount > 0) MetricEvidence.ESTIMATED else MetricEvidence.OBSERVED,
+        source = if (estimatedCount > 0) MetricSource.LOCAL_CALCULATION else MetricSource.TESLAMATE,
+        sampleCount = sampleCount
+    )
+} ?: MetricState.Unavailable("No valid source value")
+
 private fun Double?.toObserved(source: MetricSource, sampleCount: Int): MetricState<Double> =
     this?.let {
         MetricState.Available(
@@ -187,11 +204,13 @@ private fun Double?.toObserved(source: MetricSource, sampleCount: Int): MetricSt
         )
     } ?: MetricState.Unavailable("No valid source value")
 
-private fun Double?.toDerived(source: MetricSource, sampleCount: Int): MetricState<Double> =
+private fun Double?.toDerived(
+    source: MetricSource, sampleCount: Int, evidence: MetricEvidence = MetricEvidence.DERIVED
+): MetricState<Double> =
     this?.let {
         MetricState.Available(
             value = it,
-            evidence = MetricEvidence.DERIVED,
+            evidence = evidence,
             source = source,
             sampleCount = sampleCount
         )

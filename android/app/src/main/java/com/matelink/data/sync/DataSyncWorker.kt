@@ -24,6 +24,7 @@ import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 
 /**
  * Background worker for syncing stats data from TeslamateApi.
@@ -112,6 +113,8 @@ class DataSyncWorker @AssistedInject constructor(
                         log("Sync incomplete for car ${car.carId}, will retry")
                         hasNetworkError = true
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     logError("Error syncing car ${car.carId}", e)
                     if (isNetworkException(e)) {
@@ -132,6 +135,8 @@ class DataSyncWorker @AssistedInject constructor(
                 scheduleGeocoding()
                 Result.success()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logError("Unexpected error in sync worker", e)
             return if (isNetworkException(e)) {
@@ -192,6 +197,8 @@ class DataSyncWorker @AssistedInject constructor(
         return try {
             setForeground(createForegroundInfo(progress))
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             log("Could not set foreground service: ${e.message}")
             foregroundAvailable = false

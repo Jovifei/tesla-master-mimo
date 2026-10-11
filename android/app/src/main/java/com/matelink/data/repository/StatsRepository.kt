@@ -26,6 +26,7 @@ import com.matelink.domain.analytics.RecommendationDriveSample
 import com.matelink.domain.analytics.AnalysisChargeCoverageSample
 import com.matelink.domain.analytics.AnalysisDriveCoverageSample
 import com.matelink.domain.analytics.buildAnalysisCoverage
+import com.matelink.domain.analytics.qualifiedAcEnergyBalance
 import com.matelink.domain.analytics.buildRecommendationEvidence
 import com.matelink.domain.analytics.buildRecommendations
 import com.matelink.domain.analytics.observedAggregateCostOrNull
@@ -103,7 +104,7 @@ class StatsRepository @Inject constructor(
                 drives = analysisDrives.map {
                     RecommendationDriveSample(
                         distanceKm = it.distance,
-                        energyKwh = it.energyConsumedNet,
+                        energyKwh = it.netEnergyKwh,
                         averageSpeedKmh = it.speedAvg,
                         outsideTemperatureC = it.outsideTempAvg,
                         observedAt = it.startDate
@@ -111,8 +112,8 @@ class StatsRepository @Inject constructor(
                 },
                 charges = analysisCharges.map {
                     RecommendationChargeSample(
-                        energyAddedKwh = it.chargeEnergyAdded,
-                        energyUsedKwh = it.chargeEnergyUsed,
+                        energyAddedKwh = it.batteryInputKwh,
+                        energyUsedKwh = qualifiedAcEnergyBalance(it.energyContract, it.startDate, it.endDate, it.chargeType)?.inputKwh,
                         observedAt = it.startDate
                     )
                 }
@@ -122,16 +123,18 @@ class StatsRepository @Inject constructor(
             drives = analysisDrives.map {
                 AnalysisDriveCoverageSample(
                     distanceKm = it.distance,
-                    energyKwh = it.energyConsumedNet,
-                    observedAt = it.startDate
+                    energyKwh = it.netEnergyKwh,
+                    observedAt = it.startDate,
+                    energyQuality = it.energyContract?.netEnergy?.quality
                 )
             },
             charges = analysisCharges.map {
                 AnalysisChargeCoverageSample(
-                    energyAddedKwh = it.chargeEnergyAdded,
+                    energyAddedKwh = it.batteryInputKwh,
                     cost = it.cost,
                     observedAt = it.startDate,
-                    energyUsedKwh = it.chargeEnergyUsed
+                    energyUsedKwh = qualifiedAcEnergyBalance(it.energyContract, it.startDate, it.endDate, it.chargeType)?.inputKwh,
+                    acBalanceQualified = qualifiedAcEnergyBalance(it.energyContract, it.startDate, it.endDate, it.chargeType) != null
                 )
             }
         )

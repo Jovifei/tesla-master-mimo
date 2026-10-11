@@ -4,9 +4,7 @@ import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
 @JsonClass(generateAdapter = true)
-data class DrivesResponse(
-    @Json(name = "data") val data: DrivesData? = null
-)
+data class DrivesResponse(@Json(name = "data") val data: DrivesData? = null)
 
 @JsonClass(generateAdapter = true)
 data class DrivesData(
@@ -41,25 +39,26 @@ data class DriveData(
     @Json(name = "start_latitude") val startLatitude: Double? = null,
     @Json(name = "start_longitude") val startLongitude: Double? = null,
     @Json(name = "end_latitude") val endLatitude: Double? = null,
-    @Json(name = "end_longitude") val endLongitude: Double? = null
+    @Json(name = "end_longitude") val endLongitude: Double? = null,
+    @Json(name = "energy_contract") val energyContract: EnergyContract? = null
 ) {
-    // Convenience accessors
     val id: Int get() = driveId
     val distance: Double? get() = odometerDetails?.distance
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
     val startRatedRangeKm: Double? get() = rangeRated?.startRange
     val endRatedRangeKm: Double? get() = rangeRated?.endRange
-
+    // Explicit unknown/unsupported contracts must not fall back to an old scalar.
+    val netEnergyKwh: Double? get() = if (energyContract != null)
+        energyContract.netValueForWindow(startDate, endDate)
+            ?.takeIf { source == null || energyContract.netEnergy?.source == source }
+        else energyConsumedNet?.takeIf { it.isFinite() && legacyScalarEnergyAllowed(source) }
     val efficiencyWhKm: Double?
         get() {
-            if (consumptionNet != null && consumptionNet > 0.0) {
-                return consumptionNet
-            }
-            val dist = distance ?: return null
-            if (dist <= 0) return null
-            val consumed = energyConsumedNet ?: return null
-            return (consumed * 1000) / dist // Convert kWh to Wh per km
+            val dist = distance?.takeIf { it.isFinite() && it > 0.0 } ?: return null
+            val consumed = netEnergyKwh
+            if (consumed != null) return (consumed / dist * 1000.0).takeIf(Double::isFinite)
+            return if (energyContract == null && legacyScalarEnergyAllowed(source)) consumptionNet?.takeIf(Double::isFinite) else null
         }
 }
 
@@ -85,9 +84,7 @@ data class DriveRange(
 )
 
 @JsonClass(generateAdapter = true)
-data class DriveDetailResponse(
-    @Json(name = "data") val data: DriveDetailData? = null
-)
+data class DriveDetailResponse(@Json(name = "data") val data: DriveDetailData? = null)
 
 @JsonClass(generateAdapter = true)
 data class DriveDetailData(
@@ -129,12 +126,17 @@ data class DriveDetail(
     @Json(name = "start_latitude") val startLatitude: Double? = null,
     @Json(name = "start_longitude") val startLongitude: Double? = null,
     @Json(name = "end_latitude") val endLatitude: Double? = null,
-    @Json(name = "end_longitude") val endLongitude: Double? = null
+    @Json(name = "end_longitude") val endLongitude: Double? = null,
+    @Json(name = "energy_contract") val energyContract: EnergyContract? = null
 ) {
     val id: Int get() = driveId
     val distance: Double? get() = odometerDetails?.distance
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
+    val netEnergyKwh: Double? get() = if (energyContract != null)
+        energyContract.netValueForWindow(startDate, endDate)
+            ?.takeIf { source == null || energyContract.netEnergy?.source == source }
+        else energyConsumedNet?.takeIf { it.isFinite() && legacyScalarEnergyAllowed(source) }
 }
 
 @JsonClass(generateAdapter = true)
@@ -149,7 +151,6 @@ data class DrivePosition(
     @Json(name = "climate_info") val climateInfo: DriveClimateInfo? = null,
     @Json(name = "battery_info") val batteryInfo: DriveBatteryInfo? = null
 ) {
-    // Convenience accessors
     val insideTemp: Double? get() = climateInfo?.insideTemp
     val outsideTemp: Double? get() = climateInfo?.outsideTemp
     val isClimateOn: Boolean get() = climateInfo?.isClimateOn == true

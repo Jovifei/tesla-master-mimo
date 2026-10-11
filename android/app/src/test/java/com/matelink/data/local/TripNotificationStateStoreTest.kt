@@ -29,11 +29,11 @@ class TripNotificationStateStoreTest {
     }
 
     @Test
-    fun noCompletedDriveDoesNotCreateAFirstSyncWatermark() {
+    fun emptyFirstSyncCreatesZeroBaselineWithoutNotifications() {
         val plan = completedTripNotificationPlan(watermark = null, summaries = emptyList())
 
         assertTrue(plan.toNotify.isEmpty())
-        assertEquals(null, plan.watermarkToSave)
+        assertEquals(0, plan.watermarkToSave)
     }
 
     @Test

@@ -58,9 +58,8 @@ enum class TirePosition {
  * State is keyed by carId (e.g., tpms_warning_fl_1 for car 1's front left tire).
  */
 @Singleton
-class TpmsStateDataStore @Inject constructor(
-    @ApplicationContext private val context: Context
-) {
+class TpmsStateDataStore internal constructor(private val dataStore: DataStore<Preferences>) {
+    @Inject constructor(@ApplicationContext context: Context) : this(context.tpmsDataStore)
     // Key builders for car-specific preferences
     private fun warningFlKey(carId: Int, prefix: String = "") = booleanPreferencesKey("${prefix}tpms_warning_fl_$carId")
     private fun warningFrKey(carId: Int, prefix: String = "") = booleanPreferencesKey("${prefix}tpms_warning_fr_$carId")
@@ -74,7 +73,7 @@ class TpmsStateDataStore @Inject constructor(
      * Get the current TPMS state for a specific car.
      */
     suspend fun getState(carId: Int): TpmsState {
-        return context.tpmsDataStore.data.map { preferences ->
+        return dataStore.data.map { preferences ->
             readState(preferences, carId)
         }.first()
     }
@@ -83,7 +82,7 @@ class TpmsStateDataStore @Inject constructor(
      * Save the TPMS state for a specific car.
      */
     suspend fun saveState(carId: Int, state: TpmsState) {
-        context.tpmsDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             writeState(preferences, carId, state)
             preferences[lastCheckedKey(carId)] = state.lastCheckedAt
         }
@@ -105,11 +104,50 @@ class TpmsStateDataStore @Inject constructor(
         carId: Int,
         nextState: TpmsState,
         now: Long
+    ): TpmsStateDataStoreClaimResult = claimPartialStateChange(
+        carId, nextState.warningFl, nextState.warningFr,
+        nextState.warningRl, nextState.warningRr, now
+    )
+
+    /** Merge only observed wheels inside the same transaction that claims a transition. */
+    internal suspend fun claimPartialStateChange(
+        carId: Int,
+        warningFl: Boolean?,
+        warningFr: Boolean?,
+        warningRl: Boolean?,
+        warningRr: Boolean?,
+        executionNow: Long,
+        qualifiedReceiptTimes: Map<TirePosition,Long> = emptyMap()
     ): TpmsStateDataStoreClaimResult {
+        if (warningFl == null && warningFr == null && warningRl == null && warningRr == null) {
+            return TpmsStateDataStoreClaimResult.NoTransition
+        }
+        val now = executionNow
         var result: TpmsStateDataStoreClaimResult = TpmsStateDataStoreClaimResult.NoTransition
-        context.tpmsDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val previousState = readState(preferences, carId)
-            val desiredState = nextState.copy(lastCheckedAt = 0L)
+            // Unknown wheels retain the pending desired snapshot too. An unrelated
+            // false wheel must not erase a warning awaiting notification delivery.
+            var base = if (preferences.contains(warningFlKey(carId, PENDING_PREFIX))) {
+                readState(preferences, carId, PENDING_PREFIX)
+            } else previousState
+            if (qualifiedReceiptTimes.isNotEmpty()) {
+                // A new field is not evidence that an unrelated old pending
+                // wheel is still fresh. Only its own durable receipt qualifies.
+                fun fresh(wheel:TirePosition)=validReceiptTime(preferences[pendingReceiptKey(carId,wheel)]?:0L,now)
+                base=base.copy(
+                    warningFl=base.warningFl.takeIf { fresh(TirePosition.FL) } ?: previousState.warningFl,
+                    warningFr=base.warningFr.takeIf { fresh(TirePosition.FR) } ?: previousState.warningFr,
+                    warningRl=base.warningRl.takeIf { fresh(TirePosition.RL) } ?: previousState.warningRl,
+                    warningRr=base.warningRr.takeIf { fresh(TirePosition.RR) } ?: previousState.warningRr)
+            }
+            val desiredState = base.copy(
+                warningFl = warningFl ?: base.warningFl,
+                warningFr = warningFr ?: base.warningFr,
+                warningRl = warningRl ?: base.warningRl,
+                warningRr = warningRr ?: base.warningRr,
+                lastCheckedAt = 0L
+            )
             val pendingState = readState(preferences, carId, PENDING_PREFIX)
 
             if (sameWarnings(previousState, desiredState)) {
@@ -120,12 +158,15 @@ class TpmsStateDataStore @Inject constructor(
                 clearClaimState(preferences, carId)
                 writeState(preferences, carId, desiredState, PENDING_PREFIX)
             }
+            qualifiedReceiptTimes.forEach { (wheel,at) ->
+                if(validReceiptTime(at,now)) preferences[pendingReceiptKey(carId,wheel)] = at
+            }
 
             val claimedState = readState(preferences, carId, CLAIM_PREFIX)
             val startedAt = preferences[claimStartedAtKey(carId)] ?: 0L
             val claimIsLive = sameWarnings(claimedState, desiredState) &&
                 !preferences[claimTokenKey(carId)].isNullOrBlank() &&
-                now - startedAt < CLAIM_LEASE_MS
+                liveLease(startedAt, now)
             if (claimIsLive) {
                 result = TpmsStateDataStoreClaimResult.InFlight
             } else {
@@ -141,8 +182,31 @@ class TpmsStateDataStore @Inject constructor(
         return result
     }
 
+    internal suspend fun savePartialState(
+        carId: Int,
+        warningFl: Boolean?,
+        warningFr: Boolean?,
+        warningRl: Boolean?,
+        warningRr: Boolean?,
+        executionNow: Long
+    ) {
+        if (warningFl == null && warningFr == null && warningRl == null && warningRr == null) return
+        dataStore.edit { preferences ->
+            val previous = readState(preferences, carId)
+            val merged = previous.copy(
+                warningFl = warningFl ?: previous.warningFl,
+                warningFr = warningFr ?: previous.warningFr,
+                warningRl = warningRl ?: previous.warningRl,
+                warningRr = warningRr ?: previous.warningRr,
+                lastCheckedAt = executionNow
+            )
+            writeState(preferences, carId, merged)
+            preferences[lastCheckedKey(carId)] = executionNow
+        }
+    }
+
     internal suspend fun commitStateChange(carId: Int, claim: TpmsStateTransitionClaim, now: Long) {
-        context.tpmsDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val claimedState = readState(preferences, carId, CLAIM_PREFIX)
             val pendingState = readState(preferences, carId, PENDING_PREFIX)
             if (sameWarnings(claimedState, claim.nextState) &&
@@ -157,7 +221,7 @@ class TpmsStateDataStore @Inject constructor(
     }
 
     internal suspend fun releaseStateChange(carId: Int, claim: TpmsStateTransitionClaim) {
-        context.tpmsDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val claimedState = readState(preferences, carId, CLAIM_PREFIX)
             if (sameWarnings(claimedState, claim.nextState) &&
                 preferences[claimTokenKey(carId)] == claim.token
@@ -165,6 +229,13 @@ class TpmsStateDataStore @Inject constructor(
                 clearClaimState(preferences, carId)
             }
         }
+    }
+
+    internal suspend fun isClaimCurrent(carId:Int,token:String,nextState:TpmsState):Boolean {
+        val p=dataStore.data.first()
+        return token.isNotBlank() && p[claimTokenKey(carId)]==token &&
+            sameWarnings(readState(p,carId,CLAIM_PREFIX),nextState) &&
+            sameWarnings(readState(p,carId,PENDING_PREFIX),nextState)
     }
 
     private fun readState(
@@ -212,7 +283,10 @@ class TpmsStateDataStore @Inject constructor(
         preferences.remove(warningRlKey(carId, PENDING_PREFIX))
         preferences.remove(warningRrKey(carId, PENDING_PREFIX))
         clearClaimState(preferences, carId)
+        TirePosition.entries.forEach { preferences.remove(pendingReceiptKey(carId,it)) }
     }
+
+    private fun pendingReceiptKey(carId:Int,wheel:TirePosition)=longPreferencesKey("pending_tpms_receipt_${carId}_${wheel.name}")
 
     private fun sameWarnings(left: TpmsState?, right: TpmsState): Boolean =
         left != null && left.warningFl == right.warningFl &&
@@ -224,7 +298,7 @@ class TpmsStateDataStore @Inject constructor(
      * Clear all TPMS states (for all cars).
      */
     suspend fun clearAllStates() {
-        context.tpmsDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             preferences.clear()
         }
     }

@@ -3,32 +3,38 @@ package com.matelink.ui.screens.drives
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.DriveDetail
-import com.matelink.data.api.models.DrivePosition
-import com.matelink.data.api.models.DriveClimateInfo
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.dao.DriveSummaryDao
-import com.matelink.data.local.entity.DriveSummary
+import com.matelink.data.local.entity.SavedTripLeg
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.GeocodingRepository
-import com.matelink.data.local.VehicleContextRepository
-import kotlin.math.roundToInt
-import com.matelink.data.local.entity.SavedTripLeg
+import com.matelink.data.repository.UnifiedHistoryRepository
+import com.matelink.data.repository.VerifiedHistoryReadContext
+import com.matelink.data.repository.historyIdentityUnavailableError
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.WeatherPoint
 import com.matelink.data.repository.WeatherRepository
+import com.matelink.domain.history.LatestHistoryLoad
 import com.matelink.domain.LegRef
 import com.matelink.domain.TripRepository
+import com.matelink.domain.analytics.asCachedDetail
+import com.matelink.domain.analytics.resolveDriveEnergy
+import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.model.Trip
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 data class DriveDetailUiState(
     val isLoading: Boolean = true,
+    val localArchiveLinkPending: Boolean = false,
+    val historySyncWarning: String? = null,
     val error: String? = null,
     val driveDetail: DriveDetail? = null,
     val units: Units? = null,
@@ -39,195 +45,109 @@ data class DriveDetailUiState(
 )
 
 data class DriveDetailStats(
-    val speedMax: Int?,
-    val speedAvg: Double?,
-    val speedMin: Int?,
-    val powerMax: Int?,
-    val powerMin: Int?,
-    val powerAvg: Double?,
-    val elevationMax: Int?,
-    val elevationMin: Int?,
-    val elevationGain: Int?,
-    val elevationLoss: Int?,
-    val batteryStart: Int?,
-    val batteryEnd: Int?,
-    val batteryUsed: Int?,
+    val speedMax: Int?, val speedAvg: Double?, val speedMin: Int?,
+    val powerMax: Int?, val powerMin: Int?, val powerAvg: Double?,
+    val elevationMax: Int?, val elevationMin: Int?, val elevationGain: Int?, val elevationLoss: Int?,
+    val batteryStart: Int?, val batteryEnd: Int?, val batteryUsed: Int?,
     val energy: DriveDetailEnergyPresentation,
-    val distance: Double?,
-    val durationMin: Int?,
-    val avgSpeedFromDistance: Double?,
-    val outsideTempAvg: Double?,
-    val insideTempAvg: Double?
+    val distance: Double?, val durationMin: Int?, val avgSpeedFromDistance: Double?,
+    val outsideTempAvg: Double?, val insideTempAvg: Double?
 )
-
-enum class DriveDetailEnergySource {
-    API,
-    POWER_SAMPLES
-}
-
-data class DriveDetailEnergyPresentation(
-    val energyKwh: Double?,
-    val efficiencyWhKm: Double?,
-    val source: DriveDetailEnergySource?,
-    val coverageSeconds: Long?,
-    val coverageRatio: Double?
-)
-
-internal fun presentDriveDetailEnergy(
-    energyKwh: Double?,
-    efficiencyWhKm: Double?,
-    energySource: String?,
-    coverageSeconds: Long?,
-    coverageRatio: Double?
-): DriveDetailEnergyPresentation {
-    val source = when (energySource) {
-        "api" -> DriveDetailEnergySource.API
-        "power_samples" -> DriveDetailEnergySource.POWER_SAMPLES
-        else -> null
-    }
-    val validEnergyKwh = energyKwh?.takeIf { it.isFinite() && it >= 0.0 }
-    if (source == null || validEnergyKwh == null) {
-        return DriveDetailEnergyPresentation(null, null, null, null, null)
-    }
-
-    return DriveDetailEnergyPresentation(
-        energyKwh = validEnergyKwh,
-        efficiencyWhKm = efficiencyWhKm?.takeIf { it.isFinite() && it >= 0.0 },
-        source = source,
-        coverageSeconds = coverageSeconds?.takeIf { it >= 0L },
-        coverageRatio = coverageRatio?.takeIf { it.isFinite() && it in 0.0..1.0 }
-    )
-}
 
 @HiltViewModel
 class DriveDetailViewModel @Inject constructor(
     private val repository: TeslamateRepository,
     private val driveSummaryDao: DriveSummaryDao,
-    private val vehicleContextRepository: VehicleContextRepository,
+    private val historyRepository: UnifiedHistoryRepository,
     private val weatherRepository: WeatherRepository,
     private val tripRepository: TripRepository,
     private val geocodingRepository: GeocodingRepository
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow(DriveDetailUiState())
     val uiState: StateFlow<DriveDetailUiState> = _uiState.asStateFlow()
-
+    private val latestLoad = LatestHistoryLoad()
+    private var historyProof: VerifiedHistoryReadContext? = null
     private var carId: Int? = null
     private var driveId: Int? = null
 
     fun loadDriveDetail(carId: Int, driveId: Int) {
-        if (this.carId == carId && this.driveId == driveId && _uiState.value.driveDetail != null) {
-            return // Already loaded
-        }
-
         this.carId = carId
         this.driveId = driveId
-
-        viewModelScope.launch {
-            val containing = tripRepository.findTripContaining(carId, SavedTripLeg.TYPE_DRIVE, driveId)
-            _uiState.update { it.copy(containingTrip = containing) }
+        historyProof = null
+        _uiState.value = DriveDetailUiState()
+        latestLoad.launch(viewModelScope) {
+            try {
+                val resolved = when (val result = historyRepository.resolveContext(carId)) {
+                    is ApiResult.Error -> {
+                        ensureCurrent()
+                        _uiState.update { it.copy(isLoading = false, error = result.message) }
+                        return@launch
+                    }
+                    is ApiResult.Success -> result.data
+                }
+                suspend fun checkContext() {
+                    ensureCurrent()
+                    if (!historyRepository.isContextCurrent(resolved)) {
+                        historyProof = null
+                        _uiState.value = DriveDetailUiState(isLoading = false, error = historyIdentityUnavailableError().message)
+                        throw CancellationException("History identity changed")
+                    }
+                }
+                checkContext()
+                historyProof = resolved
+                _uiState.update { it.copy(localArchiveLinkPending = resolved.localArchiveLinkPending) }
+                val remote = if (resolved.remoteAuthorized) repository.getDriveDetail(carId, driveId)
+                    else resolved.identityError ?: historyIdentityUnavailableError()
+                checkContext()
+                val detail = when (remote) {
+                    is ApiResult.Success -> remote.data
+                    is ApiResult.Error -> {
+                        val cached = driveSummaryDao.get(resolved.context.localHistoryCarId, driveId)
+                        checkContext()
+                        if (cached == null) {
+                            _uiState.update { it.copy(isLoading = false, error = remote.message) }
+                            return@launch
+                        }
+                        _uiState.update { it.copy(historySyncWarning = "history_cached") }
+                        cached.toAnalysisDriveData().asCachedDetail()
+                    }
+                }
+                val resolvedEnergy = detail.resolveDriveEnergy()
+                val energy = resolvedEnergy.estimate
+                val stats = calculateDriveDetailStats(detail, presentDriveDetailEnergy(
+                    energy.energyKwh, energy.efficiencyWhKm, energy.source.name.lowercase(),
+                    energy.coverageSeconds, energy.coverageRatio, resolvedEnergy.evidence))
+                checkContext()
+                _uiState.update { it.copy(isLoading = false, driveDetail = detail, stats = stats, error = null) }
+                // Optional metadata, units and geocoding cannot delay energy publication.
+                loadOptionalMetadata(detail, resolved)
+                loadWeatherData(detail, resolved)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                ensureCurrent()
+                _uiState.update { it.copy(isLoading = false, error = "history_read_failed") }
+            }
         }
+    }
 
+    private fun loadOptionalMetadata(detail: DriveDetail, proof: VerifiedHistoryReadContext) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
-
-            // Fetch drive detail and units in parallel
-            val detailResult = repository.getDriveDetail(carId, driveId)
-            val statusResult = repository.getCarStatus(carId)
-
-            val units = when (statusResult) {
-                is ApiResult.Success -> statusResult.data.units
-                is ApiResult.Error -> null
-            }
-
-            when (detailResult) {
-                is ApiResult.Success -> {
-                    val detail = enrichAddresses(detailResult.data)
-                    val localHistoryCarId = vehicleContextRepository.requireLocalHistoryCarId(carId)
-                    val persistedEnergy = driveSummaryDao.get(localHistoryCarId, driveId)
-                    val stats = calculateDriveDetailStats(
-                        detail = detail,
-                        energy = presentDriveDetailEnergy(
-                            energyKwh = persistedEnergy?.energyConsumed,
-                            efficiencyWhKm = persistedEnergy?.efficiency,
-                            energySource = persistedEnergy?.energySource,
-                            coverageSeconds = persistedEnergy?.energyCoverageSeconds,
-                            coverageRatio = persistedEnergy?.energyCoverageRatio
-                        )
-                    )
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            driveDetail = detail,
-                            units = units,
-                            stats = stats,
-                            error = null
-                        )
-                    }
-
-                    // Fetch weather data in the background
-                    loadWeatherData(detail)
+            try {
+                val containing = withTimeoutOrNull(2_000) {
+                    tripRepository.findTripContaining(proof.context.localHistoryCarId, SavedTripLeg.TYPE_DRIVE, detail.driveId)
                 }
-                is ApiResult.Error -> {
-                    val localHistoryCarId = runCatching {
-                        vehicleContextRepository.requireLocalHistoryCarId(carId)
-                    }.getOrDefault(carId)
-                    val localSummary = driveSummaryDao.get(localHistoryCarId, driveId)
-                    if (localSummary != null) {
-                        val synthesized = DriveDetail(
-                            driveId = localSummary.driveId,
-                            startDate = localSummary.startDate,
-                            endDate = localSummary.endDate,
-                            startAddress = localSummary.startAddress.ifBlank { null },
-                            endAddress = localSummary.endAddress.ifBlank { null },
-                            odometerDetails = com.matelink.data.api.models.DriveOdometerDetails(
-                                distance = localSummary.distance
-                            ),
-                            durationMin = localSummary.durationMin,
-                            durationStr = "${localSummary.durationMin}m",
-                            speedMax = localSummary.speedMax,
-                            speedAvg = localSummary.speedAvg.toDouble(),
-                            powerMax = localSummary.powerMax,
-                            powerMin = localSummary.powerMin,
-                            batteryDetails = com.matelink.data.api.models.DriveBatteryDetails(
-                                startBatteryLevel = localSummary.startBatteryLevel,
-                                endBatteryLevel = localSummary.endBatteryLevel
-                            ),
-                            outsideTempAvg = localSummary.outsideTempAvg,
-                            insideTempAvg = localSummary.insideTempAvg,
-                            energyConsumedNet = localSummary.energyConsumed,
-                            consumptionNet = localSummary.efficiency,
-                            positions = null
-                        )
-                        val stats = calculateDriveDetailStats(
-                            detail = synthesized,
-                            energy = presentDriveDetailEnergy(
-                                energyKwh = localSummary.energyConsumed,
-                                efficiencyWhKm = localSummary.efficiency,
-                                energySource = localSummary.energySource ?: "local_record",
-                                coverageSeconds = localSummary.energyCoverageSeconds,
-                                coverageRatio = localSummary.energyCoverageRatio
-                            )
-                        )
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                driveDetail = synthesized,
-                                units = units,
-                                stats = stats,
-                                error = null
-                            )
-                        }
-                    } else {
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                error = detailResult.message
-                            )
-                        }
-                    }
+                if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
+                _uiState.update { it.copy(containingTrip = containing) }
+                if (proof.remoteAuthorized) {
+                    val status = withTimeoutOrNull(2_000) { repository.getCarStatus(proof.context.remoteApiCarId) }
+                    if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
+                    if (status is ApiResult.Success) _uiState.update { it.copy(units = status.data.units) }
                 }
-            }
+                val enriched = withTimeoutOrNull(3_000) { enrichAddresses(detail) } ?: return@launch
+                if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
+                _uiState.update { it.copy(driveDetail = enriched) }
+            } catch (e: CancellationException) { throw e } catch (_: Exception) { /* optional metadata only */ }
         }
     }
 
@@ -246,128 +166,35 @@ class DriveDetailViewModel @Inject constructor(
         )
     }
 
-    /**
-     * Loads weather data for the drive positions.
-     * This runs in the background after the main drive detail is loaded.
-     */
-    private fun loadWeatherData(detail: DriveDetail) {
+    private fun loadWeatherData(detail: DriveDetail, proof: VerifiedHistoryReadContext) {
         val positions = detail.positions
         val distance = detail.distance
-
-        if (positions.isNullOrEmpty() || distance == null || distance <= 0) {
-            return
-        }
-
+        if (positions.isNullOrEmpty() || distance == null || !distance.isFinite() || distance <= 0) return
         viewModelScope.launch {
+            if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
             _uiState.update { it.copy(isLoadingWeather = true) }
-
             try {
-                val weatherPoints = weatherRepository.getWeatherAlongDrive(
-                    positions = positions,
-                    totalDistanceKm = distance
-                )
-
-                _uiState.update {
-                    it.copy(
-                        weatherPoints = weatherPoints,
-                        isLoadingWeather = false
-                    )
-                }
-            } catch (e: Exception) {
-                // Weather loading failed silently - it's optional data
+                val points = weatherRepository.getWeatherAlongDrive(positions = positions, totalDistanceKm = distance)
+                if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
+                _uiState.update { it.copy(weatherPoints = points, isLoadingWeather = false) }
+            } catch (e: CancellationException) { throw e } catch (_: Exception) {
+                if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
                 _uiState.update { it.copy(isLoadingWeather = false) }
             }
         }
     }
 
-    fun clearError() {
-        _uiState.update { it.copy(error = null) }
-    }
+    fun clearError() { _uiState.update { it.copy(error = null) } }
 
-    /** Detach this drive from its containing saved trip (auto-transitions the trip to USER_EDITED). */
     fun removeFromTrip() {
+        val proof = historyProof ?: return
         val tripId = _uiState.value.containingTrip?.first ?: return
         val drive = driveId ?: return
         viewModelScope.launch {
+            if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
             tripRepository.removeLegFromTrip(tripId, LegRef(SavedTripLeg.TYPE_DRIVE, drive))
+            if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
             _uiState.update { it.copy(containingTrip = null) }
         }
     }
-
-}
-
-internal fun calculateDriveDetailStats(
-    detail: DriveDetail,
-    energy: DriveDetailEnergyPresentation
-): DriveDetailStats {
-    val positions = detail.positions.orEmpty()
-
-    val speeds = positions.mapNotNull { it.speed?.takeIf { value -> value >= 0 } }
-    val speedMax = speeds.maxOrNull()?.roundToInt() ?: detail.speedMax?.takeIf { it >= 0 }
-    val speedMin = speeds.minOrNull()?.roundToInt()
-    val speedAvg = speeds.takeIf { it.isNotEmpty() }?.average()
-        ?: detail.speedAvg?.takeIf { it.isFinite() && it >= 0.0 }
-
-    val powers = positions.mapNotNull { it.power }
-    val powerMax = powers.maxOrNull()?.roundToInt() ?: detail.powerMax
-    val powerMin = powers.minOrNull()?.roundToInt() ?: detail.powerMin
-    val powerAvg = powers.takeIf { it.isNotEmpty() }?.average()
-
-    val elevations = positions.mapNotNull { it.elevation }
-    val elevationMax = elevations.maxOrNull()
-    val elevationMin = elevations.minOrNull()
-    val (elevationGain, elevationLoss) = calculateElevationChangeOrNull(elevations)
-
-    val batteryLevels = positions.mapNotNull { it.batteryLevel?.takeIf { value -> value in 0..100 } }
-    val batteryStart = batteryLevels.firstOrNull()
-        ?: detail.startBatteryLevel?.takeIf { it in 0..100 }
-    val batteryEnd = batteryLevels.lastOrNull()
-        ?: detail.endBatteryLevel?.takeIf { it in 0..100 }
-    val batteryUsed = if (batteryStart != null && batteryEnd != null) {
-        (batteryStart - batteryEnd).takeIf { it >= 0 }
-    } else {
-        null
-    }
-
-    val distance = detail.distance?.takeIf { it.isFinite() && it >= 0.0 }
-    val durationMin = detail.durationMin?.takeIf { it >= 0 }
-    val avgSpeedFromDistance = if (distance != null && durationMin != null && durationMin > 0) {
-        (distance / durationMin) * 60
-    } else {
-        null
-    }
-
-    return DriveDetailStats(
-        speedMax = speedMax,
-        speedAvg = speedAvg,
-        speedMin = speedMin,
-        powerMax = powerMax,
-        powerMin = powerMin,
-        powerAvg = powerAvg,
-        elevationMax = elevationMax,
-        elevationMin = elevationMin,
-        elevationGain = elevationGain,
-        elevationLoss = elevationLoss,
-        batteryStart = batteryStart,
-        batteryEnd = batteryEnd,
-        batteryUsed = batteryUsed,
-        energy = energy,
-        distance = distance,
-        durationMin = durationMin,
-        avgSpeedFromDistance = avgSpeedFromDistance,
-        outsideTempAvg = detail.outsideTempAvg,
-        insideTempAvg = detail.insideTempAvg
-    )
-}
-
-private fun calculateElevationChangeOrNull(elevations: List<Int>): Pair<Int?, Int?> {
-    if (elevations.size < 2) return Pair(null, null)
-
-    var gain = 0
-    var loss = 0
-    for (i in 1 until elevations.size) {
-        val diff = elevations[i] - elevations[i - 1]
-        if (diff > 0) gain += diff else loss += -diff
-    }
-    return Pair(gain, loss)
 }

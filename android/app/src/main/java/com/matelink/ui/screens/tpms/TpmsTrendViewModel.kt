@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.matelink.data.local.TirePosition
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.VehicleContextRepository
+import com.matelink.data.local.HistoryIdentityUnavailableException
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.TpmsPressureSample
 import com.matelink.data.repository.TpmsHistoryRepository
@@ -18,6 +19,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -37,7 +39,23 @@ internal interface TpmsTrendHistorySource {
     suspend fun load7DaySamples(carId: Int, now: Long): List<TpmsPressureSample>
     suspend fun load30DaySamples(carId: Int, now: Long): List<TpmsPressureSample>
     suspend fun loadDrives(carId: Int): List<DriveSummary>
+    suspend fun loadSnapshot(carId: Int, window: TpmsTrendWindow, now: Long): TpmsTrendHistorySnapshot {
+        val samples = when (window) {
+            TpmsTrendWindow.SEVEN -> load7DaySamples(carId, now)
+            TpmsTrendWindow.THIRTY -> load30DaySamples(carId, now)
+        }
+        val drives = loadDrives(carId)
+        check((samples.map { it.carId } + drives.map { it.carId }).distinct().size <= 1) {
+            "History identity changed between reads"
+        }
+        return TpmsTrendHistorySnapshot(samples, drives)
+    }
 }
+
+internal data class TpmsTrendHistorySnapshot(
+    val samples: List<TpmsPressureSample>, val drives: List<DriveSummary>,
+    val stillCurrent: suspend () -> Boolean = { true }
+)
 
 private class RepositoryTpmsTrendHistorySource(
     private val historyRepository: TpmsHistoryRepository,
@@ -45,53 +63,31 @@ private class RepositoryTpmsTrendHistorySource(
     private val vehicleContextRepository: VehicleContextRepository,
     private val repository: com.matelink.data.repository.TeslamateRepository
 ) : TpmsTrendHistorySource {
-    override suspend fun load7DaySamples(carId: Int, now: Long): List<TpmsPressureSample> {
-        val samples = historyRepository.load7DaySamples(carId, now)
-        if (samples.size >= 2) return samples
-        return backfillAndLoad(carId, now, 7)
-    }
-
-    override suspend fun load30DaySamples(carId: Int, now: Long): List<TpmsPressureSample> {
-        val samples = historyRepository.load30DaySamples(carId, now)
-        if (samples.size >= 2) return samples
-        return backfillAndLoad(carId, now, 30)
-    }
-
+    override suspend fun load7DaySamples(carId: Int, now: Long) = historyRepository.load7DaySamples(carId, now)
+    override suspend fun load30DaySamples(carId: Int, now: Long) = historyRepository.load30DaySamples(carId, now)
     override suspend fun loadDrives(carId: Int): List<DriveSummary> =
         driveSummaryDao.getAllChronological(vehicleContextRepository.requireLocalHistoryCarId(carId))
 
-    private suspend fun backfillAndLoad(carId: Int, now: Long, days: Int): List<TpmsPressureSample> {
-        val status = (repository.getCarStatus(carId) as? com.matelink.data.repository.ApiResult.Success)?.data?.status
-        val tpms = status?.tpmsDetails
-        val fl = tpms?.pressureFl ?: 2.8
-        val fr = tpms?.pressureFr ?: 2.9
-        val rl = tpms?.pressureRl ?: 2.8
-        val rr = tpms?.pressureRr ?: 2.9
-        val temp = status?.outsideTemp ?: 26.0
-
-        val localHistoryCarId = runCatching {
-            vehicleContextRepository.requireLocalHistoryCarId(carId)
-        }.getOrDefault(carId)
-
-        val result = mutableListOf<TpmsPressureSample>()
-        val stepMs = (days * 24 * 3600 * 1000L) / 6
-        for (i in 6 downTo 0) {
-            val t = now - (i * stepMs)
-            val variation = if (i % 2 == 0) 0.0 else -0.05
-            val sample = TpmsPressureSample(
-                carId = localHistoryCarId,
-                observedAt = t,
-                pressureFl = Math.round((fl + variation) * 100.0) / 100.0,
-                pressureFr = Math.round((fr + variation) * 100.0) / 100.0,
-                pressureRl = Math.round((rl + variation) * 100.0) / 100.0,
-                pressureRr = Math.round((rr + variation) * 100.0) / 100.0,
-                outsideTempC = temp + if (i % 2 == 0) 1.5 else -1.0
-            )
-            result.add(sample)
-            historyRepository.saveObservationForHistoryCarId(localHistoryCarId, sample)
+    override suspend fun loadSnapshot(carId: Int, window: TpmsTrendWindow, now: Long): TpmsTrendHistorySnapshot {
+        val identity = vehicleContextRepository.captureReadScope()
+        val context = vehicleContextRepository.resolveRemote(carId)
+        suspend fun verify() {
+            if (!vehicleContextRepository.isHistoryContextCurrent(identity, context))
+                throw HistoryIdentityUnavailableException()
         }
-        return result
+        verify()
+        val samples = when (window) {
+            TpmsTrendWindow.SEVEN -> historyRepository.load7DaySamplesForHistoryCarId(context.localHistoryCarId, now)
+            TpmsTrendWindow.THIRTY -> historyRepository.load30DaySamplesForHistoryCarId(context.localHistoryCarId, now)
+        }
+        verify()
+        val drives = driveSummaryDao.getAllChronological(context.localHistoryCarId)
+        verify()
+        return TpmsTrendHistorySnapshot(samples, drives) {
+            vehicleContextRepository.isHistoryContextCurrent(identity, context)
+        }
     }
+
 }
 
 internal class TpmsTrendRefreshController(
@@ -114,12 +110,12 @@ internal class TpmsTrendRefreshController(
         refreshJob?.cancel()
         refreshJob = scope.launch {
             try {
-                val samples = when (request.window) {
-                    TpmsTrendWindow.SEVEN -> source.load7DaySamples(request.carId, request.now)
-                    TpmsTrendWindow.THIRTY -> source.load30DaySamples(request.carId, request.now)
+                val snapshot = source.loadSnapshot(request.carId, request.window, request.now)
+                val analysis = analyzer.analyze(snapshot.samples, snapshot.drives)
+                val identityCurrent = snapshot.stillCurrent()
+                if (token == requestToken) {
+                    if (identityCurrent) onSuccess(request.window, analysis) else onFailure()
                 }
-                val analysis = analyzer.analyze(samples, source.loadDrives(request.carId))
-                if (token == requestToken) onSuccess(request.window, analysis)
             } catch (_: CancellationException) {
                 // A superseded request is intentionally silent.
             } catch (_: Throwable) {
@@ -130,6 +126,11 @@ internal class TpmsTrendRefreshController(
 
     fun retry() {
         lastRequest?.let { refresh(it.carId, it.window, it.now) }
+    }
+
+    fun invalidate() {
+        requestToken++
+        refreshJob?.cancel()
     }
 }
 
@@ -175,7 +176,7 @@ internal fun renderPossibleFactorConclusion(
 }
 
 data class TpmsTrendUiState(
-    val selectedWindow: TpmsTrendWindow = TpmsTrendWindow.SEVEN,
+    val selectedWindow: TpmsTrendWindow = TpmsTrendWindow.THIRTY,
     val coverage: TpmsCoverage = TpmsCoverage(0, emptyMap()),
     val series: Map<TirePosition, List<TpmsPressurePoint>> = emptyMap(),
     val deltas: Map<TirePosition, Double?> = emptyMap(),
@@ -251,6 +252,18 @@ class TpmsTrendViewModel @Inject constructor(
             )
         }
     )
+
+    init {
+        viewModelScope.launch {
+            vehicleContextRepository.historyScopeChanges.collect {
+                refreshController.invalidate()
+                // Clear the previous account/origin's visible result even if the numeric car is unchanged.
+                val carId = loadedCarId
+                _uiState.value = TpmsTrendUiState(selectedWindow = _uiState.value.selectedWindow)
+                carId?.let { refreshController.refresh(it, _uiState.value.selectedWindow) }
+            }
+        }
+    }
 
     fun load(carId: Int) {
         if (loadedCarId == carId && !_uiState.value.isLoading && _uiState.value.error == null) return

@@ -11,7 +11,7 @@ class HistoryQualityPersistenceContractTest {
         val source = File("src/main/java/com/matelink/data/local/StatsDatabase.kt").readText()
         val migration = source.substringAfter("val MIGRATION_19_20").substringBefore("private fun")
 
-        assertTrue(source.contains("version = 20"))
+        assertTrue(source.contains("version = 21"))
         assertTrue(source.contains("MIGRATION_18_19, MIGRATION_19_20"))
         assertTrue(migration.contains("ADD COLUMN `qualityState` TEXT NOT NULL DEFAULT 'incomplete'"))
         assertTrue(migration.contains("ADD COLUMN `qualityReason` TEXT NOT NULL DEFAULT 'missing_api_evidence'"))

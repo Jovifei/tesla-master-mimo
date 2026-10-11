@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,13 +38,15 @@ private val Context.connectionModeDataStore: DataStore<Preferences> by preferenc
  * an explicit mode choice on the next process start.
  */
 @Singleton
-class ConnectionModeStore @Inject constructor(
-    @ApplicationContext private val context: Context
-) {
+class ConnectionModeStore internal constructor(private val dataStore: DataStore<Preferences>) {
+    @Inject constructor(@ApplicationContext context: Context) : this(context.connectionModeDataStore)
     private val modeKey = stringPreferencesKey("mode")
     private val _current = MutableStateFlow<ConnectionMode?>(null)
+    private val identityMutex = Mutex()
+    @Volatile private var identityGeneration = 0L
+    internal fun currentIdentityGeneration(): Long = identityGeneration
 
-    val mode: Flow<ConnectionMode?> = context.connectionModeDataStore.data
+    val mode: Flow<ConnectionMode?> = dataStore.data
         .map { preferences -> preferences[modeKey]?.let(::parse) }
 
     init {
@@ -55,8 +59,14 @@ class ConnectionModeStore @Inject constructor(
 
     fun current(): ConnectionMode? = _current.value
 
-    suspend fun set(mode: ConnectionMode) {
-        context.connectionModeDataStore.edit { preferences ->
+    internal suspend fun identitySnapshot(): Pair<ConnectionMode?, Long> = identityMutex.withLock {
+        mode.first() to identityGeneration
+    }
+
+    suspend fun set(mode: ConnectionMode) = identityMutex.withLock {
+        val changed = this.mode.first() != mode
+        if (changed) identityGeneration++
+        dataStore.edit { preferences ->
             preferences[modeKey] = mode.name
         }
         _current.value = mode
