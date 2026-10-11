@@ -932,10 +932,13 @@ installation or authenticated natural Fleet data acceptance.
 
 This additional code patch repairs the **active** `CompletedChargeEventStore` path,
 not the obsolete watermark-only trip test helper. Actual `SyncRepository`
-full-page callbacks now require original persisted source evidence, observed
-quality, past ordered start/end instants, correct scope/source and matching
-persistent event end times **before recording or sending** a drive/charge
-notification. Unverified local import/archive cannot be announced as a new
+full-page callbacks now require original persisted source evidence,
+observed drive quality, past ordered start/end instants, correct scope/source
+and matching persistent event end times **before recording or sending**.
+A Fleet charge with explicit `partial_or_missing_charge_counter` or
+`missing_charge_measurement` provenance may still have an actual completed
+session and notify **without** claiming a known kWh, SOC or energy measure.
+Unverified imports and unfinished/invalid time windows remain rejected. Unverified local import/archive cannot be announced as a new
 Fleet first event. Source truth and current qualified UI projection remain
 separate. Pending denied-permission trips can be retried against the same
 vehicle's Room summary after a later successful bounded full sync, without

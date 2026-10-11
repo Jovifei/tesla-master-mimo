@@ -58,4 +58,23 @@ class CompletionPublicationPolicyTest {
         assertFalse(charge().copy(endDate = "unverified").toSyncSummary(-7)!!.canPublishCompletion(cloud, now))
         assertFalse(charge().copy(endDate = start).toSyncSummary(-7)!!.canPublishCompletion(cloud, now))
     }
+
+    @Test fun verifiedFleetChargeCompletionCanNotifyWithUnknownEnergyButAnImportCannot() {
+        val partial = charge().copy(qualityState = "incomplete",
+            qualityReason = "partial_or_missing_charge_counter",
+            chargeEnergyAdded = null, chargeEnergyUsed = null)
+        val summary = partial.toSyncSummary(-7)!!
+        assertNull(partial.batteryInputKwh)
+        assertTrue(summary.canPublishCompletion(cloud, now))
+        assertTrue(CompletedChargeEvent(-7, 10, 19, end).matchesCharge(summary))
+        assertFalse(partial.copy(source = "local_import", qualityReason = "local_import_unverified")
+            .toSyncSummary(-7)!!.canPublishCompletion(cloud, now))
+        assertFalse(partial.copy(qualityReason = "arbitrary_failure")
+            .toSyncSummary(-7)!!.canPublishCompletion(cloud, now))
+        assertFalse(partial.copy(endDate = "2026-10-07T01:10:00Z")
+            .toSyncSummary(-7)!!.canPublishCompletion(cloud, now))
+        assertTrue(partial.copy(source = "fleet_api", qualityReason = "missing_charge_measurement")
+            .toSyncSummary(-7)!!.canPublishCompletion(cloud, now))
+        assertFalse(drive(quality = "incomplete").toSyncSummary(-7)!!.canPublishCompletion(cloud, now))
+    }
 }

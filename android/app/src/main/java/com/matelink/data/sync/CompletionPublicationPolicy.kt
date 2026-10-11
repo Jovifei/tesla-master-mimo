@@ -14,14 +14,23 @@ import java.time.Instant
  * impersonate a new natural Fleet drive or charge.
  */
 internal fun eligibleCompletedPublication(
-    quality: String, rawQuality: String?, rawSource: String?,
+    kind: String, quality: String, rawQuality: String?, rawReason: String?, rawSource: String?,
     connectionSource: HistoryConnectionSource, start: String?, end: String?,
     now: Instant = Instant.now()
 ): Boolean {
-    if (quality != "observed" || (rawQuality != null && rawQuality != "observed")) return false
+    if (kind !in setOf("drive", "charge")) return false
     if (rawSource in setOf("local_import", "local_history")) return false
     if (connectionSource == HistoryConnectionSource.CLOUD &&
-        (rawSource !in setOf("telemetry_mqtt", "fleet_api") || rawQuality != "observed")) return false
+        (rawSource !in setOf("telemetry_mqtt", "fleet_api") || rawQuality == null)) return false
+    val observed = quality == "observed" && (rawQuality == null || rawQuality == "observed")
+    // A completed Fleet charge may have an unknown/incomplete energy counter:
+    // completion is evidenced by the real session boundary, NOT by kWh.
+    // Do not loosen drive proof or unverified/unknown-source imports.
+    val chargeWithUnknownEnergy = kind == "charge" && quality == "incomplete" &&
+        rawQuality == "incomplete" &&
+        ((rawSource == "telemetry_mqtt" && rawReason == "partial_or_missing_charge_counter") ||
+         (rawSource == "fleet_api" && rawReason == "missing_charge_measurement"))
+    if (!observed && !chargeWithUnknownEnergy) return false
     val started = start?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return false
     val ended = end?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return false
     return started.isBefore(ended) && !ended.isAfter(now)
@@ -32,7 +41,7 @@ internal fun DriveSummary.canPublishCompletion(
 ): Boolean {
     val raw = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive) ?: return false
     return raw.driveId == driveId && eligibleCompletedPublication(
-        qualityState, raw.qualityState, raw.source, source, raw.startDate, raw.endDate, now
+        "drive", qualityState, raw.qualityState, raw.qualityReason, raw.source, source, raw.startDate, raw.endDate, now
     )
 }
 
@@ -41,7 +50,7 @@ internal fun ChargeSummary.canPublishCompletion(
 ): Boolean {
     val raw = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeCharge) ?: return false
     return raw.chargeId == chargeId && eligibleCompletedPublication(
-        qualityState, raw.qualityState, raw.source, source, raw.startDate, raw.endDate, now
+        "charge", qualityState, raw.qualityState, raw.qualityReason, raw.source, source, raw.startDate, raw.endDate, now
     )
 }
 
