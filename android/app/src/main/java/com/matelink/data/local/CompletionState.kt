@@ -82,7 +82,31 @@ internal fun advanceQualifiedCompletionState(
         }.distinct()
         canonical.singleOrNull()
     }.associateBy { it.id }
-    return advanceCompletionState(state, carId, remoteId, kind,
+
+    // Room may already contain a corrected canonical row for an ID whose original
+    // notification is still pending. Rebind only that existing, fully-qualified
+    // receipt to the corrected same-source window; keep its ack flags and cutoff.
+    val cutoff = Instant.ofEpochMilli(state.cutoff)
+    val now = Instant.ofEpochMilli(nowMillis)
+    val currentReceipts = receipts.values.filter { receipt ->
+        val end = completionInstant(receipt.endDate) ?: return@filter false
+        end.isAfter(cutoff) && !end.isAfter(now)
+    }.associateBy { it.id }
+    val reconciledEvents = if (state.baseline == null) state.events else state.events.map { event ->
+        val receipt = currentReceipts[event.chargeId] ?: return@map event
+        if (event.carId != carId || event.remoteCarId != remoteId || event.kind != kind ||
+            event.scopeKey != scopeKey || event.source != receipt.source) return@map event
+        val oldStart = event.startDate?.let(::completionInstant) ?: return@map event
+        val oldEnd = event.endDate?.let(::completionInstant) ?: return@map event
+        val newStart = completionInstant(receipt.startDate) ?: return@map event
+        val newEnd = completionInstant(receipt.endDate) ?: return@map event
+        if (!oldStart.isBefore(oldEnd) || !oldEnd.isAfter(cutoff) || oldEnd.isAfter(now) ||
+            !newStart.isBefore(newEnd) || !newEnd.isAfter(cutoff) || newEnd.isAfter(now) ||
+            oldStart == newStart && oldEnd == newEnd) return@map event
+        event.copy(startDate = newStart.toString(), endDate = newEnd.toString())
+    }
+    val reconciledState = if (reconciledEvents == state.events) state else state.copy(events = reconciledEvents)
+    return advanceCompletionState(reconciledState, carId, remoteId, kind,
         receipts.values.map { it.id to it.endDate }, nowMillis) { id, end ->
         val receipt = receipts.getValue(id)
         CompletedChargeEvent(carId, remoteId, id, end, kind = kind,

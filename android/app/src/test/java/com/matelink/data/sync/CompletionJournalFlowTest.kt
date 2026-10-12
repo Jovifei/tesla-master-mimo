@@ -85,6 +85,82 @@ class CompletionJournalFlowTest {
         assertEquals(raw, CompletionJournalCodec.consume(raw, event.copy(scopeKey = "wrong"), false, now))
     }
 
+    @Test fun pendingDriveReceiptRebasesToCorrectedCanonicalReceiptWithoutResettingAcknowledgements() = runBlocking {
+        val correctedStart = "2026-10-07T01:00:01.417Z"
+        val correctedEnd = "2026-10-07T01:05:01.417Z"
+        fun drive(startDate: String, endDate: String) = DriveData(42, startDate = startDate,
+            endDate = endDate, source = "telemetry_mqtt", qualityState = "observed").toSyncSummary(-7)!!
+        var canonicalRow = drive(start, end)
+        val correctedRow = drive(correctedStart, correctedEnd)
+        val journalStart = CompletionJournalCodec.record(null, -7, 1, "drive", key, emptyList(), cutoff)
+        var raw = CompletionJournalCodec.record(journalStart, -7, 1, "drive", key,
+            listOf(canonicalRow.completionReceipt(scope.source, Instant.ofEpochMilli(now))!!), now)
+        val original = CompletionJournalCodec.decode(raw, now).events.single()
+        assertTrue(original.matchesDrive(canonicalRow))
+
+        // App acknowledgement is independent; the system notification remains pending.
+        raw = CompletionJournalCodec.consume(raw, original, false, now)
+        var posts = 0
+        suspend fun deliver(allowPost: Boolean) {
+            deliverPendingCompletions(CompletionJournalCodec.decode(raw, now).events, { true },
+                { event -> resolvePendingCompletion(event, -7, 1, key, { true }, { canonicalRow },
+                    { it.canPublishCompletion(scope.source, Instant.ofEpochMilli(now)) && event.matchesDrive(it) }) },
+                { _, _ -> if (allowPost) { posts++; true } else false },
+                { event -> raw = CompletionJournalCodec.consume(raw, event, true, now) })
+        }
+        deliver(allowPost = false)
+        assertEquals(0, posts)
+        assertTrue(CompletionJournalCodec.decode(raw, now).events.single().appConsumed)
+
+        // Simulate Room's same-ID canonical upsert followed by the matching completed-sync callback.
+        canonicalRow = correctedRow
+        raw = CompletionJournalCodec.record(raw, -7, 1, "drive", key,
+            listOf(correctedRow.completionReceipt(scope.source, Instant.ofEpochMilli(now))!!), now)
+        val correctedEvent = CompletionJournalCodec.decode(raw, now).events.single()
+        assertEquals(correctedStart, correctedEvent.startDate)
+        assertEquals(correctedEnd, correctedEvent.endDate)
+        assertTrue(correctedEvent.appConsumed)
+        assertFalse(correctedEvent.systemConsumed)
+        assertTrue(correctedEvent.matchesDrive(canonicalRow))
+        assertEquals(cutoff, CompletionJournalCodec.decode(raw, now).cutoff)
+        assertEquals(setOf(42), CompletionJournalCodec.decode(raw, now).seen)
+
+        // A delayed acknowledgement carrying the old receipt still cannot consume the corrected event.
+        val staleAckAttempt = CompletionJournalCodec.consume(raw, original, true, now)
+        val afterStaleAck = CompletionJournalCodec.decode(staleAckAttempt, now).events.single()
+        assertTrue(afterStaleAck.appConsumed)
+        assertFalse(afterStaleAck.systemConsumed)
+
+        deliver(allowPost = true)
+        assertEquals(1, posts)
+        assertTrue(CompletionJournalCodec.decode(raw, now).events.isEmpty())
+        raw = CompletionJournalCodec.record(raw, -7, 1, "drive", key,
+            listOf(correctedRow.completionReceipt(scope.source, Instant.ofEpochMilli(now))!!), now)
+        assertTrue(CompletionJournalCodec.decode(raw, now).events.isEmpty())
+    }
+
+    @Test fun differentSourceSameIdDoesNotRebindPendingDriveReceipt() {
+        val originalRow = DriveData(43, startDate = start, endDate = end,
+            source = "telemetry_mqtt", qualityState = "observed").toSyncSummary(-7)!!
+        val otherSourceRow = DriveData(43, startDate = "2026-10-07T01:00:02.417Z",
+            endDate = "2026-10-07T01:05:02.417Z", source = "fleet_api", qualityState = "observed")
+            .toSyncSummary(-7)!!
+        var raw = CompletionJournalCodec.record(null, -7, 1, "drive", key, emptyList(), cutoff)
+        raw = CompletionJournalCodec.record(raw, -7, 1, "drive", key,
+            listOf(originalRow.completionReceipt(scope.source, Instant.ofEpochMilli(now))!!), now)
+        val original = CompletionJournalCodec.decode(raw, now).events.single()
+
+        raw = CompletionJournalCodec.record(raw, -7, 1, "drive", key,
+            listOf(otherSourceRow.completionReceipt(scope.source, Instant.ofEpochMilli(now))!!), now)
+        val stillPending = CompletionJournalCodec.decode(raw, now).events.single()
+        assertEquals(original, stillPending)
+        assertFalse(stillPending.matchesDrive(otherSourceRow))
+        val forged = CompletionJournalCodec.consume(raw, stillPending.copy(source = "fleet_api",
+            startDate = otherSourceRow.completionReceipt(scope.source, Instant.ofEpochMilli(now))!!.startDate,
+            endDate = otherSourceRow.completionReceipt(scope.source, Instant.ofEpochMilli(now))!!.endDate), true, now)
+        assertEquals(stillPending, CompletionJournalCodec.decode(forged, now).events.single())
+    }
+
     @Test fun staleBeforeCutoffThenCorrectedReplayCannotEraseDurableSeenAfterRestart() {
         var raw = recorded()
         val event = CompletionJournalCodec.decode(raw, now).events.single()
