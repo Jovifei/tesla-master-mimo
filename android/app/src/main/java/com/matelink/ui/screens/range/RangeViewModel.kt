@@ -3,8 +3,10 @@ package com.matelink.ui.screens.range
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.DriveData
+import com.matelink.data.api.models.driveDistanceKm
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.repository.CarStatusWithUnits
 import com.matelink.domain.analytics.AnalysisHistoryRepository
 import com.matelink.domain.analytics.AnalysisWindow
 import com.matelink.domain.analytics.DatedSourceRecord
@@ -140,13 +142,12 @@ class RangeViewModel @Inject constructor(
                         .getOrNull()
                         ?.let { it as? ApiResult.Success }
                         ?.data
-                        ?.status
+                    val current = rangeStatusInputs(status)
                     usableEnergyKwh = health?.currentCapacity?.takeIf { it.isFinite() && it > 0.0 }
-                    ratedRangeKm = status?.ratedBatteryRangeKm
+                    ratedRangeKm = current.ratedRangeKm
                         ?.takeIf { it.isFinite() && it > 0.0 }
-                        ?: health?.currentRange?.takeIf { it.isFinite() && it > 0.0 }
-                    currentTemperatureC = status?.outsideTemp
-                    currentSpeedKmh = status?.speed?.toDouble()
+                    currentTemperatureC = status?.status?.outsideTemp
+                    currentSpeedKmh = current.speedKmh
                     recalculate(_uiState.value.selectedWindow)
                     _uiState.update {
                         it.copy(
@@ -259,4 +260,13 @@ internal fun rangeSpeedDeviations(trips: List<RangeTrip>): Pair<Double?, Double?
     val low = trips.filter { it.speedAvgKmh != null && it.speedAvgKmh <= 40.0 }
     val high = trips.filter { it.speedAvgKmh != null && it.speedAvgKmh > 40.0 }
     return average(low) to average(high)
+}
+
+internal data class RangeStatusInputs(val speedKmh: Double?, val ratedRangeKm: Double?)
+
+/** The current-condition consumer retains the status response's own units. */
+internal fun rangeStatusInputs(response: CarStatusWithUnits?): RangeStatusInputs {
+    val unit = response?.units?.unitOfLength?.trim()?.lowercase() ?: ""
+    return RangeStatusInputs(driveDistanceKm(response?.status?.speed, unit),
+        driveDistanceKm(response?.status?.ratedBatteryRangeKm, unit))
 }
