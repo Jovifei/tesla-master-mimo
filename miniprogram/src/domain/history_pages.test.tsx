@@ -221,7 +221,8 @@ describe('history pages consume canonical data across layers', () => {
     platform.request.mockImplementation(async ({ url }: { url: string }) => {
       if (url.endsWith('/cars')) return respond({ cars: cars.map(car => ({ ...car, current_capacity: 60 })) })
       if (url.includes('/drives/1')) return respond({ car_id: 7, vehicle_uid: 'uid7', drive: detail })
-      return respond({ car_id: 7, vehicle_uid: 'uid7', drives: [{ ...summary, energy_contract: null }], meta: { page: 1, show: 20, total: 1, total_pages: 1,
+      return respond({ car_id: 7, vehicle_uid: 'uid7', drives: [{ ...summary, energy_contract: null,
+        odometer_details: { odometer_distance: null }, battery_details: { start_battery_level: null, end_battery_level: null } }], meta: { page: 1, show: 20, total: 1, total_pages: 1,
         availability: 'SERVER_INTERNAL_CREDENTIAL', source: 'SERVER_INTERNAL_CREDENTIAL' } })
     })
     let page = await mount('drives')
@@ -232,11 +233,24 @@ describe('history pages consume canonical data across layers', () => {
     const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
     const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
     const key = historyCacheKey('drives', 'user-a', 'uid7', 'https://api.example.test')
+    const assertReportedInputs = () => {
+      const cached = readHistoryCache<Drive>(storage, key)[0]
+      expect(cached.distanceKm).toBe(2)
+      expect(cached.startBatteryLevel).toBe(80)
+      expect(cached.endBatteryLevel).toBe(79)
+      expect(cached.energy?.efficiencyWhKm).toBe(-125)
+      expect(JSON.stringify(page.toJSON())).toContain('2 km')
+      expect(JSON.stringify(page.toJSON())).toContain('-125 Wh/km')
+      expect(page.root.findAllByType('text').some(node => node.children.join('') === '80% → 79%')).toBe(true)
+    }
     expect(readHistoryCache<{ energy: { energyKwh: number } }>(storage, key)[0].energy.energyKwh).toBe(-0.25)
+    assertReportedInputs()
     await click(page, '返回列表'); expect(JSON.stringify(page.toJSON())).not.toContain('行程详情')
     await click(page, '刷新'); expect(JSON.stringify(page.toJSON())).toContain('-0.25 kWh')
+    assertReportedInputs()
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
     page = await mount('drives'); expect(JSON.stringify(page.toJSON())).toContain('-0.25 kWh')
+    assertReportedInputs()
     detail = unknown
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
@@ -252,6 +266,70 @@ describe('history pages consume canonical data across layers', () => {
     expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
     expect(readHistoryCache<{ energy: { energyKwh: number | null } }>(storage, key)[0].energy.energyKwh).toBeNull()
     expect(JSON.stringify(page.toJSON())).not.toContain('SERVER_INTERNAL_CREDENTIAL')
+    detail = { ...reported, energy_contract: { version: 1, net_energy: { ...reported.energy_contract.net_energy, value_kwh: 0 } } }
+    await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+    expect(readHistoryCache<Drive>(storage, key)[0].energy?.energyKwh).toBe(0)
+    expect(JSON.stringify(page.toJSON())).toContain('0 kWh')
+    await click(page, '返回列表')
+    await click(page, '刷新')
+    expect(readHistoryCache<Drive>(storage, key)[0].energy?.energyKwh).toBe(0)
+  })
+
+  it('preserves real SOC and distance on compatible weak null refresh/reopen, but applies non-null corrections and zeros', async () => {
+    let phase: 'original' | 'weak-null' | 'corrected' | 'zero' | 'reported-zero' = 'original'
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars: cars.map(car => ({ ...car, current_capacity: 78.4 })) })
+      const raw = phase === 'weak-null' ? { ...summary, energy_contract: null,
+        odometer_details: { odometer_distance: null }, battery_details: { start_battery_level: null, end_battery_level: null } } :
+        phase === 'corrected' ? { ...summary, odometer_details: { odometer_distance: 4 },
+          battery_details: { start_battery_level: 80, end_battery_level: 78 } } :
+        phase === 'zero' || phase === 'reported-zero' ? { ...summary, odometer_details: { odometer_distance: 0 },
+          battery_details: { start_battery_level: 0, end_battery_level: 0 },
+          ...(phase === 'reported-zero' ? { energy_contract: { version: 1,
+            net_energy: { ...reported.energy_contract.net_energy, value_kwh: 0 } } } : {}) } : summary
+      return respond({ drives: [raw], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
+    const key = historyCacheKey('drives', 'user-a', 'uid7', 'https://api.example.test')
+    let page = await mount('drives')
+    const assertOriginal = () => {
+      const cached = readHistoryCache<Drive>(storage, key)[0]
+      expect(cached.energy?.energyKwh).toBeCloseTo(0.784)
+      expect(cached.energy?.efficiencyWhKm).toBeCloseTo(392)
+      expect(cached.distanceKm).toBe(2)
+      expect(cached.startBatteryLevel).toBe(80)
+      expect(cached.endBatteryLevel).toBe(79)
+      expect(page.root.findAllByType('text').some(node => node.children.join('') === '80% → 79%')).toBe(true)
+    }
+    assertOriginal()
+    phase = 'weak-null'
+    await click(page, '刷新')
+    assertOriginal()
+    await act(async () => { platform.unload(); page.unmount() }); renderer = null
+    page = await mount('drives')
+    assertOriginal()
+    phase = 'corrected'
+    await click(page, '刷新')
+    const corrected = readHistoryCache<Drive>(storage, key)[0]
+    expect(corrected.energy?.energyKwh).toBeCloseTo(1.568)
+    expect(corrected.distanceKm).toBe(4)
+    expect(corrected.endBatteryLevel).toBe(78)
+    expect(page.root.findAllByType('text').some(node => node.children.join('') === '80% → 78%')).toBe(true)
+    phase = 'zero'
+    await click(page, '刷新')
+    const zero = readHistoryCache<Drive>(storage, key)[0]
+    expect(zero.distanceKm).toBe(0)
+    expect(zero.startBatteryLevel).toBe(0)
+    expect(zero.endBatteryLevel).toBe(0)
+    expect(zero.energy?.energyKwh).toBeNull() // Equal integer SOC does not prove zero kWh.
+    expect(zero.energy?.efficiencyWhKm).toBeNull()
+    expect(page.root.findAllByType('text').some(node => node.children.join('') === '0% → 0%')).toBe(true)
+    expect(JSON.stringify(page.toJSON())).toContain('0 km')
+    phase = 'reported-zero'
+    await click(page, '刷新')
+    expect(readHistoryCache<Drive>(storage, key)[0].energy?.energyKwh).toBe(0)
+    expect(JSON.stringify(page.toJSON())).toContain('0 kWh')
   })
 
   it('restores scoped date/distance filters and offline cars authorize only cache reads', async () => {

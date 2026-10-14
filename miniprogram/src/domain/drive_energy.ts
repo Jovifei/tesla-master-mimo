@@ -260,7 +260,14 @@ export function mergeDriveEnergyRecord(prior: Drive, incoming: Drive, admittedBa
   }
   const compatible = sameSource && sameWindow(old, input)
   if (!compatible) input = { ...fresh, parsedEnergyVersion: 1 }
-  else if (fresh.energy_contract == null && old.energy_contract != null) input.energy_contract = old.energy_contract
+  else {
+    if (fresh.energy_contract == null && old.energy_contract != null) input.energy_contract = old.energy_contract
+    input.odometer_details = { ...input.odometer_details,
+      odometer_distance: input.odometer_details?.odometer_distance ?? old.odometer_details?.odometer_distance }
+    input.battery_details = { ...input.battery_details,
+      start_battery_level: input.battery_details?.start_battery_level ?? old.battery_details?.start_battery_level,
+      end_battery_level: input.battery_details?.end_battery_level ?? old.battery_details?.end_battery_level }
+  }
   const shown = { ...admittedBase, startDate: own(input, 'start_date') ? input.start_date ?? null : compatible ? admittedBase.startDate : null,
     endDate: own(input, 'end_date') ? input.end_date ?? null : compatible ? admittedBase.endDate : null,
     source: own(input, 'source') ? input.source ?? null : compatible ? admittedBase.source : incoming.source,

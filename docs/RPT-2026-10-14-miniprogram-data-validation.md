@@ -1,5 +1,13 @@
 # 小程序数据阶段执行与验收
 
+## Review14 后最后增量：169 实例
+
+原Chat确认Review13整组修复闭合，新增MePage注销失败状态P2：API先清本机session，页面异常分支却仍显示旧登录。真实页面RED3fail/2pass后，finally只在当前operation内读取实际session同步UI；晚到logout不覆盖新登录或误toast。成功/网络/HTTP500/新登录竞争/hide回归5项通过；不改服务端注销协议。
+
+父任务额外真实RED2fail/22pass证明：同scope/window弱摘要的null SOC/距离会使旧0.784kWh或2km/-125Whkm丢失。仅兼容ID/source/精确window下保留旧有限数值，非null含真实0及更正仍生效；显式unknown与跨scope否定守护不放宽。实际API→列表→缓存→重开验证SOC/距离/Whkm保持及真实纠正；相同整数SOC不伪造0kWh，新合格reported0合同才恢复0。
+
+最新本地169/169、19文件、0fail/skip，严格类型0，weapp SUCCESS4.82秒；最后有限独立源复审APPROVE。旧7408固定CI38512795537已实际14/14完成SUCCESS，但不能给此次新补丁背书；最终新SHA/同SHA完整CI与普通Chat最终裁决仍需记录。App/Go源、Owner非阶段文件及两份依赖锁保持。
+
 ## Review13 集中修复后的最新本地结果
 
 当前最终源码160/160测试、18文件、0fail/skip；严格类型exit0、微信编译SUCCESS5.04秒。独立只读复审APPROVE，无剩余可触发P1/P2；固定新SHA的完整CI及原GPT-6极高最终复审仍待，不能继承旧候选绿色结果。

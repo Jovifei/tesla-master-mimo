@@ -171,19 +171,25 @@ export default function MePage() {
     setLoading(true)
     setError(null)
     const operation = ++operationEpoch.current
+    const generation = getApiSessionGeneration()
     try {
       await matelinkApi.logout()
       if (operation !== operationEpoch.current) return
-      setSession(null)
-      setLinkRequired(false)
-      setTermsAccepted(false)
-      setPrivacyAccepted(false)
-      setAuthorizationPending(false)
-      Taro.showToast({ title: '已退出登录', icon: 'success' })
+      if (!readAppSession(Taro) && getApiSessionGeneration() === generation + 1)
+        Taro.showToast({ title: '已退出登录', icon: 'success' })
     } catch (reason) {
-      if (operation === operationEpoch.current) setError(errorMessage(reason))
+      if (operation === operationEpoch.current && getApiSessionGeneration() === generation + 1)
+        setError(errorMessage(reason))
     } finally {
-      if (operation === operationEpoch.current) setLoading(false)
+      if (operation === operationEpoch.current) {
+        const current = readAppSession(Taro)
+        setSession(current)
+        setLinkRequired(Boolean(current?.linkRequired) || Boolean(readPendingWechatLink(Taro)))
+        setTermsAccepted(Boolean(current))
+        setPrivacyAccepted(Boolean(current))
+        setAuthorizationPending(Boolean(readPendingTeslaAuthorization(Taro)))
+        setLoading(false)
+      }
     }
   }
 

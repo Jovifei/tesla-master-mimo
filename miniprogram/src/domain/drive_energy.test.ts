@@ -100,6 +100,41 @@ describe('qualified per-drive energy inputs', () => {
 })
 
 describe('canonical drive and charge energy merge', () => {
+  it('keeps known SOC and distance through same-window weak null scalar fields', () => {
+    const prior = drive(raw(), car)
+    const weak = drive(raw({ battery_details: { start_battery_level: null, end_battery_level: null },
+      odometer_details: { odometer_distance: null }, energy_contract: null }))
+    const next = mergeDriveEnergyRecord(prior, weak, prior)
+    expect(next.energyConsumedKwh).toBeCloseTo(0.784, 12)
+    expect([next.startBatteryLevel, next.endBatteryLevel, next.distanceKm, next.efficiencyWhKm]).toEqual([80, 79, 2, 392])
+  })
+  it('keeps reported energy efficiency when a weak summary has a null distance', () => {
+    const prior = drive(raw({ energy_contract: { version: 1, net_energy: reported(-0.25) } }))
+    const weak = drive(raw({ odometer_details: { odometer_distance: null }, energy_contract: null }))
+    const next = mergeDriveEnergyRecord(prior, weak, prior)
+    expect(next.energyConsumedKwh).toBe(-0.25)
+    expect(next.distanceKm).toBe(2)
+    expect(next.efficiencyWhKm).toBe(-125)
+  })
+
+  it('retains weak numeric nulls without masking real zero, unknown contracts or changed scopes', () => {
+    const prior = drive(raw(), car)
+    const zero = drive(raw({ battery_details: { start_battery_level: 0, end_battery_level: 0 }, odometer_details: { odometer_distance: 0 } }))
+    const corrected = mergeDriveEnergyRecord(prior, zero, prior)
+    expect(corrected).toMatchObject({ startBatteryLevel: 0, endBatteryLevel: 0, distanceKm: 0, energyConsumedKwh: null, efficiencyWhKm: null })
+    const input = { battery_details: { start_battery_level: null, end_battery_level: null },
+      odometer_details: { odometer_distance: null }, energy_contract: null }
+    const unknown = drive(raw({ ...input, energy_contract: { version: 1, net_energy: reported(null, { quality: 'unknown' }) } }))
+    const revoked = mergeDriveEnergyRecord(prior, unknown, prior)
+    expect(revoked).toMatchObject({ startBatteryLevel: 80, endBatteryLevel: 79, distanceKm: 2, energyConsumedKwh: null })
+    for (const changed of [
+      drive(raw({ ...input, source: 'teslamate_archive' })),
+      drive(raw({ ...input, end_date: '2026-10-14T00:02:00Z' })),
+      { ...drive(raw(input)), id: 'drive-5' },
+    ]) expect(mergeDriveEnergyRecord(prior, changed, changed)).toMatchObject({
+      startBatteryLevel: null, endBatteryLevel: null, distanceKm: null, energyConsumedKwh: null, efficiencyWhKm: null,
+    })
+  })
   it('keeps the first equally qualified capacity and only upgrades a stronger basis', () => {
     const original = drive(raw(), { ...car, capacityKwh: 90, capacityBasis: 'api_reported_current_capacity' })
     const late = drive(raw(), { ...car, capacityKwh: 60, capacityBasis: 'api_reported_current_capacity' })
