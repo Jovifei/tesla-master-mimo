@@ -52,7 +52,8 @@ data class TelemetryMetricSpec(
     val icon: ImageVector,
     val label: String,
     val value: String,
-    val tint: Color
+    val tint: Color,
+    val valueMaxLines: Int = 1
 )
 
 @Composable
@@ -159,7 +160,7 @@ private fun TelemetryMetricCell(
             text = metric.value,
             style = MaterialTheme.typography.titleSmall.copy(fontFamily = MetricMono),
             fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
+            maxLines = metric.valueMaxLines,
             textAlign = TextAlign.Center
         )
         Text(

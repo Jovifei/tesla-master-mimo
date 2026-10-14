@@ -713,7 +713,8 @@ private fun DriveItem(
                                 ?.takeIf(Double::isFinite)
                                 ?.let { UnitFormatter.formatEfficiency(it, units) }
                                 ?: stringResource(R.string.not_available),
-                            tint = if (efficiency != null && efficiency < 0.0) Color(0xFF10B981) else Color(0xFF22C55E)
+                            tint = if (efficiency != null && efficiency < 0.0) Color(0xFF10B981) else Color(0xFF22C55E),
+                            valueMaxLines = 2
                         )
                     ),
                     modifier = Modifier.padding(vertical = 8.dp)
