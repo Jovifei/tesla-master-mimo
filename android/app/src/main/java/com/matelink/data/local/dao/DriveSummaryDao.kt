@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
 import androidx.room.Transaction
+import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.data.repository.mergeStoredDrive
 import com.matelink.data.local.entity.DriveSummary
 import kotlinx.coroutines.flow.Flow
@@ -78,7 +79,7 @@ interface DriveSummaryDao {
         ensureCurrent()
         val newest = get(carId, id) ?: return
         if (newest.apiEvidence != expectedEvidence) return
-        upsert(newest.copy(qualityState = "incomplete", qualityReason = "detail_terminal_404"))
+        upsert(newest.copy(apiEvidence = HistorySummaryEvidenceCodec.markDetailTerminal404(newest.apiEvidence, carId)))
         ensureCurrent()
     }
 
@@ -349,6 +350,7 @@ interface DriveSummaryDao {
         LEFT JOIN drive_detail_aggregates a ON d.carId = a.carId AND d.driveId = a.driveId
         WHERE d.carId = :carId
         AND d.qualityState != 'quarantined' AND d.qualityReason NOT LIKE 'detail_terminal_404%'
+        AND COALESCE(d.apiEvidence,'') NOT LIKE ('{"_matelink_detail_terminal_404_car_id":' || d.carId || ',"_matelink_local_evidence_version":1,%')
         AND (a.driveId IS NULL OR a.schemaVersion < :currentVersion)
         ORDER BY d.driveId
     """)
@@ -358,6 +360,7 @@ interface DriveSummaryDao {
         SELECT d.driveId FROM drives_summary d
         LEFT JOIN drive_detail_aggregates a ON d.carId = a.carId AND d.driveId = a.driveId
         WHERE d.carId = :carId AND d.qualityState != 'quarantined' AND d.qualityReason NOT LIKE 'detail_terminal_404%'
+        AND COALESCE(d.apiEvidence,'') NOT LIKE ('{"_matelink_detail_terminal_404_car_id":' || d.carId || ',"_matelink_local_evidence_version":1,%')
         AND (a.driveId IS NULL OR a.schemaVersion < :currentVersion)
         ORDER BY d.driveId LIMIT :limit
     """)
@@ -369,6 +372,7 @@ interface DriveSummaryDao {
         LEFT JOIN drive_detail_aggregates a ON d.carId = a.carId AND d.driveId = a.driveId
         WHERE d.carId = :carId
         AND d.qualityState != 'quarantined' AND d.qualityReason NOT LIKE 'detail_terminal_404%'
+        AND COALESCE(d.apiEvidence,'') NOT LIKE ('{"_matelink_detail_terminal_404_car_id":' || d.carId || ',"_matelink_local_evidence_version":1,%')
         AND (a.driveId IS NULL OR a.schemaVersion < :currentVersion)
     """)
     suspend fun countUnprocessedDrives(carId: Int, currentVersion: Int): Int
@@ -557,9 +561,14 @@ internal suspend fun persistDriveRowsWithoutEvidenceLoss(
     rows.forEach { incoming ->
         val prior = get(incoming.carId, incoming.driveId)
         val merged = mergeStoredDrive(incoming, prior)
+        val marked = merged.copy(apiEvidence = HistorySummaryEvidenceCodec.carryDetailTerminal404(
+            merged.apiEvidence, prior?.apiEvidence, incoming.carId))
+        // Legacy terminal rows lost their original qualification in older code. Do not guess it back.
         upsert(if (prior?.qualityReason?.startsWith("detail_terminal_404") == true) {
-            if (prior.apiEvidence == incoming.apiEvidence) merged.copy(qualityReason = prior.qualityReason)
-            else merged.copy(qualityReason = incoming.qualityReason)
-        } else merged)
+            val sameReceipt = HistorySummaryEvidenceCodec.sourceJson(incoming.apiEvidence) ==
+                HistorySummaryEvidenceCodec.sourceJson(prior.apiEvidence)
+            marked.copy(qualityState = prior.qualityState,
+                qualityReason = if (sameReceipt) prior.qualityReason else incoming.qualityReason)
+        } else marked)
     }
 }

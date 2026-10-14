@@ -13,6 +13,7 @@ import com.matelink.data.api.models.*
 import com.matelink.data.local.*
 import com.matelink.data.repository.*
 import com.matelink.di.TeslamateApiFactory
+import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.notification.*
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.*
@@ -77,15 +78,158 @@ class DetailSyncResourceRecoveryTest {
             fixture.status = { path -> if (path.endsWith("/drives/1") || path.endsWith("/charges/1")) 404 else 200 }
             assertEquals(CarSyncResult.Complete, runHistoryDetailBatch(listOf(1)) { car, budget -> fixture.repo.syncDetailsOnly(car, budget) })
             val car = fixture.localId(1)
-            assertEquals("detail_terminal_404", fixture.db.driveSummaryDao().get(car, 1)!!.qualityReason)
-            assertEquals("detail_terminal_404", fixture.db.chargeSummaryDao().get(car, 1)!!.qualityReason)
+            assertTrue(HistorySummaryEvidenceCodec.isDetailTerminal404(fixture.db.driveSummaryDao().get(car, 1)!!.apiEvidence, car))
+            assertTrue(HistorySummaryEvidenceCodec.isDetailTerminal404(fixture.db.chargeSummaryDao().get(car, 1)!!.apiEvidence, car))
+            assertFalse(HistorySummaryEvidenceCodec.isDetailTerminal404(fixture.db.chargeSummaryDao().get(car, 1)!!.apiEvidence, car - 1))
+            assertNull(fixture.db.aggregateDao().getDriveAggregate(car, 1))
+            assertNull(fixture.db.aggregateDao().getChargeAggregate(car, 1))
             assertEquals(2, fixture.db.driveSummaryDao().getAllChronological(car).size)
             assertEquals(2, fixture.db.chargeSummaryDao().getAllForCar(car).size)
             val terminal = fixture.db.chargeSummaryDao().get(car, 1)!!
-            fixture.db.chargeSummaryDao().upsertPreservingEvidence(listOf(terminal.copy(qualityReason = "missing_api_evidence")))
+            fixture.db.chargeSummaryDao().upsertPreservingEvidence(listOf(terminal.copy(apiEvidence = HistorySummaryEvidenceCodec.sourceJson(terminal.apiEvidence), qualityReason = "missing_api_evidence")))
             assertEquals(0, fixture.db.chargeSummaryDao().countUnprocessedCharges(car, com.matelink.data.local.entity.SchemaVersion.CURRENT))
-            fixture.db.chargeSummaryDao().upsertPreservingEvidence(listOf(terminal.copy(apiEvidence = "{}", qualityReason = "changed_receipt")))
+            fixture.db.chargeSummaryDao().upsertPreservingEvidence(listOf(terminal.copy(apiEvidence = HistorySummaryEvidenceCodec.encode(
+                HistorySummaryEvidenceCodec.decodeCharge(terminal.apiEvidence!!)!!.copy(chargeEnergyAdded = 1.0)), qualityReason = "changed_receipt")))
             assertEquals(1, fixture.db.chargeSummaryDao().countUnprocessedCharges(car, com.matelink.data.local.entity.SchemaVersion.CURRENT))
+        } finally { fixture.close() }
+    }
+
+    @Test fun observedAndDerivedSummaryStatsSurviveActual404AndDiskRoomReopen() = runBlocking {
+        val fixture = HistoryResourceFixture(File(temp.root, "404-qualified-stats.db"))
+        try {
+            fixture.initialize()
+            val car = fixture.localId(1)
+            seedSummaryQualifications(fixture, car)
+            suspend fun stats(): List<Any?> = listOf(
+                fixture.db.driveSummaryDao().count(car), fixture.db.driveSummaryDao().sumDistance(car),
+                fixture.db.driveSummaryDao().sumEnergyConsumed(car), fixture.db.chargeSummaryDao().count(car),
+                fixture.db.chargeSummaryDao().sumEnergyAdded(car), fixture.db.chargeSummaryDao().sumCost(car))
+            val before = stats()
+            val driveRaw = (1..3).associateWith { HistorySummaryEvidenceCodec.sourceJson(fixture.db.driveSummaryDao().get(car, it)!!.apiEvidence) }
+            val chargeRaw = (1..3).associateWith { HistorySummaryEvidenceCodec.sourceJson(fixture.db.chargeSummaryDao().get(car, it)!!.apiEvidence) }
+            assertEquals(listOf(2, 12.0, 1.5, 2, 10.0, 2.0), before)
+            fixture.status = { 404 }
+            assertEquals(CarSyncResult.Complete, runHistoryDetailBatch(listOf(1)) { id, budget -> fixture.repo.syncDetailsOnly(id, budget) })
+            fixture.reopen()
+            assertEquals("Unavailable detail must not remove qualified summary metrics from Stats SQL", before, stats())
+            for (id in 1..3) {
+                val driveEvidence = fixture.db.driveSummaryDao().get(car, id)!!.apiEvidence
+                val chargeEvidence = fixture.db.chargeSummaryDao().get(car, id)!!.apiEvidence
+                assertEquals(driveRaw[id], HistorySummaryEvidenceCodec.sourceJson(driveEvidence))
+                assertEquals(chargeRaw[id], HistorySummaryEvidenceCodec.sourceJson(chargeEvidence))
+                assertTrue(HistorySummaryEvidenceCodec.isDetailTerminal404(driveEvidence, car))
+                assertTrue(HistorySummaryEvidenceCodec.isDetailTerminal404(chargeEvidence, car))
+                assertFalse(HistorySummaryEvidenceCodec.isDetailTerminal404(driveEvidence, car - 1))
+                assertFalse(HistorySummaryEvidenceCodec.isDetailTerminal404(chargeEvidence, car - 1))
+                assertNull(fixture.db.aggregateDao().getDriveAggregate(car, id))
+                assertNull(fixture.db.aggregateDao().getChargeAggregate(car, id))
+            }
+            assertEquals(4, fixture.db.query("SELECT COUNT(*) FROM drives_summary WHERE carId = ?", arrayOf(car)).use { it.moveToFirst(); it.getInt(0) })
+            assertEquals(4, fixture.db.query("SELECT COUNT(*) FROM charges_summary WHERE carId = ?", arrayOf(car)).use { it.moveToFirst(); it.getInt(0) })
+        } finally { fixture.close() }
+    }
+
+    @Test fun terminal404PreservesExactSummaryQualityReasonIncludingUnqualifiedRowsAfterReopen() = runBlocking {
+        val fixture = HistoryResourceFixture(File(temp.root, "404-quality-reasons.db"))
+        try {
+            fixture.initialize()
+            val car = fixture.localId(1)
+            seedSummaryQualifications(fixture, car)
+            fun states(table: String): List<Pair<String, String>> = fixture.db.query(
+                "SELECT qualityState, qualityReason FROM $table WHERE carId = ? ORDER BY " +
+                    if (table == "drives_summary") "driveId" else "chargeId", arrayOf(car)).use { cursor ->
+                buildList { while (cursor.moveToNext()) add(cursor.getString(0) to cursor.getString(1)) }
+            }
+            val beforeDrive = states("drives_summary")
+            val beforeCharge = states("charges_summary")
+            fixture.status = { 404 }
+            runHistoryDetailBatch(listOf(1)) { id, budget -> fixture.repo.syncDetailsOnly(id, budget) }
+            fixture.reopen()
+            assertEquals("A processing failure is separate from original summary qualification/reason", beforeDrive, states("drives_summary"))
+            assertEquals(beforeCharge, states("charges_summary"))
+            assertEquals(2, fixture.db.driveSummaryDao().count(car))
+            assertEquals(2, fixture.db.chargeSummaryDao().count(car))
+            assertEquals(6, fixture.calls.size) // quarantined rows never requested or promoted
+        } finally { fixture.close() }
+    }
+
+    private suspend fun seedSummaryQualifications(fixture: HistoryResourceFixture, car: Int) {
+        val quality = listOf("observed" to "genuine_summary_observed", "derived" to "genuine_summary_derived",
+            "incomplete" to "legacy_missing_receipt", "quarantined" to "legacy_ambiguous_source")
+        val drives = quality.mapIndexed { index, (state, reason) ->
+            DriveData(index + 1, startDate = "2026-10-14T00:00:00Z", endDate = "2026-10-14T00:01:00Z",
+                source = "teslamate_archive", odometerDetails = DriveOdometerDetails(distance = 6.0))
+                .toSyncSummary(car)!!.copy(qualityState = state, qualityReason = reason,
+                    distance = if (index < 2) 6.0 else 777.0, energyConsumed = if (index < 2) 0.75 else 777.0)
+        }
+        val charges = quality.mapIndexed { index, (state, reason) ->
+            ChargeData(index + 1, startDate = "2026-10-14T00:00:00Z", endDate = "2026-10-14T00:01:00Z",
+                source = "teslamate_archive", chargeEnergyAdded = 5.0, cost = 1.0)
+                .toSyncSummary(car)!!.copy(qualityState = state, qualityReason = reason,
+                    energyAdded = if (index < 2) 5.0 else 777.0, cost = if (index < 2) 1.0 else 777.0)
+        }
+        fixture.db.driveSummaryDao().upsertAll(drives)
+        fixture.db.chargeSummaryDao().upsertAll(charges)
+    }
+
+    @Test fun terminal404OnLegacyNullEvidenceRecordsOnlyLocalRecoveryMetadata() = runBlocking {
+        val fixture = HistoryResourceFixture(File(temp.root, "404-legacy-null.db"))
+        try {
+            fixture.initialize(); fixture.seed(1, 1, 1)
+            val car = fixture.localId(1)
+            fixture.db.driveSummaryDao().get(car, 1)!!.let {
+                fixture.db.driveSummaryDao().upsert(it.copy(apiEvidence = null, qualityState = "incomplete", qualityReason = "legacy_missing_receipt"))
+            }
+            fixture.db.chargeSummaryDao().get(car, 1)!!.let {
+                fixture.db.chargeSummaryDao().upsert(it.copy(apiEvidence = null, qualityState = "incomplete", qualityReason = "legacy_missing_receipt"))
+            }
+            fixture.status = { 404 }
+            assertEquals(CarSyncResult.Complete, runHistoryDetailBatch(listOf(1)) { id, budget -> fixture.repo.syncDetailsOnly(id, budget) })
+            fixture.reopen()
+            val drive = fixture.db.driveSummaryDao().get(car, 1)!!
+            val charge = fixture.db.chargeSummaryDao().get(car, 1)!!
+            assertNull(HistorySummaryEvidenceCodec.sourceJson(drive.apiEvidence))
+            assertNull(HistorySummaryEvidenceCodec.sourceJson(charge.apiEvidence))
+            assertTrue(HistorySummaryEvidenceCodec.isDetailTerminal404(drive.apiEvidence, car))
+            assertTrue(HistorySummaryEvidenceCodec.isDetailTerminal404(charge.apiEvidence, car))
+            assertEquals("legacy_missing_receipt", drive.qualityReason)
+            assertEquals("legacy_missing_receipt", charge.qualityReason)
+            assertEquals("incomplete", drive.qualityState)
+            assertEquals("incomplete", charge.qualityState)
+            assertEquals(0, fixture.db.driveSummaryDao().count(car))
+            assertEquals(0, fixture.db.chargeSummaryDao().count(car))
+        } finally { fixture.close() }
+    }
+
+    @Test fun changedGenuineReceiptReconsidersLegacyTerminalReasonWithoutUpgradingSummary() = runBlocking {
+        val fixture = HistoryResourceFixture(File(temp.root, "404-legacy-receipt.db"))
+        try {
+            fixture.initialize(); fixture.seed(1, 1, 1)
+            val car = fixture.localId(1)
+            val drive = fixture.db.driveSummaryDao().get(car, 1)!!.copy(qualityState = "incomplete", qualityReason = "detail_terminal_404")
+            val charge = fixture.db.chargeSummaryDao().get(car, 1)!!.copy(qualityState = "incomplete", qualityReason = "detail_terminal_404")
+            fixture.db.driveSummaryDao().upsert(drive); fixture.db.chargeSummaryDao().upsert(charge)
+            fixture.db.driveSummaryDao().upsertPreservingEvidence(listOf(drive.copy(qualityReason = "api_evidence")))
+            fixture.db.chargeSummaryDao().upsertPreservingEvidence(listOf(charge.copy(qualityReason = "api_evidence")))
+            assertEquals(0, fixture.db.driveSummaryDao().countUnprocessedDrives(car, com.matelink.data.local.entity.SchemaVersion.DRIVE_ENERGY))
+            assertEquals(0, fixture.db.chargeSummaryDao().countUnprocessedCharges(car, com.matelink.data.local.entity.SchemaVersion.CURRENT))
+            val updatedDrive = drive.copy(apiEvidence = HistorySummaryEvidenceCodec.encode(
+                HistorySummaryEvidenceCodec.decodeDrive(drive.apiEvidence!!)!!.copy(odometerDetails = DriveOdometerDetails(distance = 2.0))),
+                qualityState = "observed", qualityReason = "genuine_changed_receipt")
+            val updatedCharge = charge.copy(apiEvidence = HistorySummaryEvidenceCodec.encode(
+                HistorySummaryEvidenceCodec.decodeCharge(charge.apiEvidence!!)!!.copy(chargeEnergyAdded = 2.0)),
+                qualityState = "observed", qualityReason = "genuine_changed_receipt")
+            fixture.db.driveSummaryDao().upsertPreservingEvidence(listOf(updatedDrive))
+            fixture.db.chargeSummaryDao().upsertPreservingEvidence(listOf(updatedCharge))
+            fixture.reopen()
+            assertEquals(listOf(1), fixture.db.driveSummaryDao().getUnprocessedDriveBatchIds(car, com.matelink.data.local.entity.SchemaVersion.DRIVE_ENERGY, 20))
+            assertEquals(listOf(1), fixture.db.chargeSummaryDao().getUnprocessedChargeBatchIds(car, com.matelink.data.local.entity.SchemaVersion.CURRENT, 20))
+            assertEquals("incomplete", fixture.db.driveSummaryDao().get(car, 1)!!.qualityState)
+            assertEquals("incomplete", fixture.db.chargeSummaryDao().get(car, 1)!!.qualityState)
+            assertEquals("genuine_changed_receipt", fixture.db.driveSummaryDao().get(car, 1)!!.qualityReason)
+            assertEquals("genuine_changed_receipt", fixture.db.chargeSummaryDao().get(car, 1)!!.qualityReason)
+            assertEquals(0, fixture.db.driveSummaryDao().count(car))
+            assertEquals(0, fixture.db.chargeSummaryDao().count(car))
         } finally { fixture.close() }
     }
 

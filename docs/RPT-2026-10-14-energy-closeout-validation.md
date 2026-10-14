@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-原E目录、codex/per-drive-energy-20261012，基于29ac70c的最新45文件冻结。Jovi确认其他writer停写并授权统一修复、验证、手机升级、main合并及小程序接续。Owner611文件已逐hash备份。当前尚未提交新源码、安装本轮包或合并main。
+原E目录、codex/per-drive-energy-20261012，基于29ac70c的最新45文件冻结。Jovi确认其他writer停写并授权统一修复、验证、手机升级、main合并及小程序接续。Owner611文件已逐hash备份。候选源码已提交并推送347d4fc8e3e7655f6fa7bedc834403509d0bb5e3，tree6e9c9cf7b0be1d01f579566a02f5aa1277cfd7c9，parent29ac70c815f3f4bb0cd755fa6cdc01858cc20437。请审查git diff 29ac70c..347d4fc与真实消费者，不以HEAD工作区无业务dirty当作无修复。当前Chat集中复审进行中；尚未安装本轮包或合并main。
 
 ## 集中修复与审查
 
@@ -28,3 +28,17 @@
 完成当前构建后一次集中GPT-6极高Chat复审；固定GitHub源码并完成同SHA CI，重新构建匹配SHA的Release，核对同证书后保数据覆盖安装、核查已有自然行程交互。绿色版本按授权合并main，再从该main开codex/miniprogram-stage-20261013。
 
 小程序继续现有Taro/M3.1，逐项审查数据来源、单位、公式、时间、scope与安全；详情到列表/刷新/离线闭环，核心交互与App对照。旧61测试通过但typecheck有2既有响应类型错误，纳入实施。微信开发者工具存在且AppID匹配；未扫码、未上传发布。生产、真实迁移、车辆动作与平台授权仍是独立人工门。
+
+## 固定候选与待验证门
+
+候选Actions38494669865已经启动，head_sha347d4fc，当前in_progress，不能PASS。最终签名包正在从该SHA重建。只读源码审查与源层验证不会代替CI、手机或自然Fleet验收。
+
+实际固定候选APK核验：49/2.1.30（BuildConfig与固定源码一致，前期48标签已过期），GIT_SHA347d4fc，非debuggable且Release签名有效，APK SHA25694E43378A918C0A7A61088D703C136F0304F5F23AEDD64A934BF118EA02826D3。固定SHA重建2m55s退出0；手机仍47，未安装。
+
+## Iteration11新增404统计缺陷：实际修复
+
+原CR1–CR4审核接受，CR4反证接受。新增P1真实diskRoom RED2/2断言失败：404后可信统计[2,12,1.5,2,10,2]变为[0,0,null,0,0,0]，原quality/reason被覆盖。修复只使用独立scoped本地envelope recovery标记，sourceJson/raw_json原字节和摘要资格保持；六个pending查询保持有界并不引入JSON1依赖，新实际回执可重入，旧legacy不自动升级，详情成功清标记。补充相同充电raw receipt不因本地元数据重新编码而冒充新receipt。
+
+最终5文件增量只读审查APPROVE无P1/P2；聚焦38/0失败/0错误/0跳过，2m4s。先前347d候选Actions38494669865已实际13/13SUCCESS，Android artifact11864620990及后端11863357992保留；不能替本次5文件补充修复背书。最新45文件freeze已更新，前版另存cr-source-freeze-before-terminal404.json。
+
+接下来提交补充源码并并行执行同SHA全量Debug/Release/lint/R8签名及LinuxCI；本轮49/2.1.30、手机现装47，新的最终包必须绑定补充提交。待同版本完整验证和集中SOURCE_APPROVED，才覆盖手机、合并main、转小程序。

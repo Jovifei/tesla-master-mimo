@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
 import androidx.room.Transaction
+import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.data.repository.mergeStoredCharge
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.domain.analytics.withDetailEvidence
@@ -34,7 +35,7 @@ interface ChargeSummaryDao {
         ensureCurrent()
         val newest = get(carId, id) ?: return
         if (newest.apiEvidence != expectedEvidence) return
-        upsert(newest.copy(qualityState = "incomplete", qualityReason = "detail_terminal_404"))
+        upsert(newest.copy(apiEvidence = HistorySummaryEvidenceCodec.markDetailTerminal404(newest.apiEvidence, carId)))
         ensureCurrent()
     }
 
@@ -228,6 +229,7 @@ interface ChargeSummaryDao {
         LEFT JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
         WHERE c.carId = :carId
         AND c.qualityState != 'quarantined' AND c.qualityReason NOT LIKE 'detail_terminal_404%'
+        AND COALESCE(c.apiEvidence,'') NOT LIKE ('{"_matelink_detail_terminal_404_car_id":' || c.carId || ',"_matelink_local_evidence_version":1,%')
         AND (a.chargeId IS NULL OR a.schemaVersion < :currentVersion)
         ORDER BY c.chargeId
     """)
@@ -238,6 +240,7 @@ interface ChargeSummaryDao {
         LEFT JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
         WHERE c.carId = :carId AND c.qualityState != 'quarantined'
         AND c.qualityReason NOT LIKE 'detail_terminal_404%'
+        AND COALESCE(c.apiEvidence,'') NOT LIKE ('{"_matelink_detail_terminal_404_car_id":' || c.carId || ',"_matelink_local_evidence_version":1,%')
         AND (a.chargeId IS NULL OR a.schemaVersion < :currentVersion)
         ORDER BY c.chargeId LIMIT :limit
     """)
@@ -249,6 +252,7 @@ interface ChargeSummaryDao {
         LEFT JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
         WHERE c.carId = :carId
         AND c.qualityState != 'quarantined' AND c.qualityReason NOT LIKE 'detail_terminal_404%'
+        AND COALESCE(c.apiEvidence,'') NOT LIKE ('{"_matelink_detail_terminal_404_car_id":' || c.carId || ',"_matelink_local_evidence_version":1,%')
         AND (a.chargeId IS NULL OR a.schemaVersion < :currentVersion)
     """)
     suspend fun countUnprocessedCharges(carId: Int, currentVersion: Int): Int
@@ -475,9 +479,14 @@ internal suspend fun persistChargeRowsWithoutEvidenceLoss(
     rows.forEach { incoming ->
         val prior = get(incoming.carId, incoming.chargeId)
         val merged = mergeStoredCharge(incoming, prior)
+        val marked = merged.copy(apiEvidence = HistorySummaryEvidenceCodec.carryDetailTerminal404(
+            merged.apiEvidence, prior?.apiEvidence, incoming.carId))
+        // Legacy terminal rows lost their original qualification in older code. Do not guess it back.
         upsert(if (prior?.qualityReason?.startsWith("detail_terminal_404") == true) {
-            if (prior.apiEvidence == incoming.apiEvidence) merged.copy(qualityReason = prior.qualityReason)
-            else merged.copy(qualityReason = incoming.qualityReason)
-        } else merged)
+            val sameReceipt = HistorySummaryEvidenceCodec.sourceJson(incoming.apiEvidence) ==
+                HistorySummaryEvidenceCodec.sourceJson(prior.apiEvidence)
+            marked.copy(qualityState = prior.qualityState,
+                qualityReason = if (sameReceipt) prior.qualityReason else incoming.qualityReason)
+        } else marked)
     }
 }

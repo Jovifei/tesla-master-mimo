@@ -39,7 +39,9 @@ internal data class LocalHistoryEvidenceEnvelope(
     @Json(name = "detail_charge_presentation") val detailChargePresentation: ChargeData? = null,
     // At most one prior genuine receipt, never used as current energy proof.
     @Json(name = "prior_drive_raw_json") val priorDriveRawJson: String? = null,
-    @Json(name = "prior_drive_scope_car_id") val priorDriveScopeCarId: Int? = null
+    @Json(name = "prior_drive_scope_car_id") val priorDriveScopeCarId: Int? = null,
+    // Detail availability is local recovery state, not summary qualification.
+    @Json(name = "_matelink_detail_terminal_404_car_id") val detailTerminal404CarId: Int? = null
 )
 
 /** Rehydrate exact nullable evidence; scalar placeholders never prove a measured zero. */
@@ -168,10 +170,33 @@ internal object HistorySummaryEvidenceCodec {
     fun encode(drive: DriveData): String = driveAdapter.toJson(drive)
     fun encode(charge: ChargeData): String = chargeAdapter.toJson(charge)
 
-    private fun envelope(value: String?): LocalHistoryEvidenceEnvelope? {
+    private fun envelope(value: String?, requireSource: Boolean = true): LocalHistoryEvidenceEnvelope? {
         if (value == null || !value.contains("\"_matelink_local_evidence_version\"")) return null
         return runCatching { envelopeAdapter.fromJson(value) }.getOrNull()
-            ?.takeIf { it.version == 1 && it.rawJson.isNotBlank() }
+            ?.takeIf { it.version == 1 && (!requireSource || it.rawJson.isNotBlank()) }
+    }
+
+    fun isDetailTerminal404(value: String?, carId: Int): Boolean =
+        envelope(value, requireSource = false)?.detailTerminal404CarId == carId
+
+    /** A deterministic local-envelope prefix permits SQLite without JSON1.
+     * raw_json is untouched; an empty legacy raw is never decoded as evidence.
+     */
+    fun markDetailTerminal404(value: String?, carId: Int): String? {
+        val existing = envelope(value, requireSource = false)
+        val raw = sourceJson(value) ?: if (value == null || existing != null) "" else return value
+        val local = existing ?: LocalHistoryEvidenceEnvelope(1, raw)
+        val body = envelopeAdapter.toJson(local.copy(detailTerminal404CarId = null))
+        return "{\"_matelink_detail_terminal_404_car_id\":$carId," + body.drop(1)
+    }
+
+    /** Same real receipt keeps the stop marker; a correction permits a retry. */
+    fun carryDetailTerminal404(current: String?, prior: String?, carId: Int): String? {
+        val local = envelope(current, requireSource = false)
+        val cleared = if (local?.detailTerminal404CarId != null)
+            envelopeAdapter.toJson(local.copy(detailTerminal404CarId = null)) else current
+        return if (isDetailTerminal404(prior, carId) && sourceJson(current) == sourceJson(prior))
+            markDetailTerminal404(cleared, carId) else cleared
     }
 
     fun sourceJson(value: String?): String? {

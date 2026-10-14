@@ -690,6 +690,9 @@ internal fun mergeStoredCharge(incoming: ChargeSummary, cached: ChargeSummary?):
         incomingSnapshot && raw.source == inRaw.source &&
             raw.startDate == inRaw.startDate && raw.endDate == inRaw.endDate ->
             incoming.apiEvidence
+        !newProof && HistorySummaryEvidenceCodec.sourceJson(incoming.apiEvidence) != null &&
+            HistorySummaryEvidenceCodec.sourceJson(incoming.apiEvidence) == HistorySummaryEvidenceCodec.sourceJson(cached.apiEvidence) ->
+            cached.apiEvidence // Local recovery metadata does not make an unchanged wire receipt new.
         cachedSnapshot && sameSource && sameWindow && !newProof -> cached.apiEvidence
         raw == cachedRaw && cached.apiEvidence != null -> cached.apiEvidence
         else -> base.apiEvidence
