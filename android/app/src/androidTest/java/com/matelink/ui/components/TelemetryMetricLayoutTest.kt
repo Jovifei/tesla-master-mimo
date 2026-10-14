@@ -72,6 +72,10 @@ class TelemetryMetricLayoutTest {
             for (en in listOf(false, true)) for (night in listOf(false, true)) for (large in listOf(false, true)) {
                 compose.runOnIdle { width.value = w; scale.value = s; english.value = en; dark.value = night; summary.value = large }
                 compose.waitForIdle()
+                if (scenarios == 0) {
+                    val output = File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "metric-first.png")
+                    output.outputStream().use { compose.onNodeWithTag("metric-matrix").captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
+                }
                 val expected = listOf("119", "12,345.6", "158", "-16.4", "kWh/100km") +
                     if (en) listOf("min", "mi", "mph", "Maximum speed", "Average consumption")
                     else listOf("分钟", "km", "km/h", "最高速度", "平均能耗")
@@ -81,7 +85,7 @@ class TelemetryMetricLayoutTest {
                         .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
                     assertTrue("No real text layout for $text", layouts.isNotEmpty())
                     layouts.forEach {
-                        assertFalse("Clipped $text at $w/$s/$en/$night/$large", it.hasVisualOverflow)
+                        assertFalse("Clipped $text at $w/$s/$en/$night/$large size=${it.size} paragraphHeight=${it.multiParagraph.height} constraints=${it.layoutInput.constraints} lines=${it.lineCount} widthOverflow=${it.didOverflowWidth} heightOverflow=${it.didOverflowHeight}", it.hasVisualOverflow)
                         if (text in listOf("119", "12,345.6", "158", "-16.4"))
                             assertTrue("Number broken across lines: $text at $w/$s", it.lineCount == 1)
                     }

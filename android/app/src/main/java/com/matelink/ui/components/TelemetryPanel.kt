@@ -190,6 +190,7 @@ private fun TelemetryMetricCell(
         )
         Text(
             text = number,
+            modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.titleSmall.copy(
                 fontFamily = MetricMono,
                 fontSize = metric.valueFontSize ?: if (adaptive) 20.sp else MaterialTheme.typography.titleSmall.fontSize,
@@ -201,11 +202,12 @@ private fun TelemetryMetricCell(
             textAlign = TextAlign.Center
         )
         displayedUnit?.takeIf(String::isNotBlank)?.let { unit ->
-            Text(text = unit, style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
+            Text(text = unit, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         }
         Text(
             text = metric.label,
+            modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = if (adaptive) Int.MAX_VALUE else 1,

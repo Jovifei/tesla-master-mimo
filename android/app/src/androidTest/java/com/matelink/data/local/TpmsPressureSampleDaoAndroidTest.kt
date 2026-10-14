@@ -72,14 +72,16 @@ class TpmsPressureSampleDaoAndroidTest {
     fun pruneDeletesOnlyOlderRowsForRequestedCar() = runBlocking {
         dao.upsertAll(
             listOf(
-                TpmsPressureSample(1, 99L, pressureFl = 2.4),
-                TpmsPressureSample(1, 100L, pressureFl = 2.5),
-                TpmsPressureSample(2, 99L, pressureFl = 3.0)
+                TpmsPressureSample(1, 99L, pressureFl = 2.4, provenance = "provider_observation"),
+                TpmsPressureSample(1, 100L, pressureFl = 2.5, provenance = "provider_observation"),
+                TpmsPressureSample(2, 99L, pressureFl = 3.0, provenance = "provider_observation"),
+                TpmsPressureSample(1, 98L, pressureFl = 2.6, provenance = "legacy_unverified"),
+                TpmsPressureSample(1, 97L, pressureFl = 2.7, provenance = TPMS_VERIFIED_COLLECTOR)
             )
         )
 
         assertEquals(1, dao.deleteOlderThan(1, 100L))
-        assertEquals(listOf(100L), dao.getInRange(1, 0L, 200L).map { it.observedAt })
+        assertEquals(listOf(97L, 98L, 100L), dao.getInRange(1, 0L, 200L).map { it.observedAt })
         assertEquals(listOf(99L), dao.getInRange(2, 0L, 200L).map { it.observedAt })
     }
 
