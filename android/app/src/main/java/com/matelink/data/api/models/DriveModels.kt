@@ -9,7 +9,8 @@ data class DrivesResponse(@Json(name = "data") val data: DrivesData? = null)
 @JsonClass(generateAdapter = true)
 data class DrivesData(
     @Json(name = "drives") val drives: List<DriveData>? = null,
-    @Json(name = "meta") val meta: ApiDataMeta? = null
+    @Json(name = "meta") val meta: ApiDataMeta? = null,
+    @Json(name = "units") val units: Units? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -40,14 +41,20 @@ data class DriveData(
     @Json(name = "start_longitude") val startLongitude: Double? = null,
     @Json(name = "end_latitude") val endLatitude: Double? = null,
     @Json(name = "end_longitude") val endLongitude: Double? = null,
-    @Json(name = "energy_contract") val energyContract: EnergyContract? = null
+    @Json(name = "energy_contract") val energyContract: EnergyContract? = null,
+    /** Same-response metadata, persisted separately from the raw receipt. */
+    @Json(ignore = true) val lengthUnit: String? = null
 ) {
     val id: Int get() = driveId
-    val distance: Double? get() = odometerDetails?.distance
+    val hasKnownLengthUnit: Boolean get() = knownDriveLengthUnit(lengthUnit)
+    val distance: Double? get() = odometerDetails?.distance?.takeIf { hasKnownLengthUnit }
+    val distanceKm: Double? get() = driveDistanceKm(odometerDetails?.distance, lengthUnit)
+    val speedMaxKmh: Double? get() = driveDistanceKm(speedMax?.toDouble(), lengthUnit)
+    val speedAvgKmh: Double? get() = driveDistanceKm(speedAvg, lengthUnit)
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
-    val startRatedRangeKm: Double? get() = rangeRated?.startRange
-    val endRatedRangeKm: Double? get() = rangeRated?.endRange
+    val startRatedRangeKm: Double? get() = driveDistanceKm(rangeRated?.startRange, lengthUnit)
+    val endRatedRangeKm: Double? get() = driveDistanceKm(rangeRated?.endRange, lengthUnit)
     // Explicit unknown/unsupported contracts must not fall back to an old scalar.
     val netEnergyKwh: Double? get() = if (energyContract != null)
         energyContract.netValueForWindow(startDate, endDate)
@@ -55,10 +62,12 @@ data class DriveData(
         else energyConsumedNet?.takeIf { it.isFinite() && legacyScalarEnergyAllowed(source) }
     val efficiencyWhKm: Double?
         get() {
-            val dist = distance?.takeIf { it.isFinite() && it > 0.0 } ?: return null
+            val dist = distanceKm?.takeIf { it.isFinite() && it > 0.0 } ?: return null
             val consumed = netEnergyKwh
             if (consumed != null) return (consumed / dist * 1000.0).takeIf(Double::isFinite)
-            return if (energyContract == null && legacyScalarEnergyAllowed(source)) consumptionNet?.takeIf(Double::isFinite) else null
+            // Upstream legacy imperial consumption scalars are not a reliable
+            // Wh/km contract. A known kWh and distance above can be recomputed.
+            return if (lengthUnit != "mi" && energyContract == null && legacyScalarEnergyAllowed(source)) consumptionNet?.takeIf(Double::isFinite) else null
         }
 }
 
@@ -89,7 +98,8 @@ data class DriveDetailResponse(@Json(name = "data") val data: DriveDetailData? =
 @JsonClass(generateAdapter = true)
 data class DriveDetailData(
     @Json(name = "car") val car: DriveDetailCar? = null,
-    @Json(name = "drive") val drive: DriveDetail? = null
+    @Json(name = "drive") val drive: DriveDetail? = null,
+    @Json(name = "units") val units: Units? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -127,10 +137,15 @@ data class DriveDetail(
     @Json(name = "start_longitude") val startLongitude: Double? = null,
     @Json(name = "end_latitude") val endLatitude: Double? = null,
     @Json(name = "end_longitude") val endLongitude: Double? = null,
-    @Json(name = "energy_contract") val energyContract: EnergyContract? = null
+    @Json(name = "energy_contract") val energyContract: EnergyContract? = null,
+    @Json(ignore = true) val lengthUnit: String? = null
 ) {
     val id: Int get() = driveId
-    val distance: Double? get() = odometerDetails?.distance
+    val hasKnownLengthUnit: Boolean get() = knownDriveLengthUnit(lengthUnit)
+    val distance: Double? get() = odometerDetails?.distance?.takeIf { hasKnownLengthUnit }
+    val distanceKm: Double? get() = driveDistanceKm(odometerDetails?.distance, lengthUnit)
+    val speedMaxKmh: Double? get() = driveDistanceKm(speedMax?.toDouble(), lengthUnit)
+    val speedAvgKmh: Double? get() = driveDistanceKm(speedAvg, lengthUnit)
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
     val netEnergyKwh: Double? get() = if (energyContract != null)

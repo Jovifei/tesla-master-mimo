@@ -13,6 +13,18 @@ import com.matelink.data.api.models.Units
  * Exception: elevation units.  We need implement the conversion here until API/Teslamate do itself
  */
 object UnitFormatter {
+    /** Room/analysis values have canonical units, unlike raw API display values. */
+    fun distanceKmDisplayValue(value: Double, units: Units?): Double =
+        if (units?.isImperial == true) value / 1.609344 else value
+
+    fun formatDistanceKm(value: Double, units: Units?, decimals: Int = 1): String =
+        formatDistance(distanceKmDisplayValue(value, units), units, decimals)
+
+    fun speedKmhDisplayValue(value: Double, units: Units?): Double =
+        distanceKmDisplayValue(value, units)
+
+    fun formatSpeedKmh(value: Double, units: Units?, decimals: Int = 0): String =
+        formatSpeed(speedKmhDisplayValue(value, units), units, decimals)
 
     /**
      * Format elevation value with appropriate unit label.

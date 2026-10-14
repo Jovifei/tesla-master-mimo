@@ -6,6 +6,16 @@ import org.junit.Test
 
 class UnitFormatterTest {
     @Test
+    fun canonicalStoredMetricsConvertButRawApiValuesDoNotConvertTwice() {
+        val imperial = Units(unitOfLength = "mi")
+        assertEquals(10.0, UnitFormatter.distanceKmDisplayValue(16.09344, imperial), 0.000001)
+        assertEquals("10.0 mi", UnitFormatter.formatDistanceKm(16.09344, imperial))
+        assertEquals("10.0 mi", UnitFormatter.formatDistance(10.0, imperial))
+        assertEquals("60 mph", UnitFormatter.formatSpeedKmh(96.56064, imperial))
+        assertEquals("60 mph", UnitFormatter.formatSpeed(60.0, imperial))
+        assertEquals("0.0 km", UnitFormatter.formatDistanceKm(0.0, null))
+    }
+    @Test
     fun socRangeKeepsZeroAndEitherObservedEndpoint() {
         assertEquals("0% → 65%", UnitFormatter.formatSocRange(0, 65, "不可用"))
         assertEquals("— → 65%", UnitFormatter.formatSocRange(null, 65, "不可用"))

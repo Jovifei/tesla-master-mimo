@@ -9,6 +9,19 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class DriveDetailStatsEvidenceTest {
+    @Test
+    fun explicitUnknownLengthDoesNotBorrowSpeedOrDistanceFromReceipt() {
+        val stats = calculateDriveDetailStats(
+            DriveDetail(driveId = 4, lengthUnit = "", speedMax = 99, speedAvg = 60.0,
+                odometerDetails = DriveOdometerDetails(distance = 10.0),
+                positions = listOf(DrivePosition(speed = 99.0))), unavailableEnergy
+        )
+        assertNull(stats.distance)
+        assertNull(stats.speedMax)
+        assertNull(stats.speedAvg)
+        assertNull(stats.speedMin)
+        assertNull(stats.avgSpeedFromDistance)
+    }
 
     private val unavailableEnergy = DriveDetailEnergyPresentation(
         energyKwh = null,

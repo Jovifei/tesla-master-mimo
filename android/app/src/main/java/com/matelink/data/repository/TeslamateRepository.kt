@@ -12,6 +12,8 @@ import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.DriveDetail
+import com.matelink.data.api.models.receivedDrives
+import com.matelink.data.api.models.receivedDrive
 import com.matelink.data.api.models.DataReadiness
 import com.matelink.data.api.models.DataReadinessItem
 import com.matelink.data.api.models.DataReadinessResponse
@@ -596,7 +598,7 @@ class TeslamateRepository @Inject constructor(
                 if (response.isSuccessful) {
                     val body = response.body()?.data
                     ApiResult.Success(
-                        body?.drives ?: emptyList(),
+                        body?.receivedDrives() ?: emptyList(),
                         body?.meta?.toApiResponseMetadata()
                     )
                 } else {
@@ -615,7 +617,7 @@ class TeslamateRepository @Inject constructor(
             try {
                 val response = api.getDriveDetail(carId, driveId)
                 if (response.isSuccessful) {
-                    val detail = response.body()?.data?.drive
+                    val detail = response.body()?.data?.receivedDrive()
                     if (detail != null) {
                         ApiResult.Success(detail)
                     } else {

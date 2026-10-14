@@ -243,7 +243,7 @@ class DriveDetailViewModel @Inject constructor(
 
     private fun loadWeatherData(detail: DriveDetail, proof: VerifiedHistoryReadContext) {
         val positions = detail.positions
-        val distance = detail.distance
+        val distance = detail.distanceKm
         if (positions.isNullOrEmpty() || distance == null || !distance.isFinite() || distance <= 0) return
         viewModelScope.launch {
             suspend fun isCurrent() = optionalDetailIsCurrent({ historyProof === proof },

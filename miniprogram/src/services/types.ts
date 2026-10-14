@@ -342,7 +342,11 @@ export type DrivePowerIntegral = {
 }
 
 /** Bounded parsed input plus labeled integral; never original HTTP bytes or a stored route. */
-export type DriveEnergyReceipt = Omit<RawDrive, 'drive_details'> & { parsedEnergyVersion?: 1; power_integral?: DrivePowerIntegral }
+export type DriveEnergyReceipt = Omit<RawDrive, 'drive_details'> & {
+  parsedEnergyVersion?: 1; power_integral?: DrivePowerIntegral
+  /** Response unit for the unchanged provider odometer value, not vehicle provenance. */
+  distance_unit?: string | null
+}
 
 export type ChargeEnergy = {
   batteryInputKwh: number | null; acInputKwh: number | null; inputEnergyKwh: number | null

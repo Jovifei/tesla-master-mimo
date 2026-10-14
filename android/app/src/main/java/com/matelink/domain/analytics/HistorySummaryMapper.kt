@@ -41,7 +41,10 @@ internal data class LocalHistoryEvidenceEnvelope(
     @Json(name = "prior_drive_raw_json") val priorDriveRawJson: String? = null,
     @Json(name = "prior_drive_scope_car_id") val priorDriveScopeCarId: Int? = null,
     // Detail availability is local recovery state, not summary qualification.
-    @Json(name = "_matelink_detail_terminal_404_car_id") val detailTerminal404CarId: Int? = null
+    @Json(name = "_matelink_detail_terminal_404_car_id") val detailTerminal404CarId: Int? = null,
+    /** Units accompany the response; they are not fields of its raw drive. */
+    @Json(name = "raw_drive_length_unit") val rawDriveLengthUnit: String? = null,
+    @Json(name = "detail_drive_length_unit") val detailDriveLengthUnit: String? = null
 )
 
 /** Rehydrate exact nullable evidence; scalar placeholders never prove a measured zero. */
@@ -167,7 +170,11 @@ internal object HistorySummaryEvidenceCodec {
     private val chargeAdapter = moshi.adapter(ChargeData::class.java)
     private val envelopeAdapter = moshi.adapter(LocalHistoryEvidenceEnvelope::class.java)
 
-    fun encode(drive: DriveData): String = driveAdapter.toJson(drive)
+    fun encode(drive: DriveData): String {
+        val raw = driveAdapter.toJson(drive)
+        return if (drive.lengthUnit == null) raw else envelopeAdapter.toJson(
+            LocalHistoryEvidenceEnvelope(1, raw, rawDriveLengthUnit = drive.lengthUnit))
+    }
     fun encode(charge: ChargeData): String = chargeAdapter.toJson(charge)
 
     private fun envelope(value: String?, requireSource: Boolean = true): LocalHistoryEvidenceEnvelope? {
@@ -195,7 +202,7 @@ internal object HistorySummaryEvidenceCodec {
         val local = envelope(current, requireSource = false)
         val cleared = if (local?.detailTerminal404CarId != null)
             envelopeAdapter.toJson(local.copy(detailTerminal404CarId = null)) else current
-        return if (isDetailTerminal404(prior, carId) && sourceJson(current) == sourceJson(prior))
+        return if (isDetailTerminal404(prior, carId) && sourceEvidence(current) == sourceEvidence(prior))
             markDetailTerminal404(cleared, carId) else cleared
     }
 
@@ -206,8 +213,16 @@ internal object HistorySummaryEvidenceCodec {
         return envelope(value)?.rawJson
     }
 
+    /** Preserve response-unit metadata while removing unrelated local detail claims. */
+    fun sourceEvidence(value: String?): String? {
+        val raw = sourceJson(value) ?: return null
+        val unit = envelope(value)?.rawDriveLengthUnit ?: return raw
+        return envelopeAdapter.toJson(LocalHistoryEvidenceEnvelope(1, raw, rawDriveLengthUnit = unit))
+    }
+
     fun decodeDrive(value: String): DriveData? =
         sourceJson(value)?.let { runCatching { driveAdapter.fromJson(it) }.getOrNull() }
+            ?.copy(lengthUnit = envelope(value)?.rawDriveLengthUnit)
     fun decodeCharge(value: String): ChargeData? =
         sourceJson(value)?.let { runCatching { chargeAdapter.fromJson(it) }.getOrNull() }
 
@@ -246,13 +261,17 @@ internal object HistorySummaryEvidenceCodec {
         val detail = envelope(detailEvidence) ?: return null
         val receipt = sourceJson(rawEvidence) ?: return null
         val old = decodeDrive(detailEvidence ?: return null) ?: return null
-        val next = decodeDrive(receipt) ?: return null
+        val next = decodeDrive(rawEvidence ?: return null) ?: return null
         if (old.driveId != next.driveId || old.source != next.source ||
             !sameEvidenceInstant(old.startDate, next.startDate) || !sameEvidenceInstant(old.endDate, next.endDate)) return null
-        val presentation = detail.detailDrivePresentation ?: return envelopeAdapter.toJson(detail.copy(rawJson = receipt))
+        val updated = detail.copy(rawJson = receipt, rawDriveLengthUnit = next.lengthUnit)
+        val presentation = detail.detailDrivePresentation?.copy(lengthUnit = detail.detailDriveLengthUnit)
+            ?: return envelopeAdapter.toJson(updated)
         // Sparse list fields do not erase independently persisted detail inputs.
         // This fusion is presentation only: receipt above remains byte-exact.
         fun <T> changed(value: T?, previous: T?): T? = value?.takeIf { it != previous }
+        fun <T> changedLength(value: T?, previous: T?): T? =
+            if (next.lengthUnit != old.lengthUnit) value else changed(value, previous)
         // Repeated summary values are not corrections to richer detail.
         val changes = next.copy(
             startAddress = changed(next.startAddress, old.startAddress),
@@ -266,21 +285,21 @@ internal object HistorySummaryEvidenceCodec {
                 endBatteryLevel = changed(next.batteryDetails.endBatteryLevel, old.batteryDetails?.endBatteryLevel),
                 isRangeIdeal = changed(next.batteryDetails.isRangeIdeal, old.batteryDetails?.isRangeIdeal)),
             odometerDetails = next.odometerDetails?.copy(
-                odometerStart = changed(next.odometerDetails.odometerStart, old.odometerDetails?.odometerStart),
-                odometerEnd = changed(next.odometerDetails.odometerEnd, old.odometerDetails?.odometerEnd),
-                distance = changed(next.odometerDetails.distance, old.odometerDetails?.distance)),
+                odometerStart = changedLength(next.odometerDetails.odometerStart, old.odometerDetails?.odometerStart),
+                odometerEnd = changedLength(next.odometerDetails.odometerEnd, old.odometerDetails?.odometerEnd),
+                distance = changedLength(next.odometerDetails.distance, old.odometerDetails?.distance)),
             rangeIdeal = next.rangeIdeal?.copy(
-                startRange = changed(next.rangeIdeal.startRange, old.rangeIdeal?.startRange),
-                endRange = changed(next.rangeIdeal.endRange, old.rangeIdeal?.endRange),
-                rangeDiff = changed(next.rangeIdeal.rangeDiff, old.rangeIdeal?.rangeDiff)),
+                startRange = changedLength(next.rangeIdeal.startRange, old.rangeIdeal?.startRange),
+                endRange = changedLength(next.rangeIdeal.endRange, old.rangeIdeal?.endRange),
+                rangeDiff = changedLength(next.rangeIdeal.rangeDiff, old.rangeIdeal?.rangeDiff)),
             rangeRated = next.rangeRated?.copy(
-                startRange = changed(next.rangeRated.startRange, old.rangeRated?.startRange),
-                endRange = changed(next.rangeRated.endRange, old.rangeRated?.endRange),
-                rangeDiff = changed(next.rangeRated.rangeDiff, old.rangeRated?.rangeDiff)),
+                startRange = changedLength(next.rangeRated.startRange, old.rangeRated?.startRange),
+                endRange = changedLength(next.rangeRated.endRange, old.rangeRated?.endRange),
+                rangeDiff = changedLength(next.rangeRated.rangeDiff, old.rangeRated?.rangeDiff)),
             durationMin = changed(next.durationMin, old.durationMin),
             durationStr = changed(next.durationStr, old.durationStr),
-            speedMax = changed(next.speedMax, old.speedMax),
-            speedAvg = changed(next.speedAvg, old.speedAvg),
+            speedMax = changedLength(next.speedMax, old.speedMax),
+            speedAvg = changedLength(next.speedAvg, old.speedAvg),
             powerMax = changed(next.powerMax, old.powerMax),
             powerMin = changed(next.powerMin, old.powerMin),
             outsideTempAvg = changed(next.outsideTempAvg, old.outsideTempAvg),
@@ -290,11 +309,12 @@ internal object HistorySummaryEvidenceCodec {
         ).single().copy(energyConsumedNet = null, consumptionNet = null, energyContract = null,
             startDate = presentation.startDate, endDate = presentation.endDate)
         val batteryChanged = presentation.batteryDetails != corrected.batteryDetails
-        val distanceChanged = presentation.odometerDetails != corrected.odometerDetails
+        val distanceChanged = presentation.odometerDetails != corrected.odometerDetails || presentation.lengthUnit != corrected.lengthUnit
         val rangeChanged = presentation.rangeIdeal != corrected.rangeIdeal || presentation.rangeRated != corrected.rangeRated
         val powerChanged = presentation.powerMax != corrected.powerMax || presentation.powerMin != corrected.powerMin || presentation.durationMin != corrected.durationMin
         if (!batteryChanged && !distanceChanged && !powerChanged && !rangeChanged) {
-            return envelopeAdapter.toJson(detail.copy(rawJson = receipt, detailDrivePresentation = corrected))
+            return envelopeAdapter.toJson(updated.copy(detailDrivePresentation = corrected,
+                detailDriveLengthUnit = corrected.lengthUnit))
         }
         val prior = detail.derivedContract?.netEnergy
         // A list receipt has no route samples. Recompute only a proven SOC basis;
@@ -308,8 +328,8 @@ internal object HistorySummaryEvidenceCodec {
             quality = "unknown", reason = "corrected_receipt_requires_energy_recalculation",
             source = next.source, startDate = next.startDate, endDate = next.endDate
         )
-        return envelopeAdapter.toJson(detail.copy(rawJson = receipt,
-            detailDrivePresentation = corrected, derivedContract = EnergyContract(netEnergy = resolved)))
+        return envelopeAdapter.toJson(updated.copy(detailDrivePresentation = corrected,
+            detailDriveLengthUnit = corrected.lengthUnit, derivedContract = EnergyContract(netEnergy = resolved)))
     }
     fun detailRawNet(value: String?): Double? = envelope(value)?.detailRawNetKwh
     fun detailRawBattery(value: String?): Double? = envelope(value)?.detailRawBatteryKwh
@@ -327,7 +347,7 @@ internal object HistorySummaryEvidenceCodec {
         // decoded as the matching scoped record; a local wrapper is not Fleet
         // authorization or physical energy proof.
         val sourceRecord = runCatching { driveAdapter.fromJson(e.rawJson) }.getOrNull()
-        e.detailDrivePresentation?.takeIf { p ->
+        e.detailDrivePresentation?.copy(lengthUnit = e.detailDriveLengthUnit)?.takeIf { p ->
             sourceRecord != null && sourceRecord.driveId == driveId &&
             sourceRecord.source == source &&
             e.detailScopeCarId == carId && p.driveId == driveId &&
@@ -370,13 +390,15 @@ internal object HistorySummaryEvidenceCodec {
         detailRawNet: Double?, detailSource: String?, start: String?, end: String?,
         scopeCarId: Int, presentation: DriveData
     ): String {
-        val raw = sourceJson(original) ?: encode(fallbackRaw)
+        val raw = sourceJson(original) ?: driveAdapter.toJson(fallbackRaw)
         val old = envelope(original)
         return envelopeAdapter.toJson(LocalHistoryEvidenceEnvelope(
             version = 1, rawJson = raw, derivedContract = contract,
             detailRawNetKwh = detailRawNet?.takeIf(Double::isFinite) ?: old?.detailRawNetKwh,
             detailSource = detailSource, detailStartDate = start, detailEndDate = end,
             detailScopeCarId = scopeCarId,
+            rawDriveLengthUnit = old?.rawDriveLengthUnit ?: fallbackRaw.lengthUnit,
+            detailDriveLengthUnit = presentation.lengthUnit,
             priorDriveRawJson = old?.priorDriveRawJson,
             priorDriveScopeCarId = old?.priorDriveScopeCarId,
             detailDrivePresentation = presentation.copy(

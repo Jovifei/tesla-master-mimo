@@ -301,7 +301,7 @@ private fun TripDetailContent(
             formatTripDateRange(trip.startDate, trip.endDate)
         }
         val distanceLabel = remember(trip.totalDistance, units) {
-            UnitFormatter.formatDistance(trip.totalDistance, units, decimals = 0)
+            UnitFormatter.formatDistanceKm(trip.totalDistance, units, decimals = 0)
         }
         val startCity = remember(trip.startAddress) { extractCity(trip.startAddress) }
         val endCity = remember(trip.endAddress) { extractCity(trip.endAddress) }
@@ -1202,7 +1202,7 @@ private fun DriveLegCard(
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = "%.1f %s".format(
-                        UnitFormatter.formatDistanceValue(leg.drive.distance, units),
+                        UnitFormatter.distanceKmDisplayValue(leg.drive.distance, units),
                         UnitFormatter.getDistanceUnit(units)
                     ),
                     style = MaterialTheme.typography.bodySmall,

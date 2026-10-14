@@ -103,9 +103,9 @@ class StatsRepository @Inject constructor(
             buildRecommendationEvidence(
                 drives = analysisDrives.map {
                     RecommendationDriveSample(
-                        distanceKm = it.distance,
+                        distanceKm = it.distanceKm,
                         energyKwh = it.netEnergyKwh,
-                        averageSpeedKmh = it.speedAvg,
+                        averageSpeedKmh = it.speedAvgKmh,
                         outsideTemperatureC = it.outsideTempAvg,
                         observedAt = it.startDate
                     )
@@ -122,7 +122,7 @@ class StatsRepository @Inject constructor(
         val coverage = buildAnalysisCoverage(
             drives = analysisDrives.map {
                 AnalysisDriveCoverageSample(
-                    distanceKm = it.distance,
+                    distanceKm = it.distanceKm,
                     energyKwh = it.netEnergyKwh,
                     observedAt = it.startDate,
                     energyQuality = it.energyContract?.netEnergy?.quality

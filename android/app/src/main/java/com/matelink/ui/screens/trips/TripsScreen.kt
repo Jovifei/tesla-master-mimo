@@ -362,7 +362,7 @@ private fun SummaryCard(
                 SummaryItem(
                     icon = Icons.Filled.Speed,
                     label = stringResource(R.string.total_distance),
-                    value = UnitFormatter.formatDistance(totalDistance, units, decimals = 0),
+                    value = UnitFormatter.formatDistanceKm(totalDistance, units, decimals = 0),
                     palette = palette,
                     modifier = Modifier.weight(0.8f)
                 )
@@ -468,7 +468,7 @@ private fun TripItem(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = UnitFormatter.formatDistance(trip.totalDistance, units, decimals = 0),
+                    text = UnitFormatter.formatDistanceKm(trip.totalDistance, units, decimals = 0),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
                     color = palette.accent

@@ -80,13 +80,22 @@ enum class DriveDistanceFilter(
     }
 }
 
+internal fun DriveData.matchesDistanceFilter(filter: DriveDistanceFilter): Boolean {
+    if (filter == DriveDistanceFilter.ALL) return true
+    val value = distanceKm ?: return false
+    return (filter.minDistanceKm?.let { value >= it } ?: true) &&
+        (filter.maxDistanceKm?.let { value < it } ?: true)
+}
+
 data class DriveChartData(
     val label: String,
     val count: Int,
-    val totalDistance: Double,
-    val totalDurationMin: Int,
+    val totalDistance: Double?,
+    val totalDurationMin: Int?,
     val maxSpeed: Int?,
-    val sortKey: Long
+    val sortKey: Long,
+    val distanceSampleCount: Int = 0,
+    val durationSampleCount: Int = 0
 )
 
 enum class DriveDateFilter(@get:StringRes val labelRes: Int, val days: Long?) {
@@ -178,7 +187,7 @@ internal fun DriveData.historyEnergy(
     }
     val resolved = DriveEnergyResolver.resolve(
         apiEnergyKwh = null,
-        distanceKm = distance,
+        distanceKm = distanceKm,
         samples = emptyList(),
         durationSeconds = durationMin?.toLong()?.times(60),
         startDate = startDate,
@@ -231,11 +240,13 @@ internal fun DriveSummary.matchesHistoryWindow(previous: DriveSummary): Boolean 
 
 data class DrivesSummary(
     val totalDrives: Int = 0,
-    val totalDistanceKm: Double = 0.0,
-    val totalDurationMin: Int = 0,
-    val avgDistancePerDrive: Double = 0.0,
-    val avgDurationPerDrive: Int = 0,
-    val maxSpeedKmh: Int? = null
+    val totalDistanceKm: Double? = null,
+    val totalDurationMin: Int? = null,
+    val avgDistancePerDrive: Double? = null,
+    val avgDurationPerDrive: Int? = null,
+    val maxSpeedKmh: Int? = null,
+    val distanceSampleCount: Int = 0,
+    val durationSampleCount: Int = 0
 )
 
 @HiltViewModel
@@ -514,24 +525,19 @@ class DrivesViewModel @Inject constructor(
         val visibleDrives = allDrives.filter { it.qualityState != "quarantined" }
         val routeDrives = visibleDrives.filter { drive ->
             !isAnalysisEligible(drive.qualityState, drive.qualityReason) ||
+            drive.durationMin == null || drive.distanceKm == null ||
             (drive.durationMin ?: 0) >= MIN_DURATION_MINUTES &&
-                (drive.distance ?: 0.0) >= MIN_ROUTE_DISTANCE_KM
+                (drive.distanceKm ?: 0.0) >= MIN_ROUTE_DISTANCE_KM
         }
 
         // Apply distance filter for list display, sorted newest first
         val displayDrives = routeDrives.filter { drive ->
-            val distance = drive.distance ?: 0.0
-            val minOk = distanceFilter.minDistanceKm?.let { distance >= it } ?: true
-            val maxOk = distanceFilter.maxDistanceKm?.let { distance < it } ?: true
-            minOk && maxOk
+            drive.matchesDistanceFilter(distanceFilter)
         }.sortedByDescending { it.startDate }
 
         // Apply distance filter to all drives for summary/charts (include short drives)
         val drivesForStats = routeDrives.filter { drive ->
-            val distance = drive.distance ?: 0.0
-            val minOk = distanceFilter.minDistanceKm?.let { distance >= it } ?: true
-            val maxOk = distanceFilter.maxDistanceKm?.let { distance < it } ?: true
-            isAnalysisEligible(drive.qualityState, drive.qualityReason) && minOk && maxOk
+            isAnalysisEligible(drive.qualityState, drive.qualityReason) && drive.matchesDistanceFilter(distanceFilter)
         }
 
         // Calculate summary and chart data from filtered drives
@@ -674,17 +680,6 @@ class DrivesViewModel @Inject constructor(
         }
     }
 
-    // Helper function to centralize chart data creation
-    private fun createChartPoint(label: String, sortKey: Long, drives: List<DriveData>): DriveChartData {
-        return DriveChartData(
-            label = label,
-            count = drives.size,
-            totalDistance = drives.sumOf { it.distance ?: 0.0 },
-            totalDurationMin = drives.sumOf { it.durationMin ?: 0 },
-            maxSpeed = drives.mapNotNull { it.speedMax?.takeIf { speed -> speed >= 0 } }.maxOrNull(),
-            sortKey = sortKey
-        )
-    }
 }
 
 internal suspend fun enrichDriveAddresses(
@@ -717,17 +712,37 @@ internal suspend fun enrichDriveAddresses(
 internal fun calculateDrivesSummary(drives: List<DriveData>): DrivesSummary {
     if (drives.isEmpty()) return DrivesSummary()
 
-    val totalDistance = drives.sumOf { it.distance ?: 0.0 }
-    val totalDuration = drives.sumOf { it.durationMin ?: 0 }
-    val maxSpeed = drives.mapNotNull { it.speedMax?.takeIf { speed -> speed >= 0 } }.maxOrNull()
+    val distances = drives.mapNotNull { it.distanceKm?.takeIf { value -> value.isFinite() && value >= 0.0 } }
+    val durations = drives.mapNotNull { it.durationMin?.takeIf { value -> value >= 0 } }
+    val totalDistance = distances.takeIf { it.isNotEmpty() }?.sum()?.takeIf(Double::isFinite)
+    val totalDuration = durations.takeIf { it.isNotEmpty() }?.sumOf { it.toLong() }
+        ?.takeIf { it <= Int.MAX_VALUE }?.toInt()
+    val maxSpeed = drives.mapNotNull { it.speedMaxKmh?.takeIf { speed -> speed <= Int.MAX_VALUE }?.toInt() }.maxOrNull()
     val count = drives.size
 
     return DrivesSummary(
         totalDrives = count,
         totalDistanceKm = totalDistance,
         totalDurationMin = totalDuration,
-        avgDistancePerDrive = if (count > 0) totalDistance / count else 0.0,
-        avgDurationPerDrive = if (count > 0) totalDuration / count else 0,
-        maxSpeedKmh = maxSpeed
+        avgDistancePerDrive = totalDistance?.div(distances.size),
+        avgDurationPerDrive = totalDuration?.div(durations.size),
+        maxSpeedKmh = maxSpeed,
+        distanceSampleCount = distances.size,
+        durationSampleCount = durations.size
+    )
+}
+
+/** Chart buckets use the same qualification as the summary; no records is not a measured zero. */
+internal fun createChartPoint(label: String, sortKey: Long, drives: List<DriveData>): DriveChartData {
+    val summary = calculateDrivesSummary(drives)
+    return DriveChartData(
+        label = label,
+        count = summary.totalDrives,
+        totalDistance = summary.totalDistanceKm,
+        totalDurationMin = summary.totalDurationMin,
+        maxSpeed = summary.maxSpeedKmh,
+        sortKey = sortKey,
+        distanceSampleCount = summary.distanceSampleCount,
+        durationSampleCount = summary.durationSampleCount
     )
 }

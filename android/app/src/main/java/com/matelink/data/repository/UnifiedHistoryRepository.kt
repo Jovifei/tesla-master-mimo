@@ -370,6 +370,7 @@ private fun ChargeData.withLegacyRemoteQuality(): ChargeData =
     if (qualityState == null && source != "local_import") copy(qualityState = "observed", qualityReason = "legacy_remote_api") else this
 
 private fun DriveData.mergeWith(cached: DriveData?): DriveData = cached?.let {
+    val sameLengthUnit = lengthUnit == it.lengthUnit
     if (qualityState == "quarantined") return this
     // Record ID alone cannot join different source instances. A local import
     // retains archival provenance even if it claims quality="observed".
@@ -384,20 +385,20 @@ private fun DriveData.mergeWith(cached: DriveData?): DriveData = cached?.let {
         endDate = endDate ?: it.endDate,
         startAddress = startAddress ?: it.startAddress,
         endAddress = endAddress ?: it.endAddress,
-        odometerDetails = odometerDetails.mergeWith(it.odometerDetails),
+        odometerDetails = if (sameLengthUnit) odometerDetails.mergeWith(it.odometerDetails) else odometerDetails,
         durationMin = durationMin ?: it.durationMin,
         durationStr = durationStr ?: it.durationStr,
-        speedMax = speedMax ?: it.speedMax,
-        speedAvg = speedAvg ?: it.speedAvg,
+        speedMax = speedMax ?: it.speedMax.takeIf { sameLengthUnit },
+        speedAvg = speedAvg ?: it.speedAvg.takeIf { sameLengthUnit },
         powerMax = powerMax ?: it.powerMax,
         powerMin = powerMin ?: it.powerMin,
         batteryDetails = batteryDetails.mergeWith(it.batteryDetails),
-        rangeIdeal = rangeIdeal.mergeWith(it.rangeIdeal),
-        rangeRated = rangeRated.mergeWith(it.rangeRated),
+        rangeIdeal = if (sameLengthUnit) rangeIdeal.mergeWith(it.rangeIdeal) else rangeIdeal,
+        rangeRated = if (sameLengthUnit) rangeRated.mergeWith(it.rangeRated) else rangeRated,
         outsideTempAvg = outsideTempAvg ?: it.outsideTempAvg,
         insideTempAvg = insideTempAvg ?: it.insideTempAvg,
         energyConsumedNet = energyConsumedNet ?: it.energyConsumedNet,
-        consumptionNet = consumptionNet ?: it.consumptionNet,
+        consumptionNet = consumptionNet ?: it.consumptionNet.takeIf { sameLengthUnit },
         energyContract = energyContract ?: it.energyContract,
         source = source ?: it.source,
         qualityState = qualityState ?: it.qualityState,
@@ -514,9 +515,9 @@ internal fun DriveData.toLocalSummary(historyCarId: Int): DriveSummary? {
         durationMin = durationMin ?: 0,
         startAddress = startAddress?.takeIf { !it.contains("°N") && it != "30.27°N, 120.15°E" && it != "杭州市西湖区西溪路" } ?: "",
         endAddress = endAddress?.takeIf { !it.contains("°N") && it != "30.27°N, 120.15°E" && it != "杭州市西湖区西溪路" } ?: "",
-        distance = odometerDetails?.distance ?: 0.0,
-        speedMax = speedMax ?: 0,
-        speedAvg = speedAvg?.toInt() ?: 0,
+        distance = distanceKm ?: 0.0,
+        speedMax = speedMaxKmh?.toInt() ?: 0,
+        speedAvg = speedAvgKmh?.toInt() ?: 0,
         powerMax = powerMax ?: 0,
         powerMin = powerMin ?: 0,
         startBatteryLevel = batteryDetails?.startBatteryLevel ?: 0,
@@ -592,7 +593,7 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
         raw.energyContract != cachedRaw.energyContract && inRaw.source == raw.source
     val sameSource = raw.source == cachedRaw.source
     val sameWindow = raw.startDate == cachedRaw.startDate && raw.endDate == cachedRaw.endDate
-    val sameEnergyInputs = inRaw.batteryDetails == cachedRaw.batteryDetails &&
+    val sameEnergyInputs = inRaw.lengthUnit == cachedRaw.lengthUnit && inRaw.batteryDetails == cachedRaw.batteryDetails &&
         inRaw.odometerDetails == cachedRaw.odometerDetails && inRaw.rangeIdeal == cachedRaw.rangeIdeal &&
         inRaw.rangeRated == cachedRaw.rangeRated && inRaw.powerMax == cachedRaw.powerMax &&
         inRaw.powerMin == cachedRaw.powerMin && inRaw.durationMin == cachedRaw.durationMin
@@ -603,15 +604,15 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
     val canonicalReceipt = when {
         raw.copy(qualityState = null, qualityReason = null) ==
             cachedRaw.copy(qualityState = null, qualityReason = null) || weakReceipt ->
-            HistorySummaryEvidenceCodec.sourceJson(cached.apiEvidence)
-        raw == inRaw -> HistorySummaryEvidenceCodec.sourceJson(incoming.apiEvidence)
-        raw == cachedRaw -> HistorySummaryEvidenceCodec.sourceJson(cached.apiEvidence)
+            HistorySummaryEvidenceCodec.sourceEvidence(cached.apiEvidence)
+        raw == inRaw -> HistorySummaryEvidenceCodec.sourceEvidence(incoming.apiEvidence)
+        raw == cachedRaw -> HistorySummaryEvidenceCodec.sourceEvidence(cached.apiEvidence)
         // Fusion belongs to presentation, never the immutable source receipt.
         // Prefer the admitted incoming source; a rejected foreign/weak source
         // keeps the complete cached receipt instead.
         raw.source == inRaw.source && raw.startDate == inRaw.startDate && raw.endDate == inRaw.endDate ->
-            HistorySummaryEvidenceCodec.sourceJson(incoming.apiEvidence)
-        else -> HistorySummaryEvidenceCodec.sourceJson(cached.apiEvidence)
+            HistorySummaryEvidenceCodec.sourceEvidence(incoming.apiEvidence)
+        else -> HistorySummaryEvidenceCodec.sourceEvidence(cached.apiEvidence)
     } ?: HistorySummaryEvidenceCodec.encode(if (raw.source == inRaw.source) inRaw else cachedRaw)
     val carryIncomingSnapshot = incomingSnapshot && raw.source == inRaw.source &&
         raw.startDate == inRaw.startDate && raw.endDate == inRaw.endDate
@@ -645,9 +646,9 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
         durationMin = display.durationMin ?: merged.durationMin,
         startAddress = display.startAddress.orEmpty(),
         endAddress = display.endAddress.orEmpty(),
-        distance = display.distance?.takeIf { it.isFinite() && it >= 0.0 } ?: merged.distance,
-        speedMax = display.speedMax ?: merged.speedMax,
-        speedAvg = display.speedAvg?.takeIf(Double::isFinite)?.toInt() ?: merged.speedAvg,
+        distance = display.distanceKm?.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0,
+        speedMax = display.speedMaxKmh?.toInt() ?: 0,
+        speedAvg = display.speedAvgKmh?.toInt() ?: 0,
         powerMax = display.powerMax ?: merged.powerMax,
         powerMin = display.powerMin ?: merged.powerMin,
         startBatteryLevel = display.startBatteryLevel ?: 0,

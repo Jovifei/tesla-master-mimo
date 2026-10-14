@@ -77,6 +77,7 @@ import com.matelink.data.api.models.DrivePosition
 import com.matelink.data.api.models.Units
 import com.matelink.data.repository.WeatherPoint
 import com.matelink.domain.model.UnitFormatter
+import com.matelink.data.api.models.drivePresentationUnits
 import com.matelink.ui.components.AmapRouteView
 import com.matelink.ui.components.FullscreenLineChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
@@ -157,7 +158,7 @@ fun DriveDetailScreen(
                     historySyncWarning = uiState.historySyncWarning,
                     detail = detail,
                     stats = uiState.stats,
-                    units = uiState.units,
+                    units = drivePresentationUnits(detail.lengthUnit, uiState.units),
                     routeColor = palette.accent,
                     weatherPoints = uiState.weatherPoints,
                     isLoadingWeather = uiState.isLoadingWeather,

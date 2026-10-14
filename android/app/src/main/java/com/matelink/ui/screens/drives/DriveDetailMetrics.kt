@@ -54,7 +54,7 @@ internal fun presentDriveDetailEnergy(
 
 internal fun calculateDriveDetailStats(detail: DriveDetail, energy: DriveDetailEnergyPresentation): DriveDetailStats {
     val positions = detail.positions.orEmpty()
-    val speeds = positions.mapNotNull { it.speed?.takeIf { value -> value.isFinite() && value >= 0.0 } }
+    val speeds = positions.mapNotNull { it.speed?.takeIf { value -> detail.hasKnownLengthUnit && value.isFinite() && value >= 0.0 } }
     val powers = positions.mapNotNull { it.power?.takeIf(Double::isFinite) }
     val elevations = positions.mapNotNull { it.elevation }
     val (gain, loss) = elevationChange(elevations)
@@ -75,8 +75,8 @@ internal fun calculateDriveDetailStats(detail: DriveDetail, energy: DriveDetailE
         d.seconds + d.nano / 1_000_000_000.0
     } else duration?.takeIf { it > 0 }?.times(60.0)
     return DriveDetailStats(
-        speedMax = speeds.maxOrNull()?.roundToInt() ?: detail.speedMax?.takeIf { it >= 0 },
-        speedAvg = detail.speedAvg?.takeIf { it.isFinite() && it >= 0.0 }
+        speedMax = speeds.maxOrNull()?.roundToInt() ?: detail.speedMax?.takeIf { detail.hasKnownLengthUnit && it >= 0 },
+        speedAvg = detail.speedAvg?.takeIf { detail.hasKnownLengthUnit && it.isFinite() && it >= 0.0 }
             ?: speeds.takeIf { it.isNotEmpty() }?.average()?.takeIf(Double::isFinite),
         speedMin = speeds.minOrNull()?.roundToInt(),
         powerMax = powers.maxOrNull()?.roundToInt() ?: detail.powerMax,

@@ -340,9 +340,9 @@ internal fun DriveData.toSyncSummary(carId: Int): DriveSummary? {
     val metric = energyContract?.netEnergy
     return DriveSummary(
         driveId = id, carId = carId, startDate = start, endDate = end,
-        distance = distance?.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0, durationMin = durationMin ?: 0,
+        distance = distanceKm?.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0, durationMin = durationMin ?: 0,
         startAddress = startAddress.orEmpty(), endAddress = endAddress.orEmpty(),
-        speedMax = speedMax ?: 0, speedAvg = speedAvg?.takeIf(Double::isFinite)?.toInt() ?: 0,
+        speedMax = speedMaxKmh?.toInt() ?: 0, speedAvg = speedAvgKmh?.toInt() ?: 0,
         powerMax = powerMax ?: 0, powerMin = powerMin ?: 0,
         startBatteryLevel = startBatteryLevel ?: 0, endBatteryLevel = endBatteryLevel ?: 0,
         outsideTempAvg = outsideTempAvg?.takeIf(Double::isFinite), insideTempAvg = insideTempAvg?.takeIf(Double::isFinite),

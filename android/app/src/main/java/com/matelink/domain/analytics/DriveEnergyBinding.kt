@@ -30,7 +30,7 @@ fun DriveDetail.resolveDriveEnergy(
         }
         val seconds = metric?.coverageSeconds?.takeIf { it.isFinite() && it >= 0.0 }
         return ResolvedDriveEnergy(
-            DriveEnergyEstimate(value, value?.let { e -> distance?.takeIf { it.isFinite() && it > 0.0 }?.let { (e / it * 1000).takeIf(Double::isFinite) } },
+            DriveEnergyEstimate(value, value?.let { e -> distanceKm?.takeIf { it.isFinite() && it > 0.0 }?.let { (e / it * 1000).takeIf(Double::isFinite) } },
                 classification, seconds?.toLong() ?: 0L, seconds ?: 0.0,
                 metric?.coverageRatio?.takeIf { it.isFinite() && it in 0.0..1.0 },
                 metric?.coveredEnergyKwh?.takeIf(Double::isFinite), metric?.reason),
@@ -45,7 +45,7 @@ fun DriveDetail.resolveDriveEnergy(
     val samples = if (source in setOf("local_import", "local_history")) emptyList() else positions.orEmpty()
     val estimate = DriveEnergyResolver.resolve(
         apiEnergyKwh = scalar,
-        distanceKm = distance,
+        distanceKm = distanceKm,
         samples = samples.map { DrivePowerSample(it.date, it.power) },
         durationSeconds = durationMin?.toLong()?.times(60),
         startDate = startDate,
@@ -177,20 +177,22 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
     }
     // Current metadata is a separate scoped display snapshot, never a raw
     // Tesla receipt. Explicit nulls retain genuinely unknown SOC.
+    val sameLengthUnit = current.lengthUnit == detail.lengthUnit
     val presentation = current.copy(
         startDate = nextStart, endDate = nextEnd,
         startAddress = detail.startAddress ?: current.startAddress,
         endAddress = detail.endAddress ?: current.endAddress,
-        odometerDetails = detail.odometerDetails ?: current.odometerDetails,
+        odometerDetails = detail.odometerDetails ?: current.odometerDetails.takeIf { sameLengthUnit },
+        lengthUnit = detail.lengthUnit,
         durationMin = detail.durationMin ?: current.durationMin,
         durationStr = detail.durationStr ?: current.durationStr,
-        speedMax = detail.speedMax ?: current.speedMax,
-        speedAvg = detail.speedAvg ?: current.speedAvg,
+        speedMax = detail.speedMax ?: current.speedMax.takeIf { sameLengthUnit },
+        speedAvg = detail.speedAvg ?: current.speedAvg.takeIf { sameLengthUnit },
         powerMax = detail.powerMax ?: current.powerMax,
         powerMin = detail.powerMin ?: current.powerMin,
         batteryDetails = detail.batteryDetails ?: current.batteryDetails,
-        rangeIdeal = detail.rangeIdeal ?: current.rangeIdeal,
-        rangeRated = detail.rangeRated ?: current.rangeRated,
+        rangeIdeal = detail.rangeIdeal ?: current.rangeIdeal.takeIf { sameLengthUnit },
+        rangeRated = detail.rangeRated ?: current.rangeRated.takeIf { sameLengthUnit },
         outsideTempAvg = detail.outsideTempAvg ?: current.outsideTempAvg,
         insideTempAvg = detail.insideTempAvg ?: current.insideTempAvg,
         startLatitude = detail.startLatitude ?: current.startLatitude,
@@ -207,7 +209,7 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
     val net = proof.netValueForWindow(nextStart, nextEnd)
         ?.takeIf { presentation.source == null ||
             proof.netEnergy?.source == presentation.source }
-    val distanceKm = presentation.distance?.takeIf { it.isFinite() && it > 0.0 }
+    val distanceKm = presentation.distanceKm?.takeIf { it.isFinite() && it > 0.0 }
     val efficiency = net?.let { value ->
         distanceKm?.let { (value / it * 1000.0).takeIf(Double::isFinite) }
     }
@@ -218,9 +220,9 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
         durationMin = visible.durationMin ?: durationMin,
         startAddress = visible.startAddress.orEmpty(),
         endAddress = visible.endAddress.orEmpty(),
-        distance = visible.distance?.takeIf { it.isFinite() && it >= 0.0 } ?: this.distance,
-        speedMax = visible.speedMax ?: speedMax,
-        speedAvg = visible.speedAvg?.takeIf(Double::isFinite)?.toInt() ?: speedAvg,
+        distance = visible.distanceKm?.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0,
+        speedMax = visible.speedMaxKmh?.toInt() ?: 0,
+        speedAvg = visible.speedAvgKmh?.toInt() ?: 0,
         powerMax = visible.powerMax ?: powerMax,
         powerMin = visible.powerMin ?: powerMin,
         startBatteryLevel = visible.startBatteryLevel ?: 0,
@@ -247,7 +249,8 @@ fun DriveData.asCachedDetail(): DriveDetail = DriveDetail(
     energyConsumedNet = energyConsumedNet, consumptionNet = consumptionNet,
     source = source, qualityState = qualityState, qualityReason = qualityReason,
     startLatitude = startLatitude, startLongitude = startLongitude,
-    endLatitude = endLatitude, endLongitude = endLongitude, energyContract = energyContract
+    endLatitude = endLatitude, endLongitude = endLongitude, energyContract = energyContract,
+    lengthUnit = lengthUnit
 )
 
 /** Normalize legacy scalar consumers without throwing away the original provenance. */

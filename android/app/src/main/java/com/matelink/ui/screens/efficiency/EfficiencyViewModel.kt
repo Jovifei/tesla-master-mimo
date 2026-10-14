@@ -162,7 +162,7 @@ class EfficiencyViewModel @Inject constructor(
             personalPercentile = position,
             driveCount = values.size,
             totalDistanceKm = selected.sumOf { drive ->
-                drive.distance?.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
+                drive.distanceKm?.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
             },
             last90DaysEfficiencyWhKm = averageFor(AnalysisWindow.LAST_90_DAYS),
             summerEfficiencyWhKm = averageFor(AnalysisWindow.SUMMER),
@@ -179,7 +179,7 @@ class EfficiencyViewModel @Inject constructor(
         calculateWeightedEfficiency(
             drives.map { drive ->
                 EfficiencySample(
-                    distanceKm = drive.distance,
+                    distanceKm = drive.distanceKm,
                     energyKwh = drive.energyConsumedNet
                 )
             }

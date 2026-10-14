@@ -69,6 +69,7 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.Units
 import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.domain.model.UnitFormatter
+import com.matelink.data.api.models.drivePresentationUnits
 import com.matelink.ui.components.BarChartData
 import com.matelink.ui.components.DateRangePickerDialog
 import com.matelink.ui.components.InteractiveBarChart
@@ -570,7 +571,7 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                         TelemetryMetricSpec(
                             CustomIcons.SteeringWheel,
                             stringResource(R.string.total_distance),
-                            if (hasSummary) visualTripNumber(summary.totalDistanceKm) else unavailable,
+                            summary.totalDistanceKm?.let { visualTripNumber(UnitFormatter.distanceKmDisplayValue(it, units)) } ?: unavailable,
                             palette.accent,
                             unit = UnitFormatter.getDistanceUnit(units),
                             valueFontSize = 26.sp
@@ -578,7 +579,7 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                         TelemetryMetricSpec(
                             Icons.Default.Timer,
                             stringResource(R.string.total_time),
-                            if (hasSummary) "%,d".format(summary.totalDurationMin) else unavailable,
+                            summary.totalDurationMin?.let { "%,d".format(it) } ?: unavailable,
                             palette.accent,
                             unit = stringResource(R.string.visual_trip_duration_unit),
                             valueFontSize = 26.sp
@@ -586,7 +587,7 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                         TelemetryMetricSpec(
                             Icons.Default.Speed,
                             stringResource(R.string.max_speed),
-                            summary.maxSpeedKmh?.takeIf { it >= 0 }?.let { "%,d".format(it) } ?: unavailable,
+                            summary.maxSpeedKmh?.takeIf { it >= 0 }?.let { visualTripNumber(UnitFormatter.speedKmhDisplayValue(it.toDouble(), units), 0) } ?: unavailable,
                             palette.accent,
                             unit = UnitFormatter.getSpeedUnit(units),
                             valueFontSize = 26.sp
@@ -595,6 +596,18 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                     modifier = Modifier.padding(vertical = 8.dp),
                     adaptive = true,
                     maxColumns = 2
+                )
+            }
+            if (hasSummary && (summary.distanceSampleCount < summary.totalDrives ||
+                    summary.durationSampleCount < summary.totalDrives)) {
+                Text(
+                    text = "${stringResource(R.string.stats_analysis_data_coverage)} · " +
+                        "${stringResource(R.string.total_distance)}: " +
+                        stringResource(R.string.stats_analysis_coverage_records, summary.distanceSampleCount, summary.totalDrives) +
+                        " · ${stringResource(R.string.total_time)}: " +
+                        stringResource(R.string.stats_analysis_coverage_records, summary.durationSampleCount, summary.totalDrives),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.onSurfaceVariant
                 )
             }
         }
@@ -610,6 +623,7 @@ private fun DriveItem(
     palette: CarColorPalette,
     onClick: () -> Unit
 ) {
+    val receiptUnits = drivePresentationUnits(drive.lengthUnit, units)
     val unknown = stringResource(R.string.unknown)
     val formattedStart = drive.startAddress?.takeIf { it.isNotBlank() }?.toChineseDisplayAddress()
     val formattedEnd = drive.endAddress?.takeIf { it.isNotBlank() }?.toChineseDisplayAddress()
@@ -714,16 +728,16 @@ private fun DriveItem(
                                 ?.let { visualTripNumber(it) }
                                 ?: stringResource(R.string.not_available),
                             tint = palette.accent,
-                            unit = UnitFormatter.getDistanceUnit(units),
+                            unit = UnitFormatter.getDistanceUnit(receiptUnits),
                             valueFontSize = 22.sp
                         ),
                         TelemetryMetricSpec(
                             icon = Icons.Default.Speed,
                             label = stringResource(R.string.max_speed),
-                            value = drive.speedMax?.takeIf { it >= 0 }?.let { "%,d".format(it) }
+                            value = drive.speedMax?.takeIf { drive.hasKnownLengthUnit && it >= 0 }?.let { "%,d".format(it) }
                                 ?: stringResource(R.string.not_available),
                             tint = palette.accent,
-                            unit = UnitFormatter.getSpeedUnit(units),
+                            unit = UnitFormatter.getSpeedUnit(receiptUnits),
                             valueFontSize = 22.sp
                         ),
                         TelemetryMetricSpec(
@@ -900,6 +914,7 @@ private fun DrivesChartPage(
     val speedUnit = if (isImperial) "mph" else "km/h"
     val durationUnit = stringResource(R.string.visual_trip_duration_unit)
     val countUnit = stringResource(R.string.visual_trip_count_unit)
+    val resources = LocalContext.current.resources
 
     val (title, icon) = when (chartType) {
         DrivesChartType.COUNT -> when (granularity) {
@@ -951,27 +966,34 @@ private fun DrivesChartPage(
                     displayValue = "${data.count} $countUnit"
                 )
             }
-            DrivesChartType.TIME -> chartData.map { data ->
+            DrivesChartType.TIME -> chartData.mapNotNull { data ->
+                val duration = data.totalDurationMin ?: return@mapNotNull null
+                val coverage = if (data.durationSampleCount < data.count)
+                    " · ${resources.getString(R.string.stats_analysis_coverage_records, data.durationSampleCount, data.count)} $countUnit"
+                    else ""
                 BarChartData(
                     label = data.label,
-                    value = data.totalDurationMin.toDouble(),
-                    displayValue = "${data.totalDurationMin} $durationUnit"
+                    value = duration.toDouble(),
+                    displayValue = "$duration $durationUnit$coverage"
                 )
             }
-            DrivesChartType.DISTANCE -> chartData.map { data ->
-                val distance = data.totalDistance
+            DrivesChartType.DISTANCE -> chartData.mapNotNull { data ->
+                val distance = data.totalDistance?.let { UnitFormatter.distanceKmDisplayValue(it, units) } ?: return@mapNotNull null
+                val coverage = if (data.distanceSampleCount < data.count)
+                    " · ${resources.getString(R.string.stats_analysis_coverage_records, data.distanceSampleCount, data.count)} $countUnit"
+                    else ""
                 BarChartData(
                     label = data.label,
                     value = distance,
-                    displayValue = "${visualTripNumber(distance)} $distanceUnit"
+                    displayValue = "${visualTripNumber(distance)} $distanceUnit$coverage"
                 )
             }
             DrivesChartType.TOP_SPEED -> chartData.mapNotNull { data ->
-                val speed = data.maxSpeed ?: return@mapNotNull null
+                val speed = data.maxSpeed?.let { UnitFormatter.speedKmhDisplayValue(it.toDouble(), units) } ?: return@mapNotNull null
                 BarChartData(
                     label = data.label,
                     value = speed.toDouble(),
-                    displayValue = "$speed $speedUnit"
+                    displayValue = "${visualTripNumber(speed, 0)} $speedUnit"
                 )
             }
         }
@@ -1006,6 +1028,29 @@ private fun DrivesChartPage(
             color = palette.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 6.dp)
         )
+
+        val sampleCount = when (chartType) {
+            DrivesChartType.TIME -> chartData.sumOf { it.durationSampleCount }
+            DrivesChartType.DISTANCE -> chartData.sumOf { it.distanceSampleCount }
+            else -> null
+        }
+        val recordCount = chartData.sumOf { it.count }
+        if (sampleCount != null && sampleCount < recordCount) {
+            Text(
+                text = "${stringResource(R.string.stats_analysis_data_coverage)} · " +
+                    stringResource(R.string.stats_analysis_coverage_records, sampleCount, recordCount) + " $countUnit",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+        }
+        if (barData.isEmpty()) {
+            Text(
+                text = stringResource(R.string.not_available),
+                style = MaterialTheme.typography.bodyMedium,
+                color = palette.onSurfaceVariant
+            )
+        }
 
         InteractiveBarChart(
             data = barData,

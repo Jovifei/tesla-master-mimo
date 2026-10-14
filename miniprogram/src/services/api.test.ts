@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('@tarojs/components', () => ({ Text: 'Text', View: 'View' }))
+
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   login: vi.fn(),
@@ -39,6 +41,89 @@ const storageAdapter = {
 }
 
 describe('MateLink API transport', () => {
+  it.each(['list', 'detail'] as const)('normalizes response miles exactly once through %s, cache and receipt replay', async endpoint => {
+    const { api } = await modules()
+    const raw = { drive_id: 1, source: 'teslamate_archive', start_date: '2026-10-14T00:00:00Z', end_date: '2026-10-14T00:10:00Z',
+      energy_consumed_net: -2, odometer_details: { odometer_distance: 10 },
+      speed_max: 60, speed_sample_count: 2, speed_metrics_source: 'observed_route_samples' }
+    mocks.request.mockResolvedValue({ statusCode: 200, data: { data: { units: { unit_of_length: 'mi' },
+      ...(endpoint === 'list' ? { drives: [raw] } : { drive: raw }) } }, header: {} })
+    const drive = endpoint === 'list' ? (await api.matelinkApi.getDrives(7)).items[0] : (await api.matelinkApi.getDriveDetail(7, '1'))!
+    expect(drive.distanceKm).toBeCloseTo(16.09344, 12)
+    expect(drive.efficiencyWhKm).toBeCloseTo(-2000 / 16.09344, 12)
+    expect(drive.energyConsumedKwh).toBe(-2)
+    expect(drive.speedMaxKmh).toBeCloseTo(96.56064, 12)
+    expect(drive.speedUnit).toBe('km/h')
+    const { peakSpeedKmh } = await import('../components/MetricValue')
+    expect(peakSpeedKmh(drive)).toBeCloseTo(96.56064, 12)
+    expect(drive.energyReceipt).toMatchObject({ source: 'teslamate_archive', distance_unit: 'mi', odometer_details: { odometer_distance: 10 } })
+    expect(raw.odometer_details.odometer_distance).toBe(10)
+    const cache = await import('./history_cache')
+    const key = cache.historyCacheKey('drives', 'test-user', 'test-car', 'https://api.example.test')
+    expect(cache.writeHistoryCache(storageAdapter, key, [drive])).toBe(true)
+    const reopened = cache.readHistoryCache<typeof drive>(storageAdapter, key)[0]
+    const energy = await import('../domain/drive_energy')
+    expect(energy.driveDistanceKm(reopened.energyReceipt!)).toBeCloseTo(16.09344, 12)
+    expect(energy.resolveDriveEnergy(reopened.energyReceipt!).efficiencyWhKm).toBeCloseTo(-2000 / 16.09344, 12)
+    const merged = energy.mergeDriveEnergyRecord(reopened, drive, reopened)
+    expect(merged.distanceKm).toBeCloseTo(16.09344, 12)
+    expect(merged.efficiencyWhKm).toBeCloseTo(-2000 / 16.09344, 12)
+    expect(merged.energyReceipt?.odometer_details?.odometer_distance).toBe(10)
+  })
+  it.each([
+    { unit: 'km', distance: 10, energy: 2, expectedDistance: 10, expectedEfficiency: 200 },
+    { unit: 'mi', distance: 10, energy: 0, expectedDistance: 16.09344, expectedEfficiency: 0 },
+    { unit: 'km', distance: 0, energy: -2, expectedDistance: 0, expectedEfficiency: null },
+    { unit: 'mi', distance: -1, energy: 2, expectedDistance: null, expectedEfficiency: null },
+    { unit: 'unsupported', distance: 10, energy: 2, expectedDistance: null, expectedEfficiency: null },
+    { unit: null, distance: 10, energy: -2, expectedDistance: null, expectedEfficiency: null },
+  ])('respects the actual response length unit $unit with distance $distance and energy $energy', async input => {
+    const { api } = await modules()
+    mocks.request.mockResolvedValue({ statusCode: 200, data: { data: { units: { unit_of_length: input.unit }, drives: [{ drive_id: 1,
+      energy_consumed_net: input.energy, odometer_details: { odometer_distance: input.distance },
+      speed_unit: 'km/h', speed_max: 60, speed_sample_count: 2, speed_metrics_source: 'observed_route_samples' }] } }, header: {} })
+    const drive = (await api.matelinkApi.getDrives(7)).items[0]
+    expect(drive.distanceKm).toBe(input.expectedDistance)
+    expect(drive.efficiencyWhKm).toBe(input.expectedEfficiency)
+    expect(drive.energyConsumedKwh).toBe(input.energy)
+    if (input.unit !== 'km' && input.unit !== 'mi') expect(drive.speedMaxKmh).toBeNull()
+  })
+  it('retains the cloud km contract when units are absent', async () => {
+    const { api } = await modules()
+    mocks.request.mockResolvedValue({ statusCode: 200, data: { data: { drives: [{ drive_id: 1, energy_consumed_net: 2,
+      odometer_details: { odometer_distance: 10 } }] } }, header: {} })
+    const drive = (await api.matelinkApi.getDrives(7)).items[0]
+    expect(drive.distanceKm).toBe(10)
+    expect(drive.efficiencyWhKm).toBe(200)
+    expect(drive.energyReceipt?.distance_unit).toBe('km')
+  })
+  it('reprojects a cached mi detail after km correction, preserves sparse raw evidence and revokes unknown-unit peaks', async () => {
+    const { api } = await modules()
+    const raw = { drive_id: 1, source: 'teslamate_archive', start_date: '2026-10-14T00:00:00Z', end_date: '2026-10-14T00:10:00Z',
+      energy_consumed_net: 2, odometer_details: { odometer_distance: 10 },
+      speed_max: 60, speed_sample_count: 2, speed_metrics_source: 'observed_route_samples' }
+    const respond = (unit: unknown, value: object) => mocks.request.mockResolvedValue({ statusCode: 200,
+      data: { data: { units: { unit_of_length: unit }, drives: [value] } }, header: {} })
+    respond('mi', raw)
+    const prior = (await api.matelinkApi.getDrives(7)).items[0]
+    const history = await import('../domain/history')
+    respond('km', { ...raw, odometer_details: undefined, speed_max: undefined, speed_sample_count: undefined, speed_metrics_source: undefined })
+    const sparse = (await api.matelinkApi.getDrives(7)).items[0]
+    const retained = history.mergeHistoryEvidence(prior, sparse)
+    expect(retained.distanceKm).toBeCloseTo(16.09344, 12)
+    expect(retained.energyReceipt?.distance_unit).toBe('mi')
+    respond('km', raw)
+    const corrected = history.mergeHistoryEvidence(retained, (await api.matelinkApi.getDrives(7)).items[0])
+    expect(corrected.distanceKm).toBe(10)
+    expect(corrected.efficiencyWhKm).toBe(200)
+    expect(corrected.speedMaxKmh).toBe(60)
+    respond('unknown', raw)
+    const revoked = history.mergeHistoryEvidence(corrected, (await api.matelinkApi.getDrives(7)).items[0])
+    expect(revoked.distanceKm).toBeNull()
+    expect(revoked.efficiencyWhKm).toBeNull()
+    expect(revoked.speedMaxKmh).toBeNull()
+    expect(revoked.energyConsumedKwh).toBe(2)
+  })
   it.each([
     { speed: 0, count: 1, source: 'observed_route_samples', unit: 'km/h', expected: 0 },
     { speed: 82, count: 3, source: 'observed_route_samples', unit: 'kph', expected: 82 },
@@ -46,7 +131,7 @@ describe('MateLink API transport', () => {
     { speed: 82, count: undefined, source: 'observed_route_samples', unit: 'km/h', expected: null },
     { speed: 82, count: 2, source: 'unknown', unit: 'km/h', expected: null },
     { speed: 82, count: 2, source: 'observed_route_samples', unit: undefined, expected: null },
-    { speed: 82, count: 2, source: 'observed_route_samples', unit: 'mph', expected: null },
+    { speed: 82, count: 2, source: 'observed_route_samples', unit: 'mph', expected: 82 * 1.609344 },
     { speed: -1, count: 2, source: 'observed_route_samples', unit: 'km/h', expected: null },
     { speed: null, count: 2, source: 'observed_route_samples', unit: 'km/h', expected: null },
   ])('reads drive peak only with its observed sample and unit proof: $speed / $count / $source / $unit', async row => {

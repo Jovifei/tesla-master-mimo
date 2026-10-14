@@ -144,8 +144,8 @@ function powerIntegral(raw: RawDrive): DrivePowerIntegral {
 }
 
 /** Keeps only parsed energy input; addresses, coordinates, credentials and route arrays are excluded. */
-export function driveEnergyReceipt(raw: RawDrive): DriveEnergyReceipt {
-  const input = row(raw), result: Row = { parsedEnergyVersion: 1 }
+export function driveEnergyReceipt(raw: RawDrive, distanceUnit?: string | null): DriveEnergyReceipt {
+  const input = row(raw), result: Row = { parsedEnergyVersion: 1, distance_unit: distanceUnit === undefined ? 'km' : distanceUnit }
   for (const key of ['start_date', 'end_date', 'source']) if (own(input, key)) result[key] = text(input[key])
   if (own(input, 'drive_id')) result.drive_id = typeof input.drive_id === 'number' ? number(input.drive_id) : text(input.drive_id)
   for (const key of ['duration_min', 'energy_consumed_net', 'consumption_net']) if (own(input, key)) result[key] = number(input[key])
@@ -162,6 +162,15 @@ export function driveEnergyReceipt(raw: RawDrive): DriveEnergyReceipt {
   else if (own(input, 'energy_contract')) result.energy_contract = null
   if (own(input, 'drive_details')) result.power_integral = powerIntegral(raw)
   return result as DriveEnergyReceipt
+}
+
+/** Mini displays km; keep the provider scalar/unit intact and convert only the projection. */
+export function driveDistanceKm(input: DriveEnergyReceipt): number | null {
+  const distance = number(input.odometer_details?.odometer_distance)
+  const unit = input.distance_unit === undefined ? 'km' : input.distance_unit
+  const km = distance !== null && distance >= 0 && (unit === 'km' || unit === 'mi')
+    ? distance * (unit === 'mi' ? 1.609344 : 1) : null
+  return number(km)
 }
 
 function capacity(car?: Car): { value: number; basis: string; field: string; model: string | null; trim: string | null } {
@@ -191,7 +200,7 @@ function projection(value: number | null, distance: unknown, evidence: EnergyMet
 
 export function resolveDriveEnergy(raw: RawDrive | DriveEnergyReceipt, car?: Car): DriveEnergy {
   const input = (raw as DriveEnergyReceipt).parsedEnergyVersion === 1 ? raw as DriveEnergyReceipt : driveEnergyReceipt(raw)
-  const distance = input.odometer_details?.odometer_distance
+  const distance = driveDistanceKm(input)
   if (input.energy_contract != null) {
     const proof = contract(input.energy_contract), m = proof.net_energy ?? null
     const value = validVersion(proof) && (!input.source || m?.source === input.source) &&
@@ -261,6 +270,9 @@ export function mergeDriveEnergyRecord(prior: Drive, incoming: Drive, admittedBa
   const compatible = sameSource && sameWindow(old, input)
   if (!compatible) input = { ...fresh, parsedEnergyVersion: 1 }
   else {
+    // A sparse list row may retain a detail odometer only with that odometer's unit.
+    if (fresh.odometer_details?.odometer_distance == null && (fresh.distance_unit === 'km' || fresh.distance_unit === 'mi'))
+      input.distance_unit = old.distance_unit
     if (fresh.energy_contract == null && old.energy_contract != null) input.energy_contract = old.energy_contract
     input.odometer_details = { ...input.odometer_details,
       odometer_distance: input.odometer_details?.odometer_distance ?? old.odometer_details?.odometer_distance }
@@ -271,7 +283,7 @@ export function mergeDriveEnergyRecord(prior: Drive, incoming: Drive, admittedBa
   const shown = { ...admittedBase, startDate: own(input, 'start_date') ? input.start_date ?? null : compatible ? admittedBase.startDate : null,
     endDate: own(input, 'end_date') ? input.end_date ?? null : compatible ? admittedBase.endDate : null,
     source: own(input, 'source') ? input.source ?? null : compatible ? admittedBase.source : incoming.source,
-    distanceKm: input.odometer_details?.odometer_distance ?? null,
+    distanceKm: driveDistanceKm(input),
     startBatteryLevel: input.battery_details?.start_battery_level ?? null, endBatteryLevel: input.battery_details?.end_battery_level ?? null }
   const explicit = fresh.energy_contract != null
   const unchangedInputs = old.odometer_details?.odometer_distance === input.odometer_details?.odometer_distance &&
@@ -298,7 +310,11 @@ export function mergeDriveEnergyRecord(prior: Drive, incoming: Drive, admittedBa
     const value = retained.source === (input.source ?? 'legacy_api') ? qualified(retained, input.start_date, input.end_date) : null
     energy = projection(value, shown.distanceKm, retained, reason(retained.reason))
   }
-  return { ...shown, energy, energyReceipt: input, energyConsumedKwh: energy.energyKwh, efficiencyWhKm: energy.efficiencyWhKm }
+  const validLengthUnit = input.distance_unit === undefined || input.distance_unit === 'km' || input.distance_unit === 'mi'
+  return { ...shown, speedMaxKmh: validLengthUnit ? incoming.speedMaxKmh ?? shown.speedMaxKmh : null,
+    ...(incoming.speedMaxKmh != null ? { speedUnit: incoming.speedUnit, speedSampleCount: incoming.speedSampleCount,
+      speedMetricsSource: incoming.speedMetricsSource } : {}),
+    energy, energyReceipt: input, energyConsumedKwh: energy.energyKwh, efficiencyWhKm: energy.efficiencyWhKm }
 }
 
 export function resolveChargeEnergy(raw: RawCharge): ChargeEnergy {

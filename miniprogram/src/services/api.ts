@@ -3,7 +3,7 @@ import { JOURVOLT_PRIVACY_VERSION, JOURVOLT_TERMS_VERSION } from '../domain/lega
 import { clearHistoryCachesForAccount } from './history_cache'
 import { clearCarsCacheForAccount, writeCarsCache } from './cars_cache'
 import { clearVehicleCachesForAccount } from './vehicle_cache'
-import { driveEnergyReceipt, resolveDriveEnergy, resolveChargeEnergy } from '../domain/drive_energy'
+import { driveDistanceKm, driveEnergyReceipt, resolveDriveEnergy, resolveChargeEnergy } from '../domain/drive_energy'
 import type {
   ApiEnvelope,
   AuthSessionResponse,
@@ -485,18 +485,30 @@ function pageMeta(meta: PageMeta | undefined, page: number, show: number, length
   }
 }
 
-function normalizeDrive(raw: RawDrive, car?: Car): Drive | null {
+function responseDistanceUnit(response: unknown): string | null | undefined {
+  const data = unwrap(response)
+  if (!isRecord(data) || !Object.prototype.hasOwnProperty.call(data, 'units')) return undefined
+  const units = data.units
+  if (!isRecord(units) || !Object.prototype.hasOwnProperty.call(units, 'unit_of_length')) return null
+  return stringValue(units.unit_of_length)
+}
+
+function normalizeDrive(raw: RawDrive, car?: Car, distanceUnit?: string | null): Drive | null {
   if (!isRecord(raw)) return null
   const rawId = raw.drive_id ?? raw.session_id
   if ((typeof rawId !== 'string' && typeof rawId !== 'number') || String(rawId).trim() === '' ||
       (typeof rawId === 'number' && (!Number.isSafeInteger(rawId) || rawId <= 0))) return null
-  const receipt = driveEnergyReceipt(raw)
+  const receipt = driveEnergyReceipt(raw, distanceUnit)
   const energy = resolveDriveEnergy(receipt, car)
   // Existing telemetry_mqtt route contract normalizes VehicleSpeed mph to km/h
   // before storage (telemetry_normalization.go -> telemetry_core.go -> history_sample_metrics.go).
   // Imported archive speeds have no proven implicit unit contract here.
-  const speedUnit = raw.speed_unit == null && raw.source === 'telemetry_mqtt' &&
+  const speedUnit = raw.speed_unit == null && (distanceUnit === 'km' || distanceUnit === 'mi')
+    ? (distanceUnit === 'mi' ? 'mph' : 'km/h') : raw.speed_unit == null && raw.source === 'telemetry_mqtt' &&
     (raw.quality_state === 'observed' || raw.quality_state === 'derived') ? 'km/h' : stringValue(raw.speed_unit)
+  const speed = finite(raw.speed_max, 0)
+  const speedKmh = speed !== null && (speedUnit === 'km/h' || speedUnit === 'kph' || speedUnit === 'mph')
+    ? finite(speed * (speedUnit === 'mph' ? 1.609344 : 1), 0) : null
   return {
     id: String(rawId),
     sessionId: stringValue(raw.session_id),
@@ -508,11 +520,11 @@ function normalizeDrive(raw: RawDrive, car?: Car): Drive | null {
     // A peak belongs to this drive's observed samples, never its average or the current vehicle.
     speedMaxKmh: raw.speed_metrics_source === 'observed_route_samples' &&
       Number.isSafeInteger(raw.speed_sample_count) && (raw.speed_sample_count ?? 0) > 0 &&
-      (speedUnit === 'km/h' || speedUnit === 'kph') ? finite(raw.speed_max, 0) : null,
+      (distanceUnit === undefined || distanceUnit === 'km' || distanceUnit === 'mi') ? speedKmh : null,
     speedSampleCount: Number.isSafeInteger(raw.speed_sample_count) && (raw.speed_sample_count ?? -1) >= 0 ? raw.speed_sample_count! : null,
     speedMetricsSource: stringValue(raw.speed_metrics_source),
-    speedUnit,
-    distanceKm: finite(raw.odometer_details?.odometer_distance, 0),
+    speedUnit: speedKmh !== null ? 'km/h' : speedUnit,
+    distanceKm: driveDistanceKm(receipt),
     energyConsumedKwh: energy.energyKwh,
     energy, energyReceipt: receipt, efficiencyWhKm: energy.efficiencyWhKm,
     startBatteryLevel: finite(raw.battery_details?.start_battery_level, 0, 100),
@@ -868,14 +880,14 @@ export const matelinkApi = {
     assertVehicle(null, carId, car)
     const response = await requestJson<ApiEnvelope<{ drives?: RawDrive[]; meta?: PageMeta }> | { drives?: RawDrive[]; meta?: PageMeta }>(historyPath(carId, 'drives', page, show))
     assertVehicle(unwrap(response), carId, car)
-    return historyResult(response, 'drives', page, show, value => { assertVehicle(value, carId, car); return normalizeDrive(value as RawDrive, car) })
+    return historyResult(response, 'drives', page, show, value => { assertVehicle(value, carId, car); return normalizeDrive(value as RawDrive, car, responseDistanceUnit(response)) })
   },
 
   async getDriveDetail(carId: number, driveId: string, car?: Car): Promise<Drive | null> {
     assertVehicle(null, carId, car)
     const response = await requestJson<ApiEnvelope<{ drive?: RawDrive }> | { drive?: RawDrive }>(`/api/v1/cars/${carId}/drives/${safeRecordId(driveId)}`)
     assertVehicle(unwrap(response), carId, car)
-    const result = detailResult(response, 'drive', value => { assertVehicle(value, carId, car); return value ? normalizeDrive(value as RawDrive, car) : null })
+    const result = detailResult(response, 'drive', value => { assertVehicle(value, carId, car); return value ? normalizeDrive(value as RawDrive, car, responseDistanceUnit(response)) : null })
     if (result && result.id !== driveId) throw new ApiError(errorMessages.history_unavailable, { code: 'history_unavailable' })
     return result
   },

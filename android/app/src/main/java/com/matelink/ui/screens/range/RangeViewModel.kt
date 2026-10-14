@@ -215,7 +215,7 @@ class RangeViewModel @Inject constructor(
     private fun toRangeTrip(drive: DriveData): RangeTrip? {
         val startRated = drive.startRatedRangeKm ?: return null
         val endRated = drive.endRatedRangeKm ?: return null
-        val distance = drive.distance ?: return null
+        val distance = drive.distanceKm ?: return null
 
         val estimated = startRated - endRated
         if (estimated <= 0.0) return null
@@ -243,7 +243,7 @@ class RangeViewModel @Inject constructor(
             parseDate(drive.startDate)?.let { date ->
                 PersonalizedRangeSample(
                     date = date,
-                    distanceKm = drive.distance,
+                    distanceKm = drive.distanceKm,
                     energyKwh = drive.energyConsumedNet,
                     speedKmh = drive.speedAvg,
                     temperatureC = drive.outsideTempAvg

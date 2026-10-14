@@ -71,13 +71,13 @@ describe('history pages consume canonical data across layers', () => {
     expect(JSON.stringify(page.toJSON())).toContain('总电耗 -0.25 kWh')
   })
   it('renders the four qualified trip metrics and actual partial chart, retains proof on weak refresh and rejects incompatible peak units', async () => {
-    let phase: 'initial' | 'weak' | 'mph' | 'zero' = 'initial'
+    let phase: 'initial' | 'weak' | 'mph' | 'unsupported' | 'zero' = 'initial'
     platform.request.mockImplementation(async ({ url }: { url: string }) => {
       if (url.endsWith('/cars')) return respond({ cars })
       if (url.includes('/drives/1')) return respond({ drive: { ...reported, speed_max: 0, speed_sample_count: 1, speed_metrics_source: 'observed_route_samples', speed_unit: 'km/h' } })
       const page = Number(new URL(url).searchParams.get('page') || '1')
       const row = phase === 'weak' ? { ...reported, speed_max: null, speed_sample_count: null, speed_metrics_source: null, speed_unit: null } :
-        { ...reported, speed_max: phase === 'zero' ? 0 : 82, speed_sample_count: 2, speed_metrics_source: 'observed_route_samples', speed_unit: phase === 'mph' ? 'mph' : 'km/h' }
+        { ...reported, speed_max: phase === 'zero' ? 0 : 82, speed_sample_count: 2, speed_metrics_source: 'observed_route_samples', speed_unit: phase === 'mph' ? 'mph' : phase === 'unsupported' ? 'knots' : 'km/h' }
       return respond({ drives: [{ ...row, drive_id: page, session_id: `session-${page}` }], meta: { page, show: 20, total_pages: 2 } })
     })
     let page = await mount('drives')
@@ -97,7 +97,9 @@ describe('history pages consume canonical data across layers', () => {
     phase = 'weak'; await click(page, '刷新'); assertCard('82')
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
     page = await mount('drives'); assertCard('82')
-    phase = 'mph'; await click(page, '刷新'); assertCard('暂无数据')
+    // mph has an explicit conversion contract; an unsupported unit still revokes the displayed peak.
+    phase = 'mph'; await click(page, '刷新'); assertCard('132')
+    phase = 'unsupported'; await click(page, '刷新'); assertCard('暂无数据')
     phase = 'zero'; await click(page, '刷新'); assertCard('0')
     await click(page, '加载更多')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
