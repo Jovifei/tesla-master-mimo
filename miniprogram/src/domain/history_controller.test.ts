@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { acceptHistoryDetail, acceptHistoryPage, emptyHistoryControllerState, type HistoryControllerState } from './history_controller'
 import type { Charge, Drive, HistoryPage } from '../services/types'
+import { driveEnergyReceipt, resolveDriveEnergy } from './drive_energy'
 
 const row = (id: number): Drive => ({
   id: `drive-${id}`, sessionId: `session-${id}`, startDate: `2026-09-14T${String(Math.floor(id / 60)).padStart(2, '0')}:${String(id % 60).padStart(2, '0')}:00Z`,
@@ -88,6 +89,25 @@ describe('history page controller', () => {
 })
 
 describe('canonical history detail consumption', () => {
+  it.each(['derived', 'incomplete'])('retains observed proof in canonical items and pages after a lower-grade %s detail', grade => {
+    const startDate = '2026-10-14T00:00:00Z', endDate = '2026-10-14T00:01:00Z'
+    const receipt = (value: number) => driveEnergyReceipt({ drive_id: 1, session_id: 'session-1', start_date: startDate, end_date: endDate,
+      source: 'telemetry_mqtt', odometer_details: { odometer_distance: 2 }, energy_contract: { version: 1, net_energy: {
+        value_kwh: value, unit: 'kWh', method: 'api_reported_net', measurement_point: 'reported_net', source: 'telemetry_mqtt',
+        quality: 'reported', start_date: startDate, end_date: endDate, time_basis: 'source_report', coverage_kind: 'provider_report', source_field: 'energy_consumed_net',
+      } } })
+    const oldReceipt = receipt(2), nextReceipt = receipt(99)
+    const original: Drive = { ...row(1), id: '1', startDate, endDate, distanceKm: 2, energyReceipt: oldReceipt,
+      energy: resolveDriveEnergy(oldReceipt), energyConsumedKwh: 2 }
+    const incoming: Drive = { ...original, qualityState: grade, energyReceipt: nextReceipt, energy: resolveDriveEnergy(nextReceipt), energyConsumedKwh: 99 }
+    const current = acceptHistoryPage(emptyHistoryControllerState<Drive>(), page(1, [original], false, 1), 1).state
+    const detail = acceptHistoryDetail(current, original, incoming)
+    expect(detail.items[0].energy?.energyKwh).toBe(2)
+    expect(detail.items[0].qualityState).toBe('observed')
+    expect(detail.pages[0].items[0]).toBe(detail.items[0])
+    expect(detail.pages[0].items[0].energyReceipt?.energy_contract?.net_energy?.value_kwh).toBe(2)
+  })
+
   it('never admits details into an already quarantined canonical row', () => {
     const isolated = { ...row(1), qualityState: 'quarantined', qualityReason: 'ambiguous_source' }
     const current = acceptHistoryPage(emptyHistoryControllerState<Drive>(), page(1, [isolated], false, 1), 1).state

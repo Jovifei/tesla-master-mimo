@@ -55,6 +55,90 @@ async function click(record: ReactTestRenderer, text: string) {
 /** Actual pages -> actual API adapter -> fake Taro transport -> actual controllers/scoped storage.
  * No controller, API, energy projection or React page is mocked. */
 describe('history pages consume canonical data across layers', () => {
+  it.each((['drives', 'charges'] as const).flatMap(kind => (['derived', 'incomplete'] as const).flatMap(grade =>
+    [2, 0].map(value => ({ kind, grade, value })))))('keeps observed $kind value $value instead of laundering lower-grade $grade 99 through actual detail/page/cache/reopen', async ({ kind, grade, value }) => {
+    let lowerPage = false
+    const makeRaw = (amount: number, quality: string) => kind === 'drives' ? {
+      ...reported, quality_state: quality, energy_contract: { version: 1, net_energy: { ...reported.energy_contract.net_energy, value_kwh: amount } },
+    } : {
+      charge_id: 4, session_id: 'quality-charge-session', start_date: start, end_date: end, source: 'telemetry_mqtt', quality_state: quality,
+      cost: amount, currency: amount === 99 ? 'USD' : 'EUR', energy_contract: { version: 1, battery_input: {
+        value_kwh: amount, unit: 'kWh', method: 'session_counter_delta', measurement_point: 'battery_input', source: 'telemetry_mqtt',
+        quality: 'reported', coverage_kind: 'endpoints', coverage_ratio: 1, start_date: start, end_date: end,
+      } },
+    }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/current')) return respond({ charge: null })
+      if (url.includes('/drives/1')) return respond({ drive: makeRaw(99, grade) })
+      if (url.includes('/charges/4')) return respond({ charge: makeRaw(99, grade) })
+      return respond({ [kind]: [makeRaw(lowerPage ? 99 : value, lowerPage ? grade : 'observed')], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, data: unknown) => { platform.values.set(key, data) } }
+    const key = historyCacheKey(kind, 'user-a', 'uid7', 'https://api.example.test')
+    let page = await mount(kind)
+    const assertWinner = () => {
+      const winner = readHistoryCache<Drive | Charge>(storage, key)[0]
+      expect(winner.qualityState).toBe('observed')
+      if (kind === 'drives') expect((winner as Drive).energy?.energyKwh).toBe(value)
+      else {
+        expect((winner as Charge).energy?.batteryInputKwh).toBe(value)
+        expect((winner as Charge).cost).toBe(value)
+        expect((winner as Charge).currency).toBe('EUR')
+      }
+      expect(JSON.stringify(page.toJSON())).toContain(`${value} kWh`)
+      expect(JSON.stringify(page.toJSON())).not.toContain('99 kWh')
+      expect(JSON.stringify(page.toJSON())).not.toContain('99 USD')
+    }
+    assertWinner()
+    await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+    assertWinner()
+    await click(page, '返回列表')
+    lowerPage = true
+    await click(page, '刷新')
+    assertWinner()
+    await act(async () => { platform.unload(); page.unmount() }); renderer = null
+    page = await mount(kind)
+    assertWinner()
+  })
+
+  it.each(['drives', 'charges'] as const)('does not upgrade a prior derived proof into a higher-grade empty whole %s record in actual cache/reopen', async kind => {
+    let upgraded = false
+    const metric = { value_kwh: 2, unit: 'kWh', method: 'session_counter_delta', measurement_point: 'battery_input', source: 'telemetry_mqtt',
+      quality: 'reported', coverage_kind: 'endpoints', coverage_ratio: 1, start_date: start, end_date: end }
+    const base = kind === 'drives' ? { ...reported, quality_state: 'derived', energy_contract: { version: 1,
+      net_energy: { ...reported.energy_contract.net_energy, value_kwh: 2 } } } : {
+      charge_id: 4, session_id: 'quality-charge-session', start_date: start, end_date: end, source: 'telemetry_mqtt', quality_state: 'derived',
+      energy_contract: { version: 1, battery_input: metric },
+    }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/current')) return respond({ charge: null })
+      return respond({ [kind]: [upgraded ? { ...base, quality_state: 'observed', energy_contract: null,
+        ...(kind === 'drives' ? { battery_details: null } : {}) } : base],
+        meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, data: unknown) => { platform.values.set(key, data) } }
+    const key = historyCacheKey(kind, 'user-a', 'uid7', 'https://api.example.test')
+    let page = await mount(kind)
+    expect(JSON.stringify(page.toJSON())).toContain('2 kWh')
+    upgraded = true
+    await click(page, '刷新')
+    const assertNoGraft = () => {
+      const current = readHistoryCache<Drive | Charge>(storage, key)[0]
+      expect(current.qualityState).toBe('observed')
+      if (kind === 'drives') expect((current as Drive).energy?.energyKwh).toBeNull()
+      else expect((current as Charge).energy?.batteryInputKwh).toBeNull()
+      expect(JSON.stringify(page.toJSON())).not.toContain('2 kWh')
+    }
+    assertNoGraft()
+    await act(async () => { platform.unload(); page.unmount() }); renderer = null
+    page = await mount(kind)
+    assertNoGraft()
+  })
+
   it('does not expose isolated current/detail charges, preserves quarantine on reopen, and keeps next-page recovery', async () => {
     const charge = { charge_id: 4, session_id: 'charge-q', source: 'teslamate_archive', start_date: start, end_date: end,
       quality_state: 'observed', charge_energy_added: 6 }

@@ -45,6 +45,8 @@ Jovi已授权完整本地实施，普通GPT-6极高Chat继续审核；现有M3.1
 
 ## 平台与权限
 
+Review15最后grade增量：原whole admission必须同时决定proof，专用energy不能绕过或从落选记录嫁接；仅原field-merge分支富化。真实RED16后187全绿/types0/weapp5.29秒/独立APPROVE；无公式/API/分页变更，固定新SHA CI与原Chat16最终裁决待收口。
+
 最后增量：MePage失败注销同步实际session/晚到结果不覆盖新登录；同scope/window弱null保留SOC/距离/Whkm。真实RED后169实例/types/weapp4.82秒全绿、有限源审查APPROVE；平SOC未知与reported真0区分。依赖锁未变，最终新SHA CI与同Chat15裁决待完成。
 
 Review13完整审核已集中落实namespace/GPS/quarantine/DC/Auth修复及本地null-contract补充；实际160测试、严格类型/weapp通过，独立源复审APPROVE。旧歧义v2/v3键只能保留，不可凭旧分隔符猜scope自动迁移/删除。微信平台真实授权/发布仍独立，最终固定SHA CI和原Chat审核待完成。

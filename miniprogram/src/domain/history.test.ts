@@ -1,5 +1,80 @@
 import { describe, expect, it } from 'vitest'
-import { historyRowKey, historyScopeKey, mergeHistoryByKey, mergeHistoryPages, sortHistoryByStartDate } from './history'
+import { historyRowKey, historyScopeKey, mergeHistoryByKey, mergeHistoryEvidence, mergeHistoryPages, sortHistoryByStartDate } from './history'
+import { driveEnergyReceipt, resolveChargeEnergy, resolveDriveEnergy } from './drive_energy'
+import type { RawCharge, RawDrive } from '../services/types'
+
+const proofStart = '2026-10-14T00:00:00Z', proofEnd = '2026-10-14T00:01:00Z'
+function driveProof(value: number, qualityState: string) {
+  const raw: RawDrive = { drive_id: 1, session_id: 's1', start_date: proofStart, end_date: proofEnd,
+    source: 'telemetry_mqtt', quality_state: qualityState, odometer_details: { odometer_distance: 2 }, energy_contract: { version: 1,
+      net_energy: { value_kwh: value, unit: 'kWh', method: 'api_reported_net', measurement_point: 'reported_net', source: 'telemetry_mqtt',
+        source_field: 'energy_consumed_net', quality: 'reported', start_date: proofStart, end_date: proofEnd, time_basis: 'source_report', coverage_kind: 'provider_report' } } }
+  const energyReceipt = driveEnergyReceipt(raw), energy = resolveDriveEnergy(energyReceipt)
+  return { id: '1', sessionId: 's1', startDate: proofStart, endDate: proofEnd, source: 'telemetry_mqtt', qualityState,
+    distanceKm: 2, energyConsumedKwh: energy.energyKwh, energy, energyReceipt }
+}
+function chargeProof(value: number, qualityState: string) {
+  const metric = { value_kwh: value, unit: 'kWh', method: 'session_counter_delta', measurement_point: 'battery_input',
+    source: 'telemetry_mqtt', quality: 'reported', start_date: proofStart, end_date: proofEnd, coverage_kind: 'endpoints', coverage_ratio: 1 }
+  const raw: RawCharge = { charge_id: 1, session_id: 's1', start_date: proofStart, end_date: proofEnd, source: 'telemetry_mqtt',
+    quality_state: qualityState, energy_contract: { version: 1, battery_input: metric } }
+  const energy = resolveChargeEnergy(raw)
+  return { id: '1', sessionId: 's1', startDate: proofStart, endDate: proofEnd, source: 'telemetry_mqtt', qualityState,
+    energyAddedKwh: energy.batteryInputKwh, energyUsedKwh: energy.inputEnergyKwh, energy, cost: value, currency: value === 99 ? 'USD' : 'EUR' }
+}
+
+describe('whole-record quality admission precedes energy proof merging', () => {
+  it.each(['derived', 'incomplete'])('does not launder a lower-grade %s drive or charge proof beneath observed metadata', grade => {
+    for (const value of [2, 0]) {
+      const drive = mergeHistoryEvidence(driveProof(value, 'observed'), driveProof(99, grade))
+      expect(drive.qualityState).toBe('observed')
+      expect(drive.energy.energyKwh).toBe(value)
+      expect(drive.energyReceipt.energy_contract?.net_energy?.value_kwh).toBe(value)
+      const charge = mergeHistoryEvidence(chargeProof(value, 'observed'), chargeProof(99, grade))
+      expect(charge.qualityState).toBe('observed')
+      expect(charge.energy.batteryInputKwh).toBe(value)
+      expect(charge.cost).toBe(value)
+      expect(charge.currency).toBe('EUR')
+    }
+  })
+
+  it('does not graft a lower-grade prior proof into a selected higher-grade whole incoming record', () => {
+    const incoming = driveProof(0, 'observed')
+    const raw = { ...incoming.energyReceipt, energy_contract: undefined }
+    const weakIncoming = { ...incoming, energyReceipt: raw, energy: resolveDriveEnergy(raw), energyConsumedKwh: null }
+    const upgraded = mergeHistoryEvidence(driveProof(99, 'derived'), weakIncoming)
+    expect(upgraded.qualityState).toBe('observed')
+    expect(upgraded.energy.energyKwh).toBeNull()
+    expect(upgraded.energyReceipt.energy_contract).toBeUndefined()
+  })
+
+  it('preserves whole winner evidence while updating the current public ID for the same canonical session', () => {
+    const retained = mergeHistoryEvidence(driveProof(2, 'observed'), { ...driveProof(99, 'derived'), id: 'new-public-id' })
+    expect(retained.id).toBe('new-public-id')
+    expect(retained.sessionId).toBe('s1')
+    expect(retained.energy.energyKwh).toBe(2)
+  })
+
+  it('still permits same-grade real corrections and real zero contracts', () => {
+    expect(mergeHistoryEvidence(driveProof(2, 'observed'), driveProof(0, 'observed')).energy.energyKwh).toBe(0)
+    expect(mergeHistoryEvidence(chargeProof(2, 'observed'), chargeProof(0, 'observed')).energy.batteryInputKwh).toBe(0)
+  })
+
+  it('still honors a same-grade explicit unknown and cannot transplant proof to another source/window', () => {
+    const original = driveProof(2, 'observed')
+    const revokedRaw: RawDrive = { ...original.energyReceipt, energy_contract: { version: 1,
+      net_energy: { ...original.energyReceipt.energy_contract!.net_energy!, quality: 'unknown', value_kwh: null, reason: 'no_verified_driving_net_energy' } } }
+    const revoked = { ...original, energyReceipt: driveEnergyReceipt(revokedRaw), energy: resolveDriveEnergy(revokedRaw), energyConsumedKwh: null }
+    expect(mergeHistoryEvidence(original, revoked).energy.energyKwh).toBeNull()
+    for (const change of [{ source: 'fleet_api' }, { endDate: '2026-10-14T00:02:00Z' }]) {
+      const incoming = { ...original, ...change }
+      const raw = { ...incoming.energyReceipt, source: incoming.source, start_date: incoming.startDate,
+        end_date: incoming.endDate, energy_contract: undefined }
+      const corrected = { ...incoming, energyReceipt: raw, energy: resolveDriveEnergy(raw), energyConsumedKwh: null }
+      expect(mergeHistoryEvidence(original, corrected).energy.energyKwh).toBeNull()
+    }
+  })
+})
 
 describe('history merge', () => {
   it('retains local rows when the cloud page is empty', () => {

@@ -1,5 +1,13 @@
 # 小程序数据阶段执行与验收
 
+## Review15 质量仲裁最终增量：187 实例
+
+原Chat确认此前修复闭合，发现通用历史whole选择后专用能耗再次消费落选记录。真实同source/window observed2或0→derived/incomplete99，在helper/controller/两页cache重开中RED16失败/38通过；反向高grade空整记录也会错误借旧proof。
+
+生产仅history.ts六行：复用原等级/source/quarantine整体选择，保留当前公共ID/session更新，whole winner直接返回保守admitted完整记录；只有原field-merge分支调用能耗/充电合并。没有另一套grade、公式、API、身份或分页变更。新增真实0/同等级更正/同等级unknown/异scope否定回归。高grade空fixture去除自身SOC，避免把其合法独立SOC估算误当旧证明嫁接。
+
+最新187/187、19文件、0fail/skip；严格类型0；同生产weapp5.29秒SUCCESS；有限增量只读APPROVE，无剩余可触发P1/P2。bc81旧固定CI38515054738实际14/14完成：Android916/916无fail/error、Release8预期skip，Go/PG320无skip、TLS29、Web及源审查完成；不能给此最后新源码背书。最后新SHA完整CI与原GPT-6极高裁决待最终收据；各阶段日志/XML留仓库外。
+
 ## Review14 后最后增量：169 实例
 
 原Chat确认Review13整组修复闭合，新增MePage注销失败状态P2：API先清本机session，页面异常分支却仍显示旧登录。真实页面RED3fail/2pass后，finally只在当前operation内读取实际session同步UI；晚到logout不覆盖新登录或误toast。成功/网络/HTTP500/新登录竞争/hide回归5项通过；不改服务端注销协议。

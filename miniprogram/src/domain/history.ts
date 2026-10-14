@@ -76,6 +76,7 @@ export function mergeHistoryEvidence<T>(local: T, incoming: T): T {
   const old = asRow(local), next = asRow(incoming)
   if (!old || !next) return incoming
   let merged: Row
+  let mergeFields = false
   if (quarantined(next)) merged = { ...next }
   else if (quarantined(old)) merged = { ...old } // only an explicit server revision may release quarantine
   else if (trusted(next) && !trusted(old)) merged = { ...next }
@@ -88,12 +89,14 @@ export function mergeHistoryEvidence<T>(local: T, incoming: T): T {
       // Sources/grades cannot be relabelled by filling from a different record.
       merged = { ...next }
     } else {
+      mergeFields = true
       merged = { ...old }
       for (const [key, value] of Object.entries(next)) if (!missing(value)) merged[key] = value
     }
   } else {
     // Legacy records without trustworthy provenance stay legacy. Keep their
     // existing fields; this path must not launder an unverified quality flag.
+    mergeFields = true
     merged = { ...old }
     for (const [key, value] of Object.entries(next)) if (missing(merged[key])) merged[key] = value
     if (old.qualityState === 'incomplete' || next.qualityState === 'incomplete' ||
@@ -106,6 +109,9 @@ export function mergeHistoryEvidence<T>(local: T, incoming: T): T {
   if (!missing(next.id)) merged.id = next.id
   if (!missing(next.sessionId)) merged.sessionId = next.sessionId
   const admitted = conservativeEvidence(merged as T)
+  // Whole-record admission also owns its proof. Rejected or displaced records
+  // cannot contribute energy beneath the chosen record's source/quality.
+  if (!mergeFields) return admitted
   if ('energyConsumedKwh' in old || 'energyReceipt' in old || 'energyConsumedKwh' in next || 'energyReceipt' in next) {
     return mergeDriveEnergyRecord(local as unknown as Drive, incoming as unknown as Drive, admitted as unknown as Drive) as unknown as T
   }
