@@ -642,7 +642,13 @@ class RawHistoryEvidencePersistenceTest {
         val saved = rows[30 to 7]!!
         assertNull(saved.toAnalysisDriveData().netEnergyKwh)
         assertEquals("unknown", saved.toRawAnalysisDriveData().energyContract?.netEnergy?.quality)
-        assertEquals(8.0, saved.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
+        assertNull(saved.toRawAnalysisDriveData().energyConsumedNet)
+        assertEquals(unknown.apiEvidence, HistorySummaryEvidenceCodec.sourceJson(saved.apiEvidence))
+        val archived = HistorySummaryEvidenceCodec.priorDriveSourceJson(saved.apiEvidence, 30)
+        assertEquals(original.apiEvidence, archived)
+        assertNotNull(archived)
+        assertEquals(8.0, HistorySummaryEvidenceCodec.decodeDrive(requireNotNull(archived))!!.energyConsumedNet!!, 0.0)
+        assertNull(HistorySummaryEvidenceCodec.priorDriveSourceJson(saved.apiEvidence, 31))
         assertEquals(1, rows.size)
     }
 }

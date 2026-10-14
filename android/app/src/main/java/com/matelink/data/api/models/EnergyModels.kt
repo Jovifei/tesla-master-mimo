@@ -38,7 +38,15 @@ data class EnergyMetric(
     @Json(name = "coverage_ratio") val coverageRatio: Double? = null,
     /** Diagnostic covered-subset integral; never a substitute for whole-window value_kwh. */
     @Json(name = "covered_energy_kwh") val coveredEnergyKwh: Double? = null,
-    @Json(name = "activity_evidence") val activityEvidence: String? = null
+    @Json(name = "activity_evidence") val activityEvidence: String? = null,
+    @Json(name = "capacity_kwh") val capacityKwh: Double? = null,
+    @Json(name = "capacity_basis") val capacityBasis: String? = null,
+    @Json(name = "capacity_source_field") val capacitySourceField: String? = null,
+    @Json(name = "capacity_model") val capacityModel: String? = null,
+    @Json(name = "capacity_trim") val capacityTrim: String? = null,
+    @Json(name = "calculation_version") val calculationVersion: Int? = null,
+    @Json(name = "start_soc") val startSoc: Int? = null,
+    @Json(name = "end_soc") val endSoc: Int? = null
 ) {
     val isEstimated: Boolean get() = quality == "estimated"
 
@@ -50,8 +58,9 @@ data class EnergyMetric(
         if (!expectedEnd.isAfter(expectedStart) || energyInstant(startDate) != expectedStart || energyInstant(endDate) != expectedEnd) return null
         val validMethod = when (method) {
             "api_reported_net" -> quality == "reported" && measurementPoint == "reported_net"
-            "drive_power_integral" -> isEstimated && measurementPoint == "drive_power" && coverageKind == "time" && fullCoverage()
-            "energy_remaining_delta" -> isEstimated && measurementPoint == "nominal_battery_remaining" && coverageKind == "endpoints" && fullCoverage()
+            "drive_power_integral" -> isEstimated && measurementPoint == "drive_power" && coverageKind == "time" && validPowerCoverage()
+            "energy_remaining_delta" -> isEstimated && measurementPoint in setOf("nominal_battery_remaining", "battery_energy_remaining") && coverageKind == "endpoints" && fullCoverage()
+            "soc_capacity_estimate" -> isEstimated && measurementPoint == "battery_soc" && coverageKind == "endpoints" && fullCoverage() && validCapacityEstimate(value)
             "session_counter_delta" -> quality == "reported" && measurementPoint in setOf("battery_input", "ac_charger_input") && coverageKind == "endpoints" && fullCoverage()
             "compatible_ac_balance" -> isEstimated && measurementPoint == "ac_to_battery" && coverageKind == "endpoints" && fullCoverage()
             else -> false
@@ -60,6 +69,27 @@ data class EnergyMetric(
     }
 
     private fun fullCoverage() = coverageRatio?.takeIf(Double::isFinite)?.let { it >= 1.0 - 1e-9 && it <= 1.0 } == true
+    private fun validPowerCoverage() = coverageRatio?.takeIf(Double::isFinite)?.let { it >= 0.85 && it <= 1.0 + 1e-6 } == true
+
+    private fun validCapacityEstimate(value: Double): Boolean {
+        val capacity = capacityKwh?.takeIf { it.isFinite() && it > 0.0 } ?: return false
+        val first = startSoc?.takeIf { it in 0..100 } ?: return false
+        val last = endSoc?.takeIf { it in 0..100 } ?: return false
+        if (calculationVersion != 1 || capacityBasis !in setOf("default_assumption", "model_assumption",
+                "model_trim_assumption", "provided_capacity", "api_reported_current_capacity")) return false
+        val expected = (first - last) / 100.0 * capacity
+        return first != last && kotlin.math.abs(value - expected) <= 1e-9 * maxOf(1.0, kotlin.math.abs(expected))
+    }
+}
+
+/** One method/quality mapping for persisted summaries, details and history cards. */
+fun EnergyMetric?.driveEnergySource(): String? = when {
+    this == null -> "api" // Legacy scalar compatibility is qualified by the caller.
+    quality == "estimated" && method == "drive_power_integral" -> "power_samples"
+    quality == "estimated" && method == "energy_remaining_delta" -> "energy_remaining_delta"
+    quality == "estimated" && method == "soc_capacity_estimate" -> "soc_capacity_estimate"
+    quality == "reported" && method == "api_reported_net" -> "api"
+    else -> null
 }
 
 /**
@@ -72,12 +102,26 @@ data class EnergyMetric(
 internal fun legacyScalarEnergyAllowed(source: String?): Boolean =
     source == null || source == "teslamate_archive"
 
-private fun energyInstant(raw: String?): Instant? = raw?.let { runCatching { Instant.parse(it) }.getOrNull() }
+private fun energyInstant(raw: String?): Instant? = com.matelink.util.parseIsoInstant(raw)
 
 fun EnergyContract?.netValueForWindow(start: String?, end: String?): Double? =
     this?.takeIf { it.version == 1 }?.netEnergy?.takeIf { metric ->
         (metric.method == "api_reported_net" && metric.measurementPoint == "reported_net") ||
             (metric.method == "drive_power_integral" && metric.measurementPoint == "drive_power") ||
             (metric.method == "energy_remaining_delta" && metric.measurementPoint == "nominal_battery_remaining" &&
-                metric.activityEvidence == "continuous_drive_no_charging_with_valid_endpoints")
+                metric.hasDrivingNominalEndpoints(start, end)) ||
+            (metric.method == "soc_capacity_estimate" && metric.measurementPoint == "battery_soc")
     }?.valueForWindow(start, end)
+
+private fun EnergyMetric.hasDrivingNominalEndpoints(start: String?, end: String?): Boolean {
+    if (source != "telemetry_mqtt" || sourceField != "EnergyRemaining" || timeBasis != "collector_received_at" ||
+        activityEvidence != "continuous_drive_no_charging_with_valid_endpoints") return false
+    val from = energyInstant(start) ?: return false
+    val to = energyInstant(end) ?: return false
+    val first = energyInstant(observedStartAt) ?: return false
+    val last = energyInstant(observedEndAt) ?: return false
+    if (!to.isAfter(from) || !last.isAfter(first) || first.isBefore(from) || last.isAfter(to)) return false
+    fun seconds(a: Instant, b: Instant): Double = java.time.Duration.between(a, b).let { it.seconds + it.nano / 1e9 }
+    return seconds(from, first) <= 30.0 && seconds(last, to) <= 30.0 &&
+        seconds(first, last) >= seconds(from, to) * 0.9
+}

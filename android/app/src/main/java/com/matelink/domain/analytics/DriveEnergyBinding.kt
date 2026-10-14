@@ -6,21 +6,27 @@ import com.matelink.data.api.models.EnergyContract
 import com.matelink.data.api.models.EnergyMetric
 import com.matelink.data.api.models.legacyScalarEnergyAllowed
 import com.matelink.data.api.models.netValueForWindow
+import com.matelink.data.api.models.driveEnergySource
 import com.matelink.util.parseIsoInstant
 import com.matelink.data.local.entity.DriveSummary
 
 /** The same path is used by foreground details and background Room enrichment. */
 data class ResolvedDriveEnergy(val estimate: DriveEnergyEstimate, val evidence: EnergyMetric)
 
-fun DriveDetail.resolveDriveEnergy(): ResolvedDriveEnergy {
+@JvmOverloads
+fun DriveDetail.resolveDriveEnergy(
+    batteryCapacityKwh: Double? = null,
+    model: String? = null,
+    trimBadging: String? = null,
+    capacityBasis: String? = null
+): ResolvedDriveEnergy {
     val supplied = energyContract
     if (supplied != null) {
         val metric = supplied.netEnergy
         val value = netEnergyKwh
         val classification = when {
             value == null -> DriveEnergySource.UNAVAILABLE
-            metric?.method == "drive_power_integral" -> DriveEnergySource.POWER_SAMPLES
-            else -> DriveEnergySource.API
+            else -> metric.driveEnergySource()?.let { DriveEnergySource.valueOf(it.uppercase()) } ?: DriveEnergySource.UNAVAILABLE
         }
         val seconds = metric?.coverageSeconds?.takeIf { it.isFinite() && it >= 0.0 }
         return ResolvedDriveEnergy(
@@ -37,19 +43,58 @@ fun DriveDetail.resolveDriveEnergy(): ResolvedDriveEnergy {
     // archived observed power samples remain a separately labeled estimate.
     val scalar = energyConsumedNet.takeIf { legacyScalarEnergyAllowed(source) }
     val samples = if (source in setOf("local_import", "local_history")) emptyList() else positions.orEmpty()
-    val estimate = DriveEnergyResolver.resolve(scalar, distance,
-        samples.map { DrivePowerSample(it.date, it.power) },
-        durationSeconds = durationMin?.toLong()?.times(60), startDate = startDate, endDate = endDate)
-    val power = estimate.source == DriveEnergySource.POWER_SAMPLES || estimate.observedEnergyKwh != null
+    val estimate = DriveEnergyResolver.resolve(
+        apiEnergyKwh = scalar,
+        distanceKm = distance,
+        samples = samples.map { DrivePowerSample(it.date, it.power) },
+        durationSeconds = durationMin?.toLong()?.times(60),
+        startDate = startDate,
+        endDate = endDate,
+        startEnergyRemaining = null,
+        endEnergyRemaining = null,
+        startSoc = startBatteryLevel,
+        endSoc = endBatteryLevel,
+        batteryCapacityKwh = batteryCapacityKwh,
+        model = model,
+        trimBadging = trimBadging
+    )
+    val power = estimate.source == DriveEnergySource.POWER_SAMPLES
+    val partialPower = estimate.source == DriveEnergySource.UNAVAILABLE && estimate.observedEnergyKwh != null
+    val endpoints = estimate.source in setOf(DriveEnergySource.ENERGY_REMAINING_DELTA, DriveEnergySource.SOC_CAPACITY_ESTIMATE)
+    val capacity = if (estimate.source == DriveEnergySource.SOC_CAPACITY_ESTIMATE)
+        DriveEnergyResolver.resolveBatteryCapacity(model, trimBadging, batteryCapacityKwh) else null
+    val selectedCapacityBasis = capacity?.let { capacityBasis ?: when {
+        batteryCapacityKwh?.let { it.isFinite() && it > 0.0 } == true -> "provided_capacity"
+        model?.trim()?.uppercase() in setOf("S", "X", "3", "Y") && !trimBadging.isNullOrBlank() -> "model_trim_assumption"
+        model?.trim()?.uppercase() in setOf("S", "X", "3", "Y") -> "model_assumption"
+        else -> "default_assumption"
+    } }
     val metric = EnergyMetric(
         valueKwh = estimate.energyKwh,
-        method = if (power) "drive_power_integral" else "api_reported_net",
-        measurementPoint = if (power) "drive_power" else "reported_net",
+        method = when (estimate.source) {
+            DriveEnergySource.POWER_SAMPLES -> "drive_power_integral"
+            DriveEnergySource.ENERGY_REMAINING_DELTA -> "energy_remaining_delta"
+            DriveEnergySource.SOC_CAPACITY_ESTIMATE -> "soc_capacity_estimate"
+            else -> if (partialPower) "drive_power_integral" else "api_reported_net"
+        },
+        measurementPoint = when (estimate.source) {
+            DriveEnergySource.POWER_SAMPLES -> "drive_power"
+            DriveEnergySource.ENERGY_REMAINING_DELTA -> "battery_energy_remaining"
+            DriveEnergySource.SOC_CAPACITY_ESTIMATE -> "battery_soc"
+            else -> if (partialPower) "drive_power" else "reported_net"
+        },
         source = source ?: "legacy_api",
-        sourceField = if (power) "drive_details.power" else "energy_consumed_net",
+        sourceField = when (estimate.source) {
+            DriveEnergySource.POWER_SAMPLES -> "drive_details.power"
+            DriveEnergySource.ENERGY_REMAINING_DELTA -> "energy_remaining"
+            DriveEnergySource.SOC_CAPACITY_ESTIMATE -> "battery_details"
+            else -> if (partialPower) "drive_details.power" else "energy_consumed_net"
+        },
         quality = when (estimate.source) {
             DriveEnergySource.API -> "reported"
-            DriveEnergySource.POWER_SAMPLES -> "estimated"
+            DriveEnergySource.POWER_SAMPLES,
+            DriveEnergySource.ENERGY_REMAINING_DELTA,
+            DriveEnergySource.SOC_CAPACITY_ESTIMATE -> "estimated"
             DriveEnergySource.UNAVAILABLE -> "unknown"
         },
         reason = estimate.qualityReason,
@@ -57,15 +102,32 @@ fun DriveDetail.resolveDriveEnergy(): ResolvedDriveEnergy {
         // MQTT route timestamps are collector receipt instants; archived
         // TeslaMate points carry their recorded source sample instants.
         timeBasis = when {
-            !power -> "source_report"
+            !(power || partialPower) -> "source_report"
             source == "telemetry_mqtt" -> "collector_received_at"
             source == "teslamate_archive" -> "source_sample_time"
             else -> "route_timestamp_unverified"
         },
-        coverageKind = if (power) "time" else "provider_report",
-        coverageSeconds = if (power) estimate.coverageSecondsExact else null,
-        coverageRatio = estimate.coverageRatio,
-        coveredEnergyKwh = estimate.observedEnergyKwh
+        coverageKind = when {
+            endpoints -> "endpoints"
+            power || partialPower -> "time"
+            else -> "provider_report"
+        },
+        coverageSeconds = if (power || partialPower) estimate.coverageSecondsExact else null,
+        coverageRatio = if (endpoints) 1.0 else estimate.coverageRatio,
+        coveredEnergyKwh = estimate.observedEnergyKwh,
+        capacityKwh = capacity,
+        capacityBasis = selectedCapacityBasis,
+        capacitySourceField = when (selectedCapacityBasis) {
+            "api_reported_current_capacity" -> "battery_health.current_capacity"
+            "provided_capacity" -> "provided_capacity_kwh"
+            "model_trim_assumption" -> "car_details.model+trim_badging"
+            "model_assumption" -> "car_details.model"
+            "default_assumption" -> "default_60_kwh"
+            else -> null
+        },
+        capacityModel = capacity?.let { model }, capacityTrim = capacity?.let { trimBadging },
+        calculationVersion = capacity?.let { 1 },
+        startSoc = capacity?.let { startBatteryLevel }, endSoc = capacity?.let { endBatteryLevel }
     )
     return ResolvedDriveEnergy(estimate, metric)
 }
@@ -75,26 +137,43 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
     require(detail.driveId == driveId) { "history_detail_id_mismatch" }
     val rawPrevious = toRawAnalysisDriveData()
     require(rawPrevious.source == null || detail.source == null || rawPrevious.source == detail.source) { "history_detail_source_mismatch" }
-    val estimate = resolved.estimate
     val current = toAnalysisDriveData()
-    // Room summary dates are the currently verified detail dates. Original
-    // source JSON may contain bb09's older rounded list boundaries.
+    // Room dates retain the last verified detail window, including subsecond precision.
     val nextStart = detail.startDate ?: startDate
     val nextEnd = detail.endDate ?: endDate
     val sameWindow = parseIsoInstant(nextStart) != null &&
         parseIsoInstant(nextStart) == parseIsoInstant(startDate) &&
         parseIsoInstant(nextEnd) == parseIsoInstant(endDate)
+    val priorMetric = current.energyContract?.netEnergy
+    fun capacityRank(metric: EnergyMetric?): Int = when (metric?.capacityBasis) {
+        "api_reported_current_capacity", "provided_capacity" -> 3
+        "model_trim_assumption" -> 2
+        "model_assumption" -> 1
+        else -> 0
+    }
+    // Capacity belongs to this verified source/vehicle; recompute corrected SOC, never carry old kWh.
+    val chosen = if (detail.energyContract == null && resolved.estimate.source == DriveEnergySource.SOC_CAPACITY_ESTIMATE &&
+        sameWindow && rawPrevious.source == detail.source &&
+        current.netEnergyKwh != null && priorMetric?.method == "soc_capacity_estimate" &&
+        capacityRank(priorMetric) >= capacityRank(resolved.evidence)) {
+        detail.resolveDriveEnergy(priorMetric.capacityKwh, priorMetric.capacityModel,
+            priorMetric.capacityTrim, priorMetric.capacityBasis)
+    } else resolved
+    val estimate = chosen.estimate
     val oldProof = current.energyContract
     val carried = current.netEnergyKwh?.takeIf { v ->
         detail.energyContract == null && estimate.energyKwh == null && sameWindow &&
         oldProof?.netValueForWindow(nextStart, nextEnd) == v &&
+        (priorMetric?.method != "soc_capacity_estimate" ||
+            ((detail.startBatteryLevel == null || detail.startBatteryLevel == priorMetric?.startSoc) &&
+                (detail.endBatteryLevel == null || detail.endBatteryLevel == priorMetric?.endSoc))) &&
         (detail.source == null || detail.source == rawPrevious.source)
     }
     val proof = when {
         detail.energyContract != null -> detail.energyContract
-        estimate.energyKwh != null -> EnergyContract(netEnergy = resolved.evidence)
+        estimate.energyKwh != null -> EnergyContract(netEnergy = chosen.evidence)
         carried != null && oldProof != null -> oldProof
-        else -> EnergyContract(netEnergy = resolved.evidence)
+        else -> EnergyContract(netEnergy = chosen.evidence)
     }
     // Current metadata is a separate scoped display snapshot, never a raw
     // Tesla receipt. Explicit nulls retain genuinely unknown SOC.
@@ -149,9 +228,7 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
         outsideTempAvg = visible.outsideTempAvg?.takeIf(Double::isFinite),
         insideTempAvg = visible.insideTempAvg?.takeIf(Double::isFinite),
         energyConsumed = net, efficiency = efficiency,
-        energySource = net?.let {
-            if (metric?.method == "drive_power_integral") "power_samples" else "api"
-        },
+        energySource = net?.let { metric.driveEnergySource() },
         energyCoverageSeconds = metric?.coverageSeconds
             ?.takeIf { it.isFinite() && it >= 0.0 }?.toLong() ?: 0L,
         energyCoverageRatio = metric?.coverageRatio

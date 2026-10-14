@@ -46,7 +46,7 @@ class EnergyWindowAndParkingRegressionTest {
     }
 
     @Test fun onlyExplicitContinuousDriveMayUseNominalEstimateAsNet() {
-        val metric = nominalEnergy("continuous_drive_no_charging_with_valid_endpoints")
+        val metric = nominalEnergy("continuous_drive_no_charging_with_valid_endpoints").copy(timeBasis = "collector_received_at")
         assertEquals(1.5, EnergyContract(netEnergy = metric).netValueForWindow(start, end)!!, 0.0)
     }
 

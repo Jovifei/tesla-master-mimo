@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.api.models.Units
+import com.matelink.data.api.models.CarData
+import com.matelink.data.api.models.BatteryHealth
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.entity.SavedTripLeg
 import com.matelink.data.repository.ApiResult
@@ -23,6 +25,8 @@ import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.model.Trip
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +34,28 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
+
+internal suspend fun optionalDetailIsCurrent(
+    sameLoad: () -> Boolean,
+    sameContext: suspend () -> Boolean
+): Boolean {
+    if (!sameLoad()) return false
+    val current = sameContext()
+    currentCoroutineContext().ensureActive()
+    return current && sameLoad()
+}
+
+internal data class DriveCapacityMetadata(val reportedCapacity: Double?, val model: String?, val trim: String?)
+
+/** A reused numeric car ID cannot qualify either its model or its battery-health value. */
+internal fun VerifiedHistoryReadContext.capacityMetadata(
+    cars: ApiResult<List<CarData>>?, health: ApiResult<BatteryHealth>?
+): DriveCapacityMetadata? {
+    val car = (cars as? ApiResult.Success)?.data?.filter { it.carId == context.remoteApiCarId }
+        ?.singleOrNull()?.takeIf { matchesCar(it) } ?: return null
+    val reported = (health as? ApiResult.Success)?.data?.currentCapacity?.takeIf { it > 0.0 && it.isFinite() }
+    return DriveCapacityMetadata(reported, car.carDetails?.model, car.carDetails?.trimBadging)
+}
 
 data class DriveDetailUiState(
     val isLoading: Boolean = true,
@@ -87,7 +113,9 @@ class DriveDetailViewModel @Inject constructor(
                 }
                 suspend fun checkContext() {
                     ensureCurrent()
-                    if (!historyRepository.isContextCurrent(resolved)) {
+                    val current = historyRepository.isContextCurrent(resolved)
+                    ensureCurrent()
+                    if (!current) {
                         historyProof = null
                         _uiState.value = DriveDetailUiState(isLoading = false, error = historyIdentityUnavailableError().message)
                         throw CancellationException("History identity changed")
@@ -112,7 +140,15 @@ class DriveDetailViewModel @Inject constructor(
                         cached.toAnalysisDriveData().asCachedDetail()
                     }
                 }
-                val resolvedEnergy = detail.resolveDriveEnergy()
+                require(detail.driveId == driveId) { "history_detail_id_mismatch" }
+                val proposedEnergy = detail.resolveDriveEnergy()
+                val resolvedEnergy = if (remote is ApiResult.Success) {
+                    val saved = driveSummaryDao.mergeResolvedDetail(resolved.context.localHistoryCarId, detail, proposedEnergy) {
+                        checkContext()
+                    }
+                    checkContext()
+                    saved?.toAnalysisDriveData()?.asCachedDetail()?.copy(positions = detail.positions)?.resolveDriveEnergy() ?: proposedEnergy
+                } else proposedEnergy
                 val energy = resolvedEnergy.estimate
                 val stats = calculateDriveDetailStats(detail, presentDriveDetailEnergy(
                     energy.energyKwh, energy.efficiencyWhKm, energy.source.name.lowercase(),
@@ -133,21 +169,60 @@ class DriveDetailViewModel @Inject constructor(
 
     private fun loadOptionalMetadata(detail: DriveDetail, proof: VerifiedHistoryReadContext) {
         viewModelScope.launch {
+            suspend fun isCurrent() = optionalDetailIsCurrent({ historyProof === proof },
+                { historyRepository.isContextCurrent(proof) })
             try {
                 val containing = withTimeoutOrNull(2_000) {
                     tripRepository.findTripContaining(proof.context.localHistoryCarId, SavedTripLeg.TYPE_DRIVE, detail.driveId)
                 }
-                if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
+                if (!isCurrent()) return@launch
                 _uiState.update { it.copy(containingTrip = containing) }
                 if (proof.remoteAuthorized) {
                     val status = withTimeoutOrNull(2_000) { repository.getCarStatus(proof.context.remoteApiCarId) }
-                    if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
+                    if (!isCurrent()) return@launch
                     if (status is ApiResult.Success) _uiState.update { it.copy(units = status.data.units) }
+
+                    val health = withTimeoutOrNull(2_000) { repository.getBatteryHealth(proof.context.remoteApiCarId) }
+                    val cars = withTimeoutOrNull(2_000) { repository.getCars() }
+                    if (!isCurrent()) return@launch
+                    val metadata = proof.capacityMetadata(cars, health)
+                    if (metadata != null && (metadata.reportedCapacity != null || metadata.model != null)) {
+                        val refinedEnergy = detail.resolveDriveEnergy(
+                            batteryCapacityKwh = metadata.reportedCapacity,
+                            model = metadata.model,
+                            trimBadging = metadata.trim,
+                            capacityBasis = metadata.reportedCapacity?.let { "api_reported_current_capacity" }
+                        )
+                        val saved = driveSummaryDao.refineResolvedCapacity(proof.context.localHistoryCarId, detail, refinedEnergy) {
+                            if (!isCurrent())
+                                throw CancellationException("History identity changed")
+                        }
+                        if (!isCurrent() || saved == null) return@launch
+                        val latestDetail = saved.toAnalysisDriveData().asCachedDetail().copy(positions = detail.positions)
+                        val published = latestDetail.resolveDriveEnergy(
+                            batteryCapacityKwh = metadata.reportedCapacity,
+                            model = metadata.model,
+                            trimBadging = metadata.trim,
+                            capacityBasis = metadata.reportedCapacity?.let { "api_reported_current_capacity" }
+                        )
+                        val e = published.estimate
+                        val currentDetail = detail.copy(batteryDetails = latestDetail.batteryDetails,
+                            odometerDetails = latestDetail.odometerDetails, energyContract = latestDetail.energyContract,
+                            energyConsumedNet = latestDetail.energyConsumedNet, consumptionNet = latestDetail.consumptionNet)
+                        val refinedStats = calculateDriveDetailStats(currentDetail, presentDriveDetailEnergy(
+                            e.energyKwh, e.efficiencyWhKm, e.source.name.lowercase(),
+                            e.coverageSeconds, e.coverageRatio, published.evidence))
+                        _uiState.update { it.copy(stats = refinedStats, driveDetail = currentDetail) }
+                    }
                 }
                 val enriched = withTimeoutOrNull(3_000) { enrichAddresses(detail) } ?: return@launch
-                if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
-                _uiState.update { it.copy(driveDetail = enriched) }
-            } catch (e: CancellationException) { throw e } catch (_: Exception) { /* optional metadata only */ }
+                if (!isCurrent()) return@launch
+                _uiState.update { state -> state.copy(driveDetail = state.driveDetail?.copy(
+                    startAddress = enriched.startAddress, endAddress = enriched.endAddress)) }
+            } catch (e: CancellationException) { throw e } catch (_: Exception) {
+                if (isCurrent())
+                    _uiState.update { it.copy(historySyncWarning = "history_energy_cache_failed") }
+            }
         }
     }
 
@@ -171,14 +246,16 @@ class DriveDetailViewModel @Inject constructor(
         val distance = detail.distance
         if (positions.isNullOrEmpty() || distance == null || !distance.isFinite() || distance <= 0) return
         viewModelScope.launch {
-            if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
+            suspend fun isCurrent() = optionalDetailIsCurrent({ historyProof === proof },
+                { historyRepository.isContextCurrent(proof) })
+            if (!isCurrent()) return@launch
             _uiState.update { it.copy(isLoadingWeather = true) }
             try {
                 val points = weatherRepository.getWeatherAlongDrive(positions = positions, totalDistanceKm = distance)
-                if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
+                if (!isCurrent()) return@launch
                 _uiState.update { it.copy(weatherPoints = points, isLoadingWeather = false) }
             } catch (e: CancellationException) { throw e } catch (_: Exception) {
-                if (historyProof !== proof || !historyRepository.isContextCurrent(proof)) return@launch
+                if (!isCurrent()) return@launch
                 _uiState.update { it.copy(isLoadingWeather = false) }
             }
         }

@@ -5,6 +5,8 @@ import androidx.room.Query
 import androidx.room.Upsert
 import androidx.room.Transaction
 import com.matelink.data.repository.mergeStoredCharge
+import com.matelink.data.api.models.ChargeDetail
+import com.matelink.domain.analytics.withDetailEvidence
 import com.matelink.data.local.entity.ChargeSummary
 import kotlinx.coroutines.flow.Flow
 
@@ -15,6 +17,25 @@ interface ChargeSummaryDao {
     @Transaction
     suspend fun upsertPreservingEvidence(rows: List<ChargeSummary>) {
         persistChargeRowsWithoutEvidenceLoss(rows, ::get, ::upsert)
+    }
+
+    @Transaction
+    suspend fun mergeDetail(carId: Int, detail: ChargeDetail, ensureCurrent: suspend () -> Unit): Boolean {
+        ensureCurrent()
+        val newest = get(carId, detail.chargeId) ?: return false
+        upsert(newest.withDetailEvidence(detail))
+        ensureCurrent()
+        return true
+    }
+
+    /** Retain a missing detail as visible unknown; rollback a concurrent identity change. */
+    @Transaction
+    suspend fun markDetailTerminal404(carId: Int, id: Int, expectedEvidence: String?, ensureCurrent: suspend () -> Unit) {
+        ensureCurrent()
+        val newest = get(carId, id) ?: return
+        if (newest.apiEvidence != expectedEvidence) return
+        upsert(newest.copy(qualityState = "incomplete", qualityReason = "detail_terminal_404"))
+        ensureCurrent()
     }
 
     // === CRUD Operations ===
@@ -206,18 +227,28 @@ interface ChargeSummaryDao {
         SELECT c.chargeId FROM charges_summary c
         LEFT JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
         WHERE c.carId = :carId
-        AND c.qualityState != 'quarantined'
+        AND c.qualityState != 'quarantined' AND c.qualityReason NOT LIKE 'detail_terminal_404%'
         AND (a.chargeId IS NULL OR a.schemaVersion < :currentVersion)
         ORDER BY c.chargeId
     """)
     suspend fun getUnprocessedChargeIds(carId: Int, currentVersion: Int): List<Int>
+
+    @Query("""
+        SELECT c.chargeId FROM charges_summary c
+        LEFT JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
+        WHERE c.carId = :carId AND c.qualityState != 'quarantined'
+        AND c.qualityReason NOT LIKE 'detail_terminal_404%'
+        AND (a.chargeId IS NULL OR a.schemaVersion < :currentVersion)
+        ORDER BY c.chargeId LIMIT :limit
+    """)
+    suspend fun getUnprocessedChargeBatchIds(carId: Int, currentVersion: Int, limit: Int): List<Int>
 
     // Count unprocessed charges
     @Query("""
         SELECT COUNT(*) FROM charges_summary c
         LEFT JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
         WHERE c.carId = :carId
-        AND c.qualityState != 'quarantined'
+        AND c.qualityState != 'quarantined' AND c.qualityReason NOT LIKE 'detail_terminal_404%'
         AND (a.chargeId IS NULL OR a.schemaVersion < :currentVersion)
     """)
     suspend fun countUnprocessedCharges(carId: Int, currentVersion: Int): Int
@@ -442,7 +473,11 @@ internal suspend fun persistChargeRowsWithoutEvidenceLoss(
     upsert: suspend (ChargeSummary) -> Unit
 ) {
     rows.forEach { incoming ->
-        upsert(mergeStoredCharge(incoming,
-            get(incoming.carId, incoming.chargeId)))
+        val prior = get(incoming.carId, incoming.chargeId)
+        val merged = mergeStoredCharge(incoming, prior)
+        upsert(if (prior?.qualityReason?.startsWith("detail_terminal_404") == true) {
+            if (prior.apiEvidence == incoming.apiEvidence) merged.copy(qualityReason = prior.qualityReason)
+            else merged.copy(qualityReason = incoming.qualityReason)
+        } else merged)
     }
 }

@@ -319,14 +319,34 @@ private fun DriveDetailContent(
                         energySourceLabel,
                         when {
                             s.energy.energyKwh == null -> notAvailableLabel
-                            s.energy.isEstimated -> stringResource(R.string.range_estimated)
                             s.energy.source == DriveDetailEnergySource.API -> stringResource(R.string.energy_source_api_reported)
+                            s.energy.source == DriveDetailEnergySource.POWER_SAMPLES -> {
+                                val coverage = if ((s.energy.coverageRatio ?: 0.0) > 0.0) {
+                                    " (${"%.0f".format(s.energy.coverageRatio!! * 100)}%)"
+                                } else ""
+                                "${stringResource(R.string.energy_source_power_samples)}$coverage"
+                            }
+                            s.energy.source == DriveDetailEnergySource.ENERGY_REMAINING_DELTA -> stringResource(R.string.energy_nominal_estimate)
+                            s.energy.source == DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE -> {
+                                val basis = when (s.energy.evidence?.capacityBasis) {
+                                    "model_trim_assumption" -> stringResource(R.string.energy_capacity_model_trim)
+                                    "model_assumption" -> stringResource(R.string.energy_capacity_model)
+                                    "api_reported_current_capacity" -> stringResource(R.string.energy_capacity_api_report)
+                                    "provided_capacity" -> stringResource(R.string.energy_capacity_provided)
+                                    else -> stringResource(R.string.energy_capacity_default)
+                                }
+                                s.energy.evidence?.capacityKwh?.let {
+                                    stringResource(R.string.energy_capacity_description, it, basis)
+                                } ?: stringResource(R.string.energy_source_soc_estimate)
+                            }
+                            s.energy.isEstimated -> stringResource(R.string.range_estimated)
                             else -> notAvailableLabel
                         }
                     ),
                     StatItem(
                         energyCoverageLabel,
-                        s.energy.coverageRatio?.let { ratio ->
+                        if (s.energy.evidence?.coverageKind == "endpoints") stringResource(R.string.energy_endpoint_coverage)
+                        else s.energy.coverageRatio?.let { ratio ->
                             val seconds = s.energy.coverageSeconds?.let { "$it s" } ?: notAvailableLabel
                             "%.0f%% · %s".format(ratio * 100, seconds)
                         } ?: notAvailableLabel

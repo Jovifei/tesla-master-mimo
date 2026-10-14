@@ -602,7 +602,7 @@ class StatsRepository @Inject constructor(
         val totalDrives = driveSummaryDao.count(historyCarId)
         val totalCharges = chargeSummaryDao.count(historyCarId)
         // Only count aggregates with current schema version
-        val processedDrives = aggregateDao.countDriveAggregatesWithSchema(historyCarId, SchemaVersion.CURRENT)
+        val processedDrives = aggregateDao.countDriveAggregatesWithSchema(historyCarId, SchemaVersion.DRIVE_ENERGY)
         val processedCharges = aggregateDao.countChargeAggregatesWithSchema(historyCarId, SchemaVersion.CURRENT)
 
         val total = totalDrives + totalCharges
@@ -623,7 +623,7 @@ class StatsRepository @Inject constructor(
             emitAll(kotlinx.coroutines.flow.combine(
                 driveSummaryDao.observeCount(historyCarId),
                 chargeSummaryDao.observeCount(historyCarId),
-                aggregateDao.observeDriveAggregateCountWithSchema(historyCarId, SchemaVersion.CURRENT),
+                aggregateDao.observeDriveAggregateCountWithSchema(historyCarId, SchemaVersion.DRIVE_ENERGY),
                 aggregateDao.observeChargeAggregateCountWithSchema(historyCarId, SchemaVersion.CURRENT)
             ) { totalDrives, totalCharges, processedDrives, processedCharges ->
                 val total = totalDrives + totalCharges

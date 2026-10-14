@@ -23,6 +23,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryStd
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.LocalParking
@@ -602,8 +603,9 @@ private fun DriveItem(
     val startCity = formattedStart ?: unknown
     val endCity = formattedEnd ?: unknown
 
-    val efficiency = if (metrics?.source == "power_samples" && metrics.coverageRatio < 0.9) null
-        else metrics?.efficiencyWhKm ?: drive.efficiencyWhKm
+    val energyPres = drive.historyEnergy(metrics)
+    val efficiency = energyPres.efficiencyWhKm
+    val energyKwh = energyPres.energyKwh
     val start = drive.startBatteryLevel
     val end = drive.endBatteryLevel
 
@@ -627,25 +629,41 @@ private fun DriveItem(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                metrics?.source?.takeIf { it.isNotBlank() }?.let { source ->
-                    val sourceLabel = if (source == "power_samples") {
-                        val coverage = if (metrics.coverageRatio > 0.0) {
-                            " ${"%.0f".format(metrics.coverageRatio * 100)}%"
-                        } else ""
-                        "${stringResource(R.string.range_estimated)}$coverage"
-                    } else {
-                        "API"
-                    }
-                    Surface(
-                        color = palette.accent.copy(alpha = 0.13f),
-                        shape = MaterialTheme.shapes.extraLarge
-                    ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val socRange = UnitFormatter.formatSocRange(start, end, "")
+                    if (socRange.isNotBlank()) {
                         Text(
-                            text = sourceLabel,
+                            text = socRange,
                             style = MaterialTheme.typography.labelSmall,
-                            color = palette.accent,
-                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                    energyPres.source?.takeIf { energyKwh != null }?.let { source ->
+                        val sourceLabel = when (source) {
+                            DriveDetailEnergySource.POWER_SAMPLES -> {
+                                val coverage = if ((energyPres.coverageRatio ?: 0.0) > 0.0) {
+                                    " ${"%.0f".format(energyPres.coverageRatio!! * 100)}%"
+                                } else ""
+                                "${stringResource(R.string.energy_source_power_samples)}$coverage"
+                            }
+                            DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE -> stringResource(R.string.energy_source_soc_estimate)
+                            DriveDetailEnergySource.ENERGY_REMAINING_DELTA -> stringResource(R.string.energy_nominal_estimate)
+                            DriveDetailEnergySource.API -> stringResource(R.string.energy_source_api_reported)
+                        }
+                        Surface(
+                            color = palette.accent.copy(alpha = 0.13f),
+                            shape = MaterialTheme.shapes.extraLarge
+                        ) {
+                            Text(
+                                text = sourceLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.accent,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -656,9 +674,11 @@ private fun DriveItem(
                 accent = palette.accent
             )
 
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = MaterialTheme.shapes.medium
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             ) {
                 TelemetryMetricStrip(
                     metrics = listOf(
@@ -679,19 +699,21 @@ private fun DriveItem(
                             tint = palette.accent
                         ),
                         TelemetryMetricSpec(
+                            icon = Icons.Default.Bolt,
+                            label = stringResource(R.string.energy),
+                            value = energyKwh?.let { kwh ->
+                                "%.1f kWh".format(kwh)
+                            } ?: stringResource(R.string.not_available),
+                            tint = if (energyKwh != null && energyKwh < 0.0) Color(0xFF10B981) else Color(0xFF3B82F6)
+                        ),
+                        TelemetryMetricSpec(
                             icon = Icons.Default.Eco,
                             label = stringResource(R.string.efficiency),
                             value = efficiency
-                                ?.takeIf { it.isFinite() && it >= 0.0 }
+                                ?.takeIf(Double::isFinite)
                                 ?.let { UnitFormatter.formatEfficiency(it, units) }
                                 ?: stringResource(R.string.not_available),
-                            tint = Color(0xFF22C55E)
-                        ),
-                        TelemetryMetricSpec(
-                            icon = Icons.Default.BatteryStd,
-                            label = stringResource(R.string.battery),
-                            value = UnitFormatter.formatSocRange(start, end, stringResource(R.string.not_available)),
-                            tint = Color(0xFFF97316)
+                            tint = if (efficiency != null && efficiency < 0.0) Color(0xFF10B981) else Color(0xFF22C55E)
                         )
                     ),
                     modifier = Modifier.padding(vertical = 8.dp)

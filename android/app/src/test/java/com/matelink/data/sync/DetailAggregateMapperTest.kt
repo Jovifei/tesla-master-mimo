@@ -45,7 +45,7 @@ class DetailAggregateMapperTest {
 
         assertEquals(17, aggregate.driveId)
         assertEquals(4, aggregate.carId)
-        assertEquals(SchemaVersion.CURRENT, aggregate.schemaVersion)
+        assertEquals(SchemaVersion.DRIVE_ENERGY, aggregate.schemaVersion)
         assertEquals(18, aggregate.maxElevation)
         assertEquals(10, aggregate.minElevation)
         assertEquals(8, aggregate.elevationGain)

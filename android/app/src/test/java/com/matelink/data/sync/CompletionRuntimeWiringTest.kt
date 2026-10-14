@@ -33,7 +33,8 @@ class CompletionRuntimeWiringTest {
     @Test fun backgroundWorkerPropagatesCancellationAtEveryCatchBoundary() {
         val worker = source("com/matelink/data/sync/DataSyncWorker.kt")
         val guarded = Regex("catch \\(e: CancellationException\\) \\{\\s*throw e\\s*} catch \\(e: Exception\\)")
-        assertEquals(3, guarded.findAll(worker).count())
-        assertEquals(3, Regex("catch \\(e: Exception\\)").findAll(worker).count())
+        val cancellationGuards = guarded.findAll(worker).count()
+        assertTrue(cancellationGuards > 0)
+        assertEquals(Regex("catch \\(e: Exception\\)").findAll(worker).count(), cancellationGuards)
     }
 }

@@ -1,6 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="energy_capacity_description">SOC estimate · %1$.1f kWh · %2$s</string>
+    <string name="energy_capacity_model_trim">model/trim assumption</string>
+    <string name="energy_capacity_model">model assumption</string>
+    <string name="energy_capacity_default">default capacity assumption</string>
+    <string name="energy_capacity_api_report">API-reported capacity estimate</string>
+    <string name="energy_capacity_provided">provided capacity estimate</string>
+    <string name="energy_endpoint_coverage">Start/end observations; no continuous power coverage</string>
+    <string name="energy_nominal_estimate">Remaining-energy estimate</string>
+    <string name="history_energy_cache_failed">Energy could not be saved. Pull to refresh to retry.</string>
     <string name="energy_source_api_reported">API reported</string>
+    <string name="energy_source_energy_remaining_delta">Remaining Energy Delta</string>
+    <string name="energy_source_soc_estimate">Capacity Estimate</string>
+    <string name="energy_source_power_samples">Power integral</string>
+    <string name="energy_regenerated">Regenerated %.1f kWh</string>
     <string name="vehicle_setup_later">Confirm later</string>
     <string name="trip_notification_metrics">%1$.1f km · %2$d min</string>
     <string name="default_charge_price">Default charging rate</string>
@@ -862,7 +875,7 @@
     <string name="all_years">All Years</string>
     <string name="average">Average</string>
     <string name="avg_cost_per_session">Avg Cost/Session</string>
-    <string name="avg_distance">Avg Distance</string>
+    <string name="avg_distance">Avg Speed (Trip)</string>
     <string name="charge_details_title">Charge Details</string>
     <string name="charge_free">Free</string>
     <string name="charge_parked_title">Charging while parked</string>
@@ -996,7 +1009,7 @@
     <string name="loss">Loss</string>
     <string name="map_mode_charges">Charges</string>
     <string name="map_mode_drives">Drives</string>
-    <string name="max_accel">Max Accel</string>
+    <string name="max_accel">Peak Power</string>
     <string name="max_speed">Max Speed</string>
     <string name="maximum">Maximum</string>
     <string name="mileage_avg_month">Avg/Month</string>
@@ -1012,7 +1025,7 @@
     <string name="mileage_no_data_year">No data for this year</string>
     <string name="mileage_recent_trips">Recent Trips</string>
     <string name="mileage_total">Total</string>
-    <string name="min_regen">Min Regen</string>
+    <string name="min_regen">Peak Regen</string>
     <string name="minimum">Minimum</string>
     <string name="more_information">More Information</string>
     <string name="name">Name</string>

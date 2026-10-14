@@ -16,7 +16,8 @@ internal fun HistoryReadNotices(localArchiveLinkPending: Boolean, historySyncWar
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         if (localArchiveLinkPending) Text(stringResource(R.string.history_archive_link_pending),
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (historySyncWarning != null) Text(stringResource(R.string.history_sync_cached),
+        if (historySyncWarning != null) Text(stringResource(
+            if (historySyncWarning == "history_energy_cache_failed") R.string.history_energy_cache_failed else R.string.history_sync_cached),
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
     }
 }

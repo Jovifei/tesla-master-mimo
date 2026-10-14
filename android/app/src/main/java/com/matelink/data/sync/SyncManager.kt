@@ -74,7 +74,7 @@ class SyncManager @Inject constructor(
         syncStateDao.markSummariesSynced(carId, System.currentTimeMillis())
 
         // Calculate total items to process for detail sync
-        val unprocessedDrives = driveSummaryDao.countUnprocessedDrives(carId, SchemaVersion.CURRENT)
+        val unprocessedDrives = driveSummaryDao.countUnprocessedDrives(carId, SchemaVersion.DRIVE_ENERGY)
         val unprocessedCharges = chargeSummaryDao.countUnprocessedCharges(carId, SchemaVersion.CURRENT)
 
         val state = syncStateDao.get(carId)

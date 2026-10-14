@@ -41,6 +41,7 @@ data class SyncState(
  */
 object SchemaVersion {
     const val CURRENT = 5
+    const val DRIVE_ENERGY = 6
 
     // Changelog:
     // V1 (initial): elevation, temp extremes, power, climate, charger info
@@ -48,4 +49,5 @@ object SchemaVersion {
     // V3: startCountryCode, startCountryName from reverse geocoding first position
     // V4: startRegionName, startCity for drives; countryCode, countryName, regionName, city for charges
     // V5: endLatitude, endLongitude for trip country resolution without API call
+    // V6: Re-evaluate drive energy and persist its capacity/source evidence once.
 }

@@ -36,7 +36,10 @@ internal data class LocalHistoryEvidenceEnvelope(
     // Contains no route points, energy scalar or energy contract.
     @Json(name = "detail_scope_car_id") val detailScopeCarId: Int? = null,
     @Json(name = "detail_drive_presentation") val detailDrivePresentation: DriveData? = null,
-    @Json(name = "detail_charge_presentation") val detailChargePresentation: ChargeData? = null
+    @Json(name = "detail_charge_presentation") val detailChargePresentation: ChargeData? = null,
+    // At most one prior genuine receipt, never used as current energy proof.
+    @Json(name = "prior_drive_raw_json") val priorDriveRawJson: String? = null,
+    @Json(name = "prior_drive_scope_car_id") val priorDriveScopeCarId: Int? = null
 )
 
 /** Rehydrate exact nullable evidence; scalar placeholders never prove a measured zero. */
@@ -79,10 +82,11 @@ fun ChargeSummary.toRawAnalysisChargeData(): ChargeData =
         qualityState = qualityState, qualityReason = qualityReason
     )
 
-private fun sameEvidenceInstant(a: String?, b: String?): Boolean =
-    a != null && b != null &&
-        runCatching { Instant.parse(a) }.getOrNull() != null &&
-        runCatching { Instant.parse(a) }.getOrNull() == runCatching { Instant.parse(b) }.getOrNull()
+private fun sameEvidenceInstant(a: String?, b: String?): Boolean {
+    val first = com.matelink.util.parseIsoInstant(a) ?: return false
+    val second = com.matelink.util.parseIsoInstant(b) ?: return false
+    return first == second
+}
 
 /** UI and analytic consumers only see physically qualified values; the saved raw
  * JSON, including old unverified Fleet scalars, is not modified by this view.
@@ -183,6 +187,105 @@ internal object HistorySummaryEvidenceCodec {
         sourceJson(value)?.let { runCatching { chargeAdapter.fromJson(it) }.getOrNull() }
 
     fun detailContract(value: String?): EnergyContract? = envelope(value)?.derivedContract
+
+    fun priorDriveSourceJson(value: String?, carId: Int): String? {
+        val e = envelope(value) ?: return null
+        if (e.priorDriveScopeCarId != carId) return null
+        val prior = e.priorDriveRawJson ?: return null
+        val previous = decodeDrive(prior) ?: return null
+        val current = decodeDrive(e.rawJson) ?: return null
+        return prior.takeIf { previous.driveId == current.driveId && previous.source == current.source &&
+            sameEvidenceInstant(previous.startDate, current.startDate) &&
+            sameEvidenceInstant(previous.endDate, current.endDate) }
+    }
+
+    /** Keep only a compatible genuine predecessor when current unknown revokes energy. */
+    fun retainPriorDriveReceipt(currentEvidence: String?, cachedEvidence: String?, carId: Int): String? {
+        val receipt = sourceJson(currentEvidence) ?: return currentEvidence
+        val current = decodeDrive(receipt) ?: return currentEvidence
+        val previousReceipt = sourceJson(cachedEvidence) ?: return currentEvidence
+        val previous = decodeDrive(previousReceipt) ?: return currentEvidence
+        if (previous.driveId != current.driveId || previous.source != current.source ||
+            !sameEvidenceInstant(previous.startDate, current.startDate) ||
+            !sameEvidenceInstant(previous.endDate, current.endDate)) return currentEvidence
+        val archived = priorDriveSourceJson(cachedEvidence, carId)
+            ?: previousReceipt.takeIf { current.energyContract?.netEnergy?.quality == "unknown" &&
+                previous.energyConsumedNet != null && previousReceipt != receipt }
+            ?: return currentEvidence
+        val e = envelope(currentEvidence) ?: LocalHistoryEvidenceEnvelope(1, receipt)
+        return envelopeAdapter.toJson(e.copy(priorDriveRawJson = archived, priorDriveScopeCarId = carId))
+    }
+
+    /** Adopt a newer same-source/window receipt without rewriting it or losing scoped detail proof. */
+    fun rebaseDriveRaw(detailEvidence: String?, rawEvidence: String?): String? {
+        val detail = envelope(detailEvidence) ?: return null
+        val receipt = sourceJson(rawEvidence) ?: return null
+        val old = decodeDrive(detailEvidence ?: return null) ?: return null
+        val next = decodeDrive(receipt) ?: return null
+        if (old.driveId != next.driveId || old.source != next.source ||
+            !sameEvidenceInstant(old.startDate, next.startDate) || !sameEvidenceInstant(old.endDate, next.endDate)) return null
+        val presentation = detail.detailDrivePresentation ?: return envelopeAdapter.toJson(detail.copy(rawJson = receipt))
+        // Sparse list fields do not erase independently persisted detail inputs.
+        // This fusion is presentation only: receipt above remains byte-exact.
+        fun <T> changed(value: T?, previous: T?): T? = value?.takeIf { it != previous }
+        // Repeated summary values are not corrections to richer detail.
+        val changes = next.copy(
+            startAddress = changed(next.startAddress, old.startAddress),
+            endAddress = changed(next.endAddress, old.endAddress),
+            startLatitude = changed(next.startLatitude, old.startLatitude),
+            startLongitude = changed(next.startLongitude, old.startLongitude),
+            endLatitude = changed(next.endLatitude, old.endLatitude),
+            endLongitude = changed(next.endLongitude, old.endLongitude),
+            batteryDetails = next.batteryDetails?.copy(
+                startBatteryLevel = changed(next.batteryDetails.startBatteryLevel, old.batteryDetails?.startBatteryLevel),
+                endBatteryLevel = changed(next.batteryDetails.endBatteryLevel, old.batteryDetails?.endBatteryLevel),
+                isRangeIdeal = changed(next.batteryDetails.isRangeIdeal, old.batteryDetails?.isRangeIdeal)),
+            odometerDetails = next.odometerDetails?.copy(
+                odometerStart = changed(next.odometerDetails.odometerStart, old.odometerDetails?.odometerStart),
+                odometerEnd = changed(next.odometerDetails.odometerEnd, old.odometerDetails?.odometerEnd),
+                distance = changed(next.odometerDetails.distance, old.odometerDetails?.distance)),
+            rangeIdeal = next.rangeIdeal?.copy(
+                startRange = changed(next.rangeIdeal.startRange, old.rangeIdeal?.startRange),
+                endRange = changed(next.rangeIdeal.endRange, old.rangeIdeal?.endRange),
+                rangeDiff = changed(next.rangeIdeal.rangeDiff, old.rangeIdeal?.rangeDiff)),
+            rangeRated = next.rangeRated?.copy(
+                startRange = changed(next.rangeRated.startRange, old.rangeRated?.startRange),
+                endRange = changed(next.rangeRated.endRange, old.rangeRated?.endRange),
+                rangeDiff = changed(next.rangeRated.rangeDiff, old.rangeRated?.rangeDiff)),
+            durationMin = changed(next.durationMin, old.durationMin),
+            durationStr = changed(next.durationStr, old.durationStr),
+            speedMax = changed(next.speedMax, old.speedMax),
+            speedAvg = changed(next.speedAvg, old.speedAvg),
+            powerMax = changed(next.powerMax, old.powerMax),
+            powerMin = changed(next.powerMin, old.powerMin),
+            outsideTempAvg = changed(next.outsideTempAvg, old.outsideTempAvg),
+            insideTempAvg = changed(next.insideTempAvg, old.insideTempAvg))
+        val corrected = com.matelink.data.repository.UnifiedHistoryRepository.mergeDrivesRaw(
+            listOf(changes), listOf(presentation)
+        ).single().copy(energyConsumedNet = null, consumptionNet = null, energyContract = null,
+            startDate = presentation.startDate, endDate = presentation.endDate)
+        val batteryChanged = presentation.batteryDetails != corrected.batteryDetails
+        val distanceChanged = presentation.odometerDetails != corrected.odometerDetails
+        val rangeChanged = presentation.rangeIdeal != corrected.rangeIdeal || presentation.rangeRated != corrected.rangeRated
+        val powerChanged = presentation.powerMax != corrected.powerMax || presentation.powerMin != corrected.powerMin || presentation.durationMin != corrected.durationMin
+        if (!batteryChanged && !distanceChanged && !powerChanged && !rangeChanged) {
+            return envelopeAdapter.toJson(detail.copy(rawJson = receipt, detailDrivePresentation = corrected))
+        }
+        val prior = detail.derivedContract?.netEnergy
+        // A list receipt has no route samples. Recompute only a proven SOC basis;
+        // changed nominal/power inputs must invalidate proof that cannot be replayed.
+        val resolved = if (prior?.method == "soc_capacity_estimate" &&
+            prior.valueForWindow(presentation.startDate, presentation.endDate) != null &&
+            prior.capacityKwh?.let { it.isFinite() && it > 0.0 } == true) {
+            corrected.asCachedDetail().resolveDriveEnergy(prior.capacityKwh,
+                prior.capacityModel, prior.capacityTrim, prior.capacityBasis).evidence
+        } else com.matelink.data.api.models.EnergyMetric(
+            quality = "unknown", reason = "corrected_receipt_requires_energy_recalculation",
+            source = next.source, startDate = next.startDate, endDate = next.endDate
+        )
+        return envelopeAdapter.toJson(detail.copy(rawJson = receipt,
+            detailDrivePresentation = corrected, derivedContract = EnergyContract(netEnergy = resolved)))
+    }
     fun detailRawNet(value: String?): Double? = envelope(value)?.detailRawNetKwh
     fun detailRawBattery(value: String?): Double? = envelope(value)?.detailRawBatteryKwh
     fun detailRawAc(value: String?): Double? = envelope(value)?.detailRawAcKwh
@@ -249,6 +352,8 @@ internal object HistorySummaryEvidenceCodec {
             detailRawNetKwh = detailRawNet?.takeIf(Double::isFinite) ?: old?.detailRawNetKwh,
             detailSource = detailSource, detailStartDate = start, detailEndDate = end,
             detailScopeCarId = scopeCarId,
+            priorDriveRawJson = old?.priorDriveRawJson,
+            priorDriveScopeCarId = old?.priorDriveScopeCarId,
             detailDrivePresentation = presentation.copy(
                 energyConsumedNet = null, consumptionNet = null, energyContract = null
             )

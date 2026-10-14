@@ -5,7 +5,13 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.DriveData
+import com.matelink.data.api.models.EnergyMetric
+import com.matelink.data.api.models.EnergyContract
+import com.matelink.data.api.models.driveEnergySource
+import com.matelink.domain.analytics.DriveEnergyResolver
+import com.matelink.domain.analytics.DriveEnergySource
 import com.matelink.domain.analytics.toAnalysisDriveData
+import com.matelink.domain.analytics.toRawAnalysisDriveData
 import com.matelink.domain.history.isAnalysisEligible
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.SettingsDataStore
@@ -24,9 +30,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.takeWhile
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Clock
@@ -41,6 +53,7 @@ import java.util.Locale
 import java.time.temporal.ChronoUnit
 import java.time.temporal.WeekFields
 import com.matelink.util.parseIsoDate
+import com.matelink.util.parseIsoInstant
 import javax.inject.Inject
 
 enum class DriveChartGranularity {
@@ -117,7 +130,11 @@ data class DriveHistoryMetrics(
     val energyKwh: Double?,
     val efficiencyWhKm: Double?,
     val source: String?,
-    val coverageRatio: Double
+    val coverageRatio: Double,
+    val evidence: EnergyMetric? = null,
+    val historySource: String? = null,
+    val startDate: String? = null,
+    val endDate: String? = null
 )
 
 /** Same qualified projection used by the actual history list card.
@@ -128,9 +145,88 @@ internal fun DriveSummary.toQualifiedHistoryMetrics(): DriveHistoryMetrics {
     return DriveHistoryMetrics(
         energyKwh = qualified.netEnergyKwh,
         efficiencyWhKm = qualified.efficiencyWhKm,
-        source = qualified.netEnergyKwh?.let { energySource },
-        coverageRatio = energyCoverageRatio
+        source = qualified.netEnergyKwh?.let { qualified.energyContract?.netEnergy.driveEnergySource() },
+        coverageRatio = energyCoverageRatio,
+        evidence = qualified.energyContract?.netEnergy,
+        historySource = qualified.source, startDate = qualified.startDate, endDate = qualified.endDate
     )
+}
+
+/** The actual card uses the same qualified evidence as detail and persisted history. */
+@JvmOverloads
+internal fun DriveData.historyEnergy(
+    metrics: DriveHistoryMetrics? = null,
+    batteryCapacityKwh: Double? = null,
+    model: String? = null,
+    trimBadging: String? = null
+): DriveDetailEnergyPresentation {
+    val matching = metrics?.takeIf {
+        (it.historySource == null || source == null || it.historySource == source) &&
+        parseIsoInstant(startDate) != null && parseIsoInstant(it.startDate) == parseIsoInstant(startDate) &&
+        parseIsoInstant(it.endDate) == parseIsoInstant(endDate)
+    }
+    val evidence = matching?.evidence ?: energyContract?.netEnergy
+    val energy = matching?.energyKwh ?: netEnergyKwh
+    if (energy != null) {
+        return presentDriveDetailEnergy(energy, matching?.efficiencyWhKm ?: efficiencyWhKm,
+            evidence.driveEnergySource(), evidence?.coverageSeconds?.toLong(),
+            evidence?.coverageRatio, evidence)
+    }
+    // Rejected scoped proof and explicit unknown are not permission to invent SOC energy.
+    if ((metrics != null && matching == null) || energyContract != null || evidence != null) {
+        return presentDriveDetailEnergy(null, null, null, null, null, evidence)
+    }
+    val resolved = DriveEnergyResolver.resolve(
+        apiEnergyKwh = null,
+        distanceKm = distance,
+        samples = emptyList(),
+        durationSeconds = durationMin?.toLong()?.times(60),
+        startDate = startDate,
+        endDate = endDate,
+        startSoc = startBatteryLevel,
+        endSoc = endBatteryLevel,
+        batteryCapacityKwh = batteryCapacityKwh,
+        model = model,
+        trimBadging = trimBadging
+    )
+    if (resolved.energyKwh != null) {
+        return DriveDetailEnergyPresentation(
+            energyKwh = resolved.energyKwh.takeIf(Double::isFinite),
+            efficiencyWhKm = resolved.efficiencyWhKm?.takeIf(Double::isFinite),
+            source = when (resolved.source) {
+                DriveEnergySource.SOC_CAPACITY_ESTIMATE -> DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE
+                DriveEnergySource.ENERGY_REMAINING_DELTA -> DriveDetailEnergySource.ENERGY_REMAINING_DELTA
+                else -> DriveDetailEnergySource.API
+            },
+            coverageSeconds = null,
+            coverageRatio = resolved.coverageRatio
+        )
+    }
+    return presentDriveDetailEnergy(null, null, null, null, null, null)
+}
+
+/** Delayed Room emissions are fenced by the original account/origin/vehicle generation. */
+internal suspend fun observeScopedDriveRows(
+    rows: Flow<List<DriveSummary>>,
+    isContextCurrent: suspend () -> Boolean,
+    onContextChanged: () -> Unit = {},
+    publish: (List<DriveSummary>) -> Unit
+) {
+    rows.takeWhile {
+        val current = isContextCurrent()
+        currentCoroutineContext().ensureActive()
+        if (!current) onContextChanged()
+        current
+    }.collect { publish(it) }
+}
+
+internal fun DriveSummary.matchesHistoryWindow(previous: DriveSummary): Boolean {
+    if (carId != previous.carId || driveId != previous.driveId) return false
+    val raw = toRawAnalysisDriveData()
+    val old = previous.toRawAnalysisDriveData()
+    return raw.source == old.source && parseIsoInstant(raw.startDate) != null && parseIsoInstant(raw.endDate) != null &&
+        parseIsoInstant(raw.startDate) == parseIsoInstant(old.startDate) &&
+        parseIsoInstant(raw.endDate) == parseIsoInstant(old.endDate)
 }
 
 data class DrivesSummary(
@@ -162,6 +258,8 @@ class DrivesViewModel @Inject constructor(
     private var allDrives: List<DriveData> = emptyList()
     private var isInitialized: Boolean = false
     private val latestLoad = LatestHistoryLoad()
+    private var metricsObservation: Job? = null
+    private var observationGeneration = 0L
 
     companion object {
         private const val MIN_DURATION_MINUTES = 1
@@ -286,6 +384,8 @@ class DrivesViewModel @Inject constructor(
 
     private fun loadDrives(startDate: LocalDate? = null, endDate: LocalDate? = null) {
         val id = carId ?: return
+        metricsObservation?.cancel()
+        val generation = ++observationGeneration
 
         val requestZone = clock.zone
         latestLoad.launch(viewModelScope) {
@@ -320,10 +420,15 @@ class DrivesViewModel @Inject constructor(
             when (result) {
                 is ApiResult.Success -> {
                     val remoteDrives = result.data.drives
-                    val localMetrics = driveSummaryDao.getAllChronological(result.data.context.localHistoryCarId).associate { summary ->
+                    val localRows = driveSummaryDao.getAllChronological(result.data.context.localHistoryCarId)
+                    val baselineRows = localRows.associateBy { it.driveId }
+                    val localMetrics = localRows.associate { summary ->
                         summary.driveId to summary.toQualifiedHistoryMetrics()
                     }
                     ensureCurrent()
+                    result.data.verifiedReadContext?.let { proof ->
+                        if (!historyRepository.isContextCurrent(proof)) throw CancellationException("History identity changed")
+                    }
                     allDrives = remoteDrives
                     val granularity = determineGranularity(startDate, endDate)
 
@@ -339,11 +444,45 @@ class DrivesViewModel @Inject constructor(
 
                     applyFiltersAndUpdateState()
 
+                    result.data.verifiedReadContext?.let { proof ->
+                        metricsObservation = viewModelScope.launch {
+                            observeScopedDriveRows(driveSummaryDao.observeAll(result.data.context.localHistoryCarId),
+                                { generation == observationGeneration && this@DrivesViewModel.carId == id &&
+                                    historyRepository.isContextCurrent(proof) },
+                                onContextChanged = {
+                                    if (generation == observationGeneration) {
+                                        allDrives = emptyList()
+                                        _uiState.update { it.copy(drives = emptyList(), driveMetrics = emptyMap(),
+                                            summary = DrivesSummary(), chartData = emptyList(), error = "history_identity_unavailable") }
+                                    }
+                                }) { rows ->
+                                val compatibleRows = rows.filter { row ->
+                                    baselineRows[row.driveId]?.let(row::matchesHistoryWindow) == true
+                                }
+                                val cached = compatibleRows.associateBy { it.driveId }
+                                val replacedIds = rows.map { it.driveId }.toSet() - cached.keys
+                                allDrives = allDrives.map { drive ->
+                                    val next = cached[drive.driveId]?.toAnalysisDriveData()
+                                    if (drive.driveId in replacedIds) drive.copy(energyConsumedNet = null, consumptionNet = null,
+                                        energyContract = EnergyContract(netEnergy = EnergyMetric(reason = "history_source_window_changed")))
+                                    else if (next == null || next.source != drive.source) drive else next.copy(
+                                        startAddress = drive.startAddress?.takeIf(String::isNotBlank) ?: next.startAddress,
+                                        endAddress = drive.endAddress?.takeIf(String::isNotBlank) ?: next.endAddress)
+                                }
+                                _uiState.update { it.copy(driveMetrics = compatibleRows.associate { row -> row.driveId to row.toQualifiedHistoryMetrics() }) }
+                                applyFiltersAndUpdateState()
+                            }
+                        }
+                    }
+
                     val enrichedDrives = enrichDriveAddresses(remoteDrives) { latitude, longitude ->
                         geocodingRepository.reverseGeocode(latitude, longitude)
                     }
                     ensureCurrent()
-                    allDrives = enrichedDrives
+                    val addresses = enrichedDrives.associateBy { it.driveId }
+                    allDrives = allDrives.map { drive -> drive.copy(
+                        startAddress = addresses[drive.driveId]?.startAddress ?: drive.startAddress,
+                        endAddress = addresses[drive.driveId]?.endAddress ?: drive.endAddress) }
                     applyFiltersAndUpdateState()
                 }
                 is ApiResult.Error -> {

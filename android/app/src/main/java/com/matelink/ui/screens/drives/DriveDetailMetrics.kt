@@ -6,7 +6,7 @@ import com.matelink.util.parseIsoInstant
 import kotlin.math.roundToInt
 
 // Source classification is separate from physical measurement point and quality.
-enum class DriveDetailEnergySource { API, POWER_SAMPLES }
+enum class DriveDetailEnergySource { API, POWER_SAMPLES, ENERGY_REMAINING_DELTA, SOC_CAPACITY_ESTIMATE }
 
 data class DriveDetailEnergyPresentation(
     val energyKwh: Double?,
@@ -16,7 +16,9 @@ data class DriveDetailEnergyPresentation(
     val coverageRatio: Double?,
     val evidence: EnergyMetric? = null
 ) {
-    val isEstimated: Boolean get() = evidence?.isEstimated == true || source == DriveDetailEnergySource.POWER_SAMPLES
+    val isEstimated: Boolean get() = evidence?.isEstimated == true || source in setOf(
+        DriveDetailEnergySource.POWER_SAMPLES, DriveDetailEnergySource.ENERGY_REMAINING_DELTA,
+        DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE)
 }
 
 internal fun presentDriveDetailEnergy(
@@ -27,14 +29,16 @@ internal fun presentDriveDetailEnergy(
     coverageRatio: Double?,
     evidence: EnergyMetric? = null
 ): DriveDetailEnergyPresentation {
-    val source = when (energySource) {
+    val source = when (energySource?.lowercase()) {
         "api" -> DriveDetailEnergySource.API
         "power_samples" -> DriveDetailEnergySource.POWER_SAMPLES
+        "energy_remaining_delta" -> DriveDetailEnergySource.ENERGY_REMAINING_DELTA
+        "soc_capacity_estimate" -> DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE
         else -> null
     }
     val ratio = coverageRatio?.takeIf { it.isFinite() && it in 0.0..1.0 }
     val value = energyKwh?.takeIf(Double::isFinite)?.takeIf {
-        source != DriveDetailEnergySource.POWER_SAMPLES || ratio?.let { it >= 1.0 - 1e-9 } == true
+        source != DriveDetailEnergySource.POWER_SAMPLES || ratio?.let { it >= 0.85 } == true
     }
     if (source == null) {
         return DriveDetailEnergyPresentation(null, null, null, coverageSeconds?.takeIf { it >= 0L }, null, evidence)

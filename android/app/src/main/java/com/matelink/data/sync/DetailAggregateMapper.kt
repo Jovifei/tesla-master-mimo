@@ -29,7 +29,7 @@ internal fun DriveDetail.toAggregate(carId: Int, computedAt: Long): DriveDetailA
     return DriveDetailAggregate(
         driveId = driveId,
         carId = carId,
-        schemaVersion = SchemaVersion.CURRENT,
+        schemaVersion = SchemaVersion.DRIVE_ENERGY,
         computedAt = computedAt,
         maxElevation = elevations.maxOrNull(),
         minElevation = elevations.minOrNull(),

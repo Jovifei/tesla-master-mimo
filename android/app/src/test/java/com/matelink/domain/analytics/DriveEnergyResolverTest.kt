@@ -105,4 +105,111 @@ class DriveEnergyResolverTest {
         assertEquals(200.0, result.efficiencyWhKm!!, 1e-12)
         assertEquals(20.0, result.efficiencyWhKm!! / 10.0, 1e-12)
     }
+
+    @Test fun fallbackToEnergyRemainingDeltaWhenEndpointsAvailable() {
+        val result = DriveEnergyResolver.resolve(
+            apiEnergyKwh = null,
+            distanceKm = 10.0,
+            samples = emptyList(),
+            startEnergyRemaining = 50.0,
+            endEnergyRemaining = 48.0
+        )
+        assertEquals(2.0, result.energyKwh!!, 1e-12)
+        assertEquals(200.0, result.efficiencyWhKm!!, 1e-12)
+        assertEquals(DriveEnergySource.ENERGY_REMAINING_DELTA, result.source)
+    }
+
+    @Test fun fallbackToSocCapacityEstimateWhenEndpointsOnlyHaveSoc() {
+        val result = DriveEnergyResolver.resolve(
+            apiEnergyKwh = null,
+            distanceKm = 20.0,
+            samples = emptyList(),
+            startSoc = 80,
+            endSoc = 75,
+            batteryCapacityKwh = 60.0
+        )
+        assertEquals(3.0, result.energyKwh!!, 1e-12)
+        assertEquals(150.0, result.efficiencyWhKm!!, 1e-12)
+        assertEquals(DriveEnergySource.SOC_CAPACITY_ESTIMATE, result.source)
+    }
+
+    @Test fun negativeRegenerationEnergyIsPreservedInFallback() {
+        val result = DriveEnergyResolver.resolve(
+            apiEnergyKwh = null,
+            distanceKm = 10.0,
+            samples = emptyList(),
+            startEnergyRemaining = 45.0,
+            endEnergyRemaining = 46.5
+        )
+        assertEquals(-1.5, result.energyKwh!!, 1e-12)
+        assertEquals(-150.0, result.efficiencyWhKm!!, 1e-12)
+        assertEquals(DriveEnergySource.ENERGY_REMAINING_DELTA, result.source)
+    }
+
+    @Test fun impossibleOrNegativeEnergyRemainingIsRejected() {
+        val result = DriveEnergyResolver.resolve(
+            apiEnergyKwh = null,
+            distanceKm = 10.0,
+            samples = emptyList(),
+            startEnergyRemaining = -5.0,
+            endEnergyRemaining = 48.0
+        )
+        assertNull(result.energyKwh)
+        assertEquals(DriveEnergySource.UNAVAILABLE, result.source)
+    }
+
+    @Test fun impossibleSocValuesAreRejected() {
+        val result = DriveEnergyResolver.resolve(
+            apiEnergyKwh = null,
+            distanceKm = 10.0,
+            samples = emptyList(),
+            startSoc = 120,
+            endSoc = 75
+        )
+        assertNull(result.energyKwh)
+        assertEquals(DriveEnergySource.UNAVAILABLE, result.source)
+    }
+
+    @Test fun socUnchangedOnShortTripIsUnavailableRatherThanZeroEnergy() {
+        val result = DriveEnergyResolver.resolve(
+            apiEnergyKwh = null,
+            distanceKm = 2.0,
+            samples = emptyList(),
+            startSoc = 80,
+            endSoc = 80,
+            batteryCapacityKwh = 60.0
+        )
+        assertNull(result.energyKwh)
+        assertNull(result.efficiencyWhKm)
+        assertEquals(DriveEnergySource.UNAVAILABLE, result.source)
+        assertEquals("soc_unchanged_resolution_limit", result.qualityReason)
+    }
+
+    @Test fun modelAndTrimDerivedCapacityDistinguishesStandardFromLongRange() {
+        val longRange = DriveEnergyResolver.resolve(
+            apiEnergyKwh = null,
+            distanceKm = 20.0,
+            samples = emptyList(),
+            startSoc = 80,
+            endSoc = 75,
+            model = "Y",
+            trimBadging = "Long Range AWD"
+        )
+        assertEquals(3.92, longRange.energyKwh!!, 1e-12)
+        assertEquals(196.0, longRange.efficiencyWhKm!!, 1e-12)
+        assertEquals(DriveEnergySource.SOC_CAPACITY_ESTIMATE, longRange.source)
+
+        val standardRange = DriveEnergyResolver.resolve(
+            apiEnergyKwh = null,
+            distanceKm = 20.0,
+            samples = emptyList(),
+            startSoc = 80,
+            endSoc = 75,
+            model = "Y",
+            trimBadging = "Standard Range RWD"
+        )
+        assertEquals(3.0, standardRange.energyKwh!!, 1e-12)
+        assertEquals(150.0, standardRange.efficiencyWhKm!!, 1e-12)
+        assertEquals(DriveEnergySource.SOC_CAPACITY_ESTIMATE, standardRange.source)
+    }
 }

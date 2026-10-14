@@ -2,11 +2,16 @@ package com.matelink.data.repository
 
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.DriveData
+import com.matelink.data.api.models.EnergyContract
+import com.matelink.data.api.models.EnergyMetric
 import com.matelink.data.local.HistoryReadScope
 import com.matelink.data.api.models.CarData
 import com.matelink.data.api.models.HistoryContextData
 import com.matelink.data.api.models.isValidFor
 import com.matelink.data.api.models.validHistoryVehicleUid
+import com.matelink.data.api.models.driveEnergySource
+import com.matelink.data.local.cloudOriginVehicleStableIdentity
+import com.matelink.data.local.selfHostedVehicleStableIdentity
 import com.matelink.data.local.HistoryConnectionSource
 import com.matelink.data.local.HistoryIdentityUnavailableException
 import com.matelink.data.local.VehicleContext
@@ -39,7 +44,10 @@ data class UnifiedHistory(
     val drivesSyncError: String? = null,
     val chargesSyncError: String? = null,
     val localArchiveLinkPending: Boolean = false
-)
+) {
+    /** Original proof/generation captured by load; used locally without a second discovery request. */
+    internal var verifiedReadContext: VerifiedHistoryReadContext? = null
+}
 
 internal const val HISTORY_IDENTITY_UNAVAILABLE = "history_identity_unavailable"
 
@@ -56,7 +64,17 @@ internal data class VerifiedHistoryReadContext(
     val remoteAuthorized: Boolean,
     val identityError: ApiResult.Error?,
     val localArchiveLinkPending: Boolean
-)
+) {
+    fun matchesCar(car: CarData): Boolean {
+        if (car.carId != context.remoteApiCarId) return false
+        val identity = runCatching {
+            if (scope.source == HistoryConnectionSource.CLOUD)
+                cloudOriginVehicleStableIdentity(scope.accountNamespace.orEmpty(), scope.effectiveApiOrigin, car.vehicleUid.orEmpty())
+            else selfHostedVehicleStableIdentity(scope.serverIdentity, car.carId)
+        }.getOrNull()
+        return identity == context.stableIdentity
+    }
+}
 
 /** Narrow side-effect ports allow the actual load orchestration to be tested without Android services. */
 internal data class HistoryReadDependencies(
@@ -230,9 +248,20 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         // Room also constructs the visible list. Raw bytes remain in apiEvidence;
         // detail metadata/energy is a separately guarded snapshot.
         val priorDrives = localDrives.associateBy { it.driveId }
+        val remoteDriveCandidates = remoteDrives.items.associateBy { it.driveId }
         val driveRows = rawDrives.mapNotNull { raw ->
-            raw.toLocalSummary(context.localHistoryCarId)?.let { row ->
-                mergeStoredDrive(row, priorDrives[raw.driveId])
+            val prior = priorDrives[raw.driveId]
+            val actual = remoteDriveCandidates[raw.driveId]
+            // Preserve the actual receipt before mergeDrivesRaw fills absent fields.
+            // Its canonical fallback still reconciles same-session IDs for this load.
+            val reconciledId = actual != null && prior == null && localDrives.any {
+                actual.sameSession(it.toRawAnalysisDriveData())
+            }
+            val candidate = (if (reconciledId) raw else actual?.withLegacyRemoteQuality())
+                ?.toLocalSummary(context.localHistoryCarId)
+                ?: prior ?: raw.toLocalSummary(context.localHistoryCarId)
+            candidate?.let { row ->
+                mergeStoredDrive(row, prior)
             }
         }
         val priorCharges = localCharges.associateBy { it.chargeId }
@@ -274,7 +303,7 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
                 drivesSyncError = remoteDrives.error?.let { if (remoteDrives.items.isEmpty()) "history_cached" else "history_partial" },
                 chargesSyncError = remoteCharges.error?.let { if (remoteCharges.items.isEmpty()) "history_cached" else "history_partial" },
                 localArchiveLinkPending = resolved.localArchiveLinkPending
-            )
+            ).also { it.verifiedReadContext = resolved }
         )
     }
 
@@ -498,9 +527,7 @@ internal fun DriveData.toLocalSummary(historyCarId: Int): DriveSummary? {
         // remain untouched in apiEvidence, including an unverified Fleet 8 kWh.
         energyConsumed = qualified.energyConsumedNet,
         efficiency = qualified.efficiencyWhKm,
-        energySource = qualified.energyConsumedNet?.let {
-            if (energyContract?.netEnergy?.method == "drive_power_integral") "power_samples" else "api"
-        },
+        energySource = qualified.energyConsumedNet?.let { energyContract?.netEnergy.driveEnergySource() },
         apiEvidence = HistorySummaryEvidenceCodec.encode(this),
         qualityState = qualityState ?: "incomplete",
         qualityReason = qualityReason ?: "remote_quality_unavailable"
@@ -565,20 +592,49 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
         raw.energyContract != cachedRaw.energyContract && inRaw.source == raw.source
     val sameSource = raw.source == cachedRaw.source
     val sameWindow = raw.startDate == cachedRaw.startDate && raw.endDate == cachedRaw.endDate
-    val receipt = when {
-        incomingSnapshot && raw.source == inRaw.source &&
-            raw.startDate == inRaw.startDate && raw.endDate == inRaw.endDate ->
-            incoming.apiEvidence
-        cachedSnapshot && sameSource && sameWindow && !newProof -> cached.apiEvidence
+    val sameEnergyInputs = inRaw.batteryDetails == cachedRaw.batteryDetails &&
+        inRaw.odometerDetails == cachedRaw.odometerDetails && inRaw.rangeIdeal == cachedRaw.rangeIdeal &&
+        inRaw.rangeRated == cachedRaw.rangeRated && inRaw.powerMax == cachedRaw.powerMax &&
+        inRaw.powerMin == cachedRaw.powerMin && inRaw.durationMin == cachedRaw.durationMin
+    val weakReceipt = sameSource && sameWindow && !newProof &&
+        inRaw.source == cachedRaw.source && inRaw.startDate == cachedRaw.startDate &&
+        inRaw.endDate == cachedRaw.endDate && inRaw.energyConsumedNet == null &&
+        cachedRaw.energyConsumedNet != null && sameEnergyInputs
+    val canonicalReceipt = when {
+        raw.copy(qualityState = null, qualityReason = null) ==
+            cachedRaw.copy(qualityState = null, qualityReason = null) || weakReceipt ->
+            HistorySummaryEvidenceCodec.sourceJson(cached.apiEvidence)
+        raw == inRaw -> HistorySummaryEvidenceCodec.sourceJson(incoming.apiEvidence)
+        raw == cachedRaw -> HistorySummaryEvidenceCodec.sourceJson(cached.apiEvidence)
+        // Fusion belongs to presentation, never the immutable source receipt.
+        // Prefer the admitted incoming source; a rejected foreign/weak source
+        // keeps the complete cached receipt instead.
+        raw.source == inRaw.source && raw.startDate == inRaw.startDate && raw.endDate == inRaw.endDate ->
+            HistorySummaryEvidenceCodec.sourceJson(incoming.apiEvidence)
+        else -> HistorySummaryEvidenceCodec.sourceJson(cached.apiEvidence)
+    } ?: HistorySummaryEvidenceCodec.encode(if (raw.source == inRaw.source) inRaw else cachedRaw)
+    val carryIncomingSnapshot = incomingSnapshot && raw.source == inRaw.source &&
+        raw.startDate == inRaw.startDate && raw.endDate == inRaw.endDate
+    val carryCachedSnapshot = !carryIncomingSnapshot && cachedSnapshot && sameSource && sameWindow && !newProof
+    val currentReceipt = when {
+        carryIncomingSnapshot -> HistorySummaryEvidenceCodec.rebaseDriveRaw(incoming.apiEvidence, canonicalReceipt) ?: canonicalReceipt
+        carryCachedSnapshot -> HistorySummaryEvidenceCodec.rebaseDriveRaw(cached.apiEvidence, canonicalReceipt) ?: canonicalReceipt
         raw == cachedRaw && cached.apiEvidence != null -> cached.apiEvidence
-        else -> base.apiEvidence
+        raw == inRaw -> canonicalReceipt
+        else -> HistorySummaryEvidenceCodec.withDetail(
+            canonicalReceipt, raw, raw.energyContract ?: EnergyContract(netEnergy = EnergyMetric(
+                quality = "unknown", reason = "source_energy_unqualified",
+                source = raw.source, startDate = raw.startDate, endDate = raw.endDate)),
+            null, raw.source, raw.startDate, raw.endDate, incoming.carId, raw
+        )
     }
+    val receipt = HistorySummaryEvidenceCodec.retainPriorDriveReceipt(currentReceipt, cached.apiEvidence, incoming.carId)
     val merged = base.copy(
         apiEvidence = receipt,
         // The detail clock may carry subsecond precision lacking in original
         // immutable list JSON; never round or invent source sample intervals.
-        startDate = if (receipt == cached.apiEvidence) cached.startDate else incoming.startDate,
-        endDate = if (receipt == cached.apiEvidence) cached.endDate else incoming.endDate
+        startDate = if (carryCachedSnapshot || receipt == cached.apiEvidence) cached.startDate else incoming.startDate,
+        endDate = if (carryCachedSnapshot || receipt == cached.apiEvidence) cached.endDate else incoming.endDate
     )
     val display = merged.toAnalysisDriveData()
     val value = display.netEnergyKwh
@@ -600,9 +656,7 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
         insideTempAvg = display.insideTempAvg?.takeIf(Double::isFinite),
         energyConsumed = value,
         efficiency = display.efficiencyWhKm,
-        energySource = value?.let {
-            if (metric?.method == "drive_power_integral") "power_samples" else "api"
-        },
+        energySource = value?.let { metric.driveEnergySource() },
         energyCoverageSeconds = metric?.coverageSeconds
             ?.takeIf { it.isFinite() && it >= 0.0 }?.toLong() ?: 0L,
         energyCoverageRatio = metric?.coverageRatio

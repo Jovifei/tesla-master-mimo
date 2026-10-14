@@ -57,6 +57,21 @@ class VehicleContextRepository @Inject constructor(
         return scope
     }
 
+    /** Durable continuation fence; process generations still guard the live batch only. */
+    internal suspend fun captureContinuationFence(): String {
+        val before = captureReadScope()
+        suspend fun epochs() = listOf(connectionModeStore.persistentIdentityEpoch(),
+            settingsDataStore.persistentIdentityEpoch(), sessionStore.persistentIdentityEpoch())
+        val capturedEpochs = epochs()
+        if (before != captureReadScope() || capturedEpochs != epochs() || before != captureReadScope())
+            throw HistoryIdentityUnavailableException()
+        val parts = listOf("history-continuation-v1", before.source.name,
+            before.serverIdentity, before.effectiveApiOrigin, before.accountNamespace.orEmpty()) + capturedEpochs.map(Long::toString)
+        val payload = parts.joinToString("") { "${it.length}:$it" }
+        return java.security.MessageDigest.getInstance("SHA-256").digest(payload.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+    }
+
     override suspend fun resolve(car: CarData): VehicleContext {
         val scope = captureReadScope()
         return resolveCurrentCar(car, scope)

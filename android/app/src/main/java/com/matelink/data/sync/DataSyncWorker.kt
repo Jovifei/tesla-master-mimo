@@ -25,6 +25,8 @@ import com.matelink.data.repository.TeslamateRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Background worker for syncing stats data from TeslamateApi.
@@ -72,68 +74,46 @@ class DataSyncWorker @AssistedInject constructor(
         foregroundAvailable = trySetForeground("Starting sync...")
 
         try {
-            // Get list of cars
-            val carsResult = teslamateRepository.getCars()
-            val cars = when (carsResult) {
-                is ApiResult.Success -> carsResult.data
-                is ApiResult.Error -> {
-                    logError("Failed to fetch cars: ${carsResult.message}")
-                    return when {
-                        // Server not configured yet - this is normal on first run
-                        // Return success (nothing to do) - sync will be triggered after settings are saved
-                        carsResult.message.contains("not configured", ignoreCase = true) -> {
-                            log("Server not configured, skipping sync")
-                            Result.success()
-                        }
-                        isNetworkError(carsResult.message) -> {
-                            log("Network error, will retry...")
-                            Result.retry()
-                        }
-                        else -> Result.failure()
-                    }
+            val intent = inputData.getString("history_sync_intent") ?: "FULL_SYNC"
+            if (intent !in setOf("FULL_SYNC", "DETAIL_CONTINUATION")) return Result.failure()
+            val continuation = intent == "DETAIL_CONTINUATION"
+            val fence = if (continuation) inputData.getString("history_scope_epoch") ?: return Result.failure()
+                else syncRepository.captureContinuationFence()
+            if (syncRepository.captureContinuationFence() != fence) return Result.failure()
+            val carIds = if (continuation) inputData.getIntArray("history_car_ids")?.toList() ?: return Result.failure()
+                else when (val cars = teslamateRepository.getCars()) {
+                    is ApiResult.Error -> return driveDetailFailureWorkerResult(cars)
+                    is ApiResult.Success -> cars.data.map { it.carId }
                 }
-            }
-
-            if (cars.isEmpty()) {
-                log("No cars found, nothing to sync")
-                return Result.success()
-            }
-
-            log("Found ${cars.size} cars to sync")
-
-            // Sync cars sequentially to better handle network errors
-            var hasNetworkError = false
-            for ((index, car) in cars.withIndex()) {
-                try {
-                    // Update notification with current car (only if foreground available)
-                    trySetForeground("Syncing car ${index + 1}/${cars.size}...")
-
-                    val success = syncRepository.syncCar(car.carId)
-                    if (!success) {
-                        log("Sync incomplete for car ${car.carId}, will retry")
-                        hasNetworkError = true
+            if (carIds.isEmpty()) return if (continuation) Result.failure() else Result.success()
+            if (carIds.distinct().size != carIds.size) return Result.failure()
+            val proof = if (continuation) inputData.getString("history_car_proof") ?: return Result.failure()
+                else {
+                    for (id in carIds) {
+                        if (syncRepository.captureContinuationFence() != fence) return Result.failure()
+                        when (val prepared = syncRepository.syncCar(id, summariesOnly = true)) {
+                            is CarSyncResult.Failed -> return driveDetailFailureWorkerResult(prepared.error)
+                            else -> Unit
+                        }
                     }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    logError("Error syncing car ${car.carId}", e)
-                    if (isNetworkException(e)) {
-                        log("Network error during sync, will retry...")
-                        hasNetworkError = true
-                    } else {
-                        syncManager.markSyncError(car.carId, e.message ?: "Unknown error")
-                    }
+                    syncRepository.continuationCarProof(carIds)
                 }
+            suspend fun current() = syncRepository.captureContinuationFence() == fence &&
+                syncRepository.continuationCarProof(carIds) == proof && syncRepository.captureContinuationFence() == fence
+            if (!current()) return Result.failure()
+            val offset = Math.floorMod(inputData.getInt("history_car_cursor", 0), carIds.size)
+            val ordered = carIds.drop(offset) + carIds.take(offset)
+            val outcome = runHistoryDetailBatch(ordered) { car, budget ->
+                if (!current()) throw CancellationException("History continuation fence changed")
+                syncRepository.syncDetailsOnly(car, budget)
             }
-
-            return if (hasNetworkError) {
-                log("Sync incomplete due to network errors, scheduling retry")
-                Result.retry()
-            } else {
-                log("Sync complete for all cars")
-                // Schedule background geocoding for location data
-                scheduleGeocoding()
-                Result.success()
+            if (!current()) return Result.failure()
+            return when (outcome) {
+                is CarSyncResult.Failed -> driveDetailFailureWorkerResult(outcome.error)
+                is CarSyncResult.Deferred -> finishDataSyncBatch(outcome.pendingDrives) {
+                    scheduleDetailContinuation(fence, carIds, proof, (offset + 10) % carIds.size)
+                }
+                CarSyncResult.Complete -> { scheduleGeocoding(); Result.success() }
             }
         } catch (e: CancellationException) {
             throw e
@@ -147,6 +127,25 @@ class DataSyncWorker @AssistedInject constructor(
             }
         }
     }
+
+    /** A normal batch is continued without using network-error exponential retry attempts. */
+    internal suspend fun scheduleDetailContinuation(fence: String, carIds: List<Int>, proof: String, cursor: Int) {
+        val request = detailContinuationRequest(fence, carIds, proof, cursor)
+        withContext(Dispatchers.IO) {
+            WorkManager.getInstance(applicationContext)
+                .enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request).result.get()
+        }
+    }
+
+    internal fun detailContinuationRequest(fence: String, carIds: List<Int>, proof: String, cursor: Int) =
+        OneTimeWorkRequestBuilder<DataSyncWorker>()
+            .setInputData(androidx.work.workDataOf("history_sync_intent" to "DETAIL_CONTINUATION",
+                "history_scope_epoch" to fence, "history_car_ids" to carIds.toIntArray(),
+                "history_car_proof" to proof, "history_car_cursor" to cursor))
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setInitialDelay(5, TimeUnit.SECONDS)
+            .addTag(TAG)
+            .build()
 
     /**
      * Schedule background geocoding worker as a safety net.

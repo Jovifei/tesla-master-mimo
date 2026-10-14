@@ -7,14 +7,79 @@ import androidx.room.Transaction
 import com.matelink.data.repository.mergeStoredDrive
 import com.matelink.data.local.entity.DriveSummary
 import kotlinx.coroutines.flow.Flow
+import com.matelink.data.api.models.DriveDetail
+import com.matelink.domain.analytics.ResolvedDriveEnergy
+import com.matelink.domain.analytics.resolveDriveEnergy
+import com.matelink.domain.analytics.withResolvedDriveEnergy
+import com.matelink.domain.analytics.toAnalysisDriveData
+import com.matelink.domain.analytics.asCachedDetail
+import com.matelink.util.parseIsoInstant
 
 @Dao
 interface DriveSummaryDao {
+
+    /** Read newest receipt, merge its detail, and roll back if the verified scope changes. */
+    @Transaction
+    suspend fun mergeResolvedDetail(
+        carId: Int,
+        detail: DriveDetail,
+        proposed: ResolvedDriveEnergy? = null,
+        ensureCurrent: suspend () -> Unit
+    ): DriveSummary? {
+        ensureCurrent()
+        val newest = get(carId, detail.driveId)
+        ensureCurrent()
+        if (newest == null) return null
+        val updated = newest.withResolvedDriveEnergy(detail, proposed ?: detail.resolveDriveEnergy())
+        ensureCurrent()
+        upsert(updated)
+        ensureCurrent() // Throwing cancellation here rolls back the transaction, including the upsert.
+        return updated
+    }
+
+    /** Optional car metadata refines capacity only; stale SOC/detail values are never written back. */
+    @Transaction
+    suspend fun refineResolvedCapacity(
+        carId: Int,
+        expected: DriveDetail,
+        proposal: ResolvedDriveEnergy,
+        ensureCurrent: suspend () -> Unit
+    ): DriveSummary? {
+        ensureCurrent()
+        val newest = get(carId, expected.driveId)
+        ensureCurrent()
+        if (newest == null) return null
+        val latest = newest.toAnalysisDriveData().asCachedDetail()
+        if (latest.source != expected.source || parseIsoInstant(latest.startDate) == null || parseIsoInstant(latest.endDate) == null ||
+            parseIsoInstant(latest.startDate) != parseIsoInstant(expected.startDate) ||
+            parseIsoInstant(latest.endDate) != parseIsoInstant(expected.endDate)) return null
+        val basis = proposal.evidence
+        // Explicit unknown/provider contracts and stronger non-SOC results remain authoritative.
+        if (expected.energyContract != null || basis.capacityKwh == null || latest.netEnergyKwh == null ||
+            latest.energyContract?.netEnergy?.method != "soc_capacity_estimate") return newest
+        val input = latest.copy(energyContract = null, energyConsumedNet = null, consumptionNet = null)
+        val recalculated = input.resolveDriveEnergy(basis.capacityKwh, basis.capacityModel, basis.capacityTrim, basis.capacityBasis)
+        val updated = newest.withResolvedDriveEnergy(input, recalculated)
+        ensureCurrent()
+        upsert(updated)
+        ensureCurrent()
+        return updated
+    }
 
     /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
     @Transaction
     suspend fun upsertPreservingEvidence(rows: List<DriveSummary>) {
         persistDriveRowsWithoutEvidenceLoss(rows, ::get, ::upsert)
+    }
+
+    /** Retain a missing detail as visible unknown; rollback a concurrent identity change. */
+    @Transaction
+    suspend fun markDetailTerminal404(carId: Int, id: Int, expectedEvidence: String?, ensureCurrent: suspend () -> Unit) {
+        ensureCurrent()
+        val newest = get(carId, id) ?: return
+        if (newest.apiEvidence != expectedEvidence) return
+        upsert(newest.copy(qualityState = "incomplete", qualityReason = "detail_terminal_404"))
+        ensureCurrent()
     }
 
     // === CRUD Operations ===
@@ -283,18 +348,27 @@ interface DriveSummaryDao {
         SELECT d.driveId FROM drives_summary d
         LEFT JOIN drive_detail_aggregates a ON d.carId = a.carId AND d.driveId = a.driveId
         WHERE d.carId = :carId
-        AND d.qualityState != 'quarantined'
+        AND d.qualityState != 'quarantined' AND d.qualityReason NOT LIKE 'detail_terminal_404%'
         AND (a.driveId IS NULL OR a.schemaVersion < :currentVersion)
         ORDER BY d.driveId
     """)
     suspend fun getUnprocessedDriveIds(carId: Int, currentVersion: Int): List<Int>
+
+    @Query("""
+        SELECT d.driveId FROM drives_summary d
+        LEFT JOIN drive_detail_aggregates a ON d.carId = a.carId AND d.driveId = a.driveId
+        WHERE d.carId = :carId AND d.qualityState != 'quarantined' AND d.qualityReason NOT LIKE 'detail_terminal_404%'
+        AND (a.driveId IS NULL OR a.schemaVersion < :currentVersion)
+        ORDER BY d.driveId LIMIT :limit
+    """)
+    suspend fun getUnprocessedDriveBatchIds(carId: Int, currentVersion: Int, limit: Int): List<Int>
 
     // Count unprocessed drives
     @Query("""
         SELECT COUNT(*) FROM drives_summary d
         LEFT JOIN drive_detail_aggregates a ON d.carId = a.carId AND d.driveId = a.driveId
         WHERE d.carId = :carId
-        AND d.qualityState != 'quarantined'
+        AND d.qualityState != 'quarantined' AND d.qualityReason NOT LIKE 'detail_terminal_404%'
         AND (a.driveId IS NULL OR a.schemaVersion < :currentVersion)
     """)
     suspend fun countUnprocessedDrives(carId: Int, currentVersion: Int): Int
@@ -481,7 +555,11 @@ internal suspend fun persistDriveRowsWithoutEvidenceLoss(
     upsert: suspend (DriveSummary) -> Unit
 ) {
     rows.forEach { incoming ->
-        upsert(mergeStoredDrive(incoming,
-            get(incoming.carId, incoming.driveId)))
+        val prior = get(incoming.carId, incoming.driveId)
+        val merged = mergeStoredDrive(incoming, prior)
+        upsert(if (prior?.qualityReason?.startsWith("detail_terminal_404") == true) {
+            if (prior.apiEvidence == incoming.apiEvidence) merged.copy(qualityReason = prior.qualityReason)
+            else merged.copy(qualityReason = incoming.qualityReason)
+        } else merged)
     }
 }

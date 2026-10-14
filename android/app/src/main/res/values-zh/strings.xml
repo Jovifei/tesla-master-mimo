@@ -1,6 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="energy_capacity_description">SOC 估算 · %1$.1f kWh 容量 · %2$s</string>
+    <string name="energy_capacity_model_trim">车型/版本容量假设</string>
+    <string name="energy_capacity_model">车型容量假设</string>
+    <string name="energy_capacity_default">默认容量假设</string>
+    <string name="energy_capacity_api_report">API 报告的容量估算</string>
+    <string name="energy_capacity_provided">提供的容量估算</string>
+    <string name="energy_endpoint_coverage">起止端点观测；不代表连续功率覆盖</string>
+    <string name="energy_nominal_estimate">剩余电量变化估算</string>
+    <string name="history_energy_cache_failed">能耗保存失败，请下拉刷新重试。</string>
     <string name="energy_source_api_reported">接口报告值</string>
+    <string name="energy_source_energy_remaining_delta">剩余电量端点差</string>
+    <string name="energy_source_soc_estimate">容量估算</string>
+    <string name="energy_source_power_samples">功率积分</string>
+    <string name="energy_regenerated">反充 %.1f kWh</string>
     <string name="vehicle_setup_later">稍后确认</string>
     <string name="trip_notification_metrics">%1$.1f 公里 · %2$d 分钟</string>
     <string name="default_charge_price">默认充电电价</string>
@@ -858,7 +871,7 @@
     <string name="all_years">全部年份</string>
     <string name="average">平均</string>
     <string name="avg_cost_per_session">平均每次费用</string>
-    <string name="avg_distance">平均距离</string>
+    <string name="avg_distance">全程均速</string>
     <string name="charge_details_title">充电详情</string>
     <string name="charge_free">免费</string>
     <string name="charge_parked_title">充电驻车</string>
@@ -987,7 +1000,7 @@
     <string name="loss">损失</string>
     <string name="map_mode_charges">充电</string>
     <string name="map_mode_drives">行程</string>
-    <string name="max_accel">最大加速度</string>
+    <string name="max_accel">峰值输出功率</string>
     <string name="max_speed">最高速度</string>
     <string name="maximum">最大值</string>
     <string name="mileage_avg_month">平均/月</string>
@@ -1003,7 +1016,7 @@
     <string name="mileage_no_data_year">本年无数据</string>
     <string name="mileage_recent_trips">最近行程</string>
     <string name="mileage_total">总计</string>
-    <string name="min_regen">最小动能回收</string>
+    <string name="min_regen">峰值回收功率</string>
     <string name="minimum">最小值</string>
     <string name="more_information">更多信息</string>
     <string name="name">名称</string>

@@ -6,6 +6,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -88,6 +89,14 @@ class SettingsDataStore internal constructor(
     private val identityMutex = Mutex()
     @Volatile private var identityGeneration = 0L
     internal fun currentIdentityGeneration(): Long = identityGeneration
+    private val persistentIdentityEpochKey = longPreferencesKey("history_identity_epoch")
+    internal suspend fun persistentIdentityEpoch(): Long = identityMutex.withLock {
+        backingDataStore.data.first()[persistentIdentityEpochKey] ?: 0L
+    }
+    private suspend fun advancePersistentIdentityEpoch() {
+        backingDataStore.edit { it[persistentIdentityEpochKey] = Math.addExact(it[persistentIdentityEpochKey] ?: 0L, 1L) }
+    }
+
 
     /** URL and its process generation are captured under the same lock as connection mutations. */
     internal suspend fun historyIdentitySnapshot(readServerUrl: suspend () -> String): Pair<String, Long> =
@@ -271,6 +280,7 @@ class SettingsDataStore internal constructor(
         currencyCode: String
     ): Unit = identityMutex.withLock {
         identityGeneration++
+        advancePersistentIdentityEpoch()
         backingDataStore.edit { preferences ->
             preferences[serverUrlKey] = serverUrl
             preferences[secondaryServerUrlKey] = secondaryServerUrl
@@ -285,6 +295,7 @@ class SettingsDataStore internal constructor(
     /** Saves the two user-facing connection values without rewriting legacy advanced settings. */
     suspend fun saveConnectionSettings(serverUrl: String, apiToken: String, currencyCode: String): Unit = identityMutex.withLock {
         identityGeneration++
+        advancePersistentIdentityEpoch()
         backingDataStore.edit { preferences ->
             preferences[serverUrlKey] = serverUrl
             preferences[currencyCodeKey] = currencyCode
@@ -294,12 +305,14 @@ class SettingsDataStore internal constructor(
 
     suspend fun saveHttpBasicAuth(username: String, password: String): Unit = identityMutex.withLock {
         identityGeneration++
+        advancePersistentIdentityEpoch()
         secureStore.setHttpBasicUsername(username)
         secureStore.setHttpBasicPassword(password)
     }
 
     suspend fun saveServerUrl(url: String): Unit = identityMutex.withLock {
         identityGeneration++
+        advancePersistentIdentityEpoch()
         backingDataStore.edit { preferences ->
             preferences[serverUrlKey] = url
         }
@@ -307,6 +320,7 @@ class SettingsDataStore internal constructor(
 
     suspend fun saveApiToken(token: String): Unit = identityMutex.withLock {
         identityGeneration++
+        advancePersistentIdentityEpoch()
         secureStore.setApiToken(token)
     }
 
@@ -448,7 +462,9 @@ class SettingsDataStore internal constructor(
     suspend fun clearSettings(): Unit = identityMutex.withLock {
         identityGeneration++
         backingDataStore.edit { preferences ->
+            val nextEpoch = Math.addExact(preferences[persistentIdentityEpochKey] ?: 0L, 1L)
             preferences.clear()
+            preferences[persistentIdentityEpochKey] = nextEpoch
         }
     }
 }

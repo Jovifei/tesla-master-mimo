@@ -172,6 +172,30 @@ class UnifiedHistoryDiscoveryRecoveryTest {
         assertEquals(8.0, stored.toRawAnalysisDriveData().energyConsumedNet!!, 0.0)
     }
 
+    @Test fun actualLoadRecomputesCorrectedSocAndArchivesNewCompleteReceipt() = runTest {
+        val f = Fixture()
+        val raw = f.oldDrive.copy(batteryDetails = DriveBatteryDetails(80, 79),
+            odometerDetails = DriveOdometerDetails(distance = 2.0), energyConsumedNet = 8.0,
+            startAddress = "original raw address")
+        val initial = raw.toSyncSummary(-7)!!
+        val detail = DriveDetail(1, source = raw.source, startDate = raw.startDate, endDate = raw.endDate,
+            batteryDetails = raw.batteryDetails, odometerDetails = raw.odometerDetails)
+        f.localDriveOverride = listOf(initial.withResolvedDriveEnergy(detail,
+            detail.resolveDriveEnergy(model = "Y", trimBadging = "Long Range AWD")))
+        val corrected = raw.copy(batteryDetails = DriveBatteryDetails(80, 78),
+            startAddress = "corrected raw address")
+        f.fetchDrives = { ApiResult.Success(listOf(corrected)) }
+        f.fetchCharges = { ApiResult.Success(emptyList()) }
+        val result = (f.repository().load(7) as ApiResult.Success).data
+        assertEquals(78, result.drives.single().endBatteryLevel)
+        assertEquals(1.568, result.drives.single().netEnergyKwh!!, 1e-12)
+        val saved = f.persistedDrives.single()
+        assertEquals(corrected.toSyncSummary(-7)!!.apiEvidence, HistorySummaryEvidenceCodec.sourceJson(saved.apiEvidence))
+        assertEquals("corrected raw address", saved.toRawAnalysisDriveData().startAddress)
+        assertEquals(78.4, saved.toAnalysisDriveData().energyContract!!.netEnergy!!.capacityKwh!!, 1e-12)
+        assertEquals("model_trim_assumption", saved.toAnalysisDriveData().energyContract!!.netEnergy!!.capacityBasis)
+    }
+
     @Test fun parkedChargeMetadataRetainsCurrentBatteryAndAddressAcrossRealLoad() = runTest {
         val f = Fixture()
         val start = "2026-09-29T00:00:00Z"

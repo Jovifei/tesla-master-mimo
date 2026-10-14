@@ -32,6 +32,7 @@ class JourVoltSessionStore internal constructor(private val prefs: SharedPrefere
     /** Session and generation are read under the same monitor used by save/clear. */
     @Synchronized internal fun identitySnapshot(): Pair<JourVoltSession?, Long> = _session.value to identityGeneration
     internal fun currentIdentityGeneration(): Long = identityGeneration
+    @Synchronized internal fun persistentIdentityEpoch(): Long = prefs.getLong(KEY_IDENTITY_EPOCH, 0L)
 
     @Synchronized fun save(accessToken: String, refreshToken: String, expiresInSeconds: Long, userId: String) {
         identityGeneration++
@@ -46,13 +47,15 @@ class JourVoltSessionStore internal constructor(private val prefs: SharedPrefere
             .putString(KEY_REFRESH, session.refreshToken)
             .putString(KEY_USER, session.userId)
             .putLong(KEY_EXPIRES, session.expiresAtEpochMs)
-            .apply()
+            .putLong(KEY_IDENTITY_EPOCH, Math.addExact(prefs.getLong(KEY_IDENTITY_EPOCH, 0L), 1L))
+            .commit().also { check(it) { "session_persistence_failed" } }
         _session.value = session
     }
 
     @Synchronized fun clear() {
         identityGeneration++
-        prefs.edit().clear().apply()
+        val nextEpoch = Math.addExact(prefs.getLong(KEY_IDENTITY_EPOCH, 0L), 1L)
+        check(prefs.edit().clear().putLong(KEY_IDENTITY_EPOCH, nextEpoch).commit()) { "session_persistence_failed" }
         _session.value = null
     }
 
@@ -72,6 +75,7 @@ class JourVoltSessionStore internal constructor(private val prefs: SharedPrefere
         const val KEY_REFRESH = "refresh_token"
         const val KEY_USER = "user_id"
         const val KEY_EXPIRES = "expires_at"
+        const val KEY_IDENTITY_EPOCH = "history_session_epoch"
     }
 }
 

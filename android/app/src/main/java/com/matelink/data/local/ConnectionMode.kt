@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.matelink.data.model.Instance
@@ -45,6 +46,11 @@ class ConnectionModeStore internal constructor(private val dataStore: DataStore<
     private val identityMutex = Mutex()
     @Volatile private var identityGeneration = 0L
     internal fun currentIdentityGeneration(): Long = identityGeneration
+    private val persistentIdentityEpochKey = longPreferencesKey("history_mode_epoch")
+    internal suspend fun persistentIdentityEpoch(): Long = identityMutex.withLock {
+        dataStore.data.first()[persistentIdentityEpochKey] ?: 0L
+    }
+
 
     val mode: Flow<ConnectionMode?> = dataStore.data
         .map { preferences -> preferences[modeKey]?.let(::parse) }
@@ -67,6 +73,7 @@ class ConnectionModeStore internal constructor(private val dataStore: DataStore<
         val changed = this.mode.first() != mode
         if (changed) identityGeneration++
         dataStore.edit { preferences ->
+            if (changed) preferences[persistentIdentityEpochKey] = Math.addExact(preferences[persistentIdentityEpochKey] ?: 0L, 1L)
             preferences[modeKey] = mode.name
         }
         _current.value = mode
