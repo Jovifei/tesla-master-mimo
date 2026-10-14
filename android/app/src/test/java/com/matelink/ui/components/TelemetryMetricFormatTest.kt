@@ -12,9 +12,9 @@ class TelemetryMetricFormatTest {
     @Test fun zeroNegativeAndTinyNonzeroRemainDistinct() {
         withLocale {
             assertEquals("0.0", formatTelemetryNumber(0.0))
-            assertEquals("-0.04", formatTelemetryNumber(-0.04))
-            assertNotEquals("0.0", formatTelemetryNumber(0.0004))
-            assertNotEquals("-0.0", formatTelemetryNumber(-1e-8))
+            assertEquals(-0.04, formatTelemetryNumber(-0.04).toDouble(), 0.0)
+            assertEquals(0.0004, formatTelemetryNumber(0.0004).toDouble(), 0.0)
+            assertEquals(-1e-8, formatTelemetryNumber(-1e-8).toDouble(), 1e-12)
             assertEquals("—", formatTelemetryNumber(Double.NaN))
         }
     }

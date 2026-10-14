@@ -1094,7 +1094,8 @@ private fun SummaryMetricItem(
             style = MaterialTheme.typography.titleMedium.copy(
                 fontFamily = MetricMono,
                 fontFeatureSettings = "tnum",
-                fontSize = 24.sp
+                fontSize = 24.sp,
+                lineHeight = 32.sp
             ),
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,

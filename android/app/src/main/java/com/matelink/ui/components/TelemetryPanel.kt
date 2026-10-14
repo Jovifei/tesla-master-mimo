@@ -192,7 +192,9 @@ private fun TelemetryMetricCell(
             text = number,
             style = MaterialTheme.typography.titleSmall.copy(
                 fontFamily = MetricMono,
-                fontSize = metric.valueFontSize ?: if (adaptive) 20.sp else MaterialTheme.typography.titleSmall.fontSize
+                fontSize = metric.valueFontSize ?: if (adaptive) 20.sp else MaterialTheme.typography.titleSmall.fontSize,
+                lineHeight = metric.valueFontSize?.let { it * 1.3f }
+                    ?: if (adaptive) 26.sp else MaterialTheme.typography.titleSmall.lineHeight
             ),
             fontWeight = FontWeight.SemiBold,
             maxLines = if (adaptive) Int.MAX_VALUE else metric.valueMaxLines,
