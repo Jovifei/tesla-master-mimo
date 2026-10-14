@@ -29,6 +29,8 @@
 
 原始 XML、构建、审计、冻结哈希在 E:/Claude_allow/Download/matelink-energy-final-20261013。手机私密截图/日志/现装包只留本地，不上传聊天或仓库。固定提交后的 CI 与 GPT-6 极高完整源复审仍待独立核验，不能提前 PASS。
 
+首个固定候选216e62ea49cf14d4398bb25ad508065051be7920/Actions38509529583的小程序job115674599047实际失败于浅检出无法读取HEAD^，尚未进入npm安装/测试，不是产品测试PASS。修复仅增加fetch-depth2以获取真实parent；后续提交必须重新核验完整同SHA CI。该旧run及失败artifact11869765407保留。
+
 ## 依赖安全限制
 
 Taro 的可选 Vite 4 peer 与现代测试工具冲突，已将 Vitest4.1.11/Vite7.3.7 放入独立 test-tooling 包/锁；编译仍用 Webpack5。两包实际干净安装，类型/测试/weapp 通过；不宣称支持 Taro Vite 编译器。
