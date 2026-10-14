@@ -180,7 +180,7 @@ class EfficiencyViewModel @Inject constructor(
             drives.map { drive ->
                 EfficiencySample(
                     distanceKm = drive.distanceKm,
-                    energyKwh = drive.energyConsumedNet
+                    energyKwh = drive.netEnergyKwh
                 )
             }
         ).efficiencyWhKm

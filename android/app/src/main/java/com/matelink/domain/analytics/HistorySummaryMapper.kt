@@ -271,7 +271,7 @@ internal object HistorySummaryEvidenceCodec {
         // This fusion is presentation only: receipt above remains byte-exact.
         fun <T> changed(value: T?, previous: T?): T? = value?.takeIf { it != previous }
         fun <T> changedLength(value: T?, previous: T?): T? =
-            if (next.lengthUnit != old.lengthUnit) value else changed(value, previous)
+            if (!com.matelink.data.api.models.sameDriveLengthUnit(next.lengthUnit, old.lengthUnit)) value else changed(value, previous)
         // Repeated summary values are not corrections to richer detail.
         val changes = next.copy(
             startAddress = changed(next.startAddress, old.startAddress),
@@ -309,7 +309,7 @@ internal object HistorySummaryEvidenceCodec {
         ).single().copy(energyConsumedNet = null, consumptionNet = null, energyContract = null,
             startDate = presentation.startDate, endDate = presentation.endDate)
         val batteryChanged = presentation.batteryDetails != corrected.batteryDetails
-        val distanceChanged = presentation.odometerDetails != corrected.odometerDetails || presentation.lengthUnit != corrected.lengthUnit
+        val distanceChanged = presentation.odometerDetails != corrected.odometerDetails || !com.matelink.data.api.models.sameDriveLengthUnit(presentation.lengthUnit, corrected.lengthUnit)
         val rangeChanged = presentation.rangeIdeal != corrected.rangeIdeal || presentation.rangeRated != corrected.rangeRated
         val powerChanged = presentation.powerMax != corrected.powerMax || presentation.powerMin != corrected.powerMin || presentation.durationMin != corrected.durationMin
         if (!batteryChanged && !distanceChanged && !powerChanged && !rangeChanged) {

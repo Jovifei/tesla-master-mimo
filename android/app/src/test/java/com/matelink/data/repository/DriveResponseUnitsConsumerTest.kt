@@ -18,6 +18,67 @@ import org.junit.Test
  * persistence merge and restart projection. No provider or owner data is used.
  */
 class DriveResponseUnitsConsumerTest {
+    @Test fun sparseKilometreDetailPreservesLegacyDistanceButExplicitUnknownCannotBorrowIt() {
+        val original = list(unit = "km", distance = 10.0).copy(lengthUnit = null).toSyncSummary(9)!!
+        for (unit in listOf("km", "unknown")) {
+            val sparse = detail(energy = 1.0, unit = unit).copy(odometerDetails = null, speedMax = null, speedAvg = null)
+            val stored = original.withResolvedDriveEnergy(sparse, sparse.resolveDriveEnergy())
+            val restarted = stored.toAnalysisDriveData()
+            if (unit == "km") {
+                assertEquals(10.0, restarted.distanceKm!!, 0.0)
+                assertEquals(100.0, restarted.efficiencyWhKm!!, 0.0)
+            } else {
+                assertNull(restarted.distanceKm)
+                assertNull(restarted.efficiencyWhKm)
+            }
+            assertEquals(HistorySummaryEvidenceCodec.sourceJson(original.apiEvidence),
+                HistorySummaryEvidenceCodec.sourceJson(stored.apiEvidence))
+        }
+    }
+    @Test fun explicitKilometreSparseRefreshDoesNotEraseCompatibleLegacyKilometreDistance() = runBlocking {
+        val original = list(unit = "km", distance = 10.0).copy(lengthUnit = null).toSyncSummary(9)!!
+        val rows = mutableMapOf((9 to 7) to original)
+        val next = list(unit = "km", distance = 10.0).copy(odometerDetails = null, energyConsumedNet = null).toSyncSummary(9)!!
+        persistDriveRowsWithoutEvidenceLoss(listOf(next),
+            { car, id -> rows[car to id] }, { rows[it.carId to it.driveId] = it })
+        assertEquals(10.0, rows[9 to 7]!!.toAnalysisDriveData().distanceKm!!, 0.0)
+        assertEquals(1000.0, rows[9 to 7]!!.toAnalysisDriveData().efficiencyWhKm!!, 0.0)
+        assertEquals(HistorySummaryEvidenceCodec.sourceJson(original.apiEvidence),
+            HistorySummaryEvidenceCodec.sourceJson(rows[9 to 7]!!.apiEvidence))
+    }
+    @Test fun moshiMissingNullEmptyMetricAndImperialUnitsStayDistinctThroughRoomAndDetail() {
+        val cases = listOf(
+            "" to "km",
+            ",\"units\":null" to "",
+            ",\"units\":{}" to "",
+            ",\"units\":{\"unit_of_length\":\"km\"}" to "km",
+            ",\"units\":{\"unit_of_length\":\"mi\"}" to "mi")
+        for ((metadata, expectedUnit) in cases) {
+            val received = moshi.adapter(DrivesResponse::class.java).fromJson(
+                "{\"data\":{\"drives\":[${raw()}]$metadata}}")!!.data!!.receivedDrives().single()
+            val current = moshi.adapter(DriveDetailResponse::class.java).fromJson(
+                "{\"data\":{\"drive\":${raw()}$metadata}}")!!.data!!.receivedDrive()!!
+            val row = received.toSyncSummary(9)!!
+            val restarted = row.toAnalysisDriveData()
+            assertEquals(expectedUnit, restarted.lengthUnit)
+            assertEquals(expectedUnit, current.lengthUnit)
+            val resolved = current.resolveDriveEnergy()
+            val detailedRestart = row.withResolvedDriveEnergy(current, resolved).toAnalysisDriveData()
+            assertEquals(expectedUnit, detailedRestart.lengthUnit)
+            if (expectedUnit.isEmpty()) {
+                assertNull(received.distanceKm)
+                assertNull(restarted.efficiencyWhKm)
+                assertNull(resolved.estimate.efficiencyWhKm)
+                assertNull(detailedRestart.efficiencyWhKm)
+            } else {
+                val expectedKm = if (expectedUnit == "mi") 100 * kmPerMile else 100.0
+                assertEquals(expectedKm, row.distance, 1e-10)
+                assertEquals(10_000 / expectedKm, restarted.efficiencyWhKm!!, 1e-10)
+                assertEquals(10_000 / expectedKm, resolved.estimate.efficiencyWhKm!!, 1e-10)
+                assertEquals(10_000 / expectedKm, detailedRestart.efficiencyWhKm!!, 1e-10)
+            }
+        }
+    }
     @Test fun responseUnitCorrectionReopensDetailRecoveryEvenWhenRawNumbersAreEqual() {
         val old = HistorySummaryEvidenceCodec.encode(list(distance = 10.0))
         val stopped = HistorySummaryEvidenceCodec.markDetailTerminal404(old, 9)

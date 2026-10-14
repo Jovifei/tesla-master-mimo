@@ -232,7 +232,7 @@ class RangeViewModel @Inject constructor(
             actualDistanceKm = distance,
             speedAvgKmh = drive.speedAvg,
             outsideTempC = drive.outsideTempAvg,
-            energyConsumedKwh = drive.energyConsumedNet,
+            energyConsumedKwh = drive.netEnergyKwh,
             deviationPercent = deviation
         )
     }
@@ -244,7 +244,7 @@ class RangeViewModel @Inject constructor(
                 PersonalizedRangeSample(
                     date = date,
                     distanceKm = drive.distanceKm,
-                    energyKwh = drive.energyConsumedNet,
+                    energyKwh = drive.netEnergyKwh,
                     speedKmh = drive.speedAvg,
                     temperatureC = drive.outsideTempAvg
                 )

@@ -55,6 +55,7 @@ import com.matelink.R
 import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.api.models.DrivePosition
 import com.matelink.data.api.models.Units
+import com.matelink.data.api.models.drivePresentationUnits
 import com.matelink.domain.model.UnitFormatter
 import com.matelink.ui.components.FullscreenLineChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
@@ -93,8 +94,8 @@ fun DriveCurvesScreen(
                             fontWeight = FontWeight.Bold
                         )
                         uiState.driveDetail?.let { detail ->
-                            val distStr = detail.odometerDetails?.distance?.let {
-                                UnitFormatter.formatDistance(it, uiState.units)
+                            val distStr = detail.distance?.takeIf { it.isFinite() && it >= 0.0 }?.let {
+                                UnitFormatter.formatDistance(it, drivePresentationUnits(detail.lengthUnit, uiState.units))
                             }
                             val durationStr = detail.durationMin?.let(::formatDurationCompact)
                             val summary = listOfNotNull(distStr, durationStr).joinToString(" · ")
@@ -141,12 +142,13 @@ fun DriveCurvesScreen(
 }
 
 @Composable
-private fun DriveCurvesContent(
+internal fun DriveCurvesContent(
     detail: DriveDetail,
     stats: DriveDetailStats?,
     units: Units?,
     modifier: Modifier = Modifier
 ) {
+    val receiptUnits = drivePresentationUnits(detail.lengthUnit, units)
     val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
     val scrollState = rememberScrollState()
     var sharedXFraction by remember { mutableStateOf<Float?>(null) }
@@ -186,13 +188,13 @@ private fun DriveCurvesContent(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Top KPI overview bar
-        CurvesKpiOverviewCard(detail = detail, stats = stats, units = units)
+        CurvesKpiOverviewCard(detail = detail, stats = stats, units = receiptUnits)
 
         if (hasChartData) {
             // 1. 速度变化曲线
-            SpeedCurveCard(
+            if (detail.hasKnownLengthUnit) SpeedCurveCard(
                 positions = positions,
-                units = units,
+                units = receiptUnits,
                 timeLabels = timeLabels,
                 externalSelectedFraction = sharedXFraction,
                 onXSelected = { sharedXFraction = it },
@@ -200,10 +202,11 @@ private fun DriveCurvesContent(
             )
 
             // 2. 行程距离变化曲线
-            DistanceCurveCard(
+            val knownDistance = detail.distance?.takeIf { it.isFinite() && it >= 0.0 }
+            if (knownDistance != null) DistanceCurveCard(
                 positions = positions,
-                totalDistance = detail.odometerDetails?.distance ?: stats?.distance ?: 0.0,
-                units = units,
+                totalDistance = knownDistance,
+                units = receiptUnits,
                 timeLabels = timeLabels,
                 externalSelectedFraction = sharedXFraction,
                 onXSelected = { sharedXFraction = it },
@@ -301,14 +304,14 @@ private fun CurvesKpiOverviewCard(
             ) {
                 KpiItem(
                     label = stringResource(R.string.distance),
-                    value = (detail.odometerDetails?.distance ?: stats?.distance)?.let {
+                    value = detail.distance?.takeIf { it.isFinite() && it >= 0.0 }?.let {
                         UnitFormatter.formatDistance(it, units)
                     } ?: "—",
                     modifier = Modifier.weight(1f)
                 )
                 KpiItem(
                     label = stringResource(R.string.maximum),
-                    value = (detail.speedMax ?: stats?.speedMax)?.let {
+                    value = (detail.speedMax ?: stats?.speedMax)?.takeIf { detail.hasKnownLengthUnit && it >= 0 }?.let {
                         UnitFormatter.formatSpeed(it.toDouble(), units)
                     } ?: "—",
                     modifier = Modifier.weight(1f)
@@ -352,7 +355,7 @@ private fun KpiItem(
 }
 
 @Composable
-private fun SpeedCurveCard(
+internal fun SpeedCurveCard(
     positions: List<DrivePosition>,
     units: Units?,
     timeLabels: List<String>,
@@ -360,13 +363,8 @@ private fun SpeedCurveCard(
     onXSelected: (Float?) -> Unit,
     fractionToTimeLabel: (Float) -> String
 ) {
-    val speeds = remember(positions) { positions.mapNotNull { it.speed?.toFloat() } }
+    val speeds = remember(positions) { positions.mapNotNull { it.speed?.takeIf { value -> value.isFinite() && value >= 0.0 }?.toFloat()?.takeIf(Float::isFinite) } }
     if (speeds.size < 2) return
-
-    val isImperial = units?.isImperial == true
-    val stableConvertValue: (Float) -> Float = remember(isImperial) {
-        { value: Float -> if (isImperial) (value * 0.621371f) else value }
-    }
 
     CurveContainerCard(
         title = stringResource(R.string.speed_profile),
@@ -378,12 +376,11 @@ private fun SpeedCurveCard(
         externalSelectedFraction = externalSelectedFraction,
         onXSelected = onXSelected,
         fractionToTimeLabel = fractionToTimeLabel,
-        convertValue = stableConvertValue
     )
 }
 
 @Composable
-private fun DistanceCurveCard(
+internal fun DistanceCurveCard(
     positions: List<DrivePosition>,
     totalDistance: Double,
     units: Units?,
@@ -394,7 +391,7 @@ private fun DistanceCurveCard(
 ) {
     val distancePoints = remember(positions, totalDistance) {
         val totalDist = totalDistance.toFloat()
-        if (positions.size < 2 || totalDist <= 0f) {
+        if (positions.size < 2 || !totalDist.isFinite() || totalDist <= 0f) {
             emptyList()
         } else {
             val speeds = positions.map { (it.speed ?: 0).toFloat().coerceAtLeast(0f) }
@@ -413,13 +410,8 @@ private fun DistanceCurveCard(
     }
     if (distancePoints.size < 2) return
 
-    val isImperial = units?.isImperial == true
-    val stableConvertValue: (Float) -> Float = remember(isImperial) {
-        { value: Float -> if (isImperial) (value * 0.621371f) else value }
-    }
-
     CurveContainerCard(
-        title = stringResource(R.string.distance_profile),
+        title = stringResource(R.string.distance_profile) + " · " + stringResource(R.string.range_estimated),
         icon = CustomIcons.SteeringWheel,
         data = distancePoints,
         color = Color(0xFF00897B), // Teal
@@ -428,7 +420,6 @@ private fun DistanceCurveCard(
         externalSelectedFraction = externalSelectedFraction,
         onXSelected = onXSelected,
         fractionToTimeLabel = fractionToTimeLabel,
-        convertValue = stableConvertValue
     )
 }
 

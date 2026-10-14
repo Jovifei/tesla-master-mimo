@@ -7,6 +7,10 @@ private const val KM_PER_MILE = 1.609344
  */
 internal fun knownDriveLengthUnit(unit: String?): Boolean = unit == null || unit == "km" || unit == "mi"
 
+/** Existing unitless kilometre receipts and explicit km share one physical unit. */
+internal fun sameDriveLengthUnit(first: String?, second: String?): Boolean =
+    (first ?: "km") == (second ?: "km")
+
 /** Length belongs to this receipt, temperature preferences remain independent. */
 internal fun drivePresentationUnits(lengthUnit: String?, preferences: Units?): Units =
     (preferences ?: Units()).copy(unitOfLength = lengthUnit ?: "km")
@@ -16,7 +20,7 @@ internal fun driveDistanceKm(value: Double?, unit: String?): Double? =
         ?.let { if (unit == "mi") it * KM_PER_MILE else it }?.takeIf(Double::isFinite)
 
 private fun Units?.driveLengthUnit(): String? =
-    if (this == null) null else unitOfLength?.trim()?.lowercase() ?: ""
+    this?.unitOfLength?.trim()?.lowercase() ?: ""
 
 /** These are the actual repository response boundaries, also used by tests. */
 internal fun DrivesData.receivedDrives(): List<DriveData> =

@@ -177,7 +177,7 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
     }
     // Current metadata is a separate scoped display snapshot, never a raw
     // Tesla receipt. Explicit nulls retain genuinely unknown SOC.
-    val sameLengthUnit = current.lengthUnit == detail.lengthUnit
+    val sameLengthUnit = com.matelink.data.api.models.sameDriveLengthUnit(current.lengthUnit, detail.lengthUnit)
     val presentation = current.copy(
         startDate = nextStart, endDate = nextEnd,
         startAddress = detail.startAddress ?: current.startAddress,

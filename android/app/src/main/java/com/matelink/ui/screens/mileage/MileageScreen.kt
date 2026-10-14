@@ -34,6 +34,8 @@ import com.matelink.domain.analytics.observedBatteryUsagePercent
 import com.matelink.domain.analytics.observedDistanceKm
 import com.matelink.domain.analytics.observedEnergyKwh
 import com.matelink.domain.model.UnitFormatter
+import com.matelink.ui.components.formatTelemetryEfficiency
+import com.matelink.ui.components.formatTelemetryNumber
 import com.matelink.ui.icons.CustomIcons
 import com.matelink.ui.components.MetricPanelKind
 import com.matelink.ui.components.MetricStatusPanel
@@ -267,13 +269,13 @@ private fun YearOverviewContent(
                     driveCount = uiState.totalLifetimeDriveCount,
                     totalEnergyUsed = uiState.totalLifetimeEnergy,
                     totalEnergyCost = uiState.totalLifetimeEnergyCost,
-                    avgEnergyDistance = uiState.avgLifetimeEnergyDistance,
                     currencySymbol = uiState.currencySymbol,
                     units = uiState.units,
                     palette = palette,
                     firstDriveDate = uiState.firstDriveDate,
                     distanceSampleCount = lifetimeEvidence.distanceSampleCount,
-                    energySampleCount = lifetimeEvidence.energySampleCount
+                    energySampleCount = lifetimeEvidence.energySampleCount,
+                    evidence = lifetimeEvidence
                 )
             }
             if (chartData.isNotEmpty()) {
@@ -324,7 +326,7 @@ private fun YearlyChartCard(chartData: List<Pair<Int, Double>>, palette: CarColo
                 BarChartData(
                     label = year.toString(),
                     value = distance,
-                    displayValue = UnitFormatter.formatDistance(distance, units)
+                    displayValue = UnitFormatter.formatDistanceKm(distance, units)
                 )
             }
 
@@ -333,7 +335,7 @@ private fun YearlyChartCard(chartData: List<Pair<Int, Double>>, palette: CarColo
                 modifier = Modifier.fillMaxWidth(),
                 barColor = palette.accent,
                 labelColor = palette.onSurfaceVariant,
-                valueFormatter = { UnitFormatter.formatDistance(it, units) },
+                valueFormatter = { UnitFormatter.formatDistanceKm(it, units) },
                 yAxisFormatter = { if (it >= 1000) "%.0fk".format(it / 1000) else "%.0f".format(it) }
             )
         }
@@ -401,12 +403,7 @@ private fun YearRow(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = formatObservedEfficiency(
-                                yearData.totalDistance,
-                                yearData.totalEnergy,
-                                evidence,
-                                units
-                            ),
+                            text = formatKnownEfficiency(evidence),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -495,12 +492,12 @@ private fun YearDetailScreen(
                     driveCount = uiState.yearDriveCount,
                     totalEnergyUsed = uiState.yearTotalEnergy,
                     totalEnergyCost = uiState.yearTotalEnergyCost,
-                    avgEnergyDistance = uiState.avgYearEnergyDistance,
                     currencySymbol = uiState.currencySymbol,
                     units = uiState.units,
                     palette = palette,
                     distanceSampleCount = yearEvidence.distanceSampleCount,
-                    energySampleCount = yearEvidence.energySampleCount
+                    energySampleCount = yearEvidence.energySampleCount,
+                    evidence = yearEvidence
                 )
             }
 
@@ -571,7 +568,7 @@ private fun MonthlyChartCard(chartData: List<Pair<Int, Double>>, palette: CarCol
                 BarChartData(
                     label = month.toString(),
                     value = distance,
-                    displayValue = UnitFormatter.formatDistance(distance, units)
+                    displayValue = UnitFormatter.formatDistanceKm(distance, units)
                 )
             }
 
@@ -580,7 +577,7 @@ private fun MonthlyChartCard(chartData: List<Pair<Int, Double>>, palette: CarCol
                 modifier = Modifier.fillMaxWidth(),
                 barColor = palette.accent,
                 labelColor = palette.onSurfaceVariant,
-                valueFormatter = { UnitFormatter.formatDistance(it, units) },
+                valueFormatter = { UnitFormatter.formatDistanceKm(it, units) },
                 yAxisFormatter = { if (it >= 1000) "%.0fk".format(it / 1000) else "%.0f".format(it) }
             )
         }
@@ -659,12 +656,7 @@ private fun MonthRow(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = formatObservedEfficiency(
-                                monthData.totalDistance,
-                                monthData.totalEnergy,
-                                evidence,
-                                units
-                            ),
+                            text = formatKnownEfficiency(evidence),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -802,7 +794,7 @@ private fun MonthSummaryCard(
     val evidence = buildMileageEvidence(monthData?.drives.orEmpty())
     val totalDistance = monthData?.totalDistance ?: 0.0
     val driveCount = monthData?.driveCount ?: 0
-    val avgDistance = if (evidence.hasDistance && driveCount > 0) totalDistance / driveCount else 0.0
+    val avgDistance = if (evidence.hasDistance) totalDistance / evidence.distanceSampleCount else 0.0
     val totalBatteryUsage = monthData?.totalBatteryUsage ?: 0.0
     val totalEnergy = monthData?.totalEnergy ?: 0.0
 
@@ -882,7 +874,7 @@ private fun MonthSummaryCard(
                 StatChip(
                     prefix = "Ø",
                     icon = Icons.Outlined.EnergySavingsLeaf,
-                    value = formatObservedEfficiency(totalDistance, totalEnergy, evidence, units),
+                    value = formatKnownEfficiency(evidence),
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -921,26 +913,22 @@ private fun formatObservedDistance(
     units: Units?,
     decimals: Int = 1
 ): String = if (sampleCount > 0 && value.isFinite()) {
-    UnitFormatter.formatDistance(value, units, decimals)
+    UnitFormatter.formatDistanceKm(value, units, decimals)
 } else UNKNOWN_METRIC
 
 private fun formatObservedEnergy(value: Double, sampleCount: Int): String =
-    if (sampleCount > 0 && value.isFinite() && value >= 0.0) formatEnergy(value) else UNKNOWN_METRIC
+    if (sampleCount > 0 && value.isFinite()) formatEnergy(value) else UNKNOWN_METRIC
 
 private fun formatObservedBattery(value: Double, sampleCount: Int): String =
     if (sampleCount > 0 && value.isFinite() && value >= 0.0) "%.0f%%".format(value) else UNKNOWN_METRIC
 
-private fun formatObservedEfficiency(
-    totalDistance: Double,
-    totalEnergy: Double,
-    evidence: MileageEvidence,
-    units: Units?
-): String = if (
-    evidence.hasDistance && evidence.hasEnergy &&
-    totalDistance > 0.0 && totalEnergy.isFinite() && totalEnergy >= 0.0
-) {
-    UnitFormatter.formatEfficiency((totalEnergy * 1000.0) / totalDistance, units)
-} else UNKNOWN_METRIC
+@Composable
+private fun formatKnownEfficiency(evidence: MileageEvidence): String =
+    if (evidence.recordCount > 0) {
+        (evidence.efficiencyWhKm?.let(::formatTelemetryEfficiency) ?: UNKNOWN_METRIC) + "\n" + stringResource(
+            R.string.mileage_known_energy_coverage, evidence.efficiencySampleCount,
+            evidence.recordCount, evidence.estimatedEnergySampleCount)
+    } else UNKNOWN_METRIC
 
 @Composable
 private fun SummaryRow(
@@ -950,13 +938,13 @@ private fun SummaryRow(
     driveCount: Int,
     totalEnergyUsed: Double,
     totalEnergyCost: Double?,
-    avgEnergyDistance: Double,
     currencySymbol: String,
     units: Units? = null,
     palette: CarColorPalette? = null,
     firstDriveDate: LocalDate? = null,
     distanceSampleCount: Int = 0,
-    energySampleCount: Int = 0
+    energySampleCount: Int = 0,
+    evidence: MileageEvidence = MileageEvidence(0, 0, 0, 0)
 ) {
     val containerColor = palette?.surface ?: MaterialTheme.colorScheme.surfaceVariant
     val iconColor = palette?.accent ?: ChartBlue
@@ -1034,9 +1022,7 @@ private fun SummaryRow(
         ) {
             SummaryItem(
                 icon = Icons.Outlined.EnergySavingsLeaf,
-                value = if (distanceSampleCount > 0 && energySampleCount > 0) {
-                    UnitFormatter.formatEfficiency(avgEnergyDistance, units)
-                } else UNKNOWN_METRIC,
+                value = formatKnownEfficiency(evidence),
                 label = stringResource(R.string.stats_avg_efficiency),
                 iconColor = iconColor,
                 valueColor = valueColor,
@@ -1053,7 +1039,7 @@ private fun SummaryRow(
             SummaryItem(
                 icon = Icons.Outlined.BatteryChargingFull,
                 value = formatObservedEnergy(totalEnergyUsed, energySampleCount),
-                label = stringResource(R.string.mileage_total),
+                label = stringResource(R.string.mileage_known_energy),
                 iconColor = iconColor,
                 valueColor = valueColor,
                 labelColor = labelColor
@@ -1242,7 +1228,7 @@ private fun DailyChartCard(
                 BarChartData(
                     label = day.toString(),
                     value = distance,
-                    displayValue = UnitFormatter.formatDistance(distance, units)
+                    displayValue = UnitFormatter.formatDistanceKm(distance, units)
                 )
             }
 
@@ -1251,7 +1237,7 @@ private fun DailyChartCard(
                 modifier = Modifier.fillMaxWidth(),
                 barColor = palette.accent,
                 labelColor = palette.onSurfaceVariant,
-                valueFormatter = { UnitFormatter.formatDistance(it, units) },
+                valueFormatter = { UnitFormatter.formatDistanceKm(it, units) },
                 yAxisFormatter = { if (it >= 1000) "%.0fk".format(it / 1000) else "%.0f".format(it) }
             )
         }
@@ -1336,12 +1322,7 @@ private fun DayTripRow(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = formatObservedEfficiency(
-                                dayData.totalDistance,
-                                dayData.totalEnergy,
-                                evidence,
-                                units
-                            ),
+                            text = formatKnownEfficiency(evidence),
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -1421,7 +1402,8 @@ private fun DayTripRow(
 }
 
 private fun formatEnergy(kwh: Double): String =
-    if (kwh >= 1000) "%,.1f MWh".format(kwh / 1000) else "%.0f kWh".format(kwh)
+    if (kotlin.math.abs(kwh) >= 1000) "${formatTelemetryNumber(kwh / 1000, 2)} MWh"
+    else "${formatTelemetryNumber(kwh, 2)} kWh"
 
 // ============================================================================
 // Level 4: Day Detail
@@ -1509,8 +1491,8 @@ private fun DaySummaryCard(
     palette: CarColorPalette
 ) {
     val evidence = buildMileageEvidence(dayData.drives)
-    val avgDistance = if (evidence.hasDistance && dayData.driveCount > 0) {
-        dayData.totalDistance / dayData.driveCount
+    val avgDistance = if (evidence.hasDistance) {
+        dayData.totalDistance / evidence.distanceSampleCount
     } else 0.0
     //val avgEnergy = if (dayData.driveCount > 0) dayData.totalEnergy / dayData.driveCount else 0.0
 
@@ -1585,12 +1567,7 @@ private fun DaySummaryCard(
                 StatChip(
                     prefix = "Ø",
                     icon = Icons.Outlined.EnergySavingsLeaf,
-                    value = formatObservedEfficiency(
-                        dayData.totalDistance,
-                        dayData.totalEnergy,
-                        evidence,
-                        units
-                    ),
+                    value = formatKnownEfficiency(evidence),
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1629,7 +1606,7 @@ private fun DriveRow(
     val duration = drive.durationMin?.takeIf { it >= 0 }
     val energyUsed = drive.observedEnergyKwh()
     val batteryUsage = drive.observedBatteryUsagePercent()
-    val efficiency = drive.efficiencyWhKm?.takeIf { it.isFinite() && it >= 0.0 }
+    val evidence = buildMileageEvidence(listOf(drive))
 
     Card(
         modifier = Modifier
@@ -1684,7 +1661,7 @@ private fun DriveRow(
                     )
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(
-                        text = distance?.let { UnitFormatter.formatDistance(it, units) } ?: UNKNOWN_METRIC,
+                        text = distance?.let { UnitFormatter.formatDistanceKm(it, units) } ?: UNKNOWN_METRIC,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -1699,7 +1676,7 @@ private fun DriveRow(
                     )
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(
-                        text = efficiency?.let { UnitFormatter.formatEfficiency(it, units) } ?: UNKNOWN_METRIC,
+                        text = formatKnownEfficiency(evidence),
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -1715,7 +1692,7 @@ private fun DriveRow(
                     )
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(
-                        text = energyUsed?.let { "%.1f kWh".format(it) } ?: UNKNOWN_METRIC,
+                        text = energyUsed?.let(::formatEnergy) ?: UNKNOWN_METRIC,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }

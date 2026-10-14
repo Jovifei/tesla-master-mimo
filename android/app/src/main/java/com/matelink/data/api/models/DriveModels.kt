@@ -10,7 +10,7 @@ data class DrivesResponse(@Json(name = "data") val data: DrivesData? = null)
 data class DrivesData(
     @Json(name = "drives") val drives: List<DriveData>? = null,
     @Json(name = "meta") val meta: ApiDataMeta? = null,
-    @Json(name = "units") val units: Units? = null
+    @Json(name = "units") val units: Units? = Units(unitOfLength = "km")
 )
 
 @JsonClass(generateAdapter = true)
@@ -99,7 +99,7 @@ data class DriveDetailResponse(@Json(name = "data") val data: DriveDetailData? =
 data class DriveDetailData(
     @Json(name = "car") val car: DriveDetailCar? = null,
     @Json(name = "drive") val drive: DriveDetail? = null,
-    @Json(name = "units") val units: Units? = null
+    @Json(name = "units") val units: Units? = Units(unitOfLength = "km")
 )
 
 @JsonClass(generateAdapter = true)

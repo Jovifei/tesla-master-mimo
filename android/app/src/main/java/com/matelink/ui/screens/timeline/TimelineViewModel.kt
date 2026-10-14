@@ -26,7 +26,7 @@ sealed class TimelineEvent {
         override val date: String,
         val startAddress: String?,
         val endAddress: String?,
-        val distance: Double?,
+        val distance: Double?, // Canonical kilometres for the timeline's km label.
         val durationMin: Int?,
         val durationStr: String?,
         val startBatteryLevel: Int?,
@@ -116,22 +116,7 @@ class TimelineViewModel @Inject constructor(
         drives: List<DriveData>,
         charges: List<ChargeData>
     ): List<TimelineEvent> {
-        val driveEvents = drives.map { drive ->
-            val startTs = drive.startDate ?: ""
-            TimelineEvent.DriveEvent(
-                driveId = drive.id,
-                timestamp = startTs,
-                date = extractDate(startTs),
-                startAddress = drive.startAddress,
-                endAddress = drive.endAddress,
-                distance = drive.distance,
-                durationMin = drive.durationMin,
-                durationStr = drive.durationStr,
-                startBatteryLevel = drive.startBatteryLevel,
-                endBatteryLevel = drive.endBatteryLevel,
-                efficiencyWhKm = drive.efficiencyWhKm
-            )
-        }
+        val driveEvents = drives.map { it.toTimelineDriveEvent() }
 
         val chargeEvents = charges.map { charge ->
             val startTs = charge.startDate ?: ""
@@ -157,4 +142,22 @@ class TimelineViewModel @Inject constructor(
         // Extract YYYY-MM-DD from ISO 8601 timestamp
         return isoTimestamp.take(10).ifEmpty { "Unknown" }
     }
+}
+
+/** Projection consumed by the timeline; source receipts remain unchanged. */
+internal fun DriveData.toTimelineDriveEvent(): TimelineEvent.DriveEvent {
+    val startTs = startDate ?: ""
+    return TimelineEvent.DriveEvent(
+        driveId = id,
+        timestamp = startTs,
+        date = startTs.take(10).ifEmpty { "Unknown" },
+        startAddress = startAddress,
+        endAddress = endAddress,
+        distance = distanceKm,
+        durationMin = durationMin,
+        durationStr = durationStr,
+        startBatteryLevel = startBatteryLevel,
+        endBatteryLevel = endBatteryLevel,
+        efficiencyWhKm = efficiencyWhKm
+    )
 }

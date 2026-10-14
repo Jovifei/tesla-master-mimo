@@ -370,7 +370,7 @@ private fun ChargeData.withLegacyRemoteQuality(): ChargeData =
     if (qualityState == null && source != "local_import") copy(qualityState = "observed", qualityReason = "legacy_remote_api") else this
 
 private fun DriveData.mergeWith(cached: DriveData?): DriveData = cached?.let {
-    val sameLengthUnit = lengthUnit == it.lengthUnit
+    val sameLengthUnit = com.matelink.data.api.models.sameDriveLengthUnit(lengthUnit, it.lengthUnit)
     if (qualityState == "quarantined") return this
     // Record ID alone cannot join different source instances. A local import
     // retains archival provenance even if it claims quality="observed".
@@ -593,7 +593,7 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
         raw.energyContract != cachedRaw.energyContract && inRaw.source == raw.source
     val sameSource = raw.source == cachedRaw.source
     val sameWindow = raw.startDate == cachedRaw.startDate && raw.endDate == cachedRaw.endDate
-    val sameEnergyInputs = inRaw.lengthUnit == cachedRaw.lengthUnit && inRaw.batteryDetails == cachedRaw.batteryDetails &&
+    val sameEnergyInputs = com.matelink.data.api.models.sameDriveLengthUnit(inRaw.lengthUnit, cachedRaw.lengthUnit) && inRaw.batteryDetails == cachedRaw.batteryDetails &&
         inRaw.odometerDetails == cachedRaw.odometerDetails && inRaw.rangeIdeal == cachedRaw.rangeIdeal &&
         inRaw.rangeRated == cachedRaw.rangeRated && inRaw.powerMax == cachedRaw.powerMax &&
         inRaw.powerMin == cachedRaw.powerMin && inRaw.durationMin == cachedRaw.durationMin
@@ -601,9 +601,11 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
         inRaw.source == cachedRaw.source && inRaw.startDate == cachedRaw.startDate &&
         inRaw.endDate == cachedRaw.endDate && inRaw.energyConsumedNet == null &&
         cachedRaw.energyConsumedNet != null && sameEnergyInputs
+    val unchangedPhysicalReceipt = com.matelink.data.api.models.sameDriveLengthUnit(raw.lengthUnit, cachedRaw.lengthUnit) &&
+        raw.copy(qualityState = null, qualityReason = null, lengthUnit = cachedRaw.lengthUnit) ==
+            cachedRaw.copy(qualityState = null, qualityReason = null)
     val canonicalReceipt = when {
-        raw.copy(qualityState = null, qualityReason = null) ==
-            cachedRaw.copy(qualityState = null, qualityReason = null) || weakReceipt ->
+        unchangedPhysicalReceipt || weakReceipt ->
             HistorySummaryEvidenceCodec.sourceEvidence(cached.apiEvidence)
         raw == inRaw -> HistorySummaryEvidenceCodec.sourceEvidence(incoming.apiEvidence)
         raw == cachedRaw -> HistorySummaryEvidenceCodec.sourceEvidence(cached.apiEvidence)
@@ -620,7 +622,7 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
     val currentReceipt = when {
         carryIncomingSnapshot -> HistorySummaryEvidenceCodec.rebaseDriveRaw(incoming.apiEvidence, canonicalReceipt) ?: canonicalReceipt
         carryCachedSnapshot -> HistorySummaryEvidenceCodec.rebaseDriveRaw(cached.apiEvidence, canonicalReceipt) ?: canonicalReceipt
-        raw == cachedRaw && cached.apiEvidence != null -> cached.apiEvidence
+        unchangedPhysicalReceipt && cached.apiEvidence != null -> cached.apiEvidence
         raw == inRaw -> canonicalReceipt
         else -> HistorySummaryEvidenceCodec.withDetail(
             canonicalReceipt, raw, raw.energyContract ?: EnergyContract(netEnergy = EnergyMetric(
