@@ -1,5 +1,5 @@
 import type { HistoryPage } from '../services/types'
-import { historyRowKey, mergeHistoryByKey, mergeHistoryPages, sortHistoryByStartDate } from './history'
+import { historyRowKey, isHistoryQuarantined, mergeHistoryByKey, mergeHistoryPages, sortHistoryByStartDate } from './history'
 
 export type HistoryControllerItem = { id: string; sessionId?: string | null; startDate?: string | null }
 
@@ -58,7 +58,7 @@ function canonicalHistoryPages<T extends HistoryControllerItem>(pages: HistoryPa
 export function acceptHistoryDetail<T extends HistoryControllerItem>(current: HistoryControllerState<T>, requested: T, detail: T,
   keyOf: (item: T) => string = historyRowKey): HistoryControllerState<T> {
   const row = current.items.find(item => keyOf(item) === keyOf(requested) || item.id === requested.id)
-  if (!row || row.id !== requested.id || detail.id !== requested.id ||
+  if (!row || isHistoryQuarantined(row) || isHistoryQuarantined(requested) || row.id !== requested.id || detail.id !== requested.id ||
       (row.sessionId && detail.sessionId && row.sessionId !== detail.sessionId)) return current
   const latest = row as unknown as Record<string, unknown>, original = requested as unknown as Record<string, unknown>
   if (['source', 'startDate', 'endDate', 'startBatteryLevel', 'endBatteryLevel', 'distanceKm'].some(key =>

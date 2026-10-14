@@ -1,7 +1,7 @@
 import { Button, Picker, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
-import { historyRowKey, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
+import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
 import { acceptHistoryDetail, acceptHistoryPage } from '../../domain/history_controller'
 import { emptyHistoryQuery, filterHistory, historyDateTime, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
@@ -13,6 +13,7 @@ import { readAppSession } from '../../services/session'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 import LoadingIndicator from '../../components/LoadingIndicator'
 import { availabilityLabel, qualityLabel, sourceLabel } from '../../domain/data_labels'
+import { resolveChargeEnergy } from '../../domain/drive_energy'
 
 const PAGE_SIZE = 20
 
@@ -22,6 +23,21 @@ function errorMessage(reason: unknown): string {
 }
 
 function battery(number: number | null): string { return number != null && Number.isFinite(number) && number >= 0 && number <= 100 ? `${number}%` : '暂无电量' }
+
+function verifiedEnergy(charge: Charge) {
+  return charge.energy?.evidence ? resolveChargeEnergy({ source: charge.source, start_date: charge.startDate,
+    end_date: charge.endDate, energy_contract: charge.energy.evidence }) : null
+}
+function inputLabel(charge: Charge): string { return verifiedEnergy(charge)?.acInputKwh != null ? 'AC 输入' : '输入电量（历史报告）' }
+function inputValue(charge: Charge): string {
+  const verified = verifiedEnergy(charge)
+  const input = verified ? verified.inputEnergyKwh : charge.energy ? charge.energy.inputEnergyKwh : charge.energyUsedKwh
+  return input == null ? '暂无数据' : `${input} kWh`
+}
+function modeLabel(charge: Charge): string {
+  const mode = verifiedEnergy(charge)?.chargeMode
+  return mode === 'ac' ? 'AC 充电' : mode === 'dc' ? 'DC 充电' : '模式未确认'
+}
 
 function value(value: string | number | null | undefined): string {
   return value == null || value === '' || (typeof value === 'number' && !Number.isFinite(value)) ? '暂无数据' : String(value)
@@ -296,19 +312,22 @@ export default function ChargesPage() {
 
   const openDetail = async (item: Charge) => {
     if (!car) return
+    const canonical = itemsRef.current.find(row => historyRowKey(row) === historyRowKey(item) || row.id === item.id)
+    if (!canonical || canonical.id !== item.id || isHistoryQuarantined(canonical) || isHistoryQuarantined(item)) return
     let ticket: { isCurrent(): boolean }
     try { ticket = scopeGate.current.begin('detail') } catch { return }
-    if (ticket.isCurrent()) setSelected(item)
+    if (ticket.isCurrent()) setSelected(canonical)
     try {
       if (!verifiedCarRef.current || car.remoteVerified === false) return
       const detail = await matelinkApi.getChargeDetail(car.id, item.id, car)
       if (ticket.isCurrent() && detail) {
-        const state = acceptHistoryDetail({ pages: pagesRef.current, items: itemsRef.current, page: pageRef.current }, item, detail)
+        const state = acceptHistoryDetail({ pages: pagesRef.current, items: itemsRef.current, page: pageRef.current }, canonical, detail)
         if (state.items === itemsRef.current) return
         itemsRef.current = state.items
         pagesRef.current = state.pages
         setItems(state.items)
-        setSelected(state.items.find(row => historyRowKey(row) === historyRowKey(detail) || row.id === detail.id) ?? null)
+        const selectedRow = state.items.find(row => historyRowKey(row) === historyRowKey(detail) || row.id === detail.id)
+        setSelected(selectedRow && !isHistoryQuarantined(selectedRow) ? selectedRow : null)
         const session = readAppSession(Taro)
         if (session?.userId) setCacheWarning(!writeHistoryCache(Taro, historyCacheKey('charges', session.userId, car.stableId, getApiOrigin()), state.items))
       }
@@ -317,7 +336,8 @@ export default function ChargesPage() {
     }
   }
 
-  const visibleItems = filterHistory(items, query)
+  const trustedItems = filterHistory(items, emptyHistoryQuery())
+  const visibleItems = filterHistory(trustedItems, query)
   return (
     <View className="page history-page">
       <View className="card">
@@ -342,7 +362,7 @@ export default function ChargesPage() {
         {offline ? <Text className="muted">本机缓存 · 未验证在线车辆</Text> : null}
       </View> : null}
 
-      {current ? (
+      {current && !isHistoryQuarantined(current) ? (
         <View className="card">
           <Text className="section-title">正在充电</Text>
           <Text className="muted">开始：{historyDateTime(current.startDate)} · 地点：{value(current.address)}</Text>
@@ -355,22 +375,25 @@ export default function ChargesPage() {
 
       {!readAppSession(Taro) ? (
         <View className="card"><Text className="section-title">等待微信登录</Text><Text className="muted">请先在“我的”中建立会话。</Text></View>
-      ) : items.length === 0 && !loading ? (
-        <View className="card"><Text className="section-title">暂无充电记录</Text><Text className="muted">服务端尚未采集到可展示的充电记录，空响应不会生成示例数据。</Text></View>
+      ) : trustedItems.length === 0 && !loading ? (
+        <View className="card"><Text className="section-title">暂无可展示的充电记录</Text><Text className="muted">当前没有可展示的充电记录，空响应不会生成示例数据。</Text>
+          {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
+        </View>
       ) : (
         <View className="card">
-          <Text className="section-title">充电记录 {items.length ? `（${items.length}）` : ''}</Text>
+          <Text className="section-title">充电记录 {trustedItems.length ? `（${trustedItems.length}）` : ''}</Text>
           {loading ? <LoadingIndicator label="正在读取充电记录…" compact /> : null}
-          {visibleItems.length === 0 && items.length > 0 ? <Text className="muted">没有符合筛选的充电记录</Text> : null}
+          {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的充电记录</Text> : null}
           {visibleItems.map(item => (
             <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
               <View className="history-record-top"><Text>{historyDateTime(item.startDate)}</Text><Text>{battery(item.startBatteryLevel)} → {battery(item.endBatteryLevel)}</Text></View>
               <Text className="muted">{value(item.address)}</Text>
               <Text className="history-source">{sourceLabel(item.source)}</Text>
+              <Text className="muted">{modeLabel(item)}</Text>
               <View className="history-record-metrics">
                 <View><Text className="metric-label">耗时</Text><Text>{item.durationMinutes == null ? '暂无数据' : `${item.durationMinutes} 分钟`}</Text></View>
                 <View><Text className="metric-label">电池充入</Text><Text>{item.energyAddedKwh == null ? '暂无数据' : `${item.energyAddedKwh} kWh`}</Text></View>
-                <View><Text className="metric-label">AC 输入</Text><Text>{item.energyUsedKwh == null ? '暂无数据' : `${item.energyUsedKwh} kWh`}</Text></View>
+                <View><Text className="metric-label">{inputLabel(item)}</Text><Text>{inputValue(item)}</Text></View>
                 <View><Text className="metric-label">费用</Text><Text>{item.cost == null ? '暂无数据' : `${item.cost}${item.currency ? ` ${item.currency}` : '（币种未知）'}`}</Text></View>
               </View>
             </View>
@@ -379,13 +402,14 @@ export default function ChargesPage() {
         </View>
       )}
 
-      {selected ? (
+      {selected && !isHistoryQuarantined(selected) ? (
         <View className="card">
           <View className="history-detail-heading"><Text className="section-title">充电详情</Text><Button className="button" onClick={closeDetail}>返回列表</Button></View>
           <Text className="muted">{value(selected.address)} · {historyDateTime(selected.startDate)} → {historyDateTime(selected.endDate)}</Text>
+          <Text className="muted">{modeLabel(selected)}</Text>
           <View className="metric-grid">
             <View className="metric"><Text className="metric-label">电池充入</Text><Text className="metric-value">{selected.energyAddedKwh == null ? '暂无数据' : `${selected.energyAddedKwh} kWh`}</Text></View>
-            <View className="metric"><Text className="metric-label">AC 输入</Text><Text className="metric-value">{selected.energyUsedKwh == null ? '暂无数据' : `${selected.energyUsedKwh} kWh`}</Text></View>
+            <View className="metric"><Text className="metric-label">{inputLabel(selected)}</Text><Text className="metric-value">{inputValue(selected)}</Text></View>
             <View className="metric"><Text className="metric-label">费用</Text><Text className="metric-value">{selected.cost == null ? '暂无数据' : `${selected.cost}${selected.currency ? ` ${selected.currency}` : '（币种未知）'}`}</Text></View>
             <View className="metric"><Text className="metric-label">功率</Text><Text className="metric-value">{selected.chargerPowerKw == null ? '暂无数据' : `${selected.chargerPowerKw} kW`}</Text></View>
           </View>

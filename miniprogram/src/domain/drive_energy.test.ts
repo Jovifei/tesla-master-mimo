@@ -162,6 +162,31 @@ describe('canonical drive and charge energy merge', () => {
     expect(mergeDriveEnergyRecord(revoked, weak, revoked).energyConsumedKwh).toBeNull()
   })
 
+  it('keeps an authoritative unknown contract through a same-window weak null contract', () => {
+    const prior = drive(raw({ energy_contract: { version: 1, net_energy: reported(null, { quality: 'unknown', reason: 'provider_energy_unsupported' }) } }))
+    const weak = drive(raw({ energy_contract: null }))
+    const refreshed = mergeDriveEnergyRecord(prior, weak, prior)
+    expect(refreshed.energyConsumedKwh).toBeNull()
+    expect(refreshed.energyReceipt?.energy_contract).toEqual(prior.energyReceipt?.energy_contract)
+    const reopened = JSON.parse(JSON.stringify(refreshed)) as Drive
+    expect(mergeDriveEnergyRecord(reopened, weak, reopened).energyConsumedKwh).toBeNull()
+  })
+
+  it('retains a valid contract through weak null but never lends it across source, window or ID', () => {
+    const prior = drive(raw({ energy_contract: { version: 1, net_energy: reported(-0.25) } }))
+    const weak = drive(raw({ energy_contract: null }))
+    expect(mergeDriveEnergyRecord(prior, weak, prior).energyConsumedKwh).toBe(-0.25)
+    for (const changed of [
+      drive({ drive_id: 4, source: 'teslamate_archive', start_date: start, end_date: end, energy_contract: null }),
+      drive({ drive_id: 4, source: 'telemetry_mqtt', start_date: start, end_date: '2026-10-14T00:02:00Z', energy_contract: null }),
+      { ...drive({ drive_id: 5, source: 'telemetry_mqtt', start_date: start, end_date: end, energy_contract: null }), id: 'drive-5' },
+    ]) {
+      const result = mergeDriveEnergyRecord(prior, changed, changed)
+      expect(result.energyConsumedKwh).toBeNull()
+      expect(result.energyReceipt?.energy_contract).toBeNull()
+    }
+  })
+
   it('cannot graft old SOC or energy across source, window, ID or display-only legacy caches', () => {
     const prior = drive(raw(), car)
     const changed = drive({ drive_id: 4, source: 'telemetry_mqtt', start_date: start, end_date: '2026-10-14T00:02:00Z' })
@@ -179,7 +204,7 @@ describe('canonical drive and charge energy merge', () => {
     const proof: EnergyContract = { version: 1, battery_input: counter('battery_input', 0), ac_input: counter('ac_charger_input', 2),
       charge_mode: 'ac', charge_mode_evidence: 'observed_boundary_modes_no_conflict' }
     const input = { source: 'telemetry_mqtt', start_date: start, end_date: end, energy_contract: proof, charger_power: 20 }
-    expect(resolveChargeEnergy(input)).toMatchObject({ batteryInputKwh: 0, acInputKwh: 2, chargeMode: 'ac' })
+    expect(resolveChargeEnergy(input)).toMatchObject({ batteryInputKwh: 0, acInputKwh: 2, inputEnergyKwh: 2, chargeMode: 'ac' })
     expect(resolveChargeEnergy({ ...input, energy_contract: { ...proof, charge_mode: 'dc' } }).acInputKwh).toBeNull()
     expect(resolveChargeEnergy({ ...input, energy_contract: null }).batteryInputKwh).toBeNull()
     expect(resolveChargeEnergy({ charge_energy_added: -1 }).batteryInputKwh).toBeNull()
@@ -212,12 +237,48 @@ describe('canonical drive and charge energy merge', () => {
     }
   })
 
-  it('merges independently reported legacy battery and AC fields without clearing legitimate zero', () => {
+  it('merges independently reported legacy battery and generic input fields without clearing legitimate zero', () => {
     const input = { source: 'teslamate_archive', start_date: start, end_date: end, charge_energy_added: 5, charge_energy_used: 6 }
     const prior = { id: 'charge-1', source: input.source, startDate: start, endDate: end,
       energy: resolveChargeEnergy(input), energyAddedKwh: 5, energyUsedKwh: 6 } as Charge
     const incoming = { ...prior, energy: resolveChargeEnergy({ ...input, charge_energy_added: 0, charge_energy_used: null }), energyAddedKwh: 0, energyUsedKwh: null }
     expect(mergeChargeEnergyRecord(prior, incoming, prior)).toMatchObject({ energyAddedKwh: 0, energyUsedKwh: 6,
-      energy: { batteryInputKwh: 0, acInputKwh: 6, inputEnergyKwh: 6, quality: 'reported' } })
+      energy: { batteryInputKwh: 0, acInputKwh: null, inputEnergyKwh: 6, quality: 'reported' } })
+  })
+
+  it.each(['dc', undefined] as const)('keeps legacy charging input generic without claiming AC for mode %s', mode => {
+    const input = { source: 'teslamate_archive', start_date: start, end_date: end,
+      charge_energy_added: 5, charge_energy_used: 6, charge_type: mode }
+    const energy = resolveChargeEnergy(input)
+    expect(energy).toMatchObject({ batteryInputKwh: 5, acInputKwh: null, inputEnergyKwh: 6, evidence: null })
+    const prior = { id: 'charge-1', source: input.source, startDate: start, endDate: end,
+      energy, energyAddedKwh: 5, energyUsedKwh: 6 } as Charge
+    const weak = { ...prior, energy: resolveChargeEnergy({ ...input, charge_energy_added: null, charge_energy_used: null }) }
+    const kept = mergeChargeEnergyRecord(prior, weak, prior)
+    expect(kept.energy).toMatchObject({ acInputKwh: null, inputEnergyKwh: 6 })
+    expect(kept.energyUsedKwh).toBe(6)
+    const reopened = JSON.parse(JSON.stringify(kept)) as Charge
+    expect(mergeChargeEnergyRecord(reopened, weak, reopened).energy?.inputEnergyKwh).toBe(6)
+    const unknown = { ...weak, energy: resolveChargeEnergy({ ...input, energy_contract: { version: 1, battery_input: { quality: 'unknown' }, ac_input: { quality: 'unknown' } } }) }
+    const revoked = mergeChargeEnergyRecord(kept, unknown, kept)
+    expect(revoked.energy).toMatchObject({ batteryInputKwh: null, acInputKwh: null, inputEnergyKwh: null })
+    expect(mergeChargeEnergyRecord(revoked, weak, revoked).energy?.inputEnergyKwh).toBeNull()
+    const foreign = { ...weak, source: 'telemetry_mqtt' }
+    expect(mergeChargeEnergyRecord(prior, foreign, foreign).energy?.inputEnergyKwh).toBeNull()
+  })
+
+  it('demotes old cached AC without a contract to generic input through weak null and reopening', () => {
+    const input = { source: 'teslamate_archive', start_date: start, end_date: end, charge_energy_added: 5, charge_energy_used: 6 }
+    const old = { id: 'charge-1', source: input.source, startDate: start, endDate: end, energyAddedKwh: 5, energyUsedKwh: 6,
+      energy: { ...resolveChargeEnergy(input), acInputKwh: 6 } } as Charge
+    const weak = { ...old, energy: resolveChargeEnergy({ ...input, charge_energy_added: null, charge_energy_used: null }) }
+    const refreshed = mergeChargeEnergyRecord(old, weak, old)
+    expect(refreshed.energy).toMatchObject({ acInputKwh: null, inputEnergyKwh: 6, evidence: null })
+    expect(refreshed.energyUsedKwh).toBe(6)
+    const reopened = JSON.parse(JSON.stringify(refreshed)) as Charge
+    expect(mergeChargeEnergyRecord(reopened, weak, reopened).energy).toMatchObject({ acInputKwh: null, inputEnergyKwh: 6 })
+    const unknown = { ...weak, energy: resolveChargeEnergy({ ...input, energy_contract: { version: 1, ac_input: { quality: 'unknown' } } }) }
+    const revoked = mergeChargeEnergyRecord(refreshed, unknown, refreshed)
+    expect(mergeChargeEnergyRecord(revoked, weak, revoked).energy).toMatchObject({ acInputKwh: null, inputEnergyKwh: null })
   })
 })

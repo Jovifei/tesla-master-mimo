@@ -55,6 +55,10 @@ function qualityRank(row: Row): number {
   }
 }
 function quarantined(row: Row): boolean { return text(row.qualityState).toLowerCase() === 'quarantined' }
+export function isHistoryQuarantined(item: unknown): boolean {
+  const row = asRow(item)
+  return Boolean(row && quarantined(row))
+}
 function conservativeEvidence<T>(item: T): T {
   const row = asRow(item)
   if (!row || quarantined(row)) return item

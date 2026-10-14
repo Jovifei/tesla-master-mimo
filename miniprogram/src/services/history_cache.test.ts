@@ -13,6 +13,23 @@ function storage() {
 }
 
 describe('history cache', () => {
+  it('cannot read another account when dotted account and vehicle components collide', () => {
+    const store = storage(), origin = 'https://api.example.test'
+    const owner = historyCacheKey('drives', 'a.b', 'c', origin)
+    const other = historyCacheKey('drives', 'a', 'b.c', origin)
+    writeHistoryCache(store, owner, [{ id: 'owner-only' }])
+    expect(readHistoryCache(store, other)).toEqual([])
+    expect(owner).not.toBe(other)
+  })
+  it('preserves but does not read or delete old ambiguous separator keys', () => {
+    const store = storage(), origin = 'https://api.example.test'
+    const old = `matelink.history.v3.${encodeURIComponent(origin)}.a.b.c.drives`
+    const value = { schema: 3, scope: old, items: [{ id: 'ambiguous-owner' }], savedAt: 'now' }
+    store.setStorageSync(old, value)
+    expect(readHistoryCache(store, historyCacheKey('drives', 'a.b', 'c', origin))).toEqual([])
+    clearHistoryCachesForAccount(store, 'a.b', origin)
+    expect(store.values.get(old)).toEqual(value)
+  })
   it('scopes cached rows by account and stable vehicle', () => {
     expect(historyCacheKey('drives', 'user-a', 'vehicle-a')).not.toBe(historyCacheKey('drives', 'user-b', 'vehicle-a'))
     expect(historyCacheKey('drives', 'user-a', 'vehicle-a')).not.toBe(historyCacheKey('charges', 'user-a', 'vehicle-a'))
@@ -92,6 +109,43 @@ describe('history cache', () => {
 })
 
 describe('bounded history cache payload', () => {
+  it('omits precise normalized and legacy snake-case coordinates while retaining addresses and energy', () => {
+    const store = storage(), key = historyCacheKey('drives', 'owner', 'uid', 'https://api.example.test')
+    const record = { id: '1', startAddress: 'Genuine start address', endAddress: 'Genuine end address', energyConsumedKwh: 1.25,
+      startLatitude: 31.123456, startLongitude: 121.123456, endLatitude: 31.654321, endLongitude: 121.654321,
+      latitude: 30.123456, longitude: 120.123456, start_latitude: 31.123456, start_longitude: 121.123456,
+      end_latitude: 31.654321, end_longitude: 121.654321,
+      energyReceipt: { start_latitude: 31.123456, end_longitude: 121.654321, source: 'telemetry_mqtt',
+        energy_contract: { net_energy: { value_kwh: 1.25, quality: 'reported' } } } }
+    expect(writeHistoryCache(store, key, [record])).toBe(true)
+    const saved = JSON.stringify(store.values.get(key))
+    for (const coordinate of ['Latitude', 'Longitude', 'latitude', 'longitude', '31.123456', '121.654321']) expect(saved).not.toContain(coordinate)
+    expect(saved).toContain('Genuine start address')
+    expect(saved).toContain('energyConsumedKwh')
+    expect(saved).toContain('value_kwh')
+    const chargeKey = historyCacheKey('charges', 'owner', 'uid', 'https://api.example.test')
+    writeHistoryCache(store, chargeKey, [{ id: 'c', latitude: 31.123456, longitude: 121.123456, address: 'Genuine charge site', energyAddedKwh: 5 }])
+    expect(JSON.stringify(store.values.get(chargeKey))).not.toContain('latitude')
+    expect(JSON.stringify(store.values.get(chargeKey))).toContain('Genuine charge site')
+  })
+
+  it('projects precise coordinates out of old v3 reads without deleting or rewriting the original cache', () => {
+    const store = storage(), key = historyCacheKey('drives', 'owner', 'uid', 'https://api.example.test')
+    const legacy = { schema: HISTORY_CACHE_SCHEMA, scope: key, savedAt: '2026-10-14T00:00:00Z', items: [
+      { id: '1', startLatitude: 31.123456, startLongitude: 121.123456, end_latitude: 31.654321, end_longitude: 121.654321,
+        startAddress: 'Legacy genuine address', energyConsumedKwh: 0 },
+    ] }
+    store.setStorageSync(key, legacy)
+    const projected = JSON.stringify(readHistoryCache(store, key))
+    expect(projected).not.toContain('Latitude')
+    expect(projected).not.toContain('Longitude')
+    expect(projected).not.toContain('latitude')
+    expect(projected).not.toContain('longitude')
+    expect(projected).toContain('Legacy genuine address')
+    expect(projected).toContain('energyConsumedKwh')
+    expect(store.values.get(key)).toBe(legacy)
+  })
+
   it('retains 358 small rows but caps large archives at 500 most recent rows', () => {
     const store = storage(), key = historyCacheKey('drives', 'a', 'car', 'https://a.test')
     const rows = Array.from({ length: 600 }, (_, id) => ({ id: String(id), startDate: new Date(1700000000000 + id * 1000).toISOString() }))

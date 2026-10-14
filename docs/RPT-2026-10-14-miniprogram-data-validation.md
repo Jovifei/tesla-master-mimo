@@ -1,5 +1,22 @@
 # 小程序数据阶段执行与验收
 
+## Review13 集中修复后的最新本地结果
+
+当前最终源码160/160测试、18文件、0fail/skip；严格类型exit0、微信编译SUCCESS5.04秒。独立只读复审APPROVE，无剩余可触发P1/P2；固定新SHA的完整CI及原GPT-6极高最终复审仍待，不能继承旧候选绿色结果。
+
+| 问题 | 实际修复/回归 |
+| --- | --- |
+| namespace句点碰撞 | origin/account/UID分段严格转义；真实storage RED3复现串读，修后隔离；旧歧义键保留但不读、迁移或猜测删除 |
+| null合同复活/覆盖能耗 | 同source/ID/精确window弱null保留原合同；unknown不复活，非null新合同仍权威；helper+实际页面RED3→GREEN |
+| 缓存精准坐标 | 递归剔除normalized/snake/legacy GPS字段；实际详情入缓存和旧缓存读取投影回归；原key内容不改、地址/合格能量保留 |
+| 隔离历史消费 | 行程/充电/current的可信列表、计数、详情、旧click均排除quarantined；弱摘要不升级；隔离首分页仍可加载合法下一页 |
+| 能耗/DC标签 | canonical方法名映射；无合格AC证据的历史输入6保留generic，不伪称AC；旧fakeAC重开也重新校验；明确unknown撤销 |
+| Auth外部错误/迟到状态 | 安全文案；transaction/clientProof/origin/session/lifecycle守护；隐藏不领取，旧expired不清新事务；真实API去重领取9项通过 |
+
+集中消费者RED8失败/64通过、Auth/DC RED6失败/21通过均已保存，再统一修复到160全绿。最后同组充电current/detail隔离实测RED1再修到全绿；不是调整断言掩盖源行为。
+
+依赖/锁未继续变更，已实际干净安装两份锁；最新工具audit0、Taro构建树58告警仍保持发布限制。原main/App44b及Owner非本阶段文件保留。下文保留128初次提交及CI失败的执行记录。
+
 原 E:/project/tesla_master/app_mimo；codex/miniprogram-stage-20261013；基线 main 44bfb8baaa4528078ffb88a4f3ff622b570a6469。本文与小程序源码一起提交；完整 SHA/tree/parent 以 Git 与同 SHA CI 的 source.txt 为准。
 
 ## 完成内容

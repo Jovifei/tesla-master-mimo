@@ -529,7 +529,7 @@ function normalizeCharge(raw: RawCharge): Charge | null {
     address: raw.address ?? null,
     durationMinutes: finite(raw.duration_min, 0),
     energyAddedKwh: energy.batteryInputKwh,
-    energyUsedKwh: energy.acInputKwh,
+    energyUsedKwh: energy.inputEnergyKwh,
     energy,
     cost: finite(raw.cost, 0),
     currency: chargeCurrency(raw), currencyCode: chargeCurrency(raw), chargeMode: energy.chargeMode ?? chargeMode(raw),

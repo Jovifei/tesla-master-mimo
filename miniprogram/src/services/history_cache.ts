@@ -14,6 +14,7 @@ export const HISTORY_CACHE_MAX_ROWS = 500
 export const HISTORY_CACHE_MAX_BYTES = 800 * 1024
 export const HISTORY_CACHE_SCHEMA = 3
 const PREVIOUS_HISTORY_CACHE_SCHEMA = 2
+const encodeScope = (value: string) => encodeURIComponent(value).replace(/\./g, '%2E')
 
 export function historyCacheKey(
   kind: HistoryKind,
@@ -22,7 +23,7 @@ export function historyCacheKey(
   apiOrigin = 'https://unconfigured.invalid',
   _sessionGeneration?: number,
 ): string {
-  return `matelink.history.v${HISTORY_CACHE_SCHEMA}.${encodeURIComponent(apiOrigin)}.${encodeURIComponent(userId || 'anonymous')}.${encodeURIComponent(stableCarId)}.${kind}`
+  return `matelink.history.v${HISTORY_CACHE_SCHEMA}.${encodeScope(apiOrigin)}.${encodeScope(userId || 'anonymous')}.${encodeScope(stableCarId)}.${kind}`
 }
 
 /** WeChat quotas count UTF-8 bytes, not JavaScript UTF-16 code units. */
@@ -43,7 +44,9 @@ function cacheProjection(value: unknown, depth = 0): unknown {
   if (!value || typeof value !== 'object') return value
   const result: Record<string, unknown> = {}
   for (const [key, item] of Object.entries(value)) {
-    if (['positions', 'drive_positions', 'charge_details', 'chargePoints', 'route', 'rawPositions'].includes(key)) continue
+    if (['positions', 'drive_positions', 'charge_details', 'chargePoints', 'route', 'rawPositions',
+      'startLatitude', 'startLongitude', 'endLatitude', 'endLongitude', 'latitude', 'longitude',
+      'start_latitude', 'start_longitude', 'end_latitude', 'end_longitude', 'lat', 'lon', 'lng'].includes(key)) continue
     result[key] = cacheProjection(item, depth + 1)
   }
   return result
@@ -123,7 +126,7 @@ export function clearHistoryCachesForAccount(
   apiOrigin: string,
 ): void {
   if (!userId.trim() || !apiOrigin.startsWith('https://')) return
-  const owner = `${encodeURIComponent(apiOrigin)}.${encodeURIComponent(userId)}.`
+  const owner = `${encodeScope(apiOrigin)}.${encodeScope(userId)}.`
   try {
     for (const key of storage.getStorageInfoSync?.().keys ?? []) {
       for (const schema of [HISTORY_CACHE_SCHEMA, PREVIOUS_HISTORY_CACHE_SCHEMA]) {

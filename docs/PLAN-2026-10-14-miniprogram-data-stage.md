@@ -45,4 +45,6 @@ Jovi已授权完整本地实施，普通GPT-6极高Chat继续审核；现有M3.1
 
 ## 平台与权限
 
+Review13完整审核已集中落实namespace/GPS/quarantine/DC/Auth修复及本地null-contract补充；实际160测试、严格类型/weapp通过，独立源复审APPROVE。旧歧义v2/v3键只能保留，不可凭旧分隔符猜scope自动迁移/删除。微信平台真实授权/发布仍独立，最终固定SHA CI和原Chat审核待完成。
+
 官方开发工具存在且编译配置urlCheck true；CLI两次初始化因Windows保留端口冲突失败，不能通过改系统网络/降低TLS或关闭域名校验解决。先完成可独立验证的完整源码交付，再具体交接GUI/微信登录/Tesla授权与正式平台门。不得上传/发布、实际迁移、生产配置改动或车辆操作。

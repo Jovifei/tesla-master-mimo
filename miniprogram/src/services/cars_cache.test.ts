@@ -1,6 +1,13 @@
 import { expect, it } from 'vitest'
 import { readCarsCache, writeCarsCache, clearCarsCacheForAccount } from './cars_cache'
 const car = { id: 7, stableId: 'a', name: 'fixture', displayName: null, model: null, trim: null, exteriorColor: null, wheelType: null, remoteVerified: true }
+it('isolates origin/account tuples even when dots could move between components', () => {
+  const storage = fixture()
+  writeCarsCache(storage, 'c', 'https://a.test.b', [car])
+  expect(readCarsCache(storage, 'b.c', 'https://a.test')).toEqual([])
+  clearCarsCacheForAccount(storage, 'b.c', 'https://a.test')
+  expect(readCarsCache(storage, 'c', 'https://a.test.b')).toHaveLength(1)
+})
 function fixture() {
   const disk = new Map<string, unknown>()
   return { disk, getStorageSync: (key: string) => disk.get(key),

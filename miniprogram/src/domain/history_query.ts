@@ -1,4 +1,5 @@
 import type { WechatStorage } from '../services/session'
+import { isHistoryQuarantined } from './history'
 
 export type HistoryQuery = { startDate: string; endDate: string; minDistanceKm: number }
 export const emptyHistoryQuery = (): HistoryQuery => ({ startDate: '', endDate: '', minDistanceKm: 0 })
@@ -27,6 +28,7 @@ export function historyDateTime(value: string | null | undefined): string {
 }
 export function filterHistory<T extends { startDate?: string | null; distanceKm?: number | null }>(rows: readonly T[], query: HistoryQuery): T[] {
   return rows.filter(row => {
+    if (isHistoryQuarantined(row)) return false
     if (query.minDistanceKm > 0 && (row.distanceKm == null || !Number.isFinite(row.distanceKm) || row.distanceKm < query.minDistanceKm)) return false
     if (!query.startDate && !query.endDate) return true
     const date = typeof row.startDate === 'string' && row.startDate ? new Date(row.startDate) : null

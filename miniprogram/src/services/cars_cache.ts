@@ -4,9 +4,10 @@ import type { WechatStorage } from './session'
 const prefix = 'matelink.cars.v1.'
 const MAX_CARS = 100
 const MAX_BYTES = 128_000
+const encodeScope = (value: string) => encodeURIComponent(value).replace(/\./g, '%2E')
 function key(userId: string, origin: string): string | null {
   return userId.trim() && /^https:\/\/[a-z0-9.-]+(?::443)?\/?$/i.test(origin)
-    ? `${prefix}${encodeURIComponent(origin)}.${encodeURIComponent(userId)}` : null
+    ? `${prefix}${encodeScope(origin)}.${encodeScope(userId)}` : null
 }
 function project(value: unknown): Car | null {
   if (!value || typeof value !== 'object') return null

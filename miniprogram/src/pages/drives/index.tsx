@@ -1,7 +1,7 @@
 import { Button, Picker, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
-import { historyRowKey, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
+import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
 import { acceptHistoryDetail, acceptHistoryPage } from '../../domain/history_controller'
 import { emptyHistoryQuery, filterHistory, historyDateTime, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
@@ -290,19 +290,22 @@ export default function DrivesPage() {
 
   const openDetail = async (item: Drive) => {
     if (!car) return
+    const canonical = itemsRef.current.find(row => historyRowKey(row) === historyRowKey(item) || row.id === item.id)
+    if (!canonical || canonical.id !== item.id || isHistoryQuarantined(canonical) || isHistoryQuarantined(item)) return
     let ticket: { isCurrent(): boolean }
     try { ticket = scopeGate.current.begin('detail') } catch { return }
-    if (ticket.isCurrent()) setSelected(item)
+    if (ticket.isCurrent()) setSelected(canonical)
     try {
       if (!verifiedCarRef.current || car.remoteVerified === false) return
       const detail = await matelinkApi.getDriveDetail(car.id, item.id, car)
       if (ticket.isCurrent() && detail) {
-        const state = acceptHistoryDetail({ pages: pagesRef.current, items: itemsRef.current, page: pageRef.current }, item, detail)
+        const state = acceptHistoryDetail({ pages: pagesRef.current, items: itemsRef.current, page: pageRef.current }, canonical, detail)
         if (state.items === itemsRef.current) return
         itemsRef.current = state.items
         pagesRef.current = state.pages
         setItems(state.items)
-        setSelected(state.items.find(row => historyRowKey(row) === historyRowKey(detail) || row.id === detail.id) ?? null)
+        const selectedRow = state.items.find(row => historyRowKey(row) === historyRowKey(detail) || row.id === detail.id)
+        setSelected(selectedRow && !isHistoryQuarantined(selectedRow) ? selectedRow : null)
         const session = readAppSession(Taro)
         if (session?.userId) setCacheWarning(!writeHistoryCache(Taro, historyCacheKey('drives', session.userId, car.stableId, getApiOrigin()), state.items))
       }
@@ -311,7 +314,8 @@ export default function DrivesPage() {
     }
   }
 
-  const visibleItems = filterHistory(items, query)
+  const trustedItems = filterHistory(items, emptyHistoryQuery())
+  const visibleItems = filterHistory(trustedItems, query)
   return (
     <View className="page history-page">
       <View className="card">
@@ -339,13 +343,15 @@ export default function DrivesPage() {
 
       {!readAppSession(Taro) ? (
         <View className="card"><Text className="section-title">等待微信登录</Text><Text className="muted">请先在“我的”中建立会话。</Text></View>
-      ) : items.length === 0 && !loading ? (
-        <View className="card"><Text className="section-title">暂无行程</Text><Text className="muted">服务端尚未采集到可展示的行程记录，空响应不会生成示例数据。</Text></View>
+      ) : trustedItems.length === 0 && !loading ? (
+        <View className="card"><Text className="section-title">暂无可展示的行程</Text><Text className="muted">当前没有可展示的行程记录，空响应不会生成示例数据。</Text>
+          {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
+        </View>
       ) : (
         <View className="card">
-          <Text className="section-title">行程记录 {items.length ? `（${items.length}）` : ''}</Text>
+          <Text className="section-title">行程记录 {trustedItems.length ? `（${trustedItems.length}）` : ''}</Text>
           {loading ? <LoadingIndicator label="正在读取行程…" compact /> : null}
-          {visibleItems.length === 0 && items.length > 0 ? <Text className="muted">没有符合筛选的行程</Text> : null}
+          {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的行程</Text> : null}
           {visibleItems.map(item => (
             <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
               <View className="history-record-top"><Text>{historyDateTime(item.startDate)}</Text><Text>{battery(item.startBatteryLevel)} → {battery(item.endBatteryLevel)}</Text></View>
@@ -363,7 +369,7 @@ export default function DrivesPage() {
         </View>
       )}
 
-      {selected ? (
+      {selected && !isHistoryQuarantined(selected) ? (
         <View className="card">
           <View className="history-detail-heading"><Text className="section-title">行程详情</Text><Button className="button" onClick={closeDetail}>返回列表</Button></View>
           <Text className="muted">{value(selected.startAddress)} → {value(selected.endAddress)}</Text>

@@ -186,8 +186,11 @@ describe('MateLink API transport', () => {
     session.writeAppSession(storageAdapter, {
       accessToken: 'access', refreshToken: 'refresh', expiresAt: null, userId: 'user-a', linkRequired: false,
     })
-    const accountCache = 'matelink.history.v3.https%3A%2F%2Fapi.example.test.user-a.vehicle-a.drives'
-    const otherCache = 'matelink.history.v3.https%3A%2F%2Fapi.example.test.user-b.vehicle-a.drives'
+    const { historyCacheKey } = await import('./history_cache')
+    const accountCache = historyCacheKey('drives', 'user-a', 'vehicle-a', 'https://api.example.test')
+    const otherCache = historyCacheKey('drives', 'user-b', 'vehicle-a', 'https://api.example.test')
+    const ambiguousLegacy = 'matelink.history.v3.https%3A%2F%2Fapi.example.test.user-a.vehicle-a.drives'
+    mocks.storage.set(ambiguousLegacy, { items: ['preserve-unverified-namespace'] })
     mocks.storage.set(accountCache, { items: [] })
     mocks.storage.set(otherCache, { items: [] })
     mocks.request.mockResolvedValue({
@@ -207,6 +210,7 @@ describe('MateLink API transport', () => {
     expect(session.readAppSession(storageAdapter)).toBeNull()
     expect(mocks.storage.has(accountCache)).toBe(false)
     expect(mocks.storage.has(otherCache)).toBe(true)
+    expect(mocks.storage.has(ambiguousLegacy)).toBe(true)
   })
 
   it('clears a deleted account without exposing an untrusted revoke URL', async () => {

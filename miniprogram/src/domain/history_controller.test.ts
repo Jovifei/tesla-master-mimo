@@ -88,6 +88,14 @@ describe('history page controller', () => {
 })
 
 describe('canonical history detail consumption', () => {
+  it('never admits details into an already quarantined canonical row', () => {
+    const isolated = { ...row(1), qualityState: 'quarantined', qualityReason: 'ambiguous_source' }
+    const current = acceptHistoryPage(emptyHistoryControllerState<Drive>(), page(1, [isolated], false, 1), 1).state
+    const incoming = { ...isolated, qualityState: 'observed', qualityReason: null, startAddress: 'Later unqualified detail' }
+    expect(acceptHistoryDetail(current, isolated, incoming)).toBe(current)
+    expect(current.items[0].qualityState).toBe('quarantined')
+  })
+
   it('writes accepted detail into the list and every containing page', () => {
     const original = row(1)
     const state = acceptHistoryPage(emptyHistoryControllerState<Drive>(), page(1, [original], false, 1), 1).state

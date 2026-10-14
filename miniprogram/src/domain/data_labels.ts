@@ -8,8 +8,8 @@ export function sourceLabel(source: string | null | undefined): string {
     fleet_telemetry: 'Fleet', fleet_telemetry_native: 'Fleet', fleet_native: 'Fleet', api: 'API 报告', legacy_api: '历史 API 报告' }, source, '来源未标明')
 }
 export function energyMethodLabel(method: string | null | undefined): string {
-  return label({ api_reported_net: '服务端净能耗报告', power_integral: '行驶功率积分估算',
-    nominal_energy_remaining_delta: '电量端点估算', soc_capacity_estimate: '电量百分比 × 电池容量估算' }, method, '尚无合格能耗依据')
+  return label({ api_reported_net: '服务端净能耗报告', drive_power_integral: '行驶功率积分估算',
+    energy_remaining_delta: '电量端点估算', soc_capacity_estimate: '电量百分比 × 电池容量估算' }, method, '尚无合格能耗依据')
 }
 export function capacityLabel(basis: EnergyMetric['capacity_basis']): string {
   return label({ api_reported_current_capacity: '服务端提供的当前容量', provided_capacity: '明确提供的容量',

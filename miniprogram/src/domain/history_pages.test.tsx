@@ -1,7 +1,7 @@
 import React from 'react'
 import TestRenderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Charge } from '../services/types'
+import type { Charge, Drive } from '../services/types'
 
 const platform = vi.hoisted(() => ({
   request: vi.fn(), values: new Map<string, unknown>(), failStorage: false,
@@ -55,12 +55,173 @@ async function click(record: ReactTestRenderer, text: string) {
 /** Actual pages -> actual API adapter -> fake Taro transport -> actual controllers/scoped storage.
  * No controller, API, energy projection or React page is mocked. */
 describe('history pages consume canonical data across layers', () => {
+  it('does not expose isolated current/detail charges, preserves quarantine on reopen, and keeps next-page recovery', async () => {
+    const charge = { charge_id: 4, session_id: 'charge-q', source: 'teslamate_archive', start_date: start, end_date: end,
+      quality_state: 'observed', charge_energy_added: 6 }
+    let weak = false
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/current') || url.endsWith('/charges/4')) return respond({ charge: { ...charge, quality_state: 'quarantined' } })
+      const page = Number(new URL(url).searchParams.get('page') || 1)
+      return respond({ charges: [page === 1 ? { ...charge, quality_state: weak ? undefined : 'observed' } :
+        { ...charge, charge_id: 5, session_id: 'charge-valid', charge_energy_added: 0 }], meta: { page, show: 20, total_pages: 2 } })
+    })
+    let page = await mount('charges')
+    const staleOpen = page.root.findByProps({ className: 'history-record' }).props.onClick
+    expect(JSON.stringify(page.toJSON())).not.toContain('正在充电')
+    await act(async () => { staleOpen() }); await flush()
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+    expect(JSON.stringify(page.toJSON())).not.toContain('充电详情')
+    const calls = platform.request.mock.calls.length
+    await act(async () => { staleOpen() }); await flush()
+    expect(platform.request.mock.calls).toHaveLength(calls)
+    weak = true; await click(page, '刷新')
+    await act(async () => { platform.unload(); page.unmount() }); renderer = null
+    page = await mount('charges')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+    expect(JSON.stringify(page.toJSON())).not.toContain('6 kWh')
+    await click(page, '加载更多')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
+    expect(JSON.stringify(page.toJSON())).toContain('0 kWh')
+  })
+  it('stores actual normalized drive details without precise coordinates and preserves energy/address after reopen', async () => {
+    const raw = { ...reported, start_address: 'Genuine start site', end_address: 'Genuine end site',
+      start_latitude: 31.123456, start_longitude: 121.123456, end_latitude: 31.654321, end_longitude: 121.654321 }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.includes('/drives/1')) return respond({ drive: raw })
+      return respond({ drives: [summary], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    let page = await mount('drives')
+    await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+    const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
+    const key = historyCacheKey('drives', 'user-a', 'uid7', 'https://api.example.test')
+    const saved = JSON.stringify(platform.values.get(key))
+    for (const coordinate of ['Latitude', 'Longitude', 'latitude', 'longitude', '31.123456', '121.654321']) expect(saved).not.toContain(coordinate)
+    expect(readHistoryCache<Drive>(storage, key)[0].energy?.energyKwh).toBe(-0.25)
+    expect(readHistoryCache<Drive>(storage, key)[0].startAddress).toBe('Genuine start site')
+    await act(async () => { platform.unload(); page.unmount() }); renderer = null
+    page = await mount('drives')
+    expect(JSON.stringify(page.toJSON())).toContain('Genuine start site')
+    expect(JSON.stringify(page.toJSON())).toContain('-0.25 kWh')
+    expect(JSON.stringify(readHistoryCache<Drive>(storage, key))).not.toContain('Latitude')
+  })
+
+  it('excludes quarantined records with otherwise valid contracts from the trusted list and cache reopen view', async () => {
+    const isolated = { ...reported, quality_state: 'quarantined', quality_reason: 'ambiguous_source' }
+    const valid = { ...reported, drive_id: 2, session_id: 'session-2', energy_contract: { version: 1,
+      net_energy: { ...reported.energy_contract.net_energy, value_kwh: 0 } } }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      return respond({ drives: [isolated, valid], meta: { page: 1, show: 20, total: 2, total_pages: 1 } })
+    })
+    let page = await mount('drives')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
+    expect(JSON.stringify(page.toJSON())).toContain('（1）')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).toContain('0 kWh')
+    await act(async () => { platform.unload(); page.unmount() }); renderer = null
+    page = await mount('drives')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
+    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).toContain('0 kWh')
+  })
+
+  it('keeps a quarantined-only first page loadable without counting it as a trusted drive', async () => {
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      const page = Number(new URL(url).searchParams.get('page') || '1')
+      return respond({ drives: [page === 1 ? { ...reported, quality_state: 'quarantined' } :
+        { ...reported, drive_id: 2, session_id: 'session-2', energy_contract: { version: 1,
+          net_energy: { ...reported.energy_contract.net_energy, value_kwh: 0 } } }],
+        meta: { page, show: 20, total: 2, total_pages: 2 } })
+    })
+    const page = await mount('drives')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    await click(page, '加载更多')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
+    expect(JSON.stringify(page.toJSON())).toContain('（1）')
+    expect(JSON.stringify(page.toJSON())).toContain('0 kWh')
+  })
+
+  it('authoritative quarantine refresh hides prior proof, blocks stale detail actions, and stays quarantined through weak refresh/reopen', async () => {
+    let phase: 'valid' | 'quarantined' | 'weak' = 'valid'
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.includes('/drives/1')) return respond({ drive: reported })
+      const row = phase === 'valid' ? reported : phase === 'quarantined' ? { ...reported, quality_state: 'quarantined' } : summary
+      return respond({ drives: [row], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    let page = await mount('drives')
+    const staleOpenDetail = page.root.findByProps({ className: 'history-record' }).props.onClick
+    expect(JSON.stringify(page.toJSON())).toContain('-0.25 kWh')
+    phase = 'quarantined'
+    await click(page, '刷新')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    const before = platform.request.mock.calls.length
+    await act(async () => { staleOpenDetail() }); await flush()
+    expect(platform.request.mock.calls).toHaveLength(before)
+    expect(JSON.stringify(page.toJSON())).not.toContain('行程详情')
+    phase = 'weak'
+    await click(page, '刷新')
+    const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
+    const key = historyCacheKey('drives', 'user-a', 'uid7', 'https://api.example.test')
+    expect(readHistoryCache<Drive>(storage, key)[0].qualityState).toBe('quarantined')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+    await act(async () => { platform.unload(); page.unmount() }); renderer = null
+    page = await mount('drives')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(readHistoryCache<Drive>(storage, key)[0].qualityState).toBe('quarantined')
+  })
+
+  it('quarantined actual detail downgrades a trusted row and never opens an energy drawer', async () => {
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.includes('/drives/1')) return respond({ drive: { ...reported, quality_state: 'quarantined' } })
+      return respond({ drives: [reported], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('drives')
+    await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+    expect(JSON.stringify(page.toJSON())).not.toContain('行程详情')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
+    expect(readHistoryCache<Drive>(storage, historyCacheKey('drives', 'user-a', 'uid7', 'https://api.example.test'))[0].qualityState).toBe('quarantined')
+  })
+
+  it.each([
+    ['drive_power_integral', '行驶功率积分估算', 'drive_power', 'time'],
+    ['energy_remaining_delta', '电量端点估算', 'nominal_battery_remaining', 'endpoints'],
+  ])('renders qualified %s with its real calculation label', async (method, label, point, coverage) => {
+    const detail = { ...reported, energy_contract: { version: 1, net_energy: {
+      ...reported.energy_contract.net_energy, quality: 'estimated', method, measurement_point: point,
+      coverage_kind: coverage, coverage_ratio: 1, coverage_seconds: 60, source_field: 'EnergyRemaining',
+      time_basis: 'collector_received_at', observed_start_at: start, observed_end_at: end,
+      activity_evidence: 'continuous_drive_no_charging_with_valid_endpoints',
+    } } }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.includes('/drives/1')) return respond({ drive: detail })
+      return respond({ drives: [summary], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('drives')
+    await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+    expect(JSON.stringify(page.toJSON())).toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).toContain(label)
+    expect(JSON.stringify(page.toJSON())).not.toContain('尚无合格能耗依据')
+  })
   it('writes detail to list/cache, preserves it through weak refresh/reopen, and revokes explicit unknown', async () => {
     let detail: unknown = { ...reported, quality_reason: 'SERVER_INTERNAL_CREDENTIAL' }
     platform.request.mockImplementation(async ({ url }: { url: string }) => {
-      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/cars')) return respond({ cars: cars.map(car => ({ ...car, current_capacity: 60 })) })
       if (url.includes('/drives/1')) return respond({ car_id: 7, vehicle_uid: 'uid7', drive: detail })
-      return respond({ car_id: 7, vehicle_uid: 'uid7', drives: [summary], meta: { page: 1, show: 20, total: 1, total_pages: 1,
+      return respond({ car_id: 7, vehicle_uid: 'uid7', drives: [{ ...summary, energy_contract: null }], meta: { page: 1, show: 20, total: 1, total_pages: 1,
         availability: 'SERVER_INTERNAL_CREDENTIAL', source: 'SERVER_INTERNAL_CREDENTIAL' } })
     })
     let page = await mount('drives')
@@ -80,6 +241,17 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
     expect(readHistoryCache<{ energy: { energyKwh: number | null } }>(storage, key)[0].energy.energyKwh).toBeNull()
+    await click(page, '返回列表')
+    await click(page, '刷新')
+    expect(JSON.stringify(page.toJSON())).not.toContain('0.6 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(readHistoryCache<{ energy: { energyKwh: number | null } }>(storage, key)[0].energy.energyKwh).toBeNull()
+    await act(async () => { platform.unload(); page.unmount() }); renderer = null
+    page = await mount('drives')
+    expect(JSON.stringify(page.toJSON())).not.toContain('0.6 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(readHistoryCache<{ energy: { energyKwh: number | null } }>(storage, key)[0].energy.energyKwh).toBeNull()
+    expect(JSON.stringify(page.toJSON())).not.toContain('SERVER_INTERNAL_CREDENTIAL')
   })
 
   it('restores scoped date/distance filters and offline cars authorize only cache reads', async () => {
@@ -187,6 +359,75 @@ describe('history pages consume canonical data across layers', () => {
     await click(page, '刷新')
     expect(readHistoryCache<Charge>(storage, key)[0].energyAddedKwh).toBeNull()
     expect(JSON.stringify(page.toJSON())).not.toContain(`${batteryKwh} kWh`)
+  })
+
+  it.each(['dc', undefined])('keeps archive input 6 kWh with mode %s separate from qualified AC through cache/reopen and unknown revocation', async mode => {
+    const raw = { charge_id: 4, session_id: 'charge-session', start_date: start, end_date: end,
+      source: 'teslamate_archive', quality_state: 'observed', charge_mode: mode, charge_energy_used: 6,
+      charge_energy_added: 5, cost: 2, currency: 'EUR' }
+    let detail: unknown = raw
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/current')) return respond({ charge: null })
+      if (url.endsWith('/charges/4')) return respond({ charge: detail })
+      return respond({ charges: [raw], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
+    const key = historyCacheKey('charges', 'user-a', 'uid7', 'https://api.example.test')
+    let page = await mount('charges')
+    expect(readHistoryCache<Charge>(storage, key)[0].energy?.inputEnergyKwh).toBe(6)
+    expect(readHistoryCache<Charge>(storage, key)[0].energy?.acInputKwh).toBeNull()
+    expect(JSON.stringify(page.toJSON())).toContain('输入电量（历史报告）')
+    expect(JSON.stringify(page.toJSON())).toContain('6 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('AC 输入')
+    await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+    expect(JSON.stringify(page.toJSON())).toContain('输入电量（历史报告）')
+    expect(JSON.stringify(page.toJSON())).not.toContain('AC 输入')
+    await click(page, '返回列表')
+    await click(page, '刷新')
+    await act(async () => { platform.unload(); page.unmount() }); renderer = null
+    page = await mount('charges')
+    expect(readHistoryCache<Charge>(storage, key)[0].energy?.inputEnergyKwh).toBe(6)
+    expect(readHistoryCache<Charge>(storage, key)[0].energy?.acInputKwh).toBeNull()
+    expect(JSON.stringify(page.toJSON())).toContain('6 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('AC 输入')
+    detail = { ...raw, energy_contract: { version: 1, battery_input: { quality: 'unknown', value_kwh: null },
+      ac_input: { quality: 'unknown', value_kwh: null } } }
+    await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+    expect(readHistoryCache<Charge>(storage, key)[0].energy?.inputEnergyKwh).toBeNull()
+    expect(readHistoryCache<Charge>(storage, key)[0].energy?.acInputKwh).toBeNull()
+    expect(JSON.stringify(page.toJSON())).not.toContain('6 kWh')
+    expect(JSON.stringify(page.toJSON())).toContain('2 EUR')
+  })
+
+  it('labels input as AC only for an independently qualified AC contract in the actual charge page and cache', async () => {
+    const battery = { value_kwh: 5, unit: 'kWh', method: 'session_counter_delta', measurement_point: 'battery_input',
+      source: 'telemetry_mqtt', quality: 'reported', coverage_kind: 'endpoints', coverage_ratio: 1, start_date: start, end_date: end }
+    const raw = { charge_id: 4, session_id: 'charge-session', start_date: start, end_date: end,
+      source: 'telemetry_mqtt', quality_state: 'observed', energy_contract: { version: 1, battery_input: battery,
+        ac_input: { ...battery, value_kwh: 6, measurement_point: 'ac_charger_input' },
+        charge_mode: 'ac', charge_mode_evidence: 'observed_boundary_modes_no_conflict' } }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/current')) return respond({ charge: null })
+      if (url.endsWith('/charges/4')) return respond({ charge: raw })
+      return respond({ charges: [raw], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    let page = await mount('charges')
+    expect(JSON.stringify(page.toJSON())).toContain('AC 输入')
+    expect(JSON.stringify(page.toJSON())).toContain('AC 充电')
+    expect(JSON.stringify(page.toJSON())).toContain('6 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('输入电量（历史报告）')
+    await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+    expect(JSON.stringify(page.toJSON())).toContain('AC 输入')
+    await act(async () => { platform.unload(); page.unmount() }); renderer = null
+    page = await mount('charges')
+    expect(JSON.stringify(page.toJSON())).toContain('AC 输入')
+    expect(JSON.stringify(page.toJSON())).toContain('AC 充电')
+    const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
+    expect(readHistoryCache<Charge>(storage, historyCacheKey('charges', 'user-a', 'uid7', 'https://api.example.test'))[0].energy?.acInputKwh).toBe(6)
   })
 
   it('commits real pagination only after a valid page and keeps newer vehicle scope on delayed delivery', async () => {

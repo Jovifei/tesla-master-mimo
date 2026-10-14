@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { emptyHistoryQuery, filterHistory, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery } from './history_query'
 
 describe('persisted local calendar history query', () => {
+  it('excludes quarantined drive and charge records without hiding legitimate zero or missing-energy summaries', () => {
+    const rows = [
+      { id: 'observed-zero', qualityState: 'observed', startDate: '2026-10-14T00:00:00Z', distanceKm: 0 },
+      { id: 'missing-energy', qualityState: 'incomplete', startDate: '2026-10-14T00:00:00Z', distanceKm: 1 },
+      { id: 'isolated', qualityState: 'quarantined', startDate: '2026-10-14T00:00:00Z', distanceKm: 2 },
+      { id: 'case-isolated', qualityState: ' Quarantined ', startDate: '2026-10-14T00:00:00Z', distanceKm: 2 },
+    ]
+    expect(filterHistory(rows, emptyHistoryQuery()).map(row => row.id)).toEqual(['observed-zero', 'missing-energy'])
+  })
+
   it('uses local calendar dates including a UTC boundary, and preserves zero distance', () => {
     const afterMidnight = new Date(2026, 9, 14, 0, 30).toISOString()
     const beforeMidnight = new Date(2026, 9, 13, 23, 30).toISOString()

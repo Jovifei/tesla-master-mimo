@@ -260,6 +260,7 @@ export function mergeDriveEnergyRecord(prior: Drive, incoming: Drive, admittedBa
   }
   const compatible = sameSource && sameWindow(old, input)
   if (!compatible) input = { ...fresh, parsedEnergyVersion: 1 }
+  else if (fresh.energy_contract == null && old.energy_contract != null) input.energy_contract = old.energy_contract
   const shown = { ...admittedBase, startDate: own(input, 'start_date') ? input.start_date ?? null : compatible ? admittedBase.startDate : null,
     endDate: own(input, 'end_date') ? input.end_date ?? null : compatible ? admittedBase.endDate : null,
     source: own(input, 'source') ? input.source ?? null : compatible ? admittedBase.source : incoming.source,
@@ -303,10 +304,11 @@ export function resolveChargeEnergy(raw: RawCharge): ChargeEnergy {
     return n !== null && n >= 0 ? n : null
   }
   const batteryInputKwh = value(proof?.battery_input, 'battery_input', raw.charge_energy_added)
-  const acInputKwh = value(proof?.ac_input, 'ac_charger_input', raw.charge_energy_used)
-  const chargeMode = proof?.charge_mode_evidence === 'observed_boundary_modes_no_conflict' && (proof.charge_mode === 'ac' || proof.charge_mode === 'dc') ? proof.charge_mode : null
-  return { batteryInputKwh, acInputKwh, inputEnergyKwh: acInputKwh, chargeMode, quality: batteryInputKwh !== null || acInputKwh !== null ? 'reported' : 'unknown',
-    reason: batteryInputKwh === null && acInputKwh === null ? 'no_verified_charging_energy' : null, evidence: proof }
+  const acInputKwh = proof ? value(proof.ac_input, 'ac_charger_input', null) : null
+  const inputEnergyKwh = proof ? acInputKwh : value(null, 'legacy_input', raw.charge_energy_used)
+  const chargeMode = proof && validVersion(proof) && proof.charge_mode_evidence === 'observed_boundary_modes_no_conflict' && (proof.charge_mode === 'ac' || proof.charge_mode === 'dc') ? proof.charge_mode : null
+  return { batteryInputKwh, acInputKwh, inputEnergyKwh, chargeMode, quality: batteryInputKwh !== null || inputEnergyKwh !== null ? 'reported' : 'unknown',
+    reason: batteryInputKwh === null && inputEnergyKwh === null ? 'no_verified_charging_energy' : null, evidence: proof }
 }
 
 export function mergeChargeEnergyRecord(prior: Charge, incoming: Charge, admittedBase: Charge): Charge {
@@ -317,17 +319,17 @@ export function mergeChargeEnergyRecord(prior: Charge, incoming: Charge, admitte
     sameEnergyInstant(prior.startDate, incoming.startDate) && sameEnergyInstant(prior.endDate, incoming.endDate)
   if (!compatible || incoming.energy?.evidence) return { ...admittedBase, ...money, source: incoming.source,
     startDate: incoming.startDate, endDate: incoming.endDate, energy: incoming.energy,
-    energyAddedKwh: incoming.energy?.batteryInputKwh ?? null, energyUsedKwh: incoming.energy?.acInputKwh ?? null,
+    energyAddedKwh: incoming.energy?.batteryInputKwh ?? null, energyUsedKwh: incoming.energy?.inputEnergyKwh ?? null,
     chargeMode: incoming.energy?.chargeMode ?? incoming.chargeMode ?? null }
   const proof = prior.energy?.evidence
   const previous = proof ? resolveChargeEnergy({ source: admittedBase.source, start_date: admittedBase.startDate, end_date: admittedBase.endDate, energy_contract: proof }) : prior.energy
   const battery = incoming.energy?.batteryInputKwh ?? previous?.batteryInputKwh ?? null
-  const ac = incoming.energy?.acInputKwh ?? previous?.acInputKwh ?? null
+  const input = incoming.energy?.inputEnergyKwh ?? previous?.inputEnergyKwh ?? null
   const energy: ChargeEnergy | undefined = proof ? previous : (incoming.energy || previous ? { ...(incoming.energy ?? previous!),
-    batteryInputKwh: battery, acInputKwh: ac, inputEnergyKwh: ac,
-    quality: battery !== null || ac !== null ? 'reported' : 'unknown',
-    reason: battery !== null || ac !== null ? null : 'no_verified_charging_energy',
+    batteryInputKwh: battery, acInputKwh: null, inputEnergyKwh: input,
+    quality: battery !== null || input !== null ? 'reported' : 'unknown',
+    reason: battery !== null || input !== null ? null : 'no_verified_charging_energy',
     evidence: incoming.energy?.evidence ?? previous?.evidence ?? null, chargeMode: incoming.energy?.chargeMode ?? previous?.chargeMode ?? null } : undefined)
-  return { ...admittedBase, ...money, energy, energyAddedKwh: energy?.batteryInputKwh ?? null, energyUsedKwh: energy?.acInputKwh ?? null,
+  return { ...admittedBase, ...money, energy, energyAddedKwh: energy?.batteryInputKwh ?? null, energyUsedKwh: energy?.inputEnergyKwh ?? null,
     chargeMode: energy?.chargeMode ?? incoming.chargeMode ?? admittedBase.chargeMode }
 }
