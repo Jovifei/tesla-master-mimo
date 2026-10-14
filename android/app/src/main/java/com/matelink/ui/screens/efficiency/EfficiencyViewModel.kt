@@ -139,11 +139,7 @@ class EfficiencyViewModel @Inject constructor(
             }.sortedByDescending { it.date }
         } ?: emptyList()
 
-        val bySpeed = selected
-            .filter { (it.speedAvg ?: 0.0) > 0.0 && it.efficiencyWhKm?.isFinite() == true }
-            .groupBy { (((it.speedAvg ?: 0.0) / 20.0).toInt()) * 20 }
-            .map { (bin, list) -> "${bin}-${bin + 20}" to list.mapNotNull { it.efficiencyWhKm }.average() }
-            .sortedBy { it.first.substringBefore("-").toIntOrNull() ?: 0 }
+        val bySpeed = buildEfficiencyBySpeed(selected)
 
         val trend = selected.mapNotNull { drive ->
             val month = parseDate(drive)?.let { "%04d-%02d".format(it.year, it.monthValue) } ?: return@mapNotNull null
@@ -198,3 +194,10 @@ class EfficiencyViewModel @Inject constructor(
         override val id: Int get() = drive.driveId
     }
 }
+
+/** Actual speed-group consumer shared by the VM and its regression tests. */
+internal fun buildEfficiencyBySpeed(drives: List<DriveData>): List<Pair<String, Double>> = drives
+    .filter { (it.speedAvgKmh ?: 0.0) > 0.0 && it.efficiencyWhKm?.isFinite() == true }
+    .groupBy { (((it.speedAvgKmh ?: 0.0) / 20.0).toInt()) * 20 }
+    .map { (bin, list) -> "${bin}-${bin + 20}" to list.mapNotNull { it.efficiencyWhKm }.average() }
+    .sortedBy { it.first.substringBefore("-").toIntOrNull() ?: 0 }

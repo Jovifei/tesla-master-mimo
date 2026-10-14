@@ -129,7 +129,7 @@ class RangeViewModel @Inject constructor(
                     historyRecordCount = result.data.drives.size
                     historyReason = result.data.coverage.reason
                     allTrips = result.data.drives
-                        .mapNotNull { drive -> toRangeTrip(drive) }
+                        .mapNotNull { drive -> drive.toRangeTrip() }
                         .sortedByDescending { it.startDate }
 
                     val health = runCatching { teslamateRepository.getBatteryHealth(id) }
@@ -180,8 +180,7 @@ class RangeViewModel @Inject constructor(
             else -> NoDataReason.INSUFFICIENT_COVERAGE
         }
         fun avg(items: List<RangeTrip>): Double? = items.takeIf { it.isNotEmpty() }?.map { it.deviationPercent }?.average()
-        val lowSpeed = selected.filter { it.speedAvgKmh != null && it.speedAvgKmh <= 40.0 }
-        val highSpeed = selected.filter { it.speedAvgKmh != null && it.speedAvgKmh > 40.0 }
+        val (lowSpeedDeviation, highSpeedDeviation) = rangeSpeedDeviations(selected)
         _uiState.update {
             it.copy(
                 isLoading = false,
@@ -194,8 +193,8 @@ class RangeViewModel @Inject constructor(
                 trips = selected,
                 summerDeviationPercent = avg(selectWindow(dated, AnalysisWindow.SUMMER, java.time.LocalDate.now()).map { it.trip }),
                 winterDeviationPercent = avg(selectWindow(dated, AnalysisWindow.WINTER, java.time.LocalDate.now()).map { it.trip }),
-                lowSpeedDeviationPercent = avg(lowSpeed),
-                highSpeedDeviationPercent = avg(highSpeed)
+                lowSpeedDeviationPercent = lowSpeedDeviation,
+                highSpeedDeviationPercent = highSpeedDeviation
             )
         }
     }
@@ -212,42 +211,11 @@ class RangeViewModel @Inject constructor(
         override val id: Int get() = trip.driveId
     }
 
-    private fun toRangeTrip(drive: DriveData): RangeTrip? {
-        val startRated = drive.startRatedRangeKm ?: return null
-        val endRated = drive.endRatedRangeKm ?: return null
-        val distance = drive.distanceKm ?: return null
-
-        val estimated = startRated - endRated
-        if (estimated <= 0.0) return null
-
-        val deviation = ratedRangeDeviationPercent(estimated, distance) ?: return null
-
-        return RangeTrip(
-            driveId = drive.driveId,
-            startDate = drive.startDate,
-            endDate = drive.endDate,
-            startAddress = drive.startAddress,
-            endAddress = drive.endAddress,
-            estimatedRangeKm = estimated,
-            actualDistanceKm = distance,
-            speedAvgKmh = drive.speedAvg,
-            outsideTempC = drive.outsideTempAvg,
-            energyConsumedKwh = drive.netEnergyKwh,
-            deviationPercent = deviation
-        )
-    }
-
     private fun buildPersonalizedRangeEstimate(): PersonalizedRangeEstimate? {
         if (allDrives.isEmpty()) return null
         val samples = allDrives.mapNotNull { drive ->
             parseDate(drive.startDate)?.let { date ->
-                PersonalizedRangeSample(
-                    date = date,
-                    distanceKm = drive.distanceKm,
-                    energyKwh = drive.netEnergyKwh,
-                    speedKmh = drive.speedAvg,
-                    temperatureC = drive.outsideTempAvg
-                )
+                drive.toPersonalizedRangeSample(date)
             }
         }
         return estimatePersonalizedRange(
@@ -258,4 +226,37 @@ class RangeViewModel @Inject constructor(
             asOf = LocalDate.now()
         )
     }
+}
+
+/** The VM consumes canonical range samples; this does not rewrite source receipts. */
+internal fun DriveData.toRangeTrip(): RangeTrip? {
+    val startRated = startRatedRangeKm ?: return null
+    val endRated = endRatedRangeKm ?: return null
+    val distance = distanceKm ?: return null
+    val estimated = startRated - endRated
+    if (estimated <= 0.0) return null
+    val deviation = ratedRangeDeviationPercent(estimated, distance) ?: return null
+    return RangeTrip(
+        driveId = driveId,
+        startDate = startDate,
+        endDate = endDate,
+        startAddress = startAddress,
+        endAddress = endAddress,
+        estimatedRangeKm = estimated,
+        actualDistanceKm = distance,
+        speedAvgKmh = speedAvgKmh,
+        outsideTempC = outsideTempAvg,
+        energyConsumedKwh = netEnergyKwh,
+        deviationPercent = deviation
+    )
+}
+
+internal fun DriveData.toPersonalizedRangeSample(date: LocalDate): PersonalizedRangeSample =
+    PersonalizedRangeSample(date, distanceKm, netEnergyKwh, speedAvgKmh, outsideTempAvg)
+
+internal fun rangeSpeedDeviations(trips: List<RangeTrip>): Pair<Double?, Double?> {
+    fun average(items: List<RangeTrip>) = items.takeIf { it.isNotEmpty() }?.map { it.deviationPercent }?.average()
+    val low = trips.filter { it.speedAvgKmh != null && it.speedAvgKmh <= 40.0 }
+    val high = trips.filter { it.speedAvgKmh != null && it.speedAvgKmh > 40.0 }
+    return average(low) to average(high)
 }
