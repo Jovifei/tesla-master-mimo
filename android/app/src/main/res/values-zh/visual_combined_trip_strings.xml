@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="combined_trip_efficiency">平均净能耗：%1$s kWh/100km</string>
+    <string name="combined_trip_efficiency_unknown">平均净能耗：未知</string>
+    <string name="combined_trip_energy">行驶能耗：%1$s kWh</string>
+    <string name="combined_trip_energy_known">已知路段能耗：%1$s kWh</string>
+    <string name="combined_trip_energy_unknown">行驶能耗：未知</string>
+    <string name="combined_trip_known_energy_label">已知路段能耗</string>
+    <string name="combined_trip_energy_label">行驶能耗</string>
+    <string name="combined_trip_unknown">未知</string>
+    <string name="combined_trip_partial">部分覆盖</string>
+    <string name="combined_trip_complete">完整覆盖</string>
+    <string name="combined_trip_coverage_unknown">覆盖率未知</string>
+    <string name="combined_trip_record_coverage">记录 %1$d/%2$d（%3$s%%）</string>
+    <string name="combined_trip_distance_coverage">已知里程 %1$s%%</string>
+    <string name="combined_trip_distance_coverage_unknown">里程覆盖率未知</string>
+</resources>

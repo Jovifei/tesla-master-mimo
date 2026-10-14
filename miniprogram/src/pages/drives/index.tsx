@@ -12,6 +12,9 @@ import { carSelectionStorageKey, type Car, type Drive, type HistoryPage, type Hi
 import { readAppSession } from '../../services/session'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 import LoadingIndicator from '../../components/LoadingIndicator'
+import MetricValue, { displayNumber, peakSpeedKmh } from '../../components/MetricValue'
+import VisualIcon from '../../components/VisualIcon'
+import LoadedDriveChart from '../../components/LoadedDriveChart'
 import { availabilityLabel, capacityLabel, energyMethodLabel, qualityLabel, sourceLabel } from '../../domain/data_labels'
 
 const PAGE_SIZE = 20
@@ -35,7 +38,14 @@ function energyLabel(item: Drive): string {
   return item.energy?.quality === 'estimated' ? '估算' : item.energy?.quality === 'reported' ? '报告值' : '能耗缺失'
 }
 function metric(number: number | null | undefined, unit: string): string {
-  return number == null || !Number.isFinite(number) ? '暂无数据' : `${Number(number.toFixed(2))} ${unit}`
+  return number == null || !Number.isFinite(number) ? '暂无数据' : `${displayNumber(number)} ${unit}`
+}
+function efficiency(item: Drive): number | null {
+  const number = item.energy?.quality === 'unknown' ? null : item.energy?.efficiencyWhKm
+  return number != null && Number.isFinite(number) ? number / 10 : null
+}
+function duration(minutes: number | null) {
+  return { value: minutes != null && Number.isFinite(minutes) && minutes >= 0 ? minutes : null, unit: '分钟' }
 }
 
 const emptyMeta: HistoryPageMeta = {
@@ -319,7 +329,7 @@ export default function DrivesPage() {
   return (
     <View className="page history-page">
       <View className="card">
-        <Text className="title">行程</Text>
+        <View className="visual-heading"><VisualIcon name="route" /><Text className="title">行程</Text></View>
         <Text className="muted">{car ? `${car.displayName || '当前车辆'} · ` : ''}只展示服务端返回的真实记录；缺失路线、能耗或地址会保留为暂无数据。</Text>
         {cars.length > 1 ? (
           <Picker mode="selector" range={cars.map(item => item.displayName || item.name || `车辆 ${item.stableId}`)} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}>
@@ -341,10 +351,12 @@ export default function DrivesPage() {
         {offline ? <Text className="muted">本机缓存 · 未验证在线车辆</Text> : null}
       </View> : null}
 
+      {car && visibleItems.length > 0 ? <LoadedDriveChart items={visibleItems} /> : null}
+
       {!readAppSession(Taro) ? (
-        <View className="card"><Text className="section-title">等待微信登录</Text><Text className="muted">请先在“我的”中建立会话。</Text></View>
+        <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待微信登录</Text><Text className="muted">请先在“我的”中建立会话。</Text></View>
       ) : trustedItems.length === 0 && !loading ? (
-        <View className="card"><Text className="section-title">暂无可展示的行程</Text><Text className="muted">当前没有可展示的行程记录，空响应不会生成示例数据。</Text>
+        <View className="card empty-state"><VisualIcon name="route" /><Text className="section-title">暂无可展示的行程</Text><Text className="muted">当前没有可展示的行程记录，空响应不会生成示例数据。</Text>
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
         </View>
       ) : (
@@ -354,15 +366,16 @@ export default function DrivesPage() {
           {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的行程</Text> : null}
           {visibleItems.map(item => (
             <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
-              <View className="history-record-top"><Text>{historyDateTime(item.startDate)}</Text><Text>{battery(item.startBatteryLevel)} → {battery(item.endBatteryLevel)}</Text></View>
-              <Text className="muted">{value(item.startAddress)} → {value(item.endAddress)}</Text>
+              <View className="history-record-top"><Text>{historyDateTime(item.startDate)}</Text><Text className="history-soc">{battery(item.startBatteryLevel)} → {battery(item.endBatteryLevel)}</Text></View>
+              <View className="visual-heading history-route"><VisualIcon name="route" /><Text className="muted">{value(item.startAddress)} → {value(item.endAddress)}</Text></View>
               <Text className="history-source">{energyLabel(item)} · {sourceLabel(item.source)}</Text>
               <View className="history-record-metrics">
-                <View><Text className="metric-label">耗时</Text><Text>{metric(item.durationMinutes, '分钟')}</Text></View>
-                <View><Text className="metric-label">里程</Text><Text>{metric(item.distanceKm, 'km')}</Text></View>
-                <View><Text className="metric-label">总能耗</Text><Text className={energyValue(item) != null && energyValue(item)! < 0 ? 'history-energy-negative' : ''}>{metric(energyValue(item), 'kWh')}</Text></View>
-                <View><Text className="metric-label">平均能耗</Text><Text className={item.energy?.efficiencyWhKm != null && item.energy.efficiencyWhKm < 0 ? 'history-energy-negative' : ''}>{metric(item.energy?.efficiencyWhKm, 'Wh/km')}</Text></View>
+                <MetricValue label="时长" value={duration(item.durationMinutes).value} unit={duration(item.durationMinutes).unit} icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
+                <MetricValue label="距离" value={item.distanceKm} unit="km" icon="distance" digits={1} />
+                <MetricValue label="最高速度" value={peakSpeedKmh(item)} unit="km/h" icon="speed" digits={Number.isInteger(peakSpeedKmh(item)) ? 0 : 1} />
+                <MetricValue label="平均能耗" value={efficiency(item)} unit="kWh/100km" icon="energy" digits={1} negative={(efficiency(item) ?? 0) < 0} />
               </View>
+              {peakSpeedKmh(item) != null ? <Text className="metric-source">最高速度来自行程观测样本</Text> : null}
             </View>
           ))}
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
@@ -374,10 +387,13 @@ export default function DrivesPage() {
           <View className="history-detail-heading"><Text className="section-title">行程详情</Text><Button className="button" onClick={closeDetail}>返回列表</Button></View>
           <Text className="muted">{value(selected.startAddress)} → {value(selected.endAddress)}</Text>
           <View className="metric-grid">
-            <View className="metric"><Text className="metric-label">距离</Text><Text className="metric-value">{selected.distanceKm == null ? '暂无数据' : `${selected.distanceKm} km`}</Text></View>
-            <View className="metric"><Text className="metric-label">能耗</Text><Text className={`metric-value ${energyValue(selected) != null && energyValue(selected)! < 0 ? 'history-energy-negative' : ''}`}>{metric(energyValue(selected), 'kWh')}</Text></View>
-            <View className="metric"><Text className="metric-label">起始电量</Text><Text className="metric-value">{selected.startBatteryLevel == null ? '暂无数据' : `${selected.startBatteryLevel}%`}</Text></View>
-            <View className="metric"><Text className="metric-label">结束电量</Text><Text className="metric-value">{selected.endBatteryLevel == null ? '暂无数据' : `${selected.endBatteryLevel}%`}</Text></View>
+            <MetricValue label="距离" value={selected.distanceKm} unit="km" icon="distance" digits={1} />
+            <MetricValue label="时长" value={duration(selected.durationMinutes).value} unit={duration(selected.durationMinutes).unit} icon="clock" digits={Number.isInteger(selected.durationMinutes) ? 0 : 1} />
+            <MetricValue label="最高速度" value={peakSpeedKmh(selected)} unit="km/h" icon="speed" digits={Number.isInteger(peakSpeedKmh(selected)) ? 0 : 1} />
+            <MetricValue label="平均能耗" value={efficiency(selected)} unit="kWh/100km" icon="energy" digits={1} negative={(efficiency(selected) ?? 0) < 0} />
+            <MetricValue label="总电耗" value={energyValue(selected)} unit="kWh" icon="energy" negative={(energyValue(selected) ?? 0) < 0} />
+            <MetricValue label="起始电量" value={selected.startBatteryLevel} unit="%" icon="battery" digits={Number.isInteger(selected.startBatteryLevel) ? 0 : 1} />
+            <MetricValue label="结束电量" value={selected.endBatteryLevel} unit="%" icon="battery" digits={Number.isInteger(selected.endBatteryLevel) ? 0 : 1} />
           </View>
           <Text className="history-source">{energyLabel(selected)} · {sourceLabel(selected.source)}</Text>
           <Text className="muted">计算依据：{energyMethodLabel(selected.energy?.evidence?.method)}</Text>

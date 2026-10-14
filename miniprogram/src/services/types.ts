@@ -215,6 +215,10 @@ export type Drive = {
   energy?: DriveEnergy
   energyReceipt?: DriveEnergyReceipt
   efficiencyWhKm?: number | null
+  speedMaxKmh?: number | null
+  speedSampleCount?: number | null
+  speedMetricsSource?: string | null
+  speedUnit?: string | null
 }
 
 export type RawDrive = {
@@ -225,6 +229,10 @@ export type RawDrive = {
   start_address?: string | null
   end_address?: string | null
   duration_min?: number | null
+  speed_max?: number | null
+  speed_sample_count?: number | null
+  speed_metrics_source?: string | null
+  speed_unit?: string | null
   energy_consumed_net?: number | null
   consumption_net?: number | null
   energy_contract?: EnergyContract | null

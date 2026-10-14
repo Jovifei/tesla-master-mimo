@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -68,6 +70,10 @@ fun InteractiveBarChart(
 
     val textMeasurer = rememberTextMeasurer()
     val maxValue = data.maxOfOrNull { it.value } ?: 1.0
+    val axisWidth = with(LocalDensity.current) {
+        val measured = textMeasurer.measure(yAxisFormatter(maxValue), TextStyle(fontSize = 12.sp)).size.width.toDp()
+        maxOf(48.dp, measured + 8.dp)
+    }
 
     // Reset selection when data changes to avoid IndexOutOfBoundsException
     var selectedBarIndex by remember(data) { mutableStateOf<Int?>(null) }
@@ -80,9 +86,9 @@ fun InteractiveBarChart(
                 .fillMaxWidth()
                 .onGloballyPositioned {
                     containerWidth = it.size.width.toFloat()}
-                .height(120.dp)
-                .pointerInput(data) {
-                    val yAxisWidth = 32.dp.toPx()
+                .height(150.dp)
+                .pointerInput(data, axisWidth) {
+                    val yAxisWidth = axisWidth.toPx()
                     detectTapGestures { offset ->
                         if (offset.x > yAxisWidth) {
                             val chartWidth = size.width - yAxisWidth
@@ -102,10 +108,14 @@ fun InteractiveBarChart(
                     }
                 }
         ) {
-            val yAxisWidth = 32.dp.toPx()
+            val yAxisWidth = axisWidth.toPx()
             val chartWidth = size.width - yAxisWidth
             val barWidth = chartWidth / data.size
-            val maxBarHeight = size.height - 20.dp.toPx()
+            val maxBarHeight = size.height - 30.dp.toPx()
+            val widestLabel = data.maxOf { textMeasurer.measure(it.label, TextStyle(fontSize = 12.sp)).size.width }
+            val labelStride = maxOf(showEveryNthLabel.coerceAtLeast(1), kotlin.math.ceil((widestLabel + 6.dp.toPx()) / barWidth).toInt().coerceAtLeast(1))
+            drawLine(labelColor.copy(alpha = 0.12f), Offset(yAxisWidth, maxBarHeight), Offset(size.width, maxBarHeight))
+            drawLine(labelColor.copy(alpha = 0.12f), Offset(yAxisWidth, 0f), Offset(size.width, 0f))
 
             // Draw Y-axis labels
             drawYAxisLabel(
@@ -142,7 +152,7 @@ fun InteractiveBarChart(
 
                         if (segmentHeight > 0) {
                             val baseColor = segment.color
-                            val currentSegmentColor = if (isSelected) baseColor.copy(alpha = 0.7f) else baseColor
+                            val currentSegmentColor = baseColor.copy(alpha = if (isSelected) 1f else 0.6f)
 
                             drawRect(
                                 color = currentSegmentColor,
@@ -167,7 +177,7 @@ fun InteractiveBarChart(
 
                     if (barHeight > 0) {
                         val baseBarColor = barData.color ?: barColor
-                        val currentBarColor = if (isSelected) baseBarColor.copy(alpha = 0.7f) else baseBarColor
+                        val currentBarColor = baseBarColor.copy(alpha = if (isSelected) 1f else 0.55f)
 
                         drawRect(
                             color = currentBarColor,
@@ -178,7 +188,7 @@ fun InteractiveBarChart(
                 }
 
                 // Draw X-axis label
-                if (data.size <= 6 || index % showEveryNthLabel == 0) {
+                if (index % labelStride == 0) {
                     drawXAxisLabel(
                         textMeasurer = textMeasurer,
                         text = barData.label,
@@ -196,10 +206,11 @@ fun InteractiveBarChart(
             val barData = data[index]
             // Use the container width to calculate the offset to not clip the tooltip
             val xOffset = (tooltipPosition.x - tooltipWidth / 2)
-                .coerceIn(0f, containerWidth - tooltipWidth)
+                .coerceIn(0f, (containerWidth - tooltipWidth).coerceAtLeast(0f))
 
             Box(
                 modifier = Modifier
+                    .widthIn(max = with(LocalDensity.current) { containerWidth.coerceAtLeast(1f).toDp() })
                     .offset { IntOffset(xOffset.toInt(), 0) }
                     .onGloballyPositioned { coordinates ->
                         // This captures the ACTUAL size of the tooltip
@@ -285,7 +296,7 @@ private fun DrawScope.drawYAxisLabel(
     val textLayoutResult = textMeasurer.measure(
         text = text,
         style = TextStyle(
-            fontSize = 9.sp,
+            fontSize = 12.sp,
             textAlign = TextAlign.End
         )
     )
@@ -310,7 +321,7 @@ private fun DrawScope.drawXAxisLabel(
     val textLayoutResult = textMeasurer.measure(
         text = text,
         style = TextStyle(
-            fontSize = 9.sp,
+            fontSize = 12.sp,
             textAlign = TextAlign.Center
         )
     )

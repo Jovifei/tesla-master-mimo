@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="visual_trip_count_unit">次</string>
+    <string name="visual_trip_duration_unit">分钟</string>
+    <string name="visual_trip_chart_unit">单位：%1$s</string>
+</resources>

@@ -15,9 +15,11 @@ data class Trip(
     val totalDistance: Double,
     val totalDrivingDurationMin: Int,
     val totalDurationMin: Int,
-    val totalEnergyConsumed: Double,
+    /** Sum of known finite net kWh, independent of distance; null for no known energy or sum overflow. */
+    val totalEnergyConsumed: Double?,
     val totalEnergyCharged: Double,
     val totalChargeCost: Double?,
+    /** Distance-weighted net Wh/km, using only finite energy and finite positive distance pairs. */
     val avgEfficiency: Double?,
     val maxSpeed: Int,
     val startAddress: String,
@@ -27,5 +29,12 @@ data class Trip(
     val startBatteryLevel: Int,
     val endBatteryLevel: Int,
     /** User-chosen name. Null means fall back to the default "startCity → endCity" label. */
-    val name: String? = null
+    val name: String? = null,
+    /** Optional derived coverage for older callers; these fields are never persisted. */
+    val efficiencySampleCount: Int? = null,
+    val efficiencyRecordCoveragePercent: Double? = null,
+    /** Qualified distance divided by all known finite positive distance, not unknown distance. */
+    val efficiencyDistanceCoveragePercent: Double? = null,
+    /** Known finite energy receipts, independent of efficiency's valid-distance requirement. */
+    val energySampleCount: Int? = null
 )

@@ -91,6 +91,7 @@ import com.matelink.ui.components.formatShortDate
 import com.matelink.ui.components.parseListItemDate
 import com.matelink.ui.theme.CarColorPalette
 import com.matelink.ui.theme.CarColorPalettes
+import com.matelink.ui.theme.telemetryPalette
 import com.matelink.domain.analytics.ChargeCostSource
 import com.matelink.domain.analytics.resolveChargeCostFromTotal
 import com.matelink.util.toChineseDisplayAddress
@@ -114,7 +115,7 @@ fun ChargesScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val isDarkTheme = isSystemInDarkTheme()
-    val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
+    val palette = telemetryPalette()
     var priceEditTarget by remember { mutableStateOf<ChargeData?>(null) }
 
     HistoryForegroundRefreshEffect { viewModel.refresh() }
@@ -705,7 +706,9 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                             palette.dcColor
                         )
                     ),
-                    modifier = Modifier.padding(vertical = 8.dp)
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    adaptive = true,
+                    maxColumns = 2
                 )
             }
         }
@@ -834,7 +837,8 @@ private fun ChargeItem(
                             tint = Color(0xFFF97316)
                         )
                     ),
-                    modifier = Modifier.padding(vertical = 8.dp)
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    adaptive = true
                 )
             }
 

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="combined_trip_efficiency">Average net energy: %1$s kWh/100km</string>
+    <string name="combined_trip_efficiency_unknown">Average net energy: Unknown</string>
+    <string name="combined_trip_energy">Driving energy: %1$s kWh</string>
+    <string name="combined_trip_energy_known">Known driving energy: %1$s kWh</string>
+    <string name="combined_trip_energy_unknown">Driving energy: Unknown</string>
+    <string name="combined_trip_known_energy_label">Known driving energy</string>
+    <string name="combined_trip_energy_label">Driving energy</string>
+    <string name="combined_trip_unknown">Unknown</string>
+    <string name="combined_trip_partial">Partial coverage</string>
+    <string name="combined_trip_complete">Complete coverage</string>
+    <string name="combined_trip_coverage_unknown">Coverage unknown</string>
+    <string name="combined_trip_record_coverage">Records %1$d/%2$d (%3$s%%)</string>
+    <string name="combined_trip_distance_coverage">Known distance %1$s%%</string>
+    <string name="combined_trip_distance_coverage_unknown">Distance coverage unknown</string>
+</resources>

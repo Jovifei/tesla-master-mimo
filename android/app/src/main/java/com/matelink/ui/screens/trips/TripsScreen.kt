@@ -486,7 +486,7 @@ private fun TripItem(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Meta row: duration · stops · kWh
+            // Meta row: duration · stops
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = formatDuration(LocalContext.current.resources, trip.totalDurationMin),
@@ -508,18 +508,65 @@ private fun TripItem(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                // Total electricity consumed while driving (sum of drive consumption),
-                // not the energy added at charging stops. See issue #281.
-                if (trip.totalEnergyConsumed > 0.0) {
-                    Text(
-                        text = " · %.1f kWh".format(trip.totalEnergyConsumed),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = combinedTripEnergyText(trip),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            CombinedTripEfficiencySummary(trip)
         }
     }
+}
+
+@Composable
+internal fun combinedTripEnergyText(trip: Trip): String {
+    val energy = trip.totalEnergyConsumed?.takeIf { it.isFinite() }
+        ?: return stringResource(R.string.combined_trip_energy_unknown)
+    val complete = trip.energySampleCount == trip.drives.size
+    return stringResource(
+        if (complete) R.string.combined_trip_energy else R.string.combined_trip_energy_known,
+        com.matelink.ui.components.formatTelemetryNumber(energy, 2)
+    )
+}
+
+/** Both the list and detail show coverage next to the qualified-pair average. */
+@Composable
+internal fun CombinedTripEfficiencySummary(trip: Trip) {
+    val efficiency = trip.avgEfficiency?.takeIf { it.isFinite() }?.div(10.0)
+    Text(
+        text = if (efficiency != null) {
+            stringResource(R.string.combined_trip_efficiency, com.matelink.ui.components.formatTelemetryNumber(efficiency))
+        } else stringResource(R.string.combined_trip_efficiency_unknown),
+        style = MaterialTheme.typography.bodyMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    val count = trip.efficiencySampleCount
+    val recordCoverage = trip.efficiencyRecordCoveragePercent?.takeIf { it.isFinite() && it in 0.0..100.0 }
+    val distanceCoverage = trip.efficiencyDistanceCoveragePercent?.takeIf { it.isFinite() && it in 0.0..100.0 }
+    val records = if (count != null && recordCoverage != null) {
+        stringResource(
+            R.string.combined_trip_record_coverage, count, trip.drives.size,
+            String.format(Locale.getDefault(), "%.1f", recordCoverage)
+        )
+    } else stringResource(R.string.combined_trip_coverage_unknown)
+    val distance = if (distanceCoverage != null) {
+        stringResource(R.string.combined_trip_distance_coverage, String.format(Locale.getDefault(), "%.1f", distanceCoverage))
+    } else stringResource(R.string.combined_trip_distance_coverage_unknown)
+    val status = stringResource(
+        when {
+            count == null -> R.string.combined_trip_coverage_unknown
+            count < trip.drives.size -> R.string.combined_trip_partial
+            else -> R.string.combined_trip_complete
+        }
+    )
+    Text(
+        text = "$status · $records · $distance",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 @Composable

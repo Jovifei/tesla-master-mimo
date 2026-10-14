@@ -1,18 +1,43 @@
 import { Text, View } from '@tarojs/components'
 import { sourceLabel } from '../domain/data_labels'
+import VisualIcon, { type VisualIconName } from './VisualIcon'
+import type { Drive } from '../services/types'
 
 type Props = {
   label: string
   value: string | number | null
   source?: string | null
+  unit?: string
+  icon?: VisualIconName
+  negative?: boolean
+  digits?: number
 }
 
-export default function MetricValue({ label, value, source }: Props) {
+export function displayNumber(value: number, digits = 2): string {
+  if (!Number.isFinite(value)) return '暂无数据'
+  const rounded = Number(value.toFixed(digits))
+  // Small non-zero observations must not become a displayed genuine zero.
+  return rounded === 0 && value !== 0 ? String(value) : String(rounded)
+}
+export function peakSpeedKmh(item: Drive): number | null {
+  const number = item.speedMaxKmh
+  return item.speedMetricsSource === 'observed_route_samples' &&
+    Number.isSafeInteger(item.speedSampleCount) && (item.speedSampleCount ?? 0) > 0 &&
+    (item.speedUnit === 'km/h' || item.speedUnit === 'kph') &&
+    number != null && Number.isFinite(number) && number >= 0 ? number : null
+}
+
+export default function MetricValue({ label, value, source, unit, icon, negative = false, digits = 2 }: Props) {
+  const valid = value != null && value !== '' && (typeof value !== 'number' || Number.isFinite(value))
+  const shown = valid ? (typeof value === 'number' ? displayNumber(value, digits) : value) : '暂无数据'
   return (
-    <View className="metric">
-      <Text className="metric-label">{label}</Text>
-      <Text className="metric-value">{value == null || value === '' ? '暂无数据' : value}</Text>
-      <Text className="metric-source">{sourceLabel(source)}</Text>
+    <View className="metric" ariaLabel={`${label} ${shown}${unit ? `${unit === '%' ? '' : ' '}${unit}` : ''}`}>
+      <View className="metric-heading">{icon ? <VisualIcon name={icon} /> : null}<Text className="metric-label">{label}</Text></View>
+      <View className={`metric-reading ${negative && valid ? 'history-energy-negative' : ''}`}>
+        <Text className="metric-value">{shown}</Text>
+        {unit ? <Text className="metric-unit">{unit}</Text> : null}
+      </View>
+      {source !== undefined ? <Text className="metric-source">{sourceLabel(source)}</Text> : null}
     </View>
   )
 }

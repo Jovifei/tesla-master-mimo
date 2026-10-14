@@ -39,6 +39,34 @@ const storageAdapter = {
 }
 
 describe('MateLink API transport', () => {
+  it.each([
+    { speed: 0, count: 1, source: 'observed_route_samples', unit: 'km/h', expected: 0 },
+    { speed: 82, count: 3, source: 'observed_route_samples', unit: 'kph', expected: 82 },
+    { speed: 82, count: 0, source: 'observed_route_samples', unit: 'km/h', expected: null },
+    { speed: 82, count: undefined, source: 'observed_route_samples', unit: 'km/h', expected: null },
+    { speed: 82, count: 2, source: 'unknown', unit: 'km/h', expected: null },
+    { speed: 82, count: 2, source: 'observed_route_samples', unit: undefined, expected: null },
+    { speed: 82, count: 2, source: 'observed_route_samples', unit: 'mph', expected: null },
+    { speed: -1, count: 2, source: 'observed_route_samples', unit: 'km/h', expected: null },
+    { speed: null, count: 2, source: 'observed_route_samples', unit: 'km/h', expected: null },
+  ])('reads drive peak only with its observed sample and unit proof: $speed / $count / $source / $unit', async row => {
+    const { api } = await modules()
+    mocks.request.mockResolvedValue({ statusCode: 200, data: { data: { drives: [{ drive_id: 1,
+      speed_max: row.speed, speed_sample_count: row.count, speed_metrics_source: row.source, speed_unit: row.unit,
+      speed_avg: 999, duration_min: 1, odometer_details: { odometer_distance: 999 } }] } }, header: {} })
+    const actual = (await api.matelinkApi.getDrives(7)).items[0]
+    expect(actual.speedMaxKmh).toBe(row.expected)
+    expect(actual.speedMetricsSource).toBe(row.source)
+    expect(actual.speedSampleCount).toBe(row.count ?? null)
+  })
+  it.each(['telemetry_mqtt', 'teslamate_archive', 'unknown'])('uses missing speed_unit only for proven normalized route source %s', async source => {
+    const { api } = await modules()
+    mocks.request.mockResolvedValue({ statusCode: 200, data: { data: { drives: [{ drive_id: 1,
+      source, quality_state: 'observed', speed_max: 0, speed_sample_count: 1, speed_metrics_source: 'observed_route_samples' }] } }, header: {} })
+    const actual = (await api.matelinkApi.getDrives(7)).items[0]
+    expect(actual.speedMaxKmh).toBe(source === 'telemetry_mqtt' ? 0 : null)
+    expect(actual.speedUnit).toBe(source === 'telemetry_mqtt' ? 'km/h' : null)
+  })
   it('preserves HTTP error code, message key and Retry-After', async () => {
     const { api } = await modules()
     mocks.request.mockResolvedValue({

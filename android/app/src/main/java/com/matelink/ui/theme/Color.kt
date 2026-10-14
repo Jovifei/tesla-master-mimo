@@ -3,7 +3,7 @@ package com.matelink.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // Neutral base colors aligned to Stitch's restrained white theme.
-val NeutralPrimary = Color(0xFF0E7490)
+val NeutralPrimary = Color(0xFF157A86)
 val NeutralDark = Color(0xFF0F1115)
 
 // Status colors (semantic - always fixed)
@@ -12,9 +12,9 @@ val StatusWarning = Color(0xFFB45309)
 val StatusError = Color(0xFFDC2626)
 
 // Light theme colors - white surface, near-black type, restrained grey dividers.
-val PrimaryLight = Color(0xFF0E7490)
+val PrimaryLight = Color(0xFF157A86)
 val OnPrimaryLight = Color(0xFFFFFFFF)
-val PrimaryContainerLight = Color(0xFFCFFAFE)
+val PrimaryContainerLight = Color(0xFFDDF0F1)
 val OnPrimaryContainerLight = Color(0xFF164E63)
 val SecondaryLight = Color(0xFF2C3138)
 val OnSecondaryLight = Color(0xFFFFFFFF)
@@ -22,12 +22,12 @@ val SecondaryContainerLight = Color(0xFFF5F5F5)
 val OnSecondaryContainerLight = Color(0xFF1F2329)
 val TertiaryLight = Color(0xFF5F6670)
 val OnTertiaryLight = Color(0xFFFFFFFF)
-val BackgroundLight = Color(0xFFF5F6F8)
-val OnBackgroundLight = Color(0xFF111315)
+val BackgroundLight = Color(0xFFF5F7F9)
+val OnBackgroundLight = Color(0xFF1F2937)
 val SurfaceLight = Color(0xFFFFFFFF)
-val OnSurfaceLight = Color(0xFF111315)
+val OnSurfaceLight = Color(0xFF1F2937)
 val SurfaceVariantLight = Color(0xFFF7F7F8)
-val OnSurfaceVariantLight = Color(0xFF5F6368)
+val OnSurfaceVariantLight = Color(0xFF6B7280)
 val OutlineLight = Color(0xFFE5E5E5)
 val OutlineVariantLight = Color(0xFFE9EDF2)
 val SurfaceContainerLight = Color(0xFFF9F9FA)
@@ -37,7 +37,7 @@ val ErrorLight = StatusError
 val OnErrorLight = Color.White
 
 // Dark theme stays neutral and layered instead of mirroring a bright shell.
-val PrimaryDark = Color(0xFF67E8F9)
+val PrimaryDark = Color(0xFF8CCCD2)
 val OnPrimaryDark = Color(0xFF083344)
 val PrimaryContainerDark = Color(0xFF164E63)
 val OnPrimaryContainerDark = Color(0xFFCFFAFE)

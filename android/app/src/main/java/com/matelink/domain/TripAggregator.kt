@@ -2,6 +2,8 @@ package com.matelink.domain
 
 import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.DriveSummary
+import com.matelink.domain.analytics.EfficiencySample
+import com.matelink.domain.analytics.calculateWeightedEfficiency
 import com.matelink.domain.model.Trip
 import com.matelink.util.parseIsoDateTime
 import java.time.LocalDateTime
@@ -36,14 +38,18 @@ object TripAggregator {
         val totalMin = if (firstStart != null && lastEnd != null) {
             ChronoUnit.MINUTES.between(firstStart, lastEnd).toInt()
         } else totalDrivingMin
-        val totalEnergyConsumed = drives.mapNotNull { it.energyConsumed }.sum()
+        val weightedEnergy = calculateWeightedEfficiency(
+            drives.map { EfficiencySample(distanceKm = it.distance, energyKwh = it.energyConsumed) }
+        )
+        // A known energy receipt remains meaningful even when its distance is unknown or zero.
+        // Only efficiency requires a qualified energy/distance pair.
+        val knownEnergy = drives.mapNotNull { it.energyConsumed?.takeIf(Double::isFinite) }
+        val totalEnergyConsumed = knownEnergy.takeIf { it.isNotEmpty() }?.sum()?.takeIf(Double::isFinite)
         val totalEnergyCharged = charges.sumOf { it.energyAdded }
         val costs = charges.mapNotNull { it.cost }
         val totalCost = if (costs.isNotEmpty()) costs.sum() else null
         val maxSpeed = drives.maxOf { it.speedMax }
-        val avgEfficiency = if (totalDistance > 0) {
-            (totalEnergyConsumed * 1000.0) / totalDistance
-        } else null
+        val avgEfficiency = weightedEnergy.efficiencyWhKm
 
         return Trip(
             drives = drives.toList(),
@@ -62,7 +68,11 @@ object TripAggregator {
             endDate = drives.last().endDate,
             startBatteryLevel = drives.first().startBatteryLevel,
             endBatteryLevel = drives.last().endBatteryLevel,
-            name = name
+            name = name,
+            efficiencySampleCount = weightedEnergy.sampleCount,
+            efficiencyRecordCoveragePercent = weightedEnergy.coveragePercent,
+            efficiencyDistanceCoveragePercent = weightedEnergy.distanceCoveragePercent,
+            energySampleCount = knownEnergy.size
         )
     }
 

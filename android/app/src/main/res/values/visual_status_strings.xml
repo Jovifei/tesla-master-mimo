@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="visual_status_overview_title">Your data at a glance</string>
+    <string name="visual_status_overview_body">Live readings and saved history are separate. Statuses below reflect the latest report.</string>
+    <string name="visual_status_reported">Reported categories</string>
+    <string name="visual_status_available">Available</string>
+    <string name="visual_status_unknown">Unknown</string>
+    <string name="visual_status_tpms_empty_title">No verified history in this period</string>
+    <string name="visual_status_tpms_empty_body">Live tire pressures can be available even when this period has no verified history. A trend needs saved samples with a valid source and observation time.</string>
+</resources>

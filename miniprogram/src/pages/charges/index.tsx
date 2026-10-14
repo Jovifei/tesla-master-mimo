@@ -12,6 +12,8 @@ import { carSelectionStorageKey, type Car, type Charge, type HistoryPage, type H
 import { readAppSession } from '../../services/session'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 import LoadingIndicator from '../../components/LoadingIndicator'
+import MetricValue from '../../components/MetricValue'
+import VisualIcon from '../../components/VisualIcon'
 import { availabilityLabel, qualityLabel, sourceLabel } from '../../domain/data_labels'
 import { resolveChargeEnergy } from '../../domain/drive_energy'
 
@@ -29,10 +31,9 @@ function verifiedEnergy(charge: Charge) {
     end_date: charge.endDate, energy_contract: charge.energy.evidence }) : null
 }
 function inputLabel(charge: Charge): string { return verifiedEnergy(charge)?.acInputKwh != null ? 'AC 输入' : '输入电量（历史报告）' }
-function inputValue(charge: Charge): string {
+function inputNumber(charge: Charge): number | null {
   const verified = verifiedEnergy(charge)
-  const input = verified ? verified.inputEnergyKwh : charge.energy ? charge.energy.inputEnergyKwh : charge.energyUsedKwh
-  return input == null ? '暂无数据' : `${input} kWh`
+  return verified ? verified.inputEnergyKwh : charge.energy ? charge.energy.inputEnergyKwh : charge.energyUsedKwh
 }
 function modeLabel(charge: Charge): string {
   const mode = verifiedEnergy(charge)?.chargeMode
@@ -341,7 +342,7 @@ export default function ChargesPage() {
   return (
     <View className="page history-page">
       <View className="card">
-        <Text className="title">充电</Text>
+        <View className="visual-heading"><VisualIcon name="energy" /><Text className="title">充电</Text></View>
         <Text className="muted">{car ? `${car.displayName || '当前车辆'} · ` : ''}只展示服务端返回的真实充电记录；能量、费用、功率和地点缺失时保持暂无数据。</Text>
         {cars.length > 1 ? (
           <Picker mode="selector" range={cars.map(item => item.displayName || item.name || `车辆 ${item.stableId}`)} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}>
@@ -364,19 +365,19 @@ export default function ChargesPage() {
 
       {current && !isHistoryQuarantined(current) ? (
         <View className="card">
-          <Text className="section-title">正在充电</Text>
+          <View className="visual-heading"><VisualIcon name="energy" /><Text className="section-title">正在充电</Text></View>
           <Text className="muted">开始：{historyDateTime(current.startDate)} · 地点：{value(current.address)}</Text>
           <View className="metric-grid">
-            <View className="metric"><Text className="metric-label">已充入</Text><Text className="metric-value">{current.energyAddedKwh == null ? '暂无数据' : `${current.energyAddedKwh} kWh`}</Text></View>
-            <View className="metric"><Text className="metric-label">功率</Text><Text className="metric-value">{current.chargerPowerKw == null ? '暂无数据' : `${current.chargerPowerKw} kW`}</Text></View>
+            <MetricValue label="已充入" value={current.energyAddedKwh} unit="kWh" icon="battery" />
+            <MetricValue label="功率" value={current.chargerPowerKw} unit="kW" icon="energy" />
           </View>
         </View>
       ) : null}
 
       {!readAppSession(Taro) ? (
-        <View className="card"><Text className="section-title">等待微信登录</Text><Text className="muted">请先在“我的”中建立会话。</Text></View>
+        <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待微信登录</Text><Text className="muted">请先在“我的”中建立会话。</Text></View>
       ) : trustedItems.length === 0 && !loading ? (
-        <View className="card"><Text className="section-title">暂无可展示的充电记录</Text><Text className="muted">当前没有可展示的充电记录，空响应不会生成示例数据。</Text>
+        <View className="card empty-state"><VisualIcon name="energy" /><Text className="section-title">暂无可展示的充电记录</Text><Text className="muted">当前没有可展示的充电记录，空响应不会生成示例数据。</Text>
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
         </View>
       ) : (
@@ -386,15 +387,15 @@ export default function ChargesPage() {
           {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的充电记录</Text> : null}
           {visibleItems.map(item => (
             <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
-              <View className="history-record-top"><Text>{historyDateTime(item.startDate)}</Text><Text>{battery(item.startBatteryLevel)} → {battery(item.endBatteryLevel)}</Text></View>
+              <View className="history-record-top"><Text>{historyDateTime(item.startDate)}</Text><Text className="history-soc">{battery(item.startBatteryLevel)} → {battery(item.endBatteryLevel)}</Text></View>
               <Text className="muted">{value(item.address)}</Text>
               <Text className="history-source">{sourceLabel(item.source)}</Text>
               <Text className="muted">{modeLabel(item)}</Text>
               <View className="history-record-metrics">
-                <View><Text className="metric-label">耗时</Text><Text>{item.durationMinutes == null ? '暂无数据' : `${item.durationMinutes} 分钟`}</Text></View>
-                <View><Text className="metric-label">电池充入</Text><Text>{item.energyAddedKwh == null ? '暂无数据' : `${item.energyAddedKwh} kWh`}</Text></View>
-                <View><Text className="metric-label">{inputLabel(item)}</Text><Text>{inputValue(item)}</Text></View>
-                <View><Text className="metric-label">费用</Text><Text>{item.cost == null ? '暂无数据' : `${item.cost}${item.currency ? ` ${item.currency}` : '（币种未知）'}`}</Text></View>
+                <MetricValue label="时长" value={item.durationMinutes != null && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0 ? item.durationMinutes : null} unit="分钟" icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
+                <MetricValue label="电池充入" value={item.energyAddedKwh} unit="kWh" icon="battery" />
+                <MetricValue label={inputLabel(item)} value={inputNumber(item)} unit="kWh" icon="energy" />
+                <MetricValue label="费用" value={item.cost} unit={item.currency || '币种未知'} icon="account" />
               </View>
             </View>
           ))}
@@ -408,10 +409,10 @@ export default function ChargesPage() {
           <Text className="muted">{value(selected.address)} · {historyDateTime(selected.startDate)} → {historyDateTime(selected.endDate)}</Text>
           <Text className="muted">{modeLabel(selected)}</Text>
           <View className="metric-grid">
-            <View className="metric"><Text className="metric-label">电池充入</Text><Text className="metric-value">{selected.energyAddedKwh == null ? '暂无数据' : `${selected.energyAddedKwh} kWh`}</Text></View>
-            <View className="metric"><Text className="metric-label">{inputLabel(selected)}</Text><Text className="metric-value">{inputValue(selected)}</Text></View>
-            <View className="metric"><Text className="metric-label">费用</Text><Text className="metric-value">{selected.cost == null ? '暂无数据' : `${selected.cost}${selected.currency ? ` ${selected.currency}` : '（币种未知）'}`}</Text></View>
-            <View className="metric"><Text className="metric-label">功率</Text><Text className="metric-value">{selected.chargerPowerKw == null ? '暂无数据' : `${selected.chargerPowerKw} kW`}</Text></View>
+            <MetricValue label="电池充入" value={selected.energyAddedKwh} unit="kWh" icon="battery" />
+            <MetricValue label={inputLabel(selected)} value={inputNumber(selected)} unit="kWh" icon="energy" />
+            <MetricValue label="费用" value={selected.cost} unit={selected.currency || '币种未知'} icon="account" />
+            <MetricValue label="功率" value={selected.chargerPowerKw} unit="kW" icon="energy" />
           </View>
           {selected.qualityState ? <Text className="muted">记录质量：{qualityLabel(selected.qualityState)}</Text> : null}
         </View>

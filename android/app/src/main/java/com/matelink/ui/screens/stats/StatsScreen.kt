@@ -106,6 +106,10 @@ import com.matelink.ui.icons.CustomIcons
 import com.matelink.ui.theme.CarColorPalette
 import com.matelink.ui.theme.CarColorPalettes
 import com.matelink.ui.theme.MetricMono
+import com.matelink.ui.theme.telemetryPalette
+import com.matelink.ui.components.formatTelemetryEfficiency
+import com.matelink.ui.components.telemetryMetricParts
+import androidx.compose.ui.unit.sp
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -125,7 +129,7 @@ fun StatsScreen(
     val syncLogs by viewModel.syncLogs.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val isDarkTheme = isSystemInDarkTheme()
-    val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
+    val palette = telemetryPalette()
     var showSyncLogsDialog by remember { mutableStateOf(false) }
     val historyIdentityUnavailableMessage = stringResource(R.string.history_identity_unavailable_message)
 
@@ -715,7 +719,7 @@ private fun AnalysisSummaryCard(
             SummaryMetricItem(
                 title = stringResource(R.string.stats_analysis_efficiency),
                 metric = summary.efficiencyWhKm,
-                formatter = { UnitFormatter.formatEfficiency(it, units, 0) },
+                formatter = ::formatTelemetryEfficiency,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -1083,31 +1087,34 @@ private fun SummaryMetricItem(
         null -> stringResource(R.string.stats_analysis_unavailable)
     }
 
+    val (numericDisplay, displayedUnit) = telemetryMetricParts(displayValue)
     Column(modifier = modifier) {
         Text(
-            text = displayValue,
+            text = numericDisplay,
             style = MaterialTheme.typography.titleMedium.copy(
                 fontFamily = MetricMono,
-                fontFeatureSettings = "tnum"
+                fontFeatureSettings = "tnum",
+                fontSize = 24.sp
             ),
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            maxLines = Int.MAX_VALUE
         )
+        displayedUnit?.let {
+            Text(it, style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Text(
             text = title,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            maxLines = Int.MAX_VALUE
         )
         Text(
             text = detail ?: evidenceLabel,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            maxLines = Int.MAX_VALUE
         )
     }
 }
@@ -1350,7 +1357,7 @@ private fun QuickStatsDrivesCard(
             StatItem(
                 label = stringResource(R.string.stats_avg_efficiency),
                 value = if (hasDistance && hasEnergy) {
-                    quickStats.avgEfficiencyWhKm?.let { UnitFormatter.formatEfficiency(it, units, 0) } ?: noData
+                    quickStats.avgEfficiencyWhKm?.let(::formatTelemetryEfficiency) ?: noData
                 } else noData,
                 modifier = Modifier.weight(1f)
             )
@@ -1495,7 +1502,7 @@ private fun RecordsCard(
         driveRecords.add(RecordData("🏎️", labelTopSpeed, UnitFormatter.formatSpeed(drive.speedMax.toDouble(), units), drive.startDate.take(10)) { onDriveClick(drive.driveId) })
     }
     quickStats.mostEfficientDrive?.let { drive ->
-        driveRecords.add(RecordData("🌱", labelMostEfficient, drive.efficiency?.let { UnitFormatter.formatEfficiency(it, units, 0) } ?: "N/A", drive.startDate.take(10)) { onDriveClick(drive.driveId) })
+        driveRecords.add(RecordData("🌱", labelMostEfficient, drive.efficiency?.let(::formatTelemetryEfficiency) ?: "N/A", drive.startDate.take(10)) { onDriveClick(drive.driveId) })
     }
     quickStats.longestDrivingStreak?.let { streak ->
         driveRecords.add(RecordData("🔥", labelLongestStreak, stringResource(R.string.format_days_count, streak.streakDays), "${streak.startDate} → ${streak.endDate}", null))

@@ -492,6 +492,11 @@ function normalizeDrive(raw: RawDrive, car?: Car): Drive | null {
       (typeof rawId === 'number' && (!Number.isSafeInteger(rawId) || rawId <= 0))) return null
   const receipt = driveEnergyReceipt(raw)
   const energy = resolveDriveEnergy(receipt, car)
+  // Existing telemetry_mqtt route contract normalizes VehicleSpeed mph to km/h
+  // before storage (telemetry_normalization.go -> telemetry_core.go -> history_sample_metrics.go).
+  // Imported archive speeds have no proven implicit unit contract here.
+  const speedUnit = raw.speed_unit == null && raw.source === 'telemetry_mqtt' &&
+    (raw.quality_state === 'observed' || raw.quality_state === 'derived') ? 'km/h' : stringValue(raw.speed_unit)
   return {
     id: String(rawId),
     sessionId: stringValue(raw.session_id),
@@ -500,6 +505,13 @@ function normalizeDrive(raw: RawDrive, car?: Car): Drive | null {
     startAddress: raw.start_address ?? null,
     endAddress: raw.end_address ?? null,
     durationMinutes: finite(raw.duration_min, 0),
+    // A peak belongs to this drive's observed samples, never its average or the current vehicle.
+    speedMaxKmh: raw.speed_metrics_source === 'observed_route_samples' &&
+      Number.isSafeInteger(raw.speed_sample_count) && (raw.speed_sample_count ?? 0) > 0 &&
+      (speedUnit === 'km/h' || speedUnit === 'kph') ? finite(raw.speed_max, 0) : null,
+    speedSampleCount: Number.isSafeInteger(raw.speed_sample_count) && (raw.speed_sample_count ?? -1) >= 0 ? raw.speed_sample_count! : null,
+    speedMetricsSource: stringValue(raw.speed_metrics_source),
+    speedUnit,
     distanceKm: finite(raw.odometer_details?.odometer_distance, 0),
     energyConsumedKwh: energy.energyKwh,
     energy, energyReceipt: receipt, efficiencyWhKm: energy.efficiencyWhKm,

@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,6 +28,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -42,7 +44,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
 import com.matelink.domain.model.VehicleHeroModel
 import com.matelink.domain.model.resolveVehicleHeroProfile
 import com.matelink.ui.theme.MetricMono
@@ -53,7 +59,9 @@ data class TelemetryMetricSpec(
     val label: String,
     val value: String,
     val tint: Color,
-    val valueMaxLines: Int = 1
+    val valueMaxLines: Int = 1,
+    val unit: String? = null,
+    val valueFontSize: TextUnit? = null
 )
 
 @Composable
@@ -117,24 +125,42 @@ fun TelemetrySectionHeader(
 @Composable
 fun TelemetryMetricStrip(
     metrics: List<TelemetryMetricSpec>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    adaptive: Boolean = false,
+    maxColumns: Int = 4
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly
-    ) {
-        metrics.forEachIndexed { index, metric ->
-            TelemetryMetricCell(
-                metric = metric,
-                modifier = Modifier.weight(1f)
-            )
-            if (index != metrics.lastIndex) {
-                Box(
-                    modifier = Modifier
-                        .height(64.dp)
-                        .width(1.dp)
-                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-                )
+    if (metrics.isEmpty()) return
+    val measure = rememberTextMeasurer()
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val scale = LocalDensity.current.fontScale
+        var columns = when {
+            !adaptive -> metrics.size
+            scale >= 1.5f && maxWidth < 360.dp -> 1
+            maxWidth < 400.dp || scale > 1.1f -> minOf(2, metrics.size, maxColumns.coerceAtLeast(1))
+            else -> minOf(metrics.size, maxColumns.coerceAtLeast(1))
+        }
+        if (adaptive) {
+            val widestNumber = metrics.maxOf {
+                val numeric = if (it.unit == null) telemetryMetricParts(it.value).first else it.value
+                measure.measure(numeric, TextStyle(fontFamily = MetricMono,
+                    fontWeight = FontWeight.SemiBold, fontSize = it.valueFontSize ?: 20.sp)).size.width
+            }
+            while (columns > 1 && widestNumber > with(LocalDensity.current) {
+                    (maxWidth / columns - 9.dp).toPx()
+                }) columns = if (columns > 2) 2 else 1
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(if (adaptive) 12.dp else 0.dp)) {
+            metrics.chunked(columns).forEach { row ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    row.forEachIndexed { index, metric ->
+                        TelemetryMetricCell(metric, Modifier.weight(1f), adaptive)
+                        if (index != row.lastIndex) {
+                            Box(Modifier.height(if (adaptive) 88.dp else 64.dp).width(1.dp)
+                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)))
+                        }
+                    }
+                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                }
             }
         }
     }
@@ -143,10 +169,16 @@ fun TelemetryMetricStrip(
 @Composable
 private fun TelemetryMetricCell(
     metric: TelemetryMetricSpec,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    adaptive: Boolean = false
 ) {
+    val (number, implicitUnit) = if (adaptive && metric.unit == null) telemetryMetricParts(metric.value) else metric.value to null
+    val displayedUnit = metric.unit ?: implicitUnit
     Column(
-        modifier = modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+        modifier = modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "${metric.label}: ${metric.value}${metric.unit?.let { " $it" }.orEmpty()}"
+            },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
@@ -154,20 +186,27 @@ private fun TelemetryMetricCell(
             imageVector = metric.icon,
             contentDescription = null,
             tint = metric.tint,
-            modifier = Modifier.size(19.dp)
+            modifier = Modifier.size(if (adaptive) 24.dp else 19.dp)
         )
         Text(
-            text = metric.value,
-            style = MaterialTheme.typography.titleSmall.copy(fontFamily = MetricMono),
+            text = number,
+            style = MaterialTheme.typography.titleSmall.copy(
+                fontFamily = MetricMono,
+                fontSize = metric.valueFontSize ?: if (adaptive) 20.sp else MaterialTheme.typography.titleSmall.fontSize
+            ),
             fontWeight = FontWeight.SemiBold,
-            maxLines = metric.valueMaxLines,
+            maxLines = if (adaptive) Int.MAX_VALUE else metric.valueMaxLines,
             textAlign = TextAlign.Center
         )
+        displayedUnit?.takeIf(String::isNotBlank)?.let { unit ->
+            Text(text = unit, style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+        }
         Text(
             text = metric.label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
+            maxLines = if (adaptive) Int.MAX_VALUE else 1,
             textAlign = TextAlign.Center
         )
     }

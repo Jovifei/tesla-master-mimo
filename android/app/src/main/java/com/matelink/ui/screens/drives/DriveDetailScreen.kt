@@ -5,6 +5,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,7 +49,6 @@ import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import com.matelink.ui.components.HistoryReadNotices
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,7 +65,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlin.math.roundToInt
@@ -81,8 +84,8 @@ import com.matelink.ui.components.RouteIndicator
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.TelemetrySectionHeader
 import com.matelink.ui.screens.trips.displayName
-import com.matelink.ui.theme.CarColorPalettes
-import com.matelink.util.formatDurationCompact
+import com.matelink.ui.theme.telemetryPalette
+import com.matelink.util.formatDuration
 import com.matelink.util.formatMonthDayTime
 import com.matelink.util.formatTime
 import com.matelink.util.parseIsoDateTime
@@ -101,8 +104,7 @@ fun DriveDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    val isDarkTheme = isSystemInDarkTheme()
-    val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
+    val palette = telemetryPalette()
 
     HistoryForegroundRefreshEffect { viewModel.loadDriveDetail(carId, driveId) }
     LaunchedEffect(carId, driveId) {
@@ -137,7 +139,7 @@ fun DriveDetailScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    containerColor = MaterialTheme.colorScheme.surface
                 )
             )
         },
@@ -253,12 +255,14 @@ private fun DriveDetailContent(
                 actionText = curvesActionLabel,
                 onActionClick = onNavigateToDriveCurves,
                 stats = listOf(
-                    StatItem(stringResource(R.string.distance), s.distance?.let { UnitFormatter.formatDistance(it, units) } ?: notAvailableLabel),
-                    StatItem(stringResource(R.string.duration), s.durationMin?.let(::formatDurationCompact) ?: notAvailableLabel),
+                    StatItem(stringResource(R.string.distance), s.distance?.let { visualTripNumber(it) } ?: notAvailableLabel, UnitFormatter.getDistanceUnit(units)),
+                    StatItem(stringResource(R.string.duration), s.durationMin?.let { "%,d".format(it) } ?: notAvailableLabel, stringResource(R.string.visual_trip_duration_unit)),
                     StatItem(
                         stringResource(R.string.efficiency),
-                        s.energy.efficiencyWhKm?.let { UnitFormatter.formatEfficiency(it, units) }
-                            ?: notAvailableLabel
+                        s.energy.efficiencyWhKm?.let { visualTripNumber(it / 10.0) }
+                            ?: notAvailableLabel,
+                        unit = "kWh/100km",
+                        recovered = (s.energy.efficiencyWhKm ?: 0.0) < 0.0
                     )
                 )
             )
@@ -270,9 +274,9 @@ private fun DriveDetailContent(
                 actionText = curvesActionLabel,
                 onActionClick = onNavigateToDriveCurves,
                 stats = listOf(
-                    StatItem(stringResource(R.string.maximum), s.speedMax?.let { UnitFormatter.formatSpeed(it.toDouble(), units) } ?: notAvailableLabel),
-                    StatItem(stringResource(R.string.average), s.speedAvg?.let { UnitFormatter.formatSpeed(it, units) } ?: notAvailableLabel),
-                    StatItem(stringResource(R.string.avg_distance), s.avgSpeedFromDistance?.let { UnitFormatter.formatSpeed(it, units) } ?: notAvailableLabel)
+                    StatItem(stringResource(R.string.maximum), s.speedMax?.let { "%,d".format(it) } ?: notAvailableLabel, UnitFormatter.getSpeedUnit(units)),
+                    StatItem(stringResource(R.string.average), s.speedAvg?.let { visualTripNumber(it, 0) } ?: notAvailableLabel, UnitFormatter.getSpeedUnit(units)),
+                    StatItem(stringResource(R.string.avg_distance), s.avgSpeedFromDistance?.let { visualTripNumber(it, 0) } ?: notAvailableLabel, UnitFormatter.getSpeedUnit(units))
                 )
             )
 
@@ -295,9 +299,9 @@ private fun DriveDetailContent(
                 actionText = curvesActionLabel,
                 onActionClick = onNavigateToDriveCurves,
                 stats = listOf(
-                    StatItem(stringResource(R.string.max_accel), s.powerMax?.let { "$it kW" } ?: notAvailableLabel),
-                    StatItem(stringResource(R.string.min_regen), s.powerMin?.let { "$it kW" } ?: notAvailableLabel),
-                    StatItem(stringResource(R.string.average), s.powerAvg?.let { "%.1f kW".format(it) } ?: notAvailableLabel)
+                    StatItem(stringResource(R.string.max_accel), s.powerMax?.toString() ?: notAvailableLabel, "kW"),
+                    StatItem(stringResource(R.string.min_regen), s.powerMin?.toString() ?: notAvailableLabel, "kW"),
+                    StatItem(stringResource(R.string.average), s.powerAvg?.let { visualTripNumber(it) } ?: notAvailableLabel, "kW")
                 )
             )
 
@@ -308,12 +312,14 @@ private fun DriveDetailContent(
                 actionText = curvesActionLabel,
                 onActionClick = onNavigateToDriveCurves,
                 stats = listOf(
-                    StatItem(stringResource(R.string.start), s.batteryStart?.let { "$it%" } ?: notAvailableLabel),
-                    StatItem(stringResource(R.string.end), s.batteryEnd?.let { "$it%" } ?: notAvailableLabel),
-                    StatItem(stringResource(R.string.used), s.batteryUsed?.let { "$it%" } ?: notAvailableLabel),
+                    StatItem(stringResource(R.string.start), s.batteryStart?.toString() ?: notAvailableLabel, "%"),
+                    StatItem(stringResource(R.string.end), s.batteryEnd?.toString() ?: notAvailableLabel, "%"),
+                    StatItem(stringResource(R.string.used), s.batteryUsed?.toString() ?: notAvailableLabel, "%"),
                     StatItem(
                         stringResource(R.string.energy),
-                        s.energy.energyKwh?.let { "%.2f kWh".format(it) } ?: notAvailableLabel
+                        s.energy.energyKwh?.let { visualTripNumber(it, 2) } ?: notAvailableLabel,
+                        unit = "kWh",
+                        recovered = (s.energy.energyKwh ?: 0.0) < 0.0
                     ),
                     StatItem(
                         energySourceLabel,
@@ -362,10 +368,10 @@ private fun DriveDetailContent(
                     actionText = curvesActionLabel,
                     onActionClick = onNavigateToDriveCurves,
                     stats = listOf(
-                        StatItem(stringResource(R.string.maximum), UnitFormatter.formatElevation(s.elevationMax, units)),
-                        StatItem(stringResource(R.string.minimum), UnitFormatter.formatElevation(s.elevationMin, units)),
-                        StatItem(stringResource(R.string.gain), s.elevationGain?.let { "+${UnitFormatter.formatElevation(it, units)}" } ?: notAvailableLabel),
-                        StatItem(stringResource(R.string.loss), s.elevationLoss?.let { "-${UnitFormatter.formatElevation(it, units)}" } ?: notAvailableLabel)
+                        StatItem(stringResource(R.string.maximum), UnitFormatter.formatElevation(s.elevationMax, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}"), UnitFormatter.getElevationUnit(units)),
+                        StatItem(stringResource(R.string.minimum), UnitFormatter.formatElevation(s.elevationMin, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}"), UnitFormatter.getElevationUnit(units)),
+                        StatItem(stringResource(R.string.gain), s.elevationGain?.let { "+${UnitFormatter.formatElevation(it, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}")}" } ?: notAvailableLabel, UnitFormatter.getElevationUnit(units)),
+                        StatItem(stringResource(R.string.loss), s.elevationLoss?.let { "-${UnitFormatter.formatElevation(it, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}")}" } ?: notAvailableLabel, UnitFormatter.getElevationUnit(units))
                     )
                 )
             }
@@ -376,8 +382,8 @@ private fun DriveDetailContent(
                     title = stringResource(R.string.temperature),
                     icon = Icons.Default.DeviceThermostat,
                     stats = listOfNotNull(
-                        s.outsideTempAvg?.let { StatItem(stringResource(R.string.outside), UnitFormatter.formatTemperature(it, units)) },
-                        s.insideTempAvg?.let { StatItem(stringResource(R.string.inside), UnitFormatter.formatTemperature(it, units)) }
+                        s.outsideTempAvg?.let { StatItem(stringResource(R.string.outside), UnitFormatter.formatTemperature(it, units).removeSuffix(UnitFormatter.getTemperatureUnit(units)), UnitFormatter.getTemperatureUnit(units)) },
+                        s.insideTempAvg?.let { StatItem(stringResource(R.string.inside), UnitFormatter.formatTemperature(it, units).removeSuffix(UnitFormatter.getTemperatureUnit(units)), UnitFormatter.getTemperatureUnit(units)) }
                     )
                 )
             }
@@ -440,7 +446,7 @@ private fun RouteHeaderCard(detail: DriveDetail) {
                 )
                 DetailTimeValue(
                     label = stringResource(R.string.duration),
-                    value = detail.durationMin?.let(::formatDurationCompact)
+                    value = detail.durationMin?.let { formatDuration(LocalContext.current.resources, it) }
                         ?: detail.durationStr?.takeIf { it.isNotBlank() }
                         ?: stringResource(R.string.not_available),
                     modifier = Modifier.weight(0.8f)
@@ -521,8 +527,14 @@ private fun DriveMapCard(positions: List<DrivePosition>, routeColor: Color) {
     }
 }
 
-data class StatItem(val label: String, val value: String)
+data class StatItem(
+    val label: String,
+    val value: String,
+    val unit: String? = null,
+    val recovered: Boolean = false
+)
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StatsSectionCard(
     title: String,
@@ -535,11 +547,8 @@ private fun StatsSectionCard(
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp
 
-    val columnCount = when {
-        screenWidth > 600 -> 4
-        screenWidth > 340 -> 3
-        else -> 2
-    }
+    val columnCount = if (screenWidth >= 600 && configuration.fontScale <= 1.1f) 3 else 2
+    val palette = telemetryPalette()
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -547,18 +556,16 @@ private fun StatsSectionCard(
         enabled = onActionClick != null,
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = palette.surface
         )
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -607,12 +614,14 @@ private fun StatsSectionCard(
             chunked.forEachIndexed { index, row ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     row.forEach { stat ->
                         StatItemView(
                             label = stat.label,
                             value = stat.value,
+                            unit = stat.unit,
+                            recovered = stat.recovered,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -627,7 +636,7 @@ private fun StatsSectionCard(
                     }
                 }
                 if (index < chunked.size - 1) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
                 }
             }
         }
@@ -638,19 +647,31 @@ private fun StatsSectionCard(
 private fun StatItemView(
     label: String,
     value: String,
+    unit: String? = null,
+    recovered: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier) {
+    Column(modifier = modifier.semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold
+            style = MaterialTheme.typography.bodyLarge,
+            fontSize = if (unit != null) 22.sp else 16.sp,
+            color = if (recovered) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.SemiBold
         )
+        unit?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -756,7 +777,7 @@ private fun ElevationChartCard(
         title = stringResource(R.string.elevation_profile),
         icon = Icons.Default.Landscape,
         data = elevations,
-        color = Color(0xFF8B4513), // Brown color for terrain
+        color = MaterialTheme.colorScheme.primary,
         unit = "m",
         timeLabels = timeLabels,
         externalSelectedFraction = externalSelectedFraction,

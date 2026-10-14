@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,8 +24,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BatteryStd
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.LocalParking
@@ -45,7 +45,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -62,6 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
@@ -84,10 +84,9 @@ import com.matelink.ui.components.formatEditorialDate
 import com.matelink.ui.components.formatShortDate
 import com.matelink.ui.components.parseListItemDate
 import com.matelink.util.formatDuration
-import com.matelink.util.formatDurationCompact
 import com.matelink.util.toChineseDisplayAddress
 import com.matelink.ui.theme.CarColorPalette
-import com.matelink.ui.theme.CarColorPalettes
+import com.matelink.ui.theme.telemetryPalette
 import java.time.Duration
 import java.time.LocalDate
 import java.time.OffsetDateTime
@@ -103,8 +102,7 @@ fun DrivesScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    val isDarkTheme = isSystemInDarkTheme()
-    val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
+    val palette = telemetryPalette()
 
     // Remember scroll state and restore from ViewModel
     val listState = rememberLazyListState(
@@ -307,12 +305,17 @@ private fun DrivesContent(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        Icon(
+                            imageVector = Icons.Default.DirectionsCar,
+                            contentDescription = null,
+                            tint = palette.accent,
+                            modifier = Modifier.size(36.dp)
+                        )
                         Text(
                             text = stringResource(R.string.no_drives_found),
                             style = MaterialTheme.typography.bodyLarge,
@@ -560,34 +563,45 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                             Icons.Default.DirectionsCar,
                             stringResource(R.string.total_trips),
                             if (hasSummary) "%,d".format(summary.totalDrives) else unavailable,
-                            palette.accent
+                            palette.accent,
+                            unit = stringResource(R.string.visual_trip_count_unit),
+                            valueFontSize = 26.sp
                         ),
                         TelemetryMetricSpec(
                             CustomIcons.SteeringWheel,
                             stringResource(R.string.total_distance),
-                            if (hasSummary) UnitFormatter.formatDistance(summary.totalDistanceKm, units) else unavailable,
-                            palette.accent
+                            if (hasSummary) visualTripNumber(summary.totalDistanceKm) else unavailable,
+                            palette.accent,
+                            unit = UnitFormatter.getDistanceUnit(units),
+                            valueFontSize = 26.sp
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Timer,
                             stringResource(R.string.total_time),
-                            if (hasSummary) formatDuration(LocalContext.current.resources, summary.totalDurationMin) else unavailable,
-                            Color(0xFFF59E0B)
+                            if (hasSummary) "%,d".format(summary.totalDurationMin) else unavailable,
+                            palette.accent,
+                            unit = stringResource(R.string.visual_trip_duration_unit),
+                            valueFontSize = 26.sp
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Speed,
                             stringResource(R.string.max_speed),
-                            summary.maxSpeedKmh?.let { UnitFormatter.formatSpeed(it.toDouble(), units) } ?: unavailable,
-                            Color(0xFF22C55E)
+                            summary.maxSpeedKmh?.takeIf { it >= 0 }?.let { "%,d".format(it) } ?: unavailable,
+                            palette.accent,
+                            unit = UnitFormatter.getSpeedUnit(units),
+                            valueFontSize = 26.sp
                         )
                     ),
-                    modifier = Modifier.padding(vertical = 8.dp)
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    adaptive = true,
+                    maxColumns = 2
                 )
             }
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DriveItem(
     drive: DriveData,
@@ -596,7 +610,6 @@ private fun DriveItem(
     palette: CarColorPalette,
     onClick: () -> Unit
 ) {
-    val context = LocalContext.current
     val unknown = stringResource(R.string.unknown)
     val formattedStart = drive.startAddress?.takeIf { it.isNotBlank() }?.toChineseDisplayAddress()
     val formattedEnd = drive.endAddress?.takeIf { it.isNotBlank() }?.toChineseDisplayAddress()
@@ -619,26 +632,28 @@ private fun DriveItem(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
                     text = formatEditorialDate(drive.startDate, true),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     val socRange = UnitFormatter.formatSocRange(start, end, "")
                     if (socRange.isNotBlank()) {
                         Text(
                             text = socRange,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = MaterialTheme.typography.titleMedium,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = palette.onSurface
                         )
                     }
                     energyPres.source?.takeIf { energyKwh != null }?.let { source ->
@@ -685,39 +700,46 @@ private fun DriveItem(
                         TelemetryMetricSpec(
                             icon = Icons.Default.Timer,
                             label = stringResource(R.string.duration),
-                            value = drive.durationMin?.let(::formatDurationCompact)
+                            value = drive.durationMin?.takeIf { it >= 0 }?.let { "%,d".format(it) }
                                 ?: stringResource(R.string.not_available),
-                            tint = Color(0xFFF59E0B)
+                            tint = palette.accent,
+                            unit = stringResource(R.string.visual_trip_duration_unit),
+                            valueFontSize = 22.sp
                         ),
                         TelemetryMetricSpec(
                             icon = CustomIcons.SteeringWheel,
                             label = stringResource(R.string.distance),
                             value = drive.distance
                                 ?.takeIf { it.isFinite() && it >= 0.0 }
-                                ?.let { UnitFormatter.formatDistance(it, units) }
+                                ?.let { visualTripNumber(it) }
                                 ?: stringResource(R.string.not_available),
-                            tint = palette.accent
+                            tint = palette.accent,
+                            unit = UnitFormatter.getDistanceUnit(units),
+                            valueFontSize = 22.sp
                         ),
                         TelemetryMetricSpec(
-                            icon = Icons.Default.Bolt,
-                            label = stringResource(R.string.energy),
-                            value = energyKwh?.let { kwh ->
-                                "%.1f kWh".format(kwh)
-                            } ?: stringResource(R.string.not_available),
-                            tint = if (energyKwh != null && energyKwh < 0.0) Color(0xFF10B981) else Color(0xFF3B82F6)
+                            icon = Icons.Default.Speed,
+                            label = stringResource(R.string.max_speed),
+                            value = drive.speedMax?.takeIf { it >= 0 }?.let { "%,d".format(it) }
+                                ?: stringResource(R.string.not_available),
+                            tint = palette.accent,
+                            unit = UnitFormatter.getSpeedUnit(units),
+                            valueFontSize = 22.sp
                         ),
                         TelemetryMetricSpec(
                             icon = Icons.Default.Eco,
                             label = stringResource(R.string.efficiency),
                             value = efficiency
                                 ?.takeIf(Double::isFinite)
-                                ?.let { UnitFormatter.formatEfficiency(it, units) }
+                                ?.let { visualTripNumber(it / 10.0) }
                                 ?: stringResource(R.string.not_available),
-                            tint = if (efficiency != null && efficiency < 0.0) Color(0xFF10B981) else Color(0xFF22C55E),
-                            valueMaxLines = 2
+                            tint = if (efficiency != null && efficiency < 0.0) Color(0xFF10B981) else palette.accent,
+                            unit = "kWh/100km",
+                            valueFontSize = 22.sp
                         )
                     ),
-                    modifier = Modifier.padding(vertical = 8.dp)
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    adaptive = true
                 )
             }
         }
@@ -876,6 +898,8 @@ private fun DrivesChartPage(
     val isImperial = units?.isImperial == true
     val distanceUnit = if (isImperial) "mi" else "km"
     val speedUnit = if (isImperial) "mph" else "km/h"
+    val durationUnit = stringResource(R.string.visual_trip_duration_unit)
+    val countUnit = stringResource(R.string.visual_trip_count_unit)
 
     val (title, icon) = when (chartType) {
         DrivesChartType.COUNT -> when (granularity) {
@@ -924,14 +948,14 @@ private fun DrivesChartPage(
                 BarChartData(
                     label = data.label,
                     value = data.count.toDouble(),
-                    displayValue = data.count.toString()
+                    displayValue = "${data.count} $countUnit"
                 )
             }
             DrivesChartType.TIME -> chartData.map { data ->
                 BarChartData(
                     label = data.label,
                     value = data.totalDurationMin.toDouble(),
-                    displayValue = formatDurationCompact(data.totalDurationMin)
+                    displayValue = "${data.totalDurationMin} $durationUnit"
                 )
             }
             DrivesChartType.DISTANCE -> chartData.map { data ->
@@ -939,7 +963,7 @@ private fun DrivesChartPage(
                 BarChartData(
                     label = data.label,
                     value = distance,
-                    displayValue = "%.1f $distanceUnit".format(distance)
+                    displayValue = "${visualTripNumber(distance)} $distanceUnit"
                 )
             }
             DrivesChartType.TOP_SPEED -> chartData.mapNotNull { data ->
@@ -953,9 +977,9 @@ private fun DrivesChartPage(
         }
 
         val valueFormatter: (Double) -> String = when (chartType) {
-            DrivesChartType.COUNT -> { v -> v.toInt().toString() }
-            DrivesChartType.TIME -> { v -> formatDurationCompact(v.toInt()) }
-            DrivesChartType.DISTANCE -> { v -> "%.1f $distanceUnit".format(v) }
+            DrivesChartType.COUNT -> { v -> "${v.toInt()} $countUnit" }
+            DrivesChartType.TIME -> { v -> "${v.toInt()} $durationUnit" }
+            DrivesChartType.DISTANCE -> { v -> "${visualTripNumber(v)} $distanceUnit" }
             DrivesChartType.TOP_SPEED -> { v -> "${v.toInt()} $speedUnit" }
         }
 
@@ -966,9 +990,22 @@ private fun DrivesChartPage(
             else -> ((barData.size + 5) / 6).coerceAtLeast(1)
         }
         val yAxisFormatter: (Double) -> String = when (chartType) {
-            DrivesChartType.TIME -> { v -> formatDurationCompact(v.toInt()) }
+            DrivesChartType.TIME -> { v -> "%,d".format(v.toInt()) }
             else -> { v -> if (v >= 1000) "%.0fk".format(v / 1000) else "%.0f".format(v) }
         }
+
+        val axisUnit = when (chartType) {
+            DrivesChartType.COUNT -> countUnit
+            DrivesChartType.TIME -> durationUnit
+            DrivesChartType.DISTANCE -> distanceUnit
+            DrivesChartType.TOP_SPEED -> speedUnit
+        }
+        Text(
+            text = stringResource(R.string.visual_trip_chart_unit, axisUnit),
+            style = MaterialTheme.typography.labelMedium,
+            color = palette.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 6.dp)
+        )
 
         InteractiveBarChart(
             data = barData,
@@ -980,4 +1017,9 @@ private fun DrivesChartPage(
             yAxisFormatter = yAxisFormatter
         )
     }
+}
+
+/** Display-only precision: a nonzero observation must not look like a true zero. */
+internal fun visualTripNumber(value: Double, decimals: Int = 1): String {
+    return com.matelink.ui.components.formatTelemetryNumber(value, decimals)
 }

@@ -55,6 +55,58 @@ async function click(record: ReactTestRenderer, text: string) {
 /** Actual pages -> actual API adapter -> fake Taro transport -> actual controllers/scoped storage.
  * No controller, API, energy projection or React page is mocked. */
 describe('history pages consume canonical data across layers', () => {
+  it('keeps long trips in total minutes with explicit units on the actual card and detail', async () => {
+    const row = { ...reported, duration_min: 130, odometer_details: { odometer_distance: 2.04 } }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.includes('/drives/1')) return respond({ drive: row })
+      return respond({ drives: [row], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('drives')
+    expect(JSON.stringify(page.toJSON())).toContain('时长 130 分钟')
+    expect(JSON.stringify(page.toJSON())).not.toContain('小时')
+    expect(JSON.stringify(page.toJSON())).toContain('距离 2 km')
+    await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+    expect(page.root.findAllByProps({ ariaLabel: '时长 130 分钟' })).toHaveLength(2)
+    expect(JSON.stringify(page.toJSON())).toContain('总电耗 -0.25 kWh')
+  })
+  it('renders the four qualified trip metrics and actual partial chart, retains proof on weak refresh and rejects incompatible peak units', async () => {
+    let phase: 'initial' | 'weak' | 'mph' | 'zero' = 'initial'
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.includes('/drives/1')) return respond({ drive: { ...reported, speed_max: 0, speed_sample_count: 1, speed_metrics_source: 'observed_route_samples', speed_unit: 'km/h' } })
+      const page = Number(new URL(url).searchParams.get('page') || '1')
+      const row = phase === 'weak' ? { ...reported, speed_max: null, speed_sample_count: null, speed_metrics_source: null, speed_unit: null } :
+        { ...reported, speed_max: phase === 'zero' ? 0 : 82, speed_sample_count: 2, speed_metrics_source: 'observed_route_samples', speed_unit: phase === 'mph' ? 'mph' : 'km/h' }
+      return respond({ drives: [{ ...row, drive_id: page, session_id: `session-${page}` }], meta: { page, show: 20, total_pages: 2 } })
+    })
+    let page = await mount('drives')
+    const card = () => page.root.findAllByProps({ className: 'history-record' })[0]
+    const assertCard = (speed: string) => {
+      const labels = card().findAllByProps({ className: 'metric-label' }).map(node => node.children.join(''))
+      expect(labels).toEqual(['时长', '距离', '最高速度', '平均能耗'])
+      const semantics = card().findAllByProps({ className: 'metric' }).map(node => node.props.ariaLabel)
+      expect(semantics).toContain('时长 1 分钟')
+      expect(semantics).toContain(`最高速度 ${speed} km/h`)
+      expect(semantics).toContain('平均能耗 -12.5 kWh/100km')
+      expect(semantics).not.toContain('总电耗 -0.25 kWh')
+    }
+    assertCard('82')
+    expect(JSON.stringify(page.toJSON())).toContain('已加载记录统计')
+    expect(JSON.stringify(page.toJSON())).toContain('不代表全部历史')
+    phase = 'weak'; await click(page, '刷新'); assertCard('82')
+    await act(async () => { platform.unload(); page.unmount() }); renderer = null
+    page = await mount('drives'); assertCard('82')
+    phase = 'mph'; await click(page, '刷新'); assertCard('暂无数据')
+    phase = 'zero'; await click(page, '刷新'); assertCard('0')
+    await click(page, '加载更多')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
+    expect(JSON.stringify(page.toJSON())).toContain('已加载行程 2 次')
+    await act(async () => { card().props.onClick() }); await flush()
+    expect(JSON.stringify(page.toJSON())).toContain('总电耗 -0.25 kWh')
+    await click(page, '返回列表')
+    expect(JSON.stringify(page.toJSON())).not.toContain('总电耗 -0.25 kWh')
+  })
   it.each((['drives', 'charges'] as const).flatMap(kind => (['derived', 'incomplete'] as const).flatMap(grade =>
     [2, 0].map(value => ({ kind, grade, value })))))('keeps observed $kind value $value instead of laundering lower-grade $grade 99 through actual detail/page/cache/reopen', async ({ kind, grade, value }) => {
     let lowerPage = false
@@ -87,8 +139,8 @@ describe('history pages consume canonical data across layers', () => {
         expect((winner as Charge).cost).toBe(value)
         expect((winner as Charge).currency).toBe('EUR')
       }
-      expect(JSON.stringify(page.toJSON())).toContain(`${value} kWh`)
-      expect(JSON.stringify(page.toJSON())).not.toContain('99 kWh')
+      expect(JSON.stringify(page.toJSON())).toContain(kind === 'drives' ? `${value * 50} kWh/100km` : `${value} kWh`)
+      expect(JSON.stringify(page.toJSON())).not.toContain(kind === 'drives' ? '4950 kWh/100km' : '99 kWh')
       expect(JSON.stringify(page.toJSON())).not.toContain('99 USD')
     }
     assertWinner()
@@ -123,7 +175,7 @@ describe('history pages consume canonical data across layers', () => {
     const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, data: unknown) => { platform.values.set(key, data) } }
     const key = historyCacheKey(kind, 'user-a', 'uid7', 'https://api.example.test')
     let page = await mount(kind)
-    expect(JSON.stringify(page.toJSON())).toContain('2 kWh')
+    expect(JSON.stringify(page.toJSON())).toContain(kind === 'drives' ? '100 kWh/100km' : '2 kWh')
     upgraded = true
     await click(page, '刷新')
     const assertNoGraft = () => {
@@ -131,7 +183,7 @@ describe('history pages consume canonical data across layers', () => {
       expect(current.qualityState).toBe('observed')
       if (kind === 'drives') expect((current as Drive).energy?.energyKwh).toBeNull()
       else expect((current as Charge).energy?.batteryInputKwh).toBeNull()
-      expect(JSON.stringify(page.toJSON())).not.toContain('2 kWh')
+      expect(JSON.stringify(page.toJSON())).not.toContain(kind === 'drives' ? '100 kWh/100km' : '2 kWh')
     }
     assertNoGraft()
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
@@ -188,7 +240,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
     page = await mount('drives')
     expect(JSON.stringify(page.toJSON())).toContain('Genuine start site')
-    expect(JSON.stringify(page.toJSON())).toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).toContain('-12.5 kWh/100km')
     expect(JSON.stringify(readHistoryCache<Drive>(storage, key))).not.toContain('Latitude')
   })
 
@@ -203,12 +255,12 @@ describe('history pages consume canonical data across layers', () => {
     let page = await mount('drives')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
     expect(JSON.stringify(page.toJSON())).toContain('（1）')
-    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-12.5 kWh/100km')
     expect(JSON.stringify(page.toJSON())).toContain('0 kWh')
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
     page = await mount('drives')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
-    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-12.5 kWh/100km')
     expect(JSON.stringify(page.toJSON())).toContain('0 kWh')
   })
 
@@ -223,7 +275,7 @@ describe('history pages consume canonical data across layers', () => {
     })
     const page = await mount('drives')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
-    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-12.5 kWh/100km')
     await click(page, '加载更多')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
     expect(JSON.stringify(page.toJSON())).toContain('（1）')
@@ -240,11 +292,11 @@ describe('history pages consume canonical data across layers', () => {
     })
     let page = await mount('drives')
     const staleOpenDetail = page.root.findByProps({ className: 'history-record' }).props.onClick
-    expect(JSON.stringify(page.toJSON())).toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).toContain('-12.5 kWh/100km')
     phase = 'quarantined'
     await click(page, '刷新')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
-    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-12.5 kWh/100km')
     const before = platform.request.mock.calls.length
     await act(async () => { staleOpenDetail() }); await flush()
     expect(platform.request.mock.calls).toHaveLength(before)
@@ -259,7 +311,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
     page = await mount('drives')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
-    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-12.5 kWh/100km')
     expect(readHistoryCache<Drive>(storage, key)[0].qualityState).toBe('quarantined')
   })
 
@@ -273,7 +325,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
     expect(JSON.stringify(page.toJSON())).not.toContain('行程详情')
-    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-12.5 kWh/100km')
     const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
     const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
     expect(readHistoryCache<Drive>(storage, historyCacheKey('drives', 'user-a', 'uid7', 'https://api.example.test'))[0].qualityState).toBe('quarantined')
@@ -296,7 +348,7 @@ describe('history pages consume canonical data across layers', () => {
     })
     const page = await mount('drives')
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
-    expect(JSON.stringify(page.toJSON())).toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).toContain('-12.5 kWh/100km')
     expect(JSON.stringify(page.toJSON())).toContain(label)
     expect(JSON.stringify(page.toJSON())).not.toContain('尚无合格能耗依据')
   })
@@ -311,9 +363,9 @@ describe('history pages consume canonical data across layers', () => {
     })
     let page = await mount('drives')
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
-    expect(JSON.stringify(page.toJSON())).toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).toContain('-12.5 kWh/100km')
     expect(JSON.stringify(page.toJSON())).not.toContain('SERVER_INTERNAL_CREDENTIAL')
-    expect(page.root.findAllByProps({ className: 'history-energy-negative' }).length).toBeGreaterThan(0)
+    expect(page.root.findAll(node => String(node.props.className || '').includes('history-energy-negative')).length).toBeGreaterThan(0)
     const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
     const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
     const key = historyCacheKey('drives', 'user-a', 'uid7', 'https://api.example.test')
@@ -324,30 +376,30 @@ describe('history pages consume canonical data across layers', () => {
       expect(cached.endBatteryLevel).toBe(79)
       expect(cached.energy?.efficiencyWhKm).toBe(-125)
       expect(JSON.stringify(page.toJSON())).toContain('2 km')
-      expect(JSON.stringify(page.toJSON())).toContain('-125 Wh/km')
+      expect(JSON.stringify(page.toJSON())).toContain('-12.5 kWh/100km')
       expect(page.root.findAllByType('text').some(node => node.children.join('') === '80% → 79%')).toBe(true)
     }
     expect(readHistoryCache<{ energy: { energyKwh: number } }>(storage, key)[0].energy.energyKwh).toBe(-0.25)
     assertReportedInputs()
     await click(page, '返回列表'); expect(JSON.stringify(page.toJSON())).not.toContain('行程详情')
-    await click(page, '刷新'); expect(JSON.stringify(page.toJSON())).toContain('-0.25 kWh')
+    await click(page, '刷新'); expect(JSON.stringify(page.toJSON())).toContain('-12.5 kWh/100km')
     assertReportedInputs()
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
-    page = await mount('drives'); expect(JSON.stringify(page.toJSON())).toContain('-0.25 kWh')
+    page = await mount('drives'); expect(JSON.stringify(page.toJSON())).toContain('-12.5 kWh/100km')
     assertReportedInputs()
     detail = unknown
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
-    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-12.5 kWh/100km')
     expect(readHistoryCache<{ energy: { energyKwh: number | null } }>(storage, key)[0].energy.energyKwh).toBeNull()
     await click(page, '返回列表')
     await click(page, '刷新')
-    expect(JSON.stringify(page.toJSON())).not.toContain('0.6 kWh')
-    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('30 kWh/100km')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-12.5 kWh/100km')
     expect(readHistoryCache<{ energy: { energyKwh: number | null } }>(storage, key)[0].energy.energyKwh).toBeNull()
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
     page = await mount('drives')
-    expect(JSON.stringify(page.toJSON())).not.toContain('0.6 kWh')
-    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('30 kWh/100km')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-12.5 kWh/100km')
     expect(readHistoryCache<{ energy: { energyKwh: number | null } }>(storage, key)[0].energy.energyKwh).toBeNull()
     expect(JSON.stringify(page.toJSON())).not.toContain('SERVER_INTERNAL_CREDENTIAL')
     detail = { ...reported, energy_contract: { version: 1, net_energy: { ...reported.energy_contract.net_energy, value_kwh: 0 } } }
@@ -413,7 +465,7 @@ describe('history pages consume canonical data across layers', () => {
     phase = 'reported-zero'
     await click(page, '刷新')
     expect(readHistoryCache<Drive>(storage, key)[0].energy?.energyKwh).toBe(0)
-    expect(JSON.stringify(page.toJSON())).toContain('0 kWh')
+    expect(JSON.stringify(page.toJSON())).toContain('平均能耗 暂无数据 kWh/100km') // Zero distance has no per-distance efficiency.
   })
 
   it('restores scoped date/distance filters and offline cars authorize only cache reads', async () => {
@@ -456,7 +508,7 @@ describe('history pages consume canonical data across layers', () => {
     expect(release).not.toBeNull()
     await act(async () => { release!(respond({ drive: reported })) }); await flush()
     expect(JSON.stringify(page.toJSON())).not.toContain('行程详情')
-    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-12.5 kWh/100km')
   })
 
   it('persists actual charge details into history and survives cache quota failures online', async () => {
@@ -614,7 +666,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { release!(respond({ car_id: 7, vehicle_uid: 'uid7', drive: reported })) }); await flush()
     expect(JSON.stringify(page.toJSON())).toContain('Car B history')
     expect(JSON.stringify(page.toJSON())).not.toContain('行程详情')
-    expect(JSON.stringify(page.toJSON())).not.toContain('-0.25 kWh')
+    expect(JSON.stringify(page.toJSON())).not.toContain('-12.5 kWh/100km')
     expect(platform.values.get('matelink.selected.car.v1.user-a')).toBe('uid8')
   })
 })

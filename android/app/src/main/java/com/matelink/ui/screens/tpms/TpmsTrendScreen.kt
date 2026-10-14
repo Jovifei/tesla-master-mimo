@@ -1,6 +1,7 @@
 package com.matelink.ui.screens.tpms
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,9 +13,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LocalParking
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Thermostat
+import androidx.compose.material.icons.filled.TireRepair
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -112,6 +121,8 @@ fun TpmsTrendScreen(
                         modifier = Modifier.padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        Icon(Icons.Filled.WarningAmber, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(28.dp))
                         Text(
                             text = stringResource(R.string.tpms_trend_load_failed),
                             style = MaterialTheme.typography.bodyLarge
@@ -128,11 +139,28 @@ fun TpmsTrendScreen(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
                     )
                 ) {
-                    Text(
-                        text = stringResource(R.string.tpms_trend_unavailable),
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(20.dp)
-                    )
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(modifier = Modifier.size(76.dp), contentAlignment = Alignment.Center) {
+                            Box(modifier = Modifier.size(64.dp).background(
+                                MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                                contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.TireRepair, contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(36.dp))
+                            }
+                            Icon(Icons.Filled.History, contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.align(Alignment.BottomEnd).size(27.dp)
+                                    .background(MaterialTheme.colorScheme.surface, CircleShape).padding(3.dp))
+                        }
+                        Text(stringResource(R.string.visual_status_tpms_empty_title),
+                            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.visual_status_tpms_empty_body),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             } else {
                 TpmsTrendChart(state.series)
@@ -305,22 +333,30 @@ private fun TpmsSummary(state: TpmsTrendUiState) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(
-                text = stringResource(R.string.tpms_trend_coverage, state.coverage.sampleCount),
-                style = MaterialTheme.typography.bodyMedium
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Filled.History, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    text = stringResource(R.string.tpms_trend_coverage, state.coverage.sampleCount),
+                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f)
+                )
+            }
             TirePosition.entries.forEach { wheel ->
                 val latest = state.latestPressure(wheel)
                 val delta = state.deltas[wheel]
-                Text(
-                    text = stringResource(
-                        R.string.tpms_trend_wheel_summary,
-                        wheelLabel(wheel),
-                        latest?.let(::formatBar) ?: stringResource(R.string.tpms_trend_unavailable_short),
-                        delta?.let(::formatSignedBar) ?: stringResource(R.string.tpms_trend_unavailable_short)
-                    ),
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Filled.TireRepair, contentDescription = null,
+                        tint = TpmsWheelColors.getValue(wheel), modifier = Modifier.size(18.dp))
+                    Text(
+                        text = stringResource(
+                            R.string.tpms_trend_wheel_summary,
+                            wheelLabel(wheel),
+                            latest?.let(::formatBar) ?: stringResource(R.string.tpms_trend_unavailable_short),
+                            delta?.let(::formatSignedBar) ?: stringResource(R.string.tpms_trend_unavailable_short)
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }
@@ -343,11 +379,14 @@ private fun TpmsEvidence(state: TpmsTrendUiState) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = stringResource(R.string.tpms_trend_possible_factors),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    text = stringResource(R.string.tpms_trend_possible_factors),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f)
+                )
+            }
             Text(
                 text = renderedConclusion.conclusion,
                 style = MaterialTheme.typography.bodyMedium
@@ -355,10 +394,20 @@ private fun TpmsEvidence(state: TpmsTrendUiState) {
             state.possibleFactors
                 .filter { it.factor != state.possibleFactorConclusion.factor }
                 .forEach { evidence ->
-                Text(
-                    text = "• ${factorLabel(evidence.factor)}",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(
+                        imageVector = when (evidence.factor) {
+                            TpmsTrendFactor.AMBIENT -> Icons.Filled.Thermostat
+                            TpmsTrendFactor.HIGHWAY -> Icons.Filled.Speed
+                            TpmsTrendFactor.PARKING -> Icons.Filled.LocalParking
+                            TpmsTrendFactor.INSUFFICIENT_EVIDENCE -> Icons.Filled.Info
+                        },
+                        contentDescription = null, modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(text = factorLabel(evidence.factor), style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f))
+                }
             }
             renderedConclusion.recommendation?.let { recommendation ->
                 Text(

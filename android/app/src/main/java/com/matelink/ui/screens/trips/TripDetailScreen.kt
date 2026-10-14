@@ -351,8 +351,7 @@ private fun TripDetailContent(
         BatteryEnergyFlowCard(
             trip = trip,
             dcChargeIds = dcChargeIds,
-            palette = palette,
-            units = units
+            palette = palette
         )
 
         val legs = remember(trip) { buildLegList(trip) }
@@ -688,8 +687,7 @@ private fun EfficiencyPill(
 private fun BatteryEnergyFlowCard(
     trip: Trip,
     dcChargeIds: Set<Int>,
-    palette: CarColorPalette,
-    units: Units?
+    palette: CarColorPalette
 ) {
     val dcCharges = remember(trip, dcChargeIds) { trip.charges.filter { it.chargeId in dcChargeIds } }
     val acCharges = remember(trip, dcChargeIds) { trip.charges.filter { it.chargeId !in dcChargeIds } }
@@ -700,9 +698,10 @@ private fun BatteryEnergyFlowCard(
     val dcAvgKw = if (dcDurationMin > 0) dcKwh * 60.0 / dcDurationMin else 0.0
     val acAvgKw = if (acDurationMin > 0) acKwh * 60.0 / acDurationMin else 0.0
     val usedKwh = trip.totalEnergyConsumed
-    val efficiencyWhPerDist = trip.avgEfficiency?.let { UnitFormatter.efficiencyDisplayValue(it, units) }
-        ?: trip.totalDistance.takeIf { it > 0.0 }?.let { usedKwh * 1000.0 / it }
-    val efficiencyUnit = UnitFormatter.getEfficiencyUnit(units)
+    val usedEnergyLabel = stringResource(
+        if (trip.energySampleCount == trip.drives.size) R.string.combined_trip_energy_label
+        else R.string.combined_trip_known_energy_label
+    )
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -732,10 +731,11 @@ private fun BatteryEnergyFlowCard(
                 dcKwh = dcKwh, dcAvgKw = dcAvgKw,
                 acKwh = acKwh, acAvgKw = acAvgKw,
                 usedKwh = usedKwh,
-                efficiencyWhPerDist = efficiencyWhPerDist,
-                efficiencyUnit = efficiencyUnit,
+                usedEnergyLabel = usedEnergyLabel,
                 palette = palette
             )
+            Spacer(Modifier.height(8.dp))
+            CombinedTripEfficiencySummary(trip)
         }
     }
 }
@@ -744,9 +744,8 @@ private fun BatteryEnergyFlowCard(
 private fun HorizontalEnergyFlow(
     dcKwh: Double, dcAvgKw: Double,
     acKwh: Double, acAvgKw: Double,
-    usedKwh: Double,
-    efficiencyWhPerDist: Double?,
-    efficiencyUnit: String,
+    usedKwh: Double?,
+    usedEnergyLabel: String,
     palette: CarColorPalette
 ) {
     val totalCharged = dcKwh + acKwh
@@ -892,7 +891,7 @@ private fun HorizontalEnergyFlow(
             // === Outflow stream (inverse profile) ===
             // Widens from battery height at batteryRightXPx to thin startT at outTransitionX,
             // then stays thin to cardWPx.
-            run {
+            if (usedKwh != null && usedKwh.isFinite() && usedKwh > 0.0) {
                 val ctrlX = (batteryRightXPx + outTransitionX) / 2f
                 val outPath = Path().apply {
                     moveTo(batteryRightXPx, batteryTopYPx)
@@ -1027,18 +1026,17 @@ private fun HorizontalEnergyFlow(
             horizontalAlignment = Alignment.End
         ) {
             Text(
-                text = "%.1f kWh".format(usedKwh),
+                text = usedKwh?.takeIf { it.isFinite() }?.let { "${com.matelink.ui.components.formatTelemetryNumber(it, 2)} kWh" }
+                    ?: stringResource(R.string.combined_trip_unknown),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Bold,
                 color = usedColor
             )
-            if (efficiencyWhPerDist != null) {
-                Text(
-                    text = "%.1f %s".format(efficiencyWhPerDist, efficiencyUnit),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text(
+                text = usedEnergyLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

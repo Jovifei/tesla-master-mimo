@@ -1,3 +1,4 @@
+import VisualIcon from '../../components/VisualIcon'
 import { Button, Checkbox, CheckboxGroup, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
@@ -244,7 +245,7 @@ export default function MePage() {
         <View className="account-heading">
           <View>
             <Text className="eyebrow">ACCOUNT & PRIVACY</Text>
-            <Text className="title">我的</Text>
+            <View className="visual-heading"><VisualIcon name="account" /><Text className="title">我的</Text></View>
           </View>
           <Text className={`state-pill ${session ? 'state-pill-ready' : ''}`}>{session ? '会话已建立' : '尚未登录'}</Text>
         </View>
@@ -252,8 +253,8 @@ export default function MePage() {
       </View>
 
       <View className="card consent-card">
-        <Text className="section-title">授权前确认</Text>
-        <Text className="muted">请先阅读并确认以下文件。点击蓝色文字可查看完整内容。</Text>
+        <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">授权前确认</Text></View>
+        <Text className="muted">请先阅读并确认以下文件。点击下方链接可查看完整内容。</Text>
         <View className="legal-links">
           <Text className="legal-link" onClick={() => openLegal('terms')}>查看服务条款</Text>
           <Text className="legal-link" onClick={() => openLegal('privacy')}>查看隐私指引</Text>
@@ -268,7 +269,7 @@ export default function MePage() {
 
       {linkRequired ? (
         <View className="card">
-          <Text className="section-title">需要关联 Tesla 账号</Text>
+          <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">需要关联 Tesla 账号</Text></View>
           <Text className="muted">微信账号尚未绑定 Tesla。点击下面入口后，在 Tesla 官方页面登录并同意只读权限；回流后再完成车辆钥匙确认。</Text>
           <Button className="button" loading={loading} onClick={startTeslaAuthorization}>进入 Tesla 官方授权</Button>
         </View>
@@ -276,7 +277,7 @@ export default function MePage() {
 
       {authorizationPending ? (
         <View className="card">
-          <Text className="section-title">等待 Tesla 授权回流</Text>
+          <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">等待 Tesla 授权回流</Text></View>
           <Text className="muted">完成 Tesla 官方页面后返回本小程序；这里会用原授权事务安全检查并领取会话。</Text>
           <Button className="button" loading={loading} onClick={() => { void resumePendingAuthorization() }}>检查授权状态</Button>
           <Button className="button button-secondary" disabled={loading} onClick={() => { void cancelTeslaAuthorization() }}>取消本次授权</Button>
@@ -285,7 +286,7 @@ export default function MePage() {
 
       {session ? (
         <View className="card">
-          <Text className="section-title">账号管理</Text>
+          <View className="visual-heading"><VisualIcon name="account" /><Text className="section-title">账号管理</Text></View>
           <Text className="muted">退出只结束当前会话；注销会请求服务端删除账号关联数据。</Text>
           {!linkRequired ? <Button className="button" loading={loading} onClick={startTeslaAuthorization}>重新授权 Tesla</Button> : null}
           <Button className="button button-secondary" disabled={loading} onClick={logout}>退出登录</Button>

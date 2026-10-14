@@ -1,0 +1,38 @@
+import React from 'react'
+import renderer from 'react-test-renderer'
+import { expect, it, vi } from 'vitest'
+vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view', Picker: 'picker' }))
+import MetricValue, { displayNumber, peakSpeedKmh } from './MetricValue'
+import { loadedDriveGroups } from './LoadedDriveChart'
+import type { Drive } from '../services/types'
+
+it('renders large value and complete smaller unit independently, including zero/negative/unknown', () => {
+  for (const value of [0, -16.4, null]) {
+    const tree = renderer.create(<MetricValue label="平均能耗" value={value} unit="kWh/100km" icon="energy" negative={value != null && value < 0} />)
+    expect(tree.root.findByProps({ className: 'metric-value' }).children.join('')).toBe(value == null ? '暂无数据' : String(value))
+    expect(tree.root.findByProps({ className: 'metric-unit' }).children.join('')).toBe('kWh/100km')
+    expect(tree.root.findByProps({ className: 'metric' }).props.ariaLabel).toContain('kWh/100km')
+    tree.unmount()
+  }
+  expect(displayNumber(0.000001)).not.toBe('0')
+  expect(displayNumber(-0.000001)).not.toBe('0')
+})
+
+it('loaded date groups retain zero and partial known distances without inventing unknown peaks or dates', () => {
+  const row = { startDate: '2026-10-14T00:00:00Z', distanceKm: 0, speedMaxKmh: 0,
+    speedSampleCount: 1, speedMetricsSource: 'observed_route_samples', speedUnit: 'km/h' } as Drive
+  const groups = loadedDriveGroups([row, { ...row, distanceKm: null, speedSampleCount: 0 },
+    { ...row, distanceKm: 5, speedMaxKmh: 80, speedUnit: 'mph' }, { ...row, startDate: null }, { ...row, qualityState: 'quarantined', speedMaxKmh: 999 }])
+  expect(groups).toHaveLength(1)
+  expect(groups[0]).toMatchObject({ count: 3, distance: 5, speed: 0, missingDistance: 1, missingSpeed: 2 })
+  expect(loadedDriveGroups([{ ...row, distanceKm: null, speedSampleCount: null }])[0]).toMatchObject({ distance: null, speed: null })
+  expect(peakSpeedKmh({ ...row, speedMetricsSource: 'unknown' })).toBeNull()
+})
+it('uses one-decimal presentation without converting tiny non-zero energy into zero', () => {
+  for (const [value, expected] of [[16.46, '16.5'], [0, '0'], [-0.00001, '-0.00001']] as const) {
+    const tree = renderer.create(<MetricValue label="平均能耗" value={value} unit="kWh/100km" digits={1} />)
+    expect(tree.root.findByProps({ className: 'metric-value' }).children.join('')).toBe(expected)
+    expect(tree.root.findByProps({ className: 'metric-unit' }).children.join('')).toBe('kWh/100km')
+    tree.unmount()
+  }
+})

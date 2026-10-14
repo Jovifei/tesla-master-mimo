@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="visual_trip_count_unit">trips</string>
+    <string name="visual_trip_duration_unit">min</string>
+    <string name="visual_trip_chart_unit">Unit: %1$s</string>
+</resources>

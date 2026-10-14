@@ -3,9 +3,11 @@
   .history-controls { line-height: 1.9; }
   .history-actions { margin-top: 18px; }
   .history-record { padding: 22px 0; border-bottom: 1px solid #eef0f3; }
-  .history-record-top { display: flex; justify-content: space-between; gap: 12px; }
-  .history-record-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+  .history-record-top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .history-soc { font-size: 34px; font-weight: 650; color: #1f2937; }
+  .history-record-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
   .history-record-metrics text { display: block; }
   .history-energy-negative { color: #168552; }
-  .history-source { display: block; font-size: 22px; color: #647568; margin-top: 6px; }
+  .history-source { display: inline-block; font-size: 22px; color: #6b7280; background: #f5f7f9; border-radius: 8px; padding: 4px 10px; margin-top: 6px; }
 }
+@media (min-width: 640PX) { .history-page .history-record-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); } }

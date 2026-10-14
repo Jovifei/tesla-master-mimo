@@ -1,6 +1,7 @@
 import { Button, Picker, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
+import VisualIcon from '../../components/VisualIcon'
 import ReadinessChecklist from '../../components/ReadinessChecklist'
 import MetricValue from '../../components/MetricValue'
 import LoadingIndicator from '../../components/LoadingIndicator'
@@ -216,7 +217,7 @@ export default function VehiclePage() {
     <View className="page">
       <View className="hero card">
         <Text className="eyebrow">MATELINK / WECHAT</Text>
-        <Text className="title">车辆</Text>
+        <View className="visual-heading"><VisualIcon name="vehicle" /><Text className="title">车辆</Text></View>
         <Text className="muted">展示已有状态报告，缺失字段保留未知。</Text>
         <Button className="button button-secondary" loading={loading} onClick={() => { void load() }}>刷新车辆</Button>
       </View>
@@ -250,13 +251,13 @@ export default function VehiclePage() {
           {status ? (
             <View className="metric-grid">
               <MetricValue label="状态" value={stateLabel(status.state)} source={status.source} />
-              <MetricValue label="电量" value={status.batteryLevel == null ? null : `${status.batteryLevel}%`} source={status.source} />
-              <MetricValue label="续航" value={status.ratedRange == null ? null : `${status.ratedRange} km`} source={status.source} />
-              <MetricValue label="里程" value={status.odometer == null ? null : `${status.odometer} km`} source={status.source} />
+              <MetricValue label="电量" value={status.batteryLevel} unit="%" icon="battery" source={status.source} digits={Number.isInteger(status.batteryLevel) ? 0 : 1} />
+              <MetricValue label="续航" value={status.ratedRange} unit="km" icon="distance" source={status.source} digits={1} />
+              <MetricValue label="里程" value={status.odometer} unit="km" icon="distance" source={status.source} digits={1} />
               <MetricValue label="充电状态" value={stateLabel(status.chargingState, true)} source={status.source} />
-              <MetricValue label="充电功率" value={status.chargerPower == null ? null : `${status.chargerPower} kW`} source={status.source} />
-              <MetricValue label="速度" value={status.speed == null ? null : `${status.speed} km/h`} source={status.source} />
-              <MetricValue label="功率" value={status.power == null ? null : `${status.power} kW`} source={status.source} />
+              <MetricValue label="充电功率" value={status.chargerPower} unit="kW" icon="energy" source={status.source} />
+              <MetricValue label="速度" value={status.speed} unit="km/h" icon="speed" source={status.source} digits={Number.isInteger(status.speed) ? 0 : 1} />
+              <MetricValue label="功率" value={status.power} unit="kW" icon="energy" source={status.source} />
               <MetricValue label="锁车" value={booleanLabel(status.locked, '已锁', '未锁')} source={status.source} />
               <MetricValue label="空调" value={booleanLabel(status.isClimateOn, '开启', '关闭')} source={status.source} />
             </View>
@@ -273,7 +274,7 @@ export default function VehiclePage() {
         </View>
       ) : (
         <View className="card">
-          <Text className="section-title">尚未绑定车辆</Text>
+          <View className="visual-heading"><VisualIcon name="vehicle" /><Text className="section-title">尚未绑定车辆</Text></View>
           <Text className="muted">请先建立微信会话并完成 Tesla 官方关联。没有真实响应时不显示示例车辆。</Text>
           {error ? <Text className="error">{error}</Text> : null}
           <Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>去完成登录与授权</Button>

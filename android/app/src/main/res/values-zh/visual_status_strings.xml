@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="visual_status_overview_title">数据状态一览</string>
+    <string name="visual_status_overview_body">实时读数与已保存历史是两类数据，以下状态以最近报告为准。</string>
+    <string name="visual_status_reported">已报告类别</string>
+    <string name="visual_status_available">可用</string>
+    <string name="visual_status_unknown">未知</string>
+    <string name="visual_status_tpms_empty_title">这段时间暂无合格历史</string>
+    <string name="visual_status_tpms_empty_body">实时胎压可见，不代表这段时间已有合格历史。趋势需要已保存、来源和观测时间有效的样本。</string>
+</resources>
