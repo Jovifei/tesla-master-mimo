@@ -9,7 +9,8 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node", "@tarojs/taro"]
+    "types": ["node", "@tarojs/taro"],
+    "paths": { "vitest": ["./test-tooling/node_modules/vitest"] }
   },
   "include": ["config", "src", "tests"]
 }

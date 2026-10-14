@@ -7,6 +7,13 @@ describe('readiness presentation', () => {
     expect(toReadinessView('future_provider_state').ready).toBe(false)
   })
 
+  it('rejects prototype names and does not expose arbitrary provider error text', () => {
+    for (const state of ['__proto__', 'constructor', 'toString']) expect(normalizeReadinessStatus(state)).toBe('unknown')
+    const result = toReadinessView('telemetry_error', { key: 'telemetry', status: 'telemetry_error', message: 'private-token-in-provider-stack', action: null })
+    expect(result.detail).not.toContain('private-token-in-provider-stack')
+    expect(result.ready).toBe(false)
+  })
+
   it('does not treat collection as ready before an available state', () => {
     expect(toReadinessView('collecting').ready).toBe(false)
     expect(toReadinessView('available').ready).toBe(true)

@@ -1,5 +1,13 @@
 # Android能耗收尾与小程序接续验证
 
+## 2026-10-14 最新结论（下文保留历史执行记录）
+
+最终44bfb8baaa4528078ffb88a4f3ff622b570a6469/treeb609d63526328b0c86e98b26144b4d67f4608825已获原GPT-6极高聊天SOURCE_APPROVED。同SHA Actions38496939239实际13/13成功，Debug916/Release916无fail/error，Release8预期skip，Go/PG320、race、TLS/Web及10审计通过；本地lint/R8/签名、独立Java/d119通过。
+
+最终49/2.1.30、GIT_SHA44bfb8b APK SHA256A456F36C8583994603E046335B1813DF4F1AE4CCB3FCEF22E81618DA6ED7E285已实际同签install-r保数据覆盖成功，firstInstallTime未变；原登录及启动样本保留、当前进程FATAL/ANR/DB错误0。手机行程导航自动输入没有切换成功，实际历史详情/返回/离线保持OPEN，待Jovi手动进入；不标成手机全验收。
+
+Owner573文件备份后main已普通快进/推送至同44b/同tree，c9及后续提交保留，未force/reset/clean。原E新建codex/miniprogram-stage-20261013，App功能暂停；小程序最新128测试/类型/weapp通过，固定交付和平台门见RPT-2026-10-14-miniprogram-data-validation.md。微信登录/Tesla/自然Fleet/生产与发布未代办。
+
 ## 当前结论
 
 原E目录、codex/per-drive-energy-20261012，基于29ac70c的最新45文件冻结。Jovi确认其他writer停写并授权统一修复、验证、手机升级、main合并及小程序接续。Owner611文件已逐hash备份。候选源码已提交并推送347d4fc8e3e7655f6fa7bedc834403509d0bb5e3，tree6e9c9cf7b0be1d01f579566a02f5aa1277cfd7c9，parent29ac70c815f3f4bb0cd755fa6cdc01858cc20437。请审查git diff 29ac70c..347d4fc与真实消费者，不以HEAD工作区无业务dirty当作无修复。当前Chat集中复审进行中；尚未安装本轮包或合并main。
@@ -42,3 +50,17 @@
 最终5文件增量只读审查APPROVE无P1/P2；聚焦38/0失败/0错误/0跳过，2m4s。先前347d候选Actions38494669865已实际13/13SUCCESS，Android artifact11864620990及后端11863357992保留；不能替本次5文件补充修复背书。最新45文件freeze已更新，前版另存cr-source-freeze-before-terminal404.json。
 
 接下来提交补充源码并并行执行同SHA全量Debug/Release/lint/R8签名及LinuxCI；本轮49/2.1.30、手机现装47，新的最终包必须绑定补充提交。待同版本完整验证和集中SOURCE_APPROVED，才覆盖手机、合并main、转小程序。
+
+补充候选已实际推送44bfb8baaa4528078ffb88a4f3ff622b570a6469，treeb609d63526328b0c86e98b26144b4d67f4608825，parent347d4fc。Actions38496939239及本地final44bfb8b-full49.log验证正在执行，尚未PASS，尚未安装或合并。
+
+## 最终44b本地验证
+
+同SHA Debug916/Release916均0fail/error，Release8预期skip；lint0错误（268/248warnings），R8/正式签名全量构建7m23s退出0，独立Java4与原d119通过，45源码0drift。最终49/2.1.30 GIT_SHA44bfb8b，APK SHA256A456F36C8583994603E046335B1813DF4F1AE4CCB3FCEF22E81618DA6ED7E285，包名com.matelink/非debuggable/有效签名已核验。CI38496939239目前Android仍in_progress，尚未SOURCE_APPROVED。
+
+安装前只读检查：现装已49但APK SHA81d65e11185ec530316d9d06e2b8951632e037875ac18d41db79159ca538daa6，与最终包不同；本代理尚未安装，不推测其来源。当前49回滚APK已保存，firstInstallTime仍2026-08-31 22:36:47；后续由safe installer重新核对实时证书再install-r。
+
+小程序基线Taro构建实际成功、urlCheck true。CLI islogin两次因Windows保留端口导致初始化失败，改变官方HTTP-port参数未解决，不调整系统网络。依赖audit72为传播包数量，29根advisory；后续在小程序分支保持Taro4.2.1，验证Vitest4.1.11/Vite7.3.1及兼容root overrides，不force降级。平台调试及正式发布资格未通过。
+
+## 最终44b同SHA CI已完成
+
+实际Actions38496939239/44bfb8baaa4528078ffb88a4f3ff622b570a6469，13/13 completed-success；真实Android-summary日志读取XML：Debug916/Release916均0fail/error，Release8skip；verify真实Go/PG计数320/320无fail/skip，Web13通过，race/TLS及10source审计作业完成成功。Android artifact11864493624，后端11864301379；ci44b-receipt.json保存完整jobs/固定SHA。Iteration12源码最终审核正在输出，尚未安装或合并。

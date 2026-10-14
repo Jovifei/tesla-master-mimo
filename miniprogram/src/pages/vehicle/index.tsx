@@ -9,10 +9,12 @@ import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '..
 import { carSelectionStorageKey, type Car, type CarStatus, type ReadinessItem, type TelemetryPairing } from '../../services/types'
 import { readAppSession } from '../../services/session'
 import { createRequestScopeGate } from '../../domain/request_scope'
+import { readCarsCache } from '../../services/cars_cache'
+import { readVehicleCache, writeVehicleCache } from '../../services/vehicle_cache'
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message
-  return error instanceof Error ? error.message : '无法读取 MateLink 服务'
+  return '无法读取 MateLink 服务，请稍后重试'
 }
 
 function booleanLabel(value: boolean | null, yes: string, no: string): string | null {
@@ -23,6 +25,12 @@ function coordinateLabel(location: CarStatus['location']): string | null {
   if (!location) return null
   return `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`
 }
+function stateLabel(value: string | null, charging = false): string | null {
+  const states: Record<string, string> = charging ? { charging: '充电中', stopped: '已停止', complete: '已完成', disconnected: '未连接', nopower: '无供电', starting: '准备中' }
+    : { online: '在线', offline: '离线', asleep: '休眠', waking: '连接中', driving: '行驶', charging: '充电', parked: '驻车' }
+  const key = value?.toLowerCase()
+  return key && Object.prototype.hasOwnProperty.call(states, key) ? states[key] : null
+}
 
 export default function VehiclePage() {
   const [cars, setCars] = useState<Car[]>([])
@@ -32,8 +40,18 @@ export default function VehiclePage() {
   const [pairing, setPairing] = useState<TelemetryPairing | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [cached, setCached] = useState(false)
   const requestVersion = useRef(0)
   const scopeGate = useRef(createRequestScopeGate())
+  const pageOwner = useRef<string | null>(null)
+  const selectedStableId = useRef<string | null>(null)
+  const readSelection = (userId: string) => {
+    try { return String(Taro.getStorageSync(carSelectionStorageKey(userId)) ?? '') } catch { return '' }
+  }
+  const saveSelection = (userId: string, stableId: string) => {
+    selectedStableId.current = stableId
+    try { Taro.setStorageSync(carSelectionStorageKey(userId), stableId) } catch { /* optional preference */ }
+  }
 
   const invalidatePage = () => {
     requestVersion.current += 1
@@ -45,6 +63,18 @@ export default function VehiclePage() {
     const version = ++requestVersion.current
     const sessionGeneration = getApiSessionGeneration()
     const session = readAppSession(Taro)
+    const owner = `${session?.userId ?? ''}:${sessionGeneration}`
+    if (pageOwner.current !== owner) {
+      pageOwner.current = owner
+      selectedStableId.current = null
+      setCars([])
+      setCar(null)
+    }
+    scopeGate.current.invalidate()
+    setStatus(null)
+    setReadinessItems([])
+    setPairing(null)
+    setCached(false)
     if (!session?.userId) {
       scopeGate.current.invalidate()
       setCars([])
@@ -52,17 +82,21 @@ export default function VehiclePage() {
       setStatus(null)
       setReadinessItems([])
       setPairing(null)
+      setCached(false)
       setError('请先在“我的”中完成微信登录')
       return
     }
     setLoading(true)
     setError(null)
+    let origin: string | null = null
     try {
+      origin = getApiOrigin()
       const nextCars = await matelinkApi.getCars()
       const currentSession = readAppSession(Taro)
       if (version !== requestVersion.current || sessionGeneration !== getApiSessionGeneration() || currentSession?.userId !== session.userId) return
       setCars(nextCars)
-      const storedStableId = Taro.getStorageSync(carSelectionStorageKey(session.userId))
+      setCached(false)
+      const storedStableId = selectedStableId.current ?? readSelection(session.userId)
       const selected = nextCars.find(item => item.stableId === String(storedStableId)) ?? nextCars[0] ?? null
       setCar(selected)
       if (!selected) {
@@ -75,19 +109,20 @@ export default function VehiclePage() {
       scopeGate.current.bind({
         accountId: session.userId,
         stableVehicleId: selected.stableId,
-        apiOrigin: getApiOrigin(),
+        apiOrigin: origin,
         sessionGeneration,
       })
-      Taro.setStorageSync(carSelectionStorageKey(session.userId), selected.stableId)
+      saveSelection(session.userId, selected.stableId)
       const [statusResult, readinessResult, pairingResult] = await Promise.allSettled([
-        (async () => { const ticket = scopeGate.current.begin('status'); const value = await matelinkApi.getCarStatus(selected.id); return { ticket, value } })(),
-        (async () => { const ticket = scopeGate.current.begin('readiness'); const value = await matelinkApi.getReadiness(selected.id); return { ticket, value } })(),
-        (async () => { const ticket = scopeGate.current.begin('pairing'); const value = await matelinkApi.getTelemetryPairing(selected.id); return { ticket, value } })(),
+        (async () => { const ticket = scopeGate.current.begin('status'); const value = await matelinkApi.getCarStatus(selected.id, selected); return { ticket, value } })(),
+        (async () => { const ticket = scopeGate.current.begin('readiness'); const value = await matelinkApi.getReadiness(selected.id, selected); return { ticket, value } })(),
+        (async () => { const ticket = scopeGate.current.begin('pairing'); const value = await matelinkApi.getTelemetryPairing(selected.id, selected); return { ticket, value } })(),
       ])
-      if (version !== requestVersion.current || sessionGeneration !== getApiSessionGeneration()) return
+      if (version !== requestVersion.current || sessionGeneration !== getApiSessionGeneration() || readAppSession(Taro)?.userId !== session.userId) return
       if (statusResult.status === 'fulfilled' && statusResult.value.ticket.isCurrent()) {
         const nextStatus = statusResult.value.value
         setStatus(nextStatus)
+        writeVehicleCache(Taro, session.userId, origin, selected.stableId, nextStatus)
         setCar(current => current ? {
           ...current,
           model: nextStatus.model ?? current.model,
@@ -95,7 +130,10 @@ export default function VehiclePage() {
           exteriorColor: nextStatus.exteriorColor ?? current.exteriorColor,
           wheelType: nextStatus.wheelType ?? current.wheelType,
         } : current)
-      } else setStatus(null)
+      } else {
+        setStatus(readVehicleCache(Taro, session.userId, origin, selected.stableId))
+        setCached(true)
+      }
       if (readinessResult.status === 'fulfilled' && readinessResult.value.ticket.isCurrent()) setReadinessItems(readinessResult.value.value.items)
       else setReadinessItems([])
       if (pairingResult.status === 'fulfilled' && pairingResult.value.ticket.isCurrent()) setPairing(pairingResult.value.value)
@@ -103,7 +141,18 @@ export default function VehiclePage() {
       const failed = [statusResult, readinessResult, pairingResult].find(item => item.status === 'rejected')
       if (failed?.status === 'rejected') setError(messageFor(failed.reason))
     } catch (reason) {
-      if (version === requestVersion.current && sessionGeneration === getApiSessionGeneration()) setError(messageFor(reason))
+      if (version === requestVersion.current && sessionGeneration === getApiSessionGeneration() && readAppSession(Taro)?.userId === session.userId) {
+        setError(messageFor(reason))
+        const offlineCars = origin ? readCarsCache(Taro, session.userId, origin) : []
+        const stored = selectedStableId.current ?? readSelection(session.userId)
+        const selected = offlineCars.find(item => item.stableId === String(stored)) ?? offlineCars[0] ?? null
+        setCars(offlineCars)
+        setCar(selected)
+        setStatus(selected && origin ? readVehicleCache(Taro, session.userId, origin, selected.stableId) : null)
+        setReadinessItems([])
+        setPairing(null)
+        setCached(true)
+      }
     } finally {
       if (version === requestVersion.current && sessionGeneration === getApiSessionGeneration()) setLoading(false)
     }
@@ -117,13 +166,21 @@ export default function VehiclePage() {
     const index = Number(event.detail.value)
     const next = cars[index]
     const session = readAppSession(Taro)
-    if (!next || !session) return
+    if (!next || !session?.userId) return
     scopeGate.current.invalidate()
-    Taro.setStorageSync(carSelectionStorageKey(session.userId), next.stableId)
+    saveSelection(session.userId!, next.stableId)
     setCar(next)
     setStatus(null)
     setReadinessItems([])
     setPairing(null)
+    if (next.remoteVerified === false) {
+      requestVersion.current += 1
+      setLoading(false)
+      setCached(true)
+      try { setStatus(readVehicleCache(Taro, session.userId!, getApiOrigin(), next.stableId)) }
+      catch { setStatus(null) }
+      return
+    }
     void load()
   }
 
@@ -144,7 +201,7 @@ export default function VehiclePage() {
     setLoading(true)
     setError(null)
     try {
-      await matelinkApi.configureTelemetry(car.id)
+      await matelinkApi.configureTelemetry(car.id, car)
       if (operation !== requestVersion.current) return
       await load()
     } catch (reason) {
@@ -160,7 +217,8 @@ export default function VehiclePage() {
       <View className="hero card">
         <Text className="eyebrow">MATELINK / WECHAT</Text>
         <Text className="title">车辆</Text>
-        <Text className="muted">只展示服务端已确认的车辆观测，不用占位数据填充缺失字段。</Text>
+        <Text className="muted">展示已有状态报告，缺失字段保留未知。</Text>
+        <Button className="button button-secondary" loading={loading} onClick={() => { void load() }}>刷新车辆</Button>
       </View>
 
       <ReadinessChecklist items={readinessItems} pairing={pairing} sessionReady={Boolean(readAppSession(Taro))} />
@@ -186,15 +244,16 @@ export default function VehiclePage() {
         <View className="card">
           <Text className="section-title">{car.displayName || car.name || '车辆名称待确认'}</Text>
           <Text className="muted">车型：{car.model || '车型待识别'}{car.trim ? ` · ${car.trim}` : ''}</Text>
+          <Text className="state-pill">{cached ? '缓存快照 · 尚未确认最新状态' : 'API 状态快照'}</Text>
           {car.exteriorColor ? <Text className="muted">外观：{car.exteriorColor}</Text> : null}
           {loading ? <LoadingIndicator label="正在读取最新数据…" compact /> : null}
           {status ? (
             <View className="metric-grid">
-              <MetricValue label="状态" value={status.state} source={status.source} />
+              <MetricValue label="状态" value={stateLabel(status.state)} source={status.source} />
               <MetricValue label="电量" value={status.batteryLevel == null ? null : `${status.batteryLevel}%`} source={status.source} />
               <MetricValue label="续航" value={status.ratedRange == null ? null : `${status.ratedRange} km`} source={status.source} />
               <MetricValue label="里程" value={status.odometer == null ? null : `${status.odometer} km`} source={status.source} />
-              <MetricValue label="充电状态" value={status.chargingState} source={status.source} />
+              <MetricValue label="充电状态" value={stateLabel(status.chargingState, true)} source={status.source} />
               <MetricValue label="充电功率" value={status.chargerPower == null ? null : `${status.chargerPower} kW`} source={status.source} />
               <MetricValue label="速度" value={status.speed == null ? null : `${status.speed} km/h`} source={status.source} />
               <MetricValue label="功率" value={status.power == null ? null : `${status.power} kW`} source={status.source} />
@@ -202,8 +261,8 @@ export default function VehiclePage() {
               <MetricValue label="空调" value={booleanLabel(status.isClimateOn, '开启', '关闭')} source={status.source} />
             </View>
           ) : <Text className="muted">暂无车辆状态观测。</Text>}
-          {status?.location ? <Text className="muted">位置：{coordinateLabel(status.location)}（来源：{status.source || '服务端'}）</Text> : <Text className="muted">位置：暂无有效坐标</Text>}
-          {status?.observedAt ? <Text className="muted">最近观测：{status.observedAt}</Text> : null}
+          {status?.location ? <Text className="muted">位置：{coordinateLabel(status.location)}（状态快照）</Text> : <Text className="muted">位置：暂无有效坐标</Text>}
+          {status?.observedAt && Number.isFinite(Date.parse(status.observedAt)) ? <Text className="muted">状态报告时间：{new Date(status.observedAt).toLocaleString()}（未提供逐字段更新时间）</Text> : <Text className="muted">状态报告时间未提供，不能确认字段是否最新。</Text>}
           {readiness.status === 'pairing_required' || readiness.status === 'permission_required' ? (
             <Button className="button" onClick={copyOfficialLink}>打开 Tesla 官方授权入口</Button>
           ) : null}

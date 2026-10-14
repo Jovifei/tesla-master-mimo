@@ -43,6 +43,11 @@ export type Car = {
   exteriorColor: string | null
   wheelType: string | null
   displayName: string | null
+  remoteVerified?: boolean
+  capacityKwh?: number | null
+  capacityBasis?: string | null
+  capacitySourceField?: string | null
+  capacityCalculationVersion?: number | null
 }
 
 export type RawCar = {
@@ -53,6 +58,11 @@ export type RawCar = {
   name?: string | null
   model?: string | null
   display_name?: string | null
+  current_capacity?: number | null
+  capacity_basis?: string | null
+  capacity_source_field?: string | null
+  calculation_version?: number | null
+  battery_health?: { current_capacity?: number | null } | null
   car_details?: { model?: string | null; trim_badging?: string | null }
   car_exterior?: { exterior_color?: string | null; wheel_type?: string | null }
 }
@@ -202,6 +212,9 @@ export type Drive = {
   source: string | null
   qualityState: string | null
   qualityReason: string | null
+  energy?: DriveEnergy
+  energyReceipt?: DriveEnergyReceipt
+  efficiencyWhKm?: number | null
 }
 
 export type RawDrive = {
@@ -213,6 +226,9 @@ export type RawDrive = {
   end_address?: string | null
   duration_min?: number | null
   energy_consumed_net?: number | null
+  consumption_net?: number | null
+  energy_contract?: EnergyContract | null
+  drive_details?: { date?: string | null; power?: number | null }[] | null
   start_latitude?: number | null
   start_longitude?: number | null
   end_latitude?: number | null
@@ -249,6 +265,10 @@ export type Charge = {
   source: string | null
   qualityState: string | null
   qualityReason: string | null
+  energy?: ChargeEnergy
+  currency?: string | null
+  currencyCode?: string | null
+  chargeMode?: 'ac' | 'dc' | null
 }
 
 export type RawCharge = {
@@ -264,6 +284,13 @@ export type RawCharge = {
   latitude?: number | null
   longitude?: number | null
   charger_power?: number | null
+  energy_contract?: EnergyContract | null
+  currency?: string | null
+  currency_code?: string | null
+  cost_currency?: string | null
+  charge_type?: string | null
+  fast_charger_present?: boolean | null
+  charger_phases?: number | null
   source?: string | null
   quality_state?: string | null
   quality_reason?: string | null
@@ -271,6 +298,48 @@ export type RawCharge = {
     start_battery_level?: number | null
     end_battery_level?: number | null
   } | null
+}
+
+export type EnergyMetric = {
+  value_kwh?: number | null; unit?: string | null; method?: string | null
+  measurement_point?: string | null; source?: string | null; source_field?: string | null
+  quality?: string | null; reason?: string | null
+  start_date?: string | null; end_date?: string | null
+  observed_start_at?: string | null; observed_end_at?: string | null; time_basis?: string | null
+  coverage_kind?: string | null; coverage_seconds?: number | null; coverage_ratio?: number | null
+  covered_energy_kwh?: number | null; activity_evidence?: string | null
+  capacity_kwh?: number | null; capacity_basis?: string | null; capacity_source_field?: string | null
+  capacity_model?: string | null; capacity_trim?: string | null; calculation_version?: number | null
+  start_soc?: number | null; end_soc?: number | null
+}
+
+export type EnergyContract = {
+  version?: number | null; net_energy?: EnergyMetric | null
+  battery_input?: EnergyMetric | null; ac_input?: EnergyMetric | null; stored_change?: EnergyMetric | null
+  ac_loss?: EnergyMetric | null; ac_efficiency?: number | null
+  charge_mode?: string | null; charge_mode_evidence?: string | null
+}
+
+export type DriveEnergy = {
+  energyKwh: number | null; efficiencyWhKm: number | null
+  source: 'api' | 'power_samples' | 'energy_remaining_delta' | 'soc_capacity_estimate' | 'unavailable'
+  quality: 'reported' | 'estimated' | 'unknown'; reason: string | null
+  coverageRatio: number | null; coverageSeconds: number | null; observedEnergyKwh: number | null
+  evidence: EnergyMetric | null
+}
+
+export type DrivePowerIntegral = {
+  energyKwh: number | null; coverageSeconds: number; windowSeconds: number | null
+  complete: boolean; reason: string; startDate: string | null; endDate: string | null
+}
+
+/** Bounded parsed input plus labeled integral; never original HTTP bytes or a stored route. */
+export type DriveEnergyReceipt = Omit<RawDrive, 'drive_details'> & { parsedEnergyVersion?: 1; power_integral?: DrivePowerIntegral }
+
+export type ChargeEnergy = {
+  batteryInputKwh: number | null; acInputKwh: number | null; inputEnergyKwh: number | null
+  quality: 'reported' | 'unknown'; reason: string | null; evidence: EnergyContract | null
+  chargeMode: 'ac' | 'dc' | null
 }
 
 export function carSelectionStorageKey(userId: string | null): string {

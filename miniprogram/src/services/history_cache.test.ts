@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clearHistoryCachesForAccount, HISTORY_CACHE_SCHEMA, historyCacheKey, readHistoryCache, writeHistoryCache } from './history_cache'
+import { clearHistoryCachesForAccount, HISTORY_CACHE_MAX_BYTES, HISTORY_CACHE_MAX_ROWS, historyUtf8Bytes, HISTORY_CACHE_SCHEMA, historyCacheKey, readHistoryCache, writeHistoryCache } from './history_cache'
 
 function storage() {
   const values = new Map<string, unknown>()
@@ -89,4 +89,42 @@ describe('history cache', () => {
     expect(store.values.has(longerAccount)).toBe(true)
     expect(store.values.has(legacy)).toBe(false)
   })
+})
+
+describe('bounded history cache payload', () => {
+  it('retains 358 small rows but caps large archives at 500 most recent rows', () => {
+    const store = storage(), key = historyCacheKey('drives', 'a', 'car', 'https://a.test')
+    const rows = Array.from({ length: 600 }, (_, id) => ({ id: String(id), startDate: new Date(1700000000000 + id * 1000).toISOString() }))
+    writeHistoryCache(store, key, rows.slice(0, 358))
+    expect(readHistoryCache(store, key)).toHaveLength(358)
+    writeHistoryCache(store, key, rows)
+    const read = readHistoryCache<{ id: string }>(store, key)
+    expect(read).toHaveLength(HISTORY_CACHE_MAX_ROWS)
+    expect(read[0].id).toBe('599')
+    expect(read[499].id).toBe('100')
+  })
+  it('counts actual UTF-8 bytes and strips whole trajectories from nested receipts', () => {
+    const store = storage(), key = historyCacheKey('drives', 'a', 'car', 'https://a.test')
+    const items = Array.from({ length: 500 }, (_, id) => ({ id: String(id), address: '汉😀'.repeat(600),
+      positions: Array(1000).fill({ latitude: 1 }), energyReceipt: { drive_details: { positions: [1, 2], duration: 10 }, source: 'telemetry_mqtt' } }))
+    expect(historyUtf8Bytes('汉😀')).toBe(7)
+    expect(writeHistoryCache(store, key, items)).toBe(true)
+    expect(historyUtf8Bytes(JSON.stringify(store.values.get(key)))).toBeLessThanOrEqual(HISTORY_CACHE_MAX_BYTES)
+    const read = readHistoryCache<Record<string, unknown>>(store, key)
+    expect(read.length).toBeGreaterThan(0)
+    expect(read.length).toBeLessThan(500)
+    expect(read[0]).not.toHaveProperty('positions')
+    expect(read[0]).not.toHaveProperty('energyReceipt.drive_details.positions')
+    expect(read[0]).toHaveProperty('energyReceipt.source', 'telemetry_mqtt')
+  })
+})
+
+it('removes only this account scoped filter preferences together with deleted history', () => {
+  const store = storage(), origin = 'https://a.test'
+  const own = historyCacheKey('drives', 'a', 'car', origin) + '.query'
+  const other = historyCacheKey('drives', 'b', 'car', origin) + '.query'
+  store.setStorageSync(own, { startDate: '2026-10-14' }); store.setStorageSync(other, {})
+  clearHistoryCachesForAccount(store, 'a', origin)
+  expect(store.values.has(own)).toBe(false)
+  expect(store.values.has(other)).toBe(true)
 })

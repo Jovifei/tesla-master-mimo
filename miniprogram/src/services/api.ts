@@ -1,6 +1,9 @@
 import Taro from '@tarojs/taro'
 import { JOURVOLT_PRIVACY_VERSION, JOURVOLT_TERMS_VERSION } from '../domain/legal'
 import { clearHistoryCachesForAccount } from './history_cache'
+import { clearCarsCacheForAccount, writeCarsCache } from './cars_cache'
+import { clearVehicleCachesForAccount } from './vehicle_cache'
+import { driveEnergyReceipt, resolveDriveEnergy, resolveChargeEnergy } from '../domain/drive_energy'
 import type {
   ApiEnvelope,
   AuthSessionResponse,
@@ -32,7 +35,7 @@ import {
   type AppSession,
 } from './session'
 
-const apiBaseUrl = (process.env.TARO_APP_API_BASE_URL ?? '').replace(/\/$/, '')
+const apiBaseUrl = process.env.TARO_APP_API_BASE_URL ?? ''
 const DEFAULT_PAGE_SIZE = 20
 
 const errorMessages: Record<string, string> = {
@@ -112,8 +115,9 @@ function isRecord(value: unknown): value is UnknownRecord {
 }
 
 function requireApiBaseUrl(): string {
-  if (!apiBaseUrl || !apiBaseUrl.startsWith('https://')) throw new ApiConfigurationError()
-  return apiBaseUrl
+  const parsed = parseHttpsURL(apiBaseUrl)
+  if (!parsed || parsed.path !== '/' || /[?#]/.test(apiBaseUrl)) throw new ApiConfigurationError()
+  return apiBaseUrl.replace(/\/$/, '')
 }
 
 export function getApiOrigin(): string {
@@ -134,7 +138,7 @@ export function isTrustedAuthorizationURL(raw: string): boolean {
 type ParsedHttpsURL = { hostname: string; path: string }
 
 function parseHttpsURL(raw: string): ParsedHttpsURL | null {
-  if (typeof raw !== 'string' || raw.trim() !== raw || !raw.startsWith('https://')) return null
+  if (typeof raw !== 'string' || /[\s\u0000-\u001f\u007f\\]/.test(raw) || !raw.startsWith('https://')) return null
   const rest = raw.slice('https://'.length)
   const authorityEnd = rest.search(/[/?#]/)
   const authority = authorityEnd < 0 ? rest : rest.slice(0, authorityEnd)
@@ -142,7 +146,10 @@ function parseHttpsURL(raw: string): ParsedHttpsURL | null {
   const portIndex = authority.lastIndexOf(':')
   const hostname = (portIndex >= 0 ? authority.slice(0, portIndex) : authority).toLowerCase()
   const port = portIndex >= 0 ? authority.slice(portIndex + 1) : ''
-  if (!hostname || (portIndex >= 0 && !port) || (port && port !== '443') || (port && !/^\d+$/.test(port)) || !/^[a-z0-9.-]+$/.test(hostname)) return null
+  if (!hostname || hostname.length > 253 || (portIndex >= 0 && !port) || (port && port !== '443') ||
+      !hostname.split('.').every(label => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))) return null
+  if (/^0x[0-9a-f]+$/i.test(hostname) || (/^[\d.]+$/.test(hostname) &&
+      (hostname.split('.').length !== 4 || !hostname.split('.').every(part => /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255)))) return null
   const pathStart = authorityEnd < 0 ? rest.length : authorityEnd
   const suffix = rest.slice(pathStart)
   const path = suffix.split(/[?#]/)[0] || '/'
@@ -157,6 +164,45 @@ function errorBody(value: unknown): UnknownRecord {
 
 function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function finite(value: unknown, min = -Infinity, max = Infinity): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : null
+}
+function bool(value: unknown): boolean | null { return typeof value === 'boolean' ? value : null }
+function chargeCurrency(raw: RawCharge): string | null | undefined {
+  if (!('cost_currency' in raw) && !('currency_code' in raw) && !('currency' in raw)) return undefined
+  const supplied = [raw.cost_currency, raw.currency_code, raw.currency].filter(value => value != null)
+    .map(value => stringValue(value)?.toUpperCase())
+  if (supplied.some(value => !value) || new Set(supplied).size > 1) return null
+  const code = stringValue(raw.cost_currency ?? raw.currency_code ?? raw.currency)?.toUpperCase()
+  return code && ['CNY', 'USD', 'EUR', 'GBP', 'HKD', 'JPY', 'CAD', 'AUD', 'NZD', 'KRW', 'SGD', 'TWD', 'CHF',
+    'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'INR', 'THB', 'AED', 'BRL', 'MXN', 'ZAR'].includes(code) ? code : null
+}
+function chargeMode(raw: RawCharge): 'ac' | 'dc' | null {
+  const mode = stringValue(raw.charge_type)?.toLowerCase()
+  if (mode === 'ac') return raw.fast_charger_present === true ? null : 'ac'
+  if (mode === 'dc') return 'dc'
+  return mode == null && raw.fast_charger_present === true ? 'dc' : null
+}
+
+function assertVehicle(raw: unknown, carId: number, car?: Car): void {
+  if (!Number.isSafeInteger(carId) || carId <= 0 || (car && (car.id !== carId || car.remoteVerified === false)))
+    throw new ApiError(errorMessages.vehicle_not_found, { code: 'vehicle_not_found' })
+  if (car?.remoteVerified === true && (verifiedCarsScope !== currentCarsScope() || verifiedCars.get(carId) !== car.stableId))
+    throw new ApiError(errorMessages.vehicle_not_found, { code: 'vehicle_not_found' })
+  if (!isRecord(raw)) return
+  const id = raw.car_id
+  const uid = raw.vehicle_uid ?? raw.provider_vehicle_id
+  if ((id != null && String(id) !== String(carId)) ||
+      (uid != null && car && String(uid) !== car.stableId))
+    throw new ApiError(errorMessages.vehicle_not_found, { code: 'vehicle_not_found' })
+}
+
+function safeRecordId(id: string): string {
+  if (!id || id.length > 256 || /[\s\u0000-\u001f\u007f]/.test(id) || id === '.' || id === '..')
+    throw new ApiError(errorMessages.history_unavailable, { code: 'history_unavailable' })
+  return encodeURIComponent(id)
 }
 
 function headerValue(headers: TaroGeneral.IAnyObject | undefined, name: string): string | null {
@@ -174,7 +220,7 @@ function toApiError(status: number | null, body: unknown, headers?: TaroGeneral.
   const payload = errorBody(body)
   const code = stringValue(payload.error) ?? stringValue(payload.error_code) ?? stringValue(payload.code) ?? 'api_error'
   const messageKey = stringValue(payload.message_key)
-  const message = stringValue(payload.message) ?? errorMessages[code] ?? fallback
+  const message = Object.prototype.hasOwnProperty.call(errorMessages, code) ? errorMessages[code] : fallback
   return new ApiError(message, {
     status,
     code,
@@ -245,6 +291,11 @@ let refreshOwnerUser: string | null = null
 const ticketExchangePromises = new Map<string, Promise<AppSession>>()
 const wechatClaimPromises = new Map<string, Promise<AppSession>>()
 let sessionEpoch = 0
+let verifiedCarsScope: string | null = null
+const verifiedCars = new Map<number, string>()
+function currentCarsScope(): string {
+  return JSON.stringify([getApiOrigin(), readAppSession(Taro)?.userId ?? null, sessionEpoch])
+}
 
 // Non-secret generation for page lifecycle guards; never use tokens in cache keys.
 export function getApiSessionGeneration(): number { return sessionEpoch }
@@ -355,28 +406,35 @@ export async function requestJson<T extends TaroGeneral.IAnyObject>(path: string
 }
 
 function normalizeCar(raw: RawCar): Car | null {
+  if (!isRecord(raw)) return null
   const idValue = raw.car_id ?? raw.id
-  const id = typeof idValue === 'number' ? idValue : Number(idValue)
+  const id = typeof idValue === 'number' ? idValue : typeof idValue === 'string' && /^[1-9]\d*$/.test(idValue) ? Number(idValue) : NaN
   const stableId = stringValue(raw.vehicle_uid) ?? stringValue(raw.provider_vehicle_id)
   if (!Number.isInteger(id) || id <= 0 || !stableId) return null
-  const model = raw.model ?? raw.car_details?.model ?? null
-  const name = raw.display_name ?? raw.name ?? null
+  const model = stringValue(raw.model) ?? stringValue(raw.car_details?.model)
+  const name = stringValue(raw.display_name) ?? stringValue(raw.name)
   return {
     id,
     stableId,
     name,
     model,
-    trim: raw.car_details?.trim_badging ?? null,
-    exteriorColor: raw.car_exterior?.exterior_color ?? null,
-    wheelType: raw.car_exterior?.wheel_type ?? null,
+    trim: stringValue(raw.car_details?.trim_badging),
+    exteriorColor: stringValue(raw.car_exterior?.exterior_color),
+    wheelType: stringValue(raw.car_exterior?.wheel_type),
     displayName: name?.trim() || (model ? `Model ${model}` : 'Tesla'),
+    capacityKwh: finite(raw.current_capacity ?? raw.battery_health?.current_capacity, Number.MIN_VALUE),
+    capacityBasis: finite(raw.current_capacity ?? raw.battery_health?.current_capacity, Number.MIN_VALUE) != null
+      ? 'api_reported_current_capacity' : undefined,
+    capacitySourceField: finite(raw.current_capacity ?? raw.battery_health?.current_capacity, Number.MIN_VALUE) != null
+      ? raw.current_capacity != null ? 'current_capacity' : 'battery_health.current_capacity' : null,
+    capacityCalculationVersion: 1,
   }
 }
 
 function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source: string | null): CarStatus {
-  const latitude = raw.car_geodata?.latitude
-  const longitude = raw.car_geodata?.longitude
-  const location = typeof latitude === 'number' && typeof longitude === 'number'
+  const latitude = finite(raw.car_geodata?.latitude, -90, 90)
+  const longitude = finite(raw.car_geodata?.longitude, -180, 180)
+  const location = latitude != null && longitude != null
     ? { latitude, longitude }
     : null
   return {
@@ -385,27 +443,27 @@ function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source
     trim: stringValue(raw.trim_badging),
     exteriorColor: stringValue(raw.exterior_color),
     wheelType: stringValue(raw.wheel_type),
-    batteryLevel: raw.battery_details?.battery_level ?? null,
-    ratedRange: raw.battery_details?.rated_battery_range ?? null,
-    odometer: raw.odometer ?? null,
+    batteryLevel: finite(raw.battery_details?.battery_level, 0, 100),
+    ratedRange: finite(raw.battery_details?.rated_battery_range, 0),
+    odometer: finite(raw.odometer, 0),
     location,
-    locked: raw.car_status?.locked ?? null,
-    sentryMode: raw.car_status?.sentry_mode ?? null,
-    windowsOpen: raw.car_status?.windows_open ?? null,
-    doorsOpen: raw.car_status?.doors_open ?? null,
-    trunkOpen: raw.car_status?.trunk_open ?? null,
-    frunkOpen: raw.car_status?.frunk_open ?? null,
-    isClimateOn: raw.climate_details?.is_climate_on ?? null,
-    insideTemp: raw.climate_details?.inside_temp ?? null,
-    outsideTemp: raw.climate_details?.outside_temp ?? null,
-    pluggedIn: raw.charging_details?.plugged_in ?? null,
-    speed: raw.driving_details?.speed ?? null,
-    power: raw.driving_details?.power ?? null,
+    locked: bool(raw.car_status?.locked),
+    sentryMode: bool(raw.car_status?.sentry_mode),
+    windowsOpen: bool(raw.car_status?.windows_open),
+    doorsOpen: bool(raw.car_status?.doors_open),
+    trunkOpen: bool(raw.car_status?.trunk_open),
+    frunkOpen: bool(raw.car_status?.frunk_open),
+    isClimateOn: bool(raw.climate_details?.is_climate_on),
+    insideTemp: finite(raw.climate_details?.inside_temp, -100, 100),
+    outsideTemp: finite(raw.climate_details?.outside_temp, -100, 100),
+    pluggedIn: bool(raw.charging_details?.plugged_in),
+    speed: finite(raw.driving_details?.speed, 0),
+    power: finite(raw.driving_details?.power),
     shiftState: raw.driving_details?.shift_state ?? null,
-    heading: raw.driving_details?.heading ?? null,
+    heading: finite(raw.driving_details?.heading, 0, 360),
     chargingState: raw.charging_details?.charging_state ?? null,
-    chargeEnergyAdded: raw.charging_details?.charge_energy_added ?? null,
-    chargerPower: raw.charging_details?.charger_power ?? null,
+    chargeEnergyAdded: finite(raw.charging_details?.charge_energy_added, 0),
+    chargerPower: finite(raw.charging_details?.charger_power, 0),
     observedAt,
     source,
   }
@@ -427,9 +485,13 @@ function pageMeta(meta: PageMeta | undefined, page: number, show: number, length
   }
 }
 
-function normalizeDrive(raw: RawDrive): Drive | null {
+function normalizeDrive(raw: RawDrive, car?: Car): Drive | null {
+  if (!isRecord(raw)) return null
   const rawId = raw.drive_id ?? raw.session_id
-  if (rawId === undefined || rawId === null || String(rawId).trim() === '') return null
+  if ((typeof rawId !== 'string' && typeof rawId !== 'number') || String(rawId).trim() === '' ||
+      (typeof rawId === 'number' && (!Number.isSafeInteger(rawId) || rawId <= 0))) return null
+  const receipt = driveEnergyReceipt(raw)
+  const energy = resolveDriveEnergy(receipt, car)
   return {
     id: String(rawId),
     sessionId: stringValue(raw.session_id),
@@ -437,15 +499,16 @@ function normalizeDrive(raw: RawDrive): Drive | null {
     endDate: raw.end_date ?? null,
     startAddress: raw.start_address ?? null,
     endAddress: raw.end_address ?? null,
-    durationMinutes: raw.duration_min ?? null,
-    distanceKm: raw.odometer_details?.odometer_distance ?? null,
-    energyConsumedKwh: raw.energy_consumed_net ?? null,
-    startBatteryLevel: raw.battery_details?.start_battery_level ?? null,
-    endBatteryLevel: raw.battery_details?.end_battery_level ?? null,
-    startLatitude: raw.start_latitude ?? null,
-    startLongitude: raw.start_longitude ?? null,
-    endLatitude: raw.end_latitude ?? null,
-    endLongitude: raw.end_longitude ?? null,
+    durationMinutes: finite(raw.duration_min, 0),
+    distanceKm: finite(raw.odometer_details?.odometer_distance, 0),
+    energyConsumedKwh: energy.energyKwh,
+    energy, energyReceipt: receipt, efficiencyWhKm: energy.efficiencyWhKm,
+    startBatteryLevel: finite(raw.battery_details?.start_battery_level, 0, 100),
+    endBatteryLevel: finite(raw.battery_details?.end_battery_level, 0, 100),
+    startLatitude: finite(raw.start_latitude, -90, 90),
+    startLongitude: finite(raw.start_longitude, -180, 180),
+    endLatitude: finite(raw.end_latitude, -90, 90),
+    endLongitude: finite(raw.end_longitude, -180, 180),
     source: raw.source ?? null,
     qualityState: raw.quality_state ?? null,
     qualityReason: raw.quality_reason ?? null,
@@ -453,23 +516,28 @@ function normalizeDrive(raw: RawDrive): Drive | null {
 }
 
 function normalizeCharge(raw: RawCharge): Charge | null {
+  if (!isRecord(raw)) return null
   const rawId = raw.charge_id ?? raw.session_id
-  if (rawId === undefined || rawId === null || String(rawId).trim() === '') return null
+  if ((typeof rawId !== 'string' && typeof rawId !== 'number') || String(rawId).trim() === '' ||
+      (typeof rawId === 'number' && (!Number.isSafeInteger(rawId) || rawId <= 0))) return null
+  const energy = resolveChargeEnergy(raw)
   return {
     id: String(rawId),
     sessionId: stringValue(raw.session_id),
     startDate: raw.start_date ?? null,
     endDate: raw.end_date ?? null,
     address: raw.address ?? null,
-    durationMinutes: raw.duration_min ?? null,
-    energyAddedKwh: raw.charge_energy_added ?? null,
-    energyUsedKwh: raw.charge_energy_used ?? null,
-    cost: raw.cost ?? null,
-    startBatteryLevel: raw.battery_details?.start_battery_level ?? null,
-    endBatteryLevel: raw.battery_details?.end_battery_level ?? null,
-    latitude: raw.latitude ?? null,
-    longitude: raw.longitude ?? null,
-    chargerPowerKw: raw.charger_power ?? null,
+    durationMinutes: finite(raw.duration_min, 0),
+    energyAddedKwh: energy.batteryInputKwh,
+    energyUsedKwh: energy.acInputKwh,
+    energy,
+    cost: finite(raw.cost, 0),
+    currency: chargeCurrency(raw), currencyCode: chargeCurrency(raw), chargeMode: energy.chargeMode ?? chargeMode(raw),
+    startBatteryLevel: finite(raw.battery_details?.start_battery_level, 0, 100),
+    endBatteryLevel: finite(raw.battery_details?.end_battery_level, 0, 100),
+    latitude: finite(raw.latitude, -90, 90),
+    longitude: finite(raw.longitude, -180, 180),
+    chargerPowerKw: finite(raw.charger_power, 0),
     source: raw.source ?? null,
     qualityState: raw.quality_state ?? null,
     qualityReason: raw.quality_reason ?? null,
@@ -477,6 +545,8 @@ function normalizeCharge(raw: RawCharge): Charge | null {
 }
 
 function historyPath(carId: number, kind: 'drives' | 'charges', page: number, show: number): string {
+  if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(show) || show < 1 || show > 100)
+    throw new ApiError(errorMessages.history_unavailable, { code: 'history_unavailable' })
   const params = `page=${encodeURIComponent(String(page))}&show=${encodeURIComponent(String(show))}`
   return `/api/v1/cars/${carId}/${kind}?${params}`
 }
@@ -600,6 +670,8 @@ export const matelinkApi = {
     if (!current || current.userId !== owner.userId) throw sessionChangedError()
     if (response.status !== 'deleted') throw new ApiError(errorMessages.invalid_account_delete_response, { code: 'invalid_account_delete_response' })
     clearHistoryCachesForAccount(Taro, owner.userId, getApiOrigin())
+    clearCarsCacheForAccount(Taro, owner.userId, getApiOrigin())
+    clearVehicleCachesForAccount(Taro, owner.userId, getApiOrigin())
     sessionEpoch += 1
     clearAppSession(Taro)
     const revokeUrl = stringValue(response.tesla_consent_revoke_url)
@@ -609,27 +681,44 @@ export const matelinkApi = {
   async getCars(): Promise<Car[]> {
     const response = await requestJson<ApiEnvelope<{ cars?: RawCar[] }> | { cars?: RawCar[] }>('/api/v1/cars')
     const cars = unwrap(response).cars
-    return (Array.isArray(cars) ? cars : []).map(normalizeCar).filter((car): car is Car => car !== null)
+    const verified = (Array.isArray(cars) ? cars : []).map(normalizeCar).filter((car): car is Car => car !== null)
+      .map(car => ({ ...car, remoteVerified: true }))
+    if (new Set(verified.map(car => car.id)).size !== verified.length || new Set(verified.map(car => car.stableId)).size !== verified.length)
+      throw new ApiError(errorMessages.vehicle_not_found, { code: 'vehicle_not_found' })
+    verifiedCarsScope = currentCarsScope()
+    verifiedCars.clear()
+    verified.forEach(car => verifiedCars.set(car.id, car.stableId))
+    const owner = readAppSession(Taro)?.userId
+    if (owner) writeCarsCache(Taro, owner, getApiOrigin(), verified)
+    return verified
   },
 
-  async getCarStatus(carId: number): Promise<CarStatus> {
+  async getCarStatus(carId: number, car?: Car): Promise<CarStatus> {
+    assertVehicle(null, carId, car)
     const response = await requestJson<ApiEnvelope<{ status?: RawCarStatus; observed_at?: string; source?: string }> | { status?: RawCarStatus; observed_at?: string; source?: string }>(`/api/v1/cars/${carId}/status`)
     const data = unwrap(response)
+    assertVehicle(data, carId, car)
+    assertVehicle(data.status, carId, car)
     return normalizeCarStatus(data.status ?? {}, data.observed_at ?? null, data.source ?? null)
   },
 
-  async getReadiness(carId: number): Promise<DataReadiness> {
+  async getReadiness(carId: number, car?: Car): Promise<DataReadiness> {
+    assertVehicle(null, carId, car)
     const response = await requestJson<ApiEnvelope<DataReadiness> | DataReadiness>(`/api/v1/cars/${carId}/data-readiness`)
     const data = unwrap(response)
+    assertVehicle(data, carId, car)
     return { ...data, items: Array.isArray(data.items) ? data.items : [] }
   },
 
-  async getTelemetryPairing(carId: number): Promise<TelemetryPairing> {
+  async getTelemetryPairing(carId: number, car?: Car): Promise<TelemetryPairing> {
+    assertVehicle(null, carId, car)
     const response = await requestJson<ApiEnvelope<TelemetryPairing> | TelemetryPairing>(`/api/v1/cars/${carId}/telemetry/pairing`)
+    assertVehicle(unwrap(response), carId, car)
     return unwrap(response)
   },
 
-  async configureTelemetry(carId: number): Promise<{ status: string | null }> {
+  async configureTelemetry(carId: number, car?: Car): Promise<{ status: string | null }> {
+    assertVehicle(null, carId, car)
     const response = await requestJson<ApiEnvelope<{ status?: string | null }> | { status?: string | null }>(`/api/v1/cars/${carId}/telemetry/configure`, {
       method: 'POST',
       header: { 'Content-Type': 'application/json' },
@@ -763,29 +852,43 @@ export const matelinkApi = {
     }
   },
 
-  async getDrives(carId: number, page = 1, show = DEFAULT_PAGE_SIZE): Promise<HistoryPage<Drive>> {
+  async getDrives(carId: number, page = 1, show = DEFAULT_PAGE_SIZE, car?: Car): Promise<HistoryPage<Drive>> {
+    assertVehicle(null, carId, car)
     const response = await requestJson<ApiEnvelope<{ drives?: RawDrive[]; meta?: PageMeta }> | { drives?: RawDrive[]; meta?: PageMeta }>(historyPath(carId, 'drives', page, show))
-    return historyResult(response, 'drives', page, show, value => normalizeDrive(value as RawDrive))
+    assertVehicle(unwrap(response), carId, car)
+    return historyResult(response, 'drives', page, show, value => { assertVehicle(value, carId, car); return normalizeDrive(value as RawDrive, car) })
   },
 
-  async getDriveDetail(carId: number, driveId: string): Promise<Drive | null> {
-    const response = await requestJson<ApiEnvelope<{ drive?: RawDrive }> | { drive?: RawDrive }>(`/api/v1/cars/${carId}/drives/${encodeURIComponent(driveId)}`)
-    return detailResult(response, 'drive', value => value ? normalizeDrive(value as RawDrive) : null)
+  async getDriveDetail(carId: number, driveId: string, car?: Car): Promise<Drive | null> {
+    assertVehicle(null, carId, car)
+    const response = await requestJson<ApiEnvelope<{ drive?: RawDrive }> | { drive?: RawDrive }>(`/api/v1/cars/${carId}/drives/${safeRecordId(driveId)}`)
+    assertVehicle(unwrap(response), carId, car)
+    const result = detailResult(response, 'drive', value => { assertVehicle(value, carId, car); return value ? normalizeDrive(value as RawDrive, car) : null })
+    if (result && result.id !== driveId) throw new ApiError(errorMessages.history_unavailable, { code: 'history_unavailable' })
+    return result
   },
 
-  async getCharges(carId: number, page = 1, show = DEFAULT_PAGE_SIZE): Promise<HistoryPage<Charge>> {
+  async getCharges(carId: number, page = 1, show = DEFAULT_PAGE_SIZE, car?: Car): Promise<HistoryPage<Charge>> {
+    assertVehicle(null, carId, car)
     const response = await requestJson<ApiEnvelope<{ charges?: RawCharge[]; meta?: PageMeta }> | { charges?: RawCharge[]; meta?: PageMeta }>(historyPath(carId, 'charges', page, show))
-    return historyResult(response, 'charges', page, show, value => normalizeCharge(value as RawCharge))
+    assertVehicle(unwrap(response), carId, car)
+    return historyResult(response, 'charges', page, show, value => { assertVehicle(value, carId, car); return normalizeCharge(value as RawCharge) })
   },
 
-  async getChargeDetail(carId: number, chargeId: string): Promise<Charge | null> {
-    const response = await requestJson<ApiEnvelope<{ charge?: RawCharge }> | { charge?: RawCharge }>(`/api/v1/cars/${carId}/charges/${encodeURIComponent(chargeId)}`)
-    return detailResult(response, 'charge', value => value ? normalizeCharge(value as RawCharge) : null)
+  async getChargeDetail(carId: number, chargeId: string, car?: Car): Promise<Charge | null> {
+    assertVehicle(null, carId, car)
+    const response = await requestJson<ApiEnvelope<{ charge?: RawCharge }> | { charge?: RawCharge }>(`/api/v1/cars/${carId}/charges/${safeRecordId(chargeId)}`)
+    assertVehicle(unwrap(response), carId, car)
+    const result = detailResult(response, 'charge', value => { assertVehicle(value, carId, car); return value ? normalizeCharge(value as RawCharge) : null })
+    if (result && result.id !== chargeId) throw new ApiError(errorMessages.history_unavailable, { code: 'history_unavailable' })
+    return result
   },
 
-  async getCurrentCharge(carId: number): Promise<Charge | null> {
+  async getCurrentCharge(carId: number, car?: Car): Promise<Charge | null> {
+    assertVehicle(null, carId, car)
     const response = await requestJson<ApiEnvelope<{ charge?: RawCharge | null }> | { charge?: RawCharge | null }>(`/api/v1/cars/${carId}/charges/current`)
-    return detailResult(response, 'charge', value => value ? normalizeCharge(value as RawCharge) : null)
+    assertVehicle(unwrap(response), carId, car)
+    return detailResult(response, 'charge', value => { assertVehicle(value, carId, car); return value ? normalizeCharge(value as RawCharge) : null })
   },
 
   async validateInviteCode(code: string): Promise<{ valid: boolean; code?: string; remaining?: number; reason?: string }> {
@@ -796,7 +899,7 @@ export const matelinkApi = {
         data: { code: code.trim().toUpperCase() },
       },
     )
-    return response.data
+    return response
   },
 
   async claimInviteCode(code: string, clientType = 'miniprogram'): Promise<{ success: boolean; code?: string; error?: string }> {
@@ -807,11 +910,13 @@ export const matelinkApi = {
         data: { code: code.trim().toUpperCase(), client_type: clientType },
       },
     )
-    return response.data
+    return response
   },
 }
 
 export function resetApiSessionForTests(): void {
+  verifiedCarsScope = null
+  verifiedCars.clear()
   refreshPromise = null
   refreshOwnerEpoch = -1
   refreshOwnerUser = null

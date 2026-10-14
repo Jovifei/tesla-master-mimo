@@ -43,9 +43,26 @@ export function acceptHistoryPage<T extends HistoryControllerItem>(
   const merged = mergeHistoryByKey(current.items, result.items, keyOf)
   return {
     accepted: true,
-    state: { pages: candidatePages, items: sortHistoryByStartDate(merged.items), page: result.meta.page },
+    state: { pages: canonicalHistoryPages(candidatePages, merged.items, keyOf), items: sortHistoryByStartDate(merged.items), page: result.meta.page },
     hasMore: pageState.hasMore,
     complete: pageState.complete,
     errorReason: null,
   }
+}
+
+function canonicalHistoryPages<T extends HistoryControllerItem>(pages: HistoryPage<T>[], items: T[], keyOf: (item: T) => string): HistoryPage<T>[] {
+  return pages.map(page => ({ ...page, items: page.items.map(row => items.find(item => keyOf(item) === keyOf(row) || item.id === row.id) ?? row) }))
+}
+
+/** Details use the current public request ID; stale IDs may never roll a canonical session backwards. */
+export function acceptHistoryDetail<T extends HistoryControllerItem>(current: HistoryControllerState<T>, requested: T, detail: T,
+  keyOf: (item: T) => string = historyRowKey): HistoryControllerState<T> {
+  const row = current.items.find(item => keyOf(item) === keyOf(requested) || item.id === requested.id)
+  if (!row || row.id !== requested.id || detail.id !== requested.id ||
+      (row.sessionId && detail.sessionId && row.sessionId !== detail.sessionId)) return current
+  const latest = row as unknown as Record<string, unknown>, original = requested as unknown as Record<string, unknown>
+  if (['source', 'startDate', 'endDate', 'startBatteryLevel', 'endBatteryLevel', 'distanceKm'].some(key =>
+      (latest[key] ?? null) !== (original[key] ?? null))) return current
+  const items = sortHistoryByStartDate(mergeHistoryByKey(current.items, [detail], keyOf).items)
+  return { ...current, items, pages: canonicalHistoryPages(current.pages, items, keyOf) }
 }

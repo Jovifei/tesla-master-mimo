@@ -1,4 +1,5 @@
-import type { HistoryPage } from '../services/types'
+import type { Charge, Drive, HistoryPage } from '../services/types'
+import { mergeChargeEnergyRecord, mergeDriveEnergyRecord } from './drive_energy'
 
 export type HistoryLoadState = 'loading' | 'partial' | 'ready' | 'cached' | 'failed'
 export type HistoryMergeResult<T> = { items: T[]; retainedLocalCount: number; addedRemoteCount: number }
@@ -100,7 +101,14 @@ export function mergeHistoryEvidence<T>(local: T, incoming: T): T {
   // must use the current incoming ID, even when cached evidence is stronger.
   if (!missing(next.id)) merged.id = next.id
   if (!missing(next.sessionId)) merged.sessionId = next.sessionId
-  return conservativeEvidence(merged as T)
+  const admitted = conservativeEvidence(merged as T)
+  if ('energyConsumedKwh' in old || 'energyReceipt' in old || 'energyConsumedKwh' in next || 'energyReceipt' in next) {
+    return mergeDriveEnergyRecord(local as unknown as Drive, incoming as unknown as Drive, admitted as unknown as Drive) as unknown as T
+  }
+  if ('energyAddedKwh' in old || 'energyAddedKwh' in next) {
+    return mergeChargeEnergyRecord(local as unknown as Charge, incoming as unknown as Charge, admitted as unknown as Charge) as unknown as T
+  }
+  return admitted
 }
 
 function compatibleID(a: unknown, b: unknown): boolean {

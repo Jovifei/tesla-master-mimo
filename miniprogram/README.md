@@ -1,11 +1,11 @@
-# MateLink 微信小程序（0.2.0，M2 账号与数据链路）
+# MateLink 微信小程序（0.3.0，数据与能耗阶段）
 
 这是 MateLink 的微信小程序客户端。它复用既有 MateLink Go API 的业务语义，不复制 Android Compose、Room 或 Web DOM，也不直接访问 Tesla Fleet API、MQTT、mTLS 或服务器私钥。
 
 ## 当前边界
 
-- 当前版本是 M2：Taro 4.2.1 + React 18.3.1 + TypeScript 5.7.3，版本已锁定在 `package.json`，安装后提交 `package-lock.json`。
-- `project.config.json` 的 AppID 仍留空；主体、AppID、类目、业务域名、request 域名、Tesla OAuth/虚拟钥匙仍需取得真实平台证据。
+- 当前版本延续既有四 Tab：Taro 4.2.1 + React 18.3.1 + TypeScript 5.7.3。项目配置已包含 Jovi 提供的 AppID；主体、类目、业务/request 域名、真实微信登录和 Tesla 授权仍须取得平台证据。
+- 当前测试工具独立锁定在 `test-tooling`，避免 Taro 可选 Vite 4 编译器与现代 Vitest/Vite 的依赖冲突；实际小程序编译器仍为 Webpack 5。
 - 页面使用服务端微信会话、Tesla OAuth 和车辆接口；没有配置 `TARO_APP_API_BASE_URL` 时会明确失败，不回退到 mock 数据。
 - 后端已提供 `POST /v1/auth/wechat/session`：服务端用 AppID/AppSecret 换取微信 openid；首次微信身份只得到短期关联凭证，必须再完成 Tesla 官方授权，不能用 openid、VIN、车辆名或客户端 user id 自动认领旧账号。
 - Tesla 关联在小程序 `web-view` 中经过自有 `/oauth/wechat/authorize` 桥接页回流；正式环境必须把授权域名配置为微信 `web-view` 业务域名，并允许 MateLink API request 域名。
@@ -14,7 +14,8 @@
 ## 本地命令
 
 ```powershell
-npm install
+npm ci --ignore-scripts
+npm ci --prefix test-tooling --ignore-scripts
 npm run typecheck
 npm test
 npm run build:weapp
@@ -24,7 +25,11 @@ npm run build:weapp
 
 ## 页面与数据规则
 
-四个 Tab 为车辆、行程、充电、我的。车辆状态、数据准备、来源、更新时间和缺失原因优先于装饰性数据。车辆页读取 `key=telemetry`，不会把 `live_status` 当作持续采集就绪；它显示车型、状态、位置、来源和观测时间，并保留授权/配对/配置重试入口。行程/充电页支持分页、详情、当前充电和本地历史缓存，按微信用户与稳定车辆隔离；云端空响应不能清除合法本地缓存；不完整摘要不参与要求完整证据的分析。
+四个 Tab 为车辆、行程、充电、我的。车辆页保留数值 0、布尔 false 和负功率；状态报告时间不能证明每个字段的更新时间。在线有效坐标可显示，缓存不保存位置。服务器配置就绪与用户确认车辆钥匙分别显示。
+
+行程卡展示耗时、km、净 kWh 和 Wh/km（kWh × 1000 / km），负净值保留并用绿色标示。有效 API 合同、完整功率积分、无充电污染的 nominal 端点以及明确容量的 SOC 估算遵循 Android 同样的资格规则；估算明确标示，缺失或无效输入不填 0。充电 AC 输入与电池输入分别验证，费用保留实际币种，未知币种不默认人民币。
+
+历史页支持日期/距离筛选、刷新、分页、详情返回和本地重开。详情写回同作用域列表及缓存；同输入弱摘要保留详情，明确 unknown 撤销旧能量。缓存按 HTTPS origin、微信账号与稳定车辆 UID 隔离，并限制条数和字节；轨迹数组不缓存，配额失败不阻断在线阅读。离线车单只能阅读缓存；再次真实验证车辆列表前不能凭旧 numeric ID 发在线请求。账号/换车/隐藏页面后，迟到响应不得写回当前界面或缓存。
 
 ## 服务端配置
 
@@ -40,4 +45,6 @@ WECHAT_SESSION_URL=https://api.weixin.qq.com/sns/jscode2session
 
 ## 当前放行边界
 
-本地 typecheck、Vitest 和 `build:weapp` 已通过。正式 AppID、微信业务域名、真实微信安卓/ iOS、Tesla 官方授权、虚拟钥匙、首个 MQTT 事件和发布审核尚未验证，因此当前版本可以交给 Jovi 做平台配置与开发工具联调，不能宣称已上线或真实车辆链路已通过。
+本阶段固定版本和实际执行证据见 `../docs/RPT-2026-10-14-miniprogram-data-validation.md`。代码测试与编译不等于微信开发工具、真实微信安卓/iOS、Tesla 官方授权、虚拟钥匙、首个自然 MQTT 事件或发布通过。
+
+构建依赖审计仍须记录未消除的工具链告警；不使用 `npm audit fix --force`、远程模板/插件下载、H5 公网开发服务器或不可信压缩包解包来规避。当前只编译受控本地源码及隔离测试，不自动上传或发布。开发工具 `urlCheck` 保持 true；本机官方 CLI 初始化失败需由 Jovi 在工具 GUI 登录/导入工程，不能降低 TLS/域名校验或改系统网络来绕过。

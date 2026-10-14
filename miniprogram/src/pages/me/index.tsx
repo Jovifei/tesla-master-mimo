@@ -9,7 +9,7 @@ const PRIVACY_VERSION = JOURVOLT_PRIVACY_VERSION
 
 function errorMessage(reason: unknown): string {
   if (reason instanceof ApiError) return reason.message
-  return reason instanceof Error ? reason.message : '操作暂时不可用'
+  return '操作暂时不可用，请稍后重试'
 }
 
 function errorMessagesForStatus(status: string): string {
@@ -18,7 +18,7 @@ function errorMessagesForStatus(status: string): string {
     case 'cancelled': return 'Tesla 授权已取消，请重新开始授权'
     case 'failed': return 'Tesla 授权未完成，请重新开始授权'
     case 'claimed': return '授权已领取，请点击微信登录恢复会话'
-    default: return `Tesla 授权状态：${status}`
+    default: return 'Tesla 授权状态尚未确认，请稍后重新检查'
   }
 }
 

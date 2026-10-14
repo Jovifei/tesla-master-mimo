@@ -1,12 +1,12 @@
 {
   "name": "@matelink/wechat-miniprogram",
   "private": true,
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "MateLink WeChat Mini Program client",
   "scripts": {
     "build:weapp": "taro build --type weapp",
     "dev:weapp": "taro build --type weapp --watch",
-    "test": "vitest run",
+    "test": "node test-tooling/node_modules/vitest/vitest.mjs run --config test-tooling/vitest.config.mts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -30,8 +30,16 @@
     "@types/react-dom": "18.3.5",
     "babel-preset-taro": "4.2.1",
     "typescript": "5.7.3",
-    "vite": "4.5.5",
-    "vitest": "2.1.8",
-    "webpack": "5.91.0"
+    "webpack": "5.91.0",
+    "react-test-renderer": "18.3.1",
+    "@types/react-test-renderer": "18.3.1"
+  },
+  "overrides": {
+    "proxy-addr": "2.0.8",
+    "shell-quote": "1.11.0",
+    "adm-zip": "0.6.1",
+    "@tarojs/components": {
+      "swiper": "12.1.2"
+    }
   }
 }

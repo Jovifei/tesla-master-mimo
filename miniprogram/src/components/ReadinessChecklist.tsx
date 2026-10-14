@@ -10,14 +10,17 @@ type Props = {
 
 export default function ReadinessChecklist({ items = [], pairing, sessionReady = false }: Props) {
   const readiness = readinessViewFor(items, 'telemetry')
-  const linkReady = pairing?.config_synced === true
-  const pairingLabel = pairing?.status === 'available' || linkReady ? '已确认' : pairing?.status === 'pairing_required' ? '需要确认' : '待服务端确认'
+  const pairingLabel = pairing?.status === 'available' ? '服务端报告就绪' : pairing?.status === 'pairing_required' ? '需要确认' : '待服务端确认'
   return (
     <View className="card">
       <Text className="section-title">数据准备</Text>
       <View className="status">
         <Text className="status-label">微信会话</Text>
-        <Text className="status-value">{sessionReady ? '已由服务端确认' : '需要微信登录'}</Text>
+        <Text className="status-value">{sessionReady ? '本机会话可用' : '需要微信登录'}</Text>
+      </View>
+      <View className="status">
+        <Text className="status-label">持续采集配置</Text>
+        <Text className="status-value">{pairing?.config_synced == null ? '尚未确认' : pairing.config_synced ? '服务端已配置' : '尚未配置'}</Text>
       </View>
       <View className="status">
         <Text className="status-label">Tesla 授权与车辆钥匙</Text>

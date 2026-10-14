@@ -1,4 +1,5 @@
 import { Text, View } from '@tarojs/components'
+import { sourceLabel } from '../domain/data_labels'
 
 type Props = {
   label: string
@@ -11,7 +12,7 @@ export default function MetricValue({ label, value, source }: Props) {
     <View className="metric">
       <Text className="metric-label">{label}</Text>
       <Text className="metric-value">{value == null || value === '' ? '暂无数据' : value}</Text>
-      {source ? <Text className="metric-source">来源：{source}</Text> : null}
+      <Text className="metric-source">{sourceLabel(source)}</Text>
     </View>
   )
 }

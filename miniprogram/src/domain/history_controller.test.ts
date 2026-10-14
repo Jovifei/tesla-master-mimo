@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { acceptHistoryPage, emptyHistoryControllerState, type HistoryControllerState } from './history_controller'
+import { acceptHistoryDetail, acceptHistoryPage, emptyHistoryControllerState, type HistoryControllerState } from './history_controller'
 import type { Charge, Drive, HistoryPage } from '../services/types'
 
 const row = (id: number): Drive => ({
@@ -84,5 +84,26 @@ describe('history page controller', () => {
     const contradiction = acceptHistoryPage(state, page(2, [row(2)], false, 3), 2)
     expect(contradiction.accepted).toBe(false)
     expect(contradiction.errorReason).toBe('total_pages_contradiction')
+  })
+})
+
+describe('canonical history detail consumption', () => {
+  it('writes accepted detail into the list and every containing page', () => {
+    const original = row(1)
+    const state = acceptHistoryPage(emptyHistoryControllerState<Drive>(), page(1, [original], false, 1), 1).state
+    const detail = { ...original, startAddress: 'Genuine detail address' }
+    const updated = acceptHistoryDetail(state, original, detail)
+    expect(updated.items[0].startAddress).toBe('Genuine detail address')
+    expect(updated.pages[0].items[0]).toBe(updated.items[0])
+    const refreshed = acceptHistoryPage(updated, page(1, [{ ...original, startAddress: null }], false, 1), 1).state
+    expect(refreshed.items[0].startAddress).toBe('Genuine detail address')
+    expect(refreshed.pages[0].items[0]).toBe(refreshed.items[0])
+  })
+  it('rejects stale public IDs and another canonical session after an in-flight detail', () => {
+    const original = row(1)
+    const state = acceptHistoryPage(emptyHistoryControllerState<Drive>(), page(1, [original], false, 1), 1).state
+    const changed = acceptHistoryPage(state, page(1, [{ ...original, id: 'drive-new-id' }], false, 1), 1).state
+    expect(acceptHistoryDetail(changed, original, { ...original, startAddress: 'stale' })).toBe(changed)
+    expect(acceptHistoryDetail(state, original, { ...original, sessionId: 'another-session' })).toBe(state)
   })
 })

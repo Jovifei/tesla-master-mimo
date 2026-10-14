@@ -1,0 +1,11 @@
+.history-page {
+  .history-filter-row, .history-actions, .history-detail-heading { display: flex; justify-content: space-between; gap: 18px; align-items: center; }
+  .history-controls { line-height: 1.9; }
+  .history-actions { margin-top: 18px; }
+  .history-record { padding: 22px 0; border-bottom: 1px solid #eef0f3; }
+  .history-record-top { display: flex; justify-content: space-between; gap: 12px; }
+  .history-record-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+  .history-record-metrics text { display: block; }
+  .history-energy-negative { color: #168552; }
+  .history-source { display: block; font-size: 22px; color: #647568; margin-top: 6px; }
+}

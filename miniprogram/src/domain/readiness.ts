@@ -37,7 +37,7 @@ const labels: Record<ReadinessStatus, string> = {
 }
 
 const details: Record<ReadinessStatus, string> = {
-  available: '已收到服务端可用的最新观测。',
+  available: '服务端报告数据可用，请结合车辆报告时间查看。',
   collecting: '车辆已配置，等待新的真实观测。',
   waiting_vehicle: '车辆需要在线或唤醒后才能采用配置。',
   pairing_required: '请在 Tesla 官方 App 中确认车辆钥匙。',
@@ -52,7 +52,7 @@ const details: Record<ReadinessStatus, string> = {
 export function normalizeReadinessStatus(value: unknown): ReadinessStatus {
   if (typeof value !== 'string') return 'unknown'
   const normalized = value.trim().toLowerCase() as ReadinessStatus
-  return normalized in labels ? normalized : 'unknown'
+  return Object.prototype.hasOwnProperty.call(labels, normalized) ? normalized : 'unknown'
 }
 
 export function findReadinessItem(items: readonly ReadinessItem[], key: string): ReadinessItem | null {
@@ -68,7 +68,7 @@ export function toReadinessView(status: unknown, item?: ReadinessItem | null): R
   return {
     status: normalized,
     label: labels[normalized],
-    detail: item?.message || details[normalized],
+    detail: details[normalized],
     ready: normalized === 'available',
     messageKey: item?.message_key ?? null,
     action: item?.action ?? null,

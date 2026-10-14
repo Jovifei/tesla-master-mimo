@@ -9,6 +9,52 @@ concurrency:
   group: history-memory-review-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  miniprogram:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: miniprogram
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            miniprogram/package-lock.json
+            miniprogram/test-tooling/package-lock.json
+      - name: Record source and install locked tooling without lifecycle scripts
+        run: |
+          mkdir -p evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/source.txt
+          npm ci --ignore-scripts --no-fund
+          npm ci --prefix test-tooling --ignore-scripts --no-fund
+      - name: Strict types and real page regression tests
+        run: |
+          set -euo pipefail
+          npm run typecheck 2>&1 | tee evidence/typecheck.log
+          npm test -- --reporter=default --reporter=junit --outputFile.junit=evidence/tests.xml 2>&1 | tee evidence/tests.log
+      - name: Compile WeChat bundle with domain checking enabled
+        run: |
+          set -euo pipefail
+          npm run build:weapp 2>&1 | tee evidence/build.log
+          node -e "const p=require('./dist/project.config.json'); if(p.setting.urlCheck !== true) throw Error('domain check disabled')"
+      - name: Archive dependency advisories (not a zero-vulnerability claim)
+        if: always()
+        run: |
+          npm audit --json > evidence/audit.json || test -s evidence/audit.json
+          npm audit --prefix test-tooling --json > evidence/test-tooling-audit.json || test -s evidence/test-tooling-audit.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: miniprogram-source-tests-weapp
+          retention-days: 14
+          path: |
+            miniprogram/evidence/
+            miniprogram/dist/
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -137,7 +183,7 @@ jobs:
           retention-days: 14
           path: evidence/
   android:
-    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/codex/miniprogram-')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -170,7 +216,7 @@ jobs:
             android/app/build/outputs/apk/
             android/app/schemas/
   android-summary:
-    if: always() && (github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main')
+    if: always() && (github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/codex/miniprogram-'))
     needs: android
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -198,7 +244,7 @@ jobs:
           print('COUNTS',counts)
           PY
   source-audit:
-    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/codex/miniprogram-')
     strategy:
       fail-fast: false
       max-parallel: 3
