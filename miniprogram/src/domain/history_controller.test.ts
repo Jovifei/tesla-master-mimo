@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, emptyHistoryControllerState, type HistoryControllerState } from './history_controller'
+import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, emptyHistoryControllerState, reconcileHistoryCache, type HistoryControllerState } from './history_controller'
 import type { Charge, Drive, HistoryPage } from '../services/types'
 import { driveEnergyReceipt, resolveDriveEnergy } from './drive_energy'
 
@@ -25,6 +25,17 @@ function page<T extends Drive | Charge>(pageNumber: number, items: T[], hasMore:
 }
 
 describe('history page controller', () => {
+  it('reconciles cache aliases only within existing membership and keeps page metadata/cursor', () => {
+    const original = row(1)
+    const state = acceptHistoryPage(emptyHistoryControllerState<Drive>(), page(1, [original], true), 1).state
+    const next = reconcileHistoryCache(state, [{ ...original, id: 'new-public-id', startAddress: 'new cache evidence' }, row(2), { ...original, sessionId: 'conflicting-session', startAddress: 'must not graft' }])
+    expect(next.items).toHaveLength(1)
+    expect(next.items[0]).toMatchObject({ id: 'new-public-id', startAddress: 'new cache evidence' })
+    expect(next.pages[0].items[0]).toBe(next.items[0])
+    expect(next.pages[0].meta).toBe(state.pages[0].meta)
+    expect(next.page).toBe(state.page)
+    expect(reconcileHistoryCache(next, [])).toBe(next)
+  })
   it('collects no more than 500 actual interval rows and leaves a stopped snapshot explicitly partial', async () => {
     const fetchPage = async (number: number) => page(number, Array.from({ length: 20 }, (_, index) => row((number - 1) * 20 + index)), true, 30)
     const interval = await collectHistoryInterval(await fetchPage(1), fetchPage, () => true)

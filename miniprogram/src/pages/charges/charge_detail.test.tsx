@@ -52,6 +52,35 @@ async function edit(amount: string, currency: string) {
   await act(async () => { const fields = tree!.root.findAllByType('input'); fields[0].props.onInput({ detail: { value: amount } }); fields[1].props.onInput({ detail: { value: currency } }) })
 }
 const shown = () => tree!.root.findAllByType('text').map(node => node.children.join('')).join('\n')
+it.each([{ change: 'power', resumeOffline: false }, { change: 'window', resumeOffline: true }, { change: 'weak', resumeOffline: false }, { change: 'cost', resumeOffline: false }])('reconciles $change cached charge evidence and invalidates only superseded summary/samples (offline=$resumeOffline)', async ({ change, resumeOffline }) => {
+  await mount(); await detail()
+  expect(tree!.root.findByProps({ ariaLabel: '样本平均功率 5 kW' })).toBeDefined()
+  await act(async () => { platform.hide() })
+  const updated = { ...charge, charge_details: undefined,
+    ...(change === 'power' ? { charger_power: 225 } : change === 'window' ? { end_date: '2026-10-14T01:00:00Z' } : change === 'weak' ? { energy_contract: undefined, charger_power: undefined } : { cost: 42 }) }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7', name: '合成车辆' }] })
+    return response({ charges: [updated], meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  const { matelinkApi } = await import('../../services/api')
+  const { analysisApi } = await import('../../services/analysis_api')
+  const { historyCacheKey, readHistoryCache, writeHistoryCache } = await import('../../services/history_cache')
+  const { mergeHistoryByKey, historyRowKey } = await import('../../domain/history')
+  const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) }, getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }) }
+  const key = historyCacheKey('charges', 'owner', 'uid7', origin)
+  const result = await analysisApi.getHistory((await matelinkApi.getCars())[0], 'charges')
+  expect(writeHistoryCache(storage, key, mergeHistoryByKey(readHistoryCache<import('../../services/types').Charge>(storage, key), result.items, historyRowKey).items)).toBe(true)
+  if (resumeOffline) platform.request.mockRejectedValue(new Error('synthetic resume offline'))
+  await act(async () => { platform.show() }); await flush()
+  const panel = tree!.root.findByProps({ className: 'history-detail-overlay' })
+  if (change === 'power') expect(panel.findByProps({ ariaLabel: '报告功率 225 kW' })).toBeDefined()
+  if (change === 'power' || change === 'window') expect(panel.findByProps({ ariaLabel: '样本平均功率 暂无数据 kW' })).toBeDefined()
+  else {
+    expect(panel.findByProps({ ariaLabel: '样本平均功率 5 kW' })).toBeDefined()
+    expect(panel.findByProps({ ariaLabel: '电池充入 8 kWh' })).toBeDefined()
+  }
+  if (change === 'cost') expect(panel.findByProps({ ariaLabel: '费用 42 EUR' })).toBeDefined()
+})
 it('renders actual parsed charge detail in App section order, real sample extrema/zero and working five-curve entry', async () => {
   await mount(); await detail()
   const titles = tree!.root.findAllByProps({ className: 'section-title' }).map(node => node.children.join(''))

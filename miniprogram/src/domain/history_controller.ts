@@ -54,6 +54,18 @@ function canonicalHistoryPages<T extends HistoryControllerItem>(pages: HistoryPa
   return pages.map(page => ({ ...page, items: page.items.map(row => items.find(item => keyOf(item) === keyOf(row) || item.id === row.id) ?? row) }))
 }
 
+/** Reconcile current scoped cache evidence only into an existing snapshot's membership.
+ * Unlike a detail response, a newer canonical session may legitimately change its public ID.
+ */
+export function reconcileHistoryCache<T extends HistoryControllerItem>(current: HistoryControllerState<T>, cached: readonly T[],
+  keyOf: (item: T) => string = historyRowKey): HistoryControllerState<T> {
+  const incoming = cached.filter(candidate => current.items.some(item => keyOf(item) === keyOf(candidate) ||
+    (item.id === candidate.id && (!item.sessionId || !candidate.sessionId || item.sessionId === candidate.sessionId))))
+  if (!incoming.length) return current
+  const items = sortHistoryByStartDate(mergeHistoryByKey(current.items, incoming, keyOf).items)
+  return { ...current, items, pages: canonicalHistoryPages(current.pages, items, keyOf) }
+}
+
 /** Details use the current public request ID; stale IDs may never roll a canonical session backwards. */
 export function acceptHistoryDetail<T extends HistoryControllerItem>(current: HistoryControllerState<T>, requested: T, detail: T,
   keyOf: (item: T) => string = historyRowKey): HistoryControllerState<T> {

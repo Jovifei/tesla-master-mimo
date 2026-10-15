@@ -70,6 +70,108 @@ async function click(record: ReactTestRenderer, text: string) {
 /** Actual pages -> actual API adapter -> fake Taro transport -> actual controllers/scoped storage.
  * No controller, API, energy projection or React page is mocked. */
 describe('history pages consume canonical data across layers', () => {
+  it.each((['drives', 'charges'] as const).flatMap(kind => (['unchanged', 'otherRow', 'missing'] as const).map(cacheChange => ({ kind, cacheChange }))))('keeps current $kind public ID after quota failure with $cacheChange old disk evidence', async ({ kind, cacheChange }) => {
+    let phase: 'old' | 'current' | 'otherOnly' = 'old'
+    const record = (id: number, canonical = true) => kind === 'drives' ? { ...reported, drive_id: id, session_id: canonical ? 'selected-canonical' : `orphan-${id}`, energy_contract: { version: 1, net_energy: { ...reported.energy_contract.net_energy, value_kwh: 2 } } }
+      : { charge_id: id, session_id: canonical ? 'selected-canonical' : `orphan-${id}`, source: 'telemetry_mqtt', quality_state: 'observed', start_date: start, end_date: end,
+        energy_contract: { version: 1, battery_input: { value_kwh: 2, unit: 'kWh', method: 'session_counter_delta', measurement_point: 'battery_input', source: 'telemetry_mqtt', quality: 'reported', coverage_kind: 'endpoints', coverage_ratio: 1, start_date: start, end_date: end } } }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/current')) return respond({ charge: null })
+      if (url.endsWith(`/${kind}/2`)) return respond({ [kind === 'drives' ? 'drive' : 'charge']: record(2) })
+      return respond({ [kind]: [phase === 'otherOnly' ? record(99, false) : record(phase === 'old' ? 1 : 2)], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount(kind)
+    phase = 'current'; platform.failStorage = true
+    await click(page, '刷新')
+    await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+    const { historyCacheKey, readHistoryCache, writeHistoryCache } = await import('../services/history_cache')
+    const { mergeHistoryByKey, historyRowKey } = await import('../domain/history')
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) }, getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }) }
+    const key = historyCacheKey(kind, 'user-a', 'uid7', 'https://api.example.test')
+    expect(readHistoryCache<Drive | Charge>(storage, key)[0].id).toBe('1')
+    await act(async () => { platform.hide() })
+    platform.failStorage = false
+    if (cacheChange === 'missing') platform.values.delete(key)
+    if (cacheChange === 'otherRow') {
+      phase = 'otherOnly'
+      const { matelinkApi } = await import('../services/api')
+      const { analysisApi } = await import('../services/analysis_api')
+      const incoming = await analysisApi.getHistory((await matelinkApi.getCars())[0], kind)
+      expect(writeHistoryCache(storage, key, mergeHistoryByKey(readHistoryCache<Drive | Charge>(storage, key), incoming.items, historyRowKey).items)).toBe(true)
+    }
+    await act(async () => { platform.show() }); await flush()
+    expect(page.root.findByProps({ className: 'history-detail-overlay' }).findByProps({ ariaLabel: `${kind === 'drives' ? '总电耗' : '电池充入'} 2 kWh` })).toBeDefined()
+    await click(page, kind === 'drives' ? '行程曲线' : '查看SOC、功率、电压、电流、温度曲线')
+    expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: kind === 'drives' ? '/pages/analysis/index?kind=curves&id=2' : '/pages/analysis/index?kind=chargeCurves&chargeId=2' })
+    await click(page, '返回列表')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
+  })
+
+  it.each((['drives', 'charges'] as const).flatMap(kind => (['unknown', 'quarantine', 'correction', 'weak', 'aliasUnknown'] as const).map(change => ({ kind, change }))))('reconciles $kind $change cache evidence written by the curve consumer before restoring detail', async ({ kind, change }) => {
+    let changed = false
+    const raw = (id: number) => {
+      const amount = id === 1 ? changed && change === 'correction' ? 3 : 2 : 0
+      const grade = changed && id === 1 && change === 'quarantine' ? 'quarantined' : 'observed'
+      const metric = { value_kwh: changed && id === 1 && (change === 'unknown' || change === 'aliasUnknown') ? null : amount, unit: 'kWh',
+        method: kind === 'drives' ? 'api_reported_net' : 'session_counter_delta', measurement_point: kind === 'drives' ? 'reported_net' : 'battery_input', source: 'telemetry_mqtt',
+        quality: changed && id === 1 && (change === 'unknown' || change === 'aliasUnknown') ? 'unknown' : 'reported', start_date: start, end_date: end, coverage_kind: kind === 'drives' ? 'provider_report' : 'endpoints', coverage_ratio: 1 }
+      const publicId = changed && id === 1 && change === 'aliasUnknown' ? 11 : id
+      const base = kind === 'drives' ? { ...summary, drive_id: publicId, session_id: `resume-${id}`, quality_state: grade,
+        odometer_details: { odometer_distance: changed && id === 1 && change === 'correction' ? 4 : 2 }, energy_contract: { version: 1, net_energy: metric } }
+        : { charge_id: publicId, session_id: `resume-${id}`, source: 'telemetry_mqtt', quality_state: grade, start_date: start, end_date: end,
+          cost: changed && id === 1 && change === 'correction' ? 4 : 0, currency: 'EUR', energy_contract: { version: 1, battery_input: metric } }
+      return changed && id === 1 && change === 'weak' ? { ...base, energy_contract: undefined } : base
+    }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/current')) return respond({ charge: null })
+      if (url.endsWith(`/${kind}/1`)) return respond({ [kind === 'drives' ? 'drive' : 'charge']: raw(1) })
+      const page = Number(new URL(url).searchParams.get('page') || 1)
+      return respond({ [kind]: page === 1 && changed ? [raw(1), raw(99)] : [raw(page)], meta: { page, show: 20, total_pages: 3 } })
+    })
+    const page = await mount(kind)
+    await click(page, '加载更多')
+    const date = page.root.findAllByType('picker' as React.ElementType).find(node => node.props.mode === 'date')!
+    await act(async () => { date.props.onChange({ detail: { value: '2026-10-14' } }); platform.scroll({ scrollTop: 640 }) })
+    await act(async () => { page.root.findAllByProps({ className: 'history-record' })[0].props.onClick() }); await flush()
+    expect(page.root.findByProps({ className: 'history-detail-overlay' }).findByProps({ ariaLabel: `${kind === 'drives' ? '总电耗' : '电池充入'} 2 kWh` })).toBeDefined()
+    await act(async () => { page.root.findByProps({ className: 'history-detail-overlay' }).props.onScroll({ detail: { scrollTop: 180 } }); platform.hide() })
+    changed = true
+    const { matelinkApi } = await import('../services/api')
+    const { analysisApi } = await import('../services/analysis_api')
+    const { mergeHistoryByKey, historyRowKey } = await import('../domain/history')
+    const { historyCacheKey, readHistoryCache, writeHistoryCache } = await import('../services/history_cache')
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) }, getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }) }
+    const key = historyCacheKey(kind, 'user-a', 'uid7', 'https://api.example.test')
+    const vehicle = (await matelinkApi.getCars())[0]
+    const result = await analysisApi.getHistory(vehicle, kind)
+    expect(writeHistoryCache(storage, key, mergeHistoryByKey(readHistoryCache<Drive | Charge>(storage, key), result.items, historyRowKey).items)).toBe(true)
+    await act(async () => { platform.show() }); await flush()
+    if (change === 'quarantine') {
+      expect(page.root.findAllByProps({ className: 'history-detail-overlay' })).toHaveLength(0)
+      expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
+    } else {
+      const panel = page.root.findByProps({ className: 'history-detail-overlay' })
+      const amount = change === 'unknown' || change === 'aliasUnknown' ? '暂无数据' : change === 'correction' ? '3' : '2'
+      expect(panel.findByProps({ ariaLabel: `${kind === 'drives' ? '总电耗' : '电池充入'} ${amount} kWh` })).toBeDefined()
+      expect(panel.props.scrollTop).toBe(180)
+      if (change === 'aliasUnknown') {
+        await click(page, kind === 'drives' ? '行程曲线' : '查看SOC、功率、电压、电流、温度曲线')
+        expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: kind === 'drives' ? '/pages/analysis/index?kind=curves&id=11' : '/pages/analysis/index?kind=chargeCurves&chargeId=11' })
+      }
+      await click(page, '返回列表')
+      expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
+      expect(platform.pageScrollTo).toHaveBeenCalledWith({ scrollTop: 640, duration: 0 })
+    }
+    expect(page.root.findAllByType('picker' as React.ElementType).some(node => node.props.mode === 'date' && node.props.value === '2026-10-14')).toBe(true)
+    const statistics = page.root.findByProps({ className: 'card history-interval' })
+    if (kind === 'drives') expect(statistics.findByProps({ ariaLabel: `总行程数 ${change === 'quarantine' ? 2 : 3} 次` })).toBeDefined()
+    else expect(statistics.findByProps({ ariaLabel: `充电量 ${change === 'unknown' || change === 'aliasUnknown' || change === 'quarantine' ? 0 : change === 'correction' ? 3 : 2} kWh` })).toBeDefined()
+    await click(page, '加载更多')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(change === 'quarantine' ? 2 : 3)
+  })
+
   it.each(['drives', 'charges'] as const)('opens %s in a visible viewport panel and restores detail/list context after curves and return', async kind => {
     const record = (id: number) => kind === 'drives' ? { ...reported, drive_id: id, session_id: `panel-${id}` } : { charge_id: id, session_id: `panel-${id}`, source: 'teslamate_archive', quality_state: 'observed', start_date: start, end_date: end, charge_energy_added: id }
     platform.request.mockImplementation(async ({ url }: { url: string }) => {

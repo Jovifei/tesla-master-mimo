@@ -2,7 +2,7 @@ import { Button, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
-import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, type HistoryInterval } from '../../domain/history_controller'
+import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, reconcileHistoryCache, type HistoryInterval } from '../../domain/history_controller'
 import { emptyHistoryQuery, filterHistory, historyDateTime, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
 import './index.scss'
@@ -63,6 +63,7 @@ export default function DrivesPage() {
   const [meta, setMeta] = useState<HistoryPageMeta | null>(null)
   const [selected, setSelectedState] = useState<Drive | null>(null)
   const detailContext = useRef<{ user: string; origin: string; uid: string; generation: number; row: Drive } | null>(null)
+  const detailCacheBaseline = useRef<Map<string, string> | null>(null)
   const listScrollTop = useRef(0), detailScrollTop = useRef(0), pageVisible = useRef(false)
   const nativeTabBar = async (hidden: boolean) => {
     try {
@@ -74,9 +75,9 @@ export default function DrivesPage() {
     if (row) {
       const session = readAppSession(Taro)
       if (!session?.userId || !car) return Promise.resolve()
-      if (detailContext.current?.row.id !== row.id) detailScrollTop.current = 0
+      if (!detailContext.current || historyRowKey(detailContext.current.row) !== historyRowKey(row)) detailScrollTop.current = 0
       detailContext.current = { user: session.userId, origin: getApiOrigin(), uid: car.stableId, generation: getApiSessionGeneration(), row }
-    } else detailContext.current = null
+    } else { detailContext.current = null; detailCacheBaseline.current = null }
     setSelectedState(row)
     return nativeTabBar(Boolean(row))
   }
@@ -335,6 +336,17 @@ export default function DrivesPage() {
       } catch { return false }
     }
     if (!context || !sameOwner()) { void setSelected(null); await load(); return }
+    const baseline = detailCacheBaseline.current
+    const reconcileCached = () => {
+      const cached = readHistoryCache<Drive>(Taro, historyCacheKey('drives', context.user, context.uid, context.origin))
+        .filter(row => baseline !== null && baseline.get(historyRowKey(row)) !== JSON.stringify(row))
+      const replay = (initial: { pages: HistoryPage<Drive>[]; items: Drive[]; page: number }) => reconcileHistoryCache(initial, cached)
+      const state = replay({ pages: pagesRef.current, items: itemsRef.current, page: pageRef.current })
+      itemsRef.current = state.items; pagesRef.current = state.pages
+      setItems(state.items)
+      setInterval(snapshot => snapshot ? { ...snapshot, items: replay({ pages: [], items: snapshot.items, page: 0 }).items } : snapshot)
+      return state.items.find(item => historyRowKey(item) === historyRowKey(context.row) || item.id === context.row.id)
+    }
     invalidatePage()
     const epoch = lifecycleEpoch.current
     setLoading(true)
@@ -343,23 +355,36 @@ export default function DrivesPage() {
       if (epoch !== lifecycleEpoch.current || context !== detailContext.current) return
       const nextCar = nextCars.find(item => item.stableId === context.uid)
       if (!sameOwner() || !nextCar) { void setSelected(null); await load(); return }
-      const row = itemsRef.current.find(item => historyRowKey(item) === historyRowKey(context.row) && item.id === context.row.id)
-      if (!row || isHistoryQuarantined(row)) { void setSelected(null); return }
       scopeGate.current.bind({ accountId: context.user, stableVehicleId: nextCar.stableId, apiOrigin: context.origin, sessionGeneration: context.generation })
       setCars(nextCars); setCar(nextCar); verifiedCarRef.current = true; setOffline(false)
+      const row = reconcileCached()
+      if (!row || isHistoryQuarantined(row)) { void setSelected(null); return }
       void setSelected(row)
     } catch {
       if (epoch !== lifecycleEpoch.current) return
       if (!sameOwner()) { void setSelected(null); await load(); return }
       verifiedCarRef.current = false; setOffline(true)
       scopeGate.current.bind({ accountId: context.user, stableVehicleId: context.uid, apiOrigin: context.origin, sessionGeneration: context.generation })
-      void setSelected(context.row)
+      const row = reconcileCached()
+      if (!row || isHistoryQuarantined(row)) { void setSelected(null); return }
+      void setSelected(row)
       setError('在线车辆暂时无法重新验证；当前为本机已读取详情。')
     } finally { if (epoch === lifecycleEpoch.current) setLoading(false) }
   }
   useDidShow(() => { void showPage() })
-  useDidHide(() => { pageVisible.current = false; invalidatePage(); setSelectedState(null); void nativeTabBar(false) })
-  useUnload(() => { pageVisible.current = false; detailContext.current = null; invalidatePage(); void nativeTabBar(false) })
+  useDidHide(() => {
+    const context = detailContext.current
+    detailCacheBaseline.current = null
+    if (context) {
+      try {
+        const key = historyCacheKey('drives', context.user, context.uid, context.origin)
+        Taro.getStorageSync(key) // An unreadable baseline cannot prove a later cache record is newer.
+        detailCacheBaseline.current = new Map(readHistoryCache<Drive>(Taro, key).map(row => [historyRowKey(row), JSON.stringify(row)]))
+      } catch { /* Fail closed: keep current memory rather than replay an unproven disk version. */ }
+    }
+    pageVisible.current = false; invalidatePage(); setSelectedState(null); void nativeTabBar(false)
+  })
+  useUnload(() => { pageVisible.current = false; detailContext.current = null; detailCacheBaseline.current = null; invalidatePage(); void nativeTabBar(false) })
   usePageScroll(event => { if (pageVisible.current && !detailContext.current) listScrollTop.current = event.scrollTop })
 
   const selectCar = (event: { detail: { value: number | string } }) => {
