@@ -1,4 +1,8 @@
 .history-page {
+  .history-detail-overlay { z-index: 2000; background: #f5f7f9; box-sizing: border-box; }
+  .history-detail-surface { min-height: 100%; padding: 0 24px 40px; padding-bottom: calc(40px + env(safe-area-inset-bottom)); box-sizing: border-box; background: #fff; }
+  .history-detail-surface .history-detail-heading { position: sticky; top: 0; z-index: 2; background: #fff; padding: 18px 0; border-bottom: 1px solid #e9edf2; margin-bottom: 20px; }
+  .history-detail-surface .section-title { display: block; }
   .history-filter-row, .history-actions, .history-detail-heading { display: flex; justify-content: space-between; gap: 18px; align-items: center; flex-wrap: wrap; }
   .history-filter-row > picker { min-width: 0; overflow-wrap: anywhere; }
   .history-interval, .history-notice { overflow-wrap: anywhere; }

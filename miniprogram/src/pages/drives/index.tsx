@@ -1,5 +1,5 @@
-import { Button, Picker, Text, View } from '@tarojs/components'
-import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
+import { Button, Picker, ScrollView, Text, View } from '@tarojs/components'
+import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
 import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, type HistoryInterval } from '../../domain/history_controller'
@@ -61,7 +61,25 @@ export default function DrivesPage() {
   const [car, setCar] = useState<Car | null>(null)
   const [items, setItems] = useState<Drive[]>([])
   const [meta, setMeta] = useState<HistoryPageMeta | null>(null)
-  const [selected, setSelected] = useState<Drive | null>(null)
+  const [selected, setSelectedState] = useState<Drive | null>(null)
+  const detailContext = useRef<{ user: string; origin: string; uid: string; generation: number; row: Drive } | null>(null)
+  const listScrollTop = useRef(0), detailScrollTop = useRef(0), pageVisible = useRef(false)
+  const nativeTabBar = async (hidden: boolean) => {
+    try {
+      const action = hidden ? Taro.hideTabBar : Taro.showTabBar
+      if (typeof action === 'function') await action({ animation: false })
+    } catch { /* Non-tab hosts and unavailable native APIs keep the panel usable. */ }
+  }
+  const setSelected = (row: Drive | null) => {
+    if (row) {
+      const session = readAppSession(Taro)
+      if (!session?.userId || !car) return Promise.resolve()
+      if (detailContext.current?.row.id !== row.id) detailScrollTop.current = 0
+      detailContext.current = { user: session.userId, origin: getApiOrigin(), uid: car.stableId, generation: getApiSessionGeneration(), row }
+    } else detailContext.current = null
+    setSelectedState(row)
+    return nativeTabBar(Boolean(row))
+  }
   const [interval, setInterval] = useState<HistoryInterval<Drive> | null>(null)
   const [notices, setNotices] = useState<ForegroundNotice[]>([])
   const notice = notices[0] ?? null
@@ -89,7 +107,7 @@ export default function DrivesPage() {
     pageRef.current = 0
     setItems([])
     setMeta(null)
-    setSelected(null)
+    void setSelected(null)
     setInterval(null)
     setNotices([])
     setNoticeLimited(false)
@@ -129,8 +147,12 @@ export default function DrivesPage() {
     setQuery(next)
   }
   const closeDetail = () => {
+    const scrollEpoch = lifecycleEpoch.current
     try { scopeGate.current.begin('detail') } catch { /* no bound remote scope */ }
-    setSelected(null)
+    void setSelected(null).then(() => {
+      if (scrollEpoch !== lifecycleEpoch.current || !pageVisible.current || detailContext.current || typeof Taro.pageScrollTo !== 'function') return
+      try { void Taro.pageScrollTo({ scrollTop: listScrollTop.current, duration: 0 }).catch(() => {}) } catch { /* optional native scroll restoration */ }
+    })
   }
 
   const loadHistory = async (nextCar: Car, append = false) => {
@@ -302,9 +324,43 @@ export default function DrivesPage() {
     }
   }
 
-  useDidShow(() => { void load() })
-  useDidHide(invalidatePage)
-  useUnload(invalidatePage)
+  const showPage = async () => {
+    pageVisible.current = true
+    const context = detailContext.current
+    const sameOwner = () => {
+      try {
+        const session = readAppSession(Taro), stored = session?.userId ? Taro.getStorageSync(carSelectionStorageKey(session.userId)) : null
+        return Boolean(context && session?.userId === context.user && getApiOrigin() === context.origin &&
+          getApiSessionGeneration() === context.generation && (!stored || String(stored) === context.uid))
+      } catch { return false }
+    }
+    if (!context || !sameOwner()) { void setSelected(null); await load(); return }
+    invalidatePage()
+    const epoch = lifecycleEpoch.current
+    setLoading(true)
+    try {
+      const nextCars = await matelinkApi.getCars()
+      if (epoch !== lifecycleEpoch.current || context !== detailContext.current) return
+      const nextCar = nextCars.find(item => item.stableId === context.uid)
+      if (!sameOwner() || !nextCar) { void setSelected(null); await load(); return }
+      const row = itemsRef.current.find(item => historyRowKey(item) === historyRowKey(context.row) && item.id === context.row.id)
+      if (!row || isHistoryQuarantined(row)) { void setSelected(null); return }
+      scopeGate.current.bind({ accountId: context.user, stableVehicleId: nextCar.stableId, apiOrigin: context.origin, sessionGeneration: context.generation })
+      setCars(nextCars); setCar(nextCar); verifiedCarRef.current = true; setOffline(false)
+      void setSelected(row)
+    } catch {
+      if (epoch !== lifecycleEpoch.current) return
+      if (!sameOwner()) { void setSelected(null); await load(); return }
+      verifiedCarRef.current = false; setOffline(true)
+      scopeGate.current.bind({ accountId: context.user, stableVehicleId: context.uid, apiOrigin: context.origin, sessionGeneration: context.generation })
+      void setSelected(context.row)
+      setError('在线车辆暂时无法重新验证；当前为本机已读取详情。')
+    } finally { if (epoch === lifecycleEpoch.current) setLoading(false) }
+  }
+  useDidShow(() => { void showPage() })
+  useDidHide(() => { pageVisible.current = false; invalidatePage(); setSelectedState(null); void nativeTabBar(false) })
+  useUnload(() => { pageVisible.current = false; detailContext.current = null; invalidatePage(); void nativeTabBar(false) })
+  usePageScroll(event => { if (pageVisible.current && !detailContext.current) listScrollTop.current = event.scrollTop })
 
   const selectCar = (event: { detail: { value: number | string } }) => {
     const next = cars[Number(event.detail.value)]
@@ -431,7 +487,8 @@ export default function DrivesPage() {
       )}
 
       {selected && !isHistoryQuarantined(selected) ? (
-        <View className="card">
+        <ScrollView className="history-detail-overlay" scrollY scrollTop={detailScrollTop.current} onScroll={event => { detailScrollTop.current = event.detail.scrollTop }} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%' }} ariaLabel="行程详情">
+        <View className="history-detail-surface">
           <View className="history-detail-heading"><Text className="section-title">行程详情</Text><Button className="button" onClick={closeDetail}>返回列表</Button></View>
           <Button className="button-secondary" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=curves&id=${encodeURIComponent(selected.id)}` }) }}>行程曲线</Button>
           <Text className="muted">{value(selected.startAddress)} → {value(selected.endAddress)}</Text>
@@ -450,7 +507,10 @@ export default function DrivesPage() {
           <Text className="muted">覆盖：{metric(selected.energy?.coverageRatio == null ? null : selected.energy.coverageRatio * 100, '%')} · {metric(selected.energy?.coverageSeconds, '秒')}</Text>
           {selected.energy?.quality === 'unknown' ? <Text className="muted">能耗证据不足，暂无可用数值。</Text> : null}
           {selected.qualityState ? <Text className="muted">记录质量：{qualityLabel(selected.qualityState)}</Text> : null}
+          {cacheWarning ? <Text className="error">当前详情尚未保存到本机。</Text> : null}
+          {error ? <Text className="error">{error}</Text> : null}
         </View>
+        </ScrollView>
       ) : null}
       {error ? <Text className="error">{error}</Text> : null}
     </View>

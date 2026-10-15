@@ -3,12 +3,12 @@ import renderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), navigateTo: vi.fn(),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void }))
-vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Input: 'input', Image: 'image' }))
+vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Input: 'input', Image: 'image', ScrollView: 'scroll-view' }))
 vi.mock('@tarojs/taro', () => ({ default: {
   request: platform.request, getStorageSync: (key: string) => platform.values.get(key),
   setStorageSync: (key: string, value: unknown) => { platform.values.set(key, JSON.parse(JSON.stringify(value))) },
   removeStorageSync: (key: string) => { platform.values.delete(key) }, getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }), navigateTo: platform.navigateTo,
-}, useDidShow: (callback: () => void) => { platform.show = callback }, useDidHide: (callback: () => void) => { platform.hide = callback }, useUnload: (callback: () => void) => { platform.unload = callback } }))
+}, useDidShow: (callback: () => void) => { platform.show = callback }, useDidHide: (callback: () => void) => { platform.hide = callback }, useUnload: (callback: () => void) => { platform.unload = callback }, usePageScroll: () => {} }))
 let tree: ReactTestRenderer | null = null
 const start = '2026-10-14T00:00:00Z', end = '2026-10-14T00:30:00Z', origin = 'https://api.example.test'
 const metric = (value: number, point: string) => ({ value_kwh: value, unit: 'kWh', method: 'session_counter_delta', measurement_point: point, source: 'telemetry_mqtt', quality: 'reported', start_date: start, end_date: end, coverage_kind: 'endpoints', coverage_ratio: 1 })

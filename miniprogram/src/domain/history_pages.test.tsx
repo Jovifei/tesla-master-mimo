@@ -13,13 +13,15 @@ const sharedCases = (JSON.parse(readFileSync(resolve(process.cwd(), '../fixtures
 const platform = vi.hoisted(() => ({
   request: vi.fn(), values: new Map<string, unknown>(), failStorage: false,
   navigateTo: vi.fn(),
+  hideTabBar: vi.fn(), showTabBar: vi.fn(), pageScrollTo: vi.fn(), scroll: ((_event: { scrollTop: number }) => {}) as (event: { scrollTop: number }) => void,
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void,
 }))
-vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Image: 'image' }))
+vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Image: 'image', ScrollView: 'scroll-view' }))
 vi.mock('@tarojs/taro', () => ({
   default: {
     request: platform.request,
     navigateTo: platform.navigateTo,
+    hideTabBar: platform.hideTabBar, showTabBar: platform.showTabBar, pageScrollTo: platform.pageScrollTo,
     getStorageSync: (key: string) => platform.values.get(key),
     setStorageSync: (key: string, value: unknown) => { if (platform.failStorage) throw new Error('synthetic quota'); platform.values.set(key, value) },
     removeStorageSync: (key: string) => platform.values.delete(key),
@@ -28,6 +30,7 @@ vi.mock('@tarojs/taro', () => ({
   useDidShow: (callback: () => void) => { platform.show = callback },
   useDidHide: (callback: () => void) => { platform.hide = callback },
   useUnload: (callback: () => void) => { platform.unload = callback },
+  usePageScroll: (callback: (event: { scrollTop: number }) => void) => { platform.scroll = callback },
 }))
 
 let renderer: ReactTestRenderer | null = null
@@ -35,6 +38,7 @@ beforeEach(() => {
   vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test')
   platform.values.clear(); platform.failStorage = false; platform.request.mockReset()
   platform.navigateTo.mockReset()
+  platform.hideTabBar.mockReset(); platform.showTabBar.mockReset(); platform.pageScrollTo.mockReset()
   platform.values.set('matelink.wechat.session.v1', { apiOrigin: 'https://api.example.test', accessToken: 'synthetic-access', refreshToken: null, expiresAt: null, userId: 'user-a', linkRequired: false })
 })
 afterEach(async () => {
@@ -66,6 +70,66 @@ async function click(record: ReactTestRenderer, text: string) {
 /** Actual pages -> actual API adapter -> fake Taro transport -> actual controllers/scoped storage.
  * No controller, API, energy projection or React page is mocked. */
 describe('history pages consume canonical data across layers', () => {
+  it.each(['drives', 'charges'] as const)('opens %s in a visible viewport panel and restores detail/list context after curves and return', async kind => {
+    const record = (id: number) => kind === 'drives' ? { ...reported, drive_id: id, session_id: `panel-${id}` } : { charge_id: id, session_id: `panel-${id}`, source: 'teslamate_archive', quality_state: 'observed', start_date: start, end_date: end, charge_energy_added: id }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/current')) return respond({ charge: null })
+      if (url.endsWith(`/${kind}/1`)) return respond({ [kind === 'drives' ? 'drive' : 'charge']: record(1) })
+      const page = Number(new URL(url).searchParams.get('page') || 1)
+      return respond({ [kind]: [record(page)], meta: { page, show: 20, total_pages: 3 } })
+    })
+    const page = await mount(kind)
+    await click(page, '加载更多')
+    const filter = page.root.findAllByType('picker' as React.ElementType).find(node => node.props.mode === 'date')!
+    await act(async () => { filter.props.onChange({ detail: { value: '2026-10-14' } }); platform.scroll({ scrollTop: 640 }) })
+    await act(async () => { page.root.findAllByProps({ className: 'history-record' })[0].props.onClick() }); await flush()
+    const panel = page.root.findByProps({ className: 'history-detail-overlay' })
+    expect(panel.props.scrollY).toBe(true)
+    expect(panel.props.style).toMatchObject({ position: 'fixed', top: 0 })
+    expect(platform.hideTabBar).toHaveBeenCalled()
+    await act(async () => { panel.props.onScroll({ detail: { scrollTop: 180 } }); platform.hide() })
+    expect(page.root.findAllByProps({ className: 'history-detail-overlay' })).toHaveLength(0)
+    const historyCalls = platform.request.mock.calls.filter(([request]) => /\/(drives|charges)\?/.test(request.url)).length
+    await act(async () => { platform.show() }); await flush()
+    expect(page.root.findByProps({ className: 'history-detail-overlay' }).props.scrollTop).toBe(180)
+    expect(platform.request.mock.calls.filter(([request]) => /\/(drives|charges)\?/.test(request.url))).toHaveLength(historyCalls)
+    await click(page, '返回列表')
+    expect(page.root.findAllByProps({ className: 'history-detail-overlay' })).toHaveLength(0)
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
+    expect(page.root.findAllByType('picker' as React.ElementType).some(node => node.props.mode === 'date' && node.props.value === '2026-10-14')).toBe(true)
+    expect(platform.pageScrollTo).toHaveBeenCalledWith({ scrollTop: 640, duration: 0 })
+    expect(platform.showTabBar).toHaveBeenCalled()
+    await click(page, '加载更多')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(3)
+  })
+
+  it.each(['drives', 'charges'] as const)('never restores a suspended %s detail into another vehicle or a new same-account session generation', async kind => {
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/current')) return respond({ charge: null })
+      const record = kind === 'drives' ? { ...reported, start_address: url.includes('/cars/8/') ? 'New vehicle route' : 'Original vehicle route' }
+        : { charge_id: 1, source: 'teslamate_archive', start_date: start, end_date: end, address: url.includes('/cars/8/') ? 'New vehicle site' : 'Original vehicle site' }
+      if (url.endsWith(`/${kind}/1`)) return respond({ [kind === 'drives' ? 'drive' : 'charge']: record })
+      return respond({ [kind]: [record], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount(kind)
+    await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+    await act(async () => { platform.hide() })
+    const { carSelectionStorageKey } = await import('../services/types')
+    platform.values.set(carSelectionStorageKey('user-a'), 'uid8')
+    await act(async () => { platform.show() }); await flush()
+    expect(page.root.findAllByProps({ className: 'history-detail-overlay' })).toHaveLength(0)
+    expect(JSON.stringify(page.toJSON())).not.toContain('Original vehicle')
+    await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+    await act(async () => { platform.hide() })
+    const { matelinkApi } = await import('../services/api')
+    await act(async () => { await matelinkApi.logout() })
+    platform.values.set('matelink.wechat.session.v1', { apiOrigin: 'https://api.example.test', accessToken: 'new-generation-synthetic', refreshToken: null, userId: 'user-a', expiresAt: null })
+    await act(async () => { platform.show() }); await flush()
+    expect(page.root.findAllByProps({ className: 'history-detail-overlay' })).toHaveLength(0)
+  })
+
   it('keeps history readable and makes a saturated durable notice journal visible', async () => {
     platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? respond({ cars })
       : respond({ drives: [reported], meta: { page: 1, show: 20, total_pages: 1 } }))
