@@ -6,7 +6,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/matelink-archive-bridge .
 
 FROM alpine:3.21
-RUN adduser -D -H -u 10002 matelink-archive
+RUN apk add --no-cache ca-certificates tzdata && adduser -D -H -u 10002 matelink-archive
 USER matelink-archive
 COPY --from=build /out/matelink-archive-bridge /usr/local/bin/matelink-archive-bridge
 ENTRYPOINT ["/usr/local/bin/matelink-archive-bridge"]

@@ -6,7 +6,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/matelink-adapter ./cmd/adapter
 
 FROM alpine:3.21
-RUN adduser -D -H -u 10001 matelink
+RUN apk add --no-cache ca-certificates tzdata && adduser -D -H -u 10001 matelink
 USER matelink
 COPY --from=build /out/matelink-adapter /usr/local/bin/matelink-adapter
 EXPOSE 8080

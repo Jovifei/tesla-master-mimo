@@ -11,7 +11,7 @@ ARG BUILD_TIME=unknown
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.buildSHA=${BUILD_SHA} -X main.buildTime=${BUILD_TIME}" -o /out/jourvolt-api .
 
 FROM alpine:3.20
-RUN adduser -D -H -u 10001 jourvolt
+RUN apk add --no-cache ca-certificates tzdata && adduser -D -H -u 10001 jourvolt
 USER jourvolt
 COPY --from=build /out/jourvolt-api /jourvolt-api
 EXPOSE 8080

@@ -56,6 +56,33 @@ jobs:
           path: |
             miniprogram/evidence/
             miniprogram/dist/
+  production-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build canonical public-source runtime images without credentials
+        run: |
+          set -euo pipefail
+          mkdir -p image-evidence
+          git rev-parse HEAD > image-evidence/source.txt
+          docker build --label org.opencontainers.image.revision="$GITHUB_SHA" --build-arg BUILD_SHA="$GITHUB_SHA" --build-arg GOPROXY=https://proxy.golang.org,direct -t matelink-production:api-$GITHUB_SHA deploy/jourvolt-dev-mock
+          docker build --label org.opencontainers.image.revision="$GITHUB_SHA" -t matelink-production:adapter-$GITHUB_SHA deploy/teslamate-home-docker/adapter
+          docker build --label org.opencontainers.image.revision="$GITHUB_SHA" -t matelink-production:bridge-$GITHUB_SHA deploy/teslamate-home-docker/archive-bridge
+          for kind in api adapter bridge; do
+            image=matelink-production:$kind-$GITHUB_SHA
+            docker run --rm --network none --entrypoint /bin/sh "$image" -c 'test "$(id -u)" != 0 && test -s /etc/ssl/certs/ca-certificates.crt && test -f /usr/share/zoneinfo/Asia/Shanghai'
+            docker image inspect "$image" --format '{{.Id}} {{index .Config.Labels "org.opencontainers.image.revision"}}' > image-evidence/$kind-image.txt
+            docker save "$image" | gzip -1 > image-evidence/$kind-image.tar.gz
+            sha256sum image-evidence/$kind-image.tar.gz > image-evidence/$kind-image.tar.gz.sha256
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-public-runtime-images
+          path: image-evidence/
+          retention-days: 14
   upstream-pg18:
     runs-on: ubuntu-latest
     timeout-minutes: 20
