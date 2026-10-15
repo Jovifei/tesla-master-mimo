@@ -13,6 +13,29 @@ type HistoryCache<T> = {
 export const HISTORY_CACHE_MAX_ROWS = 500
 export const HISTORY_CACHE_MAX_BYTES = 800 * 1024
 export const HISTORY_CACHE_SCHEMA = 3
+
+export type HistoryCacheEvidence = { rows: number; qualified: number; quarantined: number; savedAt: string | null }
+
+/** Diagnostic-only inspection. Never enumerates, migrates, writes or returns private history rows. */
+export function inspectHistoryCache(storage: Pick<WechatStorage, 'getStorageSync'>, userId: string, stableId: string, origin: string): HistoryCacheEvidence {
+  const evidence: HistoryCacheEvidence = { rows: 0, qualified: 0, quarantined: 0, savedAt: null }
+  if (!userId.trim() || !stableId.trim() || !origin.startsWith('https://')) return evidence
+  for (const kind of ['drives', 'charges'] as const) {
+    const key = historyCacheKey(kind, userId, stableId, origin)
+    try {
+      const value = storage.getStorageSync(key) as Partial<HistoryCache<unknown>> | null
+      if (value?.schema !== HISTORY_CACHE_SCHEMA || value.scope !== key || !Array.isArray(value.items)) continue
+      const rows = value.items.slice(0, HISTORY_CACHE_MAX_ROWS).filter((item): item is Record<string, unknown> =>
+        Boolean(item && typeof item === 'object' && typeof (item as Record<string, unknown>).id === 'string' && String((item as Record<string, unknown>).id).trim()))
+      evidence.rows += rows.length
+      evidence.qualified += rows.filter(row => row.qualityState === 'observed' || row.qualityState === 'derived').length
+      evidence.quarantined += rows.filter(row => row.qualityState === 'quarantined').length
+      if (typeof value.savedAt === 'string' && Number.isFinite(Date.parse(value.savedAt)) &&
+          (!evidence.savedAt || Date.parse(value.savedAt) > Date.parse(evidence.savedAt))) evidence.savedAt = value.savedAt
+    } catch { /* An unreadable archive supplies no evidence. */ }
+  }
+  return evidence
+}
 const PREVIOUS_HISTORY_CACHE_SCHEMA = 2
 const encodeScope = (value: string) => encodeURIComponent(value).replace(/\./g, '%2E')
 

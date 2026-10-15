@@ -22,7 +22,7 @@ type teslaPartnerRegistrar struct {
 }
 
 func newTeslaPartnerRegistrar(config *teslaConfig, client *http.Client) *teslaPartnerRegistrar {
-	return &teslaPartnerRegistrar{config: config, client: client}
+	return &teslaPartnerRegistrar{config: config, client: credentialHTTPClient(client)}
 }
 
 func (r *teslaPartnerRegistrar) ensure(ctx context.Context) error {
@@ -60,7 +60,10 @@ func (r *teslaPartnerRegistrar) register(ctx context.Context) error {
 	req.Header.Set("Content-Type", "application/json")
 	response, err := r.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("tesla partner register: %w", err)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return errTeslaUnavailable
 	}
 	defer response.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
@@ -88,13 +91,22 @@ func (r *teslaPartnerRegistrar) partnerAccessToken(ctx context.Context) (string,
 	req.Header.Set("Accept", "application/json")
 	response, err := r.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("tesla partner token: %w", err)
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return "", errTeslaUnavailable
 	}
 	defer response.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	if readErr != nil || len(body) > 1<<20 {
+		return "", errTeslaUnavailable
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		logTeslaAPI("POST", r.config.TokenEndpoint, response.StatusCode, body)
-		return "", fmt.Errorf("tesla partner token: status=%d", response.StatusCode)
+		return "", teslaTokenFailure(response.StatusCode, body)
 	}
 	var payload struct {
 		AccessToken string `json:"access_token"`

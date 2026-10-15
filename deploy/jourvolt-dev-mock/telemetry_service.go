@@ -63,7 +63,7 @@ func newTelemetryService(config *telemetryConfig, database *store) *telemetrySer
 	}
 	return &telemetryService{
 		store: database, config: config, vinHashKey: telemetryVINHashKeyFromConfig(config),
-		commandProxyURL: config.CommandProxyURL, httpClient: &http.Client{Timeout: config.CommandTimeout},
+		commandProxyURL: config.CommandProxyURL, httpClient: credentialHTTPClient(&http.Client{Timeout: config.CommandTimeout}),
 	}
 }
 
@@ -981,10 +981,8 @@ func (b *telemetryResponseBody) Close() error {
 }
 
 func (s *telemetryService) commandProxyHTTPClient(requestURL string, timeout time.Duration) (*http.Client, error) {
-	client := s.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: timeout}
-	}
+	client := credentialHTTPClient(s.httpClient)
+	if s.httpClient == nil { client.Timeout = timeout }
 	parsed, err := url.Parse(requestURL)
 	if err != nil || parsed.Scheme != "https" {
 		return client, err
@@ -1092,6 +1090,7 @@ func (s *telemetryService) getFleetTelemetryConfig(ctx context.Context, userID, 
 }
 
 func telemetryCommandErrorClass(status int, body []byte) string {
+    if errors.Is(teslaTokenFailure(status,body),errTeslaConfiguration) { return "configuration_invalid" }
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
 		return "permission_required"
 	}

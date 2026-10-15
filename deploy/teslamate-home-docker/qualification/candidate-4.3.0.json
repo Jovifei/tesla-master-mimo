@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "status": "VERIFIED_OFFLINE",
+  "scope": "ISOLATED_SYNTHETIC_LOCAL_ONLY",
+  "observed_at": "2026-10-15T06:27:49.390043+00:00",
+  "components": {
+    "teslamate": {
+      "version": "4.3.0",
+      "image": "teslamate/teslamate:4.3.0@sha256:516fc9f0a14369f541b1a70ff2f65dd9b57c2e01c1f533b6d43b375445404955",
+      "platform": "linux/amd64",
+      "registry_evidence": "https://registry-1.docker.io/v2/teslamate/teslamate/manifests/4.3.0"
+    },
+    "grafana": {
+      "version": "4.3.0",
+      "image": "teslamate/grafana:4.3.0@sha256:7f5a119ad06c212c4122e12c957a6848b5718d9618826b5ce70a1ec12d84fed5",
+      "platform": "linux/amd64",
+      "registry_evidence": "https://registry-1.docker.io/v2/teslamate/grafana/manifests/4.3.0"
+    },
+    "teslamateapi": {
+      "version": "1.25.0",
+      "image": "tobiasehlert/teslamateapi:1.25.0@sha256:6f7eea55c6475c2bc4639ee582dfec01d5cf618d30b0c7444020274a4786704e",
+      "platform": "linux/amd64"
+    },
+    "postgres": {
+      "version": "18.4",
+      "image": "postgres@sha256:22c89fe0d0f507606260237fd55e51f6137f58b2d5bcf6152242b96d9fe8f9a4",
+      "platform": "linux/amd64",
+      "note": "Exact tested image reports PostgreSQL 18.4; current public 18.4-trixie tag resolves a different digest and was not substituted"
+    },
+    "bridge": {
+      "kind": "local-image",
+      "version": "0.0.0-safety20261015",
+      "image": "sha256:9c4129524ae5169df107b2c401eefbf6042fdb23bb6a7a9584aa9655eb4283b7",
+      "platform": "linux/amd64",
+      "artifact": {
+        "file": "E:/Claude_allow/Download/matelink-safety-stage-20261015/isolated-images/bridge.tar",
+        "sha256": "49d6ebf404bce9ecaa4c0cbe9923dc153a6c67215059c8ecfd6e9f59d9081e38"
+      }
+    },
+    "adapter": {
+      "kind": "local-image",
+      "version": "0.0.0-safety20261015",
+      "image": "sha256:0209b89a2749500043e67861814de7f0ef5e874de2a6e4e553ade8c682d29220",
+      "platform": "linux/amd64",
+      "artifact": {
+        "file": "E:/Claude_allow/Download/matelink-safety-stage-20261015/isolated-images/adapter.tar",
+        "sha256": "43422fcb1f0ee57418d9e67695b9c4df6fd0d555ada1179aa39cefad27d62829"
+      }
+    }
+  },
+  "evidence": {
+    "file": "local-evidence-20261015.json",
+    "sha256": "ca5df830197c6cd18f2be060e17f0db6f6443d3aa4d4fd61c0f7c90731ae1fd3"
+  },
+  "blockers": [],
+  "deployment_authorized": false,
+  "provider_verified": false,
+  "whole_history_verified": false,
+  "remaining_gates": [
+    "Production/provider/device and two-household acceptance NOT_RUN",
+    "Real authorized exported copies not supplied; no whole-history assertion",
+    "Local image artifacts are not registry-published or remotely deployable",
+    "No production upgrade, migration, restore, rollback or deployment authorized"
+  ]
+}

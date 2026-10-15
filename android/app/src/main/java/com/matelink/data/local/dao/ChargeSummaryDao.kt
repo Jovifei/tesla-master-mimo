@@ -13,6 +13,12 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ChargeSummaryDao {
+    @Query("SELECT COUNT(*) FROM charges_summary WHERE carId = :carId AND qualityState != 'quarantined'")
+    suspend fun countDiagnosticHistory(carId: Int): Int
+
+    @Query("SELECT COUNT(*) FROM charges_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND energyAdded BETWEEN 0 AND 1.0e100 AND apiEvidence IS NOT NULL AND apiEvidence != ''")
+    suspend fun countDiagnosticEnergy(carId: Int): Int
+
 
     /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
     @Transaction

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -116,24 +115,34 @@ func (m *teslaTokenManager) refresh(ctx context.Context, refreshToken string) (t
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	response, err := m.client.Do(req)
+	response, err := credentialHTTPClient(m.client).Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			return teslaRefreshResponse{}, ctx.Err()
+		}
 		return teslaRefreshResponse{}, errTeslaUnavailable
 	}
 	defer response.Body.Close()
-	switch response.StatusCode {
-	case http.StatusUnauthorized:
-		return teslaRefreshResponse{}, errTeslaReauthorization
-	case http.StatusTooManyRequests:
-		return teslaRefreshResponse{}, errTeslaRateLimited
-	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, 4096))
+		if readErr != nil {
+			if ctx.Err() != nil {
+				return teslaRefreshResponse{}, ctx.Err()
+			}
+			return teslaRefreshResponse{}, errTeslaUnavailable
+		}
+		return teslaRefreshResponse{}, teslaTokenFailure(response.StatusCode, body)
+	}
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
+	if ctx.Err() != nil {
+		return teslaRefreshResponse{}, ctx.Err()
+	}
+	if readErr != nil || len(body) > 1<<20 {
 		return teslaRefreshResponse{}, errTeslaUnavailable
 	}
 	var payload teslaRefreshResponse
-	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&payload); err != nil {
-		return teslaRefreshResponse{}, fmt.Errorf("decode Tesla refresh response: %w", err)
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return teslaRefreshResponse{}, errTeslaUnavailable
 	}
 	if payload.AccessToken == "" || payload.RefreshToken == "" || payload.ExpiresIn <= 0 {
 		return teslaRefreshResponse{}, errTeslaUnavailable

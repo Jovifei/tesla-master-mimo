@@ -20,6 +20,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
@@ -39,7 +40,8 @@ data class DataReadinessUiState(
     val telemetryErrorCode: String? = null,
     val isConfiguringTelemetry: Boolean = false,
     val isTelemetryActivationPending: Boolean = false,
-    val pairingLinkUnavailable: Boolean = false
+    val pairingLinkUnavailable: Boolean = false,
+    val diagnosticFacts: List<DiagnosticFact> = unknownDiagnosticFacts()
 )
 
 internal fun shouldAutoConfigureTelemetry(
@@ -60,7 +62,8 @@ internal fun shouldAutoConfigureTelemetry(
 class DataReadinessViewModel @Inject constructor(
     private val repository: DataReadinessDataSource,
     private val vehicleContextRepository: VehicleContextResolver,
-    private val migrationRepository: LegacyHistoryMigrationService
+    private val migrationRepository: LegacyHistoryMigrationService,
+    private val diagnosticSource: ReadinessEvidenceSource
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DataReadinessUiState())
     val uiState: StateFlow<DataReadinessUiState> = _uiState.asStateFlow()
@@ -80,16 +83,28 @@ class DataReadinessViewModel @Inject constructor(
     private var screenWasPaused = false
     private var retryTelemetryAfterExternalPairing = false
 
+    init {
+        diagnosticSource.let { source ->
+            viewModelScope.launch {
+                source.scopeChanges.drop(1).collect {
+                    ++loadGeneration
+                    ++configureGeneration
+                    loadJob?.cancel()
+                    configureJob?.cancel()
+                    stopTelemetryPolling()
+                    loadedCar = null
+                    _uiState.value = DataReadinessUiState(isLoading = false)
+                }
+            }
+        }
+    }
+
     fun setCarId(carId: Int) {
         if (loadedCarId == carId) return
         configureGeneration++
         loadedCarId = carId
         configureJob?.cancel()
-        _uiState.value = _uiState.value.copy(
-            isConfiguringTelemetry = false,
-            isTelemetryActivationPending = false,
-            pairingLinkUnavailable = false
-        )
+        _uiState.value = DataReadinessUiState()
         stopTelemetryPolling()
         load(carId)
     }
@@ -168,23 +183,28 @@ class DataReadinessViewModel @Inject constructor(
         loadJob?.cancel()
         stopTelemetryPolling()
         val generation = ++loadGeneration
-        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+        _uiState.value = _uiState.value.copy(isLoading = true, error = null,
+            data = null, diagnosticFacts = unknownDiagnosticFacts())
         loadJob = viewModelScope.launch {
+            var diagnosticSession: ReadinessEvidenceSession? = null
             try {
+                diagnosticSession = diagnosticSource.capture(carId)
+                suspend fun current(): Boolean = isCurrentLoad(generation, carId) &&
+                    diagnosticSession?.isCurrent() == true
                 val readinessRequest = async { repository.getDataReadiness(carId) }
                 val pairingRequest = async { repository.getTelemetryPairingStatus(carId) }
                 val readinessResult = readinessRequest.await()
                 val pairingResult = pairingRequest.await()
-                if (!isCurrentLoad(generation, carId)) return@launch
+                if (!current()) return@launch
 
                 val car = (repository.getCar(carId) as? ApiResult.Success)?.data
-                if (!isCurrentLoad(generation, carId)) return@launch
+                if (!current()) return@launch
                 loadedCar = car
                 val context = car?.let { vehicleContextRepository.resolve(it) }
-                if (!isCurrentLoad(generation, carId)) return@launch
+                if (!current()) return@launch
                 val currentOdometer = (repository.getCarStatus(carId) as? ApiResult.Success)
                     ?.data?.status?.odometer
-                if (!isCurrentLoad(generation, carId)) return@launch
+                if (!current()) return@launch
                 val eligibility = car?.let {
                     migrationRepository.inspect(
                         legacyCarId = carId,
@@ -193,16 +213,26 @@ class DataReadinessViewModel @Inject constructor(
                         currentObservedOdometer = currentOdometer
                     )
                 }
-                if (!isCurrentLoad(generation, carId)) return@launch
+                if (!current()) return@launch
+
+                val readiness = (readinessResult as? ApiResult.Success)?.data
+                val localEvidence = diagnosticSession?.localEvidence()
+                if (!current()) return@launch
+                val resolvedFacts = resolveReadinessDiagnostics(readiness, true,
+                    diagnosticSession?.verifies(readiness) == true, localEvidence)
 
                 val pairing = (pairingResult as? ApiResult.Success)?.data
                 val pairingErrorCode = (pairingResult as? ApiResult.Error)?.details
                     ?: if (pairingResult is ApiResult.Error) "telemetry_error" else null
+                val diagnosticFacts = if (pairing?.status == "permission_required" ||
+                    pairing?.errorClass == "permission_required" || pairingErrorCode == "permission_required")
+                    withDiagnosticPermissionBlocker(resolvedFacts) else resolvedFacts
                 val previous = _uiState.value
                 _uiState.value = when (readinessResult) {
                     is ApiResult.Success -> DataReadinessUiState(
                         isLoading = false,
                         data = readinessResult.data,
+                        diagnosticFacts = diagnosticFacts,
                         migrationEligibility = eligibility,
                         migrationTarget = context,
                         targetVehicleName = car?.displayName,
@@ -215,6 +245,7 @@ class DataReadinessViewModel @Inject constructor(
                     is ApiResult.Error -> DataReadinessUiState(
                         isLoading = false,
                         error = readinessResult.message,
+                        diagnosticFacts = diagnosticFacts,
                         migrationEligibility = eligibility,
                         migrationTarget = context,
                         targetVehicleName = car?.displayName,
@@ -242,8 +273,9 @@ class DataReadinessViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (isCurrentLoad(generation, carId)) {
-                    _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
+                if (isCurrentLoad(generation, carId) && (diagnosticSession == null || diagnosticSession?.isCurrent() == true)) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, error = "Data readiness unavailable",
+                        diagnosticFacts = unknownDiagnosticFacts())
                 }
             }
         }
@@ -266,14 +298,19 @@ class DataReadinessViewModel @Inject constructor(
                                 pairing = result.data,
                                 telemetryErrorCode = null,
                                 isTelemetryActivationPending = shouldObserveAutomaticSetup(result),
-                                pairingLinkUnavailable = false
+                                pairingLinkUnavailable = false,
+                                diagnosticFacts = if (result.data.status == "permission_required" ||
+                                    result.data.errorClass == "permission_required")
+                                    withDiagnosticPermissionBlocker(_uiState.value.diagnosticFacts) else _uiState.value.diagnosticFacts
                             )
                             if (!shouldObserveAutomaticSetup(result)) return@withTimeout
                         }
                         is ApiResult.Error -> {
                             if (!isCurrentPoll(generation, carId)) return@withTimeout
                             _uiState.value = _uiState.value.copy(
-                                telemetryErrorCode = result.details ?: "telemetry_error"
+                                telemetryErrorCode = result.details ?: "telemetry_error",
+                                diagnosticFacts = if (result.details == "permission_required")
+                                    withDiagnosticPermissionBlocker(_uiState.value.diagnosticFacts) else _uiState.value.diagnosticFacts
                             )
                         }
                     }

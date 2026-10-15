@@ -10,6 +10,10 @@ import com.matelink.data.local.entity.TpmsPressureSample
 
 @Dao
 interface TpmsPressureSampleDao {
+    /** One qualified receipt, never a full history scan into app memory. */
+    @Query("SELECT MAX(observedAt) FROM tpms_pressure_samples WHERE carId = :carId AND provenance = 'collector_received_verified' AND observedAt > 0 AND observedAt <= :now AND (pressureFl IS NOT NULL OR pressureFr IS NOT NULL OR pressureRl IS NOT NULL OR pressureRr IS NOT NULL)")
+    suspend fun latestDiagnosticReceipt(carId: Int, now: Long): Long?
+
     @Upsert
     suspend fun upsert(sample: TpmsPressureSample)
 

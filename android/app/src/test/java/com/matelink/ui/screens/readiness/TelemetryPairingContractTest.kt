@@ -188,7 +188,8 @@ class TelemetryPairingContractTest {
         val viewModel = DataReadinessViewModel(
             repository = source,
             vehicleContextRepository = NoopVehicleContextResolver,
-            migrationRepository = NoopLegacyHistoryMigrationService
+            migrationRepository = NoopLegacyHistoryMigrationService,
+            diagnosticSource = TestReadinessEvidenceSource
         )
         try {
             viewModel.setCarId(1)
@@ -300,7 +301,8 @@ class TelemetryPairingContractTest {
         val viewModel = DataReadinessViewModel(
             repository = source,
             vehicleContextRepository = NoopVehicleContextResolver,
-            migrationRepository = NoopLegacyHistoryMigrationService
+            migrationRepository = NoopLegacyHistoryMigrationService,
+            diagnosticSource = TestReadinessEvidenceSource
         )
 
         viewModel.setCarId(1)
@@ -343,7 +345,7 @@ class TelemetryPairingContractTest {
             override suspend fun getCar(carId: Int): ApiResult<CarData> = ApiResult.Error("fixture")
             override suspend fun getCarStatus(carId: Int): ApiResult<CarStatusWithUnits> = ApiResult.Error("fixture")
         }
-        val viewModel = DataReadinessViewModel(source, NoopVehicleContextResolver, NoopLegacyHistoryMigrationService)
+        val viewModel = DataReadinessViewModel(source, NoopVehicleContextResolver, NoopLegacyHistoryMigrationService, TestReadinessEvidenceSource)
         viewModel.setCarId(1)
         runCurrent()
         assertEquals(2, reads)

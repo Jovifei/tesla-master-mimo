@@ -266,7 +266,7 @@ func (p *postgresStore) Parked(ctx context.Context, carID, olderID, newerID int)
 	var chargeID int
 	var chargeStart, chargeEnd time.Time
 	var chargeEnergy sql.NullFloat64
-	chargeErr := p.db.QueryRowContext(ctx, `SELECT id,start_date,end_date,charge_energy_added FROM charges WHERE car_id=$1 AND start_date<$3 AND COALESCE(end_date,start_date)>$2 ORDER BY start_date LIMIT 1`, carID, start, end).Scan(&chargeID, &chargeStart, &chargeEnd, &chargeEnergy)
+	chargeErr := p.db.QueryRowContext(ctx, `SELECT id,start_date,end_date,charge_energy_added FROM charging_processes WHERE car_id=$1 AND start_date<$3 AND COALESCE(end_date,start_date)>$2 ORDER BY start_date LIMIT 1`, carID, start, end).Scan(&chargeID, &chargeStart, &chargeEnd, &chargeEnergy)
 	if chargeErr == nil {
 		result.LinkedCharge = &linkedCharge{
 			ChargeID:       chargeID,
@@ -355,7 +355,7 @@ func (p *postgresStore) Standby(ctx context.Context, carID int) ([]standbyWindow
 			continue
 		}
 		var linkedChargeID int
-		chargeErr := p.db.QueryRowContext(ctx, `SELECT id FROM charges WHERE car_id=$1 AND start_date<$3 AND COALESCE(end_date,start_date)>$2 ORDER BY start_date LIMIT 1`, carID, start, end).Scan(&linkedChargeID)
+		chargeErr := p.db.QueryRowContext(ctx, `SELECT id FROM charging_processes WHERE car_id=$1 AND start_date<$3 AND COALESCE(end_date,start_date)>$2 ORDER BY start_date LIMIT 1`, carID, start, end).Scan(&linkedChargeID)
 		if chargeErr == nil {
 			continue
 		}

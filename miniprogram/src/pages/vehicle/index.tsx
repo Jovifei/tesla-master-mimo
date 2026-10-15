@@ -12,6 +12,7 @@ import { readAppSession } from '../../services/session'
 import { createRequestScopeGate } from '../../domain/request_scope'
 import { readCarsCache } from '../../services/cars_cache'
 import { readVehicleCache, writeVehicleCache } from '../../services/vehicle_cache'
+import { inspectHistoryCache, type HistoryCacheEvidence } from '../../services/history_cache'
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message
@@ -42,9 +43,11 @@ export default function VehiclePage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [cached, setCached] = useState(false)
+  const [historyEvidence, setHistoryEvidence] = useState<HistoryCacheEvidence | null>(null)
   const requestVersion = useRef(0)
   const scopeGate = useRef(createRequestScopeGate())
   const pageOwner = useRef<string | null>(null)
+  const pageOrigin = useRef<string | null>(null)
   const selectedStableId = useRef<string | null>(null)
   const readSelection = (userId: string) => {
     try { return String(Taro.getStorageSync(carSelectionStorageKey(userId)) ?? '') } catch { return '' }
@@ -72,7 +75,10 @@ export default function VehiclePage() {
       setCar(null)
     }
     scopeGate.current.invalidate()
+    pageOrigin.current = null
     setStatus(null)
+    setCar(null)
+    setHistoryEvidence(null)
     setReadinessItems([])
     setPairing(null)
     setCached(false)
@@ -90,11 +96,15 @@ export default function VehiclePage() {
     setLoading(true)
     setError(null)
     let origin: string | null = null
+    const ownerIsCurrent = () => {
+      try { return version === requestVersion.current && sessionGeneration === getApiSessionGeneration() &&
+        readAppSession(Taro)?.userId === session.userId && origin === getApiOrigin() } catch { return false }
+    }
     try {
       origin = getApiOrigin()
       const nextCars = await matelinkApi.getCars()
-      const currentSession = readAppSession(Taro)
-      if (version !== requestVersion.current || sessionGeneration !== getApiSessionGeneration() || currentSession?.userId !== session.userId) return
+      if (!ownerIsCurrent()) return
+      pageOrigin.current = origin
       setCars(nextCars)
       setCached(false)
       const storedStableId = selectedStableId.current ?? readSelection(session.userId)
@@ -114,12 +124,13 @@ export default function VehiclePage() {
         sessionGeneration,
       })
       saveSelection(session.userId, selected.stableId)
+      setHistoryEvidence(inspectHistoryCache(Taro, session.userId, selected.stableId, origin))
       const [statusResult, readinessResult, pairingResult] = await Promise.allSettled([
         (async () => { const ticket = scopeGate.current.begin('status'); const value = await matelinkApi.getCarStatus(selected.id, selected); return { ticket, value } })(),
         (async () => { const ticket = scopeGate.current.begin('readiness'); const value = await matelinkApi.getReadiness(selected.id, selected); return { ticket, value } })(),
         (async () => { const ticket = scopeGate.current.begin('pairing'); const value = await matelinkApi.getTelemetryPairing(selected.id, selected); return { ticket, value } })(),
       ])
-      if (version !== requestVersion.current || sessionGeneration !== getApiSessionGeneration() || readAppSession(Taro)?.userId !== session.userId) return
+      if (!ownerIsCurrent()) return
       if (statusResult.status === 'fulfilled' && statusResult.value.ticket.isCurrent()) {
         const nextStatus = statusResult.value.value
         setStatus(nextStatus)
@@ -142,14 +153,16 @@ export default function VehiclePage() {
       const failed = [statusResult, readinessResult, pairingResult].find(item => item.status === 'rejected')
       if (failed?.status === 'rejected') setError(messageFor(failed.reason))
     } catch (reason) {
-      if (version === requestVersion.current && sessionGeneration === getApiSessionGeneration() && readAppSession(Taro)?.userId === session.userId) {
+      if (ownerIsCurrent() || (origin === null && version === requestVersion.current && sessionGeneration === getApiSessionGeneration() && readAppSession(Taro)?.userId === session.userId)) {
         setError(messageFor(reason))
         const offlineCars = origin ? readCarsCache(Taro, session.userId, origin) : []
         const stored = selectedStableId.current ?? readSelection(session.userId)
         const selected = offlineCars.find(item => item.stableId === String(stored)) ?? offlineCars[0] ?? null
+        pageOrigin.current = origin
         setCars(offlineCars)
         setCar(selected)
         setStatus(selected && origin ? readVehicleCache(Taro, session.userId, origin, selected.stableId) : null)
+        setHistoryEvidence(selected && origin ? inspectHistoryCache(Taro, session.userId, selected.stableId, origin) : null)
         setReadinessItems([])
         setPairing(null)
         setCached(true)
@@ -168,17 +181,34 @@ export default function VehiclePage() {
     const next = cars[index]
     const session = readAppSession(Taro)
     if (!next || !session?.userId) return
+    let currentOrigin: string | null = null
+    try { currentOrigin = getApiOrigin() } catch { /* invalid origin cannot own a vehicle selection */ }
+    if (pageOwner.current !== `${session.userId}:${getApiSessionGeneration()}` || !currentOrigin || pageOrigin.current !== currentOrigin) {
+      invalidatePage()
+      setCars([])
+      setCar(null)
+      setStatus(null)
+      setHistoryEvidence(null)
+      setReadinessItems([])
+      setPairing(null)
+      return
+    }
     scopeGate.current.invalidate()
     saveSelection(session.userId!, next.stableId)
     setCar(next)
     setStatus(null)
+    setHistoryEvidence(null)
     setReadinessItems([])
     setPairing(null)
     if (next.remoteVerified === false) {
       requestVersion.current += 1
       setLoading(false)
       setCached(true)
-      try { setStatus(readVehicleCache(Taro, session.userId!, getApiOrigin(), next.stableId)) }
+      try {
+        const origin = getApiOrigin()
+        setStatus(readVehicleCache(Taro, session.userId!, origin, next.stableId))
+        setHistoryEvidence(inspectHistoryCache(Taro, session.userId!, next.stableId, origin))
+      }
       catch { setStatus(null) }
       return
     }
@@ -222,7 +252,8 @@ export default function VehiclePage() {
         <Button className="button button-secondary" loading={loading} onClick={() => { void load() }}>刷新车辆</Button>
       </View>
 
-      <ReadinessChecklist items={readinessItems} pairing={pairing} sessionReady={Boolean(readAppSession(Taro))} />
+      <ReadinessChecklist items={readinessItems} pairing={pairing} sessionReady={Boolean(readAppSession(Taro))}
+        diagnostics={{ car, status, cached, onlineError: Boolean(error), history: historyEvidence }} />
 
       {cars.length > 1 ? (
         <View className="card">

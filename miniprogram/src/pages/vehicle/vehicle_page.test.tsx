@@ -1,6 +1,15 @@
 import React from 'react'
 import TestRenderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { diagnosticSteps } from '../../domain/diagnostic'
+import type { ReadinessItem, TelemetryPairing } from '../../services/types'
+
+const fixture = JSON.parse(readFileSync(resolve(process.cwd(), '../fixtures/safety-stage-v1.json'), 'utf8')) as {
+  readiness_cases: Array<{ id: string; scope: { account: string; origin: string; vehicle_uid: string }; rawStatus: Record<string, unknown> | null;
+    readiness: { items: ReadinessItem[] }; pairing: TelemetryPairing | null; expected: { receive: string; qualification: string; history: string } }>
+}
 
 const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), quota: false,
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void }))
@@ -37,6 +46,11 @@ async function mount() {
   return renderer!
 }
 const visible = () => JSON.stringify(renderer!.toJSON())
+async function diagnosticEvidence() {
+  const Checklist = (await import('../../components/ReadinessChecklist')).default
+  const props = renderer!.root.findByType(Checklist).props
+  return diagnosticSteps({ ...props.diagnostics, items: props.items, pairing: props.pairing, sessionReady: props.sessionReady })
+}
 async function choose(index: number) {
   await act(async () => { renderer!.root.findByType('picker' as React.ElementType).props.onChange({ detail: { value: index } }) })
   await flush()
@@ -47,6 +61,85 @@ function online(url: string) {
   if (url.endsWith('/data-readiness')) return respond({ items: [] })
   return respond({ status: 'available' })
 }
+
+it.each(fixture.readiness_cases)('shared synthetic $id runs through the API normalizer and actual diagnostic component', async row => {
+  vi.stubEnv('TARO_APP_API_BASE_URL', row.scope.origin)
+  platform.values.set('matelink.wechat.session.v1', session(row.scope.account))
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return respond({ cars: [{ car_id: 7, vehicle_uid: row.scope.vehicle_uid }] })
+    if (url.endsWith('/status')) return respond({ status: row.rawStatus ?? {}, observed_at: row.rawStatus?.observed_at, source: row.rawStatus?.source })
+    if (url.endsWith('/data-readiness')) return respond(row.readiness)
+    return respond(row.pairing ?? {})
+  })
+  await mount()
+  const steps = await diagnosticEvidence()
+  const byKey = Object.fromEntries(steps.map(step => [step.key, step]))
+  expect(byKey.qualification.state).toBe(row.expected.qualification)
+  expect(byKey.history.state).toBe(row.expected.history)
+  expect(byKey.receive.state).toBe(row.expected.receive)
+  if (row.id === 'old_timestamp') expect(byKey.receive.freshness).toBe('stale_or_skewed')
+  expect(visible()).toContain('订阅通知尚未接入（UNSUPPORTED）')
+  expect(visible()).toContain('小程序胎压历史尚未接入（UNSUPPORTED）')
+  expect(platform.request).toHaveBeenCalledTimes(4)
+})
+
+it('actual scoped local cache proves saved summaries independently of current quality or receipt', async () => {
+  const { writeHistoryCache, historyCacheKey } = await import('../../services/history_cache')
+  const origin = 'https://api.example.test'
+  writeHistoryCache({ setStorageSync: (key, value) => platform.values.set(key, value) }, historyCacheKey('drives', 'other-account', 'uid7', origin), [{ id: 'private', qualityState: 'observed' }])
+  platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
+  await mount()
+  expect((await diagnosticEvidence())[4].state).toBe('UNKNOWN')
+  writeHistoryCache({ setStorageSync: (key, value) => platform.values.set(key, value) }, historyCacheKey('drives', 'a', 'uid7', origin), [
+    { id: 'incomplete', qualityState: 'incomplete' }, { id: 'quarantined', qualityState: 'quarantined' },
+  ])
+  await act(async () => { platform.show() }); await flush()
+  const steps = await diagnosticEvidence()
+  expect(steps[3].state).toBe('WARNING')
+  expect(steps[4].state).toBe('PASS')
+  expect(steps[4].summary).toContain('2 条历史摘要')
+  expect(visible()).not.toContain('private')
+  await choose(1)
+  expect((await diagnosticEvidence())[4].state).toBe('UNKNOWN')
+})
+
+it('drops a delayed response after API origin changes without writing its status cache', async () => {
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/cars/7/status')
+    ? new Promise(resolve => { release = resolve }) : Promise.resolve(online(url)))
+  await mount()
+  const api = await import('../../services/api')
+  const origin = vi.spyOn(api, 'getApiOrigin').mockReturnValue('https://other.example.test')
+  await act(async () => { release(respond(report(-99))) }); await flush()
+  expect(visible()).not.toContain('-99 kW')
+  expect([...platform.values.keys()].some(key => key.startsWith('matelink.status.'))).toBe(false)
+  origin.mockRestore()
+})
+
+it('rejects late evidence across a same-account logout and new session generation', async () => {
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/cars/7/status')
+    ? new Promise(resolve => { release = resolve }) : Promise.resolve(online(url)))
+  await mount()
+  const api = await import('../../services/api')
+  await api.matelinkApi.logout()
+  platform.values.set('matelink.wechat.session.v1', session('a'))
+  await act(async () => { release(respond(report(-99))) }); await flush()
+  expect(visible()).not.toContain('-99 kW')
+  expect([...platform.values.keys()].some(key => key.startsWith('matelink.status.'))).toBe(false)
+})
+
+it('clears old account selection before a stale picker can expose another account vehicle', async () => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
+  await mount()
+  platform.values.set('matelink.wechat.session.v1', session('b'))
+  const before = platform.request.mock.calls.length
+  await choose(1)
+  expect(visible()).not.toContain('Car A')
+  expect(visible()).not.toContain('Car B')
+  expect(visible()).not.toContain('-22 kW')
+  expect(platform.request).toHaveBeenCalledTimes(before)
+})
 
 /** Real React page and API/cache layers; only the Taro platform is replaced. */
 it('renders genuine zero, false and negative power without changing their meaning', async () => {

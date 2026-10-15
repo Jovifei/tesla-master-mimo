@@ -389,7 +389,11 @@ func (p *fleetProvider) get(ctx context.Context, userID, path string, target any
 		return err
 	}
 	if response.StatusCode == http.StatusUnauthorized {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
 		response.Body.Close()
+		if errors.Is(teslaTokenFailure(response.StatusCode, body), errTeslaConfiguration) {
+			return errTeslaConfiguration
+		}
 		accessToken, err = p.tokens.accessToken(ctx, userID, accessToken)
 		if err != nil {
 			return err
@@ -406,6 +410,9 @@ func (p *fleetProvider) get(ctx context.Context, userID, path string, target any
 	}
 	switch response.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
+		if errors.Is(teslaTokenFailure(response.StatusCode, body), errTeslaConfiguration) {
+			return errTeslaConfiguration
+		}
 		if fleetResponseErrorClass(response.StatusCode, body) == "billing_blocked" {
 			logFleetAPI("GET", path, response.StatusCode, body)
 			return &fleetAPIError{class: "billing_blocked", statusCode: response.StatusCode, cause: errTeslaBillingBlocked}
@@ -463,6 +470,9 @@ func fleetResponseErrorClass(status int, body []byte) string {
 	}
 	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden:
+		if errors.Is(teslaTokenFailure(status, body), errTeslaConfiguration) {
+			return "configuration_invalid"
+		}
 		return "reauthorization"
 	case http.StatusNotFound:
 		return "vehicle_not_found"
@@ -545,8 +555,11 @@ func (p *fleetProvider) request(ctx context.Context, path, accessToken string) (
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
-	response, err := p.client.Do(req)
+	response, err := credentialHTTPClient(p.client).Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, errTeslaUnavailable
 	}
 	return response, nil

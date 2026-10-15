@@ -436,6 +436,8 @@ fun DataReadinessScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                ReadinessDiagnosticCards(uiState.diagnosticFacts)
+                Text(stringResource(R.string.diagnostic_server_capabilities), style = MaterialTheme.typography.titleMedium)
                 ReadinessOverview(uiState.data)
                 uiState.data?.let { DataReadinessRows(it) } ?: Text(
                     text = stringResource(R.string.data_readiness_load_error),

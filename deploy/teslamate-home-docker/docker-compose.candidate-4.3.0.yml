@@ -1,0 +1,21 @@
+# EXPLICIT OPT-IN, NOT QUALIFIED. Never pass this file to an existing production project.
+# !reset requires a Compose implementation supporting that tag. All placeholders
+# must be exact image@sha256 references from a passing qualification manifest.
+# No credentials, ports, volumes, or existing deployment defaults are changed here.
+services:
+  teslamate:
+    image: teslamate/teslamate:4.3.0@sha256:516fc9f0a14369f541b1a70ff2f65dd9b57c2e01c1f533b6d43b375445404955
+  grafana:
+    image: teslamate/grafana:4.3.0@sha256:7f5a119ad06c212c4122e12c957a6848b5718d9618826b5ce70a1ec12d84fed5
+  teslamateapi:
+    image: ${QUALIFIED_TESLAMATEAPI_IMAGE:?exact release digest must come from qualification manifest}
+  database:
+    image: ${QUALIFIED_POSTGRES_IMAGE:?exact release digest must come from qualification manifest}
+  matelink-adapter:
+    build: !reset null
+    image: ${QUALIFIED_ADAPTER_IMAGE:?exact local adapter digest must come from qualification manifest}
+    pull_policy: never
+  matelink-archive-bridge:
+    build: !reset null
+    image: ${QUALIFIED_ARCHIVE_BRIDGE_IMAGE:?exact local archive bridge digest must come from qualification manifest}
+    pull_policy: never

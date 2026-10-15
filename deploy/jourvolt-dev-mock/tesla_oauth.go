@@ -60,7 +60,7 @@ func newTeslaOAuth(config *teslaConfig, store *store, cipher *tokenCipher, clien
 			},
 		},
 		verifiers: verifiers,
-		client:    client,
+		client:    credentialHTTPClient(client),
 	}
 }
 

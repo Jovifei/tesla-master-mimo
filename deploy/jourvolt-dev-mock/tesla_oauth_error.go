@@ -3,13 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"golang.org/x/oauth2"
 )
-
-var teslaErrorCodePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
 func teslaAppLinkError(err error) string {
 	if err == nil {
@@ -48,7 +45,8 @@ func teslaCallbackLogError(err error) string {
 
 func sanitizeTeslaErrorCode(code string) string {
 	code = strings.TrimSpace(code)
-	if teslaErrorCodePattern.MatchString(code) {
+	switch code {
+	case "invalid_request", "invalid_client", "invalid_grant", "unauthorized_client", "unsupported_grant_type", "invalid_scope", "access_denied", "temporarily_unavailable", "server_error", "not_found", "vehicle_not_found", "rate_limited", "billing_blocked":
 		return code
 	}
 	return ""

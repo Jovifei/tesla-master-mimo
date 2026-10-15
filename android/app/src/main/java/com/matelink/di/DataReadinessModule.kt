@@ -17,6 +17,10 @@ import javax.inject.Singleton
 abstract class DataReadinessModule {
     @Binds
     @Singleton
+    abstract fun bindReadinessEvidenceSource(source: com.matelink.ui.screens.readiness.ReadOnlyReadinessDiagnostics): com.matelink.ui.screens.readiness.ReadinessEvidenceSource
+
+    @Binds
+    @Singleton
     abstract fun bindDataReadinessDataSource(repository: TeslamateRepository): DataReadinessDataSource
 
     @Binds

@@ -1057,7 +1057,7 @@ func main() {
 	if telemetrySettings != nil && teslaSettings != nil {
 		telemetrySettings.PartnerDomain = teslaSettings.PartnerDomain
 	}
-	httpClient := &http.Client{Timeout: 20 * time.Second}
+	httpClient := credentialHTTPClient(nil)
 	mock := mockProvider{}
 	dataProvider := provider(unconfiguredProvider{})
 	mode := "unconfigured"

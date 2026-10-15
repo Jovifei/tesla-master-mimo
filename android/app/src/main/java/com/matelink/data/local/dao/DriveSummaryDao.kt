@@ -18,6 +18,12 @@ import com.matelink.util.parseIsoInstant
 
 @Dao
 interface DriveSummaryDao {
+    @Query("SELECT COUNT(*) FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined'")
+    suspend fun countDiagnosticHistory(carId: Int): Int
+
+    @Query("SELECT COUNT(*) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND energyConsumed BETWEEN -1.0e100 AND 1.0e100 AND apiEvidence IS NOT NULL AND apiEvidence != '' AND energySource IN ('api', 'power_samples', 'energy_remaining_delta', 'soc_capacity_estimate')")
+    suspend fun countDiagnosticEnergy(carId: Int): Int
+
 
     /** Read newest receipt, merge its detail, and roll back if the verified scope changes. */
     @Transaction

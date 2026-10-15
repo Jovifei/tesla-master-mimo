@@ -1,0 +1,104 @@
+{
+  "scope": "ISOLATED_EXACT_STACK",
+  "evidence_class": "SYNTHETIC_LOCAL_ONLY",
+  "observed_at": "2026-10-15T06:27:49.390043+00:00",
+  "run_id": "codex-compat430-20261015",
+  "observed_components": {
+    "teslamate": {
+      "version": "4.3.0",
+      "image": "teslamate/teslamate:4.3.0@sha256:516fc9f0a14369f541b1a70ff2f65dd9b57c2e01c1f533b6d43b375445404955",
+      "platform": "linux/amd64"
+    },
+    "grafana": {
+      "version": "4.3.0",
+      "image": "teslamate/grafana:4.3.0@sha256:7f5a119ad06c212c4122e12c957a6848b5718d9618826b5ce70a1ec12d84fed5",
+      "platform": "linux/amd64"
+    },
+    "teslamateapi": {
+      "version": "1.25.0",
+      "image": "tobiasehlert/teslamateapi:1.25.0@sha256:6f7eea55c6475c2bc4639ee582dfec01d5cf618d30b0c7444020274a4786704e",
+      "platform": "linux/amd64"
+    },
+    "postgres": {
+      "version": "18.4",
+      "image": "postgres@sha256:22c89fe0d0f507606260237fd55e51f6137f58b2d5bcf6152242b96d9fe8f9a4",
+      "platform": "linux/amd64"
+    },
+    "bridge": {
+      "version": "0.0.0-safety20261015",
+      "image": "sha256:9c4129524ae5169df107b2c401eefbf6042fdb23bb6a7a9584aa9655eb4283b7",
+      "platform": "linux/amd64",
+      "kind": "local-image",
+      "artifact_sha256": "49d6ebf404bce9ecaa4c0cbe9923dc153a6c67215059c8ecfd6e9f59d9081e38"
+    },
+    "adapter": {
+      "version": "0.0.0-safety20261015",
+      "image": "sha256:0209b89a2749500043e67861814de7f0ef5e874de2a6e4e553ade8c682d29220",
+      "platform": "linux/amd64",
+      "kind": "local-image",
+      "artifact_sha256": "43422fcb1f0ee57418d9e67695b9c4df6fd0d555ada1179aa39cefad27d62829"
+    }
+  },
+  "source_bindings": {
+    "adapter": "7957fb46b3f331d1e2b12683136a51310d53aed67c6bd854bbdd32aface0dda0",
+    "bridge": "5e3dd8ab86032688a50a68d03c1cadc2cbb000ada93fb1dee98315aabc3291ec"
+  },
+  "source_binding_policy": "UTF-8 text CRLF normalized to LF; ordered POSIX relative path NUL normalized bytes NUL for .go/go.mod/go.sum/Dockerfile; includes tests",
+  "checks": {
+    "schema": "PASS",
+    "null_units_time": "PASS",
+    "pagination": "PASS",
+    "bounded_reconciliation": "PASS",
+    "restore": "PASS",
+    "grafana_sql_and_teslamate_runtime": "PASS",
+    "six_image_build_and_no_public_ports": "PASS",
+    "archive_app_receipts": "PASS"
+  },
+  "artifacts": {
+    "schema": {
+      "file": "E:\\Claude_allow\\Download\\matelink-safety-stage-20261015\\isolated-migration-attempt2.log",
+      "sha256": "937c077d29c2775401ca194fc7ced7f76d61a4957c93415a4764e552c63a2a58"
+    },
+    "null_units_time": {
+      "file": "E:\\Claude_allow\\Download\\matelink-safety-stage-20261015\\isolated-images\\adapter-runtime-pg18-api-green.log",
+      "sha256": "4aa3e0c7e8f34601f5a1a2883002b7a8ae0862bbcdf433046fb881ffd4d9b49b"
+    },
+    "pagination": {
+      "file": "E:\\Claude_allow\\Download\\matelink-safety-stage-20261015\\isolated-images\\bridge-restored-pg18-poll-receipt.log",
+      "sha256": "ab04d0406240af6c14542a10477b5f4222cc9d2dcb2b7bdb504cb7beea9cc75a"
+    },
+    "bounded_reconciliation": {
+      "file": "E:\\Claude_allow\\Download\\matelink-safety-stage-20261015\\bounded-reconciliation-evidence.json",
+      "sha256": "e335ebf6ad38622d433379ef3f6d5283c3c7168ef40f71ca9156d19ad7cde50f"
+    },
+    "restore": {
+      "file": "E:\\Claude_allow\\Download\\matelink-safety-stage-20261015\\isolated-restore-evidence.json",
+      "sha256": "1f31f304303050aae1d8685698dd33ed916a6e0e5d355f1bbbfc32ddc7fa0c34"
+    },
+    "grafana_sql_and_teslamate_runtime": {
+      "file": "E:\\Claude_allow\\Download\\matelink-safety-stage-20261015\\grafana-teslamate-runtime-probe-attempt3.log",
+      "sha256": "3e03079369f5cab8c6b350ecdba9720ee19c10c7444deaa3395c167bec75693e"
+    },
+    "six_image_build_and_no_public_ports": {
+      "file": "E:\\Claude_allow\\Download\\matelink-safety-stage-20261015\\isolated-build-and-container-evidence.json",
+      "sha256": "23d38c8689d14eb087d3d45fe20e688981bc40936b7037ebf0a1050221e0f122"
+    },
+    "archive_app_receipts": {
+      "file": "E:\\Claude_allow\\Download\\matelink-safety-stage-20261015\\isolated-images\\tls-fixture\\receipt-counts.json",
+      "sha256": "d490ae41f9d06869276f1599c27467fca1878d25c9ea7ae4c671491730154072"
+    }
+  },
+  "runtime_constraints": {
+    "network_internal": true,
+    "published_ports": false,
+    "data": "new synthetic fixture only",
+    "grafana_basic_auth": "enabled solely for synthetic fixture probe",
+    "production_services_modified": false
+  },
+  "limitations": [
+    "Production/provider/device and two-household acceptance NOT_RUN",
+    "Real authorized exported copies not supplied; no whole-history assertion",
+    "Local image artifacts are not registry-published or remotely deployable",
+    "No production upgrade, migration, restore, rollback or deployment authorized"
+  ]
+}

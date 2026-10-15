@@ -593,6 +593,12 @@ class TpmsPressureWorkerTest {
     private class RecordingTpmsPressureSampleDao : TpmsPressureSampleDao {
         val saved = mutableListOf<TpmsPressureSample>()
 
+        override suspend fun latestDiagnosticReceipt(carId: Int, now: Long): Long? = saved
+            .filter { it.carId == carId && it.observedAt in 1..now &&
+                it.provenance == com.matelink.data.local.entity.TPMS_VERIFIED_COLLECTOR &&
+                listOf(it.pressureFl, it.pressureFr, it.pressureRl, it.pressureRr).any { p -> p != null } }
+            .maxOfOrNull { it.observedAt }
+
         override suspend fun upsert(sample: TpmsPressureSample) { saved += sample }
         override suspend fun upsertAll(samples: List<TpmsPressureSample>) = Unit
         override suspend fun getAt(carId: Int, at: Long): TpmsPressureSample? =

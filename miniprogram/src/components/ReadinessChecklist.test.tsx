@@ -1,8 +1,22 @@
 import React from 'react'
-import renderer from 'react-test-renderer'
+import renderer, { act } from 'react-test-renderer'
 import { expect, it, vi } from 'vitest'
 vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view' }))
 import ReadinessChecklist from './ReadinessChecklist'
+it('renders six independent evidence steps with read-only collapsible details and explicit unsupported capabilities', () => {
+  const tree = renderer.create(<ReadinessChecklist />)
+  const visible = () => JSON.stringify(tree.toJSON())
+  expect(visible()).toContain('证据未知')
+  expect(visible()).toContain('6 · 展示与通知')
+  expect(visible()).toContain('UNSUPPORTED')
+  expect(visible()).not.toContain('Android 通知权限')
+  const detail = tree.root.findAll(node => node.type === 'view' && typeof node.props.onClick === 'function')[5]
+  act(() => detail.props.onClick())
+  expect(visible()).toContain('Android 通知权限')
+  act(() => detail.props.onClick())
+  expect(visible()).not.toContain('Android 通知权限')
+  tree.unmount()
+})
 it('keeps server configuration distinct from vehicle-key confirmation and local session evidence', () => {
   const tree = renderer.create(<ReadinessChecklist sessionReady pairing={{ status: 'pairing_required', virtual_key_url: null, config_synced: true, updated_at: null, error_class: null }} />)
   const text = JSON.stringify(tree.toJSON())

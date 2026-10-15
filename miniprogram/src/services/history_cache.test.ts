@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clearHistoryCachesForAccount, HISTORY_CACHE_MAX_BYTES, HISTORY_CACHE_MAX_ROWS, historyUtf8Bytes, HISTORY_CACHE_SCHEMA, historyCacheKey, readHistoryCache, writeHistoryCache } from './history_cache'
+import { clearHistoryCachesForAccount, HISTORY_CACHE_MAX_BYTES, HISTORY_CACHE_MAX_ROWS, historyUtf8Bytes, HISTORY_CACHE_SCHEMA, historyCacheKey, readHistoryCache, writeHistoryCache, inspectHistoryCache } from './history_cache'
 
 function storage() {
   const values = new Map<string, unknown>()
@@ -13,6 +13,23 @@ function storage() {
 }
 
 describe('history cache', () => {
+  it('diagnostics inspect only matching current cache and never migrate or write a legacy archive', () => {
+    const store = storage(), origin = 'https://api.example.test'
+    const current = historyCacheKey('drives', 'a', 'uid', origin)
+    const previous = current.replace('.v3.', '.v2.') + '.1'
+    store.setStorageSync(previous, { schema: 2, scope: previous, items: [{ id: 'legacy', qualityState: 'observed' }] })
+    expect(inspectHistoryCache(store, 'a', 'uid', origin).rows).toBe(0)
+    expect(store.values.has(current)).toBe(false)
+    writeHistoryCache(store, current, [{ id: 'real', qualityState: 'observed' }, { id: 'isolated', qualityState: 'quarantined' }, { qualityState: 'observed' }])
+    const before = JSON.stringify([...store.values])
+    expect(inspectHistoryCache(store, 'a', 'uid', origin)).toMatchObject({ rows: 2, qualified: 1, quarantined: 1 })
+    expect(inspectHistoryCache(store, 'b', 'uid', origin).rows).toBe(0)
+    expect(inspectHistoryCache(store, 'a', 'other', origin).rows).toBe(0)
+    expect(inspectHistoryCache(store, 'a', 'uid', 'https://other.example.test').rows).toBe(0)
+    expect(JSON.stringify([...store.values])).toBe(before)
+    store.setStorageSync(current, { schema: 3, scope: previous, items: [{ id: 'wrong-scope' }] })
+    expect(inspectHistoryCache(store, 'a', 'uid', origin).rows).toBe(0)
+  })
   it('cannot read another account when dotted account and vehicle components collide', () => {
     const store = storage(), origin = 'https://api.example.test'
     const owner = historyCacheKey('drives', 'a.b', 'c', origin)

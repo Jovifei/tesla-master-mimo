@@ -56,6 +56,63 @@ jobs:
           path: |
             miniprogram/evidence/
             miniprogram/dist/
+  upstream-pg18:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres@sha256:22c89fe0d0f507606260237fd55e51f6137f58b2d5bcf6152242b96d9fe8f9a4
+        env:
+          POSTGRES_USER: compat_only
+          POSTGRES_PASSWORD: isolated-only
+          POSTGRES_DB: compat430
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U compat_only -d compat430"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      MATELINK_COMPAT_DATABASE_URL: postgres://compat_only:isolated-only@127.0.0.1:5432/compat430?sslmode=disable
+      MATELINK_COMPAT_UNSUPPORTED_DATABASE_URL: postgres://compat_only:isolated-only@127.0.0.1:5432/compat430?sslmode=disable&search_path=compat_unsupported
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: deploy/jourvolt-dev-mock/go.mod
+          cache: false
+      - name: Apply actual immutable upstream migrations to disposable PostgreSQL
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          git rev-parse HEAD > evidence/upstream-source.txt
+          docker run --rm --network host --entrypoint bin/teslamate \
+            -e DATABASE_USER=compat_only -e DATABASE_PASS=isolated-only \
+            -e DATABASE_NAME=compat430 -e DATABASE_HOST=127.0.0.1 -e DATABASE_PORT=5432 \
+            -e ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= -e TZ=UTC \
+            teslamate/teslamate:4.3.0@sha256:516fc9f0a14369f541b1a70ff2f65dd9b57c2e01c1f533b6d43b375445404955 \
+            eval 'TeslaMate.Release.migrate()' 2>&1 | tee evidence/upstream-migrations.log
+          docker exec -i '${{ job.services.postgres.id }}' psql -U compat_only -d compat430 < deploy/teslamate-home-docker/qualification/fixture-v430.sql
+          docker exec -i '${{ job.services.postgres.id }}' psql -U compat_only -d compat430 < deploy/teslamate-home-docker/qualification/fixture-unsupported.sql
+      - name: Run actual adapter and bridge consumers with positive and unsupported schemas
+        run: |
+          set -euo pipefail
+          (cd deploy/teslamate-home-docker/adapter && go test ./... -count=1 -run '^TestCompatibilityRealPG18MigratedV430$' -json) 2>&1 | tee evidence/upstream-adapter-pg18.json
+          (cd deploy/teslamate-home-docker/archive-bridge && go test ./... -count=1 -run '^TestCompatibilityRealPG18MigratedV430$' -json) 2>&1 | tee evidence/upstream-bridge-pg18.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for file in ('upstream-adapter-pg18.json','upstream-bridge-pg18.json'):
+              rows=[json.loads(line) for line in Path('evidence',file).read_text().splitlines() if line.startswith('{')]
+              assert not any(row.get('Action') in ('fail','skip') for row in rows), file
+              assert any(row.get('Test')=='TestCompatibilityRealPG18MigratedV430' and row.get('Action')=='pass' for row in rows), file
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upstream-v430-pg18-consumers
+          path: evidence/upstream-*
+          retention-days: 14
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -106,6 +163,12 @@ jobs:
           go vet ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-vet.log"
           go mod verify 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-mod-verify.log"
           go build ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-build.log"
+      - name: Offline upstream qualification and bounded compatibility tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s deploy/teslamate-home-docker/qualification -p 'test_*.py' -v 2>&1 | tee evidence/upstream-qualification-tests.log
+          (cd deploy/teslamate-home-docker/adapter && go test ./... -count=1) 2>&1 | tee evidence/upstream-adapter-tests.log
+          (cd deploy/teslamate-home-docker/archive-bridge && go test ./... -count=1) 2>&1 | tee evidence/upstream-bridge-tests.log
       - name: Race regression for history and energy queries
         working-directory: deploy/jourvolt-dev-mock
         env:

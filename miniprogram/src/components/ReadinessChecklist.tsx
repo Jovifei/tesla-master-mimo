@@ -1,4 +1,6 @@
 import { Text, View } from '@tarojs/components'
+import { useState } from 'react'
+import { diagnosticSteps, type DiagnosticInput } from '../domain/diagnostic'
 import { readinessViewFor, toReadinessView } from '../domain/readiness'
 import { sourceLabel } from '../domain/data_labels'
 import type { ReadinessItem, TelemetryPairing } from '../services/types'
@@ -17,15 +19,30 @@ type Props = {
   items?: ReadinessItem[]
   pairing?: TelemetryPairing | null
   sessionReady?: boolean
+  diagnostics?: Omit<DiagnosticInput, 'items' | 'pairing' | 'sessionReady'>
 }
 
-export default function ReadinessChecklist({ items = [], pairing, sessionReady = false }: Props) {
+export default function ReadinessChecklist({ items = [], pairing, sessionReady = false, diagnostics }: Props) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const steps = diagnosticSteps({ ...diagnostics, items, pairing, sessionReady })
+  const icons: VisualIconName[] = ['account', 'vehicle', 'cloud', 'shield', 'clock', 'chart']
   const readiness = readinessViewFor(items, 'telemetry')
   const pairingLabel = pairing?.status === 'available' ? '服务端报告就绪' : pairing?.status === 'pairing_required' ? '需要确认' : '待服务端确认'
   return (
     <View className="card">
       <View className="visual-heading"><VisualIcon name="cloud" /><Text className="section-title">数据准备</Text></View>
       <Text className="muted">逐项查看服务端状态，实时可用不代表历史已保存。</Text>
+      <Text className="muted">只读诊断 · 各项证据独立，不计算整链通过率。</Text>
+      {steps.map((step, index) => <View className="readiness-item" key={step.key}>
+        <View className="status"><View className="visual-heading"><VisualIcon name={icons[index]} /><Text className="status-label">{step.label}</Text></View><Text className={`state-pill ${step.state === 'PASS' && step.freshness !== 'stale_or_skewed' ? 'state-pill-ready' : ''}`}>{step.freshness === 'stale_or_skewed' ? '已见旧报告' : step.state === 'PASS' ? '局部证据已见' : step.state === 'WAITING' ? '等待车辆' : step.state === 'WARNING' ? '待核对' : '证据未知'} · {step.state}</Text></View>
+        <Text className="muted">{step.summary}</Text>
+        <Text className="metric-source">来源：{step.source}</Text>
+        <Text className="metric-source">证据时间：{reportTime(step.time)}</Text>
+        <Text className="metric-source">建议：{step.action}</Text>
+        <View onClick={() => setExpanded(expanded === step.key ? null : step.key)}><Text className="readiness-count">{expanded === step.key ? '收起详情' : '查看详情'} · {step.label}</Text></View>
+        {expanded === step.key ? <Text className="muted">{step.detail}</Text> : null}
+      </View>)}
+      <Text className="muted">小程序胎压历史尚未接入（UNSUPPORTED）；订阅通知尚未接入（UNSUPPORTED）。</Text>
       <View className="status">
         <View className="visual-heading"><VisualIcon name="account" /><Text className="status-label">微信会话</Text></View>
         <Text className="status-value">{sessionReady ? '本机会话可用' : '需要微信登录'}</Text>

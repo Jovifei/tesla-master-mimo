@@ -1,0 +1,306 @@
+{
+  "version": 1,
+  "synthetic": true,
+  "readiness_cases": [
+    {
+      "id": "missing",
+      "scope": {
+        "account": "synthetic-a",
+        "origin": "https://fixture.example.test",
+        "vehicle_uid": "synthetic-car-a"
+      },
+      "rawStatus": null,
+      "readiness": {
+        "vehicle_uid": "synthetic-car-a",
+        "items": [],
+        "capability_version": 1
+      },
+      "pairing": null,
+      "expected": {
+        "receive": "UNKNOWN",
+        "qualification": "UNKNOWN",
+        "history": "UNKNOWN"
+      }
+    },
+    {
+      "id": "available_only",
+      "scope": {
+        "account": "synthetic-a",
+        "origin": "https://fixture.example.test",
+        "vehicle_uid": "synthetic-car-a"
+      },
+      "rawStatus": null,
+      "readiness": {
+        "vehicle_uid": "synthetic-car-a",
+        "items": [
+          {
+            "key": "live_status",
+            "status": "available",
+            "source": "fleet_api",
+            "last_observed_at": null
+          },
+          {
+            "key": "tpms",
+            "status": "available",
+            "source": "fleet_api"
+          },
+          {
+            "key": "drives",
+            "status": "collecting",
+            "source": "telemetry_mqtt"
+          }
+        ],
+        "capability_version": 1
+      },
+      "pairing": null,
+      "expected": {
+        "receive": "UNKNOWN",
+        "qualification": "UNKNOWN",
+        "history": "UNKNOWN"
+      }
+    },
+    {
+      "id": "waiting_vehicle",
+      "scope": {
+        "account": "synthetic-a",
+        "origin": "https://fixture.example.test",
+        "vehicle_uid": "synthetic-car-a"
+      },
+      "rawStatus": null,
+      "readiness": {
+        "vehicle_uid": "synthetic-car-a",
+        "items": [
+          {
+            "key": "live_status",
+            "status": "waiting_vehicle",
+            "source": "fleet_api",
+            "last_observed_at": null
+          },
+          {
+            "key": "tpms",
+            "status": "waiting_vehicle",
+            "source": "fleet_api"
+          },
+          {
+            "key": "drives",
+            "status": "collecting",
+            "source": "telemetry_mqtt"
+          }
+        ],
+        "capability_version": 1
+      },
+      "pairing": null,
+      "expected": {
+        "receive": "WAITING",
+        "qualification": "UNKNOWN",
+        "history": "UNKNOWN"
+      }
+    },
+    {
+      "id": "permission",
+      "scope": {
+        "account": "synthetic-a",
+        "origin": "https://fixture.example.test",
+        "vehicle_uid": "synthetic-car-a"
+      },
+      "rawStatus": null,
+      "readiness": {
+        "vehicle_uid": "synthetic-car-a",
+        "items": [
+          {
+            "key": "live_status",
+            "status": "permission_required",
+            "source": "fleet_api",
+            "last_observed_at": null
+          },
+          {
+            "key": "tpms",
+            "status": "permission_required",
+            "source": "fleet_api"
+          },
+          {
+            "key": "drives",
+            "status": "collecting",
+            "source": "telemetry_mqtt"
+          }
+        ],
+        "capability_version": 1
+      },
+      "pairing": null,
+      "expected": {
+        "receive": "UNKNOWN",
+        "qualification": "UNKNOWN",
+        "history": "UNKNOWN"
+      }
+    },
+    {
+      "id": "live_no_history",
+      "scope": {
+        "account": "synthetic-a",
+        "origin": "https://fixture.example.test",
+        "vehicle_uid": "synthetic-car-a"
+      },
+      "rawStatus": {
+        "observed_at": "2026-10-15T00:00:00Z",
+        "tpms_pressure_fl": 2.8,
+        "source": "fleet_api",
+        "state": "online"
+      },
+      "readiness": {
+        "vehicle_uid": "synthetic-car-a",
+        "items": [
+          {
+            "key": "live_status",
+            "status": "available",
+            "source": "fleet_api",
+            "last_observed_at": "2026-10-15T00:00:00Z"
+          },
+          {
+            "key": "tpms",
+            "status": "available",
+            "source": "fleet_api"
+          },
+          {
+            "key": "drives",
+            "status": "collecting",
+            "source": "telemetry_mqtt"
+          }
+        ],
+        "capability_version": 1
+      },
+      "pairing": null,
+      "expected": {
+        "receive": "PASS",
+        "qualification": "UNKNOWN",
+        "history": "UNKNOWN"
+      }
+    },
+    {
+      "id": "old_timestamp",
+      "scope": {
+        "account": "synthetic-a",
+        "origin": "https://fixture.example.test",
+        "vehicle_uid": "synthetic-car-a"
+      },
+      "rawStatus": {
+        "observed_at": "2026-10-10T00:00:00Z",
+        "tpms_pressure_fl": 2.8,
+        "source": "fleet_api",
+        "state": "online"
+      },
+      "readiness": {
+        "vehicle_uid": "synthetic-car-a",
+        "items": [
+          {
+            "key": "live_status",
+            "status": "available",
+            "source": "fleet_api",
+            "last_observed_at": "2026-10-10T00:00:00Z"
+          },
+          {
+            "key": "tpms",
+            "status": "available",
+            "source": "fleet_api"
+          },
+          {
+            "key": "drives",
+            "status": "collecting",
+            "source": "telemetry_mqtt"
+          }
+        ],
+        "capability_version": 1
+      },
+      "pairing": null,
+      "expected": {
+        "receive": "PASS",
+        "qualification": "UNKNOWN",
+        "history": "UNKNOWN"
+      }
+    },
+    {
+      "id": "network_cache",
+      "scope": {
+        "account": "synthetic-a",
+        "origin": "https://fixture.example.test",
+        "vehicle_uid": "synthetic-car-a"
+      },
+      "rawStatus": null,
+      "readiness": {
+        "vehicle_uid": "synthetic-car-a",
+        "items": [
+          {
+            "key": "live_status",
+            "status": "telemetry_error",
+            "source": "fleet_api",
+            "last_observed_at": null
+          },
+          {
+            "key": "tpms",
+            "status": "telemetry_error",
+            "source": "fleet_api"
+          },
+          {
+            "key": "drives",
+            "status": "collecting",
+            "source": "telemetry_mqtt"
+          }
+        ],
+        "capability_version": 1
+      },
+      "pairing": null,
+      "expected": {
+        "receive": "UNKNOWN",
+        "qualification": "UNKNOWN",
+        "history": "UNKNOWN"
+      }
+    },
+    {
+      "id": "unsupported",
+      "scope": {
+        "account": "synthetic-a",
+        "origin": "https://fixture.example.test",
+        "vehicle_uid": "synthetic-car-a"
+      },
+      "rawStatus": null,
+      "readiness": {
+        "vehicle_uid": "synthetic-car-a",
+        "items": [
+          {
+            "key": "live_status",
+            "status": "unsupported",
+            "source": "fleet_api",
+            "last_observed_at": null
+          },
+          {
+            "key": "tpms",
+            "status": "unsupported",
+            "source": "fleet_api"
+          },
+          {
+            "key": "drives",
+            "status": "collecting",
+            "source": "telemetry_mqtt"
+          }
+        ],
+        "capability_version": 1
+      },
+      "pairing": null,
+      "expected": {
+        "receive": "UNKNOWN",
+        "qualification": "UNKNOWN",
+        "history": "UNKNOWN"
+      }
+    }
+  ],
+  "history_scenarios": [
+    "duplicate",
+    "same_id_correction",
+    "null_zero_negative",
+    "unknown_units",
+    "cross_scope",
+    "crash_reopen",
+    "cancel_recover",
+    "permission_recover",
+    "window_pagination"
+  ]
+}
