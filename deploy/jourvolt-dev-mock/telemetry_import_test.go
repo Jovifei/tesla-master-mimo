@@ -584,15 +584,40 @@ func TestHistoryImportPostgresScopedAndIdempotent(t *testing.T) {
 
 var _ = context.Background
 
-func TestTelemetrySchemaRestoresCompletedLocalImportsFromQuarantine(t *testing.T) {
-	if !strings.Contains(telemetrySchema, "WHERE source='local_import' AND quality_state='quarantined'") {
-		t.Fatal("schema must restore structurally completed local imports")
+func TestTelemetrySchemaPreservesCompletedLocalImportQuarantineOnReopen(t *testing.T) {
+	database := boundedHistoryTestStore(t)
+	user, car := boundedHistoryTestTenant(t, database, "schema-local-import-guard")
+	ctx := context.Background()
+	at := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
+	type savedGrade struct {
+		publicID int
+		reason   string
 	}
-	if !strings.Contains(telemetrySchema, "ended_at IS NOT NULL AND ended_at >= started_at") {
-		t.Fatal("schema restoration must require a structurally completed interval")
+	var saved []savedGrade
+	for _, kind := range []string{"drive", "charge"} {
+		for i, reason := range []string{"legacy_import", "legacy_import_without_evidence", "legacy_completed_import_v0"} {
+			id := boundedHistoryInsertSession(t, database, user, car, kind, at.Add(time.Duration(i)*time.Hour), "local_import", "quarantined", []historyImportRoutePoint{}, "")
+			if _, err := database.pool.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET quality_reason=$1 WHERE user_id=$2 AND public_id=$3`, reason, user, id); err != nil {
+				t.Fatal(err)
+			}
+			saved = append(saved, savedGrade{publicID: id, reason: reason})
+		}
 	}
-	if strings.Contains(telemetrySchema, "quality_reason IN ('legacy_import', 'legacy_import_without_evidence')") {
-		t.Fatal("schema must not hide valid local imports merely because an older reason string differs")
+	reopened, err := openStore(ctx, os.Getenv("JOURVOLT_TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.close()
+	for _, expected := range saved {
+		var grade, reason string
+		var completed bool
+		err := reopened.pool.QueryRow(ctx, `SELECT quality_state,quality_reason,ended_at IS NOT NULL AND ended_at >= started_at FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND vehicle_id=$2 AND public_id=$3`, user, car, expected.publicID).Scan(&grade, &reason, &completed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !completed || grade != "quarantined" || reason != expected.reason {
+			t.Fatalf("startup changed completed local import: completed=%t grade=%s reason=%s want quarantined/%s", completed, grade, reason, expected.reason)
+		}
 	}
 }
 

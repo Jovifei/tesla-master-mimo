@@ -145,19 +145,8 @@ ALTER TABLE jourvolt_telemetry_pairing ADD COLUMN IF NOT EXISTS correlation_id T
 ALTER TABLE jourvolt_telemetry_sessions ALTER COLUMN public_id SET DEFAULT nextval('jourvolt_telemetry_session_public_id_seq');
 UPDATE jourvolt_telemetry_sessions SET public_id=nextval('jourvolt_telemetry_session_public_id_seq') WHERE public_id IS NULL;
 ALTER TABLE jourvolt_telemetry_sessions ALTER COLUMN public_id SET NOT NULL;
-UPDATE jourvolt_telemetry_sessions
-SET quality_state='incomplete', quality_reason='local_import_summary_only'
-WHERE source='local_import' AND quality_state='quarantined'
-  AND ended_at IS NOT NULL AND ended_at >= started_at;
-UPDATE jourvolt_telemetry_sessions
-SET quality_state='incomplete', quality_reason='local_import_summary_only'
-WHERE source='local_import' AND quality_state='incomplete'
-  AND quality_reason = 'local_import_unverified'
-  AND ended_at IS NOT NULL AND ended_at >= started_at;
-UPDATE jourvolt_telemetry_sessions
-SET quality_state='observed', quality_reason='legacy_telemetry_session'
-WHERE source='telemetry_mqtt' AND quality_state='incomplete'
-  AND (odometer_start IS NOT NULL OR odometer_end IS NOT NULL OR COALESCE(jsonb_array_length(route_json), 0)>0 OR energy_added IS NOT NULL);
+-- Startup establishes structure only. Existing record grades are immutable here;
+-- any historical reclassification needs a separately authorized migration.
 CREATE UNIQUE INDEX IF NOT EXISTS jourvolt_telemetry_sessions_completion_key_idx ON jourvolt_telemetry_sessions(completion_key) WHERE completion_key IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS jourvolt_telemetry_sessions_public_id_idx ON jourvolt_telemetry_sessions(public_id);
 `
