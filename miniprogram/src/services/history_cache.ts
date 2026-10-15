@@ -1,5 +1,6 @@
 import type { WechatStorage } from './session'
 import { historyRowKey, mergeHistoryByKey } from '../domain/history'
+import { canStoreCache } from './cache_budget'
 
 export type HistoryKind = 'drives' | 'charges'
 
@@ -67,6 +68,10 @@ function cacheProjection(value: unknown, depth = 0): unknown {
   if (!value || typeof value !== 'object') return value
   const result: Record<string, unknown> = {}
   for (const [key, item] of Object.entries(value)) {
+    // Parsed receipts retain qualified power_integral, never raw sample arrays or upstream identities/secrets.
+    const normalizedKey = key.replace(/_/g, '').toLowerCase()
+    if (['vin', 'accesstoken', 'refreshtoken', 'sessionkey', 'appsecret', 'privatekey', 'clientsecret', 'authorization',
+      'password', 'clientproof', 'linktoken', 'drivedetails'].includes(normalizedKey)) continue
     if (['positions', 'drive_positions', 'charge_details', 'chargePoints', 'route', 'rawPositions',
       'startLatitude', 'startLongitude', 'endLatitude', 'endLongitude', 'latitude', 'longitude',
       'start_latitude', 'start_longitude', 'end_latitude', 'end_longitude', 'lat', 'lon', 'lng'].includes(key)) continue
@@ -104,7 +109,7 @@ export function readHistoryCache<T>(storage: Pick<WechatStorage, 'getStorageSync
     const legacyPrefix = key.replace(`.v${HISTORY_CACHE_SCHEMA}.`, `.v${PREVIOUS_HISTORY_CACHE_SCHEMA}.`) + '.'
     const legacyItems: T[] = []
     for (const legacyKey of storageInfo.getStorageInfoSync().keys ?? []) {
-      if (!legacyKey.startsWith(legacyPrefix)) continue
+      if (!legacyKey.startsWith(legacyPrefix) || !/^\d+$/.test(legacyKey.slice(legacyPrefix.length))) continue
       const legacy = storage.getStorageSync(legacyKey) as Partial<HistoryCache<T>> | undefined
       if (!legacy || legacy.schema !== PREVIOUS_HISTORY_CACHE_SCHEMA || legacy.scope !== legacyKey || !Array.isArray(legacy.items)) continue
       legacyItems.push(...legacy.items)
@@ -121,12 +126,13 @@ export function readHistoryCache<T>(storage: Pick<WechatStorage, 'getStorageSync
   }
 }
 
-export function writeHistoryCache<T>(storage: Pick<WechatStorage, 'setStorageSync'>, key: string, items: readonly T[]): boolean {
+export function writeHistoryCache<T>(storage: Pick<WechatStorage, 'setStorageSync'> & Partial<Pick<WechatStorage, 'getStorageSync' | 'getStorageInfoSync'>>, key: string, items: readonly T[]): boolean {
   if (key.includes('.anonymous.')) return false
   try {
     const savedAt = new Date().toISOString()
     const cache: HistoryCache<T> = { schema: HISTORY_CACHE_SCHEMA, scope: key, items: boundedItems(key, items, savedAt), savedAt }
     if (historyUtf8Bytes(JSON.stringify(cache)) > HISTORY_CACHE_MAX_BYTES) return false
+    if (storage.getStorageInfoSync && !canStoreCache(storage, key, cache)) return false
     storage.setStorageSync(key, cache)
     return true
   } catch {

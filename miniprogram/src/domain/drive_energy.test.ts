@@ -18,6 +18,17 @@ const drive = (input: RawDrive, vehicle?: Car): Drive => {
 }
 
 describe('qualified per-drive energy inputs', () => {
+  it('rejects default capacity assumptions while retaining explicit capacity for unknown models', () => {
+    for (const model of [null, '', 'unknown', 'Roadster']) {
+      const vehicle = { ...car, model }
+      expect(resolveDriveEnergy(raw(), vehicle).energyKwh).toBeNull()
+      expect(resolveDriveEnergy(raw(), { ...vehicle, capacityKwh: 70, capacityBasis: 'provided_capacity' }).energyKwh).toBeCloseTo(0.7)
+    }
+    const m: EnergyMetric = { ...reported(0.6), quality: 'estimated', method: 'soc_capacity_estimate', measurement_point: 'battery_soc',
+      coverage_kind: 'endpoints', coverage_ratio: 1, capacity_kwh: 60, capacity_basis: 'default_assumption',
+      calculation_version: 1, start_soc: 80, end_soc: 79 }
+    expect(resolveDriveEnergy(raw({ energy_contract: { net_energy: m } })).energyKwh).toBeNull()
+  })
   it('keeps reported zero and signed net energy separate from missing', () => {
     for (const value of [0, -0.25, 0.5]) {
       const energy = resolveDriveEnergy(raw({ energy_contract: { version: 1, net_energy: reported(value) } }))
@@ -161,9 +172,10 @@ describe('canonical drive and charge energy merge', () => {
     expect(mergeDriveEnergyRecord(reopened, weak, reopened).energyConsumedKwh).toBe(8)
     const zero = drive(raw({ source: 'teslamate_archive', energy_consumed_net: 0 }))
     expect(mergeDriveEnergyRecord(next, zero, next).energyConsumedKwh).toBe(0)
-    const corrected = drive(raw({ source: 'teslamate_archive', energy_consumed_net: null, battery_details: { start_battery_level: 80, end_battery_level: 78 } }))
+    const providedCapacity = { ...car, capacityKwh: 60, capacityBasis: 'provided_capacity' }
+    const corrected = drive(raw({ source: 'teslamate_archive', energy_consumed_net: null, battery_details: { start_battery_level: 80, end_battery_level: 78 } }), providedCapacity)
     expect(mergeDriveEnergyRecord(next, corrected, next).energyConsumedKwh).toBeCloseTo(1.2, 12)
-    const distanceCorrection = drive(raw({ source: 'teslamate_archive', energy_consumed_net: null, odometer_details: { odometer_distance: 4 } }))
+    const distanceCorrection = drive(raw({ source: 'teslamate_archive', energy_consumed_net: null, odometer_details: { odometer_distance: 4 } }), providedCapacity)
     expect(mergeDriveEnergyRecord(next, distanceCorrection, next).efficiencyWhKm).toBeCloseTo(150, 12)
     const moved = drive(raw({ source: 'teslamate_archive', end_date: '2026-10-14T00:02:00Z', energy_consumed_net: null }))
     expect(mergeDriveEnergyRecord(next, moved, moved).energyConsumedKwh).not.toBe(8)

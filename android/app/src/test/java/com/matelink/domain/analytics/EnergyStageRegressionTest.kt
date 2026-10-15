@@ -25,7 +25,7 @@ class EnergyStageRegressionTest {
 
     @Test fun partialPowerMustNotInvalidateSocEstimatePersistence() {
         val detail = detail(true)
-        val resolved = detail.resolveDriveEnergy()
+        val resolved = detail.resolveDriveEnergy(batteryCapacityKwh = 60.0)
         assertEquals(0.6, resolved.estimate.energyKwh!!, 1e-12)
         val saved = summary().withResolvedDriveEnergy(detail, resolved)
         assertEquals(0.6, saved.energyConsumed ?: Double.NaN, 1e-12)
@@ -115,7 +115,7 @@ class EnergyStageRegressionTest {
 
     @Test fun listCardCannotBorrowAnotherSourceWindowOrVehicleEstimate() {
         val d = detail()
-        val saved = summary().withResolvedDriveEnergy(d, d.resolveDriveEnergy())
+        val saved = summary().withResolvedDriveEnergy(d, d.resolveDriveEnergy(batteryCapacityKwh = 60.0))
         val drive = saved.toAnalysisDriveData()
         val wrongSource = drive.copy(source = "other_source", energyConsumedNet = null, energyContract = null)
         assertNull(wrongSource.historyEnergy(saved.toQualifiedHistoryMetrics()).energyKwh)
@@ -127,10 +127,10 @@ class EnergyStageRegressionTest {
     }
 
     @Test fun explicitUnknownCannotFallBackToHistoricalSoc() {
-        val drive = detail().let { summary().withResolvedDriveEnergy(it, it.resolveDriveEnergy()) }.toAnalysisDriveData()
+        val drive = detail().let { summary().withResolvedDriveEnergy(it, it.resolveDriveEnergy(batteryCapacityKwh = 60.0)) }.toAnalysisDriveData()
         val unknown = drive.copy(energyConsumedNet = null, energyContract = EnergyContract(
             netEnergy = EnergyMetric(quality = "unknown", reason = "local_detail_scope_or_window_mismatch")))
         assertNull(unknown.historyEnergy(batteryCapacityKwh = 78.4).energyKwh)
-        assertNotNull(drive.copy(energyContract = null, energyConsumedNet = null).historyEnergy().energyKwh)
+        assertNotNull(drive.copy(energyContract = null, energyConsumedNet = null).historyEnergy(batteryCapacityKwh = 60.0).energyKwh)
     }
 }

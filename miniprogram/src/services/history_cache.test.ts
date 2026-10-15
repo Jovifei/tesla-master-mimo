@@ -88,6 +88,16 @@ describe('history cache', () => {
     expect(store.values.has(legacyKey)).toBe(true)
   })
 
+  it('does not guess a generation from a malformed legacy suffix', () => {
+    const store = storage(), key = historyCacheKey('drives', 'a', 'uid', 'https://api.example.test')
+    const legacyKey = key.replace('.v3.', '.v2.') + '.7.other'
+    const value = { schema: 2, scope: legacyKey, items: [{ id: 'ambiguous' }], savedAt: 'now' }
+    store.setStorageSync(legacyKey, value)
+    expect(readHistoryCache(store, key)).toEqual([])
+    expect(store.values.get(legacyKey)).toBe(value)
+    expect(store.values.has(key)).toBe(false)
+  })
+
   it('does not read or write anonymous history archives', () => {
     const store = storage()
     const key = historyCacheKey('drives', null, 'vehicle-a', 'https://api.example.test')
@@ -126,6 +136,21 @@ describe('history cache', () => {
 })
 
 describe('bounded history cache payload', () => {
+  it('removes upstream credentials, VIN and raw trajectory arrays on writes and old reads', () => {
+    const store = storage(), key = historyCacheKey('drives', 'owner', 'uid', 'https://api.example.test')
+    const item = { id: '1', source: 'telemetry_mqtt', vin: 'private-vin', access_token: 'private-token',
+      energyReceipt: { refreshToken: 'private-refresh', session_key: 'private-session',
+        drive_details: [{ date: '2026-10-14T00:00:00Z', power: 1, speed: 2 }],
+        power_integral: { energyKwh: 0, complete: true } } }
+    expect(writeHistoryCache(store, key, [item])).toBe(true)
+    const serialized = JSON.stringify(store.values.get(key))
+    expect(serialized).not.toMatch(/private-|drive_details/)
+    expect(serialized).toContain('power_integral')
+    const legacy = { schema: HISTORY_CACHE_SCHEMA, scope: key, savedAt: '2026-10-14T00:00:00Z', items: [item] }
+    store.setStorageSync(key, legacy)
+    expect(JSON.stringify(readHistoryCache(store, key))).not.toMatch(/private-|drive_details/)
+    expect(store.values.get(key)).toBe(legacy)
+  })
   it('omits precise normalized and legacy snake-case coordinates while retaining addresses and energy', () => {
     const store = storage(), key = historyCacheKey('drives', 'owner', 'uid', 'https://api.example.test')
     const record = { id: '1', startAddress: 'Genuine start address', endAddress: 'Genuine end address', energyConsumedKwh: 1.25,

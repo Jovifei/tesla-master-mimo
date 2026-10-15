@@ -3,6 +3,7 @@ const PENDING_LINK_KEY = 'matelink.wechat.link.v1'
 const PENDING_TESLA_AUTH_KEY = 'matelink.wechat.tesla-auth.v1'
 
 export type AppSession = {
+  apiOrigin?: string
   accessToken: string
   refreshToken: string | null
   expiresAt: string | null
@@ -10,10 +11,21 @@ export type AppSession = {
   linkRequired: boolean | null
 }
 
+function currentOrigin(): string | null {
+  const value = process.env.TARO_APP_API_BASE_URL?.replace(/\/$/, '')
+  return value?.startsWith('https://') ? value : null
+}
+
+function matchesOrigin(value: unknown): value is string {
+  const current = currentOrigin()
+  return current !== null && typeof value === 'string' && value === current
+}
+
 export function readAppSession(storage: Pick<WechatStorage, 'getStorageSync'>): AppSession | null {
   const value = storage.getStorageSync(SESSION_KEY) as Partial<AppSession> | undefined
-  if (!value || typeof value.accessToken !== 'string' || value.accessToken.length === 0) return null
+  if (!value || !matchesOrigin(value.apiOrigin) || typeof value.accessToken !== 'string' || value.accessToken.length === 0) return null
   return {
+    apiOrigin: value.apiOrigin,
     accessToken: value.accessToken,
     refreshToken: typeof value.refreshToken === 'string' && value.refreshToken.length > 0 ? value.refreshToken : null,
     expiresAt: typeof value.expiresAt === 'string' ? value.expiresAt : null,
@@ -40,14 +52,16 @@ export type WechatStorage = {
 }
 
 export type PendingWechatLink = {
+  apiOrigin?: string
   linkToken: string
   expiresAt: string | null
 }
 
 export function readPendingWechatLink(storage: Pick<WechatStorage, 'getStorageSync'>): PendingWechatLink | null {
   const value = storage.getStorageSync(PENDING_LINK_KEY) as Partial<PendingWechatLink> | undefined
-  if (!value || typeof value.linkToken !== 'string' || value.linkToken.trim() === '') return null
+  if (!value || !matchesOrigin(value.apiOrigin) || typeof value.linkToken !== 'string' || value.linkToken.trim() === '') return null
   return {
+    apiOrigin: value.apiOrigin,
     linkToken: value.linkToken,
     expiresAt: typeof value.expiresAt === 'string' ? value.expiresAt : null,
   }

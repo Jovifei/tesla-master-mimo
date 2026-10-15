@@ -54,6 +54,18 @@ function canonicalHistoryPages<T extends HistoryControllerItem>(pages: HistoryPa
   return pages.map(page => ({ ...page, items: page.items.map(row => items.find(item => keyOf(item) === keyOf(row) || item.id === row.id) ?? row) }))
 }
 
+/** Reconcile current scoped cache evidence only into an existing snapshot's membership.
+ * Unlike a detail response, a newer canonical session may legitimately change its public ID.
+ */
+export function reconcileHistoryCache<T extends HistoryControllerItem>(current: HistoryControllerState<T>, cached: readonly T[],
+  keyOf: (item: T) => string = historyRowKey): HistoryControllerState<T> {
+  const incoming = cached.filter(candidate => current.items.some(item => keyOf(item) === keyOf(candidate) ||
+    (item.id === candidate.id && (!item.sessionId || !candidate.sessionId || item.sessionId === candidate.sessionId))))
+  if (!incoming.length) return current
+  const items = sortHistoryByStartDate(mergeHistoryByKey(current.items, incoming, keyOf).items)
+  return { ...current, items, pages: canonicalHistoryPages(current.pages, items, keyOf) }
+}
+
 /** Details use the current public request ID; stale IDs may never roll a canonical session backwards. */
 export function acceptHistoryDetail<T extends HistoryControllerItem>(current: HistoryControllerState<T>, requested: T, detail: T,
   keyOf: (item: T) => string = historyRowKey): HistoryControllerState<T> {
@@ -61,8 +73,40 @@ export function acceptHistoryDetail<T extends HistoryControllerItem>(current: Hi
   if (!row || isHistoryQuarantined(row) || isHistoryQuarantined(requested) || row.id !== requested.id || detail.id !== requested.id ||
       (row.sessionId && detail.sessionId && row.sessionId !== detail.sessionId)) return current
   const latest = row as unknown as Record<string, unknown>, original = requested as unknown as Record<string, unknown>
-  if (['source', 'startDate', 'endDate', 'startBatteryLevel', 'endBatteryLevel', 'distanceKm'].some(key =>
-      (latest[key] ?? null) !== (original[key] ?? null))) return current
+  if (['source', 'qualityState', 'qualityReason', 'startDate', 'endDate', 'startBatteryLevel', 'endBatteryLevel', 'distanceKm',
+    'durationMinutes', 'energyConsumedKwh', 'energyAddedKwh', 'energyUsedKwh', 'cost', 'currency', 'currencyCode',
+    'speedMaxKmh', 'speedSampleCount', 'speedMetricsSource', 'speedUnit', 'energy'].some(key =>
+      JSON.stringify(latest[key] ?? null) !== JSON.stringify(original[key] ?? null))) return current
   const items = sortHistoryByStartDate(mergeHistoryByKey(current.items, [detail], keyOf).items)
   return { ...current, items, pages: canonicalHistoryPages(current.pages, items, keyOf) }
+}
+
+export type HistoryInterval<T> = { items: T[]; complete: boolean; receivedPages: number; reason: string | null }
+
+/** Separate statistics snapshot: never advances the user's list cursor or reads orphaned cache rows. */
+export async function collectHistoryInterval<T extends HistoryControllerItem>(
+  first: HistoryPage<T>, fetchPage: (page: number) => Promise<HistoryPage<T>>, isCurrent: () => boolean,
+): Promise<HistoryInterval<T> | null> {
+  let state = emptyHistoryControllerState<T>()
+  let response = first
+  for (let page = 1; page <= 25; page += 1) {
+    if (!isCurrent()) return null
+    if (response.items.length > 20) return { items: state.items, complete: false, receivedPages: state.page, reason: 'page_size_exceeded' }
+    const decision = acceptHistoryPage(state, response, page)
+    if (!decision.accepted) return { items: state.items, complete: false, receivedPages: state.page, reason: decision.errorReason }
+    state = decision.state
+    if (decision.complete) return { items: state.items, complete: true, receivedPages: page, reason: null }
+    if (page === 25 || state.items.length >= 500) return { items: state.items, complete: false, receivedPages: page, reason: 'limit' }
+    try { response = await fetchPage(page + 1) }
+    catch { return isCurrent() ? { items: state.items, complete: false, receivedPages: state.page, reason: 'request_failed' } : null }
+  }
+  return null
+}
+
+/** Enrich only rows actually in this snapshot; cached records cannot expand its coverage. */
+export function enrichHistoryInterval<T extends HistoryControllerItem>(rows: readonly T[], canonical: readonly T[]): T[] {
+  return rows.map(row => {
+    const old = canonical.find(item => historyRowKey(item) === historyRowKey(row) || item.id === row.id)
+    return old ? mergeHistoryByKey([old], [row], historyRowKey).items[0] : row
+  })
 }

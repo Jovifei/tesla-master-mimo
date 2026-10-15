@@ -35,6 +35,24 @@ describe('scoped vehicle snapshot cache', () => {
     clearVehicleCachesForAccount(s, 'a', origin)
     expect(readVehicleCache(s, 'a', origin, 'uid')).toBeNull(); expect(readVehicleCache(s, 'a.b', origin, 'uid')).not.toBeNull()
   })
+  it('preserves old literal-dot ambiguous snapshot suffixes when clearing exact encoded UID', () => {
+    const s = store(), encode = (value: string) => encodeURIComponent(value).replace(/\./g, '%2E')
+    const ambiguous = `matelink.status.v1.${encode(origin)}.a.b.uid`
+    s.data.set(ambiguous, { schema: 1, scope: ambiguous, status: sample })
+    writeVehicleCache(s, 'a', origin, 'b.uid', sample)
+    clearVehicleCachesForAccount(s, 'a', origin)
+    expect(s.data.has(ambiguous)).toBe(true)
+    expect(readVehicleCache(s, 'a', origin, 'b.uid')).toBeNull()
+  })
+  it('keeps unknown snapshot schemas and malformed keys without blocking later known cleanup', () => {
+    const s = store(), encode = (value: string) => encodeURIComponent(value).replace(/\./g, '%2E'), prefix = `matelink.status.v1.${encode(origin)}.a.`
+    s.data.set(prefix + '%ZZ', { schema: 1, scope: prefix + '%ZZ' })
+    s.data.set(prefix + 'future', { schema: 2, scope: prefix + 'future' })
+    writeVehicleCache(s, 'a', origin, 'uid', sample)
+    clearVehicleCachesForAccount(s, 'a', origin)
+    expect(s.data.has(prefix + '%ZZ')).toBe(true); expect(s.data.has(prefix + 'future')).toBe(true)
+    expect(readVehicleCache(s, 'a', origin, 'uid')).toBeNull()
+  })
   it('treats quota failure as optional and never grants numeric-ID authority', () => {
     expect(writeVehicleCache({ setStorageSync: () => { throw Error('quota') } }, 'owner', origin, 'uid', sample)).toBe(false)
     expect(readVehicleCache(store(), '', origin, 'uid')).toBeNull()

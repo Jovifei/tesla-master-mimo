@@ -31,7 +31,7 @@ it('historical persistence is independent of qualification and never confers cur
   const input = { car, sessionReady: true, history: { rows: 2, qualified: 0, quarantined: 1, savedAt: null } }
   expect(states(input)).toMatchObject({ receive: 'UNKNOWN', qualification: 'WARNING', history: 'PASS', display: 'UNKNOWN' })
   expect(states({ ...input, history: { ...input.history, qualified: 1 } }).qualification).toBe('PASS')
-  expect(diagnosticSteps(input)[4].detail).toContain('小程序胎压历史尚未接入（UNSUPPORTED）')
+  expect(diagnosticSteps(input)[4].detail).toContain('胎压仅有本机前台观测历史')
   expect(states({ history: input.history }).history).toBe('UNKNOWN')
 })
 

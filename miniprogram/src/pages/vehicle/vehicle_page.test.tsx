@@ -25,7 +25,7 @@ useUnload: (fn: () => void) => { platform.unload = fn } }))
 let renderer: ReactTestRenderer | null = null
 const cars = [{ car_id: 7, vehicle_uid: 'uid7', name: 'Car A' }, { car_id: 8, vehicle_uid: 'uid8', name: 'Car B' }]
 const respond = (data: unknown) => ({ statusCode: 200, data: { data }, header: {} })
-const session = (userId: string) => ({ accessToken: `fixture-${userId}`, refreshToken: null, expiresAt: null, userId, linkRequired: false })
+const session = (userId: string) => ({ apiOrigin: process.env.TARO_APP_API_BASE_URL, accessToken: `fixture-${userId}`, refreshToken: null, expiresAt: null, userId, linkRequired: false })
 const report = (power: number) => ({ status: { state: 'online', battery_details: { battery_level: 0, rated_battery_range: 0 },
   odometer: 0, car_geodata: { latitude: 0, longitude: 0 }, car_status: { locked: false },
   climate_details: { is_climate_on: false }, driving_details: { speed: 0, power }, charging_details: { charger_power: 0 } } })
@@ -39,10 +39,14 @@ afterEach(async () => {
   vi.unstubAllEnvs()
 })
 async function flush() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) }) }
-async function mount() {
+async function mount(openDiagnostics = true) {
   const Page = (await import('./index')).default
   await act(async () => { renderer = TestRenderer.create(React.createElement(Page)) })
   await act(async () => { platform.show() }); await flush()
+  if (openDiagnostics) {
+    const button = renderer!.root.findAllByType('button').find(node => node.children.join('') === '查看数据状态')
+    if (button) await act(async () => { button.props.onClick() })
+  }
   return renderer!
 }
 const visible = () => JSON.stringify(renderer!.toJSON())
@@ -79,7 +83,7 @@ it.each(fixture.readiness_cases)('shared synthetic $id runs through the API norm
   expect(byKey.receive.state).toBe(row.expected.receive)
   if (row.id === 'old_timestamp') expect(byKey.receive.freshness).toBe('stale_or_skewed')
   expect(visible()).toContain('订阅通知尚未接入（UNSUPPORTED）')
-  expect(visible()).toContain('小程序胎压历史尚未接入（UNSUPPORTED）')
+  expect(visible()).toContain('胎压为有界本机前台观测历史')
   expect(platform.request).toHaveBeenCalledTimes(4)
 })
 

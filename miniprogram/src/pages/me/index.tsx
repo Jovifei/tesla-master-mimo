@@ -240,12 +240,36 @@ export default function MePage() {
   useUnload(invalidatePage)
 
   return (
-    <View className="page">
+    <View className="page more-page">
+      <View className="app-toolbar"><Text className="title">更多</Text></View>
+      <View className="card more-status">
+        <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">数据状态</Text></View>
+        <Text className="muted">连接成功后可查看实时车辆数据；统计分析页面需要积累足够的历史记录后才会完整。</Text>
+        <Button className="toolbar-button" onClick={() => Taro.switchTab({ url: '/pages/vehicle/index' })}>查看车辆与数据状态</Button>
+      </View>
+      <Text className="more-section-heading">数据分析</Text>
+      <View className="more-grid">{[
+        { label: '统计分析', icon: 'chart' as const, route: '/pages/analysis/index?kind=stats', detail: '区间数据' },
+        { label: '电池健康', icon: 'battery' as const, route: '/pages/insights/index?kind=battery' },
+        { label: '里程统计', icon: 'distance' as const, route: '/pages/analysis/index?kind=mileage' },
+        { label: '行程记录', icon: 'clock' as const, route: '/pages/drives/index' },
+        { label: '长途行程', icon: 'route' as const, route: '/pages/insights/index?kind=longTrips' },
+        { label: '能耗分析', icon: 'chart' as const, route: '/pages/analysis/index?kind=efficiency' },
+        { label: '费用分析', icon: 'energy' as const, route: '/pages/insights/index?kind=cost' },
+        { label: '续航分析', icon: 'route' as const, route: '/pages/insights/index?kind=range' },
+        { label: '待机耗电', icon: 'energy' as const, route: '/pages/analysis/index?kind=vampire' },
+        { label: '时间轴', icon: 'clock' as const, route: '/pages/analysis/index?kind=timeline' },
+      ].map(item => <Button className="more-action" key={item.label} onClick={() => item.route === '/pages/drives/index' ? Taro.switchTab({ url: item.route }) : Taro.navigateTo({ url: item.route })}>
+        <VisualIcon name={item.icon} /><View className="more-action-copy"><Text>{item.label}</Text><Text className="metric-source">{item.detail || '查看数据'}</Text></View>
+      </Button>)}</View>
+      <Text className="more-section-heading">报告与导出</Text>
+      <View className="more-grid">{[{ label: '年度报告', kind: 'report' }, { label: '数据导出', kind: 'export' }].map(item => <Button className="more-action" key={item.kind} onClick={() => Taro.navigateTo({ url: `/pages/tools/index?kind=${item.kind}` })}><VisualIcon name="chart" /><View className="more-action-copy"><Text>{item.label}</Text></View></Button>)}</View>
+      <Text className="more-section-heading">系统</Text>
+      <View className="more-system">{[{ label: '软件更新', kind: 'updates' }, { label: '哨兵历史', kind: 'sentry' }, { label: '设置', kind: 'settings' }, { label: '关于', kind: 'about' }].map(item => <Button className="more-action" key={item.kind} onClick={() => Taro.navigateTo({ url: `/pages/tools/index?kind=${item.kind}` })}><Text>{item.label}</Text><Text>›</Text></Button>)}</View>
       <View className="card account-hero">
         <View className="account-heading">
           <View>
-            <Text className="eyebrow">ACCOUNT & PRIVACY</Text>
-            <View className="visual-heading"><VisualIcon name="account" /><Text className="title">我的</Text></View>
+            <View className="visual-heading"><VisualIcon name="account" /><Text className="section-title">账号与授权</Text></View>
           </View>
           <Text className={`state-pill ${session ? 'state-pill-ready' : ''}`}>{session ? '会话已建立' : '尚未登录'}</Text>
         </View>

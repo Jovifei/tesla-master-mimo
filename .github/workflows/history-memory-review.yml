@@ -39,6 +39,8 @@ jobs:
           npm run typecheck 2>&1 | tee evidence/typecheck.log
           npm test -- --reporter=default --reporter=junit --outputFile.junit=evidence/tests.xml 2>&1 | tee evidence/tests.log
       - name: Compile WeChat bundle with domain checking enabled
+        env:
+          TARO_APP_API_BASE_URL: https://api.teslalink.joviluma.com
         run: |
           set -euo pipefail
           npm run build:weapp 2>&1 | tee evidence/build.log

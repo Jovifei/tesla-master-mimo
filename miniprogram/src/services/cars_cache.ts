@@ -1,5 +1,6 @@
 import type { Car } from './types'
 import type { WechatStorage } from './session'
+import { canStoreCache } from './cache_budget'
 
 const prefix = 'matelink.cars.v1.'
 const MAX_CARS = 100
@@ -32,13 +33,14 @@ export function readCarsCache(storage: Pick<WechatStorage, 'getStorageSync'>, us
     return new Set(cars.map(car => car.stableId)).size === cars.length ? cars : []
   } catch { return [] }
 }
-export function writeCarsCache(storage: Pick<WechatStorage, 'setStorageSync'>, userId: string, origin: string, cars: readonly Car[]): boolean {
+export function writeCarsCache(storage: Pick<WechatStorage, 'setStorageSync'> & Partial<Pick<WechatStorage, 'getStorageSync' | 'getStorageInfoSync'>>, userId: string, origin: string, cars: readonly Car[]): boolean {
   const scope = key(userId, origin)
   if (!scope || cars.length > MAX_CARS) return false
   const projected = cars.map(project)
   if (projected.some(car => !car) || new Set(projected.map(car => car!.stableId)).size !== cars.length) return false
   const value = { schema: 1, scope, cars: projected, savedAt: new Date().toISOString() }
   if (JSON.stringify(value).length * 3 > MAX_BYTES) return false
+  if (storage.getStorageInfoSync && !canStoreCache(storage, scope, value)) return false
   try { storage.setStorageSync(scope, value); return true } catch { return false }
 }
 export function clearCarsCacheForAccount(storage: Pick<WechatStorage, 'removeStorageSync'>, userId: string, origin: string): void {

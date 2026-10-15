@@ -22,10 +22,8 @@ data class DriveEnergyEstimate(
 
 /** API-reported net energy is not automatically a measured battery counter. */
 object DriveEnergyResolver {
-    const val DEFAULT_BATTERY_CAPACITY_KWH = 60.0
-
     /**
-     * Capacity input, model lookup and the default are estimates. A positive
+     * Capacity input and known-model lookup are estimates. A positive
      * API number does not prove calibration; the binding persists the actual basis.
      */
     @JvmStatic
@@ -34,7 +32,7 @@ object DriveEnergyResolver {
         model: String? = null,
         trimBadging: String? = null,
         calibratedCapacityKwh: Double? = null
-    ): Double {
+    ): Double? {
         calibratedCapacityKwh?.takeIf { it > 0.0 && it.isFinite() }?.let { return it }
         val cleanModel = model?.trim()?.uppercase()
         val cleanTrim = trimBadging?.trim()?.uppercase()
@@ -52,7 +50,7 @@ object DriveEnergyResolver {
                 cleanTrim?.contains("AWD") == true || cleanTrim?.contains("DUAL") == true -> 78.4
                 else -> 60.0
             }
-            else -> DEFAULT_BATTERY_CAPACITY_KWH
+            else -> null
         }
     }
 
@@ -149,6 +147,12 @@ object DriveEnergyResolver {
             if (deltaSoc in -30..100) {
                 val capacity = batteryCapacityKwh?.takeIf { it > 0.0 && it.isFinite() }
                     ?: resolveBatteryCapacity(model, trimBadging)
+                if (capacity == null) return DriveEnergyEstimate(
+                    energyKwh = null, efficiencyWhKm = null, source = DriveEnergySource.UNAVAILABLE,
+                    coverageSeconds = calculated.coverageSeconds, coverageSecondsExact = calculated.coverageSecondsExact,
+                    coverageRatio = coverage, observedEnergyKwh = calculated.energyKwh,
+                    qualityReason = "capacity_basis_unavailable"
+                )
                 val estimateKwh = (deltaSoc.toDouble() / 100.0) * capacity
                 if (estimateKwh.isFinite()) {
                     return DriveEnergyEstimate(

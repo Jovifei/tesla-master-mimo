@@ -1,8 +1,10 @@
 import Taro from '@tarojs/taro'
 import { JOURVOLT_PRIVACY_VERSION, JOURVOLT_TERMS_VERSION } from '../domain/legal'
+import { parseTpmsDetails } from '../domain/tpms'
 import { clearHistoryCachesForAccount } from './history_cache'
 import { clearCarsCacheForAccount, writeCarsCache } from './cars_cache'
 import { clearVehicleCachesForAccount } from './vehicle_cache'
+import { clearNewAccountCaches } from './account_cache_cleanup'
 import { driveDistanceKm, driveEnergyReceipt, resolveDriveEnergy, resolveChargeEnergy } from '../domain/drive_energy'
 import type {
   ApiEnvelope,
@@ -51,6 +53,7 @@ const errorMessages: Record<string, string> = {
   invalid_account_delete_response: '服务端未确认账号注销，请稍后重试',
   session_changed: '会话已切换，请重新读取数据',
   network_error: '网络暂时不可用，请稍后重试',
+  invalid_api_response: '服务返回的数据无效，请稍后重试',
   telemetry_not_configured: '持续采集尚未配置',
   pairing_required: '请在 Tesla 官方 App 中确认车辆钥匙',
   permission_required: '请返回 Tesla 官方页面补充车辆权限',
@@ -186,7 +189,7 @@ function chargeMode(raw: RawCharge): 'ac' | 'dc' | null {
   return mode == null && raw.fast_charger_present === true ? 'dc' : null
 }
 
-function assertVehicle(raw: unknown, carId: number, car?: Car): void {
+export function assertVehicle(raw: unknown, carId: number, car?: Car): void {
   if (!Number.isSafeInteger(carId) || carId <= 0 || (car && (car.id !== carId || car.remoteVerified === false)))
     throw new ApiError(errorMessages.vehicle_not_found, { code: 'vehicle_not_found' })
   if (car?.remoteVerified === true && (verifiedCarsScope !== currentCarsScope() || verifiedCars.get(carId) !== car.stableId))
@@ -236,10 +239,21 @@ function unwrap<T>(value: T | ApiEnvelope<T>): T {
 
 async function rawRequest<T extends TaroGeneral.IAnyObject>(path: string, options: Omit<Taro.request.Option, 'url'> = {}): Promise<Taro.request.SuccessCallbackResult<T>> {
   try {
-    return await Taro.request<T>({
+    const response = await Taro.request<T>({
       ...options,
       url: `${requireApiBaseUrl()}${path}`,
     })
+    // Fail closed if a proxy/auth page or visible redirect reaches the client.
+    // The platform's redirect transport policy still requires runtime verification.
+    const contentType = headerValue(response.header, 'Content-Type')?.split(';')[0].trim().toLowerCase()
+    const success = response.statusCode >= 200 && response.statusCode < 300
+    if (success && isRecord(response.data) && stringValue(response.data.error)) throw toApiError(response.statusCode, response.data, response.header)
+    if ((response.statusCode >= 300 && response.statusCode < 400) || headerValue(response.header, 'Location') !== null ||
+      (success && ((contentType != null && contentType !== 'application/json' && !/^application\/[a-z0-9.+-]+\+json$/.test(contentType)) ||
+        !isRecord(response.data) || ('data' in response.data && !isRecord(response.data.data))))) {
+      throw new ApiError(errorMessages.invalid_api_response, { status: response.statusCode, code: 'invalid_api_response' })
+    }
+    return response
   } catch (reason) {
     if (reason instanceof ApiError) throw reason
     throw new ApiError(errorMessages.network_error, { code: 'network_error', cause: reason })
@@ -275,6 +289,7 @@ function normalizeSession(raw: AuthSessionResponse, previousRefreshToken: string
   const accessToken = stringValue(raw.access_token)
   if (!accessToken) throw new ApiError('服务端未返回有效会话', { code: 'invalid_session_response' })
   return {
+    apiOrigin: getApiOrigin(),
     accessToken,
     refreshToken: stringValue(raw.refresh_token) ?? previousRefreshToken,
     expiresAt: expiresAt(raw.expires_at, raw.expires_in),
@@ -410,7 +425,7 @@ function normalizeCar(raw: RawCar): Car | null {
   const idValue = raw.car_id ?? raw.id
   const id = typeof idValue === 'number' ? idValue : typeof idValue === 'string' && /^[1-9]\d*$/.test(idValue) ? Number(idValue) : NaN
   const stableId = stringValue(raw.vehicle_uid) ?? stringValue(raw.provider_vehicle_id)
-  if (!Number.isInteger(id) || id <= 0 || !stableId) return null
+  if (!Number.isSafeInteger(id) || id <= 0 || !stableId) return null
   const model = stringValue(raw.model) ?? stringValue(raw.car_details?.model)
   const name = stringValue(raw.display_name) ?? stringValue(raw.name)
   return {
@@ -431,21 +446,33 @@ function normalizeCar(raw: RawCar): Car | null {
   }
 }
 
-function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source: string | null): CarStatus {
+function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source: string | null, units?: unknown): CarStatus {
+  // Absent units retain the existing API's metric contract; explicit unknown units do not.
+  const unit = (key: string, fallback: string): string | null => units === undefined ? fallback : isRecord(units) ? stringValue(units[key]) : null
+  const length = unit('unit_of_length', 'km'), temperature = unit('unit_of_temperature', 'C')
+  const km = (value: unknown): number | null => {
+    const scalar = finite(value, 0)
+    return scalar !== null && (length === 'km' || length === 'mi') ? finite(scalar * (length === 'mi' ? 1.609344 : 1), 0) : null
+  }
+  const celsius = (value: unknown): number | null => {
+    const scalar = finite(value)
+    return scalar !== null && (temperature === 'C' || temperature === 'F') ? finite(temperature === 'F' ? (scalar - 32) * 5 / 9 : scalar, -100, 100) : null
+  }
   const latitude = finite(raw.car_geodata?.latitude, -90, 90)
   const longitude = finite(raw.car_geodata?.longitude, -180, 180)
   const location = latitude != null && longitude != null
     ? { latitude, longitude }
     : null
   return {
+    ...(raw.tpms_details !== undefined ? { tpms: parseTpmsDetails(raw.tpms_details) } : {}),
     state: raw.state ?? null,
     model: stringValue(raw.model),
     trim: stringValue(raw.trim_badging),
     exteriorColor: stringValue(raw.exterior_color),
     wheelType: stringValue(raw.wheel_type),
     batteryLevel: finite(raw.battery_details?.battery_level, 0, 100),
-    ratedRange: finite(raw.battery_details?.rated_battery_range, 0),
-    odometer: finite(raw.odometer, 0),
+    ratedRange: km(raw.battery_details?.rated_battery_range),
+    odometer: km(raw.odometer),
     location,
     locked: bool(raw.car_status?.locked),
     sentryMode: bool(raw.car_status?.sentry_mode),
@@ -454,10 +481,10 @@ function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source
     trunkOpen: bool(raw.car_status?.trunk_open),
     frunkOpen: bool(raw.car_status?.frunk_open),
     isClimateOn: bool(raw.climate_details?.is_climate_on),
-    insideTemp: finite(raw.climate_details?.inside_temp, -100, 100),
-    outsideTemp: finite(raw.climate_details?.outside_temp, -100, 100),
+    insideTemp: celsius(raw.climate_details?.inside_temp),
+    outsideTemp: celsius(raw.climate_details?.outside_temp),
     pluggedIn: bool(raw.charging_details?.plugged_in),
-    speed: finite(raw.driving_details?.speed, 0),
+    speed: km(raw.driving_details?.speed),
     power: finite(raw.driving_details?.power),
     shiftState: raw.driving_details?.shift_state ?? null,
     heading: finite(raw.driving_details?.heading, 0, 360),
@@ -493,7 +520,13 @@ function responseDistanceUnit(response: unknown): string | null | undefined {
   return stringValue(units.unit_of_length)
 }
 
-function normalizeDrive(raw: RawDrive, car?: Car, distanceUnit?: string | null): Drive | null {
+function responseTemperatureUnit(response: unknown): string | null | undefined {
+  const data = unwrap(response)
+  if (!isRecord(data) || !Object.prototype.hasOwnProperty.call(data, 'units')) return undefined
+  return isRecord(data.units) ? stringValue(data.units.unit_of_temperature) : null
+}
+
+export function normalizeDrive(raw: RawDrive, car?: Car, distanceUnit?: string | null, temperatureUnit?: string | null): Drive | null {
   if (!isRecord(raw)) return null
   const rawId = raw.drive_id ?? raw.session_id
   if ((typeof rawId !== 'string' && typeof rawId !== 'number') || String(rawId).trim() === '' ||
@@ -509,6 +542,10 @@ function normalizeDrive(raw: RawDrive, car?: Car, distanceUnit?: string | null):
   const speed = finite(raw.speed_max, 0)
   const speedKmh = speed !== null && (speedUnit === 'km/h' || speedUnit === 'kph' || speedUnit === 'mph')
     ? finite(speed * (speedUnit === 'mph' ? 1.609344 : 1), 0) : null
+  const length = (value: unknown) => driveDistanceKm({ odometer_details: { odometer_distance: finite(value, 0) }, distance_unit: distanceUnit })
+  const averageSpeed = finite(raw.speed_avg, 0)
+  const outside = finite(raw.outside_temp_avg)
+  const temp = temperatureUnit === undefined ? 'C' : temperatureUnit
   return {
     id: String(rawId),
     sessionId: stringValue(raw.session_id),
@@ -517,6 +554,10 @@ function normalizeDrive(raw: RawDrive, car?: Car, distanceUnit?: string | null):
     startAddress: raw.start_address ?? null,
     endAddress: raw.end_address ?? null,
     durationMinutes: finite(raw.duration_min, 0),
+    startRatedRangeKm: length(raw.range_rated?.start_range), endRatedRangeKm: length(raw.range_rated?.end_range),
+    speedAvgKmh: averageSpeed !== null && ['km/h', 'kph', 'mph'].includes(speedUnit ?? '')
+      ? finite(averageSpeed * (speedUnit === 'mph' ? 1.609344 : 1), 0) : null,
+    outsideTempC: outside !== null && (temp === 'C' || temp === 'F') ? finite(temp === 'F' ? (outside - 32) * 5 / 9 : outside, -100, 100) : null,
     // A peak belongs to this drive's observed samples, never its average or the current vehicle.
     speedMaxKmh: raw.speed_metrics_source === 'observed_route_samples' &&
       Number.isSafeInteger(raw.speed_sample_count) && (raw.speed_sample_count ?? 0) > 0 &&
@@ -539,7 +580,7 @@ function normalizeDrive(raw: RawDrive, car?: Car, distanceUnit?: string | null):
   }
 }
 
-function normalizeCharge(raw: RawCharge): Charge | null {
+export function normalizeCharge(raw: RawCharge): Charge | null {
   if (!isRecord(raw)) return null
   const rawId = raw.charge_id ?? raw.session_id
   if ((typeof rawId !== 'string' && typeof rawId !== 'number') || String(rawId).trim() === '' ||
@@ -578,7 +619,8 @@ function historyPath(carId: number, kind: 'drives' | 'charges', page: number, sh
 function historyResult<T>(raw: unknown, key: 'drives' | 'charges', page: number, show: number, mapper: (item: unknown) => T | null): HistoryPage<T> {
   const data = unwrap(raw as ApiEnvelope<UnknownRecord> | UnknownRecord)
   const record = isRecord(data) ? data : {}
-  const rows = Array.isArray(record[key]) ? record[key] : []
+  const rows = record[key]
+  if (!Array.isArray(rows)) throw new ApiError(errorMessages.invalid_api_response, { code: 'invalid_api_response' })
   const mapped = rows.map(mapper).filter((item): item is T => item !== null)
   return {
     items: mapped,
@@ -650,6 +692,7 @@ export const matelinkApi = {
       if (!linkToken) throw new ApiError('服务端未返回有效的账号关联凭证', { code: 'invalid_link_response' })
       clearAppSession(Taro)
       writePendingWechatLink(Taro, {
+        apiOrigin: getApiOrigin(),
         linkToken,
         expiresAt: expiresAt(payload.expires_at, null),
       })
@@ -686,16 +729,18 @@ export const matelinkApi = {
   async deleteAccount(): Promise<{ teslaConsentRevokeUrl: string | null }> {
     const owner = readAppSession(Taro)
     if (!owner?.userId) throw new ApiError(errorMessages.session_required, { status: 401, code: 'session_required' })
+    const ownerEpoch = sessionEpoch, ownerOrigin = getApiOrigin()
     const response = await requestJson<{ status?: string; tesla_consent_revoke_url?: string | null }>('/v1/account', {
       method: 'DELETE',
       header: { 'Content-Type': 'application/json' },
     })
     const current = readAppSession(Taro)
-    if (!current || current.userId !== owner.userId) throw sessionChangedError()
+    if (!current || current.userId !== owner.userId || ownerEpoch !== sessionEpoch || ownerOrigin !== getApiOrigin()) throw sessionChangedError()
     if (response.status !== 'deleted') throw new ApiError(errorMessages.invalid_account_delete_response, { code: 'invalid_account_delete_response' })
     clearHistoryCachesForAccount(Taro, owner.userId, getApiOrigin())
     clearCarsCacheForAccount(Taro, owner.userId, getApiOrigin())
     clearVehicleCachesForAccount(Taro, owner.userId, getApiOrigin())
+    clearNewAccountCaches(Taro, owner.userId, ownerOrigin)
     sessionEpoch += 1
     clearAppSession(Taro)
     const revokeUrl = stringValue(response.tesla_consent_revoke_url)
@@ -705,7 +750,8 @@ export const matelinkApi = {
   async getCars(): Promise<Car[]> {
     const response = await requestJson<ApiEnvelope<{ cars?: RawCar[] }> | { cars?: RawCar[] }>('/api/v1/cars')
     const cars = unwrap(response).cars
-    const verified = (Array.isArray(cars) ? cars : []).map(normalizeCar).filter((car): car is Car => car !== null)
+    if (!Array.isArray(cars)) throw new ApiError(errorMessages.invalid_api_response, { code: 'invalid_api_response' })
+    const verified = cars.map(normalizeCar).filter((car): car is Car => car !== null)
       .map(car => ({ ...car, remoteVerified: true }))
     if (new Set(verified.map(car => car.id)).size !== verified.length || new Set(verified.map(car => car.stableId)).size !== verified.length)
       throw new ApiError(errorMessages.vehicle_not_found, { code: 'vehicle_not_found' })
@@ -719,11 +765,11 @@ export const matelinkApi = {
 
   async getCarStatus(carId: number, car?: Car): Promise<CarStatus> {
     assertVehicle(null, carId, car)
-    const response = await requestJson<ApiEnvelope<{ status?: RawCarStatus; observed_at?: string; source?: string }> | { status?: RawCarStatus; observed_at?: string; source?: string }>(`/api/v1/cars/${carId}/status`)
+    const response = await requestJson<ApiEnvelope<{ status?: RawCarStatus; observed_at?: string; source?: string; units?: unknown }> | { status?: RawCarStatus; observed_at?: string; source?: string; units?: unknown }>(`/api/v1/cars/${carId}/status`)
     const data = unwrap(response)
     assertVehicle(data, carId, car)
     assertVehicle(data.status, carId, car)
-    return normalizeCarStatus(data.status ?? {}, data.observed_at ?? null, data.source ?? null)
+    return normalizeCarStatus(data.status ?? {}, data.observed_at ?? null, data.source ?? null, data.units)
   },
 
   async getReadiness(carId: number, car?: Car): Promise<DataReadiness> {
@@ -880,14 +926,14 @@ export const matelinkApi = {
     assertVehicle(null, carId, car)
     const response = await requestJson<ApiEnvelope<{ drives?: RawDrive[]; meta?: PageMeta }> | { drives?: RawDrive[]; meta?: PageMeta }>(historyPath(carId, 'drives', page, show))
     assertVehicle(unwrap(response), carId, car)
-    return historyResult(response, 'drives', page, show, value => { assertVehicle(value, carId, car); return normalizeDrive(value as RawDrive, car, responseDistanceUnit(response)) })
+    return historyResult(response, 'drives', page, show, value => { assertVehicle(value, carId, car); return normalizeDrive(value as RawDrive, car, responseDistanceUnit(response), responseTemperatureUnit(response)) })
   },
 
   async getDriveDetail(carId: number, driveId: string, car?: Car): Promise<Drive | null> {
     assertVehicle(null, carId, car)
     const response = await requestJson<ApiEnvelope<{ drive?: RawDrive }> | { drive?: RawDrive }>(`/api/v1/cars/${carId}/drives/${safeRecordId(driveId)}`)
     assertVehicle(unwrap(response), carId, car)
-    const result = detailResult(response, 'drive', value => { assertVehicle(value, carId, car); return value ? normalizeDrive(value as RawDrive, car, responseDistanceUnit(response)) : null })
+    const result = detailResult(response, 'drive', value => { assertVehicle(value, carId, car); return value ? normalizeDrive(value as RawDrive, car, responseDistanceUnit(response), responseTemperatureUnit(response)) : null })
     if (result && result.id !== driveId) throw new ApiError(errorMessages.history_unavailable, { code: 'history_unavailable' })
     return result
   },

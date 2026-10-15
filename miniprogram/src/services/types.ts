@@ -1,3 +1,5 @@
+import type { TpmsSnapshot } from '../domain/tpms'
+
 export type ApiEnvelope<T> = {
   data?: T
   error?: string
@@ -68,6 +70,7 @@ export type RawCar = {
 }
 
 export type CarStatus = {
+  tpms?: TpmsSnapshot
   state: string | null
   model: string | null
   trim: string | null
@@ -99,6 +102,7 @@ export type CarStatus = {
 }
 
 export type RawCarStatus = {
+  tpms_details?: RawTpmsDetails | null
   display_name?: string | null
   state?: string | null
   model?: string | null
@@ -139,6 +143,19 @@ export type RawCarStatus = {
     charge_energy_added?: number | null
     charger_power?: number | null
   }
+}
+
+export type RawTpmsDetails = {
+  tpms_pressure_fl?: number | null; tpms_pressure_fr?: number | null
+  tpms_pressure_rl?: number | null; tpms_pressure_rr?: number | null
+  tpms_pressure_fl_observed_at?: string | null; tpms_pressure_fr_observed_at?: string | null
+  tpms_pressure_rl_observed_at?: string | null; tpms_pressure_rr_observed_at?: string | null
+  pressure_unit?: string | null; source?: string | null; time_basis?: string | null
+  tpms_soft_warning_fl?: boolean | null; tpms_soft_warning_fr?: boolean | null
+  tpms_soft_warning_rl?: boolean | null; tpms_soft_warning_rr?: boolean | null
+  tpms_soft_warning_fl_observed_at?: string | null; tpms_soft_warning_fr_observed_at?: string | null
+  tpms_soft_warning_rl_observed_at?: string | null; tpms_soft_warning_rr_observed_at?: string | null
+  warning_source?: string | null; warning_time_basis?: string | null
 }
 
 export type ReadinessItem = {
@@ -194,6 +211,10 @@ export type WechatAuthorizationStatus = {
 }
 
 export type Drive = {
+  startRatedRangeKm?: number | null
+  endRatedRangeKm?: number | null
+  speedAvgKmh?: number | null
+  outsideTempC?: number | null
   id: string
   sessionId: string | null
   startDate: string | null
@@ -222,6 +243,9 @@ export type Drive = {
 }
 
 export type RawDrive = {
+  range_rated?: { start_range?: number | null; end_range?: number | null; range_diff?: number | null } | null
+  speed_avg?: number | null
+  outside_temp_avg?: number | null
   drive_id?: number | string | null
   session_id?: string | null
   start_date?: string | null

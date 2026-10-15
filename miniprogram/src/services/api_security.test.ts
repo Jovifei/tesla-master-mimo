@@ -52,7 +52,7 @@ it('actual getCars cache is scoped and offline cache cannot authorize remote his
   const { matelinkApi } = await import('./api')
   const { writeAppSession } = await import('./session')
   const { readCarsCache } = await import('./cars_cache')
-  writeAppSession(storage, { accessToken: 'fixture', refreshToken: null, expiresAt: null, userId: 'a', linkRequired: false })
+  writeAppSession(storage, { apiOrigin: 'https://api.example.test', accessToken: 'fixture', refreshToken: null, expiresAt: null, userId: 'a', linkRequired: false })
   fake.request.mockResolvedValueOnce(response({ cars: [{ car_id: 7, vehicle_uid: 'vehicle-a', name: 'A' }] }))
   const fresh = await matelinkApi.getCars()
   expect(fresh[0].remoteVerified).toBe(true)
@@ -86,7 +86,7 @@ it('late actual Taro response cannot populate another account cars cache', async
   const { matelinkApi } = await import('./api')
   const { writeAppSession } = await import('./session')
   const { readCarsCache } = await import('./cars_cache')
-  const session = (userId: string) => ({ accessToken: `fixture-${userId}`, refreshToken: null, expiresAt: null, userId, linkRequired: false })
+  const session = (userId: string) => ({ apiOrigin: 'https://api.example.test', accessToken: `fixture-${userId}`, refreshToken: null, expiresAt: null, userId, linkRequired: false })
   writeAppSession(storage, session('a'))
   let release!: (value: unknown) => void
   fake.request.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
@@ -101,7 +101,7 @@ it('late actual Taro response cannot populate another account cars cache', async
 it('previous account fresh car proof cannot authorize the new account numeric ID', async () => {
   const { matelinkApi } = await import('./api')
   const { writeAppSession } = await import('./session')
-  const session = (userId: string) => ({ accessToken: `fixture-${userId}`, refreshToken: null, expiresAt: null, userId, linkRequired: false })
+  const session = (userId: string) => ({ apiOrigin: 'https://api.example.test', accessToken: `fixture-${userId}`, refreshToken: null, expiresAt: null, userId, linkRequired: false })
   writeAppSession(storage, session('a'))
   fake.request.mockResolvedValueOnce(response({ cars: [{ car_id: 7, vehicle_uid: 'a' }] }))
   const [car] = await matelinkApi.getCars()
@@ -138,4 +138,173 @@ it('actual wire-derived power claims cannot forge a qualified history receipt', 
   expect(items[0].energyConsumedKwh).toBeNull()
   expect(items[0].energy?.source).toBe('unavailable')
   expect(items[0].energyReceipt?.power_integral).toBeUndefined()
+})
+
+it.each([
+  { statusCode: 302, data: {}, header: { Location: 'https://outside.example.test' } },
+  { statusCode: 200, data: { cars: [] }, header: { location: 'https://outside.example.test' } },
+  { statusCode: 200, data: '<html>login</html>', header: { 'Content-Type': 'text/html' } },
+  { statusCode: 200, data: null, header: {} },
+  { statusCode: 200, data: [], header: {} },
+])('fails closed on redirects and non-JSON-object success without erasing session', async result => {
+  const { matelinkApi } = await import('./api')
+  const { writeAppSession, readAppSession } = await import('./session')
+  writeAppSession(storage, { apiOrigin: 'https://api.example.test', accessToken: 'fixture', refreshToken: null, expiresAt: null, userId: 'a', linkRequired: false })
+  fake.request.mockResolvedValueOnce(result)
+  await expect(matelinkApi.getCars()).rejects.toMatchObject({ code: 'invalid_api_response' })
+  expect(readAppSession(storage)?.userId).toBe('a')
+  expect(fake.request).toHaveBeenCalledTimes(1)
+})
+
+it('status converts only same-response proven units and preserves zero and negative power through cache reopen', async () => {
+  const { matelinkApi } = await import('./api')
+  const { writeVehicleCache, readVehicleCache } = await import('./vehicle_cache')
+  fake.request.mockResolvedValueOnce(response({ units: { unit_of_length: 'mi', unit_of_temperature: 'F' }, status: {
+    odometer: 10, battery_details: { rated_battery_range: 20 }, driving_details: { speed: 0, power: -12 },
+    climate_details: { inside_temp: 32, outside_temp: -4 }, car_status: { locked: false },
+  } }))
+  const status = await matelinkApi.getCarStatus(7)
+  expect(status).toMatchObject({ odometer: 16.09344, ratedRange: 32.18688, speed: 0, power: -12, insideTemp: 0, outsideTemp: -20, locked: false })
+  expect(writeVehicleCache(storage, 'a', 'https://api.example.test', 'uid', status)).toBe(true)
+  expect(readVehicleCache(storage, 'a', 'https://api.example.test', 'uid')).toMatchObject({ odometer: 16.09344, insideTemp: 0 })
+  fake.request.mockResolvedValueOnce(response({ units: { unit_of_length: 'yards', unit_of_temperature: null }, status: {
+    odometer: 10, battery_details: { rated_battery_range: 20, battery_level: 0 }, driving_details: { speed: 30, power: -12 },
+    climate_details: { inside_temp: 20, outside_temp: 21 },
+  } }))
+  await expect(matelinkApi.getCarStatus(7)).resolves.toMatchObject({ odometer: null, ratedRange: null, speed: null,
+    insideTemp: null, outsideTemp: null, batteryLevel: 0, power: -12 })
+})
+
+it('real parser never guesses SOC capacity for unknown vehicles, including receipt cache reconstruction', async () => {
+  const { matelinkApi } = await import('./api')
+  const { historyCacheKey, readHistoryCache, writeHistoryCache } = await import('./history_cache')
+  const { resolveDriveEnergy } = await import('../domain/drive_energy')
+  fake.request.mockResolvedValueOnce(response({ cars: [{ car_id: 7, vehicle_uid: 'uid', model: 'unknown' }] }))
+  const [car] = await matelinkApi.getCars()
+  fake.request.mockResolvedValueOnce(response({ drives: [{ drive_id: 9, source: 'telemetry_mqtt',
+    start_date: '2026-10-14T00:00:00Z', end_date: '2026-10-14T00:10:00Z',
+    odometer_details: { odometer_distance: 10 }, battery_details: { start_battery_level: 80, end_battery_level: 78 } }] }))
+  const [drive] = (await matelinkApi.getDrives(7, 1, 20, car)).items
+  expect(drive.energyConsumedKwh).toBeNull()
+  expect(drive.energy?.reason).toBe('capacity_basis_unavailable')
+  const key = historyCacheKey('drives', 'a', 'uid', 'https://api.example.test')
+  writeHistoryCache(storage, key, [drive])
+  const reopened = readHistoryCache<typeof drive>(storage, key)[0]
+  expect(resolveDriveEnergy(reopened.energyReceipt!, car).energyKwh).toBeNull()
+  expect(resolveDriveEnergy(reopened.energyReceipt!, { ...car, capacityKwh: 70 }).energyKwh).toBeCloseTo(1.4)
+})
+
+it.each(['cars', 'drives', 'charges'] as const)('rejects a malformed %s payload instead of replacing good data with empty success', async kind => {
+  const { matelinkApi } = await import('./api')
+  for (const data of [{}, { [kind]: null }, { [kind]: {} }]) {
+    fake.request.mockResolvedValueOnce(response(data))
+    const request = kind === 'cars' ? matelinkApi.getCars() : kind === 'drives' ? matelinkApi.getDrives(7) : matelinkApi.getCharges(7)
+    await expect(request).rejects.toMatchObject({ code: 'invalid_api_response' })
+  }
+})
+
+it('actual status parser retains per-wheel evidence through scoped cache rebuilding without borrowing package time', async () => {
+  const { matelinkApi } = await import('./api')
+  const { writeVehicleCache, readVehicleCache } = await import('./vehicle_cache')
+  vi.useFakeTimers()
+  try {
+    vi.setSystemTime(new Date('2026-10-15T08:01:00Z'))
+    fake.request.mockResolvedValueOnce(response({ observed_at: '2026-10-15T08:01:00Z', source: 'telemetry_mqtt', status: {
+      tpms_details: { pressure_unit: 'bar', source: 'telemetry_mqtt', time_basis: 'collector_received_at',
+        tpms_pressure_fl: 0, tpms_pressure_fl_observed_at: '2026-10-15T08:00:00Z', tpms_pressure_fr: 2.6,
+        tpms_pressure_rl: 2.7, tpms_pressure_rl_observed_at: '2026-10-15T07:40:00Z' },
+    } }))
+    const status = await matelinkApi.getCarStatus(7)
+    expect(status.tpms?.wheels.fl).toMatchObject({ pressureBar: 0, observedAt: '2026-10-15T08:00:00.000Z', state: 'observed' })
+    expect(status.tpms?.wheels.fr).toMatchObject({ pressureBar: null, observedAt: null, reason: 'missing_or_invalid_wheel_time' })
+    expect(status.tpms?.wheels.rl.state).toBe('stale')
+    writeVehicleCache(storage, 'a', 'https://api.example.test', 'uid', status)
+    vi.setSystemTime(new Date('2026-10-15T08:20:00Z'))
+    const reopened = readVehicleCache(storage, 'a', 'https://api.example.test', 'uid')!
+    expect(reopened.tpms?.wheels.fl).toMatchObject({ pressureBar: 0, observedAt: '2026-10-15T08:00:00.000Z', state: 'stale' })
+    expect(reopened.tpms?.wheels.fr.observedAt).toBeNull()
+  } finally { vi.useRealTimers() }
+})
+
+it.each([undefined, 'https://previous.example.test'])('does not send a session or link credential from an unbound/foreign origin %s', async apiOrigin => {
+  const { matelinkApi } = await import('./api')
+  const { SESSION_KEY, PENDING_LINK_KEY, readAppSession, readPendingWechatLink } = await import('./session')
+  const legacy = { accessToken: 'private-old-access', refreshToken: 'private-old-refresh', userId: 'a', apiOrigin }
+  const link = { linkToken: 'private-old-link', expiresAt: null, apiOrigin }
+  fake.storage.set(SESSION_KEY, legacy)
+  fake.storage.set(PENDING_LINK_KEY, link)
+  expect(readAppSession(storage)).toBeNull()
+  expect(readPendingWechatLink(storage)).toBeNull()
+  fake.request.mockResolvedValueOnce(response({ cars: [] }))
+  await matelinkApi.getCars()
+  expect(fake.request.mock.calls[0][0].header).not.toHaveProperty('Authorization')
+  fake.request.mockResolvedValueOnce(response({ authorization_url: 'https://auth.tesla.com/oauth2/v3/authorize',
+    transaction_id: 'fixture-transaction', client_proof: 'fixture-proof' }))
+  await matelinkApi.startTeslaAuthorization({ termsVersion: 'fixture', privacyVersion: 'fixture' })
+  expect(fake.request.mock.calls[1][0].header).not.toHaveProperty('X-WeChat-Link-Token')
+  expect(fake.storage.get(SESSION_KEY)).toBe(legacy)
+  expect(fake.storage.get(PENDING_LINK_KEY)).toBe(link)
+})
+
+it('a changed-origin build never forwards the previous build session after module reconstruction', async () => {
+  const { writeAppSession, SESSION_KEY } = await import('./session')
+  const previous = { apiOrigin: 'https://api.example.test', accessToken: 'fixture-old-origin', refreshToken: 'fixture-refresh',
+    expiresAt: null, userId: 'a', linkRequired: false }
+  writeAppSession(storage, previous)
+  vi.resetModules()
+  vi.stubEnv('TARO_APP_API_BASE_URL', 'https://new.example.test')
+  const { matelinkApi, refreshSession } = await import('./api')
+  const { readAppSession } = await import('./session')
+  expect(readAppSession(storage)).toBeNull()
+  fake.request.mockResolvedValueOnce(response({ cars: [] }))
+  await matelinkApi.getCars()
+  expect(fake.request.mock.calls[0][0]).toMatchObject({ url: 'https://new.example.test/api/v1/cars' })
+  expect(fake.request.mock.calls[0][0].header).not.toHaveProperty('Authorization')
+  await expect(refreshSession()).rejects.toMatchObject({ code: 'session_required' })
+  expect(fake.request).toHaveBeenCalledTimes(1)
+  expect(fake.storage.get(SESSION_KEY)).toBe(previous)
+})
+
+function newAccountArchives(user: string, origin = 'https://api.example.test') {
+  const encode = (value: string) => encodeURIComponent(value).replace(/\./g, '%2E'), owner = `${encode(origin)}.${encode(user)}`
+  const entries = ['tpms', 'events', 'manual-trips', 'charge-cost', 'tpms-profile'].map(namespace => {
+    const key = `matelink.${namespace}.v1.${owner}.uid${namespace === 'tpms' ? '.telemetry_mqtt' : namespace === 'events' ? '.drives' : ''}`
+    const value = { schema: 1, scope: key, points: [], sources: {}, trips: [], rows: [], source: 'user_configured', profile: { enabled: true, targetBar: 2.9, lowBar: 2.6, highBar: 3.4, changeEnabled: false, deltaBar: .3, windowHours: 24 } }
+    fake.storage.set(key, value); return key
+  })
+  const tariff = `matelink.tariff.v1.${owner}`
+  fake.storage.set(tariff, { currency: 'CNY', peak: 1, flat: .7, valley: 0, timeZone: 'Asia/Shanghai', source: 'user_configured', estimateOnly: true })
+  return [...entries, tariff]
+}
+
+it('only server-confirmed current account deletion removes its new caches and normal logout preserves them', async () => {
+  const { matelinkApi } = await import('./api'), { writeAppSession } = await import('./session')
+  const own = newAccountArchives('a'), other = newAccountArchives('a.b'), foreign = newAccountArchives('a', 'https://other.example.test')
+  const unknown = own[0].replace('.v1.', '.v9.'), ambiguous = own[2].replace('.uid', '.b.uid'), wrongSchema = own[3].replace('.uid', '.future')
+  for (const key of [unknown, ambiguous]) fake.storage.set(key, { schema: 1, scope: key, trips: [], points: [] })
+  fake.storage.set(wrongSchema, { schema: 9, scope: wrongSchema, rows: [] })
+  const login = () => writeAppSession(storage, { apiOrigin: 'https://api.example.test', accessToken: 'fixture', refreshToken: null, expiresAt: null, userId: 'a', linkRequired: false })
+  login(); fake.request.mockResolvedValueOnce(response({ status: 'pending' }))
+  await expect(matelinkApi.deleteAccount()).rejects.toMatchObject({ code: 'invalid_account_delete_response' })
+  expect(own.every(key => fake.storage.has(key))).toBe(true)
+  fake.request.mockResolvedValueOnce({ statusCode: 503, data: {}, header: {} })
+  await expect(matelinkApi.deleteAccount()).rejects.toBeDefined()
+  expect(own.every(key => fake.storage.has(key))).toBe(true)
+  fake.request.mockResolvedValueOnce(response({ status: 'ok' })); await matelinkApi.logout()
+  expect(own.every(key => fake.storage.has(key))).toBe(true)
+  login(); fake.request.mockResolvedValueOnce(response({ status: 'deleted' })); await matelinkApi.deleteAccount()
+  expect(own.some(key => fake.storage.has(key))).toBe(false)
+  expect([...other, ...foreign, unknown, ambiguous, wrongSchema].every(key => fake.storage.has(key))).toBe(true)
+})
+
+it('a late account deletion callback cannot clear another active account session or new caches', async () => {
+  const { matelinkApi } = await import('./api'), { writeAppSession, readAppSession } = await import('./session')
+  const own = newAccountArchives('a'), other = newAccountArchives('b')
+  const login = (userId: string) => writeAppSession(storage, { apiOrigin: 'https://api.example.test', accessToken: `fixture-${userId}`, refreshToken: null, expiresAt: null, userId, linkRequired: false })
+  login('a'); let release!: (value: unknown) => void
+  fake.request.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+  const pending = matelinkApi.deleteAccount(); login('b'); release(response({ status: 'deleted' }))
+  await expect(pending).rejects.toMatchObject({ code: 'session_changed' })
+  expect(readAppSession(storage)?.userId).toBe('b')
+  expect([...own, ...other].every(key => fake.storage.has(key))).toBe(true)
 })
