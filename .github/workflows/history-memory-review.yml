@@ -89,7 +89,7 @@ jobs:
           docker run --rm --network host --entrypoint bin/teslamate \
             -e DATABASE_USER=compat_only -e DATABASE_PASS=isolated-only \
             -e DATABASE_NAME=compat430 -e DATABASE_HOST=127.0.0.1 -e DATABASE_PORT=5432 \
-            -e ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= -e TZ=UTC \
+            -e ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= -e TZ=UTC -e MQTT_HOST=synthetic.invalid \
             teslamate/teslamate:4.3.0@sha256:516fc9f0a14369f541b1a70ff2f65dd9b57c2e01c1f533b6d43b375445404955 \
             eval 'TeslaMate.Release.migrate()' 2>&1 | tee evidence/upstream-migrations.log
           docker exec -i '${{ job.services.postgres.id }}' psql -U compat_only -d compat430 < deploy/teslamate-home-docker/qualification/fixture-v430.sql
