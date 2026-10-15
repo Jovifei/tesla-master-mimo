@@ -1,8 +1,39 @@
 .history-page {
-  .history-filter-row, .history-actions, .history-detail-heading { display: flex; justify-content: space-between; gap: 18px; align-items: center; }
+  .history-filter-row, .history-actions, .history-detail-heading { display: flex; justify-content: space-between; gap: 18px; align-items: center; flex-wrap: wrap; }
+  .history-filter-row > picker { min-width: 0; overflow-wrap: anywhere; }
+  .history-interval, .history-notice { overflow-wrap: anywhere; }
   .history-controls { line-height: 1.9; }
   .history-actions { margin-top: 18px; }
-  .history-record { padding: 22px 0; border-bottom: 1px solid #eef0f3; }
+  .history-page-header { margin: -24px -24px 14px; padding: 22px 24px; background: #fff; }
+  .history-page-header .title { margin: 0; }
+  .history-page-header > .muted { font-size: 22px; line-height: 1.45; }
+  .history-controls { margin-bottom: 14px; }
+  .history-date-chips, .history-distance-chips { display: flex; gap: 12px; overflow-x: auto; padding: 6px 0 14px; white-space: nowrap; }
+  .history-chip { flex: none; margin: 0; border: 1px solid #e9edf2; border-radius: 16px; background: #fff; color: #6b7280; padding: 6px 18px; font-size: 25px; line-height: 1.7; }
+  .history-chip::after { border: none; }
+  .history-chip-selected { background: #ddf0f1; border-color: #157a86; color: #157a86; }
+  .history-filter-row, .history-custom-distance { color: #6b7280; font-size: 22px; }
+  .history-record { padding: 24px; margin: 12px 0; border: 1px solid #e9edf2; border-radius: 24px; background: #f9f9fa; box-shadow: 0 2px 3px #1f293708; }
+  .history-record-date { display: block; color: #6b7280; font-size: 24px; }
+  .history-record-evidence { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin-top: 12px; }
+  .history-route { display: flex; gap: 20px; align-items: center; margin: 20px 0; }
+  .history-route-stops { flex: 1; min-width: 0; border-left: 3px solid #dce3e8; padding-left: 20px; }
+  .history-route-stops text { display: block; position: relative; line-height: 1.5; margin: 4px 0; overflow-wrap: anywhere; font-weight: 500; }
+  .history-route-stops text::before { content: ''; position: absolute; width: 12px; height: 12px; border-radius: 50%; left: -28px; top: 14px; background: #157a86; }
+  .history-route-stops .history-route-end::before { background: #5f6670; }
+  .history-summary-primary, .history-record-metrics { background: #f4f5f6; border-radius: 18px; padding: 16px 0; }
+  .history-record-metrics .metric, .history-summary-primary .metric { background: transparent; border-radius: 0; padding: 8px; }
+  .history-record-metrics .metric:nth-child(odd), .history-summary-primary .metric:nth-child(odd) { border-right: 1px solid #e9edf2; }
+  .history-record-metrics .metric-heading, .history-record-metrics .metric-reading, .history-summary-primary .metric-heading, .history-summary-primary .metric-reading { align-items: center; justify-content: center; }
+  .history-record-metrics .metric-label, .history-record-metrics .metric-value, .history-record-metrics .metric-unit, .history-summary-primary .metric-label, .history-summary-primary .metric-value, .history-summary-primary .metric-unit { text-align: center; }
+  .history-record-metrics .metric-value { font-size: 44px; font-family: monospace; }
+  .history-summary-primary .metric-value { font-size: 52px; font-family: monospace; }
+  .history-summary-secondary { border-top: 1px solid #e9edf2; padding-top: 12px; }
+  .history-charge-heading { display: flex; gap: 18px; align-items: center; margin-bottom: 20px; }
+  .history-charge-location { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .history-charge-location > text { display: block; }
+  .history-charge-mode { flex: none; border-radius: 24px; padding: 6px 14px; background: #ddf0f1; color: #157a86; font-size: 22px; }
+  .history-statistics-coverage { margin-top: 14px; }
   .history-record-top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
   .history-soc { font-size: 34px; font-weight: 650; color: #1f2937; }
   .history-record-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }

@@ -4,6 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DriveEnergyResolverTest {
+    @Test fun unknownModelCannotInventCapacityFromSocEndpoints() {
+        listOf(null, "unknown", "future-model").forEach { model ->
+            val result = DriveEnergyResolver.resolve(null, 10.0, emptyList(), startSoc = 80, endSoc = 78, model = model)
+            assertNull(result.energyKwh)
+            assertEquals(DriveEnergySource.UNAVAILABLE, result.source)
+        }
+        val supplied = DriveEnergyResolver.resolve(null, 10.0, emptyList(), startSoc = 80, endSoc = 78, batteryCapacityKwh = 60.0)
+        assertEquals(1.2, supplied.energyKwh!!, 1e-12)
+    }
     private val start = "2026-07-11T10:00:00Z"
     private val end = "2026-07-11T10:00:10Z"
     private fun rows(power: Double) = listOf(DrivePowerSample(start, power), DrivePowerSample(end, power))

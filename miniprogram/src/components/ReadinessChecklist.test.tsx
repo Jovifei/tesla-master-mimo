@@ -32,7 +32,7 @@ it('shows actual readiness rows without confusing live TPMS with stored history 
   ]} />)
   const text = JSON.stringify(tree.toJSON())
   expect(text).toContain('实时胎压状态')
-  expect(text).toContain('小程序胎压历史尚未接入')
+  expect(text).toContain('胎压为有界本机前台观测历史')
   expect(text).toContain('正在采集')
   expect(text).toContain('状态未知')
   expect(text).not.toContain('SERVER_PRIVATE_DETAIL')

@@ -170,7 +170,7 @@ describe('MateLink API transport', () => {
 
   it('refreshes once after 401 and retries with the rotated access token', async () => {
     const { api, session } = await modules()
-    session.writeAppSession(storageAdapter, {
+    session.writeAppSession(storageAdapter, { apiOrigin: 'https://api.example.test',
       accessToken: 'old-access',
       refreshToken: 'old-refresh',
       expiresAt: null,
@@ -192,7 +192,7 @@ describe('MateLink API transport', () => {
 
   it('does not recursively refresh when the refresh endpoint is unauthorized', async () => {
     const { api, session } = await modules()
-    session.writeAppSession(storageAdapter, {
+    session.writeAppSession(storageAdapter, { apiOrigin: 'https://api.example.test',
       accessToken: 'old-access',
       refreshToken: 'old-refresh',
       expiresAt: null,
@@ -210,7 +210,7 @@ describe('MateLink API transport', () => {
 
   it('does not resurrect a session when logout wins a refresh race', async () => {
     const { api, session } = await modules()
-    session.writeAppSession(storageAdapter, {
+    session.writeAppSession(storageAdapter, { apiOrigin: 'https://api.example.test',
       accessToken: 'old-access', refreshToken: 'old-refresh', expiresAt: null, userId: 'user-a', linkRequired: false,
     })
     let resolveRefresh!: (value: unknown) => void
@@ -232,7 +232,7 @@ describe('MateLink API transport', () => {
 
   it('cancels a pending WeChat authorization before revoking the session', async () => {
     const { api, session } = await modules()
-    session.writeAppSession(storageAdapter, {
+    session.writeAppSession(storageAdapter, { apiOrigin: 'https://api.example.test',
       accessToken: 'access', refreshToken: 'refresh', expiresAt: null, userId: 'user-a', linkRequired: false,
     })
     session.writePendingTeslaAuthorization(storageAdapter, { transactionId: 'txn-1', clientProof: 'proof-1', apiOrigin: 'https://api.example.test', expiresAt: null })
@@ -256,7 +256,7 @@ describe('MateLink API transport', () => {
       status: 'link_required',
       expiresAt: '2026-09-13T00:15:00Z',
     })
-    expect(session.readPendingWechatLink(storageAdapter)).toEqual({ linkToken: 'short-link', expiresAt: '2026-09-13T00:15:00Z' })
+    expect(session.readPendingWechatLink(storageAdapter)).toEqual({ apiOrigin: 'https://api.example.test', linkToken: 'short-link', expiresAt: '2026-09-13T00:15:00Z' })
     await api.matelinkApi.startTeslaAuthorization({ termsVersion: '2026-08-21', privacyVersion: '2026-08-21' })
     expect(mocks.request.mock.calls[1][0].header).toMatchObject({
       'X-WeChat-Link-Token': 'short-link',
@@ -296,7 +296,7 @@ describe('MateLink API transport', () => {
 
   it('deletes only the owning account session and accepts only a Tesla revoke URL', async () => {
     const { api, session } = await modules()
-    session.writeAppSession(storageAdapter, {
+    session.writeAppSession(storageAdapter, { apiOrigin: 'https://api.example.test',
       accessToken: 'access', refreshToken: 'refresh', expiresAt: null, userId: 'user-a', linkRequired: false,
     })
     const { historyCacheKey } = await import('./history_cache')
@@ -328,7 +328,7 @@ describe('MateLink API transport', () => {
 
   it('clears a deleted account without exposing an untrusted revoke URL', async () => {
     const { api, session } = await modules()
-    session.writeAppSession(storageAdapter, {
+    session.writeAppSession(storageAdapter, { apiOrigin: 'https://api.example.test',
       accessToken: 'access', refreshToken: null, expiresAt: null, userId: 'user-a', linkRequired: false,
     })
     mocks.request.mockResolvedValue({
@@ -343,7 +343,7 @@ describe('MateLink API transport', () => {
 
   it('rejects a delayed claim after logout instead of restoring the cleared session', async () => {
     const { api, session } = await modules()
-    session.writeAppSession(storageAdapter, {
+    session.writeAppSession(storageAdapter, { apiOrigin: 'https://api.example.test',
       accessToken: 'access-a', refreshToken: 'refresh-a', expiresAt: null, userId: 'user-a', linkRequired: false,
     })
     session.writePendingTeslaAuthorization(storageAdapter, { transactionId: 'txn-a', clientProof: 'proof-a', apiOrigin: 'https://api.example.test', expiresAt: null })
@@ -365,7 +365,7 @@ describe('MateLink API transport', () => {
 
   it('keeps a replacement WeChat session and captured logout token across a delayed cancel', async () => {
     const { api, session } = await modules()
-    session.writeAppSession(storageAdapter, {
+    session.writeAppSession(storageAdapter, { apiOrigin: 'https://api.example.test',
       accessToken: 'access-a', refreshToken: 'refresh-a', expiresAt: null, userId: 'user-a', linkRequired: false,
     })
     session.writePendingTeslaAuthorization(storageAdapter, { transactionId: 'txn-a', clientProof: 'proof-a', apiOrigin: 'https://api.example.test', expiresAt: null })
@@ -432,7 +432,7 @@ describe('MateLink API transport', () => {
 
   it('exposes telemetry configure as an authenticated POST operation', async () => {
     const { api, session } = await modules()
-    session.writeAppSession(storageAdapter, {
+    session.writeAppSession(storageAdapter, { apiOrigin: 'https://api.example.test',
       accessToken: 'access', refreshToken: 'refresh', expiresAt: null, userId: 'user-a', linkRequired: false,
     })
     mocks.request.mockResolvedValue({ statusCode: 200, data: { data: { status: 'waiting_vehicle' } }, header: {} })

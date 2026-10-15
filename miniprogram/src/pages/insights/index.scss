@@ -1,0 +1,11 @@
+.insights-page {
+  .insight-header { margin-bottom: 24px; }
+  .insight-header .muted { margin-top: 8px; }
+  .insight-filters { margin-top: 24px; }
+  .insight-coverage { display: block; color: #6b7280; font-size: 24px; line-height: 1.6; }
+  .insight-table-row { display: flex; flex-direction: column; gap: 8px; padding: 20px 0; border-top: 1px solid #e9edf2; overflow-wrap: anywhere; }
+  .insight-name { min-height: 80px; padding: 16px; margin: 16px 0; border: 1px solid #e9edf2; border-radius: 16px; }
+  .insight-leg { margin-top: 12px; background: #f9f9fa; color: #1f2937; text-align: left; padding: 16px; font-size: 26px; line-height: 1.5; white-space: normal; }
+  .insight-leg-selected { background: #ddf0f1; color: #164e63; }
+  .metric-grid > .muted { grid-column: 1 / -1; }
+}

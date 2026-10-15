@@ -5,12 +5,13 @@ import type { Drive } from '../services/types'
 
 type Props = {
   label: string
-  value: string | number | null
+  value: string | number | null | undefined
   source?: string | null
   unit?: string
   icon?: VisualIconName
   negative?: boolean
   digits?: number
+  presentation?: 'telemetry'
 }
 
 export function displayNumber(value: number, digits = 2): string {
@@ -32,11 +33,12 @@ export default function MetricValue({ label, value, source, unit, icon, negative
   const shown = valid ? (typeof value === 'number' ? displayNumber(value, digits) : value) : '暂无数据'
   return (
     <View className="metric" ariaLabel={`${label} ${shown}${unit ? `${unit === '%' ? '' : ' '}${unit}` : ''}`}>
-      <View className="metric-heading">{icon ? <VisualIcon name={icon} /> : null}<Text className="metric-label">{label}</Text></View>
+      <View className="metric-heading">{icon ? <VisualIcon name={icon} /> : null}</View>
       <View className={`metric-reading ${negative && valid ? 'history-energy-negative' : ''}`}>
         <Text className="metric-value">{shown}</Text>
         {unit ? <Text className="metric-unit">{unit}</Text> : null}
       </View>
+      <Text className="metric-label">{label}</Text>
       {source !== undefined ? <Text className="metric-source">{sourceLabel(source)}</Text> : null}
     </View>
   )

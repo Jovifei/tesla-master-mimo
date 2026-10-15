@@ -9,7 +9,7 @@ function errorMessage(reason: unknown): string {
   if (reason instanceof ApiError) {
     switch (reason.code) {
       case 'api_not_configured': return '服务地址尚未配置，请返回后重新开始'
-      case 'session_changed': return '会话已变化，请返回“我的”重新开始'
+      case 'session_changed': return '会话已变化，请返回“更多”重新开始'
       case 'network_error': return '网络暂时不可用，请稍后检查'
       case 'wechat_authorization_expired': return '授权事务已过期，请重新开始'
       case 'wechat_authorization_cancelled': return '授权已取消，请重新开始'
@@ -85,7 +85,7 @@ export default function AuthPage() {
     const sessionGeneration = getApiSessionGeneration()
     const scope = captureScope()
     if (!pageScope.current || !sameScope(pageScope.current)) {
-      setError('授权事务已变化，请返回“我的”重新开始')
+      setError('授权事务已变化，请返回“更多”重新开始')
       return
     }
     setError(null)
@@ -98,7 +98,7 @@ export default function AuthPage() {
         clearPendingTeslaAuthorization(Taro)
         const messages = { expired: '授权事务已过期，请重新开始', failed: 'Tesla 授权失败，请重新开始', cancelled: '授权已取消，请重新开始' }
         setError(messages[status.status])
-      } else if (status.status === 'claimed') setError('授权已领取，请返回“我的”恢复会话')
+      } else if (status.status === 'claimed') setError('授权已领取，请返回“更多”恢复会话')
       else if (status.status !== 'none') setError('授权状态暂时不可用，请稍后检查')
       else setError('没有待恢复的授权事务')
     } catch (reason) {
@@ -120,9 +120,9 @@ export default function AuthPage() {
     try {
       const candidate = typeof options?.url === 'string' ? decodeURIComponent(options.url) : ''
       if (isTrustedAuthorizationURL(candidate)) setUrl(candidate)
-      else setError('授权入口无效，请从“我的”页面重新开始')
+      else setError('授权入口无效，请从“更多”页面重新开始')
     } catch {
-      setError('授权入口编码无效，请从“我的”页面重新开始')
+      setError('授权入口编码无效，请从“更多”页面重新开始')
     }
   })
 

@@ -1,0 +1,42 @@
+.analysis-page {
+  .app-toolbar { display: flex; gap: 20px; align-items: center; margin-bottom: 20px; }
+  .analysis-back { margin: 0; padding: 0 18px; font-size: 25px; line-height: 1.7; color: #157a86; background: transparent; }
+  .analysis-back::after { border: 0; }
+  .analysis-controls { margin-bottom: 18px; }
+  .history-date-chips { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 16px; white-space: nowrap; }
+  .history-chip { flex: none; margin: 0; padding: 4px 18px; background: #fff; border: 1px solid #e9edf2; color: #6b7280; font-size: 24px; border-radius: 18px; line-height: 1.8; }
+  .history-chip-selected { color: #157a86; background: #ddf0f1; }
+  .analysis-date-range { display: flex; gap: 18px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+  .analysis-date-range picker { font-size: 23px; color: #6b7280; }
+  .analysis-coverage { padding: 12px 0 20px; color: #6b7280; font-size: 24px; }
+  .analysis-coverage > text, .analysis-record > text, .timeline-event > text { display: block; overflow-wrap: anywhere; }
+  .analysis-record { border-top: 1px solid #e9edf2; padding: 20px 0; line-height: 1.7; }
+  .analysis-bars .analysis-bar-row { display: grid; grid-template-columns: 126px minmax(0,1fr) 140px; gap: 14px; align-items: center; margin-top: 18px; font-size: 22px; }
+  .analysis-bar-track { height: 20px; background: #eef0f3; border-radius: 6px; overflow: hidden; }
+  .analysis-bar { height: 100%; background: #157a86; }
+  .analysis-bar-negative { background: #047857; }
+  .analysis-percentile-track { height: 14px; background: #e9edf2; border-radius: 8px; overflow: hidden; }
+  .analysis-percentile-track > view { height: 100%; background: #157a86; }
+  .analysis-bar-row text { overflow-wrap: anywhere; }
+  .analysis-canvas { display: block; width: 100%; height: 320px; margin-top: 18px; }
+  .analysis-curve-expand { display: inline-block; margin: 0; padding: 4px 14px; color: #157a86; background: #ddf0f1; border: 0; border-radius: 12px; font-size: 23px; line-height: 1.7; }
+  .analysis-curve-fullscreen { position: fixed; inset: 0; z-index: 1000; margin: 0; border-radius: 0; overflow-y: auto; background: #fff; padding: 36px 24px; padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
+  .analysis-curve-fullscreen .analysis-canvas { height: 58vh; }
+  .analysis-axis { display: flex; justify-content: space-between; gap: 16px; font-size: 21px; color: #6b7280; }
+  .analysis-axis > text { flex: 1; overflow-wrap: anywhere; }
+  .analysis-axis > text:last-child { text-align: right; }
+  .analysis-cursor { display: block; color: #157a86; font-size: 24px; line-height: 1.5; }
+  .calendar-week, .analysis-calendar { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 6px; }
+  .calendar-week { text-align: center; font-size: 24px; color: #6b7280; margin: 22px 0 12px; }
+  .calendar-day { width: 100%; padding: 10px 0; border: 1px solid #e9edf2; background: #f5f7f9; font-size: 23px; line-height: 1.5; border-radius: 10px; }
+  .calendar-day::after { border: none; }
+  .calendar-day > text { display: block; }
+  .calendar-distance { color: #157a86; font-size: 18px; overflow-wrap: anywhere; }
+  .timeline-event { border-left: 4px solid #157a86; }
+  .timeline-day { display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; padding: 12px 0; font-weight: 600; }
+  .timeline-date { color: #6b7280; font-size: 23px; margin-bottom: 12px; }
+  .metric-grid .metric { text-align: center; }
+  .metric-heading, .metric-reading { justify-content: center; align-items: center; }
+  .button-secondary { margin-top: 12px; }
+  .section-title { display: block; }
+}

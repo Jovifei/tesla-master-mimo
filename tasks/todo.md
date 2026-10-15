@@ -3519,3 +3519,29 @@ legacy whole-array paths and original OOM acceptance remain open.
 - [ ] Device/signature/provider/production gates remain NOT_RUN; no main merge or deployment.
 
 Review: docs/RPT-2026-10-11-local-persistent-recovery.md is the current evidence ledger. Existing Owner working-copy task content is preserved separately; only this safe stage summary is appended to the staged public ledger.
+
+## 2026-10-15 Authorized Mini/App parity stage (local dedicated worktree)
+
+Authorization: Jovi approved the full implementation and GitHub candidate stage. The dispatch explicitly supersedes the plan's original E-only location: product changes belong only in C:/Users/Admin/.codex/worktrees/c0fa/app_mimo. E:/project/tesla_master/app_mimo is read-only. No production, main merge, device installation, historical import, credential copying or release.
+
+Baseline: origin/main = 92cbf11ac0fd688f7eb3ba1cfa610910d79637fb, tree 89525f1f0248676e8ba09f6940753189a0aec9ae. Branch codex/miniprogram-parity-20261015. Git inherits an invalid shared core.worktree; always pass --work-tree=<actual absolute worktree> on Git commands. Shared config is unchanged.
+
+Evidence root: E:/Claude_allow/Download/matelink-mini-parity-20261015. Download/cache/test logs/candidates stay under this root. No private Owner configuration copied.
+
+- [x] Read full approved plan, parent and local AGENTS, relevant lessons and current production closeout. Fetch and verify main.
+- [x] Freeze Owner dirty manifest and baseline/source identity; create per-consumer parity matrix.
+- [x] Reproduce and fix data/units/energy/paging/security defects with real parser/controller/storage/page regressions; preserve all existing tests.
+- [x] Complete four-tab interaction, bounded statistics, typography and current README contract.
+- [x] Verify actual TPMS field evidence; implement only qualified per-wheel values and bounded foreground history; record unavailable fields explicitly.
+- [x] Implement isolated durable foreground completion notices with first-import suppression, correction deduplication and correct detail routing.
+- [ ] Shared Android/TS scenarios; Mini tests/typecheck/build/audits; Android and Go/PG/race/TLS/Web/source checks.
+- [ ] Official WeChat tool compile/render/network/cache/domain checks. If login is required, request Jovi QR scan while continuing independent work.
+- [ ] Review full diff, fix issues; commit/push independent branch, attach PR, await actual complete same-SHA CI.
+- [ ] Fixed SHA/tree/parent, package hashes, per-item acceptance and rollback report; Owner manifest unchanged. Experience/release labels remain separate.
+
+Review: in progress. Source candidate, DevTools verification, real device experience and release approval must be recorded separately. Existing baseline CI does not qualify new source.
+
+
+Integration review: App-authoritative visual correction captured in lessons. Implemented full39-entry matrix plus advanced analysis, curves, foreground TPMS/alerts, local trips/manualcost/adjustable tariff, report/export, actual historical instant query. Private Owner1870-file SHA256 snapshot rechecked zero drift. Local Android1023 each/0fail/error (Release8expectedskip), PG16Go404, LinuxTLS29+policy, Web13 passed. FinalMini/CI counts remain in the candidate report.
+
+Platform review: officialDevTools compile/render with urlCheck=true, syntheticUI distinct from real provider. Actualrequest blocked by missingrequestlegaldomain forAppIDwxc84899ab6146f1be; no TLS/domain bypass, upload or release. Subscriptionqualification/templates/consent/recipient/delivery and hand-heldexperienceNOT_RUN. Data-contract gaps and remainingApp-depthrequirements explicitly retained in matrix. This ledger does not label the whole experience/release complete.

@@ -1,5 +1,7 @@
 import type { CarStatus } from './types'
 import type { WechatStorage } from './session'
+import { restoreTpmsSnapshot } from '../domain/tpms'
+import { canStoreCache } from './cache_budget'
 
 const encode = (value: string) => encodeURIComponent(value).replace(/\./g, '%2E')
 function key(user: string, origin: string, uid: string): string {
@@ -13,6 +15,7 @@ function project(value: unknown): CarStatus | null {
   const b = (k: string): boolean | null => typeof row[k] === 'boolean' ? row[k] as boolean : null
   const t = (k: string): string | null => typeof row[k] === 'string' && row[k].length <= 128 ? row[k] as string : null
   return {
+    ...(row.tpms ? { tpms: restoreTpmsSnapshot(row.tpms) } : {}),
     state: t('state'), model: t('model'), trim: t('trim'), exteriorColor: t('exteriorColor'), wheelType: t('wheelType'),
     batteryLevel: n('batteryLevel', 0, 100), ratedRange: n('ratedRange', 0, 2000), odometer: n('odometer', 0, 10_000_000), location: null,
     locked: b('locked'), sentryMode: b('sentryMode'), windowsOpen: b('windowsOpen'), doorsOpen: b('doorsOpen'),
@@ -31,13 +34,31 @@ export function readVehicleCache(storage: Pick<WechatStorage, 'getStorageSync'>,
     return value?.schema === 1 && value.scope === scope ? project(value.status) : null
   } catch { return null }
 }
-export function writeVehicleCache(storage: Pick<WechatStorage, 'setStorageSync'>, user: string, origin: string, uid: string, status: CarStatus): boolean {
+export function writeVehicleCache(storage: Pick<WechatStorage, 'setStorageSync'> & Partial<Pick<WechatStorage, 'getStorageSync' | 'getStorageInfoSync'>>, user: string, origin: string, uid: string, status: CarStatus): boolean {
   if (!user.trim() || !uid.trim()) return false
   const scope = key(user, origin, uid)
-  try { storage.setStorageSync(scope, { schema: 1, scope, status: project(status), savedAt: new Date().toISOString() }); return true } catch { return false }
+  try {
+    const value = { schema: 1, scope, status: project(status), savedAt: new Date().toISOString() }
+    if (storage.getStorageInfoSync && !canStoreCache(storage, scope, value)) return false
+    storage.setStorageSync(scope, value); return true
+  } catch { return false }
 }
-export function clearVehicleCachesForAccount(storage: Pick<WechatStorage, 'getStorageInfoSync' | 'removeStorageSync'>, user: string, origin: string): void {
+export function clearVehicleCachesForAccount(storage: Pick<WechatStorage, 'getStorageInfoSync' | 'removeStorageSync'> & Partial<Pick<WechatStorage, 'getStorageSync'>>, user: string, origin: string): void {
   if (!user.trim()) return
   const prefix = `matelink.status.v1.${encode(origin)}.${encode(user)}.`
-  try { for (const item of storage.getStorageInfoSync?.().keys ?? []) if (item.startsWith(prefix)) storage.removeStorageSync(item) } catch { /* optional local cache */ }
+  try {
+    for (const item of storage.getStorageInfoSync?.().keys ?? []) {
+      if (!item.startsWith(prefix)) continue
+      const suffix = item.slice(prefix.length)
+      // Current keys encode dots in the stable UID; old literal separators are ambiguous.
+      let canonical = false
+      try { canonical = Boolean(suffix) && !suffix.includes('.') && encode(decodeURIComponent(suffix)) === suffix } catch { /* Unknown encoding stays untouched. */ }
+      if (!canonical) continue
+      if (storage.getStorageSync) {
+        const value = storage.getStorageSync(item) as { schema?: unknown; scope?: unknown } | undefined
+        if (!value || value.schema !== 1 || value.scope !== item) continue
+      }
+      storage.removeStorageSync(item)
+    }
+  } catch { /* optional local cache */ }
 }

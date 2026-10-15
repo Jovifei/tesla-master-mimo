@@ -2,15 +2,24 @@ import React from 'react'
 import TestRenderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Charge, Drive } from '../services/types'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+const sharedCases = (JSON.parse(readFileSync(resolve(process.cwd(), '../fixtures/miniprogram-app-parity-v1.json'), 'utf8')) as {
+  cases: { name: string; car: Record<string, unknown>; response: unknown; previousResponse?: unknown;
+    expected: { distanceKm: number; energyKwh: number | null; averageKwh100km: number | null; quality: string } }[]
+}).cases
 
 const platform = vi.hoisted(() => ({
   request: vi.fn(), values: new Map<string, unknown>(), failStorage: false,
+  navigateTo: vi.fn(),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void,
 }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Image: 'image' }))
 vi.mock('@tarojs/taro', () => ({
   default: {
     request: platform.request,
+    navigateTo: platform.navigateTo,
     getStorageSync: (key: string) => platform.values.get(key),
     setStorageSync: (key: string, value: unknown) => { if (platform.failStorage) throw new Error('synthetic quota'); platform.values.set(key, value) },
     removeStorageSync: (key: string) => platform.values.delete(key),
@@ -25,11 +34,13 @@ let renderer: ReactTestRenderer | null = null
 beforeEach(() => {
   vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test')
   platform.values.clear(); platform.failStorage = false; platform.request.mockReset()
-  platform.values.set('matelink.wechat.session.v1', { accessToken: 'synthetic-access', refreshToken: null, expiresAt: null, userId: 'user-a', linkRequired: false })
+  platform.navigateTo.mockReset()
+  platform.values.set('matelink.wechat.session.v1', { apiOrigin: 'https://api.example.test', accessToken: 'synthetic-access', refreshToken: null, expiresAt: null, userId: 'user-a', linkRequired: false })
 })
 afterEach(async () => {
   if (renderer) { await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null }
   vi.unstubAllEnvs()
+  vi.useRealTimers()
 })
 const start = '2026-10-14T00:00:00Z', end = '2026-10-14T00:01:00Z'
 const summary = { drive_id: 1, session_id: 'session-1', start_date: start, end_date: end,
@@ -55,6 +66,211 @@ async function click(record: ReactTestRenderer, text: string) {
 /** Actual pages -> actual API adapter -> fake Taro transport -> actual controllers/scoped storage.
  * No controller, API, energy projection or React page is mocked. */
 describe('history pages consume canonical data across layers', () => {
+  it('keeps history readable and makes a saturated durable notice journal visible', async () => {
+    platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? respond({ cars })
+      : respond({ drives: [reported], meta: { page: 1, show: 20, total_pages: 1 } }))
+    const page = await mount('drives')
+    const { foregroundEventsKey } = await import('../services/foreground_events')
+    const key = foregroundEventsKey({ origin: 'https://api.example.test', userId: 'user-a', stableId: 'uid7' }, 'drives')
+    platform.values.set(key, { schema: 1, scope: key, sources: { telemetry_mqtt: {
+      baseline: Date.parse(end), watermark: Date.parse(end), seen: Array.from({ length: 500 }, (_, id) => `session:old-${id}`),
+    } } })
+    await click(page, '刷新')
+    expect(JSON.stringify(page.toJSON())).toContain('本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
+  })
+
+  it.each(sharedCases)('consumes shared Android/Mini fixture $name through actual parsing, scoped persistence, offline reconstruction and page', async fixture => {
+    let offline = false, corrected = !fixture.previousResponse
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (offline) throw new Error('synthetic offline')
+      if (url.endsWith('/cars')) return respond({ cars: [fixture.car] })
+      return { statusCode: 200, data: corrected ? fixture.response : fixture.previousResponse, header: {} }
+    })
+    let page = await mount('drives')
+    if (fixture.previousResponse) { corrected = true; await click(page, '刷新') }
+    const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
+    const key = historyCacheKey('drives', 'user-a', 'fixture-vehicle', 'https://api.example.test')
+    const assertConsumer = () => {
+      const saved = readHistoryCache<Drive>(storage, key)[0]
+      expect(saved.distanceKm).toBeCloseTo(fixture.expected.distanceKm, 8)
+      if (fixture.expected.energyKwh == null) expect(saved.energy?.energyKwh).toBeNull()
+      else expect(saved.energy?.energyKwh).toBeCloseTo(fixture.expected.energyKwh, 8)
+      expect(saved.energy?.quality).toBe(fixture.expected.quality)
+      const card = page.root.findByProps({ className: 'history-record' })
+      const avg = fixture.expected.averageKwh100km
+      expect(card.findByProps({ ariaLabel: `平均能耗 ${avg == null ? '暂无数据' : Number(avg.toFixed(1))} kWh/100km` })).toBeDefined()
+    }
+    assertConsumer()
+    await act(async () => { platform.unload(); page.unmount() }); renderer = null
+    offline = true
+    page = await mount('drives')
+    assertConsumer()
+    expect(JSON.stringify(page.toJSON())).toContain('仅本机缓存')
+  })
+
+  it('consumes normalized miles, qualified negative net and genuine zero in independent and paired interval totals', async () => {
+    const raw = (id: number, distance: number, kwh: number | null) => ({ ...reported,
+      drive_id: id, session_id: `semantic-${id}`, odometer_details: { odometer_distance: distance },
+      energy_contract: { version: 1, net_energy: { ...reported.energy_contract.net_energy, value_kwh: kwh, quality: kwh == null ? 'unknown' : 'reported' } } })
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      return respond({ units: { unit_of_length: 'mi' }, drives: [raw(1, 10, 2), raw(2, 10 / 1.609344, -0.5), raw(3, 0, 0), raw(4, 10 / 1.609344, null)],
+        meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('drives')
+    await click(page, '统计口径与能耗')
+    const cards = page.root.findAllByProps({ className: 'history-record' })
+    expect(cards[0].findByProps({ ariaLabel: '平均能耗 12.4 kWh/100km' })).toBeDefined()
+    expect(cards[1].findByProps({ ariaLabel: '平均能耗 -5 kWh/100km' })).toBeDefined()
+    expect(cards[2].findByProps({ ariaLabel: '距离 0 km' })).toBeDefined()
+    expect(cards[2].findByProps({ ariaLabel: '平均能耗 暂无数据 kWh/100km' })).toBeDefined()
+    const interval = page.root.findByProps({ className: 'card history-interval' })
+    expect(interval.findByProps({ ariaLabel: '已知净能量合计 1.5 kWh' })).toBeDefined()
+    expect(interval.findByProps({ ariaLabel: '已知距离合计 36.09 km' })).toBeDefined()
+    expect(interval.findByProps({ ariaLabel: '区间平均能耗 5.7 kWh/100km' })).toBeDefined()
+    expect(interval.findAllByType('text').some(node => node.children.join('') === '配对平均覆盖 2/4 条；含估算 0 条')).toBe(true)
+  })
+
+  it.each(['drives', 'charges'] as const)('places %s summary and record cells in the actual Android App hierarchy', async kind => {
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/current')) return respond({ charge: null })
+      return respond({ [kind]: kind === 'drives' ? [reported] : [{ charge_id: 1, source: 'teslamate_archive', start_date: start, end_date: end,
+        start_battery_level: 20, end_battery_level: 80, charge_energy_added: 10, cost: 5, currency: 'EUR', address: '真实地点' }],
+        meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount(kind)
+    const summary = page.root.findByProps({ className: 'history-summary-primary metric-grid' })
+    expect(summary.findAllByProps({ className: 'metric-label' }).map(node => node.children.join(''))).toEqual(
+      kind === 'drives' ? ['总行程数', '总距离', '总时间', '最高速度'] : ['充电次数', '充电量', '总费用', '平均每次费用'])
+    const record = page.root.findByProps({ className: 'history-record' })
+    const sections = record.children.filter(child => typeof child !== 'string').map(child => child.props.className)
+    expect(sections.slice(0, kind === 'drives' ? 4 : 2)).toEqual(kind === 'drives'
+      ? ['history-record-date', 'history-record-evidence', 'history-route', 'history-record-metrics']
+      : ['history-charge-heading', 'history-record-metrics'])
+    expect(record.findByProps({ className: 'history-record-metrics' }).findAllByProps({ className: 'metric-label' }).map(node => node.children.join('')))
+      .toEqual(kind === 'drives' ? ['时长', '距离', '最高速度', '平均能耗'] : ['时长', '电池充入', '费用', '电量'])
+    const body = page.root.findByProps({ className: 'page history-page' })
+    const headerClasses = body.findAllByType('view').map(child => child.props.className).filter(Boolean)
+    expect(headerClasses.indexOf('history-controls')).toBeLessThan(headerClasses.indexOf('card history-interval'))
+  })
+
+  it('keeps each newly detected event available when one poll contains multiple completed drives', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-14T00:02:00Z'))
+    let fresh = false
+    const raw = (id: number) => ({ ...reported, drive_id: id, session_id: `batch-${id}`, end_date: `2026-10-14T00:0${id}:00Z` })
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      const match = url.match(/\/drives\/(\d+)$/)
+      if (match) return respond({ drive: raw(Number(match[1])) })
+      return respond({ drives: fresh ? [raw(4), raw(3), raw(1)] : [raw(1)], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('drives')
+    fresh = true; vi.setSystemTime(new Date('2026-10-14T00:05:00Z'))
+    await click(page, '刷新')
+    await click(page, '查看新行程')
+    expect(page.root.findAllByProps({ className: 'card history-notice' })).toHaveLength(1)
+    await click(page, '查看新行程')
+    expect(page.root.findAllByProps({ className: 'card history-notice' })).toHaveLength(0)
+    expect(platform.request.mock.calls.some(([request]) => request.url.endsWith('/drives/3'))).toBe(true)
+    expect(platform.request.mock.calls.some(([request]) => request.url.endsWith('/drives/4'))).toBe(true)
+  })
+
+  it.each(['drives', 'charges'] as const)('suppresses first-import %s notices, opens a genuinely new same-scope detail once and deduplicates corrections/reopen', async kind => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-14T00:02:00Z'))
+    let phase: 'initial' | 'new' | 'correction' = 'initial'
+    const raw = (id: number) => kind === 'drives' ? { ...reported, drive_id: id, session_id: `new-${id}`,
+      end_date: id === 1 ? end : phase === 'correction' ? '2026-10-14T00:03:30Z' : '2026-10-14T00:03:00Z' }
+      : { charge_id: id, session_id: `new-${id}`, start_date: start, end_date: id === 1 ? end : phase === 'correction' ? '2026-10-14T00:03:30Z' : '2026-10-14T00:03:00Z', source: 'teslamate_archive', quality_state: 'observed', charge_energy_added: id }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/current')) return respond({ charge: null })
+      if (url.endsWith(`/${kind}/2`)) return respond({ [kind === 'drives' ? 'drive' : 'charge']: raw(2) })
+      return respond({ [kind]: phase === 'initial' ? [raw(1)] : [raw(2), raw(1)], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    let page = await mount(kind)
+    const noticeLabel = `查看新${kind === 'drives' ? '行程' : '充电'}`
+    expect(page.root.findAllByProps({ className: 'card history-notice' })).toHaveLength(0)
+    phase = 'new'; vi.setSystemTime(new Date('2026-10-14T00:04:00Z'))
+    await click(page, '刷新')
+    expect(page.root.findAllByProps({ className: 'card history-notice' })).toHaveLength(1)
+    await click(page, noticeLabel)
+    expect(platform.request.mock.calls.some(([request]) => request.url.endsWith(`/${kind}/2`))).toBe(true)
+    expect(JSON.stringify(page.toJSON())).toContain(`${kind === 'drives' ? '行程' : '充电'}详情`)
+    await click(page, '返回列表')
+    phase = 'correction'
+    await click(page, '刷新')
+    expect(page.root.findAllByProps({ className: 'card history-notice' })).toHaveLength(0)
+    await act(async () => { platform.unload(); page.unmount() }); renderer = null
+    page = await mount(kind)
+    expect(page.root.findAllByProps({ className: 'card history-notice' })).toHaveLength(0)
+  })
+
+  it('automatically collects a bounded interval without advancing manual paging and keeps paired energy coverage independent', async () => {
+    const row = (id: number, kwh: number | null) => ({ ...reported, drive_id: id, session_id: `interval-${id}`,
+      odometer_details: { odometer_distance: 10 }, energy_contract: { version: 1,
+        net_energy: { ...reported.energy_contract.net_energy, value_kwh: kwh, quality: kwh == null ? 'unknown' : 'reported' } } })
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      const page = Number(new URL(url).searchParams.get('page') || 1)
+      return respond({ drives: [row(page, page === 1 ? 2 : null)], meta: { page, show: 20, total_pages: 2 } })
+    })
+    const page = await mount('drives')
+    await click(page, '统计口径与能耗')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
+    const interval = page.root.findByProps({ className: 'card history-interval' })
+    expect(interval.findByProps({ ariaLabel: '区间平均能耗 20 kWh/100km' })).toBeDefined()
+    expect(interval.findByProps({ ariaLabel: '已知净能量合计 2 kWh' })).toBeDefined()
+    expect(interval.findByProps({ ariaLabel: '已知距离合计 20 km' })).toBeDefined()
+    expect(interval.findAllByType('text').some(node => node.children.join('') === '配对平均覆盖 1/2 条；含估算 0 条')).toBe(true)
+    expect(interval.findAllByType('text').some(node => node.children.join('').includes('已完成服务器分页'))).toBe(true)
+    await click(page, '加载更多')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
+  })
+
+  it('does not restore revoked detail energy when a delayed statistics page finishes', async () => {
+    let release: ((response: unknown) => void) | null = null
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/drives/1')) return respond({ drive: unknown })
+      const page = Number(new URL(url).searchParams.get('page') || 1)
+      if (page === 2) return new Promise(resolve => { release = resolve })
+      return respond({ drives: [reported], meta: { page, show: 20, total_pages: 2 } })
+    })
+    const page = await mount('drives')
+    await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+    await act(async () => { release!(respond({ drives: [], meta: { page: 2, show: 20, total_pages: 2 } })) }); await flush()
+    await click(page, '统计口径与能耗')
+    const interval = page.root.findByProps({ className: 'card history-interval' })
+    expect(interval.findByProps({ ariaLabel: '已知净能量合计 暂无数据 kWh' })).toBeDefined()
+    expect(interval.findByProps({ ariaLabel: '区间平均能耗 暂无数据 kWh/100km' })).toBeDefined()
+  })
+
+  it('renders all-unknown interval totals as unknown and stops automatic statistics at 25 pages while manual paging remains', async () => {
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      const page = Number(new URL(url).searchParams.get('page') || 1)
+      return respond({ drives: [{ ...unknown, drive_id: page, session_id: `bound-${page}`, duration_min: null, odometer_details: null }],
+        meta: { page, show: 20, total_pages: 30 } })
+    })
+    const page = await mount('drives')
+    await click(page, '统计口径与能耗')
+    const interval = page.root.findByProps({ className: 'card history-interval' })
+    expect(interval.findByProps({ ariaLabel: '区间平均能耗 暂无数据 kWh/100km' })).toBeDefined()
+    expect(interval.findByProps({ ariaLabel: '已知净能量合计 暂无数据 kWh' })).toBeDefined()
+    expect(interval.findByProps({ ariaLabel: '已知距离合计 暂无数据 km' })).toBeDefined()
+    expect(interval.findAllByType('text').some(node => node.children.join('').includes('部分覆盖：达到 500 条或 25 页上限'))).toBe(true)
+    const fetched = platform.request.mock.calls.map(([request]) => request.url).filter(url => /\/drives\?/.test(url))
+    expect(fetched).toHaveLength(25)
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
+    await click(page, '加载更多')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
+  })
+
   it('keeps long trips in total minutes with explicit units on the actual card and detail', async () => {
     const row = { ...reported, duration_min: 130, odometer_details: { odometer_distance: 2.04 } }
     platform.request.mockImplementation(async ({ url }: { url: string }) => {
@@ -69,6 +285,8 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(page.root.findAllByProps({ ariaLabel: '时长 130 分钟' })).toHaveLength(2)
     expect(JSON.stringify(page.toJSON())).toContain('总电耗 -0.25 kWh')
+    await click(page, '行程曲线')
+    expect(platform.navigateTo).toHaveBeenCalledWith({ url: '/pages/analysis/index?kind=curves&id=1' })
   })
   it('renders the four qualified trip metrics and actual partial chart, retains proof on weak refresh and rejects incompatible peak units', async () => {
     let phase: 'initial' | 'weak' | 'mph' | 'unsupported' | 'zero' = 'initial'

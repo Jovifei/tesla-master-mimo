@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-10-16 Jovi: Mini page appearance and metric placement must follow App
+
+- Correction: 小程序页面风格和数据的位置与当前 App 不一致；必须以 Jovi 的 App 为准。
+- Rule: Before changing a Mini page, map the actual current Android page hierarchy, card order, metric positions, colors, typography and primary actions to its Mini counterpart. Use App source and rendered evidence; generic cold-gray/blue-green styling alone is insufficient.
+- Acceptance: Compare all four tabs plus auth/detail states side by side. Retain physically correct data qualification, and explicitly label platform limitations; do not use those differences to justify unrelated layout changes.
+
 ## 2026-10-02 远端执行与本地交接
 
 - Pattern：Jovi 的协作流程允许网页 GPT 在远端执行并提交独立分支，再把 Prompt/交接包交给本地 Codex，不能固定解释为远端永远只规划。

@@ -1,6 +1,16 @@
 import { defineConfig } from '@tarojs/cli'
+import { execFileSync } from 'node:child_process'
+import { resolve } from 'node:path'
 
 const apiBaseUrl = process.env.TARO_APP_API_BASE_URL ?? ''
+const sourceRevision = (() => {
+  try {
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+    let dirty = true
+    try { execFileSync('git', [`--work-tree=${resolve(process.cwd(), '..')}`, 'diff', '--quiet', 'HEAD'], { stdio: 'ignore' }); dirty = false } catch { /* An uncommitted source is labeled explicitly. */ }
+    return `${head}${dirty ? '-dirty' : ''}`
+  } catch { return 'unknown' }
+})()
 
 export default defineConfig({
   projectName: 'matelink-wechat-miniprogram',
@@ -21,6 +31,7 @@ export default defineConfig({
   ],
   defineConstants: {
     'process.env.TARO_APP_API_BASE_URL': JSON.stringify(apiBaseUrl),
+    'process.env.TARO_APP_SOURCE_REVISION': JSON.stringify(sourceRevision),
   },
   mini: {
     postcss: {

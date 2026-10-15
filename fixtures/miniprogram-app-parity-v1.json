@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "evidenceKind": "synthetic_shared_contract",
+  "cases": [
+    {
+      "name": "ten_miles_two_kwh",
+      "car": { "car_id": 7, "vehicle_uid": "fixture-vehicle", "model": "unknown" },
+      "response": { "data": { "units": { "unit_of_length": "mi" }, "drives": [
+        { "drive_id": 101, "source": "teslamate_archive", "start_date": "2026-10-14T00:00:00Z", "end_date": "2026-10-14T00:10:00Z", "duration_min": 10, "odometer_details": { "odometer_distance": 10 }, "energy_consumed_net": 2 }
+      ] } },
+      "expected": { "distanceKm": 16.09344, "energyKwh": 2, "averageKwh100km": 12.42742384474668, "quality": "reported" }
+    },
+    {
+      "name": "qualified_zero",
+      "car": { "car_id": 7, "vehicle_uid": "fixture-vehicle", "model": "unknown" },
+      "response": { "data": { "units": { "unit_of_length": "km" }, "drives": [
+        { "drive_id": 102, "source": "telemetry_mqtt", "start_date": "2026-10-14T01:00:00Z", "end_date": "2026-10-14T01:10:00Z", "duration_min": 10, "odometer_details": { "odometer_distance": 10 }, "energy_contract": { "version": 1, "net_energy": { "value_kwh": 0, "unit": "kWh", "method": "api_reported_net", "measurement_point": "reported_net", "source": "telemetry_mqtt", "quality": "reported", "start_date": "2026-10-14T01:00:00Z", "end_date": "2026-10-14T01:10:00Z" } } }
+      ] } },
+      "expected": { "distanceKm": 10, "energyKwh": 0, "averageKwh100km": 0, "quality": "reported" }
+    },
+    {
+      "name": "qualified_negative_net",
+      "car": { "car_id": 7, "vehicle_uid": "fixture-vehicle", "model": "unknown" },
+      "response": { "data": { "units": { "unit_of_length": "km" }, "drives": [
+        { "drive_id": 103, "source": "telemetry_mqtt", "start_date": "2026-10-14T02:00:00Z", "end_date": "2026-10-14T02:10:00Z", "duration_min": 10, "odometer_details": { "odometer_distance": 10 }, "energy_contract": { "version": 1, "net_energy": { "value_kwh": -0.5, "unit": "kWh", "method": "api_reported_net", "measurement_point": "reported_net", "source": "telemetry_mqtt", "quality": "reported", "start_date": "2026-10-14T02:00:00Z", "end_date": "2026-10-14T02:10:00Z" } } }
+      ] } },
+      "expected": { "distanceKm": 10, "energyKwh": -0.5, "averageKwh100km": -5, "quality": "reported" }
+    },
+    {
+      "name": "unknown_capacity_soc",
+      "car": { "car_id": 7, "vehicle_uid": "fixture-vehicle", "model": "unknown" },
+      "response": { "data": { "units": { "unit_of_length": "km" }, "drives": [
+        { "drive_id": 104, "source": "telemetry_mqtt", "start_date": "2026-10-14T03:00:00Z", "end_date": "2026-10-14T03:10:00Z", "duration_min": 10, "odometer_details": { "odometer_distance": 10 }, "battery_details": { "start_battery_level": 80, "end_battery_level": 78 } }
+      ] } },
+      "expected": { "distanceKm": 10, "energyKwh": null, "averageKwh100km": null, "quality": "unknown" }
+    },
+    {
+      "name": "explicit_unknown_revocation",
+      "car": { "car_id": 7, "vehicle_uid": "fixture-vehicle", "model": "Y" },
+      "previousResponse": { "data": { "units": { "unit_of_length": "km" }, "drives": [
+        { "drive_id": 105, "source": "telemetry_mqtt", "start_date": "2026-10-14T04:00:00Z", "end_date": "2026-10-14T04:10:00Z", "duration_min": 10, "odometer_details": { "odometer_distance": 10 }, "energy_contract": { "version": 1, "net_energy": { "value_kwh": 2, "unit": "kWh", "method": "api_reported_net", "measurement_point": "reported_net", "source": "telemetry_mqtt", "quality": "reported", "start_date": "2026-10-14T04:00:00Z", "end_date": "2026-10-14T04:10:00Z" } } }
+      ] } },
+      "response": { "data": { "units": { "unit_of_length": "km" }, "drives": [
+        { "drive_id": 105, "source": "telemetry_mqtt", "start_date": "2026-10-14T04:00:00Z", "end_date": "2026-10-14T04:10:00Z", "duration_min": 10, "odometer_details": { "odometer_distance": 10 }, "battery_details": { "start_battery_level": 80, "end_battery_level": 78 }, "energy_contract": { "version": 1, "net_energy": { "value_kwh": null, "source": "telemetry_mqtt", "quality": "unknown", "reason": "provider_energy_unsupported" } } }
+      ] } },
+      "expected": { "distanceKm": 10, "energyKwh": null, "averageKwh100km": null, "quality": "unknown" }
+    }
+  ]
+}

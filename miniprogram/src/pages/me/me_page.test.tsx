@@ -12,7 +12,7 @@ vi.mock('@tarojs/taro', () => ({ default: {
 }, useDidShow: (fn: () => void) => { platform.show = fn }, useDidHide: (fn: () => void) => { platform.hide = fn },
 useUnload: (fn: () => void) => { platform.unload = fn } }))
 const key = 'matelink.wechat.session.v1'
-const session = (userId: string) => ({ accessToken: `fixture-${userId}`, refreshToken: null, expiresAt: null, userId, linkRequired: false })
+const session = (userId: string) => ({ apiOrigin: 'https://api.example.test', accessToken: `fixture-${userId}`, refreshToken: null, expiresAt: null, userId, linkRequired: false })
 const respond = (statusCode: number, data: unknown) => ({ statusCode, data, header: {} })
 let renderer: ReactTestRenderer | null = null
 beforeEach(() => {

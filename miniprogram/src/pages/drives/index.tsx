@@ -2,7 +2,7 @@ import { Button, Picker, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
-import { acceptHistoryDetail, acceptHistoryPage } from '../../domain/history_controller'
+import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, type HistoryInterval } from '../../domain/history_controller'
 import { emptyHistoryQuery, filterHistory, historyDateTime, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
 import './index.scss'
@@ -12,6 +12,9 @@ import { carSelectionStorageKey, type Car, type Drive, type HistoryPage, type Hi
 import { readAppSession } from '../../services/session'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 import LoadingIndicator from '../../components/LoadingIndicator'
+import HistoryIntervalSummary from '../../components/HistoryIntervalSummary'
+import HistoryDateChips from '../../components/HistoryDateChips'
+import { inspectForegroundEvents, observeForegroundEvents, type ForegroundNotice } from '../../services/foreground_events'
 import MetricValue, { displayNumber, peakSpeedKmh } from '../../components/MetricValue'
 import VisualIcon from '../../components/VisualIcon'
 import LoadedDriveChart from '../../components/LoadedDriveChart'
@@ -59,6 +62,10 @@ export default function DrivesPage() {
   const [items, setItems] = useState<Drive[]>([])
   const [meta, setMeta] = useState<HistoryPageMeta | null>(null)
   const [selected, setSelected] = useState<Drive | null>(null)
+  const [interval, setInterval] = useState<HistoryInterval<Drive> | null>(null)
+  const [notices, setNotices] = useState<ForegroundNotice[]>([])
+  const notice = notices[0] ?? null
+  const [noticeLimited, setNoticeLimited] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [query, setQueryState] = useState<HistoryQuery>(emptyHistoryQuery())
   const queryRef = useRef(query)
@@ -83,6 +90,9 @@ export default function DrivesPage() {
     setItems([])
     setMeta(null)
     setSelected(null)
+    setInterval(null)
+    setNotices([])
+    setNoticeLimited(false)
     setCacheWarning(false)
     queryScopeRef.current = null
     setQuery(emptyHistoryQuery())
@@ -94,6 +104,8 @@ export default function DrivesPage() {
     loadingMoreRef.current = false
     setLoading(false)
     setLoadingMore(false)
+    setNotices([])
+    setNoticeLimited(false)
   }
 
   const restoreCached = (nextCar: Car) => {
@@ -107,6 +119,7 @@ export default function DrivesPage() {
     pagesRef.current = []
     pageRef.current = 0
     setItems(cached)
+    setInterval({ items: cached, complete: false, receivedPages: 0, reason: 'cached' })
     setMeta({ ...emptyMeta, availability: 'cached', source: 'local_history', hasMore: false })
   }
 
@@ -144,6 +157,10 @@ export default function DrivesPage() {
     setQuery(readHistoryQuery(Taro, cacheKey))
 
     if (!append) {
+      setInterval(null)
+      setNotices([])
+      setNoticeLimited(false)
+      scopeGate.current.begin('interval')
       loadingMoreRef.current = false
       itemsRef.current = []
       pagesRef.current = []
@@ -186,10 +203,25 @@ export default function DrivesPage() {
       pagesRef.current = decision.state.pages
       pageRef.current = decision.state.page
       setItems(decision.state.items)
+      setInterval(snapshot => snapshot ? { ...snapshot, items: snapshot.items.map(row => decision.state.items.find(item => historyRowKey(item) === historyRowKey(row) || item.id === row.id) ?? row) } : snapshot)
       const saved = writeHistoryCache(Taro, cacheKey, decision.state.items)
       setCacheWarning(!saved)
       setMeta({ ...result.meta, hasMore: decision.hasMore })
       setError(null)
+      if (!append) {
+        const admittedRows = result.items.map(row => decision.state.items.find(item => historyRowKey(item) === historyRowKey(row) || item.id === row.id) ?? row)
+        const notices = observeForegroundEvents(Taro, { origin: apiOrigin, userId: session.userId, stableId: nextCar.stableId }, 'drives', admittedRows)
+        setNotices(notices)
+        setNoticeLimited(inspectForegroundEvents(Taro, { origin: apiOrigin, userId: session.userId, stableId: nextCar.stableId }, 'drives').limited)
+        const intervalTicket = scopeGate.current.begin('interval')
+        const canonicalPage = { ...result, items: enrichHistoryInterval(result.items, decision.state.items) }
+        void collectHistoryInterval(canonicalPage, async page => {
+          const response = await matelinkApi.getDrives(nextCar.id, page, PAGE_SIZE, nextCar)
+          return { ...response, items: enrichHistoryInterval(response.items, itemsRef.current) }
+        }, intervalTicket.isCurrent).then(snapshot => {
+          if (snapshot && intervalTicket.isCurrent()) setInterval({ ...snapshot, items: snapshot.items.map(row => itemsRef.current.find(item => historyRowKey(item) === historyRowKey(row) || item.id === row.id) ?? row) })
+        })
+      }
     } catch (reason) {
       if (!ticket.isCurrent()) return
       setError(errorMessage(reason))
@@ -220,7 +252,7 @@ export default function DrivesPage() {
       setCars([])
       setCar(null)
       resetHistoryState()
-      setError('请先在“我的”中完成微信登录')
+      setError('请先在“更多”中完成微信登录')
       return
     }
     setError(null)
@@ -314,6 +346,7 @@ export default function DrivesPage() {
         itemsRef.current = state.items
         pagesRef.current = state.pages
         setItems(state.items)
+        setInterval(snapshot => snapshot ? { ...snapshot, items: snapshot.items.map(row => state.items.find(item => historyRowKey(item) === historyRowKey(row) || item.id === row.id) ?? row) } : snapshot)
         const selectedRow = state.items.find(row => historyRowKey(row) === historyRowKey(detail) || row.id === detail.id)
         setSelected(selectedRow && !isHistoryQuarantined(selectedRow) ? selectedRow : null)
         const session = readAppSession(Taro)
@@ -328,47 +361,62 @@ export default function DrivesPage() {
   const visibleItems = filterHistory(trustedItems, query)
   return (
     <View className="page history-page">
-      <View className="card">
-        <View className="visual-heading"><VisualIcon name="route" /><Text className="title">行程</Text></View>
-        <Text className="muted">{car ? `${car.displayName || '当前车辆'} · ` : ''}只展示服务端返回的真实记录；缺失路线、能耗或地址会保留为暂无数据。</Text>
+      <View className="history-page-header">
+        <Text className="title">行程</Text>
         {cars.length > 1 ? (
           <Picker mode="selector" range={cars.map(item => item.displayName || item.name || `车辆 ${item.stableId}`)} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}>
             <View className="status"><Text className="status-label">车辆</Text><Text className="status-value">{car?.displayName || '请选择车辆'}</Text></View>
           </Picker>
         ) : null}
         {meta?.availability ? <Text className="muted">历史状态：{availabilityLabel(meta.availability)} · {sourceLabel(meta.source)}</Text> : null}
-        <Text className="muted">本机缓存保留最近最多 500 条且不超过 800 KiB，其他记录请在线加载。</Text>
         {cacheWarning ? <Text className="error">在线数据已读到，但未保存到本机。</Text> : null}
       </View>
 
-      {car ? <View className="card history-controls">
+      {car ? <View className="history-controls">
+        <HistoryDateChips kind="drives" query={query} onChange={updateQuery} />
+        <View className="history-distance-chips">
+          {[{ label: '全部里程', min: 0, max: undefined }, { label: '通勤 (< 10km)', min: 0, max: 10 },
+            { label: '短途 (10–100km)', min: 10, max: 100 }, { label: '长途 (100km+)', min: 100, max: undefined }].map(option =>
+            <Button key={option.label} className={`history-chip ${query.minDistanceKm === option.min && query.maxDistanceKm === option.max ? 'history-chip-selected' : ''}`} onClick={() => updateQuery({ minDistanceKm: option.min, maxDistanceKm: option.max })}>{option.label}</Button>)}
+        </View>
         <View className="history-filter-row">
           <Picker mode="date" value={query.startDate} onChange={event => updateQuery({ startDate: event.detail.value })}><View>开始日期：{query.startDate || '不限'}</View></Picker>
           <Picker mode="date" value={query.endDate} onChange={event => updateQuery({ endDate: event.detail.value })}><View>结束日期：{query.endDate || '不限'}</View></Picker>
         </View>
-        <Picker mode="selector" range={['全部里程', '至少 1 km', '至少 5 km', '至少 10 km']} value={Math.max(0, [0, 1, 5, 10].indexOf(query.minDistanceKm))} onChange={event => updateQuery({ minDistanceKm: [0, 1, 5, 10][Number(event.detail.value)] ?? 0 })}><View>里程：{query.minDistanceKm ? `至少 ${query.minDistanceKm} km` : '不限'}</View></Picker>
+        <Picker mode="selector" range={['全部里程', '至少 1 km', '至少 5 km', '至少 10 km']} value={Math.max(0, [0, 1, 5, 10].indexOf(query.minDistanceKm))} onChange={event => updateQuery({ minDistanceKm: [0, 1, 5, 10][Number(event.detail.value)] ?? 0, maxDistanceKm: undefined })}><View className="history-custom-distance">自定义最少里程：{query.minDistanceKm ? `至少 ${query.minDistanceKm} km` : '不限'}</View></Picker>
         <View className="history-actions"><Button className="button" onClick={() => updateQuery(emptyHistoryQuery())}>清除筛选</Button><Button className="button" loading={loading} onClick={() => { void load() }}>刷新</Button></View>
         {offline ? <Text className="muted">本机缓存 · 未验证在线车辆</Text> : null}
       </View> : null}
+      {notice ? <View className="card history-notice">
+        <Text className="muted">前台发现一条新的已完成行程，仅本次打开时检查。</Text>
+        <Button className="button" onClick={() => {
+          const row = itemsRef.current.find(item => item.id === notice.id && item.sessionId === notice.sessionId && item.source === notice.source)
+          setNotices(current => current.slice(1))
+          if (row) void openDetail(row)
+        }}>查看新行程</Button>
+        <Button className="button" onClick={() => setNotices([])}>关闭提示</Button>
+      </View> : null}
+      {car ? <HistoryIntervalSummary interval={interval} query={query} kind="drives" /> : null}
+      {noticeLimited ? <Text className="muted history-notice-limit">本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看</Text> : null}
 
       {car && visibleItems.length > 0 ? <LoadedDriveChart items={visibleItems} /> : null}
 
       {!readAppSession(Taro) ? (
-        <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待微信登录</Text><Text className="muted">请先在“我的”中建立会话。</Text></View>
+        <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待微信登录</Text><Text className="muted">请先在“更多”中建立会话。</Text></View>
       ) : trustedItems.length === 0 && !loading ? (
         <View className="card empty-state"><VisualIcon name="route" /><Text className="section-title">暂无可展示的行程</Text><Text className="muted">当前没有可展示的行程记录，空响应不会生成示例数据。</Text>
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
         </View>
       ) : (
-        <View className="card">
+        <View className="history-list">
           <Text className="section-title">行程记录 {trustedItems.length ? `（${trustedItems.length}）` : ''}</Text>
           {loading ? <LoadingIndicator label="正在读取行程…" compact /> : null}
           {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的行程</Text> : null}
           {visibleItems.map(item => (
             <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
-              <View className="history-record-top"><Text>{historyDateTime(item.startDate)}</Text><Text className="history-soc">{battery(item.startBatteryLevel)} → {battery(item.endBatteryLevel)}</Text></View>
-              <View className="visual-heading history-route"><VisualIcon name="route" /><Text className="muted">{value(item.startAddress)} → {value(item.endAddress)}</Text></View>
-              <Text className="history-source">{energyLabel(item)} · {sourceLabel(item.source)}</Text>
+              <Text className="history-record-date">{historyDateTime(item.startDate)}</Text>
+              <View className="history-record-evidence"><Text className="history-soc">{battery(item.startBatteryLevel)} → {battery(item.endBatteryLevel)}</Text><Text className="history-source">{energyLabel(item)} · {sourceLabel(item.source)}</Text></View>
+              <View className="history-route"><View className="history-route-stops"><Text className="history-route-start">{value(item.startAddress)}</Text><Text className="history-route-end">{value(item.endAddress)}</Text></View><VisualIcon name="route" /></View>
               <View className="history-record-metrics">
                 <MetricValue label="时长" value={duration(item.durationMinutes).value} unit={duration(item.durationMinutes).unit} icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
                 <MetricValue label="距离" value={item.distanceKm} unit="km" icon="distance" digits={1} />
@@ -385,6 +433,7 @@ export default function DrivesPage() {
       {selected && !isHistoryQuarantined(selected) ? (
         <View className="card">
           <View className="history-detail-heading"><Text className="section-title">行程详情</Text><Button className="button" onClick={closeDetail}>返回列表</Button></View>
+          <Button className="button-secondary" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=curves&id=${encodeURIComponent(selected.id)}` }) }}>行程曲线</Button>
           <Text className="muted">{value(selected.startAddress)} → {value(selected.endAddress)}</Text>
           <View className="metric-grid">
             <MetricValue label="距离" value={selected.distanceKm} unit="km" icon="distance" digits={1} />

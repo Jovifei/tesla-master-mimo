@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { acceptHistoryDetail, acceptHistoryPage, emptyHistoryControllerState, type HistoryControllerState } from './history_controller'
+import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, emptyHistoryControllerState, type HistoryControllerState } from './history_controller'
 import type { Charge, Drive, HistoryPage } from '../services/types'
 import { driveEnergyReceipt, resolveDriveEnergy } from './drive_energy'
 
@@ -25,6 +25,27 @@ function page<T extends Drive | Charge>(pageNumber: number, items: T[], hasMore:
 }
 
 describe('history page controller', () => {
+  it('collects no more than 500 actual interval rows and leaves a stopped snapshot explicitly partial', async () => {
+    const fetchPage = async (number: number) => page(number, Array.from({ length: 20 }, (_, index) => row((number - 1) * 20 + index)), true, 30)
+    const interval = await collectHistoryInterval(await fetchPage(1), fetchPage, () => true)
+    expect(interval).toMatchObject({ complete: false, receivedPages: 25, reason: 'limit' })
+    expect(interval?.items).toHaveLength(500)
+  })
+
+  it('abandons a statistics snapshot after its owner changes and retains only verified prefix on failures', async () => {
+    let current = true
+    const cancelled = await collectHistoryInterval(page(1, [row(1)], true, 2), async () => {
+      current = false
+      return page(2, [row(2)], false, 2)
+    }, () => current)
+    expect(cancelled).toBeNull()
+    const failed = await collectHistoryInterval(page(1, [row(1)], true, 2), async () => { throw new Error('offline') }, () => true)
+    expect(failed).toMatchObject({ complete: false, receivedPages: 1, reason: 'request_failed' })
+    expect(failed?.items.map(row => row.id)).toEqual(['drive-1'])
+    const repeated = await collectHistoryInterval(page(1, [row(1)], true, 2), async () => page(2, [row(1)], false, 2), () => true)
+    expect(repeated).toMatchObject({ complete: false, receivedPages: 1, reason: 'repeated_page' })
+  })
+
   it('accepts four pages of 66 rows and keeps the intermediate prefix loadable', () => {
     let state: HistoryControllerState<Drive> = emptyHistoryControllerState()
     const batches = [Array.from({ length: 20 }, (_, i) => row(i)), Array.from({ length: 20 }, (_, i) => row(i + 20)), Array.from({ length: 20 }, (_, i) => row(i + 40)), Array.from({ length: 6 }, (_, i) => row(i + 60))]
@@ -89,6 +110,14 @@ describe('history page controller', () => {
 })
 
 describe('canonical history detail consumption', () => {
+  it('rejects a delayed charge detail after a newer same-window cost/energy correction', () => {
+    const original = { ...chargeRow(1), energyAddedKwh: 2, energyUsedKwh: 3, cost: 4, currency: 'EUR' }
+    const current = acceptHistoryPage(emptyHistoryControllerState<Charge>(), page(1, [original], true), 1).state
+    const corrected = { ...original, energyAddedKwh: 0, energyUsedKwh: 0, cost: 0 }
+    const state = { ...current, items: [corrected] }
+    expect(acceptHistoryDetail(state, original, { ...original, address: 'stale detail' })).toBe(state)
+  })
+
   it.each(['derived', 'incomplete'])('retains observed proof in canonical items and pages after a lower-grade %s detail', grade => {
     const startDate = '2026-10-14T00:00:00Z', endDate = '2026-10-14T00:01:00Z'
     const receipt = (value: number) => driveEnergyReceipt({ drive_id: 1, session_id: 'session-1', start_date: startDate, end_date: endDate,

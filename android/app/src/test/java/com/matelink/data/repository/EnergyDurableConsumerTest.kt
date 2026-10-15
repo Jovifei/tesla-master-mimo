@@ -122,7 +122,7 @@ class EnergyDurableConsumerTest {
             val afterRead = CompletableDeferred<Unit>()
             var fences = 0
             val detailWrite = async(Dispatchers.IO) {
-                dao.mergeResolvedDetail(-7, detail()) {
+                dao.mergeResolvedDetail(-7, detail(), detail().resolveDriveEnergy(model = "Y")) {
                     fences++
                     if (fences == 2) { afterRead.complete(Unit); release.await() }
                 }
@@ -153,7 +153,7 @@ class EnergyDurableConsumerTest {
             dao.upsert(before)
             var fences = 0
             try {
-                dao.mergeResolvedDetail(-7, detail()) {
+                dao.mergeResolvedDetail(-7, detail(), detail().resolveDriveEnergy(model = "Y")) {
                     fences++
                     if (fences == 4) {
                         assertEquals(0.6, dao.get(-7, 4)!!.energyConsumed!!, 1e-12)
@@ -206,7 +206,7 @@ class EnergyDurableConsumerTest {
                     { invalidated.complete(Unit) }) { emissions.trySend(it) }
             }
             assertNull(withTimeout(10_000) { emissions.receive() }.single().toQualifiedHistoryMetrics().energyKwh)
-            dao.mergeResolvedDetail(-7, detail()) { check(repository.isContextCurrent(proof)) }
+            dao.mergeResolvedDetail(-7, detail(), detail().resolveDriveEnergy(model = "Y")) { check(repository.isContextCurrent(proof)) }
             val enriched = withTimeout(10_000) {
                 var snapshot = emissions.receive()
                 while (snapshot.single().energyConsumed == null) snapshot = emissions.receive()
@@ -243,13 +243,13 @@ class EnergyDurableConsumerTest {
             val dao = db.driveSummaryDao()
             val original = detail()
             dao.upsert(row.toSyncSummary(-7)!!)
-            dao.mergeResolvedDetail(-7, original) {}
+            dao.mergeResolvedDetail(-7, original, original.resolveDriveEnergy(model = "Y")) {}
             val delayed = CompletableDeferred<ResolvedDriveEnergy>()
             val metadata = async {
                 dao.refineResolvedCapacity(-7, original, delayed.await()) {}
             }
             val corrected = original.copy(batteryDetails = DriveBatteryDetails(80, 78))
-            dao.mergeResolvedDetail(-7, corrected) {}
+            dao.mergeResolvedDetail(-7, corrected, corrected.resolveDriveEnergy(model = "Y")) {}
             delayed.complete(original.resolveDriveEnergy(model = "Y", trimBadging = "Long Range AWD"))
             val final = withTimeout(10_000) { metadata.await() }!!
             assertEquals(78, final.toAnalysisDriveData().endBatteryLevel)
@@ -380,7 +380,7 @@ class EnergyDurableConsumerTest {
             assertEquals(5, com.matelink.data.local.entity.SchemaVersion.CURRENT)
             assertTrue(db.chargeSummaryDao().getUnprocessedChargeIds(-7, com.matelink.data.local.entity.SchemaVersion.CURRENT).isEmpty())
             assertEquals(listOf(4), dao.getUnprocessedDriveIds(-7, version))
-            dao.mergeResolvedDetail(-7, d) {}
+            dao.mergeResolvedDetail(-7, d, d.resolveDriveEnergy(model = "Y")) {}
             db.aggregateDao().upsertDriveAggregate(d.toAggregate(-7, 2L))
             assertTrue(dao.getUnprocessedDriveIds(-7, version).isEmpty())
             assertEquals(0.6, dao.get(-7, 4)!!.energyConsumed!!, 1e-12)
