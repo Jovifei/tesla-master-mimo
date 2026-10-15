@@ -5,6 +5,7 @@
 - Correction: 小程序页面风格和数据的位置与当前 App 不一致；必须以 Jovi 的 App 为准。
 - Rule: Before changing a Mini page, map the actual current Android page hierarchy, card order, metric positions, colors, typography and primary actions to its Mini counterpart. Use App source and rendered evidence; generic cold-gray/blue-green styling alone is insufficient.
 - Acceptance: Compare all four tabs plus auth/detail states side by side. Retain physically correct data qualification, and explicitly label platform limitations; do not use those differences to justify unrelated layout changes.
+- Consumer rule: Shared filter markup does not bring another page's scoped CSS with it. Verify wrapping and metric positions in every actual consumer; Insights must follow the App AnalysisWindowSelector horizontal Row, not fall back to full-width native buttons.
 
 ## 2026-10-02 远端执行与本地交接
 

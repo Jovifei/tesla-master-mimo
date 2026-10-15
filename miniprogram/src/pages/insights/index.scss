@@ -2,6 +2,11 @@
   .insight-header { margin-bottom: 24px; }
   .insight-header .muted { margin-top: 8px; }
   .insight-filters { margin-top: 24px; }
+  .insight-filters .history-date-chips { display: flex; flex-wrap: nowrap; gap: 16px; overflow-x: auto; align-items: center; padding: 4px 0; }
+  .insight-filters .history-chip { flex: 0 0 auto; width: auto; margin: 0; padding: 10px 20px; border: 1px solid #e9edf2; border-radius: 16px; color: #6b7280; background: #f9f9fa; font-size: 24px; line-height: 1.4; white-space: nowrap; }
+  .insight-filters .history-chip::after { border: 0; }
+  .insight-filters .history-chip-selected { color: #164e63; background: #ddf0f1; border-color: #157a86; font-weight: 600; }
+  .insight-filters .history-filter-row { display: flex; flex-wrap: wrap; gap: 16px; padding: 20px 0; }
   .insight-coverage { display: block; color: #6b7280; font-size: 24px; line-height: 1.6; }
   .insight-table-row { display: flex; flex-direction: column; gap: 8px; padding: 20px 0; border-top: 1px solid #e9edf2; overflow-wrap: anywhere; }
   .insight-name { min-height: 80px; padding: 16px; margin: 16px 0; border: 1px solid #e9edf2; border-radius: 16px; }
