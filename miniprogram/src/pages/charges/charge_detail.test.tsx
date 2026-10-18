@@ -11,9 +11,9 @@ vi.mock('@tarojs/taro', () => ({ default: {
 }, useDidShow: (callback: () => void) => { platform.show = callback }, useDidHide: (callback: () => void) => { platform.hide = callback }, useUnload: (callback: () => void) => { platform.unload = callback }, usePageScroll: () => {} }))
 let tree: ReactTestRenderer | null = null
 const start = '2026-10-14T00:00:00Z', end = '2026-10-14T00:30:00Z', origin = 'https://api.example.test'
-const metric = (value: number, point: string) => ({ value_kwh: value, unit: 'kWh', method: 'session_counter_delta', measurement_point: point, source: 'telemetry_mqtt', quality: 'reported', start_date: start, end_date: end, coverage_kind: 'endpoints', coverage_ratio: 1 })
+const metric = (value: number, point: string) => ({ value_kwh: value, unit: 'kWh', method: 'session_counter_delta', measurement_point: point, source: 'telemetry_mqtt', quality: 'reported', start_date: start, end_date: end, observed_start_at: start, observed_end_at: end, time_basis: 'collector_received_at', coverage_kind: 'endpoints', coverage_ratio: 1 })
 const charge = { charge_id: 1, session_id: 'canonical-charge', start_date: start, end_date: end, source: 'telemetry_mqtt', quality_state: 'observed', duration_min: 30,
-  cost: 0, currency_code: 'EUR', charger_power: 0, charger_voltage: 230, charger_actual_current: 0, outside_temp_avg: 21,
+  cost: 0, currency_code: 'EUR', charge_type: 'ac', charger_power: 0, charger_voltage: 230, charger_actual_current: 0, outside_temp_avg: 21,
   battery_details: { start_battery_level: 20, end_battery_level: 80 }, energy_contract: { version: 1, charge_mode: 'ac', charge_mode_evidence: 'observed_boundary_modes_no_conflict', battery_input: metric(8, 'battery_input'), ac_input: metric(10, 'ac_charger_input') },
   charge_details: [
     { date: start, battery_level: 20, outside_temp: 20, charger_details: { charger_power: 0, charger_voltage: 230, charger_actual_current: 0 } },
@@ -52,6 +52,34 @@ async function edit(amount: string, currency: string) {
   await act(async () => { const fields = tree!.root.findAllByType('input'); fields[0].props.onInput({ detail: { value: amount } }); fields[1].props.onInput({ detail: { value: currency } }) })
 }
 const shown = () => tree!.root.findAllByType('text').map(node => node.children.join('')).join('\n')
+it.each(['missing-mode', 'dc-mode', 'uppercase-mode', 'mismatched-basis', 'blank-basis', 'missing-observed', 'submillisecond-shift'])('keeps independently qualified energies but withholds AC efficiency for %s', async reason => {
+  const altered = JSON.parse(JSON.stringify(charge))
+  if (reason === 'missing-mode') delete altered.charge_type
+  if (reason === 'dc-mode') altered.charge_type = 'dc'
+  if (reason === 'uppercase-mode') altered.charge_type = 'AC'
+  if (reason === 'mismatched-basis') altered.energy_contract.battery_input.time_basis = 'source_sample_time'
+  if (reason === 'blank-basis') { altered.energy_contract.battery_input.time_basis = ' '; altered.energy_contract.ac_input.time_basis = ' ' }
+  if (reason === 'missing-observed') delete altered.energy_contract.battery_input.observed_start_at
+  if (reason === 'submillisecond-shift') altered.energy_contract.battery_input.observed_start_at = '2026-10-14T00:00:00.000000001Z'
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7', name: '合成车辆' }] })
+    if (url.endsWith('/current')) return response({ charge: null })
+    if (url.endsWith('/charges/1')) return response({ charge: altered })
+    return response({ charges: [altered], meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  await mount(); await detail()
+  const panel = tree!.root.findByProps({ className: 'history-detail-overlay' })
+  expect(panel.findByProps({ ariaLabel: '电池充入 8 kWh' })).toBeDefined()
+  expect(panel.findByProps({ ariaLabel: 'AC 输入 10 kWh' })).toBeDefined()
+  expect(panel.findByProps({ ariaLabel: 'AC输入效率 暂无数据%' })).toBeDefined()
+})
+it('preserves qualified zero battery input as zero percent efficiency', async () => {
+  const altered = { ...charge, energy_contract: { ...charge.energy_contract, battery_input: metric(0, 'battery_input') } }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] }) : url.endsWith('/current') ? response({ charge: null }) : url.endsWith('/charges/1') ? response({ charge: altered }) : response({ charges: [altered], meta: { page: 1, show: 20, total_pages: 1 } }))
+  await mount(); await detail()
+  expect(tree!.root.findByProps({ className: 'history-detail-overlay' }).findByProps({ ariaLabel: '电池充入 0 kWh' })).toBeDefined()
+  expect(tree!.root.findByProps({ ariaLabel: 'AC输入效率 0%' })).toBeDefined()
+})
 it.each([{ change: 'power', resumeOffline: false }, { change: 'window', resumeOffline: true }, { change: 'weak', resumeOffline: false }, { change: 'cost', resumeOffline: false }])('reconciles $change cached charge evidence and invalidates only superseded summary/samples (offline=$resumeOffline)', async ({ change, resumeOffline }) => {
   await mount(); await detail()
   expect(tree!.root.findByProps({ ariaLabel: '样本平均功率 5 kW' })).toBeDefined()

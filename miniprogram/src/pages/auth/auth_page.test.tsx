@@ -2,7 +2,7 @@ import React from 'react'
 import TestRenderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), toast: vi.fn(), back: vi.fn(),
+const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), toast: vi.fn(), back: vi.fn(), clipboard: vi.fn(),
   load: ((_options: Record<string, string>) => {}) as (options: Record<string, string>) => void,
   hide: (() => {}) as () => void, show: (() => {}) as () => void, unload: (() => {}) as () => void }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', WebView: 'webview', Image: 'image' }))
@@ -10,7 +10,7 @@ vi.mock('@tarojs/taro', () => ({ default: {
   request: platform.request, getStorageSync: (key: string) => platform.values.get(key),
   setStorageSync: (key: string, value: unknown) => platform.values.set(key, value),
   removeStorageSync: (key: string) => platform.values.delete(key),
-  showToast: platform.toast, navigateBack: platform.back,
+  showToast: platform.toast, navigateBack: platform.back, setClipboardData: platform.clipboard,
 }, useLoad: (fn: (options: Record<string, string>) => void) => { platform.load = fn },
 useDidHide: (fn: () => void) => { platform.hide = fn }, useDidShow: (fn: () => void) => { platform.show = fn },
 useUnload: (fn: () => void) => { platform.unload = fn } }))
@@ -20,7 +20,7 @@ const respond = (data: unknown) => ({ statusCode: 200, data, header: {} })
 let renderer: ReactTestRenderer | null = null
 beforeEach(() => {
   vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test')
-  platform.values.clear(); platform.request.mockReset(); platform.toast.mockReset(); platform.back.mockReset()
+  platform.values.clear(); platform.request.mockReset(); platform.toast.mockReset(); platform.back.mockReset(); platform.clipboard.mockReset().mockResolvedValue({})
   platform.hide = () => {}; platform.show = () => {}
   platform.values.set(pendingKey, pending('a'))
 })
@@ -44,6 +44,7 @@ async function checkStatus() {
 /** Real AuthPage and session/API layers; replace only platform transport, lifecycle and WebView. */
 it('WebView error payload never appears in rendered authorization error', async () => {
   await mount({ url: encodeURIComponent('https://auth.tesla.com/oauth2/v3/authorize?state=fixture') })
+  platform.request.mockResolvedValueOnce(respond({ status: 'failed' }))
   await act(async () => { renderer!.root.findByType('webview' as React.ElementType).props.onMessage({ detail: { data: [{ error: 'SECRET_ACCESS_TOKEN' }] } }) })
   expect(visible()).not.toContain('SECRET_ACCESS_TOKEN')
   expect(visible()).toContain('Tesla 授权失败')
@@ -79,9 +80,10 @@ it('hidden page does not claim a late ready status or publish success', async ()
 })
 
 it('router callback preserves actual transaction proof and authenticated claim flow', async () => {
-  platform.request.mockResolvedValueOnce(respond({ access_token: 'fixture-access', refresh_token: 'fixture-refresh', user: { id: 'fixture-user' } }))
+  platform.request.mockResolvedValueOnce(respond({ status: 'ready' })).mockResolvedValueOnce(respond({ access_token: 'fixture-access', refresh_token: 'fixture-refresh', user: { id: 'fixture-user' } }))
   await mount({ callback_ref: 'fixture-callback' })
-  expect(platform.request.mock.calls[0][0].data).toEqual({ transaction_id: 'a', client_proof: 'fixture-proof-a', callback_ref: 'fixture-callback' })
+  expect(platform.request.mock.calls[0][0].url).toContain('/miniprogram/status')
+  expect(platform.request.mock.calls[1][0].data).toEqual({ transaction_id: 'a', client_proof: 'fixture-proof-a' })
   expect(platform.values.get('matelink.wechat.session.v1')).toMatchObject({ userId: 'fixture-user', accessToken: 'fixture-access' })
   expect(platform.back).toHaveBeenCalledTimes(1)
 })
@@ -111,16 +113,62 @@ it('reuses an actual pending claim promise and still accepts its owned session',
   const { matelinkApi } = await import('../../services/api')
   let release!: (value: unknown) => void
   platform.request.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
-  const existingClaim = matelinkApi.claimWechatAuthorization('fixture-callback')
+  const existingClaim = matelinkApi.claimTeslaAuthorization()
+  platform.request.mockResolvedValueOnce(respond({ status: 'ready' }))
   await mount({ callback_ref: 'fixture-callback' })
-  expect(platform.request).toHaveBeenCalledTimes(1)
+  expect(platform.request).toHaveBeenCalledTimes(2)
   await act(async () => {
     release(respond({ access_token: 'fixture-owned-access', user: { id: 'fixture-owner' } }))
     await existingClaim
   })
   await flush()
-  expect(platform.request).toHaveBeenCalledTimes(1)
+  expect(platform.request).toHaveBeenCalledTimes(2)
   expect(platform.values.get('matelink.wechat.session.v1')).toMatchObject({ userId: 'fixture-owner', accessToken: 'fixture-owned-access' })
   expect(platform.toast).toHaveBeenCalledTimes(1)
   expect(platform.back).toHaveBeenCalledTimes(1)
+})
+
+it.each(['callback_ref', 'ticket'])('router %s only prompts status and cannot bypass pending status', async hint => {
+  platform.request.mockResolvedValueOnce(respond({ status: 'pending' }))
+  await mount({ [hint]: 'untrusted-ticket' })
+  expect(platform.request).toHaveBeenCalledTimes(1)
+  expect(platform.request.mock.calls[0][0].url).toContain('/miniprogram/status')
+  expect(platform.request.mock.calls[0][0].data).toEqual({ transaction_id: 'a', client_proof: 'fixture-proof-a' })
+  expect(platform.values.has('matelink.wechat.session.v1')).toBe(false)
+})
+it('blocked WebView offers a trusted official browser copy fallback', async () => {
+  const official = 'https://auth.tesla.com/oauth2/v3/authorize?state=fixture'
+  await mount({ url: encodeURIComponent(official) })
+  await act(async () => { renderer!.root.findByType('webview' as React.ElementType).props.onError({ detail: { errMsg: 'PRIVATE_DIAGNOSTIC' } }) })
+  expect(visible()).not.toContain('PRIVATE_DIAGNOSTIC')
+  expect(visible()).toContain('浏览器')
+  const copy = renderer!.root.findAllByType('button').find(node => node.children.join('') === '复制 Tesla 官方授权入口')!
+  await act(async () => { await copy.props.onClick() }); await flush()
+  expect(platform.clipboard).toHaveBeenCalledWith({ data: official })
+})
+it('consumed state remains readable without clearing pending proof', async () => {
+  platform.request.mockResolvedValueOnce(respond({ status: 'consumed' }))
+  await mount(); await checkStatus()
+  expect(visible()).toContain('本次授权已使用')
+  expect(platform.values.get(pendingKey)).toEqual(pending('a'))
+})
+
+it('callback message cannot directly claim or forward a supplied ticket to backend', async () => {
+  platform.request.mockResolvedValueOnce(respond({ status: 'pending' }))
+  await mount({ url: encodeURIComponent('https://auth.tesla.com/oauth2/v3/authorize?state=fixture') })
+  await act(async () => { renderer!.root.findByType('webview' as React.ElementType).props.onMessage({ detail: { data: [{ ticket: 'untrusted-ticket' }] } }) }); await flush()
+  expect(platform.request).toHaveBeenCalledTimes(1)
+  expect(platform.request.mock.calls[0][0].url).toContain('/miniprogram/status')
+  expect(JSON.stringify(platform.request.mock.calls)).not.toContain('untrusted-ticket')
+})
+it('hidden page suppresses a late claim success until session is read by another active page', async () => {
+  platform.request.mockResolvedValueOnce(respond({ status: 'ready' }))
+  let release!: (value: unknown) => void
+  platform.request.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+  await mount({ callback_ref: 'fixture-callback' })
+  await act(async () => { platform.hide() })
+  await act(async () => { release(respond({ access_token: 'fixture-owned-access', user: { id: 'fixture-owner' } })) }); await flush()
+  expect(platform.values.get('matelink.wechat.session.v1')).toMatchObject({ userId: 'fixture-owner' })
+  expect(platform.toast).not.toHaveBeenCalled()
+  expect(platform.back).not.toHaveBeenCalled()
 })

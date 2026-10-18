@@ -275,7 +275,7 @@ export default function DrivesPage() {
       setCars([])
       setCar(null)
       resetHistoryState()
-      setError('请先在“更多”中完成微信登录')
+      setError('请先在“更多”中完成特斯拉账号登录')
       return
     }
     setError(null)
@@ -483,7 +483,7 @@ export default function DrivesPage() {
       {car && visibleItems.length > 0 ? <LoadedDriveChart items={visibleItems} /> : null}
 
       {!readAppSession(Taro) ? (
-        <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待微信登录</Text><Text className="muted">请先在“更多”中建立会话。</Text></View>
+        <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待特斯拉账号登录</Text><Text className="muted">请先在“更多”中建立会话。</Text></View>
       ) : trustedItems.length === 0 && !loading ? (
         <View className="card empty-state"><VisualIcon name="route" /><Text className="section-title">暂无可展示的行程</Text><Text className="muted">当前没有可展示的行程记录，空响应不会生成示例数据。</Text>
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}

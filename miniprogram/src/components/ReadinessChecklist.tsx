@@ -45,7 +45,7 @@ export default function ReadinessChecklist({ items = [], pairing, sessionReady =
       <Text className="muted">胎压为有界本机前台观测历史；行程与充电提示仅在前台。订阅通知尚未接入（UNSUPPORTED）。</Text>
       <View className="status">
         <View className="visual-heading"><VisualIcon name="account" /><Text className="status-label">微信会话</Text></View>
-        <Text className="status-value">{sessionReady ? '本机会话可用' : '需要微信登录'}</Text>
+        <Text className="status-value">{sessionReady ? '本机会话可用' : '需要特斯拉账号登录'}</Text>
       </View>
       <View className="status">
         <View className="visual-heading"><VisualIcon name="cloud" /><Text className="status-label">持续采集配置</Text></View>

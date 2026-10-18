@@ -240,7 +240,7 @@ it.each([undefined, 'https://previous.example.test'])('does not send a session o
   expect(fake.request.mock.calls[0][0].header).not.toHaveProperty('Authorization')
   fake.request.mockResolvedValueOnce(response({ authorization_url: 'https://auth.tesla.com/oauth2/v3/authorize',
     transaction_id: 'fixture-transaction', client_proof: 'fixture-proof' }))
-  await matelinkApi.startTeslaAuthorization({ termsVersion: 'fixture', privacyVersion: 'fixture' })
+  await matelinkApi.startTeslaAuthorization({ termsVersion: '2026-08-21', privacyVersion: '2026-08-21' })
   expect(fake.request.mock.calls[1][0].header).not.toHaveProperty('X-WeChat-Link-Token')
   expect(fake.storage.get(SESSION_KEY)).toBe(legacy)
   expect(fake.storage.get(PENDING_LINK_KEY)).toBe(link)
@@ -307,4 +307,98 @@ it('a late account deletion callback cannot clear another active account session
   await expect(pending).rejects.toMatchObject({ code: 'session_changed' })
   expect(readAppSession(storage)?.userId).toBe('b')
   expect([...own, ...other].every(key => fake.storage.has(key))).toBe(true)
+})
+
+const pendingAuth = (id = 'txn') => ({ transactionId: id, clientProof: `proof-${id}`, apiOrigin: 'https://api.example.test', expiresAt: null })
+it('only the newest anonymous authorization start may replace the local transaction', async () => {
+  const { matelinkApi } = await import('./api')
+  const { readPendingTeslaAuthorization } = await import('./session')
+  let release!: (value: unknown) => void
+  fake.request.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    .mockResolvedValueOnce(response({ authorization_url: 'https://auth.tesla.com/authorize', transaction_id: 'new', client_proof: 'new-proof' }))
+  const consent = { termsVersion: '2026-08-21', privacyVersion: '2026-08-21' }
+  const old = matelinkApi.startTeslaAuthorization(consent)
+  await matelinkApi.startTeslaAuthorization(consent)
+  release(response({ authorization_url: 'https://auth.tesla.com/authorize', transaction_id: 'old', client_proof: 'old-proof' }))
+  await expect(old).rejects.toMatchObject({ code: 'session_changed' })
+  expect(readPendingTeslaAuthorization(storage)?.transactionId).toBe('new')
+})
+it.each(['http://auth.tesla.com/authorize', 'https://evil.example.test/authorize',
+  'https://api.example.test/oauth/wechat/authorize', 'https://auth.tesla.com/user/revoke/consent'])('refuses a non-login authorization entry: %s', async url => {
+  const { matelinkApi } = await import('./api')
+  fake.request.mockResolvedValueOnce(response({ authorization_url: url, transaction_id: 'txn', client_proof: 'proof' }))
+  await expect(matelinkApi.startTeslaAuthorization({ termsVersion: '2026-08-21', privacyVersion: '2026-08-21' })).rejects.toMatchObject({ code: 'invalid_authorization_response' })
+})
+it('cancelling fences a claim before its network response can resurrect the session', async () => {
+  const { matelinkApi } = await import('./api')
+  const { writePendingTeslaAuthorization, readAppSession } = await import('./session')
+  writePendingTeslaAuthorization(storage, pendingAuth())
+  let release!: (value: unknown) => void
+  fake.request.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    .mockResolvedValueOnce(response({ status: 'cancelled' }))
+  const claim = matelinkApi.claimTeslaAuthorization()
+  await matelinkApi.cancelTeslaAuthorization()
+  release(response({ access_token: 'late-access', user: { id: 'a' } }))
+  await expect(claim).rejects.toMatchObject({ code: 'session_changed' })
+  expect(readAppSession(storage)).toBeNull()
+})
+it('deduplicates same transaction claims and never sends callback messages or WeChat identity', async () => {
+  const { matelinkApi } = await import('./api')
+  const { writePendingTeslaAuthorization } = await import('./session')
+  writePendingTeslaAuthorization(storage, pendingAuth())
+  let release!: (value: unknown) => void
+  fake.request.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+  const first = matelinkApi.claimTeslaAuthorization(), second = matelinkApi.claimTeslaAuthorization()
+  expect(fake.request).toHaveBeenCalledTimes(1)
+  expect(fake.request.mock.calls[0][0]).toMatchObject({ url: 'https://api.example.test/v1/auth/miniprogram/claim',
+    data: { transaction_id: 'txn', client_proof: 'proof-txn' }, header: { 'Content-Type': 'application/json' } })
+  release(response({ access_token: 'access', user: { id: 'same-tesla-user' } }))
+  expect((await first).userId).toBe('same-tesla-user')
+  expect((await second).userId).toBe('same-tesla-user')
+})
+it('rejects late status after transaction replacement, including late errors', async () => {
+  const { matelinkApi } = await import('./api')
+  const { writePendingTeslaAuthorization } = await import('./session')
+  writePendingTeslaAuthorization(storage, pendingAuth('a'))
+  let release!: (value: unknown) => void
+  fake.request.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+  const status = matelinkApi.getTeslaAuthorizationStatus()
+  writePendingTeslaAuthorization(storage, pendingAuth('b'))
+  release({ statusCode: 410, data: { error: 'authorization_expired' }, header: {} })
+  await expect(status).rejects.toMatchObject({ code: 'session_changed' })
+})
+
+it('cancels the captured Tesla transaction before deleting the account', async () => {
+  const { matelinkApi } = await import('./api')
+  const { writePendingTeslaAuthorization, writeAppSession, readAppSession } = await import('./session')
+  writeAppSession(storage, { apiOrigin: 'https://api.example.test', accessToken: 'a-access', refreshToken: null, expiresAt: null, userId: 'a', linkRequired: false })
+  writePendingTeslaAuthorization(storage, pendingAuth())
+  fake.request.mockImplementation(async (options: { url: string }) => response(options.url.endsWith('/cancel') ? { status: 'cancelled' } : { status: 'deleted' }))
+  await matelinkApi.deleteAccount()
+  expect(fake.request.mock.calls.map(call => call[0].url)).toEqual([
+    'https://api.example.test/v1/auth/miniprogram/cancel', 'https://api.example.test/v1/account'])
+  expect(readAppSession(storage)).toBeNull()
+})
+it.each([401, 500])('does not delete an account when cancelling its pending Tesla authorization fails with %s', async statusCode => {
+  const { matelinkApi } = await import('./api')
+  const { writePendingTeslaAuthorization, writeAppSession, readAppSession } = await import('./session')
+  writeAppSession(storage, { apiOrigin: 'https://api.example.test', accessToken: 'a-access', refreshToken: null, expiresAt: null, userId: 'a', linkRequired: false })
+  writePendingTeslaAuthorization(storage, pendingAuth())
+  fake.request.mockResolvedValueOnce({ statusCode, data: { error: 'invalid_authorization_transaction' }, header: {} })
+  await expect(matelinkApi.deleteAccount()).rejects.toBeInstanceOf(Error)
+  expect(fake.request).toHaveBeenCalledTimes(1)
+  expect(fake.request.mock.calls[0][0].url).toContain('/cancel')
+  expect(readAppSession(storage)?.userId).toBe('a')
+})
+it('prevents new Tesla authorization while account deletion is in flight', async () => {
+  const { matelinkApi } = await import('./api')
+  const { writeAppSession } = await import('./session')
+  writeAppSession(storage, { apiOrigin: 'https://api.example.test', accessToken: 'a-access', refreshToken: null, expiresAt: null, userId: 'a', linkRequired: false })
+  let release!: (value: unknown) => void
+  fake.request.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+  const deletion = matelinkApi.deleteAccount()
+  await expect(matelinkApi.startTeslaAuthorization({ termsVersion: '2026-08-21', privacyVersion: '2026-08-21' })).rejects.toMatchObject({ code: 'session_changed' })
+  release(response({ status: 'deleted' }))
+  await deletion
+  expect(fake.request).toHaveBeenCalledTimes(1)
 })

@@ -60,7 +60,7 @@ export default function ToolsPage() {
     if (nextPage === 1) { setStatus(null); setDrives([]); setCharges([]); setUpdates([]); setCar(null); setComplete(false); setHistoricPosition(null); setHistoricReason(null) }
     try {
       const scope = scopeKey(); loadScope = scope; owner.current = scope
-      if (!scope && !noFetch.has(kind)) throw new Error('请先在更多中完成微信登录与 Tesla 关联')
+      if (!scope && !noFetch.has(kind)) throw new Error('请先在更多中完成特斯拉账号登录')
       if (noFetch.has(kind)) {
         if (kind === 'tariff') {
           const session = readAppSession(Taro), saved = session?.userId ? readTariff(Taro, session.userId, getApiOrigin()) : null
@@ -89,7 +89,7 @@ export default function ToolsPage() {
         setDrives(tripResult.items); setCharges(chargeResult.items); setComplete(tripResult.complete && chargeResult.complete)
       }
     } catch (reason) {
-      if (isCurrentOwner()) setError(reason instanceof ApiError ? reason.message : reason instanceof Error && ['请先在更多中完成微信登录与 Tesla 关联', '当前账号暂无车辆'].includes(reason.message) ? reason.message : '当前数据读取失败，请稍后重试')
+      if (isCurrentOwner()) setError(reason instanceof ApiError ? reason.message : reason instanceof Error && ['请先在更多中完成特斯拉账号登录', '当前账号暂无车辆'].includes(reason.message) ? reason.message : '当前数据读取失败，请稍后重试')
     } finally { if (isCurrentOwner()) setLoading(false) }
   }
   useDidShow(() => { void load() }); useDidHide(invalidate); useUnload(invalidate)

@@ -1,6 +1,6 @@
 # MateLink App / 小程序完整入口与数据链矩阵
 
-2026-10-18续修：Dashboard布局/车色及手动外观选择见 `RPT-2026-10-18-dashboard-exact-and-appearance.md`。下方2026-10-16域名阻断为历史记录；域名请求已通达，真实登录/手机按Jovi本轮选择暂不执行。其它数据合同和深层功能缺口继续保留。
+2026-10-18登录/数据续修见 `RPT-2026-10-18-tesla-first-app-contract.md`：Tesla主入口及原生未登录状态已验证；新后端未部署，Git固定SHA/CI不可确认，真实回流仍NOT_VERIFIED。Dashboard布局/车色及手动外观选择见 `RPT-2026-10-18-dashboard-exact-and-appearance.md`。下方2026-10-16域名阻断为历史记录；域名请求已通达，真实登录/手机按Jovi本轮选择暂不执行。其它数据合同和深层功能缺口继续保留。
 
 本表以实际 Android `ui/navigation/NavGraph.kt` 的全部 `Screen` 及 `ui/screens/more/MoreScreen.kt` 为入口合同。日期为阶段标识，不把跨午夜后继续实施拆成新阶段。冻结基线 main `92cbf11ac0fd688f7eb3ba1cfa610910d79637fb`、parent `d951853e4c81ebb05c0a7ce6045bbe81014a92e8`；PR18 已合并。基线 CI 不能替最终候选 SHA 背书。
 
@@ -14,7 +14,7 @@ Android 源文件均以 `android/app/src/main/java/com/matelink/` 为前缀；Mi
 
 | Android Screen / 真实入口 | Android 实际消费者 | Mini 对应候选入口 | 数据 / 行为合同与当前判定 |
 |---|---|---|---|
-| TeslaLogin | `ui/screens/auth/TeslaLoginScreen.kt`、`NavGraph.kt` | `pages/auth/index` | MATCH（源码）：微信身份、Tesla关联各自独立；origin绑定会话、事务一次领取及撤销回归。NOT_VERIFIED：真实微信/Tesla往返。 |
+| TeslaLogin | `ui/screens/auth/TeslaLoginScreen.kt`、`NavGraph.kt` | `pages/auth/index` | MATCH（源码/消费者/PG）：特斯拉账号直接登录，无微信身份前置；与App共用verified Tesla subject对应用户，proof/PKCE/nonce、一次领取/取消/注销竞态回归。MATCH（原生入口）：DevTools实际按钮与未勾协议禁用。NOT_VERIFIED：新后端部署、真实Tesla往返与同账号历史。 |
 | Settings | `ui/screens/settings/SettingsScreen.kt` | `pages/tools/index?kind=settings` | MATCH（源码）：账号/授权、系统明暗说明、规范化单位、微信权限及分时电价/关于入口。FIX_REQUIRED：App可配置显示单位/货币、额外显示、同步/连接测试的细分操作；固定HTTPS来源是本渠道明确安全合同，不自动认定其它控件无法实现。 |
 | TariffConfig | `ui/screens/settings/TariffConfigScreen.kt` | `pages/tools/index?kind=tariff` | MATCH（源码/消费者）：币种与峰平谷价格、真实0、精确账号/origin保存重开、共享预算、切号拒绝旧草稿，IANA时区持久化且UTC测试不改8.5边界断言。MATCH（源码）：默认电价/启停、峰平谷价格及小时区间编辑、跨午夜分段、24小时无重叠校验和显式恢复App参考默认；估算不反写实际账单。NOT_VERIFIED：真实微信输入与本地时区行为。 |
 | TpmsSettings | `ui/screens/settings/TpmsSettingsScreen.kt` | `pages/tools/index?kind=tpms`（设置部分） | MATCH（源码/11消费者测试）：目标/高低阈值、启停、变化阈值0.1–2bar及1–720小时、精确作用域保存/重开、坏档案保留与迟到编辑拒写。仅对真实新鲜逐轮观测作前台比较；后台通知/授权拒绝仍NOT_VERIFIED。 |
@@ -24,7 +24,7 @@ Android 源文件均以 `android/app/src/main/java/com/matelink/` 为前缀；Mi
 | More（第四Tab） | `ui/screens/more/MoreScreen.kt` | `pages/me/index`（显示“更多”） | MATCH（源码入口）：分析/报告/系统分组及已有普通行程/长途/分析/报告/设置路由；就绪清单沿用实际车辆诊断。NOT_VERIFIED：微信原生导航与返回。 |
 | About | `ui/screens/about/AboutScreen.kt` | `pages/tools/index?kind=about` | MATCH（源码）：当前候选版本、服务条款/隐私入口及返回。MATCH（源码）：本版更新说明及问题反馈地址复制；NOT_VERIFIED：微信实际页面。 |
 | Charges | `ui/screens/charges/` | `pages/charges/index` | MATCH（源码合同）：实际币种、输入/电池能量分离、0保留、分页/筛选/详情返回及隔离回归。NOT_VERIFIED：开发工具渲染。 |
-| ChargeDetail(carId,chargeId) | `ui/screens/charges/ChargeDetail*` | 充电页内详情 | MATCH（源码/消费者）：电量→SOC/时长→功率→电压电流→温度→费用分区，同一真实响应证据及五图深链；本机手填/清除恢复原始0账单、跨账号迟到编辑拒绝、列表/统计/长途/报告/导出显示层分开。NOT_VERIFIED：真实充电与微信五图。 |
+| ChargeDetail(carId,chargeId) | `ui/screens/charges/ChargeDetail*` | 充电页内详情 | MATCH（源码/消费者）：电量→SOC/时长→功率→电压电流→温度→费用分区，同一真实响应证据及五图深链；效率额外遵循App共同时间基准/精确观测窗口/原始ac模式资格；本机手填/清除恢复原始0账单、跨账号迟到编辑拒绝、列表/统计/长途/报告/导出显示层分开。NOT_VERIFIED：真实充电与微信五图。 |
 | CurrentCharge | `ui/screens/charges/CurrentCharge*` | `pages/insights/index?kind=currentCharge` | MATCH（源码消费者）：真实 `/charges/current` 进行中/空态、0kW与资格能量显示，独立于历史列表。NOT_VERIFIED：真实充电与微信生命周期。 |
 | Drives | `ui/screens/drives/DrivesScreen.kt` | `pages/drives/index` | MATCH（数据与源码层级）：净能量资格、配对均耗、峰值样本、详情写回、缓存重开；顶部时间/SOC/来源及底部四指标按实际App卡片实现。NOT_VERIFIED：微信像素/窄屏字体与返回位置。 |
 | DriveDetail(carId,driveId) | `ui/screens/drives/DriveDetailScreen.kt` | 行程页内详情 | MATCH（源码）：顶部时间/SOC/来源、四指标、kWh与资格依据、真实五图深链；停车详情由相邻记录/时间轴进入。NOT_VERIFIED：真实微信返回/滚动上下文。 |

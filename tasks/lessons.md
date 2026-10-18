@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-10-18 Jovi: Tesla account is the primary login and the existing App owns data rules
+
+- Correction: 小程序首先应登录特斯拉账号，不是先微信登录；页面和数据处理均以已可用App为准。
+- Rule: Trace the App's actual OAuth/session/account identity and repository-to-UI contracts before changing Mini onboarding or calculations. Reuse the Tesla authorization/session flow; do not make WeChat identity a prerequisite for vehicle access or create a separate data account. Keep optional messaging/channel association separate from primary login.
+- Acceptance: Compare the real login entry, account-to-existing-data mapping, metric/units/cache consumers and page positions with App source and runtime evidence. A green Mini-only fixture cannot prove App equivalence or a real-account acceptance.
+
 ## 2026-10-16 Jovi: Mini page appearance and metric placement must follow App
 
 - Correction: 小程序页面风格和数据的位置与当前 App 不一致；必须以 Jovi 的 App 为准。

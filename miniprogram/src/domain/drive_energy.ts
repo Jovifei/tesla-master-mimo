@@ -346,6 +346,7 @@ export function mergeChargeEnergyRecord(prior: Charge, incoming: Charge, admitte
   if (!compatible || incoming.energy?.evidence) return { ...admittedBase, ...money, source: incoming.source,
     startDate: incoming.startDate, endDate: incoming.endDate, energy: incoming.energy,
     energyAddedKwh: incoming.energy?.batteryInputKwh ?? null, energyUsedKwh: incoming.energy?.inputEnergyKwh ?? null,
+    reportedChargeMode: incoming.reportedChargeMode ?? null,
     chargeMode: incoming.energy?.chargeMode ?? incoming.chargeMode ?? null }
   const proof = prior.energy?.evidence
   const previous = proof ? resolveChargeEnergy({ source: admittedBase.source, start_date: admittedBase.startDate, end_date: admittedBase.endDate, energy_contract: proof }) : prior.energy
@@ -357,5 +358,6 @@ export function mergeChargeEnergyRecord(prior: Charge, incoming: Charge, admitte
     reason: battery !== null || input !== null ? null : 'no_verified_charging_energy',
     evidence: incoming.energy?.evidence ?? previous?.evidence ?? null, chargeMode: incoming.energy?.chargeMode ?? previous?.chargeMode ?? null } : undefined)
   return { ...admittedBase, ...money, energy, energyAddedKwh: energy?.batteryInputKwh ?? null, energyUsedKwh: energy?.inputEnergyKwh ?? null,
+    reportedChargeMode: proof ? prior.reportedChargeMode ?? null : incoming.reportedChargeMode ?? admittedBase.reportedChargeMode ?? null,
     chargeMode: energy?.chargeMode ?? incoming.chargeMode ?? admittedBase.chargeMode }
 }

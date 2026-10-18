@@ -236,15 +236,13 @@ export type AuthSessionResponse = {
 
 export type TeslaAuthorization = {
   authorization_url: string
-  web_authorization_url?: string | null
   transaction_id: string | null
   client_proof?: string | null
-  channel?: string | null
   expires_at: string | null
 }
 
-export type WechatAuthorizationStatus = {
-  status: 'pending' | 'ready' | 'claimed' | 'failed' | 'expired' | 'none' | string
+export type TeslaAuthorizationStatus = {
+  status: 'pending' | 'ready' | 'consumed' | 'cancelled' | 'failed' | 'expired' | 'none' | string
   expiresAt: string | null
 }
 
@@ -339,6 +337,8 @@ export type Charge = {
   currency?: string | null
   currencyCode?: string | null
   chargeMode?: 'ac' | 'dc' | null
+  /** Exact provider charge_type, kept separate from the evidence-derived display mode. */
+  reportedChargeMode?: string | null
 }
 
 export type RawCharge = {

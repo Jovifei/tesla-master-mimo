@@ -4,11 +4,12 @@
 
 ## 当前边界
 
-- 当前版本延续既有四 Tab：Taro 4.2.1 + React 18.3.1 + TypeScript 5.7.3。项目配置已包含 Jovi 提供的 AppID；主体、类目、业务/request 域名、真实微信登录和 Tesla 授权仍须取得平台证据。
+- 当前版本延续既有四 Tab：Taro 4.2.1 + React 18.3.1 + TypeScript 5.7.3。项目配置已包含 Jovi 提供的 AppID；主体、类目、业务/request 域名、真实特斯拉账号登录及授权仍须取得平台证据。
 - 当前测试工具独立锁定在 `test-tooling`，避免 Taro 可选 Vite 4 编译器与现代 Vitest/Vite 的依赖冲突；实际小程序编译器仍为 Webpack 5。
-- 页面使用服务端微信会话、Tesla OAuth 和车辆接口；没有配置 `TARO_APP_API_BASE_URL` 时会明确失败，不回退到 mock 数据。
-- 后端已提供 `POST /v1/auth/wechat/session`：服务端用 AppID/AppSecret 换取微信 openid；首次微信身份只得到短期关联凭证，必须再完成 Tesla 官方授权，不能用 openid、VIN、车辆名或客户端 user id 自动认领旧账号。
-- Tesla 关联在小程序 `web-view` 中经过自有 `/oauth/wechat/authorize` 桥接页回流；正式环境必须把授权域名配置为微信 `web-view` 业务域名，并允许 MateLink API request 域名。
+- 页面使用既有 App 的 Tesla 账号会话、Tesla OAuth 和车辆接口；没有配置 `TARO_APP_API_BASE_URL` 时会明确失败，不回退到 mock 数据。
+- 主入口是特斯拉账号登录，无 `wx.login`、openid 或微信绑定前置。服务端按 App 既有的 verified Tesla subject 映射复用 MateLink user ID；不按 VIN、邮箱或显示名自动合并账户。
+- `GET /v1/auth/tesla/start` 携带原协议版本头和 `X-MiniProgram-Channel: wechat`，返回官方授权 URL、transaction ID、client proof 与期限。通过 `/v1/auth/miniprogram/status|claim|cancel` 检查、领取或取消；proof 不进入 URL/日志，领取只成功一次。App 默认通道保持原 start/callback/exchange 合同。
+- 授权在 Tesla 官方页面完成。`web-view` 受微信业务域限制；加载失败可复制本次官方入口到浏览器，完成后返回小程序检查状态。不能仅凭 WebView 消息或 URL 票据建立会话。相关服务端补丁尚须独立部署和实账号验收，源码通过不代表线上已支持。
 - Tesla 密码、Tesla refresh token、微信 `session_key`、AppSecret、私钥、明文 VIN 和精确位置不得进入小程序代码、缓存或日志。
 
 ## 本地命令
@@ -35,19 +36,11 @@ npm run build:weapp
 
 前台新行程 / 新充电提示在首次载入仅建立基线，以持久去重避免刷新、同 ID 纠正和本机重开重复提醒；按账号、稳定车辆 UID、来源和 HTTPS origin 隔离。提示跳转实际同作用域详情，关闭提示不删除历史。该能力只在小程序前台检查，不宣称微信后台订阅消息或系统通知已送达。
 
-历史页支持日期/距离筛选、刷新、分页、详情返回和本地重开。详情写回同作用域列表及缓存；同输入弱摘要保留详情，明确 unknown 撤销旧能量。缓存按 HTTPS origin、微信账号与稳定车辆 UID 隔离，并限制条数和字节；轨迹数组不缓存，配额失败不阻断在线阅读。离线车单只能阅读缓存；再次真实验证车辆列表前不能凭旧 numeric ID 发在线请求。账号/换车/隐藏页面后，迟到响应不得写回当前界面或缓存。
+历史页支持日期/距离筛选、刷新、分页、详情返回和本地重开。详情写回同作用域列表及缓存；同输入弱摘要保留详情，明确 unknown 撤销旧能量。缓存按 HTTPS origin、MateLink 账号与稳定车辆 UID 隔离，并限制条数和字节；轨迹数组不缓存，配额失败不阻断在线阅读。离线车单只能阅读缓存；再次真实验证车辆列表前不能凭旧 numeric ID 发在线请求。账号/换车/隐藏页面后，迟到响应不得写回当前界面或缓存。
 
 ## 服务端配置
 
-在运行 Go API 的服务器环境设置以下变量，AppSecret 只留在服务器：
-
-```text
-WECHAT_APP_ID=<正式小程序 AppID>
-WECHAT_APP_SECRET=<正式小程序 AppSecret>
-WECHAT_SESSION_URL=https://api.weixin.qq.com/sns/jscode2session
-```
-
-`WECHAT_APP_ID` 与 `WECHAT_APP_SECRET` 必须同时存在；缺少任一项时接口 fail-closed。微信 `session_key` 只在服务端内存中短暂使用，不写入数据库、日志或小程序缓存。
+复用 App 已有 Tesla OAuth、ID-token 验证和服务端加密配置。主登录不需要微信 AppSecret；没有新增短信、微信身份或车辆数据源。新的 Mini 授权事务表和接口必须随受审查的服务端版本部署；本地测试数据库不等于生产迁移。既有内部存储键保留兼容，不将键名中的 wechat 解释为微信账号身份。
 
 ## 当前放行边界
 

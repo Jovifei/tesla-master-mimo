@@ -25,6 +25,7 @@ import { readVehicleCache, writeVehicleCache } from '../../services/vehicle_cach
 import { inspectHistoryCache, type HistoryCacheEvidence } from '../../services/history_cache'
 import { readTpmsProfile } from '../../services/tpms_profile'
 import { evaluateTpmsAlerts } from '../../domain/tpms_alerts'
+import { vehicleSnapshotDelay } from '../../domain/vehicle_polling'
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message
@@ -48,6 +49,12 @@ export default function VehiclePage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [cached, setCached] = useState(false)
+  const [visible, setVisible] = useState(false)
+  const [foregroundNow, setForegroundNow] = useState(Date.now)
+  const foreground = useRef(false)
+  const statusRef = useRef(status)
+  statusRef.current = status
+  const pollBusy = useRef(false)
   const [hudDismissed, setHudDismissed] = useState(false)
   const [mapFailed, setMapFailed] = useState(false)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
@@ -132,7 +139,7 @@ export default function VehiclePage() {
     setError(null)
     let origin: string | null = null
     const ownerIsCurrent = () => {
-      try { return version === requestVersion.current && sessionGeneration === getApiSessionGeneration() &&
+      try { return foreground.current && version === requestVersion.current && sessionGeneration === getApiSessionGeneration() &&
         readAppSession(Taro)?.userId === session.userId && origin === getApiOrigin() } catch { return false }
     }
     try {
@@ -212,9 +219,58 @@ export default function VehiclePage() {
     }
   }
 
-  useDidShow(() => { void load() })
-  useDidHide(invalidatePage)
-  useUnload(invalidatePage)
+  useDidShow(() => { foreground.current = true; setVisible(true); setForegroundNow(Date.now()); void load() })
+  const leavePage = () => { foreground.current = false; setVisible(false); invalidatePage() }
+  useDidHide(leavePage)
+  useUnload(leavePage)
+
+  // This clock is independent of network completion, so a hung request cannot keep a live badge fresh.
+  useEffect(() => {
+    if (!visible) return
+    const timer = setInterval(() => {
+      setForegroundNow(Date.now())
+      let originChanged = false
+      try { originChanged = Boolean(pageOrigin.current && pageOrigin.current !== getApiOrigin()) } catch { originChanged = true }
+      if (pageOwner.current && (originChanged || pageOwner.current !== `${readAppSession(Taro)?.userId ?? ''}:${getApiSessionGeneration()}`)) {
+        invalidatePage(); setCars([]); setCar(null); setStatus(null); setReadinessItems([]); setPairing(null); setHistoryEvidence(null)
+        pageOwner.current = null
+      }
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [visible])
+
+  // Poll only the snapshot. Preserve image, HUD, selected car, readiness and the user's open editor.
+  useEffect(() => {
+    if (!visible || loading || !car || car.remoteVerified === false) return
+    const selected = car, version = requestVersion.current, generation = getApiSessionGeneration()
+    const owner = readAppSession(Taro)?.userId, origin = pageOrigin.current
+    if (!owner || !origin) return
+    let stopped = false, timer: ReturnType<typeof setTimeout> | undefined
+    const current = () => {
+      try { return !stopped && foreground.current && version === requestVersion.current && generation === getApiSessionGeneration() &&
+        owner === readAppSession(Taro)?.userId && origin === getApiOrigin() && selectedStableId.current === selected.stableId } catch { return false }
+    }
+    const schedule = () => { if (current()) timer = setTimeout(() => { void refreshSnapshot() }, vehicleSnapshotDelay(statusRef.current)) }
+    const refreshSnapshot = async () => {
+      if (!current()) return
+      if (pollBusy.current) { schedule(); return }
+      pollBusy.current = true
+      try {
+        const ticket = scopeGate.current.begin('status'), nextStatus = await matelinkApi.getCarSnapshot(selected.id, selected)
+        if (!current() || !ticket.isCurrent()) return
+        statusRef.current = nextStatus
+        setStatus(nextStatus); setCached(false); setError(null)
+        writeVehicleCache(Taro, owner, origin, selected.stableId, nextStatus)
+        setTpmsCacheReason(nextStatus.tpms ? observeTpmsCache(Taro, owner, origin, selected.stableId, nextStatus.tpms).reason : null)
+        setCar(value => value?.stableId === selected.stableId ? { ...value, model: nextStatus.model ?? value.model,
+          trim: nextStatus.trim ?? value.trim, exteriorColor: nextStatus.exteriorColor ?? value.exteriorColor,
+          wheelType: nextStatus.wheelType ?? value.wheelType } : value)
+      } catch (reason) { if (current()) setError(messageFor(reason)) }
+      finally { pollBusy.current = false; schedule() }
+    }
+    schedule()
+    return () => { stopped = true; if (timer !== undefined) clearTimeout(timer) }
+  }, [visible, loading, car?.id, car?.stableId, car?.remoteVerified])
 
   const selectCar = (event: { detail: { value: number | string } }) => {
     const index = Number(event.detail.value)
@@ -313,7 +369,7 @@ export default function VehiclePage() {
     setImageLoading(true)
     void ensureVehicleAsset(visual, { isCurrent }).then(src => { if (isCurrent()) { setImageSrc(src); setImageLoading(false) } }).catch(() => { if (isCurrent()) { clearNativeImage(); setImageError(true); setImageLoading(false) } })
     return () => { if (imageEpoch.current === assetEpoch) { imageEpoch.current += 1; clearNativeImage() } }
-  }, [visual.assetKey, car?.stableId, status, imageRetry, appearanceRevision, loading, imageActivation])
+  }, [visual.assetKey, car?.stableId, imageRetry, appearanceRevision, loading, imageActivation])
 
   const readiness = readinessViewFor(readinessItems)
   const tpmsHistory = car && currentSession?.userId && pageOrigin.current &&
@@ -325,7 +381,7 @@ export default function VehiclePage() {
   const model = car?.model?.toUpperCase().replace(/^MODEL\s*/, '')
   const activeDriving = status?.state?.toLowerCase() === 'driving' || (status?.speed ?? 0) > 0
   const activeCharging = status?.chargingState?.toLowerCase() === 'charging'
-  const snapshot = dashboardSnapshot(status, cached)
+  const snapshot = dashboardSnapshot(status, cached, foregroundNow)
   const map = !cached && status?.location ? mapCoordinate(status.location.latitude, status.location.longitude) : null
   const navigate = (url: string) => { void Taro.navigateTo({ url }) }
   const settings = () => navigate('/pages/tools/index?kind=settings')
@@ -354,7 +410,7 @@ export default function VehiclePage() {
         <View className="dashboard-temperature-row"><DashboardInfoCard label="总行程" value="暂无数据" /><DashboardInfoCard label="总充电" value="暂无数据" /></View>
         <DashboardInfoCard label="数据来源" value={cached ? '缓存车辆资料' : '已关联车辆资料'} />
         <View className="dashboard-partial-actions"><Button className="button" onClick={() => { void load() }}>刷新车辆</Button><Button className="button button-secondary" onClick={settings}>设置</Button></View>
-      </View> : <View className="card empty-state"><Text className="section-title">车辆外观预览</Text><DashboardVehicleArt car={{ model: appearance.model ?? null }} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} /><Text className="section-title">尚未绑定车辆</Text><Text className="muted">请先建立微信会话并完成 Tesla 官方关联。外观预览不代表已绑定车辆，没有真实响应时不显示车辆数据。</Text><Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>去完成登录与授权</Button></View>}
+      </View> : <View className="card empty-state"><Text className="section-title">车辆外观预览</Text><DashboardVehicleArt car={{ model: appearance.model ?? null }} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} /><Text className="section-title">尚未绑定车辆</Text><Text className="muted">请先登录特斯拉账号并完成 Tesla 官方授权。外观预览不代表已绑定车辆，没有真实响应时不显示车辆数据。</Text><Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>去完成登录与授权</Button></View>}
       {appearanceOpen && appearanceScope ? <AppearanceSelector key={`${appearanceScope.userId ?? 'preview'}:${appearanceScope.stableId ?? ''}`} initial={appearance} preview={!car} onClose={() => setAppearanceOpen(false)} onSave={value => {
         if (!appearanceEditorIsCurrent() || !writeVehicleAppearance(Taro, appearanceScope, value)) return false
         setAppearanceRevision(value => value + 1); return true

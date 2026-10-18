@@ -125,7 +125,7 @@ export default function AnalysisPage() {
   const load = async () => {
     invalidate(); clear(); setError(null)
     const epoch = requestEpoch.current, session = readAppSession(Taro)
-    if (!session?.userId) { setError('请先在“我的”中完成微信登录'); return }
+    if (!session?.userId) { setError('请先在“更多”中完成特斯拉账号登录'); return }
     let origin: string
     try { origin = getApiOrigin() } catch { setError('无法验证当前服务地址'); return }
     owner.current = { user: session.userId, origin, generation: getApiSessionGeneration(), epoch }

@@ -23,8 +23,11 @@ type oauthConsent struct {
 }
 
 type authTransaction struct {
-	Nonce   string
-	Consent oauthConsent
+	Nonce        string
+	Consent      oauthConsent
+	StateHash    string
+	Mini         bool
+	PKCEVerifier string
 }
 
 func currentOAuthConsent(termsVersion, privacyVersion string) (oauthConsent, error) {
@@ -60,10 +63,11 @@ func (s *store) consumeAuthState(ctx context.Context, state string) (authTransac
 UPDATE jourvolt_auth_transactions
 SET consumed_at=now()
 WHERE state_hash=$1 AND consumed_at IS NULL AND expires_at > now()
-RETURNING nonce, terms_version, privacy_version`, hashToken(state)).Scan(
+RETURNING nonce, terms_version, privacy_version, state_hash`, hashToken(state)).Scan(
 		&transaction.Nonce,
 		&transaction.Consent.TermsVersion,
 		&transaction.Consent.PrivacyVersion,
+		&transaction.StateHash,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return authTransaction{}, errors.New("invalid_oauth_state")
@@ -72,6 +76,16 @@ RETURNING nonce, terms_version, privacy_version`, hashToken(state)).Scan(
 		return authTransaction{}, err
 	}
 	if _, err := currentOAuthConsent(transaction.Consent.TermsVersion, transaction.Consent.PrivacyVersion); err != nil {
+		return authTransaction{}, errors.New("invalid_oauth_state")
+	}
+	var miniStatus string
+	var miniExpiry time.Time
+	err = s.pool.QueryRow(ctx, `SELECT pkce_verifier,status,expires_at FROM jourvolt_miniprogram_auth WHERE state_hash=$1`, transaction.StateHash).Scan(&transaction.PKCEVerifier, &miniStatus, &miniExpiry)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return authTransaction{}, err
+	}
+	transaction.Mini = err == nil
+	if transaction.Mini && (miniStatus != "pending" || !time.Now().UTC().Before(miniExpiry)) {
 		return authTransaction{}, errors.New("invalid_oauth_state")
 	}
 	return transaction, nil
@@ -83,10 +97,6 @@ func (s *store) saveTeslaGrantAndLoginTicket(
 	consent oauthConsent,
 	accessExpiresAt time.Time,
 ) (string, string, error) {
-	userIDSeed, err := randomToken()
-	if err != nil {
-		return "", "", err
-	}
 	ticket, err := randomToken()
 	if err != nil {
 		return "", "", err
@@ -96,6 +106,26 @@ func (s *store) saveTeslaGrantAndLoginTicket(
 		return "", "", err
 	}
 	defer tx.Rollback(ctx)
+	userID, err := saveTeslaGrant(ctx, tx, providerSub, accessCiphertext, refreshCiphertext, consent, accessExpiresAt)
+	if err != nil {
+		return "", "", err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO jourvolt_login_tickets(ticket_hash, user_id, expires_at) VALUES ($1, $2, $3)`, hashToken(ticket), userID, time.Now().UTC().Add(loginTicketLifetime))
+	if err != nil {
+		return "", "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", "", err
+	}
+	return userID, ticket, nil
+}
+
+// Both channels use the same verified Tesla subject and grant transaction.
+func saveTeslaGrant(ctx context.Context, tx pgx.Tx, providerSub, accessCiphertext, refreshCiphertext string, consent oauthConsent, accessExpiresAt time.Time) (string, error) {
+	userIDSeed, err := randomToken()
+	if err != nil {
+		return "", err
+	}
 
 	var userID string
 	providerSubHash := hashToken("tesla:" + providerSub)
@@ -104,10 +134,10 @@ INSERT INTO jourvolt_users(id, provider_sub) VALUES ($1, $2)
 ON CONFLICT (provider_sub) DO UPDATE SET provider_sub=EXCLUDED.provider_sub
 RETURNING id`, "usr_"+userIDSeed, providerSubHash).Scan(&userID)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	if _, err := currentOAuthConsent(consent.TermsVersion, consent.PrivacyVersion); err != nil {
-		return "", "", err
+		return "", err
 	}
 	_, err = tx.Exec(ctx, `
 INSERT INTO jourvolt_tesla_tokens(user_id, access_ciphertext, refresh_ciphertext, access_expires_at, updated_at)
@@ -118,7 +148,7 @@ refresh_ciphertext=EXCLUDED.refresh_ciphertext,
 access_expires_at=EXCLUDED.access_expires_at,
 updated_at=now()`, userID, accessCiphertext, refreshCiphertext, accessExpiresAt)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	_, err = tx.Exec(ctx, `
 INSERT INTO jourvolt_user_consents(user_id, terms_version, privacy_version, accepted_at)
@@ -128,18 +158,9 @@ terms_version=EXCLUDED.terms_version,
 privacy_version=EXCLUDED.privacy_version,
 accepted_at=EXCLUDED.accepted_at`, userID, consent.TermsVersion, consent.PrivacyVersion)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
-	_, err = tx.Exec(ctx, `
-INSERT INTO jourvolt_login_tickets(ticket_hash, user_id, expires_at)
-VALUES ($1, $2, $3)`, hashToken(ticket), userID, time.Now().UTC().Add(loginTicketLifetime))
-	if err != nil {
-		return "", "", err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return "", "", err
-	}
-	return userID, ticket, nil
+	return userID, nil
 }
 
 func (s *store) exchangeLoginTicket(ctx context.Context, ticket string) (session, error) {

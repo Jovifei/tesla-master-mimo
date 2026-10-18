@@ -39,9 +39,10 @@ beforeEach(() => {
 })
 afterEach(async () => {
   if (renderer) { await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null }
+  vi.useRealTimers()
   vi.unstubAllEnvs()
 })
-async function flush() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) }) }
+async function flush() { await act(async () => { if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(0); else await new Promise(resolve => setTimeout(resolve, 0)) }) }
 async function mount(openDiagnostics = true) {
   const Page = (await import('./index')).default
   await act(async () => { renderer = TestRenderer.create(React.createElement(Page)) })
@@ -54,6 +55,63 @@ async function mount(openDiagnostics = true) {
 }
 const visible = () => JSON.stringify(renderer!.toJSON())
 const snapshotBadge = () => renderer!.root.findAll(node => node.type === 'text' && String(node.props.className ?? '').split(' ').includes('dashboard-snapshot-badge'))[0]
+const snapshots = () => platform.request.mock.calls.filter(([request]) => request.url.endsWith('/snapshot'))
+const advance = async (milliseconds: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(milliseconds) }) }
+it.each([{ state: 'driving', speed: 0, delay: 8000 }, { state: 'online', speed: 1, delay: 8000 },
+  { state: 'charging', speed: 0, delay: 15000 }, { state: 'asleep', speed: 0, delay: 60000 },
+  { state: 'online', speed: 0, delay: 10000 }])('polls only snapshots at the App $state/$speed cadence without resetting the image', async ({ state, speed, delay }) => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/snapshot') ? respond({ status: { state, driving_details: { speed } } }) : online(url))
+  const assets = await import('../../services/vehicle_assets'), image = vi.spyOn(assets, 'ensureVehicleAsset').mockImplementation(async plan => plan.assetPath!)
+  try {
+    vi.useFakeTimers(); await mount(false)
+    const before = platform.request.mock.calls.length, imageCalls = image.mock.calls.length
+    await advance(delay - 1); expect(snapshots()).toHaveLength(1)
+    await advance(1); expect(snapshots()).toHaveLength(2)
+    expect(platform.request.mock.calls.slice(before).map(([request]) => request.url)).toEqual([snapshots()[1][0].url])
+    expect(image).toHaveBeenCalledTimes(imageCalls)
+    await act(async () => { platform.hide() }); await advance(delay * 2)
+    expect(snapshots()).toHaveLength(2)
+    await act(async () => { platform.show() }); await advance(0)
+    expect(snapshots()).toHaveLength(3)
+    await advance(delay); expect(snapshots()).toHaveLength(4)
+  } finally { image.mockRestore() }
+})
+it('does not overlap a hung snapshot and expires the live badge using the independent foreground clock', async () => {
+  const stamp = new Date().toISOString()
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/snapshot') ? respond({ source: 'live_mqtt', observed_at: stamp, status: { state: 'online' } }) : online(url))
+  vi.useFakeTimers(); await mount(false); expect(snapshotBadge().props['data-kind']).toBe('live')
+  platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/snapshot') ? new Promise(() => {}) : Promise.resolve(online(url)))
+  await advance(121000)
+  expect(snapshots()).toHaveLength(2)
+  expect(snapshotBadge().props['data-kind']).toBe('history')
+})
+it.each(['hide', 'unload', 'car', 'account'])('rejects a late polled snapshot after %s invalidates its scope', async change => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
+  vi.useFakeTimers(); await mount(false)
+  let finish: (value: unknown) => void = () => {}
+  platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/snapshot') ? new Promise(resolve => { finish = resolve }) : Promise.resolve(online(url)))
+  await advance(10000); const oldFinish = finish
+  if (change === 'hide') await act(async () => { platform.hide() })
+  if (change === 'unload') await act(async () => { platform.unload() })
+  if (change === 'car') {
+    platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
+    await act(async () => { renderer!.root.findByType('picker' as React.ElementType).props.onChange({ detail: { value: 1 } }) })
+    await advance(0)
+  }
+  if (change === 'account') { platform.values.set('matelink.wechat.session.v1', session('b')); await advance(1000) }
+  await act(async () => { oldFinish(respond(report(98765))) })
+  expect(visible()).not.toContain('98765')
+  if (change === 'car') expect(visible()).toContain('Car B')
+  if (change === 'account') expect(visible()).not.toContain('Car A')
+})
+it('uses the newly received driving state for the following snapshot interval', async () => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
+  vi.useFakeTimers(); await mount(false)
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/snapshot') ? respond({ status: { state: 'driving' } }) : online(url))
+  await advance(10000); expect(snapshots()).toHaveLength(2)
+  await advance(7999); expect(snapshots()).toHaveLength(2)
+  await advance(1); expect(snapshots()).toHaveLength(3)
+})
 async function diagnosticEvidence() {
   const Checklist = (await import('../../components/ReadinessChecklist')).default
   const props = renderer!.root.findByType(Checklist).props

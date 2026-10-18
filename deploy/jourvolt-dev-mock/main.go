@@ -118,6 +118,10 @@ ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS privacy_version 
 		pool.Close()
 		return nil, err
 	}
+	if err := ensureMiniProgramAuthSchema(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
 	if err := ensureTelemetrySchema(ctx, pool); err != nil {
 		pool.Close()
 		return nil, err
@@ -1126,36 +1130,46 @@ func main() {
 // Additive field-specific collector evidence. These are MQTT receipt instants,
 // not raw Tesla tire-sensor timestamps or a guessed global status poll time.
 func tpmsPressureEvidence(status vehicleStatus) map[string]any {
-    result := map[string]any{"pressure_unit":"bar"}
-    fields := []struct{ field, wire string; value *float64 }{
-        {"TpmsPressureFl","tpms_pressure_fl_observed_at",status.TPMSPressureFL},
-        {"TpmsPressureFr","tpms_pressure_fr_observed_at",status.TPMSPressureFR},
-        {"TpmsPressureRl","tpms_pressure_rl_observed_at",status.TPMSPressureRL},
-        {"TpmsPressureRr","tpms_pressure_rr_observed_at",status.TPMSPressureRR},
-    }
-    qualified := false
-    for _, item := range fields {
-        at := status.TPMSFieldObservedAt[item.field]
-        if item.value==nil || at.IsZero() || status.TPMSFieldSources[item.field]!="telemetry_mqtt" { continue }
-        result[item.wire]=at.UTC().Format(time.RFC3339Nano)
-        qualified=true
-    }
-    if qualified {
-        result["source"]="telemetry_mqtt"
-        result["time_basis"]="collector_received_at"
-    }
-    warnings := []struct{ field, wire string; value *bool }{
-        {"TpmsSoftWarningFl","tpms_soft_warning_fl_observed_at",status.TPMSSoftWarningFL},
-        {"TpmsSoftWarningFr","tpms_soft_warning_fr_observed_at",status.TPMSSoftWarningFR},
-        {"TpmsSoftWarningRl","tpms_soft_warning_rl_observed_at",status.TPMSSoftWarningRL},
-        {"TpmsSoftWarningRr","tpms_soft_warning_rr_observed_at",status.TPMSSoftWarningRR},
-    }
-    for _, item := range warnings {
-        at := status.TPMSFieldObservedAt[item.field]
-        if item.value==nil || at.IsZero() || status.TPMSFieldSources[item.field]!="telemetry_mqtt" { continue }
-        result[item.wire]=at.UTC().Format(time.RFC3339Nano)
-        result["warning_source"]="telemetry_mqtt"
-        result["warning_time_basis"]="collector_received_at"
-    }
-    return result
+	result := map[string]any{"pressure_unit": "bar"}
+	fields := []struct {
+		field, wire string
+		value       *float64
+	}{
+		{"TpmsPressureFl", "tpms_pressure_fl_observed_at", status.TPMSPressureFL},
+		{"TpmsPressureFr", "tpms_pressure_fr_observed_at", status.TPMSPressureFR},
+		{"TpmsPressureRl", "tpms_pressure_rl_observed_at", status.TPMSPressureRL},
+		{"TpmsPressureRr", "tpms_pressure_rr_observed_at", status.TPMSPressureRR},
+	}
+	qualified := false
+	for _, item := range fields {
+		at := status.TPMSFieldObservedAt[item.field]
+		if item.value == nil || at.IsZero() || status.TPMSFieldSources[item.field] != "telemetry_mqtt" {
+			continue
+		}
+		result[item.wire] = at.UTC().Format(time.RFC3339Nano)
+		qualified = true
+	}
+	if qualified {
+		result["source"] = "telemetry_mqtt"
+		result["time_basis"] = "collector_received_at"
+	}
+	warnings := []struct {
+		field, wire string
+		value       *bool
+	}{
+		{"TpmsSoftWarningFl", "tpms_soft_warning_fl_observed_at", status.TPMSSoftWarningFL},
+		{"TpmsSoftWarningFr", "tpms_soft_warning_fr_observed_at", status.TPMSSoftWarningFR},
+		{"TpmsSoftWarningRl", "tpms_soft_warning_rl_observed_at", status.TPMSSoftWarningRL},
+		{"TpmsSoftWarningRr", "tpms_soft_warning_rr_observed_at", status.TPMSSoftWarningRR},
+	}
+	for _, item := range warnings {
+		at := status.TPMSFieldObservedAt[item.field]
+		if item.value == nil || at.IsZero() || status.TPMSFieldSources[item.field] != "telemetry_mqtt" {
+			continue
+		}
+		result[item.wire] = at.UTC().Format(time.RFC3339Nano)
+		result["warning_source"] = "telemetry_mqtt"
+		result["warning_time_basis"] = "collector_received_at"
+	}
+	return result
 }

@@ -2,7 +2,7 @@ import { Button, Text, View, WebView } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useLoad, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 import { ApiError, getApiSessionGeneration, isTrustedAuthorizationURL, matelinkApi } from '../../services/api'
-import { clearPendingTeslaAuthorization, readAppSession, readPendingTeslaAuthorization } from '../../services/session'
+import { readAppSession, readPendingTeslaAuthorization } from '../../services/session'
 import LoadingIndicator from '../../components/LoadingIndicator'
 
 function errorMessage(reason: unknown): string {
@@ -11,35 +11,31 @@ function errorMessage(reason: unknown): string {
       case 'api_not_configured': return '服务地址尚未配置，请返回后重新开始'
       case 'session_changed': return '会话已变化，请返回“更多”重新开始'
       case 'network_error': return '网络暂时不可用，请稍后检查'
-      case 'wechat_authorization_expired': return '授权事务已过期，请重新开始'
-      case 'wechat_authorization_cancelled': return '授权已取消，请重新开始'
-      case 'wechat_authorization_failed': return 'Tesla 授权失败，请重新开始'
+      case 'authorization_expired': return '授权事务已过期，请重新开始'
+      case 'authorization_cancelled': return '授权已取消，请重新开始'
+      case 'authorization_consumed': return '本次授权已使用，请返回重新登录特斯拉账号'
+      case 'authorization_failed': return 'Tesla 授权失败，请重新开始'
     }
   }
   return 'Tesla 授权暂时不可用，请重新检查'
 }
 
-function bridgePayload(value: unknown): { callbackRef: string; error: string } | null {
+// WebView messages are untrusted wake-up hints. Only the server status for
+// the locally owned transaction may authorize a claim.
+function hasAuthorizationHint(value: unknown): boolean {
   if (typeof value === 'string') {
-    try {
-      return bridgePayload(JSON.parse(value))
-    } catch {
-      return null
-    }
+    try { return hasAuthorizationHint(JSON.parse(value)) } catch { return false }
   }
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const record = value as Record<string, unknown>
-  return {
-    callbackRef: typeof record.callback_ref === 'string' ? record.callback_ref : '',
-    error: typeof record.error === 'string' ? record.error : '',
-  }
+  return ['callback_ref', 'ticket', 'error'].some(key => typeof record[key] === 'string' && record[key] !== '')
 }
 
 export default function AuthPage() {
   const [url, setUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [exchanging, setExchanging] = useState(false)
-  const claimedRef = useRef<string | null>(null)
+  const claimInFlight = useRef(false)
   const claimRun = useRef(0)
   const lifecycleEpoch = useRef(0)
   const pageAlive = useRef(true)
@@ -50,33 +46,31 @@ export default function AuthPage() {
   const sameScope = (scope: AuthorizationScope) => {
     const current = captureScope()
     return scope.generation === current.generation && scope.session?.userId === current.session?.userId &&
-      scope.session?.accessToken === current.session?.accessToken &&
+      scope.session?.accessToken === current.session?.accessToken && scope.session?.apiOrigin === current.session?.apiOrigin &&
       scope.pending?.transactionId === current.pending?.transactionId &&
       scope.pending?.clientProof === current.pending?.clientProof && scope.pending?.apiOrigin === current.pending?.apiOrigin
   }
 
-  const claimAuthorization = (callbackRef = '') => {
-    const normalizedRef = callbackRef.trim()
-    if (claimedRef.current === normalizedRef || !pageAlive.current || !pageScope.current || !sameScope(pageScope.current)) return
+  const claimAuthorization = () => {
+    if (claimInFlight.current || !pageAlive.current || !pageScope.current || !sameScope(pageScope.current)) return
     const run = ++claimRun.current
     const scope = captureScope()
-    claimedRef.current = normalizedRef
+    claimInFlight.current = true
     setExchanging(true)
-    void matelinkApi.claimWechatAuthorization(normalizedRef)
+    void matelinkApi.claimTeslaAuthorization()
       .then(session => {
         if (!pageAlive.current || claimRun.current !== run) return
         const current = readAppSession(Taro)
         if (getApiSessionGeneration() !== scope.generation + 1 || current?.userId !== session.userId ||
-            current?.accessToken !== session.accessToken || readPendingTeslaAuthorization(Taro)) return
-        Taro.showToast({ title: 'Tesla 授权成功', icon: 'success' })
+            current?.accessToken !== session.accessToken || current?.apiOrigin !== session.apiOrigin || readPendingTeslaAuthorization(Taro)) return
+        Taro.showToast({ title: '特斯拉账号登录成功', icon: 'success' })
         Taro.navigateBack()
       })
       .catch(reason => {
         if (!pageAlive.current || claimRun.current !== run || !sameScope(scope)) return
-        if (claimedRef.current === normalizedRef) claimedRef.current = null
         setError(errorMessage(reason))
       })
-      .finally(() => { if (pageAlive.current && claimRun.current === run) setExchanging(false) })
+      .finally(() => { if (pageAlive.current && claimRun.current === run) { claimInFlight.current = false; setExchanging(false) } })
   }
 
   const resumeAuthorization = async () => {
@@ -90,31 +84,26 @@ export default function AuthPage() {
     }
     setError(null)
     try {
-      const status = await matelinkApi.getWechatAuthorizationStatus()
+      const status = await matelinkApi.getTeslaAuthorizationStatus()
       if (!pageAlive.current || operation !== lifecycleEpoch.current || sessionGeneration !== getApiSessionGeneration() || !sameScope(scope)) return
       if (status.status === 'ready') claimAuthorization()
       else if (status.status === 'pending') setError('授权尚未回流，请完成 Tesla 官方页面后再检查')
       else if (status.status === 'expired' || status.status === 'failed' || status.status === 'cancelled') {
-        clearPendingTeslaAuthorization(Taro)
         const messages = { expired: '授权事务已过期，请重新开始', failed: 'Tesla 授权失败，请重新开始', cancelled: '授权已取消，请重新开始' }
         setError(messages[status.status])
-      } else if (status.status === 'claimed') setError('授权已领取，请返回“更多”恢复会话')
+      } else if (status.status === 'consumed') setError('本次授权已使用，请返回重新登录特斯拉账号')
       else if (status.status !== 'none') setError('授权状态暂时不可用，请稍后检查')
       else setError('没有待恢复的授权事务')
     } catch (reason) {
       if (!pageAlive.current || operation !== lifecycleEpoch.current || sessionGeneration !== getApiSessionGeneration() || !sameScope(scope)) return
-      if (reason instanceof ApiError && (reason.code === 'wechat_authorization_expired' || reason.code === 'wechat_authorization_cancelled' || reason.code === 'wechat_authorization_failed')) {
-        clearPendingTeslaAuthorization(Taro)
-      }
       setError(errorMessage(reason))
     }
   }
 
   useLoad(options => {
     pageScope.current = captureScope()
-    const callbackRef = typeof options?.callback_ref === 'string' ? options.callback_ref : ''
-    if (callbackRef) {
-      claimAuthorization(callbackRef)
+    if (options?.callback_ref || options?.ticket) {
+      void resumeAuthorization()
       return
     }
     try {
@@ -130,15 +119,27 @@ export default function AuthPage() {
     pageAlive.current = false
     lifecycleEpoch.current += 1
     claimRun.current += 1
-    claimedRef.current = null
+    claimInFlight.current = false
     setExchanging(false)
   }
   useDidHide(invalidatePage)
   useDidShow(() => { pageAlive.current = true })
   useUnload(invalidatePage)
 
+  const copyOfficialEntry = async () => {
+    if (!url || !isTrustedAuthorizationURL(url) || !pageAlive.current || !pageScope.current || !sameScope(pageScope.current)) return
+    const scope = captureScope(), operation = lifecycleEpoch.current
+    try {
+      await Taro.setClipboardData({ data: url })
+      if (pageAlive.current && operation === lifecycleEpoch.current && sameScope(scope))
+        Taro.showToast({ title: '官方入口已复制，请在浏览器打开', icon: 'none' })
+    } catch {
+      if (pageAlive.current && operation === lifecycleEpoch.current && sameScope(scope)) setError('复制失败，请重试')
+    }
+  }
+
   if (exchanging) {
-    return <View className="page"><View className="card"><Text className="section-title">正在完成授权</Text><LoadingIndicator label="正在用当前微信授权事务领取 MateLink 会话…" /></View></View>
+    return <View className="page"><View className="card"><Text className="section-title">正在完成授权</Text><LoadingIndicator label="正在完成当前特斯拉账号登录…" /></View></View>
   }
 
   if (error || !url) {
@@ -147,6 +148,10 @@ export default function AuthPage() {
         <View className="card">
           <Text className="section-title">Tesla 官方授权</Text>
           {error ? <Text className="error">{error}</Text> : <LoadingIndicator label="正在准备官方授权入口…" compact />}
+          {url ? <>
+            <Text className="muted">若微信无法打开官方页面，请复制入口到系统浏览器完成登录，再返回小程序检查授权状态。</Text>
+            <Button className="button" onClick={() => { void copyOfficialEntry() }}>复制 Tesla 官方授权入口</Button>
+          </> : null}
           <Button className="button" onClick={() => { void resumeAuthorization() }}>检查授权状态</Button>
           <Button className="button" onClick={() => Taro.navigateBack()}>返回</Button>
         </View>
@@ -157,14 +162,12 @@ export default function AuthPage() {
   return (
     <WebView
       src={url}
-      onError={() => { if (pageAlive.current) setError('授权页面加载失败，请返回后检查授权状态') }}
+      onError={() => { if (pageAlive.current) setError('微信未能打开 Tesla 官方页面，可复制入口到浏览器继续') }}
       onMessage={event => {
         if (!pageAlive.current || !pageScope.current || !sameScope(pageScope.current)) return
         const value = event.detail?.data
         const messages = Array.isArray(value) ? value : [value]
-        const payload = bridgePayload(messages[messages.length - 1])
-        if (payload?.callbackRef) claimAuthorization(payload.callbackRef)
-        else if (payload?.error) setError('Tesla 授权失败，请返回后重新检查')
+        if (messages.some(hasAuthorizationHint)) void resumeAuthorization()
       }}
     />
   )

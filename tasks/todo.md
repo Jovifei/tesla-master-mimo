@@ -1,3 +1,25 @@
+# 2026-10-18 新接口部署与真实 Tesla 登录验收
+
+Jovi已明确授权部署新接口并真实登录验收；此前本轮“暂不登录/不部署”的限制由此更新。保持App为页面/数据合同；不合并main、不替用户同意条款、不采集密码/MFA。Owner原目录只读，下载与证据均在E:/Claude_allow/Download。
+
+- [ ] 核对当前源码内容摘要、Git可追溯性与线上build/image/Compose服务；建立精确部署候选。
+- [ ] 复核新增表与旧App兼容；保存当前镜像/数据库备份并隔离恢复演练，准备按镜像回滚。
+- [ ] 构建、部署仅API新接口；核验健康、Mini start/status/cancel和App默认start合同，不影响原账号/历史。
+- [ ] 微信原生真实登录：由Jovi本人确认协议、Tesla官方登录/扫码/MFA；随后检查同账号车辆/历史与App合同。
+- [ ] 记录部署版本/回滚点/真实验收分层及剩余差距，复核Owner保护。
+
+Review：进行中。生产变更必须在实际快照、兼容及候选验证后执行；不把健康200/合成OAuth算成真实账户验收。
+
+# 2026-10-18 Tesla 主登录与 App 数据合同续修
+
+- [x] 复核中断后实际文件；确认旧微信接口没有服务端实现，Tesla 身份需沿用 App。
+- [x] 完成匿名 Tesla 主入口、Mini 授权事务返回及消费者安全回归。
+- [x] 对齐 App 充电效率资格和 Dashboard 前台刷新规则。
+- [x] 定向与全量 Mini/Go/数据库测试、类型、构建及独立复审。
+- [x] 更新证据与剩余验收边界；真实账号继续遵循 Jovi 暂不登录选择。
+
+Review：Mini661+Node6、类型/构建PASS；真实PG Go418/0/0+vet；复审P2注销回流已修。DevTools实际Tesla主入口、未勾协议禁用/无session；1870 Owner文件0变化。当前目录缺少.git，不重建、不据旧SHA声称新CI；新后端未部署，真实回流/手机未验收。记录：docs/RPT-2026-10-18-tesla-first-app-contract.md。
+
 # 2026-10-02 接收远端 OOM 修复交接
 
 - [x] 读取 ZIP/Prompt，fetch 修复分支，确认 PR #11 Draft/head 16a31c3；隔离工作树接收，未重复 apply。

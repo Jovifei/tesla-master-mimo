@@ -2,8 +2,8 @@ import VisualIcon from '../../components/VisualIcon'
 import { Button, Checkbox, CheckboxGroup, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
-import { ApiError, getApiSessionGeneration, JOURVOLT_PRIVACY_VERSION, JOURVOLT_TERMS_VERSION, matelinkApi, type WechatLoginResult } from '../../services/api'
-import { clearPendingTeslaAuthorization, readAppSession, readPendingTeslaAuthorization, readPendingWechatLink, type AppSession } from '../../services/session'
+import { ApiError, getApiSessionGeneration, JOURVOLT_PRIVACY_VERSION, JOURVOLT_TERMS_VERSION, matelinkApi } from '../../services/api'
+import { readAppSession, readPendingTeslaAuthorization, type AppSession } from '../../services/session'
 
 const TERMS_VERSION = JOURVOLT_TERMS_VERSION
 const PRIVACY_VERSION = JOURVOLT_PRIVACY_VERSION
@@ -18,7 +18,7 @@ function errorMessagesForStatus(status: string): string {
     case 'expired': return 'Tesla 授权事务已过期，请重新开始授权'
     case 'cancelled': return 'Tesla 授权已取消，请重新开始授权'
     case 'failed': return 'Tesla 授权未完成，请重新开始授权'
-    case 'claimed': return '授权已领取，请点击微信登录恢复会话'
+    case 'consumed': return '本次授权已使用，请重新登录特斯拉账号'
     default: return 'Tesla 授权状态尚未确认，请稍后重新检查'
   }
 }
@@ -26,7 +26,6 @@ function errorMessagesForStatus(status: string): string {
 export default function MePage() {
   const initialSession = readAppSession(Taro)
   const [session, setSession] = useState<AppSession | null>(initialSession)
-  const [linkRequired, setLinkRequired] = useState(() => Boolean(readPendingWechatLink(Taro)))
   const [termsAccepted, setTermsAccepted] = useState(Boolean(initialSession))
   const [privacyAccepted, setPrivacyAccepted] = useState(Boolean(initialSession))
   const [authorizationPending, setAuthorizationPending] = useState(false)
@@ -39,47 +38,44 @@ export default function MePage() {
     setLoading(false)
   }
 
+  const captureScope = () => ({ pending: readPendingTeslaAuthorization(Taro),
+    session: readAppSession(Taro), generation: getApiSessionGeneration() })
+  type AuthorizationScope = ReturnType<typeof captureScope>
+  const sameScope = (scope: AuthorizationScope) => {
+    const current = captureScope()
+    return scope.generation === current.generation && scope.session?.userId === current.session?.userId &&
+      scope.session?.accessToken === current.session?.accessToken && scope.session?.apiOrigin === current.session?.apiOrigin &&
+      scope.pending?.transactionId === current.pending?.transactionId && scope.pending?.clientProof === current.pending?.clientProof &&
+      scope.pending?.apiOrigin === current.pending?.apiOrigin
+  }
+
   const resumePendingAuthorization = async () => {
     const operation = ++operationEpoch.current
-    const sessionGeneration = getApiSessionGeneration()
-    if (!readPendingTeslaAuthorization(Taro)) {
-      setAuthorizationPending(false)
-      return
-    }
+    const scope = captureScope()
+    if (!scope.pending) { setAuthorizationPending(false); return }
     setAuthorizationPending(true)
+    setLoading(true)
+    setError(null)
     try {
-      const status = await matelinkApi.getWechatAuthorizationStatus()
-      if (operation !== operationEpoch.current || sessionGeneration !== getApiSessionGeneration()) return
+      const status = await matelinkApi.getTeslaAuthorizationStatus()
+      if (operation !== operationEpoch.current || !sameScope(scope)) return
       if (status.status === 'ready') {
-        const nextSession = await matelinkApi.claimWechatAuthorization()
-        // claim intentionally advances the API session generation after the
-        // server has committed; the claim result itself owns the new session.
-        if (operation !== operationEpoch.current) return
-        setSession(nextSession)
-        setLinkRequired(Boolean(nextSession.linkRequired))
+        const nextSession = await matelinkApi.claimTeslaAuthorization()
+        const current = readAppSession(Taro)
+        if (operation !== operationEpoch.current || getApiSessionGeneration() !== scope.generation + 1 ||
+            current?.userId !== nextSession.userId || current?.accessToken !== nextSession.accessToken ||
+            current?.apiOrigin !== nextSession.apiOrigin || readPendingTeslaAuthorization(Taro)) return
+        setSession(current)
         setAuthorizationPending(false)
-        Taro.showToast({ title: 'Tesla 授权成功', icon: 'success' })
-      } else if (status.status === 'expired' || status.status === 'failed' || status.status === 'cancelled') {
-        clearPendingTeslaAuthorization(Taro)
-        setAuthorizationPending(false)
-        setError(errorMessagesForStatus(status.status))
-      } else if (status.status === 'claimed') {
-        setAuthorizationPending(false)
-        setError('授权已领取，请点击微信登录恢复会话')
-      } else if (status.status === 'pending') {
-        setAuthorizationPending(true)
-        setError(null)
-      } else {
-        setAuthorizationPending(false)
+        Taro.showToast({ title: '特斯拉账号登录成功', icon: 'success' })
+      } else if (status.status !== 'pending') {
         setError(errorMessagesForStatus(status.status))
       }
     } catch (reason) {
-      if (operation !== operationEpoch.current || sessionGeneration !== getApiSessionGeneration()) return
-      if (reason instanceof ApiError && (reason.code === 'wechat_authorization_expired' || reason.code === 'wechat_authorization_cancelled' || reason.code === 'wechat_authorization_failed')) {
-        clearPendingTeslaAuthorization(Taro)
-        setAuthorizationPending(false)
-      }
+      if (operation !== operationEpoch.current || !sameScope(scope)) return
       setError(errorMessage(reason))
+    } finally {
+      if (operation === operationEpoch.current) setLoading(false)
     }
   }
 
@@ -90,40 +86,12 @@ export default function MePage() {
       setTermsAccepted(true)
       setPrivacyAccepted(true)
     }
-    setLinkRequired(Boolean(current?.linkRequired) || Boolean(readPendingWechatLink(Taro)))
     void resumePendingAuthorization()
   })
 
   const onConsentChange = (event: { detail: { value: string[] } }) => {
     setTermsAccepted(event.detail.value.includes('terms'))
     setPrivacyAccepted(event.detail.value.includes('privacy'))
-  }
-
-  const startWechatSession = async () => {
-    if (!termsAccepted || !privacyAccepted) {
-      setError('请先勾选服务条款和隐私指引')
-      return
-    }
-    setLoading(true)
-    setError(null)
-    const operation = ++operationEpoch.current
-    try {
-      const result: WechatLoginResult = await matelinkApi.loginWithWechat({ termsVersion: TERMS_VERSION, privacyVersion: PRIVACY_VERSION })
-      if (operation !== operationEpoch.current) return
-      if (result.status === 'authenticated') {
-        setSession(result.session)
-        setLinkRequired(Boolean(result.session.linkRequired))
-        Taro.showToast({ title: '微信登录成功', icon: 'success' })
-      } else {
-        setSession(null)
-        setLinkRequired(true)
-        Taro.showToast({ title: '请继续完成 Tesla 授权', icon: 'none' })
-      }
-    } catch (reason) {
-      if (operation === operationEpoch.current) setError(errorMessage(reason))
-    } finally {
-      if (operation === operationEpoch.current) setLoading(false)
-    }
   }
 
   const startTeslaAuthorization = async () => {
@@ -134,16 +102,24 @@ export default function MePage() {
     setLoading(true)
     setError(null)
     const operation = ++operationEpoch.current
+    const scope = captureScope()
     try {
       const result = await matelinkApi.startTeslaAuthorization({ termsVersion: TERMS_VERSION, privacyVersion: PRIVACY_VERSION })
-      if (operation !== operationEpoch.current) return
-      const authorizationUrl = result.web_authorization_url || result.authorization_url
+      if (operation !== operationEpoch.current || scope.generation !== getApiSessionGeneration() ||
+          scope.session?.accessToken !== readAppSession(Taro)?.accessToken) return
+      const authorizationUrl = result.authorization_url
       setAuthorizationPending(true)
       const url = `/pages/auth/index?url=${encodeURIComponent(authorizationUrl)}`
-      Taro.navigateTo({ url }).catch(() => {
-        if (operation !== operationEpoch.current) return
-        Taro.setClipboardData({ data: authorizationUrl })
-        Taro.showToast({ title: '官方入口已复制，请在浏览器打开', icon: 'none' })
+      const startedScope = captureScope()
+      void Taro.navigateTo({ url }).catch(async () => {
+        if (operation !== operationEpoch.current || !sameScope(startedScope)) return
+        try {
+          await Taro.setClipboardData({ data: authorizationUrl })
+          if (operation === operationEpoch.current && sameScope(startedScope))
+            Taro.showToast({ title: '官方入口已复制，请在浏览器打开', icon: 'none' })
+        } catch {
+          if (operation === operationEpoch.current && sameScope(startedScope)) setError('官方入口复制失败，请重试')
+        }
       })
     } catch (reason) {
       if (operation === operationEpoch.current) setError(errorMessage(reason))
@@ -156,9 +132,13 @@ export default function MePage() {
     setLoading(true)
     setError(null)
     const operation = ++operationEpoch.current
+    const scope = captureScope()
     try {
-      await matelinkApi.cancelWechatAuthorization()
-      if (operation !== operationEpoch.current) return
+      await matelinkApi.cancelTeslaAuthorization()
+      const current = readAppSession(Taro)
+      if (operation !== operationEpoch.current || scope.generation !== getApiSessionGeneration() ||
+          current?.userId !== scope.session?.userId || current?.accessToken !== scope.session?.accessToken ||
+          current?.apiOrigin !== scope.session?.apiOrigin || readPendingTeslaAuthorization(Taro)) return
       setAuthorizationPending(false)
       Taro.showToast({ title: '本次授权已取消', icon: 'success' })
     } catch (reason) {
@@ -185,7 +165,6 @@ export default function MePage() {
       if (operation === operationEpoch.current) {
         const current = readAppSession(Taro)
         setSession(current)
-        setLinkRequired(Boolean(current?.linkRequired) || Boolean(readPendingWechatLink(Taro)))
         setTermsAccepted(Boolean(current))
         setPrivacyAccepted(Boolean(current))
         setAuthorizationPending(Boolean(readPendingTeslaAuthorization(Taro)))
@@ -209,7 +188,6 @@ export default function MePage() {
       const result = await matelinkApi.deleteAccount()
       if (operation !== operationEpoch.current) return
       setSession(null)
-      setLinkRequired(false)
       setAuthorizationPending(false)
       setTermsAccepted(false)
       setPrivacyAccepted(false)
@@ -273,7 +251,7 @@ export default function MePage() {
           </View>
           <Text className={`state-pill ${session ? 'state-pill-ready' : ''}`}>{session ? '会话已建立' : '尚未登录'}</Text>
         </View>
-        <Text className="muted">微信身份只用于建立小程序会话。Tesla 授权仍在官方页面完成，令牌只留在服务端。</Text>
+        <Text className="muted">使用特斯拉账号登录，授权在 Tesla 官方页面完成。与 App 使用同一特斯拉账号，可查看该账号已有的车辆和历史数据。</Text>
       </View>
 
       <View className="card consent-card">
@@ -287,22 +265,14 @@ export default function MePage() {
           <View className="consent-row"><Checkbox value="terms" checked={termsAccepted}>同意服务条款（{TERMS_VERSION}）</Checkbox></View>
           <View className="consent-row"><Checkbox value="privacy" checked={privacyAccepted}>同意隐私指引（{PRIVACY_VERSION}）</Checkbox></View>
         </CheckboxGroup>
-        {!session ? <Button className="button" loading={loading} onClick={startWechatSession}>微信登录</Button> : null}
+        {!session ? <Button className="button" loading={loading} disabled={loading || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>特斯拉账号登录</Button> : null}
         {session ? <Text className="muted">MateLink 会话已建立{session.expiresAt ? `，有效期至 ${session.expiresAt}` : ''}。</Text> : null}
       </View>
 
-      {linkRequired ? (
-        <View className="card">
-          <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">需要关联 Tesla 账号</Text></View>
-          <Text className="muted">微信账号尚未绑定 Tesla。点击下面入口后，在 Tesla 官方页面登录并同意只读权限；回流后再完成车辆钥匙确认。</Text>
-          <Button className="button" loading={loading} onClick={startTeslaAuthorization}>进入 Tesla 官方授权</Button>
-        </View>
-      ) : null}
-
       {authorizationPending ? (
         <View className="card">
-          <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">等待 Tesla 授权回流</Text></View>
-          <Text className="muted">完成 Tesla 官方页面后返回本小程序；这里会用原授权事务安全检查并领取会话。</Text>
+          <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">等待特斯拉账号授权</Text></View>
+          <Text className="muted">请在 Tesla 官方页面完成登录，然后返回本小程序检查授权状态。</Text>
           <Button className="button" loading={loading} onClick={() => { void resumePendingAuthorization() }}>检查授权状态</Button>
           <Button className="button button-secondary" disabled={loading} onClick={() => { void cancelTeslaAuthorization() }}>取消本次授权</Button>
         </View>
@@ -312,7 +282,7 @@ export default function MePage() {
         <View className="card">
           <View className="visual-heading"><VisualIcon name="account" /><Text className="section-title">账号管理</Text></View>
           <Text className="muted">退出只结束当前会话；注销会请求服务端删除账号关联数据。</Text>
-          {!linkRequired ? <Button className="button" loading={loading} onClick={startTeslaAuthorization}>重新授权 Tesla</Button> : null}
+          <Button className="button" loading={loading} disabled={loading || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>重新授权 Tesla</Button>
           <Button className="button button-secondary" disabled={loading} onClick={logout}>退出登录</Button>
           <Button className="button button-danger" disabled={loading} onClick={() => { void deleteAccount() }}>注销账号</Button>
         </View>

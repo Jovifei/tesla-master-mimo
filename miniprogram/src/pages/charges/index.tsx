@@ -19,6 +19,7 @@ import MetricValue from '../../components/MetricValue'
 import VisualIcon from '../../components/VisualIcon'
 import { availabilityLabel, qualityLabel, sourceLabel } from '../../domain/data_labels'
 import { resolveChargeEnergy } from '../../domain/drive_energy'
+import { qualifiedAcEnergyBalance } from '../../domain/charge_energy_balance'
 import { analysisApi } from '../../services/analysis_api'
 import type { ChargeEvidence } from '../../services/analysis_types'
 import { clearChargeCostOverride, overlayChargeCosts, readChargeCostOverride, writeChargeCostOverride, type ChargeCostScope } from '../../services/charge_cost'
@@ -298,7 +299,7 @@ export default function ChargesPage() {
       setCar(null)
       setCurrent(null)
       resetHistoryState()
-      setError('请先在“更多”中完成微信登录')
+      setError('请先在“更多”中登录特斯拉账号')
       return
     }
     setError(null)
@@ -476,9 +477,7 @@ export default function ChargesPage() {
   const intervalView = interval ? { ...interval, items: costRows(interval.items) } : null
   const costState = selected && costScope ? overlayChargeCosts(Taro, costScope, [selected])[0] : null
   const renderedCostEdit = costEdit.current
-  const selectedEnergy = selected ? verifiedEnergy(selected) : null
-  const acEfficiency = selectedEnergy?.batteryInputKwh != null && selectedEnergy.acInputKwh != null && selectedEnergy.acInputKwh > 0 && selectedEnergy.batteryInputKwh <= selectedEnergy.acInputKwh
-    ? 100 * selectedEnergy.batteryInputKwh / selectedEnergy.acInputKwh : null
+  const acEfficiency = selected ? qualifiedAcEnergyBalance(selected)?.efficiencyPercent ?? null : null
   const trustedItems = costRows(filterHistory(items, emptyHistoryQuery()))
   const visibleItems = filterHistory(trustedItems, query)
   const sampleStats = (key: 'powerKw' | 'voltageV' | 'currentA' | 'temperatureC') => {
@@ -562,7 +561,7 @@ export default function ChargesPage() {
       ) : null}
 
       {!readAppSession(Taro) ? (
-        <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待微信登录</Text><Text className="muted">请先在“更多”中建立会话。</Text></View>
+        <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待特斯拉账号登录</Text><Text className="muted">请先在“更多”中登录特斯拉账号。</Text></View>
       ) : trustedItems.length === 0 && !loading ? (
         <View className="card empty-state"><VisualIcon name="energy" /><Text className="section-title">暂无可展示的充电记录</Text><Text className="muted">当前没有可展示的充电记录，空响应不会生成示例数据。</Text>
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}

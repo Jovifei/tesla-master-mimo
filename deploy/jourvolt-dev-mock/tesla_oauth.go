@@ -32,6 +32,7 @@ type authStart struct {
 	AuthorizationURL string    `json:"authorization_url"`
 	TransactionID    string    `json:"transaction_id"`
 	ExpiresAt        time.Time `json:"expires_at"`
+	ClientProof      string    `json:"client_proof,omitempty"`
 }
 
 func newTeslaOAuth(config *teslaConfig, store *store, cipher *tokenCipher, client *http.Client) *teslaOAuth {
@@ -192,7 +193,7 @@ func (o *teslaOAuth) start(ctx context.Context, consent oauthConsent) (authStart
 	}, nil
 }
 
-func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, error) {
+func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (ticket string, callbackErr error) {
 	state := strings.TrimSpace(values.Get("state"))
 	if state == "" {
 		return "", errOAuthCallbackRejected
@@ -201,6 +202,12 @@ func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, e
 	if err != nil {
 		return "", errOAuthCallbackRejected
 	}
+	defer func() {
+		if transaction.Mini && callbackErr != nil {
+			// Never undo cancellation, expiry, readiness or a successful claim.
+			_, _ = o.store.pool.Exec(ctx, `UPDATE jourvolt_miniprogram_auth SET status='failed',pkce_verifier='' WHERE state_hash=$1 AND status='pending' AND expires_at>now()`, transaction.StateHash)
+		}
+	}()
 	if values.Get("error") != "" {
 		return "", errOAuthCallbackRejected
 	}
@@ -210,11 +217,11 @@ func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, e
 	}
 
 	exchangeContext := context.WithValue(ctx, oauth2.HTTPClient, o.client)
-	token, err := o.oauth2.Exchange(
-		exchangeContext,
-		code,
-		oauth2.SetAuthURLParam("audience", o.config.FleetAPIBase),
-	)
+	exchangeOptions := []oauth2.AuthCodeOption{oauth2.SetAuthURLParam("audience", o.config.FleetAPIBase)}
+	if transaction.Mini {
+		exchangeOptions = append(exchangeOptions, oauth2.VerifierOption(transaction.PKCEVerifier))
+	}
+	token, err := o.oauth2.Exchange(exchangeContext, code, exchangeOptions...)
 	if err != nil {
 		log.Printf("tesla oauth token exchange failed: %s", teslaCallbackLogError(err))
 		return "", err
@@ -249,7 +256,10 @@ func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, e
 	if err != nil {
 		return "", err
 	}
-	_, ticket, err := o.store.saveTeslaGrantAndLoginTicket(
+	if transaction.Mini {
+		return "", o.store.completeMiniProgramAuthorization(ctx, transaction, claims.Subject, accessCiphertext, refreshCiphertext, token.Expiry.UTC())
+	}
+	_, ticket, err = o.store.saveTeslaGrantAndLoginTicket(
 		ctx,
 		claims.Subject,
 		accessCiphertext,
@@ -318,6 +328,10 @@ func (o *teslaOAuth) consentRevokeURL() string {
 }
 
 func (a *app) authRoute(w http.ResponseWriter, r *http.Request) bool {
+	if strings.HasPrefix(r.URL.Path, "/v1/auth/miniprogram/") {
+		a.miniProgramAuthRoute(w, r)
+		return true
+	}
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/auth/tesla/start":
 		if a.oauth == nil {
@@ -332,7 +346,12 @@ func (a *app) authRoute(w http.ResponseWriter, r *http.Request) bool {
 			a.json(w, http.StatusBadRequest, map[string]string{"error": "consent_required"})
 			return true
 		}
-		started, err := a.oauth.start(r.Context(), consent)
+		var started authStart
+		if r.Header.Get("X-MiniProgram-Channel") == "wechat" {
+			started, err = a.oauth.startMiniProgram(r.Context(), consent)
+		} else {
+			started, err = a.oauth.start(r.Context(), consent)
+		}
 		if err != nil {
 			a.json(w, http.StatusInternalServerError, map[string]string{"error": "oauth_start_failed"})
 			return true
@@ -344,7 +363,16 @@ func (a *app) authRoute(w http.ResponseWriter, r *http.Request) bool {
 			a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "oauth_not_configured"})
 			return true
 		}
+		var miniCallback bool
+		if err := a.store.pool.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM jourvolt_miniprogram_auth WHERE state_hash=$1)`, hashToken(strings.TrimSpace(r.URL.Query().Get("state")))).Scan(&miniCallback); err != nil {
+			miniProgramCallbackPage(w, false)
+			return true
+		}
 		ticket, err := a.oauth.callback(r.Context(), r.URL.Query())
+		if miniCallback {
+			miniProgramCallbackPage(w, err == nil)
+			return true
+		}
 		if err != nil {
 			http.Redirect(w, r, a.oauth.appLink("", teslaAppLinkError(err)), http.StatusSeeOther)
 			return true

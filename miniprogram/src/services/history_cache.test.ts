@@ -13,6 +13,13 @@ function storage() {
 }
 
 describe('history cache', () => {
+  it('round-trips exact reported charge mode separately from derived mode and keeps old missing mode unknown', () => {
+    const store = storage(), key = historyCacheKey('charges', 'a', 'uid', 'https://api.example.test')
+    writeHistoryCache(store, key, [{ id: '1', chargeMode: 'ac', reportedChargeMode: 'AC' }, { id: '2', chargeMode: 'ac' }])
+    const rows = readHistoryCache<{ id: string; reportedChargeMode?: string }>(store, key)
+    expect(rows.find(row => row.id === '1')?.reportedChargeMode).toBe('AC')
+    expect(rows.find(row => row.id === '2')?.reportedChargeMode).toBeUndefined()
+  })
   it('diagnostics inspect only matching current cache and never migrate or write a legacy archive', () => {
     const store = storage(), origin = 'https://api.example.test'
     const current = historyCacheKey('drives', 'a', 'uid', origin)
