@@ -3533,3 +3533,10 @@ Review: docs/RPT-2026-10-11-local-persistent-recovery.md is the current evidence
 - [ ] 行程/充电摘要一行四列20sp，历史一行四列18sp，单位完整。
 - [ ] 双变体/lint/R8/模拟器/同签实机验证并交付58。
 - [ ] 推送APK分支、完整同SHA CI成功后合并main。
+
+## APK58 阶段复审
+- [x] 日期常用三项加更多、第二行类型筛选；摘要20sp与历史18sp四列，来源可展开。
+- [x] Debug/Release各1020测试0失败/0错误，Release8预期跳过；双lint/R8通过。
+- [x] 模拟器13项原生测试通过（含18/20sp、长数值、窄屏和大字体场景）。
+- [ ] 最终固定SHA包/保数据实机安装、GitHub同SHA完整CI、main合并。
+Review: 大字体旧90dp断言被真实模拟器触发；修正为分字号上限，13项重跑通过。
