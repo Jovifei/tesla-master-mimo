@@ -697,7 +697,7 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                                 }
                             } ?: stringResource(R.string.not_available),
                             palette.acColor,
-                            unit = if ((summary.totalEnergyAdded ?: 0.0) > 999) "MWh" else "kWh"
+                            unit = summary.totalEnergyAdded?.let { if (it > 999) "MWh" else "kWh" }
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Paid,
@@ -710,7 +710,7 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                                 }
                             } ?: stringResource(R.string.not_available),
                             Color(0xFF22C55E),
-                            unit = currencySymbol
+                            unit = if (summary.totalCost != null) currencySymbol else null
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Paid,
@@ -719,7 +719,7 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                                 "%.2f".format(cost)
                             } ?: stringResource(R.string.not_available),
                             palette.dcColor,
-                            unit = currencySymbol
+                            unit = if (summary.avgCostPerCharge != null) currencySymbol else null
                         )
                     ),
                     modifier = Modifier.padding(vertical = 8.dp),
