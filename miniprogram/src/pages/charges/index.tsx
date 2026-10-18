@@ -3,7 +3,7 @@ import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/
 import { useRef, useState } from 'react'
 import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
 import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, reconcileHistoryCache, type HistoryInterval } from '../../domain/history_controller'
-import { emptyHistoryQuery, filterHistory, historyDateTime, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
+import { emptyHistoryQuery, filterHistory, historyDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
 import './index.scss'
 import { createRequestScopeGate } from '../../domain/request_scope'
@@ -25,6 +25,7 @@ import type { ChargeEvidence } from '../../services/analysis_types'
 import { APP_DEFAULT_CHARGE_PRICE_CNY, clearChargeCostOverride, overlayChargeCosts, readChargeCostOverride, writeChargeCostOverride, type ChargeCostScope, type ChargeEstimatePrice, type CostedCharge } from '../../services/charge_cost'
 import { mapCoordinate } from '../../domain/map_coordinate'
 import { readTariff } from '../../domain/tariff'
+import { appChargeListRows, appChargeStatisticsRows } from '../../domain/app_history_projection'
 
 const PAGE_SIZE = 20
 
@@ -82,6 +83,7 @@ export default function ChargesPage() {
   const [cars, setCars] = useState<Car[]>([])
   const [car, setCar] = useState<Car | null>(null)
   const [items, setItems] = useState<Charge[]>([])
+  const [showShortCharges, setShowShortCharges] = useState(false)
   const [current, setCurrent] = useState<Charge | null>(null)
   const [meta, setMeta] = useState<HistoryPageMeta | null>(null)
   const [selected, setSelectedState] = useState<Charge | null>(null)
@@ -502,13 +504,13 @@ export default function ChargesPage() {
     : { amount: APP_DEFAULT_CHARGE_PRICE_CNY, currency: 'CNY', source: 'app_default' }
   const costRows = (rows: readonly Charge[]): CostedCharge[] => costScope ? overlayChargeCosts(Taro, costScope, rows, estimatePrice) : []
   const selectedView = selected ? costRows([selected])[0] : null
-  const intervalView = interval ? { ...interval, items: costRows(interval.items) } : null
+  const intervalView = interval ? { ...interval, items: costRows(appChargeStatisticsRows(interval.items)) } : null
   const costState = selectedView
   const renderedCostEdit = costEdit.current
   const acEfficiency = selected ? qualifiedAcEnergyBalance(selected)?.efficiencyPercent ?? null : null
-  const trustedItems = costRows(filterHistory(items, emptyHistoryQuery()))
+  const trustedItems = costRows(appChargeListRows(filterHistory(items, emptyHistoryQuery()), showShortCharges))
   const visibleItems = filterHistory(trustedItems, query)
-  const chartItems = filterHistory((intervalView?.items ?? trustedItems).filter(row => !isHistoryQuarantined(row)), query)
+  const chartItems = filterHistory(intervalView?.items ?? costRows(appChargeStatisticsRows(items)), query)
   const chartCurrencies = [...new Set(chartItems.filter(row => row.cost != null && Number.isFinite(row.cost) && row.cost >= 0).map(row => row.currencyCode ?? row.currency).filter((code): code is string => Boolean(code)))]
   const chartCurrency = chartCurrencies.length === 1 ? chartCurrencies[0] : null
   const months = new Map<string, { label: string; energy: number; energyKnown: number; cost: number; costKnown: number; count: number }>()
@@ -582,6 +584,7 @@ export default function ChargesPage() {
           <Picker mode="date" value={query.endDate} onChange={event => updateQuery({ endDate: event.detail.value })}><View>结束日期：{query.endDate || '不限'}</View></Picker>
         </View>
         <View className="history-actions"><Button className="button" onClick={() => updateQuery(emptyHistoryQuery())}>清除筛选</Button><Button className="button" loading={loading} onClick={() => { void load() }}>刷新</Button></View>
+        <Button className="button-secondary charge-short-toggle" onClick={() => setShowShortCharges(value => !value)}>{showShortCharges ? '隐藏短充' : '显示短充'}</Button>
         {offline ? <Text className="muted">本机缓存 · 未验证在线车辆</Text> : null}
       </View> : null}
       {notice ? <View className="card history-notice">
@@ -625,17 +628,17 @@ export default function ChargesPage() {
       {!readAppSession(Taro) ? (
         <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待特斯拉账号登录</Text><Text className="muted">请先在“更多”中登录特斯拉账号。</Text></View>
       ) : trustedItems.length === 0 && !loading ? (
-        <View className="card empty-state"><VisualIcon name="energy" /><Text className="section-title">暂无可展示的充电记录</Text><Text className="muted">当前没有可展示的充电记录，空响应不会生成示例数据。</Text>
+        <View className="card empty-state"><VisualIcon name="energy" /><Text className="section-title">暂无可展示的充电记录</Text><Text className="muted">{items.length && !showShortCharges ? '当前记录均为短充；可选择“显示短充”查看。' : '当前没有可展示的充电记录，空响应不会生成示例数据。'}</Text>
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
         </View>
       ) : (
-        <View className="card">
-          <Text className="section-title">充电记录 {trustedItems.length ? `（${trustedItems.length}）` : ''}</Text>
+        <View className="history-list charge-history-list">
+          <Text className="section-title charge-history-heading">充电历史</Text>
           {loading ? <LoadingIndicator label="正在读取充电记录…" compact /> : null}
           {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的充电记录</Text> : null}
           {visibleItems.map(item => (
             <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
-              <View className="history-charge-heading"><VisualIcon name="distance" /><View className="history-charge-location"><Text>{displayAddress(item.address)}</Text><Text className="history-record-date">{historyDateTime(item.startDate)}</Text></View><Text className="history-charge-mode">{modeLabel(item) === '模式未确认' ? '暂无数据' : modeLabel(item)}</Text></View>
+              <View className="history-charge-heading"><VisualIcon name="distance" /><View className="history-charge-location"><Text>{displayAddress(item.address)}</Text><Text className="history-record-date">{historyEditorialDate(item.startDate, false)}</Text></View><Text className="history-charge-mode">{modeLabel(item) === '模式未确认' ? '暂无数据' : modeLabel(item)}</Text></View>
               <View className="history-record-metrics">
                 <MetricValue label="时长" value={item.durationMinutes != null && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0 ? item.durationMinutes : null} unit="m" icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
                 <MetricValue label="能量" value={oneDecimal(item.energyAddedKwh)} unit="kWh" icon="energy" />
@@ -657,7 +660,7 @@ export default function ChargesPage() {
           <View className="card charge-detail-intro"><Text className="section-title">位置与费用</Text><Text className="charge-detail-address">{displayAddress(selected.address)}</Text>
             <Text className="muted">{historyDateTime(selected.startDate)} → {historyDateTime(selected.endDate)} · {modeLabel(selected)}</Text>
             <MetricValue label="充电费用" {...costLabel(selectedView)} icon="account" />
-            <Text className="muted">费用来源：{costState?.costProvenance === 'manual' ? '本机手动设置' : costState?.costProvenance === 'actual' ? selectedView.cost === 0 ? '服务端报告0费用' : '服务端账单报告' : costState?.costProvenance === 'estimate' ? `按 ${estimateBasis(costState)} 与合格电池充入量估算` : '未知'}</Text>
+            <Text className="muted">费用来源：{costState?.costProvenance === 'manual' ? '本机手动设置' : costState?.costProvenance === 'actual' ? selectedView.cost === 0 ? '服务端报告0费用' : '服务端账单报告' : costState?.costProvenance === 'estimate' ? `按 ${estimateBasis(costState)} 与合格电池充入量估算` : costState?.reportedCost === 0 && selected.source === 'teslamate_archive' ? 'TeslaMate 原始0表示未填，当前无合格估算' : '未知'}</Text>
             {costState?.costProvenance === 'manual' ? <Text className="metric-source">原服务端账单：{costState.reportedCost ?? '未知'} {costState.reportedCurrency || '币种未知'} · 本机编辑时间：{historyDateTime(costState.manualCostUpdatedAt)}</Text> : null}
             <Button className="button-secondary" onClick={startCostEdit}>编辑本机费用</Button>
             {costEditing ? <View className="card"><Text className="section-title">本机手动费用</Text><Text className="muted">仅保存当前记录的本机费用；不修改服务端账单或合格能量。</Text>

@@ -273,6 +273,21 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     if (kind === 'stats' || kind === 'efficiency') expect(page.root.findByProps({ ariaLabel: '平均能耗 -5 kWh/100km' })).toBeDefined()
   })
 
+  it('uses App quality eligibility for efficiency without removing raw mileage history', async () => {
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars: [car] })
+      if (url.includes('/charges')) return respond({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } })
+      return respond({ drives: [raw(1), { ...raw(2, -500), quality_state: 'incomplete', quality_reason: 'missing_api_evidence' }], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('efficiency')
+    expect(page.root.findByProps({ ariaLabel: '平均能耗 -5 kWh/100km' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '合格行程 1 次' })).toBeDefined()
+    expect(page.root.findByProps({ className: 'analysis-coverage' }).findAllByType('text').map(node => node.children.join('')).join(' ')).toContain('已加载行程 2 条')
+    const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
+    const cached = readHistoryCache<{ id: string }>({ getStorageSync: (key: string) => platform.values.get(key), setStorageSync() {} }, historyCacheKey('drives', 'analysis-user', 'analysis-car', 'https://api.example.test'))
+    expect(cached).toHaveLength(2)
+  })
+
   it('drills from annual mileage to month calendar, an actual day and a concrete drive', async () => {
     const page = await mount('mileage')
     await click(page, '2026 年')

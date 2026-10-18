@@ -9,6 +9,7 @@ export const dashboardNumber = (value: number | null | undefined, digits = 1): s
  return fraction === undefined ? grouped : `${grouped}.${fraction}`
 }
 export const dashboardMetric = (value: number | null | undefined, unit: string, digits = 1): string => `${dashboardNumber(value, digits)}${unit ? ` ${unit}` : ''}`
+export const dashboardTemperature = (value: number | null | undefined): string => value == null || !Number.isFinite(value) ? '--' : `${value.toFixed(1)}°C`
 export function dashboardRange(status: CarStatus) { return status.ratedRange ?? status.idealRange ?? status.estimatedRange ?? null }
 export function dashboardShift(value: string | null | undefined): string | null { const shift = value?.trim().toUpperCase(); return shift && ['P', 'R', 'N', 'D'].includes(shift) ? shift : null }
 export function dashboardState(value: string | null | undefined): string { return ({ online: '在线', driving: '行驶', charging: '充电', asleep: '休眠', suspended: '休眠', offline: '离线', waking: '连接中', parked: '驻车' } as Record<string, string>)[value?.toLowerCase() ?? ''] ?? '状态未知' }

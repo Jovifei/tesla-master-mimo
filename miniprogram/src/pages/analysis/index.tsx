@@ -5,6 +5,7 @@ import MetricValue, { displayNumber, peakSpeedKmh } from '../../components/Metri
 import HistoryDateChips from '../../components/HistoryDateChips'
 import LoadingIndicator from '../../components/LoadingIndicator'
 import { analysisDay, analysisGroups, analysisKind, analysisTitles, buildParkedWindows, calendarCells, distanceCurveEstimates, efficiencyDistribution, efficiencySpeedGroups, selectCurveSamples } from '../../domain/analysis'
+import { isAppDriveAnalysisEligible } from '../../domain/app_history_projection'
 import { aggregateDriveHistory, coveredTotal, historyRowKey, isHistoryQuarantined, mergeHistoryByKey } from '../../domain/history'
 import { acceptHistoryDetail } from '../../domain/history_controller'
 import { emptyHistoryQuery, filterHistory, historyDateTime, normalizeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
@@ -243,10 +244,14 @@ export default function AnalysisPage() {
   const displayedChargeDetail = chargeDetail && costScope ? overlayChargeCosts(Taro, costScope, [chargeDetail])[0] : null
   const displayedCurveCharge = chargeEvidence?.charge && costScope ? overlayChargeCosts(Taro, costScope, [chargeEvidence.charge])[0] : null
   const visibleDrives = filterHistory(drives, query), visibleCharges = filterHistory(displayCharges, query)
+  // The App's efficiency consumer uses qualified history; its mileage and timeline consumers use their own projections.
+  const efficiencyDrives = visibleDrives.filter(isAppDriveAnalysisEligible)
   const driveCount = status.drivesComplete || drives.length ? visibleDrives.length : null
   const chargeCount = status.chargesComplete || charges.length ? visibleCharges.length : null
-  const totals = aggregateDriveHistory(visibleDrives), distribution = efficiencyDistribution(visibleDrives)
+  const totals = aggregateDriveHistory(visibleDrives), efficiencyTotals = aggregateDriveHistory(efficiencyDrives)
+  const distribution = efficiencyDistribution(efficiencyDrives)
   const yearly = analysisGroups(visibleDrives, 'year'), monthly = analysisGroups(visibleDrives, 'month')
+  const efficiencyMonthly = analysisGroups(efficiencyDrives, 'month')
   const windows = buildParkedWindows(drives, charges, status.chargesComplete).filter(window => filterHistory([{ startDate: window.startDate }], { ...query, minDistanceKm: 0 }).length > 0)
   const eligibleWindows = windows.filter(window => !window.chargeOverlap && window.chargeCoverageComplete)
   const selectedWindow = windows.find(window => window.olderId === params.olderId && window.newerId === params.newerId)
@@ -268,7 +273,7 @@ export default function AnalysisPage() {
   const recordDrive = [...visibleDrives].filter(row => recordValue(row) != null).sort((a, b) => recordValue(b)! - recordValue(a)!)[0]
   const recordCharge = [...visibleCharges].filter(row => known(row.energyAddedKwh) != null).sort((a, b) => b.energyAddedKwh! - a.energyAddedKwh!)[0]
   const temperatureGroups = [{ label: '< 10 °C', min: -Infinity, max: 10 }, { label: '10–25 °C', min: 10, max: 25 }, { label: '≥ 25 °C', min: 25, max: Infinity }].map(group => {
-    const rows = visibleDrives.filter(row => known(row.outsideTempC) != null && row.outsideTempC! >= group.min && row.outsideTempC! < group.max)
+    const rows = efficiencyDrives.filter(row => known(row.outsideTempC) != null && row.outsideTempC! >= group.min && row.outsideTempC! < group.max)
     return { ...group, ...aggregateDriveHistory(rows).efficiency }
   })
   const driveRows = (rows: readonly Drive[]) => rows.map(row => <View className="analysis-record" key={historyRowKey(row)}>
@@ -325,13 +330,13 @@ export default function AnalysisPage() {
       {day ? <View className="card"><Button className="button-secondary" onClick={() => setDay(null)}>返回日历</Button><Text className="section-title">{day} 行程</Text>{driveRows(visibleDrives.filter(row => analysisDay(row.startDate) === day))}{visibleDrives.every(row => analysisDay(row.startDate) !== day) ? <Text className="muted">当日暂无已加载行程，不代表车辆未行驶。</Text> : null}</View> : null}
     </> : null}
     {car && kind === 'efficiency' ? <>
-      <View className="card analysis-headline"><Text className="section-title">平均能耗</Text><MetricValue label="平均能耗" value={totals.efficiency.value} unit="kWh/100km" icon="energy" negative={(totals.efficiency.value ?? 0) < 0} /><Text className="muted">配对覆盖 {totals.efficiency.known}/{totals.efficiency.total} 条，含估算 {totals.efficiency.estimated} 条；按合格净能量/同条正里程加权。</Text></View>
-      <View className="card metric-grid"><MetricValue label="合格行程" value={driveCount == null ? null : totals.efficiency.known} unit="次" icon="route" /><MetricValue label="已知距离" value={totals.distance.value} unit="km" icon="distance" /></View>
-      <GroupBars title="能耗趋势" groups={monthly} metric="efficiency" />
-      <View className="card"><Text className="section-title">时间窗口</Text><View className="metric-grid">{[{ label: '近90天', rows: visibleDrives.filter(row => Date.parse(row.startDate ?? '') >= Date.now() - 90 * 86400000) },
-        { label: '夏季（6–8月）', rows: visibleDrives.filter(row => [6, 7, 8].includes(new Date(row.startDate ?? '').getMonth() + 1)) }, { label: '冬季（12–2月）', rows: visibleDrives.filter(row => [12, 1, 2].includes(new Date(row.startDate ?? '').getMonth() + 1)) }].map(window => <MetricValue key={window.label} label={window.label} value={aggregateDriveHistory(window.rows).efficiency.value} unit="kWh/100km" icon="energy" />)}</View></View>
+      <View className="card analysis-headline"><Text className="section-title">平均能耗</Text><MetricValue label="平均能耗" value={efficiencyTotals.efficiency.value} unit="kWh/100km" icon="energy" negative={(efficiencyTotals.efficiency.value ?? 0) < 0} /><Text className="muted">配对覆盖 {efficiencyTotals.efficiency.known}/{efficiencyTotals.efficiency.total} 条，含估算 {efficiencyTotals.efficiency.estimated} 条；按合格净能量/同条正里程加权。</Text></View>
+      <View className="card metric-grid"><MetricValue label="合格行程" value={driveCount == null ? null : efficiencyTotals.efficiency.known} unit="次" icon="route" /><MetricValue label="已知距离" value={efficiencyTotals.distance.value} unit="km" icon="distance" /></View>
+      <GroupBars title="能耗趋势" groups={efficiencyMonthly} metric="efficiency" />
+      <View className="card"><Text className="section-title">时间窗口</Text><View className="metric-grid">{[{ label: '近90天', rows: efficiencyDrives.filter(row => Date.parse(row.startDate ?? '') >= Date.now() - 90 * 86400000) },
+        { label: '夏季（6–8月）', rows: efficiencyDrives.filter(row => [6, 7, 8].includes(new Date(row.startDate ?? '').getMonth() + 1)) }, { label: '冬季（12–2月）', rows: efficiencyDrives.filter(row => [12, 1, 2].includes(new Date(row.startDate ?? '').getMonth() + 1)) }].map(window => <MetricValue key={window.label} label={window.label} value={aggregateDriveHistory(window.rows).efficiency.value} unit="kWh/100km" icon="energy" />)}</View></View>
       <View className="card"><Text className="section-title">个人历史位置</Text><View className="metric-grid"><MetricValue label="最低能耗" value={distribution.min} unit="kWh/100km" /><MetricValue label="中位数" value={distribution.median} unit="kWh/100km" /><MetricValue label="最高能耗" value={distribution.max} unit="kWh/100km" /></View><Text className="muted">合格样本 {distribution.count} 段；仅比较本车当前范围，不代表公开车型排名。</Text></View>
-      <View className="card"><Text className="section-title">按行程平均速度</Text>{efficiencySpeedGroups(visibleDrives).map(group => <MetricValue key={group.label} label={`${group.label} · ${group.known}条`} value={group.value} unit="kWh/100km" />)}<Text className="muted">平均速度仅由该条合格距离/有效时长计算，不把峰值当平均速度。</Text></View>
+      <View className="card"><Text className="section-title">按行程平均速度</Text>{efficiencySpeedGroups(efficiencyDrives).map(group => <MetricValue key={group.label} label={`${group.label} · ${group.known}条`} value={group.value} unit="kWh/100km" />)}<Text className="muted">平均速度仅由该条合格距离/有效时长计算，不把峰值当平均速度。</Text></View>
       <View className="card"><Text className="section-title">个人行程记录</Text>{distribution.trips.slice(0, 20).map(trip => <View key={historyRowKey(trip.row)}><Text className="muted">P{trip.percentile} · {shown(trip.value, 'kWh/100km')}</Text><View className="analysis-percentile-track"><View style={{ width: `${trip.percentile}%` }} /></View>{driveRows([trip.row])}</View>)}<Text className="muted">百分位来自当前合格行程能耗分布；数值越高表示能耗越高，不能作为车型公开排名。</Text></View>
     </> : null}
     {car && kind === 'timeline' ? <View className="analysis-timeline"><Text className="section-title">行程与充电</Text><View className="history-date-chips">{[{ key: 'all', label: '全部' }, { key: 'drive', label: '行程' }, { key: 'charge', label: '充电' }, { key: 'parked', label: '驻车窗口' }].map(choice => <Button key={choice.key} className="history-chip" onClick={() => setEventKind(choice.key as typeof eventKind)}>{choice.label}</Button>)}</View>

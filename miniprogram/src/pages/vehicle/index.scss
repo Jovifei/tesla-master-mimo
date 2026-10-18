@@ -95,7 +95,7 @@
     border-radius:32rpx
   }
   .dashboard-hero {
-    padding:20rpx 32rpx;
+    padding:26rpx 32rpx;
     margin-bottom:32rpx
   }
   .dashboard-hero-heading,.dashboard-current-heading {
@@ -113,13 +113,13 @@
   }
   .dashboard-vehicle-state {
     border-radius:16rpx;
-    background:var(--dashboard-soft);
-    color:var(--dashboard-badge-fg);
+    background:var(--dashboard-primary-container);
+    color:var(--dashboard-primary);
     padding:8rpx 16rpx;
     font-size:22rpx
   }
   .dashboard-vehicle-art {
-    height:330rpx;
+    height:354rpx;
     position:relative;
     display:flex;
     justify-content:center;
@@ -146,7 +146,7 @@
   .dashboard-camera-button {
     position:absolute;
     bottom:0;
-    right:0;
+    right:20rpx;
     border-radius:50%;
     width:68rpx;
     height:68rpx;
@@ -155,7 +155,9 @@
     justify-content:center;
     padding:0;
     margin:0;
-    background:var(--dashboard-soft)
+    background:var(--dashboard-surface);
+    border:1rpx solid var(--dashboard-border);
+    box-shadow:0 2rpx 8rpx #00000014
   }
   .dashboard-driving-strip {
     display:flex;
@@ -235,7 +237,7 @@
     flex-direction:column;
     align-items:center;
     gap:8rpx;
-    padding:14rpx 4rpx;
+    padding:17rpx 4rpx;
     border-radius:24rpx
   }
   .dashboard-chip-label {

@@ -1,6 +1,7 @@
 import { isHistoryQuarantined } from '../../domain/history'
 import { historyDateTime } from '../../domain/history_query'
 import type { Drive } from '../../services/types'
+import { isAppDriveAnalysisEligible } from '../../domain/app_history_projection'
 
 // Match the App's route and statistics admission (DrivesViewModel). A short,
 // qualified repositioning is part of the parking interval, not a route.
@@ -11,8 +12,7 @@ export function isAppRouteDrive(drive: Drive): boolean {
 }
 
 export function isAppAnalysisDrive(drive: Drive): boolean {
-  return drive.qualityState === 'observed' || drive.qualityState === 'derived' ||
-    (drive.qualityState === 'incomplete' && drive.qualityReason === 'remote_quality_unavailable')
+  return isAppDriveAnalysisEligible(drive)
 }
 
 export function isAppStatisticsDrive(drive: Drive): boolean {

@@ -37,6 +37,7 @@
   .history-charge-location { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .history-charge-location > text { display: block; }
   .history-charge-location > text:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .history-charge-location > text:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .history-charge-mode { flex: none; border-radius: 24px; padding: 6px 14px; background: #ddf0f1; color: #157a86; font-size: 22px; }
   .history-statistics-coverage { margin-top: 14px; }
   .history-record-top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
@@ -50,6 +51,9 @@
   padding-top: 96px;
   .history-page-header { margin: -32px -32px 28px; padding: 72px 32px 34px; }
   .history-page-header .title { font-size: 48px; margin: 0; }
+  .charge-short-toggle { margin: 8px 0 4px; font-size: 24px; }
+  .charge-history-heading { display: block; margin: 32px 0 18px; font-size: 34px; }
+  .charge-history-list .history-record { background: #fff; margin: 12px 0; }
 }
 .charge-month-chart { margin-top: 16px; }
 .charge-chart-tabs { display: flex; gap: 10px; margin: 16px 0 12px; }

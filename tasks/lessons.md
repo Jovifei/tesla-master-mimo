@@ -1,5 +1,12 @@
 # Lessons
 
+## 2026-10-19 Jovi: verify the exact phone preview and App cost meaning before parity claims
+
+- Correction: Jovi仍看到小程序首页及多个页面的信息/布局与可用App不同；用户说已扫码后，USB连接的同机截图仍显示旧版顶部MateLink和旧图标/统计，因此二维码生成成功与用户回复均不能单独证明当前前台运行固定SHA。
+- Rule: 每轮先核实同一设备当前前台预览版本，再捕获同一账号对应页面的App与Mini实机画面；只有实际新版画面才能关闭视觉/统计差异。微信预览可能回到旧实例，需明确版本与前台，不把旧屏当新版失败或成功。
+- Data rule: 数字的原始类型不足以确定业务含义。App对TeslaMate原始cost=0可当未填转默认电价估算，显式手填0和可信免费0另有优先级；比较Mini实际金额前必须追踪App resolver的来源/资格分支。
+- Acceptance: 用手机新版首页及行程、充电、更多页逐项记录字段、顺序、大小与值；云未提供地址/胎压/峰值样本时保持未知并写明差距，不能借App手机本地数据伪造。
+
 ## 2026-10-18 Jovi: actual phone App is the final visual benchmark
 
 - Correction: 已登录小程序真机页即使字段看似完整，位置仍显示经纬度、里程少分组符、底栏名称与App2.1.38不同。旧源码2.1.37/合成图不足以宣布页面一致。

@@ -12,6 +12,7 @@ const fixture = JSON.parse(readFileSync(resolve(process.cwd(), '../fixtures/safe
 }
 
 const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), quota: false,
+  menuBottom: 80,
   navigateTo: vi.fn(), switchTab: vi.fn(), showModal: vi.fn(), pageScrollTo: vi.fn(() => Promise.resolve()),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Image: 'image', Map: 'map', ScrollView: 'scroll-view' }))
@@ -21,6 +22,7 @@ vi.mock('@tarojs/taro', () => ({ default: {
   removeStorageSync: (key: string) => platform.values.delete(key),
   getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }),
   navigateTo: platform.navigateTo, switchTab: platform.switchTab, showModal: platform.showModal, pageScrollTo: platform.pageScrollTo,
+  getMenuButtonBoundingClientRect: () => ({ bottom: platform.menuBottom }),
 }, useDidShow: (fn: () => void) => { platform.show = fn }, useDidHide: (fn: () => void) => { platform.hide = fn },
 useUnload: (fn: () => void) => { platform.unload = fn } }))
 
@@ -33,7 +35,7 @@ const report = (power: number) => ({ status: { state: 'online', battery_details:
   climate_details: { is_climate_on: false }, driving_details: { speed: 0, power }, charging_details: { charger_power: 0 } } })
 beforeEach(() => {
   vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test')
-  platform.values.clear(); platform.quota = false; platform.request.mockReset()
+  platform.values.clear(); platform.quota = false; platform.menuBottom = 80; platform.request.mockReset()
   platform.navigateTo.mockReset(); platform.switchTab.mockReset(); platform.showModal.mockReset()
   platform.values.set('matelink.wechat.session.v1', session('a'))
 })
@@ -46,11 +48,11 @@ async function flush() { await act(async () => { if (vi.isFakeTimers()) await vi
 async function mount(openDiagnostics = true) {
   const Page = (await import('./index')).default
   await act(async () => { renderer = TestRenderer.create(React.createElement(Page)) })
-  await act(async () => { platform.show() }); await flush()
   if (openDiagnostics) {
-    const button = renderer!.root.findAllByType('button').find(node => node.children.join('') === '查看数据状态')
-    if (button) await act(async () => { button.props.onClick() })
+    const current = platform.values.get('matelink.wechat.session.v1') as { userId: string; apiOrigin: string }
+    platform.values.set('matelink.ui.data-status.v1', { userId: current.userId, origin: current.apiOrigin, at: Date.now() })
   }
+  await act(async () => { platform.show() }); await flush()
   return renderer!
 }
 const visible = () => JSON.stringify(renderer!.toJSON())
@@ -62,6 +64,13 @@ it('opens the real readiness panel from More for the same signed-in owner', asyn
   expect(renderer!.root.findByProps({ className: 'dashboard-readiness-panel' })).toBeDefined()
   expect(platform.pageScrollTo).toHaveBeenCalledWith({ selector: '.dashboard-readiness-panel', duration: 250 })
   expect(platform.values.has('matelink.ui.data-status.v1')).toBe(false)
+})
+it('keeps the normal dashboard at the capsule-safe top and moves diagnostics into More', async () => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
+  const page = await mount(false)
+  expect(page.root.findByProps({ className: 'page vehicle-page' }).props.style.paddingTop).toBe('84px')
+  expect(visible()).not.toContain('查看数据状态')
+  expect(page.root.findAllByProps({ className: 'dashboard-readiness-panel' })).toHaveLength(0)
 })
 it('shows the App odometer and state wording without accepting an unusable zero position', async () => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/snapshot')
@@ -268,7 +277,7 @@ it('matches the actual Dashboard hierarchy, App InfoCard ordering, four state ch
   expect(chips.map(node => node.findByProps({ className: 'dashboard-chip-label' }).children.join(''))).toEqual(['未锁', '已插枪', '空调关闭', '哨兵关闭'])
   expect(hero.findByProps({ className: 'dashboard-opening-alert' })).toBeDefined()
   const info = page.root.findAllByProps({ className: 'dashboard-info-card' })
-  expect(info.slice(0, 4).map(node => node.findByProps({ className: 'dashboard-info-label' }).children.join(''))).toEqual(['里程', '位置', '车内温度', '车外温度'])
+  expect(info.slice(0, 4).map(node => node.findByProps({ className: 'dashboard-info-label' }).children.join(''))).toEqual(['里程', '位置', '车内', '车外'])
   for (const card of info) expect(card.children.map(child => typeof child === 'string' ? '' : child.props.className).slice(0, 2)).toEqual(['dashboard-info-heading', 'dashboard-info-value'])
   const map = page.root.findByType('map' as React.ElementType)
   expect(map.props.showLocation).toBe(false)
@@ -478,8 +487,8 @@ it('driving values follow App speed, recovery and gear order after actual unit p
  const strip = page.root.findByProps({ className: 'dashboard-driving-strip' })
  expect(strip.children.map(node => typeof node === 'string' ? node : node.props.ariaLabel)).toEqual(['速度 16 km/h', '回收 11 kW，原始功率 -11 kW', '挡位 D'])
  expect(page.root.findByProps({ ariaLabel: '续航 16 km' })).toBeDefined()
- expect(page.root.findByProps({ ariaLabel: '车内温度 0 °C' })).toBeDefined()
- expect(page.root.findByProps({ ariaLabel: '车外温度 -20 °C' })).toBeDefined()
+ expect(page.root.findByProps({ ariaLabel: '车内 0.0°C' })).toBeDefined()
+ expect(page.root.findByProps({ ariaLabel: '车外 -20.0°C' })).toBeDefined()
  expect(visible()).toContain('Model 3 · 长续航版')
  expect(snapshotBadge().children.join('')).toBe('时间未知')
  const Hero = (await import('../../components/dashboard/DashboardParts')).DashboardHero

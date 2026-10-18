@@ -3,7 +3,7 @@ import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/
 import { useRef, useState } from 'react'
 import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
 import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, reconcileHistoryCache, type HistoryInterval } from '../../domain/history_controller'
-import { emptyHistoryQuery, filterHistory, historyDateTime, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
+import { emptyHistoryQuery, filterHistory, historyDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
 import './index.scss'
 import { createRequestScopeGate } from '../../domain/request_scope'
@@ -509,7 +509,7 @@ export default function DrivesPage() {
           {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的行程</Text> : null}
           {visibleItems.map(item => (
             <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
-              <Text className="history-record-date">{historyDateTime(item.startDate)}</Text>
+              <Text className="history-record-date">{historyEditorialDate(item.startDate)}</Text>
               <View className="history-record-evidence"><Text className="history-soc">{battery(item.startBatteryLevel)} → {battery(item.endBatteryLevel)}</Text><Text className="history-source">{energyLabel(item)} · {sourceLabel(item.source)}</Text></View>
               <View className="history-route"><View className="history-route-stops"><Text className="history-route-start">{value(item.startAddress)}</Text><Text className="history-route-end">{value(item.endAddress)}</Text></View><VisualIcon name="route" /></View>
               <View className="history-record-metrics">

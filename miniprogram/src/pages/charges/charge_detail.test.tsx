@@ -76,7 +76,7 @@ it.each(['missing-mode', 'dc-mode', 'uppercase-mode', 'mismatched-basis', 'blank
 it('preserves qualified zero battery input as zero percent efficiency', async () => {
   const altered = { ...charge, energy_contract: { ...charge.energy_contract, battery_input: metric(0, 'battery_input') } }
   platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] }) : url.endsWith('/current') ? response({ charge: null }) : url.endsWith('/charges/1') ? response({ charge: altered }) : response({ charges: [altered], meta: { page: 1, show: 20, total_pages: 1 } }))
-  await mount(); await detail()
+  await mount(); await click('显示短充'); await detail()
   expect(tree!.root.findByProps({ className: 'history-detail-overlay' }).findByProps({ ariaLabel: '电池充入 0 kWh' })).toBeDefined()
   expect(tree!.root.findByProps({ ariaLabel: 'AC输入效率 0%' })).toBeDefined()
 })
@@ -260,4 +260,25 @@ it('does not adopt a default price saved by another account or origin', async ()
   await mount()
   expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 ≈¥11.40' })).toBeDefined()
   expect(shown()).toContain('费用按 App 默认 ¥1.14/kWh 估算')
+})
+it('shows TeslaMate unfilled raw zero as an estimate until the owner explicitly saves manual zero', async () => {
+  const legacy = { ...charge, source: 'teslamate_archive', cost: 0, currency_code: 'CNY', energy_contract: null,
+    charge_energy_added: 10, charge_details: [] }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] })
+    if (url.endsWith('/current')) return response({ charge: null })
+    if (url.endsWith('/charges/1')) return response({ charge: legacy })
+    return response({ charges: [legacy], meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  await mount()
+  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 ≈¥11.40' })).toBeDefined()
+  expect(shown()).toContain('实际/手填费用覆盖 0/1 条；估算费用覆盖 1/1 条')
+  await detail()
+  expect(shown()).toContain('费用来源：按 App 默认 ¥1.14/kWh 与合格电池充入量估算')
+  await edit('0', 'CNY'); await click('保存本机费用')
+  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 0 CNY' })).toBeDefined()
+  expect(shown()).toContain('费用来源：本机手动设置')
+  const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
+  const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
+  expect(readHistoryCache<{ cost: number }>(storage, historyCacheKey('charges', 'owner', 'uid7', origin))[0].cost).toBe(0)
 })

@@ -6,7 +6,7 @@ import ReadinessChecklist from '../../components/ReadinessChecklist'
 import MetricValue from '../../components/MetricValue'
 import { DashboardVehicleArt, DashboardHero, DashboardHud, DashboardInfoCard, DashboardTpms, DashboardCurrentCharge } from '../../components/dashboard/DashboardParts'
 import DashboardIcon from '../../components/dashboard/DashboardIcon'
-import { dashboardMetric, dashboardSource, dashboardSnapshot, dashboardReportTime, dashboardVehicleSubtitle } from '../../components/dashboard/presentation'
+import { dashboardMetric, dashboardSource, dashboardSnapshot, dashboardReportTime, dashboardVehicleSubtitle, dashboardTemperature } from '../../components/dashboard/presentation'
 import { mapCoordinate } from '../../domain/map_coordinate'
 import { mergeVehicleVisualConfig, resolveVehicleVisual } from '../../domain/vehicle_visual'
 import { ensureVehicleAsset } from '../../services/vehicle_assets'
@@ -35,6 +35,14 @@ function messageFor(error: unknown): string {
 
 function booleanLabel(value: boolean | null, yes: string, no: string): string | null {
   return value == null ? null : value ? yes : no
+}
+
+function dashboardHeaderInset(): number {
+  try {
+    const bottom = Taro.getMenuButtonBoundingClientRect?.().bottom
+    if (Number.isFinite(bottom) && bottom > 0) return Math.ceil(bottom) + 4
+  } catch { /* fallback for hosts without a WeChat capsule */ }
+  return 88
 }
 
 export default function VehiclePage() {
@@ -400,7 +408,7 @@ export default function VehiclePage() {
   const openBattery = () => navigate('/pages/insights/index?kind=battery')
   const location = status?.geofence || (map ? '地址待解析' : '暂无数据')
   return (
-    <View className="page vehicle-page">
+    <View className="page vehicle-page" style={{ paddingTop: `${dashboardHeaderInset()}px` }}>
       <View className="dashboard-toolbar">
         <View className="dashboard-title"><Text>{car?.displayName || car?.name || '车辆'}</Text><Text>{dashboardVehicleSubtitle(car?.model, car?.trim) || '车型待识别'}</Text></View>
         <View className="dashboard-toolbar-right"><View className="dashboard-toolbar-actions"><Text className={`dashboard-snapshot-badge dashboard-snapshot-${snapshot.kind}`} data-kind={snapshot.kind}>{snapshot.label}</Text><Button className="dashboard-icon-button" ariaLabel="刷新车辆" loading={loading} onClick={() => { void load() }}><DashboardIcon name="refresh" /></Button><Button className="dashboard-icon-button" ariaLabel="设置" onClick={settings}><DashboardIcon name="settings" /></Button></View><Text className="dashboard-report-time">{dashboardReportTime(status?.observedAt)}</Text></View>
@@ -410,9 +418,9 @@ export default function VehiclePage() {
         <DashboardHud status={status} dismissed={hudDismissed} onDismiss={() => setHudDismissed(true)} onExpand={() => setHudDismissed(false)} onOpen={() => { void Taro.switchTab({ url: activeDriving ? '/pages/drives/index' : '/pages/charges/index' }) }} />
         <DashboardHero car={car} status={status} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onOpenBattery={openBattery} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} />
         {loading ? <LoadingIndicator label="正在读取最新数据…" compact /> : null}
-        <View className="dashboard-location-row"><DashboardInfoCard label="里程" value={dashboardMetric(status.odometer, 'km', 0)} icon="speed" onClick={() => navigate('/pages/analysis/index?kind=mileage')} /><DashboardInfoCard label="位置" value={location} icon="location" onClick={() => { if (map) navigate('/pages/tools/index?kind=location'); else setShowDiagnostics(true) }} /></View>
+        <View className="dashboard-location-row"><DashboardInfoCard label="里程" value={dashboardMetric(status.odometer, 'km', 0)} icon="speed" onClick={() => navigate('/pages/analysis/index?kind=mileage')} /><DashboardInfoCard label="位置" value={location} icon="location" onClick={() => { if (map) navigate('/pages/tools/index?kind=location'); else { focusDiagnostics.current = true; setShowDiagnostics(true) } }} /></View>
         {map ? <View className="dashboard-map-card">{!mapFailed ? <Map id="dashboard-map" latitude={map.latitude} longitude={map.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...map, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24, title: car.displayName || car.name || '车辆' }]} onError={() => setMapFailed(true)} /> : <View className="dashboard-map-unavailable"><Text>地图暂时无法载入</Text><Button className="dashboard-text-button" onClick={() => setMapFailed(false)}>重试地图</Button></View>}</View> : null}
-        <View className="dashboard-temperature-row"><DashboardInfoCard label="车内温度" value={dashboardMetric(status.insideTemp, '°C')} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /><DashboardInfoCard label="车外温度" value={dashboardMetric(status.outsideTemp, '°C')} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /></View>
+        <View className="dashboard-temperature-row"><DashboardInfoCard label="车内" value={dashboardTemperature(status.insideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /><DashboardInfoCard label="车外" value={dashboardTemperature(status.outsideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /></View>
         <DashboardTpms snapshot={status.tpms} warnings={tpmsAlerts} onOpen={() => navigate('/pages/tools/index?kind=tpms')} />
         <View className="dashboard-history-entry" onClick={() => navigate('/pages/analysis/index?kind=stats')}><DashboardIcon name="bolt" /><View><Text>7天电量趋势</Text><Text>查看已记录的电池历史与容量详情</Text></View><Text>›</Text></View>
         {activeCharging ? <DashboardCurrentCharge status={status} onOpen={() => { void Taro.switchTab({ url: '/pages/charges/index' }) }} /> : null}
@@ -434,8 +442,8 @@ export default function VehiclePage() {
       {readiness.status === 'telemetry_not_configured' ? <Text className="muted">持续采集需要服务端先完成配置，请联系管理员。</Text> : null}
       {readiness.status === 'telemetry_error' ? <Button className="button" loading={loading} onClick={retryTelemetry}>重新配置持续采集</Button> : null}
       {error ? <Text className="error">{error}</Text> : null}
-      <Button className="button button-secondary" onClick={() => setShowDiagnostics(!showDiagnostics)}>{showDiagnostics ? '收起数据状态' : '查看数据状态'}</Button>
       {showDiagnostics ? <View className="dashboard-readiness-panel">
+        <Button className="button button-secondary" onClick={() => setShowDiagnostics(false)}>收起数据状态</Button>
         <View className="dashboard-evidence"><Text>{dashboardSource(status?.source)}</Text><Text>{status?.observedAt ? `状态报告时间：${status.observedAt}（未提供逐字段更新时间）` : '状态报告时间未提供，不能确认字段是否最新。'}</Text>{tpmsCacheReason ? <Text>{tpmsCacheReason}</Text> : null}</View>
         <ReadinessChecklist items={readinessItems} pairing={pairing} sessionReady={Boolean(currentSession)} diagnostics={{ car, status, cached, onlineError: Boolean(error), history: historyEvidence }} />
         {status ? <View className="card"><Text className="section-title">状态报告详情</Text><View className="metric-grid"><MetricValue label="速度" value={status.speed} unit="km/h" /><MetricValue label="功率" value={status.power} unit="kW" negative={(status.power ?? 0) < 0} /><MetricValue label="空调" value={booleanLabel(status.isClimateOn, '开启', '关闭')} /></View></View> : null}

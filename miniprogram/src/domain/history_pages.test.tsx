@@ -131,6 +131,7 @@ describe('history pages consume canonical data across layers', () => {
       return respond({ [kind]: page === 1 && changed ? [raw(1), raw(99)] : [raw(page)], meta: { page, show: 20, total_pages: 3 } })
     })
     const page = await mount(kind)
+    if (kind === 'charges') await click(page, '显示短充')
     await click(page, '加载更多')
     const date = page.root.findAllByType('picker' as React.ElementType).find(node => node.props.mode === 'date')!
     await act(async () => { date.props.onChange({ detail: { value: '2026-10-14' } }); platform.scroll({ scrollTop: 640 }) })
@@ -321,6 +322,41 @@ describe('history pages consume canonical data across layers', () => {
     const body = page.root.findByProps({ className: kind === 'drives' ? 'page history-page drives-page' : 'page history-page charges-page' })
     const headerClasses = body.findAllByType('view').map(child => child.props.className).filter(Boolean)
     expect(headerClasses.indexOf('history-controls')).toBeLessThan(headerClasses.indexOf('card history-interval'))
+  })
+
+  it('keeps App charge list, summary and monthly chart on their separate quality and short-session projections', async () => {
+    const charge = (id: number, energy: number | null | undefined, quality = 'observed', reason?: string) => ({
+      charge_id: id, session_id: `projection-${id}`, source: 'teslamate_archive', quality_state: quality,
+      quality_reason: reason, start_date: start, end_date: end, cost: 0, currency: 'CNY',
+      ...(energy === undefined ? {} : { charge_energy_added: energy }),
+    })
+    const rows = [charge(1, 2), charge(2, 0), charge(3, 0.1), charge(4, null),
+      charge(5, 0, 'incomplete', 'missing_charge_measurement'),
+      charge(6, 0, 'incomplete', 'remote_quality_unavailable'), charge(7, 5, 'quarantined')]
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/current')) return respond({ charge: null })
+      return respond({ charges: rows, meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('charges')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(3)
+    const interval = page.root.findByProps({ className: 'card history-interval' })
+    expect(interval.findByProps({ ariaLabel: '充电次数 5 次' })).toBeDefined()
+    expect(interval.findByProps({ ariaLabel: '充电量 2.1 kWh' })).toBeDefined()
+    await click(page, '次数')
+    expect(page.root.findAllByProps({ className: 'charge-chart-value' }).map(node => node.children.join(''))).toContain('5')
+    const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
+    const key = historyCacheKey('charges', 'user-a', 'uid7', 'https://api.example.test')
+    const stored = readHistoryCache<Charge>({ getStorageSync: (name: string) => platform.values.get(name), setStorageSync: (name: string, value: unknown) => { platform.values.set(name, value) } }, key)
+    expect(stored).toHaveLength(7)
+    expect(stored.find(row => row.id === '2')).toMatchObject({ energyAddedKwh: 0, cost: 0 })
+    const list = page.root.findByProps({ className: 'history-list charge-history-list' })
+    expect(list.findByProps({ className: 'section-title charge-history-heading' }).children.join('')).toBe('充电历史')
+    expect(list.findAllByProps({ className: 'history-record' })).toHaveLength(3)
+    expect(list.props.className).not.toContain('card')
+    await click(page, '显示短充')
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(6)
+    expect(interval.findByProps({ ariaLabel: '充电次数 5 次' })).toBeDefined()
   })
 
   it('keeps each newly detected event available when one poll contains multiple completed drives', async () => {
@@ -516,6 +552,7 @@ describe('history pages consume canonical data across layers', () => {
     const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, data: unknown) => { platform.values.set(key, data) } }
     const key = historyCacheKey(kind, 'user-a', 'uid7', 'https://api.example.test')
     let page = await mount(kind)
+    if (kind === 'charges' && value === 0) await click(page, '显示短充')
     const assertWinner = () => {
       const winner = readHistoryCache<Drive | Charge>(storage, key)[0]
       expect(winner.qualityState).toBe('observed')
@@ -538,6 +575,7 @@ describe('history pages consume canonical data across layers', () => {
     assertWinner()
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
     page = await mount(kind)
+    if (kind === 'charges' && value === 0) await click(page, '显示短充')
     assertWinner()
   })
 
@@ -600,6 +638,7 @@ describe('history pages consume canonical data across layers', () => {
     weak = true; await click(page, '刷新')
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
     page = await mount('charges')
+    await click(page, '显示短充')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
     expect(JSON.stringify(page.toJSON())).not.toContain('6 kWh')
     await click(page, '加载更多')
@@ -908,9 +947,11 @@ describe('history pages consume canonical data across layers', () => {
     platform.failStorage = true
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(JSON.stringify(page.toJSON())).toContain('Genuine detail site')
-    expect(JSON.stringify(page.toJSON())).toContain('0 EUR')
+    expect(page.root.findByProps({ ariaLabel: '充电费用 暂无数据 EUR' })).toBeDefined()
+    expect(JSON.stringify(page.toJSON())).toContain('TeslaMate 原始0表示未填，当前无合格估算')
     expect(JSON.stringify(page.toJSON())).toContain('未保存到本机')
     await click(page, '返回列表')
+    await click(page, '显示短充')
     expect(JSON.stringify(page.toJSON())).toContain('Genuine detail site')
   })
 
@@ -946,6 +987,7 @@ describe('history pages consume canonical data across layers', () => {
     page = await mount('charges')
     expect(JSON.stringify(page.toJSON())).toContain(`${batteryKwh} kWh`)
     expect(readHistoryCache<Charge>(storage, key)[0].energyAddedKwh).toBe(batteryKwh)
+    if (batteryKwh === 0) await click(page, '显示短充')
     detail = { ...charge, address: 'Genuine archived charge site', cost: 2, currency: 'EUR', energy_contract: { version: 1,
       battery_input: { value_kwh: null, unit: 'kWh', source: 'teslamate_archive', quality: 'unknown',
         start_date: start, end_date: end, reason: 'charging_detail_unavailable' } } }

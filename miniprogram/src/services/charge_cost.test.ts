@@ -47,9 +47,23 @@ it('matches the App default estimate from qualified battery energy while preserv
   const result = overlayChargeCosts(storage, scope, [legacy], appDefault)[0]
   expect(result).toMatchObject({ costProvenance: 'estimate', cost: 24.0175 * 1.14, currencyCode: 'CNY', reportedCost: null })
   expect(legacy.cost).toBeNull(); expect(storage.data.size).toBe(0)
-  expect(overlayChargeCosts(storage, scope, [{ ...legacy, cost: 0 }], appDefault)[0]).toMatchObject({ cost: 0, costProvenance: 'actual' })
+  expect(overlayChargeCosts(storage, scope, [{ ...legacy, cost: 0 }], appDefault)[0]).toMatchObject({ cost: 24.0175 * 1.14, costProvenance: 'estimate', reportedCost: 0 })
   expect(writeChargeCostOverride(storage, scope, legacy, 0, 'USD', () => true)).toBe(true)
   expect(overlayChargeCosts(storage, scope, [legacy], appDefault)[0]).toMatchObject({ cost: 0, costProvenance: 'manual', currencyCode: 'USD', reportedCost: null })
+})
+it('treats TeslaMate raw zero as unfilled while preserving manual zero, positive bills and genuine zero from another source', () => {
+  const legacy = { ...charge, source: 'teslamate_archive', cost: 0, currency: 'CNY', currencyCode: 'CNY',
+    energy: { batteryInputKwh: 10, quality: 'reported' } } as Charge
+  const storage = store()
+  const estimated = overlayChargeCosts(storage, scope, [legacy], appDefault)[0]
+  expect(estimated).toMatchObject({ costProvenance: 'estimate', reportedCost: 0 })
+  expect(estimated.cost).toBeCloseTo(11.4, 10)
+  expect(overlayChargeCosts(storage, scope, [{ ...legacy, energy: undefined }], appDefault)[0]).toMatchObject({ cost: null, costProvenance: 'unknown', reportedCost: 0 })
+  expect(overlayChargeCosts(storage, scope, [{ ...legacy, cost: 7 }], appDefault)[0]).toMatchObject({ cost: 7, costProvenance: 'actual', reportedCost: 7 })
+  expect(overlayChargeCosts(storage, scope, [{ ...legacy, source: 'telemetry_mqtt' }], appDefault)[0]).toMatchObject({ cost: 0, costProvenance: 'actual', reportedCost: 0 })
+  expect(overlayChargeCosts(storage, scope, [legacy])[0]).toMatchObject({ cost: 0, costProvenance: 'actual', reportedCost: 0 })
+  expect(writeChargeCostOverride(storage, scope, legacy, 0, 'CNY', () => true)).toBe(true)
+  expect(overlayChargeCosts(storage, scope, [legacy], appDefault)[0]).toMatchObject({ cost: 0, costProvenance: 'manual', reportedCost: 0 })
 })
 it('withholds a default CNY estimate for foreign currency, unqualified telemetry and quarantined rows', () => {
   const candidate = { ...charge, source: 'teslamate_archive', cost: null, currency: null, currencyCode: null,

@@ -79,6 +79,25 @@ it('actual range proof and capacity response reach personalized range and rated 
   expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '合格能耗与容量估算 300 km')).toBe(true)
   expect(shown()).toContain('共 0 段')
 })
+it('excludes incomplete history from App range and cost analysis while keeping source receipts', async () => {
+  drives = [...Array.from({ length: 5 }, (_, i) => rawDrive(i + 1, 4, 20)), { ...rawDrive(6, 300, 20), quality_state: 'incomplete' }]
+  health = { current_capacity: 60, max_capacity: 65, max_range: 450, current_range: 420, battery_health_percentage: 92 }
+  healthMeta = { availability: 'available', source: 'teslamate', quality_state: 'observed', observed_at: start }
+  await mount('range')
+  expect(tree!.root.findByProps({ ariaLabel: '合格能耗与容量估算 300 km' })).toBeDefined()
+  expect(shown()).toContain('当前条件分组 · 5 段')
+  expect(shown()).toContain('行驶已加载 6 条')
+  await act(async () => { platform.unload(); tree!.unmount() }); tree = null
+
+  charges = [rawCharge(1, 0, 'EUR'), { ...rawCharge(2, 500, 'EUR'), quality_state: 'incomplete' }]
+  await mount('cost')
+  expect(tree!.root.findByProps({ ariaLabel: '费用合计 0 EUR' })).toBeDefined()
+  expect(shown()).toContain('已加载 1 次')
+  expect(shown()).toContain('充电已加载 2 条')
+  const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
+  const cached = readHistoryCache<{ id: string }>({ getStorageSync: (key: string) => platform.values.get(key), setStorageSync() {} }, historyCacheKey('charges', 'owner', 'uid7', 'https://api.example.test'))
+  expect(cached).toHaveLength(2)
+})
 it('actual manual selection saves a scoped bounded trip and rebuilds detail offline without inventing energy for missing leg', async () => {
   await mount('longTrips'); await click('创建长途行程')
   await act(async () => { tree!.root.findByType('input').props.onInput({ detail: { value: '合成手动长途' } }) })

@@ -64,10 +64,14 @@ export function overlayChargeCosts(storage: Pick<WechatStorage, 'getStorageSync'
   return charges.map(charge => {
     const target = identity(charge), manual = target ? byKey.get(rowKey(target)) : null
     const reportedCost = finite(charge.cost) ? charge.cost : null, reportedCurrency = currencyCode(charge.currencyCode ?? charge.currency)
-    const estimate = manual || reportedCost != null || !estimatePrice ? null : estimateAppDefaultChargeCost(charge, estimatePrice.amount, estimatePrice.currency)
+    // The App's Charges screen treats TeslaMate zero as an unfilled price before estimating.
+    // Other consumers (such as Cost analysis) keep the raw reported zero when no estimate contract is requested.
+    const blankTeslaMatePrice = estimatePrice != null && charge.source === 'teslamate_archive' && reportedCost === 0
+    const actualCost = reportedCost !== null && reportedCost >= 0 && !blankTeslaMatePrice ? reportedCost : null
+    const estimate = manual || actualCost != null || !estimatePrice ? null : estimateAppDefaultChargeCost(charge, estimatePrice.amount, estimatePrice.currency)
     return { ...charge, reportedCost, reportedCurrency, manualCostUpdatedAt: manual?.updatedAt ?? null,
-      cost: manual?.amount ?? reportedCost ?? estimate, currency: manual?.currency ?? (estimate != null ? estimatePrice!.currency : charge.currency), currencyCode: manual?.currency ?? (estimate != null ? estimatePrice!.currency : charge.currencyCode),
-      costProvenance: manual ? 'manual' : reportedCost != null ? 'actual' : estimate != null ? 'estimate' : 'unknown',
+      cost: manual?.amount ?? actualCost ?? estimate, currency: manual?.currency ?? (estimate != null ? estimatePrice!.currency : charge.currency), currencyCode: manual?.currency ?? (estimate != null ? estimatePrice!.currency : charge.currencyCode),
+      costProvenance: manual ? 'manual' : actualCost != null ? 'actual' : estimate != null ? 'estimate' : 'unknown',
       estimatedUnitPrice: estimate != null ? estimatePrice!.amount : null, estimatePriceSource: estimate != null ? estimatePrice!.source : null }
   })
 }

@@ -8,6 +8,7 @@ import { readCarsCache } from '../../services/cars_cache'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 import { carSelectionStorageKey, type Car, type CarStatus, type Charge, type Drive } from '../../services/types'
 import { aggregateDriveHistory, historyRowKey, isHistoryQuarantined } from '../../domain/history'
+import { isAppChargeAnalysisEligible, isAppDriveAnalysisEligible } from '../../domain/app_history_projection'
 import { emptyHistoryQuery, filterHistory, historyDateTime, type HistoryQuery } from '../../domain/history_query'
 import { chargeCosts, insightDrive, makeManualTrip, manualTripSummary, personalizedRange, ratedRangeComparisons, rangeInfluences, readManualTrips,
   removeManualTrip, tripLegKey, writeManualTrip, type CapacityEvidence, type ManualTrip, type TripLeg, type TripScope } from '../../domain/insights'
@@ -115,7 +116,9 @@ export default function InsightsPage() {
   const displayCharge = (charge: Charge): Charge | CostedCharge => costByKey.get(costIdentity(charge)) ?? charge
   const currentCharge = currentChargeRaw ? displayCharge(currentChargeRaw) : null
   const selectedTrip = selectedTripRaw ? { ...selectedTripRaw, legs: selectedTripRaw.legs.map(leg => leg.kind === 'charge' ? { kind: 'charge' as const, charge: displayCharge(leg.charge) } : leg) } : null
-  const displayedCosts = filteredCharges.map(displayCharge), costs = chargeCosts(displayedCosts)
+  // App analytics excludes incomplete/unverified history; manual long trips retain their saved raw legs.
+  const analysisDrives = drives.filter(isAppDriveAnalysisEligible)
+  const displayedCosts = filteredCharges.filter(isAppChargeAnalysisEligible).map(displayCharge), costs = chargeCosts(displayedCosts)
   const manualCostCount = displayedCosts.filter(charge => 'costProvenance' in charge && charge.costProvenance === 'manual').length
   const tariff = activeSession?.userId && scope.current?.userId === activeSession.userId ? readTariff(Taro, activeSession.userId, scope.current.origin) : null
   const estimatedCosts = tariff ? displayedCosts.filter(charge => charge.cost == null).flatMap(charge => {
@@ -123,7 +126,9 @@ export default function InsightsPage() {
     return cost == null ? [] : [{ charge, cost }]
   }) : []
   const capacity: CapacityEvidence | null = health ? { currentCapacityKwh: health.currentCapacityKwh, ...healthEvidence } : null
-  const range = personalizedRange(drives, capacity, status), comparisons = ratedRangeComparisons(filteredDrives), influences = rangeInfluences(drives)
+  const range = personalizedRange(analysisDrives, capacity, status)
+  const comparisons = ratedRangeComparisons(filteredDrives.filter(isAppDriveAnalysisEligible))
+  const influences = rangeInfluences(analysisDrives)
   const averageDeviation = comparisons.length ? comparisons.reduce((sum, row) => sum + row.deviationPercent, 0) / comparisons.length : null
   const legs: TripLeg[] = [...filteredDrives.map(drive => ({ kind: 'drive' as const, drive })), ...filteredCharges.map(charge => ({ kind: 'charge' as const, charge }))]
   const candidates = new Map<string, TripLeg>()

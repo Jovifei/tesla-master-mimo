@@ -27,6 +27,16 @@ export function historyDateTime(value: string | null | undefined): string {
   if (!date || !Number.isFinite(date.getTime())) return '暂无日期'
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
+/** Android formatEditorialDate: the card date follows the device's local calendar. */
+export function historyEditorialDate(value: string | null | undefined, is24Hour = true): string {
+  const date = typeof value === 'string' && value ? new Date(value) : null
+  if (!date || !Number.isFinite(date.getTime())) return '暂无日期'
+  const pad = (number: number) => String(number).padStart(2, '0')
+  const day = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()]
+  const time = is24Hour ? `${pad(date.getHours())}:${pad(date.getMinutes())}`
+    : `${pad(date.getHours() % 12 || 12)}:${pad(date.getMinutes())} ${date.getHours() < 12 ? '上午' : '下午'}`
+  return `${day} · ${date.getMonth() + 1}月${date.getDate()}日 · ${time}`
+}
 export function filterHistory<T extends { startDate?: string | null; distanceKm?: number | null }>(rows: readonly T[], query: HistoryQuery): T[] {
   return rows.filter(row => {
     if (isHistoryQuarantined(row)) return false
