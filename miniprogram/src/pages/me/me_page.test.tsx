@@ -1,15 +1,15 @@
 import React from 'react'
-import TestRenderer, { act, type ReactTestRenderer } from 'react-test-renderer'
+import TestRenderer, { act, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), toast: vi.fn(), navigate: vi.fn(), clipboard: vi.fn(),
+const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), toast: vi.fn(), navigate: vi.fn(), switchTab: vi.fn(), clipboard: vi.fn(),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void }))
-vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Checkbox: 'checkbox', CheckboxGroup: 'checkboxgroup' }))
+vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Image: 'image', Button: 'button', Checkbox: 'checkbox', CheckboxGroup: 'checkboxgroup' }))
 vi.mock('@tarojs/taro', () => ({ default: {
   request: platform.request, getStorageSync: (key: string) => platform.values.get(key),
   setStorageSync: (key: string, value: unknown) => platform.values.set(key, value),
   removeStorageSync: (key: string) => platform.values.delete(key), showToast: platform.toast,
-  navigateTo: platform.navigate, setClipboardData: platform.clipboard,
+  navigateTo: platform.navigate, switchTab: platform.switchTab, setClipboardData: platform.clipboard,
 }, useDidShow: (fn: () => void) => { platform.show = fn }, useDidHide: (fn: () => void) => { platform.hide = fn },
 useUnload: (fn: () => void) => { platform.unload = fn } }))
 const key = 'matelink.wechat.session.v1'
@@ -18,7 +18,7 @@ const respond = (statusCode: number, data: unknown) => ({ statusCode, data, head
 let renderer: ReactTestRenderer | null = null
 beforeEach(() => {
   vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test')
-  platform.values.clear(); platform.request.mockReset(); platform.toast.mockReset(); platform.navigate.mockReset().mockResolvedValue({}); platform.clipboard.mockReset().mockResolvedValue({})
+  platform.values.clear(); platform.request.mockReset(); platform.toast.mockReset(); platform.navigate.mockReset().mockResolvedValue({}); platform.switchTab.mockReset().mockResolvedValue({}); platform.clipboard.mockReset().mockResolvedValue({})
   platform.values.set(key, session('a'))
 })
 afterEach(async () => {
@@ -36,6 +36,27 @@ async function logout() {
   await act(async () => { button.props.onClick() }); await flush()
 }
 const visible = () => JSON.stringify(renderer!.toJSON())
+
+it('More mirrors the App section order and opens existing analysis and live readiness routes', async () => {
+  await mount()
+  const labels = renderer!.root.findAllByProps({ className: 'more-tile-label' }).map(node => node.children.join(''))
+  expect(labels).toEqual(['统计概览', '电池健康', '里程统计', '行程历史', '长途行程', '能耗', '费用分析', '续航分析', '待机能耗', '时间线', '年度报告', '导出数据'])
+  expect(visible()).not.toContain('查看数据')
+  expect(visible()).not.toContain('查看车辆与数据状态')
+  const system = renderer!.root.findAllByProps({ className: 'more-system-label' }).map(node => node.children.join(''))
+  expect(system).toEqual(['数据状态', '软件更新', '哨兵历史', '设置', '关于'])
+  const tiles = renderer!.root.findAllByType('button').filter(node => node.props.className === 'more-action more-tile')
+  const systemRows = renderer!.root.findAllByType('button').filter(node => node.props.className === 'more-action more-system-action')
+  const iconName = (node: ReactTestInstance) => node.findAll(child => typeof child.props.className === 'string' && child.props.className.startsWith('visual-icon visual-icon-'))[0].props.className.replace('visual-icon visual-icon-', '')
+  expect(tiles.map(iconName)).toEqual(['speed', 'battery', 'distance', 'clock', 'route', 'chart', 'money', 'route', 'energy', 'timeline', 'chart', 'update'])
+  expect(systemRows.map(iconName)).toEqual(['shield', 'update', 'shield', 'settings', 'info'])
+  await act(async () => { tiles[0].props.onClick(); tiles[3].props.onClick(); tiles[11].props.onClick(); systemRows[0].props.onClick() })
+  expect(platform.navigate).toHaveBeenCalledWith({ url: '/pages/analysis/index?kind=stats' })
+  expect(platform.navigate).toHaveBeenCalledWith({ url: '/pages/tools/index?kind=export' })
+  expect(platform.switchTab).toHaveBeenCalledWith({ url: '/pages/drives/index' })
+  expect(platform.switchTab).toHaveBeenCalledWith({ url: '/pages/vehicle/index' })
+  expect(platform.values.get('matelink.ui.data-status.v1')).toMatchObject({ userId: 'a', origin: 'https://api.example.test', at: expect.any(Number) })
+})
 
 /** Actual page -> actual API logout -> platform transport/storage, no API mocking. */
 it('successful logout exposes login and clears the actual local session', async () => {

@@ -369,25 +369,36 @@ button {
 .tpms-evidence-toggle { background: transparent; color: #6b7280; font-size: 23px; padding: 8px 0; margin: 0; text-align: left; }
 .tpms-evidence-toggle::after { border: 0; }
 .tpms-evidence { padding: 20px 0; font-size: 24px; }
-.more-status { background: #ddf0f1; color: #164e63; }
-.more-section-heading { display: block; margin: 36px 0 16px; font-size: 28px; font-weight: 600; }
-.more-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
-.more-action { display: flex; align-items: center; gap: 16px; min-width: 0; padding: 24px; margin: 0; background: #fff; border: 1px solid #e5e5e5; border-radius: 24px; font-size: 26px; text-align: left; line-height: 1.5; }
+.more-page { padding-top: 96px; }
+.more-page .app-toolbar { margin-bottom: 40px; }
+.more-status { display: flex; align-items: flex-start; gap: 20px; padding: 32px; border-radius: 30px; background: #ddf0f1; color: #164e63; }
+.more-status .visual-icon { width: 48px; height: 48px; border-radius: 0; background: transparent; font-size: 42px; }
+.more-status-copy { flex: 1; min-width: 0; }
+.more-status-title { display: block; font-size: 30px; font-weight: 700; line-height: 1.4; }
+.more-status-description { display: block; margin-top: 12px; color: #416f7e; font-size: 25px; line-height: 1.55; }
+.more-section-heading { display: block; margin: 40px 8px 28px; font-size: 29px; font-weight: 700; }
+.more-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.more-action { min-width: 0; margin: 0; background: #fff; border: 1px solid #e5e5e5; color: #171717; text-align: left; }
 .more-action::after { border: 0; }
-.more-action .visual-icon { width: 40px; height: 40px; background: transparent; font-size: 32px; }
-.more-action-copy { flex: 1; min-width: 0; }
-.more-action-copy text { display: block; overflow-wrap: anywhere; }
-.more-action-copy .metric-source { font-size: 21px; }
-.more-system { display: flex; flex-direction: column; gap: 0; margin-bottom: 32px; }
-.more-system .more-action { border-radius: 0; justify-content: space-between; }
+.more-tile { display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; height: 174px; padding: 30px; border-radius: 28px; line-height: 1.35; }
+.more-tile .visual-icon { width: 48px; height: 48px; border-radius: 0; background: transparent; font-size: 42px; }
+.more-tile-label { display: block; font-size: 29px; line-height: 1.35; overflow-wrap: anywhere; }
+.more-system { display: flex; flex-direction: column; overflow: hidden; margin: 0 0 32px; border: 1px solid #e5e5e5; border-radius: 22px; background: #fff; box-shadow: 0 3px 8px rgba(17,24,39,.06); }
+.more-system .more-system-action { display: flex; align-items: center; gap: 20px; width: 100%; min-height: 96px; padding: 20px 32px; border: 0; border-bottom: 1px solid #e5e5e5; border-radius: 0; font-size: 28px; line-height: 1.4; }
+.more-system .more-system-action:last-child { border-bottom: 0; }
+.more-system-action .visual-icon { width: 48px; height: 48px; border-radius: 0; background: transparent; font-size: 41px; }
+.more-system-label { flex: 1; }
+.more-system-chevron { color: #737373; font-size: 42px; font-weight: 300; }
 @media (prefers-color-scheme: dark) {
   page { background: #111315; color: #f5f6f7; }
   .card, .tpms-wheel-card { background: #191d22; border-color: #323840; }
   .metric, .vehicle-state-chips text { background: #242a31; }
   .metric-value, .status-value, .title, .section-title { color: #f5f6f7; }
   .metric-label, .metric-unit, .metric-source, .muted, .chart-date { color: #b7bdc6; }
-  .more-action, .button-secondary { background: #15181c; color: #f5f6f7; border-color: #323840; }
+  .more-action, .more-system, .button-secondary { background: #15181c; color: #f5f6f7; border-color: #323840; }
+  .more-system .more-system-action { border-color: #323840; }
   .more-status { background: #164e63; color: #cffafe; }
+  .more-status-description { color: #b9dee4; }
   .vehicle-battery-fill { background: #8cccd2; }
   .vehicle-battery-row .metric { background: transparent; }
 }

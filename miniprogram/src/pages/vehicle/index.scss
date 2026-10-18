@@ -286,12 +286,19 @@
   }
   .dashboard-info-value {
     display:block;
-    font-size:28rpx;
+    font-size:32rpx;
     font-weight:600;
     line-height:1.35;
     overflow:hidden;
     white-space:nowrap;
     text-overflow:ellipsis
+  }
+  .dashboard-tpms .dashboard-info-card { padding:16rpx }
+  .dashboard-tpms .dashboard-info-value {
+    font-size:26rpx;
+    white-space:normal;
+    text-overflow:clip;
+    overflow:visible
   }
   .dashboard-info-hint {
     display:flex;

@@ -1,8 +1,9 @@
 import { expect, it } from 'vitest'
 import type { Charge } from './types'
 import { CACHE_BUDGET_BYTES } from './cache_budget'
-import { chargeCostKey, clearChargeCostOverride, overlayChargeCosts, readChargeCostOverride, writeChargeCostOverride } from './charge_cost'
+import { APP_DEFAULT_CHARGE_PRICE_CNY, chargeCostKey, clearChargeCostOverride, estimateAppDefaultChargeCost, overlayChargeCosts, readChargeCostOverride, writeChargeCostOverride } from './charge_cost'
 const scope = { userId: 'owner', origin: 'https://api.example.test', stableId: 'uid7' }
+const appDefault = { amount: APP_DEFAULT_CHARGE_PRICE_CNY, currency: 'CNY', source: 'app_default' } as const
 const charge = { id: '1', sessionId: 'canonical', source: 'telemetry_mqtt', qualityState: 'observed', cost: 10, currency: 'EUR', currencyCode: 'EUR', energy: { quality: 'unknown' } } as Charge
 function store() {
   const data = new Map<string, unknown>()
@@ -36,6 +37,38 @@ it('rejects stale page/session saves, invalid amount/currency and missing source
 it('keeps unknown or actual zero when no manual override is present', () => {
   const result = overlayChargeCosts(store(), scope, [{ ...charge, cost: null, currency: null, currencyCode: null }, { ...charge, cost: 0 }])
   expect(result[0]).toMatchObject({ cost: null, costProvenance: 'unknown' }); expect(result[1]).toMatchObject({ cost: 0, costProvenance: 'actual' })
+})
+it('matches the App default estimate from qualified battery energy while preserving the original missing bill', () => {
+  const legacy = { ...charge, source: 'teslamate_archive', cost: null, currency: null, currencyCode: null,
+    energy: { batteryInputKwh: 24.0175, quality: 'reported' } } as Charge
+  const storage = store()
+  expect(APP_DEFAULT_CHARGE_PRICE_CNY).toBe(1.14)
+  expect(estimateAppDefaultChargeCost(legacy)?.toFixed(2)).toBe('27.38')
+  const result = overlayChargeCosts(storage, scope, [legacy], appDefault)[0]
+  expect(result).toMatchObject({ costProvenance: 'estimate', cost: 24.0175 * 1.14, currencyCode: 'CNY', reportedCost: null })
+  expect(legacy.cost).toBeNull(); expect(storage.data.size).toBe(0)
+  expect(overlayChargeCosts(storage, scope, [{ ...legacy, cost: 0 }], appDefault)[0]).toMatchObject({ cost: 0, costProvenance: 'actual' })
+  expect(writeChargeCostOverride(storage, scope, legacy, 0, 'USD', () => true)).toBe(true)
+  expect(overlayChargeCosts(storage, scope, [legacy], appDefault)[0]).toMatchObject({ cost: 0, costProvenance: 'manual', currencyCode: 'USD', reportedCost: null })
+})
+it('withholds a default CNY estimate for foreign currency, unqualified telemetry and quarantined rows', () => {
+  const candidate = { ...charge, source: 'teslamate_archive', cost: null, currency: null, currencyCode: null,
+    energy: { batteryInputKwh: 10, quality: 'reported' } } as Charge
+  expect(estimateAppDefaultChargeCost({ ...candidate, currencyCode: 'EUR' })).toBeNull()
+  expect(estimateAppDefaultChargeCost({ ...candidate, source: 'telemetry_mqtt' })).toBeNull()
+  expect(estimateAppDefaultChargeCost({ ...candidate, qualityState: 'quarantined' })).toBeNull()
+  expect(estimateAppDefaultChargeCost({ ...candidate, energy: undefined })).toBeNull()
+})
+it('respects an explicit zero or foreign-currency saved default without using peak/flat/valley rates', () => {
+  const legacy = { ...charge, source: 'teslamate_archive', cost: null, currency: null, currencyCode: null,
+    energy: { batteryInputKwh: 10, quality: 'reported' } } as Charge
+  const storage = store()
+  const freeEstimate = overlayChargeCosts(storage, scope, [legacy], { amount: 0, currency: 'CNY', source: 'saved_default' })[0]
+  expect(freeEstimate).toMatchObject({ cost: 0, currencyCode: 'CNY', costProvenance: 'estimate', estimatedUnitPrice: 0, estimatePriceSource: 'saved_default', reportedCost: null })
+  const foreign = overlayChargeCosts(storage, scope, [legacy], { amount: 2, currency: 'EUR', source: 'saved_default' })[0]
+  expect(foreign).toMatchObject({ cost: 20, currencyCode: 'EUR', costProvenance: 'estimate', estimatedUnitPrice: 2, reportedCost: null })
+  expect(overlayChargeCosts(storage, scope, [{ ...legacy, currencyCode: 'USD' }], { amount: 2, currency: 'EUR', source: 'saved_default' })[0].cost).toBeNull()
+  expect(storage.data.size).toBe(0)
 })
 it('refuses overflow of row/shared budgets and preserves existing overrides', () => {
   const storage = store()

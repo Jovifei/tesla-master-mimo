@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-10-18 Jovi: actual phone App is the final visual benchmark
+
+- Correction: 已登录小程序真机页即使字段看似完整，位置仍显示经纬度、里程少分组符、底栏名称与App2.1.38不同。旧源码2.1.37/合成图不足以宣布页面一致。
+- Rule: 先在同一手机捕获两端相同真实账号和页面的实际画面，逐项记录文案/位置/数值资格；再从当前消费者向源头追踪并做最小修复。App安装版比E源码更新时，以实机2.1.38为最终可见依据，旧源码只作线索。
+- Acceptance: 数值相同、图片相同和测试绿都不足以证明布局/数据解释一致；每项最终要有真机复看。未知地址不得编造或以精确经纬度替代App地址。
+
 ## 2026-10-18 Jovi: Tesla account is the primary login and the existing App owns data rules
 
 - Correction: 小程序首先应登录特斯拉账号，不是先微信登录；页面和数据处理均以已可用App为准。

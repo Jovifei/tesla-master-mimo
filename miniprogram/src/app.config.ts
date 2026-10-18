@@ -27,7 +27,7 @@ export default defineAppConfig({
     backgroundColor: '#ffffff',
     borderStyle: 'white',
     list: [
-      { pagePath: 'pages/vehicle/index', text: '车辆', iconPath: 'assets/tabs/vehicle.png', selectedIconPath: 'assets/tabs/vehicle-selected.png' },
+      { pagePath: 'pages/vehicle/index', text: '仪表盘', iconPath: 'assets/tabs/vehicle.png', selectedIconPath: 'assets/tabs/vehicle-selected.png' },
       { pagePath: 'pages/drives/index', text: '行程', iconPath: 'assets/tabs/route.png', selectedIconPath: 'assets/tabs/route-selected.png' },
       { pagePath: 'pages/charges/index', text: '充电', iconPath: 'assets/tabs/energy.png', selectedIconPath: 'assets/tabs/energy-selected.png' },
       { pagePath: 'pages/me/index', text: '更多', iconPath: 'assets/tabs/analysis.png', selectedIconPath: 'assets/tabs/analysis-selected.png' },

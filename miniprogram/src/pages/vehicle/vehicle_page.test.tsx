@@ -12,7 +12,7 @@ const fixture = JSON.parse(readFileSync(resolve(process.cwd(), '../fixtures/safe
 }
 
 const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), quota: false,
-  navigateTo: vi.fn(), switchTab: vi.fn(), showModal: vi.fn(),
+  navigateTo: vi.fn(), switchTab: vi.fn(), showModal: vi.fn(), pageScrollTo: vi.fn(() => Promise.resolve()),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Image: 'image', Map: 'map', ScrollView: 'scroll-view' }))
 vi.mock('@tarojs/taro', () => ({ default: {
@@ -20,7 +20,7 @@ vi.mock('@tarojs/taro', () => ({ default: {
   setStorageSync: (key: string, value: unknown) => { if (platform.quota) throw Error('fixture quota'); platform.values.set(key, value) },
   removeStorageSync: (key: string) => platform.values.delete(key),
   getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }),
-  navigateTo: platform.navigateTo, switchTab: platform.switchTab, showModal: platform.showModal,
+  navigateTo: platform.navigateTo, switchTab: platform.switchTab, showModal: platform.showModal, pageScrollTo: platform.pageScrollTo,
 }, useDidShow: (fn: () => void) => { platform.show = fn }, useDidHide: (fn: () => void) => { platform.hide = fn },
 useUnload: (fn: () => void) => { platform.unload = fn } }))
 
@@ -54,6 +54,34 @@ async function mount(openDiagnostics = true) {
   return renderer!
 }
 const visible = () => JSON.stringify(renderer!.toJSON())
+it('opens the real readiness panel from More for the same signed-in owner', async () => {
+  platform.values.set('matelink.ui.data-status.v1', { userId: 'a', origin: 'https://api.example.test', at: Date.now() })
+  platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
+  await mount(false)
+  expect(visible()).toContain('收起数据状态')
+  expect(renderer!.root.findByProps({ className: 'dashboard-readiness-panel' })).toBeDefined()
+  expect(platform.pageScrollTo).toHaveBeenCalledWith({ selector: '.dashboard-readiness-panel', duration: 250 })
+  expect(platform.values.has('matelink.ui.data-status.v1')).toBe(false)
+})
+it('shows the App odometer and state wording without accepting an unusable zero position', async () => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/snapshot')
+    ? respond({ status: { state: 'online', odometer: 19992, car_geodata: { latitude: 0, longitude: 0 }, car_status: { sentry_mode: true } } })
+    : online(url))
+  await mount(false)
+  expect(visible()).toContain('19,992 km')
+  expect(visible()).toContain('哨兵已开启')
+  expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
+})
+it('keeps a real map but labels an unresolved address honestly', async () => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/snapshot')
+    ? respond({ status: { state: 'online', car_geodata: { latitude: 31.2, longitude: 121.5 } } })
+    : online(url))
+  await mount(false)
+  const location = renderer!.root.findAllByProps({ className: 'dashboard-info-card' })
+    .find(card => card.findByProps({ className: 'dashboard-info-label' }).children.join('') === '位置')!
+  expect(location.findByProps({ className: 'dashboard-info-value' }).children.join('')).toBe('地址待解析')
+  expect(renderer!.root.findByType('map' as React.ElementType)).toBeDefined()
+})
 const snapshotBadge = () => renderer!.root.findAll(node => node.type === 'text' && String(node.props.className ?? '').split(' ').includes('dashboard-snapshot-badge'))[0]
 const snapshots = () => platform.request.mock.calls.filter(([request]) => request.url.endsWith('/snapshot'))
 const advance = async (milliseconds: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(milliseconds) }) }
@@ -363,7 +391,8 @@ it('renders genuine zero, false and negative power without changing their meanin
   expect(visible()).toContain('-11 kW')
   expect(visible()).toContain('未锁')
   expect(visible()).toContain('关闭')
-  expect(visible()).toContain('0.0000, 0.0000')
+  expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
+  expect(visible()).not.toContain('0.0000, 0.0000')
 })
 
 it('offline cached cars support only scoped display and selection, never numeric-ID requests', async () => {
@@ -510,7 +539,7 @@ it('map render failure preserves location evidence and offers an actual retry wi
  const page = await mount(false)
  await act(async () => { page.root.findByType('map' as React.ElementType).props.onError() })
  expect(page.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
- expect(visible()).toContain('31.2000, 121.5000')
+ expect(visible()).toContain('地址待解析')
  await act(async () => { page.root.findAllByType('button').find(node => node.children.join('') === '重试地图')!.props.onClick() })
  expect(page.root.findByType('map' as React.ElementType).props.showLocation).toBe(false)
 })

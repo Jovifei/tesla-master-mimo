@@ -44,7 +44,7 @@ it('status adapter preserves zero/false and rejects nonfinite/out-of-range/coerc
     driving_details: { speed: -1, power: -10, heading: 361 }, charging_details: { charger_power: 0 },
   } }))
   await expect(matelinkApi.getCarStatus(7)).resolves.toMatchObject({ batteryLevel: 0, ratedRange: null,
-    odometer: null, location: { latitude: 0, longitude: 0 }, locked: false, sentryMode: null,
+    odometer: null, location: null, locked: false, sentryMode: null,
     isClimateOn: null, insideTemp: null, speed: null, power: -10, heading: null, chargerPower: 0 })
 })
 

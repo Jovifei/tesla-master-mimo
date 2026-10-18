@@ -1,7 +1,11 @@
 import { expect, it, vi } from 'vitest'
 vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view' }))
 import type { CarStatus } from '../../services/types'
-import { dashboardRange, dashboardSnapshot, dashboardVehicleSubtitle, dashboardPower, dashboardShift } from './presentation'
+import { dashboardRange, dashboardSnapshot, dashboardVehicleSubtitle, dashboardPower, dashboardShift, dashboardMetric } from './presentation'
+it('groups the App odometer while preserving an observed zero', () => {
+ expect(dashboardMetric(19992, 'km', 0)).toBe('19,992 km')
+ expect(dashboardMetric(0, 'km', 0)).toBe('0 km')
+})
 it.each([['74D','长续航版'],['50','标准续航版'],['P100D','性能版'],['Long Range','长续航版'],['unknown',null]])('matches actual App trim rule %s without exposing raw trim', (raw, expected) => { expect(dashboardVehicleSubtitle(null,raw)).toBe(expected); expect(dashboardVehicleSubtitle('Model Y',raw)).toBe(expected ? `Model Y · ${expected}` : 'Model Y') })
 it('retains zero range, signed direction and missing shift without guessing', () => {
  expect(dashboardRange({ ratedRange:0,idealRange:50,estimatedRange:99 } as CarStatus)).toBe(0)

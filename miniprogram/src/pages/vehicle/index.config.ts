@@ -1,4 +1,4 @@
 export default definePageConfig({
-  navigationBarTitleText: '车辆',
+  navigationBarTitleText: '仪表盘',
   usingComponents: { 'vehicle-asset': '/native/vehicle-asset/index' },
 })

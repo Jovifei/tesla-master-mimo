@@ -1,11 +1,15 @@
 import type { Charge } from './types'
 import type { WechatStorage } from './session'
 import { cacheBytes, canStoreCache } from './cache_budget'
+import { resolveChargeEnergy } from '../domain/drive_energy'
 
 export type ChargeCostScope = { userId: string; origin: string; stableId: string }
 export type ChargeCostOverride = { identity: string; source: string; amount: number; currency: string; updatedAt: string }
-export type CostedCharge = Charge & { costProvenance: 'manual' | 'actual' | 'unknown'; reportedCost: number | null; reportedCurrency: string | null; manualCostUpdatedAt: string | null }
+export type ChargeEstimatePrice = { amount: number; currency: string; source: 'app_default' | 'saved_default' }
+export type CostedCharge = Charge & { costProvenance: 'manual' | 'actual' | 'estimate' | 'unknown'; reportedCost: number | null; reportedCurrency: string | null; manualCostUpdatedAt: string | null;
+  estimatedUnitPrice: number | null; estimatePriceSource: ChargeEstimatePrice['source'] | null }
 export const CHARGE_COST_MAX_ROWS = 200, CHARGE_COST_MAX_BYTES = 64 * 1024
+export const APP_DEFAULT_CHARGE_PRICE_CNY = 1.14
 const text = (value: unknown, max = 256): value is string => typeof value === 'string' && value.trim().length > 0 && value.length <= max && !/[\u0000-\u001f\u007f]/.test(value)
 const currencyCode = (value: unknown): string | null => typeof value === 'string' && /^[A-Z]{3}$/.test(value.trim().toUpperCase()) ? value.trim().toUpperCase() : null
 const encode = (value: string) => encodeURIComponent(value).replace(/\./g, '%2E')
@@ -44,15 +48,27 @@ export function readChargeCostOverride(storage: Pick<WechatStorage, 'getStorageS
   if (!key || !target) return null
   return archive(storage, key)?.rows.find(row => rowKey(row) === rowKey(target)) ?? null
 }
+/** The App's default CNY price estimates a missing bill from admitted battery input, never AC input. */
+export function estimateAppDefaultChargeCost(charge: Charge, price = APP_DEFAULT_CHARGE_PRICE_CNY, currency = 'CNY'): number | null {
+  const code = currencyCode(currency), reportedCode = currencyCode(charge.currencyCode ?? charge.currency)
+  if (charge.qualityState === 'quarantined' || !finite(price) || price < 0 || !code ||
+    (reportedCode !== null && reportedCode !== code)) return null
+  const battery = charge.energy?.evidence
+    ? resolveChargeEnergy({ source: charge.source, start_date: charge.startDate, end_date: charge.endDate, energy_contract: charge.energy.evidence }).batteryInputKwh
+    : charge.source === 'teslamate_archive' && charge.energy?.quality === 'reported' ? charge.energy.batteryInputKwh : null
+  return finite(battery) && battery >= 0 ? battery * price : null
+}
 /** Copies only the cost view. Energy, source, quality, receipt and original upstream bill stay unchanged. */
-export function overlayChargeCosts(storage: Pick<WechatStorage, 'getStorageSync'>, scope: ChargeCostScope, charges: readonly Charge[]): CostedCharge[] {
+export function overlayChargeCosts(storage: Pick<WechatStorage, 'getStorageSync'>, scope: ChargeCostScope, charges: readonly Charge[], estimatePrice: ChargeEstimatePrice | null = null): CostedCharge[] {
   const key = chargeCostKey(scope), rows = key ? archive(storage, key)?.rows ?? [] : [], byKey = new Map(rows.map(row => [rowKey(row), row]))
   return charges.map(charge => {
     const target = identity(charge), manual = target ? byKey.get(rowKey(target)) : null
     const reportedCost = finite(charge.cost) ? charge.cost : null, reportedCurrency = currencyCode(charge.currencyCode ?? charge.currency)
+    const estimate = manual || reportedCost != null || !estimatePrice ? null : estimateAppDefaultChargeCost(charge, estimatePrice.amount, estimatePrice.currency)
     return { ...charge, reportedCost, reportedCurrency, manualCostUpdatedAt: manual?.updatedAt ?? null,
-      cost: manual?.amount ?? reportedCost, currency: manual?.currency ?? charge.currency, currencyCode: manual?.currency ?? charge.currencyCode,
-      costProvenance: manual ? 'manual' : reportedCost != null ? 'actual' : 'unknown' }
+      cost: manual?.amount ?? reportedCost ?? estimate, currency: manual?.currency ?? (estimate != null ? estimatePrice!.currency : charge.currency), currencyCode: manual?.currency ?? (estimate != null ? estimatePrice!.currency : charge.currencyCode),
+      costProvenance: manual ? 'manual' : reportedCost != null ? 'actual' : estimate != null ? 'estimate' : 'unknown',
+      estimatedUnitPrice: estimate != null ? estimatePrice!.amount : null, estimatePriceSource: estimate != null ? estimatePrice!.source : null }
   })
 }
 function store(storage: WechatStorage, key: string, value: CostArchive, isCurrent: () => boolean): boolean {

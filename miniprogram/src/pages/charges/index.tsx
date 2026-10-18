@@ -1,4 +1,4 @@
-import { Button, Input, Picker, ScrollView, Text, View } from '@tarojs/components'
+import { Button, Input, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
@@ -22,7 +22,9 @@ import { resolveChargeEnergy } from '../../domain/drive_energy'
 import { qualifiedAcEnergyBalance } from '../../domain/charge_energy_balance'
 import { analysisApi } from '../../services/analysis_api'
 import type { ChargeEvidence } from '../../services/analysis_types'
-import { clearChargeCostOverride, overlayChargeCosts, readChargeCostOverride, writeChargeCostOverride, type ChargeCostScope } from '../../services/charge_cost'
+import { APP_DEFAULT_CHARGE_PRICE_CNY, clearChargeCostOverride, overlayChargeCosts, readChargeCostOverride, writeChargeCostOverride, type ChargeCostScope, type ChargeEstimatePrice, type CostedCharge } from '../../services/charge_cost'
+import { mapCoordinate } from '../../domain/map_coordinate'
+import { readTariff } from '../../domain/tariff'
 
 const PAGE_SIZE = 20
 
@@ -45,6 +47,26 @@ function inputNumber(charge: Charge): number | null {
 function modeLabel(charge: Charge): string {
   const mode = verifiedEnergy(charge)?.chargeMode
   return mode === 'ac' ? 'AC 充电' : mode === 'dc' ? 'DC 充电' : '模式未确认'
+}
+function displayAddress(address: string | null): string {
+  const original = address?.trim()
+  if (!original) return '位置未知'
+  const chineseParts = original.split(/[,，]/).map(part => part.trim()).filter(part => /[\u4e00-\u9fff]/.test(part))
+  return chineseParts.length ? chineseParts.join(' ') : original
+}
+function costLabel(charge: CostedCharge): { value: string | number | null; unit?: string } {
+  if (charge.costProvenance === 'estimate' && charge.cost != null) return charge.currencyCode === 'CNY'
+    ? { value: `≈¥${charge.cost.toFixed(2)}` } : { value: `≈${charge.cost.toFixed(2)}`, unit: charge.currencyCode || '币种未知' }
+  return { value: charge.cost, unit: charge.currencyCode || charge.currency || '币种未知' }
+}
+function estimateBasis(charge: CostedCharge): string {
+  if (charge.costProvenance !== 'estimate' || charge.estimatedUnitPrice == null) return ''
+  const price = charge.currencyCode === 'CNY' ? `¥${charge.estimatedUnitPrice}` : `${charge.estimatedUnitPrice} ${charge.currencyCode}`
+  return `${charge.estimatePriceSource === 'saved_default' ? '已保存默认电价' : 'App 默认'} ${price}/kWh`
+}
+function oneDecimal(value: number | null): string | null {
+  if (value == null || !Number.isFinite(value)) return null
+  return Number(value.toFixed(1)) === 0 && value !== 0 ? String(value) : value.toFixed(1)
 }
 
 function value(value: string | number | null | undefined): string {
@@ -84,6 +106,8 @@ export default function ChargesPage() {
   }
   const [selectedEvidence, setSelectedEvidence] = useState<ChargeEvidence | null>(null)
   const [costEditing, setCostEditing] = useState(false), [costAmount, setCostAmount] = useState(''), [costCurrency, setCostCurrency] = useState('')
+  const [chartKind, setChartKind] = useState<'energy' | 'cost' | 'count'>('energy')
+  const [mapFailed, setMapFailed] = useState(false)
   const [, setCostVersion] = useState(0)
   const selectedRef = useRef(selected), carRef = useRef(car)
   selectedRef.current = selected; carRef.current = car
@@ -116,7 +140,7 @@ export default function ChargesPage() {
     setItems([])
     setMeta(null)
     void setSelected(null)
-    setSelectedEvidence(null); setCostEditing(false); costEdit.current = null
+    setSelectedEvidence(null); setCostEditing(false); costEdit.current = null; setMapFailed(false)
     setInterval(null)
     setNotices([])
     setNoticeLimited(false)
@@ -447,7 +471,7 @@ export default function ChargesPage() {
     if (!canonical || canonical.id !== item.id || isHistoryQuarantined(canonical) || isHistoryQuarantined(item)) return
     let ticket: { isCurrent(): boolean }
     try { ticket = scopeGate.current.begin('detail') } catch { return }
-    if (ticket.isCurrent()) { setSelected(canonical); setSelectedEvidence(null); setCostEditing(false); costEdit.current = null }
+    if (ticket.isCurrent()) { setSelected(canonical); setSelectedEvidence(null); setCostEditing(false); costEdit.current = null; setMapFailed(false) }
     try {
       if (!verifiedCarRef.current || car.remoteVerified === false) return
       const evidence = await analysisApi.getChargeEvidence(car, item.id, { isCurrent: ticket.isCurrent })
@@ -472,14 +496,37 @@ export default function ChargesPage() {
 
   const session = readAppSession(Taro)
   const costScope = car && session?.userId ? { userId: session.userId, origin: getApiOrigin(), stableId: car.stableId } : null
-  const costRows = (rows: readonly Charge[]) => costScope ? overlayChargeCosts(Taro, costScope, rows) : [...rows]
+  const savedTariff = costScope ? readTariff(Taro, costScope.userId, costScope.origin) : null
+  const estimatePrice: ChargeEstimatePrice = savedTariff?.defaultPrice != null
+    ? { amount: savedTariff.defaultPrice, currency: savedTariff.currency, source: 'saved_default' }
+    : { amount: APP_DEFAULT_CHARGE_PRICE_CNY, currency: 'CNY', source: 'app_default' }
+  const costRows = (rows: readonly Charge[]): CostedCharge[] => costScope ? overlayChargeCosts(Taro, costScope, rows, estimatePrice) : []
   const selectedView = selected ? costRows([selected])[0] : null
   const intervalView = interval ? { ...interval, items: costRows(interval.items) } : null
-  const costState = selected && costScope ? overlayChargeCosts(Taro, costScope, [selected])[0] : null
+  const costState = selectedView
   const renderedCostEdit = costEdit.current
   const acEfficiency = selected ? qualifiedAcEnergyBalance(selected)?.efficiencyPercent ?? null : null
   const trustedItems = costRows(filterHistory(items, emptyHistoryQuery()))
   const visibleItems = filterHistory(trustedItems, query)
+  const chartItems = filterHistory((intervalView?.items ?? trustedItems).filter(row => !isHistoryQuarantined(row)), query)
+  const chartCurrencies = [...new Set(chartItems.filter(row => row.cost != null && Number.isFinite(row.cost) && row.cost >= 0).map(row => row.currencyCode ?? row.currency).filter((code): code is string => Boolean(code)))]
+  const chartCurrency = chartCurrencies.length === 1 ? chartCurrencies[0] : null
+  const months = new Map<string, { label: string; energy: number; energyKnown: number; cost: number; costKnown: number; count: number }>()
+  for (const row of chartItems) {
+    const date = row.startDate ? new Date(row.startDate) : null
+    if (!date || !Number.isFinite(date.getTime())) continue
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    const month = months.get(key) ?? { label: `${date.getMonth() + 1}月`, energy: 0, energyKnown: 0, cost: 0, costKnown: 0, count: 0 }
+    month.count++
+    if (row.energyAddedKwh != null && Number.isFinite(row.energyAddedKwh) && row.energyAddedKwh >= 0) { month.energy += row.energyAddedKwh; month.energyKnown++ }
+    if (row.cost != null && Number.isFinite(row.cost) && row.cost >= 0 && chartCurrency != null && (row.currencyCode ?? row.currency) === chartCurrency) { month.cost += row.cost; month.costKnown++ }
+    months.set(key, month)
+  }
+  const chartMonths = [...months.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-6).map(([, month]) => month)
+  const chartValue = (month: typeof chartMonths[number]) => chartKind === 'energy' ? month.energy : chartKind === 'cost' ? month.cost : month.count
+  const chartKnown = (month: typeof chartMonths[number]) => chartKind === 'energy' ? month.energyKnown : chartKind === 'cost' ? month.costKnown : month.count
+  const chartMaximum = Math.max(0, ...chartMonths.map(chartValue))
+  const detailCoordinate = selectedEvidence?.charge ? mapCoordinate(selectedEvidence.charge.latitude, selectedEvidence.charge.longitude) : null
   const sampleStats = (key: 'powerKw' | 'voltageV' | 'currentA' | 'temperatureC') => {
     const values = (selectedEvidence?.points ?? []).map(point => point[key]).filter((value): value is number => value != null && Number.isFinite(value))
     return { max: values.length ? Math.max(...values) : null, min: values.length ? Math.min(...values) : null,
@@ -495,7 +542,7 @@ export default function ChargesPage() {
     const manual = readChargeCostOverride(Taro, scope, selected)
     costEdit.current = { scope, charge: selected, generation: getApiSessionGeneration(), epoch: lifecycleEpoch.current, isCurrent: ticket.isCurrent }
     setCostAmount(manual != null ? String(manual.amount) : '')
-    setCostCurrency(manual?.currency ?? selected.currencyCode ?? selected.currency ?? '')
+    setCostCurrency(manual?.currency ?? selected.currencyCode ?? selected.currency ?? (selectedView?.costProvenance === 'estimate' ? selectedView.currencyCode ?? '' : ''))
     setCostEditing(true)
   }
   const saveCost = (clear = false) => {
@@ -516,9 +563,9 @@ export default function ChargesPage() {
     setCostVersion(value => value + 1); setCostEditing(false); costEdit.current = null; setError(null)
   }
   return (
-    <View className="page history-page">
+    <View className="page history-page charges-page">
       <View className="history-page-header">
-        <Text className="title">充电</Text>
+        <Text className="title">充电历史</Text>
         {cars.length > 1 ? (
           <Picker mode="selector" range={cars.map(item => item.displayName || item.name || `车辆 ${item.stableId}`)} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}>
             <View className="status"><Text className="status-label">车辆</Text><Text className="status-value">{car?.displayName || '请选择车辆'}</Text></View>
@@ -547,6 +594,21 @@ export default function ChargesPage() {
         <Button className="button" onClick={() => setNotices([])}>关闭提示</Button>
       </View> : null}
       {car ? <HistoryIntervalSummary interval={intervalView} query={query} kind="charges" /> : null}
+      {car && chartMonths.length ? <View className="card charge-month-chart">
+        <Text className="section-title">充电趋势</Text>
+        <View className="charge-chart-tabs">
+          {([['energy', '电量'], ['cost', '费用'], ['count', '次数']] as const).map(([kind, label]) =>
+            <Button key={kind} className={`charge-chart-tab ${chartKind === kind ? 'charge-chart-tab-active' : ''}`} onClick={() => setChartKind(kind)}>{label}</Button>)}
+        </View>
+        <View className="charge-chart-bars">
+          {chartMonths.map((month, index) => <View className="charge-chart-column" key={`${index}-${month.label}`}>
+            <Text className="charge-chart-value">{chartKnown(month) ? chartKind === 'count' ? String(month.count) : chartKind === 'energy' ? `${month.energy.toFixed(1)} kWh` : chartCurrency === 'CNY' ? `¥${month.cost.toFixed(2)}` : `${month.cost.toFixed(2)} ${chartCurrency}` : '—'}</Text>
+            <View className="charge-chart-track"><View className="charge-chart-bar" style={{ height: chartKnown(month) && chartMaximum > 0 ? `${Math.max(5, chartValue(month) / chartMaximum * 100)}%` : '0%' }} /></View>
+            <Text className="charge-chart-month">{month.label}</Text>
+          </View>)}
+        </View>
+        <Text className="muted">仅统计当前筛选中已返回的 {chartItems.length} 条记录；{interval?.complete ? '已完成当前区间分页' : '当前为部分覆盖'}。费用仅在同币种时合计，含明确标记的估算；多币种与未知费用不合计。</Text>
+      </View> : null}
       {noticeLimited ? <Text className="muted history-notice-limit">本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看</Text> : null}
 
       {current && !isHistoryQuarantined(current) ? (
@@ -573,14 +635,14 @@ export default function ChargesPage() {
           {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的充电记录</Text> : null}
           {visibleItems.map(item => (
             <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
-              <View className="history-charge-heading"><VisualIcon name="distance" /><View className="history-charge-location"><Text>{value(item.address)}</Text><Text className="history-record-date">{historyDateTime(item.startDate)}</Text></View><Text className="history-charge-mode">{modeLabel(item)}</Text></View>
+              <View className="history-charge-heading"><VisualIcon name="distance" /><View className="history-charge-location"><Text>{displayAddress(item.address)}</Text><Text className="history-record-date">{historyDateTime(item.startDate)}</Text></View><Text className="history-charge-mode">{modeLabel(item) === '模式未确认' ? '暂无数据' : modeLabel(item)}</Text></View>
               <View className="history-record-metrics">
-                <MetricValue label="时长" value={item.durationMinutes != null && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0 ? item.durationMinutes : null} unit="分钟" icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
-                <MetricValue label="电池充入" value={item.energyAddedKwh} unit="kWh" icon="battery" />
-                <MetricValue label="费用" value={item.cost} unit={item.currency || '币种未知'} icon="account" />
+                <MetricValue label="时长" value={item.durationMinutes != null && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0 ? item.durationMinutes : null} unit="m" icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
+                <MetricValue label="能量" value={oneDecimal(item.energyAddedKwh)} unit="kWh" icon="energy" />
+                <MetricValue label="费用" {...costLabel(item)} icon="account" />
                 <MetricValue label="电量" value={`${battery(item.startBatteryLevel)} → ${battery(item.endBatteryLevel)}`} icon="battery" />
               </View>
-              <Text className="history-source">{sourceLabel(item.source)} · {inputLabel(item)}：{inputNumber(item) == null ? '暂无数据' : `${inputNumber(item)} kWh`}</Text>
+              <Text className="history-source">{sourceLabel(item.source)}{item.costProvenance === 'estimate' ? ` · 费用按 ${estimateBasis(item)} 估算` : ''} · {inputLabel(item)}：{inputNumber(item) == null ? '暂无数据' : `${inputNumber(item)} kWh`}</Text>
               {'costProvenance' in item && item.costProvenance === 'manual' ? <Text className="metric-source">本机手动费用 · 原服务端账单保留</Text> : null}
             </View>
           ))}
@@ -592,8 +654,21 @@ export default function ChargesPage() {
         <ScrollView className="history-detail-overlay" scrollY scrollTop={detailScrollTop.current} onScroll={event => { detailScrollTop.current = event.detail.scrollTop }} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%' }} ariaLabel="充电详情">
         <View className="history-detail-surface">
           <View className="history-detail-heading"><Text className="section-title">充电详情</Text><Button className="button" onClick={closeDetail}>返回列表</Button></View>
-          <Text className="muted">{value(selected.address)} · {historyDateTime(selected.startDate)} → {historyDateTime(selected.endDate)}</Text>
-          <Text className="muted">{modeLabel(selected)}</Text>
+          <View className="card charge-detail-intro"><Text className="section-title">位置与费用</Text><Text className="charge-detail-address">{displayAddress(selected.address)}</Text>
+            <Text className="muted">{historyDateTime(selected.startDate)} → {historyDateTime(selected.endDate)} · {modeLabel(selected)}</Text>
+            <MetricValue label="充电费用" {...costLabel(selectedView)} icon="account" />
+            <Text className="muted">费用来源：{costState?.costProvenance === 'manual' ? '本机手动设置' : costState?.costProvenance === 'actual' ? selectedView.cost === 0 ? '服务端报告0费用' : '服务端账单报告' : costState?.costProvenance === 'estimate' ? `按 ${estimateBasis(costState)} 与合格电池充入量估算` : '未知'}</Text>
+            {costState?.costProvenance === 'manual' ? <Text className="metric-source">原服务端账单：{costState.reportedCost ?? '未知'} {costState.reportedCurrency || '币种未知'} · 本机编辑时间：{historyDateTime(costState.manualCostUpdatedAt)}</Text> : null}
+            <Button className="button-secondary" onClick={startCostEdit}>编辑本机费用</Button>
+            {costEditing ? <View className="card"><Text className="section-title">本机手动费用</Text><Text className="muted">仅保存当前记录的本机费用；不修改服务端账单或合格能量。</Text>
+              <Input type="digit" value={costAmount} placeholder="非负总金额（允许0）" onInput={event => setCostAmount(event.detail.value)} />
+              <Input value={costCurrency} maxlength={3} placeholder="币种代码，如 EUR / CNY" onInput={event => setCostCurrency(event.detail.value)} />
+              <Button className="button" onClick={() => saveCost()}>保存本机费用</Button><Button className="button-secondary" onClick={() => saveCost(true)}>清除本机费用并恢复账单</Button><Button className="button-secondary" onClick={() => { setCostEditing(false); costEdit.current = null }}>取消费用编辑</Button>
+            </View> : null}
+          </View>
+          {detailCoordinate ? <View className="card charge-detail-map-card"><Text className="section-title">充电地点</Text>
+            {mapFailed ? <Text className="muted">地图暂时无法载入</Text> : <TaroMap className="charge-detail-map" latitude={detailCoordinate.latitude} longitude={detailCoordinate.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...detailCoordinate, iconPath: '/assets/tabs/energy-selected.png', width: 24, height: 24 }]} onError={() => setMapFailed(true)} />}
+            <Text className="muted">仅展示本次在线详情返回的有效位置。</Text></View> : null}
           <Text className="section-title">电量</Text><View className="metric-grid">
             <MetricValue label="电池充入" value={selected.energyAddedKwh} unit="kWh" icon="battery" />
             <MetricValue label={inputLabel(selected)} value={inputNumber(selected)} unit="kWh" icon="energy" />
@@ -607,26 +682,14 @@ export default function ChargesPage() {
             <MetricValue label="报告功率" value={selectedEvidence?.summary.chargerPowerKw ?? selected.chargerPowerKw} unit="kW" icon="energy" />
             <MetricValue label="样本最高功率" value={powerStats.max} unit="kW" /><MetricValue label="样本最低功率" value={powerStats.min} unit="kW" /><MetricValue label="样本平均功率" value={powerStats.average} unit="kW" />
           </View>
-          <Text className="section-title">电压与电流</Text><View className="metric-grid">
+          {selected.energy?.chargeMode === 'ac' && qualifiedAcEnergyBalance(selected) ? <><Text className="section-title">电压与电流</Text><View className="metric-grid">
             <MetricValue label="报告电压" value={selectedEvidence?.summary.chargerVoltageV ?? null} unit="V" /><MetricValue label="报告电流" value={selectedEvidence?.summary.currentA ?? null} unit="A" />
             <MetricValue label="样本最高电压" value={voltageStats.max} unit="V" /><MetricValue label="样本最低电压" value={voltageStats.min} unit="V" /><MetricValue label="样本平均电压" value={voltageStats.average} unit="V" />
             <MetricValue label="样本最高电流" value={currentStats.max} unit="A" /><MetricValue label="样本最低电流" value={currentStats.min} unit="A" /><MetricValue label="样本平均电流" value={currentStats.average} unit="A" />
-          </View>
+          </View></> : null}
           <Text className="section-title">温度</Text><View className="metric-grid"><MetricValue label="报告环境温度" value={selectedEvidence?.summary.outsideTempC ?? null} unit="°C" /><MetricValue label="样本最高温度" value={temperatureStats.max} unit="°C" /><MetricValue label="样本最低温度" value={temperatureStats.min} unit="°C" /><MetricValue label="样本平均温度" value={temperatureStats.average} unit="°C" /></View>
           <Text className="muted">仅基于本次响应的有效采样：功率 {powerStats.count} / 电压 {voltageStats.count} / 电流 {currentStats.count} / 温度 {temperatureStats.count} 点；缺失不补0，均值为样本均值。</Text>
           <Button className="button-secondary" disabled={offline || !verifiedCarRef.current} onClick={() => Taro.navigateTo({ url: `/pages/analysis/index?kind=chargeCurves&chargeId=${encodeURIComponent(selected.id)}` })}>查看SOC、功率、电压、电流、温度曲线</Button>
-          <Text className="section-title">费用</Text><View className="metric-grid">
-            <MetricValue label="费用" value={selectedView.cost} unit={selectedView.currencyCode || selectedView.currency || '币种未知'} icon="account" />
-            <MetricValue label="每电池充入kWh费用" value={selectedView.cost != null && (selected.energyAddedKwh ?? 0) > 0 ? selectedView.cost / selected.energyAddedKwh! : null} unit={`${selectedView.currencyCode || selectedView.currency || '币种未知'}/kWh`} />
-          </View>
-          <Text className="muted">费用来源：{costState?.costProvenance === 'manual' ? '本机手动设置' : costState?.costProvenance === 'actual' ? selectedView.cost === 0 ? '服务端报告0费用' : '服务端账单报告' : '未知'}</Text>
-          {costState?.costProvenance === 'manual' ? <Text className="metric-source">原服务端账单：{costState.reportedCost ?? '未知'} {costState.reportedCurrency || '币种未知'} · 本机编辑时间：{historyDateTime(costState.manualCostUpdatedAt)}</Text> : null}
-          <Button className="button-secondary" onClick={startCostEdit}>编辑本机费用</Button>
-          {costEditing ? <View className="card"><Text className="section-title">本机手动费用</Text><Text className="muted">仅保存当前记录的本机费用；不修改服务端账单或合格能量。</Text>
-            <Input type="digit" value={costAmount} placeholder="非负总金额（允许0）" onInput={event => setCostAmount(event.detail.value)} />
-            <Input value={costCurrency} maxlength={3} placeholder="币种代码，如 EUR / CNY" onInput={event => setCostCurrency(event.detail.value)} />
-            <Button className="button" onClick={() => saveCost()}>保存本机费用</Button><Button className="button-secondary" onClick={() => saveCost(true)}>清除本机费用并恢复账单</Button><Button className="button-secondary" onClick={() => { setCostEditing(false); costEdit.current = null }}>取消费用编辑</Button>
-          </View> : null}
           {selected.qualityState ? <Text className="muted">记录质量：{qualityLabel(selected.qualityState)}</Text> : null}
           {cacheWarning ? <Text className="error">当前详情尚未保存到本机。</Text> : null}
           {error ? <Text className="error">{error}</Text> : null}

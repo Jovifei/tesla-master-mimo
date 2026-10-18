@@ -1,7 +1,7 @@
 import React from 'react'
 import renderer from 'react-test-renderer'
 import { expect, it, vi } from 'vitest'
-vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view', Picker: 'picker' }))
+vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view', Image: 'image', Picker: 'picker' }))
 import MetricValue, { displayNumber, peakSpeedKmh } from './MetricValue'
 import LoadedDriveChart, { loadedDriveGroups } from './LoadedDriveChart'
 import type { Drive } from '../services/types'

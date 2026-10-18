@@ -4,6 +4,7 @@ import { aggregateDriveHistory, coveredTotal, isHistoryQuarantined, type Covered
 import { filterHistory, type HistoryQuery } from '../domain/history_query'
 import type { HistoryInterval } from '../domain/history_controller'
 import type { Charge, Drive } from '../services/types'
+import type { CostedCharge } from '../services/charge_cost'
 import MetricValue, { peakSpeedKmh } from './MetricValue'
 
 function coverage(label: string, metric: CoveredMetric) { return `${label}覆盖 ${metric.known}/${metric.total} 条` }
@@ -23,9 +24,19 @@ export default function HistoryIntervalSummary({ interval, query, kind }: {
   const battery = kind === 'charges' ? coveredTotal(charges, row => row.energyAddedKwh != null && row.energyAddedKwh >= 0 ? row.energyAddedKwh : null) : null
   const input = kind === 'charges' ? coveredTotal(charges, row => row.energyUsedKwh != null && row.energyUsedKwh >= 0 ? row.energyUsedKwh : null) : null
   const speeds = kind === 'drives' ? (rows as Drive[]).map(peakSpeedKmh).filter((number): number is number => number != null) : []
-  const currencies = kind === 'charges' ? [...new Set(charges.filter(row => row.cost != null && Number.isFinite(row.cost)).map(row => row.currency).filter(Boolean))] : []
+  const chargeCost = (row: Charge) => row.cost != null && Number.isFinite(row.cost) && row.cost >= 0 ? row.cost : null
+  const costSource = (row: Charge) => (row as Partial<CostedCharge>).costProvenance
+  const actualCount = kind === 'charges' ? charges.filter(row => chargeCost(row) != null && costSource(row) !== 'estimate' && costSource(row) !== 'unknown').length : 0
+  const estimateCount = kind === 'charges' ? charges.filter(row => chargeCost(row) != null && costSource(row) === 'estimate').length : 0
+  const currencies = kind === 'charges' ? [...new Set(charges.filter(row => chargeCost(row) != null).map(row => row.currencyCode ?? row.currency).filter((value): value is string => Boolean(value)))] : []
   const currency = currencies.length === 1 ? currencies[0]! : currencies.length > 1 ? '多币种' : '币种未知'
-  const cost = coveredTotal(charges, row => kind === 'charges' && currencies.length === 1 && row.currency === currency && row.cost != null && Number.isFinite(row.cost) ? row.cost : null)
+  const cost = coveredTotal(charges, row => kind === 'charges' && currencies.length === 1 && (row.currencyCode ?? row.currency) === currency ? chargeCost(row) : null)
+  const hasEstimateInTotal = cost.value != null && estimateCount > 0 && currencies.length === 1
+  const groups = currencies.map(code => {
+    const values = charges.filter(row => (row.currencyCode ?? row.currency) === code && chargeCost(row) != null)
+    return { code, total: values.reduce((sum, row) => sum + chargeCost(row)!, 0), estimated: values.filter(row => costSource(row) === 'estimate').length,
+      actual: values.filter(row => costSource(row) !== 'estimate' && costSource(row) !== 'unknown').length }
+  })
   return <View className="card history-interval">
     <Text className="section-title">摘要</Text>
     <View className="history-summary-primary metric-grid">
@@ -37,13 +48,16 @@ export default function HistoryIntervalSummary({ interval, query, kind }: {
       </> : <>
         <MetricValue label="充电次数" value={rows.length} unit="次" icon="energy" digits={0} />
         <MetricValue label="充电量" value={battery!.value} unit="kWh" icon="battery" />
-        <MetricValue label="总费用" value={cost.value} unit={currency} icon="account" />
-        <MetricValue label="平均每次费用" value={cost.value != null && cost.known > 0 ? cost.value / cost.known : null} unit={currency} icon="account" />
+        <MetricValue label={hasEstimateInTotal ? '总费用（含估算）' : '总费用'} value={hasEstimateInTotal ? `≈${cost.value!.toFixed(2)}` : cost.value} unit={currency} icon="account" />
+        <MetricValue label={hasEstimateInTotal ? '平均每次费用（含估算）' : '平均每次费用'} value={cost.value != null && cost.known > 0 ? hasEstimateInTotal ? `≈${(cost.value / cost.known).toFixed(2)}` : cost.value / cost.known : null} unit={currency} icon="account" />
       </>}
     </View>
     <Text className="muted history-statistics-coverage">{status}</Text>
     <Text className="muted">已读取 {interval.receivedPages} 页；当前筛选 {rows.length} 条。日期使用本机时区。</Text>
-    {drives ? <Text className="muted">{`${coverage('距离', drives.distance)}；${coverage('时长', drives.duration)}；最高速度覆盖 ${speeds.length}/${rows.length} 条`}</Text> : <Text className="muted">{`${coverage('电池充入', battery!)}；${coverage('费用', cost)}`}</Text>}
+    {drives ? <Text className="muted">{`${coverage('距离', drives.distance)}；${coverage('时长', drives.duration)}；最高速度覆盖 ${speeds.length}/${rows.length} 条`}</Text> : <>
+      <Text className="muted">{`${coverage('电池充入', battery!)}；实际/手填费用覆盖 ${actualCount}/${charges.length} 条；估算费用覆盖 ${estimateCount}/${charges.length} 条`}</Text>
+      {currencies.length > 1 ? <Text className="muted">多币种分开统计：{groups.map(group => `${group.code} ${group.estimated ? '≈' : ''}${group.total.toFixed(2)}（实际/手填 ${group.actual} 条，估算 ${group.estimated} 条）`).join('；')}。未跨币种相加。</Text> : hasEstimateInTotal ? <Text className="muted">合计与平均含明确估算；估算未写入服务端账单。</Text> : null}
+    </>}
     <Button className="history-evidence-toggle" onClick={() => setExpanded(!expanded)}>{expanded ? '收起统计明细' : kind === 'drives' ? '统计口径与能耗' : '统计口径与输入'}</Button>
     {expanded ? drives ? <>
       <View className="metric-grid history-summary-secondary">
@@ -58,7 +72,7 @@ export default function HistoryIntervalSummary({ interval, query, kind }: {
     </> : <>
       <View className="metric-grid"><MetricValue label="已知电池充入合计" value={battery!.value} unit="kWh" /><MetricValue label="已知输入电量合计" value={input!.value} unit="kWh" /></View>
       <Text className="muted">{`${coverage('电池充入', battery!)}；${coverage('输入电量', input!)}`}</Text>
-      <Text className="muted">{coverage('费用', cost)}；平均费用只使用同币种已知费用记录。</Text>
+      <Text className="muted">实际/手填费用覆盖 {actualCount}/{charges.length} 条；估算费用覆盖 {estimateCount}/{charges.length} 条；平均仅使用同币种已知金额，含估算时显示≈。</Text>
       <Text className="muted">输入保留各条记录的测量口径；费用按各条实际币种展示，未跨币种相加。</Text>
     </> : null}
   </View>

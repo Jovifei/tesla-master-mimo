@@ -1,12 +1,12 @@
 # MateLink App / 小程序完整入口与数据链矩阵
 
-2026-10-18登录/数据续修见 `RPT-2026-10-18-tesla-first-app-contract.md`：Tesla主入口及原生未登录状态已验证；新后端未部署，Git固定SHA/CI不可确认，真实回流仍NOT_VERIFIED。Dashboard布局/车色及手动外观选择见 `RPT-2026-10-18-dashboard-exact-and-appearance.md`。下方2026-10-16域名阻断为历史记录；域名请求已通达，真实登录/手机按Jovi本轮选择暂不执行。其它数据合同和深层功能缺口继续保留。
+本表记录 2026-10-15/16 的阶段性源码矩阵，其旧域名阻断和“真实登录未执行”状态已由后续实机事实覆盖。生产 Tesla 主登录接口已部署，Jovi 已在手机微信内完成真实 Tesla 授权并看到同一车辆。2026-10-18 同手机 App2.1.38 与小程序页面逐项对照、已修项目及剩余数据来源缺口见 `RPT-2026-10-18-phone-app-mini-visual-parity.md`。下表其余深层页面的源码合同与未验收项继续保留。
 
 本表以实际 Android `ui/navigation/NavGraph.kt` 的全部 `Screen` 及 `ui/screens/more/MoreScreen.kt` 为入口合同。日期为阶段标识，不把跨午夜后继续实施拆成新阶段。冻结基线 main `92cbf11ac0fd688f7eb3ba1cfa610910d79637fb`、parent `d951853e4c81ebb05c0a7ce6045bbe81014a92e8`；PR18 已合并。基线 CI 不能替最终候选 SHA 背书。
 
 判定：MATCH 表示所列源码/合成消费者合同已验证；FIX_REQUIRED 表示缺少实现或仍有明确行为差距；PLATFORM_DIFFERENCE 必须有真实平台能力限制证据；NOT_VERIFIED 表示已有实现但尚无所需运行/平台证据。仅入口可点击、共享标题、空卡或通用统计摘要，不能使整页获得 MATCH。未移植页面必须记 FIX_REQUIRED，不能因为工作量或阶段优先级记平台差异。
 
-矩阵是源码交叉审查，不等于手机或微信平台验收。当前所有实账号、实车和微信体验版运行结论均为 NOT_VERIFIED。新增工具/分析页由同一候选实现，最终集成后须逐行依据消费者测试和实际工具验收更新本表；下面明确保留尚未达到 App 深度的差距。
+矩阵是源码交叉审查，不等于整套手机或微信平台验收。真实 Tesla 登录与首页部分车辆字段已经在手机上验证；新客户端页面仍需扫描最新预览后逐页复看。新增工具/分析页须逐行依据消费者测试和实际工具验收更新；下面明确保留尚未达到 App 深度的差距。
 
 ## 全部导航入口
 
@@ -14,19 +14,19 @@ Android 源文件均以 `android/app/src/main/java/com/matelink/` 为前缀；Mi
 
 | Android Screen / 真实入口 | Android 实际消费者 | Mini 对应候选入口 | 数据 / 行为合同与当前判定 |
 |---|---|---|---|
-| TeslaLogin | `ui/screens/auth/TeslaLoginScreen.kt`、`NavGraph.kt` | `pages/auth/index` | MATCH（源码/消费者/PG）：特斯拉账号直接登录，无微信身份前置；与App共用verified Tesla subject对应用户，proof/PKCE/nonce、一次领取/取消/注销竞态回归。MATCH（原生入口）：DevTools实际按钮与未勾协议禁用。NOT_VERIFIED：新后端部署、真实Tesla往返与同账号历史。 |
+| TeslaLogin | `ui/screens/auth/TeslaLoginScreen.kt`、`NavGraph.kt` | `pages/auth/index` | MATCH（源码/消费者/PG）：特斯拉账号直接登录，无微信身份前置；与App共用verified Tesla subject对应用户，proof/PKCE/nonce、一次领取/取消/注销竞态回归。MATCH（手机）：Jovi已在微信小程序完成真实Tesla登录，同一车辆的SOC/续航/里程值与手机App吻合。历史完整性与所有深层页仍逐项验收。 |
 | Settings | `ui/screens/settings/SettingsScreen.kt` | `pages/tools/index?kind=settings` | MATCH（源码）：账号/授权、系统明暗说明、规范化单位、微信权限及分时电价/关于入口。FIX_REQUIRED：App可配置显示单位/货币、额外显示、同步/连接测试的细分操作；固定HTTPS来源是本渠道明确安全合同，不自动认定其它控件无法实现。 |
 | TariffConfig | `ui/screens/settings/TariffConfigScreen.kt` | `pages/tools/index?kind=tariff` | MATCH（源码/消费者）：币种与峰平谷价格、真实0、精确账号/origin保存重开、共享预算、切号拒绝旧草稿，IANA时区持久化且UTC测试不改8.5边界断言。MATCH（源码）：默认电价/启停、峰平谷价格及小时区间编辑、跨午夜分段、24小时无重叠校验和显式恢复App参考默认；估算不反写实际账单。NOT_VERIFIED：真实微信输入与本地时区行为。 |
 | TpmsSettings | `ui/screens/settings/TpmsSettingsScreen.kt` | `pages/tools/index?kind=tpms`（设置部分） | MATCH（源码/11消费者测试）：目标/高低阈值、启停、变化阈值0.1–2bar及1–720小时、精确作用域保存/重开、坏档案保留与迟到编辑拒写。仅对真实新鲜逐轮观测作前台比较；后台通知/授权拒绝仍NOT_VERIFIED。 |
 | AmapSetup | `ui/screens/map/AmapSetupGuideScreen.kt`、Settings地图入口 | `pages/tools/index?kind=location` | FIX_REQUIRED：App地图配置/可用性反馈不能用经纬度文本替代；微信地图域名/权限待核实。 |
 | AmapPreview | `ui/screens/map/AmapMapScreen.kt` | `pages/tools/index?kind=location` | FIX_REQUIRED：地图预览/失败重试/位置定位交互需独立验证；未证实平台无法实现。 |
-| Dashboard | `ui/screens/dashboard/` | `pages/vehicle/index` | SOURCE_MATCH：按实际Header/HUD/Hero/InfoCard顺序、间距和字段层级实现，97原图按车型/车色/轮毂匹配；支持隔离的手选及默认黑色焕新Y预览。合同保留单位、负功率/0/false、源/时间未知及TPMS逐轮时间。开发工具合成图像与页面单独取证；真实账号/车辆/手机、用户最终视觉确认NOT_VERIFIED。无跨端自定义照片同步，年款缺失允许手选且不猜焕新。 |
-| More（第四Tab） | `ui/screens/more/MoreScreen.kt` | `pages/me/index`（显示“更多”） | MATCH（源码入口）：分析/报告/系统分组及已有普通行程/长途/分析/报告/设置路由；就绪清单沿用实际车辆诊断。NOT_VERIFIED：微信原生导航与返回。 |
+| Dashboard | `ui/screens/dashboard/` | `pages/vehicle/index` | 手机实机已对照同一辆车；新客户端修正底栏、里程分隔/字号、哨兵文案、位置卡回退及胎压窄屏卡。App本机逆地理编码地址和本机胎压当前与云字段不等价，仍 FIX_REQUIRED/来源待补；新版微信预览和用户最终视觉确认仍 NOT_VERIFIED。无跨端自定义照片同步，年款缺失允许手选且不猜焕新。 |
+| More（第四Tab） | `ui/screens/more/MoreScreen.kt` | `pages/me/index`（显示“更多”） | 手机实机对照后增加App数据状态卡/入口、双列高卡、系统列表并修自定义导航顶部空间；精确图标本地化。新版微信预览与实际返回仍 NOT_VERIFIED。 |
 | About | `ui/screens/about/AboutScreen.kt` | `pages/tools/index?kind=about` | MATCH（源码）：当前候选版本、服务条款/隐私入口及返回。MATCH（源码）：本版更新说明及问题反馈地址复制；NOT_VERIFIED：微信实际页面。 |
-| Charges | `ui/screens/charges/` | `pages/charges/index` | MATCH（源码合同）：实际币种、输入/电池能量分离、0保留、分页/筛选/详情返回及隔离回归。NOT_VERIFIED：开发工具渲染。 |
+| Charges | `ui/screens/charges/` | `pages/charges/index` | 已在手机对照同一最新充电：时长、电量/SOC吻合；新客户端补月图、详情位置层级及App默认电价有标记估算。实际/手填零账单与不同币种分开，真实新版预览/图表渲染仍 NOT_VERIFIED。 |
 | ChargeDetail(carId,chargeId) | `ui/screens/charges/ChargeDetail*` | 充电页内详情 | MATCH（源码/消费者）：电量→SOC/时长→功率→电压电流→温度→费用分区，同一真实响应证据及五图深链；效率额外遵循App共同时间基准/精确观测窗口/原始ac模式资格；本机手填/清除恢复原始0账单、跨账号迟到编辑拒绝、列表/统计/长途/报告/导出显示层分开。NOT_VERIFIED：真实充电与微信五图。 |
 | CurrentCharge | `ui/screens/charges/CurrentCharge*` | `pages/insights/index?kind=currentCharge` | MATCH（源码消费者）：真实 `/charges/current` 进行中/空态、0kW与资格能量显示，独立于历史列表。NOT_VERIFIED：真实充电与微信生命周期。 |
-| Drives | `ui/screens/drives/DrivesScreen.kt` | `pages/drives/index` | MATCH（数据与源码层级）：净能量资格、配对均耗、峰值样本、详情写回、缓存重开；顶部时间/SOC/来源及底部四指标按实际App卡片实现。NOT_VERIFIED：微信像素/窄屏字体与返回位置。 |
+| Drives | `ui/screens/drives/DrivesScreen.kt` | `pages/drives/index` | 手机App2.1.38实际加载后与旧小程序显示不同条数/合计；App源码对有资格且字段齐的微挪车按1分钟/0.2km排除，并在摘要下展示月图。新客户端按此规则修正中，尚未证明两次实机读数的全部差额；新版微信像素/窄屏字体与返回位置仍 NOT_VERIFIED。 |
 | DriveDetail(carId,driveId) | `ui/screens/drives/DriveDetailScreen.kt` | 行程页内详情 | MATCH（源码）：顶部时间/SOC/来源、四指标、kWh与资格依据、真实五图深链；停车详情由相邻记录/时间轴进入。NOT_VERIFIED：真实微信返回/滚动上下文。 |
 | DriveCurves(carId,driveId) | `ui/screens/drives/DriveCurvesScreen.kt` | `pages/analysis/index?kind=curves&id=…` | MATCH（源码/消费者）：实际detail.drive_details→五个原生Canvas（速度、按时间积分并锚定总距离的估计距离、带符号功率、SOC、海拔）、共享光标/十字线与单图全屏；带符号/0、五图绘制和不缓存位置有消费者验证。NOT_VERIFIED：微信Canvas实渲染/触摸。 |
 | ParkedDetail(olderDriveId,newerDriveId) | `ui/screens/drives/ParkedDetailScreen.kt`、`AdapterModels.kt` | `pages/analysis/index?kind=parked&olderId=…&newerId=…` | MATCH（源码）：真实端点、SOC/时间、合格能量/环境/样本/覆盖及充电重叠；无合格stored_change不显示kWh/平均W。NOT_VERIFIED：真实停车响应与渲染。 |

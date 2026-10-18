@@ -4,6 +4,7 @@ import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 import { ApiError, getApiSessionGeneration, JOURVOLT_PRIVACY_VERSION, JOURVOLT_TERMS_VERSION, matelinkApi } from '../../services/api'
 import { readAppSession, readPendingTeslaAuthorization, type AppSession } from '../../services/session'
+import { requestDataStatus } from '../../services/data_status_intent'
 
 const TERMS_VERSION = JOURVOLT_TERMS_VERSION
 const PRIVACY_VERSION = JOURVOLT_PRIVACY_VERSION
@@ -220,30 +221,46 @@ export default function MePage() {
   return (
     <View className="page more-page">
       <View className="app-toolbar"><Text className="title">更多</Text></View>
-      <View className="card more-status">
-        <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">数据状态</Text></View>
-        <Text className="muted">连接成功后可查看实时车辆数据；统计分析页面需要积累足够的历史记录后才会完整。</Text>
-        <Button className="toolbar-button" onClick={() => Taro.switchTab({ url: '/pages/vehicle/index' })}>查看车辆与数据状态</Button>
+      <View className="more-status">
+        <VisualIcon name="shield" />
+        <View className="more-status-copy">
+          <Text className="more-status-title">数据状态</Text>
+          <Text className="more-status-description">连接成功后可查看实时车辆数据；统计分析页面需要积累足够的历史记录后才会完整。</Text>
+        </View>
       </View>
       <Text className="more-section-heading">数据分析</Text>
       <View className="more-grid">{[
-        { label: '统计分析', icon: 'chart' as const, route: '/pages/analysis/index?kind=stats', detail: '区间数据' },
+        { label: '统计概览', icon: 'speed' as const, route: '/pages/analysis/index?kind=stats' },
         { label: '电池健康', icon: 'battery' as const, route: '/pages/insights/index?kind=battery' },
         { label: '里程统计', icon: 'distance' as const, route: '/pages/analysis/index?kind=mileage' },
-        { label: '行程记录', icon: 'clock' as const, route: '/pages/drives/index' },
+        { label: '行程历史', icon: 'clock' as const, route: '/pages/drives/index' },
         { label: '长途行程', icon: 'route' as const, route: '/pages/insights/index?kind=longTrips' },
-        { label: '能耗分析', icon: 'chart' as const, route: '/pages/analysis/index?kind=efficiency' },
-        { label: '费用分析', icon: 'energy' as const, route: '/pages/insights/index?kind=cost' },
+        { label: '能耗', icon: 'chart' as const, route: '/pages/analysis/index?kind=efficiency' },
+        { label: '费用分析', icon: 'money' as const, route: '/pages/insights/index?kind=cost' },
         { label: '续航分析', icon: 'route' as const, route: '/pages/insights/index?kind=range' },
-        { label: '待机耗电', icon: 'energy' as const, route: '/pages/analysis/index?kind=vampire' },
-        { label: '时间轴', icon: 'clock' as const, route: '/pages/analysis/index?kind=timeline' },
-      ].map(item => <Button className="more-action" key={item.label} onClick={() => item.route === '/pages/drives/index' ? Taro.switchTab({ url: item.route }) : Taro.navigateTo({ url: item.route })}>
-        <VisualIcon name={item.icon} /><View className="more-action-copy"><Text>{item.label}</Text><Text className="metric-source">{item.detail || '查看数据'}</Text></View>
+        { label: '待机能耗', icon: 'energy' as const, route: '/pages/analysis/index?kind=vampire' },
+        { label: '时间线', icon: 'timeline' as const, route: '/pages/analysis/index?kind=timeline' },
+      ].map(item => <Button className="more-action more-tile" key={item.label} onClick={() => item.route === '/pages/drives/index' ? Taro.switchTab({ url: item.route }) : Taro.navigateTo({ url: item.route })}>
+        <VisualIcon name={item.icon} /><Text className="more-tile-label">{item.label}</Text>
       </Button>)}</View>
       <Text className="more-section-heading">报告与导出</Text>
-      <View className="more-grid">{[{ label: '年度报告', kind: 'report' }, { label: '数据导出', kind: 'export' }].map(item => <Button className="more-action" key={item.kind} onClick={() => Taro.navigateTo({ url: `/pages/tools/index?kind=${item.kind}` })}><VisualIcon name="chart" /><View className="more-action-copy"><Text>{item.label}</Text></View></Button>)}</View>
+      <View className="more-grid">{[{ label: '年度报告', kind: 'report', icon: 'chart' as const }, { label: '导出数据', kind: 'export', icon: 'update' as const }].map(item => <Button className="more-action more-tile" key={item.kind} onClick={() => Taro.navigateTo({ url: `/pages/tools/index?kind=${item.kind}` })}><VisualIcon name={item.icon} /><Text className="more-tile-label">{item.label}</Text></Button>)}</View>
       <Text className="more-section-heading">系统</Text>
-      <View className="more-system">{[{ label: '软件更新', kind: 'updates' }, { label: '哨兵历史', kind: 'sentry' }, { label: '设置', kind: 'settings' }, { label: '关于', kind: 'about' }].map(item => <Button className="more-action" key={item.kind} onClick={() => Taro.navigateTo({ url: `/pages/tools/index?kind=${item.kind}` })}><Text>{item.label}</Text><Text>›</Text></Button>)}</View>
+      <View className="more-system">{[
+        { label: '数据状态', kind: 'dataStatus', icon: 'shield' as const },
+        { label: '软件更新', kind: 'updates', icon: 'update' as const },
+        { label: '哨兵历史', kind: 'sentry', icon: 'shield' as const },
+        { label: '设置', kind: 'settings', icon: 'settings' as const },
+        { label: '关于', kind: 'about', icon: 'info' as const },
+      ].map(item => <Button className="more-action more-system-action" key={item.kind} onClick={() => {
+        if (item.kind === 'dataStatus') {
+          const current = readAppSession(Taro)
+          if (current?.userId && current.apiOrigin) {
+            try { requestDataStatus(Taro, current.userId, current.apiOrigin) } catch { /* navigation remains available */ }
+          }
+          void Taro.switchTab({ url: '/pages/vehicle/index' })
+        } else void Taro.navigateTo({ url: `/pages/tools/index?kind=${item.kind}` })
+      }}><VisualIcon name={item.icon} /><Text className="more-system-label">{item.label}</Text><Text className="more-system-chevron">›</Text></Button>)}</View>
       <View className="card account-hero">
         <View className="account-heading">
           <View>

@@ -2,7 +2,12 @@ import { displayNumber } from '../MetricValue'
 import { sameEnergyInstant } from '../../domain/drive_energy'
 import type { CarStatus } from '../../services/types'
 
-export const dashboardNumber = (value: number | null | undefined, digits = 1): string => value != null && Number.isFinite(value) ? displayNumber(value, digits) : '暂无数据'
+export const dashboardNumber = (value: number | null | undefined, digits = 1): string => {
+ if (value == null || !Number.isFinite(value)) return '暂无数据'
+ const [whole, fraction] = displayNumber(value, digits).split('.')
+ const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+ return fraction === undefined ? grouped : `${grouped}.${fraction}`
+}
 export const dashboardMetric = (value: number | null | undefined, unit: string, digits = 1): string => `${dashboardNumber(value, digits)}${unit ? ` ${unit}` : ''}`
 export function dashboardRange(status: CarStatus) { return status.ratedRange ?? status.idealRange ?? status.estimatedRange ?? null }
 export function dashboardShift(value: string | null | undefined): string | null { const shift = value?.trim().toUpperCase(); return shift && ['P', 'R', 'N', 'D'].includes(shift) ? shift : null }

@@ -442,7 +442,7 @@ function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source
   }
   const latitude = finite(raw.car_geodata?.latitude, -90, 90)
   const longitude = finite(raw.car_geodata?.longitude, -180, 180)
-  const location = latitude != null && longitude != null
+  const location = latitude != null && longitude != null && (latitude !== 0 || longitude !== 0)
     ? { latitude, longitude }
     : null
   const shift = stringValue(raw.driving_details?.shift_state)?.toUpperCase()

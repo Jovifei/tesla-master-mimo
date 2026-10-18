@@ -19,6 +19,7 @@ import { readinessViewFor } from '../../domain/readiness'
 import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { carSelectionStorageKey, type Car, type CarStatus, type ReadinessItem, type TelemetryPairing } from '../../services/types'
 import { readAppSession } from '../../services/session'
+import { consumeDataStatus } from '../../services/data_status_intent'
 import { createRequestScopeGate } from '../../domain/request_scope'
 import { readCarsCache } from '../../services/cars_cache'
 import { readVehicleCache, writeVehicleCache } from '../../services/vehicle_cache'
@@ -36,10 +37,6 @@ function booleanLabel(value: boolean | null, yes: string, no: string): string | 
   return value == null ? null : value ? yes : no
 }
 
-function coordinateLabel(location: CarStatus['location']): string | null {
-  if (!location) return null
-  return `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`
-}
 export default function VehiclePage() {
   const [cars, setCars] = useState<Car[]>([])
   const [car, setCar] = useState<Car | null>(null)
@@ -72,6 +69,7 @@ export default function VehiclePage() {
   const clearImage = () => { imageEpoch.current += 1; clearNativeImage(); setImageSrc(null); setImageLoading(false); setImageError(false) }
   const [tpmsCacheReason, setTpmsCacheReason] = useState<string | null>(null)
   const [showDiagnostics, setShowDiagnostics] = useState(false)
+  const focusDiagnostics = useRef(false)
   const [historyEvidence, setHistoryEvidence] = useState<HistoryCacheEvidence | null>(null)
   const requestVersion = useRef(0)
   const scopeGate = useRef(createRequestScopeGate())
@@ -219,7 +217,21 @@ export default function VehiclePage() {
     }
   }
 
-  useDidShow(() => { foreground.current = true; setVisible(true); setForegroundNow(Date.now()); void load() })
+  useDidShow(() => {
+    foreground.current = true; setVisible(true); setForegroundNow(Date.now())
+    try {
+      if (consumeDataStatus(Taro, readAppSession(Taro)?.userId ?? null, getApiOrigin())) {
+        focusDiagnostics.current = true
+        setShowDiagnostics(true)
+      }
+    } catch { /* invalid origin or unavailable storage cannot authorize a navigation hint */ }
+    void load()
+  })
+  useEffect(() => {
+    if (!visible || !showDiagnostics || !focusDiagnostics.current) return
+    focusDiagnostics.current = false
+    void Taro.pageScrollTo({ selector: '.dashboard-readiness-panel', duration: 250 }).catch(() => {})
+  }, [visible, showDiagnostics])
   const leavePage = () => { foreground.current = false; setVisible(false); invalidatePage() }
   useDidHide(leavePage)
   useUnload(leavePage)
@@ -386,7 +398,7 @@ export default function VehiclePage() {
   const navigate = (url: string) => { void Taro.navigateTo({ url }) }
   const settings = () => navigate('/pages/tools/index?kind=settings')
   const openBattery = () => navigate('/pages/insights/index?kind=battery')
-  const location = status?.geofence || coordinateLabel(status?.location ?? null) || '暂无数据'
+  const location = status?.geofence || (map ? '地址待解析' : '暂无数据')
   return (
     <View className="page vehicle-page">
       <View className="dashboard-toolbar">
@@ -423,11 +435,11 @@ export default function VehiclePage() {
       {readiness.status === 'telemetry_error' ? <Button className="button" loading={loading} onClick={retryTelemetry}>重新配置持续采集</Button> : null}
       {error ? <Text className="error">{error}</Text> : null}
       <Button className="button button-secondary" onClick={() => setShowDiagnostics(!showDiagnostics)}>{showDiagnostics ? '收起数据状态' : '查看数据状态'}</Button>
-      {showDiagnostics ? <>
+      {showDiagnostics ? <View className="dashboard-readiness-panel">
         <View className="dashboard-evidence"><Text>{dashboardSource(status?.source)}</Text><Text>{status?.observedAt ? `状态报告时间：${status.observedAt}（未提供逐字段更新时间）` : '状态报告时间未提供，不能确认字段是否最新。'}</Text>{tpmsCacheReason ? <Text>{tpmsCacheReason}</Text> : null}</View>
         <ReadinessChecklist items={readinessItems} pairing={pairing} sessionReady={Boolean(currentSession)} diagnostics={{ car, status, cached, onlineError: Boolean(error), history: historyEvidence }} />
         {status ? <View className="card"><Text className="section-title">状态报告详情</Text><View className="metric-grid"><MetricValue label="速度" value={status.speed} unit="km/h" /><MetricValue label="功率" value={status.power} unit="kW" negative={(status.power ?? 0) < 0} /><MetricValue label="空调" value={booleanLabel(status.isClimateOn, '开启', '关闭')} /></View></View> : null}
-      </> : null}
+      </View> : null}
     </View>
   )
 }

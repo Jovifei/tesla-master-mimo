@@ -19,6 +19,8 @@ import MetricValue, { displayNumber, peakSpeedKmh } from '../../components/Metri
 import VisualIcon from '../../components/VisualIcon'
 import LoadedDriveChart from '../../components/LoadedDriveChart'
 import { availabilityLabel, capacityLabel, energyMethodLabel, qualityLabel, sourceLabel } from '../../domain/data_labels'
+import { isAppRouteDrive, isAppStatisticsDrive } from './drive_parity'
+import AppDriveMonthChart from './AppDriveMonthChart'
 
 const PAGE_SIZE = 20
 
@@ -90,6 +92,7 @@ export default function DrivesPage() {
   const queryRef = useRef(query)
   const setQuery = (next: HistoryQuery) => { queryRef.current = next; setQueryState(next) }
   const [offline, setOffline] = useState(false)
+  const [sourceExplanationVisible, setSourceExplanationVisible] = useState(false)
   const verifiedCarRef = useRef(false)
   const queryScopeRef = useRef<string | null>(null)
   const [cacheWarning, setCacheWarning] = useState(false)
@@ -438,26 +441,35 @@ export default function DrivesPage() {
     }
   }
 
-  const trustedItems = filterHistory(items, emptyHistoryQuery())
+  const trustedItems = filterHistory(items.filter(isAppRouteDrive), emptyHistoryQuery())
   const visibleItems = filterHistory(trustedItems, query)
+  const statisticsInterval = interval ? { ...interval, items: interval.items.filter(isAppStatisticsDrive) } : null
+  const chartRows = statisticsInterval ? filterHistory(statisticsInterval.items, query) : []
   return (
-    <View className="page history-page">
+    <View className="page history-page drives-page">
       <View className="history-page-header">
-        <Text className="title">行程</Text>
+        <Text className="title">行程记录</Text>
         {cars.length > 1 ? (
           <Picker mode="selector" range={cars.map(item => item.displayName || item.name || `车辆 ${item.stableId}`)} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}>
             <View className="status"><Text className="status-label">车辆</Text><Text className="status-value">{car?.displayName || '请选择车辆'}</Text></View>
           </Picker>
         ) : null}
-        {meta?.availability ? <Text className="muted">历史状态：{availabilityLabel(meta.availability)} · {sourceLabel(meta.source)}</Text> : null}
         {cacheWarning ? <Text className="error">在线数据已读到，但未保存到本机。</Text> : null}
       </View>
+
+      {car ? <View className="drives-source" onClick={() => setSourceExplanationVisible(current => !current)}>
+        <Text className="drives-source-icon">i</Text><Text>数据来源 · 查看说明</Text>
+      </View> : null}
+      {sourceExplanationVisible && meta?.availability ? <View className="drives-source-details">
+        <Text>历史状态：{availabilityLabel(meta.availability)} · {sourceLabel(meta.source)}</Text>
+        <Text>摘要只统计有合格证据的行程；不足 1 分钟或 0.2 km 的短距离挪车不计入行程。</Text>
+      </View> : null}
 
       {car ? <View className="history-controls">
         <HistoryDateChips kind="drives" query={query} onChange={updateQuery} />
         <View className="history-distance-chips">
-          {[{ label: '全部里程', min: 0, max: undefined }, { label: '通勤 (< 10km)', min: 0, max: 10 },
-            { label: '短途 (10–100km)', min: 10, max: 100 }, { label: '长途 (100km+)', min: 100, max: undefined }].map(option =>
+          {[{ label: '全部', min: 0, max: undefined }, { label: '通勤', min: 0, max: 10 },
+            { label: '短途', min: 10, max: 100 }, { label: '长途', min: 100, max: undefined }].map(option =>
             <Button key={option.label} className={`history-chip ${query.minDistanceKm === option.min && query.maxDistanceKm === option.max ? 'history-chip-selected' : ''}`} onClick={() => updateQuery({ minDistanceKm: option.min, maxDistanceKm: option.max })}>{option.label}</Button>)}
         </View>
         <View className="history-filter-row">
@@ -477,10 +489,12 @@ export default function DrivesPage() {
         }}>查看新行程</Button>
         <Button className="button" onClick={() => setNotices([])}>关闭提示</Button>
       </View> : null}
-      {car ? <HistoryIntervalSummary interval={interval} query={query} kind="drives" /> : null}
+      {car ? <HistoryIntervalSummary interval={statisticsInterval} query={query} kind="drives" /> : null}
       {noticeLimited ? <Text className="muted history-notice-limit">本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看</Text> : null}
 
-      {car && visibleItems.length > 0 ? <LoadedDriveChart items={visibleItems} /> : null}
+      {car && chartRows.length > 0 && !query.startDate && !query.endDate
+        ? <AppDriveMonthChart rows={chartRows} partial={!statisticsInterval?.complete} />
+        : car && visibleItems.length > 0 && (query.startDate || query.endDate) ? <LoadedDriveChart items={visibleItems.filter(isAppStatisticsDrive)} /> : null}
 
       {!readAppSession(Taro) ? (
         <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待特斯拉账号登录</Text><Text className="muted">请先在“更多”中建立会话。</Text></View>
@@ -490,7 +504,7 @@ export default function DrivesPage() {
         </View>
       ) : (
         <View className="history-list">
-          <Text className="section-title">行程记录 {trustedItems.length ? `（${trustedItems.length}）` : ''}</Text>
+          <Text className="section-title">行程历史</Text>
           {loading ? <LoadingIndicator label="正在读取行程…" compact /> : null}
           {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的行程</Text> : null}
           {visibleItems.map(item => (

@@ -47,3 +47,36 @@
   .history-source { display: inline-block; font-size: 22px; color: #6b7280; background: #f5f7f9; border-radius: 8px; padding: 4px 10px; margin-top: 6px; }
 }
 @media (min-width: 640PX) { .history-page .history-record-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+.drives-page {
+  padding-top: 96px;
+  .history-page-header { margin: -32px -32px 28px; padding: 72px 32px 34px; }
+  .history-page-header .title { font-size: 48px; margin: 0; }
+  .drives-source { display: flex; align-items: center; gap: 16px; min-height: 88px; margin: 8px 0 30px; color: #25303d; font-size: 27px; }
+  .drives-source-icon { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; background: #707987; color: #fff; font-size: 25px; font-weight: 700; }
+  .drives-source-details { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; padding: 20px; color: #586574; background: #fff; border-radius: 14px; font-size: 23px; line-height: 1.5; }
+  .history-controls { margin-bottom: 24px; }
+  .history-date-chips, .history-distance-chips { padding-bottom: 16px; gap: 12px; }
+  .history-chip { padding: 8px 24px; color: #6f7783; font-size: 28px; }
+  .history-chip-selected { background: #fff; border-color: #fff; color: #1f2937; }
+  .history-interval { box-shadow: none; }
+  .history-summary-primary { display: flex; overflow-x: auto; gap: 0; margin-top: 12px; padding: 12px 0; white-space: nowrap; }
+  .history-summary-primary .metric { display: grid; grid-template-columns: 40px minmax(0, 1fr); grid-template-rows: auto auto; flex: 0 0 28%; min-width: 0; align-content: start; }
+  .history-summary-primary .metric-heading { grid-column: 1; grid-row: 1; }
+  .history-summary-primary .metric-label { grid-column: 2; grid-row: 1; align-self: center; }
+  .history-summary-primary .metric-reading { grid-column: 1 / 3; grid-row: 2; }
+  .history-summary-primary .metric:nth-child(odd) { border-right: 0; }
+  .history-summary-primary .metric-label { font-size: 21px; }
+  .history-summary-primary .metric-value { font-size: 44px; }
+  .history-list > .section-title { margin: 42px 0 20px; font-size: 38px; }
+}
+
+.app-drive-month-chart { margin-top: 18px; box-shadow: none; }
+.app-drive-month-chart > .muted { font-size: 23px; }
+.app-drive-month-scroll { width: 100%; margin: 16px 0 8px; white-space: nowrap; }
+.app-drive-month-bars { display: flex; align-items: flex-end; min-width: 100%; min-height: 258px; gap: 14px; }
+.app-drive-month-column { display: flex; flex: 0 0 22%; flex-direction: column; align-items: center; }
+.app-drive-month-value, .app-drive-month-label { display: block; width: 100%; text-align: center; font-size: 24px; color: #687483; }
+.app-drive-month-track { display: flex; flex-direction: column; justify-content: flex-end; width: 100%; height: 205px; border-bottom: 1px solid #dce3e8; }
+.app-drive-month-bar { width: 100%; background: #80b8bd; }
+.app-drive-month-label { margin-top: 10px; }
