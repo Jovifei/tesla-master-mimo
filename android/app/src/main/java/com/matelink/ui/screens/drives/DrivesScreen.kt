@@ -78,6 +78,7 @@ import com.matelink.ui.components.MateLinkLoadingMark
 import com.matelink.ui.components.MonthScrollIndicator
 import com.matelink.ui.components.RouteIndicator
 import com.matelink.ui.components.TelemetryMetricSpec
+import com.matelink.ui.components.CompactHistoryMetricStrip
 import com.matelink.ui.components.TelemetryMetricStrip
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.rememberDebouncedLoading
@@ -644,11 +645,11 @@ private fun DriveItem(
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
                     text = formatEditorialDate(drive.startDate, true),
@@ -658,7 +659,7 @@ private fun DriveItem(
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     val socRange = UnitFormatter.formatSocRange(start, end, "")
                     if (socRange.isNotBlank()) {
@@ -709,7 +710,7 @@ private fun DriveItem(
                     .clip(MaterialTheme.shapes.medium)
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             ) {
-                TelemetryMetricStrip(
+                CompactHistoryMetricStrip(
                     metrics = listOf(
                         TelemetryMetricSpec(
                             icon = Icons.Default.Timer,
@@ -718,7 +719,7 @@ private fun DriveItem(
                                 ?: stringResource(R.string.not_available),
                             tint = palette.accent,
                             unit = stringResource(R.string.visual_trip_duration_unit),
-                            valueFontSize = 22.sp
+                            valueFontSize = 16.sp
                         ),
                         TelemetryMetricSpec(
                             icon = CustomIcons.SteeringWheel,
@@ -729,7 +730,7 @@ private fun DriveItem(
                                 ?: stringResource(R.string.not_available),
                             tint = palette.accent,
                             unit = UnitFormatter.getDistanceUnit(receiptUnits),
-                            valueFontSize = 22.sp
+                            valueFontSize = 16.sp
                         ),
                         TelemetryMetricSpec(
                             icon = Icons.Default.Speed,
@@ -738,7 +739,7 @@ private fun DriveItem(
                                 ?: stringResource(R.string.not_available),
                             tint = palette.accent,
                             unit = UnitFormatter.getSpeedUnit(receiptUnits),
-                            valueFontSize = 22.sp
+                            valueFontSize = 16.sp
                         ),
                         TelemetryMetricSpec(
                             icon = Icons.Default.Eco,
@@ -749,11 +750,10 @@ private fun DriveItem(
                                 ?: stringResource(R.string.not_available),
                             tint = if (efficiency != null && efficiency < 0.0) Color(0xFF10B981) else palette.accent,
                             unit = "kWh/100km",
-                            valueFontSize = 22.sp
+                            valueFontSize = 16.sp
                         )
                     ),
-                    modifier = Modifier.padding(vertical = 8.dp),
-                    adaptive = true
+                    modifier = Modifier.padding(vertical = 4.dp)
                 )
             }
         }
