@@ -72,7 +72,10 @@ class CompactHistoryMetricLayoutTest {
                 val layouts = mutableListOf<TextLayoutResult>()
                 node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
                 assertTrue(layouts.isNotEmpty())
-                layouts.forEach { assertFalse(it.hasVisualOverflow); assertEquals(1, it.lineCount) }
+                layouts.forEach {
+                    assertFalse("value=${values.value[i]} at $w/$s/long=$long size=${it.size} paragraph=${it.multiParagraph.width}x${it.multiParagraph.height} constraints=${it.layoutInput.constraints} lines=${it.lineCount} widthOverflow=${it.didOverflowWidth} heightOverflow=${it.didOverflowHeight}", it.hasVisualOverflow)
+                    assertEquals(1, it.lineCount)
+                }
             }
             val unit = compose.onNodeWithText("kWh/100km", useUnmergedTree = true)
             unit.assertIsDisplayed()

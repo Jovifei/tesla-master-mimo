@@ -23,6 +23,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.matelink.ui.theme.MetricMono
@@ -63,10 +64,11 @@ fun CompactHistoryMetricStrip(metrics: List<TelemetryMetricSpec>, modifier: Modi
                         Text(metric.label, style = captionStyle, maxLines = 1,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text(metric.value, Modifier.testTag("history-metric-value-$index"),
-                        style = numberStyle, maxLines = 1)
+                    Text(metric.value, Modifier.fillMaxWidth().testTag("history-metric-value-$index"),
+                        style = numberStyle, maxLines = 1, textAlign = TextAlign.Center)
                     metric.unit?.takeIf(String::isNotBlank)?.let {
-                        Text(it, style = captionStyle, maxLines = 1,
+                        Text(it, modifier = Modifier.fillMaxWidth(), style = captionStyle, maxLines = 1,
+                            textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
