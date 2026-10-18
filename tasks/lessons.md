@@ -6,6 +6,7 @@
 - Rule: 每轮先核实同一设备当前前台预览版本，再捕获同一账号对应页面的App与Mini实机画面；只有实际新版画面才能关闭视觉/统计差异。微信预览可能回到旧实例，需明确版本与前台，不把旧屏当新版失败或成功。
 - Data rule: 数字的原始类型不足以确定业务含义。App对TeslaMate原始cost=0可当未填转默认电价估算，显式手填0和可信免费0另有优先级；比较Mini实际金额前必须追踪App resolver的来源/资格分支。
 - Acceptance: 用手机新版首页及行程、充电、更多页逐项记录字段、顺序、大小与值；云未提供地址/胎压/峰值样本时保持未知并写明差距，不能借App手机本地数据伪造。
+- Theme rule: 小程序静态 `app.config.ts` 的颜色可能被 `app.ts` 运行时 `setTabBarStyle` 覆盖；比对选中态时同时追踪静态配置和实际前台主题回调。App的浅青选中椭圆属于Material3 indicator，原生微信TabBar无同类属性，若需像素一致必须单独实现/验收自定义TabBar。
 
 ## 2026-10-18 Jovi: actual phone App is the final visual benchmark
 
