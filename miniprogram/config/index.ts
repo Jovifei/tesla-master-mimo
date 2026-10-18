@@ -1,6 +1,7 @@
 import { defineConfig } from '@tarojs/cli'
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
+import { vehicleAssetPackages } from '../vehicle-assets.config'
 
 const apiBaseUrl = process.env.TARO_APP_API_BASE_URL ?? ''
 const sourceRevision = (() => {
@@ -23,6 +24,13 @@ export default defineConfig({
   },
   sourceRoot: 'src',
   outputRoot: 'dist',
+  copy: {
+    patterns: [
+      ...vehicleAssetPackages.map(packageInfo => ({ from: resolve(__dirname, '../vehicle-assets', packageInfo.root), to: resolve(__dirname, '../dist', packageInfo.root) })),
+      { from: resolve(__dirname, '../vehicle-assets/native'), to: resolve(__dirname, '../dist/native') },
+    ],
+    options: {},
+  },
   framework: 'react',
   compiler: 'webpack5',
   plugins: [

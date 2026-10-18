@@ -1,5 +1,7 @@
 # MateLink 小程序 App 对齐源码候选
 
+后续修正：Jovi重新指出Dashboard车色/位置差异，原报告的车辆页视觉资格已重新打开；2026-10-18结果见 `RPT-2026-10-18-dashboard-exact-and-appearance.md`。本报告保留旧候选历史，域名阻断不再代表当前状态。
+
 状态：SOURCE_CANDIDATE_WITH_GAPS / BLOCKED_PLATFORM_CONFIG。此报告不声明所有 App 深层功能、真实账号/车辆、体验版或正式发布均已完成。
 
 ## 基线与保护

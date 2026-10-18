@@ -6,6 +6,8 @@
 - Rule: Before changing a Mini page, map the actual current Android page hierarchy, card order, metric positions, colors, typography and primary actions to its Mini counterpart. Use App source and rendered evidence; generic cold-gray/blue-green styling alone is insufficient.
 - Acceptance: Compare all four tabs plus auth/detail states side by side. Retain physically correct data qualification, and explicitly label platform limitations; do not use those differences to justify unrelated layout changes.
 - Consumer rule: Shared filter markup does not bring another page's scoped CSS with it. Verify wrapping and metric positions in every actual consumer; Insights must follow the App AnalysisWindowSelector horizontal Row, not fall back to full-width native buttons.
+- Reopened correction: Jovi still found the vehicle colour and parameter positions different. A white synthetic fixture cannot validate real colour selection. Trace model/paint/wheel/trim through the final image consumer, and compare Dashboard InfoCard independently from history TelemetryMetricCell. Do not reuse one metric layout for both contracts or declare visual acceptance from generic style similarity.
+- Appearance follow-up: Jovi requires automatic account configuration first, manual choices when incomplete, and a default black refreshed ModelY preview. Keep manual/preview settings separate from real vehicle identity and telemetry; year, generation and purchase date are different facts. Verify native Image events, page-show cancellation/reload and canonical model aliases in the actual consumer.
 
 ## 2026-10-02 远端执行与本地交接
 

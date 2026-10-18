@@ -4,9 +4,9 @@
   "version": "0.4.0",
   "description": "MateLink WeChat Mini Program client",
   "scripts": {
-    "build:weapp": "taro build --type weapp",
+    "build:weapp": "node ../tools/miniprogram/build-vehicle-assets.mjs --check && taro build --type weapp && node ../tools/miniprogram/build-vehicle-assets.mjs --check-dist",
     "dev:weapp": "taro build --type weapp --watch",
-    "test": "node test-tooling/node_modules/vitest/vitest.mjs run --config test-tooling/vitest.config.mts",
+    "test": "node --test ../tools/miniprogram/vehicle-assets-integrity.test.mjs && node test-tooling/node_modules/vitest/vitest.mjs run --config test-tooling/vitest.config.mts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -1,6 +1,7 @@
 import Taro from '@tarojs/taro'
 import { JOURVOLT_PRIVACY_VERSION, JOURVOLT_TERMS_VERSION } from '../domain/legal'
 import { parseTpmsDetails } from '../domain/tpms'
+import { statusFieldSources, type RawStatusPayload } from './types'
 import { clearHistoryCachesForAccount } from './history_cache'
 import { clearCarsCacheForAccount, writeCarsCache } from './cars_cache'
 import { clearVehicleCachesForAccount } from './vehicle_cache'
@@ -446,7 +447,7 @@ function normalizeCar(raw: RawCar): Car | null {
   }
 }
 
-function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source: string | null, units?: unknown): CarStatus {
+function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source: string | null, units?: unknown, fieldSources?: unknown): CarStatus {
   // Absent units retain the existing API's metric contract; explicit unknown units do not.
   const unit = (key: string, fallback: string): string | null => units === undefined ? fallback : isRecord(units) ? stringValue(units[key]) : null
   const length = unit('unit_of_length', 'km'), temperature = unit('unit_of_temperature', 'C')
@@ -463,6 +464,10 @@ function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source
   const location = latitude != null && longitude != null
     ? { latitude, longitude }
     : null
+  const shift = stringValue(raw.driving_details?.shift_state)?.toUpperCase()
+  const phases = finite(raw.charging_details?.charger_phases, 0, 3)
+  const limitSoc = finite(raw.charging_details?.charge_limit_soc, 0, 100)
+  const originalText = (value: unknown) => typeof value === 'string' && value.trim() && value.length <= 128 && !/[\u0000-\u001f\u007f]/.test(value) ? value : null
   return {
     ...(raw.tpms_details !== undefined ? { tpms: parseTpmsDetails(raw.tpms_details) } : {}),
     state: raw.state ?? null,
@@ -472,8 +477,11 @@ function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source
     wheelType: stringValue(raw.wheel_type),
     batteryLevel: finite(raw.battery_details?.battery_level, 0, 100),
     ratedRange: km(raw.battery_details?.rated_battery_range),
+    idealRange: km(raw.battery_details?.ideal_battery_range),
+    estimatedRange: km(raw.battery_details?.est_battery_range),
     odometer: km(raw.odometer),
     location,
+    geofence: stringValue(raw.car_geodata?.geofence)?.slice(0, 256) ?? null,
     locked: bool(raw.car_status?.locked),
     sentryMode: bool(raw.car_status?.sentry_mode),
     windowsOpen: bool(raw.car_status?.windows_open),
@@ -481,18 +489,28 @@ function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source
     trunkOpen: bool(raw.car_status?.trunk_open),
     frunkOpen: bool(raw.car_status?.frunk_open),
     isClimateOn: bool(raw.climate_details?.is_climate_on),
+    isPreconditioning: bool(raw.climate_details?.is_preconditioning),
     insideTemp: celsius(raw.climate_details?.inside_temp),
     outsideTemp: celsius(raw.climate_details?.outside_temp),
     pluggedIn: bool(raw.charging_details?.plugged_in),
     speed: km(raw.driving_details?.speed),
     power: finite(raw.driving_details?.power),
-    shiftState: raw.driving_details?.shift_state ?? null,
+    shiftState: shift && ['P', 'R', 'N', 'D'].includes(shift) ? shift : null,
     heading: finite(raw.driving_details?.heading, 0, 360),
     chargingState: raw.charging_details?.charging_state ?? null,
     chargeEnergyAdded: finite(raw.charging_details?.charge_energy_added, 0),
     chargerPower: finite(raw.charging_details?.charger_power, 0),
-    observedAt,
-    source,
+    chargerVoltage: finite(raw.charging_details?.charger_voltage, 0),
+    chargerActualCurrent: finite(raw.charging_details?.charger_actual_current),
+    timeToFullChargeHours: finite(raw.charging_details?.time_to_full_charge, 0),
+    chargeLimitSoc: limitSoc !== null && Number.isInteger(limitSoc) ? limitSoc : null,
+    chargerPhases: phases !== null && Number.isInteger(phases) ? phases : null,
+    chargeCurrentRequest: finite(raw.charging_details?.charge_current_request, 0),
+    chargeCurrentRequestMax: finite(raw.charging_details?.charge_current_request_max, 0),
+    chargePortDoorOpen: bool(raw.charging_details?.charge_port_door_open),
+    observedAt: originalText(observedAt),
+    source: originalText(source),
+    fieldSources: statusFieldSources(fieldSources),
   }
 }
 
@@ -765,11 +783,30 @@ export const matelinkApi = {
 
   async getCarStatus(carId: number, car?: Car): Promise<CarStatus> {
     assertVehicle(null, carId, car)
-    const response = await requestJson<ApiEnvelope<{ status?: RawCarStatus; observed_at?: string; source?: string; units?: unknown }> | { status?: RawCarStatus; observed_at?: string; source?: string; units?: unknown }>(`/api/v1/cars/${carId}/status`)
+    const response = await requestJson<ApiEnvelope<RawStatusPayload> | RawStatusPayload>(`/api/v1/cars/${carId}/status`)
     const data = unwrap(response)
     assertVehicle(data, carId, car)
     assertVehicle(data.status, carId, car)
-    return normalizeCarStatus(data.status ?? {}, data.observed_at ?? null, data.source ?? null, data.units)
+    return normalizeCarStatus(data.status ?? {}, data.observed_at ?? null, data.source ?? null, data.units, data.field_sources)
+  },
+
+  async getCarSnapshot(carId: number, car?: Car): Promise<CarStatus> {
+    assertVehicle(null, carId, car)
+    const ownerEpoch = sessionEpoch, owner = readAppSession(Taro)?.userId ?? null
+    const checkOwner = () => { if (ownerEpoch !== sessionEpoch || (readAppSession(Taro)?.userId ?? null) !== owner) throw sessionChangedError() }
+    let data: RawStatusPayload
+    try {
+      const response = await requestJson<ApiEnvelope<RawStatusPayload> | RawStatusPayload>(`/api/matelink/v1/cars/${carId}/snapshot`)
+      checkOwner(); data = unwrap(response)
+    } catch (error) {
+      if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 501)) throw error
+      checkOwner()
+      const fallback = await matelinkApi.getCarStatus(carId, car)
+      checkOwner(); return fallback
+    }
+    assertVehicle(data, carId, car); assertVehicle(data.status, carId, car)
+    if (!isRecord(data.status)) throw new ApiError(errorMessages.invalid_api_response, { code: 'invalid_api_response' })
+    return normalizeCarStatus(data.status, data.observed_at ?? null, data.source ?? null, data.units, data.field_sources)
   },
 
   async getReadiness(carId: number, car?: Car): Promise<DataReadiness> {

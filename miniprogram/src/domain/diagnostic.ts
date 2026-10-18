@@ -22,8 +22,8 @@ export function diagnosticSteps(input: DiagnosticInput = {}): DiagnosticStep[] {
   const history = input.history
   const identity = Boolean(input.sessionReady && input.car?.stableId.trim())
   const remoteIdentity = identity && input.car?.remoteVerified !== false
-  const fields = input.status && Object.entries(input.status).some(([key, value]) =>
-    !['source', 'observedAt', 'model', 'trim', 'exteriorColor', 'wheelType'].includes(key) && value !== null)
+  const observationKeys: ReadonlyArray<keyof CarStatus> = ['state', 'batteryLevel', 'ratedRange', 'idealRange', 'estimatedRange', 'odometer', 'location', 'geofence', 'locked', 'sentryMode', 'windowsOpen', 'doorsOpen', 'trunkOpen', 'frunkOpen', 'isClimateOn', 'isPreconditioning', 'insideTemp', 'outsideTemp', 'pluggedIn', 'speed', 'power', 'shiftState', 'heading', 'chargingState', 'chargeEnergyAdded', 'chargerPower', 'chargerVoltage', 'chargerActualCurrent', 'timeToFullChargeHours', 'chargeLimitSoc', 'chargerPhases', 'chargeCurrentRequest', 'chargeCurrentRequestMax', 'chargePortDoorOpen']
+  const fields = input.status && (observationKeys.some(key => input.status![key] != null) || Object.values(input.status.tpms?.wheels ?? {}).some(row => row.pressureBar != null))
   const received = identity && Boolean(fields)
   const time = input.status?.observedAt ?? null
   const observed = time && Number.isFinite(Date.parse(time))

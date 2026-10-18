@@ -473,6 +473,9 @@ describe('MateLink API transport', () => {
       isClimateOn: false, insideTemp: 0, outsideTemp: 0, pluggedIn: false, speed: 0, power: 0, shiftState: 'P', heading: 0,
       chargingState: 'Disconnected', chargeEnergyAdded: 0, chargerPower: 0,
       observedAt: '2026-09-13T09:00:00Z', source: 'telemetry_mqtt',
+      idealRange: null, estimatedRange: null, chargerVoltage: null, chargerActualCurrent: null, timeToFullChargeHours: null,
+      chargeLimitSoc: null, chargerPhases: null, chargeCurrentRequest: null, chargeCurrentRequestMax: null, chargePortDoorOpen: null,
+      isPreconditioning: null, geofence: null, fieldSources: {},
     })
   })
 })

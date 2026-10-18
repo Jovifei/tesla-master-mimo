@@ -70,6 +70,22 @@ export type RawCar = {
 }
 
 export type CarStatus = {
+  idealRange?: number | null
+  estimatedRange?: number | null
+  chargerVoltage?: number | null
+  chargerActualCurrent?: number | null
+  /** Tesla's time_to_full_charge is hours, not minutes. */
+  timeToFullChargeHours?: number | null
+  chargeLimitSoc?: number | null
+  chargerPhases?: number | null
+  chargeCurrentRequest?: number | null
+  chargeCurrentRequestMax?: number | null
+  chargePortDoorOpen?: boolean | null
+  isPreconditioning?: boolean | null
+  /** Online-only location label; never persisted in the vehicle snapshot cache. */
+  geofence?: string | null
+  /** Source identifiers only; package observedAt is not a field observation clock. */
+  fieldSources?: Record<string, string>
   tpms?: TpmsSnapshot
   state: string | null
   model: string | null
@@ -121,10 +137,13 @@ export type RawCarStatus = {
   battery_details?: {
     battery_level?: number | null
     rated_battery_range?: number | null
+    ideal_battery_range?: number | null
+    est_battery_range?: number | null
   }
   car_geodata?: {
     latitude?: number | null
     longitude?: number | null
+    geofence?: string | null
   }
   driving_details?: {
     shift_state?: string | null
@@ -134,6 +153,7 @@ export type RawCarStatus = {
   }
   climate_details?: {
     is_climate_on?: boolean | null
+    is_preconditioning?: boolean | null
     inside_temp?: number | null
     outside_temp?: number | null
   }
@@ -142,7 +162,25 @@ export type RawCarStatus = {
     charging_state?: string | null
     charge_energy_added?: number | null
     charger_power?: number | null
+    charger_voltage?: number | null
+    charger_actual_current?: number | null
+    time_to_full_charge?: number | null
+    charge_limit_soc?: number | null
+    charger_phases?: number | null
+    charge_current_request?: number | null
+    charge_current_request_max?: number | null
+    charge_port_door_open?: boolean | null
   }
+}
+
+export type RawStatusPayload = { status?: RawCarStatus | null; observed_at?: string | null; source?: string | null; units?: unknown; field_sources?: unknown }
+
+/** Bounded provenance map projection, shared by HTTP parsing and cache reopening. */
+export function statusFieldSources(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value).filter(([key, source]) =>
+    /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key) && !['constructor', 'prototype', '__proto__'].includes(key) &&
+    typeof source === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(source)).slice(0, 64))
 }
 
 export type RawTpmsDetails = {

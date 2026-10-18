@@ -1,5 +1,6 @@
 import { readTariff, tariffKey } from '../domain/tariff'
 import { validTpmsProfile } from '../domain/tpms_alerts'
+import { validVehicleAppearance } from './vehicle_appearance'
 import type { WechatStorage } from './session'
 
 const encode = (value: string) => encodeURIComponent(value).replace(/\./g, '%2E')
@@ -24,7 +25,7 @@ export function clearNewAccountCaches(storage: Pick<WechatStorage, 'getStorageSy
         continue
       }
       if (value.schema !== 1 || value.scope !== key) continue
-      for (const namespace of ['tpms', 'events', 'manual-trips', 'charge-cost', 'tpms-profile'] as const) {
+      for (const namespace of ['tpms', 'events', 'manual-trips', 'charge-cost', 'tpms-profile', 'vehicle-appearance'] as const) {
         const prefix = `matelink.${namespace}.v1.${owner}`
         if (!key.startsWith(prefix)) continue
         const suffix = key.slice(prefix.length).split('.')
@@ -33,7 +34,8 @@ export function clearNewAccountCaches(storage: Pick<WechatStorage, 'getStorageSy
         if (!validSuffix) continue
         const known = namespace === 'tpms' ? Array.isArray(value.points) : namespace === 'events' ? record(value.sources) !== null :
           namespace === 'manual-trips' ? Array.isArray(value.trips) : namespace === 'charge-cost' ? Array.isArray(value.rows) :
-            value.source === 'user_configured' && validTpmsProfile(value.profile)
+            namespace === 'tpms-profile' ? value.source === 'user_configured' && validTpmsProfile(value.profile) :
+              value.source === 'user_configured' && validVehicleAppearance(value.config)
         if (known) storage.removeStorageSync(key)
       }
     } catch { /* Preserve unreadable/unknown records and continue checking other exact owned keys. */ }

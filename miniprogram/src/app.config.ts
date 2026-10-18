@@ -1,3 +1,5 @@
+import { vehicleAssetPackages } from '../vehicle-assets.config'
+
 export default defineAppConfig({
   darkmode: true,
   pages: [
@@ -11,6 +13,7 @@ export default defineAppConfig({
     'pages/insights/index',
     'pages/tools/index',
   ],
+  subpackages: vehicleAssetPackages,
   window: {
     navigationBarTitleText: 'MateLink',
     navigationBarBackgroundColor: '#f5f7f9',

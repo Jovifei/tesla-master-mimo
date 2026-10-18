@@ -1,5 +1,7 @@
 # MateLink App / 小程序完整入口与数据链矩阵
 
+2026-10-18续修：Dashboard布局/车色及手动外观选择见 `RPT-2026-10-18-dashboard-exact-and-appearance.md`。下方2026-10-16域名阻断为历史记录；域名请求已通达，真实登录/手机按Jovi本轮选择暂不执行。其它数据合同和深层功能缺口继续保留。
+
 本表以实际 Android `ui/navigation/NavGraph.kt` 的全部 `Screen` 及 `ui/screens/more/MoreScreen.kt` 为入口合同。日期为阶段标识，不把跨午夜后继续实施拆成新阶段。冻结基线 main `92cbf11ac0fd688f7eb3ba1cfa610910d79637fb`、parent `d951853e4c81ebb05c0a7ce6045bbe81014a92e8`；PR18 已合并。基线 CI 不能替最终候选 SHA 背书。
 
 判定：MATCH 表示所列源码/合成消费者合同已验证；FIX_REQUIRED 表示缺少实现或仍有明确行为差距；PLATFORM_DIFFERENCE 必须有真实平台能力限制证据；NOT_VERIFIED 表示已有实现但尚无所需运行/平台证据。仅入口可点击、共享标题、空卡或通用统计摘要，不能使整页获得 MATCH。未移植页面必须记 FIX_REQUIRED，不能因为工作量或阶段优先级记平台差异。
@@ -18,7 +20,7 @@ Android 源文件均以 `android/app/src/main/java/com/matelink/` 为前缀；Mi
 | TpmsSettings | `ui/screens/settings/TpmsSettingsScreen.kt` | `pages/tools/index?kind=tpms`（设置部分） | MATCH（源码/11消费者测试）：目标/高低阈值、启停、变化阈值0.1–2bar及1–720小时、精确作用域保存/重开、坏档案保留与迟到编辑拒写。仅对真实新鲜逐轮观测作前台比较；后台通知/授权拒绝仍NOT_VERIFIED。 |
 | AmapSetup | `ui/screens/map/AmapSetupGuideScreen.kt`、Settings地图入口 | `pages/tools/index?kind=location` | FIX_REQUIRED：App地图配置/可用性反馈不能用经纬度文本替代；微信地图域名/权限待核实。 |
 | AmapPreview | `ui/screens/map/AmapMapScreen.kt` | `pages/tools/index?kind=location` | FIX_REQUIRED：地图预览/失败重试/位置定位交互需独立验证；未证实平台无法实现。 |
-| Dashboard | `ui/screens/dashboard/` | `pages/vehicle/index` | MATCH（解析/缓存合同）：SOC%、公制续航/里程、速度、负功率/0/false、来源缺失不造值、TPMS逐轮时间。NOT_VERIFIED：完整渲染与实际车辆字段。 |
+| Dashboard | `ui/screens/dashboard/` | `pages/vehicle/index` | SOURCE_MATCH：按实际Header/HUD/Hero/InfoCard顺序、间距和字段层级实现，97原图按车型/车色/轮毂匹配；支持隔离的手选及默认黑色焕新Y预览。合同保留单位、负功率/0/false、源/时间未知及TPMS逐轮时间。开发工具合成图像与页面单独取证；真实账号/车辆/手机、用户最终视觉确认NOT_VERIFIED。无跨端自定义照片同步，年款缺失允许手选且不猜焕新。 |
 | More（第四Tab） | `ui/screens/more/MoreScreen.kt` | `pages/me/index`（显示“更多”） | MATCH（源码入口）：分析/报告/系统分组及已有普通行程/长途/分析/报告/设置路由；就绪清单沿用实际车辆诊断。NOT_VERIFIED：微信原生导航与返回。 |
 | About | `ui/screens/about/AboutScreen.kt` | `pages/tools/index?kind=about` | MATCH（源码）：当前候选版本、服务条款/隐私入口及返回。MATCH（源码）：本版更新说明及问题反馈地址复制；NOT_VERIFIED：微信实际页面。 |
 | Charges | `ui/screens/charges/` | `pages/charges/index` | MATCH（源码合同）：实际币种、输入/电池能量分离、0保留、分页/筛选/详情返回及隔离回归。NOT_VERIFIED：开发工具渲染。 |

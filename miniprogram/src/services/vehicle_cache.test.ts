@@ -18,6 +18,21 @@ describe('scoped vehicle snapshot cache', () => {
     expect(value.location).toBeNull(); expect(value.source).toBe(sample.source)
     expect(JSON.stringify([...s.data.values()])).not.toContain('latitude')
   })
+  it('revalidates new HUD fields and old private snapshot extras without rewriting original evidence on read', () => {
+    const s = store(); writeVehicleCache(s, 'owner', origin, 'uid-A', sample)
+    const key = [...s.data.keys()][0]
+    const old = { schema: 1, scope: key, savedAt: '2099-01-01T00:00:00Z', status: { ...sample,
+      idealRange: 0, estimatedRange: 100, chargerVoltage: -1, chargerActualCurrent: -4, timeToFullChargeHours: 0, chargeLimitSoc: 50.5,
+      chargerPhases: 1.5, chargeCurrentRequest: NaN, chargeCurrentRequestMax: 0, chargePortDoorOpen: false, isPreconditioning: false,
+      shiftState: 'not-real', geofence: 'private old geofence', cachedAddress: 'private address', fieldSources: { Soc: 'telemetry_mqtt', constructor: 'private-token' } } }
+    s.data.set(key, old)
+    const value = readVehicleCache(s, 'owner', origin, 'uid-A')!
+    expect(value).toMatchObject({ idealRange: 0, estimatedRange: 100, chargerVoltage: null, chargerActualCurrent: -4, timeToFullChargeHours: 0,
+      chargeLimitSoc: null, chargerPhases: null, chargeCurrentRequest: null, chargeCurrentRequestMax: 0, chargePortDoorOpen: false,
+      isPreconditioning: false, shiftState: null, observedAt: sample.observedAt, source: sample.source, fieldSources: { Soc: 'telemetry_mqtt' }, location: null })
+    expect(JSON.stringify(value)).not.toMatch(/private|geofence|cachedAddress|latitude|longitude/)
+    expect(s.data.get(key)).toBe(old)
+  })
   it('isolates origin, account and stable UID', () => {
     const s = store(); writeVehicleCache(s, 'owner', origin, 'uid-A', sample)
     expect(readVehicleCache(s, 'other', origin, 'uid-A')).toBeNull()

@@ -41,3 +41,11 @@ it.each(['tpms','charges','location'])('capability %s permission overrides aggre
 it('pairing permission error overrides its available status',()=>{
  expect(states({sessionReady:true,pairing:{status:'available',virtual_key_url:null,config_synced:true,updated_at:null,error_class:'permission_required'}}).authorization).toBe('WARNING')
 })
+
+it('snapshot metadata alone is not a vehicle observation; real zero and false remain received', () => {
+ const metadata = { source: 'fleet_api', observedAt: '2026-10-16T00:00:00Z', fieldSources: { Soc: 'fleet_api' } } as unknown as CarStatus
+ expect(states({ car, sessionReady: true, status: metadata }).receive).toBe('UNKNOWN')
+ expect(states({ car, sessionReady: true, status: { ...metadata, batteryLevel: 0 } }).receive).toBe('PASS')
+ expect(states({ car, sessionReady: true, status: { ...metadata, locked: false } }).receive).toBe('PASS')
+ expect(states({ car, sessionReady: true, status: { ...metadata, tpms: { wheels: {} } } as CarStatus }).receive).toBe('UNKNOWN')
+})

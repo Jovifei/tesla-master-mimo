@@ -3551,3 +3551,15 @@ Detail interaction review: 419/419 Mini regressions + typecheck PASS. Both detai
 Cache-return review: 440/440 full Mini + typecheck/build PASS; 21 new cases close explicit-unknown/quarantine/correction/new-public-ID return and failed-storage old-cache rollback. Only changed per-canonical records since hide are reconciled into existing list/pages/interval; changed charge core evidence invalidates old side samples. Independent limited re-review20/20+tsc passed. Raw DevTools RED retained; fixed source native GREEN and new same-head CI remain required.
 
 Visual consumer review: actual App CostScreen uses AnalysisWindowSelector Row/horizontalScroll/8dp; Insights lacked its own scoped chip CSS. Five local SCSS rules correct wrapping without data changes. DevTools cost4/range6 actual chip rects share one horizontal top; typecheck PASS. Full same-head CI and fixed clean build required for this final style follow-up.
+
+## 2026-10-16 Reopened exact Dashboard and real WeChat stage
+
+Jovi authorized the API request legal-domain addition and real WeChat qualification, and rejected remaining car-colour/parameter-position differences. Plan: tasks/plans/2026-10-16-dashboard-colour-layout-and-real-wechat.md. Previous8312 source/CI qualification remains literal; visual acceptance is reopened CHANGES_REQUIRED.
+
+- [x] Freeze current Owner1870 files, confirm current PR19/Draft and both source heads.
+- [x] Verify existing public DNS; identify final-consumer white-car hardcoding and Dashboard/history metric-layout contract mismatch.
+- [x] Implement97 original resources in six budgeted packages and App Dashboard layout; add isolated model/generation/year/paint/wheel selection and default black refreshedY preview.
+- [x] Verify actual domain/request after user manual save: HTTP401/request:ok. Browser site-safety block was not bypassed. Real account/vehicle flow NOT_RUN: Jovi explicitly chose no login for this round.
+- [ ] New fixed candidate, rendered comparisons, same-head full CI and final protection/acceptance ledger.
+
+2026-10-18 review:48 files/612 Mini tests plus3 original-asset integrity checks, types/build PASS. Independent review found lowercase/model-alias editor crash; canonical initialization and actual consumer regressions fix it. Native DevTools verifies default black refreshedY and greyY/black3/red refreshedY Image loads, actual vehiclePicker switches, appearance editor and saved black refreshed3 Image, all with separate synthetic account/data labeling. Owner1870 hashes/head92cb unchanged. No production change, callback/subscription send, upload, release or main merge.

@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
 import { clearNewAccountCaches } from './account_cache_cleanup'
+import { DEFAULT_VEHICLE_APPEARANCE, vehicleAppearanceKey, writeVehicleAppearance } from './vehicle_appearance'
 const encode = (value: string) => encodeURIComponent(value).replace(/\./g, '%2E')
 it('deletes only known schema and exact encoded owner/UID suffixes, retaining ambiguous and future archives', () => {
   const origin = 'https://api.example.test', owner = `${encode(origin)}.${encode('a.b')}`
@@ -15,4 +16,17 @@ it('preserves valid-looking tariff records carrying an unrecognized schema', () 
   const values = new Map([[key, value]])
   clearNewAccountCaches({ getStorageSync: name => values.get(name), getStorageInfoSync: () => ({ keys: [...values.keys()] }), removeStorageSync: name => { values.delete(name) } }, 'a', origin)
   expect(values.get(key)).toBe(value)
+})
+it('deletes only the confirmed account appearance settings and preserves preview, other owners and unknown schemas', () => {
+  const values = new Map<string, unknown>(), origin = 'https://api.example.test'
+  const storage = { getStorageSync: (key: string) => values.get(key), setStorageSync: (key: string, value: unknown) => { values.set(key, value) }, getStorageInfoSync: () => ({ keys: [...values.keys()] }), removeStorageSync: (key: string) => { values.delete(key) } }
+  const own = { origin, userId: 'a', stableId: 'uid.a' }, other = { origin, userId: 'b', stableId: 'uid.a' }, preview = { origin, userId: null, stableId: null }
+  for (const scope of [own, other, preview]) expect(writeVehicleAppearance(storage, scope, DEFAULT_VEHICLE_APPEARANCE)).toBe(true)
+  const future = vehicleAppearanceKey({ ...own, stableId: 'future' })!
+  values.set(future, { schema: 2, scope: future, source: 'user_configured', config: DEFAULT_VEHICLE_APPEARANCE })
+  clearNewAccountCaches(storage, 'a', origin)
+  expect(values.has(vehicleAppearanceKey(own)!)).toBe(false)
+  expect(values.has(vehicleAppearanceKey(other)!)).toBe(true)
+  expect(values.has(vehicleAppearanceKey(preview)!)).toBe(true)
+  expect(values.has(future)).toBe(true)
 })

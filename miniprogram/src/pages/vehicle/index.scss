@@ -1,0 +1,568 @@
+.vehicle-page  {
+  --dashboard-primary:#157a86;
+  --dashboard-primary-container:#ddf0f1;
+  --dashboard-warning:#b45309;
+  --dashboard-neutral-soft:#f4f5f6;
+  --dashboard-neutral-unknown:#edeff2;
+  --dashboard-surface:#f9f9fa;
+  --dashboard-text:#1f2937;
+  --dashboard-muted:#6b7280;
+  --dashboard-border:rgba(233,237,242,.48);
+  --dashboard-soft:#edeff2;
+  --dashboard-badge-bg:#ddf0f1;
+  --dashboard-badge-fg:#164e63;
+  --dashboard-warning-bg:rgba(180,83,9,.10);
+  color:var(--dashboard-text);
+  .dashboard-icon {
+    width:36rpx;
+    height:36rpx;
+    flex-shrink:0
+  }
+  .dashboard-toolbar {
+    display:flex;
+    justify-content:space-between;
+    gap:16rpx;
+    margin-bottom:32rpx
+  }
+  .dashboard-title {
+    flex:1;
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    gap:8rpx
+  }
+  .dashboard-title>text:first-child {
+    font-size:56rpx;
+    line-height:1.2;
+    font-weight:700;
+    overflow:hidden;
+    white-space:nowrap;
+    text-overflow:ellipsis
+  }
+  .dashboard-title>text:last-child {
+    font-size:26rpx;
+    color:var(--dashboard-muted)
+  }
+  .dashboard-toolbar-right {
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:4rpx
+  }
+  .dashboard-toolbar-actions {
+    display:flex;
+    align-items:center;
+    gap:8rpx
+  }
+  .dashboard-snapshot-badge {
+    font-size:20rpx;
+    color:var(--dashboard-badge-fg);
+    background:var(--dashboard-badge-bg);
+    border-radius:12rpx;
+    padding:6rpx 12rpx;
+    max-width:180rpx
+  }
+  .dashboard-report-time {
+    color:var(--dashboard-muted);
+    font-size:20rpx
+  }
+  .dashboard-icon-button {
+    margin:0;
+    padding:12rpx;
+    background:transparent;
+    width:60rpx;
+    height:60rpx;
+    line-height:1;
+    display:flex;
+    align-items:center;
+    justify-content:center
+  }
+  .dashboard-icon-button::after,.dashboard-text-button::after,.dashboard-camera-button::after {
+    border:0
+  }
+  .dashboard-text-button {
+    margin:0;
+    padding:8rpx;
+    color:var(--dashboard-primary);
+    background:transparent;
+    font-size:22rpx;
+    line-height:1.3
+  }
+  .dashboard-hero,.dashboard-info-card,.dashboard-hud,.dashboard-history-entry,.dashboard-current-charge,.dashboard-partial-hero {
+    background:var(--dashboard-surface);
+    border:1rpx solid var(--dashboard-border);
+    box-shadow:0 2rpx 6rpx #00000008;
+    border-radius:32rpx
+  }
+  .dashboard-hero {
+    padding:20rpx 32rpx;
+    margin-bottom:32rpx
+  }
+  .dashboard-hero-heading,.dashboard-current-heading {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12rpx;
+    font-size:28rpx;
+    font-weight:600
+  }
+  .dashboard-hero-heading>view,.dashboard-hud-heading>view {
+    display:flex;
+    align-items:center;
+    gap:12rpx
+  }
+  .dashboard-vehicle-state {
+    border-radius:16rpx;
+    background:var(--dashboard-soft);
+    color:var(--dashboard-badge-fg);
+    padding:8rpx 16rpx;
+    font-size:22rpx
+  }
+  .dashboard-vehicle-art {
+    height:330rpx;
+    position:relative;
+    display:flex;
+    justify-content:center;
+    align-items:center
+  }
+  .dashboard-vehicle-image {
+    display:block;
+    height:310rpx;
+    width:96%
+  }
+  .dashboard-vehicle-placeholder {
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    gap:12rpx;
+    font-size:24rpx;
+    color:var(--dashboard-muted)
+  }
+  .dashboard-vehicle-placeholder>.dashboard-icon {
+    width:84rpx;
+    height:84rpx
+  }
+  .dashboard-camera-button {
+    position:absolute;
+    bottom:0;
+    right:0;
+    border-radius:50%;
+    width:68rpx;
+    height:68rpx;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:0;
+    margin:0;
+    background:var(--dashboard-soft)
+  }
+  .dashboard-driving-strip {
+    display:flex;
+    margin:8rpx 0 16rpx
+  }
+  .dashboard-driving-strip>view {
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:6rpx;
+    font-size:28rpx;
+    font-weight:600
+  }
+  .dashboard-driving-strip>view>text:last-child {
+    font-size:22rpx;
+    color:var(--dashboard-muted);
+    font-weight:400
+  }
+  .dashboard-battery-row {
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    margin-top:16rpx
+  }
+  .dashboard-battery-row>view {
+    display:flex;
+    flex-direction:column
+  }
+  .dashboard-soc-value {
+    font-size:90rpx;
+    font-family:"JetBrains Mono",Consolas,Menlo,monospace;
+    font-weight:700;
+    line-height:1.1
+  }
+  .dashboard-soc-label,.dashboard-range>text:last-child {
+    font-size:24rpx;
+    color:var(--dashboard-muted);
+    margin-top:4rpx
+  }
+  .dashboard-range {
+    align-items:flex-end
+  }
+  .dashboard-range>text:first-child {
+    color:var(--dashboard-primary);
+    font-family:"JetBrains Mono",Consolas,Menlo,monospace;
+    font-size:44rpx;
+    font-weight:600
+  }
+  .dashboard-battery-track {
+    background:var(--dashboard-primary-container);
+    height:14rpx;
+    overflow:hidden;
+    border-radius:12rpx;
+    margin-top:16rpx
+  }
+  .dashboard-battery-track>view {
+    height:100%;
+    background:var(--dashboard-primary);
+    border-radius:inherit
+  }
+  .dashboard-charge-target {
+    display:block;
+    font-size:22rpx;
+    color:var(--dashboard-muted);
+    margin-top:10rpx
+  }
+  .dashboard-state-row {
+    display:flex;
+    gap:12rpx;
+    margin-top:16rpx
+  }
+  .dashboard-state-chip {
+    min-width:0;
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:8rpx;
+    padding:14rpx 4rpx;
+    border-radius:24rpx
+  }
+  .dashboard-chip-label {
+    font-size:22rpx;
+    text-align:center
+  }
+  .dashboard-opening-alert {
+    margin-top:16rpx;
+    border-radius:16rpx;
+    padding:16rpx;
+    background:var(--dashboard-warning-bg);
+    color:var(--dashboard-warning);
+    font-size:22rpx
+  }
+  .dashboard-opening-alert>view:first-child,.dashboard-opening-grid>view {
+    display:flex;
+    align-items:center;
+    gap:8rpx
+  }
+  .dashboard-opening-grid {
+    display:flex;
+    flex-wrap:wrap;
+    margin-top:10rpx;
+    gap:12rpx
+  }
+  .dashboard-opening-grid>view {
+    width:calc(50% - 6rpx)
+  }
+  .dashboard-location-row,.dashboard-temperature-row {
+    display:flex;
+    gap:24rpx;
+    margin-bottom:32rpx
+  }
+  .dashboard-info-card {
+    flex:1;
+    min-width:0;
+    padding:24rpx
+  }
+  .dashboard-info-heading {
+    display:flex;
+    align-items:center;
+    gap:12rpx;
+    margin-bottom:12rpx
+  }
+  .dashboard-info-label {
+    color:var(--dashboard-muted);
+    font-size:22rpx
+  }
+  .dashboard-info-value {
+    display:block;
+    font-size:28rpx;
+    font-weight:600;
+    line-height:1.35;
+    overflow:hidden;
+    white-space:nowrap;
+    text-overflow:ellipsis
+  }
+  .dashboard-info-hint {
+    display:flex;
+    align-items:center;
+    gap:4rpx;
+    margin-top:8rpx;
+    font-size:20rpx;
+    color:var(--dashboard-warning)
+  }
+  .dashboard-info-hint .dashboard-icon {
+    width:24rpx;
+    height:24rpx
+  }
+  .dashboard-map-card {
+    height:400rpx;
+    border-radius:24rpx;
+    overflow:hidden;
+    margin-bottom:32rpx
+  }
+  .dashboard-map-card>map {
+    width:100%;
+    height:100%
+  }
+  .dashboard-map-unavailable {
+    height:100%;
+    background:var(--dashboard-neutral-soft);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    font-size:24rpx
+  }
+  .dashboard-section-title {
+    display:block;
+    font-size:24rpx;
+    font-weight:600;
+    margin-bottom:16rpx
+  }
+  .dashboard-tpms {
+    margin-bottom:32rpx
+  }
+  .dashboard-tpms-row {
+    display:flex;
+    gap:24rpx
+  }
+  .dashboard-history-entry {
+    display:flex;
+    align-items:center;
+    gap:24rpx;
+    padding:24rpx;
+    margin-bottom:32rpx
+  }
+  .dashboard-history-entry>view {
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    gap:8rpx
+  }
+  .dashboard-history-entry>view>text:first-child {
+    font-size:28rpx;
+    font-weight:600
+  }
+  .dashboard-history-entry>view>text:last-child {
+    font-size:22rpx;
+    color:var(--dashboard-muted)
+  }
+  .dashboard-hud {
+    padding:24rpx;
+    margin-bottom:32rpx
+  }
+  .dashboard-hud-heading {
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:26rpx;
+    font-weight:600
+  }
+  .dashboard-live-dot {
+    width:12rpx;
+    height:12rpx;
+    background:var(--dashboard-primary);
+    border-radius:50%
+  }
+  .dashboard-hud-inline {
+    font-size:22rpx;
+    color:var(--dashboard-muted)
+  }
+  .dashboard-hud-row {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-top:20rpx;
+    gap:16rpx
+  }
+  .dashboard-hud-value {
+    display:flex;
+    flex-direction:column;
+    gap:8rpx;
+    min-width:0
+  }
+  .dashboard-hud-number {
+    font-family:"JetBrains Mono",Consolas,Menlo,monospace;
+    font-weight:600;
+    font-size:28rpx
+  }
+  .dashboard-hud-primary .dashboard-hud-number {
+    font-size:48rpx
+  }
+  .dashboard-hud-driving .dashboard-hud-primary .dashboard-hud-number {
+    font-size:72rpx
+  }
+  .dashboard-hud-label {
+    font-size:22rpx;
+    color:var(--dashboard-muted)
+  }
+  .dashboard-hud-right {
+    align-items:flex-end
+  }
+  .dashboard-hud-gear {
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:8rpx;
+    font-size:22rpx
+  }
+  .dashboard-hud-gear>text:first-child {
+    width:88rpx;
+    height:88rpx;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family:"JetBrains Mono",Consolas,Menlo,monospace;
+    font-size:44rpx;
+    background:var(--dashboard-primary-container);
+    border-radius:50%
+  }
+  .dashboard-hud-collapsed {
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:20rpx 24rpx;
+    border-radius:24rpx;
+    background:var(--dashboard-primary-container);
+    font-size:24rpx;
+    margin-bottom:32rpx
+  }
+  .dashboard-hud-collapsed>view {
+    display:flex;
+    align-items:center;
+    gap:12rpx
+  }
+  .dashboard-current-charge {
+    padding:24rpx;
+    margin-bottom:32rpx
+  }
+  .dashboard-current-heading {
+    justify-content:flex-start
+  }
+  .dashboard-current-row {
+    display:flex;
+    gap:16rpx;
+    margin-top:24rpx
+  }
+  .dashboard-current-row>view {
+    flex:1
+  }
+  .dashboard-current-row .dashboard-hud-label {
+    order:-1
+  }
+  .dashboard-current-row .dashboard-hud-number {
+    font-size:28rpx
+  }
+  .dashboard-partial {
+    display:flex;
+    flex-direction:column;
+    gap:32rpx;
+    margin-bottom:32rpx
+  }
+  .dashboard-partial .dashboard-location-row,.dashboard-partial .dashboard-temperature-row {
+    margin:0
+  }
+  .dashboard-partial-hero {
+    padding:24rpx;
+    font-size:24rpx;
+    color:var(--dashboard-muted)
+  }
+  .dashboard-partial-actions {
+    display:flex;
+    gap:24rpx
+  }
+  .dashboard-partial-actions>button {
+    flex:1
+  }
+  .dashboard-evidence {
+    display:flex;
+    flex-direction:column;
+    gap:8rpx;
+    font-size:22rpx;
+    color:var(--dashboard-muted);
+    margin-bottom:24rpx
+  }
+}
+.vehicle-page .dashboard-art-placeholder  {
+  position: absolute;
+  inset: 0;
+  background: var(--dashboard-surface);
+  pointer-events: none;
+}
+.vehicle-page .dashboard-art-placeholder button  {
+  pointer-events: auto;
+}
+.vehicle-page .dashboard-icon-dark  {
+  display: none;
+}
+@media (prefers-color-scheme: dark)  {
+  .vehicle-page  {
+    --dashboard-primary:#8cccd2;
+    --dashboard-primary-container:#164e63;
+    --dashboard-neutral-soft:#20252b;
+    --dashboard-neutral-unknown:#282d34;
+    --dashboard-surface:#191d22;
+    --dashboard-text:#f5f6f7;
+    --dashboard-muted:#b7bdc6;
+    --dashboard-border:rgba(50,56,64,.48);
+    --dashboard-soft:#282d34;
+    --dashboard-badge-bg:#164e63;
+    --dashboard-badge-fg:#cffafe;
+  }
+  .vehicle-page .dashboard-icon-light  {
+    display: none;
+  }
+  .vehicle-page .dashboard-icon-dark  {
+    display: block;
+  }
+}
+.vehicle-page .dashboard-snapshot-badge  {
+  background: #737373;
+  color: #fff;
+  font-size: 24rpx;
+  border-radius: 56rpx;
+  padding: 12rpx 24rpx;
+}
+.vehicle-page .dashboard-snapshot-live  {
+  background: #047857;
+}
+.vehicle-page .dashboard-snapshot-asleep, .vehicle-page .dashboard-snapshot-cached  {
+  background: #607d8b;
+}
+.vehicle-page .dashboard-snapshot-history  {
+  background: #b45309;
+}
+.vehicle-page .dashboard-icon-button  {
+  width: 96rpx;
+  height: 96rpx;
+}
+.vehicle-page .dashboard-icon-button .dashboard-icon  {
+  width: 48rpx;
+  height: 48rpx;
+}
+.vehicle-page .dashboard-appearance-label { position:absolute;left:0;top:0;font-size:20rpx;color:#6b7280;max-width:90%; }
+.vehicle-page .empty-state .dashboard-vehicle-art { width:100%; }
+.vehicle-page .appearance-overlay { position:fixed;inset:0;z-index:1000;background:#0008;display:flex;align-items:center;justify-content:center;padding:32rpx; }
+.vehicle-page .appearance-dialog { width:100%;height:85vh;border-radius:32rpx;padding:32rpx;box-sizing:border-box;background:#f9f9fa;box-shadow:0 8rpx 32rpx #0002; }
+.vehicle-page .appearance-title { display:block;font-size:36rpx;font-weight:600;margin-bottom:16rpx; }
+.vehicle-page .appearance-description { display:block;font-size:24rpx;line-height:1.5;color:#6b7280;margin:12rpx 0 24rpx; }
+.vehicle-page .appearance-field { display:flex;align-items:center;gap:24rpx;margin:20rpx 0;font-size:28rpx; }
+.vehicle-page .appearance-field>text { width:88rpx;flex-shrink:0; }
+.vehicle-page .appearance-field>picker { flex:1;min-width:0; }
+.vehicle-page .appearance-field>picker>view { display:flex;justify-content:space-between;gap:16rpx;border:1rpx solid #d5d9dd;border-radius:12rpx;padding:16rpx; }
+@media (prefers-color-scheme:dark) {
+ .vehicle-page .appearance-dialog { background:#191d22; }
+ .vehicle-page .appearance-description,.vehicle-page .dashboard-appearance-label { color:#b7bdc6; }
+ .vehicle-page .appearance-field>picker>view { border-color:#42474f; }
+}
