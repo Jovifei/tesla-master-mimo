@@ -1,7 +1,7 @@
 import type { WechatStorage } from '../services/session'
 import { isHistoryQuarantined } from './history'
 
-export type HistoryQuery = { startDate: string; endDate: string; minDistanceKm: number }
+export type HistoryQuery = { startDate: string; endDate: string; minDistanceKm: number; maxDistanceKm?: number }
 export const emptyHistoryQuery = (): HistoryQuery => ({ startDate: '', endDate: '', minDistanceKm: 0 })
 function civilDate(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return ''
@@ -13,7 +13,8 @@ export function normalizeHistoryQuery(value: unknown): HistoryQuery {
   let startDate = civilDate(row.startDate), endDate = civilDate(row.endDate)
   if (startDate && endDate && startDate > endDate) [startDate, endDate] = [endDate, startDate]
   const minDistanceKm = typeof row.minDistanceKm === 'number' && Number.isFinite(row.minDistanceKm) && row.minDistanceKm >= 0 && row.minDistanceKm <= 10000 ? row.minDistanceKm : 0
-  return { startDate, endDate, minDistanceKm }
+  const maxDistanceKm = typeof row.maxDistanceKm === 'number' && Number.isFinite(row.maxDistanceKm) && row.maxDistanceKm > minDistanceKm && row.maxDistanceKm <= 10000 ? row.maxDistanceKm : undefined
+  return { startDate, endDate, minDistanceKm, ...(maxDistanceKm === undefined ? {} : { maxDistanceKm }) }
 }
 export function readHistoryQuery(storage: Pick<WechatStorage, 'getStorageSync'>, scope: string): HistoryQuery {
   try { return normalizeHistoryQuery(storage.getStorageSync(`${scope}.query`)) } catch { return emptyHistoryQuery() }
@@ -30,6 +31,7 @@ export function filterHistory<T extends { startDate?: string | null; distanceKm?
   return rows.filter(row => {
     if (isHistoryQuarantined(row)) return false
     if (query.minDistanceKm > 0 && (row.distanceKm == null || !Number.isFinite(row.distanceKm) || row.distanceKm < query.minDistanceKm)) return false
+    if (query.maxDistanceKm != null && (row.distanceKm == null || !Number.isFinite(row.distanceKm) || row.distanceKm < 0 || row.distanceKm >= query.maxDistanceKm)) return false
     if (!query.startDate && !query.endDate) return true
     const date = typeof row.startDate === 'string' && row.startDate ? new Date(row.startDate) : null
     if (!date || !Number.isFinite(date.getTime())) return false

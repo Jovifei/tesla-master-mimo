@@ -45,8 +45,8 @@ export default function LoadedDriveChart({ items }: { items: readonly Drive[] })
       const number = getValue(group)
       const missing = kind === 1 ? group.missingDistance : kind === 2 ? group.missingSpeed : 0
       return <View className="chart-column" key={group.day}>
-        <Text className="chart-value">{number == null ? '暂无' : displayNumber(number, kind === 0 || (kind === 2 && Number.isInteger(number)) ? 0 : 1)}</Text>
-        <View className="chart-track"><View className="chart-bar" style={{ height: number == null || max === 0 ? '0%' : `${number / max * 100}%` }} /></View>
+        <Text className="chart-value">{`${number == null ? '暂无' : displayNumber(number, kind === 0 || (kind === 2 && Number.isInteger(number)) ? 0 : 1)} ${unit}`}</Text>
+        <View className="chart-track">{number == null ? null : <View className="chart-bar" style={{ height: max === 0 ? '0%' : `${number / max * 100}%` }} />}</View>
         <Text className="chart-date">{group.day.slice(5)}</Text>
         {missing ? <Text className="chart-missing">缺 {missing} 条</Text> : null}
       </View>

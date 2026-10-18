@@ -59,12 +59,12 @@ export const legalDocuments: Record<LegalDocumentKind, LegalDocument> = {
   privacy: {
     title: 'MateLink 隐私指引',
     version: JOURVOLT_PRIVACY_VERSION,
-    summary: '本指引说明微信登录、Tesla 授权和车辆数据在 MateLink 小程序中的处理边界。',
+    summary: '本指引说明特斯拉账号登录、Tesla 授权和车辆数据在 MateLink 小程序中的处理边界。',
     sections: [
       {
         title: '1. 我们处理的信息',
         paragraphs: [
-          '微信登录时，小程序向服务端提交一次性登录凭证，用于建立当前微信身份对应的 MateLink 会话。服务端按微信应用和账号隔离身份，不在页面展示 OpenID 等平台标识。',
+          '登录由 Tesla 官方页面验证特斯拉账号，服务端使用同一 Tesla 身份对应的 MateLink 账号建立会话，以读取该账号已有车辆和历史数据。主登录不要求微信身份凭证。',
           '完成 Tesla 官方授权后，服务端会处理账号会话、车辆标识、车辆状态、位置、行程、充电和持续遥测所需的数据。授权令牌在服务端加密保存，小程序不保存 Tesla 密码。',
         ],
       },
@@ -84,13 +84,13 @@ export const legalDocuments: Record<LegalDocumentKind, LegalDocument> = {
       {
         title: '4. 第三方服务',
         paragraphs: [
-          '登录会使用微信提供的平台能力；车辆授权与数据访问会使用 Tesla 官方服务。相应处理同时受微信和 Tesla 的规则与隐私说明约束。',
+          '小程序运行会使用微信提供的平台能力；账号登录、车辆授权与数据访问会使用 Tesla 官方服务。相应处理同时受微信和 Tesla 的规则与隐私说明约束。',
         ],
       },
       {
         title: '5. 用户权利',
         paragraphs: [
-          '用户可以退出登录、重新授权或在“我的”页面申请注销账号。退出、卸载或清除小程序数据不等于删除云端存档；账号注销会删除服务端账号关联数据并尽力清理当前设备中的账号历史缓存，成功后仍应前往 Tesla 官方页面撤销第三方授权。',
+          '用户可以退出登录、重新授权或在“更多”页面申请注销账号。退出、卸载或清除小程序数据不等于删除云端存档；账号注销会删除服务端账号关联数据并尽力清理当前设备中的账号历史缓存，成功后仍应前往 Tesla 官方页面撤销第三方授权。',
         ],
       },
       {

@@ -1,4 +1,7 @@
+import { vehicleAssetPackages } from '../vehicle-assets.config'
+
 export default defineAppConfig({
+  darkmode: true,
   pages: [
     'pages/vehicle/index',
     'pages/drives/index',
@@ -6,24 +9,28 @@ export default defineAppConfig({
     'pages/me/index',
     'pages/legal/index',
     'pages/auth/index',
+    'pages/analysis/index',
+    'pages/insights/index',
+    'pages/tools/index',
   ],
+  subpackages: vehicleAssetPackages,
   window: {
     navigationBarTitleText: 'MateLink',
-    navigationBarBackgroundColor: '#f7f8fa',
+    navigationBarBackgroundColor: '#f5f7f9',
     navigationBarTextStyle: 'black',
-    backgroundColor: '#f7f8fa',
+    backgroundColor: '#f5f7f9',
     backgroundTextStyle: 'light',
   },
   tabBar: {
-    color: '#8a8f98',
-    selectedColor: '#111827',
+    color: '#737373',
+    selectedColor: '#171717',
     backgroundColor: '#ffffff',
     borderStyle: 'white',
     list: [
-      { pagePath: 'pages/vehicle/index', text: '车辆' },
-      { pagePath: 'pages/drives/index', text: '行程' },
-      { pagePath: 'pages/charges/index', text: '充电' },
-      { pagePath: 'pages/me/index', text: '我的' },
+      { pagePath: 'pages/vehicle/index', text: '仪表盘', iconPath: 'assets/tabs/vehicle.png', selectedIconPath: 'assets/tabs/vehicle-selected.png' },
+      { pagePath: 'pages/drives/index', text: '行程', iconPath: 'assets/tabs/route.png', selectedIconPath: 'assets/tabs/route-selected.png' },
+      { pagePath: 'pages/charges/index', text: '充电', iconPath: 'assets/tabs/energy.png', selectedIconPath: 'assets/tabs/energy-selected.png' },
+      { pagePath: 'pages/me/index', text: '更多', iconPath: 'assets/tabs/analysis.png', selectedIconPath: 'assets/tabs/analysis-selected.png' },
     ],
   },
 })

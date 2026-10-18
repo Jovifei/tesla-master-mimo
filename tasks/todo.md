@@ -1,3 +1,35 @@
+# 2026-10-18 真机 App 与 Mini 页面差异修正
+
+- [x] 比对同一手机 App2.1.38和已登录 Mini 的代表页面与真实数据。
+- [x] 修正首页可见的名称、位置/里程格式、卡片排布与底栏；地址与胎压缺可信云来源另列。
+- [x] 补齐实机确认的行程、充电、更多页结构差异；行程统计依据App合格微挪车规则，精确实机数字尚待新版复看。
+- [ ] 消费者回归/类型/构建已通过；固定SHA后重新构建、微信新预览真机复看并记录账户与数据作用域。
+
+Review：进行中；本地集成 Mini 687+资源6、类型、weapp构建通过；微信原生“更多”安全区/本地图标与行程未登录标题实渲染通过。新预览扫码/真实账户逐页验收待完成；详细计划与差异docs/RPT-2026-10-18-phone-app-mini-visual-parity.md。
+
+# 2026-10-18 新接口部署与真实 Tesla 登录验收
+
+Jovi已明确授权部署新接口并真实登录验收；此前本轮“暂不登录/不部署”的限制由此更新。保持App为页面/数据合同；不合并main、不替用户同意条款、不采集密码/MFA。Owner原目录只读，下载与证据均在E:/Claude_allow/Download。
+
+- [x] 核对当前源码内容摘要、Git可追溯性与线上build/image/Compose服务；建立精确部署候选。
+- [x] 复核新增表与旧App兼容；保存当前镜像/数据库备份并隔离恢复演练，准备按镜像回滚。
+- [x] 构建、部署仅API新接口；核验健康、Mini start/status/cancel和App默认start合同，不影响原账号/历史。
+- [x] 微信原生真实登录：由Jovi本人确认协议并完成Tesla官方账号授权；同机同车辆SOC/续航/里程值已比对。
+- [ ] 同账号历史数量/口径及深层页面继续与App比对；复核Owner保护。
+- [x] 记录部署版本/回滚点/真实验收分层及剩余差距。
+
+Review：2c8b765已上线，同SHA CI16/16、备份真实恢复/有界新增表/私密配置往返预检通过，公网App/Mini合同通过。OnePlus已连接、App2.1.38与微信小程序实机对照；Tesla授权与同车辆首页读数通过，历史/布局差距见docs/RPT-2026-10-18-phone-app-mini-visual-parity.md。生产API保持原部署SHA，后续仅Mini客户端修正。
+
+# 2026-10-18 Tesla 主登录与 App 数据合同续修
+
+- [x] 复核中断后实际文件；确认旧微信接口没有服务端实现，Tesla 身份需沿用 App。
+- [x] 完成匿名 Tesla 主入口、Mini 授权事务返回及消费者安全回归。
+- [x] 对齐 App 充电效率资格和 Dashboard 前台刷新规则。
+- [x] 定向与全量 Mini/Go/数据库测试、类型、构建及独立复审。
+- [x] 更新证据与剩余验收边界；真实账号继续遵循 Jovi 暂不登录选择。
+
+Review：Mini661+Node6、类型/构建PASS；真实PG Go418/0/0+vet；复审P2注销回流已修。DevTools实际Tesla主入口、未勾协议禁用/无session；1870 Owner文件0变化。当前目录缺少.git，不重建、不据旧SHA声称新CI；新后端未部署，真实回流/手机未验收。记录：docs/RPT-2026-10-18-tesla-first-app-contract.md。
+
 # 2026-10-02 接收远端 OOM 修复交接
 
 - [x] 读取 ZIP/Prompt，fetch 修复分支，确认 PR #11 Draft/head 16a31c3；隔离工作树接收，未重复 apply。
@@ -3519,3 +3551,49 @@ legacy whole-array paths and original OOM acceptance remain open.
 - [ ] Device/signature/provider/production gates remain NOT_RUN; no main merge or deployment.
 
 Review: docs/RPT-2026-10-11-local-persistent-recovery.md is the current evidence ledger. Existing Owner working-copy task content is preserved separately; only this safe stage summary is appended to the staged public ledger.
+
+## 2026-10-15 Authorized Mini/App parity stage (local dedicated worktree)
+
+Authorization: Jovi approved the full implementation and GitHub candidate stage. The dispatch explicitly supersedes the plan's original E-only location: product changes belong only in C:/Users/Admin/.codex/worktrees/c0fa/app_mimo. E:/project/tesla_master/app_mimo is read-only. No production, main merge, device installation, historical import, credential copying or release.
+
+Baseline: origin/main = 92cbf11ac0fd688f7eb3ba1cfa610910d79637fb, tree 89525f1f0248676e8ba09f6940753189a0aec9ae. Branch codex/miniprogram-parity-20261015. Git inherits an invalid shared core.worktree; always pass --work-tree=<actual absolute worktree> on Git commands. Shared config is unchanged.
+
+Evidence root: E:/Claude_allow/Download/matelink-mini-parity-20261015. Download/cache/test logs/candidates stay under this root. No private Owner configuration copied.
+
+- [x] Read full approved plan, parent and local AGENTS, relevant lessons and current production closeout. Fetch and verify main.
+- [x] Freeze Owner dirty manifest and baseline/source identity; create per-consumer parity matrix.
+- [x] Reproduce and fix data/units/energy/paging/security defects with real parser/controller/storage/page regressions; preserve all existing tests.
+- [x] Complete four-tab interaction, bounded statistics, typography and current README contract.
+- [x] Verify actual TPMS field evidence; implement only qualified per-wheel values and bounded foreground history; record unavailable fields explicitly.
+- [x] Implement isolated durable foreground completion notices with first-import suppression, correction deduplication and correct detail routing.
+- [ ] Shared Android/TS scenarios; Mini tests/typecheck/build/audits; Android and Go/PG/race/TLS/Web/source checks.
+- [ ] Official WeChat tool compile/render/network/cache/domain checks. If login is required, request Jovi QR scan while continuing independent work.
+- [ ] Review full diff, fix issues; commit/push independent branch, attach PR, await actual complete same-SHA CI.
+- [ ] Fixed SHA/tree/parent, package hashes, per-item acceptance and rollback report; Owner manifest unchanged. Experience/release labels remain separate.
+
+Review: in progress. Source candidate, DevTools verification, real device experience and release approval must be recorded separately. Existing baseline CI does not qualify new source.
+
+
+Integration review: App-authoritative visual correction captured in lessons. Implemented full39-entry matrix plus advanced analysis, curves, foreground TPMS/alerts, local trips/manualcost/adjustable tariff, report/export, actual historical instant query. Private Owner1870-file SHA256 snapshot rechecked zero drift. Local Android1023 each/0fail/error (Release8expectedskip), PG16Go404, LinuxTLS29+policy, Web13 passed. FinalMini/CI counts remain in the candidate report.
+
+Platform review: officialDevTools compile/render with urlCheck=true, syntheticUI distinct from real provider. Actualrequest blocked by missingrequestlegaldomain forAppIDwxc84899ab6146f1be; no TLS/domain bypass, upload or release. Subscriptionqualification/templates/consent/recipient/delivery and hand-heldexperienceNOT_RUN. Data-contract gaps and remainingApp-depthrequirements explicitly retained in matrix. This ledger does not label the whole experience/release complete.
+
+Detail interaction review: 419/419 Mini regressions + typecheck PASS. Both detail panels are fixed viewport ScrollViews; verified same-scope curves return restores selected detail and scroll, closing preserves list filters/page/scroll. Cross-car/new-session negatives pass. New commit requires its own full CI and fixed-source build.
+
+Cache-return review: 440/440 full Mini + typecheck/build PASS; 21 new cases close explicit-unknown/quarantine/correction/new-public-ID return and failed-storage old-cache rollback. Only changed per-canonical records since hide are reconciled into existing list/pages/interval; changed charge core evidence invalidates old side samples. Independent limited re-review20/20+tsc passed. Raw DevTools RED retained; fixed source native GREEN and new same-head CI remain required.
+
+Visual consumer review: actual App CostScreen uses AnalysisWindowSelector Row/horizontalScroll/8dp; Insights lacked its own scoped chip CSS. Five local SCSS rules correct wrapping without data changes. DevTools cost4/range6 actual chip rects share one horizontal top; typecheck PASS. Full same-head CI and fixed clean build required for this final style follow-up.
+
+## 2026-10-16 Reopened exact Dashboard and real WeChat stage
+
+Jovi authorized the API request legal-domain addition and real WeChat qualification, and rejected remaining car-colour/parameter-position differences. Plan: tasks/plans/2026-10-16-dashboard-colour-layout-and-real-wechat.md. Previous8312 source/CI qualification remains literal; visual acceptance is reopened CHANGES_REQUIRED.
+
+- [x] Freeze current Owner1870 files, confirm current PR19/Draft and both source heads.
+- [x] Verify existing public DNS; identify final-consumer white-car hardcoding and Dashboard/history metric-layout contract mismatch.
+- [x] Implement97 original resources in six budgeted packages and App Dashboard layout; add isolated model/generation/year/paint/wheel selection and default black refreshedY preview.
+- [x] Verify actual domain/request after user manual save: HTTP401/request:ok. Browser site-safety block was not bypassed. Real account/vehicle flow NOT_RUN: Jovi explicitly chose no login for this round.
+- [ ] New fixed candidate, rendered comparisons, same-head full CI and final protection/acceptance ledger.
+
+2026-10-18 review:48 files/612 Mini tests plus3 original-asset integrity checks, types/build PASS. Independent review found lowercase/model-alias editor crash; canonical initialization and actual consumer regressions fix it. Native DevTools verifies default black refreshedY and greyY/black3/red refreshedY Image loads, actual vehiclePicker switches, appearance editor and saved black refreshed3 Image, all with separate synthetic account/data labeling. Owner1870 hashes/head92cb unchanged. No production change, callback/subscription send, upload, release or main merge.
+
+Final native review: package-level hung Promise retry defect reproduced against the old Git source in memory (RED), fixed with expiry and request identity, and independently rechecked. Three actual native-component VM cases PASS in addition to3 original-asset cases; the612 Mini cases remain PASS. Final source identity/CI/package signoff is recorded outside the frozen tree in the delivery evidence directory.

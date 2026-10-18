@@ -75,7 +75,7 @@ data class EnergyMetric(
         val capacity = capacityKwh?.takeIf { it.isFinite() && it > 0.0 } ?: return false
         val first = startSoc?.takeIf { it in 0..100 } ?: return false
         val last = endSoc?.takeIf { it in 0..100 } ?: return false
-        if (calculationVersion != 1 || capacityBasis !in setOf("default_assumption", "model_assumption",
+        if (calculationVersion != 1 || capacityBasis !in setOf("model_assumption",
                 "model_trim_assumption", "provided_capacity", "api_reported_current_capacity")) return false
         val expected = (first - last) / 100.0 * capacity
         return first != last && kotlin.math.abs(value - expected) <= 1e-9 * maxOf(1.0, kotlin.math.abs(expected))

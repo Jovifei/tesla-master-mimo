@@ -93,7 +93,7 @@ function qualified(metric: EnergyMetric | null | undefined, start: unknown, end:
       const expected = capacity !== null && from !== null && to !== null ? (from - to) / 100 * capacity : null
       valid = metric.quality === 'estimated' && metric.measurement_point === 'battery_soc' && metric.coverage_kind === 'endpoints' && full &&
         capacity !== null && capacity > 0 && from !== null && to !== null && from !== to && metric.calculation_version === 1 &&
-        ['default_assumption', 'model_assumption', 'model_trim_assumption', 'provided_capacity', 'api_reported_current_capacity'].includes(metric.capacity_basis ?? '') &&
+        ['model_assumption', 'model_trim_assumption', 'provided_capacity', 'api_reported_current_capacity'].includes(metric.capacity_basis ?? '') &&
         expected !== null && Math.abs(metric.value_kwh! - expected) <= 1e-9 * Math.max(1, Math.abs(expected)); break
     }
     case 'session_counter_delta': valid = metric.quality === 'reported' && ['battery_input', 'ac_charger_input'].includes(metric.measurement_point ?? '') && metric.coverage_kind === 'endpoints' && full; break
@@ -173,18 +173,18 @@ export function driveDistanceKm(input: DriveEnergyReceipt): number | null {
   return number(km)
 }
 
-function capacity(car?: Car): { value: number; basis: string; field: string; model: string | null; trim: string | null } {
+function capacity(car?: Car): { value: number; basis: string; field: string; model: string | null; trim: string | null } | null {
   const modelText = text(car?.model), trimText = text(car?.trim)
   const model = modelText?.trim().toUpperCase() ?? '', trim = trimText?.trim().toUpperCase() ?? ''
   const provided = number(car?.capacityKwh)
   if (provided !== null && provided > 0) return { value: provided, basis: car?.capacityBasis == null ? 'provided_capacity' : text(car.capacityBasis) ?? 'unsupported_capacity_basis',
     field: text(car?.capacitySourceField) ?? 'provided_capacity_kwh', model: modelText, trim: trimText }
+  if (!['S', 'X', '3', 'Y'].includes(model)) return null
   let value = 60
   if (model === 'S' || model === 'X') value = trim.includes('100') || trim.includes('PLAID') ? 100 : trim.includes('90') ? 90 : trim.includes('85') ? 85 : trim.includes('75') ? 75 : 100
   else if (model === '3' || model === 'Y') value = trim.includes('PERFORMANCE') || trim.startsWith('P') || ['LONG', 'LR', 'AWD', 'DUAL'].some(x => trim.includes(x)) ? 78.4 : 60
-  const known = ['S', 'X', '3', 'Y'].includes(model)
-  return { value, basis: known ? (trim ? 'model_trim_assumption' : 'model_assumption') : 'default_assumption',
-    field: known ? (trim ? 'car_details.model+trim_badging' : 'car_details.model') : 'default_60_kwh', model: modelText, trim: trimText }
+  return { value, basis: trim ? 'model_trim_assumption' : 'model_assumption',
+    field: trim ? 'car_details.model+trim_badging' : 'car_details.model', model: modelText, trim: trimText }
 }
 
 function projection(value: number | null, distance: unknown, evidence: EnergyMetric | null, why: string | null): DriveEnergy {
@@ -229,7 +229,10 @@ export function resolveDriveEnergy(raw: RawDrive | DriveEnergyReceipt, car?: Car
     return projection(integral, distance, m, complete ? 'complete_power_window' : 'power_integral_short_trip')
   }
   if (from !== null && to !== null && from !== to && from - to >= -30) {
-    const c = capacity(car), value = (from - to) / 100 * c.value
+    const c = capacity(car)
+    if (!c) return projection(null, distance, integral === null ? null : { ...basis, covered_energy_kwh: integral,
+      coverage_seconds: power!.coverageSeconds, coverage_ratio: ratio }, 'capacity_basis_unavailable')
+    const value = (from - to) / 100 * c.value
     const m: EnergyMetric = { ...basis, value_kwh: number(value), method: 'soc_capacity_estimate', measurement_point: 'battery_soc', source_field: 'battery_details',
       quality: 'estimated', time_basis: 'source_report', coverage_kind: 'endpoints', coverage_ratio: 1, covered_energy_kwh: integral,
       capacity_kwh: c.value, capacity_basis: c.basis, capacity_source_field: c.field, capacity_model: c.model, capacity_trim: c.trim,
@@ -343,6 +346,7 @@ export function mergeChargeEnergyRecord(prior: Charge, incoming: Charge, admitte
   if (!compatible || incoming.energy?.evidence) return { ...admittedBase, ...money, source: incoming.source,
     startDate: incoming.startDate, endDate: incoming.endDate, energy: incoming.energy,
     energyAddedKwh: incoming.energy?.batteryInputKwh ?? null, energyUsedKwh: incoming.energy?.inputEnergyKwh ?? null,
+    reportedChargeMode: incoming.reportedChargeMode ?? null,
     chargeMode: incoming.energy?.chargeMode ?? incoming.chargeMode ?? null }
   const proof = prior.energy?.evidence
   const previous = proof ? resolveChargeEnergy({ source: admittedBase.source, start_date: admittedBase.startDate, end_date: admittedBase.endDate, energy_contract: proof }) : prior.energy
@@ -354,5 +358,6 @@ export function mergeChargeEnergyRecord(prior: Charge, incoming: Charge, admitte
     reason: battery !== null || input !== null ? null : 'no_verified_charging_energy',
     evidence: incoming.energy?.evidence ?? previous?.evidence ?? null, chargeMode: incoming.energy?.chargeMode ?? previous?.chargeMode ?? null } : undefined)
   return { ...admittedBase, ...money, energy, energyAddedKwh: energy?.batteryInputKwh ?? null, energyUsedKwh: energy?.inputEnergyKwh ?? null,
+    reportedChargeMode: proof ? prior.reportedChargeMode ?? null : incoming.reportedChargeMode ?? admittedBase.reportedChargeMode ?? null,
     chargeMode: energy?.chargeMode ?? incoming.chargeMode ?? admittedBase.chargeMode }
 }

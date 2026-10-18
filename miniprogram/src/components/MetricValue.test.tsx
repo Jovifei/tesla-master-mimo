@@ -1,13 +1,13 @@
 import React from 'react'
 import renderer from 'react-test-renderer'
 import { expect, it, vi } from 'vitest'
-vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view', Picker: 'picker' }))
+vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view', Image: 'image', Picker: 'picker' }))
 import MetricValue, { displayNumber, peakSpeedKmh } from './MetricValue'
-import { loadedDriveGroups } from './LoadedDriveChart'
+import LoadedDriveChart, { loadedDriveGroups } from './LoadedDriveChart'
 import type { Drive } from '../services/types'
 
 it('renders large value and complete smaller unit independently, including zero/negative/unknown', () => {
-  for (const value of [0, -16.4, null]) {
+  for (const value of [0, -16.4, null, undefined]) {
     const tree = renderer.create(<MetricValue label="平均能耗" value={value} unit="kWh/100km" icon="energy" negative={value != null && value < 0} />)
     expect(tree.root.findByProps({ className: 'metric-value' }).children.join('')).toBe(value == null ? '暂无数据' : String(value))
     expect(tree.root.findByProps({ className: 'metric-unit' }).children.join('')).toBe('kWh/100km')
@@ -35,4 +35,25 @@ it('uses one-decimal presentation without converting tiny non-zero energy into z
     expect(tree.root.findByProps({ className: 'metric-unit' }).children.join('')).toBe('kWh/100km')
     tree.unmount()
   }
+})
+
+it('puts the selected unit on each actual chart value, including genuine zero', () => {
+  const tree = renderer.create(<LoadedDriveChart items={[{ startDate: '2026-10-14T00:00:00Z', distanceKm: 0 } as Drive]} />)
+  expect(tree.root.findByProps({ className: 'chart-value' }).children.join('')).toBe('1 次')
+  renderer.act(() => { tree.root.findByType('picker' as React.ElementType).props.onChange({ detail: { value: 1 } }) })
+  expect(tree.root.findByProps({ className: 'chart-value' }).children.join('')).toBe('0 km')
+  renderer.act(() => { tree.root.findByType('picker' as React.ElementType).props.onChange({ detail: { value: 2 } }) })
+  expect(tree.root.findByProps({ className: 'chart-value' }).children.join('')).toBe('暂无 km/h')
+  expect(tree.root.findAllByProps({ className: 'chart-bar' })).toHaveLength(0)
+  tree.unmount()
+})
+
+it('matches the App telemetry cell hierarchy: icon, number/unit, then label', () => {
+  const tree = renderer.create(<MetricValue label="距离" value={10} unit="km" icon="distance" presentation="telemetry" />)
+  const root = tree.root.findByProps({ className: 'metric' })
+  expect(root.children.filter(child => typeof child !== 'string').map(child => child.props.className)).toEqual([
+    'metric-heading', 'metric-reading ', 'metric-label',
+  ])
+  expect(tree.root.findByProps({ className: 'metric-heading' }).findAllByProps({ className: 'metric-label' })).toHaveLength(0)
+  tree.unmount()
 })

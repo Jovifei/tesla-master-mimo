@@ -1,5 +1,26 @@
 # Lessons
 
+## 2026-10-18 Jovi: actual phone App is the final visual benchmark
+
+- Correction: 已登录小程序真机页即使字段看似完整，位置仍显示经纬度、里程少分组符、底栏名称与App2.1.38不同。旧源码2.1.37/合成图不足以宣布页面一致。
+- Rule: 先在同一手机捕获两端相同真实账号和页面的实际画面，逐项记录文案/位置/数值资格；再从当前消费者向源头追踪并做最小修复。App安装版比E源码更新时，以实机2.1.38为最终可见依据，旧源码只作线索。
+- Acceptance: 数值相同、图片相同和测试绿都不足以证明布局/数据解释一致；每项最终要有真机复看。未知地址不得编造或以精确经纬度替代App地址。
+
+## 2026-10-18 Jovi: Tesla account is the primary login and the existing App owns data rules
+
+- Correction: 小程序首先应登录特斯拉账号，不是先微信登录；页面和数据处理均以已可用App为准。
+- Rule: Trace the App's actual OAuth/session/account identity and repository-to-UI contracts before changing Mini onboarding or calculations. Reuse the Tesla authorization/session flow; do not make WeChat identity a prerequisite for vehicle access or create a separate data account. Keep optional messaging/channel association separate from primary login.
+- Acceptance: Compare the real login entry, account-to-existing-data mapping, metric/units/cache consumers and page positions with App source and runtime evidence. A green Mini-only fixture cannot prove App equivalence or a real-account acceptance.
+
+## 2026-10-16 Jovi: Mini page appearance and metric placement must follow App
+
+- Correction: 小程序页面风格和数据的位置与当前 App 不一致；必须以 Jovi 的 App 为准。
+- Rule: Before changing a Mini page, map the actual current Android page hierarchy, card order, metric positions, colors, typography and primary actions to its Mini counterpart. Use App source and rendered evidence; generic cold-gray/blue-green styling alone is insufficient.
+- Acceptance: Compare all four tabs plus auth/detail states side by side. Retain physically correct data qualification, and explicitly label platform limitations; do not use those differences to justify unrelated layout changes.
+- Consumer rule: Shared filter markup does not bring another page's scoped CSS with it. Verify wrapping and metric positions in every actual consumer; Insights must follow the App AnalysisWindowSelector horizontal Row, not fall back to full-width native buttons.
+- Reopened correction: Jovi still found the vehicle colour and parameter positions different. A white synthetic fixture cannot validate real colour selection. Trace model/paint/wheel/trim through the final image consumer, and compare Dashboard InfoCard independently from history TelemetryMetricCell. Do not reuse one metric layout for both contracts or declare visual acceptance from generic style similarity.
+- Appearance follow-up: Jovi requires automatic account configuration first, manual choices when incomplete, and a default black refreshed ModelY preview. Keep manual/preview settings separate from real vehicle identity and telemetry; year, generation and purchase date are different facts. Verify native Image events, page-show cancellation/reload and canonical model aliases in the actual consumer.
+
 ## 2026-10-02 远端执行与本地交接
 
 - Pattern：Jovi 的协作流程允许网页 GPT 在远端执行并提交独立分支，再把 Prompt/交接包交给本地 Codex，不能固定解释为远端永远只规划。

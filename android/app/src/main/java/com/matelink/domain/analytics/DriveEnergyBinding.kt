@@ -67,7 +67,7 @@ fun DriveDetail.resolveDriveEnergy(
         batteryCapacityKwh?.let { it.isFinite() && it > 0.0 } == true -> "provided_capacity"
         model?.trim()?.uppercase() in setOf("S", "X", "3", "Y") && !trimBadging.isNullOrBlank() -> "model_trim_assumption"
         model?.trim()?.uppercase() in setOf("S", "X", "3", "Y") -> "model_assumption"
-        else -> "default_assumption"
+        else -> null
     } }
     val metric = EnergyMetric(
         valueKwh = estimate.energyKwh,
@@ -122,7 +122,6 @@ fun DriveDetail.resolveDriveEnergy(
             "provided_capacity" -> "provided_capacity_kwh"
             "model_trim_assumption" -> "car_details.model+trim_badging"
             "model_assumption" -> "car_details.model"
-            "default_assumption" -> "default_60_kwh"
             else -> null
         },
         capacityModel = capacity?.let { model }, capacityTrim = capacity?.let { trimBadging },
@@ -152,7 +151,9 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
         else -> 0
     }
     // Capacity belongs to this verified source/vehicle; recompute corrected SOC, never carry old kWh.
-    val chosen = if (detail.energyContract == null && resolved.estimate.source == DriveEnergySource.SOC_CAPACITY_ESTIMATE &&
+    val canUseRetainedCapacity = resolved.estimate.source == DriveEnergySource.SOC_CAPACITY_ESTIMATE ||
+        (resolved.estimate.source == DriveEnergySource.UNAVAILABLE && resolved.estimate.qualityReason == "capacity_basis_unavailable")
+    val chosen = if (detail.energyContract == null && canUseRetainedCapacity &&
         sameWindow && rawPrevious.source == detail.source &&
         current.netEnergyKwh != null && priorMetric?.method == "soc_capacity_estimate" &&
         capacityRank(priorMetric) >= capacityRank(resolved.evidence)) {
