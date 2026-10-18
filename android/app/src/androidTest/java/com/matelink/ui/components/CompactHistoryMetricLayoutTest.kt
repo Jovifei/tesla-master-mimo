@@ -80,8 +80,8 @@ class CompactHistoryMetricLayoutTest {
             unit.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
             assertTrue(layouts.isNotEmpty())
             layouts.forEach { assertFalse("unit clipped at $w/$s", it.hasVisualOverflow) }
-            assertTrue("history row is too tall", compose.onNodeWithTag("history-metric-row")
-                .getUnclippedBoundsInRoot().height.value < 90f)
+            val rowBounds = compose.onNodeWithTag("history-metric-row").getUnclippedBoundsInRoot()
+            assertTrue("history row is too tall", (rowBounds.bottom - rowBounds.top).value < 90f)
             if (w == 288 && s == 1.6f) assertTrue("large text must have reachable horizontal overflow",
                 compose.onNodeWithTag("history-metric-row").fetchSemanticsNode()
                     .config[SemanticsProperties.HorizontalScrollAxisRange].maxValue() > 0f)
