@@ -21,6 +21,7 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.matelink.ui.theme.MateLinkTheme
 import org.junit.Assert.assertEquals
@@ -36,6 +37,7 @@ class CompactHistoryMetricLayoutTest {
     @get:Rule val compose = createComposeRule()
 
     @Test fun historyKeepsOneShortRowAndCompleteUnitsAtLargeText() {
+        val fontSize = mutableStateOf(18)
         val width = mutableStateOf(320)
         val scale = mutableStateOf(1f)
         val values = mutableStateOf(listOf("8", "2.5", "74", "-16.4"))
@@ -49,15 +51,15 @@ class CompactHistoryMetricLayoutTest {
                                     values.value[i],
                                     MaterialTheme.colorScheme.primary,
                                     unit = listOf("分钟", "km", "km/h", "kWh/100km")[i])
-                            }
+                            }, numberFontSize = fontSize.value.sp
                         )
                     }
                 }
             }
         }
-        for (long in listOf(false, true)) for (w in listOf(288, 336, 388)) for (s in listOf(1f, 1.3f, 1.6f)) {
+        for (font in listOf(18, 20)) for (long in listOf(false, true)) for (w in listOf(288, 336, 388)) for (s in listOf(1f, 1.3f, 1.6f)) {
             compose.runOnIdle {
-                width.value = w; scale.value = s
+                fontSize.value = font; width.value = w; scale.value = s
                 values.value = if (long) listOf("12,345", "1,234.5", "暂无数据", "-16.4")
                     else listOf("8", "2.5", "74", "-16.4")
             }

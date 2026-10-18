@@ -26,21 +26,28 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
 import com.matelink.ui.theme.MetricMono
 
 /** History rows stay compact; enlarged text can scroll without losing values or units. */
 @Composable
-fun CompactHistoryMetricStrip(metrics: List<TelemetryMetricSpec>, modifier: Modifier = Modifier) {
+fun CompactHistoryMetricStrip(metrics: List<TelemetryMetricSpec>, modifier: Modifier = Modifier, numberFontSize: TextUnit = 18.sp) {
     if (metrics.isEmpty()) return
+    val displayMetrics = metrics.map { metric ->
+        if (metric.unit != null) metric else {
+            val (number, unit) = telemetryMetricParts(metric.value)
+            metric.copy(value = number, unit = unit)
+        }
+    }
     val measure = rememberTextMeasurer()
     val density = LocalDensity.current
     val numberStyle = MaterialTheme.typography.titleSmall.copy(
         fontFamily = MetricMono, fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp, lineHeight = 20.sp
+        fontSize = numberFontSize, lineHeight = numberFontSize * 1.25f
     )
     val captionStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp)
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val neededWidth = metrics.maxOf { metric ->
+        val neededWidth = displayMetrics.maxOf { metric ->
             maxOf(
                 with(density) { measure.measure(metric.value, numberStyle).size.width.toDp() },
                 with(density) { measure.measure(metric.unit.orEmpty(), captionStyle).size.width.toDp() },
@@ -49,7 +56,7 @@ fun CompactHistoryMetricStrip(metrics: List<TelemetryMetricSpec>, modifier: Modi
         }
         val cellWidth = maxOf(maxWidth / metrics.size, neededWidth)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).testTag("history-metric-row")) {
-            metrics.forEachIndexed { index, metric ->
+            displayMetrics.forEachIndexed { index, metric ->
                 Column(
                     Modifier.width(cellWidth).padding(horizontal = 4.dp, vertical = 2.dp)
                         .semantics(mergeDescendants = true) {

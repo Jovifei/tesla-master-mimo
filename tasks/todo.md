@@ -3519,3 +3519,17 @@ legacy whole-array paths and original OOM acceptance remain open.
 - [ ] Device/signature/provider/production gates remain NOT_RUN; no main merge or deployment.
 
 Review: docs/RPT-2026-10-11-local-persistent-recovery.md is the current evidence ledger. Existing Owner working-copy task content is preserved separately; only this safe stage summary is appended to the staged public ledger.
+
+## 2026-10-18 APK实机与紧凑历史完成
+- [x] 独立codex/apk-device-20261018基于main92cb；原E与小程序未写。
+- [x] GM1910原49保数据安装56基线，再按Jovi要求改历史四指标一横行，详情/统计保留。
+- [x] 最终e60cb9e双变体1020各/0fail/error8ReleaseSkip，双lint0Error/Fatal、R8/同签57通过；13原生/90布局场景通过。
+- [x] 57/2.1.38 install-r实机完成，初装时间不变、0FATAL/ANR，列表→详情→返回通过；指标区772→203px，减少73.7%。
+- [x] 正式APK与报告E:/Claude_allow/Download/MateLink-2.1.38-build57-e60cb9e-20261018。
+- [ ] Jovi视觉验收；源码未推送GitHub/未合main，本轮无生产或自然事件验收。Hub连接拒绝，pending记录未发送。
+
+## 2026-10-18 APK58 四列摘要与筛选收口
+- [ ] 保留原E与Mini工作树；日期与类型固定两行，完整保留筛选入口。
+- [ ] 行程/充电摘要一行四列20sp，历史一行四列18sp，单位完整。
+- [ ] 双变体/lint/R8/模拟器/同签实机验证并交付58。
+- [ ] 推送APK分支、完整同SHA CI成功后合并main。

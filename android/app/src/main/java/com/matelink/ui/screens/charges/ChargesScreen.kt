@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Paid
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -55,6 +56,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import com.matelink.ui.components.HistorySourceNotice
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -70,6 +72,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
@@ -83,6 +86,7 @@ import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.MateLinkLoadingMark
 import com.matelink.ui.components.MonthScrollIndicator
 import com.matelink.ui.components.TelemetryMetricSpec
+import com.matelink.ui.components.CompactHistoryMetricStrip
 import com.matelink.ui.components.TelemetryMetricStrip
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.rememberDebouncedLoading
@@ -279,12 +283,7 @@ private fun ChargesContent(
     ) {
         if (localArchiveLinkPending) {
             item(key = "history_archive_link_pending") {
-                Text(
-                    text = stringResource(R.string.history_archive_link_pending),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(12.dp)
-                )
+                HistorySourceNotice()
             }
         }
         if (historySyncWarning != null) {
@@ -476,18 +475,12 @@ private fun DateFilterChips(
     onCustomRangeSelected: (LocalDate, LocalDate) -> Unit
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
+    var showMore by remember { mutableStateOf(false) }
+    val commonFilters = listOf(DateFilter.TODAY, DateFilter.LAST_7_DAYS, DateFilter.LAST_30_DAYS)
+    val moreFilters = DateFilter.entries.filter { it !in commonFilters }
 
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(
-            listOf(
-                DateFilter.ALL_TIME,
-                DateFilter.LAST_7_DAYS,
-                DateFilter.LAST_30_DAYS,
-                DateFilter.LAST_90_DAYS
-            )
-        ) { filter ->
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(commonFilters) { filter ->
             FilterChip(
                 selected = filter == selectedFilter,
                 onClick = { onFilterSelected(filter) },
@@ -499,20 +492,39 @@ private fun DateFilterChips(
             )
         }
         item {
-            val label = if (selectedFilter == DateFilter.CUSTOM && customStartDate != null && customEndDate != null) {
-                "${formatShortDate(customStartDate)} – ${formatShortDate(customEndDate)}"
-            } else {
-                stringResource(R.string.filter_custom)
+            val moreSelected = selectedFilter in moreFilters
+            val label = when {
+                selectedFilter == DateFilter.CUSTOM && customStartDate != null && customEndDate != null ->
+                    "${formatShortDate(customStartDate)} – ${formatShortDate(customEndDate)}"
+                moreSelected -> stringResource(selectedFilter.labelRes)
+                else -> stringResource(R.string.nav_more)
             }
-            FilterChip(
-                selected = selectedFilter == DateFilter.CUSTOM,
-                onClick = { showDatePicker = true },
-                label = { Text(label) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = palette.surface,
-                    selectedLabelColor = palette.onSurface
+            Box {
+                FilterChip(
+                    selected = moreSelected,
+                    onClick = { showMore = true },
+                    label = { Text(label) },
+                    trailingIcon = {
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = palette.surface,
+                        selectedLabelColor = palette.onSurface
+                    )
                 )
-            )
+                DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
+                    moreFilters.forEach { filter ->
+                        DropdownMenuItem(
+                            text = { Text(stringResource(filter.labelRes)) },
+                            onClick = {
+                                showMore = false
+                                if (filter == DateFilter.CUSTOM) showDatePicker = true
+                                else onFilterSelected(filter)
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -665,50 +677,53 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = MaterialTheme.shapes.medium
             ) {
-                TelemetryMetricStrip(
+                CompactHistoryMetricStrip(
                     metrics = listOf(
                         TelemetryMetricSpec(
                             Icons.Default.ElectricBolt,
                             stringResource(R.string.total_sessions),
                             summary.totalCharges.toString(),
-                            palette.accent
+                            palette.accent,
+                            unit = stringResource(R.string.visual_trip_count_unit)
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.BatteryChargingFull,
                             stringResource(R.string.total_energy),
                             summary.totalEnergyAdded?.let { energy ->
                                 when {
-                                    energy > 999 -> "%.2f MWh".format(energy / 1000)
-                                    energy < 10 -> "%.1f kWh".format(energy)
-                                    else -> "%.0f kWh".format(energy)
+                                    energy > 999 -> "%.2f".format(energy / 1000)
+                                    energy < 10 -> "%.1f".format(energy)
+                                    else -> "%.0f".format(energy)
                                 }
                             } ?: stringResource(R.string.not_available),
-                            palette.acColor
+                            palette.acColor,
+                            unit = if ((summary.totalEnergyAdded ?: 0.0) > 999) "MWh" else "kWh"
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Paid,
                             stringResource(R.string.total_cost),
                             summary.totalCost?.let { cost ->
                                 when {
-                                    cost < 100 -> "$currencySymbol%.2f".format(cost)
-                                    cost < 1000 -> "$currencySymbol%.1f".format(cost)
-                                    else -> "$currencySymbol%.0f".format(cost)
+                                    cost < 100 -> "%.2f".format(cost)
+                                    cost < 1000 -> "%.1f".format(cost)
+                                    else -> "%.0f".format(cost)
                                 }
                             } ?: stringResource(R.string.not_available),
-                            Color(0xFF22C55E)
+                            Color(0xFF22C55E),
+                            unit = currencySymbol
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Paid,
                             stringResource(R.string.avg_cost_per_session),
                             summary.avgCostPerCharge?.let { cost ->
-                                "$currencySymbol%.2f".format(cost)
+                                "%.2f".format(cost)
                             } ?: stringResource(R.string.not_available),
-                            palette.dcColor
+                            palette.dcColor,
+                            unit = currencySymbol
                         )
                     ),
                     modifier = Modifier.padding(vertical = 8.dp),
-                    adaptive = true,
-                    maxColumns = 2
+                    numberFontSize = 20.sp
                 )
             }
         }
@@ -808,7 +823,7 @@ private fun ChargeItem(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = MaterialTheme.shapes.medium
             ) {
-                TelemetryMetricStrip(
+                CompactHistoryMetricStrip(
                     metrics = listOf(
                         TelemetryMetricSpec(
                             icon = Icons.Default.Timer,
@@ -827,18 +842,20 @@ private fun ChargeItem(
                         TelemetryMetricSpec(
                             icon = Icons.Default.Paid,
                             label = stringResource(R.string.trip_charge_cost),
-                            value = costText,
+                            value = if (effectiveCost.cost != null && !isFree) costText.replace(currencySymbol, "") else costText,
+                            unit = if (effectiveCost.cost != null && !isFree) currencySymbol else null,
                             tint = if (isFree) palette.acColor else Color(0xFF22C55E)
                         ),
                         TelemetryMetricSpec(
                             icon = Icons.Default.BatteryStd,
                             label = stringResource(R.string.battery),
-                            value = UnitFormatter.formatSocRange(start, end, notAvailableLabel),
+                            value = UnitFormatter.formatSocRange(start, end, notAvailableLabel).replace("%", "").replace(" ", ""),
+                            unit = if (start != null || end != null) "%" else null,
                             tint = Color(0xFFF97316)
                         )
                     ),
                     modifier = Modifier.padding(vertical = 8.dp),
-                    adaptive = true
+                    numberFontSize = 18.sp
                 )
             }
 

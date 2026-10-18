@@ -1,7 +1,7 @@
 name: History memory isolated verification
 on:
   push:
-    branches: [main, fix/20261002-history-metadata-memory, codex/history-resource-stage2-20261002, codex/reliable-data-stage-20261007, codex/per-drive-energy-20261012, 'codex/miniprogram-*']
+    branches: [main, fix/20261002-history-metadata-memory, codex/history-resource-stage2-20261002, codex/reliable-data-stage-20261007, codex/per-drive-energy-20261012, 'codex/miniprogram-*', 'codex/apk-*']
   workflow_dispatch:
 permissions:
   contents: read
