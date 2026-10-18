@@ -100,6 +100,9 @@ if (args.includes('--check-dist')) {
   const main = all.filter(file => !result.groups.some(group => file.name.startsWith(group.name + '/'))).reduce((sum, file) => sum + file.bytes.length, 0)
   const total = all.reduce((sum, file) => sum + file.bytes.length, 0)
   if (main > MAX_MAIN || total > MAX_TOTAL || groups.some(group => group.bytes > MAX_GROUP)) fail('Built package exceeds an internal conservative budget')
-  report.built = { main, groups, total, originalPngHashesMatch: true }
+  const canonicalFiles = [...all].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+    .map(file => `${file.name}\0${file.bytes.length}\0${sha(file.bytes)}`).join('\n')
+  report.built = { main, groups, total, originalPngHashesMatch: true,
+    compiledFiles: all.length, contentSha256: sha(canonicalFiles) }
 }
 console.log(JSON.stringify(report, null, 2))

@@ -6,15 +6,35 @@ var pendingPackages = Object.create(null)
 function assetError(code) { var error = new Error('车辆图片暂时无法读取'); error.code = code; return error }
 function loadPackage(name) {
   if (loadedPackages[name]) return Promise.resolve()
-  if (pendingPackages[name]) return pendingPackages[name]
+  var previous = pendingPackages[name]
+  if (previous) {
+    if (Date.now() >= previous.expiresAt) previous.expire()
+    else return previous.promise
+  }
   var loader = loaders[name]
   if (!loader) return Promise.reject(assetError('invalid_plan'))
-  var promise = Promise.resolve().then(function () { return loader() }).then(function (ready) {
-    if (!ready || ready.packageName !== name) throw assetError('load_failed')
-    loadedPackages[name] = true
+  var record = { expiresAt: Date.now() + 20000, timer: null, expire: null, promise: null }
+  var promise = new Promise(function (resolve, reject) {
+    record.expire = function () {
+      if (pendingPackages[name] === record) delete pendingPackages[name]
+      clearTimeout(record.timer)
+      reject(assetError('load_failed'))
+    }
+    record.timer = setTimeout(record.expire, 20000)
+    Promise.resolve().then(function () { return loader() }).then(function (ready) {
+      if (pendingPackages[name] !== record) { reject(assetError('stale_request')); return }
+      if (!ready || ready.packageName !== name) { reject(assetError('load_failed')); return }
+      loadedPackages[name] = true
+      resolve()
+    }, reject)
   })
-  pendingPackages[name] = promise
-  promise.then(function () { delete pendingPackages[name] }, function () { delete pendingPackages[name] })
+  record.promise = promise
+  pendingPackages[name] = record
+  var cleanup = function () {
+    clearTimeout(record.timer)
+    if (pendingPackages[name] === record) delete pendingPackages[name]
+  }
+  promise.then(cleanup, cleanup)
   return promise
 }
 Component({

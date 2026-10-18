@@ -3563,3 +3563,5 @@ Jovi authorized the API request legal-domain addition and real WeChat qualificat
 - [ ] New fixed candidate, rendered comparisons, same-head full CI and final protection/acceptance ledger.
 
 2026-10-18 review:48 files/612 Mini tests plus3 original-asset integrity checks, types/build PASS. Independent review found lowercase/model-alias editor crash; canonical initialization and actual consumer regressions fix it. Native DevTools verifies default black refreshedY and greyY/black3/red refreshedY Image loads, actual vehiclePicker switches, appearance editor and saved black refreshed3 Image, all with separate synthetic account/data labeling. Owner1870 hashes/head92cb unchanged. No production change, callback/subscription send, upload, release or main merge.
+
+Final native review: package-level hung Promise retry defect reproduced against the old Git source in memory (RED), fixed with expiry and request identity, and independently rechecked. Three actual native-component VM cases PASS in addition to3 original-asset cases; the612 Mini cases remain PASS. Final source identity/CI/package signoff is recorded outside the frozen tree in the delivery evidence directory.
