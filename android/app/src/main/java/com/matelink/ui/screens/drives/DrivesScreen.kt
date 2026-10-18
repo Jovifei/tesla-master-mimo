@@ -587,34 +587,30 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                         TelemetryMetricSpec(
                             Icons.Default.DirectionsCar,
                             stringResource(R.string.total_trips),
-                            if (hasSummary) "%,d".format(summary.totalDrives) else unavailable,
+                            if (hasSummary) summary.totalDrives.toString() else unavailable,
                             palette.accent,
-                            unit = stringResource(R.string.visual_trip_count_unit),
-                            valueFontSize = 26.sp
+                            unit = stringResource(R.string.visual_trip_count_unit)
                         ),
                         TelemetryMetricSpec(
                             CustomIcons.SteeringWheel,
                             stringResource(R.string.total_distance),
-                            summary.totalDistanceKm?.let { visualTripNumber(UnitFormatter.distanceKmDisplayValue(it, units)) } ?: unavailable,
+                            summary.totalDistanceKm?.let { visualTripNumber(UnitFormatter.distanceKmDisplayValue(it, units)).replace(",", "") } ?: unavailable,
                             palette.accent,
-                            unit = UnitFormatter.getDistanceUnit(units),
-                            valueFontSize = 26.sp
+                            unit = UnitFormatter.getDistanceUnit(units)
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Timer,
                             stringResource(R.string.total_time),
-                            summary.totalDurationMin?.let { "%,d".format(it) } ?: unavailable,
+                            summary.totalDurationMin?.let { it.toString() } ?: unavailable,
                             palette.accent,
-                            unit = stringResource(R.string.visual_trip_duration_unit),
-                            valueFontSize = 26.sp
+                            unit = stringResource(R.string.visual_trip_duration_unit)
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Speed,
                             stringResource(R.string.max_speed),
                             summary.maxSpeedKmh?.takeIf { it >= 0 }?.let { visualTripNumber(UnitFormatter.speedKmhDisplayValue(it.toDouble(), units), 0) } ?: unavailable,
                             palette.accent,
-                            unit = UnitFormatter.getSpeedUnit(units),
-                            valueFontSize = 26.sp
+                            unit = UnitFormatter.getSpeedUnit(units)
                         )
                     ),
                     modifier = Modifier.padding(vertical = 8.dp),

@@ -47,18 +47,17 @@ fun CompactHistoryMetricStrip(metrics: List<TelemetryMetricSpec>, modifier: Modi
     )
     val captionStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp)
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val neededWidth = displayMetrics.maxOf { metric ->
-            maxOf(
+        val cellWidths = displayMetrics.map { metric ->
+            maxOf(maxWidth / displayMetrics.size, maxOf(
                 with(density) { measure.measure(metric.value, numberStyle).size.width.toDp() },
                 with(density) { measure.measure(metric.unit.orEmpty(), captionStyle).size.width.toDp() },
                 with(density) { measure.measure(metric.label, captionStyle).size.width.toDp() } + 16.dp
-            ) + 8.dp
+            ) + 6.dp)
         }
-        val cellWidth = maxOf(maxWidth / metrics.size, neededWidth)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).testTag("history-metric-row")) {
             displayMetrics.forEachIndexed { index, metric ->
                 Column(
-                    Modifier.width(cellWidth).padding(horizontal = 4.dp, vertical = 2.dp)
+                    Modifier.width(cellWidths[index]).padding(horizontal = 3.dp, vertical = 2.dp)
                         .semantics(mergeDescendants = true) {
                             contentDescription = "${metric.label}: ${metric.value} ${metric.unit.orEmpty()}"
                         },

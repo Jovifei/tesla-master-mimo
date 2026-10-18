@@ -36,6 +36,36 @@ import org.junit.runner.RunWith
 class CompactHistoryMetricLayoutTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun regularPhoneShowsAllFourSummaryValuesWithoutScrolling() {
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f, 1f)) {
+                MateLinkTheme {
+                    Box(Modifier.width(336.dp)) {
+                        CompactHistoryMetricStrip(
+                            listOf("总行程数", "总距离", "总时间", "最高速度").mapIndexed { i, label ->
+                                TelemetryMetricSpec(Icons.Default.Speed, label,
+                                    listOf("341", "2848.1", "4355", "158")[i],
+                                    MaterialTheme.colorScheme.primary,
+                                    unit = listOf("次", "km", "分钟", "km/h")[i])
+                            }, numberFontSize = 20.sp
+                        )
+                    }
+                }
+            }
+        }
+        val row = compose.onNodeWithTag("history-metric-row").getUnclippedBoundsInRoot()
+        repeat(4) { i ->
+            val node = compose.onNodeWithTag("history-metric-value-$i", useUnmergedTree = true)
+            node.assertIsDisplayed()
+            val bounds = node.getUnclippedBoundsInRoot()
+            assertTrue("summary $i is outside regular phone width: $bounds row=$row",
+                bounds.right.value <= row.right.value + 0.5f)
+            val layouts = mutableListOf<TextLayoutResult>()
+            node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            layouts.forEach { assertFalse("summary $i clipped", it.hasVisualOverflow) }
+        }
+    }
+
     @Test fun historyKeepsOneShortRowAndCompleteUnitsAtLargeText() {
         val fontSize = mutableStateOf(18)
         val width = mutableStateOf(320)
