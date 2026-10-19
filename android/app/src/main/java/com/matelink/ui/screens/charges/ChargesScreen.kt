@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -51,6 +52,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -71,6 +73,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -151,6 +154,7 @@ fun ChargesScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                 },
+                actions = { if (uiState.localArchiveLinkPending) HistorySourceNotice() },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
@@ -170,7 +174,6 @@ fun ChargesScreen(
             } else {
                 ChargesContent(
                     historySyncWarning = uiState.historySyncWarning,
-                    localArchiveLinkPending = uiState.localArchiveLinkPending,
                     charges = uiState.charges,
                     dcChargeIds = uiState.dcChargeIds,
                     processedChargeIds = uiState.processedChargeIds,
@@ -229,7 +232,6 @@ fun ChargesScreen(
 @Composable
 private fun ChargesContent(
     historySyncWarning: String?,
-    localArchiveLinkPending: Boolean,
     charges: List<ChargeData>,
     dcChargeIds: Set<Int>,
     processedChargeIds: Set<Int>,
@@ -265,27 +267,21 @@ private fun ChargesContent(
         initialFirstVisibleItemScrollOffset = initialScrollOffset
     )
 
-    // Header items in render order: date chips, dropdowns, free hint (conditional),
-    // summary, charts (conditional), history header. Adjust if items are added.
+    // Filters and summary precede history; charts expand only on request.
+    var showCharts by remember { mutableStateOf(false) }
     val showFreeHint = freeSupercharging && selectedCostFilter == CostFilter.NO_COST
     val headerCount = 4 +
         (if (historySyncWarning != null) 1 else 0) +
-        (if (localArchiveLinkPending) 1 else 0) +
         (if (showFreeHint) 1 else 0) +
-        (if (chartData.isNotEmpty()) 1 else 0)
+        (if (showCharts && chartData.isNotEmpty()) 1 else 0)
 
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        contentPadding = PaddingValues(8.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        if (localArchiveLinkPending) {
-            item(key = "history_archive_link_pending") {
-                HistorySourceNotice()
-            }
-        }
         if (historySyncWarning != null) {
             item(key = "history_sync_warning") {
                 Text(
@@ -314,7 +310,7 @@ private fun ChargesContent(
         item {
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 item {
                     ChargeTypeFilterDropdown(
@@ -363,8 +359,19 @@ private fun ChargesContent(
             )
         }
 
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.charge_history),
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                if (chartData.isNotEmpty()) TextButton(onClick = { showCharts = !showCharts }) {
+                    Text(stringResource(if (showCharts) R.string.history_hide_charts else R.string.history_show_charts))
+                }
+            }
+        }
+
         // Charges charts (daily/weekly/monthly based on date range) - swipeable
-        if (chartData.isNotEmpty()) {
+        if (showCharts && chartData.isNotEmpty()) {
             item {
                 ChargesChartsPager(
                     chartData = chartData,
@@ -373,15 +380,6 @@ private fun ChargesContent(
                     palette = palette
                 )
             }
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.charge_history),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
         }
 
         if (charges.isEmpty()) {
@@ -479,12 +477,13 @@ private fun DateFilterChips(
     val commonFilters = listOf(DateFilter.TODAY, DateFilter.LAST_7_DAYS, DateFilter.LAST_30_DAYS)
     val moreFilters = DateFilter.entries.filter { it !in commonFilters }
 
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         items(commonFilters) { filter ->
             FilterChip(
+                modifier = Modifier.height(28.dp),
                 selected = filter == selectedFilter,
                 onClick = { onFilterSelected(filter) },
-                label = { Text(stringResource(filter.labelRes)) },
+                label = { Text(stringResource(filter.labelRes), style = MaterialTheme.typography.labelSmall) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = palette.surface,
                     selectedLabelColor = palette.onSurface
@@ -501,11 +500,12 @@ private fun DateFilterChips(
             }
             Box {
                 FilterChip(
+                    modifier = Modifier.height(28.dp),
                     selected = moreSelected,
                     onClick = { showMore = true },
-                    label = { Text(label) },
+                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                     trailingIcon = {
-                        Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(12.dp))
                     },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = palette.surface,
@@ -557,10 +557,11 @@ private fun ChargeTypeFilterDropdown(
     }
     Box {
         FilterChip(
+            modifier = Modifier.height(28.dp),
             selected = isActive,
             onClick = { expanded = true },
-            label = { Text(getChargeTypeFilterLabel(selectedFilter)) },
-            leadingIcon = { Icon(Icons.Default.ElectricBolt, null, Modifier.size(16.dp)) },
+            label = { Text(getChargeTypeFilterLabel(selectedFilter), style = MaterialTheme.typography.labelSmall) },
+            leadingIcon = { Icon(Icons.Default.ElectricBolt, null, Modifier.size(14.dp)) },
             colors = FilterChipDefaults.filterChipColors(
                 selectedContainerColor = themeColor,
                 selectedLabelColor = Color.White,
@@ -607,10 +608,11 @@ private fun CostFilterDropdown(
     val themeColor = palette.onSurfaceVariant
     Box {
         FilterChip(
+            modifier = Modifier.height(28.dp),
             selected = isActive,
             onClick = { expanded = true },
-            label = { Text(stringResource(selectedFilter.labelRes)) },
-            leadingIcon = { Icon(Icons.Default.Paid, null, Modifier.size(16.dp)) },
+            label = { Text(stringResource(selectedFilter.labelRes), style = MaterialTheme.typography.labelSmall) },
+            leadingIcon = { Icon(Icons.Default.Paid, null, Modifier.size(14.dp)) },
             colors = FilterChipDefaults.filterChipColors(
                 selectedContainerColor = themeColor,
                 selectedLabelColor = Color.White,
@@ -1127,6 +1129,7 @@ private fun LocationFilterDropdown(
 
     Box {
         FilterChip(
+            modifier = Modifier.height(28.dp),
             selected = hasSelection,
             onClick = { expanded = true },
             label = {
@@ -1137,16 +1140,20 @@ private fun LocationFilterDropdown(
                     else if (hasSelection)
                         stringResource(R.string.selected_locations_count, selectedLocations.size)
                     else
-                        stringResource(R.string.filter_location)
+                        stringResource(R.string.filter_location),
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 112.dp)
                 )
             },
-            leadingIcon = { Icon(Icons.Default.LocationOn, null, Modifier.size(16.dp)) },
+            leadingIcon = { Icon(Icons.Default.LocationOn, null, Modifier.size(14.dp)) },
             trailingIcon = if (hasSelection) {
                 {
                     Icon(
                         Icons.Default.Clear,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp).clickable { onClearAll() }
+                        modifier = Modifier.size(14.dp).clickable { onClearAll() }
                     )
                 }
             } else null

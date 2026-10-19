@@ -45,6 +45,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -156,6 +157,7 @@ fun DrivesScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                 },
+                actions = { if (uiState.localArchiveLinkPending) HistorySourceNotice() },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
@@ -175,7 +177,6 @@ fun DrivesScreen(
             } else {
                 DrivesContent(
                     historySyncWarning = uiState.historySyncWarning,
-                    localArchiveLinkPending = uiState.localArchiveLinkPending,
                     drives = uiState.drives,
                     chartData = uiState.chartData,
                     chartGranularity = uiState.chartGranularity,
@@ -204,7 +205,6 @@ fun DrivesScreen(
 @Composable
 private fun DrivesContent(
     historySyncWarning: String?,
-    localArchiveLinkPending: Boolean,
     drives: List<DriveData>,
     chartData: List<DriveChartData>,
     chartGranularity: DriveChartGranularity,
@@ -225,22 +225,17 @@ private fun DrivesContent(
     onParkedClick: (olderDriveId: Int, newerDriveId: Int) -> Unit
 ) {
     val historyItems = remember(drives) { buildDriveHistoryItems(drives) }
-    // Header items in this LazyColumn, in render order: date chips, distance chips,
-    // summary, charts (conditional), history header. Adjust if items are added.
-    val headerCount = 4 + (if (chartData.isNotEmpty()) 1 else 0) + (if (historySyncWarning != null) 1 else 0) + (if (localArchiveLinkPending) 1 else 0)
+    // Filters, summary and history header precede the optional chart and entries.
+    var showCharts by remember { mutableStateOf(false) }
+    val headerCount = 4 + (if (showCharts && chartData.isNotEmpty()) 1 else 0) + (if (historySyncWarning != null) 1 else 0)
 
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        contentPadding = PaddingValues(8.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        if (localArchiveLinkPending) {
-            item(key = "history_archive_link_pending") {
-                HistorySourceNotice()
-            }
-        }
         if (historySyncWarning != null) {
             item(key = "history_sync_warning") {
                 Text(
@@ -279,8 +274,19 @@ private fun DrivesContent(
             SummaryCard(summary = summary, units = units, palette = palette)
         }
 
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.drive_history),
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                if (chartData.isNotEmpty()) TextButton(onClick = { showCharts = !showCharts }) {
+                    Text(stringResource(if (showCharts) R.string.history_hide_charts else R.string.history_show_charts))
+                }
+            }
+        }
+
         // Drives charts (daily/weekly/monthly based on date range) - swipeable
-        if (chartData.isNotEmpty()) {
+        if (showCharts && chartData.isNotEmpty()) {
             item {
                 DrivesChartsPager(
                     chartData = chartData,
@@ -289,15 +295,6 @@ private fun DrivesContent(
                     palette = palette
                 )
             }
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.drive_history),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
         }
 
         if (drives.isEmpty()) {
@@ -457,12 +454,13 @@ private fun DateFilterChips(
     val commonFilters = listOf(DriveDateFilter.TODAY, DriveDateFilter.LAST_7_DAYS, DriveDateFilter.LAST_30_DAYS)
     val moreFilters = DriveDateFilter.entries.filter { it !in commonFilters }
 
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         items(commonFilters) { filter ->
             FilterChip(
+                modifier = Modifier.height(28.dp),
                 selected = filter == selectedFilter,
                 onClick = { onFilterSelected(filter) },
-                label = { Text(stringResource(filter.labelRes)) },
+                label = { Text(stringResource(filter.labelRes), style = MaterialTheme.typography.labelSmall) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = palette.surface,
                     selectedLabelColor = palette.onSurface
@@ -479,11 +477,12 @@ private fun DateFilterChips(
             }
             Box {
                 FilterChip(
+                    modifier = Modifier.height(28.dp),
                     selected = moreSelected,
                     onClick = { showMore = true },
-                    label = { Text(label) },
+                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                     trailingIcon = {
-                        Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(12.dp))
                     },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = palette.surface,
@@ -539,15 +538,15 @@ private fun DistanceFilterChips(
     onFilterSelected: (DriveDistanceFilter) -> Unit
 ) {
     LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         items(DriveDistanceFilter.entries.toList()) { filter ->
             val fullLabel = getDistanceFilterLabel(filter, units)
             FilterChip(
                 selected = filter == selectedFilter,
                 onClick = { onFilterSelected(filter) },
-                label = { Text(fullLabel.substringBefore(" (").substringBefore("（")) },
-                modifier = Modifier.semantics { contentDescription = fullLabel },
+                label = { Text(fullLabel.substringBefore(" (").substringBefore("（"), style = MaterialTheme.typography.labelSmall) },
+                modifier = Modifier.height(28.dp).semantics { contentDescription = fullLabel },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = palette.surface,
                     selectedLabelColor = palette.onSurface
