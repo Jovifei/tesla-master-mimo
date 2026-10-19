@@ -5,8 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -224,10 +222,8 @@ private fun DrivesContent(
     onParkedClick: (olderDriveId: Int, newerDriveId: Int) -> Unit
 ) {
     val historyItems = remember(drives) { buildDriveHistoryItems(drives) }
-    // Date, distance, summary and history title precede the recent records.
-    val headerCount = 4 + (if (historySyncWarning != null) 1 else 0)
-    val recentCount = minOf(3, historyItems.size)
-    val chartIndex = headerCount + recentCount
+    // Date, distance, summary and chart precede the history list.
+    val headerCount = 4 + (if (historySyncWarning != null) 1 else 0) + (if (chartData.isNotEmpty()) 1 else 0)
     val historyRow: @Composable (DriveHistoryItem) -> Unit = { item ->
         when (item) {
             is DriveHistoryItem.Drive -> DriveItem(
@@ -292,6 +288,7 @@ private fun DrivesContent(
         item {
             SummaryCard(summary = summary, units = units, palette = palette)
         }
+        if (chartData.isNotEmpty()) item { chartRow() }
 
         item {
             Text(stringResource(R.string.drive_history),
@@ -325,22 +322,16 @@ private fun DrivesContent(
                     }
                 }
             }
-            if (chartData.isNotEmpty()) item { chartRow() }
         } else {
-            items(historyItems.take(recentCount), key = { it.key }) { historyRow(it) }
-            if (chartData.isNotEmpty()) item { chartRow() }
-            items(historyItems.subList(recentCount, historyItems.size), key = { it.key }) { historyRow(it) }
+            items(historyItems, key = { it.key }) { historyRow(it) }
         }
     }
 
     MonthScrollIndicator(
         state = listState,
         dateAt = { index ->
-            if (index < headerCount || (chartData.isNotEmpty() && index == chartIndex)) null
-            else {
-                val chartOffset = if (chartData.isNotEmpty() && index > chartIndex) 1 else 0
-                historyItems.getOrNull(index - headerCount - chartOffset)?.dateForIndicator.parseListItemDate()
-            }
+            if (index < headerCount) null
+            else historyItems.getOrNull(index - headerCount)?.dateForIndicator.parseListItemDate()
         },
         accent = palette.accent,
         modifier = Modifier.align(Alignment.CenterEnd),
@@ -624,7 +615,6 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DriveItem(
     drive: DriveData,
@@ -656,52 +646,49 @@ private fun DriveItem(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Column(
+            val socRange = UnitFormatter.formatSocRange(start, end, "")
+            val sourceLabel = energyPres.source?.takeIf { energyKwh != null }?.let { source ->
+                when (source) {
+                    DriveDetailEnergySource.POWER_SAMPLES -> null
+                    DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE -> stringResource(R.string.energy_source_soc_estimate)
+                    DriveDetailEnergySource.ENERGY_REMAINING_DELTA -> stringResource(R.string.energy_nominal_estimate)
+                    DriveDetailEnergySource.API -> stringResource(R.string.energy_source_api_reported)
+                }
+            }
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
             ) {
                 Text(
                     text = formatEditorialDate(drive.startDate, true),
+                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    val socRange = UnitFormatter.formatSocRange(start, end, "")
-                    if (socRange.isNotBlank()) {
-                        Text(
+                if (socRange.isNotBlank() || sourceLabel != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Column(horizontalAlignment = Alignment.End) {
+                        if (socRange.isNotBlank()) Text(
                             text = socRange,
                             style = MaterialTheme.typography.titleMedium,
                             fontSize = 17.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = palette.onSurface
+                            color = palette.onSurface,
+                            maxLines = 1
                         )
-                    }
-                    energyPres.source?.takeIf { energyKwh != null }?.let { source ->
-                        val sourceLabel = when (source) {
-                            DriveDetailEnergySource.POWER_SAMPLES -> {
-                                val coverage = if ((energyPres.coverageRatio ?: 0.0) > 0.0) {
-                                    " ${"%.0f".format(energyPres.coverageRatio!! * 100)}%"
-                                } else ""
-                                "${stringResource(R.string.energy_source_power_samples)}$coverage"
+                        sourceLabel?.let { label ->
+                            Surface(
+                                color = palette.accent.copy(alpha = 0.13f),
+                                shape = MaterialTheme.shapes.extraLarge
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = palette.accent,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
                             }
-                            DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE -> stringResource(R.string.energy_source_soc_estimate)
-                            DriveDetailEnergySource.ENERGY_REMAINING_DELTA -> stringResource(R.string.energy_nominal_estimate)
-                            DriveDetailEnergySource.API -> stringResource(R.string.energy_source_api_reported)
-                        }
-                        Surface(
-                            color = palette.accent.copy(alpha = 0.13f),
-                            shape = MaterialTheme.shapes.extraLarge
-                        ) {
-                            Text(
-                                text = sourceLabel,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = palette.accent,
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
-                            )
                         }
                     }
                 }

@@ -266,11 +266,10 @@ private fun ChargesContent(
         initialFirstVisibleItemScrollOffset = initialScrollOffset
     )
 
-    // Date, categories, summary and history title precede the recent records.
+    // Date, categories, summary and chart precede the history list.
     val showFreeHint = freeSupercharging && selectedCostFilter == CostFilter.NO_COST
-    val headerCount = 4 + (if (historySyncWarning != null) 1 else 0) + (if (showFreeHint) 1 else 0)
-    val recentCount = minOf(3, charges.size)
-    val chartIndex = headerCount + recentCount
+    val headerCount = 4 + (if (historySyncWarning != null) 1 else 0) +
+        (if (showFreeHint) 1 else 0) + (if (chartData.isNotEmpty()) 1 else 0)
     val chargeRow: @Composable (ChargeData) -> Unit = { charge ->
         ChargeItem(
             defaultChargePrice = defaultChargePrice,
@@ -381,6 +380,7 @@ private fun ChargesContent(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
             )
         }
+        if (chartData.isNotEmpty()) item { chartRow() }
 
         item {
             Text(stringResource(R.string.charge_history),
@@ -409,22 +409,16 @@ private fun ChargesContent(
                     }
                 }
             }
-            if (chartData.isNotEmpty()) item { chartRow() }
         } else {
-            items(charges.take(recentCount), key = { it.chargeId }) { chargeRow(it) }
-            if (chartData.isNotEmpty()) item { chartRow() }
-            items(charges.subList(recentCount, charges.size), key = { it.chargeId }) { chargeRow(it) }
+            items(charges, key = { it.chargeId }) { chargeRow(it) }
         }
     }
 
     MonthScrollIndicator(
         state = listState,
         dateAt = { index ->
-            if (index < headerCount || (chartData.isNotEmpty() && index == chartIndex)) null
-            else {
-                val chartOffset = if (chartData.isNotEmpty() && index > chartIndex) 1 else 0
-                charges.getOrNull(index - headerCount - chartOffset)?.startDate.parseListItemDate()
-            }
+            if (index < headerCount) null
+            else charges.getOrNull(index - headerCount)?.startDate.parseListItemDate()
         },
         accent = palette.accent,
         modifier = Modifier.align(Alignment.CenterEnd),
