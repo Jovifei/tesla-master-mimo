@@ -1099,7 +1099,7 @@
     <string name="settings_release_notes_close">知道了</string>
     <string name="settings_switch_to_cloud">切换到 MateLink 云端</string>
     <string name="settings_switch_to_self_hosted">切换到本地 TeslaMate</string>
-<string name="settings_release_notes_body" formatted="false">• 行程与充电历史首屏先看摘要和最近记录；筛选更紧凑，图表按需展开。\n• 摘要与充电历史统一四列，数字加大，日期筛选精简并保留完整选项。\n• 行程历史的四项指标改为紧凑一行，详情保留完整面板，大字体可横滑查看，不截断数字和单位。
+<string name="settings_release_notes_body" formatted="false">• 行程与充电历史首屏先看摘要和最近记录；筛选更紧凑，原月度柱状图保留在最近记录之后。\n• 摘要与充电历史统一四列，数字加大，日期筛选精简并保留完整选项。\n• 行程历史的四项指标改为紧凑一行，详情保留完整面板，大字体可横滑查看，不截断数字和单位。
 • 自动历史同步与缓存刷新保留已验证的用户车辆身份、观测来源和时间边界。
 • 行驶和充电能耗区分真实零值、负净回收与未知；推算与估算明确标记，不冒充实测。
 • 充电损耗与效率仅在整段 AC 模式和计数时段均有观测证明时计算；未知或混合 AC/DC 模式保留未知。
@@ -1566,6 +1566,4 @@
     <string name="diagnostic_permission_detail">接口报告缺少权限。登录有效或车辆绑定不代表全部 Tesla 授权已满足。可手动查看既有授权流程。</string>
     <string name="history_source_show">数据来源 · 查看说明</string>
     <string name="history_source_hide">数据来源 · 收起说明</string>
-    <string name="history_show_charts">月度图表</string>
-    <string name="history_hide_charts">收起图表</string>
 </resources>

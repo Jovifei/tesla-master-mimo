@@ -45,7 +45,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -225,9 +224,29 @@ private fun DrivesContent(
     onParkedClick: (olderDriveId: Int, newerDriveId: Int) -> Unit
 ) {
     val historyItems = remember(drives) { buildDriveHistoryItems(drives) }
-    // Filters, summary and history header precede the optional chart and entries.
-    var showCharts by remember { mutableStateOf(false) }
-    val headerCount = 4 + (if (showCharts && chartData.isNotEmpty()) 1 else 0) + (if (historySyncWarning != null) 1 else 0)
+    // Date, distance, summary and history title precede the recent records.
+    val headerCount = 4 + (if (historySyncWarning != null) 1 else 0)
+    val recentCount = minOf(3, historyItems.size)
+    val chartIndex = headerCount + recentCount
+    val historyRow: @Composable (DriveHistoryItem) -> Unit = { item ->
+        when (item) {
+            is DriveHistoryItem.Drive -> DriveItem(
+                drive = item.drive,
+                metrics = driveMetrics[item.drive.id],
+                units = units,
+                palette = palette,
+                onClick = { onDriveClick(item.drive.id) }
+            )
+            is DriveHistoryItem.Parked -> ParkedItem(
+                item = item,
+                palette = palette,
+                onClick = { onParkedClick(item.olderDrive.id, item.newerDrive.id) }
+            )
+        }
+    }
+    val chartRow: @Composable () -> Unit = {
+        DrivesChartsPager(chartData, chartGranularity, units, palette)
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
@@ -275,26 +294,8 @@ private fun DrivesContent(
         }
 
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.drive_history),
-                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                if (chartData.isNotEmpty()) TextButton(onClick = { showCharts = !showCharts }) {
-                    Text(stringResource(if (showCharts) R.string.history_hide_charts else R.string.history_show_charts))
-                }
-            }
-        }
-
-        // Drives charts (daily/weekly/monthly based on date range) - swipeable
-        if (showCharts && chartData.isNotEmpty()) {
-            item {
-                DrivesChartsPager(
-                    chartData = chartData,
-                    granularity = chartGranularity,
-                    units = units,
-                    palette = palette
-                )
-            }
+            Text(stringResource(R.string.drive_history),
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
 
         if (drives.isEmpty()) {
@@ -324,31 +325,22 @@ private fun DrivesContent(
                     }
                 }
             }
+            if (chartData.isNotEmpty()) item { chartRow() }
         } else {
-            items(historyItems, key = { it.key }) { item ->
-                when (item) {
-                    is DriveHistoryItem.Drive -> DriveItem(
-                        drive = item.drive,
-                        metrics = driveMetrics[item.drive.id],
-                        units = units,
-                        palette = palette,
-                        onClick = { onDriveClick(item.drive.id) }
-                    )
-                    is DriveHistoryItem.Parked -> ParkedItem(
-                        item = item,
-                        palette = palette,
-                        onClick = { onParkedClick(item.olderDrive.id, item.newerDrive.id) }
-                    )
-                }
-            }
+            items(historyItems.take(recentCount), key = { it.key }) { historyRow(it) }
+            if (chartData.isNotEmpty()) item { chartRow() }
+            items(historyItems.subList(recentCount, historyItems.size), key = { it.key }) { historyRow(it) }
         }
     }
 
     MonthScrollIndicator(
         state = listState,
         dateAt = { index ->
-            if (index < headerCount) null
-            else historyItems.getOrNull(index - headerCount)?.dateForIndicator.parseListItemDate()
+            if (index < headerCount || (chartData.isNotEmpty() && index == chartIndex)) null
+            else {
+                val chartOffset = if (chartData.isNotEmpty() && index > chartIndex) 1 else 0
+                historyItems.getOrNull(index - headerCount - chartOffset)?.dateForIndicator.parseListItemDate()
+            }
         },
         accent = palette.accent,
         modifier = Modifier.align(Alignment.CenterEnd),

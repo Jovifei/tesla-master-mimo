@@ -1109,7 +1109,7 @@
     <string name="settings_release_notes_close">Got it</string>
     <string name="settings_switch_to_cloud">Switch to MateLink Cloud</string>
     <string name="settings_switch_to_self_hosted">Switch to local TeslaMate</string>
-<string name="settings_release_notes_body" formatted="false">• History now opens with the summary and recent records; compact filters and optional charts keep more trips in view.\n• Four-column summaries and charging history, larger numbers and compact date filters.\n• Drive history metrics now fit a compact single row; details retain their full panels and enlarged text can scroll without truncation.
+<string name="settings_release_notes_body" formatted="false">• History now opens with the summary and recent records; compact filters and the original monthly charts follow recent records.\n• Four-column summaries and charging history, larger numbers and compact date filters.\n• Drive history metrics now fit a compact single row; details retain their full panels and enlarged text can scroll without truncation.
 • Automatic history syncing and cached history now preserve validated vehicle identity and observed data evidence across refreshes.
 • Driving and charging energy display keeps real zero, signed recovery and unknown distinct; estimated values are explicitly labeled, never upgraded to measurements.
 • AC charging loss and efficiency require complete matching observed AC-only mode and counter windows; unknown or mixed-mode charging remains unavailable.
@@ -1575,6 +1575,4 @@
     <string name="diagnostic_permission_detail">The API reports a missing permission. A valid login or vehicle binding does not prove all Tesla grants. Review the existing authorization flow manually.</string>
     <string name="history_source_show">Data source · details</string>
     <string name="history_source_hide">Data source · collapse</string>
-    <string name="history_show_charts">Charts</string>
-    <string name="history_hide_charts">Hide charts</string>
 </resources>

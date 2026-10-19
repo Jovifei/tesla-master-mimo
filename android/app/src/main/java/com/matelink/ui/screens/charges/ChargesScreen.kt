@@ -52,7 +52,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -267,13 +266,37 @@ private fun ChargesContent(
         initialFirstVisibleItemScrollOffset = initialScrollOffset
     )
 
-    // Filters and summary precede history; charts expand only on request.
-    var showCharts by remember { mutableStateOf(false) }
+    // Date, categories, summary and history title precede the recent records.
     val showFreeHint = freeSupercharging && selectedCostFilter == CostFilter.NO_COST
-    val headerCount = 4 +
-        (if (historySyncWarning != null) 1 else 0) +
-        (if (showFreeHint) 1 else 0) +
-        (if (showCharts && chartData.isNotEmpty()) 1 else 0)
+    val headerCount = 4 + (if (historySyncWarning != null) 1 else 0) + (if (showFreeHint) 1 else 0)
+    val recentCount = minOf(3, charges.size)
+    val chartIndex = headerCount + recentCount
+    val chargeRow: @Composable (ChargeData) -> Unit = { charge ->
+        ChargeItem(
+            defaultChargePrice = defaultChargePrice,
+            charge = charge,
+            isDcCharge = when (historyChargeType(charge, dcChargeIds, processedChargeIds)) {
+                ChargeType.DC -> true
+                ChargeType.AC -> false
+                ChargeType.UNKNOWN -> null
+            },
+            currencySymbol = currencySymbol,
+            manualTotalAmount = priceOverrides[charge.chargeId],
+            freeSupercharging = freeSupercharging,
+            palette = palette,
+            onEditCost = { onEditCost(charge) },
+            onClick = {
+                onChargeClick(
+                    charge.chargeId,
+                    listState.firstVisibleItemIndex,
+                    listState.firstVisibleItemScrollOffset
+                )
+            }
+        )
+    }
+    val chartRow: @Composable () -> Unit = {
+        ChargesChartsPager(chartData, chartGranularity, currencySymbol, palette)
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
@@ -360,26 +383,8 @@ private fun ChargesContent(
         }
 
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.charge_history),
-                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                if (chartData.isNotEmpty()) TextButton(onClick = { showCharts = !showCharts }) {
-                    Text(stringResource(if (showCharts) R.string.history_hide_charts else R.string.history_show_charts))
-                }
-            }
-        }
-
-        // Charges charts (daily/weekly/monthly based on date range) - swipeable
-        if (showCharts && chartData.isNotEmpty()) {
-            item {
-                ChargesChartsPager(
-                    chartData = chartData,
-                    granularity = chartGranularity,
-                    currencySymbol = currencySymbol,
-                    palette = palette
-                )
-            }
+            Text(stringResource(R.string.charge_history),
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
 
         if (charges.isEmpty()) {
@@ -404,38 +409,22 @@ private fun ChargesContent(
                     }
                 }
             }
+            if (chartData.isNotEmpty()) item { chartRow() }
         } else {
-            items(charges, key = { it.chargeId }) { charge ->
-                ChargeItem(
-                    defaultChargePrice = defaultChargePrice,
-                    charge = charge,
-                    isDcCharge = when (historyChargeType(charge, dcChargeIds, processedChargeIds)) {
-                        ChargeType.DC -> true
-                        ChargeType.AC -> false
-                        ChargeType.UNKNOWN -> null
-                    },
-                    currencySymbol = currencySymbol,
-                    manualTotalAmount = priceOverrides[charge.chargeId],
-                    freeSupercharging = freeSupercharging,
-                    palette = palette,
-                    onEditCost = { onEditCost(charge) },
-                    onClick = {
-                        onChargeClick(
-                            charge.chargeId,
-                            listState.firstVisibleItemIndex,
-                            listState.firstVisibleItemScrollOffset
-                        )
-                    }
-                )
-            }
+            items(charges.take(recentCount), key = { it.chargeId }) { chargeRow(it) }
+            if (chartData.isNotEmpty()) item { chartRow() }
+            items(charges.subList(recentCount, charges.size), key = { it.chargeId }) { chargeRow(it) }
         }
     }
 
     MonthScrollIndicator(
         state = listState,
         dateAt = { index ->
-            if (index < headerCount) null
-            else charges.getOrNull(index - headerCount)?.startDate.parseListItemDate()
+            if (index < headerCount || (chartData.isNotEmpty() && index == chartIndex)) null
+            else {
+                val chartOffset = if (chartData.isNotEmpty() && index > chartIndex) 1 else 0
+                charges.getOrNull(index - headerCount - chartOffset)?.startDate.parseListItemDate()
+            }
         },
         accent = palette.accent,
         modifier = Modifier.align(Alignment.CenterEnd),
