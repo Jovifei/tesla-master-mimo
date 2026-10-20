@@ -9,6 +9,16 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.UnifiedHistoryRepository
+import com.matelink.data.local.ChargeCostOverrideStore
+import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.VehicleContextRepository
+import com.matelink.data.local.HistoryReadScope
+import com.matelink.data.model.Currency
+import com.matelink.domain.analytics.ChargeCostSource
+import com.matelink.domain.analytics.EffectiveChargeCost
+import com.matelink.domain.analytics.findChargeCostOverride
+import com.matelink.domain.analytics.projectEffectiveChargeCost
+import com.matelink.domain.history.LatestHistoryLoad
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -51,6 +61,9 @@ sealed class TimelineEvent {
         val address: String?,
         val energyAdded: Double?,
         val cost: Double?,
+        val currencySymbol: String? = null,
+        val costSource: ChargeCostSource = ChargeCostSource.UNAVAILABLE,
+        val costQualificationReason: String? = null,
         val durationMin: Int?,
         val durationStr: String?,
         val startBatteryLevel: Int?,
@@ -69,14 +82,27 @@ data class TimelineUiState(
 class TimelineViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val repository: UnifiedHistoryRepository,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val settingsDataStore: SettingsDataStore,
+    private val chargeCostOverrideStore: ChargeCostOverrideStore,
+    private val vehicleContexts: VehicleContextRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TimelineUiState())
     val uiState: StateFlow<TimelineUiState> = _uiState.asStateFlow()
+    private val latestLoad = LatestHistoryLoad()
+    private var activeScope: HistoryReadScope? = null
 
     init {
-        loadTimeline()
+        viewModelScope.launch { settingsRepository.currentCarId.collect { loadTimeline() } }
+        viewModelScope.launch {
+            vehicleContexts.historyScopeChanges.collect { scope ->
+                if (activeScope != null && activeScope != scope) {
+                    _uiState.value = TimelineUiState(isLoading = true)
+                    loadTimeline()
+                }
+            }
+        }
     }
 
     fun refresh() {
@@ -84,14 +110,19 @@ class TimelineViewModel @Inject constructor(
     }
 
     private fun loadTimeline() {
-        viewModelScope.launch {
+        latestLoad.launch(viewModelScope) {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            var capturedScope: HistoryReadScope? = null
             try {
                 val carId = settingsRepository.currentCarId.first()
+                capturedScope = vehicleContexts.captureReadScope()
 
                 val history = when (val result = repository.load(carId)) {
                     is ApiResult.Success -> result.data
                     is ApiResult.Error -> {
+                        ensureCurrent()
+                        if (vehicleContexts.captureReadScope() != capturedScope) return@launch
+                        if (settingsRepository.currentCarId.first() != carId) return@launch
                         _uiState.value = TimelineUiState(
                             isLoading = false, error = appContext.getString(R.string.error_loading_data)
                         )
@@ -99,10 +130,29 @@ class TimelineViewModel @Inject constructor(
                     }
                 }
 
-                val events = mergeTimelineEvents(history.drives, history.charges)
+                val proof = history.verifiedReadContext ?: run {
+                    ensureCurrent()
+                    _uiState.value = TimelineUiState(isLoading = false, error = "history_identity_unavailable")
+                    return@launch
+                }
+                if (proof.scope != capturedScope) throw CancellationException("Timeline scope changed")
+                suspend fun checkProof() {
+                    ensureCurrent()
+                    if (settingsRepository.currentCarId.first() != carId ||
+                        !repository.isContextCurrent(proof)) throw CancellationException("Timeline scope changed")
+                }
+                checkProof()
+                val records = chargeCostOverrideStore.getAllRecords()
+                val currency = settingsDataStore.settings.first().currencyCode
+                checkProof()
+                val events = mergeTimelineEvents(history.drives, history.charges) { charge ->
+                    projectEffectiveChargeCost(charge, proof.context.localHistoryCarId,
+                        findChargeCostOverride(records, proof.context.localHistoryCarId, charge, currency), currency)
+                }
                 val grouped = events.groupBy { it.date }
                 val warning = history.drivesSyncError ?: history.chargesSyncError
-
+                checkProof()
+                activeScope = proof.scope
                 _uiState.value = TimelineUiState(
                     isLoading = false,
                     events = events,
@@ -114,6 +164,10 @@ class TimelineViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                ensureCurrent()
+                val scope = capturedScope
+                if (scope != null && runCatching { vehicleContexts.captureReadScope() }.getOrNull() != scope)
+                    return@launch
                 _uiState.value = TimelineUiState(
                     isLoading = false,
                     error = e.message
@@ -136,8 +190,12 @@ private fun timelineMoment(raw: String?): TimelineMoment? {
 }
 
 /** Sort by physical time; equal instants keep a deterministic type/ID order. */
-internal fun mergeTimelineEvents(drives: List<DriveData>, charges: List<ChargeData>): List<TimelineEvent> {
-    val events = drives.mapNotNull { it.toTimelineDriveEvent() } + charges.mapNotNull { it.toTimelineChargeEvent() }
+internal fun mergeTimelineEvents(
+    drives: List<DriveData>, charges: List<ChargeData>,
+    costFor: (ChargeData) -> EffectiveChargeCost = { EffectiveChargeCost(null, ChargeCostSource.UNAVAILABLE) }
+): List<TimelineEvent> {
+    val events = drives.mapNotNull { it.toTimelineDriveEvent() } +
+        charges.mapNotNull { it.toTimelineChargeEvent(costFor(it)) }
     return events.sortedWith(
         compareByDescending<TimelineEvent> { it.instant }
             .thenBy { if (it is TimelineEvent.DriveEvent) 0 else 1 }
@@ -171,7 +229,7 @@ internal fun DriveData.toTimelineDriveEvent(): TimelineEvent.DriveEvent? {
     )
 }
 
-private fun ChargeData.toTimelineChargeEvent(): TimelineEvent.ChargeEvent? {
+private fun ChargeData.toTimelineChargeEvent(effectiveCost: EffectiveChargeCost): TimelineEvent.ChargeEvent? {
     val startTs = startDate ?: return null
     val moment = timelineMoment(startTs) ?: return null
     return TimelineEvent.ChargeEvent(
@@ -182,7 +240,10 @@ private fun ChargeData.toTimelineChargeEvent(): TimelineEvent.ChargeEvent? {
         instant = moment.instant,
         address = address,
         energyAdded = chargeEnergyAdded,
-        cost = cost,
+        cost = effectiveCost.cost,
+        currencySymbol = effectiveCost.currencyCode?.let { Currency.findByCode(it).symbol },
+        costSource = effectiveCost.source,
+        costQualificationReason = effectiveCost.qualificationReason,
         durationMin = durationMin,
         durationStr = durationStr,
         startBatteryLevel = startBatteryLevel,

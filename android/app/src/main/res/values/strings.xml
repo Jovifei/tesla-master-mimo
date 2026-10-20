@@ -9,6 +9,13 @@
     <string name="energy_endpoint_coverage">Start/end observations; no continuous power coverage</string>
     <string name="energy_nominal_estimate">Remaining-energy estimate</string>
     <string name="history_energy_cache_failed">Energy could not be saved. Pull to refresh to retry.</string>
+    <string name="history_detail_waiting_for_summary">This detail cannot be matched to a saved session yet. Refresh the history list and try again.</string>
+    <string name="history_detail_points_missing">Detail points could not be saved. The chart may be unavailable offline.</string>
+    <string name="history_detail_cache_corrupt">Saved detail points failed the integrity check. Showing the summary without a chart.</string>
+    <string name="history_detail_source_unverified">Received detail points are saved, but their source instance or record ID is unverified; the provider total is also unknown.</string>
+    <string name="history_detail_total_unverified">Received detail points are saved. The provider has not supplied a total count to verify full coverage.</string>
+    <string name="history_detail_cached_source_unverified">Showing saved detail points offline. Their source instance or record ID and full provider coverage remain unverified.</string>
+    <string name="history_detail_cached_total_unverified">Showing saved detail points offline. Full provider coverage remains unverified.</string>
     <string name="energy_source_api_reported">API reported</string>
     <string name="energy_source_energy_remaining_delta">Remaining Energy Delta</string>
     <string name="energy_source_soc_estimate">Capacity Estimate</string>
@@ -260,7 +267,7 @@
     <string name="timeline_distance_value">%.1f km</string>
     <string name="timeline_battery_end">%d%%</string>
     <string name="timeline_energy_added">%.1f kWh</string>
-    <string name="timeline_cost_value">¥%.2f</string>
+    <string name="timeline_cost_value">%1$s%2$.2f</string>
     <string name="timeline_unknown_route">未知路线</string>
     <string name="timeline_unknown_location">未知地点</string>
 
@@ -867,6 +874,17 @@
     <string name="charge_cost_manual">Manual total</string>
     <string name="edit_charge_cost">Modify total amount</string>
     <string name="charge_total_amount">Session total</string>
+    <string name="charge_cost_legacy_pending">Previous manual amount %1$.2f has unconfirmed currency and session. Enter and save a value to bind this charge in the selected currency.</string>
+    <string name="charge_cost_instance_unverified">Saved for this local session; upstream source instance unverified</string>
+    <string name="charge_cost_edit_conflict">This charge cost changed elsewhere. Reopen it before saving.</string>
+    <string name="charge_cost_currency_unverified">Select a valid currency before editing this cost.</string>
+    <string name="charge_cost_saved_unconfirmed">Saved manual amount %1$.2f · currency unconfirmed; excluded from comparable totals</string>
+    <string name="charge_cost_saved_unbound">Saved manual %1$s %2$.2f · session or source evidence unverified; excluded from comparable totals</string>
+    <string name="charge_cost_other_currency">Saved manual %1$s %2$.2f · excluded from the selected-currency total</string>
+    <string name="charge_cost_source_unconfirmed">Source amount %1$.2f · currency unconfirmed; excluded from comparable totals</string>
+    <string name="charge_cost_source_identity_unverified">Source amount %1$.2f · source identity unverified; excluded from comparable totals</string>
+    <string name="charge_cost_source_other_currency">Source amount %1$s %2$.2f · excluded from the selected-currency total</string>
+    <string name="charge_cost_source_zero_unverified">Source returned 0.00; a free charge is unverified</string>
     <string name="charge_total_amount_hint">Enter the total amount for this charge</string>
     <string name="charge_price_invalid">Enter a valid non-negative price</string>
     <string name="charge_price_saved">Total amount saved</string>
@@ -893,6 +911,7 @@
     <!-- All missing strings batch -->
     <string name="all_years">All Years</string>
     <string name="average">Average</string>
+    <string name="drive_detail_sample_mean">Sample mean</string>
     <string name="avg_cost_per_session">Avg Cost/Session</string>
     <string name="avg_distance">Avg Speed (Trip)</string>
     <string name="charge_details_title">Charge Details</string>

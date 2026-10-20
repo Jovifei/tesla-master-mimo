@@ -46,6 +46,14 @@ private fun sameChargeInstant(first: String?, second: String?): Boolean {
     return expected == parseIsoInstant(second)
 }
 
+/** Optional wire identities are fences, never values inferred from a numeric charge ID.
+ * Both absent retains the established legacy path; one absent cannot inherit known proof.
+ */
+internal fun sameChargeSourceInstance(
+    firstInstance: String?, firstRecord: String?, secondInstance: String?, secondRecord: String?
+): Boolean = firstInstance?.takeIf(String::isNotBlank) == secondInstance?.takeIf(String::isNotBlank) &&
+    firstRecord?.takeIf(String::isNotBlank) == secondRecord?.takeIf(String::isNotBlank)
+
 /** A numeric charge ID is only meaningful within the saved source and session window. */
 internal fun ChargeSummary.acceptsDetail(detail: ChargeDetail): Boolean {
     val raw = toRawAnalysisChargeData()
@@ -56,6 +64,7 @@ internal fun ChargeSummary.acceptsDetail(detail: ChargeDetail): Boolean {
         sameChargeInstant(legacyRaw.startDate, startDate) &&
         sameChargeInstant(legacyRaw.endDate, endDate)
     return chargeId == detail.chargeId && (sameSource || oldTeslaMateReceipt) &&
+        sameChargeSourceInstance(raw.sourceInstanceId, raw.sourceId, detail.sourceInstanceId, detail.sourceId) &&
         sameChargeInstant(startDate, detail.startDate) && sameChargeInstant(endDate, detail.endDate) &&
         sameChargeInstant(raw.startDate, detail.startDate) && sameChargeInstant(raw.endDate, detail.endDate)
 }
@@ -109,6 +118,7 @@ fun ChargeSummary.withDetailEvidence(detail: ChargeDetail): ChargeSummary {
         chargeType = detail.chargeType ?: current.chargeType,
         cost = (detail.cost ?: current.cost)?.takeIf { it.isFinite() && it >= 0.0 },
         source = detail.source ?: rawPrevious.source,
+        sourceInstanceId = detail.sourceInstanceId, sourceId = detail.sourceId,
         chargeEnergyAdded = null, chargeEnergyUsed = null, energyContract = null
     )
     val receipt = HistorySummaryEvidenceCodec.withChargeDetail(

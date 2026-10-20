@@ -1,7 +1,10 @@
 package com.matelink.ui.screens.trips
 
 import com.matelink.data.local.entity.ChargeSummary
+import com.matelink.data.local.entity.ChargeCostOverride
 import com.matelink.data.local.entity.DriveSummary
+import com.matelink.domain.analytics.chargeCostSessionKey
+import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.domain.TripAggregator
 import com.matelink.domain.model.Trip
 import org.junit.Assert.assertEquals
@@ -12,7 +15,6 @@ import org.junit.Test
 
 /** Uses the detail card's actual price projection, including its cache admission check. */
 class TripDetailCostConsumerTest {
-    private val functions = Class.forName("com.matelink.ui.screens.trips.TripDetailViewModelKt")
     private val start = "2026-10-14T10:00:00Z"
     private val end = "2026-10-14T10:30:00Z"
 
@@ -27,17 +29,22 @@ class TripDetailCostConsumerTest {
             durationMin = 30, address = "B", latitude = 1.0, longitude = 2.0,
             energyAdded = qualifiedKwh ?: 5.0, energyUsed = null, cost = cost,
             startBatteryLevel = 75, endBatteryLevel = 80, outsideTempAvg = null,
-            odometer = 100.0, apiEvidence = qualifiedKwh?.let {
-                """{"charge_id":$id,"start_date":"$start","end_date":"$end","source":"teslamate_archive","charge_energy_added":$it}"""
-            })
+            odometer = 100.0, apiEvidence =
+                """{"charge_id":$id,"start_date":"$start","end_date":"$end","source":"teslamate_archive","currency_code":"CNY","cost":${cost ?: "null"}${qualifiedKwh?.let { ",\"charge_energy_added\":$it" } ?: ""}}""")
 
     private fun trip(drives: List<DriveSummary>, charges: List<ChargeSummary>): Trip =
         requireNotNull(TripAggregator.buildTrip(drives, charges))
 
-    private fun project(trip: Trip, localCarId: Int, manual: Map<String, Double>): Any? =
-        functions.getDeclaredMethod("projectTripChargeCosts", Trip::class.java,
-            Int::class.javaPrimitiveType, Map::class.java).apply { isAccessible = true }
-            .invoke(null, trip, localCarId, manual)
+    private fun project(trip: Trip, localCarId: Int, manual: List<ChargeCostOverride>): Any? =
+        projectTripChargeCosts(trip, localCarId, manual, "CNY")
+
+    private fun manual(charge: ChargeSummary, amount: Double, carId: Int = 701): ChargeCostOverride {
+        val analysis = charge.toAnalysisChargeData()
+        return ChargeCostOverride(carId, charge.chargeId, amount,
+            sessionKey = chargeCostSessionKey(analysis) + ":CNY", currencyCode = "CNY",
+            sourceKind = analysis.source, startInstant = analysis.startDate,
+            endInstant = analysis.endDate, version = 1L)
+    }
 
     private fun value(result: Any, getter: String): Any? =
         result.javaClass.getDeclaredMethod(getter).invoke(result)
@@ -47,7 +54,7 @@ class TripDetailCostConsumerTest {
             charge(11, 10.0)))
         assertEquals(18.0, trip.totalChargeCost!!, 0.0) // Raw receipt stays unchanged.
 
-        val result = requireNotNull(project(trip, 701, mapOf("701:10" to 0.0)))
+        val result = requireNotNull(project(trip, 701, listOf(manual(trip.charges.first(), 0.0))))
         assertEquals(10.0, value(result, "getTotalCost") as Double, 0.0)
         assertEquals(0.0, value(result, "getPairedUnitCost") as Double, 0.0)
         assertEquals(true, value(result, "getAllPriced"))
@@ -61,11 +68,11 @@ class TripDetailCostConsumerTest {
 
     @Test fun partialPriceIsNotCompleteAndUnknownRemainsUnknown() {
         val trip = trip(listOf(drive()), listOf(charge(10, null), charge(11, 0.0)))
-        val result = requireNotNull(project(trip, 701, emptyMap()))
-        assertEquals(0.0, value(result, "getTotalCost") as Double, 0.0)
+        val result = requireNotNull(project(trip, 701, emptyList()))
+        assertNull(value(result, "getTotalCost"))
         assertEquals(false, value(result, "getAllPriced"))
         assertNull(value(result, "getPairedUnitCost"))
-        val allUnknown = project(trip(listOf(drive()), listOf(charge(10, null))), 701, emptyMap())
+        val allUnknown = project(trip(listOf(drive()), listOf(charge(10, null))), 701, emptyList())
         assertNotNull(allUnknown)
         assertNull(value(allUnknown!!, "getTotalCost"))
         assertTrue((value(allUnknown, "getPricedCharges") as List<*>).isEmpty())
@@ -74,17 +81,17 @@ class TripDetailCostConsumerTest {
     @Test fun foreignCachedTripCannotBorrowTheCurrentCarsPriceOrBePublished() {
         val foreignDrive = trip(listOf(drive(702)), listOf(charge(10, 8.0, 702)))
         val mixedLeg = trip(listOf(drive()), listOf(charge(10, 8.0, 702)))
-        assertNull(project(foreignDrive, 701, mapOf("701:10" to 2.0)))
-        assertNull(project(mixedLeg, 701, mapOf("701:10" to 2.0)))
+        assertNull(project(foreignDrive, 701, emptyList()))
+        assertNull(project(mixedLeg, 701, emptyList()))
         val own = project(trip(listOf(drive()), listOf(charge(10, 8.0))), 701,
-            mapOf("702:10" to 2.0))
+            emptyList())
         assertEquals(8.0, value(requireNotNull(own), "getTotalCost") as Double, 0.0)
     }
 
     @Test fun movedArchiveReceiptCannotProvideThePriceDenominator() {
         val moved = charge(10, 8.0, qualifiedKwh = 2.0)
             .copy(endDate = "2026-10-14T10:35:00Z")
-        val result = requireNotNull(project(trip(listOf(drive()), listOf(moved)), 701, emptyMap()))
+        val result = requireNotNull(project(trip(listOf(drive()), listOf(moved)), 701, emptyList()))
         assertEquals(8.0, value(result, "getTotalCost") as Double, 0.0)
         assertNull(value(result, "getPairedUnitCost"))
         assertNull(value((value(result, "getPricedCharges") as List<*>).single()!!,

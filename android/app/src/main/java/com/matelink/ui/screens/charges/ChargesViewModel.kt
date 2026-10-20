@@ -7,16 +7,19 @@ import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.ChargeData
 import com.matelink.domain.history.isAnalysisEligible
 import com.matelink.data.local.ChargeCostOverrideStore
+import com.matelink.data.local.entity.ChargeCostOverride
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.dao.AggregateDao
 import com.matelink.data.model.Currency
-import com.matelink.data.repository.saveVerifiedHistoryChargeCost
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.UnifiedHistoryRepository
 import com.matelink.domain.LocalDayBoundaries
-import com.matelink.domain.analytics.chargeTotalOverrideKey
-import com.matelink.domain.analytics.resolveChargeCostFromTotal
+import com.matelink.domain.analytics.ChargeCostSource
+import com.matelink.domain.analytics.EffectiveChargeCost
+import com.matelink.domain.analytics.findChargeCostOverride
+import com.matelink.domain.analytics.findOtherCurrencyChargeCostOverride
+import com.matelink.domain.analytics.projectEffectiveChargeCost
 import com.matelink.domain.analytics.observedCostSumOrNull
 import com.matelink.domain.analytics.validManualChargeTotal
 import android.content.Context
@@ -121,9 +124,14 @@ data class ChargesUiState(
     val scrollOffset: Int = 0,    // Scroll offset within first item
     val summary: ChargesSummary = ChargesSummary(),
     val currencySymbol: String = com.matelink.data.model.Currency.CNY.symbol,
+    val currencyCode: String = "CNY",
     val teslamateBaseUrl: String = "",
     val freeSupercharging: Boolean = false,
-    val priceOverrides: Map<Int, Double> = emptyMap()
+    val priceOverrides: Map<Int, Double> = emptyMap(),
+    val effectiveCosts: Map<Int, EffectiveChargeCost> = emptyMap(),
+    val pendingLegacyAmounts: Map<Int, Double> = emptyMap(),
+    val pendingBoundAmounts: Map<Int, Pair<String?, Double>> = emptyMap(),
+    val otherCurrencyAmounts: Map<Int, Pair<String, Double>> = emptyMap()
 )
 
 data class ChargesSummary(
@@ -155,7 +163,7 @@ class ChargesViewModel @Inject constructor(
     private var historyCarId: Int? = null
     private var showShortDrivesCharges: Boolean = false
     private var allCharges: List<ChargeData> = emptyList()
-    private var allPriceOverrides: Map<String, Double> = emptyMap()
+    private var allCostRecords: List<ChargeCostOverride> = emptyList()
 
     companion object {
         private const val MIN_ENERGY_KWH = 0.1
@@ -201,19 +209,8 @@ class ChargesViewModel @Inject constructor(
     private fun observeChargePriceOverrides() {
         viewModelScope.launch {
             chargeCostOverrideStore.ensureLegacyMigrated()
-            chargeCostOverrideStore.observeAll().collect { overrides ->
-                allPriceOverrides = overrides
-                val id = historyCarId
-                _uiState.update { state ->
-                    state.copy(
-                        priceOverrides = if (id == null) emptyMap() else {
-                            allCharges.mapNotNull { charge ->
-                                overrides[chargeTotalOverrideKey(id, charge.chargeId)]
-                                    ?.let { charge.chargeId to it }
-                            }.toMap()
-                        }
-                    )
-                }
+            chargeCostOverrideStore.observeAllRecords().collect { records ->
+                allCostRecords = records
                 if (allCharges.isNotEmpty()) applyFiltersAndUpdateState()
             }
         }
@@ -222,10 +219,13 @@ class ChargesViewModel @Inject constructor(
     private fun observeSettings() {
         viewModelScope.launch {
             settingsDataStore.settings.collect { settings ->
-                val currency = Currency.findByCode(settings.currencyCode)
+                val currency = Currency.entries.firstOrNull {
+                    it.code.equals(settings.currencyCode, ignoreCase = true)
+                }
                 _uiState.update {
                     it.copy(
-                        currencySymbol = currency.symbol,
+                        currencySymbol = currency?.symbol ?: "?",
+                        currencyCode = currency?.code ?: settings.currencyCode,
                         defaultChargePrice = settings.defaultChargePrice,
                         teslamateBaseUrl = settings.teslamateBaseUrl
                     )
@@ -242,7 +242,8 @@ class ChargesViewModel @Inject constructor(
             carId = id
             historyCarId = null
             allCharges = emptyList()
-            _uiState.update { it.copy(charges = emptyList(), freeSupercharging = false, priceOverrides = emptyMap(), chartData = emptyList(), summary = ChargesSummary(), dcChargeIds = emptySet(), processedChargeIds = emptySet(), availableLocations = emptyList(), error = null, historySyncWarning = null, localArchiveLinkPending = false) }
+            allCostRecords = emptyList()
+            _uiState.update { it.copy(charges = emptyList(), freeSupercharging = false, priceOverrides = emptyMap(), effectiveCosts = emptyMap(), pendingLegacyAmounts = emptyMap(), pendingBoundAmounts = emptyMap(), otherCurrencyAmounts = emptyMap(), chartData = emptyList(), summary = ChargesSummary(), dcChargeIds = emptySet(), processedChargeIds = emptySet(), availableLocations = emptyList(), error = null, historySyncWarning = null, localArchiveLinkPending = false) }
             loadCarSettings(id)
             // Apply restored (or default) filter on first load. CUSTOM needs the
             // explicit date pair — setDateFilter is a no-op for CUSTOM.
@@ -405,17 +406,12 @@ class ChargesViewModel @Inject constructor(
                     ensureCurrent()
                     historyCarId = result.data.context.localHistoryCarId
                     allCharges = result.data.charges
-                    val priceOverrides = result.data.charges.mapNotNull { charge ->
-                        allPriceOverrides[chargeTotalOverrideKey(result.data.context.localHistoryCarId, charge.chargeId)]
-                            ?.let { charge.chargeId to it }
-                    }.toMap()
                     val granularity = determineGranularity(startDate, endDate)
 
                     _uiState.update {
                         it.copy(
                             dcChargeIds = dcChargeIds,
                             processedChargeIds = processedChargeIds,
-                            priceOverrides = priceOverrides,
                             chartGranularity = granularity,
                             error = null,
                             historySyncWarning = result.data.chargesSyncError,
@@ -429,7 +425,8 @@ class ChargesViewModel @Inject constructor(
                     if (result.message == com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE) {
                         allCharges = emptyList()
                         historyCarId = null
-                        _uiState.update { it.copy(charges = emptyList(), freeSupercharging = false, priceOverrides = emptyMap(), chartData = emptyList(), summary = ChargesSummary(), dcChargeIds = emptySet(), processedChargeIds = emptySet(), availableLocations = emptyList(), localArchiveLinkPending = false, historySyncWarning = null) }
+                        allCostRecords = emptyList()
+                        _uiState.update { it.copy(charges = emptyList(), freeSupercharging = false, priceOverrides = emptyMap(), effectiveCosts = emptyMap(), pendingLegacyAmounts = emptyMap(), pendingBoundAmounts = emptyMap(), otherCurrencyAmounts = emptyMap(), chartData = emptyList(), summary = ChargesSummary(), dcChargeIds = emptySet(), processedChargeIds = emptySet(), availableLocations = emptyList(), localArchiveLinkPending = false, historySyncWarning = null) }
                     }
                     _uiState.update {
                         it.copy(
@@ -524,6 +521,29 @@ class ChargesViewModel @Inject constructor(
         // Calculate summary and chart data from filtered charges
         val summary = calculateSummary(chargesForStatsFiltered)
         val chartData = calculateChartData(chargesForStatsFiltered, granularity, state.startDate)
+        val projections = allCharges.associate { charge -> charge.chargeId to projectedCost(charge, state) }
+        val prices = allCharges.mapNotNull { charge ->
+            projections[charge.chargeId]?.takeIf { it.source == ChargeCostSource.MANUAL }
+                ?.cost?.let { charge.chargeId to it }
+        }.toMap()
+        val pendingLegacy = historyCarId?.let { id ->
+            allCostRecords.filter { it.carId == id && it.sessionKey == "legacy" && !it.deleted }
+                .associate { it.chargeId to it.manualTotalAmount }
+        } ?: emptyMap()
+        val pendingBound = historyCarId?.let { id ->
+            allCharges.mapNotNull { charge ->
+                val record = findChargeCostOverride(allCostRecords, id, charge, state.currencyCode)
+                if (record == null || record.deleted ||
+                    projections[charge.chargeId]?.source == ChargeCostSource.MANUAL) null
+                else charge.chargeId to (record.currencyCode to record.manualTotalAmount)
+            }.toMap()
+        } ?: emptyMap()
+        val otherCurrency = historyCarId?.let { id ->
+            allCharges.mapNotNull { charge ->
+                findOtherCurrencyChargeCostOverride(allCostRecords, id, charge, state.currencyCode)
+                    ?.let { record -> charge.chargeId to (record.currencyCode!! to record.manualTotalAmount) }
+            }.toMap()
+        } ?: emptyMap()
 
         _uiState.update {
             it.copy(
@@ -532,6 +552,11 @@ class ChargesViewModel @Inject constructor(
                 isFilterLoading = false,
                 charges = displayChargesFiltered.sortedByDescending { it.startDate },
                 availableLocations = locations,
+                priceOverrides = prices,
+                effectiveCosts = projections,
+                pendingLegacyAmounts = pendingLegacy,
+                pendingBoundAmounts = pendingBound,
+                otherCurrencyAmounts = otherCurrency,
                 summary = summary,
                 chartData = chartData
             )
@@ -717,6 +742,13 @@ class ChargesViewModel @Inject constructor(
     fun saveManualTotalAmount(chargeId: Int, totalAmount: Double?) {
         val currentCarId = historyCarId ?: return
         val remoteCarId = carId ?: return
+        val charge = allCharges.firstOrNull { it.chargeId == chargeId } ?: return
+        val currencyCode = _uiState.value.currencyCode
+        if (Currency.entries.none { it.code.equals(currencyCode, ignoreCase = true) }) {
+            _uiState.update { it.copy(error = appContext.getString(R.string.charge_cost_currency_unverified)) }
+            return
+        }
+        val expectedVersion = findChargeCostOverride(allCostRecords, currentCarId, charge, currencyCode)?.version ?: 0L
         val validTotal = validManualChargeTotal(totalAmount)
         if (totalAmount != null && validTotal == null) return
 
@@ -728,10 +760,12 @@ class ChargesViewModel @Inject constructor(
                 }
                 is ApiResult.Success -> result.data
             }
-            if (carId != remoteCarId || historyCarId != currentCarId ||
+            if (carId != remoteCarId || historyCarId != currentCarId || _uiState.value.currencyCode != currencyCode ||
                 proof.context.localHistoryCarId != currentCarId || !historyRepository.isContextCurrent(proof)) return@launch
-            saveVerifiedHistoryChargeCost(proof, chargeId, validTotal,
-                historyRepository::isContextCurrent, chargeCostOverrideStore::save)
+            val saved = chargeCostOverrideStore.saveBound(currentCarId, charge, validTotal,
+                currencyCode, expectedVersion)
+            if (!historyRepository.isContextCurrent(proof)) return@launch
+            if (!saved) _uiState.update { it.copy(error = appContext.getString(R.string.charge_cost_edit_conflict)) }
         }
     }
 
@@ -756,15 +790,22 @@ class ChargesViewModel @Inject constructor(
     }
 
     private fun effectiveCost(charge: ChargeData, state: ChargesUiState): Double? {
+        val projection = projectedCost(charge, state)
+        return projection.cost.takeUnless { projection.source == ChargeCostSource.ESTIMATE }
+    }
+
+    private fun projectedCost(charge: ChargeData, state: ChargesUiState): EffectiveChargeCost {
         val isDcCharge = historyChargeType(charge, state.dcChargeIds, state.processedChargeIds) == ChargeType.DC
-        return resolveChargeCostFromTotal(
-            manualTotalAmount = state.priceOverrides[charge.chargeId],
+        val localCar = historyCarId ?: return EffectiveChargeCost(null, ChargeCostSource.UNAVAILABLE)
+        return projectEffectiveChargeCost(
+            charge = charge,
+            localHistoryCarId = localCar,
+            manual = findChargeCostOverride(allCostRecords, localCar, charge, state.currencyCode),
+            selectedCurrencyCode = state.currencyCode,
             freeSupercharging = state.freeSupercharging,
             isDcCharge = isDcCharge,
-            teslaMateCost = charge.cost,
-            energyKwh = charge.batteryInputKwh,
             defaultPricePerKwh = state.defaultChargePrice
-        ).cost
+        )
     }
 
 }

@@ -12,6 +12,7 @@ import com.matelink.data.local.dao.GeocodeCacheDao
 import com.matelink.data.local.dao.LegacyHistoryArchiveDao
 import com.matelink.data.local.dao.GeocodeProgressDao
 import com.matelink.data.local.dao.GeocodeQueueDao
+import com.matelink.data.local.dao.HistoryDetailDao
 import com.matelink.data.local.dao.SavedTripDao
 import com.matelink.data.local.dao.SentryAlertLogDao
 import com.matelink.data.local.dao.SyncStateDao
@@ -27,6 +28,8 @@ import com.matelink.data.local.entity.GeocodeCache
 import com.matelink.data.local.entity.LegacyHistoryArchive
 import com.matelink.data.local.entity.GeocodeProgress
 import com.matelink.data.local.entity.GeocodeQueueItem
+import com.matelink.data.local.entity.HistoryDetailChunk
+import com.matelink.data.local.entity.HistoryDetailReceipt
 import com.matelink.data.local.entity.SavedTrip
 import com.matelink.data.local.entity.SavedTripConsumedFingerprint
 import com.matelink.data.local.entity.SavedTripLeg
@@ -66,9 +69,11 @@ import com.matelink.data.local.entity.TpmsPressureSample
         SavedTripLeg::class,
         SavedTripConsumedFingerprint::class,
         TpmsPressureSample::class,
-        LegacyHistoryArchive::class
+        LegacyHistoryArchive::class,
+        HistoryDetailReceipt::class,
+        HistoryDetailChunk::class
     ],
-    version = 21,
+    version = 23,
     exportSchema = true
 )
 abstract class StatsDatabase : RoomDatabase() {
@@ -87,6 +92,7 @@ abstract class StatsDatabase : RoomDatabase() {
     abstract fun savedTripDao(): SavedTripDao
     abstract fun tpmsPressureSampleDao(): TpmsPressureSampleDao
     abstract fun legacyHistoryArchiveDao(): LegacyHistoryArchiveDao
+    abstract fun historyDetailDao(): HistoryDetailDao
 
     companion object {
         const val DATABASE_NAME = "matelink_stats.db"
@@ -456,6 +462,84 @@ abstract class StatsDatabase : RoomDatabase() {
             }
         }
 
+        /** Preserve old numeric values but leave currency and session provenance unconfirmed. */
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS charge_cost_overrides_v22 (
+                        carId INTEGER NOT NULL, chargeId INTEGER NOT NULL,
+                        manualTotalAmount REAL NOT NULL, sessionKey TEXT NOT NULL DEFAULT 'legacy',
+                        currencyCode TEXT, sourceKind TEXT, sourceInstanceId TEXT,
+                        sourceRecordId TEXT, startInstant TEXT, endInstant TEXT,
+                        version INTEGER NOT NULL DEFAULT 0, deleted INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(carId, chargeId, sessionKey)
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO charge_cost_overrides_v22 (carId, chargeId, manualTotalAmount, sessionKey)
+                    SELECT carId, chargeId, manualTotalAmount, 'legacy' FROM charge_cost_overrides
+                """.trimIndent())
+                db.execSQL("DROP TABLE charge_cost_overrides")
+                db.execSQL("ALTER TABLE charge_cost_overrides_v22 RENAME TO charge_cost_overrides")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_charge_cost_overrides_carId ON charge_cost_overrides (carId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_charge_cost_overrides_carId_chargeId ON charge_cost_overrides (carId, chargeId)")
+            }
+        }
+
+        /** Add scoped point receipts without changing any existing history or manual-cost row. */
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS history_detail_receipts (
+                        receiptId TEXT NOT NULL PRIMARY KEY,
+                        identityKey TEXT NOT NULL,
+                        localHistoryCarId INTEGER NOT NULL,
+                        scopeFingerprint TEXT NOT NULL,
+                        kind TEXT NOT NULL,
+                        recordId INTEGER NOT NULL,
+                        sourceKey TEXT NOT NULL,
+                        sourceInstanceKey TEXT NOT NULL,
+                        sourceInstanceVerified INTEGER NOT NULL,
+                        sourceIdKey TEXT NOT NULL,
+                        sourceIdVerified INTEGER NOT NULL,
+                        startInstant TEXT NOT NULL,
+                        endInstant TEXT NOT NULL,
+                        localRevision INTEGER NOT NULL,
+                        state TEXT NOT NULL,
+                        responseComplete INTEGER NOT NULL,
+                        providerTotalVerified INTEGER NOT NULL,
+                        providerPointCount INTEGER,
+                        pointCount INTEGER NOT NULL,
+                        nextCursor TEXT,
+                        contentSha256 TEXT,
+                        encodedByteCount INTEGER NOT NULL,
+                        codecVersion INTEGER NOT NULL,
+                        headerJson TEXT,
+                        lengthUnit TEXT,
+                        receivedAtEpochMs INTEGER NOT NULL,
+                        lastFailureCode TEXT,
+                        lastAttemptAtEpochMs INTEGER
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_history_detail_receipts_identityKey_localRevision ON history_detail_receipts (identityKey, localRevision)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_history_detail_receipts_localHistoryCarId_kind_recordId ON history_detail_receipts (localHistoryCarId, kind, recordId)")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS history_detail_chunks (
+                        receiptId TEXT NOT NULL,
+                        chunkIndex INTEGER NOT NULL,
+                        firstPointIndex INTEGER NOT NULL,
+                        pointCount INTEGER NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        payload BLOB NOT NULL,
+                        PRIMARY KEY(receiptId, chunkIndex),
+                        FOREIGN KEY(receiptId) REFERENCES history_detail_receipts(receiptId)
+                            ON UPDATE NO ACTION ON DELETE NO ACTION
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_history_detail_chunks_receiptId ON history_detail_chunks (receiptId)")
+            }
+        }
+
         val MIGRATION_19_20 = object : Migration(19, 20) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `drives_summary` ADD COLUMN `qualityState` TEXT NOT NULL DEFAULT 'incomplete'")
@@ -788,7 +872,8 @@ abstract class StatsDatabase : RoomDatabase() {
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
             MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
             MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
-            MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21
+            MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
+            MIGRATION_21_22, MIGRATION_22_23
         )
     }
 }

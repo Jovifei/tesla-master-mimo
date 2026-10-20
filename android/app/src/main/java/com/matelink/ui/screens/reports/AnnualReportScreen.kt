@@ -661,14 +661,19 @@ private fun DrivingHabitsSection(stats: CarStats) {
             }
 
             // Efficiency rating
-            if ((qs.avgEfficiencyWhKm ?: 0.0) > 0) {
-                val rating = when {
-                    (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 150 -> stringResource(R.string.annual_report_excellent)
-                    (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 180 -> stringResource(R.string.annual_report_good)
-                    (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 220 -> stringResource(R.string.annual_report_average)
-                    else -> stringResource(R.string.annual_report_high)
+            qs.avgEfficiencyWhKm?.takeIf(Double::isFinite)?.let { efficiency ->
+                if (efficiency <= 0.0) {
+                    HabitRow(stringResource(R.string.stats_avg_efficiency),
+                        String.format(Locale.getDefault(), "%.0f Wh/km", efficiency))
+                } else {
+                    val rating = when {
+                        efficiency < 150 -> stringResource(R.string.annual_report_excellent)
+                        efficiency < 180 -> stringResource(R.string.annual_report_good)
+                        efficiency < 220 -> stringResource(R.string.annual_report_average)
+                        else -> stringResource(R.string.annual_report_high)
+                    }
+                    HabitRow(stringResource(R.string.annual_report_efficiency_rating), rating)
                 }
-                HabitRow(stringResource(R.string.annual_report_efficiency_rating), rating)
             }
 
             // Max speed

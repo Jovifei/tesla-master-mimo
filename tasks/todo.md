@@ -3572,6 +3572,33 @@ Review: 大字体旧90dp断言被真实模拟器触发；修正为分字号上�
 
 2026-10-21 build62 最终本地回归：Debug/Release JUnit 各1142、0失败/错误，Release8项既有skip；双lint0错误，R8及同签Release候选PASS。隔离API35模拟器全套最终XML72项、0失败/错误、2项两次安装流程skip，Gradle退出0；聚焦RED与后续GREEN证据已保存在E盘允许的本机目录。签名候选尚为提交前BuildConfig基线SHA，不给手机安装。下一步固定源码提交/同SHA CI、同一C2C网页终审、修复其阻断，再重建固定SHA正式包并保数据实机核对，最后按授权合并main。
 
+## 2026-10-21 C2C 第2轮整包修复（PR22 仍 Draft）
+
+- [x] `7512fd843a9d61a19ef5a2e702981d4212882fc2` 已推 GitHub，Actions `39493998325` 16/16 SUCCESS；本地双变体、lint/R8 与 API35 原生测试完成。网页 GPT-6 极高在同聊天给 `CHANGES_REQUIRED`，不安装、不合并该候选。
+- [ ] P1：实际 Room 并发 RED，获取同一修订的 Stats/Annual 摘要、覆盖、Deep、手工费用，再在事务外计算；切换年份与身份后不可拼旧结果。
+- [ ] P1：手工费用可验证币种、来源实例、精确会话窗和修改版本的增量迁移；旧金额保持待确认且不能被换符号；Timeline、Stats 记录卡、Cost、Mileage、Trip、Annual 共享有效费用资格与零价语义。
+- [ ] P1：Cost/Efficiency/Timeline/Mileage 辅助请求以 origin/账号/稳定车辆/来源和代际守护；A→B→A、同数字 ID 与迟到非合作取消负例 RED→GREEN。
+- [ ] P1：64 条隔离合成充电多页列表、弱 null、同 ID 详情、Room 重开、跨页价格/能量与明确撤销；来源实例不同不得继承旧 proof，不把现实 967/920 当固定真值。
+- [ ] P1：增量 Room 迁移保存完整详情原始点或明确部分覆盖，绑定同 scope/source/window 与 hash；失败不中断旧副本，离线关闭重开仍显示真实已保存点；驻车无证据字段保持未知。
+- [ ] P2：年度 AC/DC/UNKNOWN 三态、行程采样平均说明、稀疏/零/负值及新布局实际消费者回归。
+- [ ] 新固定 SHA 上双变体、lint/R8、真实 Room 迁移/重开、API35/窄屏、Go/PG/race/TLS/Web、完整同 SHA CI 和同一 C2C 终审；只有源码通过后才同签保数据手机安装与主分支合并。
+
+Review：第1轮绿色CI只证明 `7512fd8` 的现有检查点，不能替上述P1消费者缺口背书。原E盘小程序Owner dirty、手机build61/历史、生产API/DB/bridge均保持不动。Hub按C工作树绑定revision本次连接拒绝，未上报成功且不盲重试。
+
+第2轮RED检查点：`iter2-cost-d12-red-01.log` 实际编译并执行9项聚焦测试，费用契约6项失败（币种、旧金额、手工0、来源实例/窗口、上游零价），64条两页真实Repository/Room合成链3项通过。D12通过不等于现实手机64条已取得同修订原始receipt；该部分仍待设备只读对账。
+
+`iter2-scope-red-01.log`：实际实例化的 Efficiency/Mileage VM 与详情采样标签 12 项中 11 项失败、1 项通过，包含 A→B→A 同数字车 ID 迟到成功/错误、旧单位覆盖、source flow 清屏与样本均值语义。产品和测试源码均已编译；待守护修复后复跑 GREEN。首轮 Stats 聚焦产品 Kotlin 编译通过，测试编译因费用新测试参数更名中止，已修正参数，未将该次冒称 Stats 测试 PASS。
+
+`iter2-integrated-focused-03.log`：费用、Stats、Mileage、Efficiency、Trips与采样标签9个真实消费者类共59项，0失败/错误/跳过。`iter2-v22-migration-native-01.log`：隔离API35 AndroidTest 15项，新增v21→22和费用可见性回归PASS，3项旧迁移测试仍硬编码最新版本21而FAIL；保留XML，待改为完整升级链并复跑。D10原始详情点副本尚未实施/运行。
+
+`iter2-v22-migration-native-02.log`：旧迁移测试补证 v21 中间节点后，同一隔离API35 15/15 PASS、0失败/错误/跳过，XML留E盘允许目录；真机build61数据库未触碰。v23详情点迁移仍未开始。
+
+D10原始点保存RED：`HistoryDetailCodecTest` 3/3 PASS，证明有界typed点序、hash与同刻/null处理；`HistoryDetailRoomIntegrationTest` 在现有v22真实隔离Room执行1项、因缺 receipt/chunk 表按预期 FAIL（`iter2-detail-room-red-01.log`），产品与测试均编译。下一步只作v22→v23增量迁移及真实Drive/Charge详情/Sync消费者接线，再跑迁移/关闭重开/离线/中断GREEN；不在真机跑RED。
+
+`iter2-d12-instance-red-02.log`：同source标签/ID/Instant窗但实例不同或单侧缺实例，真实DAO+64页Unified+Room重开5项中3项按预期AssertionError，2项legacy兼容PASS；修复后`iter2-d12-green-d10-focused-03.log`同类6/6、64页3/3、旧能量合并4/4、D10 Room4/4与codec3/3，总20/20 PASS。v23详情VM/Sync真实消费者尚待接线，不能把新表测试等同离线曲线完成。
+
+第二轮提交前完整检查点：`iter2-full-android-precommit-02.log` Debug/Release各1191项0失败/错误，Release8项预期skip；双lint0error，R8/双变体构建PASS。`iter2-full-emulator-precommit-01.log`隔离API35最终XML76项0失败/错误、2项两次安装流程skip，Gradle退出0；v21/v22→23迁移13/13与Charge/Drive离线VM+真实Sync/Room/codec20/20此前聚焦PASS。正式固定SHA、同SHA CI、网页终审、手机与main门仍未闭合。
+
 2026-10-21 执行检查点：充电同步旧夹具与来源准入、统计本地年/月与费用配对、温度真实点、时间线、哨兵本地历史ID、云TPMS零额外HTTP均已进入源码候选。D7旧实现10项中5项实际 RED，修复后15项通过；TPMS旧路径4项中3项实际 RED，候选在48项聚焦中通过。完整Debug首轮1092项中8失败，按旧DAO名称、旧无来源摘要、诊断轮询预期、版本号与隔离fixture逐项收口；7个失败类的57项聚焦已重新通过。最终全量、lint、R8、模拟器、手机、同SHA CI 和远端复审仍待执行。
 
 独立负面复审新增发布阻断：StatsRepository 跨 await 重解析历史车辆可能混 A/B 账号或来源；年度 QuickStats/coverage/月图使用不同 UTC 与本地年份 cohort。修复与迟到异步/跨年负例进行中，完成前不提交正式候选、不安装。

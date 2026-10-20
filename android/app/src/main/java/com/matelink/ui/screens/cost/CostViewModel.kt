@@ -4,6 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.local.ChargeCostOverrideStore
+import com.matelink.data.local.VehicleContextRepository
+import com.matelink.data.local.HistoryReadScope
+import com.matelink.data.local.VehicleContext
+import com.matelink.data.local.entity.ChargeCostOverride
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.dao.AggregateDao
 import com.matelink.data.model.Currency
@@ -13,7 +17,10 @@ import com.matelink.domain.analytics.AnalysisWindow
 import com.matelink.domain.analytics.DatedSourceRecord
 import com.matelink.domain.analytics.HistoryFreshness
 import com.matelink.domain.analytics.NoDataReason
-import com.matelink.domain.analytics.chargeTotalOverrideKey
+import com.matelink.domain.analytics.findChargeCostOverride
+import com.matelink.domain.analytics.projectEffectiveChargeCost
+import com.matelink.domain.analytics.ChargeCostSource
+import com.matelink.domain.history.LatestHistoryLoad
 import com.matelink.domain.analytics.calculateCostTotals
 import com.matelink.domain.analytics.selectWindow
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,6 +32,7 @@ import com.matelink.ui.screens.charges.ChargeType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -125,7 +133,8 @@ class CostViewModel @Inject constructor(
     private val historyRepository: AnalysisHistoryRepository,
     private val aggregateDao: AggregateDao,
     private val chargeCostOverrideStore: ChargeCostOverrideStore,
-    private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore,
+    private val vehicleContexts: VehicleContextRepository
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CostUiState())
     val uiState = _uiState.asStateFlow()
@@ -136,10 +145,26 @@ class CostViewModel @Inject constructor(
     private var historyRecordCount: Int = 0
     private var historyReason: NoDataReason? = null
     private var dcChargeIds: Set<Int> = emptySet()
-    private var manualTotals: Map<String, Double> = emptyMap()
+    private var manualRecords: List<ChargeCostOverride> = emptyList()
+    private var currencyCode: String = "CNY"
+    private val latestLoad = LatestHistoryLoad()
+    private var activeScope: HistoryReadScope? = null
     private var defaultChargePrice: Double? = null
     private var customStart: LocalDate? = null
     private var customEnd: LocalDate? = null
+
+    init {
+        viewModelScope.launch {
+            vehicleContexts.historyScopeChanges.collect { scope ->
+                val id = currentCarId ?: return@collect
+                if (activeScope != null && activeScope != scope) {
+                    charges = emptyList()
+                    manualRecords = emptyList()
+                    load(id)
+                }
+            }
+        }
+    }
 
     fun load(carId: Int) {
         val sameCar = currentCarId == carId
@@ -150,25 +175,44 @@ class CostViewModel @Inject constructor(
             charges = emptyList()
         }
         currentCarId = carId
-        viewModelScope.launch {
+        latestLoad.launch(viewModelScope) {
             _uiState.value = CostUiState(loading = true, selectedWindow = window)
+            var capturedScope: HistoryReadScope? = null
+            var capturedContext: VehicleContext? = null
             try {
+                val scope = vehicleContexts.captureReadScope()
+                val context = vehicleContexts.resolveRemote(carId)
+                capturedScope = scope
+                capturedContext = context
+                suspend fun checkScope() {
+                    ensureCurrent()
+                    if (currentCarId != carId || !vehicleContexts.isHistoryContextCurrent(scope, context))
+                        throw CancellationException("Cost history scope changed")
+                }
+                checkScope()
                 val settings = settingsDataStore.settings.first()
-                val currencySymbol = Currency.findByCode(settings.currencyCode).symbol
-                val overrides = chargeCostOverrideStore.getAll()
+                val currencySymbol = Currency.entries.firstOrNull {
+                    it.code.equals(settings.currencyCode, ignoreCase = true)
+                }?.symbol ?: "?"
+                val records = chargeCostOverrideStore.getAllRecords()
+                checkScope()
                 when (val result = historyRepository.load(carId)) {
                     is ApiResult.Success -> {
-                        if (currentCarId != carId) return@launch
+                        checkScope()
                         val scopedCarId = result.data.context?.localHistoryCarId
+                        if (scopedCarId != context.localHistoryCarId ||
+                            result.data.context?.stableIdentity != context.stableIdentity) return@launch
                         val dcIds = scopedCarId?.let { id ->
                             try { aggregateDao.getDcChargeIds(id).toSet() }
                             catch (e: CancellationException) { throw e }
                             catch (_: Exception) { emptySet() }
                         } ?: emptySet()
-                        if (currentCarId != carId) return@launch
+                        checkScope()
+                        activeScope = scope
                         historyCarId = scopedCarId
                         dcChargeIds = dcIds
-                        manualTotals = overrides
+                        manualRecords = records
+                        currencyCode = settings.currencyCode
                         defaultChargePrice = settings.defaultChargePrice
                         historyRecordCount = result.data.charges.size
                         historyReason = result.data.coverage.reason
@@ -182,13 +226,19 @@ class CostViewModel @Inject constructor(
                         }
                         recalculate(_uiState.value.selectedWindow)
                     }
-                    is ApiResult.Error -> if (currentCarId == carId) {
+                    is ApiResult.Error -> {
+                        checkScope()
                         _uiState.value = CostUiState(loading = false, error = result.message)
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                ensureCurrent()
+                val scope = capturedScope
+                val context = capturedContext
+                if (scope != null && context != null &&
+                    !vehicleContexts.isHistoryContextCurrent(scope, context)) return@launch
                 if (currentCarId == carId) _uiState.value = CostUiState(loading = false, error = e.message)
             }
         }
@@ -211,17 +261,19 @@ class CostViewModel @Inject constructor(
     private fun recalculate(window: AnalysisWindow) {
         val selected = selectWindow(charges, window, LocalDate.now(), customStart, customEnd).map { it.charge }
         fun costFor(charge: ChargeData): Double? {
-            val manual = historyCarId?.let { manualTotals[chargeTotalOverrideKey(it, charge.chargeId)] }
-            if (manual != null && manual.isFinite() && manual >= 0.0) return manual
-            if (charge.cost != null && charge.cost.isFinite() && charge.cost >= 0.0) return charge.cost
-            return null
+            val car = historyCarId ?: return null
+            return projectEffectiveChargeCost(charge, car,
+                findChargeCostOverride(manualRecords, car, charge, currencyCode), currencyCode).cost
         }
 
         val monthly = buildMonthlyCosts(selected, dcChargeIds, costFor = ::costFor)
         val locations = buildLocationCosts(selected, ::costFor)
         val totals = calculateCostTotals(selected, ::costFor, defaultChargePrice)
         val manualCostCount = historyCarId?.let { id ->
-            selected.count { manualTotals.containsKey(chargeTotalOverrideKey(id, it.chargeId)) }
+            selected.count { charge ->
+                projectEffectiveChargeCost(charge, id,
+                    findChargeCostOverride(manualRecords, id, charge, currencyCode), currencyCode).source == ChargeCostSource.MANUAL
+            }
         } ?: 0
         val noDataReason = when {
             selected.isNotEmpty() -> null

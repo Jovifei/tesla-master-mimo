@@ -149,6 +149,10 @@ fun ChargeDetailScreen(
                     currencySymbol = uiState.currencySymbol,
                     isDcCharge = uiState.isDcCharge,
                     manualTotalAmount = uiState.manualTotalAmount,
+                    pendingLegacyAmount = uiState.pendingLegacyAmount,
+                    pendingBoundAmount = uiState.pendingBoundAmount,
+                    otherCurrencyAmount = uiState.otherCurrencyAmount,
+                    sourceUnconfirmedAmount = uiState.sourceUnconfirmedAmount,
                     containingTrip = uiState.containingTrip,
                     onNavigateToTripDetail = onNavigateToTripDetail,
                     onRemoveFromTrip = viewModel::removeFromTrip,
@@ -171,6 +175,10 @@ internal fun ChargeDetailContent(
     currencySymbol: String,
     isDcCharge: Boolean?,
     manualTotalAmount: Double?,
+    pendingLegacyAmount: Double? = null,
+    pendingBoundAmount: Pair<String?, Double>? = null,
+    otherCurrencyAmount: Pair<String, Double>? = null,
+    sourceUnconfirmedAmount: Double? = null,
     containingTrip: Pair<Long, com.matelink.domain.model.Trip>?,
     onNavigateToTripDetail: (String) -> Unit,
     onRemoveFromTrip: () -> Unit,
@@ -402,11 +410,61 @@ internal fun ChargeDetailContent(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+        if (costPresentation.state == ChargeDetailCostState.MANUAL &&
+            costPresentation.qualificationReason == "instance_unverified") {
+            Text(stringResource(R.string.charge_cost_instance_unverified),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        pendingLegacyAmount?.let { amount ->
+            Text(stringResource(R.string.charge_cost_saved_unconfirmed, amount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        pendingBoundAmount?.let { (code, amount) ->
+            Text(stringResource(R.string.charge_cost_saved_unbound, code ?: "?", amount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        otherCurrencyAmount?.let { (code, amount) ->
+            Text(stringResource(R.string.charge_cost_other_currency, code, amount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        sourceUnconfirmedAmount?.let { amount ->
+            Text(stringResource(R.string.charge_cost_source_unconfirmed, amount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (costPresentation.qualificationReason == "source_unverified") {
+            detail.cost?.takeIf { it.isFinite() && it >= 0.0 }?.let { amount ->
+                Text(stringResource(R.string.charge_cost_source_identity_unverified, amount),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (costPresentation.qualificationReason == "currency_mismatch") {
+            detail.cost?.takeIf { it.isFinite() && it > 0.0 }?.let { amount ->
+                Text(stringResource(R.string.charge_cost_source_other_currency,
+                    detail.currencyCode.orEmpty(), amount),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (costPresentation.qualificationReason == "provider_zero_unverified" &&
+            sourceUnconfirmedAmount == null) {
+            Text(stringResource(R.string.charge_cost_source_zero_unverified),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 
     if (showPriceDialog) {
         ChargePriceDialog(
             currentTotal = manualTotalAmount,
+            pendingLegacyAmount = if (manualTotalAmount == null) pendingLegacyAmount else null,
+            otherCurrencyAmount = otherCurrencyAmount,
+            pendingBoundAmount = pendingBoundAmount,
             currencySymbol = currencySymbol,
             onDismiss = { showPriceDialog = false },
             onSave = { total ->
@@ -596,7 +654,10 @@ internal fun ChargePriceDialog(
     currencySymbol: String,
     onDismiss: () -> Unit,
     onSave: (Double) -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    pendingLegacyAmount: Double? = null,
+    pendingBoundAmount: Pair<String?, Double>? = null,
+    otherCurrencyAmount: Pair<String, Double>? = null
 ) {
     var value by remember(currentTotal) {
         mutableStateOf(currentTotal?.let { "%.2f".format(it) } ?: "")
@@ -608,7 +669,20 @@ internal fun ChargePriceDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.charge_total_dialog_title)) },
         text = {
-            OutlinedTextField(
+            Column {
+                pendingLegacyAmount?.let {
+                    Text(stringResource(R.string.charge_cost_legacy_pending, it),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                otherCurrencyAmount?.let { (code, amount) ->
+                    Text(stringResource(R.string.charge_cost_other_currency, code, amount),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                pendingBoundAmount?.let { (code, amount) ->
+                    Text(stringResource(R.string.charge_cost_saved_unbound, code ?: "?", amount),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                OutlinedTextField(
                 value = value,
                 onValueChange = { value = it },
                 label = { Text(stringResource(R.string.charge_total_amount)) },
@@ -620,7 +694,8 @@ internal fun ChargePriceDialog(
                 isError = value.isNotBlank() && !isValid,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-            )
+                )
+            }
         },
         confirmButton = {
             TextButton(

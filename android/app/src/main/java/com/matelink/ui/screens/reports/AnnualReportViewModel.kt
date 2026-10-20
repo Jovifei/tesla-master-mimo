@@ -163,14 +163,9 @@ class AnnualReportViewModel @Inject constructor(
         reportLoader.load(
             proof = { suspend { isCurrent(id, epoch, proof) && _uiState.value.year == year } },
             fetch = { request ->
-                val currency = Currency.findByCode(settingsDataStore.settings.first().currencyCode).symbol
+                val annual = statsRepository.getAnnualSnapshot(id, year)
                 request.requireCurrent()
-                val stats = statsRepository.getStats(id, YearFilter.Year(year))
-                request.requireCurrent()
-                val monthlyDrives = statsRepository.getMonthlyDriveAggregation(id, year)
-                request.requireCurrent()
-                val monthlyCharges = statsRepository.getMonthlyChargeAggregation(id, year)
-                request.requireCurrent()
+                val currency = Currency.findByCode(annual.currencyCode).symbol
                 var freshness = HistoryFreshness.FRESH
                 val standby = try {
                     when (val history = historyRepository.load(id)) {
@@ -183,7 +178,8 @@ class AnnualReportViewModel @Inject constructor(
                 } catch (e: CancellationException) { throw e }
                 catch (_: Exception) { null }
                 request.requireCurrent()
-                AnnualReportResult(stats, monthlyDrives, monthlyCharges, standby, freshness, currency)
+                AnnualReportResult(annual.stats, annual.monthlyDrives, annual.monthlyCharges,
+                    standby, freshness, currency)
             },
             onSuccess = { result -> _uiState.value = _uiState.value.publishReport(result) },
             onFailure = { error -> _uiState.value = _uiState.value.copy(

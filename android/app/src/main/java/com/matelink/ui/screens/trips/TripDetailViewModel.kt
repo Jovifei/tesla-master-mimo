@@ -16,6 +16,7 @@ import com.matelink.data.local.dao.TripRouteCacheDao
 import com.matelink.data.local.entity.TripCountryCache
 import com.matelink.data.local.entity.TripRouteCache
 import com.matelink.data.local.entity.ChargeSummary
+import com.matelink.data.local.entity.ChargeCostOverride
 import com.matelink.data.model.Currency
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
@@ -26,9 +27,9 @@ import com.matelink.domain.EligibleLegs
 import com.matelink.domain.LegRef
 import com.matelink.domain.RouteSimplifier
 import com.matelink.domain.TripRepository
-import com.matelink.domain.analytics.chargeTotalOverrideKey
+import com.matelink.domain.analytics.findChargeCostOverride
+import com.matelink.domain.analytics.projectEffectiveChargeCost
 import com.matelink.domain.analytics.observedCostSumOrNull
-import com.matelink.domain.analytics.validManualChargeTotal
 import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.domain.analytics.toRawAnalysisChargeData
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
@@ -127,7 +128,7 @@ data class TripChargeCostProjection(
 
 /** Reuses only rows from the verified local vehicle; raw Room/API receipts remain unchanged. */
 internal fun projectTripChargeCosts(
-    trip: Trip, localHistoryCarId: Int, manualTotals: Map<String, Double>
+    trip: Trip, localHistoryCarId: Int, records: List<ChargeCostOverride>, currencyCode: String
 ): TripChargeCostProjection? {
     if (trip.drives.isEmpty() || trip.drives.any { it.carId != localHistoryCarId } ||
         trip.charges.any { it.carId != localHistoryCarId }) return null
@@ -135,9 +136,10 @@ internal fun projectTripChargeCosts(
         charge.chargeId to qualifiedTripChargeEnergy(charge)
     }
     val priced = trip.charges.mapNotNull { charge ->
-        val cost = validManualChargeTotal(
-            manualTotals[chargeTotalOverrideKey(localHistoryCarId, charge.chargeId)])
-            ?: charge.cost?.takeIf { it.isFinite() && it >= 0.0 }
+        val analysis = charge.toAnalysisChargeData()
+        val cost = projectEffectiveChargeCost(analysis, localHistoryCarId,
+            findChargeCostOverride(records, localHistoryCarId, analysis, currencyCode),
+            currencyCode).cost
         cost?.let { PricedTripCharge(charge, it, energyById[charge.chargeId]) }
     }
     val paired = priced.mapNotNull { item ->
@@ -318,27 +320,30 @@ class TripDetailViewModel @Inject constructor(
                 }
                 launch {
                     val settings = settingsDataStore.settings.first()
-                    val symbol = Currency.findByCode(settings.currencyCode).symbol
+                    val symbol = Currency.entries.firstOrNull {
+                        it.code.equals(settings.currencyCode, ignoreCase = true)
+                    }?.symbol ?: "?"
                     if (isCurrent(generation, scope, context))
                         _uiState.update { it.copy(currencySymbol = symbol) }
                 }
             }
 
             // Fast path: use cached trip from list screen (avoids a repository round trip)
-            val manualTotals = chargeCostOverrideStore.getAll()
+            val currencyCode = settingsDataStore.settings.first().currencyCode
+            val manualRecords = chargeCostOverrideStore.getAllRecords()
             if (!isCurrent(generation, scope, context)) return@launch
             val localCarId = context.localHistoryCarId
             val cached = tripCache.take(tripStartDate)
-                ?.takeIf { projectTripChargeCosts(it, localCarId, manualTotals) != null }
+                ?.takeIf { projectTripChargeCosts(it, localCarId, manualRecords, currencyCode) != null }
             val trip = cached ?: tripRepository.getSavedTripsReadOnly(localCarId)
                 .find { it.startDate == tripStartDate &&
-                    projectTripChargeCosts(it, localCarId, manualTotals) != null }
+                    projectTripChargeCosts(it, localCarId, manualRecords, currencyCode) != null }
             if (!isCurrent(generation, scope, context)) return@launch
             if (trip == null) {
                 _uiState.update { it.copy(isLoading = false, isMapLoading = false) }
                 return@launch
             }
-            val costs = projectTripChargeCosts(trip, localCarId, manualTotals) ?: return@launch
+            val costs = projectTripChargeCosts(trip, localCarId, manualRecords, currencyCode) ?: return@launch
 
             // Lookup savedTripId (for edit/merge/delete actions) and DC charge id set (for AC/DC visuals)
             val savedId = tripRepository.findSavedTripId(localCarId, trip)

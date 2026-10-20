@@ -66,8 +66,8 @@ class HistoryRefreshIntegrationContractTest {
             assertFalse(vm.contains("historyCarId ?: carId"))
             assertTrue(source("ui/screens/${kind}DetailScreen.kt").contains("HistoryReadNotices(localArchiveLinkPending, historySyncWarning)"))
         }
-        assertTrue(source("ui/screens/charges/ChargesViewModel.kt").contains("saveVerifiedHistoryChargeCost("))
-        assertTrue(source("ui/screens/charges/ChargeDetailViewModel.kt").contains("saveVerifiedHistoryChargeCost("))
+        assertTrue(source("ui/screens/charges/ChargesViewModel.kt").contains("chargeCostOverrideStore.saveBound("))
+        assertTrue(source("ui/screens/charges/ChargeDetailViewModel.kt").contains("chargeCostOverrideStore.saveBound("))
     }
     @Test fun currentConsumersShareOriginNamespaceAndPreserveLegacyMapping() {
         val disk = HistoryConsumerIdentityRecoveryTest.PreferenceDisk()

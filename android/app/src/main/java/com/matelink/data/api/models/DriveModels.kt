@@ -42,6 +42,8 @@ data class DriveData(
     @Json(name = "end_latitude") val endLatitude: Double? = null,
     @Json(name = "end_longitude") val endLongitude: Double? = null,
     @Json(name = "energy_contract") val energyContract: EnergyContract? = null,
+    @Json(name = "source_instance_id") val sourceInstanceId: String? = null,
+    @Json(name = "source_id") val sourceId: String? = null,
     /** Same-response metadata, persisted separately from the raw receipt. */
     @Json(ignore = true) val lengthUnit: String? = null
 ) {
@@ -138,6 +140,8 @@ data class DriveDetail(
     @Json(name = "end_latitude") val endLatitude: Double? = null,
     @Json(name = "end_longitude") val endLongitude: Double? = null,
     @Json(name = "energy_contract") val energyContract: EnergyContract? = null,
+    @Json(name = "source_instance_id") val sourceInstanceId: String? = null,
+    @Json(name = "source_id") val sourceId: String? = null,
     @Json(ignore = true) val lengthUnit: String? = null
 ) {
     val id: Int get() = driveId

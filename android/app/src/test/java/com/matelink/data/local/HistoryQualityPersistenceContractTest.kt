@@ -41,7 +41,7 @@ class HistoryQualityPersistenceContractTest {
         val source = File("src/main/java/com/matelink/data/local/StatsDatabase.kt").readText()
         val migration = source.substringAfter("val MIGRATION_19_20").substringBefore("private fun")
 
-        assertTrue(source.contains("version = 21"))
+        // The current schema version and complete chain are exercised by native Room migration tests.
         assertTrue(source.contains("MIGRATION_18_19, MIGRATION_19_20"))
         assertTrue(migration.contains("ADD COLUMN `qualityState` TEXT NOT NULL DEFAULT 'incomplete'"))
         assertTrue(migration.contains("ADD COLUMN `qualityReason` TEXT NOT NULL DEFAULT 'missing_api_evidence'"))
@@ -150,12 +150,14 @@ class HistoryQualityPersistenceContractTest {
         try {
             fixture.initialize(cloud = true)
             SettingsRepository(fixture.context).setMockMode(false)
+            fixture.settings.saveCurrency("CNY")
             val car = fixture.localId(1)
             val geo = SyncRepository::class.java.getDeclaredField("geocodingRepository")
                 .apply { isAccessible = true }.get(fixture.repo) as GeocodingRepository
             val stats = StatsRepository(fixture.db.driveSummaryDao(), fixture.db.chargeSummaryDao(),
                 fixture.db.aggregateDao(), fixture.syncManager, geo, fixture.vehicleContexts,
-                ChargeCostOverrideStore(fixture.db.chargeCostOverrideDao(), fixture.settings))
+                ChargeCostOverrideStore(fixture.db.chargeCostOverrideDao(), fixture.settings), fixture.db,
+                fixture.settings)
             fun drive(id: Int, date: String, distance: Double, energy: Double, speed: Double,
                 state: String, reason: String) = DriveData(id, startDate = date,
                 endDate = Instant.parse(date).plusSeconds(3600).toString(),
@@ -165,7 +167,7 @@ class HistoryQualityPersistenceContractTest {
             fun charge(id: Int, energy: Double, cost: Double, state: String, reason: String) = ChargeData(id,
                 startDate = "2026-10-03T12:00:00Z", endDate = "2026-10-03T13:00:00Z",
                 chargeEnergyAdded = energy, cost = cost, source = "teslamate_archive",
-                qualityState = state, qualityReason = reason).toSyncSummary(car)!!
+                qualityState = state, qualityReason = reason, currencyCode = "CNY").toSyncSummary(car)!!
             val baseline = (0..4).map { index -> drive(index + 1,
                 "2026-10-${(1 + index * 2).toString().padStart(2, '0')}T12:00:00Z",
                 20.0, 2.0, 70.0, "observed", "api") }

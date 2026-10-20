@@ -5,6 +5,12 @@ import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.repository.ApiResult
 import com.matelink.domain.analytics.AnalysisHistoryRepository
+import com.matelink.domain.analytics.AnalysisHistorySnapshot
+import com.matelink.domain.analytics.AnalysisPageIdentity
+import com.matelink.domain.analytics.captureAnalysisPageIdentity
+import com.matelink.data.local.VehicleContextRepository
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import com.matelink.domain.analytics.AnalysisWindow
 import com.matelink.domain.analytics.DatedSourceRecord
 import com.matelink.domain.analytics.EfficiencySample
@@ -23,6 +29,13 @@ import com.matelink.util.parseIsoInstant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.collect
+import com.matelink.domain.history.LatestHistoryLoad
+import com.matelink.data.local.HistoryIdentityUnavailableException
 import javax.inject.Inject
 
 data class EfficiencyTripPosition(
@@ -58,10 +71,19 @@ data class EfficiencyUiState(
     val error: String? = null
 )
 
+internal interface EfficiencyPageSource {
+    val scopeChanges: Flow<Unit>
+    suspend fun identity(carId: Int): AnalysisPageIdentity
+    suspend fun load(carId: Int): ApiResult<AnalysisHistorySnapshot>
+}
+
 @HiltViewModel
-class EfficiencyViewModel @Inject constructor(
-    private val historyRepository: AnalysisHistoryRepository
-) : ViewModel() {
+class EfficiencyViewModel internal constructor(private val source: EfficiencyPageSource) : ViewModel() {
+    @Inject constructor(historyRepository: AnalysisHistoryRepository, contexts: VehicleContextRepository) : this(object : EfficiencyPageSource {
+        override val scopeChanges = contexts.historyScopeChanges.map { Unit }
+        override suspend fun identity(carId: Int) = contexts.captureAnalysisPageIdentity(carId)
+        override suspend fun load(carId: Int) = historyRepository.load(carId)
+    })
     private val _uiState = MutableStateFlow(EfficiencyUiState())
     val uiState = _uiState.asStateFlow()
 
@@ -73,30 +95,83 @@ class EfficiencyViewModel @Inject constructor(
     private var customStart: LocalDate? = null
     private var customEnd: LocalDate? = null
 
+    private val latestLoad = LatestHistoryLoad()
+    private var loadGeneration = 0L
+    private var activeIdentity: AnalysisPageIdentity? = null
+
+    init {
+        viewModelScope.launch {
+            source.scopeChanges.collect {
+                if (activeIdentity?.stillCurrent() == false) currentCarId?.let(::load)
+            }
+        }
+    }
+
+    private fun clearProjection() {
+        datedDrives = emptyList()
+        historyRecordCount = 0
+        historyReason = null
+        historyLoaded = false
+    }
+
     fun load(carId: Int) {
-        if (currentCarId == carId && historyLoaded) {
+        if (currentCarId == carId && historyLoaded && activeIdentity?.stillCurrent() == true) {
             recalculate(_uiState.value.selectedWindow)
             return
         }
         currentCarId = carId
-        historyLoaded = false
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            when (val result = historyRepository.load(carId)) {
-                is ApiResult.Success -> {
-                    historyRecordCount = result.data.drives.size
-                    historyReason = result.data.coverage.reason
-                    _uiState.value = _uiState.value.copy(
-                        historyFreshness = result.data.freshness,
-                        noDataReason = historyReason
-                    )
-                    datedDrives = result.data.drives.mapNotNull { drive ->
-                        parseDate(drive)?.let { date -> DatedEfficiency(date, drive) }
-                    }
-                    historyLoaded = true
-                    recalculate(_uiState.value.selectedWindow)
+        val generation = ++loadGeneration
+        clearProjection()
+        activeIdentity = null
+        _uiState.value = EfficiencyUiState(selectedWindow = _uiState.value.selectedWindow)
+        latestLoad.launch(viewModelScope) {
+            val execution = currentCoroutineContext()
+            var proof: AnalysisPageIdentity? = null
+            fun requireIdentity() {
+                execution.ensureActive()
+                if (generation != loadGeneration || currentCarId != carId)
+                    throw CancellationException("Efficiency request superseded")
+                if (proof?.stillCurrent() != true) {
+                    clearProjection()
+                    _uiState.value = EfficiencyUiState(isLoading = false,
+                        selectedWindow = _uiState.value.selectedWindow, noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
+                    throw CancellationException("Efficiency identity changed")
                 }
-                is ApiResult.Error -> _uiState.value = EfficiencyUiState(isLoading = false, error = result.message)
+            }
+            try {
+                ensureCurrent()
+                val identity = source.identity(carId)
+                ensureCurrent()
+                proof = identity
+                requireIdentity()
+                activeIdentity = identity
+                val result = source.load(carId)
+                ensureCurrent()
+                requireIdentity()
+                when (result) {
+                    is ApiResult.Success -> {
+                        if (result.data.context != identity.context) throw HistoryIdentityUnavailableException()
+                        val dated = result.data.drives.mapNotNull { drive -> parseDate(drive)?.let { DatedEfficiency(it, drive) } }
+                        requireIdentity()
+                        historyRecordCount = result.data.drives.size
+                        historyReason = result.data.coverage.reason
+                        datedDrives = dated
+                        historyLoaded = true
+                        _uiState.value = _uiState.value.copy(historyFreshness = result.data.freshness,
+                            noDataReason = historyReason, error = null)
+                        recalculate(_uiState.value.selectedWindow)
+                    }
+                    is ApiResult.Error -> _uiState.value = _uiState.value.copy(isLoading = false,
+                        noDataReason = NoDataReason.SOURCE_UNAVAILABLE, error = result.message)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (generation == loadGeneration && currentCarId == carId && execution.isActive) {
+                    clearProjection()
+                    _uiState.value = EfficiencyUiState(isLoading = false,
+                        selectedWindow = _uiState.value.selectedWindow, noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
+                }
             }
         }
     }
@@ -116,6 +191,14 @@ class EfficiencyViewModel @Inject constructor(
     }
 
     private fun recalculate(window: AnalysisWindow) {
+        if (activeIdentity?.stillCurrent() == false) {
+            clearProjection()
+            _uiState.value = EfficiencyUiState(isLoading = false, selectedWindow = window,
+                noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
+            return
+        }
+        if (!historyLoaded) return
+        val generation = loadGeneration
         val selected = selectWindow(datedDrives, window, LocalDate.now(), customStart, customEnd).map { it.drive }
         val paired = selected.filter { drive ->
             drive.distanceKm?.let { it.isFinite() && it > 0.0 } == true &&
@@ -148,7 +231,15 @@ class EfficiencyViewModel @Inject constructor(
 
         val bySpeed = buildEfficiencyBySpeed(selected)
         val trend = buildEfficiencyTrend(selected)
-
+        val last90 = averageFor(AnalysisWindow.LAST_90_DAYS)
+        val summer = averageFor(AnalysisWindow.SUMMER)
+        val winter = averageFor(AnalysisWindow.WINTER)
+        if (generation != loadGeneration || activeIdentity?.stillCurrent() != true) {
+            clearProjection()
+            _uiState.value = EfficiencyUiState(isLoading = false, selectedWindow = window,
+                noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
+            return
+        }
         _uiState.value = _uiState.value.copy(
             isLoading = false,
             noDataReason = noDataReason,
@@ -159,9 +250,9 @@ class EfficiencyViewModel @Inject constructor(
             personalPercentile = position,
             driveCount = weighted.sampleCount,
             totalDistanceKm = weighted.validDistanceKm,
-            last90DaysEfficiencyWhKm = averageFor(AnalysisWindow.LAST_90_DAYS),
-            summerEfficiencyWhKm = averageFor(AnalysisWindow.SUMMER),
-            winterEfficiencyWhKm = averageFor(AnalysisWindow.WINTER)
+            last90DaysEfficiencyWhKm = last90,
+            summerEfficiencyWhKm = summer,
+            winterEfficiencyWhKm = winter
         )
     }
 

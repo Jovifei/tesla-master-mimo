@@ -3,6 +3,8 @@ package com.matelink.ui.screens.mileage
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.DriveOdometerDetails
+import com.matelink.data.local.entity.ChargeCostOverride
+import com.matelink.domain.analytics.chargeCostSessionKey
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -14,10 +16,17 @@ class MileageChargeCostConsumerTest {
     private val functions = Class.forName("com.matelink.ui.screens.mileage.MileageViewModelKt")
     private val at = LocalDateTime.of(2026, 10, 14, 10, 0)
 
-    private fun projected(charge: ChargeData, localCarId: Int, overrides: Map<String, Double>): Double? =
+    private fun projected(charge: ChargeData, localCarId: Int, overrides: List<ChargeCostOverride>): Double? =
         functions.getDeclaredMethod("projectMileageChargeCost", ChargeData::class.java,
-            Int::class.javaPrimitiveType, Map::class.java).apply { isAccessible = true }
-            .invoke(null, charge, localCarId, overrides) as Double?
+            Int::class.javaPrimitiveType, List::class.java, String::class.java)
+            .apply { isAccessible = true }
+            .invoke(null, charge, localCarId, overrides, "CNY") as Double?
+
+    private fun manual(charge: ChargeData, carId: Int, amount: Double) =
+        ChargeCostOverride(carId, charge.chargeId, amount,
+            sessionKey = chargeCostSessionKey(charge) + ":CNY", currencyCode = "CNY",
+            sourceKind = charge.source, startInstant = charge.startDate,
+            endInstant = charge.endDate, version = 1L)
 
     private fun timedCharge(charge: ChargeData, cost: Double?): Any =
         Class.forName("com.matelink.ui.screens.mileage.TimedCharge")
@@ -32,10 +41,14 @@ class MileageChargeCostConsumerTest {
                 endDate = "2026-10-14T11:00:00Z", odometerDetails = DriveOdometerDetails(distance = 10.0)), at)
 
     @Test fun yearlyMonthlyDailyConsumersUseScopedManualTotalIncludingRealZero() {
-        val free = ChargeData(10, startDate = "2026-10-14T10:00:00Z", cost = 12.0)
-        val paid = ChargeData(11, startDate = "2026-10-14T10:00:00Z", cost = 3.0)
-        val charges = listOf(timedCharge(free, projected(free, 701, mapOf("701:10" to 0.0))),
-            timedCharge(paid, projected(paid, 701, emptyMap())))
+        val free = ChargeData(10, startDate = "2026-10-14T10:00:00Z",
+            endDate = "2026-10-14T10:30:00Z", cost = 12.0,
+            source = "teslamate_archive", currencyCode = "CNY")
+        val paid = ChargeData(11, startDate = "2026-10-14T10:00:00Z",
+            endDate = "2026-10-14T10:30:00Z", cost = 3.0,
+            source = "teslamate_archive", currencyCode = "CNY")
+        val charges = listOf(timedCharge(free, projected(free, 701, listOf(manual(free, 701, 0.0)))),
+            timedCharge(paid, projected(paid, 701, emptyList())))
         val drives = listOf(timedDrive())
 
         val year = functions.getDeclaredMethod("computeYearAggregation", List::class.java,
@@ -60,12 +73,16 @@ class MileageChargeCostConsumerTest {
     }
 
     @Test fun foreignOverrideAndUnverifiedScalarNeverCreateAChargePrice() {
-        val raw = ChargeData(10, cost = 12.0)
-        assertEquals(12.0, projected(raw, 701, mapOf("702:10" to 99.0))!!, 0.0)
-        assertEquals(12.0, projected(raw, 701, mapOf("701:10" to Double.NaN))!!, 0.0)
+        val raw = ChargeData(10, startDate = "2026-10-14T10:00:00Z",
+            endDate = "2026-10-14T10:30:00Z", source = "teslamate_archive",
+            currencyCode = "CNY", cost = 12.0)
+        assertEquals(12.0, projected(raw, 701, listOf(manual(raw, 702, 99.0)))!!, 0.0)
+        assertNull(projected(raw, 701, listOf(manual(raw, 701, Double.NaN))))
         val unknown = ChargeData(11, cost = null)
-        assertNull(projected(unknown, 701, emptyMap()))
-        assertEquals(0.0, projected(unknown, 701, mapOf("701:11" to 0.0))!!, 0.0)
-        assertNull(projected(ChargeData(12, cost = Double.NaN), 701, emptyMap()))
+        assertNull(projected(unknown, 701, emptyList()))
+        assertNull(projected(unknown, 701, listOf(ChargeCostOverride(701, 11, 0.0))))
+        assertNull(projected(ChargeData(12, cost = Double.NaN), 701, emptyList()))
+        assertNull(projected(ChargeData(13, source = "teslamate_archive", cost = 0.0,
+            currencyCode = "CNY"), 701, emptyList()))
     }
 }

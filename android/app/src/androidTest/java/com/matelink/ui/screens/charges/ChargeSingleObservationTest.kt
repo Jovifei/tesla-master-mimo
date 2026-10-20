@@ -95,4 +95,28 @@ class ChargeSingleObservationTest {
             .getString(R.string.charge_electrical_samples)
         compose.onNodeWithText(label).assertDoesNotExist()
     }
+
+    @Test fun savedLegacyAndUnpricedSourceAmountsRemainVisibleWithoutCurrencySymbol() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        compose.setContent {
+            MateLinkTheme {
+                ChargeDetailContent(
+                    localArchiveLinkPending = false, historySyncWarning = null,
+                    detail = ChargeDetail(7, startDate = "2026-10-20T10:00:00Z",
+                        endDate = "2026-10-20T11:00:00Z", cost = 8.0),
+                    stats = null,
+                    costPresentation = ChargeDetailCostPresentation(null, ChargeDetailCostState.UNAVAILABLE),
+                    units = null, currencySymbol = "¥", isDcCharge = null,
+                    manualTotalAmount = null, pendingLegacyAmount = 12.34,
+                    sourceUnconfirmedAmount = 8.0,
+                    containingTrip = null, onNavigateToTripDetail = {},
+                    onRemoveFromTrip = {}, onSaveManualTotal = {}
+                )
+            }
+        }
+        compose.onNodeWithText(context.getString(R.string.charge_cost_saved_unconfirmed, 12.34))
+            .performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.charge_cost_source_unconfirmed, 8.0))
+            .performScrollTo().assertIsDisplayed()
+    }
 }

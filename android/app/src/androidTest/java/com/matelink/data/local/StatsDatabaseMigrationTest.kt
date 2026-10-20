@@ -31,6 +31,58 @@ class StatsDatabaseMigrationTest {
         FrameworkSQLiteOpenHelperFactory()
     )
 
+    @Test fun migration21To22KeepsLegacyAmountPendingAndVersionsSeparateSessions() {
+        val name = "charge-cost-v21-to-v22"
+        helper.createDatabase(name, 21).apply {
+            execSQL("INSERT INTO charge_cost_overrides (carId, chargeId, manualTotalAmount) VALUES (-3, 7, 12.34)")
+            close()
+        }
+        val migrated = helper.runMigrationsAndValidate(name, 22, true, StatsDatabase.MIGRATION_21_22)
+        migrated.query("SELECT manualTotalAmount, sessionKey, currencyCode, startInstant, version FROM charge_cost_overrides WHERE carId = -3 AND chargeId = 7").use {
+            assertTrue(it.moveToFirst())
+            assertEquals(12.34, it.getDouble(0), 0.0)
+            assertEquals("legacy", it.getString(1))
+            assertTrue(it.isNull(2))
+            assertTrue(it.isNull(3))
+            assertEquals(0L, it.getLong(4))
+        }
+        migrated.close()
+
+        val room = Room.databaseBuilder(InstrumentationRegistry.getInstrumentation().targetContext,
+            StatsDatabase::class.java, name).addMigrations(*StatsDatabase.ALL_MIGRATIONS).build()
+        try {
+            kotlinx.coroutines.runBlocking {
+                val dao = room.chargeCostOverrideDao()
+                val first = com.matelink.data.local.entity.ChargeCostOverride(-3, 7, 0.0,
+                    sessionKey = "session:a", currencyCode = "CNY", sourceKind = "teslamate_archive",
+                    startInstant = "2026-10-20T10:00:00Z", endInstant = "2026-10-20T11:00:00Z")
+                val second = first.copy(sessionKey = "session:b", manualTotalAmount = 25.0,
+                    startInstant = "2026-10-21T10:00:00Z")
+                assertTrue(dao.saveIfVersion(first, 0L))
+                assertFalse(dao.saveIfVersion(first.copy(manualTotalAmount = 99.0), 0L))
+                assertTrue(dao.saveIfVersion(second, 0L))
+                assertTrue(dao.saveIfVersion(first.copy(deleted = true), 1L))
+                assertFalse(dao.saveIfVersion(first.copy(manualTotalAmount = 77.0), 1L))
+                assertEquals(3, dao.getRecordsForCharge(-3, 7).size)
+                assertEquals(0.0, dao.getRecord(-3, 7, "session:a")!!.manualTotalAmount, 0.0)
+                assertTrue(dao.getRecord(-3, 7, "session:a")!!.deleted)
+                assertEquals(2L, dao.getRecord(-3, 7, "session:a")!!.version)
+                assertEquals(25.0, dao.getRecord(-3, 7, "session:b")!!.manualTotalAmount, 0.0)
+            }
+        } finally { room.close() }
+        val reopened = Room.databaseBuilder(InstrumentationRegistry.getInstrumentation().targetContext,
+            StatsDatabase::class.java, name).addMigrations(*StatsDatabase.ALL_MIGRATIONS).build()
+        try {
+            kotlinx.coroutines.runBlocking {
+                val records = reopened.chargeCostOverrideDao().getRecordsForCharge(-3, 7)
+                assertEquals(3, records.size)
+                assertTrue(records.single { it.sessionKey == "session:a" }.deleted)
+                assertEquals(12.34, records.single { it.sessionKey == "legacy" }.manualTotalAmount, 0.0)
+                assertTrue(records.single { it.sessionKey == "legacy" }.currencyCode == null)
+            }
+        } finally { reopened.close() }
+    }
+
     @Test fun migration20To21RetainsAndQuarantinesLegacyTpmsWithoutDeleting() {
         val name="tpms-provenance-v20"
         helper.createDatabase(name,20).apply {
@@ -79,7 +131,7 @@ class StatsDatabaseMigrationTest {
     }
 
     @Test
-    fun migratingV17PreservesUnverifiedHistoryAndMarkersAtV21ButFreshV21HasNoMarkers() {
+    fun migratingV17PreservesUnverifiedHistoryThroughV21AndLatestButFreshLatestHasNoMarkers() {
         val upgradedName = "legacy-v17-upgrade-marker"
         helper.createDatabase(upgradedName, 17).apply {
             execSQL(
@@ -129,13 +181,28 @@ class StatsDatabaseMigrationTest {
             upgraded.close()
         }
 
+        val intermediate = helper.runMigrationsAndValidate(upgradedName, 21, true,
+            StatsDatabase.MIGRATION_18_19, StatsDatabase.MIGRATION_19_20,
+            StatsDatabase.MIGRATION_20_21)
+        try {
+            intermediate.query("PRAGMA user_version").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(21, cursor.getInt(0))
+            }
+            intermediate.query("SELECT vehicleFingerprint FROM legacy_history_archives WHERE legacyCarId = 42")
+                .use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals("legacy-v17:car:42", cursor.getString(0))
+                }
+        } finally { intermediate.close() }
+
         val upgradedRoom = Room.databaseBuilder(
             InstrumentationRegistry.getInstrumentation().targetContext,
             StatsDatabase::class.java,
             upgradedName
         ).addMigrations(*StatsDatabase.ALL_MIGRATIONS).build()
         try {
-            assertUnverifiedLegacyRowsAtV21(upgradedRoom, 42, 700, 701, 10.0, null)
+            assertUnverifiedLegacyRowsAtLatest(upgradedRoom, 42, 700, 701, 10.0, null)
             val repository = LegacyHistoryMigrationRepository(
                 database = upgradedRoom,
                 driveSummaryDao = upgradedRoom.driveSummaryDao(),
@@ -170,7 +237,7 @@ class StatsDatabaseMigrationTest {
             assertEquals(0, blocked.copiedRecordCount)
             assertEquals(0, rawCount(upgradedRoom, "drives_summary", -42))
             assertEquals(0, rawCount(upgradedRoom, "charges_summary", -42))
-            assertUnverifiedLegacyRowsAtV21(upgradedRoom, 42, 700, 701, 10.0, null)
+            assertUnverifiedLegacyRowsAtLatest(upgradedRoom, 42, 700, 701, 10.0, null)
         } finally {
             upgradedRoom.close()
         }
@@ -180,7 +247,7 @@ class StatsDatabaseMigrationTest {
             StatsDatabase::class.java
         ).build()
         try {
-            assertVersion21(fresh)
+            assertLatestVersion(fresh)
             fresh.openHelper.writableDatabase.query("SELECT COUNT(*) FROM legacy_history_archives").use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals(0, cursor.getInt(0))
@@ -215,7 +282,7 @@ class StatsDatabaseMigrationTest {
             databaseName
         ).addMigrations(*StatsDatabase.ALL_MIGRATIONS).build()
         try {
-            assertUnverifiedLegacyRowsAtV21(database, 7, 101, 501, 12.0, 3.0)
+            assertUnverifiedLegacyRowsAtLatest(database, 7, 101, 501, 12.0, 3.0)
             database.openHelper.writableDatabase.query(
                 "SELECT positionCount FROM drive_detail_aggregates WHERE carId = 7 AND driveId = 101"
             ).use { cursor ->
@@ -224,7 +291,7 @@ class StatsDatabaseMigrationTest {
             }
             database.openHelper.writableDatabase.query("PRAGMA user_version").use { cursor ->
                 cursor.moveToFirst()
-                assertEquals(21, cursor.getInt(0))
+                assertEquals(23, cursor.getInt(0))
             }
             database.openHelper.writableDatabase.query(
                 "SELECT identity_hash FROM room_master_table WHERE id = 42"
@@ -470,7 +537,7 @@ class StatsDatabaseMigrationTest {
             databaseName
         ).addMigrations(*StatsDatabase.ALL_MIGRATIONS).build()
         try {
-            assertUnverifiedLegacyRowsAtV21(database, 7, 7, 8, 12.0, 3.0)
+            assertUnverifiedLegacyRowsAtLatest(database, 7, 7, 8, 12.0, 3.0)
             val fingerprint = "self-hosted:https://example.test:car:7"
             kotlinx.coroutines.runBlocking {
                 database.legacyHistoryArchiveDao().recordExplicitUpgradeOrigin(
@@ -499,7 +566,7 @@ class StatsDatabaseMigrationTest {
             }
             assertEquals(0, rawCount(database, "drives_summary", -1))
             assertEquals(0, rawCount(database, "charges_summary", -1))
-            assertUnverifiedLegacyRowsAtV21(database, 7, 7, 8, 12.0, 3.0)
+            assertUnverifiedLegacyRowsAtLatest(database, 7, 7, 8, 12.0, 3.0)
 
             // Simulate new, explicit API receipts for the same IDs. The schema/identity binding above
             // must never manufacture these receipts or upgrade the old rows' quality on its own.
@@ -554,10 +621,10 @@ class StatsDatabaseMigrationTest {
         }
     }
 
-    private fun assertVersion21(database: StatsDatabase) {
+    private fun assertLatestVersion(database: StatsDatabase) {
         database.openHelper.writableDatabase.query("PRAGMA user_version").use { cursor ->
             assertTrue(cursor.moveToFirst())
-            assertEquals(21, cursor.getInt(0))
+            assertEquals(23, cursor.getInt(0))
         }
     }
 
@@ -567,9 +634,9 @@ class StatsDatabaseMigrationTest {
             cursor.getInt(0)
         }
 
-    private fun assertUnverifiedLegacyRowsAtV21(database: StatsDatabase, car: Int, drive: Int,
+    private fun assertUnverifiedLegacyRowsAtLatest(database: StatsDatabase, car: Int, drive: Int,
         charge: Int, distance: Double, cost: Double?) {
-        assertVersion21(database)
+        assertLatestVersion(database)
         assertEquals(1, rawCount(database, "drives_summary", car))
         assertEquals(1, rawCount(database, "charges_summary", car))
         val db = database.openHelper.writableDatabase
@@ -598,6 +665,11 @@ class StatsDatabaseMigrationTest {
             assertEquals("missing_api_evidence", cursor.getString(7))
         }
         db.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
+        // The v23 migration does not create raw points from legacy summary or aggregate rows.
+        db.query("SELECT COUNT(*) FROM history_detail_receipts").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
     }
 
     private fun seedLegacyV14Rows(db: SupportSQLiteDatabase) {

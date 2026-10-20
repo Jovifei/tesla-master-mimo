@@ -268,7 +268,7 @@ private fun ChargeEventContent(event: TimelineEvent.ChargeEvent, palette: CarCol
         }
         event.cost?.let { cost ->
             Text(
-                text = stringResource(R.string.timeline_cost_value, cost),
+                text = stringResource(R.string.timeline_cost_value, event.currencySymbol.orEmpty(), cost),
                 style = MaterialTheme.typography.bodySmall,
                 color = palette.onSurfaceVariant
             )

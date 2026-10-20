@@ -41,6 +41,53 @@ import java.lang.reflect.Proxy
 class DetailSyncResourceRecoveryTest {
     @get:Rule val temp = TemporaryFolder()
 
+    @Test fun actualSyncPersistsScopedChargePointsAndFailureDoesNotAdvanceProgress() = runBlocking {
+        val fixture = HistoryResourceFixture(File(temp.root, "detail-points.db"))
+        try {
+            fixture.initialize()
+            val car = fixture.localId(1)
+            val start = "2026-10-14T00:00:00Z"
+            val end = "2026-10-14T00:01:00Z"
+            fun list(id: Int) = ChargeData(id, startDate = start, endDate = end,
+                source = "teslamate_archive", sourceInstanceId = "archive-A", sourceId = "record-$id",
+                chargeEnergyAdded = 24.0, qualityState = "observed")
+            fixture.db.chargeSummaryDao().upsert(list(64).toSyncSummary(car)!!)
+            fixture.detailResponse = { path -> if (path.endsWith("/charges/64")) """
+                {"data":{"charge":{"charge_id":64,"start_date":"$start","end_date":"$end",
+                "source":"teslamate_archive","source_instance_id":"archive-A","source_id":"record-64",
+                "charge_energy_added":24.02,"charge_details":[
+                  {"date":"$start","battery_level":0,"charge_energy_added":0.0},
+                  {"date":"$start","battery_level":null,"charger_details":{"charger_power":-3.5}},
+                  {"date":"$end","battery_level":88,"charge_energy_added":24.02}
+                ]}}}
+            """.trimIndent() else null }
+            assertEquals(CarSyncResult.Complete, fixture.repo.syncDetailsOnly(1, DriveDetailRequestBudget()))
+            val context = fixture.vehicleContexts.cachedContextForRemote(1)!!
+            val identity = fixture.db.chargeSummaryDao().get(car, 64)!!.verifiedDetailIdentity(context)!!
+            val stored = HistoryDetailRepository(fixture.db.historyDetailDao()).readCharge(identity)
+            assertEquals(3, stored.detail?.chargePoints?.size)
+            assertEquals(0.0, stored.detail!!.chargePoints!![0].chargeEnergyAdded!!, 0.0)
+            assertEquals(-3.5, stored.detail!!.chargePoints!![1].chargerPowerValue!!, 0.0)
+            assertFalse(stored.receipt!!.providerTotalVerified)
+            fixture.reopen()
+            assertEquals(3, HistoryDetailRepository(fixture.db.historyDetailDao())
+                .readCharge(identity).detail?.chargePoints?.size)
+
+            fixture.db.chargeSummaryDao().upsert(list(65).toSyncSummary(car)!!)
+            fixture.detailResponse = { path -> if (path.endsWith("/charges/65")) """
+                {"data":{"charge":{"charge_id":65,"start_date":"$start","end_date":"$end",
+                "source":"teslamate_archive","source_instance_id":"archive-A","source_id":"record-65",
+                "charge_energy_added":25.0}}}
+            """.trimIndent() else null }
+            val failed = fixture.repo.syncDetailsOnly(1, DriveDetailRequestBudget())
+            assertTrue(failed is CarSyncResult.Failed)
+            assertNull(fixture.db.aggregateDao().getChargeAggregate(car, 65))
+            assertEquals(listOf(65), fixture.db.chargeSummaryDao().getUnprocessedChargeBatchIds(car,
+                com.matelink.data.local.entity.SchemaVersion.CURRENT, 20))
+            assertEquals(24.0, fixture.db.chargeSummaryDao().get(car, 65)!!.energyAdded, 0.0)
+        } finally { fixture.close() }
+    }
+
     @Test fun actualRepositorySharesTwentyRequestsAcrossDrivesChargesAndCarsAfterRoomReopen() = runBlocking {
         val fixture = HistoryResourceFixture(File(temp.root, "resource.db"))
         try {
@@ -282,9 +329,11 @@ internal class HistoryResourceFixture(private val databaseFile: File) {
     var db: StatsDatabase = open()
     lateinit var repo: SyncRepository
     lateinit var syncManager: SyncManager
+    lateinit var geocodingRepository: GeocodingRepository
     val calls = java.util.Collections.synchronizedList(mutableListOf<String>())
     var status: (String) -> Int = { 200 }
     var onRequest: suspend (String) -> Unit = {}
+    var detailResponse: ((String) -> String?)? = null
     val log = SyncLogCollector()
     private val moshi = Moshi.Builder().build()
     init {
@@ -317,7 +366,7 @@ internal class HistoryResourceFixture(private val databaseFile: File) {
             runBlocking { onRequest(path) }
             val code = status(path)
             val id = path.substringAfterLast('/').toIntOrNull() ?: 1
-            val body = when {
+            val body = detailResponse?.invoke(path) ?: when {
                 path.endsWith("/drives/$id") -> """{"data":{"drive":{"drive_id":$id,"start_date":"2026-10-14T00:00:00Z","end_date":"2026-10-14T00:01:00Z","source":"teslamate_archive","quality_state":"observed"}}}"""
                 path.endsWith("/charges/$id") -> """{"data":{"charge":{"charge_id":$id,"start_date":"2026-10-14T00:00:00Z","end_date":"2026-10-14T00:01:00Z","source":"teslamate_archive","quality_state":"observed"}}}"""
                 path.endsWith("/drives") -> """{"data":{"drives":[]}}"""
@@ -340,9 +389,11 @@ internal class HistoryResourceFixture(private val databaseFile: File) {
         val nominatim = Proxy.newProxyInstance(NominatimApi::class.java.classLoader, arrayOf(NominatimApi::class.java)) { _, _, _ -> error("External geocoding forbidden in test") } as NominatimApi
         val geocode = GeocodingRepository(nominatim, AmapReverseGeocoder(context, AmapSettingsStore(context, secure)),
             db.geocodeCacheDao(), db.geocodeQueueDao(), db.geocodeProgressDao(), modes)
+        geocodingRepository = geocode
         repo = SyncRepository(apiRepo, db.driveSummaryDao(), db.chargeSummaryDao(), db.aggregateDao(), syncManager,
             geocode, modes, HistoryMetadataStore(), TripNotificationStateStore(context), TripNotificationManager(context),
-            vehicleContexts, CompletedChargeEventStore(context), CompletedChargeNotificationManager(context))
+            vehicleContexts, CompletedChargeEventStore(context), CompletedChargeNotificationManager(context),
+            db, com.matelink.data.repository.HistoryDetailRepository(db.historyDetailDao()))
     }
     fun localId(remote: Int): Int = runBlocking { vehicleContexts.cachedContextForRemote(remote)!!.localHistoryCarId }
     suspend fun seed(remote: Int, drives: Int, charges: Int) {

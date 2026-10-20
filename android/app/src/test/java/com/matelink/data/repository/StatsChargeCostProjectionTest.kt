@@ -2,10 +2,12 @@ package com.matelink.data.repository
 
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.ChargesResponse
+import com.matelink.data.local.entity.ChargeCostOverride
 import com.matelink.data.sync.toSyncSummary
 import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.domain.analytics.AnalysisChargeCoverageSample
 import com.matelink.domain.analytics.buildAnalysisCoverage
+import com.matelink.domain.analytics.chargeCostSessionKey
 import com.matelink.domain.model.YearFilter
 import com.squareup.moshi.Moshi
 import org.junit.Assert.assertEquals
@@ -29,7 +31,8 @@ class StatsChargeCostProjectionTest {
         )
         val projection = projectStatsChargeCosts(
             charges, localHistoryCarId = 700,
-            manualTotals = mapOf("700:1" to 0.0, "701:2" to 999.0, "700:2" to -4.0),
+            manualRecords = listOf(manual(charges[0], 700, 0.0), manual(charges[1], 701, 999.0)),
+            selectedCurrencyCode = "CNY",
             filter = YearFilter.Year(2026), zone = zone
         )
 
@@ -52,7 +55,7 @@ class StatsChargeCostProjectionTest {
     @Test fun allTimeWithNoKnownPriceRemainsUnknownRatherThanZero() {
         val projection = projectStatsChargeCosts(
             charges = listOf(charge(1, "2026-10-20T10:00:00Z", 0.0, null)),
-            localHistoryCarId = 700, manualTotals = emptyMap(),
+            localHistoryCarId = 700, manualRecords = emptyList(), selectedCurrencyCode = "CNY",
             filter = YearFilter.AllTime, zone = zone
         )
 
@@ -66,15 +69,15 @@ class StatsChargeCostProjectionTest {
             "data":{"charges":[
                 {"charge_id":11,"source":"teslamate_archive","quality_state":"observed",
                  "start_date":"2026-10-20T10:00:00Z","end_date":"2026-10-20T11:00:00Z",
-                 "charge_energy_added":5.0,"cost":10.0},
+                  "charge_energy_added":5.0,"cost":10.0,"currency_code":"CNY"},
                 {"charge_id":12,"source":"fleet_mqtt","quality_state":"observed",
                  "start_date":"2026-10-20T12:00:00Z","end_date":"2026-10-20T13:00:00Z",
-                 "charge_energy_added":100.0,"cost":7.0}
+                  "charge_energy_added":100.0,"cost":7.0,"currency_code":"CNY"}
             ]}}
         """)!!.data!!.charges!!
         val restored = receipt.map { it.toSyncSummary(700)!!.toAnalysisChargeData() }
-        val projection = projectStatsChargeCosts(restored, 700, mapOf("700:11" to 0.0),
-            YearFilter.AllTime, zone)
+        val projection = projectStatsChargeCosts(restored, 700,
+            listOf(manual(restored[0], 700, 0.0)), "CNY", YearFilter.AllTime, zone)
 
         assertEquals(10.0, receipt[0].cost!!, 0.0001)
         assertEquals(7.0, projection.totals.knownTotal!!, 0.0001)
@@ -88,6 +91,16 @@ class StatsChargeCostProjectionTest {
                        source: String = "teslamate_archive") = ChargeData(
         chargeId = id, startDate = start,
         endDate = runCatching { Instant.parse(start).plusSeconds(3600).toString() }.getOrNull(),
-        chargeEnergyAdded = energy, cost = cost, source = source, qualityState = "observed"
+        chargeEnergyAdded = energy, cost = cost, source = source, qualityState = "observed",
+        currencyCode = "CNY"
+    )
+
+    private fun manual(charge: ChargeData, carId: Int, amount: Double) = ChargeCostOverride(
+        carId = carId, chargeId = charge.chargeId, manualTotalAmount = amount,
+        sessionKey = chargeCostSessionKey(charge) + ":CNY", currencyCode = "CNY",
+        sourceKind = charge.source, sourceInstanceId = charge.sourceInstanceId,
+        sourceRecordId = charge.sourceId,
+        startInstant = charge.startDate?.let { Instant.parse(it).toString() },
+        endInstant = charge.endDate?.let { Instant.parse(it).toString() }
     )
 }

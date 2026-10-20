@@ -248,6 +248,8 @@ private fun DriveDetailContent(
             val energySourceLabel = stringResource(R.string.energy_source)
             val energyCoverageLabel = stringResource(R.string.energy_coverage)
             val curvesActionLabel = stringResource(R.string.drive_curves_action)
+            val speedAverageLabel = remember(detail) { driveDetailSpeedAverageLabel(detail) }
+            val powerAverageLabel = remember(detail) { driveDetailPowerAverageLabel(detail) }
 
             // 1. 行程面板 (Distance & Duration section)
             StatsSectionCard(
@@ -274,7 +276,7 @@ private fun DriveDetailContent(
                 icon = Icons.Default.Speed,
                 stats = listOf(
                     StatItem(stringResource(R.string.maximum), s.speedMax?.let { "%,d".format(it) } ?: notAvailableLabel, UnitFormatter.getSpeedUnit(units)),
-                    StatItem(stringResource(R.string.average), s.speedAvg?.let { visualTripNumber(it, 0) } ?: notAvailableLabel, UnitFormatter.getSpeedUnit(units)),
+                    StatItem(stringResource(speedAverageLabel), s.speedAvg?.let { visualTripNumber(it, 0) } ?: notAvailableLabel, UnitFormatter.getSpeedUnit(units)),
                     StatItem(stringResource(R.string.avg_distance), s.avgSpeedFromDistance?.let { visualTripNumber(it, 0) } ?: notAvailableLabel, UnitFormatter.getSpeedUnit(units))
                 )
             )
@@ -286,7 +288,7 @@ private fun DriveDetailContent(
                 stats = listOf(
                     StatItem(stringResource(R.string.max_accel), s.powerMax?.toString() ?: notAvailableLabel, "kW"),
                     StatItem(stringResource(R.string.min_regen), s.powerMin?.toString() ?: notAvailableLabel, "kW"),
-                    StatItem(stringResource(R.string.average), s.powerAvg?.let { visualTripNumber(it) } ?: notAvailableLabel, "kW")
+                    StatItem(stringResource(powerAverageLabel), s.powerAvg?.let { visualTripNumber(it) } ?: notAvailableLabel, "kW")
                 )
             )
 

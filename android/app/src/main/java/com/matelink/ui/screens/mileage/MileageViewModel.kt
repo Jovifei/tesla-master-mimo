@@ -5,6 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.Units
+import com.matelink.data.repository.CarStatusWithUnits
+import com.matelink.data.repository.UnifiedHistory
+import com.matelink.domain.analytics.AnalysisPageIdentity
+import com.matelink.domain.analytics.captureAnalysisPageIdentity
+import com.matelink.data.local.VehicleContextRepository
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.UnifiedHistoryRepository
@@ -14,14 +21,23 @@ import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.model.Currency
 import com.matelink.domain.analytics.observedCostSumOrNull
-import com.matelink.domain.analytics.chargeTotalOverrideKey
-import com.matelink.domain.analytics.validManualChargeTotal
+import com.matelink.domain.analytics.findChargeCostOverride
+import com.matelink.domain.analytics.projectEffectiveChargeCost
+import com.matelink.data.local.entity.ChargeCostOverride
+import com.matelink.domain.history.LatestHistoryLoad
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.collect
 import com.matelink.domain.analytics.buildMileageEvidence
 import com.matelink.domain.analytics.observedBatteryUsagePercent
 import com.matelink.domain.analytics.observedDistanceKm
 import com.matelink.domain.analytics.observedEnergyKwh
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -141,13 +157,38 @@ private data class MonthAggregation(
     val yearTotalEnergyCost: Double?,
 )
 
+internal interface MileagePageSource {
+    val scopeChanges: Flow<Unit>
+    suspend fun identity(carId: Int): AnalysisPageIdentity
+    suspend fun status(carId: Int): ApiResult<CarStatusWithUnits>
+    suspend fun history(carId: Int): ApiResult<UnifiedHistory>
+    suspend fun isContextCurrent(proof: VerifiedHistoryReadContext): Boolean
+    fun isContextCurrentNow(proof: VerifiedHistoryReadContext): Boolean
+    suspend fun currencyCode(): String
+    suspend fun manualRecords(): List<ChargeCostOverride>
+}
+
 @HiltViewModel
-class MileageViewModel @Inject constructor(
-    private val repository: TeslamateRepository,
-    private val settingsDataStore: SettingsDataStore,
-    private val unifiedHistoryRepository: UnifiedHistoryRepository,
-    private val chargeCostOverrideStore: ChargeCostOverrideStore
+class MileageViewModel internal constructor(
+    private val source: MileagePageSource,
+    private val aggregationDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
+    @Inject constructor(
+        repository: TeslamateRepository,
+        settingsDataStore: SettingsDataStore,
+        unifiedHistoryRepository: UnifiedHistoryRepository,
+        chargeCostOverrideStore: ChargeCostOverrideStore,
+        contexts: VehicleContextRepository
+    ) : this(object : MileagePageSource {
+        override val scopeChanges = contexts.historyScopeChanges.map { Unit }
+        override suspend fun identity(carId: Int) = contexts.captureAnalysisPageIdentity(carId)
+        override suspend fun status(carId: Int) = repository.getCarStatus(carId)
+        override suspend fun history(carId: Int) = unifiedHistoryRepository.load(carId)
+        override suspend fun isContextCurrent(proof: VerifiedHistoryReadContext) = unifiedHistoryRepository.isContextCurrent(proof)
+        override fun isContextCurrentNow(proof: VerifiedHistoryReadContext) = contexts.isHistoryContextCurrentNow(proof.scope, proof.context)
+        override suspend fun currencyCode() = settingsDataStore.settings.first().currencyCode
+        override suspend fun manualRecords() = chargeCostOverrideStore.getAllRecords()
+    })
 
     private val _uiState = MutableStateFlow(MileageUiState())
     val uiState: StateFlow<MileageUiState> = _uiState.asStateFlow()
@@ -155,6 +196,12 @@ class MileageViewModel @Inject constructor(
     private var carId: Int? = null
     private var loadGeneration = 0L
     private var historyProof: VerifiedHistoryReadContext? = null
+    private var identityGeneration = 0L
+    private var activeIdentity: AnalysisPageIdentity? = null
+    private var activationJob: Job? = null
+    private var unitsJob: Job? = null
+    private var historyJob: Job? = null
+    private val latestHistory = LatestHistoryLoad()
 
     // Pre-parsed drive / charge lists. Populated once per loadAllDrives,
     // reused across all subsequent year / month / day aggregations.
@@ -163,49 +210,91 @@ class MileageViewModel @Inject constructor(
 
     init {
         loadSettings()
+        viewModelScope.launch {
+            source.scopeChanges.collect {
+                if (activeIdentity?.stillCurrent() == false || historyProof?.let { !source.isContextCurrentNow(it) } == true)
+                    carId?.let(::activate)
+            }
+        }
     }
 
     private fun loadSettings() {
+        val initialGeneration = loadGeneration
         viewModelScope.launch {
-            val settings = settingsDataStore.settings.first()
-            val currency = Currency.findByCode(settings.currencyCode)
-            _uiState.update { it.copy(currencySymbol = currency.symbol) }
+            val currency = Currency.findByCode(source.currencyCode())
+            if (initialGeneration == loadGeneration) _uiState.update { it.copy(currencySymbol = currency.symbol) }
         }
+    }
+
+    private fun clearProjection() {
+        historyProof = null
+        timedDrives = emptyList()
+        timedCharges = emptyList()
+        _uiState.update { MileageUiState(currencySymbol = it.currencySymbol) }
     }
 
     fun setCarId(id: Int) {
-        if (carId != id) {
-            carId = id
-            historyProof = null
-            timedDrives = emptyList()
-            timedCharges = emptyList()
-            _uiState.update { MileageUiState(currencySymbol = it.currencySymbol) }
-            // `loadUnits` is the single getCarStatus call. The previous version
-            // also fired one inline here, doubling the network round-trip on
-            // every screen entry.
-            loadUnits(id)
-            loadAllDrives()
+        if (carId != id || activeIdentity?.stillCurrent() == false ||
+            historyProof?.let { !source.isContextCurrentNow(it) } == true ||
+            (activeIdentity == null && activationJob?.isActive != true)) activate(id)
+    }
+
+    private fun activate(id: Int) {
+        carId = id
+        val generation = ++identityGeneration
+        loadGeneration++
+        activationJob?.cancel()
+        unitsJob?.cancel()
+        historyJob?.cancel()
+        activeIdentity = null
+        clearProjection()
+        activationJob = viewModelScope.launch {
+            val execution = currentCoroutineContext()
+            try {
+                val identity = source.identity(id)
+                execution.ensureActive()
+                if (generation != identityGeneration || carId != id || !identity.stillCurrent())
+                    throw CancellationException("Mileage identity superseded")
+                activeIdentity = identity
+                loadUnits(id, generation, identity)
+                loadAllDrives()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (generation == identityGeneration && carId == id && execution.isActive)
+                    _uiState.update { it.copy(isLoading = false, isRefreshing = false, error = HISTORY_IDENTITY_UNAVAILABLE) }
+            }
         }
     }
 
-    private fun loadUnits(carId: Int) {
-        viewModelScope.launch {
-            when (val result = repository.getCarStatus(carId)) {
+    private fun loadUnits(id: Int, generation: Long, identity: AnalysisPageIdentity) {
+        // Exactly one status request per identity activation. A history refresh does not replace it.
+        unitsJob = viewModelScope.launch {
+            val result = source.status(id)
+            currentCoroutineContext().ensureActive()
+            if (generation != identityGeneration || carId != id || !identity.stillCurrent())
+                throw CancellationException("Mileage units identity changed")
+            when (result) {
                 is ApiResult.Success -> _uiState.update { it.copy(units = result.data.units) }
-                is ApiResult.Error -> { /* default to metric */ }
+                is ApiResult.Error -> Unit
             }
         }
     }
 
     fun refresh() {
-        carId?.let {
-            _uiState.update { it.copy(isRefreshing = true) }
-            loadAllDrives()
+        carId?.let { id ->
+            if (activeIdentity?.stillCurrent() == false || historyProof?.let { !source.isContextCurrentNow(it) } == true) {
+                activate(id)
+            } else {
+                _uiState.update { it.copy(isRefreshing = true) }
+                if (activeIdentity != null) loadAllDrives()
+            }
         }
     }
 
     fun clearError() {
-        _uiState.update { it.copy(error = null) }
+        if (activeIdentity?.stillCurrent() == false) clearProjection()
+        else _uiState.update { it.copy(error = null) }
     }
 
     fun selectYear(year: Int) {
@@ -262,102 +351,95 @@ class MileageViewModel @Inject constructor(
 
     private fun loadAllDrives() {
         val id = carId ?: return
+        val identity = activeIdentity ?: return
         val generation = ++loadGeneration
-
-        viewModelScope.launch {
-            val state = _uiState.value
-            if (!state.isRefreshing) {
-                _uiState.update { it.copy(isLoading = true) }
+        latestHistory.launch(viewModelScope) {
+            val execution = currentCoroutineContext()
+            historyJob = execution[Job]
+            fun requireIdentity() {
+                execution.ensureActive()
+                if (generation != loadGeneration || carId != id) throw CancellationException("Mileage history superseded")
+                if (!identity.stillCurrent()) {
+                    clearProjection()
+                    _uiState.update { it.copy(isLoading = false, isRefreshing = false, error = HISTORY_IDENTITY_UNAVAILABLE) }
+                    throw CancellationException("Mileage history identity changed")
+                }
             }
-
-            val historyResult = unifiedHistoryRepository.load(id)
-
-            when (historyResult) {
-                is ApiResult.Success -> {
-                    val proof = historyResult.data.verifiedReadContext
-                    if (proof == null || generation != loadGeneration || carId != id ||
-                        !unifiedHistoryRepository.isContextCurrent(proof)) {
-                        if (generation == loadGeneration && carId == id && proof == null) {
-                            _uiState.update { it.copy(isLoading = false, isRefreshing = false,
-                                error = HISTORY_IDENTITY_UNAVAILABLE) }
+            try {
+                ensureCurrent()
+                requireIdentity()
+                if (!_uiState.value.isRefreshing) _uiState.update { it.copy(isLoading = true) }
+                val historyResult = source.history(id)
+                ensureCurrent()
+                requireIdentity()
+                when (historyResult) {
+                    is ApiResult.Success -> {
+                        val proof = historyResult.data.verifiedReadContext
+                        if (proof == null || proof.context != historyResult.data.context || proof.context != identity.context ||
+                            !source.isContextCurrentNow(proof)) {
+                            clearProjection()
+                            _uiState.update { it.copy(isLoading = false, isRefreshing = false, error = HISTORY_IDENTITY_UNAVAILABLE) }
+                            return@launch
                         }
-                        return@launch
-                    }
-                    val manualTotals = chargeCostOverrideStore.getAll()
-                    if (generation != loadGeneration || carId != id ||
-                        !unifiedHistoryRepository.isContextCurrent(proof)) return@launch
-                    val drives = historyResult.data.drives
-                    val charges = historyResult.data.charges
-
-                    // Pre-parse all dates and run the lifetime / yearly
-                    // aggregation in a single Dispatchers.Default block so the
-                    // UI thread stays free during the heavy lift. With 500
-                    // drives the parsing alone is ~1,500 calls that previously
-                    // ran on Main.
-                    data class PreparedAndYear(
-                        val timedDrives: List<TimedDrive>,
-                        val timedCharges: List<TimedCharge>,
-                        val agg: YearAggregation,
-                    )
-                    val prepared = withContext(Dispatchers.Default) {
-                        val td = drives.mapNotNull { d ->
-                            parseDateTime(d.startDate)?.let { TimedDrive(d, it) }
+                        val selectedCurrencyCode = source.currencyCode()
+                        ensureCurrent()
+                        requireIdentity()
+                        val manualRecords = source.manualRecords()
+                        ensureCurrent()
+                        requireIdentity()
+                        val drives = historyResult.data.drives
+                        val charges = historyResult.data.charges
+                        data class PreparedAndYear(
+                            val timedDrives: List<TimedDrive>, val timedCharges: List<TimedCharge>, val agg: YearAggregation
+                        )
+                        val prepared = withContext(aggregationDispatcher) {
+                            val td = drives.mapNotNull { drive -> parseDateTime(drive.startDate)?.let { TimedDrive(drive, it) } }
+                            val tc = charges.mapNotNull { charge -> parseDateTime(charge.startDate)?.let { TimedCharge(charge, it,
+                                projectMileageChargeCost(charge, proof.context.localHistoryCarId, manualRecords, selectedCurrencyCode)) } }
+                            PreparedAndYear(td, tc, computeYearAggregation(td, tc))
                         }
-                        val tc = charges.mapNotNull { c ->
-                            parseDateTime(c.startDate)?.let { TimedCharge(c, it,
-                                projectMileageChargeCost(c, proof.context.localHistoryCarId, manualTotals)) }
-                        }
-                        PreparedAndYear(td, tc, computeYearAggregation(td, tc))
-                    }
-
-                    if (generation != loadGeneration || carId != id ||
-                        !unifiedHistoryRepository.isContextCurrent(proof)) return@launch
-                    historyProof = proof
-                    timedDrives = prepared.timedDrives
-                    timedCharges = prepared.timedCharges
-
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            isRefreshing = false,
-                            allDrives = drives,
-                            allCharges = charges,
-                            error = null,
-                            yearlyData = prepared.agg.yearlyData,
-                            totalLifetimeDistance = prepared.agg.totalLifetimeDistance,
-                            avgYearlyDistance = prepared.agg.avgYearlyDistance,
-                            firstDriveDate = prepared.agg.firstDriveDate,
+                        ensureCurrent()
+                        requireIdentity()
+                        if (!source.isContextCurrentNow(proof)) throw CancellationException("Mileage history proof changed")
+                        historyProof = proof
+                        timedDrives = prepared.timedDrives
+                        timedCharges = prepared.timedCharges
+                        _uiState.update { it.copy(
+                            currencySymbol = Currency.findByCode(selectedCurrencyCode).symbol,
+                            isLoading = false, isRefreshing = false, allDrives = drives, allCharges = charges, error = null,
+                            yearlyData = prepared.agg.yearlyData, totalLifetimeDistance = prepared.agg.totalLifetimeDistance,
+                            avgYearlyDistance = prepared.agg.avgYearlyDistance, firstDriveDate = prepared.agg.firstDriveDate,
                             totalLifetimeEnergy = prepared.agg.totalLifetimeEnergy,
                             avgLifetimeEnergyDistance = prepared.agg.avgLifetimeEnergyDistance,
                             totalLifetimeEnergyCost = prepared.agg.totalLifetimeEnergyCost,
-                            totalLifetimeDriveCount = prepared.agg.totalLifetimeDriveCount,
-                        )
+                            totalLifetimeDriveCount = prepared.agg.totalLifetimeDriveCount)
+                        }
                     }
+                    is ApiResult.Error -> _uiState.update { it.copy(isLoading = false, isRefreshing = false, error = historyResult.message) }
                 }
-                is ApiResult.Error -> {
-                    if (generation != loadGeneration || carId != id) return@launch
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            isRefreshing = false,
-                            error = historyResult.message
-                        )
-                    }
-                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (generation == loadGeneration && carId == id && execution.isActive)
+                    _uiState.update { it.copy(isLoading = false, isRefreshing = false, error = HISTORY_IDENTITY_UNAVAILABLE) }
             }
         }
     }
+
+    private fun historyStillCurrent(generation: Long, proof: VerifiedHistoryReadContext): Boolean =
+        generation == loadGeneration && carId == proof.context.remoteApiCarId &&
+            activeIdentity?.stillCurrent() == true && source.isContextCurrentNow(proof)
 
     private suspend fun aggregateByMonth(year: Int) {
         val generation = loadGeneration
         val proof = historyProof ?: return
         val drivesSnapshot = timedDrives
         val chargesSnapshot = timedCharges
-        val agg = withContext(Dispatchers.Default) {
+        val agg = withContext(aggregationDispatcher) {
             computeMonthAggregation(drivesSnapshot, chargesSnapshot, year)
         }
         if (generation != loadGeneration || carId != proof.context.remoteApiCarId ||
-            !unifiedHistoryRepository.isContextCurrent(proof)) return
+            !source.isContextCurrent(proof) || !historyStillCurrent(generation, proof)) return
         _uiState.update {
             it.copy(
                 monthlyData = agg.monthlyData,
@@ -376,11 +458,11 @@ class MileageViewModel @Inject constructor(
         val proof = historyProof ?: return
         val drivesSnapshot = timedDrives
         val chargesSnapshot = timedCharges
-        val dailyData = withContext(Dispatchers.Default) {
+        val dailyData = withContext(aggregationDispatcher) {
             computeDailyAggregation(drivesSnapshot, chargesSnapshot, yearMonth)
         }
         if (generation != loadGeneration || carId != proof.context.remoteApiCarId ||
-            !unifiedHistoryRepository.isContextCurrent(proof)) return
+            !source.isContextCurrent(proof) || !historyStillCurrent(generation, proof)) return
         _uiState.update { it.copy(dailyData = dailyData) }
     }
 
@@ -429,9 +511,9 @@ private fun parseDateTime(dateStr: String?): LocalDateTime? =
     parseIsoDateTime(dateStr)
 
 internal fun projectMileageChargeCost(
-    charge: ChargeData, localHistoryCarId: Int, manualTotals: Map<String, Double>
-): Double? = validManualChargeTotal(manualTotals[chargeTotalOverrideKey(localHistoryCarId, charge.chargeId)])
-    ?: charge.cost?.takeIf { it.isFinite() && it >= 0.0 }
+    charge: ChargeData, localHistoryCarId: Int, manualRecords: List<ChargeCostOverride>, selectedCurrencyCode: String
+): Double? = projectEffectiveChargeCost(charge, localHistoryCarId,
+    findChargeCostOverride(manualRecords, localHistoryCarId, charge, selectedCurrencyCode), selectedCurrencyCode).cost
 
 private fun computeYearAggregation(
     drives: List<TimedDrive>,

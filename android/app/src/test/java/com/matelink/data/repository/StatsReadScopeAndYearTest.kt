@@ -1,10 +1,12 @@
 package com.matelink.data.repository
 
 import android.app.Application
+import androidx.room.withTransaction
 import com.matelink.data.api.models.*
 import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.HistoryIdentityUnavailableException
 import com.matelink.data.local.dao.DriveSummaryDao
+import com.matelink.data.local.dao.ChargeSummaryDao
 import com.matelink.data.local.dao.AggregateDao
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.DriveDetailAggregate
@@ -32,11 +34,12 @@ class StatsReadScopeAndYearTest {
     @get:Rule val temp=TemporaryFolder()
 
     private fun repository(f:HistoryResourceFixture,drives:DriveSummaryDao=f.db.driveSummaryDao(),
-        aggregates:AggregateDao=f.db.aggregateDao()):StatsRepository {
+        aggregates:AggregateDao=f.db.aggregateDao(),
+        charges:ChargeSummaryDao=f.db.chargeSummaryDao()):StatsRepository {
         val geo=SyncRepository::class.java.getDeclaredField("geocodingRepository").apply { isAccessible=true }
             .get(f.repo) as GeocodingRepository
-        return StatsRepository(drives,f.db.chargeSummaryDao(),aggregates,f.syncManager,geo,
-            f.vehicleContexts,ChargeCostOverrideStore(f.db.chargeCostOverrideDao(),f.settings))
+        return StatsRepository(drives,charges,aggregates,f.syncManager,geo,
+            f.vehicleContexts,ChargeCostOverrideStore(f.db.chargeCostOverrideDao(),f.settings),f.db,f.settings)
     }
     private fun drive(id:Int,car:Int,start:String,distance:Double,energy:Double,legacy:Boolean=false)=DriveData(
         id,startDate=start,endDate=Instant.parse(start).plusSeconds(60).toString(),
@@ -47,7 +50,8 @@ class StatsReadScopeAndYearTest {
     private fun charge(id:Int,car:Int,start:String,energy:Double?,cost:Double?,legacy:Boolean=false)=ChargeData(
         id,startDate=start,endDate=Instant.parse(start).plusSeconds(60).toString(),chargeEnergyAdded=energy,cost=cost,
         source="teslamate_archive",qualityState=if(legacy) "incomplete" else "observed",
-        qualityReason=if(legacy) "remote_quality_unavailable" else "api"
+        qualityReason=if(legacy) "remote_quality_unavailable" else "api",currencyCode="CNY",
+        chargeType="ac"
     ).toSyncSummary(car)!!
 
     private class GateDao(private val real:DriveSummaryDao):DriveSummaryDao by real {
@@ -129,13 +133,15 @@ class StatsReadScopeAndYearTest {
         val f=HistoryResourceFixture(File(temp.root,"stats-deep-scope.db"))
         try {
             f.initialize(cloud=true); SettingsRepository(f.context).setMockMode(false)
+            val car=f.localId(1)
+            f.db.driveSummaryDao().upsert(drive(1,car,"2026-06-01T12:00:00Z",10.0,1.0))
             val entered=CompletableDeferred<Unit>(); val resume=CompletableDeferred<Unit>()
             val real=f.db.aggregateDao()
             val aggregate=object:AggregateDao by real {
-                override suspend fun countDriveAggregates(carId:Int):Int {
-                    val count=real.countDriveAggregates(carId)
+                override suspend fun getDriveAggregatesForStats(carId:Int,driveIds:List<Int>):List<DriveDetailAggregate> {
+                    val rows=real.getDriveAggregatesForStats(carId,driveIds)
                     entered.complete(Unit); resume.await()
-                    return count
+                    return rows
                 }
             }
             val result=async { runCatching { repository(f,aggregates=aggregate).getStats(1,YearFilter.AllTime) } }
@@ -273,12 +279,161 @@ class StatsReadScopeAndYearTest {
         } finally { f.close() }
     }
 
+    @Test fun annualCardsCoverageMonthlyAndDeepComeFromOneRoomRevision() = runBlocking(Dispatchers.IO) {
+        val f=HistoryResourceFixture(File(temp.root,"stats-atomic-room.db"))
+        try {
+            f.initialize(cloud=true); SettingsRepository(f.context).setMockMode(false)
+            f.settings.saveCurrency("CNY")
+            val car=f.localId(1)
+            val firstAt="2026-06-01T12:00:00Z"
+            val secondAt="2026-06-02T12:00:00Z"
+            val real=f.db.chargeSummaryDao()
+            real.upsertAll(listOf(charge(1,car,firstAt,10.0,5.0),
+                charge(2,car,secondAt,null,null)))
+            fun aggregate(id:Int,power:Int)=ChargeDetailAggregate(id,car,1,1,false,
+                null,null,power,null,null,null,null,null,2)
+            f.db.aggregateDao().upsertChargeAggregate(aggregate(1,11))
+            val entered=CompletableDeferred<Unit>(); val release=CompletableDeferred<Unit>()
+            val gated=object:ChargeSummaryDao by real {
+                override suspend fun getHistoryChargesInRange(carId:Int,startDate:String,endDate:String):List<com.matelink.data.local.entity.ChargeSummary> {
+                    val rows=real.getHistoryChargesInRange(carId,startDate,endDate)
+                    entered.complete(Unit)
+                    release.await()
+                    return rows
+                }
+            }
+            val stats=repository(f,charges=gated)
+            val pending=async { stats.getAnnualSnapshot(1,2026) }
+            withTimeout(10_000) { entered.await() }
+            val writerStarted=CompletableDeferred<Unit>(); val writerDone=CompletableDeferred<Unit>()
+            val writer=async(Dispatchers.IO) {
+                writerStarted.complete(Unit)
+                f.db.withTransaction {
+                    real.upsert(charge(2,car,secondAt,7.0,2.0))
+                    f.db.aggregateDao().upsertChargeAggregate(aggregate(2,22))
+                }
+                writerDone.complete(Unit)
+            }
+            try {
+                withTimeout(10_000) { writerStarted.await() }
+                // Old separate DAO reads let the writer commit here and produce a hybrid report.
+                assertNull("writer crossed an open stats snapshot",withTimeoutOrNull(400) { writerDone.await() })
+            } finally { release.complete(Unit) }
+            val before=withTimeout(10_000) { pending.await() }
+            withTimeout(10_000) { writer.await() }
+            val after=stats.getAnnualSnapshot(1,2026)
+            assertEquals(10.0,before.stats.quickStats.totalEnergyAddedKwh,0.001)
+            assertEquals(5.0,requireNotNull(before.stats.quickStats.totalCost),0.001)
+            assertEquals(1,before.stats.analysisCoverage!!.chargeEnergySampleCount)
+            assertEquals(10.0,requireNotNull(before.monthlyCharges.single().totalEnergy),0.001)
+            assertEquals(11,before.stats.deepStats!!.maxChargerPowerKw)
+            assertEquals(1,before.stats.deepStats!!.chargeDetailsProcessed)
+            assertEquals(17.0,after.stats.quickStats.totalEnergyAddedKwh,0.001)
+            assertEquals(7.0,requireNotNull(after.stats.quickStats.totalCost),0.001)
+            assertEquals(2,after.stats.analysisCoverage!!.chargeEnergySampleCount)
+            assertEquals(17.0,requireNotNull(after.monthlyCharges.single().totalEnergy),0.001)
+            assertEquals(22,after.stats.deepStats!!.maxChargerPowerKw)
+            assertEquals(2,after.stats.deepStats!!.chargeDetailsProcessed)
+            assertTrue(f.calls.isEmpty())
+        } finally { f.close() }
+    }
+
+    @Test fun explicitUnknownModeDoesNotBecomeAcFromFalseAggregateFlag() = runBlocking(Dispatchers.IO) {
+        val f=HistoryResourceFixture(File(temp.root,"stats-unknown-ac.db"))
+        try {
+            f.initialize(cloud=true); SettingsRepository(f.context).setMockMode(false)
+            val car=f.localId(1)
+            val at="2026-06-01T12:00:00Z"
+            val raw=ChargeData(1,startDate=at,endDate=Instant.parse(at).plusSeconds(60).toString(),
+                chargeEnergyAdded=5.0,source="teslamate_archive",qualityState="observed",
+                energyContract=EnergyContract(chargeMode="unknown",chargeModeEvidence="insufficient"))
+            f.db.chargeSummaryDao().upsert(raw.toSyncSummary(car)!!)
+            val noModeAt="2026-06-02T12:00:00Z"
+            f.db.chargeSummaryDao().upsert(ChargeData(2,startDate=noModeAt,
+                endDate=Instant.parse(noModeAt).plusSeconds(60).toString(),
+                chargeEnergyAdded=4.0,source="teslamate_archive",qualityState="observed")
+                .toSyncSummary(car)!!)
+            f.db.aggregateDao().upsertChargeAggregate(ChargeDetailAggregate(1,car,1,1,false,
+                null,null,56,null,null,null,null,null,2))
+            f.db.aggregateDao().upsertChargeAggregate(ChargeDetailAggregate(2,car,1,1,false,
+                null,null,22,null,null,null,null,null,2))
+            val deep=requireNotNull(repository(f).getStats(1,YearFilter.Year(2026)).deepStats)
+            assertEquals(2,deep.chargeDetailsProcessed)
+            assertEquals(0,deep.acChargeCount)
+            assertEquals(0,deep.dcChargeCount)
+            assertEquals(0.0,deep.acChargeEnergyKwh,0.001)
+        } finally { f.close() }
+    }
+
+    @Test fun qualifiedManualTotalDrivesCoverageAndMostExpensiveRecord() = runBlocking(Dispatchers.IO) {
+        val f=HistoryResourceFixture(File(temp.root,"stats-manual-record.db"))
+        try {
+            f.initialize(cloud=true); SettingsRepository(f.context).setMockMode(false)
+            f.settings.saveCurrency("CNY")
+            val car=f.localId(1)
+            val at="2026-06-01T12:00:00Z"
+            val later="2026-06-02T12:00:00Z"
+            f.db.chargeSummaryDao().upsertAll(listOf(charge(1,car,at,10.0,5.0),
+                charge(2,car,later,10.0,20.0)))
+            val raw=ChargeData(1,startDate=at,endDate=Instant.parse(at).plusSeconds(60).toString(),
+                chargeEnergyAdded=10.0,cost=5.0,source="teslamate_archive",
+                qualityState="observed",qualityReason="api",currencyCode="CNY")
+            val store=ChargeCostOverrideStore(f.db.chargeCostOverrideDao(),f.settings)
+            assertTrue(store.saveBound(car,raw,30.0,"CNY",0L))
+            val result=repository(f).getStats(1,YearFilter.Year(2026))
+            assertEquals(50.0,requireNotNull(result.quickStats.totalCost),0.001)
+            assertEquals(2,result.analysisCoverage!!.chargeCostSampleCount)
+            assertEquals(1,result.quickStats.mostExpensiveCharge!!.chargeId)
+            assertEquals(30.0,result.quickStats.mostExpensiveCharge!!.cost!!,0.001)
+            assertEquals(1,result.quickStats.mostExpensivePerKwhCharge!!.chargeId)
+            assertEquals(30.0,result.quickStats.mostExpensivePerKwhCharge!!.cost!!,0.001)
+            assertEquals(10.0,result.quickStats.mostExpensivePerKwhCharge!!.energyAdded,0.001)
+        } finally { f.close() }
+    }
+
+    @Test fun legacyAmountMigratesBeforeSnapshotButCannotClaimCurrencyOrSession() = runBlocking(Dispatchers.IO) {
+        val f=HistoryResourceFixture(File(temp.root,"stats-pending-legacy-cost.db"))
+        try {
+            f.initialize(cloud=true); SettingsRepository(f.context).setMockMode(false)
+            f.settings.saveCurrency("CNY")
+            val car=f.localId(1)
+            f.db.chargeSummaryDao().upsert(charge(1,car,"2026-06-01T12:00:00Z",10.0,5.0))
+            f.settings.saveChargeTotalOverride("$car:1",99.0)
+            val result=repository(f).getStats(1,YearFilter.Year(2026))
+            assertEquals(5.0,requireNotNull(result.quickStats.totalCost),0.001)
+            assertEquals(5.0,result.quickStats.mostExpensiveCharge!!.cost!!,0.001)
+            assertTrue(f.db.chargeCostOverrideDao().getAll().any {
+                it.carId==car && it.chargeId==1 && it.sessionKey=="legacy" && it.manualTotalAmount==99.0
+            })
+        } finally { f.close() }
+    }
+
+    @Test fun providerPriceWithoutCurrencyRemainsUnknownAfterRoomRoundTrip() = runBlocking(Dispatchers.IO) {
+        val f=HistoryResourceFixture(File(temp.root,"stats-unknown-currency.db"))
+        try {
+            f.initialize(cloud=true); SettingsRepository(f.context).setMockMode(false)
+            f.settings.saveCurrency("CNY")
+            val car=f.localId(1)
+            val at="2026-06-01T12:00:00Z"
+            f.db.chargeSummaryDao().upsert(ChargeData(1,startDate=at,
+                endDate=Instant.parse(at).plusSeconds(60).toString(),chargeEnergyAdded=10.0,
+                cost=9.0,source="teslamate_archive",qualityState="observed")
+                .toSyncSummary(car)!!)
+            val result=repository(f).getStats(1,YearFilter.Year(2026))
+            assertEquals(10.0,result.quickStats.totalEnergyAddedKwh,0.001)
+            assertNull(result.quickStats.totalCost)
+            assertEquals(0,result.analysisCoverage!!.chargeCostSampleCount)
+            assertNull(result.quickStats.mostExpensiveCharge)
+        } finally { f.close() }
+    }
+
     @Test fun localYearCountsCoverageTotalsAndMonthlyChartsUseOneCohortIncludingLegacyZeroAndRecovery() = runBlocking(Dispatchers.IO) {
         val previousZone=TimeZone.getDefault()
         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"))
         val f=HistoryResourceFixture(File(temp.root,"stats-local-year.db"))
         try {
             f.initialize(cloud=true); SettingsRepository(f.context).setMockMode(false)
+            f.settings.saveCurrency("CNY")
             val id=f.localId(1)
             f.db.driveSummaryDao().upsertAll(listOf(
                 drive(1,id,"2025-12-31T16:30:00Z",10.0,2.0),drive(2,id,"2026-02-01T00:00:00Z",0.0,0.0),

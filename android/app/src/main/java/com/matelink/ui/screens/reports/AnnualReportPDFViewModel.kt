@@ -68,20 +68,17 @@ class AnnualReportPDFViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
                 val year = _uiState.value.year
-                val currencySymbol = Currency.findByCode(
-                    settingsDataStore.settings.first().currencyCode
-                ).symbol
-                val stats = statsRepository.getStats(carId, YearFilter.Year(year))
-                val monthlyDrives = statsRepository.getMonthlyDriveAggregation(carId, year)
-                val monthlyCharges = statsRepository.getMonthlyChargeAggregation(carId, year)
+                val annual = statsRepository.getAnnualSnapshot(carId, year)
+                val currencySymbol = Currency.findByCode(annual.currencyCode).symbol
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    carStats = stats,
-                    monthlyDrives = monthlyDrives,
-                    monthlyCharges = monthlyCharges,
+                    carStats = annual.stats,
+                    monthlyDrives = annual.monthlyDrives,
+                    monthlyCharges = annual.monthlyCharges,
                     currencySymbol = currencySymbol
                 )
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = e.message ?: context.getString(R.string.error_load_report)

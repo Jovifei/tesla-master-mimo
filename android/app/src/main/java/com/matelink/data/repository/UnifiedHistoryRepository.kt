@@ -25,6 +25,7 @@ import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.analytics.toRawAnalysisDriveData
 import com.matelink.domain.analytics.toRawAnalysisChargeData
 import com.matelink.domain.analytics.withSafeHistoryDisplay
+import com.matelink.domain.analytics.sameChargeSourceInstance
 import com.matelink.domain.analytics.withQualifiedEnergy
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import kotlinx.coroutines.currentCoroutineContext
@@ -418,6 +419,9 @@ private fun ChargeData.mergeWith(cached: ChargeData?): ChargeData = cached?.let 
         return if (hasTrustedHistoryEvidence(qualityState, source) &&
             !hasTrustedHistoryEvidence(it.qualityState, it.source)) this else it
     }
+    // A new receipt from a different (or newly unknown) instance stands alone.
+    // Never fill its absent proof, costs or presentation from the saved instance.
+    if (!sameChargeSourceInstance(sourceInstanceId, sourceId, it.sourceInstanceId, it.sourceId)) return this
     if (hasTrustedHistoryEvidence(it.qualityState, it.source) && !hasTrustedHistoryEvidence(qualityState, source)) return it.copy(chargeId = chargeId)
     if (hasTrustedHistoryEvidence(qualityState, source) && !hasTrustedHistoryEvidence(it.qualityState, it.source)) return this
     copy(
@@ -686,8 +690,10 @@ internal fun mergeStoredCharge(incoming: ChargeSummary, cached: ChargeSummary?):
     // existing detail. An observed-looking local import from another source
     // is not allowed to revoke or transplant a Fleet measurement.
     val newProof = raw.energyContract != null &&
-        raw.energyContract != cachedRaw.energyContract && inRaw.source == raw.source
-    val sameSource = raw.source == cachedRaw.source
+        raw.energyContract != cachedRaw.energyContract && inRaw.source == raw.source &&
+        sameChargeSourceInstance(raw.sourceInstanceId, raw.sourceId, inRaw.sourceInstanceId, inRaw.sourceId)
+    val sameSource = raw.source == cachedRaw.source &&
+        sameChargeSourceInstance(raw.sourceInstanceId, raw.sourceId, cachedRaw.sourceInstanceId, cachedRaw.sourceId)
     val sameWindow = sameHistorySession(raw.startDate, raw.endDate,
         cachedRaw.startDate, cachedRaw.endDate)
     // A missing field in a same-session page is weak; a new trusted, non-null
@@ -700,6 +706,7 @@ internal fun mergeStoredCharge(incoming: ChargeSummary, cached: ChargeSummary?):
                 inRaw.chargeEnergyUsed != cachedRaw.chargeEnergyUsed))
     val receipt = when {
         incomingSnapshot && raw.source == inRaw.source &&
+            sameChargeSourceInstance(raw.sourceInstanceId, raw.sourceId, inRaw.sourceInstanceId, inRaw.sourceId) &&
             sameHistorySession(raw.startDate, raw.endDate, inRaw.startDate, inRaw.endDate) ->
             incoming.apiEvidence
         !newProof && HistorySummaryEvidenceCodec.sourceJson(incoming.apiEvidence) != null &&

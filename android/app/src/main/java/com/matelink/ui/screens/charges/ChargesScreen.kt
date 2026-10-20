@@ -98,7 +98,7 @@ import com.matelink.ui.theme.CarColorPalette
 import com.matelink.ui.theme.CarColorPalettes
 import com.matelink.ui.theme.telemetryPalette
 import com.matelink.domain.analytics.ChargeCostSource
-import com.matelink.domain.analytics.resolveChargeCostFromTotal
+import com.matelink.domain.analytics.EffectiveChargeCost
 import com.matelink.util.toChineseDisplayAddress
 import java.time.LocalDate
 
@@ -183,8 +183,10 @@ fun ChargesScreen(
                     selectedChargeTypeFilter = uiState.chargeTypeFilter,
                     selectedCostFilter = uiState.costFilter,
                     freeSupercharging = uiState.freeSupercharging,
-                    priceOverrides = uiState.priceOverrides,
-                    defaultChargePrice = uiState.defaultChargePrice,
+                    effectiveCosts = uiState.effectiveCosts,
+                    pendingLegacyAmounts = uiState.pendingLegacyAmounts,
+                    pendingBoundAmounts = uiState.pendingBoundAmounts,
+                    otherCurrencyAmounts = uiState.otherCurrencyAmounts,
                     customStartDate = uiState.customStartDate,
                     customEndDate = uiState.customEndDate,
                     initialScrollPosition = uiState.scrollPosition,
@@ -212,6 +214,10 @@ fun ChargesScreen(
     priceEditTarget?.let { charge ->
         ChargePriceDialog(
             currentTotal = uiState.priceOverrides[charge.chargeId],
+            pendingLegacyAmount = if (uiState.priceOverrides[charge.chargeId] == null)
+                uiState.pendingLegacyAmounts[charge.chargeId] else null,
+            otherCurrencyAmount = uiState.otherCurrencyAmounts[charge.chargeId],
+            pendingBoundAmount = uiState.pendingBoundAmounts[charge.chargeId],
             currencySymbol = uiState.currencySymbol,
             onDismiss = { priceEditTarget = null },
             onSave = { total ->
@@ -241,8 +247,10 @@ private fun ChargesContent(
     selectedChargeTypeFilter: ChargeTypeFilter,
     selectedCostFilter: CostFilter,
     freeSupercharging: Boolean,
-    priceOverrides: Map<Int, Double>,
-    defaultChargePrice: Double,
+    effectiveCosts: Map<Int, EffectiveChargeCost>,
+    pendingLegacyAmounts: Map<Int, Double>,
+    pendingBoundAmounts: Map<Int, Pair<String?, Double>>,
+    otherCurrencyAmounts: Map<Int, Pair<String, Double>>,
     customStartDate: LocalDate?,
     customEndDate: LocalDate?,
     availableLocations: List<String>,
@@ -271,7 +279,6 @@ private fun ChargesContent(
         (if (showFreeHint) 1 else 0) + (if (chartData.isNotEmpty()) 1 else 0)
     val chargeRow: @Composable (ChargeData) -> Unit = { charge ->
         ChargeItem(
-            defaultChargePrice = defaultChargePrice,
             charge = charge,
             isDcCharge = when (historyChargeType(charge, dcChargeIds, processedChargeIds)) {
                 ChargeType.DC -> true
@@ -279,8 +286,11 @@ private fun ChargesContent(
                 ChargeType.UNKNOWN -> null
             },
             currencySymbol = currencySymbol,
-            manualTotalAmount = priceOverrides[charge.chargeId],
-            freeSupercharging = freeSupercharging,
+            effectiveCost = effectiveCosts[charge.chargeId]
+                ?: EffectiveChargeCost(null, ChargeCostSource.UNAVAILABLE),
+            pendingLegacyAmount = pendingLegacyAmounts[charge.chargeId],
+            pendingBoundAmount = pendingBoundAmounts[charge.chargeId],
+            otherCurrencyAmount = otherCurrencyAmounts[charge.chargeId],
             palette = palette,
             onEditCost = { onEditCost(charge) },
             onClick = {
@@ -716,12 +726,13 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
 
 @Composable
 private fun ChargeItem(
-    defaultChargePrice: Double,
     charge: ChargeData,
     isDcCharge: Boolean?,
     currencySymbol: String,
-    manualTotalAmount: Double?,
-    freeSupercharging: Boolean,
+    effectiveCost: EffectiveChargeCost,
+    pendingLegacyAmount: Double?,
+    pendingBoundAmount: Pair<String?, Double>?,
+    otherCurrencyAmount: Pair<String, Double>?,
     palette: CarColorPalette,
     onEditCost: (() -> Unit)? = null,
     onClick: () -> Unit
@@ -737,14 +748,6 @@ private fun ChargeItem(
     }
     val energy = presentChargeEnergy(charge.batteryInputKwh)
 
-    val effectiveCost = resolveChargeCostFromTotal(
-        manualTotalAmount = manualTotalAmount,
-        freeSupercharging = freeSupercharging,
-        isDcCharge = isDcCharge == true,
-        teslaMateCost = charge.cost,
-        energyKwh = energy.energyKwh,
-        defaultPricePerKwh = defaultChargePrice
-    )
     val isFree = effectiveCost.source == ChargeCostSource.FREE
     val costText = when {
         isFree -> freeLabel
@@ -844,6 +847,55 @@ private fun ChargeItem(
                     onMetricClick = onEditCost,
                     metricClickLabel = stringResource(R.string.edit_charge_cost)
                 )
+                if (effectiveCost.source == ChargeCostSource.MANUAL &&
+                    effectiveCost.qualificationReason == "instance_unverified") {
+                    Text(stringResource(R.string.charge_cost_instance_unverified),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.onSurfaceVariant)
+                }
+                pendingLegacyAmount?.let { amount ->
+                    Text(stringResource(R.string.charge_cost_saved_unconfirmed, amount),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.onSurfaceVariant)
+                }
+                pendingBoundAmount?.let { (code, amount) ->
+                    Text(stringResource(R.string.charge_cost_saved_unbound, code ?: "?", amount),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.onSurfaceVariant)
+                }
+                otherCurrencyAmount?.let { (code, amount) ->
+                    Text(stringResource(R.string.charge_cost_other_currency, code, amount),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.onSurfaceVariant)
+                }
+                charge.cost?.takeIf { it.isFinite() && it >= 0.0 &&
+                    charge.currencyCode.isNullOrBlank() && !charge.source.isNullOrBlank() }
+                    ?.let { amount ->
+                        Text(stringResource(R.string.charge_cost_source_unconfirmed, amount),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.onSurfaceVariant)
+                    }
+                if (effectiveCost.qualificationReason == "source_unverified") {
+                    charge.cost?.takeIf { it.isFinite() && it >= 0.0 }?.let { amount ->
+                        Text(stringResource(R.string.charge_cost_source_identity_unverified, amount),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.onSurfaceVariant)
+                    }
+                }
+                if (effectiveCost.qualificationReason == "currency_mismatch") {
+                    charge.cost?.takeIf { it.isFinite() && it > 0.0 }?.let { amount ->
+                        Text(stringResource(R.string.charge_cost_source_other_currency,
+                            charge.currencyCode.orEmpty(), amount),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.onSurfaceVariant)
+                    }
+                }
+                if (effectiveCost.qualificationReason == "provider_zero_unverified" &&
+                    !charge.currencyCode.isNullOrBlank()) {
+                    Text(stringResource(R.string.charge_cost_source_zero_unverified),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.onSurfaceVariant)
+                }
             }
         }
     }

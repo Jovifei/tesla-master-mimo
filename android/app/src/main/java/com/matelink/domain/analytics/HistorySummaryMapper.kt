@@ -144,9 +144,9 @@ fun ChargeSummary.toAnalysisChargeData(): ChargeData {
     val detail = HistorySummaryEvidenceCodec.detailContract(apiEvidence)
     val metric = detail?.batteryInput ?: detail?.acInput
     // A local detail claim requires the same raw receipt, car namespace,
-// source and window. Legacy v1 without a scoped presentation remains
-// readable as raw data, but its orphaned claim cannot certify energy.
-val safe = latest != null
+    // source and window. Legacy v1 without a scoped presentation remains
+    // readable as raw data, but its orphaned claim cannot certify energy.
+    val safe = latest != null
     val verified = safe && detail?.version == 1 && metric?.source != null &&
         (raw.source == null || raw.source == metric.source) &&
         sameEvidenceInstant(metric.startDate, startDate) &&
@@ -382,6 +382,7 @@ internal object HistorySummaryEvidenceCodec {
         e.detailChargePresentation?.takeIf { p ->
             sourceRecord != null && sourceRecord.chargeId == chargeId &&
             sourceRecord.source == source &&
+            sameChargeSourceInstance(sourceRecord.sourceInstanceId, sourceRecord.sourceId, p.sourceInstanceId, p.sourceId) &&
             e.detailScopeCarId == carId && p.chargeId == chargeId &&
                 p.chargeEnergyAdded == null && p.chargeEnergyUsed == null &&
                 p.energyContract == null && (source == null || source == p.source) &&
