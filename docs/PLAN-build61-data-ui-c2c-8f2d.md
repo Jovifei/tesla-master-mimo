@@ -4,7 +4,7 @@
 STATE: PLAN
 TASK_ID: c2c_8f2d
 ITERATION: 0
-REVISION: visual-evidence-complete
+REVISION: charge-same-id-p1-evidence
 VERDICT: CHANGES_REQUIRED
 APPROVAL_GATE: Jovi 审核整包范围；此文不是实现完成、设备验收或生产授权。
 
@@ -14,7 +14,7 @@ APPROVAL_GATE: Jovi 审核整包范围；此文不是实现完成、设备验收
 
 app_mimo 连接器复核仍是 `codex/miniprogram-stage-20261013@92cbf11`，Owner dirty 保留；本轮定向 android HEAD diff 为空，但这不使旧工作树成为手机源码。本方案的产品判断来自 GitHub 固定提交，不来自 E 根旧源码。
 
-已通读本地 `docs/RPT-2026-10-20-app-data-ui-audit-c2c-packet.md` 最新 70 行版本。16 张直接上传的 PNG 已逐张观察实际画面，弥补 read_image 只返回元数据的缺口。含精确地点的仪表盘、行程列表、充电列表、驻车、时间线等原图没有读取或发布；这些页面只采用报告中的实机描述和固定源码，不伪称完成视觉验收。
+已通读本地 `docs/RPT-2026-10-20-app-data-ui-audit-c2c-packet.md` 最新 72 行版本（含同ID充电列表与详情分歧）。16 张直接上传的 PNG 已逐张观察实际画面，弥补 read_image 只返回元数据的缺口。含精确地点的仪表盘、行程列表、充电列表、驻车、时间线等原图没有读取或发布；这些页面只采用报告中的实机描述和固定源码，不伪称完成视觉验收。
 
 这个文档分支只新增 PLAN，不修改产品代码、不启动车辆动作、不运行生产迁移、不安装 App、不合并 main。后续产品候选必须有新固定 SHA 和真实同 SHA 验证，不能借用 build61 旧 CI。
 
@@ -24,6 +24,17 @@ app_mimo 连接器复核仍是 `codex/miniprogram-stage-20261013@92cbf11`，Owne
 - `AnnualReportScreen.kt:273-275` 的 `>0` 门槛作用于平均 Wh/km，不是该处总净 kWh；因此应修复合法零/负平均能耗被隐藏，而不是错误声称所有年度负净能量均被禁止。
 - 26 与 27 截图时间分别为 11:11:22 和 11:11:56，样本数有 5→27、充电能量相关样本 64→61 的变化；不能把不同截图反算为同一数据库快照。349/429/506、967/919.6、2/9.2 的确需要解释，但不能据此认定重复、丢失或篡改。
 - 图 23 的规则曲线与生产合成路径相符，但没有逐点 Room 对照，不能说截图每个点都是假。能证实的是生产代码允许合成点参与历史极值与结论。
+
+### 1.2 新增同一充电 ID 的实机 P1（只读观测，非历史丢失结论）
+
+2026-10-20 原 build61、同一车辆、筛选“全部时间”、未改设置，64次充电数保持不变：
+
+| 同一会话 | 首次列表 | 再次进入列表 | 点击同ID详情后返回 |
+|---|---|---|---|
+| 64条合计 | 967 kWh / 约¥1102 | 920 kWh / 约¥1048 | 返回列表仍920/约¥1048 |
+| 首条39分钟 | 24.0 kWh / 约¥27.38 | 能量、费用皆“暂无数据” | 详情24.02 kWh、¥27.38、SOC56→97、最大功率56 kW；返回列表仍未知 |
+
+数值相差约47 kWh、约¥54；47×现有默认价格1.14≈¥53.58，**与列表资格撤销后依赖电量的估算费用同步消失相符，但不证明用户当时实际费率、原因或物理数据丢失**。64条不变并不能排除某行Room receipt被降级；详情仍显示则证明另一条消费者仍能取得该会话的合格值。因实际两次同ID wire JSON、Room前后`apiEvidence`、来源实例、精确窗口及刷新修订未提取，不得宣称具体根因已锁定，也不能强制将合计回填967。带位置的四幅新图继续仅私有保存。
 
 ## 2. 独立源码发现与优先级
 
@@ -41,9 +52,22 @@ app_mimo 连接器复核仍是 `codex/miniprogram-stage-20261013@92cbf11`，Owne
 | D8 | P2 已证实：充电编辑被能量门控、未知类型可能落入 AC 分组 | `ChargeDetailScreen:523-599` 的费用编辑在 batteryInputKwh?.let 内；`ChargesScreen:847-879` 单独编辑行；`CostViewModel.buildMonthlyCosts` 非 DC 全归 AC | 有合法记录身份即可编辑总价，不依赖能量；类型 AC/DC/UNKNOWN 三态；不能用 56kW 或未命中 DC 集合推断 AC/DC |
 | D9 | P2 已证实：续航空态、待机“稳定”、年报零负值表达有问题 | `RangeViewModel.loadRangeData` 会覆盖 recalculate 的 metric reason；`StandbyWindowAnalysis` 仅下降 SOC 窗口入选且以数量/小时判 stable；`AnnualReportScreen` 对平均能耗 >0 才显示 | 区分已有历史与模型不合格；端点跨度不叫连续观测覆盖；零变化不能被当缺失；净能耗零/负合法 |
 | D10 | P2 已证实：手机并非已有完整详情副本 | `ParkedDetailViewModel` 只请求远端；`ChargeDetailViewModel` 离线退回 summary 并设置 empty chargePoints；Room 当前 version=21 | 已取得详情持久化、离线可复现、缓存明确不完整状态；不以聚合数据伪造曲线 |
+| D12 | **P1 实机已复现：同ID list/detail与总计分歧；触发层待取证** | `ChargesViewModel.kt:391-426,447-540,739-773`；`UnifiedHistoryRepository.kt:242-288,345-355,670-725`；`HistorySummaryMapper.kt:76-161,358-385`；`ChargeDetailViewModel.kt:197-245` 的详情成功分支仅直接渲染、未调用已有的 `ChargeSummaryDao.mergeDetail`；`ChargeModels.kt:44-45,117-134` 独立资格；`EnergyModels.kt:53-78` 严格窗口 | 同scope/chargeId/来源/窗口、同修订取`getCharges`/Room原始receipt及`getChargeDetail`并作逐层RED；修复弱null降级与有效同窗详情持久化；显式可信撤销仍保持unknown；跨页能源和估价按同一资格快照一致，不强行指定正确合计 |
 | D11 | 待运行时取证：readiness 全未知的具体原因 | `ReadOnlyReadinessDiagnostics.capture` 先捕获 cached vehicle；verifies 要 capabilityVersion、vehicleUid、来源验证；VM 后面 getCar/resolve 不自动更新此前捕获的 vehicle | 首次捕获为空、旧 capability、UID 不匹配、离线和权限失败分别诊断；不能用实时仪表盘或 archive 证明 Fleet 已接收 |
 
 TPMS 调度调用图的 GitHub code search 返回 incomplete_results，未作为“没有其他调用点”的证据。已读到 BootReceiver 的周期安排及 Application 的 WorkManager 初始化；后续完整 checkout 必须枚举登录、设置、前台、重启和 worker 自续调用并做行为测试，不能只加一个 schedule 调用就结案。
+
+### 2.1 D12 的已证实断点、未证实触发层及判别顺序
+
+**已证实的源码两条路径**：`ChargesViewModel.loadCharges`→`UnifiedHistoryRepository.load`(远端`getCharges`每页50条+Room原`apiEvidence`)→`mergeChargesRaw`→`toLocalSummary`→`mergeStoredCharge`→`toAnalysisChargeData`→`batteryInputKwh`→单卡/`calculateSummary`；而`ChargeDetailViewModel`经独立验证上下文直接`getChargeDetail`→`withQualifiedEnergy`→显示24.02，成功路径没有持久化此详情proof。现有`ChargeSummaryDao.mergeDetail`和`ChargeSummary.withDetailEvidence`可作为候选接线，必须先独立验证来源/窗口安全和强证据等级。
+
+至少按以下四类逐一排查，不能先将其中一类当最终根因：
+- **远端 list/detail 合同**：同ID两次`getCharges`的`energy_contract`是否从有效变弱null、缺键、显式unknown或不同版本，而`getChargeDetail`仍携带有效`battery_input`；若远端权威同源同窗显式撤销，列表应显示unknown，不能拿旧值覆盖。
+- **Room原始receipt/合并展示层**：`mergeStoredCharge`对新旧raw、source、proof、detail envelope作选择；`toAnalysisChargeData`在细节scope/window不符时可将电量屏蔽为unknown；`toLocalSummary`旧非nullable列用0承接unknown但另存原`apiEvidence`。逐层核对是否只是展示资格降级、raw误选择或持久化真实改动。
+- **来源和窗口**：同数字ID不能跨账号/origin/稳定车辆/来源实例嫁接；目前`mergeStoredCharge`有`raw.startDate == cachedRaw.startDate`字符串比较，另有`sameEvidenceInstant`按Instant解析。同一时刻的`Z`/`+08:00`/纳秒表示必须按合同等价，不同真实边界或来源必须隔离。
+- **刷新修订**：分页中断、局部响应、后台Room同步、页面重入、迟到任务可能让可见列表/详情/Stats DAO处于不同revision；一轮发布必须携带相同scope/window/qualification revision，不得悄然从另一轮拿数。
+
+只读真实取证需对每条改变的64条记录提供不可逆脱敏的稳定键、时间窗和source实例是否匹配、list/detail合同版本/质量/方法/测量点/覆盖、Room before/after`apiEvidence`哈希、每层qualified value/reason、同步成功/partial/failure、总电量/总费用/覆盖数及快照代际。**不上传raw JSON、VIN、位置、地址、真实轨迹或秘密。** 若旧网络响应已经不可追溯，只能把隔离fixture重现称为合成RED，不能冒充捕获过之前真实receipt。
 
 ## 3. 16 张截图逐张结论
 
@@ -112,7 +136,7 @@ TPMS 调度调用图的 GitHub code search 返回 incomplete_results，未作为
 
 值、覆盖和已知/估算数量来自同一作用域、同一筛选窗、同一数据库快照；现有 getStats 串行分别计算quick/deep/coverage应避免把不同写入时刻拼成一张卡。网络请求不持有Room事务；事务只读摘要/资格/必要索引，不能加载全车原始路线。记录原始数、可分析数、当前列表数和未结束/短程/隔离/缺单位等排除原因，不能强迫所有页面计数相等。
 
-同一冻结快照在本地生成ID差集，导出脱敏行：opaque record key、source分类、质量、边界/字段可用布尔、各消费者是否入选、排除代码；不上传VIN、账号、坐标、地点、token或真实轨迹。把349/429/506及967/919.6差异逐项解释，含同步进度；不得靠删除数据对齐。
+同一冻结快照在本地生成ID差集，导出脱敏行：opaque record key、source分类、质量、边界/字段可用布尔、各消费者是否入选、排除代码；不上传VIN、账号、坐标、地点、token或真实轨迹。把349/429/506及967/919.6差异逐项解释，含同步进度；不得靠删除数据对齐。D12还需对64条逐ID输出同scope/window/revision的合格/unknown及其原因、带费用来源的差集，解释967→920与估算费用联动；真实合计取决于合格receipt，不能硬编码967或920。
 
 `DrivesViewModel.applyFiltersAndUpdateState` 真正使用短行程设置；筛选只作用于列表/明确的统计范围，不改变原始保存和驻车邻接判断。`EfficiencyViewModel` 月度和速度组与主卡使用同一配对加权，不再算术平均。`AnnualReportScreen` 和图表保留零/负值；未知月不是零柱。
 
@@ -120,13 +144,26 @@ TPMS 调度调用图的 GitHub code search 返回 incomplete_results，未作为
 
 复用 `EffectiveChargeCostResolver.kt`，修改 `ChargeCostOverrideStore.kt`、`ChargeSummaryDao.kt`、`ChargesViewModel/Screen.kt`、`ChargeDetailViewModel/Screen.kt`、`CostViewModel/Screen.kt`、`StatsRepository.kt`、`MileageViewModel.kt`、`TimelineViewModel.kt`、`AnnualReportViewModel/Metrics/Screen.kt`；组合旅程费用消费者同样复核。
 
-手工总价保存后，详情、列表、费用、统计、里程、时间线、年度和组合旅程按同一key重新投影，不能把手工值写进原API receipt。持久化币种/来源/修改版本；旧手工值币种证据不明时保留但不猜币种或跨币种求和。有效账单/手工小计和估算小计分别展示。
+手工总价保存后，详情、列表、费用、统计、里程、时间线、年度和组合旅程按同一key重新投影，不能把手工值写进原API receipt。D12中列表电量资格变未知可使默认费率估价一起变未知，但不能吞掉已验证的手工总价/账单，也不能把已有同窗详情24.02因弱null抹去；有权威撤销则必须保留unknown及原因。持久化币种/来源/修改版本；旧手工值币种证据不明时保留但不猜币种或跨币种求和。有效账单/手工小计和估算小计分别展示。
 
 充电总价编辑不以batteryInputKwh是否存在为条件。AC/DC/UNKNOWN三态贯通列表、费用分组、聚合；`isFastCharger=false`而缺证据不能自动变成AC。修 `ChargeStatsCalculator` 的伪极值和点序/SOC边界；时间加权统计不替换原充电能量物理量。
 
 不能按时长、能量unknown/0或少数零功率点删除“插枪未充”；原记录保留。只有完整、同窗、无冲突的明确证据才可给“仅连接/未观察到充入”分类；本次24.02kWh、56→97%的样本不在此类。
 
 ### D. 真实观测、详情持久化和可恢复同步（P1/P2）
+
+#### D-P1 首要修复：同 chargeId 的 list→raw merge→Room→detail→reload
+
+新增实机现象必须作为D包首个真实消费者 RED，优先于增建温度/TPMS表。不得只在`ChargesScreen`给缺值补一个UI fallback，也不得把首条24.02或合计967写成常量。复用现有事务`ChargeSummaryDao.mergeDetail`/`withDetailEvidence`须满足same account/origin/stable vehicle/source instance/chargeId/Instant boundary/metric purpose/unit/coverage，并再次验证请求仍属当前scope；详情成功但缺合法本地摘要行时应显示可解释的待同步状态，不跨范围创建可信记录。
+
+连续真实消费者回归要求：
+1. 同scope注入64条隔离合格`getCharges` fixture（含39分钟24.02和另一条约22.98kWh），使首轮列表/费用/图表/Room详情资格一致；第二次模拟同源同窗列表仅弱null或缺键，保持64条，观察是否丢约47kWh及其默认费率估算。同步注入同ID`getChargeDetail` 24.02/SOC56→97/56kW。先在旧源码得到RED，再修复；**最终合计由fixture中逐条独立有效值计算**，不是测试里硬断言任何现实合计永远等于967。
+2. 逐步断言`remote list→mergeChargesRaw→toLocalSummary→mergeStoredCharge→upsertPreservingEvidence(Room事务)→reload→toAnalysisChargeData→ChargesViewModel`，与`getChargeDetail→withQualifiedEnergy→verified mergeDetail→reload→return list`；记录每层value、原因、哈希和scope revision，确保详情成功不会只停留在UI内存。
+3. 区分缺键/弱null、明确的`EnergyMetric(quality="unknown", reason=...)`、可信校正为0及真实同窗撤销。保留raw receipt原字节，detail proof单独追加，不允许弱摘要清除同窗强proof；如果权威新证据推翻旧值必须失去展示资格。核对`mergeStoredCharge`字符串window相等与`sameEvidenceInstant`的时间语义差异，覆盖`Z`与`+08:00`、纳秒精度、不同实际窗口、source实例和迟到修订。
+4. 故障注入列表半途页失败、后台Room更新、详情先后返回、取消/切车、进程死亡事务前/后、磁盘满、重启和离线。无来源证明时留unknown及原因，不通过借窗外详情或把API原raw覆写成投影来填数。已获取且完整合格的详情和曲线可离线展示，缓存字段不足时明确缺口。
+5. 同一修订跨页比对单条能量/价与总合计：列表、月柱图、Stats、Cost、Annual、Mileage、Timeline、Trips有关消费者逐ID核对，knownEnergyCount/estimatedCostCount及n/N一同更新；列表64条数不应因能量缺失变成零条，费用不能凭unknown当0。返回列表、关闭进程再打开与离线情境仍保持资格/来源一致，拒绝源或窗口不一致的详情拼接。
+
+
 
 修改 `TpmsPressureWorker.kt`、`TpmsObservationEvidence.kt`、`TpmsHistoryRepository.kt`、`MateLinkApplication.kt`/现有启动协调入口、`BootReceiver.kt` 和模式就绪判断。不要把AppSettings.isConfigured简单改为恒true；按云会话/自托管各自授权来源判断。使用唯一、可幂等协调的周期工作，登录/恢复配置/前台/重启能够恢复，注销阻止旧scope网络调用。周期与立即检查使用不会互相替代或堆积的唯一工作名；permission拒绝不禁止合格历史保存，也不假装通知已送达。
 
@@ -166,7 +203,7 @@ A–E不是若干可独立宣布交付的小片段；整包源代码接线、回
 
 | 实体 | 手机保留 | 服务器/私有冷归档 | 风险与恢复 |
 |---|---|---|---|
-| 行程/充电摘要 | 已取得原始receipt、nullable边界、资格投影、来源/单位/修订；按scope独立 | 可恢复原始会话/分页索引 | 不完整会话不能因Room旧非空列限制而永久丢失；新增receipt容器保留，不伪造结束边界 |
+| 行程/充电摘要 | 已取得原始receipt、nullable边界、资格投影、来源/单位/修订；按scope独立；同ID充电的原list receipt和经验证的detail receipt独立保留，明示各自revision | 可恢复原始会话/分页索引 | 不完整会话不能因Room旧非空列限制而永久丢失；新增receipt容器保留，不伪造结束边界 |
 | 详情曲线 | 已下载完整点或明确标记的分页块；receipt hash、point count、complete/cursor；展示降采样是可重建派生物 | 有界热索引、完整冷归档 | 原始点和降采样不可混淆；事务完成后才标complete；断电/磁盘满不发布半包为完整 |
 | 温度/TPMS | 逐字段/逐轮value、observed_at、received_at、time_basis、unit、source；按车去重 | 真实源观测及恢复游标 | 不造时间、不复写legacy资格；7/30天是查询窗，不自动变成删历史授权 |
 | 驻车窗口 | scope+两侧会话key+精确窗+来源修订+边界/温度/能量各自证据 | 有证据的停车观测或边界合同 | 邻接关系变化/中间有行程要使旧投影失效，但原receipt保留；不跨窗嫁接温度 |
@@ -192,6 +229,9 @@ A–E不是若干可独立宣布交付的小片段；整包源代码接线、回
 | WeightedMetrics | 1km/1kWh+99km/9kWh；-0.5kWh/5km；2kWh但距离缺失；E与D在不同ID | 前例100Wh/km而非约545.45；负例-100Wh/km保留；能量小计可知但配对效率未知；n是交集而非min |
 | ChargeCostPairing | A有¥20但E未知，B有10kWh但价格未知；C有¥0和5kWh；不同币种；手工12.34/清除 | A+B单价未知而非¥2/kWh；C单价0；手工变更所有消费者和重启后相同；账单与估算不混 |
 | ChargeEvidence | 类型未知但功率56；电池充入已知而AC输入未知；只有均温；无序/同刻冲突点；中途零功率 | 不猜DC/AC、效率保持未知；不把均温复制为最高最低；SOC首末观测不冒充精确端点；不删除会话 |
+| **SameChargeIdListDetailRED→GREEN** | 同64条fixture中39分钟24.02 kWh/约¥27.38，弱列表刷新后单卡变unknown、合计967→920、约¥1102→1048；详情仍有SOC/56kW且返回列表不恢复 | 用实际`UnifiedHistoryRepository`/DAO/`ChargesViewModel`/详情成功消费链获得RED，合法同scope同窗来源下GREEN保持数据、合计与价格一致；重开Room/离线也一致；禁止硬填967 |
+| **ChargeSourceWindowRevision** | 同ID换来源实例/账号/窗口；同Instant异ISO时区/纳秒；可信unknown撤销、合法真0、错scope晚到、事务取消/重启 | 弱null不擦合法proof，真正撤销继续unknown、真0保留；无跨车/跨窗富化；raw哈希守恒，丢失资格显示reason |
+| **ChargeCrossPageAggregate** | 同一64条固定修订逐ID电量、价格、覆盖和总和，混入手工价、估算价、unknown能量、分页部分失败 | 列表/详情/四指标/月图/Stats/Cost/Annual及相关Mileage/Timeline/Trips都消费相同证据来源和资格修订；费用与电量联动不冒充账单，计数不误降 |
 | ParkedEvidence | 相邻边界SOC0/缺失；中间短程/隔离/开口行程；关联充电未知；温度仅在窗外 | 合法0保留；不安全邻接拒绝；窗外不借值；本地已有同窗缓存离线可读并标陈旧 |
 | CloudWorkerReadiness | 云会话有效+self-host URL空；自托管未配置；重复前台/重启；立即任务并发周期任务 | 云模式不被serverUrl门跳过；未授权不发请求；唯一工作不无限堆积；不修改网络配置 |
 | TpmsAdmissionAndRecovery | 同一2.8bar receipt重复/重启；逐轮不同时间；缺单位/来源；legacy碰撞；未来时间 | 不重复增点/报警、不覆盖旧证据；自然新时间才新增；legacy保留但不进入趋势；真实0值按合同处理 |
@@ -206,7 +246,7 @@ A–E不是若干可独立宣布交付的小片段；整包源代码接线、回
 
 ## 8. CI、安装与回滚门
 
-源码/隔离CI：固定候选执行现有Debug+Release单元测试、lint、assemble/R8；读取JUnit真实fail/error/skip与进程退出码，不能只看包装器exit0。新增Room/Compose实际模拟器测试另有job。后端变更执行真实Go、vet、build、隔离PG、race，以及现有TLS/Web/兼容回归；不接生产数据库或真实provider。需要保留Android时间测试的显式zone注入，不只依赖runner默认上海时区。
+源码/隔离CI：D12首轮必须针对49ee产品固定源码执行同ID合成跨层RED并保存真实失败日志，再在修复候选做GREEN和真实Room重开、可读diff/receipt哈希对照；不得把旧绿色CI或仅纯函数的断言代替。固定候选执行现有Debug+Release单元测试、lint、assemble/R8；读取JUnit真实fail/error/skip与进程退出码，不能只看包装器exit0。新增Room/Compose实际模拟器测试另有job。后端变更执行真实Go、vet、build、隔离PG、race，以及现有TLS/Web/兼容回归；不接生产数据库或真实provider。需要保留Android时间测试的显式zone注入，不只依赖runner默认上海时区。
 
 本地独立验证：取完整GitHub SHA/tree/parent和已验证源码，重建并核验签名/R8/构建号；检查Owner dirty前后不变。旧生产API与本次候选源码并不等同，不部署候选去“验证”。
 
@@ -216,7 +256,7 @@ A–E不是若干可独立宣布交付的小片段；整包源代码接线、回
 
 ## 9. 完成交付与同任务回传模板
 
-整阶段源代码完成条件：D1–D10已接线修复或用实际证据否定，并对D11提供分类而非一概unknown；16图布局逐项对照；全部消费者同snapshot口径解释；详情/观测/手工价重启保持；真实同SHA测试无未解释失败。生产自然数据/人类门可OPEN，但必须有明确缺哪项证据，不能被SOURCE_APPROVED吞掉。
+整阶段源代码完成条件：D1–D10与新增D12已接线修复或以同ID逐层事实否定，并对D11提供分类而非一概unknown；16图布局逐项对照；全部消费者同snapshot口径解释；详情/观测/手工价重启保持；真实同SHA测试无未解释失败。生产自然数据/人类门可OPEN，但必须有明确缺哪项证据，不能被SOURCE_APPROVED吞掉。
 
 同一任务EXECUTED回传：
 
@@ -230,7 +270,8 @@ BRANCH: <assigned-owned-branch>
 HEAD_SHA: <full sha>
 TREE_SHA: <full tree>
 PARENT_SHA: <full parent>
-PLAN_COMPARISON: D1-D11 / A-F / 16 screenshots
+PLAN_COMPARISON: D1-D12 / A-F / 16 screenshots
+SAME_ID_CHARGE_P1: <64条，同ID首/次list及detail，源/Instant窗/contract/Room哈希，RED/GREEN，统计及估价跨页快照>
 CI: <same-SHA run IDs, job IDs, exact results, artifacts>
 LOCAL: <independent tests/build/signature; NOT_RUN where absent>
 DEVICE: <installed SHA/version or NOT_INSTALLED; screenshots and observations>
@@ -239,4 +280,4 @@ HUMAN_NATURAL_GATES: <explicit open gates>
 OWNER_DIRTY: <preserved evidence>
 ```
 
-配套文档应包括本PLAN逐项完成对照、固定SHA源码与CI回执、隐私安全的ID差集原因统计、字段/单位/来源/时间/资格合同、Room迁移与恢复矩阵、16图前后对比以及未通过的人工/自然数据门。GitHub为源码与证据交接桥，原私有地点图不上传。后续审查将独立读取diff、可读execution_output、实际CI及新截图，不依据执行方“全通过”一句话宣布验收。
+配套文档应包括本PLAN逐项完成对照、固定SHA源码与CI回执、隐私安全的ID差集原因统计、64条同ID充电list/detail/Room漂移RED→GREEN和各层脱敏哈希及覆盖总数、字段/单位/来源/时间/资格合同、Room迁移与恢复矩阵、16图前后对比以及未通过的人工/自然数据门。GitHub为源码与证据交接桥，原私有地点图不上传。后续审查将独立读取diff、可读execution_output、实际CI及新截图，不依据执行方“全通过”一句话宣布验收。
