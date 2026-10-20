@@ -38,12 +38,21 @@ data class AnalysisCoverage(
     val chargeEnergyUsedForLossKwh: Double? = null,
     val chargeEnergyAddedForLossKwh: Double? = null,
     /** A positive count means the aggregate must be labeled estimated. */
-    val driveEnergyEstimatedSampleCount: Int = 0
+    val driveEnergyEstimatedSampleCount: Int = 0,
+    /** Values and counts come from the same qualified history snapshot. */
+    val qualifiedDistanceTotalKm: Double? = null,
+    val qualifiedDriveEnergyTotalKwh: Double? = null,
+    val qualifiedChargeEnergyTotalKwh: Double? = null,
+    val pairedEfficiency: WeightedEfficiencyResult? = null,
+    val pairedEstimatedEnergySampleCount: Int = 0,
+    val driveDistanceDayCount: Int = 0
 ) {
     val distanceCoveragePercent: Double?
         get() = coverage(driveDistanceSampleCount, driveRecordCount)
     val driveEnergyCoveragePercent: Double?
         get() = coverage(driveEnergySampleCount, driveRecordCount)
+    val efficiencyCoveragePercent: Double?
+        get() = coverage(pairedEfficiency?.sampleCount ?: 0, driveRecordCount)
     val chargeEnergyCoveragePercent: Double?
         get() = coverage(chargeEnergySampleCount, chargeRecordCount)
     val chargeEnergyUsedCoveragePercent: Double?
@@ -70,6 +79,10 @@ fun buildAnalysisCoverage(
     val driveDates = drives.mapNotNull { parseObservedDate(it.observedAt) }
     val chargeDates = charges.mapNotNull { parseObservedDate(it.observedAt) }
     val dates = driveDates + chargeDates
+    val distances = drives.mapNotNull { it.distanceKm?.takeIf { value -> value.isFinite() && value >= 0.0 } }
+    val driveEnergies = drives.mapNotNull { it.energyKwh?.takeIf(Double::isFinite) }
+    val chargeEnergies = charges.mapNotNull { it.energyAddedKwh?.takeIf { value -> value.isFinite() && value >= 0.0 } }
+    val pairedEfficiency = calculateWeightedEfficiency(drives.map { EfficiencySample(it.distanceKm, it.energyKwh) })
 
     val validLossSamples = charges.filter { sample ->
         val added = sample.energyAddedKwh
@@ -79,13 +92,13 @@ fun buildAnalysisCoverage(
 
     return AnalysisCoverage(
         driveRecordCount = drives.size,
-        driveDistanceSampleCount = drives.count { it.distanceKm.isValidNonNegative() },
-        driveEnergySampleCount = drives.count { it.energyKwh.isValidSigned() },
+        driveDistanceSampleCount = distances.size,
+        driveEnergySampleCount = driveEnergies.size,
         driveEnergyEstimatedSampleCount = drives.count {
             it.energyKwh.isValidSigned() && it.energyQuality != "reported"
         },
         chargeRecordCount = charges.size,
-        chargeEnergySampleCount = charges.count { it.energyAddedKwh.isValidNonNegative() },
+        chargeEnergySampleCount = chargeEnergies.size,
         chargeCostSampleCount = charges.count { it.cost.isValidNonNegative() },
         firstObservedDate = dates.minOrNull(),
         lastObservedDate = dates.maxOrNull(),
@@ -94,7 +107,17 @@ fun buildAnalysisCoverage(
         chargeEnergyUsedForLossKwh = validLossSamples.mapNotNull { it.energyUsedKwh }.sum()
             .takeIf { validLossSamples.isNotEmpty() },
         chargeEnergyAddedForLossKwh = validLossSamples.mapNotNull { it.energyAddedKwh }.sum()
-            .takeIf { validLossSamples.isNotEmpty() }
+            .takeIf { validLossSamples.isNotEmpty() },
+        qualifiedDistanceTotalKm = distances.takeIf { it.isNotEmpty() }?.sum()?.takeIf(Double::isFinite),
+        qualifiedDriveEnergyTotalKwh = driveEnergies.takeIf { it.isNotEmpty() }?.sum()?.takeIf(Double::isFinite),
+        qualifiedChargeEnergyTotalKwh = chargeEnergies.takeIf { it.isNotEmpty() }?.sum()?.takeIf(Double::isFinite),
+        pairedEfficiency = pairedEfficiency,
+        pairedEstimatedEnergySampleCount = drives.count { sample ->
+            sample.distanceKm.isValidPositive() && sample.energyKwh.isValidSigned() &&
+                sample.energyQuality != "reported"
+        },
+        driveDistanceDayCount = drives.filter { it.distanceKm.isValidNonNegative() }
+            .mapNotNull { parseObservedDate(it.observedAt) }.distinct().size
     )
 }
 

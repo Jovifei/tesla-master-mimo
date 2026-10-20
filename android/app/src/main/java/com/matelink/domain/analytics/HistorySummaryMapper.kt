@@ -117,9 +117,9 @@ fun DriveSummary.toAnalysisDriveData(): DriveData {
     val localDetail = HistorySummaryEvidenceCodec.detailContract(apiEvidence)
     val metric = localDetail?.netEnergy
     // A local detail claim requires the same raw receipt, car namespace,
-// source and window. Legacy v1 without a scoped presentation remains
-// readable as raw data, but its orphaned claim cannot certify energy.
-val safe = latest != null
+    // source and window. Legacy v1 without a scoped presentation remains
+    // readable as raw data, but its orphaned claim cannot certify energy.
+    val safe = latest != null
     val verified = safe && localDetail?.version == 1 && metric?.source != null &&
         (raw.source == null || raw.source == metric.source) &&
         sameEvidenceInstant(metric.startDate, startDate) &&
@@ -151,13 +151,26 @@ val safe = latest != null
         (raw.source == null || raw.source == metric.source) &&
         sameEvidenceInstant(metric.startDate, startDate) &&
         sameEvidenceInstant(metric.endDate, endDate)
-    val projected = if (detail == null && !hasSnapshot) displayed else displayed.copy(
-        energyContract = if (verified) detail else EnergyContract(
+    // Historical TeslaMate detail reports a whole-session scalar without a
+    // versioned Fleet counter contract. Keep its separately scoped receipt;
+    // an explicit unknown contract from the current list still revokes it.
+    val legacyTeslaMate = raw.source == "teslamate_archive" ||
+        (raw.source == null && latest?.source == "teslamate_archive")
+    val legacyDetailBattery = if (safe && legacyTeslaMate &&
+        raw.energyContract == null && metric == null) {
+        (HistorySummaryEvidenceCodec.detailRawBattery(apiEvidence) ?: raw.chargeEnergyAdded)
+            ?.takeIf { it.isFinite() && it >= 0.0 }
+    } else null
+    val projected = when {
+        legacyDetailBattery != null -> displayed.copy(
+            chargeEnergyAdded = legacyDetailBattery, energyContract = null)
+        detail == null && !hasSnapshot -> displayed
+        else -> displayed.copy(energyContract = if (verified) detail else EnergyContract(
             batteryInput = com.matelink.data.api.models.EnergyMetric(
                 quality = "unknown", reason = "local_charge_detail_scope_or_window_mismatch"
             )
-        )
-    )
+        ))
+    }
     return projected.withQualifiedEnergy()
 }
 

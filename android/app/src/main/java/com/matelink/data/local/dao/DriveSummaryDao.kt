@@ -167,6 +167,15 @@ interface DriveSummaryDao {
     """)
     suspend fun getDrivesInRange(carId: Int, startDate: String, endDate: String): List<DriveSummary>
 
+    /** Bounded history read for local-time annual projections, including trusted legacy rows. */
+    @Query("""
+        SELECT * FROM drives_summary
+        WHERE carId = :carId AND qualityState != 'quarantined'
+        AND startDate >= :startDate AND startDate < :endDate
+        ORDER BY startDate ASC
+    """)
+    suspend fun getHistoryDrivesInRange(carId: Int, startDate: String, endDate: String): List<DriveSummary>
+
     // Total distance
     @Query("SELECT COALESCE(SUM(distance), 0) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
     suspend fun sumDistance(carId: Int): Double
@@ -511,19 +520,6 @@ interface DriveSummaryDao {
     """)
     suspend fun getDistinctDrivingDaysInRange(carId: Int, startDate: String, endDate: String): List<String>
 
-    // === Monthly Aggregation Queries ===
-
-    @Query("""
-        SELECT CAST(strftime('%m', startDate) AS INTEGER) as month,
-               COALESCE(SUM(distance), 0) as totalDistance,
-               COALESCE(SUM(energyConsumed), 0) as totalEnergy,
-               COUNT(*) as driveCount
-        FROM drives_summary
-        WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND strftime('%Y', startDate) = :year
-        GROUP BY strftime('%m', startDate)
-        ORDER BY month ASC
-    """)
-    suspend fun getMonthlyAggregation(carId: Int, year: String): List<MonthlyDriveAggregation>
 }
 
 data class BusiestDayResult(
@@ -549,9 +545,11 @@ data class GapBetweenDrivesResult(
 
 data class MonthlyDriveAggregation(
     val month: Int,
-    val totalDistance: Double,
-    val totalEnergy: Double,
-    val driveCount: Int
+    val totalDistance: Double?,
+    val totalEnergy: Double?,
+    val driveCount: Int,
+    val distanceSampleCount: Int,
+    val energySampleCount: Int
 )
 
 /**

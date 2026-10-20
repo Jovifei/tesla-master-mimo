@@ -8,9 +8,14 @@ import com.matelink.data.api.models.Units
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.UnifiedHistoryRepository
+import com.matelink.data.repository.VerifiedHistoryReadContext
+import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.model.Currency
 import com.matelink.domain.analytics.observedCostSumOrNull
+import com.matelink.domain.analytics.chargeTotalOverrideKey
+import com.matelink.domain.analytics.validManualChargeTotal
 import com.matelink.domain.analytics.buildMileageEvidence
 import com.matelink.domain.analytics.observedBatteryUsagePercent
 import com.matelink.domain.analytics.observedDistanceKm
@@ -108,7 +113,7 @@ data class MileageUiState(
  * upwards of 2,000 string-parse calls saved per re-aggregation.
  */
 private data class TimedDrive(val drive: DriveData, val dateTime: LocalDateTime)
-private data class TimedCharge(val charge: ChargeData, val dateTime: LocalDateTime)
+private data class TimedCharge(val charge: ChargeData, val dateTime: LocalDateTime, val effectiveCost: Double?)
 
 /**
  * Bundle holding everything `aggregateByYear` writes back to UiState. Computed
@@ -140,13 +145,16 @@ private data class MonthAggregation(
 class MileageViewModel @Inject constructor(
     private val repository: TeslamateRepository,
     private val settingsDataStore: SettingsDataStore,
-    private val unifiedHistoryRepository: UnifiedHistoryRepository
+    private val unifiedHistoryRepository: UnifiedHistoryRepository,
+    private val chargeCostOverrideStore: ChargeCostOverrideStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MileageUiState())
     val uiState: StateFlow<MileageUiState> = _uiState.asStateFlow()
 
     private var carId: Int? = null
+    private var loadGeneration = 0L
+    private var historyProof: VerifiedHistoryReadContext? = null
 
     // Pre-parsed drive / charge lists. Populated once per loadAllDrives,
     // reused across all subsequent year / month / day aggregations.
@@ -168,6 +176,10 @@ class MileageViewModel @Inject constructor(
     fun setCarId(id: Int) {
         if (carId != id) {
             carId = id
+            historyProof = null
+            timedDrives = emptyList()
+            timedCharges = emptyList()
+            _uiState.update { MileageUiState(currencySymbol = it.currencySymbol) }
             // `loadUnits` is the single getCarStatus call. The previous version
             // also fired one inline here, doubling the network round-trip on
             // every screen entry.
@@ -250,6 +262,7 @@ class MileageViewModel @Inject constructor(
 
     private fun loadAllDrives() {
         val id = carId ?: return
+        val generation = ++loadGeneration
 
         viewModelScope.launch {
             val state = _uiState.value
@@ -261,6 +274,18 @@ class MileageViewModel @Inject constructor(
 
             when (historyResult) {
                 is ApiResult.Success -> {
+                    val proof = historyResult.data.verifiedReadContext
+                    if (proof == null || generation != loadGeneration || carId != id ||
+                        !unifiedHistoryRepository.isContextCurrent(proof)) {
+                        if (generation == loadGeneration && carId == id && proof == null) {
+                            _uiState.update { it.copy(isLoading = false, isRefreshing = false,
+                                error = HISTORY_IDENTITY_UNAVAILABLE) }
+                        }
+                        return@launch
+                    }
+                    val manualTotals = chargeCostOverrideStore.getAll()
+                    if (generation != loadGeneration || carId != id ||
+                        !unifiedHistoryRepository.isContextCurrent(proof)) return@launch
                     val drives = historyResult.data.drives
                     val charges = historyResult.data.charges
 
@@ -279,11 +304,15 @@ class MileageViewModel @Inject constructor(
                             parseDateTime(d.startDate)?.let { TimedDrive(d, it) }
                         }
                         val tc = charges.mapNotNull { c ->
-                            parseDateTime(c.startDate)?.let { TimedCharge(c, it) }
+                            parseDateTime(c.startDate)?.let { TimedCharge(c, it,
+                                projectMileageChargeCost(c, proof.context.localHistoryCarId, manualTotals)) }
                         }
                         PreparedAndYear(td, tc, computeYearAggregation(td, tc))
                     }
 
+                    if (generation != loadGeneration || carId != id ||
+                        !unifiedHistoryRepository.isContextCurrent(proof)) return@launch
+                    historyProof = proof
                     timedDrives = prepared.timedDrives
                     timedCharges = prepared.timedCharges
 
@@ -306,6 +335,7 @@ class MileageViewModel @Inject constructor(
                     }
                 }
                 is ApiResult.Error -> {
+                    if (generation != loadGeneration || carId != id) return@launch
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -319,11 +349,15 @@ class MileageViewModel @Inject constructor(
     }
 
     private suspend fun aggregateByMonth(year: Int) {
+        val generation = loadGeneration
+        val proof = historyProof ?: return
         val drivesSnapshot = timedDrives
         val chargesSnapshot = timedCharges
         val agg = withContext(Dispatchers.Default) {
             computeMonthAggregation(drivesSnapshot, chargesSnapshot, year)
         }
+        if (generation != loadGeneration || carId != proof.context.remoteApiCarId ||
+            !unifiedHistoryRepository.isContextCurrent(proof)) return
         _uiState.update {
             it.copy(
                 monthlyData = agg.monthlyData,
@@ -338,11 +372,15 @@ class MileageViewModel @Inject constructor(
     }
 
     private suspend fun aggregateByDay(yearMonth: YearMonth) {
+        val generation = loadGeneration
+        val proof = historyProof ?: return
         val drivesSnapshot = timedDrives
         val chargesSnapshot = timedCharges
         val dailyData = withContext(Dispatchers.Default) {
             computeDailyAggregation(drivesSnapshot, chargesSnapshot, yearMonth)
         }
+        if (generation != loadGeneration || carId != proof.context.remoteApiCarId ||
+            !unifiedHistoryRepository.isContextCurrent(proof)) return
         _uiState.update { it.copy(dailyData = dailyData) }
     }
 
@@ -390,6 +428,11 @@ class MileageViewModel @Inject constructor(
 private fun parseDateTime(dateStr: String?): LocalDateTime? =
     parseIsoDateTime(dateStr)
 
+internal fun projectMileageChargeCost(
+    charge: ChargeData, localHistoryCarId: Int, manualTotals: Map<String, Double>
+): Double? = validManualChargeTotal(manualTotals[chargeTotalOverrideKey(localHistoryCarId, charge.chargeId)])
+    ?: charge.cost?.takeIf { it.isFinite() && it >= 0.0 }
+
 private fun computeYearAggregation(
     drives: List<TimedDrive>,
     charges: List<TimedCharge>,
@@ -406,7 +449,7 @@ private fun computeYearAggregation(
             totalEnergy += td.drive.observedEnergyKwh() ?: 0.0
             totalBatteryUsage += td.drive.observedBatteryUsagePercent() ?: 0.0
         }
-        val totalCost = observedCostSumOrNull(chargesByYear[year].orEmpty().map { it.charge.cost })
+        val totalCost = observedCostSumOrNull(chargesByYear[year].orEmpty().map { it.effectiveCost })
 
         YearlyMileage(
             year = year,
@@ -423,7 +466,7 @@ private fun computeYearAggregation(
     val totalLifetimeDriveCount = yearlyData.sumOf { it.driveCount }
     val totalLifetimeEnergy = yearlyData.sumOf { it.totalEnergy }
     val avgLifetimeEnergyDistance = buildMileageEvidence(drives.map { it.drive }).efficiencyWhKm ?: 0.0
-    val totalLifetimeEnergyCost = observedCostSumOrNull(charges.map { it.charge.cost })
+    val totalLifetimeEnergyCost = observedCostSumOrNull(charges.map { it.effectiveCost })
 
     val firstDriveDate = drives.minByOrNull { it.dateTime }?.dateTime?.toLocalDate()
 
@@ -470,7 +513,7 @@ private fun computeMonthAggregation(
             totalEnergy += td.drive.observedEnergyKwh() ?: 0.0
             totalBatteryUsage += td.drive.observedBatteryUsagePercent() ?: 0.0
         }
-        val totalCost = observedCostSumOrNull(chargesByYearMonth[yearMonth].orEmpty().map { it.charge.cost })
+        val totalCost = observedCostSumOrNull(chargesByYearMonth[yearMonth].orEmpty().map { it.effectiveCost })
 
         MonthlyMileage(
             yearMonth = yearMonth,
@@ -523,7 +566,7 @@ private fun computeDailyAggregation(
             totalEnergy += td.drive.observedEnergyKwh() ?: 0.0
             totalBatteryUsage += td.drive.observedBatteryUsagePercent() ?: 0.0
         }
-        val totalCost = observedCostSumOrNull(chargesByDay[date].orEmpty().map { it.charge.cost })
+        val totalCost = observedCostSumOrNull(chargesByDay[date].orEmpty().map { it.effectiveCost })
 
         DailyMileage(
             date = date,

@@ -292,7 +292,7 @@ class SyncRepository @Inject constructor(
                     if (result.data.chargeId != id) return ApiResult.Error("charge_detail_identity_invalid",
                         kind = com.matelink.data.repository.ApiErrorKind.INVALID_RESPONSE)
                     val detail = result.data.withQualifiedEnergy()
-                    if (!chargeSummaryDao.mergeDetail(historyCarId, detail) {
+                    if (!chargeSummaryDao.mergeDetail(historyCarId, result.data) {
                         requireIdentity(scope, historyCarId, remoteApiCarId)
                     }) return ApiResult.Error("charge_detail_write_rejected", kind = com.matelink.data.repository.ApiErrorKind.INVALID_RESPONSE)
                     requireIdentity(scope, historyCarId, remoteApiCarId)

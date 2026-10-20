@@ -7,8 +7,10 @@ import com.matelink.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.matelink.data.local.dao.MonthlyChargeAggregation
 import com.matelink.data.local.dao.MonthlyDriveAggregation
-import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.HistoryIdentityUnavailableException
+import com.matelink.data.local.HistoryReadScope
+import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.model.Currency
 import com.matelink.data.repository.StatsRepository
 import com.matelink.data.repository.ApiResult
@@ -16,12 +18,16 @@ import com.matelink.domain.model.CarStats
 import com.matelink.domain.model.YearFilter
 import com.matelink.domain.analytics.AnalysisHistoryRepository
 import com.matelink.domain.analytics.HistoryFreshness
+import com.matelink.ui.screens.stats.ScopedUiLoader
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collect
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import javax.inject.Inject
 
 data class AnnualReportUiState(
@@ -38,93 +44,150 @@ data class AnnualReportUiState(
     val error: String? = null
 )
 
+internal data class AnnualReportResult(
+    val stats: CarStats,
+    val monthlyDrives: List<MonthlyDriveAggregation>,
+    val monthlyCharges: List<MonthlyChargeAggregation>,
+    val standbyKwh: Double?,
+    val freshness: HistoryFreshness,
+    val currencySymbol: String
+)
+
+internal fun AnnualReportUiState.publishReport(result: AnnualReportResult): AnnualReportUiState = copy(
+    isLoading = false, carStats = result.stats,
+    monthlyDrives = result.monthlyDrives, monthlyCharges = result.monthlyCharges,
+    effectiveCost = result.stats.quickStats.totalCost,
+    standbyKwh = result.standbyKwh, currencySymbol = result.currencySymbol,
+    historyFreshness = result.freshness, error = null
+)
+
 @HiltViewModel
 class AnnualReportViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val statsRepository: StatsRepository,
     private val historyRepository: AnalysisHistoryRepository,
-    private val chargeCostOverrideStore: ChargeCostOverrideStore,
-    private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore,
+    private val vehicleContextRepository: VehicleContextRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AnnualReportUiState())
     val uiState: StateFlow<AnnualReportUiState> = _uiState.asStateFlow()
 
-    private var carId: Int = 1
-    private var loadJob: kotlinx.coroutines.Job? = null
+    private data class Proof(val stillCurrent: suspend () -> Boolean)
+    private var carId: Int? = null
+    private var scopeEpoch = 0L
+    private var identityJob: Job? = null
+    private var activeProof: Proof? = null
+    private var activeScope: HistoryReadScope? = null
+    private var observedScope: HistoryReadScope? = null
+    private var scopeObserved = false
+    private val reportLoader = ScopedUiLoader(viewModelScope)
+    private val yearsLoader = ScopedUiLoader(viewModelScope)
 
-    fun init(carId: Int, year: Int) {
-        this.carId = carId
-        _uiState.value = _uiState.value.copy(year = year)
-        loadYears()
-        loadReport()
-    }
-
-    private fun loadYears() {
+    init {
         viewModelScope.launch {
-            try {
-                val years = availableReportYears(java.time.Year.now().value, statsRepository.getAvailableYears(carId))
-                _uiState.value = _uiState.value.copy(availableYears = years)
-            } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                _uiState.value = _uiState.value.copy(error = context.getString(R.string.error_load_years, e.message ?: ""))
+            vehicleContextRepository.historyScopeChanges.collect { scope ->
+                scopeObserved = true
+                observedScope = scope
+                val id = carId ?: return@collect
+                if (activeScope != null && activeScope != scope) activate(id, _uiState.value.year)
+                else if (activeScope == null && identityJob?.isActive != true) activate(id, _uiState.value.year)
             }
         }
+    }
+
+    fun init(carId: Int, year: Int) {
+        activate(carId, year)
+    }
+
+    private fun activate(id: Int, year: Int) {
+        carId = id
+        val epoch = ++scopeEpoch
+        identityJob?.cancel()
+        reportLoader.invalidate()
+        yearsLoader.invalidate()
+        activeProof = null
+        activeScope = null
+        _uiState.value = AnnualReportUiState(year = year)
+        identityJob = viewModelScope.launch {
+            try {
+                val scope = vehicleContextRepository.captureReadScope()
+                val vehicle = vehicleContextRepository.resolveRemote(id)
+                val proof = Proof { vehicleContextRepository.isHistoryContextCurrent(scope, vehicle) }
+                if (scopeObserved && observedScope != null && observedScope != scope) {
+                    activate(id, _uiState.value.year)
+                    return@launch
+                }
+                if (!isCurrent(id, epoch, proof)) throw HistoryIdentityUnavailableException()
+                activeProof = proof
+                activeScope = scope
+                loadYears(id, epoch, proof)
+                loadReport(id, _uiState.value.year, epoch, proof)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                if (carId == id && scopeEpoch == epoch)
+                    _uiState.value = _uiState.value.copy(isLoading = false,
+                        error = context.getString(R.string.error_load_report))
+            }
+        }
+    }
+
+    private suspend fun isCurrent(id: Int, epoch: Long, proof: Proof): Boolean =
+        carId == id && scopeEpoch == epoch && proof.stillCurrent() &&
+            carId == id && scopeEpoch == epoch
+
+    private fun loadYears(id: Int, epoch: Long, proof: Proof) {
+        yearsLoader.load(
+            proof = { suspend { isCurrent(id, epoch, proof) } },
+            fetch = { request ->
+                val years = statsRepository.getAvailableYears(id)
+                request.requireCurrent()
+                availableReportYears(java.time.Year.now().value, years)
+            },
+            onSuccess = { years -> _uiState.value = _uiState.value.copy(availableYears = years) },
+            onFailure = { error -> _uiState.value = _uiState.value.copy(
+                error = context.getString(R.string.error_load_years, error.message ?: "")) }
+        )
     }
 
     fun selectYear(year: Int) {
-        _uiState.value = _uiState.value.copy(year = year)
-        loadReport()
+        val id = carId ?: return
+        _uiState.value = _uiState.value.copy(year = year, carStats = null,
+            monthlyDrives = emptyList(), monthlyCharges = emptyList(),
+            effectiveCost = null, standbyKwh = null, isLoading = true, error = null)
+        activeProof?.let { loadReport(id, year, scopeEpoch, it) }
     }
 
-    private fun loadReport() {
-        loadJob?.cancel()
-        loadJob = viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            try {
-                val year = _uiState.value.year
-                val yearFilter = YearFilter.Year(year)
-                val currencySymbol = Currency.findByCode(
-                    settingsDataStore.settings.first().currencyCode
-                ).symbol
-                val stats = statsRepository.getStats(carId, yearFilter)
-                val monthlyDrives = statsRepository.getMonthlyDriveAggregation(carId, year)
-                val monthlyCharges = statsRepository.getMonthlyChargeAggregation(carId, year)
-                var historyFreshness = HistoryFreshness.FRESH
-                val remoteMetrics = runCatching {
-                    when (val history = historyRepository.load(carId)) {
+    private fun loadReport(id: Int, year: Int, epoch: Long, proof: Proof) {
+        reportLoader.load(
+            proof = { suspend { isCurrent(id, epoch, proof) && _uiState.value.year == year } },
+            fetch = { request ->
+                val currency = Currency.findByCode(settingsDataStore.settings.first().currencyCode).symbol
+                request.requireCurrent()
+                val stats = statsRepository.getStats(id, YearFilter.Year(year))
+                request.requireCurrent()
+                val monthlyDrives = statsRepository.getMonthlyDriveAggregation(id, year)
+                request.requireCurrent()
+                val monthlyCharges = statsRepository.getMonthlyChargeAggregation(id, year)
+                request.requireCurrent()
+                var freshness = HistoryFreshness.FRESH
+                val standby = try {
+                    when (val history = historyRepository.load(id)) {
                         is ApiResult.Success -> {
-                            historyFreshness = history.data.freshness
-                            val manualTotals = chargeCostOverrideStore.getAll()
-                            val effectiveCost = annualEffectiveCost(
-                                history.data.context?.localHistoryCarId ?: carId,
-                                year,
-                                history.data.charges,
-                                manualTotals
-                            )
-                            val standbyKwh = annualStandbyKwh(year, history.data.charges, history.data.drives)
-                            effectiveCost to standbyKwh
+                            freshness = history.data.freshness
+                            annualStandbyKwh(year, history.data.charges, history.data.drives)
                         }
                         is ApiResult.Error -> null
                     }
-                }.getOrNull()
-
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    carStats = stats,
-                    monthlyDrives = monthlyDrives,
-                    monthlyCharges = monthlyCharges,
-                    effectiveCost = remoteMetrics?.first,
-                    standbyKwh = remoteMetrics?.second,
-                    currencySymbol = currencySymbol,
-                    historyFreshness = historyFreshness
-                )
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.message ?: context.getString(R.string.error_load_report)
-                )
-            }
-        }
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { null }
+                request.requireCurrent()
+                AnnualReportResult(stats, monthlyDrives, monthlyCharges, standby, freshness, currency)
+            },
+            onSuccess = { result -> _uiState.value = _uiState.value.publishReport(result) },
+            onFailure = { error -> _uiState.value = _uiState.value.copy(
+                isLoading = false, error = error.message ?: context.getString(R.string.error_load_report)) }
+        )
     }
 }

@@ -276,6 +276,13 @@ class DrivesViewModel @Inject constructor(
         private const val MIN_DURATION_MINUTES = 1
         private const val MIN_ROUTE_DISTANCE_KM = 0.2
 
+        internal fun isVisibleHistoryDrive(drive: DriveData, showShort: Boolean): Boolean {
+            if (showShort || !isAnalysisEligible(drive.qualityState, drive.qualityReason)) return true
+            val duration = drive.durationMin ?: return true
+            val distance = drive.distanceKm ?: return true
+            return duration >= MIN_DURATION_MINUTES && distance >= MIN_ROUTE_DISTANCE_KM
+        }
+
         private const val KEY_DATE_FILTER = "filter_date"
         private const val KEY_DISTANCE_FILTER = "filter_distance"
         private const val KEY_CUSTOM_START = "filter_custom_start"
@@ -524,10 +531,7 @@ class DrivesViewModel @Inject constructor(
         // interval, not a user-visible route.
         val visibleDrives = allDrives.filter { it.qualityState != "quarantined" }
         val routeDrives = visibleDrives.filter { drive ->
-            !isAnalysisEligible(drive.qualityState, drive.qualityReason) ||
-            drive.durationMin == null || drive.distanceKm == null ||
-            (drive.durationMin ?: 0) >= MIN_DURATION_MINUTES &&
-                (drive.distanceKm ?: 0.0) >= MIN_ROUTE_DISTANCE_KM
+            isVisibleHistoryDrive(drive, showShortDrivesCharges)
         }
 
         // Apply distance filter for list display, sorted newest first
@@ -535,7 +539,7 @@ class DrivesViewModel @Inject constructor(
             drive.matchesDistanceFilter(distanceFilter)
         }.sortedByDescending { it.startDate }
 
-        // Apply distance filter to all drives for summary/charts (include short drives)
+        // The summary and charts describe the same visible, qualified routes.
         val drivesForStats = routeDrives.filter { drive ->
             isAnalysisEligible(drive.qualityState, drive.qualityReason) && drive.matchesDistanceFilter(distanceFilter)
         }

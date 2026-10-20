@@ -14,16 +14,24 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import com.matelink.util.parseIsoInstant
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 sealed class TimelineEvent {
     abstract val timestamp: String
     abstract val date: String
+    abstract val time: String
+    abstract val instant: Instant
 
     data class DriveEvent(
         val driveId: Int,
         override val timestamp: String,
         override val date: String,
+        override val time: String,
+        override val instant: Instant,
         val startAddress: String?,
         val endAddress: String?,
         val distance: Double?, // Canonical kilometres for the timeline's km label.
@@ -38,6 +46,8 @@ sealed class TimelineEvent {
         val chargeId: Int,
         override val timestamp: String,
         override val date: String,
+        override val time: String,
+        override val instant: Instant,
         val address: String?,
         val energyAdded: Double?,
         val cost: Double?,
@@ -89,7 +99,7 @@ class TimelineViewModel @Inject constructor(
                     }
                 }
 
-                val events = mergeTimeline(history.drives, history.charges)
+                val events = mergeTimelineEvents(history.drives, history.charges)
                 val grouped = events.groupBy { it.date }
                 val warning = history.drivesSyncError ?: history.chargesSyncError
 
@@ -111,46 +121,45 @@ class TimelineViewModel @Inject constructor(
             }
         }
     }
-
-    private fun mergeTimeline(
-        drives: List<DriveData>,
-        charges: List<ChargeData>
-    ): List<TimelineEvent> {
-        val driveEvents = drives.map { it.toTimelineDriveEvent() }
-
-        val chargeEvents = charges.map { charge ->
-            val startTs = charge.startDate ?: ""
-            TimelineEvent.ChargeEvent(
-                chargeId = charge.chargeId,
-                timestamp = startTs,
-                date = extractDate(startTs),
-                address = charge.address,
-                energyAdded = charge.chargeEnergyAdded,
-                cost = charge.cost,
-                durationMin = charge.durationMin,
-                durationStr = charge.durationStr,
-                startBatteryLevel = charge.startBatteryLevel,
-                endBatteryLevel = charge.endBatteryLevel
-            )
-        }
-
-        return (driveEvents + chargeEvents)
-            .sortedByDescending { it.timestamp }
-    }
-
-    private fun extractDate(isoTimestamp: String): String {
-        // Extract YYYY-MM-DD from ISO 8601 timestamp
-        return isoTimestamp.take(10).ifEmpty { "Unknown" }
-    }
 }
 
-/** Projection consumed by the timeline; source receipts remain unchanged. */
-internal fun DriveData.toTimelineDriveEvent(): TimelineEvent.DriveEvent {
-    val startTs = startDate ?: ""
+private data class TimelineMoment(val instant: Instant, val date: String, val time: String)
+
+private fun timelineMoment(raw: String?): TimelineMoment? {
+    val instant = parseIsoInstant(raw) ?: return null
+    val local = instant.atZone(ZoneId.systemDefault())
+    return TimelineMoment(
+        instant = instant,
+        date = local.toLocalDate().toString(),
+        time = local.toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))
+    )
+}
+
+/** Sort by physical time; equal instants keep a deterministic type/ID order. */
+internal fun mergeTimelineEvents(drives: List<DriveData>, charges: List<ChargeData>): List<TimelineEvent> {
+    val events = drives.mapNotNull { it.toTimelineDriveEvent() } + charges.mapNotNull { it.toTimelineChargeEvent() }
+    return events.sortedWith(
+        compareByDescending<TimelineEvent> { it.instant }
+            .thenBy { if (it is TimelineEvent.DriveEvent) 0 else 1 }
+            .thenBy { event ->
+                when (event) {
+                    is TimelineEvent.DriveEvent -> event.driveId
+                    is TimelineEvent.ChargeEvent -> event.chargeId
+                }
+            }
+    )
+}
+
+/** Projection consumed by the timeline; invalid timestamps never become a dated event. */
+internal fun DriveData.toTimelineDriveEvent(): TimelineEvent.DriveEvent? {
+    val startTs = startDate ?: return null
+    val moment = timelineMoment(startTs) ?: return null
     return TimelineEvent.DriveEvent(
         driveId = id,
         timestamp = startTs,
-        date = startTs.take(10).ifEmpty { "Unknown" },
+        date = moment.date,
+        time = moment.time,
+        instant = moment.instant,
         startAddress = startAddress,
         endAddress = endAddress,
         distance = distanceKm,
@@ -159,5 +168,24 @@ internal fun DriveData.toTimelineDriveEvent(): TimelineEvent.DriveEvent {
         startBatteryLevel = startBatteryLevel,
         endBatteryLevel = endBatteryLevel,
         efficiencyWhKm = efficiencyWhKm
+    )
+}
+
+private fun ChargeData.toTimelineChargeEvent(): TimelineEvent.ChargeEvent? {
+    val startTs = startDate ?: return null
+    val moment = timelineMoment(startTs) ?: return null
+    return TimelineEvent.ChargeEvent(
+        chargeId = chargeId,
+        timestamp = startTs,
+        date = moment.date,
+        time = moment.time,
+        instant = moment.instant,
+        address = address,
+        energyAdded = chargeEnergyAdded,
+        cost = cost,
+        durationMin = durationMin,
+        durationStr = durationStr,
+        startBatteryLevel = startBatteryLevel,
+        endBatteryLevel = endBatteryLevel
     )
 }

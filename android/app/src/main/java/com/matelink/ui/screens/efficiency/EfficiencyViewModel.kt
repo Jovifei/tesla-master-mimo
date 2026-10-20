@@ -8,6 +8,7 @@ import com.matelink.domain.analytics.AnalysisHistoryRepository
 import com.matelink.domain.analytics.AnalysisWindow
 import com.matelink.domain.analytics.DatedSourceRecord
 import com.matelink.domain.analytics.EfficiencySample
+import com.matelink.domain.analytics.WeightedEfficiencyResult
 import com.matelink.domain.analytics.HistoryFreshness
 import com.matelink.domain.analytics.NoDataReason
 import com.matelink.domain.analytics.calculateWeightedEfficiency
@@ -17,6 +18,7 @@ import com.matelink.domain.analytics.selectWindow
 import com.matelink.domain.analytics.classifyMetricNoData
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.LocalDate
+import java.util.Locale
 import com.matelink.util.parseIsoInstant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -115,17 +117,22 @@ class EfficiencyViewModel @Inject constructor(
 
     private fun recalculate(window: AnalysisWindow) {
         val selected = selectWindow(datedDrives, window, LocalDate.now(), customStart, customEnd).map { it.drive }
-        val values = selected.mapNotNull { it.efficiencyWhKm }.filter { it.isFinite() }
+        val paired = selected.filter { drive ->
+            drive.distanceKm?.let { it.isFinite() && it > 0.0 } == true &&
+                drive.netEnergyKwh?.isFinite() == true
+        }
+        val weighted = weightedEfficiencyForDrives(selected)
+        val values = paired.mapNotNull { it.efficiencyWhKm?.takeIf(Double::isFinite) }
         val noDataReason = classifyMetricNoData(
             historyReason = historyReason,
             sourceRecordCount = historyRecordCount,
             selectedRecordCount = selected.size,
-            validSampleCount = values.size
+            validSampleCount = weighted.sampleCount
         )
-        val average = weightedAverage(selected)
+        val average = weighted.efficiencyWhKm
         val position = average?.let { percentilePosition(values, it) }
         val positions = position?.let { personal ->
-            selected.mapNotNull { drive ->
+            paired.mapNotNull { drive ->
                 val value = drive.efficiencyWhKm ?: return@mapNotNull null
                 val tripPosition = percentilePosition(values, value) ?: return@mapNotNull null
                 EfficiencyTripPosition(
@@ -140,13 +147,7 @@ class EfficiencyViewModel @Inject constructor(
         } ?: emptyList()
 
         val bySpeed = buildEfficiencyBySpeed(selected)
-
-        val trend = selected.mapNotNull { drive ->
-            val month = parseDate(drive)?.let { "%04d-%02d".format(it.year, it.monthValue) } ?: return@mapNotNull null
-            drive.efficiencyWhKm?.let { month to it }
-        }.groupBy({ it.first }, { it.second })
-            .map { (month, monthValues) -> EfficiencyTrendPoint(month, monthValues.average(), monthValues.size) }
-            .sortedBy { it.month }
+        val trend = buildEfficiencyTrend(selected)
 
         _uiState.value = _uiState.value.copy(
             isLoading = false,
@@ -156,10 +157,8 @@ class EfficiencyViewModel @Inject constructor(
             efficiencyTrend = trend,
             tripPositions = positions,
             personalPercentile = position,
-            driveCount = values.size,
-            totalDistanceKm = selected.sumOf { drive ->
-                drive.distanceKm?.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
-            },
+            driveCount = weighted.sampleCount,
+            totalDistanceKm = weighted.validDistanceKm,
             last90DaysEfficiencyWhKm = averageFor(AnalysisWindow.LAST_90_DAYS),
             summerEfficiencyWhKm = averageFor(AnalysisWindow.SUMMER),
             winterEfficiencyWhKm = averageFor(AnalysisWindow.WINTER)
@@ -172,20 +171,9 @@ class EfficiencyViewModel @Inject constructor(
             .let(::weightedAverage)
 
     private fun weightedAverage(drives: List<DriveData>): Double? =
-        calculateWeightedEfficiency(
-            drives.map { drive ->
-                EfficiencySample(
-                    distanceKm = drive.distanceKm,
-                    energyKwh = drive.netEnergyKwh
-                )
-            }
-        ).efficiencyWhKm
+        weightedEfficiencyForDrives(drives).efficiencyWhKm
 
-    private fun parseDate(drive: DriveData): LocalDate? {
-        val value = drive.startDate ?: return null
-		return runCatching { LocalDate.parse(value) }.getOrNull()
-			?: parseIsoInstant(value)?.atZone(java.time.ZoneId.systemDefault())?.toLocalDate()
-    }
+    private fun parseDate(drive: DriveData): LocalDate? = parseEfficiencyDate(drive)
 
     private data class DatedEfficiency(
         override val date: LocalDate,
@@ -197,7 +185,29 @@ class EfficiencyViewModel @Inject constructor(
 
 /** Actual speed-group consumer shared by the VM and its regression tests. */
 internal fun buildEfficiencyBySpeed(drives: List<DriveData>): List<Pair<String, Double>> = drives
-    .filter { (it.speedAvgKmh ?: 0.0) > 0.0 && it.efficiencyWhKm?.isFinite() == true }
+    .filter { drive -> drive.speedAvgKmh?.let { it.isFinite() && it > 0.0 } == true }
     .groupBy { (((it.speedAvgKmh ?: 0.0) / 20.0).toInt()) * 20 }
-    .map { (bin, list) -> "${bin}-${bin + 20}" to list.mapNotNull { it.efficiencyWhKm }.average() }
+    .mapNotNull { (bin, list) ->
+        weightedEfficiencyForDrives(list).efficiencyWhKm?.let { "${bin}-${bin + 20}" to it }
+    }
     .sortedBy { it.first.substringBefore("-").toIntOrNull() ?: 0 }
+
+internal fun buildEfficiencyTrend(drives: List<DriveData>): List<EfficiencyTrendPoint> = drives
+    .mapNotNull { drive -> parseEfficiencyDate(drive)?.let { date ->
+        "%04d-%02d".format(Locale.ROOT, date.year, date.monthValue) to drive
+    } }
+    .groupBy { (yearMonth, _) -> yearMonth }
+    .mapNotNull { (yearMonth, records) ->
+        val weighted = weightedEfficiencyForDrives(records.map { it.second })
+        weighted.efficiencyWhKm?.let { EfficiencyTrendPoint(yearMonth, it, weighted.sampleCount) }
+    }
+    .sortedBy { it.month }
+
+private fun weightedEfficiencyForDrives(drives: List<DriveData>): WeightedEfficiencyResult =
+    calculateWeightedEfficiency(drives.map { EfficiencySample(it.distanceKm, it.netEnergyKwh) })
+
+private fun parseEfficiencyDate(drive: DriveData): LocalDate? {
+    val value = drive.startDate ?: return null
+    return runCatching { LocalDate.parse(value) }.getOrNull()
+        ?: parseIsoInstant(value)?.atZone(java.time.ZoneId.systemDefault())?.toLocalDate()
+}

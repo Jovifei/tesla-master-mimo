@@ -8,6 +8,7 @@ import com.squareup.moshi.Moshi
 import java.io.File
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -107,6 +108,59 @@ class ReadinessDiagnosticBehaviorTest {
         } finally { Dispatchers.resetMain() }
     }
 
+    @Test fun openingDiagnosticWithPairingRequiredDoesNotConfigureVehicle() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val source = Source(ready, pairingStatus = TelemetryPairingStatus(
+                status = "pairing_required", configSynced = false, updatedAt = null))
+            val vm = DataReadinessViewModel(source, Resolver, Migration, Evidence())
+            vm.setCarId(1)
+            runCurrent()
+            assertFalse(vm.uiState.value.isLoading)
+            assertEquals(0, source.configureCalls)
+        } finally { Dispatchers.resetMain() }
+    }
+
+    @Test fun verifiedVehicleResolutionRefreshesDiagnosticIdentityEvidence() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            var captures = 0
+            val evidence = object : ReadinessEvidenceSource {
+                override val scopeChanges = flowOf(Unit)
+                override suspend fun capture(carId: Int): ReadinessEvidenceSession {
+                    captures++
+                    val verified = captures >= 2
+                    return object : ReadinessEvidenceSession {
+                        override suspend fun isCurrent() = true
+                        override fun verifies(readiness: DataReadiness?) = verified
+                        override suspend fun localEvidence() = ReadinessLocalEvidence(scopeVerified = verified)
+                    }
+                }
+            }
+            val resolver = object : VehicleContextResolver {
+                override suspend fun resolve(car: CarData) = VehicleContext(
+                    car.carId, "verified", 31,
+                    com.matelink.data.local.HistoryConnectionSource.CLOUD, "cloud")
+                override suspend fun recordExplicitUpgradeOrigin(car: CarData) = false
+            }
+            val migration = object : LegacyHistoryMigrationService {
+                override suspend fun inspect(legacyCarId: Int, currentModel: String?,
+                    currentVehicleFingerprint: String?, currentObservedOdometer: Double?) =
+                    LegacyHistoryMigrationEligibility(false, 0, 0, null)
+                override suspend fun migrate(legacyCarId: Int, targetHistoryCarId: Int,
+                    eligibility: LegacyHistoryMigrationEligibility): LegacyHistoryMigrationResult =
+                    error("diagnostic must not migrate")
+            }
+            val source = Source(ready, carData = CarData(1, vehicleUid = "synthetic-car-a"))
+            val vm = DataReadinessViewModel(source, resolver, migration, evidence)
+            vm.setCarId(1)
+            runCurrent()
+            assertEquals(2, captures)
+            assertEquals(DiagnosticResult.PASS, vm.uiState.value.diagnosticFacts[0].result)
+            assertEquals(0, source.configureCalls)
+        } finally { Dispatchers.resetMain() }
+    }
+
     @Test fun accountOrOriginChangeDropsLateUncancellableResultAndClearsPriorFacts() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
@@ -153,7 +207,12 @@ class ReadinessDiagnosticBehaviorTest {
         }
     }
 
-    private class Source(val ready: DataReadiness, val block: CompletableDeferred<Unit>? = null) : DataReadinessDataSource {
+    private class Source(
+        val ready: DataReadiness,
+        val block: CompletableDeferred<Unit>? = null,
+        val pairingStatus: TelemetryPairingStatus? = null,
+        val carData: CarData? = null
+    ) : DataReadinessDataSource {
         var configureCalls = 0
         var readinessCalls = 0
         override suspend fun getDataReadiness(carId: Int): ApiResult<DataReadiness> {
@@ -161,12 +220,14 @@ class ReadinessDiagnosticBehaviorTest {
             if (carId == 1 && block != null) withContext(NonCancellable) { block.await() }
             return ApiResult.Success(if (carId == 2) ready.copy(vehicleUid = "car-2") else ready)
         }
-        override suspend fun getTelemetryPairingStatus(carId: Int): ApiResult<TelemetryPairingStatus> = ApiResult.Error("fixture")
+        override suspend fun getTelemetryPairingStatus(carId: Int): ApiResult<TelemetryPairingStatus> =
+            pairingStatus?.let { ApiResult.Success(it) } ?: ApiResult.Error("fixture")
         override suspend fun configureTelemetry(carId: Int): ApiResult<TelemetryConfigureResult> {
             configureCalls++
             return ApiResult.Error("unexpected write")
         }
-        override suspend fun getCar(carId: Int): ApiResult<CarData> = ApiResult.Error("fixture")
+        override suspend fun getCar(carId: Int): ApiResult<CarData> =
+            carData?.let { ApiResult.Success(it) } ?: ApiResult.Error("fixture")
         override suspend fun getCarStatus(carId: Int): ApiResult<CarStatusWithUnits> = ApiResult.Error("fixture")
     }
 

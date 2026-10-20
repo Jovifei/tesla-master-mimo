@@ -216,9 +216,7 @@ private fun LegacyHonestAnnualSummarySection(
         )
         SummaryCard(
             title = stringResource(R.string.stats_avg_cost_kwh),
-            value = if (effectiveCost != null && qs.totalEnergyAddedKwh > 0) {
-                formatMoney(currencySymbol, effectiveCost / qs.totalEnergyAddedKwh, 3)
-            } else noData,
+            value = qs.avgCostPerKwh?.let { formatMoney(currencySymbol, it, 3) } ?: noData,
             modifier = Modifier.weight(1f)
         )
     }
@@ -271,7 +269,7 @@ private fun HonestAnnualSummarySection(
         )
         SummaryCard(
             title = stringResource(R.string.stats_avg_efficiency),
-            value = if (hasDistance && hasDrivingEnergy && (qs.avgEfficiencyWhKm ?: 0.0) > 0) String.format(Locale.getDefault(), "%.0f Wh/km", qs.avgEfficiencyWhKm) else noData,
+            value = if (hasDistance && hasDrivingEnergy && qs.avgEfficiencyWhKm?.isFinite() == true) String.format(Locale.getDefault(), "%.0f Wh/km", qs.avgEfficiencyWhKm) else noData,
             modifier = Modifier.weight(1f)
         )
     }
@@ -295,9 +293,7 @@ private fun HonestAnnualSummarySection(
         )
         SummaryCard(
             title = stringResource(R.string.stats_avg_cost_kwh),
-            value = if (effectiveCost != null && hasChargeEnergy && qs.totalEnergyAddedKwh > 0) {
-                formatMoney(currencySymbol, effectiveCost / qs.totalEnergyAddedKwh, 3)
-            } else noData,
+            value = qs.avgCostPerKwh?.let { formatMoney(currencySymbol, it, 3) } ?: noData,
             modifier = Modifier.weight(1f)
         )
     }
@@ -502,12 +498,12 @@ private fun MonthlyTrendsSection(
     // Distance chart
     if (monthlyDrives.isNotEmpty()) {
         Text(stringResource(R.string.annual_report_distance_km), style = MaterialTheme.typography.labelMedium)
-        BarChart(
-            data = monthlyDrives.map { it.totalDistance.toFloat() },
+        if (monthlyDrives.any { it.totalDistance != null }) BarChart(
+            data = monthlyDrives.map { it.totalDistance?.toFloat() },
             labels = monthlyDrives.map { monthLabel(it.month) },
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.fillMaxWidth().height(160.dp)
-        )
+        ) else Text(stringResource(R.string.analysis_coverage_insufficient))
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -525,35 +521,44 @@ private fun MonthlyTrendsSection(
     if (monthlyCharges.isNotEmpty()) {
         Spacer(modifier = Modifier.height(12.dp))
         Text(stringResource(R.string.annual_report_energy_added_kwh), style = MaterialTheme.typography.labelMedium)
-        BarChart(
-            data = monthlyCharges.map { it.totalEnergy.toFloat() },
+        if (monthlyCharges.any { it.totalEnergy != null }) BarChart(
+            data = monthlyCharges.map { it.totalEnergy?.toFloat() },
             labels = monthlyCharges.map { monthLabel(it.month) },
             color = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.fillMaxWidth().height(160.dp)
-        )
+        ) else Text(stringResource(R.string.analysis_coverage_insufficient))
     }
 }
 
 @Composable
 private fun BarChart(
-    data: List<Float>,
+    data: List<Float?>,
     labels: List<String>,
     color: Color,
     modifier: Modifier = Modifier
 ) {
-    val maxVal = data.maxOrNull()?.coerceAtLeast(1f) ?: 1f
+    val observed = data.filterNotNull()
+    val high = maxOf(0f, observed.maxOrNull() ?: 0f)
+    val low = minOf(0f, observed.minOrNull() ?: 0f)
+    val span = (high - low).coerceAtLeast(1f)
+    val zeroColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    val recoveryColor = MaterialTheme.colorScheme.tertiary
 
     Canvas(modifier = modifier) {
         val barWidth = size.width / (data.size * 2f)
         val chartHeight = size.height - 24f
+        val zeroY = if (high == 0f && low == 0f) chartHeight else chartHeight * high / span
+        drawLine(zeroColor, Offset(0f, zeroY), Offset(size.width, zeroY))
 
         data.forEachIndexed { index, value ->
-            val barHeight = (value / maxVal) * chartHeight
+            if (value == null) return@forEachIndexed
+            val barHeight = (kotlin.math.abs(value) / span) * chartHeight
             val x = index * (size.width / data.size) + barWidth / 2
-            val y = chartHeight - barHeight
+            val y = if (value >= 0f) zeroY - barHeight else zeroY
 
-            drawRoundRect(
-                color = color,
+            if (value == 0f) drawCircle(color, radius = 2.5f, center = Offset(x + barWidth / 2, zeroY))
+            else drawRoundRect(
+                color = if (value < 0f) recoveryColor else color,
                 topLeft = Offset(x, y),
                 size = Size(barWidth, barHeight),
                 cornerRadius = CornerRadius(4f, 4f)

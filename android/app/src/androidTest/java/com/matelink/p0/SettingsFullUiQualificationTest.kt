@@ -5,6 +5,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -16,6 +17,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
+import androidx.test.espresso.Espresso
 import androidx.test.platform.app.InstrumentationRegistry
 import com.matelink.MainActivity
 import com.matelink.R
@@ -80,6 +82,7 @@ class SettingsFullUiQualificationTest {
 
     @Test fun savedConfigurationLoadsAfterFreshActivity() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        runBlocking { prepareQualificationState(context) }
         val saved = runBlocking { savedQualificationSettings(context) }
         check(saved.serverUrl == FIXTURE_BASE_URL) { "saved server URL is not the fixture URL" }
         check(saved.apiToken == VALID_SYNTHETIC_TOKEN) { "saved API token is not the synthetic token" }
@@ -105,7 +108,7 @@ class SettingsFullUiQualificationTest {
                 .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Password))
             composeRule.onNodeWithTag("testConnectionButton").assertExists()
             composeRule.onNodeWithTag("saveConfigurationButton").assertExists()
-            composeRule.onNodeWithTag("tokenInput").assertDoesNotExist()
+            composeRule.onNodeWithText(VALID_SYNTHETIC_TOKEN).assertDoesNotExist()
 
             resetFixtureRequests()
             composeRule.onNodeWithTag("tokenInput").performTextClearance()
@@ -120,7 +123,11 @@ class SettingsFullUiQualificationTest {
 
             composeRule.onNodeWithTag("tokenInput").performTextClearance()
             composeRule.onNodeWithTag("tokenInput").performTextInput(VALID_SYNTHETIC_TOKEN)
-            composeRule.onNodeWithTag("testConnectionButton").performClick()
+            Espresso.closeSoftKeyboard()
+            resetFixtureRequests()
+            composeRule.onNodeWithTag("testConnectionButton")
+                .performScrollTo().assertIsEnabled().performClick()
+            composeRule.waitUntil(15_000) { fixtureConnectionTestRequestCount() > 0 }
             composeRule.waitForTag("connectionTestResultSuccess")
 
             assertInvalidUrlsDoNotReachFixture(context)
@@ -163,8 +170,15 @@ class SettingsFullUiQualificationTest {
             composeRule.onNodeWithTag("serverAddressInput").performTextClearance()
             composeRule.onNodeWithTag("serverAddressInput").performTextInput(url)
             composeRule.onNodeWithTag("serverAddressInput").assertTextContains(url)
-            composeRule.onNodeWithTag("testConnectionButton").performClick()
-            composeRule.waitForTag("connectionTestResultFailure")
+            if (url == "https://") {
+                // Placeholder is intentionally not a submitted URL.
+                composeRule.onNodeWithTag("testConnectionButton").assertIsNotEnabled()
+            } else {
+                Espresso.closeSoftKeyboard()
+                composeRule.onNodeWithTag("testConnectionButton")
+                    .performScrollTo().assertIsEnabled().performClick()
+                composeRule.waitForTag("connectionTestResultFailure")
+            }
             check(fixtureConnectionTestRequestCount() == 0) { "invalid URL reached the fixture: $url" }
             check(runBlocking { savedQualificationSettings(context).serverUrl } == FIXTURE_BASE_URL) {
                 "invalid URL was persisted"
@@ -177,7 +191,9 @@ class SettingsFullUiQualificationTest {
         composeRule.onNodeWithTag("serverAddressInput").performTextClearance()
         composeRule.onNodeWithTag("serverAddressInput").performTextInput("http://198.51.100.10")
         composeRule.onNodeWithTag("serverAddressInput").assertTextContains("http://198.51.100.10")
-        composeRule.onNodeWithTag("testConnectionButton").performClick()
+        Espresso.closeSoftKeyboard()
+        composeRule.onNodeWithTag("testConnectionButton")
+            .performScrollTo().assertIsEnabled().performClick()
         composeRule.waitForTag("connectionTestResultFailure")
         check(fixtureConnectionTestRequestCount() == 0) { "public HTTP reached the fixture" }
         check(runBlocking { savedQualificationSettings(context).serverUrl } == FIXTURE_BASE_URL) {

@@ -38,8 +38,8 @@ android {
         applicationId = "com.matelink"
         minSdk = 26
         targetSdk = 35
-        versionCode = 61
-        versionName = "2.1.42"
+        versionCode = 62
+        versionName = "2.1.43"
         buildConfigField("String", "GIT_SHA", "\"${resolveGitSha()}\"")
         val publicInfoBaseUrl = providers.gradleProperty("MATELINK_PUBLIC_INFO_BASE_URL")
             .orElse("https://auth.teslalink.joviluma.com")
@@ -67,6 +67,11 @@ android {
         buildConfigField("String", "JOURVOLT_AUTH_HOST", quoteBuildConfigString(jourVoltAuthHost))
         manifestPlaceholders["jourvoltAuthHost"] = jourVoltAuthHost
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunnerArguments["qualificationFixturePort"] = providers.gradleProperty(
+            "MATELINK_QUALIFICATION_FIXTURE_PORT").orElse("18080").get()
+        providers.gradleProperty("MATELINK_INSTRUMENTATION_CLASSES").orNull?.let {
+            testInstrumentationRunnerArguments["class"] = it
+        }
     }
 
     val formalReleaseSigningConfig = providers.gradleProperty("MATELINK_SIGNING_PROPERTIES_FILE")

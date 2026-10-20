@@ -7,6 +7,7 @@ import androidx.room.Transaction
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.data.repository.mergeStoredCharge
 import com.matelink.data.api.models.ChargeDetail
+import com.matelink.domain.analytics.acceptsDetail
 import com.matelink.domain.analytics.withDetailEvidence
 import com.matelink.data.local.entity.ChargeSummary
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +31,7 @@ interface ChargeSummaryDao {
     suspend fun mergeDetail(carId: Int, detail: ChargeDetail, ensureCurrent: suspend () -> Unit): Boolean {
         ensureCurrent()
         val newest = get(carId, detail.chargeId) ?: return false
+        if (!newest.acceptsDetail(detail)) return false
         upsert(newest.withDetailEvidence(detail))
         ensureCurrent()
         return true
@@ -113,6 +115,15 @@ interface ChargeSummaryDao {
         ORDER BY startDate ASC
     """)
     suspend fun getChargesInRange(carId: Int, startDate: String, endDate: String): List<ChargeSummary>
+
+    /** Bounded history read for local-time year projection, including trusted legacy rows. */
+    @Query("""
+        SELECT * FROM charges_summary
+        WHERE carId = :carId AND qualityState != 'quarantined'
+        AND startDate >= :startDate AND startDate < :endDate
+        ORDER BY startDate ASC
+    """)
+    suspend fun getHistoryChargesInRange(carId: Int, startDate: String, endDate: String): List<ChargeSummary>
 
     // Total energy added
     @Query("SELECT COALESCE(SUM(energyAdded), 0) FROM charges_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
@@ -428,19 +439,6 @@ interface ChargeSummaryDao {
         endDate: String
     ): ChargeSummary?
 
-    // === Monthly Aggregation Queries ===
-
-    @Query("""
-        SELECT CAST(strftime('%m', startDate) AS INTEGER) as month,
-               COALESCE(SUM(energyAdded), 0) as totalEnergy,
-               COALESCE(SUM(cost), 0) as totalCost,
-               COUNT(*) as chargeCount
-        FROM charges_summary
-        WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND strftime('%Y', startDate) = :year
-        GROUP BY strftime('%m', startDate)
-        ORDER BY month ASC
-    """)
-    suspend fun getMonthlyAggregation(carId: Int, year: String): List<MonthlyChargeAggregation>
 }
 
 /**
@@ -467,9 +465,13 @@ data class GapBetweenChargesResult(
 
 data class MonthlyChargeAggregation(
     val month: Int,
-    val totalEnergy: Double,
-    val totalCost: Double,
-    val chargeCount: Int
+    /** Null means the month has records but no qualified battery-energy sample. */
+    val totalEnergy: Double?,
+    val chargeCount: Int,
+    val energySampleCount: Int,
+    /** Source-reported prices only; the annual cost headline resolves manual overrides separately. */
+    val totalCost: Double? = null,
+    val costSampleCount: Int = 0
 )
 
 /**

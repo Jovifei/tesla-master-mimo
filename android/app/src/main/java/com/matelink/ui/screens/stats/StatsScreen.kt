@@ -808,23 +808,12 @@ private fun AnalysisSummaryCard(
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            SummaryMetricItem(
-                title = stringResource(R.string.stats_analysis_cost_per_100km),
-                metric = conclusions.costPer100Km,
-                formatter = { String.format(Locale.getDefault(), "%.2f %s", it, currencySymbol) },
-                modifier = Modifier.weight(1f)
-            )
-            SummaryMetricItem(
-                title = stringResource(R.string.stats_analysis_charge_drive_ratio),
-                metric = conclusions.chargedToDrivingEnergyPercent,
-                formatter = { String.format(Locale.getDefault(), "%.0f%%", it) },
-                modifier = Modifier.weight(1f)
-            )
-        }
+        SummaryMetricItem(
+            title = stringResource(R.string.stats_analysis_cost_per_100km),
+            metric = conclusions.costPer100Km,
+            formatter = { String.format(Locale.getDefault(), "%.2f %s", it, currencySymbol) },
+            modifier = Modifier.fillMaxWidth()
+        )
         Spacer(modifier = Modifier.height(12.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),

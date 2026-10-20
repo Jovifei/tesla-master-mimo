@@ -8,12 +8,26 @@ import com.matelink.ui.screens.reports.annualStandbyKwh
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.ZoneId
 
 class AnnualReportMetricsTest {
     @Test
     fun manualTotalOverridesOriginalCost() {
-        val charge = ChargeData(1, startDate = "2026-02-01T00:00:00Z", cost = 10.0)
+        val charge = ChargeData(1, startDate = "2026-02-01T00:00:00Z",
+            cost = 10.0, qualityState = "observed")
         assertEquals(38.5, annualEffectiveCost(4, 2026, listOf(charge), mapOf("4:1" to 38.5))!!, 0.0)
+    }
+
+    @Test
+    fun annualCostUsesLocalCalendarAndQualifiedCharges() {
+        val crossing = ChargeData(2, startDate = "2026-12-31T18:30:00Z",
+            cost = 12.0, qualityState = "observed")
+        val unknown = ChargeData(3, startDate = "2027-01-02T00:00:00Z",
+            cost = 9.0, qualityState = "quarantined")
+        val zone = ZoneId.of("Asia/Shanghai")
+        assertNull(annualEffectiveCost(4, 2026, listOf(crossing), emptyMap(), zone))
+        assertEquals(12.0, annualEffectiveCost(4, 2027,
+            listOf(crossing, unknown), emptyMap(), zone)!!, 0.0)
     }
 
     @Test

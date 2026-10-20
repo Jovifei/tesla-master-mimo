@@ -632,7 +632,6 @@ private fun DriveItem(
 
     val energyPres = drive.historyEnergy(metrics)
     val efficiency = energyPres.efficiencyWhKm
-    val energyKwh = energyPres.energyKwh
     val start = drive.startBatteryLevel
     val end = drive.endBatteryLevel
 
@@ -647,14 +646,6 @@ private fun DriveItem(
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             val socRange = UnitFormatter.formatSocRange(start, end, "")
-            val sourceLabel = energyPres.source?.takeIf { energyKwh != null }?.let { source ->
-                when (source) {
-                    DriveDetailEnergySource.POWER_SAMPLES -> null
-                    DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE -> stringResource(R.string.energy_source_soc_estimate)
-                    DriveDetailEnergySource.ENERGY_REMAINING_DELTA -> stringResource(R.string.energy_nominal_estimate)
-                    DriveDetailEnergySource.API -> stringResource(R.string.energy_source_api_reported)
-                }
-            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -666,31 +657,16 @@ private fun DriveItem(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (socRange.isNotBlank() || sourceLabel != null) {
+                if (socRange.isNotBlank()) {
                     Spacer(Modifier.width(8.dp))
-                    Column(horizontalAlignment = Alignment.End) {
-                        if (socRange.isNotBlank()) Text(
-                            text = socRange,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = palette.onSurface,
-                            maxLines = 1
-                        )
-                        sourceLabel?.let { label ->
-                            Surface(
-                                color = palette.accent.copy(alpha = 0.13f),
-                                shape = MaterialTheme.shapes.extraLarge
-                            ) {
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = palette.accent,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
+                    Text(
+                        text = socRange,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = palette.onSurface,
+                        maxLines = 1
+                    )
                 }
             }
 

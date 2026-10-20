@@ -238,6 +238,15 @@
     <!-- Charging -->
     <string name="charges_title">Charge History</string>
     <string name="charge_detail">Charge Detail</string>
+    <string name="charge_soc_first_observed">First observed SOC</string>
+    <string name="charge_soc_last_observed">Last observed SOC</string>
+    <string name="charge_soc_observed_change">Observed SOC change</string>
+    <string name="charge_sample_average">Sample average</string>
+    <string name="charge_single_observation">Single observation</string>
+    <string name="charge_electrical_samples">Electrical samples</string>
+    <string name="software_interval_unknown">Not enough updates</string>
+    <string name="software_duration_unknown">Duration not recorded</string>
+    <string name="trip_route_deferred_budget">This route has many legs, so it was not loaded automatically. Open a drive to see its recorded route.</string>
     <string name="charging_in_progress">Charging in Progress</string>
     <string name="charge_power">Power</string>
     <string name="charge_added">Added</string>
@@ -349,6 +358,7 @@
     <string name="efficiency_avg_label">Average Efficiency</string>
     <string name="efficiency_drive_count">Drives</string>
     <string name="efficiency_total_distance">Total Distance</string>
+    <string name="efficiency_paired_distance">Distance used for efficiency</string>
     <string name="efficiency_by_speed_title">Efficiency by Speed</string>
     <string name="efficiency_by_speed_subtitle">Wh/km at different speed ranges</string>
     <string name="efficiency_windows_title">Time windows</string>
@@ -402,6 +412,14 @@
     <string name="cost_average_session_hint">Manual totals included</string>
     <string name="cost_average_kwh">Average/kWh</string>
     <string name="cost_average_kwh_hint">Effective cost</string>
+    <string name="cost_recorded_manual_total">Recorded and manual totals</string>
+    <string name="cost_default_rate_estimate">Default-rate estimate</string>
+    <string name="cost_paired_battery_unit">Cost per battery kWh (paired)</string>
+    <string name="cost_coverage_counts">Priced %1$d/%2$d · energy %3$d/%2$d · paired %4$d</string>
+    <string name="cost_estimate_coverage">Estimated %1$d sessions</string>
+    <string name="cost_mode_unknown">Unknown type</string>
+    <string name="cost_no_paired_values">No charge has both a known total and qualified positive battery input</string>
+    <string name="cost_current_currency_assumption">Amounts use the current currency setting; historical per-session currencies are not verified.</string>
 
     <!-- Range Analysis -->
     <string name="range_analysis_title">Range Analysis</string>
@@ -436,10 +454,11 @@
     <string name="standby_range_7_days">7 days</string>
     <string name="standby_range_30_days">30 days</string>
     <string name="standby_range_year">1 year</string>
-    <string name="standby_insufficient_detail">This range has %1$d observed parking windows and %2$.1f qualified hours. After first login, drive and charge history appears gradually as the vehicle reconnects and the data source collects observations; a stable conclusion needs 5 valid windows and 20 qualified hours.</string>
+    <string name="standby_insufficient_detail">This range has %1$d observed parking windows and %2$.1f hours between qualified endpoints. A trend needs at least 5 valid windows spanning 20 hours; these are not continuous power samples.</string>
     <string name="standby_evidence_title">Evidence and coverage</string>
-    <string name="standby_evidence_summary">Observed %1$d parking windows; %2$d valid windows; %3$.1f qualified hours.</string>
-    <string name="standby_stable_conclusion">Enough data for a stable conclusion</string>
+    <string name="standby_evidence_summary">Observed %1$d parking windows; %2$d valid windows; %3$.1f hours between endpoints.</string>
+    <string name="standby_stable_conclusion">SOC endpoint trend is usable; energy cause is unverified</string>
+    <string name="standby_soc_points">%1$d pp</string>
     <string name="standby_preliminary_observation">Preliminary observation only</string>
     <string name="standby_attribution_title">Observed causes</string>
     <string name="standby_climate_observed">Climate activity was observed in one or more valid windows.</string>
@@ -545,7 +564,7 @@
 
     <!-- Trips -->
     <string name="trip_summary">Trip Summary</string>
-    <string name="trips_title">Trips</string>
+    <string name="trips_title">Combined trips</string>
     <string name="total_distance">Total Distance</string>
     <string name="trip_driving_time">Driving Time</string>
     <string name="trip_energy_charged">Energy Charged</string>
@@ -589,12 +608,12 @@
     <string name="trip_edit_delete_confirm_body">Are you sure you want to delete this trip?</string>
     <string name="delete">Delete</string>
     <string name="trip_create_cd">Create Trip</string>
-    <string name="trips_empty_title">No Trips Yet</string>
-    <string name="trips_empty_intro">Create your first trip to start tracking your journeys.</string>
-    <string name="trips_empty_rule_drives">Record drives with your Tesla</string>
-    <string name="trips_empty_rule_charge">Charge at different locations</string>
-    <string name="trips_empty_rule_distance">Build up distance over time</string>
-    <string name="trips_empty_create_hint">Tap the + button to create a trip</string>
+    <string name="trips_empty_title">No combined trips yet</string>
+    <string name="trips_empty_intro">Combine drives and charges you already have. No new vehicle recording is needed.</string>
+    <string name="trips_empty_rule_drives">Choose existing drives</string>
+    <string name="trips_empty_rule_charge">Include existing charge stops</string>
+    <string name="trips_empty_rule_distance">Review the combined distance</string>
+    <string name="trips_empty_create_hint">Tap + to create a combined trip</string>
 
     <!-- Currency -->
     <string name="currency_format">%1$s %2$.2f</string>
@@ -689,22 +708,20 @@
     <string name="temperature_trend_window_7">7 days</string>
     <string name="temperature_trend_window_30">30 days</string>
     <string name="temperature_trend_load_failed">Unable to load temperature history. Try again.</string>
-    <string name="temperature_trend_unavailable">No temperature history is available for this window.</string>
-    <string name="temperature_trend_chart_title">Inside / Outside Temperature Curves</string>
+    <string name="temperature_trend_unavailable">No qualified drive temperature samples in this period.</string>
+    <string name="temperature_trend_chart_title">Drive temperature samples</string>
+    <string name="temperature_current_status_note">Latest status values; sensor sample time is not verified and is excluded from history.</string>
+    <string name="temperature_current_unavailable">Latest temperature status is unavailable. Saved history can still be viewed below.</string>
+    <string name="temperature_history_note">Saved drive averages (°C). Each dot is one drive; no temperature is inferred between drives.</string>
     <string name="temperature_inside_legend">Cabin</string>
     <string name="temperature_outside_legend">Outside</string>
-    <string name="temperature_current_inside">Current Cabin</string>
-    <string name="temperature_current_outside">Current Outside</string>
+    <string name="temperature_current_inside">Latest cabin status</string>
+    <string name="temperature_current_outside">Latest outside status</string>
     <string name="temperature_max_outside">Max Outside</string>
     <string name="temperature_max_inside">Max Cabin</string>
     <string name="temperature_min_outside">Min Outside</string>
     <string name="temperature_min_inside">Min Cabin</string>
     <string name="temperature_cabin_diff">Max Temp Diff</string>
-    <string name="temperature_insights_title">Temperature &amp; Climate Insights</string>
-    <string name="temperature_insights_solar_gain">Cabin Solar Heat Gain</string>
-    <string name="temperature_insights_solar_desc">Cabin temperature rises quickly under direct sunlight. Consider enabling Cabin Overheat Protection or pre-cooling before driving.</string>
-    <string name="temperature_insights_climate_good">Climate Performance</string>
-    <string name="temperature_insights_climate_good_desc">Cabin temperature remained in comfortable range during drives with efficient climate regulation.</string>
     <string name="tpms_pressure_unit">bar</string>
     <string name="settings_tpms_entry_subtitle">Target pressure &amp; alert thresholds per car</string>
     <string name="tpms_profile_title">Per-car cold tire-pressure profile</string>
@@ -835,10 +852,12 @@
     <!-- Battery extra -->
     <string name="range">Range</string>
     <string name="max_range_new">Max Range (New)</string>
-    <string name="max_range_now">Max Range (Now)</string>
+    <string name="max_range_now">Estimated full-charge rated range</string>
     <string name="range_loss">Range Loss</string>
     <string name="battery_detail_title">Battery Detail</string>
     <string name="current_charge_title">Current Charge</string>
+    <string name="current_battery_level_title">Current battery level</string>
+    <string name="current_battery_level_message">Latest reported battery percentage. This is not a charging session.</string>
     <string name="current_charge_message">Current charging information.</string>
     <string name="current_charge">Current Charge</string>
     <string name="usable_percent">Usable (%1$d%%)</string>
@@ -862,9 +881,9 @@
     <string name="estimated_range">Estimated Range</string>
     <string name="estimated_range_subtitle">Based on recent driving</string>
     <string name="rated_range">Rated Range</string>
-    <string name="rated_range_subtitle">EPA rated range</string>
+    <string name="rated_range_subtitle">Reported rated range</string>
     <string name="ideal_range">Ideal Range</string>
-    <string name="ideal_range_subtitle">WLTP ideal range</string>
+    <string name="ideal_range_subtitle">Reported ideal range</string>
     <string name="estimated_total_capacity_title">Estimated Total Capacity</string>
     <string name="estimated_total_capacity_message">Based on charging data analysis.</string>
     <string name="estimated_total_capacity">Estimated Total Capacity</string>
@@ -881,6 +900,26 @@
     <string name="charge_parked_title">Charging while parked</string>
     <string name="charge_parked_summary">A charging session overlaps this parked period.</string>
     <string name="charge_parked_view">View this charge</string>
+    <string name="parked_battery_title">Battery during parking</string>
+    <string name="parked_energy_title">Energy and power</string>
+    <string name="parked_environment_title">Temperature during parking</string>
+    <string name="parked_start_soc">Start battery</string>
+    <string name="parked_end_soc">End battery</string>
+    <string name="parked_soc_change">Battery decrease</string>
+    <string name="parked_percentage_points">%1$d percentage points</string>
+    <string name="parked_soc_drop">Down %1$d percentage points</string>
+    <string name="parked_soc_gain">Up %1$d percentage points</string>
+    <string name="parked_soc_same">No change</string>
+    <string name="parked_energy_change">Energy change (estimated)</string>
+    <string name="parked_average_power">Average power (estimated)</string>
+    <string name="parked_peak_power">Peak power</string>
+    <string name="parked_inside_temperature">Cabin temperature</string>
+    <string name="parked_outside_temperature">Outside temperature</string>
+    <string name="parked_no_battery_data">No battery-level endpoints were recorded for this parking window.</string>
+    <string name="parked_no_energy_data">No qualified energy or power samples were recorded for this parking window.</string>
+    <string name="parked_no_temperature_data">No cabin or outside temperature samples were recorded for this parking window.</string>
+    <string name="parked_power_coverage">Power samples: %1$d · power coverage: %2$.0f%%</string>
+    <string name="parked_power_coverage_unknown">Power sample coverage is unknown.</string>
     <string name="charge_history">Charge History</string>
     <string name="charge_location">Location</string>
     <string name="charger">Charger</string>
@@ -1065,8 +1104,9 @@
     <string name="select_all">Select All</string>
     <string name="sentry_alert_detected">Alert Detected</string>
     <string name="sentry_history_current_session">Current Session</string>
-    <string name="sentry_history_empty">No history</string>
-    <string name="sentry_history_no_alerts">No alerts</string>
+    <string name="sentry_history_empty">No locally recorded history</string>
+    <string name="sentry_history_no_alerts">No alerts recorded in this session</string>
+    <string name="sentry_history_identity_unavailable">Vehicle history identity is unavailable. Recorded alerts cannot be verified right now.</string>
     <string name="sentry_history_past">Past</string>
     <string name="sentry_history_title">Sentry History</string>
     <string name="sentry_history_today">Today</string>
@@ -1109,7 +1149,7 @@
     <string name="settings_release_notes_close">Got it</string>
     <string name="settings_switch_to_cloud">Switch to MateLink Cloud</string>
     <string name="settings_switch_to_self_hosted">Switch to local TeslaMate</string>
-<string name="settings_release_notes_body" formatted="false">• History now opens with the summary and recent records; compact filters and the original monthly charts remain above the history list.\n• Four-column summaries and charging history, larger numbers and compact date filters.\n• Drive history metrics now fit a compact single row; details retain their full panels and enlarged text can scroll without truncation.
+<string name="settings_release_notes_body" formatted="false">• Qualified charge detail can be saved safely; a weak list refresh no longer erases its energy. Edit the total inside the right-side fee cell.\n• Temperature history uses real observations only. Tire-pressure history reuses existing status responses without automatic periodic Fleet data requests. Sentry history uses verified local vehicle identity.\n• Annual and cost statistics separate unknown, real zero and signed recovery; unknown monthly values are not zero bars. Timeline dates use local time.\n• History now opens with the summary and recent records; compact filters and the original monthly charts remain above the history list.\n• Four-column summaries and charging history, larger numbers and compact date filters.\n• Drive history metrics now fit a compact single row; details retain their full panels and enlarged text can scroll without truncation.
 • Automatic history syncing and cached history now preserve validated vehicle identity and observed data evidence across refreshes.
 • Driving and charging energy display keeps real zero, signed recovery and unknown distinct; estimated values are explicitly labeled, never upgraded to measurements.
 • AC charging loss and efficiency require complete matching observed AC-only mode and counter windows; unknown or mixed-mode charging remains unavailable.

@@ -11,6 +11,13 @@ import com.matelink.data.local.entity.DriveDetailAggregate
 @Dao
 interface AggregateDao {
 
+    /** Selected IDs already passed the caller's scoped, local-calendar cohort qualification. */
+    @Query("SELECT * FROM drive_detail_aggregates WHERE carId = :carId AND driveId IN (:driveIds) ORDER BY driveId")
+    suspend fun getDriveAggregatesForStats(carId: Int, driveIds: List<Int>): List<DriveDetailAggregate>
+
+    @Query("SELECT * FROM charge_detail_aggregates WHERE carId = :carId AND chargeId IN (:chargeIds) ORDER BY chargeId")
+    suspend fun getChargeAggregatesForStats(carId: Int, chargeIds: List<Int>): List<ChargeDetailAggregate>
+
     // === Drive Detail Aggregates ===
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

@@ -31,7 +31,6 @@ import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ElectricBolt
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Paid
 import androidx.compose.material.icons.filled.Timer
@@ -840,42 +839,11 @@ private fun ChargeItem(
                         )
                     ),
                     modifier = Modifier.padding(vertical = 8.dp),
-                    numberFontSize = 18.sp
+                    numberFontSize = 18.sp,
+                    clickableMetricIndex = if (onEditCost != null) 2 else null,
+                    onMetricClick = onEditCost,
+                    metricClickLabel = stringResource(R.string.edit_charge_cost)
                 )
-            }
-
-            if (onEditCost != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    onEditCost?.let { editCost ->
-                        Surface(
-                            modifier = Modifier.clickable(onClick = editCost),
-                            color = accent.copy(alpha = 0.12f),
-                            shape = MaterialTheme.shapes.extraLarge
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = null,
-                                    tint = accent,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Text(
-                                    text = stringResource(R.string.edit_charge_cost),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = accent
-                                )
-                            }
-                        }
-                    }
-                }
             }
         }
     }

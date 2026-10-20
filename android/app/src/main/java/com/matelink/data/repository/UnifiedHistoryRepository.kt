@@ -688,15 +688,24 @@ internal fun mergeStoredCharge(incoming: ChargeSummary, cached: ChargeSummary?):
     val newProof = raw.energyContract != null &&
         raw.energyContract != cachedRaw.energyContract && inRaw.source == raw.source
     val sameSource = raw.source == cachedRaw.source
-    val sameWindow = raw.startDate == cachedRaw.startDate && raw.endDate == cachedRaw.endDate
+    val sameWindow = sameHistorySession(raw.startDate, raw.endDate,
+        cachedRaw.startDate, cachedRaw.endDate)
+    // A missing field in a same-session page is weak; a new trusted, non-null
+    // scalar is a correction and must not inherit an older detail snapshot.
+    val correctedScalar = sameSource && sameWindow &&
+        hasTrustedHistoryEvidence(inRaw.qualityState, inRaw.source) &&
+        ((inRaw.chargeEnergyAdded != null &&
+            inRaw.chargeEnergyAdded != cachedRaw.chargeEnergyAdded) ||
+            (inRaw.chargeEnergyUsed != null &&
+                inRaw.chargeEnergyUsed != cachedRaw.chargeEnergyUsed))
     val receipt = when {
         incomingSnapshot && raw.source == inRaw.source &&
-            raw.startDate == inRaw.startDate && raw.endDate == inRaw.endDate ->
+            sameHistorySession(raw.startDate, raw.endDate, inRaw.startDate, inRaw.endDate) ->
             incoming.apiEvidence
         !newProof && HistorySummaryEvidenceCodec.sourceJson(incoming.apiEvidence) != null &&
             HistorySummaryEvidenceCodec.sourceJson(incoming.apiEvidence) == HistorySummaryEvidenceCodec.sourceJson(cached.apiEvidence) ->
             cached.apiEvidence // Local recovery metadata does not make an unchanged wire receipt new.
-        cachedSnapshot && sameSource && sameWindow && !newProof -> cached.apiEvidence
+        cachedSnapshot && sameSource && sameWindow && !newProof && !correctedScalar -> cached.apiEvidence
         raw == cachedRaw && cached.apiEvidence != null -> cached.apiEvidence
         else -> base.apiEvidence
     }

@@ -205,7 +205,16 @@ class ChargeDetailViewModel @Inject constructor(
 
             when (detailResult) {
                 is ApiResult.Success -> {
-                    val detail = detailResult.data.withQualifiedEnergy()
+                    val rawDetail = detailResult.data
+                    val detail = rawDetail.withQualifiedEnergy()
+                    val saved = try {
+                        chargeSummaryDao.mergeDetail(localHistoryCarId, rawDetail) { checkContext() }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        false
+                    }
+                    checkContext()
                     val stats = ChargeStatsCalculator.calculateStats(detail)
                     val chargeType = ChargeStatsCalculator.detectChargeType(detail)
                     val isDcCharge = chargeType.toDcFlag()
@@ -225,6 +234,7 @@ class ChargeDetailViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            historySyncWarning = if (saved) null else "history_energy_cache_failed",
                             chargeDetail = detail,
                             units = units,
                             stats = stats,

@@ -10,6 +10,8 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.Units
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.local.HistoryReadScope
+import com.matelink.data.local.VehicleContextRepository
 import com.matelink.domain.analytics.AnalysisHistoryRepository
 import com.matelink.domain.analytics.BatteryTrendEstimate
 import com.matelink.domain.analytics.BatteryTrendSample
@@ -17,14 +19,17 @@ import com.matelink.domain.analytics.estimateBatteryTrend
 import com.matelink.util.parseIsoDateTime
 import com.matelink.ui.screens.readiness.ReadinessItemStatus
 import com.matelink.ui.screens.readiness.readinessItemStatus
+import com.matelink.ui.screens.stats.ScopedUiLoader
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import java.util.Locale
@@ -108,6 +113,22 @@ data class BatteryUiState(
     val showDetail: Boolean = false
 )
 
+internal fun BatteryUiState.withHealthStatus(
+    healthResult: ApiResult<BatteryHealth>,
+    status: CarStatus?,
+    units: Units?,
+    trend: BatteryTrendEstimate?
+) = copy(
+    isLoading = false,
+    isRefreshing = false,
+    batteryHealth = (healthResult as? ApiResult.Success)?.data,
+    batteryHealthAvailability = classifyBatteryHealth(healthResult, null),
+    carStatus = status,
+    batteryTrend = trend ?: batteryTrend,
+    units = units,
+    error = (healthResult as? ApiResult.Error)?.message
+)
+
 // Computed battery statistics
 data class BatteryStats(
     val currentCapacity: Double,
@@ -157,30 +178,62 @@ data class BatteryStats(
 @HiltViewModel
 class BatteryViewModel @Inject constructor(
     private val repository: TeslamateRepository,
-    private val historyRepository: AnalysisHistoryRepository
+    private val historyRepository: AnalysisHistoryRepository,
+    private val vehicleContextRepository: VehicleContextRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BatteryUiState())
     val uiState: StateFlow<BatteryUiState> = _uiState.asStateFlow()
 
     private var carId: Int? = null
-    private var loadJob: Job? = null
-    private var loadGeneration = 0L
+    private var identityJob: Job? = null
+    private var activeScope: HistoryReadScope? = null
+    private var identityEpoch = 0L
+    private val loader = ScopedUiLoader(viewModelScope)
+
+    init {
+        viewModelScope.launch {
+            vehicleContextRepository.historyScopeChanges.collect { scope ->
+                val id = carId ?: return@collect
+                if (activeScope != null && activeScope != scope) activate(id, null)
+                else if (activeScope == null && identityJob?.isActive != true) activate(id, null)
+            }
+        }
+    }
 
     fun setCarId(id: Int, efficiency: Double? = null) {
         if (carId != id) {
-            carId = id
-            efficiency?.let { eff ->
-                _uiState.update { it.copy(ratedEfficiency = eff) }
+            activate(id, efficiency)
+        }
+    }
+
+    private fun activate(id: Int, efficiency: Double?) {
+        carId = id
+        val epoch = ++identityEpoch
+        identityJob?.cancel()
+        loader.invalidate()
+        activeScope = null
+        _uiState.value = BatteryUiState(ratedEfficiency = efficiency?.takeIf { it.isFinite() && it > 0.0 })
+        identityJob = viewModelScope.launch {
+            try {
+                val scope = vehicleContextRepository.captureReadScope()
+                if (carId != id || epoch != identityEpoch) return@launch
+                activeScope = scope
+                loadBatteryData(id, scope)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                if (carId == id && epoch == identityEpoch) _uiState.update {
+                    it.copy(isLoading = false, batteryHealthAvailability = BatteryHealthAvailability.UNAVAILABLE)
+                }
             }
-            loadBatteryData()
         }
     }
 
     fun refresh() {
-        carId?.let {
+        carId?.let { id ->
             _uiState.update { it.copy(isRefreshing = true) }
-            loadBatteryData()
+            activeScope?.let { loadBatteryData(id, it) } ?: activate(id, null)
         }
     }
 
@@ -196,17 +249,15 @@ class BatteryViewModel @Inject constructor(
         _uiState.update { it.copy(showDetail = false) }
     }
 
-    private fun loadBatteryData() {
-        val id = carId ?: return
-        loadJob?.cancel()
-        val generation = ++loadGeneration
+    private fun loadBatteryData(id: Int, scope: HistoryReadScope) {
         val wasRefreshing = _uiState.value.isRefreshing
         if (!wasRefreshing) {
             _uiState.update { it.copy(isLoading = true) }
         }
 
-        loadJob = viewModelScope.launch {
-            try {
+        loader.load(
+            proof = { { carId == id && activeScope == scope && vehicleContextRepository.captureReadScope() == scope } },
+            fetch = { request -> coroutineScope {
                 // Readiness is optional and must not delay health/status rendering.
                 val readinessDeferred = async {
                     try {
@@ -233,47 +284,34 @@ class BatteryViewModel @Inject constructor(
                     ?.mapNotNull { it.toBatteryTrendSample() }
                     ?.let(::estimateBatteryTrend)
 
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        isRefreshing = false,
-                        batteryHealth = (healthResult as? ApiResult.Success)?.data,
-                        batteryHealthAvailability = classifyBatteryHealth(healthResult, null),
-                        carStatus = (statusResult as? ApiResult.Success)?.data?.status,
-                        batteryTrend = batteryTrend ?: it.batteryTrend,
-                        units = (statusResult as? ApiResult.Success)?.data?.units,
-                        error = (healthResult as? ApiResult.Error)?.message
-                    )
-                }
+                request.requireCurrent()
+                _uiState.update { it.withHealthStatus(healthResult,
+                    (statusResult as? ApiResult.Success)?.data?.status,
+                    (statusResult as? ApiResult.Success)?.data?.units, batteryTrend) }
 
                 val readinessResult = readinessDeferred.await()
-                if (!isCurrentLoad(generation, id)) return@launch
-                val readiness = (readinessResult as? ApiResult.Success)?.data
+                Pair(healthResult, (readinessResult as? ApiResult.Success)?.data)
+            } },
+            onSuccess = { (healthResult, readiness) ->
                 _uiState.update {
                     it.copy(
                         dataReadiness = readiness,
                         batteryHealthAvailability = classifyBatteryHealth(healthResult, readiness?.item("battery_health"))
                     )
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (isCurrentLoad(generation, id)) {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            isRefreshing = false,
-                            batteryHealthAvailability = BatteryHealthAvailability.UNAVAILABLE,
-                            error = e.message
-                        )
-                    }
+            },
+            onFailure = { error ->
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        batteryHealthAvailability = BatteryHealthAvailability.UNAVAILABLE,
+                        error = error.message
+                    )
                 }
             }
-        }
+        )
     }
-
-    private fun isCurrentLoad(generation: Long, id: Int): Boolean =
-        generation == loadGeneration && carId == id
 
     fun computeStats(): BatteryStats? {
         val state = _uiState.value

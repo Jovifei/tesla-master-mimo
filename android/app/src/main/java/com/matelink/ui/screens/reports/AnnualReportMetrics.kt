@@ -2,15 +2,24 @@ package com.matelink.ui.screens.reports
 
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.DriveData
+import com.matelink.domain.history.isAnalysisEligible
+import com.matelink.util.parseIsoInstant
+import java.time.LocalDate
 import java.time.OffsetDateTime
+import java.time.ZoneId
 
 fun annualEffectiveCost(
     carId: Int,
     year: Int,
     charges: List<ChargeData>,
-    manualTotals: Map<String, Double>
+    manualTotals: Map<String, Double>,
+    zone: ZoneId = ZoneId.systemDefault()
 ): Double? {
-    val values = charges.filter { it.startDate?.startsWith("$year-") == true }
+    val values = charges.filter { charge ->
+        val date = charge.startDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            ?: parseIsoInstant(charge.startDate)?.atZone(zone)?.toLocalDate()
+        date?.year == year && isAnalysisEligible(charge.qualityState, charge.qualityReason)
+    }
         .map { charge -> manualTotals["$carId:${charge.chargeId}"] ?: charge.cost }
         .filterNotNull()
         .filter { it.isFinite() && it >= 0.0 }
