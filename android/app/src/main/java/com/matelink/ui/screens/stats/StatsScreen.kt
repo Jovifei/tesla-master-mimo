@@ -808,23 +808,12 @@ private fun AnalysisSummaryCard(
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            SummaryMetricItem(
-                title = stringResource(R.string.stats_analysis_cost_per_100km),
-                metric = conclusions.costPer100Km,
-                formatter = { String.format(Locale.getDefault(), "%.2f %s", it, currencySymbol) },
-                modifier = Modifier.weight(1f)
-            )
-            SummaryMetricItem(
-                title = stringResource(R.string.stats_analysis_charge_drive_ratio),
-                metric = conclusions.chargedToDrivingEnergyPercent,
-                formatter = { String.format(Locale.getDefault(), "%.0f%%", it) },
-                modifier = Modifier.weight(1f)
-            )
-        }
+        SummaryMetricItem(
+            title = stringResource(R.string.stats_analysis_cost_per_100km),
+            metric = conclusions.costPer100Km,
+            formatter = { String.format(Locale.getDefault(), "%.2f %s", it, currencySymbol) },
+            modifier = Modifier.fillMaxWidth()
+        )
         Spacer(modifier = Modifier.height(12.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1857,11 +1846,11 @@ private fun formatEnergy(kwh: Double): String {
 @Composable
 private fun AcDcRatioCard(deepStats: DeepStats, palette: CarColorPalette) {
     val totalEnergy = deepStats.acChargeEnergyKwh + deepStats.dcChargeEnergyKwh
-    if (totalEnergy <= 0) {
-        return // No charge data
-    }
+    if (deepStats.chargeDetailsProcessed <= 0) return
 
-    val acRatio = (deepStats.acChargeEnergyKwh / totalEnergy).toFloat()
+    val unknownCount = (deepStats.chargeDetailsProcessed - deepStats.acChargeCount - deepStats.dcChargeCount)
+        .coerceAtLeast(0)
+    val acRatio = if (totalEnergy > 0.0) (deepStats.acChargeEnergyKwh / totalEnergy).toFloat() else 0f
     val acColor = palette.acColor
     val dcColor = palette.dcColor
 
@@ -1884,16 +1873,15 @@ private fun AcDcRatioCard(deepStats: DeepStats, palette: CarColorPalette) {
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        if (totalEnergy > 0.0) {
+            Spacer(modifier = Modifier.height(12.dp))
+            // Percentages describe only sessions with qualified AC or DC energy.
+            val acPercent = (acRatio * 100).toInt()
+            val dcPercent = 100 - acPercent
+            val showAcPercent = acPercent >= 15
+            val showDcPercent = dcPercent >= 15
 
-        // Custom ratio bar with percentage labels
-        val acPercent = (acRatio * 100).toInt()
-        val dcPercent = 100 - acPercent
-        // Only show percentage if segment is wide enough (>= 15%)
-        val showAcPercent = acPercent >= 15
-        val showDcPercent = dcPercent >= 15
-
-        Box(
+            Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(20.dp)
@@ -1933,6 +1921,7 @@ private fun AcDcRatioCard(deepStats: DeepStats, palette: CarColorPalette) {
                     )
                 }
             }
+            }
         }
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -1951,6 +1940,19 @@ private fun AcDcRatioCard(deepStats: DeepStats, palette: CarColorPalette) {
                 )
                 Text(
                     text = stringResource(R.string.format_charges_count, deepStats.acChargeCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.onSurfaceVariant
+                )
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = stringResource(R.string.cost_mode_unknown),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.onSurfaceVariant
+                )
+                Text(
+                    text = stringResource(R.string.format_charges_count, unknownCount),
                     style = MaterialTheme.typography.labelSmall,
                     color = palette.onSurfaceVariant
                 )

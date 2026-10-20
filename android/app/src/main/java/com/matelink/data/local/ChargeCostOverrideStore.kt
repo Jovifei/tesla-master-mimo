@@ -2,12 +2,17 @@ package com.matelink.data.local
 
 import com.matelink.data.local.dao.ChargeCostOverrideDao
 import com.matelink.data.local.entity.ChargeCostOverride
-import com.matelink.domain.analytics.chargeTotalOverrideKey
+import com.matelink.data.api.models.ChargeData
+import com.matelink.data.model.Currency
+import com.matelink.domain.analytics.chargeCostInstant
+import com.matelink.domain.analytics.chargeCostSessionKey
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -40,37 +45,55 @@ class ChargeCostOverrideStore @Inject constructor(
                         ChargeCostOverride(carId, chargeId, amount)
                     }
                 }
-                if (parsed.isNotEmpty()) dao.upsertAll(parsed)
+                if (parsed.isNotEmpty()) dao.insertLegacyIfAbsent(parsed)
                 settingsDataStore.markChargeTotalOverridesMigrated()
             }
             legacyMigrationChecked = true
         }
     }
 
-    fun observeAll(): Flow<Map<String, Double>> = dao.observeAll().map { overrides ->
-        overrides.associate { override ->
-            chargeTotalOverrideKey(override.carId, override.chargeId) to override.manualTotalAmount
-        }
+    fun observeAllRecords(): Flow<List<ChargeCostOverride>> = flow {
+        ensureLegacyMigrated()
+        emitAll(dao.observeAll())
     }
 
-    suspend fun getAmount(carId: Int, chargeId: Int): Double? {
+    suspend fun getAllRecords(): List<ChargeCostOverride> {
         ensureLegacyMigrated()
-        return dao.getAmount(carId, chargeId)
+        return readAllRecordsAfterMigration()
     }
 
-    suspend fun getAll(): Map<String, Double> {
+    /** Call only after ensureLegacyMigrated(); safe to capture within a Room read transaction. */
+    suspend fun readAllRecordsAfterMigration(): List<ChargeCostOverride> = dao.getAll()
+
+    suspend fun getRecordsForCharge(carId: Int, chargeId: Int): List<ChargeCostOverride> {
         ensureLegacyMigrated()
-        return dao.getAll().associate { override ->
-            chargeTotalOverrideKey(override.carId, override.chargeId) to override.manualTotalAmount
-        }
+        return dao.getRecordsForCharge(carId, chargeId)
     }
 
-    suspend fun save(carId: Int, chargeId: Int, amount: Double?) {
+    /** Returns false if another edit or clear advanced this exact session's version. */
+    suspend fun saveBound(
+        carId: Int, charge: ChargeData, amount: Double?, currencyCode: String,
+        expectedVersion: Long
+    ): Boolean {
         ensureLegacyMigrated()
-        if (amount == null) {
-            dao.delete(carId, chargeId)
-        } else {
-            dao.upsert(ChargeCostOverride(carId, chargeId, amount))
-        }
+        if (charge.sourceRecordIdentity.conflicted) return false
+        if (amount != null && (!amount.isFinite() || amount < 0.0)) return false
+        val code = currencyCode.trim().uppercase(Locale.ROOT)
+            .takeIf { value -> Currency.entries.any { it.code == value } }
+        val key = chargeCostSessionKey(charge) + ":" + (code ?: "unverified")
+        val current = dao.getRecord(carId, charge.chargeId, key)
+        val record = ChargeCostOverride(
+            carId = carId, chargeId = charge.chargeId,
+            manualTotalAmount = amount ?: current?.manualTotalAmount ?: 0.0,
+            sessionKey = key, currencyCode = code,
+            sourceKind = charge.source?.takeIf(String::isNotBlank),
+            sourceInstanceId = charge.sourceInstanceId?.takeIf(String::isNotBlank),
+            sourceRecordId = charge.sourceRecordIdentity.value,
+            startInstant = chargeCostInstant(charge.startDate)?.toString(),
+            endInstant = chargeCostInstant(charge.endDate)?.toString(),
+            deleted = amount == null
+        )
+        return dao.saveIfVersion(record, expectedVersion)
     }
+
 }

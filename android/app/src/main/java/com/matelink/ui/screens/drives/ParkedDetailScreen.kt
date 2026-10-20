@@ -89,7 +89,17 @@ private fun ParkedDetailContent(
     modifier: Modifier = Modifier,
     onNavigateToChargeDetail: (Int) -> Unit
 ) {
-    val unavailable = stringResource(R.string.not_available)
+    val socChange = data.batteryDelta?.takeIf { it in -100..100 }?.let { delta ->
+        when {
+            delta > 0 -> stringResource(R.string.parked_soc_drop, delta)
+            delta < 0 -> stringResource(R.string.parked_soc_gain, -delta)
+            else -> stringResource(R.string.parked_soc_same)
+        }
+    }
+    val powerCoverage = data.coverageRatio.takeIf { it.isFinite() && it in 0.0..1.0 }
+    val coverageLabel = if (data.sampleCount >= 0 && powerCoverage != null) {
+        stringResource(R.string.parked_power_coverage, data.sampleCount, powerCoverage * 100)
+    } else stringResource(R.string.parked_power_coverage_unknown)
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -113,30 +123,41 @@ private fun ParkedDetailContent(
         }
 
         MetricBand(
-            title = "驻车时间与电量",
+            title = stringResource(R.string.parked_battery_title),
             icon = Icons.Default.Bolt,
             accent = MaterialTheme.colorScheme.primary,
+            emptyMessage = stringResource(R.string.parked_no_battery_data),
             entries = listOf(
-                "开始时间" to parkedBoundaryTimeLabel(data.startDate, unavailable),
-                "结束时间" to parkedBoundaryTimeLabel(data.endDate, unavailable),
-                "开始电量" to data.startBatteryLevel?.takeIf { it in 0..100 }?.let { "$it%" }.orUnavailable(unavailable),
-                "结束电量" to data.endBatteryLevel?.takeIf { it in 0..100 }?.let { "$it%" }.orUnavailable(unavailable),
-                "电量变化" to data.batteryDelta?.let { "$it%" }.orUnavailable(unavailable),
-                "电池剩余能量变化（估算）" to data.qualifiedParkedEnergyKwh?.let { "%.2f kWh".format(it) }.orUnavailable(unavailable),
-                "平均功率（估算）" to data.qualifiedAveragePowerW?.let { "%.0f W".format(it) }.orUnavailable(unavailable),
-                "峰值功率" to data.peakPowerKw?.let { "%.1f kW".format(it) }.orUnavailable(unavailable)
+                stringResource(R.string.parked_start_soc) to data.startBatteryLevel?.takeIf { it in 0..100 }?.let { "$it%" },
+                stringResource(R.string.parked_end_soc) to data.endBatteryLevel?.takeIf { it in 0..100 }?.let { "$it%" },
+                stringResource(R.string.parked_soc_change) to socChange
             )
         )
         MetricBand(
-            title = "环境与数据",
+            title = stringResource(R.string.parked_energy_title),
+            icon = Icons.Default.Bolt,
+            accent = MaterialTheme.colorScheme.primary,
+            emptyMessage = stringResource(R.string.parked_no_energy_data),
+            entries = listOf(
+                stringResource(R.string.parked_energy_change) to data.qualifiedParkedEnergyKwh?.takeIf(Double::isFinite)?.let { "%.2f kWh".format(it) },
+                stringResource(R.string.parked_average_power) to data.qualifiedAveragePowerW?.takeIf(Double::isFinite)?.let { "%.0f W".format(it) },
+                stringResource(R.string.parked_peak_power) to data.peakPowerKw?.takeIf(Double::isFinite)?.let { "%.1f kW".format(it) }
+            )
+        )
+        MetricBand(
+            title = stringResource(R.string.parked_environment_title),
             icon = Icons.Default.Thermostat,
             accent = MaterialTheme.colorScheme.tertiary,
+            emptyMessage = stringResource(R.string.parked_no_temperature_data),
             entries = listOf(
-                "车内温度" to data.insideTempAverage?.let { "%.1f °C".format(it) }.orUnavailable(unavailable),
-                "车外温度" to data.outsideTempAverage?.let { "%.1f °C".format(it) }.orUnavailable(unavailable),
-                "采样数" to data.sampleCount.toString(),
-                "覆盖率" to "%.0f%%".format(data.coverageRatio * 100)
+                stringResource(R.string.parked_inside_temperature) to data.insideTempAverage?.takeIf(Double::isFinite)?.let { "%.1f °C".format(it) },
+                stringResource(R.string.parked_outside_temperature) to data.outsideTempAverage?.takeIf(Double::isFinite)?.let { "%.1f °C".format(it) }
             )
+        )
+        Text(
+            text = coverageLabel,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
             text = "数据来源：${if (data.source == "database_latest") "TeslaMate 历史数据库" else data.source}",
@@ -194,8 +215,10 @@ private fun MetricBand(
     title: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     accent: androidx.compose.ui.graphics.Color,
-    entries: List<Pair<String, String>>
+    entries: List<Pair<String, String?>>,
+    emptyMessage: String
 ) {
+    val visible = entries.mapNotNull { (label, value) -> value?.let { label to it } }
     TelemetryPanel(
         modifier = Modifier.fillMaxWidth(),
         accent = accent
@@ -205,7 +228,12 @@ private fun MetricBand(
                 Icon(imageVector = icon, contentDescription = null, tint = accent)
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
-            entries.chunked(2).forEach { row ->
+            if (visible.isEmpty()) Text(
+                emptyMessage,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            visible.chunked(2).forEach { row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     row.forEach { (label, value) ->
                         Column(Modifier.weight(1f)) {
@@ -218,8 +246,6 @@ private fun MetricBand(
         }
     }
 }
-
-private fun String?.orUnavailable(fallback: String): String = this ?: fallback
 
 internal fun parkedErrorLabel(error: String?, unavailable: String): String = when (error) {
     "history_not_collected", "history_not_connected" -> "暂无可验证的驻车详情；行程历史仍可查看"

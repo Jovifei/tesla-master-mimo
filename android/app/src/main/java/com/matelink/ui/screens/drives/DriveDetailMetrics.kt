@@ -1,5 +1,6 @@
 package com.matelink.ui.screens.drives
 
+import com.matelink.R
 import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.api.models.EnergyMetric
 import com.matelink.util.parseIsoInstant
@@ -51,6 +52,16 @@ internal fun presentDriveDetailEnergy(
     return DriveDetailEnergyPresentation(value, efficiencyWhKm?.takeIf(Double::isFinite), source,
         coverageSeconds?.takeIf { it >= 0L }, ratio, evidence)
 }
+
+/** Arithmetic means describe the received samples, never an evenly sampled whole journey. */
+internal fun driveDetailSpeedAverageLabel(detail: DriveDetail): Int {
+    val reported = detail.speedAvg?.takeIf { detail.hasKnownLengthUnit && it.isFinite() && it >= 0.0 }
+    val sampled = detail.hasKnownLengthUnit && detail.positions.orEmpty().any { it.speed?.let { value -> value.isFinite() && value >= 0.0 } == true }
+    return if (reported == null && sampled) R.string.drive_detail_sample_mean else R.string.average
+}
+
+internal fun driveDetailPowerAverageLabel(detail: DriveDetail): Int =
+    if (detail.positions.orEmpty().any { it.power?.isFinite() == true }) R.string.drive_detail_sample_mean else R.string.average
 
 internal fun calculateDriveDetailStats(detail: DriveDetail, energy: DriveDetailEnergyPresentation): DriveDetailStats {
     val positions = detail.positions.orEmpty()

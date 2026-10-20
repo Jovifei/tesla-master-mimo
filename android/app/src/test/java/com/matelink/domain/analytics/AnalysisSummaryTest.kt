@@ -1,12 +1,36 @@
 package com.matelink.domain.analytics
 
 import com.matelink.domain.model.QuickStats
+import com.matelink.data.repository.qualifiedQuickStatsTotals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AnalysisSummaryTest {
+    @Test
+    fun quickStatsTotalsFollowQualifiedSnapshotWithoutChangingRecordCount() {
+        val coverage = buildAnalysisCoverage(
+            drives = listOf(
+                AnalysisDriveCoverageSample(10.0, 2.0, "2026-01-01"),
+                AnalysisDriveCoverageSample(5.0, -0.5, "2026-01-02"),
+                AnalysisDriveCoverageSample(null, null, "2026-01-03"),
+                AnalysisDriveCoverageSample(0.0, 0.0, "2026-01-04")
+            ), charges = emptyList()
+        )
+        val qualified = qualifiedQuickStatsTotals(sampleStats(), coverage)
+        assertEquals(4, qualified.totalDrives)
+        assertEquals(15.0, qualified.totalDistanceKm, 0.0001)
+        assertEquals(1.5, qualified.totalEnergyConsumedKwh!!, 0.0001)
+        assertEquals(100.0, qualified.avgEfficiencyWhKm!!, 0.0001)
+
+        val unknown = qualifiedQuickStatsTotals(sampleStats(), buildAnalysisCoverage(emptyList(), emptyList()))
+        assertEquals(0.0, unknown.totalDistanceKm, 0.0001)
+        assertNull(unknown.totalEnergyConsumedKwh)
+        assertNull(unknown.avgEfficiencyWhKm)
+    }
+
     @Test
     fun efficiencyIsDerivedAndUsesDriveSampleCount() {
         val summary = buildAnalysisSummary(sampleStats())
@@ -32,6 +56,61 @@ class AnalysisSummaryTest {
             available(summary.drivingEnergyKwh).evidence)
         assertEquals(MetricEvidence.ESTIMATED,
             available(summary.efficiencyWhKm).evidence)
+    }
+
+    @Test
+    fun unpairedEstimatedEnergyDoesNotRelabelReportedEfficiencyPair() {
+        val coverage = buildAnalysisCoverage(
+            drives = listOf(
+                AnalysisDriveCoverageSample(10.0, 2.0, "2026-01-01", energyQuality = "reported"),
+                AnalysisDriveCoverageSample(null, -0.5, "2026-01-02", energyQuality = "estimated")
+            ),
+            charges = emptyList()
+        )
+        val summary = buildAnalysisSummary(sampleStats(), coverage)
+
+        assertEquals(MetricEvidence.ESTIMATED, available(summary.drivingEnergyKwh).evidence)
+        assertEquals(MetricEvidence.DERIVED, available(summary.efficiencyWhKm).evidence)
+        assertEquals(1, available(summary.efficiencyWhKm).sampleCount)
+    }
+
+    @Test
+    fun summaryUsesOneQualifiedSnapshotAndOnlyEnergyDistancePairsForEfficiency() {
+        val coverage = buildAnalysisCoverage(
+            drives = listOf(
+                AnalysisDriveCoverageSample(100.0, null, "2026-01-01"),
+                AnalysisDriveCoverageSample(null, 2.0, "2026-01-02"),
+                AnalysisDriveCoverageSample(5.0, -0.5, "2026-01-03"),
+                AnalysisDriveCoverageSample(2.0, 0.0, "2026-01-04"),
+                AnalysisDriveCoverageSample(0.0, 1.0, "2026-01-05")
+            ),
+            charges = listOf(
+                AnalysisChargeCoverageSample(10.0, null, "2026-01-06"),
+                AnalysisChargeCoverageSample(0.0, null, "2026-01-07")
+            )
+        )
+        val summary = buildAnalysisSummary(sampleStats(), coverage)
+
+        assertEquals(107.0, available(summary.distanceKm).value, 0.0001)
+        assertEquals(2.5, available(summary.drivingEnergyKwh).value, 0.0001)
+        assertEquals(-0.5 / 7.0 * 1000.0, available(summary.efficiencyWhKm).value, 0.0001)
+        assertEquals(2, available(summary.efficiencyWhKm).sampleCount)
+        assertEquals(10.0, available(summary.chargedEnergyKwh).value, 0.0001)
+        assertEquals(7, summary.sourceRecordCount)
+        assertEquals(107.0 / 4.0,
+            available(buildAnalysisConclusions(sampleStats(), coverage).averageDistancePerDrivingDayKm).value,
+            0.0001)
+    }
+
+    @Test
+    fun independentChargingAndDrivingTotalsNeverBecomeAHeadlineEnergyRatio() {
+        val coverage = buildAnalysisCoverage(
+            drives = listOf(AnalysisDriveCoverageSample(10.0, 1.0, "2026-01-01")),
+            charges = listOf(AnalysisChargeCoverageSample(100.0, null, "2026-01-31"))
+        )
+
+        assertTrue(buildAnalysisConclusions(sampleStats(), coverage)
+            .chargedToDrivingEnergyPercent is MetricState.Unavailable)
     }
 
     @Test
@@ -73,7 +152,7 @@ class AnalysisSummaryTest {
         assertEquals(33.3333, available(conclusions.averageDistancePerDrivingDayKm).value, 0.0001)
         assertEquals(12.5, available(conclusions.averageChargeEnergyKwh).value, 0.0001)
         assertEquals(20.0, available(conclusions.costPer100Km).value, 0.0001)
-        assertEquals(138.8889, available(conclusions.chargedToDrivingEnergyPercent).value, 0.0001)
+        assertTrue(conclusions.chargedToDrivingEnergyPercent is MetricState.Unavailable)
         assertEquals(MetricEvidence.DERIVED, available(conclusions.costPer100Km).evidence)
     }
 
@@ -82,20 +161,23 @@ class AnalysisSummaryTest {
         val conclusions = buildAnalysisConclusions(sampleStats().copy(totalCost = null))
 
         assertTrue(conclusions.costPer100Km is MetricState.Unavailable)
-        assertTrue(conclusions.chargedToDrivingEnergyPercent is MetricState.Available)
+        assertTrue(conclusions.chargedToDrivingEnergyPercent is MetricState.Unavailable)
     }
 
     @Test
-    fun pairedDerivedMetricsUseConservativeSampleCounts() {
-        val coverage = AnalysisCoverage(
-            driveRecordCount = 4,
-            driveDistanceSampleCount = 4,
-            driveEnergySampleCount = 2,
-            chargeRecordCount = 3,
-            chargeEnergySampleCount = 1,
-            chargeCostSampleCount = 1,
-            firstObservedDate = null,
-            lastObservedDate = null
+    fun pairedDerivedMetricsUseActualJointSamples() {
+        val coverage = buildAnalysisCoverage(
+            drives = listOf(
+                AnalysisDriveCoverageSample(50.0, 9.0, "2026-01-01"),
+                AnalysisDriveCoverageSample(50.0, 9.0, "2026-01-02"),
+                AnalysisDriveCoverageSample(null, null, "2026-01-03"),
+                AnalysisDriveCoverageSample(null, null, "2026-01-04")
+            ),
+            charges = listOf(
+                AnalysisChargeCoverageSample(25.0, 20.0, "2026-01-05"),
+                AnalysisChargeCoverageSample(null, null, "2026-01-06"),
+                AnalysisChargeCoverageSample(null, null, "2026-01-07")
+            )
         )
 
         val summary = buildAnalysisSummary(sampleStats(), coverage)
@@ -103,7 +185,7 @@ class AnalysisSummaryTest {
 
         assertEquals(2, available(summary.efficiencyWhKm).sampleCount)
         assertEquals(1, available(conclusions.costPer100Km).sampleCount)
-        assertEquals(1, available(conclusions.chargedToDrivingEnergyPercent).sampleCount)
+        assertTrue(conclusions.chargedToDrivingEnergyPercent is MetricState.Unavailable)
     }
 
     @Test

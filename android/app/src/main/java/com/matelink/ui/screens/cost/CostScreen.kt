@@ -38,6 +38,7 @@ import java.util.Locale
 
 private val AcColor = Color(0xFF2196F3)   // Blue
 private val DcColor = Color(0xFFFF9800)   // Orange
+private val UnknownCostColor = Color(0xFF94A3B8)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -137,9 +138,17 @@ fun CostScreen(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    LegendDot(color = AcColor, label = stringResource(R.string.cost_ac))
-                    Spacer(modifier = Modifier.width(16.dp))
-                    LegendDot(color = DcColor, label = stringResource(R.string.cost_dc))
+                    if (uiState.monthlyCosts.any { it.acCost > 0.0 }) {
+                        LegendDot(color = AcColor, label = stringResource(R.string.cost_ac))
+                        Spacer(modifier = Modifier.width(12.dp))
+                    }
+                    if (uiState.monthlyCosts.any { it.dcCost > 0.0 }) {
+                        LegendDot(color = DcColor, label = stringResource(R.string.cost_dc))
+                        Spacer(modifier = Modifier.width(12.dp))
+                    }
+                    if (uiState.monthlyCosts.any { it.unknownCost > 0.0 }) {
+                        LegendDot(color = UnknownCostColor, label = stringResource(R.string.cost_mode_unknown))
+                    }
                 }
             }
 
@@ -162,51 +171,56 @@ fun CostScreen(
 
 @Composable
 private fun SummarySection(uiState: CostUiState, currencySymbol: String) {
-    val hasCost = uiState.costCoverage > 0
-    val hasEnergy = uiState.energyCoverage > 0
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    val hasCost = uiState.costCoverage > 0 && uiState.totalCost != null
+    val hasEstimate = uiState.estimatedCoverage > 0 && uiState.estimatedCost != null
+    val hasEnergy = uiState.energyCoverage > 0 && uiState.totalEnergy != null
+    val hasPair = uiState.pairedCoverage > 0 && uiState.pairedUnitCost != null
+    if (hasCost || hasEstimate) Row(
+        modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SummaryCard(
-            modifier = Modifier.weight(1f),
-            title = stringResource(R.string.cost_total),
-            value = if (hasCost) formatMoney(currencySymbol, uiState.totalCost, 2) else stringResource(R.string.analysis_no_records),
-            subtitle = stringResource(R.string.cost_charges_count, uiState.totalCharges)
-        )
-        SummaryCard(
-            modifier = Modifier.weight(1f),
-            title = stringResource(R.string.cost_energy_added),
-            value = if (hasEnergy) String.format(Locale.getDefault(), "%.1f kWh", uiState.totalEnergy) else stringResource(R.string.analysis_no_records),
-            subtitle = if (hasCost && hasEnergy && uiState.totalEnergy > 0) {
-                formatMoney(currencySymbol, uiState.totalCost / uiState.totalEnergy, 2) + "/kWh"
-            } else {
-                ""
-            }
-        )
+        uiState.totalCost?.takeIf { hasCost }?.let { total ->
+            SummaryCard(Modifier.weight(1f), stringResource(R.string.cost_recorded_manual_total),
+                formatMoney(currencySymbol, total, 2),
+                uiState.averageSessionCost?.let { avg ->
+                    "${stringResource(R.string.cost_average_session)} ${formatMoney(currencySymbol, avg, 2)}"
+                }.orEmpty())
+        }
+        uiState.estimatedCost?.takeIf { hasEstimate }?.let { estimate ->
+            SummaryCard(Modifier.weight(1f), stringResource(R.string.cost_default_rate_estimate),
+                formatMoney(currencySymbol, estimate, 2),
+                stringResource(R.string.cost_estimate_coverage, uiState.estimatedCoverage))
+        }
     }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    if (hasEnergy || hasPair) Row(
+        modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SummaryCard(
-            modifier = Modifier.weight(1f),
-            title = stringResource(R.string.cost_average_session),
-            value = uiState.averageSessionCost?.let { formatMoney(currencySymbol, it, 2) }
-                ?: stringResource(R.string.analysis_no_records),
-            subtitle = if (uiState.manualCostCount > 0) {
-                stringResource(R.string.cost_manual_count, uiState.manualCostCount)
-            } else stringResource(R.string.cost_average_session_hint)
-        )
-        SummaryCard(
-            modifier = Modifier.weight(1f),
-            title = stringResource(R.string.cost_average_kwh),
-            value = if (hasCost && hasEnergy && uiState.totalEnergy > 0) {
-                formatMoney(currencySymbol, uiState.totalCost / uiState.totalEnergy, 2) + "/kWh"
-            } else stringResource(R.string.analysis_no_records),
-            subtitle = stringResource(R.string.cost_average_kwh_hint)
-        )
+        uiState.totalEnergy?.takeIf { hasEnergy }?.let { energy ->
+            SummaryCard(Modifier.weight(1f), stringResource(R.string.cost_energy_added),
+                String.format(Locale.getDefault(), "%.1f kWh", energy), "")
+        }
+        uiState.pairedUnitCost?.takeIf { hasPair }?.let { paired ->
+            SummaryCard(Modifier.weight(1f), stringResource(R.string.cost_paired_battery_unit),
+                formatMoney(currencySymbol, paired, 2) + "/kWh", "")
+        }
     }
+    if (!hasCost && !hasEstimate && !hasEnergy) {
+        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))) {
+            Text(stringResource(R.string.cost_no_paired_values), Modifier.padding(16.dp),
+                style = MaterialTheme.typography.bodyMedium)
+        }
+    } else if (!hasPair && hasCost && hasEnergy) {
+        Text(stringResource(R.string.cost_no_paired_values),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Text(stringResource(R.string.cost_coverage_counts, uiState.costCoverage,
+        uiState.totalCharges, uiState.energyCoverage, uiState.pairedCoverage),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (hasCost || hasEstimate) Text(stringResource(R.string.cost_current_currency_assumption),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
@@ -249,7 +263,7 @@ private fun SummaryCard(
 @Composable
 private fun MonthlyCostChart(monthlyCosts: List<MonthlyCost>) {
     val maxValue = max(
-        monthlyCosts.maxOfOrNull { it.acCost + it.dcCost } ?: 1.0,
+        monthlyCosts.maxOfOrNull { it.acCost + it.dcCost + it.unknownCost } ?: 1.0,
         1.0
     )
 
@@ -269,25 +283,14 @@ private fun MonthlyCostChart(monthlyCosts: List<MonthlyCost>) {
 
                 monthlyCosts.forEachIndexed { index, monthly ->
                     val x = index * (barWidth + 8.dp.toPx())
-                    val totalHeight = ((monthly.acCost + monthly.dcCost) / maxValue * chartHeight).toFloat()
-                    val acHeight = (monthly.acCost / maxValue * chartHeight).toFloat()
-
-                    // DC bar (bottom)
-                    if (monthly.dcCost > 0) {
-                        drawRect(
-                            color = DcColor,
-                            topLeft = Offset(x, chartHeight - totalHeight),
-                            size = Size(barWidth, totalHeight)
-                        )
-                    }
-
-                    // AC bar (top of stacked)
-                    if (monthly.acCost > 0) {
-                        drawRect(
-                            color = AcColor,
-                            topLeft = Offset(x, chartHeight - acHeight),
-                            size = Size(barWidth, acHeight)
-                        )
+                    var top = chartHeight
+                    listOf(monthly.dcCost to DcColor, monthly.acCost to AcColor,
+                        monthly.unknownCost to UnknownCostColor).forEach { (cost, color) ->
+                        if (cost > 0) {
+                            val height = (cost / maxValue * chartHeight).toFloat()
+                            top -= height
+                            drawRect(color, topLeft = Offset(x, top), size = Size(barWidth, height))
+                        }
                     }
                 }
 

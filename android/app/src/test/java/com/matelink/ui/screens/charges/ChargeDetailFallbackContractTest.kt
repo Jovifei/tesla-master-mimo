@@ -17,7 +17,9 @@ class ChargeDetailFallbackContractTest {
             .substringBefore("} else {")
 
         assertTrue(detailFailure.contains("val localSummary = chargeSummaryDao.get(localHistoryCarId, chargeId)"))
-        assertTrue(detailFailure.contains("chargePoints = emptyList()"))
+        assertTrue(detailFailure.contains("localSummary.verifiedDetailIdentity(resolved.context)"))
+        assertTrue(detailFailure.contains("historyDetailStore.readCharge(it)"))
+        assertTrue(detailFailure.contains("chargePoints = pointCache?.detail?.chargePoints ?: emptyList()"))
         assertFalse(source.contains("synthesizeChargePoints"))
         assertFalse(Regex("pointCount\\s*=\\s*20").containsMatchIn(source))
     }

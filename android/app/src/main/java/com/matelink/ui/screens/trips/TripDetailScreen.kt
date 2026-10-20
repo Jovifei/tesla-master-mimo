@@ -82,6 +82,7 @@ import com.matelink.R
 import com.matelink.data.api.models.Units
 import com.matelink.domain.model.Trip
 import com.matelink.domain.model.UnitFormatter
+import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.ui.icons.CustomIcons
 import com.matelink.ui.components.CostDonutStop
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
@@ -212,10 +213,12 @@ fun TripDetailScreen(
                         routeSegments = uiState.routeSegments,
                         markers = uiState.markers,
                         isMapLoading = uiState.isMapLoading,
+                        routeDeferredByBudget = uiState.routeDeferredByBudget,
                         countries = uiState.countries,
                         units = uiState.units,
                         palette = palette,
                         dcChargeIds = uiState.dcChargeIds,
+                        chargeCosts = uiState.chargeCosts,
                         canEdit = uiState.savedTripId != null,
                         weatherPoints = uiState.weatherPoints,
                         onDriveClick = onNavigateToDriveDetail,
@@ -276,10 +279,12 @@ private fun TripDetailContent(
     routeSegments: List<TripRouteSegment>,
     markers: List<TripMapMarker>,
     isMapLoading: Boolean,
+    routeDeferredByBudget: Boolean,
     countries: List<TripCountry>,
     units: Units?,
     palette: CarColorPalette,
     dcChargeIds: Set<Int>,
+    chargeCosts: TripChargeCostProjection?,
     canEdit: Boolean,
     weatherPoints: List<com.matelink.data.repository.TripWeatherPoint>,
     onDriveClick: (driveId: Int) -> Unit,
@@ -317,6 +322,7 @@ private fun TripDetailContent(
             routeSegments = routeSegments,
             markers = markers,
             isMapLoading = isMapLoading,
+            routeDeferredByBudget = routeDeferredByBudget,
             palette = palette,
             dateRangeLabel = dateRangeLabel,
             distanceLabel = distanceLabel,
@@ -337,9 +343,10 @@ private fun TripDetailContent(
             onCountryClick = onCountryClick
         )
 
-        if ((trip.totalChargeCost ?: 0.0) > 0.0) {
+        if (chargeCosts?.totalCost != null) {
             ChargeCostCard(
                 trip = trip,
+                costs = chargeCosts,
                 currencySymbol = currencySymbol,
                 palette = palette,
                 dcChargeIds = dcChargeIds,
@@ -481,12 +488,14 @@ private fun TripDetailContent(
 @Composable
 private fun ChargeCostCard(
     trip: Trip,
+    costs: TripChargeCostProjection,
     currencySymbol: String,
     palette: CarColorPalette,
     dcChargeIds: Set<Int>,
     units: Units?,
     onChargeClick: (chargeId: Int) -> Unit
 ) {
+    val totalCost = costs.totalCost ?: return
     var expanded by remember { mutableStateOf(false) }
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
@@ -494,22 +503,29 @@ private fun ChargeCostCard(
         label = "chevron"
     )
 
-    val costStops = remember(trip, dcChargeIds) {
-        trip.charges
-            .filter { it.cost != null }
-            .map { charge ->
+    val canClassifyEveryStop = remember(costs, dcChargeIds) {
+        costs.pricedCharges.all { item ->
+            item.energyKwh != null && (item.charge.chargeId in dcChargeIds ||
+                item.charge.toAnalysisChargeData().chargeType == "ac")
+        }
+    }
+    val costStops = remember(costs, dcChargeIds, canClassifyEveryStop) {
+        if (!canClassifyEveryStop) emptyList() else
+        costs.pricedCharges
+            .filter { it.cost > 0.0 }
+            .map { (charge, cost, energyKwh) ->
                 CostDonutStop(
                     chargeId = charge.chargeId,
                     label = extractCity(charge.address),
-                    cost = charge.cost!!,
+                    cost = cost,
                     durationMin = charge.durationMin,
-                    energyAddedKwh = charge.energyAdded,
+                    energyAddedKwh = requireNotNull(energyKwh),
                     isDc = charge.chargeId in dcChargeIds
                 )
             }
     }
     val shades = remember(costStops, palette) { computeCostShades(costStops, palette) }
-    val costCharges = remember(trip) { trip.charges.filter { it.cost != null } }
+    val costCharges = costs.pricedCharges
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -550,7 +566,7 @@ private fun ChargeCostCard(
                 )
             }
 
-            if (costStops.isNotEmpty()) {
+            if (costs.allPriced && costStops.isNotEmpty()) {
                 TripCostDonut(
                     stops = costStops,
                     shades = shades,
@@ -558,39 +574,54 @@ private fun ChargeCostCard(
                     currencySymbol = currencySymbol
                 )
 
-                // Always-visible efficiency pills below the donut — the "at-a-glance verdict"
-                // on how expensive the trip was per distance / per energy.
-                val distanceUnit = UnitFormatter.getDistanceUnit(units)
-                val per100 = trip.totalChargeCost?.takeIf { trip.totalDistance > 0.0 }
-                    ?.let { it / trip.totalDistance * 100.0 }
-                val perKwh = trip.totalChargeCost?.takeIf { trip.totalEnergyCharged > 0.0 }
-                    ?.let { it / trip.totalEnergyCharged }
-                if (per100 != null || perKwh != null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
-                    ) {
-                        per100?.let {
-                            EfficiencyPill(
-                                value = "%.2f %s".format(it, currencySymbol),
-                                unit = "/ 100 $distanceUnit",
-                                palette = palette
-                            )
-                        }
-                        perKwh?.let {
-                            EfficiencyPill(
-                                value = "%.2f %s".format(it, currencySymbol),
-                                unit = "/ kWh",
-                                palette = palette
-                            )
-                        }
+            }
+            if (!costs.allPriced || costStops.isEmpty()) {
+                Text(
+                    text = "${stringResource(R.string.cost_recorded_manual_total)}: %.2f %s"
+                        .format(totalCost, currencySymbol),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = stringResource(R.string.cost_coverage_counts, costCharges.size,
+                    trip.charges.size, costs.energyCount, costs.pairedCount),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // Distance needs complete price coverage; kWh uses only priced and
+            // qualified energy from the same charge, never the raw trip total.
+            val distanceUnit = UnitFormatter.getDistanceUnit(units)
+            val per100 = totalCost.takeIf { costs.allPriced && trip.totalDistance > 0.0 }
+                ?.let { it / trip.totalDistance * 100.0 }
+            val perKwh = costs.pairedUnitCost
+            if (per100 != null || perKwh != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                ) {
+                    per100?.let {
+                        EfficiencyPill(
+                            value = "%.2f %s".format(it, currencySymbol),
+                            unit = "/ 100 $distanceUnit",
+                            palette = palette
+                        )
+                    }
+                    perKwh?.let {
+                        EfficiencyPill(
+                            value = "%.2f %s".format(it, currencySymbol),
+                            unit = "/ kWh",
+                            palette = palette
+                        )
                     }
                 }
             }
 
             if (expanded) {
-                costCharges.forEachIndexed { index, charge ->
-                    val shade = shades.getOrNull(index) ?: palette.accent
+                costCharges.forEach { (charge, cost, energyKwh) ->
+                    val shade = shades.getOrNull(costStops.indexOfFirst { it.chargeId == charge.chargeId })
+                        ?: palette.accent
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -624,13 +655,14 @@ private fun ChargeCostCard(
                                         fontWeight = FontWeight.Medium
                                     )
                                     Text(
-                                        text = "+%.1f kWh · %dm".format(charge.energyAdded, charge.durationMin),
+                                        text = energyKwh?.let { "+%.1f kWh · %dm".format(it, charge.durationMin) }
+                                            ?: "— kWh · %dm".format(charge.durationMin),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                                 Text(
-                                    text = "%.2f %s".format(charge.cost, currencySymbol),
+                                    text = "%.2f %s".format(cost, currencySymbol),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = shade
@@ -1049,11 +1081,30 @@ private fun TripMapCard(
     routeSegments: List<TripRouteSegment>,
     markers: List<TripMapMarker>,
     isMapLoading: Boolean,
+    routeDeferredByBudget: Boolean,
     palette: CarColorPalette,
     dateRangeLabel: String,
     distanceLabel: String,
     onChargeClick: (chargeId: Int) -> Unit = {}
 ) {
+    if (routeDeferredByBudget) {
+        Card(modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(CustomIcons.Road, contentDescription = null, tint = palette.accent,
+                    modifier = Modifier.size(24.dp))
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(text = "$dateRangeLabel · $distanceLabel",
+                        style = MaterialTheme.typography.labelMedium)
+                    Text(text = stringResource(R.string.trip_route_deferred_budget),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        return
+    }
     // Bridge: Android View click → Compose state → Compose navigation
     var pendingChargeNav by remember { mutableIntStateOf(0) }
     LaunchedEffect(pendingChargeNav) {

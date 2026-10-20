@@ -230,6 +230,29 @@ class UnifiedHistoryDiscoveryRecoveryTest {
         assertEquals(12.0, stored.toRawAnalysisChargeData().chargeEnergyAdded!!, 0.0)
     }
 
+    @Test fun sameIdTeslaMateDetailSurvivesRealHistoryLoadWithWeakListValue() = runTest {
+        val f = Fixture()
+        val start = "2026-09-29T00:00:00Z"
+        val end = "2026-09-29T00:39:00Z"
+        val raw = ChargeData(1, startDate = start, endDate = end,
+            source = "teslamate_archive", qualityState = "observed",
+            chargeEnergyAdded = 24.0, durationMin = 39)
+        val saved = raw.toSyncSummary(-7)!!.withDetailEvidence(ChargeDetail(
+            1, startDate = start, endDate = end, source = "teslamate_archive",
+            chargeEnergyAdded = 24.02, cost = 27.38
+        ))
+        f.localChargeOverride = listOf(saved)
+        f.fetchCharges = { ApiResult.Success(listOf(raw.copy(chargeEnergyAdded = null))) }
+        f.fetchDrives = { ApiResult.Success(emptyList()) }
+
+        val loaded = (f.repository().load(7) as ApiResult.Success).data
+        assertEquals(1, loaded.charges.size)
+        assertEquals(24.02, loaded.charges.single().batteryInputKwh!!, 0.001)
+        assertEquals(27.38, loaded.charges.single().cost!!, 0.001)
+        assertEquals(24.02, f.persistedCharges.single().toAnalysisChargeData().batteryInputKwh!!, 0.001)
+        assertEquals(24.0, f.persistedCharges.single().toRawAnalysisChargeData().chargeEnergyAdded!!, 0.001)
+    }
+
     @Test fun incompleteUnpersistableHistoricalSessionsRemainVisibleWithoutInventedEndTime() = runTest {
         val f = Fixture()
         f.fetchDrives = { ApiResult.Success(listOf(

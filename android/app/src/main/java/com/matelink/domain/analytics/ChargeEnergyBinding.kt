@@ -1,9 +1,12 @@
 package com.matelink.domain.analytics
 
+import com.matelink.data.api.models.SourceRecordIdentity
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.EnergyContract
+import com.matelink.data.api.models.EnergyMetric
 import com.matelink.data.local.entity.ChargeSummary
+import com.matelink.util.parseIsoInstant
 import java.time.Instant
 
 /** Loss is an AC-to-battery balance, not nominal stored-energy growth. */
@@ -39,25 +42,63 @@ fun ChargeDetail.withQualifiedEnergy(): ChargeDetail = copy(
     cost = cost?.takeIf { it.isFinite() && it >= 0.0 }
 )
 
+private fun sameChargeInstant(first: String?, second: String?): Boolean {
+    val expected = parseIsoInstant(first) ?: return false
+    return expected == parseIsoInstant(second)
+}
+
+/** Optional wire identities are fences, never values inferred from a numeric charge ID.
+ * Both absent retains the established legacy path; one absent cannot inherit known proof.
+ */
+internal fun sameChargeSourceInstance(
+    firstInstance: String?, firstRecord: SourceRecordIdentity, secondInstance: String?, secondRecord: SourceRecordIdentity
+): Boolean = !firstRecord.conflicted && !secondRecord.conflicted && firstInstance?.takeIf(String::isNotBlank) == secondInstance?.takeIf(String::isNotBlank) &&
+    firstRecord.value == secondRecord.value
+
+/** A numeric charge ID is only meaningful within the saved source and session window. */
+internal fun ChargeSummary.acceptsDetail(detail: ChargeDetail): Boolean {
+    val raw = toRawAnalysisChargeData()
+    val legacyRaw = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeCharge)
+    val sameSource = raw.source != null && raw.source == detail.source
+    val oldTeslaMateReceipt = raw.source == null && detail.source == "teslamate_archive" &&
+        legacyRaw != null && legacyRaw.chargeId == chargeId && legacyRaw.source == null &&
+        sameChargeInstant(legacyRaw.startDate, startDate) &&
+        sameChargeInstant(legacyRaw.endDate, endDate)
+    return chargeId == detail.chargeId && (sameSource || oldTeslaMateReceipt) &&
+        sameChargeSourceInstance(raw.sourceInstanceId, raw.sourceRecordIdentity, detail.sourceInstanceId, detail.sourceRecordIdentity) &&
+        sameChargeInstant(startDate, detail.startDate) && sameChargeInstant(endDate, detail.endDate) &&
+        sameChargeInstant(raw.startDate, detail.startDate) && sameChargeInstant(raw.endDate, detail.endDate)
+}
+
+private fun EnergyContract.authoritativeForChargeDetail(source: String?, start: String?, end: String?): Boolean {
+    if (version != 1 || source == null || (batteryInput == null && acInput == null)) return false
+    fun EnergyMetric.validFor(point: String): Boolean {
+        if (unit != "kWh" || method != "session_counter_delta" ||
+            measurementPoint != point || this.source != source ||
+            !sameChargeInstant(startDate, start) || !sameChargeInstant(endDate, end)) return false
+        if (quality == "unknown") return valueKwh == null
+        if (point == "ac_charger_input" &&
+            (chargeMode != "ac" || chargeModeEvidence != "observed_boundary_modes_no_conflict")) return false
+        return valueForWindow(start, end)?.let { it >= 0.0 } == true
+    }
+    return (batteryInput?.validFor("battery_input") != false) &&
+        (acInput?.validFor("ac_charger_input") != false)
+}
+
 fun ChargeSummary.withDetailEvidence(detail: ChargeDetail): ChargeSummary {
-    require(detail.chargeId == chargeId) { "history_detail_id_mismatch" }
+    require(acceptsDetail(detail)) { "history_detail_scope_or_window_mismatch" }
     val rawPrevious = toRawAnalysisChargeData()
     val current = toAnalysisChargeData()
-    require(rawPrevious.source == null || detail.source == null ||
-        rawPrevious.source == detail.source) { "history_detail_source_mismatch" }
     val nextStart = detail.startDate ?: startDate
     val nextEnd = detail.endDate ?: endDate
-    fun sameInstant(a: String?, b: String?): Boolean {
-        val left = a?.let { runCatching { Instant.parse(it) }.getOrNull() }
-        val right = b?.let { runCatching { Instant.parse(it) }.getOrNull() }
-        return left != null && left == right
-    }
-    val sameWindow = sameInstant(nextStart, startDate) && sameInstant(nextEnd, endDate)
+    val sameWindow = sameChargeInstant(nextStart, startDate) && sameChargeInstant(nextEnd, endDate)
     val oldProven = current.energyContract?.takeIf {
         sameWindow && (detail.source == null || detail.source == rawPrevious.source) &&
             (current.batteryInputKwh != null || current.inputEnergyKwh != null)
     }
-    val selectedProof = detail.energyContract ?: (
+    val selectedProof = detail.energyContract?.takeIf {
+        it.authoritativeForChargeDetail(rawPrevious.source, nextStart, nextEnd)
+    } ?: (
         if (sameWindow) HistorySummaryEvidenceCodec.detailContract(apiEvidence)
             ?: oldProven else null
     ) ?: EnergyContract()
@@ -78,6 +119,7 @@ fun ChargeSummary.withDetailEvidence(detail: ChargeDetail): ChargeSummary {
         chargeType = detail.chargeType ?: current.chargeType,
         cost = (detail.cost ?: current.cost)?.takeIf { it.isFinite() && it >= 0.0 },
         source = detail.source ?: rawPrevious.source,
+        sourceInstanceId = detail.sourceInstanceId, sourceId = detail.sourceId, sourceRecordId = detail.sourceRecordId,
         chargeEnergyAdded = null, chargeEnergyUsed = null, energyContract = null
     )
     val receipt = HistorySummaryEvidenceCodec.withChargeDetail(
@@ -85,7 +127,9 @@ fun ChargeSummary.withDetailEvidence(detail: ChargeDetail): ChargeSummary {
         detail.chargeEnergyUsed, presentation.source,
         nextStart, nextEnd, carId, presentation
     )
-    val qualified = presentation.copy(energyContract = selectedProof).withQualifiedEnergy()
+    val qualified = copy(
+        startDate = nextStart, endDate = nextEnd, apiEvidence = receipt
+    ).toAnalysisChargeData()
     return copy(
         startDate = nextStart ?: startDate, endDate = nextEnd ?: endDate,
         address = presentation.address.orEmpty(),

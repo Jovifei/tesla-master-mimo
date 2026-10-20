@@ -2,6 +2,13 @@ package com.matelink.ui.screens.range
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.matelink.data.api.models.BatteryHealth
+import com.matelink.data.local.VehicleContext
+import com.matelink.data.local.VehicleContextRepository
+import com.matelink.data.local.HistoryIdentityUnavailableException
+import com.matelink.domain.analytics.AnalysisHistorySnapshot
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.driveDistanceKm
 import com.matelink.data.repository.ApiResult
@@ -23,6 +30,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.collect
 import java.time.LocalDate
 import com.matelink.util.parseIsoInstant
 import javax.inject.Inject
@@ -63,11 +76,34 @@ data class RangeUiState(
     val trips: List<RangeTrip> = emptyList()
 )
 
+internal data class RangePageIdentity(val context: VehicleContext, val stillCurrent: () -> Boolean)
+
+internal interface RangePageSource {
+    val scopeChanges: Flow<Unit>
+    suspend fun identity(carId: Int): RangePageIdentity
+    suspend fun history(carId: Int): ApiResult<AnalysisHistorySnapshot>
+    suspend fun health(carId: Int): ApiResult<BatteryHealth>
+    suspend fun status(carId: Int): ApiResult<CarStatusWithUnits>
+}
+
 @HiltViewModel
-class RangeViewModel @Inject constructor(
-    private val historyRepository: AnalysisHistoryRepository,
-    private val teslamateRepository: TeslamateRepository
-) : ViewModel() {
+class RangeViewModel internal constructor(private val source: RangePageSource) : ViewModel() {
+    @Inject constructor(
+        historyRepository: AnalysisHistoryRepository,
+        teslamateRepository: TeslamateRepository,
+        vehicleContexts: VehicleContextRepository
+    ) : this(object : RangePageSource {
+        override val scopeChanges = vehicleContexts.historyScopeChanges.map { Unit }
+        override suspend fun identity(carId: Int): RangePageIdentity {
+            val scope = vehicleContexts.captureReadScope()
+            val context = vehicleContexts.cachedContextForRemote(carId, scope)
+                ?: throw HistoryIdentityUnavailableException()
+            return RangePageIdentity(context) { vehicleContexts.isHistoryContextCurrentNow(scope, context) }
+        }
+        override suspend fun history(carId: Int) = historyRepository.load(carId)
+        override suspend fun health(carId: Int) = teslamateRepository.getBatteryHealth(carId)
+        override suspend fun status(carId: Int) = teslamateRepository.getCarStatus(carId)
+    })
 
     private val _uiState = MutableStateFlow(RangeUiState())
     val uiState: StateFlow<RangeUiState> = _uiState.asStateFlow()
@@ -84,22 +120,47 @@ class RangeViewModel @Inject constructor(
     private var customStart: LocalDate? = null
     private var customEnd: LocalDate? = null
 
+    private var loadGeneration = 0L
+    private var loadJob: Job? = null
+    private var activeIdentity: RangePageIdentity? = null
+
+    init {
+        viewModelScope.launch {
+            source.scopeChanges.collect {
+                if (activeIdentity?.stillCurrent() == false) {
+                    clearHistory()
+                    _uiState.value = RangeUiState(selectedWindow = _uiState.value.selectedWindow)
+                    loadRangeData()
+                }
+            }
+        }
+    }
+
     fun setCarId(id: Int) {
-        if (carId != id) {
+        if (carId != id || activeIdentity?.stillCurrent() == false) {
             carId = id
+            clearHistory()
+            _uiState.value = RangeUiState(selectedWindow = _uiState.value.selectedWindow)
             loadRangeData()
         }
     }
 
     fun refresh() {
         carId?.let {
-            _uiState.update { state -> state.copy(isRefreshing = true) }
+            if (activeIdentity?.stillCurrent() != true) {
+                clearHistory()
+                _uiState.value = RangeUiState(selectedWindow = _uiState.value.selectedWindow, isRefreshing = true)
+            } else _uiState.update { state -> state.copy(isRefreshing = true) }
             loadRangeData()
         }
     }
 
     fun clearError() {
-        _uiState.update { it.copy(error = null) }
+        if (activeIdentity?.stillCurrent() != true) {
+            clearHistory()
+            _uiState.value = RangeUiState(isLoading = loadJob?.isActive == true,
+                selectedWindow = _uiState.value.selectedWindow, noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
+        } else _uiState.update { it.copy(error = null) }
     }
 
     fun selectWindow(window: AnalysisWindow) {
@@ -116,62 +177,92 @@ class RangeViewModel @Inject constructor(
         recalculate(AnalysisWindow.CUSTOM)
     }
 
+    private fun clearHistory() {
+        allDrives = emptyList()
+        allTrips = emptyList()
+        historyRecordCount = 0
+        historyReason = null
+        usableEnergyKwh = null
+        ratedRangeKm = null
+        currentTemperatureC = null
+        currentSpeedKmh = null
+    }
+
     private fun loadRangeData() {
         val id = carId ?: return
-
-        viewModelScope.launch {
-            val state = _uiState.value
-            if (!state.isRefreshing) {
-                _uiState.update { it.copy(isLoading = true) }
+        val generation = ++loadGeneration
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            val execution = currentCoroutineContext()
+            var identity: RangePageIdentity? = null
+            fun requireCurrent() {
+                execution.ensureActive()
+                if (generation != loadGeneration || carId != id || identity?.stillCurrent() != true)
+                    throw HistoryIdentityUnavailableException()
             }
-
-            when (val result = historyRepository.load(id)) {
-                is ApiResult.Success -> {
-                    allDrives = result.data.drives
-                    historyRecordCount = result.data.drives.size
-                    historyReason = result.data.coverage.reason
-                    allTrips = result.data.drives
-                        .mapNotNull { drive -> drive.toRangeTrip() }
-                        .sortedByDescending { it.startDate }
-
-                    val health = runCatching { teslamateRepository.getBatteryHealth(id) }
-                        .getOrNull()
-                        ?.let { it as? ApiResult.Success }
-                        ?.data
-                    val status = runCatching { teslamateRepository.getCarStatus(id) }
-                        .getOrNull()
-                        ?.let { it as? ApiResult.Success }
-                        ?.data
-                    val current = rangeStatusInputs(status)
-                    usableEnergyKwh = health?.currentCapacity?.takeIf { it.isFinite() && it > 0.0 }
-                    ratedRangeKm = current.ratedRangeKm
-                        ?.takeIf { it.isFinite() && it > 0.0 }
-                    currentTemperatureC = status?.status?.outsideTemp
-                    currentSpeedKmh = current.speedKmh
-                    recalculate(_uiState.value.selectedWindow)
-                    _uiState.update {
-                        it.copy(
-                            isRefreshing = false,
-                            error = null,
-                            historyFreshness = result.data.freshness,
-                            noDataReason = historyReason
-                        )
+            try {
+                if (!_uiState.value.isRefreshing) _uiState.update { it.copy(isLoading = true) }
+                val proof = source.identity(id)
+                identity = proof
+                requireCurrent()
+                activeIdentity = proof
+                val result = source.history(id)
+                requireCurrent()
+                when (result) {
+                    is ApiResult.Success -> {
+                        // A history response can discover a replacement vehicle under the same remote ID.
+                        if (result.data.context != proof.context) throw HistoryIdentityUnavailableException()
+                        val health = try {
+                            (source.health(id) as? ApiResult.Success)?.data
+                        } catch (e: CancellationException) { throw e }
+                        catch (_: Exception) { null }
+                        requireCurrent()
+                        val status = try {
+                            (source.status(id) as? ApiResult.Success)?.data
+                        } catch (e: CancellationException) { throw e }
+                        catch (_: Exception) { null }
+                        requireCurrent()
+                        val current = rangeStatusInputs(status)
+                        // Commit private caches and visible state together only after all awaited reads qualify.
+                        val drives = result.data.drives
+                        val trips = drives.mapNotNull { it.toRangeTrip() }.sortedByDescending { it.startDate }
+                        requireCurrent()
+                        allDrives = drives
+                        historyRecordCount = drives.size
+                        historyReason = result.data.coverage.reason
+                        allTrips = trips
+                        usableEnergyKwh = health?.currentCapacity?.takeIf { it.isFinite() && it > 0.0 }
+                        ratedRangeKm = current.ratedRangeKm?.takeIf { it.isFinite() && it > 0.0 }
+                        currentTemperatureC = status?.status?.outsideTemp
+                        currentSpeedKmh = current.speedKmh
+                        recalculate(_uiState.value.selectedWindow)
+                        requireCurrent()
+                        _uiState.update { it.copy(isRefreshing = false, error = null, historyFreshness = result.data.freshness) }
+                    }
+                    is ApiResult.Error -> _uiState.update {
+                        it.copy(isLoading = false, isRefreshing = false, error = result.message)
                     }
                 }
-                is ApiResult.Error -> {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            isRefreshing = false,
-                            error = result.message
-                        )
-                    }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                if (generation == loadGeneration && execution.isActive) {
+                    clearHistory()
+                    _uiState.value = RangeUiState(isLoading = false,
+                        selectedWindow = _uiState.value.selectedWindow, noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
                 }
             }
         }
     }
 
     private fun recalculate(window: AnalysisWindow) {
+        // Window changes also publish cached data, so they need the same synchronous identity fence.
+        if (activeIdentity?.stillCurrent() != true) {
+            clearHistory()
+            _uiState.value = RangeUiState(isLoading = loadJob?.isActive == true,
+                selectedWindow = window, noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
+            return
+        }
         val dated = allTrips.mapNotNull { trip -> parseDate(trip.startDate)?.let { DatedRangeTrip(it, trip) } }
         val selected = selectWindow(dated, window, LocalDate.now(), customStart, customEnd).map { it.trip }
         val noDataReason = when {
@@ -182,18 +273,29 @@ class RangeViewModel @Inject constructor(
         }
         fun avg(items: List<RangeTrip>): Double? = items.takeIf { it.isNotEmpty() }?.map { it.deviationPercent }?.average()
         val (lowSpeedDeviation, highSpeedDeviation) = rangeSpeedDeviations(selected)
+        val personalized = buildPersonalizedRangeEstimate()
+        val deviation = avg(selected)
+        val distance = selected.sumOf { it.actualDistanceKm }
+        val summer = avg(selectWindow(dated, AnalysisWindow.SUMMER, LocalDate.now()).map { it.trip })
+        val winter = avg(selectWindow(dated, AnalysisWindow.WINTER, LocalDate.now()).map { it.trip })
+        if (activeIdentity?.stillCurrent() != true) {
+            clearHistory()
+            _uiState.value = RangeUiState(isLoading = false, selectedWindow = window,
+                noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
+            return
+        }
         _uiState.update {
             it.copy(
                 isLoading = false,
                 noDataReason = noDataReason,
-                avgDeviationPercent = avg(selected),
+                avgDeviationPercent = deviation,
                 tripCount = selected.size,
-                totalDistanceKm = selected.sumOf { trip -> trip.actualDistanceKm },
-                personalizedRange = buildPersonalizedRangeEstimate(),
+                totalDistanceKm = distance,
+                personalizedRange = personalized,
                 ratedRangeKm = ratedRangeKm,
                 trips = selected,
-                summerDeviationPercent = avg(selectWindow(dated, AnalysisWindow.SUMMER, java.time.LocalDate.now()).map { it.trip }),
-                winterDeviationPercent = avg(selectWindow(dated, AnalysisWindow.WINTER, java.time.LocalDate.now()).map { it.trip }),
+                summerDeviationPercent = summer,
+                winterDeviationPercent = winter,
                 lowSpeedDeviationPercent = lowSpeedDeviation,
                 highSpeedDeviationPercent = highSpeedDeviation
             )

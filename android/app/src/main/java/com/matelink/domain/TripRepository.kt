@@ -55,6 +55,17 @@ class TripRepository @Inject constructor(
             .sortedByDescending { it.startDate }
     }
 
+    /** Detail fallback: show saved and newly detectable trips without changing saved rows. */
+    suspend fun getSavedTripsReadOnly(carId: Int): List<Trip> {
+        val drives = driveSummaryDao.getAllChronological(carId)
+        val charges = chargeSummaryDao.getAllForCar(carId)
+        val saved = savedTripDao.getAllWithLegs(carId)
+        val detected = detectUnsavedTrips(carId, drives,
+            aggregateDao.getDcChargeSummaries(carId), saved)
+        return (buildTripsFromSaved(saved, drives, charges) + detected)
+            .sortedByDescending { it.startDate }
+    }
+
     /**
      * Heal DBs polluted by beta1's detection bug, which could persist several saved trips
      * with the same drive set. When duplicates exist, keep the one most worth preserving
@@ -405,6 +416,29 @@ class TripRepository @Inject constructor(
         dcCharges: List<ChargeSummary>
     ) {
         val existing = savedTripDao.getAllWithLegs(carId)
+        val detected = detectUnsavedTrips(carId, drives, dcCharges, existing)
+        if (detected.isEmpty()) return
+
+        val now = System.currentTimeMillis()
+        for (trip in detected) {
+            savedTripDao.insertTripWithLegs(
+                trip = SavedTrip(
+                    carId = carId,
+                    name = null,
+                    source = SavedTrip.SOURCE_AUTO_DETECTED,
+                    createdAt = now,
+                    updatedAt = now
+                ),
+                legs = { tripId -> buildChronologicalLegs(tripId, trip) }
+            )
+        }
+    }
+
+    /** Identical suppression/leg rules for list persistence and detail's memory-only read. */
+    private suspend fun detectUnsavedTrips(
+        carId: Int, drives: List<DriveSummary>, dcCharges: List<ChargeSummary>,
+        existing: List<SavedTripWithLegs>
+    ): List<Trip> {
         val existingFingerprints = existing.map { swl ->
             computeFingerprint(swl.driveIds())
         }.toSet()
@@ -421,25 +455,8 @@ class TripRepository @Inject constructor(
         val freeDrives = drives.filter { it.driveId !in usedDriveIds }
         val freeDcCharges = dcCharges.filter { it.chargeId !in usedChargeIds }
 
-        val detected = tripDetector.detectTrips(freeDrives, freeDcCharges)
-        if (detected.isEmpty()) return
-
-        val now = System.currentTimeMillis()
-        for (trip in detected) {
-            val fp = computeFingerprint(trip)
-            if (fp in suppressed) continue
-
-            savedTripDao.insertTripWithLegs(
-                trip = SavedTrip(
-                    carId = carId,
-                    name = null,
-                    source = SavedTrip.SOURCE_AUTO_DETECTED,
-                    createdAt = now,
-                    updatedAt = now
-                ),
-                legs = { tripId -> buildChronologicalLegs(tripId, trip) }
-            )
-        }
+        return tripDetector.detectTrips(freeDrives, freeDcCharges)
+            .filter { computeFingerprint(it) !in suppressed }
     }
 
     private fun buildChronologicalLegs(tripId: Long, trip: Trip): List<SavedTripLeg> {

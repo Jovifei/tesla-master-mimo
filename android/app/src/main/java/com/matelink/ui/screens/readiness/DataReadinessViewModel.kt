@@ -202,6 +202,12 @@ class DataReadinessViewModel @Inject constructor(
                 loadedCar = car
                 val context = car?.let { vehicleContextRepository.resolve(it) }
                 if (!current()) return@launch
+                // Resolving the authenticated vehicle may populate the local
+                // identity cache. Capture its evidence again under the same scope.
+                val refreshedSession = diagnosticSource.capture(carId)
+                if (!current()) return@launch
+                diagnosticSession = refreshedSession
+                if (!current()) return@launch
                 val currentOdometer = (repository.getCarStatus(carId) as? ApiResult.Success)
                     ?.data?.status?.odometer
                 if (!current()) return@launch
@@ -258,15 +264,19 @@ class DataReadinessViewModel @Inject constructor(
                 }
                 val currentPairing = _uiState.value.pairing
                 val retryAfterExternalPairing = retryTelemetryAfterExternalPairing
+                val backendSetupInProgress = currentPairing?.status?.lowercase() in
+                    setOf("configuring", "waiting_vehicle", "collecting", "key_confirmed")
                 if (retryAfterExternalPairing) retryTelemetryAfterExternalPairing = false
                 if (
                     isCurrentLoad(generation, carId) &&
-                    (retryAfterExternalPairing || shouldAutoConfigureTelemetry(currentPairing, _uiState.value.telemetryErrorCode)) &&
+                    retryAfterExternalPairing &&
+                    shouldAutoConfigureTelemetry(currentPairing, _uiState.value.telemetryErrorCode) &&
                     !_uiState.value.isConfiguringTelemetry &&
                     !_uiState.value.isTelemetryActivationPending
                 ) {
                     configureTelemetry()
-                } else if (currentPairing != null && shouldObserveAutomaticSetup(ApiResult.Success(currentPairing))) {
+                } else if ((retryAfterExternalPairing || previous.isTelemetryActivationPending || backendSetupInProgress) &&
+                    currentPairing != null && shouldObserveAutomaticSetup(ApiResult.Success(currentPairing))) {
                     _uiState.value = _uiState.value.copy(isTelemetryActivationPending = true)
                     if (pageIsActive) startTelemetryPolling(carId)
                 }
