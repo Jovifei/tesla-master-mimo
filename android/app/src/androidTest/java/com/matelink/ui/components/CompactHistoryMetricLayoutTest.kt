@@ -69,6 +69,54 @@ class CompactHistoryMetricLayoutTest {
         }
     }
 
+    @Test fun regularPhoneDoesNotClipEnglishUnknownDriveSummary() {
+        compose.setContent {
+            MateLinkTheme {
+                Box(Modifier.width(336.dp)) {
+                    CompactHistoryMetricStrip(
+                        listOf("Trips", "Distance", "Duration", "Max Speed").mapIndexed { i, label ->
+                            TelemetryMetricSpec(Icons.Default.Speed, label,
+                                listOf("2", "30.0", "55", "Not available")[i],
+                                MaterialTheme.colorScheme.primary,
+                                unit = listOf("trips", "km", "min", "km/h")[i])
+                        }, numberFontSize = 20.sp
+                    )
+                }
+            }
+        }
+        val row = compose.onNodeWithTag("history-metric-row").getUnclippedBoundsInRoot()
+        repeat(4) { i ->
+            val node = compose.onNodeWithTag("history-metric-value-$i", useUnmergedTree = true)
+            val bounds = node.getUnclippedBoundsInRoot()
+            assertTrue("drive summary $i is outside regular phone width: $bounds row=$row",
+                bounds.right.value <= row.right.value + 0.5f)
+        }
+    }
+
+    @Test fun regularPhoneDoesNotClipEnglishUnknownChargeSummary() {
+        compose.setContent {
+            MateLinkTheme {
+                Box(Modifier.width(336.dp)) {
+                    CompactHistoryMetricStrip(
+                        listOf("Sessions", "Energy", "Cost", "Avg/Charge").mapIndexed { i, label ->
+                            TelemetryMetricSpec(Icons.Default.Speed, label,
+                                listOf("1", "13", "Not available", "Not available")[i],
+                                MaterialTheme.colorScheme.primary,
+                                unit = listOf("trips", "kWh", "", "")[i])
+                        }, numberFontSize = 20.sp
+                    )
+                }
+            }
+        }
+        val row = compose.onNodeWithTag("history-metric-row").getUnclippedBoundsInRoot()
+        repeat(4) { i ->
+            val node = compose.onNodeWithTag("history-metric-value-$i", useUnmergedTree = true)
+            val bounds = node.getUnclippedBoundsInRoot()
+            assertTrue("charge summary $i is outside regular phone width: $bounds row=$row",
+                bounds.right.value <= row.right.value + 0.5f)
+        }
+    }
+
     @Test fun historyKeepsOneShortRowAndCompleteUnitsAtLargeText() {
         val fontSize = mutableStateOf(18)
         val width = mutableStateOf(320)

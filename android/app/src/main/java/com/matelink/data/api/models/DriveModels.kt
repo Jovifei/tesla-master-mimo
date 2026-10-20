@@ -45,8 +45,10 @@ data class DriveData(
     @Json(name = "source_instance_id") val sourceInstanceId: String? = null,
     @Json(name = "source_id") val sourceId: String? = null,
     /** Same-response metadata, persisted separately from the raw receipt. */
-    @Json(ignore = true) val lengthUnit: String? = null
+    @Json(ignore = true) val lengthUnit: String? = null,
+    @Json(name = "source_record_id") val sourceRecordId: String? = null
 ) {
+    val sourceRecordIdentity: SourceRecordIdentity get() = resolveSourceRecordIdentity(sourceId, sourceRecordId)
     val id: Int get() = driveId
     val hasKnownLengthUnit: Boolean get() = knownDriveLengthUnit(lengthUnit)
     val distance: Double? get() = odometerDetails?.distance?.takeIf { hasKnownLengthUnit }
@@ -58,12 +60,13 @@ data class DriveData(
     val startRatedRangeKm: Double? get() = driveDistanceKm(rangeRated?.startRange, lengthUnit)
     val endRatedRangeKm: Double? get() = driveDistanceKm(rangeRated?.endRange, lengthUnit)
     // Explicit unknown/unsupported contracts must not fall back to an old scalar.
-    val netEnergyKwh: Double? get() = if (energyContract != null)
+    val netEnergyKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else if (energyContract != null)
         energyContract.netValueForWindow(startDate, endDate)
             ?.takeIf { source == null || energyContract.netEnergy?.source == source }
         else energyConsumedNet?.takeIf { it.isFinite() && legacyScalarEnergyAllowed(source) }
     val efficiencyWhKm: Double?
         get() {
+            if (sourceRecordIdentity.conflicted) return null
             val dist = distanceKm?.takeIf { it.isFinite() && it > 0.0 } ?: return null
             val consumed = netEnergyKwh
             if (consumed != null) return (consumed / dist * 1000.0).takeIf(Double::isFinite)
@@ -142,8 +145,10 @@ data class DriveDetail(
     @Json(name = "energy_contract") val energyContract: EnergyContract? = null,
     @Json(name = "source_instance_id") val sourceInstanceId: String? = null,
     @Json(name = "source_id") val sourceId: String? = null,
-    @Json(ignore = true) val lengthUnit: String? = null
+    @Json(ignore = true) val lengthUnit: String? = null,
+    @Json(name = "source_record_id") val sourceRecordId: String? = null
 ) {
+    val sourceRecordIdentity: SourceRecordIdentity get() = resolveSourceRecordIdentity(sourceId, sourceRecordId)
     val id: Int get() = driveId
     val hasKnownLengthUnit: Boolean get() = knownDriveLengthUnit(lengthUnit)
     val distance: Double? get() = odometerDetails?.distance?.takeIf { hasKnownLengthUnit }
@@ -152,7 +157,7 @@ data class DriveDetail(
     val speedAvgKmh: Double? get() = driveDistanceKm(speedAvg, lengthUnit)
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
-    val netEnergyKwh: Double? get() = if (energyContract != null)
+    val netEnergyKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else if (energyContract != null)
         energyContract.netValueForWindow(startDate, endDate)
             ?.takeIf { source == null || energyContract.netEnergy?.source == source }
         else energyConsumedNet?.takeIf { it.isFinite() && legacyScalarEnergyAllowed(source) }

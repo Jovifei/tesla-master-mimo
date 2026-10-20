@@ -1,5 +1,6 @@
 package com.matelink.data.repository
 
+import com.matelink.data.api.models.resolveSourceRecordIdentity
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.local.VehicleContext
@@ -35,7 +36,7 @@ class HistoryDetailIdentity private constructor(
         fun create(
             context: VehicleContext, kind: String, recordId: Int,
             source: String?, sourceInstanceId: String?, startDate: String?, endDate: String?,
-            sourceId: String? = null
+            sourceId: String? = null, sourceRecordId: String? = null
         ): HistoryDetailIdentity {
             require(kind == CHARGE || kind == DRIVE)
             require(recordId >= 0 && context.stableIdentity.isNotBlank())
@@ -46,7 +47,9 @@ class HistoryDetailIdentity private constructor(
             val sourceKey = source?.trim().orEmpty()
             require(sourceKey.isNotEmpty()) { "detail_source_missing" }
             val instanceKey = sourceInstanceId?.trim().orEmpty()
-            val sourceIdKey = sourceId?.trim().orEmpty()
+            val record = resolveSourceRecordIdentity(sourceId, sourceRecordId)
+            require(!record.conflicted) { "detail_source_record_conflict" }
+            val sourceIdKey = record.value?.trim().orEmpty()
             val key = digest(context.localHistoryCarId.toString(), scope, kind, recordId.toString(),
                 sourceKey, instanceKey, sourceIdKey, start.toString(), end.toString())
             return HistoryDetailIdentity(context.localHistoryCarId, scope, kind, recordId,
@@ -59,12 +62,14 @@ class HistoryDetailIdentity private constructor(
     }
 
     fun matches(id: Int, source: String?, instanceId: String?, start: String?, end: String?,
-                sourceId: String? = null): Boolean =
-        recordId == id && sourceKey == source?.trim().orEmpty() &&
+                sourceId: String? = null, sourceRecordId: String? = null): Boolean {
+        val record = resolveSourceRecordIdentity(sourceId, sourceRecordId)
+        return !record.conflicted && recordId == id && sourceKey == source?.trim().orEmpty() &&
             sourceInstanceKey == instanceId?.trim().orEmpty() &&
-            sourceIdKey == sourceId?.trim().orEmpty() &&
+            sourceIdKey == record.value?.trim().orEmpty() &&
             parseIsoInstant(start)?.toString() == startInstant &&
             parseIsoInstant(end)?.toString() == endInstant
+    }
 }
 
 /** The identity comes from the saved list receipt, never from an unverified detail alone. */
@@ -74,7 +79,7 @@ fun ChargeSummary.verifiedDetailIdentity(context: VehicleContext): HistoryDetail
     if (raw.chargeId != chargeId || parseIsoInstant(raw.startDate) != parseIsoInstant(startDate) ||
         parseIsoInstant(raw.endDate) != parseIsoInstant(endDate)) return null
     return runCatching { HistoryDetailIdentity.create(context, HistoryDetailIdentity.CHARGE,
-        chargeId, raw.source, raw.sourceInstanceId, startDate, endDate, raw.sourceId) }.getOrNull()
+        chargeId, raw.source, raw.sourceInstanceId, startDate, endDate, raw.sourceId, raw.sourceRecordId) }.getOrNull()
 }
 
 fun DriveSummary.verifiedDetailIdentity(context: VehicleContext): HistoryDetailIdentity? {
@@ -83,7 +88,7 @@ fun DriveSummary.verifiedDetailIdentity(context: VehicleContext): HistoryDetailI
     if (raw.driveId != driveId || parseIsoInstant(raw.startDate) != parseIsoInstant(startDate) ||
         parseIsoInstant(raw.endDate) != parseIsoInstant(endDate)) return null
     return runCatching { HistoryDetailIdentity.create(context, HistoryDetailIdentity.DRIVE,
-        driveId, raw.source, raw.sourceInstanceId, startDate, endDate, raw.sourceId) }.getOrNull()
+        driveId, raw.source, raw.sourceInstanceId, startDate, endDate, raw.sourceId, raw.sourceRecordId) }.getOrNull()
 }
 
 /** A single old-style 2xx detail response proves receipt delivery, not provider-total coverage. */
@@ -125,7 +130,7 @@ class HistoryDetailRepository(
         ensureCurrent: suspend () -> Unit = {}
     ): HistoryDetailWriteResult {
         if (identity.kind != HistoryDetailIdentity.CHARGE || !identity.matches(detail.chargeId,
-                detail.source, detail.sourceInstanceId, detail.startDate, detail.endDate, detail.sourceId))
+                detail.source, detail.sourceInstanceId, detail.startDate, detail.endDate, detail.sourceId, detail.sourceRecordId))
             return HistoryDetailWriteResult.Rejected("detail_identity_mismatch")
         val encoded = try { codec.encodeCharge(detail, limits) }
             catch (e: CancellationException) { throw e }
@@ -145,7 +150,7 @@ class HistoryDetailRepository(
         ensureCurrent: suspend () -> Unit = {}
     ): HistoryDetailWriteResult {
         if (identity.kind != HistoryDetailIdentity.DRIVE || !identity.matches(detail.driveId,
-                detail.source, detail.sourceInstanceId, detail.startDate, detail.endDate, detail.sourceId))
+                detail.source, detail.sourceInstanceId, detail.startDate, detail.endDate, detail.sourceId, detail.sourceRecordId))
             return HistoryDetailWriteResult.Rejected("detail_identity_mismatch")
         val encoded = try { codec.encodeDrive(detail, limits) }
             catch (e: CancellationException) { throw e }
@@ -222,7 +227,7 @@ class HistoryDetailRepository(
         }
         val detail = result.detail ?: return result
         return if (identity.matches(detail.chargeId, detail.source, detail.sourceInstanceId,
-                detail.startDate, detail.endDate, detail.sourceId)) result
+                detail.startDate, detail.endDate, detail.sourceId, detail.sourceRecordId)) result
             else result.copy(detail = null, reason = "detail_header_identity_mismatch")
     }
 
@@ -232,7 +237,7 @@ class HistoryDetailRepository(
         }
         val detail = result.detail ?: return result
         return if (identity.matches(detail.driveId, detail.source, detail.sourceInstanceId,
-                detail.startDate, detail.endDate, detail.sourceId)) result
+                detail.startDate, detail.endDate, detail.sourceId, detail.sourceRecordId)) result
             else result.copy(detail = null, reason = "detail_header_identity_mismatch")
     }
 

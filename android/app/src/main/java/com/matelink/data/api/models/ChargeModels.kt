@@ -38,14 +38,16 @@ data class ChargeData(
     @Json(name = "charge_type") val chargeType: String? = null,
     @Json(name = "source_instance_id") val sourceInstanceId: String? = null,
     @Json(name = "source_id") val sourceId: String? = null,
-    @Json(name = "currency_code") val currencyCode: String? = null
+    @Json(name = "currency_code") val currencyCode: String? = null,
+    @Json(name = "source_record_id") val sourceRecordId: String? = null
 ) {
+    val sourceRecordIdentity: SourceRecordIdentity get() = resolveSourceRecordIdentity(sourceId, sourceRecordId)
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
     val startRatedRangeKm: Double? get() = rangeRated?.startRange
     val endRatedRangeKm: Double? get() = rangeRated?.endRange
-    val batteryInputKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate, "battery_input", source)
-    val inputEnergyKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate, "ac_charger_input", source)
+    val batteryInputKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate, "battery_input", source)
+    val inputEnergyKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate, "ac_charger_input", source)
 }
 
 @JsonClass(generateAdapter = true)
@@ -114,14 +116,16 @@ data class ChargeDetail(
     @Json(name = "charge_type") val chargeType: String? = null,
     @Json(name = "source_instance_id") val sourceInstanceId: String? = null,
     @Json(name = "source_id") val sourceId: String? = null,
-    @Json(name = "currency_code") val currencyCode: String? = null
+    @Json(name = "currency_code") val currencyCode: String? = null,
+    @Json(name = "source_record_id") val sourceRecordId: String? = null
 ) {
+    val sourceRecordIdentity: SourceRecordIdentity get() = resolveSourceRecordIdentity(sourceId, sourceRecordId)
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
     val currentBatteryLevel: Int? get() = batteryDetails?.currentBatteryLevel
     val currentOrEndBatteryLevel: Int? get() = currentBatteryLevel ?: endBatteryLevel
-    val batteryInputKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate, "battery_input", source)
-    val inputEnergyKwh: Double? get() = qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate, "ac_charger_input", source)
+    val batteryInputKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate, "battery_input", source)
+    val inputEnergyKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate, "ac_charger_input", source)
 }
 
 /** An explicit unknown contract must never resurrect a historical scalar. */

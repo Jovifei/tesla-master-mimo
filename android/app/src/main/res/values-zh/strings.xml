@@ -1306,8 +1306,13 @@
     <string name="total_cost">总费用</string>
     <string name="total_energy">充电量</string>
     <string name="total_sessions">充电次数</string>
+    <string name="summary_sessions_compact">充电次数</string>
+    <string name="summary_avg_charge_compact">单次均价</string>
+    <string name="charge_session_unit">次</string>
+    <string name="charge_sessions_unit">次</string>
     <string name="total_time">总时间</string>
     <string name="total_trips">总行程数</string>
+    <string name="summary_trips_compact">行程</string>
     <string name="trip">行程</string>
     <string name="unknown_location">未知位置</string>
     <string name="used">已用</string>

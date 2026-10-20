@@ -363,6 +363,7 @@ internal object HistorySummaryEvidenceCodec {
         e.detailDrivePresentation?.copy(lengthUnit = e.detailDriveLengthUnit)?.takeIf { p ->
             sourceRecord != null && sourceRecord.driveId == driveId &&
             sourceRecord.source == source &&
+            sameChargeSourceInstance(sourceRecord.sourceInstanceId, sourceRecord.sourceRecordIdentity, p.sourceInstanceId, p.sourceRecordIdentity) &&
             e.detailScopeCarId == carId && p.driveId == driveId &&
                 p.energyConsumedNet == null && p.consumptionNet == null &&
                 p.energyContract == null && (source == null || source == p.source) &&
@@ -382,7 +383,7 @@ internal object HistorySummaryEvidenceCodec {
         e.detailChargePresentation?.takeIf { p ->
             sourceRecord != null && sourceRecord.chargeId == chargeId &&
             sourceRecord.source == source &&
-            sameChargeSourceInstance(sourceRecord.sourceInstanceId, sourceRecord.sourceId, p.sourceInstanceId, p.sourceId) &&
+            sameChargeSourceInstance(sourceRecord.sourceInstanceId, sourceRecord.sourceRecordIdentity, p.sourceInstanceId, p.sourceRecordIdentity) &&
             e.detailScopeCarId == carId && p.chargeId == chargeId &&
                 p.chargeEnergyAdded == null && p.chargeEnergyUsed == null &&
                 p.energyContract == null && (source == null || source == p.source) &&

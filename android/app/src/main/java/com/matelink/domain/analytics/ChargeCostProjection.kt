@@ -11,9 +11,10 @@ import java.security.MessageDigest
 
 /** An opaque key keeps two different sessions with the same numeric charge ID separate. */
 fun chargeCostSessionKey(charge: ChargeData): String {
+    require(!charge.sourceRecordIdentity.conflicted) { "source_record_conflict" }
     val parts = listOf(
         charge.source.orEmpty().trim(), charge.sourceInstanceId.orEmpty().trim(),
-        charge.sourceId.orEmpty().trim(),
+        charge.sourceRecordIdentity.value.orEmpty().trim(),
         chargeCostInstant(charge.startDate)?.toString() ?: "unverified:${charge.startDate.orEmpty()}",
         chargeCostInstant(charge.endDate)?.toString() ?: "unverified:${charge.endDate.orEmpty()}"
     )
@@ -27,6 +28,7 @@ fun findChargeCostOverride(
     records: List<ChargeCostOverride>, localHistoryCarId: Int, charge: ChargeData,
     selectedCurrencyCode: String? = null
 ): ChargeCostOverride? {
+    if (charge.sourceRecordIdentity.conflicted) return null
     val key = chargeCostSessionKey(charge)
     val candidates = records.filter {
         it.carId == localHistoryCarId && it.chargeId == charge.chargeId &&
@@ -42,6 +44,7 @@ fun findOtherCurrencyChargeCostOverride(
     records: List<ChargeCostOverride>, localHistoryCarId: Int, charge: ChargeData,
     selectedCurrencyCode: String
 ): ChargeCostOverride? {
+    if (charge.sourceRecordIdentity.conflicted) return null
     val key = chargeCostSessionKey(charge)
     val selected = selectedCurrencyCode.trim().uppercase(Locale.ROOT)
     return records.firstOrNull { record ->
@@ -63,6 +66,7 @@ fun ChargeDetail.toCostChargeData(): ChargeData = ChargeData(
     source = source,
     sourceInstanceId = sourceInstanceId,
     sourceId = sourceId,
+    sourceRecordId = sourceRecordId,
     currencyCode = currencyCode
 )
 
@@ -76,6 +80,7 @@ fun projectEffectiveChargeCost(
     isDcCharge: Boolean = false,
     defaultPricePerKwh: Double? = null
 ): EffectiveChargeCost {
+    if (charge.sourceRecordIdentity.conflicted) return unavailable("source_record_conflict")
     val currency = selectedCurrencyCode.trim().uppercase(Locale.ROOT)
     if (Currency.entries.none { it.code == currency }) return unavailable("currency_unverified")
     if (manual != null && !manual.deleted) {
@@ -142,8 +147,8 @@ private fun manualQualificationReason(
     if (charge.source.isNullOrBlank() || manual.sourceKind != charge.source) return "source_mismatch"
     if (start != chargeCostInstant(charge.startDate) || end != chargeCostInstant(charge.endDate))
         return "session_mismatch"
-    val recordedSourceId = manual.sourceRecordId?.takeIf(String::isNotBlank)
-    val chargeSourceId = charge.sourceId?.takeIf(String::isNotBlank)
+    val recordedSourceId = manual.sourceRecordId?.trim()?.takeIf(String::isNotBlank)
+    val chargeSourceId = charge.sourceRecordIdentity.value
     if (recordedSourceId != chargeSourceId) return "source_record_mismatch"
     val recordedInstance = manual.sourceInstanceId?.takeIf(String::isNotBlank)
     val chargeInstance = charge.sourceInstanceId?.takeIf(String::isNotBlank)

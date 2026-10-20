@@ -1,5 +1,6 @@
 package com.matelink.domain.analytics
 
+import com.matelink.data.api.models.SourceRecordIdentity
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.EnergyContract
@@ -50,9 +51,9 @@ private fun sameChargeInstant(first: String?, second: String?): Boolean {
  * Both absent retains the established legacy path; one absent cannot inherit known proof.
  */
 internal fun sameChargeSourceInstance(
-    firstInstance: String?, firstRecord: String?, secondInstance: String?, secondRecord: String?
-): Boolean = firstInstance?.takeIf(String::isNotBlank) == secondInstance?.takeIf(String::isNotBlank) &&
-    firstRecord?.takeIf(String::isNotBlank) == secondRecord?.takeIf(String::isNotBlank)
+    firstInstance: String?, firstRecord: SourceRecordIdentity, secondInstance: String?, secondRecord: SourceRecordIdentity
+): Boolean = !firstRecord.conflicted && !secondRecord.conflicted && firstInstance?.takeIf(String::isNotBlank) == secondInstance?.takeIf(String::isNotBlank) &&
+    firstRecord.value == secondRecord.value
 
 /** A numeric charge ID is only meaningful within the saved source and session window. */
 internal fun ChargeSummary.acceptsDetail(detail: ChargeDetail): Boolean {
@@ -64,7 +65,7 @@ internal fun ChargeSummary.acceptsDetail(detail: ChargeDetail): Boolean {
         sameChargeInstant(legacyRaw.startDate, startDate) &&
         sameChargeInstant(legacyRaw.endDate, endDate)
     return chargeId == detail.chargeId && (sameSource || oldTeslaMateReceipt) &&
-        sameChargeSourceInstance(raw.sourceInstanceId, raw.sourceId, detail.sourceInstanceId, detail.sourceId) &&
+        sameChargeSourceInstance(raw.sourceInstanceId, raw.sourceRecordIdentity, detail.sourceInstanceId, detail.sourceRecordIdentity) &&
         sameChargeInstant(startDate, detail.startDate) && sameChargeInstant(endDate, detail.endDate) &&
         sameChargeInstant(raw.startDate, detail.startDate) && sameChargeInstant(raw.endDate, detail.endDate)
 }
@@ -118,7 +119,7 @@ fun ChargeSummary.withDetailEvidence(detail: ChargeDetail): ChargeSummary {
         chargeType = detail.chargeType ?: current.chargeType,
         cost = (detail.cost ?: current.cost)?.takeIf { it.isFinite() && it >= 0.0 },
         source = detail.source ?: rawPrevious.source,
-        sourceInstanceId = detail.sourceInstanceId, sourceId = detail.sourceId,
+        sourceInstanceId = detail.sourceInstanceId, sourceId = detail.sourceId, sourceRecordId = detail.sourceRecordId,
         chargeEnergyAdded = null, chargeEnergyUsed = null, energyContract = null
     )
     val receipt = HistorySummaryEvidenceCodec.withChargeDetail(

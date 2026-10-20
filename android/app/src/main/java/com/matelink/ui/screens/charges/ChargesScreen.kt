@@ -675,18 +675,21 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                     metrics = listOf(
                         TelemetryMetricSpec(
                             Icons.Default.ElectricBolt,
-                            stringResource(R.string.total_sessions),
+                            stringResource(R.string.summary_sessions_compact),
                             summary.totalCharges.toString(),
                             palette.accent,
-                            unit = stringResource(R.string.visual_trip_count_unit)
+                            unit = stringResource(
+                                if (summary.totalCharges == 1) R.string.charge_session_unit
+                                else R.string.charge_sessions_unit
+                            )
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.BatteryChargingFull,
-                            stringResource(R.string.total_energy),
+                            stringResource(R.string.energy),
                             summary.totalEnergyAdded?.let { energy ->
                                 when {
                                     energy > 999 -> "%.2f".format(energy / 1000)
-                                    energy < 10 -> "%.1f".format(energy)
+                                    energy < 100 -> "%.1f".format(energy)
                                     else -> "%.0f".format(energy)
                                 }
                             } ?: stringResource(R.string.not_available),
@@ -695,7 +698,7 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Paid,
-                            stringResource(R.string.total_cost),
+                            stringResource(R.string.cost),
                             summary.totalCost?.let { cost ->
                                 when {
                                     cost < 100 -> "%.2f".format(cost)
@@ -708,7 +711,7 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Paid,
-                            stringResource(R.string.avg_cost_per_session),
+                            stringResource(R.string.summary_avg_charge_compact),
                             summary.avgCostPerCharge?.let { cost ->
                                 "%.2f".format(cost)
                             } ?: stringResource(R.string.not_available),

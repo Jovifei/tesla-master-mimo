@@ -160,11 +160,14 @@ class DriveDetailViewModel @Inject constructor(
                                 "history_detail_cached_total_unverified"
                             else -> "history_cached"
                         }) }
-                        cached.toAnalysisDriveData().asCachedDetail().copy(
+                        val summaryDetail = cached.toAnalysisDriveData().asCachedDetail()
+                        val header = pointCache?.detail ?: summaryDetail
+                        summaryDetail.copy(
                             positions = pointCache?.detail?.positions,
-                            sourceInstanceId = pointCache?.detail?.sourceInstanceId,
-                            sourceId = pointCache?.detail?.sourceId,
-                            lengthUnit = pointCache?.detail?.lengthUnit ?: cached.toAnalysisDriveData().lengthUnit)
+                            sourceInstanceId = header.sourceInstanceId,
+                            sourceId = header.sourceId,
+                            sourceRecordId = header.sourceRecordId,
+                            lengthUnit = pointCache?.detail?.lengthUnit ?: summaryDetail.lengthUnit)
                     }
                 }
                 require(detail.driveId == driveId) { "history_detail_id_mismatch" }

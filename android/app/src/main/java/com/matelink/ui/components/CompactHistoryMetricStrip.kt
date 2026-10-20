@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -32,6 +33,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.TextUnit
+import com.matelink.R
 import com.matelink.ui.theme.MetricMono
 
 /** History rows stay compact; enlarged text can scroll without losing values or units. */
@@ -43,9 +45,11 @@ fun CompactHistoryMetricStrip(
     metricClickLabel: String? = null
 ) {
     if (metrics.isEmpty()) return
+    val unavailable = stringResource(R.string.not_available)
     val displayMetrics = metrics.map { metric ->
-        if (metric.unit != null) metric else {
-            val (number, unit) = telemetryMetricParts(metric.value)
+        val value = if (metric.value == unavailable) "—" else metric.value
+        if (metric.unit != null) metric.copy(value = value) else {
+            val (number, unit) = telemetryMetricParts(value)
             metric.copy(value = number, unit = unit)
         }
     }
@@ -76,7 +80,8 @@ fun CompactHistoryMetricStrip(
                     Modifier.width(cellWidths[index]).sizeIn(minHeight = 48.dp)
                         .then(clickModifier).padding(horizontal = 3.dp, vertical = 2.dp)
                         .semantics(mergeDescendants = true) {
-                            contentDescription = "${metric.label}: ${metric.value} ${metric.unit.orEmpty()}"
+                            val spokenValue = if (metrics[index].value == unavailable) unavailable else metric.value
+                            contentDescription = "${metric.label}: $spokenValue ${metric.unit.orEmpty()}"
                         },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(2.dp)

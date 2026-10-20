@@ -32,7 +32,7 @@ suspend fun persistVerifiedChargeDetail(
     val identity = before.verifiedDetailIdentity(context) ?: return@withTransaction null
     rejectedIdentity = identity
     if (!identity.matches(detail.chargeId, detail.source, detail.sourceInstanceId,
-            detail.startDate, detail.endDate, detail.sourceId)) return@withTransaction null
+            detail.startDate, detail.endDate, detail.sourceId, detail.sourceRecordId)) return@withTransaction null
     if (!dao.mergeDetail(context.localHistoryCarId, detail, ensureCurrent)) return@withTransaction null
     val points = pointStore.saveCharge(identity, detail, ensureCurrent = ensureCurrent)
     if (points is HistoryDetailWriteResult.Rejected) throw HistoryDetailPointSaveRejected(points.reason)
@@ -69,7 +69,7 @@ suspend fun persistVerifiedDriveDetail(
     val identity = before.verifiedDetailIdentity(context) ?: return@withTransaction null
     rejectedIdentity = identity
     if (!identity.matches(detail.driveId, detail.source, detail.sourceInstanceId,
-            detail.startDate, detail.endDate, detail.sourceId)) return@withTransaction null
+            detail.startDate, detail.endDate, detail.sourceId, detail.sourceRecordId)) return@withTransaction null
     val saved = database.driveSummaryDao().mergeResolvedDetail(context.localHistoryCarId,
         detail, proposed, ensureCurrent) ?: return@withTransaction null
     val points = pointStore.saveDrive(identity, detail, ensureCurrent = ensureCurrent)

@@ -568,21 +568,21 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                     metrics = listOf(
                         TelemetryMetricSpec(
                             Icons.Default.DirectionsCar,
-                            stringResource(R.string.total_trips),
+                            stringResource(R.string.summary_trips_compact),
                             if (hasSummary) summary.totalDrives.toString() else unavailable,
                             palette.accent,
                             unit = stringResource(R.string.visual_trip_count_unit)
                         ),
                         TelemetryMetricSpec(
                             CustomIcons.SteeringWheel,
-                            stringResource(R.string.total_distance),
+                            stringResource(R.string.distance),
                             summary.totalDistanceKm?.let { visualTripNumber(UnitFormatter.distanceKmDisplayValue(it, units)).replace(",", "") } ?: unavailable,
                             palette.accent,
                             unit = UnitFormatter.getDistanceUnit(units)
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Timer,
-                            stringResource(R.string.total_time),
+                            stringResource(R.string.duration),
                             summary.totalDurationMin?.let { it.toString() } ?: unavailable,
                             palette.accent,
                             unit = stringResource(R.string.visual_trip_duration_unit)

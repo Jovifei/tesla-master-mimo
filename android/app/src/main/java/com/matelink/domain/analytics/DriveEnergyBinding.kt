@@ -137,6 +137,8 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
     require(detail.driveId == driveId) { "history_detail_id_mismatch" }
     val rawPrevious = toRawAnalysisDriveData()
     require(rawPrevious.source == null || detail.source == null || rawPrevious.source == detail.source) { "history_detail_source_mismatch" }
+    require(sameChargeSourceInstance(rawPrevious.sourceInstanceId, rawPrevious.sourceRecordIdentity,
+        detail.sourceInstanceId, detail.sourceRecordIdentity)) { "history_detail_source_record_mismatch" }
     val current = toAnalysisDriveData()
     // Room dates retain the last verified detail window, including subsecond precision.
     val nextStart = detail.startDate ?: startDate
@@ -200,6 +202,7 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
         endLatitude = detail.endLatitude ?: current.endLatitude,
         endLongitude = detail.endLongitude ?: current.endLongitude,
         source = detail.source ?: rawPrevious.source,
+        sourceInstanceId = detail.sourceInstanceId, sourceId = detail.sourceId, sourceRecordId = detail.sourceRecordId,
         energyConsumedNet = null, consumptionNet = null, energyContract = null
     )
     val receipt = HistorySummaryEvidenceCodec.withDetail(
@@ -248,6 +251,7 @@ fun DriveData.asCachedDetail(): DriveDetail = DriveDetail(
     outsideTempAvg = outsideTempAvg, insideTempAvg = insideTempAvg,
     energyConsumedNet = energyConsumedNet, consumptionNet = consumptionNet,
     source = source, qualityState = qualityState, qualityReason = qualityReason,
+    sourceInstanceId = sourceInstanceId, sourceId = sourceId, sourceRecordId = sourceRecordId,
     startLatitude = startLatitude, startLongitude = startLongitude,
     endLatitude = endLatitude, endLongitude = endLongitude, energyContract = energyContract,
     lengthUnit = lengthUnit

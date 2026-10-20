@@ -76,6 +76,7 @@ class ChargeCostOverrideStore @Inject constructor(
         expectedVersion: Long
     ): Boolean {
         ensureLegacyMigrated()
+        if (charge.sourceRecordIdentity.conflicted) return false
         if (amount != null && (!amount.isFinite() || amount < 0.0)) return false
         val code = currencyCode.trim().uppercase(Locale.ROOT)
             .takeIf { value -> Currency.entries.any { it.code == value } }
@@ -87,7 +88,7 @@ class ChargeCostOverrideStore @Inject constructor(
             sessionKey = key, currencyCode = code,
             sourceKind = charge.source?.takeIf(String::isNotBlank),
             sourceInstanceId = charge.sourceInstanceId?.takeIf(String::isNotBlank),
-            sourceRecordId = charge.sourceId?.takeIf(String::isNotBlank),
+            sourceRecordId = charge.sourceRecordIdentity.value,
             startInstant = chargeCostInstant(charge.startDate)?.toString(),
             endInstant = chargeCostInstant(charge.endDate)?.toString(),
             deleted = amount == null

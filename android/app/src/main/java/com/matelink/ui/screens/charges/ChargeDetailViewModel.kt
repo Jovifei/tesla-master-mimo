@@ -374,6 +374,7 @@ class ChargeDetailViewModel @Inject constructor(
                             source = cached.source,
                             sourceInstanceId = cached.sourceInstanceId,
                             sourceId = cached.sourceId,
+                            sourceRecordId = cached.sourceRecordId,
                             currencyCode = cached.currencyCode,
                             chargeType = cached.chargeType,
                             energyContract = cached.energyContract
