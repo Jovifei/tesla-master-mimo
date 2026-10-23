@@ -1,14 +1,14 @@
 import { Button, Text, View } from '@tarojs/components'
 import { useState } from 'react'
-import { restoreTpmsSnapshot, tpmsMissingLabel, TPMS_WHEELS, type TpmsSnapshot } from '../domain/tpms'
+import { restoreTpmsSnapshot, tpmsMissingLabel, TPMS_WHEELS, type TpmsReport, type TpmsSnapshot } from '../domain/tpms'
 import type { TpmsHistory } from '../services/tpms_cache'
 import MetricValue from './MetricValue'
 import TpmsHistoryChart from './TpmsHistoryChart'
 
 const wheelNames = { fl: '左前轮', fr: '右前轮', rl: '左后轮', rr: '右后轮' }
-type Props = { snapshot?: TpmsSnapshot | null; history?: TpmsHistory | null; cacheReason?: string | null; now?: number }
+type Props = { snapshot?: TpmsSnapshot | null; report?: TpmsReport | null; history?: TpmsHistory | null; cacheReason?: string | null; now?: number }
 
-export default function TpmsPanel({ snapshot, history, cacheReason, now = Date.now() }: Props) {
+export default function TpmsPanel({ snapshot, report, history, cacheReason, now = Date.now() }: Props) {
   const [evidenceExpanded, setEvidenceExpanded] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [historyPage, setHistoryPage] = useState(0)
@@ -21,8 +21,9 @@ export default function TpmsPanel({ snapshot, history, cacheReason, now = Date.n
     <View className="tpms-grid">{TPMS_WHEELS.map(wheel => {
       const row = current.wheels[wheel]
       return <View className="tpms-wheel-card" key={wheel}>
-        <MetricValue label={wheelNames[wheel]} value={row.pressureBar} unit="bar" digits={2} />
+        <MetricValue label={wheelNames[wheel]} value={row.pressureBar ?? report?.[wheel] ?? null} unit="bar" digits={2} />
         {row.state === 'stale' ? <Text className="tpms-age">旧观测</Text> : null}
+        {row.pressureBar == null && report?.[wheel] != null ? <Text className="tpms-age">观测未核验</Text> : null}
       </View>
     })}</View>
     {history?.limited ? <Text className="metric-source">本机胎压记录已按保留上限截取。</Text> : null}
@@ -33,7 +34,7 @@ export default function TpmsPanel({ snapshot, history, cacheReason, now = Date.n
       {TPMS_WHEELS.map(wheel => {
         const row = current.wheels[wheel]
         return <View key={wheel}>
-          <Text className="metric-source">{wheelNames[wheel]} · {row.state === 'unknown' ? tpmsMissingLabel(row.reason) : `车辆遥测 · ${row.state === 'stale' ? '旧观测' : '已观测'} · ${row.observedAt}`}</Text>
+          <Text className="metric-source">{wheelNames[wheel]} · {row.state === 'unknown' ? `${tpmsMissingLabel(row.reason)}${report?.[wheel] != null ? '；另有仅供显示的胎压报告值' : ''}` : `车辆遥测 · ${row.state === 'stale' ? '旧观测' : '已观测'} · ${row.observedAt}`}</Text>
           <Text className="metric-source">本机记录 {history?.points.filter(point => point.wheel === wheel).length ?? 0} 个合格样本</Text>
         </View>
       })}

@@ -13,6 +13,8 @@ export type TpmsReading = {
 }
 export type TpmsSnapshot = { wheels: Record<TpmsWheel, TpmsReading>; capturedAt: number }
 export type TpmsPoint = { wheel: TpmsWheel; pressureBar: number; observedAt: string; source: 'telemetry_mqtt'; timeBasis: 'collector_received_at' }
+/** Display-only values from an API report with an explicit bar unit; never alert or cache evidence. */
+export type TpmsReport = Record<TpmsWheel, number | null>
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -49,6 +51,15 @@ export function parseTpmsDetails(value: unknown, now = Date.now()): TpmsSnapshot
   const wheels = {} as Record<TpmsWheel, TpmsReading>
   for (const wheel of TPMS_WHEELS) wheels[wheel] = reading(raw[`tpms_pressure_${wheel}`], raw[`tpms_pressure_${wheel}_observed_at`], raw.pressure_unit, raw.source, raw.time_basis, now)
   return { wheels, capturedAt: now }
+}
+
+export function parseTpmsReport(value: unknown, pressureUnit: unknown): TpmsReport {
+  const raw = record(value)
+  const unit = raw.pressure_unit ?? pressureUnit
+  return Object.fromEntries(TPMS_WHEELS.map(wheel => {
+    const pressure = raw[`tpms_pressure_${wheel}`]
+    return [wheel, unit === 'bar' && typeof pressure === 'number' && Number.isFinite(pressure) && pressure >= 0 && pressure <= 15 ? pressure : null]
+  })) as TpmsReport
 }
 
 /** Rebuilds qualification at reopen while preserving each original receipt instant. */

@@ -1,4 +1,4 @@
-import type { TpmsSnapshot } from '../domain/tpms'
+import type { TpmsReport, TpmsSnapshot } from '../domain/tpms'
 
 export type ApiEnvelope<T> = {
   data?: T
@@ -87,6 +87,8 @@ export type CarStatus = {
   /** Source identifiers only; package observedAt is not a field observation clock. */
   fieldSources?: Record<string, string>
   tpms?: TpmsSnapshot
+  /** Online-only reported pressure; missing wheel time keeps it out of alerts and history. */
+  tpmsReport?: TpmsReport
   state: string | null
   model: string | null
   trim: string | null

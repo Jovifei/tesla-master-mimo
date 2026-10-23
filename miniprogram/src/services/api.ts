@@ -1,6 +1,6 @@
 import Taro from '@tarojs/taro'
 import { JOURVOLT_PRIVACY_VERSION, JOURVOLT_TERMS_VERSION } from '../domain/legal'
-import { parseTpmsDetails } from '../domain/tpms'
+import { parseTpmsDetails, parseTpmsReport } from '../domain/tpms'
 import { statusFieldSources, type RawStatusPayload } from './types'
 import { clearHistoryCachesForAccount } from './history_cache'
 import { clearCarsCacheForAccount, writeCarsCache } from './cars_cache'
@@ -450,7 +450,8 @@ function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source
   const limitSoc = finite(raw.charging_details?.charge_limit_soc, 0, 100)
   const originalText = (value: unknown) => typeof value === 'string' && value.trim() && value.length <= 128 && !/[\u0000-\u001f\u007f]/.test(value) ? value : null
   return {
-    ...(raw.tpms_details !== undefined ? { tpms: parseTpmsDetails(raw.tpms_details) } : {}),
+    ...(raw.tpms_details !== undefined ? { tpms: parseTpmsDetails(raw.tpms_details),
+      tpmsReport: parseTpmsReport(raw.tpms_details, isRecord(units) ? stringValue(units.unit_of_pressure) : null) } : {}),
     state: raw.state ?? null,
     model: stringValue(raw.model),
     trim: stringValue(raw.trim_badging),

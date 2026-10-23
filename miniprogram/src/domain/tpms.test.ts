@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseTpmsDetails, restoreTpmsSnapshot, TPMS_RETENTION_MS, tpmsInstant, tpmsPoints } from './tpms'
+import { parseTpmsDetails, parseTpmsReport, restoreTpmsSnapshot, TPMS_RETENTION_MS, tpmsInstant, tpmsPoints } from './tpms'
 
 const now = Date.parse('2026-10-15T02:00:00Z')
 const raw = { pressure_unit: 'bar', source: 'telemetry_mqtt', time_basis: 'collector_received_at',
@@ -36,5 +36,17 @@ describe('per-wheel TPMS collector qualification', () => {
     expect(tpmsInstant('2026-10-15T24:00:00Z')).toBeNull()
     expect(tpmsInstant('2026-10-15T09:59:00+08:00')).toBe(tpmsInstant('2026-10-15T01:59:00Z'))
     expect(tpmsInstant('2026-10-15T01:59:00.123456789Z')).toBe(now - 60_000 + 123)
+  })
+  it('separates a bar-valued report from mixed per-wheel alert evidence', () => {
+    const mixed = { pressure_unit: 'bar', source: 'telemetry_mqtt', time_basis: 'collector_received_at',
+      tpms_pressure_fl: 2.6, tpms_pressure_fl_observed_at: '2026-10-15T01:59:00Z',
+      tpms_pressure_fr: 0, tpms_pressure_rl: 17 }
+    expect(parseTpmsReport(mixed, 'bar')).toEqual({ fl: 2.6, fr: 0, rl: null, rr: null })
+    expect(parseTpmsReport({ ...mixed, pressure_unit: null }, null).fl).toBeNull()
+    expect(parseTpmsReport({ ...mixed, pressure_unit: 'psi' }, 'bar').fl).toBeNull()
+    const qualified = parseTpmsDetails(mixed, now)
+    expect(qualified.wheels.fl.pressureBar).toBe(2.6)
+    expect(qualified.wheels.fr).toMatchObject({ pressureBar: null, reason: 'missing_or_invalid_wheel_time' })
+    expect(tpmsPoints(qualified, now).map(point => point.wheel)).toEqual(['fl'])
   })
 })

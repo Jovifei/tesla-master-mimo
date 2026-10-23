@@ -1,3 +1,13 @@
+# 2026-10-20 仪表盘单页对齐阶段（App 实机为准）
+
+- [x] 锁定本阶段范围和逐项验收条件；计划见 `tasks/plans/2026-10-20-dashboard-only-app-parity.md`。
+- [x] 只读核对当前 App 2.1.47 页面源码与旧 App 截图；微信开发者工具已用合成数据复拍仪表盘首屏、中下段与滚动 50px，未操作手机。
+- [ ] 仪表盘布局/图标/信息顺序已按当前 App 源码修正；地址回退为原始车辆坐标，胎压报告值与合格观测分离且详情同值。街道地址与高德瓦片仍缺小程序独立地图服务，真实账号数据未验收。
+- [ ] 定向 7 文件 133/133、类型及微信构建通过；最终候选包哈希 `73bbcee90de0c8abb72e931e07a8caa5004f3812740ce6ee6fb0cdfb9a2c810d`。Git SHA、提交后构建/CI 尚待完成。
+- [ ] 独立子代理复审的 P2 已修；Codex with ChatGPT 网页审核因本机 Cloudflare 握手阻断尚未运行，待以真实账号和固定提交供 Jovi 审核。
+
+Review：进行中。Jovi 已撤销扫码/接 USB 请求并要求停止手机调试；微信模拟器的合成布局复拍不能称真实数据对齐。私有逐项对比：`E:/Claude_allow/Download/matelink-dashboard-stage-20261020/dashboard-app-mini-source-compare-20261023.md`。Codex with ChatGPT 的 joviluma.com 固定连接本地服务正常，但 Cloudflare 边缘握手受本机代理网络阻断；网页端审核尚未发生。旧 App 截图只用于定位差异。
+
 # 2026-10-19 App 真机页面再对齐
 
 - [ ] 确认同一台USB手机当前实际运行的预览版本，采集新版与App2.1.38四Tab同页证据。
