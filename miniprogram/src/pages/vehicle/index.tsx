@@ -1,5 +1,5 @@
 import { Button, Map, Picker, Text, View } from '@tarojs/components'
-import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
+import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import VisualIcon from '../../components/VisualIcon'
 import ReadinessChecklist from '../../components/ReadinessChecklist'
@@ -37,15 +37,26 @@ function booleanLabel(value: boolean | null, yes: string, no: string): string | 
   return value == null ? null : value ? yes : no
 }
 
-function dashboardHeaderInset(): number {
+function dashboardHeaderGeometry(): { top: number; toolbarOffset: number; coverHeight: number; capsuleCover: { top: number; left: number; height: number } | null } {
   try {
-    const bottom = Taro.getMenuButtonBoundingClientRect?.().bottom
-    if (Number.isFinite(bottom) && bottom > 0) return Math.ceil(bottom) + 4
+    const menu = Taro.getMenuButtonBoundingClientRect?.()
+    const bottom = menu?.bottom
+    const top = menu?.top
+    if (typeof top === 'number' && Number.isFinite(top) && top > 0 && typeof bottom === 'number' && Number.isFinite(bottom) && bottom > top) {
+      const contentTop = Math.ceil(top) + 8
+      const left = menu?.left
+      const capsuleCover = typeof left === 'number' && Number.isFinite(left) && left > 0
+        ? { top: Math.floor(top), left: Math.max(0, Math.floor(left) - 24), height: Math.ceil(bottom - top) + 4 } : null
+      return { top: contentTop, toolbarOffset: Math.max(0, Math.ceil(bottom) - contentTop + 8), coverHeight: Math.ceil(top), capsuleCover }
+    }
+    if (typeof bottom === 'number' && Number.isFinite(bottom) && bottom > 0) return { top: Math.ceil(bottom) + 4, toolbarOffset: 0, coverHeight: Math.min(44, Math.ceil(bottom)), capsuleCover: null }
   } catch { /* fallback for hosts without a WeChat capsule */ }
-  return 88
+  return { top: 88, toolbarOffset: 0, coverHeight: 44, capsuleCover: null }
 }
 
 export default function VehiclePage() {
+  const [coverSystemBar, setCoverSystemBar] = useState(false)
+  usePageScroll(event => setCoverSystemBar(event.scrollTop > 4))
   const [cars, setCars] = useState<Car[]>([])
   const [car, setCar] = useState<Car | null>(null)
   const [status, setStatus] = useState<CarStatus | null>(null)
@@ -406,12 +417,16 @@ export default function VehiclePage() {
   const navigate = (url: string) => { void Taro.navigateTo({ url }) }
   const settings = () => navigate('/pages/tools/index?kind=settings')
   const openBattery = () => navigate('/pages/insights/index?kind=battery')
-  const location = status?.geofence || (map ? '地址待解析' : '暂无数据')
+  const location = status?.geofence?.trim() || (status?.location
+    ? `${status.location.latitude.toFixed(4)}, ${status.location.longitude.toFixed(4)}` : '暂无数据')
+  const headerGeometry = dashboardHeaderGeometry()
   return (
-    <View className="page vehicle-page" style={{ paddingTop: `${dashboardHeaderInset()}px` }}>
+    <View className="page vehicle-page" style={{ paddingTop: `${headerGeometry.top}px` }}>
+      {coverSystemBar ? <View className="dashboard-system-bar-cover" style={{ height: `${headerGeometry.coverHeight}px` }} /> : null}
+      {coverSystemBar && headerGeometry.capsuleCover ? <View className="dashboard-capsule-cover" style={{ top: `${headerGeometry.capsuleCover.top}px`, left: `${headerGeometry.capsuleCover.left}px`, height: `${headerGeometry.capsuleCover.height}px` }} /> : null}
       <View className="dashboard-toolbar">
         <View className="dashboard-title"><Text>{car?.displayName || car?.name || '车辆'}</Text><Text>{dashboardVehicleSubtitle(car?.model, car?.trim) || '车型待识别'}</Text></View>
-        <View className="dashboard-toolbar-right"><View className="dashboard-toolbar-actions"><Text className={`dashboard-snapshot-badge dashboard-snapshot-${snapshot.kind}`} data-kind={snapshot.kind}>{snapshot.label}</Text><Button className="dashboard-icon-button" ariaLabel="刷新车辆" loading={loading} onClick={() => { void load() }}><DashboardIcon name="refresh" /></Button><Button className="dashboard-icon-button" ariaLabel="设置" onClick={settings}><DashboardIcon name="settings" /></Button></View><Text className="dashboard-report-time">{dashboardReportTime(status?.observedAt)}</Text></View>
+        <View className="dashboard-toolbar-right" style={{ paddingTop: `${headerGeometry.toolbarOffset}px` }}><View className="dashboard-toolbar-actions"><Text className={`dashboard-snapshot-badge dashboard-snapshot-${snapshot.kind}`} data-kind={snapshot.kind}>{snapshot.label}</Text><Button className="dashboard-icon-button" ariaLabel="刷新车辆" loading={loading} onClick={() => { void load() }}><DashboardIcon name="refresh" tone="muted" /></Button><Button className="dashboard-icon-button" ariaLabel="设置" onClick={settings}><DashboardIcon name="settings" tone="muted" /></Button></View><Text className="dashboard-report-time">{dashboardReportTime(status?.observedAt)}</Text></View>
       </View>
       {cars.length > 1 ? <Picker mode="selector" range={cars.map(item => item.displayName || item.name || '车辆')} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}><View className="vehicle-selector"><Text>当前车辆 · {car?.displayName || car?.name || '请选择车辆'}</Text><Text>切换⌄</Text></View></Picker> : null}
       {car && status ? <>
@@ -419,10 +434,10 @@ export default function VehiclePage() {
         <DashboardHero car={car} status={status} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onOpenBattery={openBattery} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} />
         {loading ? <LoadingIndicator label="正在读取最新数据…" compact /> : null}
         <View className="dashboard-location-row"><DashboardInfoCard label="里程" value={dashboardMetric(status.odometer, 'km', 0)} icon="speed" onClick={() => navigate('/pages/analysis/index?kind=mileage')} /><DashboardInfoCard label="位置" value={location} icon="location" onClick={() => { if (map) navigate('/pages/tools/index?kind=location'); else { focusDiagnostics.current = true; setShowDiagnostics(true) } }} /></View>
-        {map ? <View className="dashboard-map-card">{!mapFailed ? <Map id="dashboard-map" latitude={map.latitude} longitude={map.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...map, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24, title: car.displayName || car.name || '车辆' }]} onError={() => setMapFailed(true)} /> : <View className="dashboard-map-unavailable"><Text>地图暂时无法载入</Text><Button className="dashboard-text-button" onClick={() => setMapFailed(false)}>重试地图</Button></View>}</View> : null}
         <View className="dashboard-temperature-row"><DashboardInfoCard label="车内" value={dashboardTemperature(status.insideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /><DashboardInfoCard label="车外" value={dashboardTemperature(status.outsideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /></View>
-        <DashboardTpms snapshot={status.tpms} warnings={tpmsAlerts} onOpen={() => navigate('/pages/tools/index?kind=tpms')} />
-        <View className="dashboard-history-entry" onClick={() => navigate('/pages/analysis/index?kind=stats')}><DashboardIcon name="bolt" /><View><Text>7天电量趋势</Text><Text>查看已记录的电池历史与容量详情</Text></View><Text>›</Text></View>
+        <DashboardTpms snapshot={status.tpms} report={status.tpmsReport} warnings={tpmsAlerts} onOpen={() => navigate('/pages/tools/index?kind=tpms')} />
+        {map ? <View className="dashboard-map-card">{!mapFailed ? <Map id="dashboard-map" latitude={map.latitude} longitude={map.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...map, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24, title: car.displayName || car.name || '车辆' }]} onError={() => setMapFailed(true)} /> : <View className="dashboard-map-unavailable"><Text>地图暂时无法载入</Text><Button className="dashboard-text-button" onClick={() => setMapFailed(false)}>重试地图</Button></View>}</View> : null}
+        <View className="dashboard-history-entry" onClick={() => navigate('/pages/analysis/index?kind=stats')}><DashboardIcon name="bolt" /><View><Text>7天电量趋势</Text><Text>查看已记录的电池历史与容量详情</Text></View></View>
         {activeCharging ? <DashboardCurrentCharge status={status} onOpen={() => { void Taro.switchTab({ url: '/pages/charges/index' }) }} /> : null}
       </> : car ? <View className="dashboard-partial">
         <View className="dashboard-partial-hero"><DashboardVehicleArt car={car} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} /><Text className="dashboard-section-title">车辆状态暂不可用</Text><Text>当前仅显示已确认的车辆资料，状态数据尚未返回。</Text></View>

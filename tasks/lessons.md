@@ -1,5 +1,21 @@
 # Lessons
 
+## 2026-10-23 模拟器截图先固定构建配置与源码版本
+
+- Pattern: 一次 Taro 构建漏传 `TARO_APP_API_BASE_URL`，截图出现“服务地址尚未配置”；随后微信开发者工具复用旧编译，画面仍显示已从源码删掉的“地址待解析”。编译成功和 `simulator_refresh` 成功都不等于画面来自当前代码。
+- Rule: 每次预览显式传入 API 域名并检查编译产物包含该域名；用可识别的改动确认渲染版本，必要时清编译缓存或独立导入构建目录。合成数据截图必须标明来源，使用后移除合成会话、账户作用域缓存和请求替身。
+
+## 2026-10-23 Jovi: use the desktop Mini Program developer tool, stop phone control
+
+- Correction: Jovi明确要求按当前小程序代码与 App 页面调整，并停止在共享手机上调试。先前并行手机截图曾把行程页误归入仪表盘；旧版零散截图也不等于四页逐项完成。
+- Rule: 当前仪表盘阶段不再发 ADB 触控或扫码请求。只读检查 App 页面实现、保存过的截图与当前 Mini 源码，在微信开发者工具模拟器编译、截图、调布局；真实 Tesla 字段保持未验收。每阶段只提交该页，可让 Jovi 审核，不宣称整个小程序已对齐。
+
+## 2026-10-20 Jovi: one page, one evidence-backed submission
+
+- Correction: Jovi指出此前跨四页并行修改、反复报出数百项测试，却没有把任何一页在真实手机上完全对齐并提交审核。测试数量不能替代具体页面的可见结果。
+- Rule: 按仪表盘→行程→充电→更多顺序分阶段。当前页先由 Codex 在同一手机自行截图、比对每个字段/图标/位置，修复并复拍；再固定 SHA、交给网页端 ChatGPT 独立审查，最后提交给 Jovi 审核。下一页不混入当前提交。
+- Acceptance: 每阶段列出同账号、同车、同时间的 App/Mini 成对截图和字段来源；任何缺失数据源、旧预览或未连接手机都明确标未验收，不能说「已经对齐」。
+
 ## 2026-10-19 Jovi: verify the exact phone preview and App cost meaning before parity claims
 
 - Correction: Jovi仍看到小程序首页及多个页面的信息/布局与可用App不同；用户说已扫码后，USB连接的同机截图仍显示旧版顶部MateLink和旧图标/统计，因此二维码生成成功与用户回复均不能单独证明当前前台运行固定SHA。

@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { Button, Text, View } from '@tarojs/components'
 import type { Car, CarStatus } from '../../services/types'
-import { restoreTpmsSnapshot, TPMS_WHEELS, type TpmsSnapshot } from '../../domain/tpms'
+import { restoreTpmsSnapshot, TPMS_WHEELS, type TpmsReport, type TpmsSnapshot } from '../../domain/tpms'
 import type { TpmsAlert } from '../../domain/tpms_alerts'
 import DashboardIcon, { type DashboardIconName } from './DashboardIcon'
 import { dashboardMetric, dashboardNumber, dashboardPower, dashboardRange, dashboardRemaining, dashboardShift, dashboardState } from './presentation'
@@ -10,7 +10,7 @@ export function DashboardInfoCard({ label, value, icon, onClick, warning = false
   return <View className="dashboard-info-card" onClick={onClick} ariaLabel={`${label} ${value}`}>
     <View className="dashboard-info-heading">{icon ? <DashboardIcon name={icon} /> : null}<Text className="dashboard-info-label">{label}</Text></View>
     <Text className="dashboard-info-value" style={warning ? { color: 'var(--dashboard-warning)' } : undefined}>{value}</Text>
-    {hint ? <View className="dashboard-info-hint">{warning ? <DashboardIcon name="warning" tone="warning" /> : null}<Text>{hint}</Text></View> : null}
+    {hint ? <View className={`dashboard-info-hint${warning ? ' dashboard-info-hint-warning' : ''}`}>{warning ? <DashboardIcon name="warning" tone="warning" /> : null}<Text>{hint}</Text></View> : null}
   </View>
 }
 
@@ -78,11 +78,13 @@ export function DashboardHero({ car, status, imageSrc, imageLoading, imageError,
   </View>
 }
 
-export function DashboardTpms({ snapshot, warnings, onOpen }: { snapshot?: TpmsSnapshot; warnings: readonly TpmsAlert[]; onOpen: () => void }) {
+export function DashboardTpms({ snapshot, report, warnings, onOpen }: { snapshot?: TpmsSnapshot; report?: TpmsReport; warnings: readonly TpmsAlert[]; onOpen: () => void }) {
   const current = restoreTpmsSnapshot(snapshot), names = { fl: '左前轮', fr: '右前轮', rl: '左后轮', rr: '右后轮' }
   return <View className="dashboard-tpms"><Text className="dashboard-section-title">胎压</Text><View className="dashboard-tpms-row">{TPMS_WHEELS.map(wheel => {
     const row = current.wheels[wheel], warning = warnings.find(item => item.wheel === wheel)
-    return <DashboardInfoCard key={wheel} label={names[wheel]} value={row.pressureBar == null ? '暂无数据' : dashboardMetric(row.pressureBar, 'bar')} onClick={onOpen} warning={Boolean(warning)} hint={warning ? '本机规则提示' : row.state === 'stale' ? '旧观测' : null} />
+    const pressure = row.pressureBar ?? report?.[wheel] ?? null
+    const hint = warning ? '本机规则提示' : row.state === 'stale' ? '旧观测' : row.pressureBar == null && pressure != null ? '观测未核验' : null
+    return <DashboardInfoCard key={wheel} label={names[wheel]} value={pressure == null ? '暂无数据' : dashboardMetric(pressure, 'bar')} onClick={onOpen} warning={Boolean(warning)} hint={hint} />
   })}</View></View>
 }
 

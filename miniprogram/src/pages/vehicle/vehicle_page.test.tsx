@@ -12,9 +12,10 @@ const fixture = JSON.parse(readFileSync(resolve(process.cwd(), '../fixtures/safe
 }
 
 const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), quota: false,
-  menuBottom: 80,
+  menuTop: null as number | null, menuLeft: null as number | null, menuBottom: 80,
   navigateTo: vi.fn(), switchTab: vi.fn(), showModal: vi.fn(), pageScrollTo: vi.fn(() => Promise.resolve()),
-  show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void }))
+  show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void,
+  scroll: ((_event: { scrollTop: number }) => {}) as (event: { scrollTop: number }) => void }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Image: 'image', Map: 'map', ScrollView: 'scroll-view' }))
 vi.mock('@tarojs/taro', () => ({ default: {
   request: platform.request, getStorageSync: (key: string) => platform.values.get(key),
@@ -22,9 +23,9 @@ vi.mock('@tarojs/taro', () => ({ default: {
   removeStorageSync: (key: string) => platform.values.delete(key),
   getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }),
   navigateTo: platform.navigateTo, switchTab: platform.switchTab, showModal: platform.showModal, pageScrollTo: platform.pageScrollTo,
-  getMenuButtonBoundingClientRect: () => ({ bottom: platform.menuBottom }),
+  getMenuButtonBoundingClientRect: () => ({ top: platform.menuTop, left: platform.menuLeft, bottom: platform.menuBottom }),
 }, useDidShow: (fn: () => void) => { platform.show = fn }, useDidHide: (fn: () => void) => { platform.hide = fn },
-useUnload: (fn: () => void) => { platform.unload = fn } }))
+useUnload: (fn: () => void) => { platform.unload = fn }, usePageScroll: (fn: (event: { scrollTop: number }) => void) => { platform.scroll = fn } }))
 
 let renderer: ReactTestRenderer | null = null
 const cars = [{ car_id: 7, vehicle_uid: 'uid7', name: 'Car A' }, { car_id: 8, vehicle_uid: 'uid8', name: 'Car B' }]
@@ -35,7 +36,7 @@ const report = (power: number) => ({ status: { state: 'online', battery_details:
   climate_details: { is_climate_on: false }, driving_details: { speed: 0, power }, charging_details: { charger_power: 0 } } })
 beforeEach(() => {
   vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test')
-  platform.values.clear(); platform.quota = false; platform.menuBottom = 80; platform.request.mockReset()
+  platform.values.clear(); platform.quota = false; platform.menuTop = null; platform.menuLeft = null; platform.menuBottom = 80; platform.request.mockReset()
   platform.navigateTo.mockReset(); platform.switchTab.mockReset(); platform.showModal.mockReset()
   platform.values.set('matelink.wechat.session.v1', session('a'))
 })
@@ -72,6 +73,22 @@ it('keeps the normal dashboard at the capsule-safe top and moves diagnostics int
   expect(visible()).not.toContain('查看数据状态')
   expect(page.root.findAllByProps({ className: 'dashboard-readiness-panel' })).toHaveLength(0)
 })
+it('keeps the title beside the capsule and shields the system bar while scrolling', async () => {
+  platform.menuTop = 40
+  platform.menuLeft = 280
+  platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
+  const page = await mount(false)
+  expect(page.root.findByProps({ className: 'page vehicle-page' }).props.style.paddingTop).toBe('48px')
+  expect(page.root.findByProps({ className: 'dashboard-toolbar-right' }).props.style.paddingTop).toBe('40px')
+  await act(async () => { platform.scroll({ scrollTop: 5 }) })
+  const coverHeight = page.root.findByProps({ className: 'dashboard-system-bar-cover' }).props.style.height
+  expect(coverHeight).toBe('40px')
+  expect(parseInt(coverHeight)).toBeLessThan(parseInt(page.root.findByProps({ className: 'page vehicle-page' }).props.style.paddingTop))
+  expect(page.root.findByProps({ className: 'dashboard-capsule-cover' }).props.style).toEqual({ top: '40px', left: '256px', height: '44px' })
+  await act(async () => { platform.scroll({ scrollTop: 0 }) })
+  expect(page.root.findAllByProps({ className: 'dashboard-system-bar-cover' })).toHaveLength(0)
+  expect(page.root.findAllByProps({ className: 'dashboard-capsule-cover' })).toHaveLength(0)
+})
 it('shows the App odometer and state wording without accepting an unusable zero position', async () => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/snapshot')
     ? respond({ status: { state: 'online', odometer: 19992, car_geodata: { latitude: 0, longitude: 0 }, car_status: { sentry_mode: true } } })
@@ -81,14 +98,14 @@ it('shows the App odometer and state wording without accepting an unusable zero 
   expect(visible()).toContain('哨兵已开启')
   expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
 })
-it('keeps a real map but labels an unresolved address honestly', async () => {
+it('uses the App raw-coordinate fallback without presenting it as a resolved address', async () => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/snapshot')
     ? respond({ status: { state: 'online', car_geodata: { latitude: 31.2, longitude: 121.5 } } })
     : online(url))
   await mount(false)
   const location = renderer!.root.findAllByProps({ className: 'dashboard-info-card' })
     .find(card => card.findByProps({ className: 'dashboard-info-label' }).children.join('') === '位置')!
-  expect(location.findByProps({ className: 'dashboard-info-value' }).children.join('')).toBe('地址待解析')
+  expect(location.findByProps({ className: 'dashboard-info-value' }).children.join('')).toBe('31.2000, 121.5000')
   expect(renderer!.root.findByType('map' as React.ElementType)).toBeDefined()
 })
 const snapshotBadge = () => renderer!.root.findAll(node => node.type === 'text' && String(node.props.className ?? '').split(' ').includes('dashboard-snapshot-badge'))[0]
@@ -283,9 +300,29 @@ it('matches the actual Dashboard hierarchy, App InfoCard ordering, four state ch
   expect(map.props.showLocation).toBe(false)
   expect(map.props.latitude).not.toBe(31.2)
   const sections = page.root.findByProps({ className: 'page vehicle-page' }).findAllByType('view').map(node => node.props.className)
-  expect(sections.indexOf('dashboard-location-row')).toBeLessThan(sections.indexOf('dashboard-map-card'))
-  expect(sections.indexOf('dashboard-map-card')).toBeLessThan(sections.indexOf('dashboard-temperature-row'))
+  expect(sections.indexOf('dashboard-location-row')).toBeLessThan(sections.indexOf('dashboard-temperature-row'))
+  expect(sections.indexOf('dashboard-temperature-row')).toBeLessThan(sections.indexOf('dashboard-tpms'))
+  expect(sections.indexOf('dashboard-tpms')).toBeLessThan(sections.indexOf('dashboard-map-card'))
+  expect(sections.indexOf('dashboard-map-card')).toBeLessThan(sections.indexOf('dashboard-history-entry'))
   expect(snapshotBadge().children.join('')).toContain('实时')
+})
+
+it('shows an explicitly bar-valued Tesla report without turning undated tires into alerts or history', async () => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return respond({ cars })
+    if (url.endsWith('/snapshot')) return respond({ source: 'fleet_api', units: { unit_of_pressure: 'bar' }, status: {
+      state: 'online', tpms_details: { tpms_pressure_fl: 2.6, tpms_pressure_fr: 2.7, tpms_pressure_rl: 2.8, tpms_pressure_rr: 2.9 },
+    } })
+    if (url.endsWith('/data-readiness')) return respond({ items: [] })
+    return respond({})
+  })
+  const page = await mount(false)
+  const tires = page.root.findByProps({ className: 'dashboard-tpms' })
+  const cards = tires.findAllByProps({ className: 'dashboard-info-card' })
+  expect(cards.map(card => card.findByProps({ className: 'dashboard-info-value' }).children.join(''))).toEqual(['2.6 bar', '2.7 bar', '2.8 bar', '2.9 bar'])
+  expect(cards.map(card => card.findByProps({ className: 'dashboard-info-hint' }).findByType('text').children.join(''))).toEqual(Array(4).fill('观测未核验'))
+  const { readTpmsCache } = await import('../../services/tpms_cache')
+  expect(readTpmsCache({ getStorageSync: (key: string) => platform.values.get(key) }, 'a', 'https://api.example.test', 'uid7').points).toEqual([])
 })
 
 it('uses the full charging HUD and lower three-column card without replacing missing current/energy with zero', async () => {
@@ -548,7 +585,7 @@ it('map render failure preserves location evidence and offers an actual retry wi
  const page = await mount(false)
  await act(async () => { page.root.findByType('map' as React.ElementType).props.onError() })
  expect(page.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
- expect(visible()).toContain('地址待解析')
+  expect(visible()).toContain('31.2000, 121.5000')
  await act(async () => { page.root.findAllByType('button').find(node => node.children.join('') === '重试地图')!.props.onClick() })
  expect(page.root.findByType('map' as React.ElementType).props.showLocation).toBe(false)
 })

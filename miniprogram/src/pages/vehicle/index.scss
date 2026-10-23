@@ -13,6 +13,22 @@
   --dashboard-badge-fg:#164e63;
   --dashboard-warning-bg:rgba(180,83,9,.10);
   color:var(--dashboard-text);
+  .dashboard-system-bar-cover {
+    position:fixed;
+    top:0;
+    left:0;
+    right:0;
+    z-index:900;
+    background:#f5f7f9;
+    pointer-events:none;
+  }
+  .dashboard-capsule-cover {
+    position:fixed;
+    right:0;
+    z-index:900;
+    background:#f5f7f9;
+    pointer-events:none;
+  }
   .dashboard-icon {
     width:36rpx;
     height:36rpx;
@@ -106,6 +122,8 @@
     font-size:28rpx;
     font-weight:600
   }
+  .dashboard-hero-heading { font-size:32rpx }
+  .dashboard-hero-heading .dashboard-icon { width:48rpx; height:48rpx }
   .dashboard-hero-heading>view,.dashboard-hud-heading>view {
     display:flex;
     align-items:center;
@@ -125,11 +143,13 @@
     justify-content:center;
     align-items:center
   }
+  .dashboard-hero .dashboard-vehicle-art { height:470rpx }
   .dashboard-vehicle-image {
     display:block;
     height:310rpx;
     width:96%
   }
+  .dashboard-hero .dashboard-vehicle-image { height:450rpx }
   .dashboard-vehicle-placeholder {
     display:flex;
     flex-direction:column;
@@ -308,8 +328,9 @@
     gap:4rpx;
     margin-top:8rpx;
     font-size:20rpx;
-    color:var(--dashboard-warning)
+    color:var(--dashboard-muted)
   }
+  .dashboard-info-hint-warning { color:var(--dashboard-warning) }
   .dashboard-info-hint .dashboard-icon {
     width:24rpx;
     height:24rpx
@@ -529,6 +550,7 @@
     --dashboard-badge-bg:#164e63;
     --dashboard-badge-fg:#cffafe;
   }
+  .vehicle-page .dashboard-system-bar-cover,.vehicle-page .dashboard-capsule-cover { background:#111315; }
   .vehicle-page .dashboard-icon-light  {
     display: none;
   }

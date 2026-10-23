@@ -53,3 +53,14 @@ it('paginates actual retained foreground records without loading them into curre
   expect(tree.root.findAllByProps({ className: 'metric-value' }).every(node => node.children.join('') === '暂无数据')).toBe(true)
   tree.unmount()
 })
+
+it('shows display-only report values in details while keeping the evidence history empty', () => {
+  const snapshot = parseTpmsDetails({ tpms_pressure_fl: 2.6 })
+  const tree = renderer.create(<TpmsPanel snapshot={snapshot} report={{ fl: 2.6, fr: null, rl: null, rr: null }} history={{ points: [], oldestAt: null, latestAt: null, limited: false }} />)
+  expect(tree.root.findAllByProps({ className: 'metric-value' }).map(node => node.children.join(''))).toEqual(['2.6', '暂无数据', '暂无数据', '暂无数据'])
+  expect(tree.root.findAllByProps({ className: 'tpms-age' }).map(node => node.children.join(''))).toEqual(['观测未核验'])
+  act(() => tree.root.findByType('button').props.onClick())
+  expect(JSON.stringify(tree.toJSON())).toContain('另有仅供显示的胎压报告值')
+  expect(JSON.stringify(tree.toJSON())).toContain('暂无合格的本机前台历史')
+  tree.unmount()
+})
