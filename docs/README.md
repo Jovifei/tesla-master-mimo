@@ -1,15 +1,15 @@
-# MateLink 工程审核与故障记录入口
+# MateLink 文档入口
 
-当前阶段入口：[能耗传输、部署TLS与已部署bb09兼容性终审](ENERGY-TRANSPORT-COMPATIBILITY-FINAL-STAGE-20261009.md)；[旧设备签名实测、认证TLS待确认门](ENERGY-TLS-DEVICE-DIAGNOSTIC-20261009.md)。源码CI通过不代表手机认证或Fleet自然数据通过。
+MateLink 的长期方向、现有代码与待验证能力分别记录；不要用阶段报告推断当前生产状态。`main`、功能分支、手机安装版、服务端部署版和真实车辆采集须分别核对。
 
-- [完整固定SHA本地接收、独立签名安装与人类验收矩阵](TLS-ENERGY-FIXED-STAGE-LOCAL-RECEIVE-20261009.md)：由PR17最终完成评论获取不可变版本；原本地Codex只作独立验证，不代远端修业务代码。
+| 阅读目的 | 文档 |
+| --- | --- |
+| 产品范围与 App／Web／小程序／未来硬件方向 | [产品方向](PRODUCT-DIRECTION.md) |
+| 数据从哪里来、身份与保存边界 | [架构与数据流](ARCHITECTURE.md)、[字段目录](DATA-CATALOG.md) |
+| Fleet 多用户与个人 TeslaMate 归档的决策 | [现行架构决策](ARCH-DECISION-2026-09-27-fleet-teslamate-hybrid.md)、[归档桥](TESLAMATE-ARCHIVE-BRIDGE.md) |
+| 云端接口与部署 | [接口合同](JOURVOLT-CLOUD-API-CONTRACT.md)、[部署与运行资料](DEPLOYMENT.md)、[服务器密钥设置](JOURVOLT-ECS-SECRET-SETUP.md) |
+| Android 安装和跨层验收 | [验证与发布门](VALIDATION.md)、[设备操作规程](SOP-ANDROID-DEVICE-DEPLOYMENT-AND-VERIFICATION.md) |
+| 小程序接口与实现选择 | [小程序接口](miniprogram/INTERFACE-CONTRACT-M1.md)、[框架决策](miniprogram/ADR-0001-client-framework.md) |
+| 提议中的分层存储 | [存储 ADR](ADR-2026-10-02-tiered-history-storage.md)；状态仍是提案，不是已迁移或删除策略 |
 
-历史审核入口：[2026-10-02 主分支、部署与待修复状态](RPT-2026-10-02-review-baseline.md)。
-
-- [10月4日历史同步与详情复发](BUG-REPAIR-2026-10-04-phone-history-stale.md)：首次恢复、07:51再现、安全异常分型、未知SOC及43候选验收边界。
-- [云登录 502 与历史读取内存故障](DBG-2026-10-02-login-oom.md)：运行证据、源码风险、优化方案和验收条件。
-- [充电费用与历史同步验收](BUG-REPAIR-2026-10-01-sync-charge-cost.md)。
-- [TeslaMate 归档桥接](TESLAMATE-ARCHIVE-BRIDGE.md)。
-- 最新执行清单位于 `../tasks/todo.md`，经验规则位于 `../tasks/lessons.md`。
-
-日期较早的文档是历史记录，不代表当前部署或完成状态。代码已合并、测试通过、手机已安装、云端已部署、Fleet 实车采集通过是五个独立门禁。
+当前执行项放在 [任务页](../tasks/todo.md)，可重复使用的纠错规则放在 [经验页](../tasks/lessons.md)。历史阶段方案、审核报告和交接包已按 2026-10-23 清理批次保存在仓库外归档及 Git 基线提交 `49ee6c7423d6d61c50b511eb50f5055316ed691a`；需要旧文件时用该提交的路径检索。归档副本由项目持有人保管，不包含在公开仓库中。
