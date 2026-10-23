@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-10-24 开发者工具空白 WebView 不一定触发 onError
+
+- Correction: Jovi 在电脑开发者工具的 Tesla 登录流程未完成；start 接口实际返回 200，但模拟器 WebView 只显示空白，原来的 onError 备用入口没有出现。
+- Rule: 对电脑开发者工具提供独立的可见浏览器入口和状态检查，不依赖 WebView 的 onError 才让用户恢复；真机微信保持原登录方式，官方凭据仅由用户在 Tesla 页面输入。
+
 ## 2026-10-23 模拟器截图先固定构建配置与源码版本
 
 - Pattern: 一次 Taro 构建漏传 `TARO_APP_API_BASE_URL`，截图出现“服务地址尚未配置”；随后微信开发者工具复用旧编译，画面仍显示已从源码删掉的“地址待解析”。编译成功和 `simulator_refresh` 成功都不等于画面来自当前代码。
