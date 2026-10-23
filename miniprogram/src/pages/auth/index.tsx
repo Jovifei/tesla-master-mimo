@@ -35,6 +35,9 @@ export default function AuthPage() {
   const [url, setUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [exchanging, setExchanging] = useState(false)
+  const [desktopSimulator] = useState(() => {
+    try { return Taro.getSystemInfoSync?.().platform === 'devtools' } catch { return false }
+  })
   const claimInFlight = useRef(false)
   const claimRun = useRef(0)
   const lifecycleEpoch = useRef(0)
@@ -142,14 +145,16 @@ export default function AuthPage() {
     return <View className="page"><View className="card"><Text className="section-title">正在完成授权</Text><LoadingIndicator label="正在完成当前特斯拉账号登录…" /></View></View>
   }
 
-  if (error || !url) {
+  if (error || !url || desktopSimulator) {
     return (
       <View className="page">
         <View className="card">
           <Text className="section-title">Tesla 官方授权</Text>
-          {error ? <Text className="error">{error}</Text> : <LoadingIndicator label="正在准备官方授权入口…" compact />}
+          {error ? <Text className="error">{error}</Text> : !url ? <LoadingIndicator label="正在准备官方授权入口…" compact /> : null}
           {url ? <>
-            <Text className="muted">若微信无法打开官方页面，请复制入口到系统浏览器完成登录，再返回小程序检查授权状态。</Text>
+            <Text className="muted">{desktopSimulator
+              ? '官方授权入口已就绪。电脑开发者工具请在系统浏览器完成 Tesla 官方登录，随后返回这里检查授权状态。'
+              : '若微信无法打开官方页面，请复制入口到系统浏览器完成登录，再返回小程序检查授权状态。'}</Text>
             <Button className="button" onClick={() => { void copyOfficialEntry() }}>复制 Tesla 官方授权入口</Button>
           </> : null}
           <Button className="button" onClick={() => { void resumeAuthorization() }}>检查授权状态</Button>

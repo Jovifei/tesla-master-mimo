@@ -3,6 +3,7 @@ import TestRenderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), toast: vi.fn(), back: vi.fn(), clipboard: vi.fn(),
+  systemPlatform: 'ios',
   load: ((_options: Record<string, string>) => {}) as (options: Record<string, string>) => void,
   hide: (() => {}) as () => void, show: (() => {}) as () => void, unload: (() => {}) as () => void }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', WebView: 'webview', Image: 'image' }))
@@ -10,6 +11,7 @@ vi.mock('@tarojs/taro', () => ({ default: {
   request: platform.request, getStorageSync: (key: string) => platform.values.get(key),
   setStorageSync: (key: string, value: unknown) => platform.values.set(key, value),
   removeStorageSync: (key: string) => platform.values.delete(key),
+  getSystemInfoSync: () => ({ platform: platform.systemPlatform }),
   showToast: platform.toast, navigateBack: platform.back, setClipboardData: platform.clipboard,
 }, useLoad: (fn: (options: Record<string, string>) => void) => { platform.load = fn },
 useDidHide: (fn: () => void) => { platform.hide = fn }, useDidShow: (fn: () => void) => { platform.show = fn },
@@ -20,7 +22,7 @@ const respond = (data: unknown) => ({ statusCode: 200, data, header: {} })
 let renderer: ReactTestRenderer | null = null
 beforeEach(() => {
   vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test')
-  platform.values.clear(); platform.request.mockReset(); platform.toast.mockReset(); platform.back.mockReset(); platform.clipboard.mockReset().mockResolvedValue({})
+  platform.values.clear(); platform.systemPlatform = 'ios'; platform.request.mockReset(); platform.toast.mockReset(); platform.back.mockReset(); platform.clipboard.mockReset().mockResolvedValue({})
   platform.hide = () => {}; platform.show = () => {}
   platform.values.set(pendingKey, pending('a'))
 })
@@ -145,6 +147,45 @@ it('blocked WebView offers a trusted official browser copy fallback', async () =
   const copy = renderer!.root.findAllByType('button').find(node => node.children.join('') === '复制 Tesla 官方授权入口')!
   await act(async () => { await copy.props.onClick() }); await flush()
   expect(platform.clipboard).toHaveBeenCalledWith({ data: official })
+})
+it('desktop developer tool shows the official browser fallback without opening a blank WebView', async () => {
+  platform.systemPlatform = 'devtools'
+  const official = 'https://auth.tesla.com/oauth2/v3/authorize?state=fixture'
+  await mount({ url: encodeURIComponent(official) })
+  expect(renderer!.root.findAllByType('webview' as React.ElementType)).toHaveLength(0)
+  expect(visible()).toContain('电脑开发者工具请在系统浏览器完成 Tesla 官方登录')
+  expect(visible()).toContain('官方授权入口已就绪')
+  expect(visible()).not.toContain('正在准备官方授权入口')
+  const copy = renderer!.root.findAllByType('button').find(node => node.children.join('') === '复制 Tesla 官方授权入口')!
+  await act(async () => { await copy.props.onClick() }); await flush()
+  expect(platform.clipboard).toHaveBeenCalledWith({ data: official })
+  platform.request.mockResolvedValueOnce(respond({ status: 'pending' }))
+  await checkStatus()
+  expect(visible()).toContain('授权尚未回流')
+  expect(platform.values.has('matelink.wechat.session.v1')).toBe(false)
+})
+it('desktop fallback never offers a copy action for an untrusted authorization URL', async () => {
+  platform.systemPlatform = 'devtools'
+  await mount({ url: encodeURIComponent('https://untrusted.example/authorize?state=fixture') })
+  expect(visible()).toContain('授权入口无效')
+  expect(renderer!.root.findAllByType('webview' as React.ElementType)).toHaveLength(0)
+  expect(renderer!.root.findAllByType('button').some(node => node.children.join('') === '复制 Tesla 官方授权入口')).toBe(false)
+  expect(platform.clipboard).not.toHaveBeenCalled()
+})
+it('desktop browser return claims only its ready authorization transaction', async () => {
+  platform.systemPlatform = 'devtools'
+  const official = 'https://auth.tesla.com/oauth2/v3/authorize?state=fixture'
+  await mount({ url: encodeURIComponent(official) })
+  const copy = renderer!.root.findAllByType('button').find(node => node.children.join('') === '复制 Tesla 官方授权入口')!
+  await act(async () => { await copy.props.onClick(); platform.hide(); platform.show() })
+  platform.request.mockResolvedValueOnce(respond({ status: 'ready' }))
+    .mockResolvedValueOnce(respond({ access_token: 'fixture-access', refresh_token: 'fixture-refresh', user: { id: 'fixture-user' } }))
+  await checkStatus(); await flush()
+  expect(platform.request.mock.calls[0][0].url).toContain('/miniprogram/status')
+  expect(platform.request.mock.calls[1][0].data).toEqual({ transaction_id: 'a', client_proof: 'fixture-proof-a' })
+  expect(platform.values.get('matelink.wechat.session.v1')).toMatchObject({ userId: 'fixture-user', accessToken: 'fixture-access' })
+  expect(platform.values.has(pendingKey)).toBe(false)
+  expect(platform.back).toHaveBeenCalledTimes(1)
 })
 it('consumed state remains readable without clearing pending proof', async () => {
   platform.request.mockResolvedValueOnce(respond({ status: 'consumed' }))
