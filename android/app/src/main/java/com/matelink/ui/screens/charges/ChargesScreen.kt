@@ -264,9 +264,8 @@ private fun ChargesContent(
     // Header items in render order: date chips, dropdowns, free hint (conditional),
     // summary, charts (conditional), history header. Adjust if items are added.
     val showFreeHint = freeSupercharging && selectedCostFilter == CostFilter.NO_COST
-    val headerCount = 4 +
+    val headerCount = 3 +
         (if (historySyncWarning != null) 1 else 0) +
-        (if (localArchiveLinkPending) 1 else 0) +
         (if (showFreeHint) 1 else 0) +
         (if (chartData.isNotEmpty()) 1 else 0)
 
@@ -277,16 +276,6 @@ private fun ChargesContent(
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        if (localArchiveLinkPending) {
-            item(key = "history_archive_link_pending") {
-                Text(
-                    text = stringResource(R.string.history_archive_link_pending),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(12.dp)
-                )
-            }
-        }
         if (historySyncWarning != null) {
             item(key = "history_sync_warning") {
                 Text(
@@ -310,37 +299,6 @@ private fun ChargesContent(
                 onFilterSelected = onDateFilterSelected,
                 onCustomRangeSelected = onCustomRangeSelected
             )
-        }
-
-        item {
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item {
-                    ChargeTypeFilterDropdown(
-                        selectedFilter = selectedChargeTypeFilter,
-                        onFilterSelected = onChargeTypeFilterSelected,
-                        palette = palette
-                    )
-                }
-                item {
-                    CostFilterDropdown(
-                        selectedFilter = selectedCostFilter,
-                        onFilterSelected = onCostFilterSelected,
-                        palette = palette
-                    )
-                }
-                item {
-                    LocationFilterDropdown(
-                        availableLocations = availableLocations,
-                        selectedLocations = selectedLocations,
-                        onLocationToggled = onLocationFilterToggled,
-                        onClearAll = onLocationFilterCleared,
-                        palette = palette
-                    )
-                }
-            }
         }
 
         if (freeSupercharging && selectedCostFilter == CostFilter.NO_COST) {
@@ -482,12 +440,11 @@ private fun DateFilterChips(
     ) {
         items(
             listOf(
-                DateFilter.ALL_TIME,
                 DateFilter.LAST_7_DAYS,
                 DateFilter.LAST_30_DAYS,
-                DateFilter.LAST_90_DAYS
-            )
-        ) { filter ->
+                DateFilter.LAST_90_DAYS,
+                DateFilter.ALL_TIME
+            )) { filter ->
             FilterChip(
                 selected = filter == selectedFilter,
                 onClick = { onFilterSelected(filter) },
@@ -706,9 +663,9 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                             palette.dcColor
                         )
                     ),
-                    modifier = Modifier.padding(vertical = 8.dp),
-                    adaptive = true,
-                    maxColumns = 2
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    adaptive = false,
+                    maxColumns = 4
                 )
             }
         }
@@ -736,14 +693,18 @@ private fun ChargeItem(
         false -> palette.acColor
         null -> MaterialTheme.colorScheme.primary
     }
+    val start = charge.startBatteryLevel
+    val end = charge.endBatteryLevel
     val energy = presentChargeEnergy(charge.batteryInputKwh)
+    val displayEnergyKwh = energy.energyKwh
+        ?: if (start != null && end != null && end > start) (end - start) / 100.0 * 60.0 else null
 
     val effectiveCost = resolveChargeCostFromTotal(
         manualTotalAmount = manualTotalAmount,
         freeSupercharging = freeSupercharging,
         isDcCharge = isDcCharge == true,
         teslaMateCost = charge.cost,
-        energyKwh = energy.energyKwh,
+        energyKwh = displayEnergyKwh,
         defaultPricePerKwh = defaultChargePrice
     )
     val isFree = effectiveCost.source == ChargeCostSource.FREE
@@ -752,9 +713,7 @@ private fun ChargeItem(
         effectiveCost.cost != null -> (if (effectiveCost.source == ChargeCostSource.ESTIMATE) "≈" else "") + "$currencySymbol%.2f".format(effectiveCost.cost)
         else -> notAvailableLabel
     }
-    val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
-    val start = charge.startBatteryLevel
-    val end = charge.endBatteryLevel
+    val is24Hour = true
 
     TelemetryPanel(
         modifier = Modifier
@@ -821,7 +780,7 @@ private fun ChargeItem(
                         TelemetryMetricSpec(
                             icon = Icons.Default.ElectricBolt,
                             label = stringResource(R.string.energy),
-                            value = energy.energyKwh?.let { "%.1f kWh".format(it) } ?: notAvailableLabel,
+                            value = (energy.energyKwh ?: displayEnergyKwh)?.let { "%.1f kWh".format(it) } ?: notAvailableLabel,
                             tint = accent
                         ),
                         TelemetryMetricSpec(
@@ -837,8 +796,9 @@ private fun ChargeItem(
                             tint = Color(0xFFF97316)
                         )
                     ),
-                    modifier = Modifier.padding(vertical = 8.dp),
-                    adaptive = true
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    adaptive = false,
+                    maxColumns = 4
                 )
             }
 

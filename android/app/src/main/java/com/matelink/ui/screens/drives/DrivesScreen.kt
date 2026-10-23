@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Eco
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.LocalParking
 import com.matelink.ui.icons.CustomIcons
 import androidx.compose.material.icons.filled.Speed
@@ -220,7 +221,7 @@ private fun DrivesContent(
     val historyItems = remember(drives) { buildDriveHistoryItems(drives) }
     // Header items in this LazyColumn, in render order: date chips, distance chips,
     // summary, charts (conditional), history header. Adjust if items are added.
-    val headerCount = 4 + (if (chartData.isNotEmpty()) 1 else 0) + (if (historySyncWarning != null) 1 else 0) + (if (localArchiveLinkPending) 1 else 0)
+    val headerCount = 3 + (if (chartData.isNotEmpty()) 1 else 0) + (if (historySyncWarning != null) 1 else 0)
 
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
@@ -229,16 +230,6 @@ private fun DrivesContent(
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        if (localArchiveLinkPending) {
-            item(key = "history_archive_link_pending") {
-                Text(
-                    text = stringResource(R.string.history_archive_link_pending),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(12.dp)
-                )
-            }
-        }
         if (historySyncWarning != null) {
             item(key = "history_sync_warning") {
                 Text(
@@ -264,14 +255,7 @@ private fun DrivesContent(
             )
         }
 
-        item {
-            DistanceFilterChips(
-                selectedFilter = selectedDistanceFilter,
-                units = units,
-                palette = palette,
-                onFilterSelected = onDistanceFilterSelected
-            )
-        }
+
 
         item {
             SummaryCard(summary = summary, units = units, palette = palette)
@@ -455,7 +439,13 @@ private fun DateFilterChips(
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(DriveDateFilter.entries.filter { it != DriveDateFilter.CUSTOM }) { filter ->
+        val orderedFilters = listOf(
+            DriveDateFilter.LAST_7_DAYS,
+            DriveDateFilter.TODAY,
+            DriveDateFilter.LAST_30_DAYS,
+            DriveDateFilter.ALL_TIME
+        )
+        items(orderedFilters) { filter ->
             FilterChip(
                 selected = filter == selectedFilter,
                 onClick = { onFilterSelected(filter) },
@@ -564,38 +554,38 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                             Icons.Default.DirectionsCar,
                             stringResource(R.string.total_trips),
                             if (hasSummary) "%,d".format(summary.totalDrives) else unavailable,
-                            palette.accent,
+                            Color(0xFF0284C7),
                             unit = stringResource(R.string.visual_trip_count_unit),
-                            valueFontSize = 26.sp
+                            valueFontSize = 16.sp
                         ),
                         TelemetryMetricSpec(
                             CustomIcons.SteeringWheel,
                             stringResource(R.string.total_distance),
                             summary.totalDistanceKm?.let { visualTripNumber(UnitFormatter.distanceKmDisplayValue(it, units)) } ?: unavailable,
-                            palette.accent,
+                            Color(0xFF059669),
                             unit = UnitFormatter.getDistanceUnit(units),
-                            valueFontSize = 26.sp
+                            valueFontSize = 16.sp
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Timer,
                             stringResource(R.string.total_time),
                             summary.totalDurationMin?.let { "%,d".format(it) } ?: unavailable,
-                            palette.accent,
+                            Color(0xFFD97706),
                             unit = stringResource(R.string.visual_trip_duration_unit),
-                            valueFontSize = 26.sp
+                            valueFontSize = 16.sp
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Speed,
                             stringResource(R.string.max_speed),
                             summary.maxSpeedKmh?.takeIf { it >= 0 }?.let { visualTripNumber(UnitFormatter.speedKmhDisplayValue(it.toDouble(), units), 0) } ?: unavailable,
-                            palette.accent,
+                            Color(0xFF6366F1),
                             unit = UnitFormatter.getSpeedUnit(units),
-                            valueFontSize = 26.sp
+                            valueFontSize = 16.sp
                         )
                     ),
-                    modifier = Modifier.padding(vertical = 8.dp),
-                    adaptive = true,
-                    maxColumns = 2
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    adaptive = false,
+                    maxColumns = 4
                 )
             }
             if (hasSummary && (summary.distanceSampleCount < summary.totalDrives ||
@@ -671,25 +661,42 @@ private fun DriveItem(
                         )
                     }
                     energyPres.source?.takeIf { energyKwh != null }?.let { source ->
-                        val sourceLabel = when (source) {
+                        val (sourceLabel, badgeBg, badgeTextColor) = when (source) {
                             DriveDetailEnergySource.POWER_SAMPLES -> {
                                 val coverage = if ((energyPres.coverageRatio ?: 0.0) > 0.0) {
                                     " ${"%.0f".format(energyPres.coverageRatio!! * 100)}%"
                                 } else ""
-                                "${stringResource(R.string.energy_source_power_samples)}$coverage"
+                                Triple(
+                                    "${stringResource(R.string.energy_source_power_samples)}$coverage",
+                                    Color(0xFFE0F2FE),
+                                    Color(0xFF0369A1)
+                                )
                             }
-                            DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE -> stringResource(R.string.energy_source_soc_estimate)
-                            DriveDetailEnergySource.ENERGY_REMAINING_DELTA -> stringResource(R.string.energy_nominal_estimate)
-                            DriveDetailEnergySource.API -> stringResource(R.string.energy_source_api_reported)
+                            DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE -> Triple(
+                                stringResource(R.string.energy_source_soc_estimate),
+                                Color(0xFFFEF3C7),
+                                Color(0xFFB45309)
+                            )
+                            DriveDetailEnergySource.ENERGY_REMAINING_DELTA -> Triple(
+                                stringResource(R.string.energy_nominal_estimate),
+                                Color(0xFFF1F5F9),
+                                Color(0xFF475569)
+                            )
+                            DriveDetailEnergySource.API -> Triple(
+                                stringResource(R.string.energy_source_api_reported),
+                                Color(0xFFECFDF5),
+                                Color(0xFF047857)
+                            )
                         }
                         Surface(
-                            color = palette.accent.copy(alpha = 0.13f),
+                            color = badgeBg,
                             shape = MaterialTheme.shapes.extraLarge
                         ) {
                             Text(
                                 text = sourceLabel,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = palette.accent,
+                                color = badgeTextColor,
+                                fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                             )
                         }
@@ -712,13 +719,14 @@ private fun DriveItem(
                 TelemetryMetricStrip(
                     metrics = listOf(
                         TelemetryMetricSpec(
-                            icon = Icons.Default.Timer,
-                            label = stringResource(R.string.duration),
-                            value = drive.durationMin?.takeIf { it >= 0 }?.let { "%,d".format(it) }
+                            icon = Icons.Default.Bolt,
+                            label = stringResource(R.string.energy),
+                            value = efficiency?.let { visualTripNumber(it / 10.0) }
+                                ?: energyKwh?.let { visualTripNumber(it) }
                                 ?: stringResource(R.string.not_available),
-                            tint = palette.accent,
-                            unit = stringResource(R.string.visual_trip_duration_unit),
-                            valueFontSize = 22.sp
+                            tint = Color(0xFF10B981),
+                            unit = if (efficiency != null) "kWh/100" else if (energyKwh != null) "kWh" else "",
+                            valueFontSize = 17.5.sp
                         ),
                         TelemetryMetricSpec(
                             icon = CustomIcons.SteeringWheel,
@@ -727,33 +735,32 @@ private fun DriveItem(
                                 ?.takeIf { it.isFinite() && it >= 0.0 }
                                 ?.let { visualTripNumber(it) }
                                 ?: stringResource(R.string.not_available),
-                            tint = palette.accent,
+                            tint = Color(0xFF0284C7),
                             unit = UnitFormatter.getDistanceUnit(receiptUnits),
-                            valueFontSize = 22.sp
+                            valueFontSize = 17.5.sp
                         ),
                         TelemetryMetricSpec(
                             icon = Icons.Default.Speed,
                             label = stringResource(R.string.max_speed),
                             value = drive.speedMax?.takeIf { drive.hasKnownLengthUnit && it >= 0 }?.let { "%,d".format(it) }
                                 ?: stringResource(R.string.not_available),
-                            tint = palette.accent,
+                            tint = Color(0xFF6366F1),
                             unit = UnitFormatter.getSpeedUnit(receiptUnits),
-                            valueFontSize = 22.sp
+                            valueFontSize = 17.5.sp
                         ),
                         TelemetryMetricSpec(
-                            icon = Icons.Default.Eco,
-                            label = stringResource(R.string.efficiency),
-                            value = efficiency
-                                ?.takeIf(Double::isFinite)
-                                ?.let { visualTripNumber(it / 10.0) }
+                            icon = Icons.Default.Timer,
+                            label = stringResource(R.string.duration),
+                            value = drive.durationMin?.takeIf { it >= 0 }?.let { "%,d".format(it) }
                                 ?: stringResource(R.string.not_available),
-                            tint = if (efficiency != null && efficiency < 0.0) Color(0xFF10B981) else palette.accent,
-                            unit = "kWh/100km",
-                            valueFontSize = 22.sp
+                            tint = Color(0xFFD97706),
+                            unit = stringResource(R.string.visual_trip_duration_unit),
+                            valueFontSize = 17.5.sp
                         )
                     ),
-                    modifier = Modifier.padding(vertical = 8.dp),
-                    adaptive = true
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    adaptive = false,
+                    maxColumns = 4
                 )
             }
         }
@@ -1055,7 +1062,7 @@ private fun DrivesChartPage(
         InteractiveBarChart(
             data = barData,
             modifier = Modifier.fillMaxWidth(),
-            barColor = palette.accent,
+            barColor = Color(0xFF0891B2),
             labelColor = palette.onSurfaceVariant,
             showEveryNthLabel = labelInterval,
             valueFormatter = valueFormatter,

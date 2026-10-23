@@ -112,7 +112,7 @@ data class ChargesUiState(
     val localArchiveLinkPending: Boolean = false,
     val startDate: LocalDate? = null,
     val endDate: LocalDate? = null,
-    val selectedFilter: DateFilter = DateFilter.ALL_TIME,  // Preserve filter in ViewModel
+    val selectedFilter: DateFilter = DateFilter.LAST_7_DAYS,  // Preserve filter in ViewModel
     val chargeTypeFilter: ChargeTypeFilter = ChargeTypeFilter.ALL,
     val costFilter: CostFilter = CostFilter.ALL,
     val customStartDate: LocalDate? = null,
@@ -170,7 +170,7 @@ class ChargesViewModel @Inject constructor(
         private fun restoreInitialState(handle: SavedStateHandle): ChargesUiState {
             val dateFilter = handle.get<String>(KEY_DATE_FILTER)
                 ?.let { runCatching { DateFilter.valueOf(it) }.getOrNull() }
-                ?: DateFilter.ALL_TIME
+                ?: DateFilter.LAST_7_DAYS
             val chargeTypeFilter = handle.get<String>(KEY_CHARGE_TYPE_FILTER)
                 ?.let { runCatching { ChargeTypeFilter.valueOf(it) }.getOrNull() }
                 ?: ChargeTypeFilter.ALL

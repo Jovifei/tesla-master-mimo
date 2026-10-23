@@ -86,7 +86,7 @@ fun VehicleHeroImage(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(165.dp),
+            .height(235.dp),
         contentAlignment = Alignment.Center
     ) {
         Crossfade(
@@ -100,8 +100,8 @@ fun VehicleHeroImage(
                     contentDescription = stringResource(R.string.vehicle),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .fillMaxWidth(0.96f)
-                        .height(155.dp)
+                        .fillMaxWidth(1f)
+                        .height(225.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .clickable(
                             indication = null,
@@ -136,8 +136,8 @@ fun VehicleHeroImage(
                     contentDescription = stringResource(R.string.vehicle),
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
-                        .fillMaxWidth(0.96f)
-                        .height(155.dp)
+                        .fillMaxWidth(1f)
+                        .height(225.dp)
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() }

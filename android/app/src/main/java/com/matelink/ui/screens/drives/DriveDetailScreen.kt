@@ -1,5 +1,6 @@
 package com.matelink.ui.screens.drives
 
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -190,7 +191,7 @@ private fun DriveDetailContent(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
+    val is24Hour = true
     val scrollState = rememberScrollState()
 
     val positions = detail.positions.orEmpty()
@@ -405,7 +406,7 @@ private fun DriveDetailContent(
 
 @Composable
 private fun RouteHeaderCard(detail: DriveDetail) {
-    val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
+    val is24Hour = true
     TelemetryPanel(
         modifier = Modifier.fillMaxWidth(),
         accent = MaterialTheme.colorScheme.primary
@@ -548,7 +549,12 @@ private fun StatsSectionCard(
     val configuration = LocalConfiguration.current
     val screenWidth = configuration.screenWidthDp
 
-    val columnCount = if (screenWidth >= 600 && configuration.fontScale <= 1.1f) 3 else 2
+    val columnCount = when {
+        stats.size <= 3 -> stats.size
+        stats.size == 4 -> 4
+        screenWidth >= 600 && configuration.fontScale <= 1.1f -> 4
+        else -> 3
+    }
     val palette = telemetryPalette()
 
     Card(
@@ -652,25 +658,51 @@ private fun StatItemView(
     recovered: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier.semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(
+        modifier = modifier.semantics(mergeDescendants = true) {},
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyLarge,
-            fontSize = if (unit != null) 22.sp else 16.sp,
-            color = if (recovered) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.SemiBold
-        )
-        unit?.let {
+        if (unit != null) {
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.Start
+            ) {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontSize = if (value.length > 5) 15.sp else 17.sp,
+                    color = if (recovered) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+                Text(
+                    text = unit,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.padding(bottom = 1.dp)
+                )
+            }
+        } else {
             Text(
-                text = it,
-                style = MaterialTheme.typography.bodySmall,
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontSize = if (value.length > 10) 12.sp else 14.sp,
+                color = if (recovered) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -868,6 +900,6 @@ private fun extractTimeLabels(positions: List<DrivePosition>, is24Hour: Boolean?
     }
 }
 
-private fun formatDateTime(dateStr: String?, is24Hour: Boolean? = null): String {
-    return formatMonthDayTime(dateStr, is24Hour = is24Hour) ?: "—"
+private fun formatDateTime(dateStr: String?, is24Hour: Boolean? = true): String {
+    return formatMonthDayTime(dateStr, is24Hour = is24Hour ?: true) ?: "—"
 }

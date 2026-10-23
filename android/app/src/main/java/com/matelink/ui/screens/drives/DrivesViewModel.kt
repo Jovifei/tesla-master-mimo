@@ -127,7 +127,7 @@ data class DrivesUiState(
     val summary: DrivesSummary = DrivesSummary(),
     val units: Units? = null,
     val distanceFilter: DriveDistanceFilter = DriveDistanceFilter.ALL,
-    val dateFilter: DriveDateFilter = DriveDateFilter.ALL_TIME,
+    val dateFilter: DriveDateFilter = DriveDateFilter.LAST_7_DAYS,
     val customStartDate: LocalDate? = null,
     val customEndDate: LocalDate? = null,
     val scrollPosition: Int = 0,
@@ -211,6 +211,21 @@ internal fun DriveData.historyEnergy(
             coverageRatio = resolved.coverageRatio
         )
     }
+    val distance = distanceKm
+    if (resolved.energyKwh == null && distance != null && distance > 0.0 &&
+        startBatteryLevel != null && endBatteryLevel != null && startBatteryLevel == endBatteryLevel) {
+        val capacity = batteryCapacityKwh?.takeIf { it > 0.0 && it.isFinite() }
+            ?: DriveEnergyResolver.resolveBatteryCapacity(model, trimBadging)
+        val nominalWhKm = 145.0
+        val estKwh = minOf((distance * nominalWhKm) / 1000.0, capacity * 0.009)
+        return DriveDetailEnergyPresentation(
+            energyKwh = estKwh.takeIf(Double::isFinite),
+            efficiencyWhKm = (estKwh / distance * 1000.0).takeIf(Double::isFinite),
+            source = DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE,
+            coverageSeconds = null,
+            coverageRatio = null
+        )
+    }
     return presentDriveDetailEnergy(null, null, null, null, null, null)
 }
 
@@ -284,7 +299,7 @@ class DrivesViewModel @Inject constructor(
         private fun restoreInitialState(handle: SavedStateHandle): DrivesUiState {
             val dateFilter = handle.get<String>(KEY_DATE_FILTER)
                 ?.let { runCatching { DriveDateFilter.valueOf(it) }.getOrNull() }
-                ?: DriveDateFilter.ALL_TIME
+                ?: DriveDateFilter.LAST_7_DAYS
             val distanceFilter = handle.get<String>(KEY_DISTANCE_FILTER)
                 ?.let { runCatching { DriveDistanceFilter.valueOf(it) }.getOrNull() }
                 ?: DriveDistanceFilter.ALL
