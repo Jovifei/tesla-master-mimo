@@ -2,7 +2,7 @@
 
 日期：2026-10-02。
 状态：**PROPOSED，尚未实施迁移或删除策略**。
-关联：`RPT-2026-10-02-history-memory-repair.md`、`ARCH-DECISION-2026-09-27-fleet-teslamate-hybrid.md`、`TESLAMATE-ARCHIVE-BRIDGE.md`。
+关联：[现行来源架构](ARCH-DECISION-2026-09-27-fleet-teslamate-hybrid.md)、[归档桥](TESLAMATE-ARCHIVE-BRIDGE.md)。2026-10-02 故障过程报告已归档；本 ADR 仍是提案，不证明迁移已经实施。
 
 ## 1. 背景与不变约束
 
