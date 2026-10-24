@@ -152,13 +152,22 @@ class TemperatureTrendTruthTest {
     private fun drive(
         id: Int, start: String, inside: Double? = null, outside: Double? = null,
         quality: String = "observed"
-    ) = DriveSummary(
-        driveId = id, carId = 1, startDate = start, endDate = start, durationMin = 1,
-        startAddress = "", endAddress = "", distance = 1.0, speedMax = 0, speedAvg = 0,
-        powerMax = 0, powerMin = 0, startBatteryLevel = 50, endBatteryLevel = 50,
-        outsideTempAvg = outside, insideTempAvg = inside, energyConsumed = null,
-        efficiency = null, qualityState = quality
-    )
+    ): DriveSummary {
+        val end = runCatching { Instant.parse(start).plusSeconds(60).toString() }.getOrDefault(start)
+        val source = if (quality == "incomplete") "local_import" else "teslamate_archive"
+        val raw = DriveData(id, startDate = start, endDate = end, source = source,
+            qualityState = if (quality == "incomplete") null else "observed",
+            insideTempAvg = inside?.takeIf(Double::isFinite),
+            outsideTempAvg = outside?.takeIf(Double::isFinite))
+        return DriveSummary(
+            driveId = id, carId = 1, startDate = start, endDate = end, durationMin = 1,
+            startAddress = "", endAddress = "", distance = 1.0, speedMax = 0, speedAvg = 0,
+            powerMax = 0, powerMin = 0, startBatteryLevel = 50, endBatteryLevel = 50,
+            outsideTempAvg = outside, insideTempAvg = inside, energyConsumed = null,
+            efficiency = null, apiEvidence = HistorySummaryEvidenceCodec.encode(raw),
+            qualityState = quality, qualityReason = if (quality == "incomplete") "unverified" else "api"
+        )
+    }
 
     private class Source(
         private val response: suspend (Int, TemperatureTrendWindow) -> TemperatureTrendSnapshot
