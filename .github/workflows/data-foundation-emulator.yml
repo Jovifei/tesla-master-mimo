@@ -31,7 +31,7 @@ jobs:
           set -euo pipefail
           mkdir -p emulator-evidence
           git rev-parse HEAD HEAD^{tree} HEAD^ > emulator-evidence/source.txt
-          cp android/gradle.properties emulator-evidence/gradle.properties.original
+          # Never upload the original local Gradle settings or proxy configuration.
           python3 - <<'PY'
           from pathlib import Path
           p=Path('android/gradle.properties')
