@@ -519,8 +519,26 @@ internal suspend fun persistChargeRowsWithoutEvidenceLoss(
 ) {
     rows.forEach { incoming ->
         val prior = get(incoming.carId, incoming.chargeId)
-        if (prior != null && HistorySourceReceiptArchive.replaced(prior, incoming)) archive(prior)
+        val superseded = prior != null && HistorySourceReceiptArchive.replaced(prior, incoming)
         val merged = mergeStoredCharge(incoming, prior)
+        if (superseded) {
+            // Archive the DISCARDED original, not always the prior row.
+            // A foreign observed-looking import can be correctly rejected by
+            // the resolver; silently dropping its distinct raw bytes would
+            // still lose history. Room's enclosing @Transaction is atomic.
+            val priorBytes = prior!!.apiEvidence
+            val incomingBytes = incoming.apiEvidence
+            when {
+                merged.apiEvidence == priorBytes && merged.apiEvidence != incomingBytes ->
+                    archive(incoming)
+                merged.apiEvidence == incomingBytes && merged.apiEvidence != priorBytes ->
+                    archive(prior)
+                else -> {
+                    archive(prior)
+                    archive(incoming)
+                }
+            }
+        }
         val marked = merged.copy(apiEvidence = HistorySummaryEvidenceCodec.carryDetailTerminal404(
             merged.apiEvidence, prior?.apiEvidence, incoming.carId))
         // Legacy terminal rows lost their original qualification in older code. Do not guess it back.

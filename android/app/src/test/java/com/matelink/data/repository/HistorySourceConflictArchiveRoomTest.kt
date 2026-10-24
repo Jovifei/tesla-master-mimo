@@ -70,6 +70,39 @@ class HistorySourceConflictArchiveRoomTest {
         } finally { db.close() }
     }
 
+    @Test fun rejectedForeignSourceIsColdArchivedAndNeverPromotesItsAddressOrEnergy() = runBlocking {
+        var db = open()
+        try {
+            val car = -71
+            val trustedCharge = charge("A").toSyncSummary(car)!!
+            val trustedDrive = drive("A").toSyncSummary(car)!!
+            db.chargeSummaryDao().upsertPreservingEvidence(listOf(trustedCharge))
+            db.driveSummaryDao().upsertPreservingEvidence(listOf(trustedDrive))
+            val foreignCharge = charge("B").copy(source = "local_import",
+                qualityState = "observed", chargeEnergyAdded = 99.0,
+                address = "unverified foreign location").toSyncSummary(car)!!
+            val foreignDrive = drive("B").copy(source = "local_import",
+                qualityState = "observed", energyConsumedNet = 88.0,
+                startAddress = "unverified foreign location").toSyncSummary(car)!!
+            db.chargeSummaryDao().upsertPreservingEvidence(listOf(foreignCharge))
+            db.driveSummaryDao().upsertPreservingEvidence(listOf(foreignDrive))
+            assertEquals(trustedCharge.apiEvidence, db.chargeSummaryDao().get(car, 9)!!.apiEvidence)
+            assertEquals(trustedDrive.apiEvidence, db.driveSummaryDao().get(car, 8)!!.apiEvidence)
+            db.close(); db = open()
+            db.openHelper.readableDatabase.query(
+                "SELECT kind,headerJson FROM history_detail_receipts WHERE state='archived_source_conflict'"
+            ).use { rows ->
+                val originals = mutableMapOf<String, String>()
+                while (rows.moveToNext()) originals[rows.getString(0)] = rows.getString(1)
+                assertEquals(foreignCharge.apiEvidence, originals["archived_charge_source"])
+                assertEquals(foreignDrive.apiEvidence, originals["archived_drive_source"])
+            }
+            assertEquals(trustedCharge.apiEvidence, db.chargeSummaryDao().get(car, 9)!!.apiEvidence)
+            assertTrue(db.chargeSummaryDao().getAllForCar(-72).isEmpty())
+            assertTrue(db.driveSummaryDao().getAllChronological(-72).isEmpty())
+        } finally { db.close() }
+    }
+
     @Test fun sourceConflictArchivesChargeAndDriveBeforeOverwritingThenReopensBoth() = runBlocking {
         var db = open()
         try {
