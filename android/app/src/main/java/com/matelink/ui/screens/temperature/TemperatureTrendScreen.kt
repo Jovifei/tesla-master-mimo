@@ -50,6 +50,13 @@ import kotlin.math.roundToInt
 private val ColorCabin = Color(0xFF00897B)   // Teal for Cabin (Inside)
 private val ColorOutside = Color(0xFF1E88E5) // Blue for Outside
 
+/** Axes must enclose negative/zero and every qualified real sample, even below −20°C. */
+internal fun realTemperatureAxisBounds(values: List<Double>): Pair<Double, Double>? {
+    val finite = values.filter(Double::isFinite)
+    if (finite.isEmpty()) return null
+    return kotlin.math.floor(finite.min() - 3.0) to kotlin.math.ceil(finite.max() + 3.0)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TemperatureTrendScreen(
@@ -263,10 +270,7 @@ private fun TemperatureTrendChartCard(points: List<TemperaturePoint>) {
     val allValues = insideValues + outsideValues
     if (allValues.isEmpty()) return
 
-    val minVal = allValues.minOrNull() ?: 15.0
-    val maxVal = allValues.maxOrNull() ?: 35.0
-    val yMin = kotlin.math.floor(minVal - 3.0).coerceAtLeast(-20.0)
-    val yMax = kotlin.math.ceil(maxVal + 3.0)
+    val (yMin, yMax) = realTemperatureAxisBounds(allValues) ?: return
     val yRange = (yMax - yMin).takeIf { it > 0.0 } ?: 10.0
 
     val firstT = points.firstOrNull()?.timestampMs ?: 0L

@@ -23,6 +23,13 @@ import org.junit.Test
 class TemperatureTrendTruthTest {
     private val now = Instant.parse("2026-10-21T12:00:00Z")
 
+    @Test fun temperaturePlotAxisEnclosesObservedNegativeValuesAndValidZero() {
+        val bounds = requireNotNull(realTemperatureAxisBounds(listOf(-35.5, 0.0, 22.0)))
+        assertTrue(bounds.first < -35.5)
+        assertTrue(bounds.second > 22.0)
+        assertEquals(null, realTemperatureAxisBounds(listOf(Double.NaN, Double.POSITIVE_INFINITY)))
+    }
+
     @Test fun legacyRemoteDriveKeepsItsOwnTemperatureDespiteMissingEnergyQuality() {
         val raw = DriveData(
             driveId = 7, startDate = "2026-10-20T10:00:00Z", endDate = "2026-10-20T10:20:00Z",
