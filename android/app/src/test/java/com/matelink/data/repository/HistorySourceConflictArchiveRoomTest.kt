@@ -104,6 +104,12 @@ class HistorySourceConflictArchiveRoomTest {
             assertEquals(setOf(rawDriveA,rawDriveB),rows["archived_drive_source"])
             assertEquals(rawChargeA,db.chargeSummaryDao().get(car,9)!!.apiEvidence)
             assertEquals(rawDriveA,db.driveSummaryDao().get(car,8)!!.apiEvidence)
+            // A→B→A restores the exact immutable source bytes, not a
+            // reconstructed display envelope with an injected quality_reason.
+            assertEquals(rawChargeA,
+                db.chargeSummaryDao().getAnyForPersistence(car,9)!!.apiEvidence)
+            assertEquals(rawDriveA,
+                db.driveSummaryDao().getAnyForPersistence(car,8)!!.apiEvidence)
             assertTrue(db.chargeSummaryDao().getAllForCar(-72).isEmpty())
             assertTrue(db.driveSummaryDao().getAllChronological(-72).isEmpty())
         } finally { db.close() }

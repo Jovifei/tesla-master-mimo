@@ -586,6 +586,22 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
     require(incoming.carId == cached.carId && incoming.driveId == cached.driveId)
     val inRaw = incoming.toRawAnalysisDriveData()
     val cachedRaw = cached.toRawAnalysisDriveData()
+    // A numeric ID is not a global session identity. When a different
+    // source-instance, source-record or physical window reuses it, preserve
+    // the incoming raw receipt byte-for-byte. The enclosing DAO transaction
+    // separately archives the superseded receipt before any upsert.
+    // Never encode a display-projection quality reason into the wire envelope.
+    val distinctSession = inRaw.source != cachedRaw.source ||
+        !sameChargeSourceInstance(inRaw.sourceInstanceId, inRaw.sourceRecordIdentity,
+            cachedRaw.sourceInstanceId, cachedRaw.sourceRecordIdentity) ||
+        !sameHistorySession(inRaw.startDate, inRaw.endDate,
+            cachedRaw.startDate, cachedRaw.endDate)
+    if (distinctSession) {
+        return if (hasTrustedHistoryEvidence(inRaw.qualityState, inRaw.source) ||
+            !hasTrustedHistoryEvidence(cachedRaw.qualityState, cachedRaw.source)) incoming
+        else cached
+    }
+
     val raw = UnifiedHistoryRepository.mergeDrivesRaw(listOf(inRaw), listOf(cachedRaw)).single()
     val base = raw.toLocalSummary(incoming.carId) ?: return cached
     val incomingSnapshot = HistorySummaryEvidenceCodec.drivePresentation(
@@ -686,6 +702,22 @@ internal fun mergeStoredCharge(incoming: ChargeSummary, cached: ChargeSummary?):
     require(incoming.carId == cached.carId && incoming.chargeId == cached.chargeId)
     val inRaw = incoming.toRawAnalysisChargeData()
     val cachedRaw = cached.toRawAnalysisChargeData()
+    // A numeric ID is not a global session identity. When a different
+    // source-instance, source-record or physical window reuses it, preserve
+    // the incoming raw receipt byte-for-byte. The enclosing DAO transaction
+    // separately archives the superseded receipt before any upsert.
+    // Never encode a display-projection quality reason into the wire envelope.
+    val distinctSession = inRaw.source != cachedRaw.source ||
+        !sameChargeSourceInstance(inRaw.sourceInstanceId, inRaw.sourceRecordIdentity,
+            cachedRaw.sourceInstanceId, cachedRaw.sourceRecordIdentity) ||
+        !sameHistorySession(inRaw.startDate, inRaw.endDate,
+            cachedRaw.startDate, cachedRaw.endDate)
+    if (distinctSession) {
+        return if (hasTrustedHistoryEvidence(inRaw.qualityState, inRaw.source) ||
+            !hasTrustedHistoryEvidence(cachedRaw.qualityState, cachedRaw.source)) incoming
+        else cached
+    }
+
     val raw = UnifiedHistoryRepository.mergeChargesRaw(listOf(inRaw), listOf(cachedRaw)).single()
     val base = raw.toLocalSummary(incoming.carId) ?: return cached
     val incomingSnapshot = HistorySummaryEvidenceCodec.chargePresentation(
