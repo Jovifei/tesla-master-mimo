@@ -67,30 +67,39 @@ internal fun observedTemperaturePoints(
     return drives.mapNotNull { drive ->
         val at = parseIsoInstant(drive.startDate) ?: return@mapNotNull null
         if (at.isBefore(from) || at.isAfter(now)) return@mapNotNull null
-        val temperatures = when (drive.qualityState) {
-            "observed", "derived" -> drive.insideTempAvg to drive.outsideTempAvg
-            "incomplete" -> drive.legacyRemoteTemperatures(now) ?: return@mapNotNull null
-            else -> return@mapNotNull null
-        }
-        val inside = temperatures.first?.takeIf(Double::isFinite)
-        val outside = temperatures.second?.takeIf(Double::isFinite)
-        if (inside == null && outside == null) null else {
-            val source = drive.apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive)?.source
-            TemperaturePoint(at.toEpochMilli(), inside, outside, source)
-        }
+        val observation = drive.qualifiedTemperatureReceipt(now) ?: return@mapNotNull null
+        val inside = observation.first?.takeIf(Double::isFinite)
+        val outside = observation.second?.takeIf(Double::isFinite)
+        if (inside == null && outside == null) null else TemperaturePoint(
+            at.toEpochMilli(), inside, outside, observation.third)
     }.sortedBy { it.timestampMs }
 }
 
-private fun DriveSummary.legacyRemoteTemperatures(now: Instant): Pair<Double?, Double?>? {
-    if (qualityReason != "remote_quality_unavailable") return null
+/** The persisted raw drive is the only authority for historical temperature.
+ * Room quality labels and old non-null scalar columns alone do not prove it.
+ */
+private fun DriveSummary.qualifiedTemperatureReceipt(now: Instant): Triple<Double?, Double?, String>? {
     val raw = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive) ?: return null
-    if (raw.driveId != driveId || raw.startDate != startDate || raw.endDate != endDate ||
-        raw.source != "teslamate_archive" ||
-        raw.qualityState != null || raw.qualityReason != null || raw.sourceRecordIdentity.conflicted) return null
-    val start = runCatching { Instant.parse(startDate) }.getOrNull() ?: return null
-    val end = runCatching { Instant.parse(endDate) }.getOrNull() ?: return null
-    if (!end.isAfter(start) || end.isAfter(now)) return null
-    return raw.insideTempAvg to raw.outsideTempAvg
+    if (raw.driveId != driveId || raw.sourceRecordIdentity.conflicted) return null
+    val first = parseIsoInstant(raw.startDate) ?: return null
+    val last = parseIsoInstant(raw.endDate) ?: return null
+    if (first != parseIsoInstant(startDate) || last != parseIsoInstant(endDate) ||
+        !last.isAfter(first) || last.isAfter(now)) return null
+    val source = raw.source?.takeIf {
+        it in setOf("teslamate_archive", "fleet_api", "telemetry_mqtt")
+    } ?: return null
+    val admissible = when (qualityState) {
+        "observed", "derived" -> raw.qualityState in setOf("observed", "derived")
+        "incomplete" -> source == "teslamate_archive" &&
+            qualityReason == "remote_quality_unavailable" &&
+            raw.qualityState == null && raw.qualityReason == null
+        else -> false
+    }
+    if (!admissible) return null
+    val inside = raw.insideTempAvg?.takeIf(Double::isFinite)
+    val outside = raw.outsideTempAvg?.takeIf(Double::isFinite)
+    if (inside == null && outside == null) return null
+    return Triple(inside, outside, source)
 }
 
 internal data class TemperatureTrendSnapshot(
