@@ -210,8 +210,11 @@ private fun ParkedDetailContent(
                 } else null
                 val deltaFormatted = batteryDeltaVal?.let { if (it > 0) "+$it" else "$it" } ?: unavailable
 
+                // A positive delta means the battery grew while parked — that is
+                // charging, not consumption; the flat-rate drain estimate only
+                // models a discharge, so it must stay unknown for gains.
                 val estEnergy = data.qualifiedParkedEnergyKwh
-                    ?: batteryDeltaVal?.let { kotlin.math.abs(it) * 0.60 }
+                    ?: batteryDeltaVal?.takeIf { it <= 0 }?.let { kotlin.math.abs(it) * 0.60 }
                 val estEnergyStr = estEnergy?.let { "%.2f".format(it) } ?: unavailable
 
                 val avgPowerStr = data.qualifiedAveragePowerW?.let { "%.0f".format(it) }
