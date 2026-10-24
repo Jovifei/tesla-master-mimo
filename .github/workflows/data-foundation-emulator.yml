@@ -67,14 +67,7 @@ jobs:
           emulator-boot-timeout: 700
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save -accel on
-          script: |
-            touch emulator-evidence/instrumentation-started
-            cd android
-            TZ=Asia/Shanghai bash ./gradlew :app:connectedDebugAndroidTest \
-              --no-daemon --max-workers=1 \
-              -Dorg.gradle.jvmargs='-Xmx3g -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
-              -Pkotlin.compiler.execution.strategy=in-process \
-              -PallowConnectedDeviceTests=isolated-device
+          script: bash tools/energy-stage/android-instrumentation-ci.sh
       - name: Keep actual instrumentation assertion failures red
         if: steps.primary_api35.outcome == 'failure' && hashFiles('emulator-evidence/instrumentation-started') != ''
         run: |
@@ -95,14 +88,7 @@ jobs:
           emulator-boot-timeout: 700
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save -accel on
-          script: |
-            touch emulator-evidence/instrumentation-started
-            cd android
-            TZ=Asia/Shanghai bash ./gradlew :app:connectedDebugAndroidTest \
-              --no-daemon --max-workers=1 \
-              -Dorg.gradle.jvmargs='-Xmx3g -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
-              -Pkotlin.compiler.execution.strategy=in-process \
-              -PallowConnectedDeviceTests=isolated-device
+          script: bash tools/energy-stage/android-instrumentation-ci.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
