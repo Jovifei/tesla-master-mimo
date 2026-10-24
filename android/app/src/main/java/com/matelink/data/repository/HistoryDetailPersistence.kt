@@ -11,7 +11,7 @@ import com.matelink.data.local.entity.HistoryDetailReceipt
 import com.matelink.domain.analytics.ResolvedDriveEnergy
 import kotlinx.coroutines.CancellationException
 
-data class PersistedHistoryDetail<T>(val summary: T, val receipt: HistoryDetailReceipt)
+data class PersistedHistoryDetail<T>(val summary: T, val receipt: HistoryDetailReceipt?)
 
 class HistoryDetailPointSaveRejected(val reason: String) : IllegalStateException(reason)
 
@@ -34,6 +34,16 @@ suspend fun persistVerifiedChargeDetail(
     if (!identity.matches(detail.chargeId, detail.source, detail.sourceInstanceId,
             detail.startDate, detail.endDate, detail.sourceId, detail.sourceRecordId)) return@withTransaction null
     if (!dao.mergeDetail(context.localHistoryCarId, detail, ensureCurrent)) return@withTransaction null
+    if (detail.chargePoints == null) {
+        // A qualified session scalar does NOT imply that individual points were supplied.
+        // Preserve the scalar and an explicit missing-point reason independently.
+        try { pointStore.recordFailure(identity, "charge_points_not_provided") }
+        catch (e: CancellationException) { throw e }
+        catch (_: Exception) { /* The scalar is still valid; a missing marker is not an invented trace. */ }
+        ensureCurrent()
+        return@withTransaction PersistedHistoryDetail(
+            checkNotNull(dao.get(context.localHistoryCarId, detail.chargeId)), null)
+    }
     val points = pointStore.saveCharge(identity, detail, ensureCurrent = ensureCurrent)
     if (points is HistoryDetailWriteResult.Rejected) throw HistoryDetailPointSaveRejected(points.reason)
     ensureCurrent()
@@ -72,6 +82,13 @@ suspend fun persistVerifiedDriveDetail(
             detail.startDate, detail.endDate, detail.sourceId, detail.sourceRecordId)) return@withTransaction null
     val saved = database.driveSummaryDao().mergeResolvedDetail(context.localHistoryCarId,
         detail, proposed, ensureCurrent) ?: return@withTransaction null
+    if (detail.positions == null) {
+        try { pointStore.recordFailure(identity, "drive_points_not_provided") }
+        catch (e: CancellationException) { throw e }
+        catch (_: Exception) { /* No curve proof; session energy remains independently qualified. */ }
+        ensureCurrent()
+        return@withTransaction PersistedHistoryDetail(saved, null)
+    }
     val points = pointStore.saveDrive(identity, detail, ensureCurrent = ensureCurrent)
     if (points is HistoryDetailWriteResult.Rejected) throw HistoryDetailPointSaveRejected(points.reason)
     ensureCurrent()
