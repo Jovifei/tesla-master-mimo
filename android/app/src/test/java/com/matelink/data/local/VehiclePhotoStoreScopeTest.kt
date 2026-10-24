@@ -16,7 +16,7 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest=Config.NONE,application=Application::class,sdk=[28])
 class VehiclePhotoStoreScopeTest {
-    private val app get() = RuntimeEnvironment.getApplication<Application>()
+    private val app: Application get() = RuntimeEnvironment.getApplication()
     private val store get() = VehiclePhotoStore(app)
     private fun scope(account: String) = HistoryReadScope(
         HistoryConnectionSource.CLOUD,"cloud",account,"https://api.example")
