@@ -51,6 +51,7 @@ jobs:
             --tests '*TemperatureRoomHistoryConsumerTest' \
             --tests '*TemperatureTrendTruthTest' \
             --tests '*DashboardStatusIdentityTest' \
+            --tests '*ScopeFirstEmissionInvalidationTest' \
             --tests '*JourVoltSessionConcurrencyTest' \
             --tests '*StatsReadScopeAndYearTest' \
             --no-daemon --max-workers=1 \

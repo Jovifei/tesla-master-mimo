@@ -10,6 +10,7 @@ import com.matelink.domain.map.VehiclePositionResolver
 import com.matelink.domain.map.AmapSetupState
 import com.matelink.domain.map.amapSetupState
 import com.matelink.data.local.VehicleStatusStore
+import com.matelink.domain.history.shouldInvalidateScopedView
 import com.matelink.data.local.VehicleContextRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -76,9 +77,10 @@ class AmapMapViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            var first = true
-            vehicleContexts.historyScopeChanges.collectLatest {
-                if (first) { first = false; return@collectLatest }
+            vehicleContexts.historyScopeChanges.collectLatest { scope ->
+                // A first delayed emission can already belong to a NEW login.
+                // Compare the proven visible position; do not blindly skip it.
+                if (!shouldInvalidateScopedView(verifiedPosition?.first, scope)) return@collectLatest
                 positionGeneration++
                 verifiedPosition = null
                 _uiState.value = _uiState.value.copy(latitude = null, longitude = null,

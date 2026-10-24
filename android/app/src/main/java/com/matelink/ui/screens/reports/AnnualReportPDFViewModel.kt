@@ -26,7 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.drop
+import com.matelink.domain.history.shouldInvalidateScopedView
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -69,7 +69,10 @@ class AnnualReportPDFViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            vehicleContexts.historyScopeChanges.drop(1).collect {
+            vehicleContexts.historyScopeChanges.collect { scope ->
+                // If the very first Flow emission is from another login, an
+                // already published PDF is still sensitive and must be cleared.
+                if (!shouldInvalidateScopedView(delivered?.scope, scope)) return@collect
                 generation++
                 loadJob?.cancel()
                 yearsJob?.cancel()
