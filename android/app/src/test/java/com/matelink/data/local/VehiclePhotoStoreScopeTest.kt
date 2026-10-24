@@ -39,6 +39,19 @@ class VehiclePhotoStoreScopeTest {
         store.clearScopedPhoto(scope("bob"),vehicle("first"))
         assertArrayEquals(photo,store.getScopedPhoto(scope("alice"),vehicle("first"))!!.readBytes())
     }
+    @Test fun incompletePhotoRenameRecoversOnlyTheSameVerifiedScope() {
+        val bytes = byteArrayOf(9, 8, 7)
+        val saved = store.saveScopedPhoto(scope("alice"), vehicle("first"),
+            ByteArrayInputStream(bytes))
+        val interrupted = java.io.File(saved.parentFile,
+            saved.name.removeSuffix(".jpg") + ".rollback")
+        if (interrupted.exists()) assertEquals(true, interrupted.delete())
+        assertEquals(true, saved.renameTo(interrupted))
+        assertArrayEquals(bytes, store.getScopedPhoto(scope("alice"), vehicle("first"))!!.readBytes())
+        assertNull(store.getScopedPhoto(scope("bob"), vehicle("first")))
+        assertArrayEquals(bytes, saved.readBytes())
+    }
+
     @Test fun failedStagedReplacementRetainsPreviousScopedBytes() {
         val original=byteArrayOf(42,43)
         store.saveScopedPhoto(scope("alice"),vehicle("first"),ByteArrayInputStream(original))

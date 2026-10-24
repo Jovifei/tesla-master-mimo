@@ -68,16 +68,24 @@ class VehiclePhotoStore @Inject constructor(
             .joinToString("") { "%02x".format(it) }
     }
 
-    internal fun getScopedPhoto(scope: HistoryReadScope, vehicle: VehicleContext): File? {
+    @Synchronized internal fun getScopedPhoto(scope: HistoryReadScope, vehicle: VehicleContext): File? {
         val key = scopedPhotoKey(scope, vehicle) ?: return null
         val target = File(photosDir, "scope_$key.jpg")
+        // Restore an interrupted rename only for a scope with an existing
+        // verified pointer. Never claim a numeric-id photo without consent.
+        if (!target.exists() && preferences.getString("scoped_$key", null) == target.name) {
+            val prior = File(photosDir, "scope_$key.rollback")
+            if (prior.exists() && prior.isFile && prior.length() > 0L) prior.renameTo(target)
+        }
         return target.takeIf { it.exists() && it.isFile && it.length() > 0L &&
             preferences.getString("scoped_$key", null) == target.name }
     }
 
     /** A failed write cannot replace the older verified scoped photo. */
-    internal fun saveScopedPhoto(scope: HistoryReadScope, vehicle: VehicleContext, input: InputStream): File {
+    @Synchronized internal fun saveScopedPhoto(scope: HistoryReadScope, vehicle: VehicleContext, input: InputStream): File {
         val key = requireNotNull(scopedPhotoKey(scope, vehicle)) { "photo_identity_missing" }
+        // Finish a previous interrupted local rename before replacing a photo.
+        getScopedPhoto(scope, vehicle)
         val target = File(photosDir, "scope_$key.jpg")
         val staged = File(photosDir, "scope_$key.staged")
         val backup = File(photosDir, "scope_$key.rollback")
@@ -117,12 +125,13 @@ class VehiclePhotoStore @Inject constructor(
         }
     }
 
-    internal fun clearScopedPhoto(scope: HistoryReadScope, vehicle: VehicleContext) {
+    @Synchronized internal fun clearScopedPhoto(scope: HistoryReadScope, vehicle: VehicleContext) {
         val key = scopedPhotoKey(scope, vehicle) ?: return
         val file = File(photosDir, "scope_$key.jpg")
         // Never delete an original unscoped photo or any other vehicle's file.
         check(preferences.edit().remove("scoped_$key").commit()) { "photo_clear_failed" }
         file.delete()
+        File(photosDir, "scope_$key.rollback").delete()
         _photoUpdateSignal.value = System.currentTimeMillis()
     }
 

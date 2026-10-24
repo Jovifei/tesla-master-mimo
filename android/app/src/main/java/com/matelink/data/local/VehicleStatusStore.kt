@@ -70,8 +70,9 @@ class VehicleStatusStore @Inject constructor(
                 editor.putString("position_v2_$key", json)
                     .putString("position_at_v2_$key", positionAt)
             }
-            editor.apply()
-            _updates.tryEmit(vehicle.remoteApiCarId)
+            // The saved receipt must survive process exit; async apply() does
+            // not prove a durable local observation when a write is interrupted.
+            if (editor.commit()) _updates.tryEmit(vehicle.remoteApiCarId)
         } catch (_: Exception) {
         }
     }

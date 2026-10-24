@@ -31,6 +31,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
@@ -514,7 +516,9 @@ class DashboardViewModel @Inject constructor(
             if (activePhotoProof != proof ||
                 !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) return@launch
             try {
-                val file = vehiclePhotoStore.saveScopedPhoto(scope, vehicle, inputStream)
+                val file = withContext(Dispatchers.IO) {
+                    vehiclePhotoStore.saveScopedPhoto(scope, vehicle, inputStream)
+                }
                 if (activePhotoProof != proof ||
                     !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) return@launch
                 _uiState.update { it.copy(customPhotoFile = file) }
@@ -533,7 +537,9 @@ class DashboardViewModel @Inject constructor(
             if (activePhotoProof != proof ||
                 !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) return@launch
             try {
-                vehiclePhotoStore.clearScopedPhoto(scope, vehicle)
+                withContext(Dispatchers.IO) {
+                    vehiclePhotoStore.clearScopedPhoto(scope, vehicle)
+                }
                 if (activePhotoProof != proof ||
                     !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) return@launch
                 _uiState.update { it.copy(customPhotoFile = null) }
