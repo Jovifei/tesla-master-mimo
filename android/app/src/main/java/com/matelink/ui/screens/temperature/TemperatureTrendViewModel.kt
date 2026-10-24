@@ -3,6 +3,8 @@ package com.matelink.ui.screens.temperature
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.local.HistoryIdentityUnavailableException
+import com.matelink.data.local.HistoryReadScope
+import com.matelink.domain.history.shouldInvalidateScopedView
 import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.entity.DriveSummary
@@ -112,6 +114,7 @@ internal data class TemperatureTrendSnapshot(
     val currentStatusAvailable: Boolean = false,
     val historyDriveCount: Int = points.size,
     val historyUnavailableReason: String? = null,
+    val verifiedReadScope: HistoryReadScope? = null,
     val stillCurrent: suspend () -> Boolean = { true }
 )
 
@@ -157,6 +160,7 @@ private class RepositoryTemperatureTrendSource(
             historyDriveCount = total,
             historyUnavailableReason = if (points.isNotEmpty()) null else
                 if (total == 0) "no_history_in_window" else "no_qualified_trip_temperatures",
+            verifiedReadScope = scope,
             stillCurrent = { contexts.isHistoryContextCurrent(scope, context) }
         )
     }
@@ -184,6 +188,7 @@ internal class TemperatureTrendRefreshController(
     private val source: TemperatureTrendSource,
     private val scope: CoroutineScope,
     private val now: () -> Instant = Instant::now,
+    private val onVerifiedScope: (HistoryReadScope?) -> Unit = {},
     private val onState: (TemperatureTrendUiState) -> Unit
 ) {
     private var requestToken = 0L
@@ -197,7 +202,9 @@ internal class TemperatureTrendRefreshController(
             try {
                 val snapshot = source.load(carId, window, now())
                 if (token == requestToken) {
-                    onState(if (snapshot.stillCurrent()) snapshot.toUiState(window)
+                    val current = snapshot.stillCurrent()
+                    onVerifiedScope(if (current) snapshot.verifiedReadScope else null)
+                    onState(if (current) snapshot.toUiState(window)
                         else TemperatureTrendUiState(isLoading = false, selectedWindow = window, error = "identity_changed"))
                 }
             } catch (_: CancellationException) {
@@ -224,16 +231,22 @@ class TemperatureTrendViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(TemperatureTrendUiState())
     val uiState: StateFlow<TemperatureTrendUiState> = _uiState.asStateFlow()
     private var currentCarId: Int? = null
+    private var visibleScope: HistoryReadScope? = null
     private val refreshController = TemperatureTrendRefreshController(
         RepositoryTemperatureTrendSource(repository, driveSummaryDao, vehicleContextRepository),
         viewModelScope,
+        onVerifiedScope = { visibleScope = it },
         onState = { _uiState.value = it }
     )
 
     init {
         viewModelScope.launch {
-            vehicleContextRepository.historyScopeChanges.drop(1).collect {
+            vehicleContextRepository.historyScopeChanges.collect { next ->
+                // A first queued emission can ALREADY be the new account.
+                // Skip only when the actually displayed verified source matches.
+                if (!shouldInvalidateScopedView(visibleScope, next)) return@collect
                 refreshController.invalidate()
+                visibleScope = null
                 _uiState.value = TemperatureTrendUiState(
                     isLoading = false, selectedWindow = _uiState.value.selectedWindow, error = "identity_changed")
             }

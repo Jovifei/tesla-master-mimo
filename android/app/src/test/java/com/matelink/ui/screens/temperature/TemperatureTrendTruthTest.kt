@@ -5,6 +5,9 @@ import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.repository.toLocalSummary
 import com.matelink.data.sync.toSyncSummary
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
+import com.matelink.data.local.HistoryReadScope
+import com.matelink.data.local.HistoryConnectionSource
+import com.matelink.domain.history.shouldInvalidateScopedView
 import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
@@ -118,6 +121,33 @@ class TemperatureTrendTruthTest {
         assertFalse(state.currentStatusAvailable)
         assertEquals(18.0, state.maxInsideTemp!!, 0.0)
         assertNull(state.currentInsideTemp)
+    }
+
+    @Test fun aFirstEmittedDifferentAccountRevokesPublishedTemperatureScope() = runTest {
+        val a = HistoryReadScope(HistoryConnectionSource.CLOUD, "cloud", "alice", "https://api.example")
+        val b = HistoryReadScope(HistoryConnectionSource.CLOUD, "cloud", "bob", "https://api.example")
+        var state = TemperatureTrendUiState()
+        var published: HistoryReadScope? = null
+        val source = Source { _, _ ->
+            TemperatureTrendSnapshot(
+                listOf(TemperaturePoint(now.minusSeconds(60).toEpochMilli(), 0.0, -4.0)),
+                verifiedReadScope = a)
+        }
+        val controller = TemperatureTrendRefreshController(
+            source, this, { now }, onVerifiedScope = { published = it }) { state = it }
+        controller.refresh(1, TemperatureTrendWindow.SEVEN)
+        runCurrent()
+        assertEquals(a, published)
+        assertEquals(0.0, state.points.single().insideTemp!!, 0.0)
+        // The first scope Flow emission is B. Blind drop(1) would leak A.
+        assertTrue(shouldInvalidateScopedView(published, b))
+        controller.invalidate()
+        published = null
+        state = TemperatureTrendUiState(
+            isLoading = false, selectedWindow = state.selectedWindow, error = "identity_changed")
+        assertTrue(state.points.isEmpty())
+        assertNull(state.currentInsideTemp)
+        assertFalse(shouldInvalidateScopedView(published, b))
     }
 
     @Test fun oldCarUncancellableResponseCannotReplaceNewCar() = runTest {
