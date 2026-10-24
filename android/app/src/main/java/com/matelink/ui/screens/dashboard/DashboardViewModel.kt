@@ -112,6 +112,7 @@ class DashboardTpmsReceiptCollector @Inject constructor(
 data class DashboardUiState(
     val isLoading: Boolean = true,
     val car: CarData? = null,
+    val requestedCarId: Int? = null,
     val status: CarStatus? = null,
     val error: String? = null,
     val errorCode: Int? = null,
@@ -366,6 +367,7 @@ class DashboardViewModel @Inject constructor(
                 _uiState.value = DashboardUiState(
                     isLoading = false,
                     car = car,
+                    requestedCarId = effectiveCarId,
                     status = status,
                     error = if (status != null) null else primaryError?.message,
                     errorCode = if (status != null) null else primaryError?.code,
@@ -385,6 +387,7 @@ class DashboardViewModel @Inject constructor(
                 )
 
                 launch {
+                    if (!cacheVerified) return@launch
                     val readinessResult = try {
                         repository.getDataReadiness(effectiveCarId)
                     } catch (e: CancellationException) {
