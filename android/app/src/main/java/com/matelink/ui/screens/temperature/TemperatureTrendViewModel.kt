@@ -89,7 +89,10 @@ private fun DriveSummary.qualifiedTemperatureReceipt(now: Instant): Triple<Doubl
         it in setOf("teslamate_archive", "fleet_api", "telemetry_mqtt")
     } ?: return null
     val admissible = when (qualityState) {
-        "observed", "derived" -> raw.qualityState in setOf("observed", "derived")
+        "observed", "derived" ->
+            raw.qualityState in setOf("observed", "derived") ||
+                (source == "teslamate_archive" && qualityReason == "legacy_remote_api" &&
+                    raw.qualityState == null && raw.qualityReason == null)
         "incomplete" -> source == "teslamate_archive" &&
             qualityReason == "remote_quality_unavailable" &&
             raw.qualityState == null && raw.qualityReason == null

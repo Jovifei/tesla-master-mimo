@@ -3,6 +3,7 @@ package com.matelink.ui.screens.temperature
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.repository.toLocalSummary
+import com.matelink.data.sync.toSyncSummary
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
@@ -53,6 +54,22 @@ class TemperatureTrendTruthTest {
             stored.copy(startDate = "not-a-time")
         )
         assertTrue(observedTemperaturePoints(candidates, TemperatureTrendWindow.SEVEN, now).isEmpty())
+    }
+
+    @Test fun legacyArchiveViaActualSyncMapperCanQualifyButForgedReasonCannot() {
+        val raw = DriveData(driveId = 70,
+            startDate = "2026-10-20T10:00:00Z",
+            endDate = "2026-10-20T10:20:00Z",
+            source = "teslamate_archive", insideTempAvg = 0.0, outsideTempAvg = -3.5)
+        val persisted = raw.toSyncSummary(1)
+        val row = requireNotNull(persisted)
+        assertEquals("observed", row.qualityState)
+        assertEquals("legacy_remote_api", row.qualityReason)
+        val valid = observedTemperaturePoints(listOf(row), TemperatureTrendWindow.SEVEN, now)
+        assertEquals(1, valid.size)
+        assertEquals(0.0, valid.single().insideTemp!!, 0.0)
+        assertTrue(observedTemperaturePoints(listOf(row.copy(qualityReason = "local_unverified")),
+            TemperatureTrendWindow.SEVEN, now).isEmpty())
     }
 
     @Test fun historyUsesOnlyQualifiedTimestampedFiniteDriveAverages() {
