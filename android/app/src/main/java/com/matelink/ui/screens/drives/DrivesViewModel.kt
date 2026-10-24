@@ -40,9 +40,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import java.time.Clock
 import com.matelink.domain.history.LatestHistoryLoad
+import com.matelink.domain.history.historyTimeoutMessage
 import com.matelink.domain.history.refreshedHistoryWindow
 import java.time.LocalDate
 import java.time.YearMonth
@@ -289,6 +291,10 @@ class DrivesViewModel @Inject constructor(
         private const val MIN_DURATION_MINUTES = 1
         private const val MIN_ROUTE_DISTANCE_KM = 0.2
 
+        // Weak networks can leave the cloud history request hanging for minutes;
+        // 20s is slower than any healthy request but earlier than a user gives up.
+        private const val HISTORY_LOAD_TIMEOUT_MS = 20_000L
+
         private const val KEY_DATE_FILTER = "filter_date"
         private const val KEY_DISTANCE_FILTER = "filter_distance"
         private const val KEY_CUSTOM_START = "filter_custom_start"
@@ -477,8 +483,30 @@ class DrivesViewModel @Inject constructor(
             val startDateStr = startDate?.let { LocalDayBoundaries.startOfDay(it, requestZone) }
             val endDateStr = endDate?.let { LocalDayBoundaries.endOfDay(it, requestZone) }
 
-            val result = historyRepository.load(id, startDateStr, endDateStr)
+            val result = withTimeoutOrNull(HISTORY_LOAD_TIMEOUT_MS) {
+                historyRepository.load(id, startDateStr, endDateStr)
+            }
             ensureCurrent()
+            if (result == null) {
+                // Sync timed out: keep the already-rendered cache visible and surface
+                // a stale-data warning; only an empty cache escalates to a blocking error.
+                val placement = historyTimeoutMessage(
+                    hasCache = allDrives.isNotEmpty(),
+                    timeoutText = appContext.getString(R.string.history_sync_timeout),
+                    currentWarning = _uiState.value.historySyncWarning
+                )
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        isFilterLoading = false,
+                        isLoadingMore = false,
+                        error = placement.error,
+                        historySyncWarning = placement.historySyncWarning
+                    )
+                }
+                return@launch
+            }
             when (result) {
                 is ApiResult.Success -> {
                     val remoteDrives = result.data.drives
