@@ -4,6 +4,10 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
 import androidx.room.Transaction
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import com.matelink.data.local.HistorySourceReceiptArchive
+import com.matelink.data.local.entity.HistoryDetailReceipt
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.data.repository.mergeStoredCharge
 import com.matelink.data.api.models.ChargeDetail
@@ -24,7 +28,9 @@ interface ChargeSummaryDao {
     /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
     @Transaction
     suspend fun upsertPreservingEvidence(rows: List<ChargeSummary>) {
-        persistChargeRowsWithoutEvidenceLoss(rows, ::get, ::upsert)
+        persistChargeRowsWithoutEvidenceLoss(rows, ::get, ::upsert) { previous ->
+            HistorySourceReceiptArchive.capture(previous)?.let(::insertConflictArchive)
+        }
     }
 
     @Transaction
@@ -46,6 +52,10 @@ interface ChargeSummaryDao {
         upsert(newest.copy(apiEvidence = HistorySummaryEvidenceCodec.markDetailTerminal404(newest.apiEvidence, carId)))
         ensureCurrent()
     }
+
+    /** No overwrite: collisions remain independent read-only historical receipts. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertConflictArchive(receipt: HistoryDetailReceipt)
 
     // === CRUD Operations ===
 
@@ -482,10 +492,12 @@ data class MonthlyChargeAggregation(
 internal suspend fun persistChargeRowsWithoutEvidenceLoss(
     rows: List<ChargeSummary>,
     get: suspend (Int, Int) -> ChargeSummary?,
-    upsert: suspend (ChargeSummary) -> Unit
+    upsert: suspend (ChargeSummary) -> Unit,
+    archive: suspend (ChargeSummary) -> Unit = {}
 ) {
     rows.forEach { incoming ->
         val prior = get(incoming.carId, incoming.chargeId)
+        if (prior != null && HistorySourceReceiptArchive.replaced(prior, incoming)) archive(prior)
         val merged = mergeStoredCharge(incoming, prior)
         val marked = merged.copy(apiEvidence = HistorySummaryEvidenceCodec.carryDetailTerminal404(
             merged.apiEvidence, prior?.apiEvidence, incoming.carId))
