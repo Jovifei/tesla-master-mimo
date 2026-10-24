@@ -4,6 +4,10 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
 import androidx.room.Transaction
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import com.matelink.data.local.HistorySourceReceiptArchive
+import com.matelink.data.local.entity.HistoryDetailReceipt
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.data.repository.mergeStoredDrive
 import com.matelink.data.local.entity.DriveSummary
@@ -76,7 +80,9 @@ interface DriveSummaryDao {
     /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
     @Transaction
     suspend fun upsertPreservingEvidence(rows: List<DriveSummary>) {
-        persistDriveRowsWithoutEvidenceLoss(rows, ::get, ::upsert)
+        persistDriveRowsWithoutEvidenceLoss(rows, ::get, ::upsert) { previous ->
+            HistorySourceReceiptArchive.capture(previous)?.let(::insertConflictArchive)
+        }
     }
 
     /** Retain a missing detail as visible unknown; rollback a concurrent identity change. */
@@ -88,6 +94,9 @@ interface DriveSummaryDao {
         upsert(newest.copy(apiEvidence = HistorySummaryEvidenceCodec.markDetailTerminal404(newest.apiEvidence, carId)))
         ensureCurrent()
     }
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertConflictArchive(receipt: HistoryDetailReceipt)
 
     // === CRUD Operations ===
 
@@ -560,10 +569,12 @@ data class MonthlyDriveAggregation(
 internal suspend fun persistDriveRowsWithoutEvidenceLoss(
     rows: List<DriveSummary>,
     get: suspend (Int, Int) -> DriveSummary?,
-    upsert: suspend (DriveSummary) -> Unit
+    upsert: suspend (DriveSummary) -> Unit,
+    archive: suspend (DriveSummary) -> Unit = {}
 ) {
     rows.forEach { incoming ->
         val prior = get(incoming.carId, incoming.driveId)
+        if (prior != null && HistorySourceReceiptArchive.replaced(prior, incoming)) archive(prior)
         val merged = mergeStoredDrive(incoming, prior)
         val marked = merged.copy(apiEvidence = HistorySummaryEvidenceCodec.carryDetailTerminal404(
             merged.apiEvidence, prior?.apiEvidence, incoming.carId))
