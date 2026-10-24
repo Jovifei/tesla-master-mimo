@@ -32,8 +32,9 @@ jobs:
           mkdir -p fast-evidence
           git rev-parse HEAD HEAD^{tree} HEAD^ | tee fast-evidence/source.txt
           cd android
-          cp gradle.properties ../fast-evidence/gradle.properties.original
-          trap 'cp ../fast-evidence/gradle.properties.original gradle.properties' EXIT
+          backup="$(mktemp)"
+          cp gradle.properties "$backup"
+          trap 'cp "$backup" gradle.properties; rm -f "$backup"' EXIT
           python3 - <<'PY'
           from pathlib import Path
           p=Path('gradle.properties')
