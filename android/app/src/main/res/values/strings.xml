@@ -320,6 +320,7 @@
     <!-- Common -->
     <string name="back">Back</string>
     <string name="loading">Loading…</string>
+    <string name="loading_more_history">Loading more history…</string>
     <string name="no_data">No data available</string>
     <string name="offline">Offline - showing cached data</string>
     <string name="ok">OK</string>
@@ -1109,8 +1110,7 @@
     <string name="settings_release_notes_close">Got it</string>
     <string name="settings_switch_to_cloud">Switch to MateLink Cloud</string>
     <string name="settings_switch_to_self_hosted">Switch to local TeslaMate</string>
-<string name="settings_release_notes_body" formatted="false">• History now opens with the summary and recent records; compact filters and the original monthly charts remain above the history list.\n• Four-column summaries and charging history, larger numbers and compact date filters.\n• Drive history metrics now fit a compact single row; details retain their full panels and enlarged text can scroll without truncation.
-• Automatic history syncing and cached history now preserve validated vehicle identity and observed data evidence across refreshes.
+<string name="settings_release_notes_body" formatted="false">• Automatic history syncing and cached history now preserve validated vehicle identity and observed data evidence across refreshes.
 • Driving and charging energy display keeps real zero, signed recovery and unknown distinct; estimated values are explicitly labeled, never upgraded to measurements.
 • AC charging loss and efficiency require complete matching observed AC-only mode and counter windows; unknown or mixed-mode charging remains unavailable.
 • Parking energy, late updates and notifications retain their source and quality limits. New natural Fleet events and passive background delivery still require independent device validation.</string>
@@ -1573,6 +1573,4 @@
     <string name="diagnostic_source_projection">Stored qualification projection and verified TPMS</string>
     <string name="diagnostic_projection_detail">Verified TPMS receipt present: %1$d; stored qualified energy projections for drives: %2$d and charges: %3$d. Projection counts read existing quality/source fields; this diagnostic does not revalidate raw energy contracts. View the existing detail evidence before interpreting the measurement.</string>
     <string name="diagnostic_permission_detail">The API reports a missing permission. A valid login or vehicle binding does not prove all Tesla grants. Review the existing authorization flow manually.</string>
-    <string name="history_source_show">Data source · details</string>
-    <string name="history_source_hide">Data source · collapse</string>
 </resources>

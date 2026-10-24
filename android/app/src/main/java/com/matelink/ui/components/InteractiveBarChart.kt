@@ -26,7 +26,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -177,12 +179,29 @@ fun InteractiveBarChart(
 
                     if (barHeight > 0) {
                         val baseBarColor = barData.color ?: barColor
-                        val currentBarColor = baseBarColor.copy(alpha = if (isSelected) 1f else 0.55f)
-
-                        drawRect(
-                            color = currentBarColor,
+                        val isLatest = index == data.lastIndex
+                        val topAlpha = when {
+                            isSelected -> 1f
+                            isLatest -> 0.95f
+                            else -> 0.82f
+                        }
+                        val bottomAlpha = when {
+                            isSelected -> 0.75f
+                            isLatest -> 0.65f
+                            else -> 0.50f
+                        }
+                        drawRoundRect(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    baseBarColor.copy(alpha = topAlpha),
+                                    baseBarColor.copy(alpha = bottomAlpha)
+                                ),
+                                startY = maxBarHeight - barHeight,
+                                endY = maxBarHeight
+                            ),
                             topLeft = Offset(x = xPosition, y = maxBarHeight - barHeight),
-                            size = Size(width = barWidthRect, height = barHeight)
+                            size = Size(width = barWidthRect, height = barHeight),
+                            cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
                         )
                     }
                 }

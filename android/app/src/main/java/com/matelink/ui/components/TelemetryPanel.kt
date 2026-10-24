@@ -134,7 +134,7 @@ fun TelemetryMetricStrip(
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val scale = LocalDensity.current.fontScale
         var columns = when {
-            !adaptive -> metrics.size
+            !adaptive -> minOf(metrics.size, maxColumns.coerceAtLeast(1))
             scale >= 1.5f && maxWidth < 360.dp -> 1
             maxWidth < 400.dp || scale > 1.1f -> minOf(2, metrics.size, maxColumns.coerceAtLeast(1))
             else -> minOf(metrics.size, maxColumns.coerceAtLeast(1))
@@ -149,14 +149,23 @@ fun TelemetryMetricStrip(
                     (maxWidth / columns - 9.dp).toPx()
                 }) columns = if (columns > 2) 2 else 1
         }
-        Column(verticalArrangement = Arrangement.spacedBy(if (adaptive) 12.dp else 0.dp)) {
+        val isSingleRow = columns >= metrics.size && metrics.size <= 4
+        Column(verticalArrangement = Arrangement.spacedBy(if (adaptive && !isSingleRow) 12.dp else 0.dp)) {
             metrics.chunked(columns).forEach { row ->
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     row.forEachIndexed { index, metric ->
-                        TelemetryMetricCell(metric, Modifier.weight(1f), adaptive)
+                        TelemetryMetricCell(metric, Modifier.weight(1f), adaptive = adaptive && !isSingleRow, compact = isSingleRow)
                         if (index != row.lastIndex) {
-                            Box(Modifier.height(if (adaptive) 88.dp else 64.dp).width(1.dp)
-                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)))
+                            Box(
+                                Modifier
+                                    .height(if (isSingleRow) 28.dp else if (adaptive) 88.dp else 64.dp)
+                                    .width(1.dp)
+                                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                            )
                         }
                     }
                     repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
@@ -170,49 +179,103 @@ fun TelemetryMetricStrip(
 private fun TelemetryMetricCell(
     metric: TelemetryMetricSpec,
     modifier: Modifier = Modifier,
-    adaptive: Boolean = false
+    adaptive: Boolean = false,
+    compact: Boolean = false
 ) {
     val (number, implicitUnit) = if (adaptive && metric.unit == null) telemetryMetricParts(metric.value) else metric.value to null
     val displayedUnit = metric.unit ?: implicitUnit
     Column(
-        modifier = modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+        modifier = modifier
+            .padding(horizontal = 2.dp, vertical = if (compact) 3.dp else 2.dp)
             .semantics(mergeDescendants = true) {
                 contentDescription = "${metric.label}: ${metric.value}${metric.unit?.let { " $it" }.orEmpty()}"
             },
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(3.dp)
+        verticalArrangement = Arrangement.spacedBy(if (compact) 1.dp else 3.dp)
     ) {
-        Icon(
-            imageVector = metric.icon,
-            contentDescription = null,
-            tint = metric.tint,
-            modifier = Modifier.size(if (adaptive) 24.dp else 19.dp)
-        )
-        Text(
-            text = number,
-            modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.titleSmall.copy(
-                fontFamily = MetricMono,
-                fontSize = metric.valueFontSize ?: if (adaptive) 20.sp else MaterialTheme.typography.titleSmall.fontSize,
-                lineHeight = metric.valueFontSize?.let { it * 1.3f }
-                    ?: if (adaptive) 26.sp else MaterialTheme.typography.titleSmall.lineHeight
-            ),
-            fontWeight = FontWeight.SemiBold,
-            maxLines = if (adaptive) Int.MAX_VALUE else metric.valueMaxLines,
-            textAlign = TextAlign.Center
-        )
-        displayedUnit?.takeIf(String::isNotBlank)?.let { unit ->
-            Text(text = unit, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+        Box(
+            modifier = Modifier
+                .size(if (compact) 22.dp else if (adaptive) 30.dp else 26.dp)
+                .clip(CircleShape)
+                .background(metric.tint.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = metric.icon,
+                contentDescription = null,
+                tint = metric.tint,
+                modifier = Modifier.size(if (compact) 13.dp else if (adaptive) 18.dp else 15.dp)
+            )
         }
-        Text(
-            text = metric.label,
-            modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = if (adaptive) Int.MAX_VALUE else 1,
-            textAlign = TextAlign.Center
-        )
+        if (compact) {
+            val calcFontSize = when {
+                number.length >= 7 -> 12.sp
+                number.length >= 6 -> 13.5.sp
+                number.length >= 5 -> 14.5.sp
+                else -> metric.valueFontSize ?: 16.sp
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Text(
+                    text = number,
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontFamily = MetricMono,
+                        fontSize = calcFontSize,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                displayedUnit?.takeIf(String::isNotBlank)?.let { unit ->
+                    Spacer(Modifier.width(1.5.dp))
+                    Text(
+                        text = unit,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        softWrap = false,
+                        maxLines = 1,
+                        modifier = Modifier.padding(bottom = 1.dp)
+                    )
+                }
+            }
+            Text(
+                text = metric.label,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
+        } else {
+            Text(
+                text = number,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontFamily = MetricMono,
+                    fontSize = metric.valueFontSize ?: if (adaptive) 20.sp else MaterialTheme.typography.titleSmall.fontSize,
+                    lineHeight = metric.valueFontSize?.let { it * 1.3f }
+                        ?: if (adaptive) 26.sp else MaterialTheme.typography.titleSmall.lineHeight
+                ),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = if (adaptive) Int.MAX_VALUE else metric.valueMaxLines,
+                textAlign = TextAlign.Center
+            )
+            displayedUnit?.takeIf(String::isNotBlank)?.let { unit ->
+                Text(text = unit, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            }
+            Text(
+                text = metric.label,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = if (adaptive) Int.MAX_VALUE else 1,
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 
@@ -427,29 +490,49 @@ fun RouteIndicator(
     modifier: Modifier = Modifier,
     accent: Color = MaterialTheme.colorScheme.primary
 ) {
-    Row(modifier = modifier.fillMaxWidth()) {
+    Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(
-            modifier = Modifier.padding(top = 3.dp),
+            modifier = Modifier.padding(top = 2.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
                 modifier = Modifier
-                    .size(8.dp)
+                    .size(9.dp)
                     .clip(CircleShape)
-                    .background(accent)
+                    .background(Color(0xFF10B981)),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(3.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .width(1.5.dp)
+                    .height(16.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xFF10B981), Color(0xFF64748B))
+                        )
+                    )
             )
             Box(
                 modifier = Modifier
-                    .width(2.dp)
-                    .height(14.dp)
-                    .background(MaterialTheme.colorScheme.outlineVariant)
-            )
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
+                    .size(9.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.tertiary)
-            )
+                    .background(Color(0xFF334155)),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(3.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                )
+            }
         }
         Spacer(Modifier.width(10.dp))
         Column(
@@ -459,14 +542,15 @@ fun RouteIndicator(
             Text(
                 start,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 end,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.Normal,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -474,8 +558,8 @@ fun RouteIndicator(
         Icon(
             imageVector = Icons.Default.DirectionsCar,
             contentDescription = null,
-            tint = accent,
-            modifier = Modifier.size(20.dp)
+            tint = accent.copy(alpha = 0.55f),
+            modifier = Modifier.size(18.dp)
         )
     }
 }

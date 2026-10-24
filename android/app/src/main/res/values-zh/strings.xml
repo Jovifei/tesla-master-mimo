@@ -320,6 +320,7 @@
     <!-- Common -->
     <string name="back">返回</string>
     <string name="loading">加载中…</string>
+    <string name="loading_more_history">正在加载更多历史记录…</string>
     <string name="no_data">暂无数据</string>
     <string name="offline">离线 - 显示缓存数据</string>
     <string name="ok">确定</string>
@@ -1099,8 +1100,7 @@
     <string name="settings_release_notes_close">知道了</string>
     <string name="settings_switch_to_cloud">切换到 MateLink 云端</string>
     <string name="settings_switch_to_self_hosted">切换到本地 TeslaMate</string>
-<string name="settings_release_notes_body" formatted="false">• 行程与充电历史首屏先看摘要和最近记录；筛选更紧凑，原月度柱状图保留在摘要后、历史列表前。\n• 摘要与充电历史统一四列，数字加大，日期筛选精简并保留完整选项。\n• 行程历史的四项指标改为紧凑一行，详情保留完整面板，大字体可横滑查看，不截断数字和单位。
-• 自动历史同步与缓存刷新保留已验证的用户车辆身份、观测来源和时间边界。
+<string name="settings_release_notes_body" formatted="false">• 自动历史同步与缓存刷新保留已验证的用户车辆身份、观测来源和时间边界。
 • 行驶和充电能耗区分真实零值、负净回收与未知；推算与估算明确标记，不冒充实测。
 • 充电损耗与效率仅在整段 AC 模式和计数时段均有观测证明时计算；未知或混合 AC/DC 模式保留未知。
 • 驻车能量、迟到记录与通知保留来源和质量限制；自然 Fleet 事件与后台自动送达仍需独立真机验收。</string>
@@ -1564,6 +1564,4 @@
     <string name="diagnostic_source_projection">存储的合格性投影与已验证胎压</string>
     <string name="diagnostic_projection_detail">已验证胎压记录存在：%1$d；行程能耗合格投影：%2$d；充电能耗合格投影：%3$d。投影数读取既有质量与来源字段，本诊断未重新验证原始能量契约。解读数值前可查看现有详情证据。</string>
     <string name="diagnostic_permission_detail">接口报告缺少权限。登录有效或车辆绑定不代表全部 Tesla 授权已满足。可手动查看既有授权流程。</string>
-    <string name="history_source_show">数据来源 · 查看说明</string>
-    <string name="history_source_hide">数据来源 · 收起说明</string>
 </resources>

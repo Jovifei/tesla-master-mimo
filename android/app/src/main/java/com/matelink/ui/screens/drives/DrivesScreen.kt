@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,15 +26,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Eco
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.LocalParking
 import com.matelink.ui.icons.CustomIcons
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -47,10 +48,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import com.matelink.ui.components.HistorySourceNotice
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,8 +62,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,7 +81,6 @@ import com.matelink.ui.components.MateLinkLoadingMark
 import com.matelink.ui.components.MonthScrollIndicator
 import com.matelink.ui.components.RouteIndicator
 import com.matelink.ui.components.TelemetryMetricSpec
-import com.matelink.ui.components.CompactHistoryMetricStrip
 import com.matelink.ui.components.TelemetryMetricStrip
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.rememberDebouncedLoading
@@ -154,7 +152,6 @@ fun DrivesScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                 },
-                actions = { if (uiState.localArchiveLinkPending) HistorySourceNotice() },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
@@ -169,31 +166,33 @@ fun DrivesScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            if (uiState.isLoading && !uiState.isRefreshing) {
-                MateLinkLoadingPlaceholder(color = palette.accent)
-            } else {
-                DrivesContent(
-                    historySyncWarning = uiState.historySyncWarning,
-                    drives = uiState.drives,
-                    chartData = uiState.chartData,
-                    chartGranularity = uiState.chartGranularity,
-                    summary = uiState.summary,
-                    selectedDateFilter = uiState.dateFilter,
-                    selectedDistanceFilter = uiState.distanceFilter,
-                    customStartDate = uiState.customStartDate,
-                    customEndDate = uiState.customEndDate,
-                    units = uiState.units,
-                    palette = palette,
-                    listState = listState,
-                    isFilterLoading = uiState.isFilterLoading,
-                    driveMetrics = uiState.driveMetrics,
-                    onDateFilterSelected = { viewModel.setDateFilter(it) },
-                    onCustomRangeSelected = { start, end -> viewModel.setCustomDateRange(start, end) },
-                    onDistanceFilterSelected = { viewModel.setDistanceFilter(it) },
-                    onDriveClick = onNavigateToDriveDetail,
-                    onParkedClick = onNavigateToParkedDetail
-                )
-            }
+            DrivesContent(
+                isLoading = uiState.isLoading,
+                isRefreshing = uiState.isRefreshing,
+                isLoadingMore = uiState.isLoadingMore,
+                canLoadMore = uiState.canLoadMore,
+                onLoadMore = { viewModel.loadMore() },
+                historySyncWarning = uiState.historySyncWarning,
+                localArchiveLinkPending = uiState.localArchiveLinkPending,
+                drives = uiState.drives,
+                chartData = uiState.chartData,
+                chartGranularity = uiState.chartGranularity,
+                summary = uiState.summary,
+                selectedDateFilter = uiState.dateFilter,
+                selectedDistanceFilter = uiState.distanceFilter,
+                customStartDate = uiState.customStartDate,
+                customEndDate = uiState.customEndDate,
+                units = uiState.units,
+                palette = palette,
+                listState = listState,
+                isFilterLoading = uiState.isFilterLoading,
+                driveMetrics = uiState.driveMetrics,
+                onDateFilterSelected = { viewModel.setDateFilter(it) },
+                onCustomRangeSelected = { start, end -> viewModel.setCustomDateRange(start, end) },
+                onDistanceFilterSelected = { viewModel.setDistanceFilter(it) },
+                onDriveClick = onNavigateToDriveDetail,
+                onParkedClick = onNavigateToParkedDetail
+            )
         }
     }
 }
@@ -201,7 +200,13 @@ fun DrivesScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DrivesContent(
+    isLoading: Boolean = false,
+    isRefreshing: Boolean = false,
+    isLoadingMore: Boolean = false,
+    canLoadMore: Boolean = false,
+    onLoadMore: () -> Unit = {},
     historySyncWarning: String?,
+    localArchiveLinkPending: Boolean,
     drives: List<DriveData>,
     chartData: List<DriveChartData>,
     chartGranularity: DriveChartGranularity,
@@ -222,34 +227,16 @@ private fun DrivesContent(
     onParkedClick: (olderDriveId: Int, newerDriveId: Int) -> Unit
 ) {
     val historyItems = remember(drives) { buildDriveHistoryItems(drives) }
-    // Date, distance, summary and chart precede the history list.
-    val headerCount = 4 + (if (historySyncWarning != null) 1 else 0) + (if (chartData.isNotEmpty()) 1 else 0)
-    val historyRow: @Composable (DriveHistoryItem) -> Unit = { item ->
-        when (item) {
-            is DriveHistoryItem.Drive -> DriveItem(
-                drive = item.drive,
-                metrics = driveMetrics[item.drive.id],
-                units = units,
-                palette = palette,
-                onClick = { onDriveClick(item.drive.id) }
-            )
-            is DriveHistoryItem.Parked -> ParkedItem(
-                item = item,
-                palette = palette,
-                onClick = { onParkedClick(item.olderDrive.id, item.newerDrive.id) }
-            )
-        }
-    }
-    val chartRow: @Composable () -> Unit = {
-        DrivesChartsPager(chartData, chartGranularity, units, palette)
-    }
+    // Header items in this LazyColumn, in render order: date chips, distance chips,
+    // summary, charts (conditional), history header. Adjust if items are added.
+    val headerCount = 3 + (if (chartData.isNotEmpty()) 1 else 0) + (if (historySyncWarning != null) 1 else 0)
 
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(8.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp)
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         if (historySyncWarning != null) {
             item(key = "history_sync_warning") {
@@ -276,23 +263,31 @@ private fun DrivesContent(
             )
         }
 
-        item {
-            DistanceFilterChips(
-                selectedFilter = selectedDistanceFilter,
-                units = units,
-                palette = palette,
-                onFilterSelected = onDistanceFilterSelected
-            )
-        }
+
 
         item {
             SummaryCard(summary = summary, units = units, palette = palette)
         }
-        if (chartData.isNotEmpty()) item { chartRow() }
+
+        // Drives charts (daily/weekly/monthly based on date range) - swipeable
+        if (chartData.isNotEmpty()) {
+            item {
+                DrivesChartsPager(
+                    chartData = chartData,
+                    granularity = chartGranularity,
+                    units = units,
+                    palette = palette
+                )
+            }
+        }
 
         item {
-            Text(stringResource(R.string.drive_history),
-                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.drive_history),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
         }
 
         if (drives.isEmpty()) {
@@ -323,7 +318,59 @@ private fun DrivesContent(
                 }
             }
         } else {
-            items(historyItems, key = { it.key }) { historyRow(it) }
+            items(historyItems, key = { it.key }) { item ->
+                when (item) {
+                    is DriveHistoryItem.Drive -> DriveItem(
+                        drive = item.drive,
+                        metrics = driveMetrics[item.drive.id],
+                        units = units,
+                        palette = palette,
+                        onClick = { onDriveClick(item.drive.id) }
+                    )
+                    is DriveHistoryItem.Parked -> ParkedItem(
+                        item = item,
+                        palette = palette,
+                        onClick = { onParkedClick(item.olderDrive.id, item.newerDrive.id) }
+                    )
+                }
+            }
+        }
+
+        if (isLoadingMore) {
+            item(key = "loading_more_indicator") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = palette.accent
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.loading_more_history),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val totalItems = listState.layoutInfo.totalItemsCount
+            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            totalItems > headerCount + 1 && lastVisibleIndex >= totalItems - 2
+        }
+    }
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore && canLoadMore && !isLoadingMore && !isFilterLoading && !isLoading) {
+            onLoadMore()
         }
     }
 
@@ -339,20 +386,16 @@ private fun DrivesContent(
 
     // Sub-100ms loads never see a spinner — only sustained ones cross the
     // perceptual threshold worth giving feedback for.
-    val showSpinner = rememberDebouncedLoading(isFilterLoading)
+    val showSpinner = rememberDebouncedLoading(isFilterLoading || (isLoading && !isRefreshing))
     if (showSpinner) {
-        // Full-bleed dim scrim that sits above everything (chart cards inside the
-        // LazyColumn have shadow elevation, which puts them in their own graphics
-        // layer; without the explicit zIndex the spinner could end up rendered
-        // behind them). The list shows through at ~55% alpha.
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .zIndex(10f)
-                .background(Color.Black.copy(alpha = 0.45f)),
+                .background(Color.Black.copy(alpha = 0.20f)),
             contentAlignment = Alignment.Center,
         ) {
-            MateLinkLoadingMark()
+            MateLinkLoadingMark(size = 150.dp)
         }
     }
     }
@@ -433,17 +476,21 @@ private fun DateFilterChips(
     onCustomRangeSelected: (LocalDate, LocalDate) -> Unit
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
-    var showMore by remember { mutableStateOf(false) }
-    val commonFilters = listOf(DriveDateFilter.TODAY, DriveDateFilter.LAST_7_DAYS, DriveDateFilter.LAST_30_DAYS)
-    val moreFilters = DriveDateFilter.entries.filter { it !in commonFilters }
 
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        items(commonFilters) { filter ->
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        val orderedFilters = listOf(
+            DriveDateFilter.LAST_7_DAYS,
+            DriveDateFilter.TODAY,
+            DriveDateFilter.LAST_30_DAYS,
+            DriveDateFilter.ALL_TIME
+        )
+        items(orderedFilters) { filter ->
             FilterChip(
-                modifier = Modifier.height(28.dp),
                 selected = filter == selectedFilter,
                 onClick = { onFilterSelected(filter) },
-                label = { Text(stringResource(filter.labelRes), style = MaterialTheme.typography.labelSmall) },
+                label = { Text(stringResource(filter.labelRes)) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = palette.surface,
                     selectedLabelColor = palette.onSurface
@@ -451,40 +498,20 @@ private fun DateFilterChips(
             )
         }
         item {
-            val moreSelected = selectedFilter in moreFilters
-            val label = when {
-                selectedFilter == DriveDateFilter.CUSTOM && customStartDate != null && customEndDate != null ->
-                    "${formatShortDate(customStartDate)} – ${formatShortDate(customEndDate)}"
-                moreSelected -> stringResource(selectedFilter.labelRes)
-                else -> stringResource(R.string.nav_more)
+            val label = if (selectedFilter == DriveDateFilter.CUSTOM && customStartDate != null && customEndDate != null) {
+                "${formatShortDate(customStartDate)} – ${formatShortDate(customEndDate)}"
+            } else {
+                stringResource(R.string.filter_custom)
             }
-            Box {
-                FilterChip(
-                    modifier = Modifier.height(28.dp),
-                    selected = moreSelected,
-                    onClick = { showMore = true },
-                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-                    trailingIcon = {
-                        Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(12.dp))
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = palette.surface,
-                        selectedLabelColor = palette.onSurface
-                    )
+            FilterChip(
+                selected = selectedFilter == DriveDateFilter.CUSTOM,
+                onClick = { showDatePicker = true },
+                label = { Text(label) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = palette.surface,
+                    selectedLabelColor = palette.onSurface
                 )
-                DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
-                    moreFilters.forEach { filter ->
-                        DropdownMenuItem(
-                            text = { Text(stringResource(filter.labelRes)) },
-                            onClick = {
-                                showMore = false
-                                if (filter == DriveDateFilter.CUSTOM) showDatePicker = true
-                                else onFilterSelected(filter)
-                            }
-                        )
-                    }
-                }
-            }
+            )
         }
     }
 
@@ -521,15 +548,13 @@ private fun DistanceFilterChips(
     onFilterSelected: (DriveDistanceFilter) -> Unit
 ) {
     LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(DriveDistanceFilter.entries.toList()) { filter ->
-            val fullLabel = getDistanceFilterLabel(filter, units)
             FilterChip(
                 selected = filter == selectedFilter,
                 onClick = { onFilterSelected(filter) },
-                label = { Text(fullLabel.substringBefore(" (").substringBefore("（"), style = MaterialTheme.typography.labelSmall) },
-                modifier = Modifier.height(28.dp).semantics { contentDescription = fullLabel },
+                label = { Text(getDistanceFilterLabel(filter, units)) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = palette.surface,
                     selectedLabelColor = palette.onSurface
@@ -564,39 +589,44 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = MaterialTheme.shapes.medium
             ) {
-                CompactHistoryMetricStrip(
+                TelemetryMetricStrip(
                     metrics = listOf(
                         TelemetryMetricSpec(
                             Icons.Default.DirectionsCar,
                             stringResource(R.string.total_trips),
-                            if (hasSummary) summary.totalDrives.toString() else unavailable,
-                            palette.accent,
-                            unit = stringResource(R.string.visual_trip_count_unit)
+                            if (hasSummary) "%,d".format(summary.totalDrives) else unavailable,
+                            Color(0xFF0284C7),
+                            unit = stringResource(R.string.visual_trip_count_unit),
+                            valueFontSize = 16.sp
                         ),
                         TelemetryMetricSpec(
                             CustomIcons.SteeringWheel,
                             stringResource(R.string.total_distance),
-                            summary.totalDistanceKm?.let { visualTripNumber(UnitFormatter.distanceKmDisplayValue(it, units)).replace(",", "") } ?: unavailable,
-                            palette.accent,
-                            unit = UnitFormatter.getDistanceUnit(units)
+                            summary.totalDistanceKm?.let { visualTripNumber(UnitFormatter.distanceKmDisplayValue(it, units)) } ?: unavailable,
+                            Color(0xFF059669),
+                            unit = UnitFormatter.getDistanceUnit(units),
+                            valueFontSize = 16.sp
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Timer,
                             stringResource(R.string.total_time),
-                            summary.totalDurationMin?.let { it.toString() } ?: unavailable,
-                            palette.accent,
-                            unit = stringResource(R.string.visual_trip_duration_unit)
+                            summary.totalDurationMin?.let { "%,d".format(it) } ?: unavailable,
+                            Color(0xFFD97706),
+                            unit = stringResource(R.string.visual_trip_duration_unit),
+                            valueFontSize = 16.sp
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Speed,
                             stringResource(R.string.max_speed),
                             summary.maxSpeedKmh?.takeIf { it >= 0 }?.let { visualTripNumber(UnitFormatter.speedKmhDisplayValue(it.toDouble(), units), 0) } ?: unavailable,
-                            palette.accent,
-                            unit = UnitFormatter.getSpeedUnit(units)
+                            Color(0xFF6366F1),
+                            unit = UnitFormatter.getSpeedUnit(units),
+                            valueFontSize = 16.sp
                         )
                     ),
-                    modifier = Modifier.padding(vertical = 8.dp),
-                    numberFontSize = 20.sp
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    adaptive = false,
+                    maxColumns = 4
                 )
             }
             if (hasSummary && (summary.distanceSampleCount < summary.totalDrives ||
@@ -615,6 +645,7 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DriveItem(
     drive: DriveData,
@@ -644,51 +675,71 @@ private fun DriveItem(
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            val socRange = UnitFormatter.formatSocRange(start, end, "")
-            val sourceLabel = energyPres.source?.takeIf { energyKwh != null }?.let { source ->
-                when (source) {
-                    DriveDetailEnergySource.POWER_SAMPLES -> null
-                    DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE -> stringResource(R.string.energy_source_soc_estimate)
-                    DriveDetailEnergySource.ENERGY_REMAINING_DELTA -> stringResource(R.string.energy_nominal_estimate)
-                    DriveDetailEnergySource.API -> stringResource(R.string.energy_source_api_reported)
-                }
-            }
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
                     text = formatEditorialDate(drive.startDate, true),
-                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (socRange.isNotBlank() || sourceLabel != null) {
-                    Spacer(Modifier.width(8.dp))
-                    Column(horizontalAlignment = Alignment.End) {
-                        if (socRange.isNotBlank()) Text(
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    val socRange = UnitFormatter.formatSocRange(start, end, "")
+                    if (socRange.isNotBlank()) {
+                        Text(
                             text = socRange,
                             style = MaterialTheme.typography.titleMedium,
                             fontSize = 17.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = palette.onSurface,
-                            maxLines = 1
+                            color = palette.onSurface
                         )
-                        sourceLabel?.let { label ->
-                            Surface(
-                                color = palette.accent.copy(alpha = 0.13f),
-                                shape = MaterialTheme.shapes.extraLarge
-                            ) {
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = palette.accent,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    }
+                    energyPres.source?.takeIf { energyKwh != null }?.let { source ->
+                        val (sourceLabel, badgeBg, badgeTextColor) = when (source) {
+                            DriveDetailEnergySource.POWER_SAMPLES -> {
+                                val coverage = if ((energyPres.coverageRatio ?: 0.0) > 0.0) {
+                                    " ${"%.0f".format(energyPres.coverageRatio!! * 100)}%"
+                                } else ""
+                                Triple(
+                                    "${stringResource(R.string.energy_source_power_samples)}$coverage",
+                                    Color(0xFFE0F2FE),
+                                    Color(0xFF0369A1)
                                 )
                             }
+                            DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE -> Triple(
+                                stringResource(R.string.energy_source_soc_estimate),
+                                Color(0xFFFEF3C7),
+                                Color(0xFFB45309)
+                            )
+                            DriveDetailEnergySource.ENERGY_REMAINING_DELTA -> Triple(
+                                stringResource(R.string.energy_nominal_estimate),
+                                Color(0xFFF1F5F9),
+                                Color(0xFF475569)
+                            )
+                            DriveDetailEnergySource.API -> Triple(
+                                stringResource(R.string.energy_source_api_reported),
+                                Color(0xFFECFDF5),
+                                Color(0xFF047857)
+                            )
+                        }
+                        Surface(
+                            color = badgeBg,
+                            shape = MaterialTheme.shapes.extraLarge
+                        ) {
+                            Text(
+                                text = sourceLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = badgeTextColor,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                            )
                         }
                     }
                 }
@@ -706,16 +757,17 @@ private fun DriveItem(
                     .clip(MaterialTheme.shapes.medium)
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             ) {
-                CompactHistoryMetricStrip(
+                TelemetryMetricStrip(
                     metrics = listOf(
                         TelemetryMetricSpec(
-                            icon = Icons.Default.Timer,
-                            label = stringResource(R.string.duration),
-                            value = drive.durationMin?.takeIf { it >= 0 }?.let { "%,d".format(it) }
+                            icon = Icons.Default.Bolt,
+                            label = stringResource(R.string.energy),
+                            value = efficiency?.let { visualTripNumber(it / 10.0) }
+                                ?: energyKwh?.let { visualTripNumber(it) }
                                 ?: stringResource(R.string.not_available),
-                            tint = palette.accent,
-                            unit = stringResource(R.string.visual_trip_duration_unit),
-                            valueFontSize = 16.sp
+                            tint = Color(0xFF10B981),
+                            unit = if (efficiency != null) "kWh/100" else if (energyKwh != null) "kWh" else "",
+                            valueFontSize = 17.5.sp
                         ),
                         TelemetryMetricSpec(
                             icon = CustomIcons.SteeringWheel,
@@ -724,32 +776,32 @@ private fun DriveItem(
                                 ?.takeIf { it.isFinite() && it >= 0.0 }
                                 ?.let { visualTripNumber(it) }
                                 ?: stringResource(R.string.not_available),
-                            tint = palette.accent,
+                            tint = Color(0xFF0284C7),
                             unit = UnitFormatter.getDistanceUnit(receiptUnits),
-                            valueFontSize = 16.sp
+                            valueFontSize = 17.5.sp
                         ),
                         TelemetryMetricSpec(
                             icon = Icons.Default.Speed,
                             label = stringResource(R.string.max_speed),
                             value = drive.speedMax?.takeIf { drive.hasKnownLengthUnit && it >= 0 }?.let { "%,d".format(it) }
                                 ?: stringResource(R.string.not_available),
-                            tint = palette.accent,
+                            tint = Color(0xFF6366F1),
                             unit = UnitFormatter.getSpeedUnit(receiptUnits),
-                            valueFontSize = 16.sp
+                            valueFontSize = 17.5.sp
                         ),
                         TelemetryMetricSpec(
-                            icon = Icons.Default.Eco,
-                            label = stringResource(R.string.efficiency),
-                            value = efficiency
-                                ?.takeIf(Double::isFinite)
-                                ?.let { visualTripNumber(it / 10.0) }
+                            icon = Icons.Default.Timer,
+                            label = stringResource(R.string.duration),
+                            value = drive.durationMin?.takeIf { it >= 0 }?.let { "%,d".format(it) }
                                 ?: stringResource(R.string.not_available),
-                            tint = if (efficiency != null && efficiency < 0.0) Color(0xFF10B981) else palette.accent,
-                            unit = "kWh/100km",
-                            valueFontSize = 16.sp
+                            tint = Color(0xFFD97706),
+                            unit = stringResource(R.string.visual_trip_duration_unit),
+                            valueFontSize = 17.5.sp
                         )
                     ),
-                    modifier = Modifier.padding(vertical = 4.dp)
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    adaptive = false,
+                    maxColumns = 4
                 )
             }
         }
@@ -1051,7 +1103,7 @@ private fun DrivesChartPage(
         InteractiveBarChart(
             data = barData,
             modifier = Modifier.fillMaxWidth(),
-            barColor = palette.accent,
+            barColor = Color(0xFF0891B2),
             labelColor = palette.onSurfaceVariant,
             showEveryNthLabel = labelInterval,
             valueFormatter = valueFormatter,

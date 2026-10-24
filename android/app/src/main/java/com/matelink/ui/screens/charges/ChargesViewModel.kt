@@ -9,6 +9,8 @@ import com.matelink.domain.history.isAnalysisEligible
 import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.dao.AggregateDao
+import com.matelink.data.local.dao.ChargeSummaryDao
+import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.data.model.Currency
 import com.matelink.data.repository.saveVerifiedHistoryChargeCost
 import com.matelink.data.repository.ApiResult
@@ -100,6 +102,8 @@ data class ChargesUiState(
     // flash. Drives a centered overlay spinner that lets the existing list show
     // through.
     val isFilterLoading: Boolean = false,
+    val isLoadingMore: Boolean = false,
+    val canLoadMore: Boolean = true,
     val charges: List<ChargeData> = emptyList(),
     val dcChargeIds: Set<Int> = emptySet(),
     val availableLocations: List<String> = emptyList(),
@@ -112,7 +116,7 @@ data class ChargesUiState(
     val localArchiveLinkPending: Boolean = false,
     val startDate: LocalDate? = null,
     val endDate: LocalDate? = null,
-    val selectedFilter: DateFilter = DateFilter.ALL_TIME,  // Preserve filter in ViewModel
+    val selectedFilter: DateFilter = DateFilter.LAST_30_DAYS,  // Default to 30 days
     val chargeTypeFilter: ChargeTypeFilter = ChargeTypeFilter.ALL,
     val costFilter: CostFilter = CostFilter.ALL,
     val customStartDate: LocalDate? = null,
@@ -140,6 +144,7 @@ class ChargesViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val repository: TeslamateRepository,
     private val historyRepository: UnifiedHistoryRepository,
+    private val chargeSummaryDao: ChargeSummaryDao,
     private val settingsDataStore: SettingsDataStore,
     private val chargeCostOverrideStore: ChargeCostOverrideStore,
     private val aggregateDao: AggregateDao,
@@ -170,7 +175,7 @@ class ChargesViewModel @Inject constructor(
         private fun restoreInitialState(handle: SavedStateHandle): ChargesUiState {
             val dateFilter = handle.get<String>(KEY_DATE_FILTER)
                 ?.let { runCatching { DateFilter.valueOf(it) }.getOrNull() }
-                ?: DateFilter.ALL_TIME
+                ?: DateFilter.LAST_30_DAYS
             val chargeTypeFilter = handle.get<String>(KEY_CHARGE_TYPE_FILTER)
                 ?.let { runCatching { ChargeTypeFilter.valueOf(it) }.getOrNull() }
                 ?: ChargeTypeFilter.ALL
@@ -284,12 +289,29 @@ class ChargesViewModel @Inject constructor(
             startDate = startDate,
             endDate = if (filter.days != null) endDate else null,
             customStartDate = null,
-            customEndDate = null
+            customEndDate = null,
+            canLoadMore = filter != DateFilter.ALL_TIME
         )}
         savedStateHandle[KEY_DATE_FILTER] = filter.name
         savedStateHandle[KEY_CUSTOM_START] = null
         savedStateHandle[KEY_CUSTOM_END] = null
         loadCharges(startDate, if (filter.days != null) endDate else null)
+    }
+
+    fun loadMore() {
+        val state = _uiState.value
+        if (state.isLoadingMore || state.isLoading || state.isFilterLoading || !state.canLoadMore) return
+        val currentStart = state.startDate ?: return
+        val endDate = state.endDate ?: LocalDate.now(clock)
+        val stepDays = 30L
+        val newStart = currentStart.minusDays(stepDays)
+        _uiState.update {
+            it.copy(
+                startDate = newStart,
+                isLoadingMore = true
+            )
+        }
+        loadCharges(newStart, endDate, isLoadMore = true)
     }
 
     fun setCustomDateRange(start: LocalDate, end: LocalDate) {
@@ -358,25 +380,35 @@ class ChargesViewModel @Inject constructor(
         _uiState.update { it.copy(scrollPosition = firstVisibleIndex, scrollOffset = offset) }
     }
 
-    private fun loadCharges(startDate: LocalDate? = null, endDate: LocalDate? = null) {
+    private fun loadCharges(
+        startDate: LocalDate? = null,
+        endDate: LocalDate? = null,
+        isLoadMore: Boolean = false
+    ) {
         val id = carId ?: return
         val requestZone = clock.zone
         latestLoad.launch(viewModelScope) {
             val state = _uiState.value
-            // Only show the full-screen spinner on the true initial load — i.e. when
-            // we've never successfully fetched any data yet. Using state.charges (the
-            // filtered view) would trip the spinner whenever the active AC/DC or
-            // location filter happened to zero out the list, flashing the whole
-            // screen on every date-range change.
-            val isInitial = !state.isRefreshing && allCharges.isEmpty()
-            _uiState.update {
-                it.copy(
-                    isLoading = if (isInitial) true else it.isLoading,
-                    // Filter-driven reloads (when we already have data and aren't
-                    // pull-to-refresh-ing) get a non-blocking overlay spinner
-                    // instead. Set here, cleared in the success/error tail.
-                    isFilterLoading = !isInitial && !state.isRefreshing,
-                )
+            // 1. Immediately read local SQLite cached data if allCharges is empty
+            if (allCharges.isEmpty()) {
+                val localRows = try {
+                    chargeSummaryDao.getAllForCar(id)
+                } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
+                if (localRows.isNotEmpty()) {
+                    allCharges = localRows.map { it.toAnalysisChargeData() }
+                    applyFiltersAndUpdateState()
+                }
+            }
+            val hasData = allCharges.isNotEmpty()
+            if (!isLoadMore) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = !hasData && !state.isRefreshing,
+                        isFilterLoading = hasData && !state.isRefreshing,
+                    )
+                }
+            } else {
+                _uiState.update { it.copy(isLoadingMore = true) }
             }
 
             // Load the display setting
@@ -404,6 +436,7 @@ class ChargesViewModel @Inject constructor(
                     }
                     ensureCurrent()
                     historyCarId = result.data.context.localHistoryCarId
+                    val previousCount = allCharges.size
                     allCharges = result.data.charges
                     val priceOverrides = result.data.charges.mapNotNull { charge ->
                         allPriceOverrides[chargeTotalOverrideKey(result.data.context.localHistoryCarId, charge.chargeId)]
@@ -419,7 +452,11 @@ class ChargesViewModel @Inject constructor(
                             chartGranularity = granularity,
                             error = null,
                             historySyncWarning = result.data.chargesSyncError,
-                            localArchiveLinkPending = result.data.localArchiveLinkPending
+                            localArchiveLinkPending = result.data.localArchiveLinkPending,
+                            canLoadMore = if (isLoadMore) (allCharges.size > previousCount) else (state.selectedFilter != DateFilter.ALL_TIME),
+                            isLoading = false,
+                            isFilterLoading = false,
+                            isLoadingMore = false
                         )
                     }
 
@@ -436,7 +473,8 @@ class ChargesViewModel @Inject constructor(
                             isLoading = false,
                             isRefreshing = false,
                             isFilterLoading = false,
-                            error = result.message
+                            isLoadingMore = false,
+                            error = if (allCharges.isEmpty()) result.message else null
                         )
                     }
                 }

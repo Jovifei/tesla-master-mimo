@@ -12,8 +12,8 @@ class DrivesHistoryContractTest {
         val more = File("src/main/java/com/matelink/ui/screens/more/MoreScreen.kt").readText()
         val nav = File("src/main/java/com/matelink/ui/navigation/NavGraph.kt").readText()
 
-        assertTrue(viewModel.contains("dateFilter: DriveDateFilter = DriveDateFilter.ALL_TIME"))
-        assertTrue(viewModel.contains("?: DriveDateFilter.ALL_TIME"))
+        assertTrue(viewModel.contains("dateFilter: DriveDateFilter = DriveDateFilter.LAST_7_DAYS"))
+        assertTrue(viewModel.contains("?: DriveDateFilter.LAST_7_DAYS"))
         assertTrue(more.contains("onNavigateToDrives(carId)"))
         assertTrue(nav.contains("onNavigateToDrives = { navController.navigate(Screen.Drives"))
         assertFalse(more.contains("more_item_vehicle_3d_preview"))

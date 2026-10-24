@@ -608,20 +608,6 @@ fun DashboardScreen(
             )
         }
 
-        // Location Map
-        val latitude = status.latitude
-        val longitude = status.longitude
-        if (latitude != null && longitude != null) {
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                AmapPointView(
-                    modifier = Modifier.fillMaxWidth().height(200.dp),
-                    latitude = latitude,
-                    longitude = longitude,
-                    title = car?.displayName ?: stringResource(R.string.vehicle)
-                )
-            }
-        }
-
         // Temperature cards
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             val onTempClick: () -> Unit = { onNavigateToTemperatureTrend(carId, exteriorColor) }
@@ -682,6 +668,20 @@ fun DashboardScreen(
                     Modifier.weight(1f),
                     warning = TirePosition.RR in warningTires,
                     onClick = onTpmsClick
+                )
+            }
+        }
+
+        // Location Map
+        val latitude = status.latitude
+        val longitude = status.longitude
+        if (latitude != null && longitude != null) {
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                AmapPointView(
+                    modifier = Modifier.fillMaxWidth().height(200.dp),
+                    latitude = latitude,
+                    longitude = longitude,
+                    title = car?.displayName ?: stringResource(R.string.vehicle)
                 )
             }
         }
