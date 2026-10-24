@@ -604,7 +604,10 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
         // Same-source instance A->B is handled as a separately archived session.
         if (incomingTrusted && (!cachedTrusted || !foreign)) return incoming
         if (foreign && cachedTrusted && !incomingTrusted) {
-            // A weak local import cannot certify an older pre-contract 8 kWh.
+            // A fully qualified zero, negative-regeneration or measured
+            // energy is protected from an untrusted foreign import.
+            if (cached.toAnalysisDriveData().netEnergyKwh != null) return cached
+            // Only old unsupported pre-contract scalars are unqualified.
             // Preserve the byte-identical historical receipt but scrub only
             // its scalar analysis columns (not its raw signed energy).
             return cached.copy(energyConsumed = null, efficiency = null,
