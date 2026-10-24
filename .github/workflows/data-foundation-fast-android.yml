@@ -25,6 +25,9 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
       - name: Record fixed source and run actual Room/VM regression
         shell: bash
         run: |

@@ -25,6 +25,17 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - name: Enable KVM for isolated emulator (no device interaction)
+        shell: bash
+        run: |
+          if [[ ! -c /dev/kvm ]]; then
+            echo "Hosted virtualization /dev/kvm is unavailable; native tests cannot be claimed." >&2
+            exit 2
+          fi
+          sudo chmod 0666 /dev/kvm
       - name: Record exact isolated runner source and prepare disposable SDK
         shell: bash
         run: |
@@ -40,23 +51,56 @@ jobs:
           p.write_text('\n'.join(v for v in p.read_text().splitlines()
               if v.split('=',1)[0] not in forbidden)+'\n')
           PY
-      - uses: reactivecircus/android-emulator-runner@v2
+      - name: Primary accelerated API35 native Room/Compose tests
+        id: primary_api35
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          target: default
+          target: aosp_atd
           arch: x86_64
           profile: pixel_4
           cores: 2
-          ram-size: 4096M
-          heap-size: 512M
+          ram-size: 3072M
+          heap-size: 384M
           disk-size: 8G
+          emulator-boot-timeout: 700
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save -accel on
           script: |
+            touch emulator-evidence/instrumentation-started
             cd android
             TZ=Asia/Shanghai bash ./gradlew :app:connectedDebugAndroidTest \
               --no-daemon --max-workers=1 \
-              -Dorg.gradle.jvmargs='-Xmx5g -XX:MaxMetaspaceSize=1g -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
+              -Dorg.gradle.jvmargs='-Xmx3g -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
+              -Pkotlin.compiler.execution.strategy=in-process \
+              -PallowConnectedDeviceTests=isolated-device
+      - name: Keep actual instrumentation assertion failures red
+        if: steps.primary_api35.outcome == 'failure' && hashFiles('emulator-evidence/instrumentation-started') != ''
+        run: |
+          echo "Native test assertion/build failed after emulator boot; never retry to hide it." >&2
+          exit 1
+      - name: Retry a failed emulator BOOT once (not failed native assertions)
+        if: steps.primary_api35.outcome == 'failure' && hashFiles('emulator-evidence/instrumentation-started') == ''
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: aosp_atd
+          arch: x86_64
+          profile: pixel_4
+          cores: 2
+          ram-size: 3072M
+          heap-size: 384M
+          disk-size: 8G
+          emulator-boot-timeout: 700
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save -accel on
+          script: |
+            touch emulator-evidence/instrumentation-started
+            cd android
+            TZ=Asia/Shanghai bash ./gradlew :app:connectedDebugAndroidTest \
+              --no-daemon --max-workers=1 \
+              -Dorg.gradle.jvmargs='-Xmx3g -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
               -Pkotlin.compiler.execution.strategy=in-process \
               -PallowConnectedDeviceTests=isolated-device
       - uses: actions/upload-artifact@v4
