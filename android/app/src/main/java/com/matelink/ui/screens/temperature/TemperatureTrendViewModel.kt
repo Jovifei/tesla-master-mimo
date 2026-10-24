@@ -8,6 +8,7 @@ import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -56,13 +57,29 @@ internal fun observedTemperaturePoints(
 ): List<TemperaturePoint> {
     val from = now.minus(window.days.toLong(), ChronoUnit.DAYS)
     return drives.mapNotNull { drive ->
-        if (drive.qualityState !in setOf("observed", "derived")) return@mapNotNull null
         val at = runCatching { Instant.parse(drive.startDate) }.getOrNull() ?: return@mapNotNull null
         if (at.isBefore(from) || at.isAfter(now)) return@mapNotNull null
-        val inside = drive.insideTempAvg?.takeIf(Double::isFinite)
-        val outside = drive.outsideTempAvg?.takeIf(Double::isFinite)
+        val temperatures = when (drive.qualityState) {
+            "observed", "derived" -> drive.insideTempAvg to drive.outsideTempAvg
+            "incomplete" -> drive.legacyRemoteTemperatures(now) ?: return@mapNotNull null
+            else -> return@mapNotNull null
+        }
+        val inside = temperatures.first?.takeIf(Double::isFinite)
+        val outside = temperatures.second?.takeIf(Double::isFinite)
         if (inside == null && outside == null) null else TemperaturePoint(at.toEpochMilli(), inside, outside)
     }.sortedBy { it.timestampMs }
+}
+
+private fun DriveSummary.legacyRemoteTemperatures(now: Instant): Pair<Double?, Double?>? {
+    if (qualityReason != "remote_quality_unavailable") return null
+    val raw = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive) ?: return null
+    if (raw.driveId != driveId || raw.startDate != startDate || raw.endDate != endDate ||
+        raw.source !in setOf("teslamate_archive", "fleet_api", "telemetry_mqtt") ||
+        raw.qualityState != null || raw.qualityReason != null || raw.sourceRecordIdentity.conflicted) return null
+    val start = runCatching { Instant.parse(startDate) }.getOrNull() ?: return null
+    val end = runCatching { Instant.parse(endDate) }.getOrNull() ?: return null
+    if (!end.isAfter(start) || end.isAfter(now)) return null
+    return raw.insideTempAvg to raw.outsideTempAvg
 }
 
 internal data class TemperatureTrendSnapshot(

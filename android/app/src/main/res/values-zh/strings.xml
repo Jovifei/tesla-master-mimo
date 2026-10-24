@@ -1226,6 +1226,8 @@
     <string name="stats_analysis_energy_used">行驶能耗</string>
     <string name="stats_analysis_energy_added">充入电量</string>
     <string name="stats_analysis_cost">已记录费用</string>
+    <string name="stats_cost_not_recorded">未记录</string>
+    <string name="stats_cost_recording_hint">可在充电详情补录总价</string>
     <string name="stats_analysis_samples">数据记录</string>
     <string name="stats_analysis_sample_count">行程与充电记录</string>
     <string name="stats_analysis_observed">观测值</string>

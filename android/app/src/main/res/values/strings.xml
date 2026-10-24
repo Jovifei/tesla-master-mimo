@@ -1235,6 +1235,8 @@
     <string name="stats_analysis_energy_used">Driving energy</string>
     <string name="stats_analysis_energy_added">Charged energy</string>
     <string name="stats_analysis_cost">Recorded cost</string>
+    <string name="stats_cost_not_recorded">Not recorded</string>
+    <string name="stats_cost_recording_hint">Add a total in charge details</string>
     <string name="stats_analysis_samples">Source records</string>
     <string name="stats_analysis_sample_count">Drive and charge records</string>
     <string name="stats_analysis_observed">Observed</string>

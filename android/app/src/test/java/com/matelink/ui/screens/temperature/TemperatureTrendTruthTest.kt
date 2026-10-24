@@ -1,6 +1,9 @@
 package com.matelink.ui.screens.temperature
 
+import com.matelink.data.api.models.DriveData
 import com.matelink.data.local.entity.DriveSummary
+import com.matelink.data.repository.toLocalSummary
+import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
@@ -15,6 +18,42 @@ import org.junit.Test
 
 class TemperatureTrendTruthTest {
     private val now = Instant.parse("2026-10-21T12:00:00Z")
+
+    @Test fun legacyRemoteDriveKeepsItsOwnTemperatureDespiteMissingEnergyQuality() {
+        val raw = DriveData(
+            driveId = 7, startDate = "2026-10-20T10:00:00Z", endDate = "2026-10-20T10:20:00Z",
+            source = "teslamate_archive", insideTempAvg = 0.0, outsideTempAvg = -3.5
+        )
+        val stored = raw.toLocalSummary(1)!!
+        assertEquals("incomplete", stored.qualityState)
+        assertEquals("remote_quality_unavailable", stored.qualityReason)
+
+        // A stale Room projection cannot override the exact archived response.
+        val point = observedTemperaturePoints(listOf(stored.copy(insideTempAvg = 99.0)), TemperatureTrendWindow.SEVEN, now).single()
+        assertEquals(0.0, point.insideTemp!!, 0.0)
+        assertEquals(-3.5, point.outsideTemp!!, 0.0)
+    }
+
+    @Test fun missingOrUntrustedLegacyTemperatureReceiptCannotEnterTrend() {
+        val raw = DriveData(
+            driveId = 8, startDate = "2026-10-20T10:00:00Z", endDate = "2026-10-20T10:20:00Z",
+            source = "teslamate_archive", insideTempAvg = 22.0
+        )
+        val stored = raw.toLocalSummary(1)!!
+        val candidates = listOf(
+            stored.copy(apiEvidence = null),
+            raw.copy(source = "local_import").toLocalSummary(1)!!,
+            raw.copy(source = null).toLocalSummary(1)!!,
+            raw.copy(qualityState = "quarantined").toLocalSummary(1)!!,
+            stored.copy(apiEvidence = HistorySummaryEvidenceCodec.encode(raw.copy(qualityReason = "synthetic_provenance"))),
+            stored.copy(apiEvidence = HistorySummaryEvidenceCodec.encode(raw.copy(sourceId = "a", sourceRecordId = "b"))),
+            stored.copy(apiEvidence = HistorySummaryEvidenceCodec.encode(raw.copy(driveId = 9))),
+            stored.copy(apiEvidence = HistorySummaryEvidenceCodec.encode(raw.copy(endDate = "2026-10-20T10:21:00Z"))),
+            raw.copy(endDate = "2026-10-22T10:20:00Z").toLocalSummary(1)!!,
+            stored.copy(startDate = "not-a-time")
+        )
+        assertTrue(observedTemperaturePoints(candidates, TemperatureTrendWindow.SEVEN, now).isEmpty())
+    }
 
     @Test fun historyUsesOnlyQualifiedTimestampedFiniteDriveAverages() {
         val points = observedTemperaturePoints(listOf(

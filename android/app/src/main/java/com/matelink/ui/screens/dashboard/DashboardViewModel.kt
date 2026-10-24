@@ -26,7 +26,6 @@ import com.matelink.domain.telemetry.SnapshotFreshness
 import com.matelink.domain.telemetry.snapshotEvidence
 import com.matelink.domain.telemetry.usableVehicleCoordinates
 import com.matelink.domain.map.VehiclePositionResolver
-import com.matelink.domain.map.mergeCarStatusPosition
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
@@ -131,6 +130,20 @@ data class DashboardUiState(
     val isHudDismissed: Boolean = false
 )
 
+/** Final publication fence: a late response from a previous login cannot reuse a numeric car id. */
+internal fun dashboardStatusMayPublish(
+    capturedScope: com.matelink.data.local.HistoryReadScope?,
+    vehicle: com.matelink.data.local.VehicleContext?,
+    currentScope: com.matelink.data.local.HistoryReadScope?,
+    requestedCarId: Int,
+    selectedCarId: Int,
+    requestGeneration: Long,
+    currentGeneration: Long,
+    vehicleCurrent: Boolean
+): Boolean = capturedScope != null && vehicle != null && capturedScope == currentScope &&
+    vehicleCurrent && requestedCarId == selectedCarId && vehicle.remoteApiCarId == requestedCarId &&
+    requestGeneration == currentGeneration
+
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -170,6 +183,17 @@ class DashboardViewModel @Inject constructor(
                 _uiState.update { it.copy(isAmapConfigured = settings.hasKey) }
             }
         }
+        viewModelScope.launch {
+            var first = true
+            vehicleContextRepository.historyScopeChanges.collect {
+                if (first) { first = false; return@collect }
+                requestGeneration++
+                val current = _uiState.value
+                _uiState.value = DashboardUiState(isHudDismissed = current.isHudDismissed,
+                    isAmapConfigured = current.isAmapConfigured)
+                loadDashboard()
+            }
+        }
     }
 
     fun toggleHudDismissed() {
@@ -180,6 +204,31 @@ class DashboardViewModel @Inject constructor(
         vehicleContextRepository.captureReadScope()
     } catch (cancelled: CancellationException) { throw cancelled }
     catch (_: Exception) { null }
+
+    private fun statusCacheContext(scope: com.matelink.data.local.HistoryReadScope?,
+                                   carId: Int, verifiedCar: CarData? = null): com.matelink.data.local.VehicleContext? {
+        if (scope == null) return null
+        return try {
+            val vehicle = if (verifiedCar != null && verifiedCar.carId == carId)
+                vehicleContextRepository.resolve(verifiedCar, scope)
+            else vehicleContextRepository.cachedContextForRemote(carId, scope)
+            vehicle?.takeIf { vehicleContextRepository.isHistoryContextCurrentNow(scope, it) }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { null }
+    }
+
+    private suspend fun statusIdentityCurrent(scope: com.matelink.data.local.HistoryReadScope?,
+                                               vehicle: com.matelink.data.local.VehicleContext?,
+                                               carId: Int, generation: Long): Boolean {
+        if (scope == null || vehicle == null || generation != requestGeneration) return false
+        return try {
+            dashboardStatusMayPublish(scope, vehicle,
+                vehicleContextRepository.captureReadScope(),
+                carId, settingsRepository.currentCarId.first(), generation, requestGeneration,
+                vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle))
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { false }
+    }
 
     private suspend fun collectTpms(
         scope: com.matelink.data.local.HistoryReadScope?, car: CarData?, rawStatus: CarStatus?, generation: Long
@@ -245,14 +294,20 @@ class DashboardViewModel @Inject constructor(
                     } catch (e: CancellationException) { throw e } catch (_: Exception) { /* keep live state */ }
                 }
                 if (generation != requestGeneration) return@launch
-                val cachedStatus = vehicleStatusStore.getCachedStatus(effectiveCarId)
-                val status = mergeCarStatusPosition(liveStatus, cachedStatus) ?: cachedStatus
+                val cacheContext = statusCacheContext(tpmsScope, effectiveCarId,
+                    car.takeIf { carsResult is ApiResult.Success })
+                if (!statusIdentityCurrent(tpmsScope, cacheContext, effectiveCarId, generation)) {
+                    if (generation == requestGeneration)
+                        _uiState.value = DashboardUiState(isLoading = false, error = "history_identity_unavailable")
+                    return@launch
+                }
+                val cachedStatus = cacheContext?.let { vehicleStatusStore.getCachedStatus(tpmsScope!!, it) }
+                val status = if (liveStatus != null && cacheContext != null)
+                    vehicleStatusStore.reconcileAndSave(tpmsScope!!, cacheContext, liveStatus,
+                        (adapterResult as? ApiResult.Success)?.data?.observedAt)
+                else liveStatus ?: cachedStatus
                 val usesCachedPosition = usableVehicleCoordinates(liveStatus?.latitude, liveStatus?.longitude) == null &&
                     usableVehicleCoordinates(cachedStatus?.latitude, cachedStatus?.longitude) != null
-                if (status != null && usableVehicleCoordinates(liveStatus?.latitude, liveStatus?.longitude) != null) {
-                    val observed = (adapterResult as? ApiResult.Success)?.data?.observedAt
-                    vehicleStatusStore.saveStatus(effectiveCarId, status, observed)
-                }
 
                 val units = when {
                     adapterResult is ApiResult.Success -> adapterResult.data.units
@@ -283,6 +338,7 @@ class DashboardViewModel @Inject constructor(
                 if (generation != requestGeneration) return@launch
                 val hasAmap = amapSettingsStore.currentKey().isNotBlank() || _uiState.value.isAmapConfigured
                 val resolvedAddress = loadCachedAddress(status, effectiveCarId)
+                if (!statusIdentityCurrent(tpmsScope, cacheContext, effectiveCarId, generation)) return@launch
                 _uiState.value = DashboardUiState(
                     isLoading = false,
                     car = car,
@@ -362,13 +418,20 @@ class DashboardViewModel @Inject constructor(
                             if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
                             collectTpms(tpmsScope, tpmsCar, result.data.status, generation)
                             var currentStatus = result.data.status
-                            val cachedStatus = vehicleStatusStore.getCachedStatus(carId)
-                            val resolvedStatus = mergeCarStatusPosition(currentStatus, cachedStatus) ?: currentStatus
+                            val cacheContext = statusCacheContext(tpmsScope, carId)
+                            if (!statusIdentityCurrent(tpmsScope, cacheContext, carId, generation)) continue
+                            val cachedStatus = cacheContext?.let { vehicleStatusStore.getCachedStatus(tpmsScope!!, it) }
+                            val resolvedStatus = if (cacheContext != null)
+                                vehicleStatusStore.reconcileAndSave(tpmsScope!!, cacheContext, currentStatus,
+                                    result.data.observedAt)
+                            else currentStatus
                             val usesCachedPosition = usableVehicleCoordinates(currentStatus.latitude, currentStatus.longitude) == null &&
                                 usableVehicleCoordinates(cachedStatus?.latitude, cachedStatus?.longitude) != null
                             val displayEvidence = if (usesCachedPosition) {
                                 withCachedPositionEvidence(evidence)
                             } else evidence
+                            val address = loadCachedAddress(resolvedStatus, carId)
+                            if (!statusIdentityCurrent(tpmsScope, cacheContext, carId, generation)) continue
                             _uiState.value = _uiState.value.copy(
                                 status = resolvedStatus,
                                 error = null,
@@ -380,21 +443,20 @@ class DashboardViewModel @Inject constructor(
                                 snapshotFreshness = displayEvidence.freshness,
                                 snapshotMixedSources = displayEvidence.isMixed,
                                 units = result.data.units,
-                                cachedAddress = loadCachedAddress(resolvedStatus, carId)
+                                cachedAddress = address
                             )
-                            if (usableVehicleCoordinates(currentStatus.latitude, currentStatus.longitude) != null) {
-                                vehicleStatusStore.saveStatus(carId, resolvedStatus, result.data.observedAt)
-                            }
                         }
                         is ApiResult.Error -> {
                             when (val legacy = repository.getCarStatus(carId)) {
                                 is ApiResult.Success -> {
                                     if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
                                     collectTpms(tpmsScope, tpmsCar, legacy.data.status, generation)
-                                    val resolvedStatus = mergeCarStatusPosition(legacy.data.status, vehicleStatusStore.getCachedStatus(carId)) ?: legacy.data.status
-                                    if (usableVehicleCoordinates(legacy.data.status.latitude, legacy.data.status.longitude) != null) {
-                                        vehicleStatusStore.saveStatus(carId, resolvedStatus, null)
-                                    }
+                                    val cacheContext = statusCacheContext(tpmsScope, carId)
+                                    if (!statusIdentityCurrent(tpmsScope, cacheContext, carId, generation)) continue
+                                    val resolvedStatus = if (cacheContext != null)
+                                        vehicleStatusStore.reconcileAndSave(tpmsScope!!, cacheContext, legacy.data.status, null)
+                                    else legacy.data.status
+                                    if (!statusIdentityCurrent(tpmsScope, cacheContext, carId, generation)) continue
                                     _uiState.value = _uiState.value.copy(
                                         status = resolvedStatus,
                                         error = null,
