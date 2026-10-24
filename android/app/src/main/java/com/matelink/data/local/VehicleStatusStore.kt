@@ -3,7 +3,9 @@ package com.matelink.data.local
 import android.content.Context
 import android.content.SharedPreferences
 import com.matelink.data.api.models.*
-import com.matelink.domain.map.mergeCarStatusPosition
+import com.matelink.domain.map.VehiclePosition
+import com.matelink.domain.map.VehiclePositionResolver
+import com.matelink.util.parseIsoInstant
 import com.squareup.moshi.Moshi
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.security.MessageDigest
@@ -32,7 +34,8 @@ class VehicleStatusStore @Inject constructor(
             scope.effectiveApiOrigin.isBlank() ||
             (scope.source == HistoryConnectionSource.CLOUD && scope.accountNamespace.isNullOrBlank())) return null
         val identity = listOf(scope.source.name, scope.effectiveApiOrigin,
-            scope.accountNamespace.orEmpty(), vehicle.localHistoryCarId.toString()).joinToString("\u0000")
+            scope.accountNamespace.orEmpty(), vehicle.localHistoryCarId.toString(),
+            vehicle.stableIdentity).joinToString("\u0000")
         return MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
     }
@@ -57,23 +60,39 @@ class VehicleStatusStore @Inject constructor(
         val key = key(scope, vehicle) ?: return
         try {
             val json = adapter.toJson(status)
-            prefs.edit()
+            val editor = prefs.edit()
                 .putString("status_v2_$key", json)
                 .putString("observed_at_v2_$key", observedAt)
-                .apply()
+            // Independent last verified position: keep its OLD observation time.
+            val positionAt = parseIsoInstant(observedAt)?.toString()
+            if (positionAt != null &&
+                VehiclePositionResolver.resolve(status.latitude, status.longitude, null, null) != null) {
+                editor.putString("position_v2_$key", json)
+                    .putString("position_at_v2_$key", positionAt)
+            }
+            editor.apply()
             _updates.tryEmit(vehicle.remoteApiCarId)
         } catch (_: Exception) {
         }
     }
 
-    /** Save observed non-position fields even when GPS is absent. Only this same
-     * scoped vehicle's previously usable coordinates may complete the snapshot.
-     */
+    /** A previous position is not part of the current live status. */
+    internal fun getCachedPosition(scope: HistoryReadScope, vehicle: VehicleContext): VehiclePosition? {
+        val key = key(scope, vehicle) ?: return null
+        val at = prefs.getString("position_at_v2_$key", null)
+            ?.let(::parseIsoInstant)?.toString() ?: return null
+        val previous = prefs.getString("position_v2_$key", null)
+            ?.let { runCatching { adapter.fromJson(it) }.getOrNull() } ?: return null
+        val coordinates = VehiclePositionResolver.resolve(
+            previous.latitude, previous.longitude, null, null) ?: return null
+        return coordinates.copy(source = "scoped_historical", observedAt = at)
+    }
+
+    /** Never re-date old GPS or other sparse fields as a new observation. */
     internal fun reconcileAndSave(scope: HistoryReadScope, vehicle: VehicleContext,
                                   live: CarStatus, observedAt: String?): CarStatus {
-        val merged = mergeCarStatusPosition(live, getCachedStatus(scope, vehicle)) ?: live
-        saveStatus(scope, vehicle, merged, observedAt)
-        return merged
+        saveStatus(scope, vehicle, live, observedAt)
+        return live
     }
 
 }

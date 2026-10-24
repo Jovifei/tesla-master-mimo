@@ -58,6 +58,40 @@ class VehicleStatusStoreScopeTest {
         assertNull(store.getCachedStatus(cloudScope("bob", "https://one.example"), vehicle(-1)))
     }
 
+    @Test fun laterGpsLessReceiptKeepsOriginalPositionTimeWithoutMerging() {
+        val scope = cloudScope("alice", "https://one.example")
+        val car = vehicle(-1)
+        store.saveStatus(scope, car,
+            CarStatus(carGeodata = com.matelink.data.api.models.CarGeodata(
+                latitude = 40.0, longitude = -73.0),
+                climateDetails = com.matelink.data.api.models.ClimateDetails(insideTemp = 0.0)),
+            "2026-10-23T01:00:00Z")
+        val current = store.reconcileAndSave(scope, car,
+            CarStatus(climateDetails = com.matelink.data.api.models.ClimateDetails(insideTemp = 21.0)),
+            "2026-10-23T02:00:00Z")
+        assertNull(current.latitude)
+        val reopened = VehicleStatusStore(app, Moshi.Builder().build())
+        assertNull(reopened.getCachedStatus(scope, car)?.latitude)
+        assertEquals(21.0, reopened.getCachedStatus(scope, car)!!.insideTemp!!)
+        assertEquals("2026-10-23T02:00:00Z", reopened.getCachedObservedAt(scope, car))
+        assertEquals(40.0, reopened.getCachedPosition(scope, car)!!.latitude, 0.0)
+        assertEquals("2026-10-23T01:00:00Z", reopened.getCachedPosition(scope, car)!!.observedAt)
+    }
+
+    @Test fun positionWithoutObservationTimeIsNotHistoricalProof() {
+        val scope = cloudScope("alice", "https://one.example")
+        val car = vehicle(-1)
+        store.saveStatus(scope, car,
+            CarStatus(carGeodata = com.matelink.data.api.models.CarGeodata(
+                latitude = 40.0, longitude = -73.0)), null)
+        assertNull(store.getCachedPosition(scope, car))
+        store.saveStatus(scope, car,
+            CarStatus(carGeodata = com.matelink.data.api.models.CarGeodata(
+                latitude = 41.0, longitude = -72.0)), "2026-10-23T03:00:00Z")
+        assertNull(store.getCachedPosition(cloudScope("bob", "https://one.example"), car))
+        assertNull(store.getCachedPosition(scope, vehicle(-2)))
+    }
+
     private fun cloudScope(account: String, origin: String) =
         HistoryReadScope(HistoryConnectionSource.CLOUD, "cloud", account, origin)
 
