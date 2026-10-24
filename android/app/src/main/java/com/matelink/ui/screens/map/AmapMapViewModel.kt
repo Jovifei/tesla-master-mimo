@@ -133,10 +133,11 @@ class AmapMapViewModel @Inject constructor(
                 }
                 return@launch
             }
-            verifiedPosition = scope to vehicle!!
+            val verified = vehicle ?: return@launch
+            verifiedPosition = scope to verified
             val snapshot = if (fetch) repository.getAdapterSnapshot(id) else null
             val legacy = if (fetch && snapshot is ApiResult.Error) repository.getCarStatus(id) else null
-            if (!current(vehicle)) return@launch
+            if (!current(verified)) return@launch
             val status = when {
                 snapshot is ApiResult.Success -> snapshot.data.status
                 legacy is ApiResult.Success -> legacy.data.status
@@ -145,11 +146,11 @@ class AmapMapViewModel @Inject constructor(
             val live = com.matelink.domain.map.VehiclePositionResolver.resolve(
                 status?.latitude, status?.longitude, null, null)
             val observedAt = (snapshot as? ApiResult.Success)?.data?.observedAt
-            if (status != null && current(vehicle))
-                vehicleStatusStore.saveStatus(scope, vehicle, status, observedAt)
+            if (status != null && current(verified))
+                vehicleStatusStore.saveStatus(scope, verified, status, observedAt)
             val older = if (live == null)
-                vehicleStatusStore.getCachedPosition(scope, vehicle) else null
-            if (!current(vehicle)) return@launch
+                vehicleStatusStore.getCachedPosition(scope, verified) else null
+            if (!current(verified)) return@launch
             val position = live ?: older
             _uiState.value = _uiState.value.copy(latitude = position?.latitude,
                 longitude = position?.longitude,
