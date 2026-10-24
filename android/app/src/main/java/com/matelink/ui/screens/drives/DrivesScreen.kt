@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -50,6 +51,7 @@ import androidx.compose.runtime.Composable
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -164,32 +166,33 @@ fun DrivesScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            if (uiState.isLoading && !uiState.isRefreshing) {
-                MateLinkLoadingPlaceholder(color = palette.accent)
-            } else {
-                DrivesContent(
-                    historySyncWarning = uiState.historySyncWarning,
-                    localArchiveLinkPending = uiState.localArchiveLinkPending,
-                    drives = uiState.drives,
-                    chartData = uiState.chartData,
-                    chartGranularity = uiState.chartGranularity,
-                    summary = uiState.summary,
-                    selectedDateFilter = uiState.dateFilter,
-                    selectedDistanceFilter = uiState.distanceFilter,
-                    customStartDate = uiState.customStartDate,
-                    customEndDate = uiState.customEndDate,
-                    units = uiState.units,
-                    palette = palette,
-                    listState = listState,
-                    isFilterLoading = uiState.isFilterLoading,
-                    driveMetrics = uiState.driveMetrics,
-                    onDateFilterSelected = { viewModel.setDateFilter(it) },
-                    onCustomRangeSelected = { start, end -> viewModel.setCustomDateRange(start, end) },
-                    onDistanceFilterSelected = { viewModel.setDistanceFilter(it) },
-                    onDriveClick = onNavigateToDriveDetail,
-                    onParkedClick = onNavigateToParkedDetail
-                )
-            }
+            DrivesContent(
+                isLoading = uiState.isLoading,
+                isRefreshing = uiState.isRefreshing,
+                isLoadingMore = uiState.isLoadingMore,
+                canLoadMore = uiState.canLoadMore,
+                onLoadMore = { viewModel.loadMore() },
+                historySyncWarning = uiState.historySyncWarning,
+                localArchiveLinkPending = uiState.localArchiveLinkPending,
+                drives = uiState.drives,
+                chartData = uiState.chartData,
+                chartGranularity = uiState.chartGranularity,
+                summary = uiState.summary,
+                selectedDateFilter = uiState.dateFilter,
+                selectedDistanceFilter = uiState.distanceFilter,
+                customStartDate = uiState.customStartDate,
+                customEndDate = uiState.customEndDate,
+                units = uiState.units,
+                palette = palette,
+                listState = listState,
+                isFilterLoading = uiState.isFilterLoading,
+                driveMetrics = uiState.driveMetrics,
+                onDateFilterSelected = { viewModel.setDateFilter(it) },
+                onCustomRangeSelected = { start, end -> viewModel.setCustomDateRange(start, end) },
+                onDistanceFilterSelected = { viewModel.setDistanceFilter(it) },
+                onDriveClick = onNavigateToDriveDetail,
+                onParkedClick = onNavigateToParkedDetail
+            )
         }
     }
 }
@@ -197,6 +200,11 @@ fun DrivesScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DrivesContent(
+    isLoading: Boolean = false,
+    isRefreshing: Boolean = false,
+    isLoadingMore: Boolean = false,
+    canLoadMore: Boolean = false,
+    onLoadMore: () -> Unit = {},
     historySyncWarning: String?,
     localArchiveLinkPending: Boolean,
     drives: List<DriveData>,
@@ -327,6 +335,43 @@ private fun DrivesContent(
                 }
             }
         }
+
+        if (isLoadingMore) {
+            item(key = "loading_more_indicator") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = palette.accent
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.loading_more_history),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val totalItems = listState.layoutInfo.totalItemsCount
+            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            totalItems > headerCount + 1 && lastVisibleIndex >= totalItems - 2
+        }
+    }
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore && canLoadMore && !isLoadingMore && !isFilterLoading && !isLoading) {
+            onLoadMore()
+        }
     }
 
     MonthScrollIndicator(
@@ -341,20 +386,16 @@ private fun DrivesContent(
 
     // Sub-100ms loads never see a spinner — only sustained ones cross the
     // perceptual threshold worth giving feedback for.
-    val showSpinner = rememberDebouncedLoading(isFilterLoading)
+    val showSpinner = rememberDebouncedLoading(isFilterLoading || (isLoading && !isRefreshing))
     if (showSpinner) {
-        // Full-bleed dim scrim that sits above everything (chart cards inside the
-        // LazyColumn have shadow elevation, which puts them in their own graphics
-        // layer; without the explicit zIndex the spinner could end up rendered
-        // behind them). The list shows through at ~55% alpha.
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .zIndex(10f)
-                .background(Color.Black.copy(alpha = 0.45f)),
+                .background(Color.Black.copy(alpha = 0.20f)),
             contentAlignment = Alignment.Center,
         ) {
-            MateLinkLoadingMark()
+            MateLinkLoadingMark(size = 150.dp)
         }
     }
     }

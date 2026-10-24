@@ -1,3 +1,126 @@
+# 2026-10-12 每趟行程能耗（源码/测试/手机安装已授权）
+
+- [x] 只读核查当前源码与官方字段；明确现有计算器和实际消费者缺口。
+- [x] 完整方案：docs/PLAN-2026-10-12-per-drive-energy.md；保留原E根与Owner内容。
+- [x] 原Chat一次完整方案审查，随后本地实施与集中复审；不用Work。
+- [ ] 冻结备份 → 真实缺口RED → 最小源码修复 → 行程列表/详情/离线GREEN。
+- [ ] Fleet独立能量证据/持久化/静默完成/list/detail回归；具体unknown保持未知。
+- [ ] 同一源码完整Android/Go/隔离PG检查、Release签名/R8。
+- [ ] 同签保留数据覆盖安装及真实手机行程显示验证；服务器/车辆订阅门独立。
+- [ ] 汇总源码、测试、安装、显示与OPEN项并上报。
+
+本轮 review（2026-10-12）：90 文件基线备份和手机现有 APK 已核对保存。Go 真实行为 RED（含 PG 静默 finalizer conn-busy）已复现；新的 nominal 能量路径聚焦 GREEN，含实际隔离 PG 重建/冲突/充电污染/list-detail 回归。Go 全量首轮 336 pass/1 fail/0 skip，唯一失败 TestTaskDOfficialFleetTelemetryFieldSetIsExact 的旧31字段集合未包括新增官方 EnergyRemaining，待源码归属协调后更新精确合同并重跑。Android 在 baseline 编译期间出现非本轮写入的硬编码 60kWh/SOC fallback 与同一列表文件修改，Gradle 又收到外部 stop；此运行不是有效 RED/GREEN，即使包装器 exit0 也不能算测试通过。双方当前源码 17 文件已保存逐 hash 核对，所有源码写入暂停，等待 Jovi 确认统一写入方。未提交源码、未签新 APK、未安装/清数据、未生产部署或真实迁移。
+
+# 2026-10-09 原Project新执行聊天（Jovi明确授权）
+- [x] 原网页最后回复完整交付8625d28e/CI全绿，但页面仍显示“消息传输超时”；该源码已实际本地安装，不能重复当待安装。
+- [x] C2C doctor exit0；从原Tesla_Matelink Project合集入口提交同一剩余完整阶段（传输/部署路由与能耗消费者兼容审核、实际GitHub修复/CI/固定SHA交接），不是新Codex任务或逐文件小派工。
+- 新网页聊天：6ac835bf-30b8-83ea-b3dd-a17d2d0949d6；旧6ac66e47保留。远端正在读取workspace_info，确认app_mimo后才更新绑定。
+- [x] 核验实际workspace身份并保存新聊天绑定/五分钟兜底；旧阶段源码与证据保留。
+- [ ] 接收远端完整固定交付、独立验证、集中回传及真实门闭合后的main合并。
+- 手机临时WiFi/蜂窝对照仍未获答复，新聊天授权不扩大网络/生产数据/bridge/旧历史回填权限。
+# 2026-10-09 03:14 当前接力（等待明确网络诊断决定）
+- [x] 远端完整诊断候选8625d28e/CI37825196099全绿；本地Debug719/Release719零fail（release8skip），lint0error，签名R8通过。
+- [x] 同签install-r诊断APK46/2.1.27，实际安装SHA DD1EC28B匹配，原firstInstallTime保持；启动alive/FATAL0/ANR0。Source80旧安装与8625新安装分别记录。
+- [ ] 真实认证历史间歇失败尚未关闭。18:59UTC手机HTTPS200随后19:03再次certificate_path_validation。只读解析失败公开握手：正确SNI，但返回不匹配生产leaf/域名的自签证书。具体错误路由组件待查，不靠信任绕过掩盖。
+- [x] 新自然源记录与已知Oct7源均功率完整覆盖，无冲突或大gap；手机失败时缓存SOC/最高速度可见、能耗暂无数据，不能算新数据能耗验证PASS。
+- [ ] 已通过Agent询问Jovi是否许可临时Wi-Fi→蜂窝只读验证后恢复；未答复不视同授权。不改代理/VPN/DNS/证书或唤醒。
+- [x] 最新精华Docs/README与完整GitHub证据提交，PR17保持Draft；Owner main f0及dirty源码保留。Main合并、原目录同步待真实验收门。
+- Hub仍连接拒绝，保留原pending事件，不冒充上报成功。清理为13项1.78GB可恢复移动，不声称永久删除释放磁盘。
+
+# 2026-10-09 02:26 能耗阶段当前实测
+- [x] 远端固定产品80c89182及CI37820112901全绿；本地Debug714/Release714零FAIL（Release8skip），lint零error，同签Release/R8成功。
+- [x] 手机保留数据install-r45→46/2.1.27；firstInstallTime保持，已登录及缓存历史保留；10秒启动alive/FATAL0/ANR0。
+- [ ] 真实认证历史未通过：18:20–18:23UTC history_context http=none/category=tls，手机显示云同步失败缓存提示。APIhealth/ready200不当接口验收，源码网络策略无新增变化，具体TLS根因待分型。
+- [x] 集中完整实机证据GitHub e64c39a，docs/ENERGY-LOCAL-DEVICE-QUALIFICATION-20261009.md；PR17评论回传；同一远端原聊天已收到整阶段审核修复包并正在生成，不拆小任务。
+- [ ] 主分支合并仍待实机认证门，不预先合并；Owner dirty与原始数据保持。可恢复整理13项1,784,862,693bytes已完成，不声称物理磁盘释放。
+# 2026-10-08 能耗修复、安装、整理与合并（重新授权进行中）
+- 权限恢复；读取父/app AGENTS，无可用图工具时用rg。main f0dcd44与Owner dirty保留。
+- fetch后阶段分支5677f2c2是两份新QA文档，没有新业务源码；隔离接收树E:\Claude_allow\Download\matelink-energy-stage-20261008。
+- [x] 完整阶段规格已GitHub提交db68b49，docs/ENERGY-REPAIR-CLEANUP-STAGE-20261008.md，官方/开源依据、计算边界、CI与清理验收齐全。
+- [ ] 远端整阶段源码实现、两个底座整合及真实CI交接。
+- 中间源码8033e05/81cc79e/0bb3eaac已实际GitHub提交，阶段最新c1d83fb2为CI支援；仍生成且网页显示进一步处理，尚未整包交接。仅做源码只读review，不安装或合并中间版本。
+- [x] 本地准入：手机连接、实际build45原APK哈希B7C46F与签名9AB144匹配；firstInstallTime未变。6项独立Kotlin回归在旧产品源全部FAIL；真实DAO SQL4项2FAIL，证据分支c02d490。
+- [x] 可恢复整理13项旧缓存/失败日志，共1784862693字节移出工作树；永久删除被policy阻止；源码、有效测试、APK/report/rollback保留，Owner Drivesscreen原1增1减保持，私有patch备份未上传。
+- Hub revision读取连接拒绝，pending报告已保存，不称上报成功；不重复自动重试。旧Obsidian镜像陈旧，不能覆盖当前仓库事实。
+- [ ] 本地固定SHA测试、签名编译、保留数据安装与真实字段验证。
+- PR17完整候选fafeac26/tree0e06ebca/parent9c202491已接收；后端已以bb09完整Go子树为底，实际差异7个文件。正式本地准入仍CHANGES_REQUIRED：AnalysisSummary.kt78/83/110生产nullable编译失败，Android独立7项NOT_RUN；内存Go独立3项全FAIL（结束时刻复位重报、零AC判型、未知/混合模式假AC效率）。没有安装或main合并。
+- 集中失败包4976e42已GitHub推codex/energy-final-validation-20261009，docs/ENERGY-LOCAL-CHANGES-REQUIRED-20261009.md及实际counter测试；同一网页已实际收到整阶段修复回传，仍生成。源码写/CI/main验证后合并授权继续有效，不本地业务修复或放宽断言。
+- [ ] 精确清理可重建产物；保留有效测试/迁移/回滚和关键精华Docs。
+- [ ] 提交验证回执、验证后合并main及本地主目录安全同步。
+- 已授权本阶段，不再重复索要源码/安装/清理/main合并授权；生产历史写/bridge升级仍独立门。旧heartbeat暂不恢复。
+
+# 2026-10-08 本轮已按Jovi要求收尾（历史）
+- 已授权同Project新执行聊天6ac66e47-f474-83ea-8993-58d165090b76；最终仅入口核验，24秒结束，阶段分支仍14ca59d，无新源码或CI交付。
+- Jovi要求提交并结束今天工作；heartbeat matelink已PAUSED，不再派工。整体未验收项保持OPEN，详见docs/RPT-2026-10-08-session-closeout.md。
+- 提交范围为本轮新增脱敏Docs/验证记录，不包含Owner未提交DrivesScreen源码、凭证、原始日志或身份轨迹。
+
+# 2026-10-07 字段与通知完整链路审计（历史记录）
+- 远端分工持久配置已实际保存并重新打开核验全文一致（保留Project-only记忆及安全边界）；说明已统一remote主实施、local仅验证，取消旧混合PLAN/本地EXECUTED循环与重复代码授权要求。记录在docs/REMOTE-PRIMARY-WORKFLOW-VERIFICATION-20261007.md，GitHub docs-onlya601c011。
+- 后续原网页仍连续读取后以“下一读取点”结束；GitHub独立核对codex/reliable-data-stage-20261007头仍14ca59d，无新源码/执行器交付，不称正在后台持续执行。已询问Jovi是否允许同Project新纯执行网页聊天承接同一分支，原Codex/网页均保留；未答复不得新建。heartbeat保持ACTIVE，不自动当暂停或完成。
+- 最新分工纠正优先：远端完整审核→修复→规划下一大阶段→执行计划→CI修复复审→固定源码交接；本地只接收验证编译安装测试和GitHub回传，不实施业务源码。旧“只读收尾”阶段已明确结束，限制的是生产数据/车辆动作，不是GitHub源码写入。
+- 完整执行任务书docs/REMOTE-FULL-DATA-STAGE-MANDATE-20261007.md已发布f61b484fdc574e8320dea59664aef623500caefe；原远端会话已通过浏览器实际收到EXECUTE_FULL_STAGE并显示正在回应。未发现完整源码交付前不称远端已执行完成；不再把4秒只读回复当后台执行。
+- 用户授权每5分钟兜底检查已创建heartbeat matelink/ACTIVE，绑定当前原线程；生成中不打断，不反复小任务，仅完整交付、具体失败/人工门通知。
+- 手机12:42自然行程补证：20:04:55中国/12:04:55 UTC，3100点，独立SQL积分与屏幕kWh100km一致并标预估；最高采样速度与观测SOC首尾可见匹配。启动目标PID16039 FATAL/ANR/迁移错误0，通用ANR字样不是目标实际ANR。旧“启动归属待查”已由受限采样复核，不能代长期稳定。
+- 充电验证仍未闭合：20:05–20:20合法脱敏窗口charge_page有4次200、history_context/status200、drive_page多次200/499；无客户端身份，不能仅凭200算手机内容正确。最新三条route/charge_points皆array、37/35/36点，不先归因JSONnull。真实30天胎压与自然通知仍OPEN。
+- 19:13实际交付：API产品bb09fac/treee06e83，image5ee77870，配置/env/schema不变、历史UPDATE0；PR15 Draft、CI37611040504 success。手机源14ca59d/PR16 Draft，同签install-r44→45/2.1.26、firstInstallTime不变，Debug656/Release656零fail（release8skip）、lint0err242warn8info、signedR8通过。
+- 原远端代码边界PASS WITH REMAINING ACCEPTANCE GATES。自然新行程/充电通知、真实30天胎压历史、手机全页面认证复验和ANR归属仍OPEN。启动采样launch/PID16039alive/FATAL0，但通用全局ANR1/OEM SQLITE_OK未经归属复核，不判作MateLink故障或启动全PASS。
+- 源胎压30天7113真实记录（观测19:01:11中国/11:01:11 UTC），是否补入历史的用户答复仍待；旧六SOC不扩权、不回填，bridge不重复升级。
+- Docs原目录已记录；GitHub执行回执docs-only f10e5415bea39cffab96ec6e0a918e9e719bf79f已回传API字段分支。E本地API分支仍5ff1d49，待执行工具恢复后仅同步这条文档提交，勿覆盖Owner main及其dirty DrivesScreen。
+- 本机执行通道随后连只读echo无回执，停止额外尝试；恢复后先按MateLink进程/包名归属复查日志、认证页面/自然数据，再核Hub revision并提交待回传状态。不能把已部署/安装当最终验收。
+- [ ] 核对实际build44手机页面、通知权限和当前数据观察时间。
+- [ ] 逐字段核对能耗单位/实测或估算、充电SOC、最高速度、历史状态、驻车时间SOC及胎压。
+- [ ] 原远端Project审核实现完整最小修复并提交；不扩张历史回填或唤醒权限。
+- [ ] 本地精确SHA回归、签名构建、保留数据安装及自然数据验收。
+- [ ] 更新docs经验、现有账本与Hub，回传原远端审核。
+能耗未知不能以SOC百分点直接冒充kWh，估算必须标明假设；首次历史同步不弹旧记录通知，身份隔离、去重、权限和后台限制均需验证。
+
+---
+# 2026-10-07 17:05 当前接力：自然新行程已实际恢复
+
+- 用户确认今天12:42行程刷新显示；源云372/今日1条/3100SOC速度功率匹配，bridge积压0。手机刷新16:29:15-18历史身份200及9页drives200；安全UI确认最新条目。代理摘要无客户端身份，结合用户/UI证据关联，不仅凭HTTP200假验收。
+- 故障直接链：13:54:57身份502→安全保留371旧缓存/不取分页。代理上游提前关闭与API13:55退出/重启已证实；内核窗口没有相应OOM证据，实际退出原因仍UNKNOWN。
+- 原生产tree3f的完整history计数/readiness重型读已改COUNT/EXISTS；列表DB分页、单详情context、首尾有效SOC/真实0/unknown及计数null已修。远端源36d630a8、本地264Go/PG16及Linuxrace/CI37584926711 PASS。不是整版Stage2/驻车发布。
+- 16:14 API已实际切换，仅jourvolt-pilot-jourvolt-dev-api-1，新buildapi-bounded-36d630a8-tree-894ec4ceda49，image339ad919...；原runtime/环境配置/schema均一致，历史UPDATE0，保留原image49c和原configs回滚，无bridge/凭证/TTL修改。
+- 当前API部署需复用实际com.docker.compose.project.config_files（base+原SOC override+新bounded override），不可用旧两file命令重建后覆盖回旧API。当前配置标签/镜像在证据中，新的release目录持久存在。
+- 手机从现用43源7f仅回移UIfix，源2d1828be；2.1.25/build44已实际同签adb install-r，原firstInstallTime不变。Debug638/Release638零失败（release8skip）、lint0err、R8/signedPASS，启动0FATAL/ANR。
+- PR13最小API、PR14手机backport Draft，原PR12整版仍Draft；无main merge。最终原Project远端delivery review PASS（限定本次交付/自然行程恢复）。
+- docs/HISTORY-SYNC-SOC-502-DEBUG.md排查入口及docs/RPT-2026-10-07-new-trip-api-phone-delivery.md已在原目录并GitHub回传；API报告head72fff5a8产品源仍36d。
+- 独立OPEN：旧6SOC范围确认/最终恢复、详情SOC手机单独实显、完整退出RCA/长期稳定、临时bridge持久化、温度/直接能耗未知、整版驻车验收。当前新行程显示可关，不能代替全部事项完结。
+
+---
+# 2026-10-07 当前接力（原会话）
+
+- 原Owner main f0dcd447及未提交AGENTS/DrivesScreen/todo内容保留；原Stage2本地分支在E:/Claude_allow/Download/matelink-history-intake-20261007同步最新。
+- 用户纠正为10月6日行程，确认最新21:37记录手机可见。12:04-12:08中国时间观测源云371完成记录、Oct6六条逐条匹配；Oct7零条符合用户确认。不能据此宣称新认证网络请求已验收。
+- 远端最小UI修复6282c67c，复审停车输入扩展CHANGES_REQUIRED后远端修正e372445c；本地Debug670/Release670均0失败（Release8跳过）、lintRelease0err241warn7info、R8 unsigned release PASS；精确CI37571622069两job success。未签名/未安装新候选。
+- 本地脱敏报告推送5fcabdd5ea10222258d975154368d3aafaf1f499（docs-only，产品源e372），原Project远端只读审核进行中，PR12仍Draft。
+- 六条Oct6旧SOC缺口：25114points，排除旧369/372，私有备份、候选非SOC逐点相同，唯一重复源时间组SOC相同。独立合成PG16十二测试PASS；不是生产性能证据。六条范围审批待答复，未执行生产SQL。
+- 12:30充电字段v2证明最近三条energy/SOC源云一致，cost源缺；温度归档契约缺、drive总energy未知，不补0/估算成测量值。
+- 12:04bridge活体hash/owner/mode与交接一致，restart0/OOMfalse/cursor稳定；未重复升级/改游标，容器可写层持久化未闭合，自然新行程SOC未验收。
+- 502窗口只有00:22:05 API重启关联。现有角色Nginx error/access PermissionError，未绕过；当前健康200/未认证历史401不等于认证历史修复。生产build仍archive-soc-781c4025-tree-3f774ce1682b。
+- 手机仍2.1.24/build43、原首次安装时间，原诊断无新安全响应回执；原整版驻车生产兼容/真实手机仍PENDING。没有唤醒车/制造行程/生产部署/TTL变更。
+
+下一步：远端完成只读审核；用户确认六SOC范围后冻结实际binding/PGrowhash并做最终执行前校验；合法取得代理/退出证据；自然新数据与兼容手机证据分别验收。
+
+---
+# 2026-10-02 Codex with ChatGPT 项目关联
+
+最新接力：本地兼容修正 f06585f 与手机交付记录 d54e518 已推送 PR #11 分支，原签名覆盖/启动通过（数据保留，0 FATAL/ANR）。远端 Stage2 分支 codex/history-resource-stage2-20261002 已提交预算组件、契约回归和 shared guard；fca4af3 CI36992335178通过。实际端点接线、summary/chunk 与混合并发仍未完成。远端 d505bb4 的 handoff/remote_edits/stage2-admission.json 含占位SHA、英文描述及stub，未通过本地机械校验，未应用到源码。新的GitHub执行聊天为同Project的6abf7ddc-9918-83ea-8f42-b6bf7ef1594d；当前有用户输入草稿，页面操作已停止，等待有效远端代码交接。主目录Owner改动保留，未合并main或生产部署。
+
+接手更新：Jovi 已授权按远端 OOM 交接包执行本地接收。候选为 PR #11 / 16a31c3，验证及 Android 兼容修复在 C:/Users/Admin/.codex/worktrees/matelink-oom-handoff/app_mimo；主目录业务代码未变。以该隔离目录 docs/RPT-2026-10-02-local-handoff-acceptance.md 和当前 C2C checkpoint 为后续入口，不重复执行下述初始方案。
+
+- [x] 读取用户指定连接恢复 SOP，核验当前项目身份和原有配置。
+- [x] 建立本项目专属固定连接，doctor 全项通过；未改变系统网络配置。
+- [x] 创建并配对只读连接 Codex with ChatGPT · app_mimo。
+- [x] 将用户指定 Tesla_Matelink Project 设置为仅限项目记忆，保存专属连接与规划/执行/审核约定。
+- [x] 在同一 Project 新建协作聊天；远端 workspace_info 返回 app_mimo，并实际读取 AGENTS.md。
+- [x] 本地保存 Project/chat 映射，发送 c2c_matelink_oom_20261002 INIT 并保存等待方案的 checkpoint。
+- [x] 收到远端最小 OOM 修复 PLAN；已保存 PLAN_RECEIVED / 等待 Jovi 授权 checkpoint。
+- [ ] 取得 Jovi 代码修改授权后实施元数据查询修复；提交与部署另行确认。
+
+下一轮范围：telemetry_service.go 及必要存储方法提供数量、存在性、来源元数据读取；main.go 的 vehicleItems 和 readiness.go 的 historyReadinessSource 改用该读取。只查询必要字段或聚合，保持来源选择顺序、错误/空值与 userID/vehicleID 约束。补元数据不解码大路线、账号/车辆隔离、数量/来源一致和完整详情回归，执行 Go test/vet；生产登录、内存及重启观察留在另行授权部署后。分页、Android、本地详细历史/云端摘要架构均不在本次最小修复范围。
+
+Review：连接及文件读取验证通过。旧聊天保留；业务代码未修改。专用连接启动使用进程级 C2C_TUNNEL_PROTOCOL=quic、TUNNEL_EDGE_IP_VERSION=4；未设置全局环境变量。Project 记忆切换页面提示可能需要数小时生效。连接凭据和公网地址未写入仓库。
 # 2026-10-02 接收远端 OOM 修复交接
 
 - [x] 读取 ZIP/Prompt，fetch 修复分支，确认 PR #11 Draft/head 16a31c3；隔离工作树接收，未重复 apply。
@@ -3272,6 +3395,136 @@ Review: final Debug/Release JVM suites each ran 526 tests with zero failures/err
 - [ ] 记录 Review、提交推送、签名 APK、`adb install -r`、首次安装时间及账号/历史保留；Tesla 人工确认仍由车主完成。
 - Review：这是主工作区原有的未完成检查单。本次合并后的更新验收应以本文档顶部 2026-10-02 记录为准。
 
+## 2026-10-02 Stage2 local admission verification
+- [x] Remote detail admission integrated at e9ef770.
+- [x] Constructor limits fixed to (8,2,1); five genuine HTTP lifecycle tests; expanded CI race selection.
+- [x] Full Go/isolated PG16 287 PASS, zero failure/skip; Linux targeted race PASS.
+- [x] Pushed local correction and report: 2ddfb9d2d2754dedc4659aac1df120769cf5b735.
+- [x] Returned GitHub SHA to exact remote execution chat for independent review and next implementation batch.
+- [ ] Remote import/archive admission, independent summaries, bounded points/chunks, restart/QoS1 and 2/4/8/16 benchmarks.
+Review: Stage2 remains partial; main merge, production deployment and Stage2 device validation not performed.
+- [x] Actions37001941565 at 2ddfb9d completed/success.
+- [x] Remote import/archive adapter reviewed: base hashes/unique matches correct, but primitive-only test leaks a lease and archive replacement is a no-op. CHANGES_REQUIRED, not applied.
+- [ ] Remote correction requested: real service/HTTP tests, overload/cancel mapping, no leaked permit.
+
+## Stage2 import/archive accepted source 2026-10-02
+- [x] Remote shared admission applied; local ordinary-import HTTP mappings and cancellation checks fixed.
+- [x] Real service/HTTP regressions 7 PASS; full isolated PG16 Go294 PASS, zero fail/skip; vet/build/mod verify and Linux history/archive races PASS.
+- [x] Pushed93a1e3a28df6c7f55e468f0f23cdfe5afc556703; remote audit requested with immutable report/source paths.
+- [ ] Actions37009734090 finish; remote actual PG summary read/write slice implementation.
+- Review: e34f527 summary/chunk helper request CHANGES_REQUIRED, not materialized. Decode-before-admission remains partial. No Stage2 device/production claim.
+- [x] Decode admission final source pushed9e71eeab3c40a0d929a9ad215307257081605ff0; full Go306 PASS, zero fail/skip, vet/build/Linux race PASS.
+- [x] Actions37010530338 at exact SHA completed/success; remote read-only decode source audit PASS.
+- [x] Draft PR12 created/attached, stacked on PR11; no merge.
+- [ ] Remote next actual PG summary/bounded point-chunk batch dispatched; await executable handoff. Stage2 overall remains partial.
+# 2026-10-07 natural history/SOC/502 intake
+- [x] Owner main f0dcd447 dirty preserved; isolated checkout d73ff84d synchronized.
+- [x] Exact temporary bridge receipt exists; original C2C connection repaired and doctor green.
+- [ ] Read-only current bridge hash/cursor/source/cloud aggregate and October7 natural-session matching; UTC/China timestamps separate.
+- [ ] Field presence source/parser/storage/API/UI classification; authenticated history request and bounded 502 logs.
+- [ ] Remote original Project diagnose/implement GitHub patch; local reproduce/test/phone verify without wake/create trip.
+- [ ] Exact SHA/CI/evidence return for remote review; hub and original ledger update.
+Scope: no repeated original two-record SOC repair, no new historical fill without scoped approval, no vehicle commands, no identity/cache bypass, no private tracks/VIN/token in public evidence.
+- Scope correction: Jovi confirmed no October7 trip; investigate October6 actual trips instead. October7 zero source/cloud agrees with user correction.
+- Charge presence evidence v2 supersedes v1: native charge_points_json uses BatteryLevel, whereas archive route JSON uses battery_level. Both aliases must be checked before classifying storage loss. Latest3 source/cloud charge SOC samples and energy match; source cost absent. No data write.
+
+- Final original Project independent review: e372 UI visibility/parking regression PASS, docs5fcabdd PASS. SourceCI37571622069 success, reportCI37572505410 pending. SOC/502/root-cause/bridge persistence/whole parked release remain OPEN. No production SQL or new phone installation. Dashboard reported blocked on scoped SOC confirmation and legitimate missing log/device/natural evidence.
+
+## 2026-10-07 12:30新自然行程
+- [ ] 重新观测源/bridge/云/手机：12:04的零行程不能用于解释12:30后新行程。
+- [ ] 核对字段及队列、接口/过滤/缓存，必要时原Project远端修复提交；本地验证与保留数据安装分别验收。
+- [ ] 将报告和可复用bug经验放到原docs入口，准确区分远端代码修复/构建/部署/安装/自然数据验收。
+
+## 2026-10-07 午后新行程/502实际链路
+- 13:57源云372、当天新增1条、bridge积压0；13:58新行程3100SOC/速度/功率源云匹配。新bridge自然归档SOC存储证据成立，手机端尚未闭环。
+- 真实手机13:54:57 history_context HTTP502；服务13:55:00.929退出/13:55:04.135启动，restart1→2。身份失败保持旧缓存并不拉新分页；7.49km不受旧0.5过滤，这是同类502再次发生，不是未安装UI补丁的原因。
+- 原docs报告已复制回Owner目录；新增docs/HISTORY-SYNC-SOC-502-DEBUG.md Agent排查入口，明确代码/CI/构建/安装/部署/自然验收层级和观测时间。
+- 当前生产tree3f仍存在vehicleItems/readiness/list完整history读取风险；不是新Stage2代码。已冻结原生产源码为a4d214b0 / codex/api-502-minimal-20261007，tree完全匹配。远端原Project正审核并实现不迁移schema的最小资源修复，尚无服务变更。
+- 新最小验证工作树E:/Claude_allow/Download/matelink-api-502-minimal-20261007；原main脏内容与原Stage2不改动。
+
+
+新上下文核验：远端已实际确认workspace_info为app_mimo及RootAGENTS登记E:\project\tesla_master\app_mimo；parent路径由连接器PATH_OUTSIDE_WORKSPACE拒绝，不绕过。新聊天标题“执行完整阶段handoff”，URL已保存；远端正在修复setup-root自签降级和verify-public curl-k护栏，尚不能称手机根因已闭合。
+2026-10-09 08:37中国只读补证：当前服务器公开自签文件与旧失败EC433 peer指纹不同；8625脚本生成RSA2048且保留既有文件，不能因此归因/排除历史因果。eab3911补证已推GitHub/PR17，远端完整阶段继续。
+新阶段中间3dd44e31只读审核CHANGES_REQUIRED（不是最终交付）：失败文件回滚、LE资格证明、未认证200误报及PUBLIC_IP shell插值风险。完整集中证据14a6fce已GitHub/PR17回传，未本地改业务。Hub revision最新返回HTTP404，旧pending未发送，不再称连接拒绝为当前状态。
+Android中间2004c080只读review PASS有边界：旧Fleet/local_import无测量证明的能量标量不当完整能耗，archive兼容与真实0/负回收保留；仍建议直接Fleet充电正/零用例。手机当前8625/build46不含新增guard，最终需新源码签名包实测，不以相同版本号冒充安装。PR17已集中补证。
+2026-10-09 09:05中国/01:05UTC在原网络不变下手机普通HTTPShealth200/verify0；仅此当前公开TLS观测，不当认证历史/间歇故障关闭。仍保留先前失败peer事实及网络对照未获许可。
+2026-10-09 09:11源3100只读完整窗口补证：APIbb09起止RFC3339截小数秒，点Date保留精度；转换后缺0.417秒。已用8625真实编译类执行匿名JVM重放exit0，精确边界complete而截秒边界incomplete。92bad8b全阶段补证/回归fixture已GitHub/PR17回传，不放宽完整性或写生产。01:06手机能耗不可用但无错误warning；SOC先前UI采样误触图表不完整，margin滚动后出现百分比，不因此报SOC解析bug。
+
+2026-10-09 09:18当前远端29384c91/Actions37867534150后端及10源码审查成功，Android113617876074仍运行。完整本地反馈92bad8b包含14a6fce脚本4项与3100真实精度条件/实际编译类重放，已PR17发布；完整接受前仍CHANGES_REQUIRED，不把CI绿色代替反馈闭合。
+最新完整回传b71d4c5：29384c91 CI37867534150 Android113617876074失败；本地两种UnitCompile exit1/1m40s，兼容测试5个toSyncSummary引用未解析；tests/R8/install未执行。新网页原回复结束超时，已同一6ac835bf恢复完整阶段（编译、TLS4风险、自然时间精度合包），正在回应。新源码未安装，手机仍8625/build46，main未合并。
+固定5f本地完整unit资格失败：730Debug/730Release各2失败（Release8skip），exit1/1m47s；HistoryRecoveryTest71/117 fixture缺能耗合同，但独立查得same-ID持久化投影null会覆盖rawscalar/apiEvidence的P1风险，需原始证据保留不放宽显示资格。另TLS3失败分支未闭合；Nano精度源修reviewPASS非已部署。完整679c54c/PR17回传，未安装5f，数据/Owner/生产/main保持。
+固定697本地Debug741/Release741各1FAIL（Release8skip），exit1/6m5s；过时源码encode(normalized)断言需行为化，不弱化原始证据门。正常same-ID原路径已修，详情/充电enrichment仍派生值写raw且typed重编码丢opaque字段风险。TLS三旧分支已修，18080/18090具体公网绑定本机wildcard-only检查可能遗漏。58e26b7完整包已GitHub/PR17，未安装697，Owner/生产/手机原版保护。
+
+### 2026-10-09 fixed 4bb independent qualification
+- [x] Exact 4bb0160713d80411d2045f4256e092d93d02dadf CI verified; actual Android job SUCCESS.
+- [x] Local signed build PASS: Debug748/0fail; Release748/0fail/8skip; lint0error; R8 PASS.
+- [x] Additional compiled-class synthetic replay reproduced stale detail projection: 2km/80→70/500Whkm becomes offline1km/unknown/1000Whkm; original receipt retained.
+- [x] Complete CHANGES_REQUIRED packet pushed d11973542c3944aa68ee7237d4e7a7c3b8689664 and returned to PR17.
+- [ ] Remote whole-stage projection/persistence repair and new fixed-SHA handoff.
+- [ ] Qualified preserved-data device installation and real authenticated/natural acceptance, then authorized main merge.
+Review: 4bb APK NOT_INSTALLED. Phone remains verified8625/build46. Owner dirty and production/network/data gates preserved. Hub prior HTTP404 pending NOT_SENT; no success claimed.
+
+### 2026-10-09 05:48Z remote execution capability gate
+GitHub plugin reattached in same chat; actual read resumed and latest intermediate HEAD ef88fd573f20d892e5c351ca7c86660987c4a146 verified. Exact d119 evidence read after correcting ref. Remote reports missing code write/commit/update_ref tools; no complete delivery. Asked Jovi once to restore remote writes or explicitly authorize local whole-stage source takeover. Answer pending; local business source remains untouched, no new chat/install/main/production/network actions.
+
+### 2026-10-09 evening live recovery requested by Jovi
+Original webpage opened. Diagnostic reply showed unable-to-load after44s, then recovered by one same-tab refresh. Remote tool discovery now lists create_blob/tree/commit/update_ref/update_file; prior missing-write-tool gate is obsolete at tool-discovery layer. Actual server write not yet tested. Same chat resumed original full authorized stage with necessary real-source commit/CI qualification; local business source untouched. Avoid unchanged polling being mistaken for active source progress.
+
+### 2026-10-11 Jovi opened same-Project replacement chat
+New user-provided chat6acb311b-6fb4-83e9-bc93-c3fd9c8ae480, title继续核对任务, sameTesla_MatelinkProject. Read current reply without resending. Actual GitHub PR17 head48f284e32711ec4a7b39097196c1d12658311d45/draft/open independently verified; Actions38117337602 all13jobsSUCCESS incl actualAndroid114404751507. Source counts760 inherited remote claim, not yet local qualification. Remote still generating additional notification call-chain audit; wait full reply before concentrated acceptance. Owner/phone/production unchanged. C2Cdoctor workspace_mismatch, no connection restart/connector churn or identity verification claim.
+
+### 2026-10-11 E盘原目录接力
+- [x] 读取父/项目AGENTS、旧会话、lessons与Obsidian，核对原目录和候选身份。
+- [x] 写docs/RPT-2026-10-11-remote-stage-relay.md：五项接力及完整远端合同。
+- [ ] 恢复并验证正确项目连接，读取最新远端完整回复；生成中不重复派工。
+- [ ] 确认最新候选固定SHA及同SHA完整CI，准备E盘原目录保留dirty的接收方案。
+- [ ] 取得具体源码接收/修改授权后，原目录接收、独立验证并集中回传。
+Review：本轮未修改业务源码、未运行产品测试、未安装/部署；48f CI为GitHub独立读取，7e新候选不得继承旧绿。Hub revision连接拒绝，留存pending、不自动重试。
+- [x] 恢复正确E盘连接：旧PID不存在且保留runtime备份，doctor bridge/mcp/tunnel PASS，workspace_info main/f0/dirty正确。
+- [x] Jovi本轮明确授权：远端完整交付且同SHA CI合格后，在原E盘目录备份dirty、保留DrivesScreen地址显示改动、接收并构建验证；不清数据/不部署生产。
+- 当前远端同chat生成中，界面等待完整答复；不重复派工。Hub pending：reports/matelink-125b51cd-3c87-46ca-8fb3-b19bfa077a66.json，revision不可用，未发送。
+- [x] 480/480未提交文件已备份并逐一SHA256核对：E:\Claude_allow\Download\matelink-owner-backup-20261011-01a129ba；后续文档记录需接收前补备份。
+Review：远端原chat有源码执行和生成状态，刷新后ERR_CONNECTION_RESET；GitHub连接器亦请求失败。未发送新prompt、未确认最终交付、未接收/构建/安装候选。业务原文件保留。待网络恢复后同chat读完整结果，再按已有授权执行，不重新询问同一授权。
+
+### 2026-10-11 同Project新远端整阶段
+- [x] Jovi确认接收路径仍为原E盘app_mimo。
+- [x] doctor安全连接正常，GitHub PR17 head041a7c77及Actions38124216477实际13/13job成功。
+- [ ] 同Project新聊天，保留旧聊天/GPT-6极高，一次发送完整执行合同，验证远端正确工作区和实际执行。
+- [ ] 远端固定整阶段提交/CI/复审交付后原E盘接收并独立验证。
+- [x] 新同Project chat6acb55df-2ad0-83ea-909d-45bf96bfc837，UI确认GPT-6极高；整阶段合同已送达。首次42秒仅读取后声称缺写工具，不当交付；通过@GitHub明确附加插件后，同任务整阶段恢复已发送，DOM停止按钮证实当前回应。
+- 原目录目前另一个工作已切换fix/20261011-cleanup-fake-data并新增多文件dirty；本任务没有这些业务写入。接收前重新核实并保留并发变更。
+Review：新chat多次短审计收尾，GitHub写/API/Actions实际可用，不是假阻塞；3ac5旧测试损失已独立确认并要求恢复。965f新候选实际CI38129156529进行中，原测试GitHub读取已恢复；新增null参数源码CHANGES_REQUIRED且仅两hash断言不足整阶段。集中回传远端修复并完整实施，当前回应中。原E盘业务未接收，未产品构建/安装/部署。
+Review final：f0629d8f完整身份REST确认；旧CompletionStateTest blob完全恢复。新增仅2hash tests，完整跨层阶段NOT_DONE，当前CHANGES_REQUIRED。CI38129340409 backend/audit success、Androidin_progress。远端回复已结束，非后台ACTIVE。本地原E盘未接收/构建/安装/部署，所有已有授权保留，保护并发dirty。
+
+### 2026-10-11 持续完成整阶段（Jovi再次授权继续）
+- [ ] 等38129340409全部实际job结束，收集失败日志/同SHA证据。
+- [ ] 并行只读独立审查notification/history与TPMS真实链路，集中可复现缺口；不本地改业务。
+- [ ] 一次完整远端执行包：现阶段复审/修复、下一跨层阶段方案实施、完整CI/失败修复/复审/固定GitHub交付。
+- [ ] 原E盘基于最终固定SHA保留当前owner提交和dirty接收，独立验证。
+Current Owner HEAD c9dea6414b25cff0569bbf2a456454f97953be9e（另外工作提交），接收不得回到早先f0覆盖其功能。远端f062检查点仍仅2hash新增，不是完整阶段。本轮Agent只读审查与文档，未修改业务。
+- [x] 当前38129340409已实际13/13SUCCESS；Debug796/Release796零失败（Release8skip），Go303/303；当前无CI失败。
+- [x] 两项只读审查集中A-E源码因果缺口，完整复现/实施/回归/复审合同见docs/RPT-2026-10-11-persistent-recovery-stage-packet.md；SOURCE_CHANGES_REQUIRED，待真实候选运行证明。
+- [x] CI完结后仅一次集中发送A-E完整实施包到同chat6acb55df；五项源码复现、全链设计与真实行为资格/完整CI/复审、c9兼容、固定源码交付与授权门全部包含。DOM停止按钮证实该轮回应中，不把生成状态当完成。
+- [x] 远端误以GitHub读本地包404后，已把完整同包发布到独立证据branchcodex/persistent-recovery-evidence-20261011@44690886c035855f11c75a2ec9dd2f3ac62c6c7f（只新增doc，未改业务、未触发额外CI）；独立GitHubfetch可读。原同chat恢复整阶段执行，未新建微任务。
+Review：集中完整A-E任务包已GitHub可读（44690886证据branch），远端读包后只读一个worker又最终结束，明确无工具拒绝，无A-E源码实施。任务规模1–2小时而执行提前结束不能冒充后台。Jovi此前指定GPT-6极高，本轮已询问是否允许切可选GPT-5.6Sol继续同一完整合同，答复待定，不自行换模型，不本地接管业务，不接收部分候选。
+
+### Jovi模型选择已答复
+保留GPT-6极高，继续原A-E完整任务，不切模型，不重复询问。完整执行包GitHub44690886已可读；原阶段授权、原E盘接收与Ownerc9保护有效。
+Review：Jovi明确保留GPT-6极高，本轮未切模型。远端已创建codex/persistent-recovery-execution-20261011@7bd173ca9bf9c8cb679032d1a7da4ed761b94c3c，独立REST核验Actions38133775729SUCCESS，workflowcontentsread+隔离PG+shell布局检查，只有执行入口，无A-E业务patch。入口齐备后远端仍最终答复而未实施；不能称后台ACTIVE或已交付。已询问是否授权同Tesla_Matelink Project一个完整云端Work执行任务（原GPT6聊天保留），create_thread要求明确新任务授权，当前答复待定。未创建云端任务、未本地业务接管、未接收部分候选。
+
+### 完整云端Work已获明确授权并创建
+Jovi回复“授权一个完整云端Work任务”。在同Tesla_Matelink Project创建整阶段Work，完整A-E复现/实现/测试复审/固定GitHub交付、c9兼容与原门全部写入一个初始合同。返回clientThreadId local-chatgpt:3f67ab0d-6f1c-4200-9bd9-290b9edf29c5，任务尚待解析真实threadId，不把client id传给read/wait。原GPT6极高Chat保留，本地最后原E盘验证。正在等待实际进展，不仅派发后结束。
+- [x] 复用现有matelink heartbeat，ACTIVE，5分钟，target本Task01a129ba；只跟进同一完整新Work并保留原GPT6审核，不重复创建或微派工，无变化安静。
+Review：截至检查，云端创建仅返回clientThreadId local-chatgpt:3f67ab0d-6f1c-4200-9bd9-290b9edf29c5；list_threads与同Project网页尚未出现正式任务ID/实际源码进展。另一durable任务经最少初始消息确认属于Medcial-box，已排除，不当MateLink证据。保持NOT_CONFIRMED，未伪称执行启动。完整合同已提交，持续监控初始化/交付并后续原E盘验证。未本地业务改动/安装/部署。
+
+### 2026-10-11 12:16Z heartbeat
+只读任务列表再次确认本次MateLink Work仍无正式threadId/执行记录，仅client3f67创建凭证；PR6与Medcial-box任务已排除，没有混用。NOT_CONFIRMED，未重复创建/发任务/改业务。长时间未初始化已一次通知Jovi并询问打开已有任务卡后的状态/错误文字；该请求待答复，后续无变化安静，不重复问同一问题。原E盘接收授权有效，尚无完整交付可接收。
+
+### 2026-10-11 最新分工：Chat规划审核 / 原E盘本地实施
+- [x] Jovi明确授权本地执行，聊天模式，不使用Work；旧remote-only规则已被新指令覆盖。
+- [x] 已暂停Work heartbeat；未证实启动的旧client保留凭证，不再使用，不虚称已取消。
+- [x] 原目录c9和新fetch f062已核对，计划docs/PLAN-2026-10-11-local-persistent-recovery.md。
+- [ ] 取得一次完整远端方案后，原目录安全整合/复现/实施A-E/完整测试，集中远端审核修正并固定交付。
 ## Stage2 import/archive follow-up 2026-10-02
 - [x] Read remote request e75a452; source hashes and unique patches verified.
 - [ ] Apply remote shared admission and archive status mapping; correct ordinary import mapping locally.
@@ -3507,6 +3760,19 @@ legacy whole-array paths and original OOM acceptance remain open.
 
 经验与精确补丁身份：docs/BUG-REPAIR-2026-10-04-phone-history-stale.md。PC未登录401、当前Wi-Fi连通或单次新日期显示，都不能证明手机持续认证读取成功。
 
+### 2026-10-11 local RED/GREEN execution
+- [x] Original E owner c9 + remote f062 merged without commit; staged tree cec358764257558a7259b67859ca3b368415726d, owner overlays retained and 481/481 SHA256 backup verified.
+- [x] Real Go RED: TestTPMSWarningRecoveryIndependentReceipts and PartialDoesNotInventOtherWheels failed for lost true/false warnings; log E:\Claude_allow\Download\matelink-red-go-20261011.log.
+- [ ] Android A/B/C/D/E RED: scoped resolver, persisted DataStore restart, real Room admission crash, independent Moshi warning evidence. Gradle running; no PASS claim.
+- [ ] Implement focused fixes, full host checks, concentrated GPT-6 Chat review, fixed source commit and same-SHA validation. No Work or physical-device tests.
+- [x] Actual compiled Android classes: independent JUnitCore A4/D2 run 6 tests, 6 assertion failures (no runtime/setup failures). Source/Moshi paths tested, compiled class hashes frozen. Log matelink-direct-compiled-red-20261011.log; A/D GREEN source implementation released, no concurrent Gradle writes.
+- [x] Full Go race passed in cached isolated Linux toolchain; TLS29 and policy passed in disposable LF QA copy (source hashes retained; production untouched). Independent javac→Java/Moshi d119 replay passed against current compiled classes, raw receipt retained.
+- [ ] B/C/E disk Room + DataStore RED remains pending Robolectric runtime preparation; no GREEN writes yet.
+- [x] Actual Gradle B/C/E disk Room/DataStore RED: 4 assertion failures, no setup errors; ABA session/logout/route RED: 3 assertion failures. Seven tests/7 failures proved. Frozen XML copied to E:\Claude_allow\Download\matelink-real-red-evidence-20261011; matelink-bce-aba-red-20261011.log. Complete GREEN implementation released after evidence.
+- [x] Test SDK download completed and official Maven SHA512 verified; local E Maven cache only, temporary E downloads. Test infrastructure failures retained separately from behavioral failures.
+- [x] Extra real Settings URL/authentication A→B→A RED: 5 ABA tests ran, Session/logout/mode3 already GREEN; self-hosted URL/auth2 failed expected guard assertion. Log matelink-settings-aba-red-20261011.log, SETTINGS-ABA-RED.xml archived. Minimal settings generation implementation released.
+- [x] Latest D Go/isolated PG16 320 PASS, 0 FAIL/SKIP, full isolated Linux race PASS. Separate exact final source/SHA validation remains pending.
+
 
 ## 2026-10-11 Chat planning and original E local implementation
 
@@ -3519,3 +3785,243 @@ legacy whole-array paths and original OOM acceptance remain open.
 - [ ] Device/signature/provider/production gates remain NOT_RUN; no main merge or deployment.
 
 Review: docs/RPT-2026-10-11-local-persistent-recovery.md is the current evidence ledger. Existing Owner working-copy task content is preserved separately; only this safe stage summary is appended to the staged public ledger.
+
+### 2026-10-12 Jovi暂停
+- [x] Source df36 / same-SHA CI38152236913 13/13成功；原E source保持，Owner dirty保留。
+- [x] 只含文档的收尾2f0e831已提交远端；当前项目自动跟进确认PAUSED，所有子任务停止。
+- [ ] G1/G2及额外cross-JVM补证NOT_RUN，设备/provider/生产独立门未执行；今天不推进，等待Jovi明确恢复。
+
+
+## 2026-10-13 用户更新后能耗代码只读审核
+- 审核对象：HEAD29ac70c加当前Android未提交更新，原E目录；13文件SHA256复查0drift。
+- 实际Debug能耗聚焦61tests/0fail/0error/0skip，BUILD SUCCESSFUL1m35s。
+- 仓库外独立Java回归引用本次真实编译类，javac0，JUnit4tests/4assertion failures：partial-power/SOC保存null、刷新来源变API、后台容量0.784→0.6、缺少no-charge证据仍接受2kWh。不是环境错误。
+- 新增前台get/upsert非事务且挂起点后proof fence不足为静态P1；尚未做该项真实Room交错回归。
+- CHANGES_REQUIRED；完整报告和用例：E:\Claude_allow\Download\matelink-energy-review-20261013\REVIEW.md。未修改业务源码、未安装、未生产部署。由单一执行方集中修复后复审。
+
+## 2026-10-13 Jovi阶段切换：能耗收尾、合并main、小程序
+- [x] 新指令已形成完整接续计划：docs/PLAN-2026-10-13-energy-to-miniprogram.md；main合并已明确授权，需待实际能耗闭合后。
+- [x] 6文件Go实验候选逐hash保存到E:\Claude_allow\Download\matelink-go-nominal-candidate-20261013；只撤回本会话拥有且哈希未变化的Go改动，Go工作区恢复干净。
+- [x] fetch核对origin/main f0dcd447及旧feature/wechat-miniprogram4ca83b86；现有miniprogram0.2.2/四Tab/AppID配置可接续，不重建项目。
+- [ ] 一次完整Chat方案完成 → 本地统一F1-F5收尾 → 独立回归/全量构建/同签安装 → 集中代码复审/同SHA CI。
+- [ ] 验证后合并main并记录精确SHA/tree；保留Ownerdirty，不reset/clean/forcepush。
+- [ ] 从合并后main创建codex/miniprogram-stage-20261013，执行既有小程序接续阶段；App功能暂告一段落。
+- [x] 普通GPT-6 Chat一次完整方案已返回（3m44s），本地按Android收尾→main→现有小程序执行；未派Work。
+- [x] Owner499文件备份hash一致；Go独立候选保留且工作树Go干净。
+- [x] Windows wrapper实际故意失败返回1；修复旧BUILD FAILED返回0问题。
+- [ ] 当前第一次新源码编译失败（baselineRows），集中复审另发现无界重算/延迟SOC回退；修复后重新冻结并实测，不把旧61通过当当前新修复已通过。
+- [ ] 2026-10-14新增验收：小程序逐项数据来源/计算/安全通道审查；API到缓存/UI全链历史回归；核心交互与App对照一致。
+- [x] 2026-10-14能耗聚焦89/0失败/0错误/0跳过；独立真实编译Java4/4通过；31源码hash无漂移，版本48/2.1.29。
+- [ ] 全量Debug886有2旧rawreceipt断言失败；Release886同2及36构造器链接错误。已保留XML并仅终止本轮失败构建自身进程；load真实远端候选不能被预合并抹掉null，修复后非增量重编译核实。
+- [x] Jovi提供微信开发者工具调试入口；本地工具存在，工程AppID匹配。未替扫码、未上传发布。
+- [x] 最新32文件冻结：聚焦180全过；非增量Debug887全过，Release887零失败/8预期跳过；独立d119原fixture/源码blob未改且javac/回放通过。lint/R8/签名仍进行中。
+- [ ] 集中远端审核CR1–CR4：真实原始receipt不合成；行程+充电总预算公平/404与429；details-only续跑不重复上传归档；同rank容量新鲜度。先实际RED，再集中修复/全量GREEN；候选APK不安装，main不合并。
+- [ ] 当前等待writer协调：32冻结后5个生产文件发生外部改动，已逐hash备份。未覆盖；不能把此前887/R8通过当最新5改动通过。已向Jovi询问停写状态。
+- [ ] CR1–CR4新增RED编译首次因测试引用sun.misc.Unsafe失败，只有测试基础设施已修（反射），行为RED尚未执行。生产GREEN未放行。
+- [x] 小程序依赖有界重试安装完成；原61Vitest通过，typecheck2个既有api.ts invitation响应data类型错误待小程序分支统一修复。
+- [x] Jovi确认其他writer停写，明确继续全阶段；所有当前Owner改动保留，最新快照核对后按当前源码复现CR1–CR4。
+- [x] CR1真实原receipt/完整SOC/弱摘要详情回归已转绿；CR2实际855记录/20全局预算/错误停止和durableEpoch通过；CR3真实Worker/WorkManager持久请求+模拟重建通过；CR4当前>=保护5项通过并有反证，不盲目扩结构。最新全量验证进行。
+
+- [x] 最新45文件冻结0drift，实际Debug912/Release912均0fail/error，Release8预期skip；双lint0error；独立Java4和未改d119通过；最终只读复审无剩余P1/P2。R8正在完成，固定SHA/CI/手机/main/mini仍待。
+- [x] Hub当前报告revision12已实际接收，初次reported_status枚举校验失败文件保留。
+
+- [ ] Iteration11集中审核CR1–CR4接受，新增P1：404使可信摘要降为incomplete导致统计丢数。先实际diskRoom/统计RED，再用独立local envelope recovery metadata最小修复，保持原quality与raw字节；当前347d候选不安装/不合并。
+
+- [x] App final44b SOURCE_APPROVED + actual13/13CI；49同签保数据覆盖/启动通过，firstInstallTime保留。设备行程导航待手动，离线/自然Fleet保持OPEN。
+- [x] Owner573文件新备份hash核对；main已安全快进44b，同Tree；原E新miniprogram分支创建。
+- [ ] 按docs/PLAN-2026-10-14-miniprogram-data-stage.md执行完整小程序数据/算法/安全/缓存/交互和真实跨层测试、依赖修复、CI及集中复审。
+
+## 2026-10-14 最新统一阶段
+- [x] App44b获普通GPT-6极高SOURCE_APPROVED，同SHA CI13/13实际成功；签名49保数据覆盖与启动通过、远端main同SHA/tree。
+- [x] 原E开codex/miniprogram-stage-20261013，保留Owner；570非本阶段文件哈希无漂移。
+- [x] 小程序来源/公式/窗口/容量/unknown/0/负值、缓存/隔离/安全、筛选/刷新/分页/详情一致性实现；实际128测试/严格类型/weapp通过。
+- [x] 测试工具独立锁干净安装；测试工具audit0，Taro构建树残余58告警明确限制发布；域名校验保持true。
+- [x] 固定小程序源码3873fe7、完整同SHA CI38535684451实际14/14 SUCCESS与普通Chat16 SOURCE_APPROVED。
+- [ ] 人工平台门：手机实际历史/离线；微信开发工具GUI登录/导入、请求域名与真实微信/Tesla授权/自然数据。未上传发布或生产改动。
+
+- [x] Review13集中修复完成：namespace碰撞、GPS缓存、quarantine、DC输入标签、Auth外部错误/事务生命周期，加null-contract不复活；实际RED后160/160/types/weapp全绿，独立APPROVE。
+- [ ] 新最终SHA完整14job CI及同一GPT-6极高Chat最终源码裁决；不用旧2aad绿色替最新源。
+
+- [x] Review14新MePage注销P2和父实测numeric weak-null P2完成；实际RED3+2后169/169、19files/types/weapp4.82s全绿，独立APPROVE。平SOC保持能量未知，真实reported0可恢复0；真实0字段不丢。
+- [x] 旧7408/CI38512795537实际完整14/14SUCCESS；不能替最终新补丁背书。
+
+- [x] bc81/Actions38515054738实际14/14SUCCESS；小程序169、完整Android/Go/PG/TLS/Web均已完成作业。
+- [x] Review15新P1：真实RED16失败后最小whole-admission修复完成；187/187与原Chat16源码复审通过，同SHA实际14/14 CI闭合。
+
+## 2026-10-14 本次最终交接
+- [x] App44b正式49保数据安装、远端main合并；当前Owner改动与备份保留。
+- [x] Mini3873/treeb3fee4fb/parentbc81已推送；SOURCE_APPROVED，实际14/14CI；Draft PR18附完整最终回执。
+- [x] 独立测试187、严格类型、WeApp；CI Android916双变体、Go/PG320、TLS29及race/Web/源码审计通过。
+- [x] 交接文档：docs/RPT-2026-10-14-final-stage-handoff.md。此条明确取代前面过程记录中的等待状态。
+- [ ] Jovi官方微信工具扫码登录并导入miniprogram/dist，保持域名检查开启；真实页面/授权/自然数据验收和手机历史离线仍OPEN。
+- [ ] 发布前Taro构建依赖58受影响包处理；本次未上传发布、生产迁移或操作车辆。
+
+Review：本次源码阶段已交付；当前需要人工平台操作，无后台实施声明，不新增Work或更换普通GPT-6极高Chat。
+
+## 2026-10-14 实机单位截断补丁（Jovi单独授权）
+- [x] 真机行程历史加载；同一10月11日记录列表/详情14.3 kWh/100km一致，返回保持；当前PID错误样本0。不能据此声称离线/自然Fleet通过。
+- [x] 实机复现列表能耗单位截断；定位TelemetryMetricCell固定maxLines1。
+- [x] 可选valueMaxLines默认1，仅行程能耗卡设2；公式/数据/单位不改，版本50/2.1.31。
+- [ ] 固定补丁/独立审查、Debug/Release测试lint签名构建、CI；同签保数据安装并重拍单位/详情/返回。
+
+## 2026-10-14 Jovi新版行程视觉要求（grill-me）
+- [x] 保留当前单位换行补丁和所有Owner改动；既有测试继续，不安装已被新版布局需求取代的中间候选。
+- [x] 确认行程卡四指标改为时长/距离/最高速度/平均能耗，总能量从卡片移除但数据及详情保留；SOC仍顶栏、字号增大。
+- [x] 已探索现有车型palette、SummaryCard、共享指标组件和真实speedMax输入；不把缺少最高速度显示0。
+- [ ] 一次一个设计问题：确认主色风格，再确认数字/单位/图表和App/小程序范围；给出审美建议及可审阅布局。
+- [x] Jovi确认冷灰＋蓝绿；App与小程序保持一致，数字和单位必须完整且清楚，禁止截断。
+- [x] Jovi明确选择kWh/100km，数字大、单位小而完整；时长有单位，图标与文字配合。
+- [ ] 形成批准后的设计与执行计划，再实施新版UI、验证、同签安装和主分支闭合；此前SOURCE_APPROVED/CI不替新UI背书。
+
+Review：d25本地双编译失败为Kotlin daemon2GB heap OOM，非测试结果；证据保留。改为本轮参数4GB与单worker/nonincremental重新执行，不改全局配置/源码/网络。新版视觉设计待Jovi选择。
+
+## 当前执行：统一图文页面阶段
+- [x] 用户已授权数据状态及文字密集页面图文优化；原Chat17完整A–F PLAN已读，保留普通GPT-6极高。
+- [x] 原E新备份585文件/0mismatch；50候选APK/源码/日志保留但未安装；本地916双变体/lint/R8/签名通过。
+- [x] 手机实时四轮值存在、30天历史空态、数据来源FleetAPI已观察；新行程/充电App弹窗和系统通知源码链均存在，未制造自然事件。
+- [x] 实际编译类组合行程合成RED2/4已复现，额外计算修复授权单独征询中。
+- [ ] 共享视觉组件、Android行程/状态lane、Mini展示及真实速度字段实现和统一复审。
+- [ ] 完整UI测试/新SHA CI/实际手机51验收、仅Android main闭合；Mini保持独立与平台门。
+
+- [x] Jovi授权组合行程修复；24新增回归已写，历史/Room结构不改。
+- [x] Jovi手机拔出，改为电脑现有安卓测试环境；正式签名包做好交付，明天真机由用户测试。今晚真机安装NOT_RUN，不催重连。
+- [x] Mini本地203/203、20files、typecheck0；WeApp正在完成，不能把测试绿当渲染绿。
+
+## 2026-10-15 电脑交付最终复审收口
+- [x] bd39536同SHA CI14/14成功、943双变体、Mini205、API35仪器9项/72布局场景；复审18完成，提出两项P2。
+- [x] 真实summary回归7项4失败已复现（未知/部分平均/非法/溢出）；保留RED日志。
+- [ ] 修复已知距离/时长覆盖；按实际同响应单位规范公里分析，保留原receipt和用户数据。
+- [ ] 新固定SHA重新focused/full/模拟器/CI/最终复审；正式签名包和电脑结果交付。
+- [ ] 明天Jovi真机验收（本轮不安装）；平台/自然数据验收另列。
+
+
+- [x] 最终783ddc4已固定推送；Debug/Release976各0failure/error，Release8expectedskip；lint0error（213/212warnings），R8/签名/全构建8m55s。
+- [x] Mini215/20files/types0/WeApp8.37s；实际API35 instrument9PASS72renderer+8TPMSDAO，隔离Mock52，真机NOT_RUN。
+- [x] 完整review19一次集中送审，原GPT-6极高保留；Actions38624426266后端320/TLS29/Web13/Mini215/10审计成功，云Android运行中。
+- [ ] 完成最终remoteSOURCE_APPROVED+14CI；签名52和电脑报告交付（原51证据包保留，不误当最终版）。
+
+
+## 2026-10-15 完整消费者复审19收口
+- [x] 远端19完整复审（原GPT-6极高）确认主P2已闭合，新增CR1 Mileage绕能量资格、CR2 Mileage/Timeline/Curves单位旁路。52仅候选证据，不交付。
+- [ ] 最小修复qualified Mileage、canonical Timeline、raw Curve unitidentity和unknown gate；明确null metadata与缺键兼容；保留records/schema。
+- [ ] 实际消费者RED→GREEN，包括原曲线Card/Tooltip实机模拟器；新53源固定，完整本地/同SHA CI/Mini/远端一次集中复审。
+- [ ] 正式53 APK与完整电脑报告交付；今天不操作手机，明天Jovi验收。
+
+
+- [x] CR19四项Java/Moshi actualRED、Timeline7/3RED、原曲线两项nativeRED保留；修复后Debug995零失败、native11PASS（72matrix/8DAO/2Curve），同夹具Java4GREEN。
+- [x] 新21文件源码47debfb/tree0ead7ac/parent783已固定推送，版本53/2.1.34；旧52/783 CI14绿保留仅基线。
+- [ ] 完成当前47双变体/lint/R8/签名/native同SHA和完整CI，原GPT-6极高review20一次集中收口。
+
+
+## 最后速度统计单位收口
+- [x] Source47 full995both/native11/Mini215/14CI通过；网页GPT6模型不可用，无最终远端批准，原请求20和原会话保留。
+- [ ] Range个性化/40kmh分组以及Efficiency速度桶接入canonical speedAvgKmh；9真实生产mapper/group测试RED→GREEN。
+- [ ] 新固定54/2.1.35完整本地/CI验证，正式APK＋报告交付；不切网页模型，不再反复派发微任务。
+
+
+- [x] 最后速度真实consumer9tests5RED已保留；修复后完整Debug1004零fail/error；新6文件54/2.1.35固定42e6fc0/tree8c6d863/parent47已推送。
+- [ ] 当前42双变体/lint/R8/签名/native与完整CI；网页最终复审模型服务不可用，不能误标SOURCE_APPROVED。
+
+
+- [x] 42源完整1004双变体/lint/R8/签名构建8m59s，54保留；当前status speed/rated仍丢同响应units，独立复核P2待最小收口。
+- [ ] RangeStatus真实Moshi→VMhelper→当前cohort回归，规范当前km/h和km；冻结55后全部verify。
+
+
+- [x] 当前status5tests4实际RED保留，丢单位备用health.currentRange确认不得冒km。
+- [ ] 规范same-status speed/rated；未知保留未知，kWh容量仍可用。最小55/2.1.36修复与全1010测试收口后交付。
+
+
+- [x] 当前status6矩阵修复后全Debug1010零fail/error；最终4文件55/2.1.36固定1156f32/treeef8226f/parent42已推送。
+- [ ] 当前55 fullRelease/lint/R8/sameSig/native/1010CI收尾；网页GPT6模型故障独立标记，无外审最终批准，完整接力包交付。
+
+
+## 本次电脑交付验收（软件阶段完成）
+- [x] 原E最终1156f32/treeef8226f/parent42；正式55/2.1.36，原证书，APK D50070BA...，非debug/testOnly、Mockfalse/正式HTTPS/GIT1156。
+- [x] 同SHA本地1010双变体零fail/error（Release8skip）、lint0error/R8/sign完整8m27s；native11/72matrix/8RoomDAO/2真实Curves，9.195s。
+- [x] Mini215/20files/types0/WeApp6.23s；两个currentcompiledJava诊断各4PASS；Owner574 hash0drift/0missing。
+- [x] 同SHA Actions38640866426 actual14/14SUCCESS，Android日志1010双变体0fail/error8skip、15m44s；Go320/TLS29/Web13/10审计与Mini215全部成功、三artifacts HEAD验证。
+- [x] APK/完整XML/报告/回执已打包；同一远端完整接力任务保留。
+- [ ] 网页最终GPT6SOURCE_APPROVED未取得（Model not found，原模型/chat保留，不切模型），本地限定源码复核已关闭本轮确认P1/P2。
+- [ ] 真机由Jovi后续验收，本轮NOT_RUN；自然TPMS历史/事件提醒及微信平台、发布依赖门仍开。
+
+Review：实际已复现的摘要、能耗、单位、timeline、曲线、历史/当前速度分组缺口已最小修复并运行真实消费者回归；手机原数据不修改，不部署/迁移/补入旧样本。本次电脑软件交付结束，原Main44b/DraftPR18及Owner保留，不声称后台继续实施。
+
+
+- [x] 最终交付完整ZIP、文件哈希校验清单、正式APK、报告与全XML，打包校验0mismatch；原模拟器只读测试实例已停止，未操作他人设备。
+- [x] PR18更新最终1156完整行为/证据，Draft/open未合并；项目Hub final结构化pending0c151保留NOT_SENT、离线5lastknown，不盲重试。
+- [x] 本次执行停止在明确人工门：电脑交付完成，原GPT6外审服务不可用/真机明天验收，原chat/完整任务20与最终55接力保留，无后台实施。
+
+
+## 2026-10-15 TeslaMate借鉴优化（仅方案）
+- [x] 阅读Jovi附件与当前固定1156基线，核验官方v4.3发布说明。
+- [x] 建立完整C2C方案包，保留build55及Owner状态。
+- [ ] 原GPT6极高聊天核实工作区并给出完整安全/兼容/诊断/回放与后续功能方案。
+- [ ] 本地审查方案并交付Jovi；产品代码、生产、历史数据操作待另行授权。
+
+## 2026-10-15 已授权安全、兼容与诊断实施
+- [x] 固定1156基线、原E目录与Owner备份，build55保留。
+- [ ] 认证redirect/error/log防护与真实调用链RED→GREEN。
+- [ ] 离线兼容锁定/差异工具、版本证据和来源登记。
+- [ ] Android/Mini只读六步诊断与共享真实回放。
+- [ ] 完整本地测试、独立审查、固定SHA同CI、正式签名新候选和报告。
+- [ ] Owner逐hash保护复核；生产/历史/手机/main门保持独立。
+
+### 安全阶段集成检查点
+- [x] 575受保护文件逐hash零漂移零缺失（tasks/todo、lessons为明确工作文档排除）。
+- [x] Go403全量0fail/skip、PG16真实凭据保护；Linux离线lockedmodules race PASS7.832s，原20万样本deadline不放宽。
+- [x] Mini238/types/build、TLS Linux29+policy、Web测试/build通过。
+- [x] 本地f64 Android1020双变体0fail/error Release8skip、lint0error/R8/原签名全流程17m36s；原生Room重开+窄屏1.6字体2PASS。
+- [x] 六组件实际隔离QUALIFIED_LOCAL_ONLY；adapter两处SQL及OCI错误root绕过已复审关闭，CLI20通过。
+- [x] 固定源码f64已推送；新增CI因必填MQTT_HOST缺失失败已真实复现修复，workflow-only子提交a302b0c已推送。
+- [ ] 最终a302同SHA CI38696209761及Android正式56包重建/原生完整13项/交付包收尾。
+
+### 本阶段最终交付完成
+- [x] 最终a302b0c同SHA本地Android1020双变体0fail/error8ReleaseSkip、lint0error/R8/原签名56完整17m25s；模拟器13PASS/72布局，11.41s。
+- [x] CI38696209761实际15/15SUCCESS，原始Androidsummary1020双变体/0fail/error8skip，22m58s；Go403/0skip、20资格测试、TLS/Web/race与PG18实迁移通过。4artifact全部绑定a302。
+- [x] APK56/2.1.37（9CC6990D...）、完整XML/报告/校验清单/ZIP已交付E下载目录；PR18已更新Draft/open不合并。
+- [x] Owner575零漂移；build55与全部失败日志/备份保留。六组件QUALIFIED_LOCAL_ONLY，部署false。
+- [x] 软件阶段结束；真机/生产/历史纠正/微信/主分支门独立，未操作，不宣称后台继续实施。Hub最终pending1f9499保留NOT_SENT。
+
+## 2026-10-15 Jovi授权生产升级与main合并
+- [x] 当前已验证a302/15CI，Owner dirty保留；SSH只读确认旧API bb09、服务器根盘余510MB。
+- [ ] 核对实际生产compose/环境盲hash、schema等价、备份恢复与回滚资源；不自动迁移历史。
+- [ ] main安全合并到固定已测试源码，核实PR与main状态。
+- [ ] 本地不可变构建、离线备份恢复后定向API更新；公开/内部探测及环境/schema校验。
+- [ ] TeslaMate跨版迁移影响单独确认；设备不安装、其他项目不改、禁止prune/down-v。
+
+### 生产升级验证检查点
+- [x] Jovi已明确授权TeslaMate 4.0.1→4.3.0五项迁移（含历史字段），前提备份恢复验证。
+- [x] main已FF至92cbf11；API隐式历史等级重写已真实RED→GREEN，PG404/0fail/skip。
+- [x] API/TM实际备份恢复、TM100→105演练、GrafanaSQLite恢复及13.2.2隔离启动通过。
+- [x] 同SHA CI官方三镜像已下载哈希核验；API14表旧行全保持/4新空表，兼容回滚镜像18表旧行全保持。
+- [ ] 最新92cb全CI、定向生产切换与最终证据。
+
+### 生产升级实际完成（2026-10-15）
+- [x] main92cbf11/PR18实际merged；同SHA CI38754317665 actual16/16SUCCESS，Android1020各0fail/error8ReleaseSkip、Go404、Mini238。
+- [x] exact停写备份实际恢复指纹一致后TeslaMate100→105生产迁移，61条charge_energy_used 0变化，其余旧字段一致；实际4.3.0/Grafana13.2.2正常。
+- [x] Adapter/bridge同SHA CI镜像生产运行，Env/mount保留，DB/API/MQTT容器未重建；真实只读200/无认证401，cursor字节保持。
+- [x] 解决历史归档容器重复Compose标签冲突，保留原活跃bridge与cursor，独立matelink-archive-production项目运行；不删卷。
+- [x] 远端API生产92cb，Env盲hash/CA保留，旧会话路线绑定不变；公开HTTPS200/200/401，依赖不变，兼容rollback与备份保留。
+- [x] Owner575逐hash0drift；交付报告E下载matelink-production-upgrade-20261015/PRODUCTION-UPGRADE-REPORT.md。
+- [ ] 真机、自然Fleet/TPMS及通知、微信发布独立验收；本轮不安装、不伪造事件、不补旧样本。Hub连接拒绝，pending未发送。
+
+## 2026-10-15 小程序下一阶段完整方案（未实施）
+- [x] 核对92cb当前源码、四Tab/现有回归、关键App消费者与平台能力差异，保留已修复合同。
+- [x] 形成tasks/plans/2026-10-15-miniprogram-app-parity-stage.md，包含数据/公式/通道/交互逐项矩阵、胎压/提醒边界与完整验收。
+- [ ] Jovi审核方案后开始完整实施；当前未改产品源码、分支、生产或发布。
+
+## 2026-10-15 已授权小程序专用对话接力
+- [x] Jovi批准完整方案实施、保留所有Owner改动、独立worktree/分支，指定GPT-6.1 Sol/high。
+- [x] 已创建正式本地Codex对话01a14041-12cf-7f32-9cb9-75dc26bcf403，worktree C:/Users/Admin/.codex/worktrees/c0fa/app_mimo，基线92cb；完整任务已派发且实际active/读取基线。
+- [ ] 专用对话负责实施→完整测试/复审→GitHub固定提交/同SHA CI→微信开发工具与体验版候选；需要扫码再请求。原E根产品代码不并行改动。
+
+## 2026-10-24 历史加载体验升级、本地优先持久化与触底分页加载 (Build 67 / v2.1.48)
+- [x] 排查图二整屏灰白全屏 Loading 缺陷，彻底移除 ChargesScreen 与 DrivesScreen 阻断内容显示的 MateLinkLoadingPlaceholder 分支。
+- [x] 实现图一常驻内容方案：列表与图表始终可见，加载采用轻量半透明浮层（alpha = 0.20f），居中指示图标扩大为 150.dp。
+- [x] 本地 SQLite (Room) 优先读取：进入页面或切换 Tab 时，优先同步提取 chargeSummaryDao.getAllForCar(id) 和 driveSummaryDao.getAllChronological(id) 渲染，实现 0ms 瞬间显示原有数据。
+- [x] 差异化默认时间范围：充电历史默认设为近 30 天（契合充电频次）；行程记录默认设为近 7 天。
+- [x] 触底自动无限加载（上滑翻页）：监听列表触底状态，充电以 30 天为步长、行程以 7 天为步长向前拉取并追加历史记录。
+- [x] 页面视觉净化与优化：移除顶部云端/原手机来源提示横幅；首页车辆尺寸放大约 2/3，比例更饱满居中。
+- [x] 版本严格升级为 Build 67 (v2.1.48)，单测、契约验证全量 PASS。
+- [x] 编译签名正式 Release 包并安装至 OnePlus 7 Pro（6e4fa92f），全页面截图实机验收通过。
+- [x] 更新技术文档 docs/TECH-2026-10-23-history-loading-cache-pagination.md、docs/README.md 与经验库 tasks/lessons.md。

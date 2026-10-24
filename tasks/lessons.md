@@ -1,5 +1,21 @@
 # Lessons
 
+## 2026-10-24 历史加载体验与本地优先持久化
+- 严禁加载时的整屏空白阻断（图二缺陷）：进入页面或下拉/切 Tab 时，不可用全屏纯色 Loading 替换整体内容。必须始终保持既有或本地缓存的列表/图表内容可见，仅在前景覆盖轻量半透明遮罩（alpha = 0.20f）与居中加载标志（150.dp）。
+- 本地优先（Room SQLite）0ms 呈现：打开或切换页面时，先同步从本地数据库读取全量缓存并即时完成状态映射渲染，避免每次都依赖网络下发；网络返回后平滑增量刷新，彻底消除用户感知的加载等待。
+- 业务与使用频次匹配的时间范围：充电通常每隔数天一次，默认筛选必须为近 30 天；行程反映日常出行，默认近 7 天。二者不能简单使用相同的时间窗口。
+- 触底平滑分页加载：大数据量下不能一次性请求全量或截断展示；通过列表滚动状态检测触底，按步长自动向前扩展时间范围并拉取更早历史，配合底部轻量指示器实现无缝追加。
+- 界面信噪比提升：移除与用户核心操作无关的数据来源、云端验证等声明性冗余横幅，确保视线聚焦在核心出行与补能数据上。
+
+## 2026-10-15 统计与设备验收
+- 已知能量总和与能耗效率有不同资格：总能量保留真实0及有限能量，效率只用有效能量/里程对；不能因为距离缺失把已知能量抹为未知，也不能把未知能量当0。
+- 用户拔出手机并指定电脑测试后，只做隔离模拟环境和包交付；不要求重连，不把模拟器或UI组件回归标为真机通过。
+- UI数据格式化必须确认内部单位，typed Wh/km展示kWh/100km除10；不能受英里显示偏好错误改变已规范化能耗单位。
+
+## 2026-10-07 远端执行不能靠状态声明证明
+- Project旧持久说明同时有远端90%与本地执行旧循环，必须统一持久配置并实际点保存、重新打开比对，不能仅关闭弹窗当保存。
+- 网页回复结束且无真实Actions/新源码就是未执行交接，不把ACTIVE/“下一批继续”当后台运行；核对GitHub头和job证据。重复完整指令仍只读取返回时诊断上下文/执行环境，不无限空转或自动改派本地业务实现。
+- 用户要求原会话时，新远端执行上下文的范围不确定要明确询问；原会话/代码/data/账号均保留。
 ## 2026-10-02 远端执行与本地交接
 
 - Pattern：Jovi 的协作流程允许网页 GPT 在远端执行并提交独立分支，再把 Prompt/交接包交给本地 Codex，不能固定解释为远端永远只规划。
@@ -429,9 +445,137 @@
 - 当前 OOMKilled=false 和 healthz=200 不证明此前没有 OOM，也不证明内存问题修复。
 - 本地 main、origin/main、手机源码 SHA、生产 build_sha 必须分别记录；远端历史分支应分类说明，不能宣称所有分支都已合并。
 
+## 2026-10-07 投诉日期修正
+- 用户确认10月7日北京时间没有行程，实际需核对10月6日。自然数据查询需先明确北京时间日期和起止时间，不能用误记日期推定采集故障，也不能否定用户实际行驶。
+
+## 2026-10-07 午后自然行程新观测
+- 旧12:04零行程仅适用于当时；13:57已有自然新行程，源云372、一条今日记录、bridge积压0。不能复用旧快照否定用户新行程。
+- 代码、CI、本地构建、签名安装、实际服务部署及自然数据验收必须逐项明确；不可让“已修复”指代未安装/未部署。
+- 冻结生产源细化：historySummariesPostgres已只取路线端点，historyDetailPostgres已单条读取，不可仅凭history方法名字推定全路线。确证完整历史热点是vehicleItems/readiness调用history；列表风险为全摘要物化后Go分页，分别测试，不能混为OOM证据。
+
+## 2026-10-07 实际交付、合法日志与跨engine镜像经验
+- 普通角色PermissionError不等于没有已有合法委派。只检查当前精确命令授权；有既有权限才在服务器内按窗口脱敏读取，不能改权限/通过host挂载绕过；没有授权仍停止。
+- Docker image ID可能跨engine指向manifest而非config。先比对saved manifest的config SHA、runtime身份/labels/diffIDs，再选本机loaded ID；不能照搬ID或直接继续失败tag之后的构建。
+- Windows源码契约测试读Text要规范化EOL；仅修测试的行尾读取与版本快照，不通过改产品算法或跳过失败来过关。
+- 手机签名读取门禁失败必须停安装。本次缺少本机临时子目录，创建允许E盘目录后重新完整验签再install-r，不能跳过既有包证书比较。
+- 当前API容器重建会重置restart计数，0不证明历史问题永久消失。文档必须保留真实code/CI/build/deploy/install/natural验证层级与OPEN项目。
+
+## 2026-10-07 驻车状态与数据真实性
+- 用户确认英文history提示在驻车详情，实际safeUI为history_not_collected；不能把可选驻车功能缺数据解释为整体历史断连。逐页面核对错误来源再解释。
+- 源/云速度SOC存在不代表列表字段已输出；先逐字段定位摘要映射缺口。胎压样本不足不能制造历史；旧无来源记录保留但不作为真实趋势或提醒。
+- 复用测试容器时以docker inspect当前端口为准，本轮实际8159，旧记录7117不能当当前配置。
+
+## 2026-10-07 构建必须冻结同一源码树
+- 主源码编译后再新增函数和测试，测试阶段可能引用旧main产物；并行agent编辑完成后冻结源码再统一构建，测试/签名/安装绑定同一SHA。资源不足暂停额外编译，仅使用本任务范围的低并行设置，不停止其他项目进程。
+
+## 2026-10-07 远端必须承担完整阶段执行
+- Jovi再次明确：远端ChatGPT审核、规划、执行大阶段并GitHub提交；本地仅接收验证编译安装测试及回传。不把大阶段拆成反复小提示，不因远端未提交就自动改为本地主实施。
+- 给原会话一个完整可执行阶段，要求持续实际源码提交与交接；按用户授权每5分钟检查结果，未完成保持进行中，不把安装或源码审查当项目完成。
+# 2026-10-08 远端执行与收尾纠正
+- 远端24秒最终回复仅核验入口，不构成长任务；完整prompt不等于完整执行。没有源码/实际job证据不能声称后台ACTIVE。
+- 能读取和写GitHub却缺workflow dispatch，不足以证明不能执行：恢复工作时先检查现有push触发工作流与实际可用工具，不连续重复只读派工。
+- Jovi要求当日结束时，停止发送与定时续跑，提交自身脱敏成果并保留Owner dirty；未验收问题明确保持OPEN。
+
+
+## 2026-10-09 TLS实机验收
+- CI全绿、同签安装和health200不关闭认证历史失败；按实际手机安全诊断与来源时间取证。
+- SSLException不能统称证书链错误；独立HTTPS对照若同样失败，不能宣称服务独有根因，不采用信任全证书、HTTP降级或网络绕过。
+
+
+## 2026-10-09 已完成交付与网页超时分开
+- 完整GitHub固定源码/CI/手机回执已存在时，网页超时不能把交付重新标成未执行或重复安装。
+- Jovi明确允许因长历史切换时，复用同Project新网页执行上下文，先在同一完整阶段Prompt中核验workspace再继续；不新建Codex任务，不把绑定核验单独派成短任务。
+
+
+- When remote says GitHub write tools are missing, require explicit tool discovery before treating it as a human permission gate. UI unable-to-load reply and actual tool capability are independent; recover same-tab reply once and verify. Repeated unchanged polling is waiting, never implementation progress.
+
+- Jovi explicitly authorizes same-Project replacement web chats when long/failed replies cannot recover. First retry/refresh ended failed replies; preserve generating turns. Reuse a replacement chat Jovi opens and wait for its current response; do not create another or duplicate dispatch.
+
+## 2026-10-11 Jovi原目录与整阶段纠正
+- 本项目本地工作和接收固定E:\project\tesla_master\app_mimo；不自行放入C盘worktree。接收前保留dirty并征询具体源码范围授权，不覆盖已有改动。
+- 远端一次承担审核、修复、下一整阶段规划与实现、测试复审和GitHub固定交付；简短核验回复不是执行完成，不用微派工消耗次数。
+- 同Project旧聊天内容过长无法加载时，按Jovi明确授权在项目集合新开聊天，保留旧聊天和指定模型强度，用一个完整阶段合同接续；不反复入口审计或微派工。跨项目目录笔误先确认，不能把MateLink源码写进jovi-automation。
+
+## 2026-10-11 完整阶段不能以短回复替代
+- Jovi再次纠正：长阶段必须按真实工作量估算和固定交付验收；远端最终答复即停止，不能声称仍后台实施。CI运行时等待完整实际结果，集中失败与实质覆盖缺口后一次完整回传，不边读边发微任务。
+- 派发前明确跨层交付矩阵、完整源码路径/工具执行路线、已有覆盖及验收；两项hash测试不算跨层阶段。没有实际源码实施/同SHA全量CI/复审固定交接，不转入本地接收。
+- Jovi选择保留GPT-6极高后，不再次提议或自行换模型。只有已验证的执行机制变更才具体说明并请求必要的新任务授权；只读runner/bootstrapPASS必须与A-E业务实施/最终固定源码分开。
+
+## 2026-10-11 分工变更（最新优先）
+- Jovi明确改回聊天模式：远端给完整执行方案和集中代码审核，本地Codex在原E盘执行、测试、按审核修正。不再使用/创建/跟进Work，不再强求远端Chat实际代码实施。
+- 最新明确分工覆盖旧remote-only合同；普通本地A-E源码实施已由本次请求授权，不重复询问同一范围，生产/真实数据/迁移运行/网络/车辆门保持。
+
 ## 2026-10-04 单次新数据成功不能关闭间歇故障
 
 - 一次安装/刷新出现新日期后，仍需列表→详情→返回→前台重复读取；后续复发必须重新打开事件，不用旧成功覆盖新证据。
 - 错误诊断端口保留typed category，HTTP为空不能把DNS/TLS/JSON/EOF一律合并。固定枚举与安全阶段足够，禁止异常正文/响应体/URL/身份进入日志。
 - Room的非空数值占位不是API观测；离线详情复用原证据mapper，未知null和真实0单独验，不能靠Int字段是否为0判断已观测。
 - Portable测试不能替代生成JSON adapter、Room、Hilt、Compose或APK验证；版本号、源码、签名、安装与真实复验各自记录。
+
+## 2026-10-13 Android收口与小程序接续
+- Jovi明确最新顺序：完成能耗→验证安装→合并main→独立小程序分支；旧main不合并约束已由明确授权更新，但不能未闭合就合并。
+- 客户端能耗交付不强制捆绑服务器schema实验；独立候选完整保存，只撤回本会话明确拥有且hash未变的改动。
+- App阶段结束后只处理必要收尾，不扩展无关App功能；小程序接续现有代码、AppID与M3.1，不重建项目或覆盖较新主线业务。
+
+## 2026-10-14 Jovi来源/通道/交互纠正
+- 小程序迁移不得只追求页面可打开；每项数据保留来源、计算版本与作用域，逐层验证API→归一化→合并→缓存→列表/详情→重开。
+- 以前版本通过的能力必须保留可执行回归；新版本全链验证不能用局部单元通过替代。
+- App与小程序核心操作流程保持一致，微信差异明确记录；通信/认证边界审查不得通过降低安全性解决。
+- Raw receipt资格判断必须看到实际收到的候选；预先用缓存补齐null会抹掉缺证据事实。弱摘要与真实纠正分开，原字节保持和新SOC重算两组旧/新回归同时通过。
+
+- 版本回执以固定commit源码、生成BuildConfig和实际APK三方核验为准；接续摘要中的48是旧标签，当前冻结/提交347d实际49/2.1.30，0源码drift，不误判新writer。
+
+- 详情请求失败/停止重试属于本地执行状态，不能写回summary qualityState/qualityReason。保留行数不等于保留统计资格：真实Room回归必须比较count/distance/energy/cost并重开，0/null和quarantined一起检查。
+
+### 2026-10-14 全阶段统一验收
+- 用户明确授权完整继续后，App SOURCE_APPROVED只是阶段节点；继续完成保数据安装、主分支和小程序本地交付，不在派发或中间检查点停止。
+- 不能让Taro可选旧Vite peer与现代Vitest硬共用根依赖；用独立测试工具锁，不force/legacy-peer。两份锁分别ci/audit，保留真实剩余告警。
+- 缓存车单仅授权离线阅读；当前numeric ID必须从真实getCars的origin/account/generation/UID关系验证。
+- UI不展示任意服务端错误/状态/quality理由；报告时间不是逐字段时间，config_synced不是用户车辆钥匙确认。
+
+### 2026-10-14 小程序整包复审补充
+- encodeURIComponent不转义点号，origin/account/UID拼接必须同时严格转义分隔符。旧歧义键保留，不猜迁移或删除。
+- 缓存过滤不仅轨迹数组，还需normalized/snake GPS标量及旧cache读取投影；保留原值与非位置业务字段。
+- 可信消费必须排除隔离记录，并保持分页入口；旧click和详情反馈不能绕过quarantine。
+- legacy充电输入不等于有AC物理资格；旧缓存也需再验合同，不按标量字段名称授予AC。
+- WebView外部错误、未知status及迟到pending结果需有限文案与同事务/lifecycle守护；先真实API去重回归，不能凭猜测放宽generation规则。
+
+### 2026-10-14 最后增量
+- API先清session再请求logout，UI无论成功/失败都应同步当前真实storage session；旧请求不能无条件setSession(null)覆盖新账号。
+- 同source/ID/exactwindow弱null numeric不是清除SOC/距离；保留既有值，真实非null0/更正仍生效，unknown合同依然权威。
+- 相同整数SOC不证明0kWh；测试要区分真实0字段与有合格API合同的真实0能量，不能为了测试转绿伪造估算零。
+
+### 2026-10-14 grade仲裁
+- 通用历史已选择整条old/next时，后续专用energy/charge/enrichment不能再次消费被拒绝输入或从落选记录嫁接证明；质量选择要在真实消费者链验证。
+- observed→derived测试必须同source/window且含真实能耗receipt；只测普通distance字段或异source会漏掉专用分支。
+# 2026-10-14 行程页面反馈
+
+- 行程卡按Jovi确认的四指标组织：时长、距离、最高速度、平均能耗；总kWh留详情，不擅自增加卡片指标。
+- 数字、单位、SOC和图表颜色须作为一个可审阅页面设计确认；屏幕验收不能被源码/CI替代，长单位必须完整显示。
+- 发版版本变化要同步严格版本契约；测试失败不可只改生产版本后就安装。
+
+
+### 2026-10-15 单位与汇总复核
+- API preferred单位下原值不应二次转换，但必须用同一响应unit_of_length证明计算分母；不能只依据云km状态撤回selfhost英里缺陷。原receipt保留、分析单位规范化分别测试。
+- 未知距离/时长不当0累计成完整总量；已知样本平均分母和覆盖分别展示，真实0与缺失明确区分。
+
+
+### 2026-10-15 跨页面能耗消费者
+- 修改数据单位后必须追遍主卡、Stats、Trip、Mileage、Timeline和Curves实际页面；主formatter通过不能替旁路raw消费者通过。
+- 里程页同样只消费qualified netEnergy，负净能量/真实0保留；平均按合格energy/distance对，不用全里程稀释；估算与报告计数说明分开。
+- 曲线原API已preferred，避免再乘mile因子；rawreceipt单位属于同响应，不能借后来status修改。显式null metadata与缺键兼容分别测。
+
+
+## 2026-10-15 网页审核回复与源码版本核对
+- Jovi纠正：网页已有审核回复时，先刷新同一会话并检查已保存回复，不能仅凭末尾错误提示判断没有回复。
+- 逐项绑定Iteration、被审SHA和最终SHA；已有旧版本CHANGES_REQUIRED与最终版本未获复审分别说明。重试前确认没有已完成回复，避免重复消耗远端次数。
+
+## 2026-10-15 安全与兼容阶段复核
+- 凭据client策略必须追到遥测配置等旁路；正常refresh构造器安全不能证明所有Bearer请求安全。
+- 凭据正文需检查响应头后的取消/读取失败，不能解析ReadAll返回的部分数据后发布成功token。
+- 隔离迁移CI先按实际镜像的完整必填环境复现；缺MQTT_HOST不能通过放宽迁移测试处理。
+- OCI归档按index、manifest、config位置分别验证，正确哈希本身不证明归档是可运行镜像。
+
+## 2026-10-15 生产Compose归档容器识别
+- 定向升级前按com.docker.compose.project/service标签枚举所有状态容器，不只看当前规范名称；历史归档容器可能仍有相同标签并被Compose误选。
+- 归档桥保留原活跃容器与游标，生产桥使用独立matelink-archive-production项目；后续部署使用private/archive-production-compose.json，不再由原home项目批量重建桥。

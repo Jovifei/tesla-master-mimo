@@ -111,11 +111,9 @@ enum class DriveDateFilter(@get:StringRes val labelRes: Int, val days: Long?) {
 data class DrivesUiState(
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
-    // Set while a filter-driven reload is in flight. Distinct from `isLoading`,
-    // which intentionally stays false on filter change to avoid the full-screen
-    // flash. Drives a centered overlay spinner that lets the existing list show
-    // through.
     val isFilterLoading: Boolean = false,
+    val isLoadingMore: Boolean = false,
+    val canLoadMore: Boolean = true,
     val drives: List<DriveData> = emptyList(),
     val chartData: List<DriveChartData> = emptyList(),
     val chartGranularity: DriveChartGranularity = DriveChartGranularity.MONTHLY,
@@ -349,12 +347,29 @@ class DrivesViewModel @Inject constructor(
             startDate = startDate,
             endDate = if (filter.days != null) endDate else null,
             customStartDate = null,
-            customEndDate = null
+            customEndDate = null,
+            canLoadMore = filter != DriveDateFilter.ALL_TIME
         )}
         savedStateHandle[KEY_DATE_FILTER] = filter.name
         savedStateHandle[KEY_CUSTOM_START] = null
         savedStateHandle[KEY_CUSTOM_END] = null
         loadDrives(startDate, if (filter.days != null) endDate else null)
+    }
+
+    fun loadMore() {
+        val state = _uiState.value
+        if (state.isLoadingMore || state.isLoading || state.isFilterLoading || !state.canLoadMore) return
+        val currentStart = state.startDate ?: return
+        val endDate = state.endDate ?: LocalDate.now(clock)
+        val stepDays = 7L
+        val newStart = currentStart.minusDays(stepDays)
+        _uiState.update {
+            it.copy(
+                startDate = newStart,
+                isLoadingMore = true
+            )
+        }
+        loadDrives(newStart, endDate, isLoadMore = true)
     }
 
     fun setCustomDateRange(start: LocalDate, end: LocalDate) {
@@ -408,7 +423,11 @@ class DrivesViewModel @Inject constructor(
         }
     }
 
-    private fun loadDrives(startDate: LocalDate? = null, endDate: LocalDate? = null) {
+    private fun loadDrives(
+        startDate: LocalDate? = null,
+        endDate: LocalDate? = null,
+        isLoadMore: Boolean = false
+    ) {
         val id = carId ?: return
         metricsObservation?.cancel()
         val generation = ++observationGeneration
@@ -416,20 +435,37 @@ class DrivesViewModel @Inject constructor(
         val requestZone = clock.zone
         latestLoad.launch(viewModelScope) {
             val state = _uiState.value
-            // Only show the full-screen spinner on the true initial load — i.e. when
-            // we've never successfully fetched any data yet. Using state.drives (the
-            // filtered view) would trip the spinner whenever the active distance
-            // filter happened to zero out the list, flashing the whole screen on
-            // every date-range change.
-            val isInitial = !state.isRefreshing && allDrives.isEmpty()
-            _uiState.update {
-                it.copy(
-                    isLoading = if (isInitial) true else it.isLoading,
-                    // Filter-driven reloads (when we already have data and aren't
-                    // pull-to-refresh-ing) get a non-blocking overlay spinner
-                    // instead. Set here, cleared in the success/error tail.
-                    isFilterLoading = !isInitial && !state.isRefreshing,
-                )
+            // 1. Immediately read local SQLite cached data if allDrives is empty
+            if (allDrives.isEmpty()) {
+                val localRows = try {
+                    driveSummaryDao.getAllChronological(id)
+                } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
+                if (localRows.isNotEmpty()) {
+                    allDrives = localRows.map { it.toAnalysisDriveData() }
+                    val localMetrics = localRows.associate { summary ->
+                        summary.driveId to summary.toQualifiedHistoryMetrics()
+                    }
+                    val granularity = determineGranularity(state.startDate, state.endDate)
+                    _uiState.update {
+                        it.copy(
+                            chartGranularity = granularity,
+                            driveMetrics = localMetrics
+                        )
+                    }
+                    applyFiltersAndUpdateState()
+                }
+            }
+
+            val hasData = allDrives.isNotEmpty()
+            if (!isLoadMore) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = !hasData && !state.isRefreshing,
+                        isFilterLoading = hasData && !state.isRefreshing,
+                    )
+                }
+            } else {
+                _uiState.update { it.copy(isLoadingMore = true) }
             }
 
             // Load the display setting
@@ -455,6 +491,7 @@ class DrivesViewModel @Inject constructor(
                     result.data.verifiedReadContext?.let { proof ->
                         if (!historyRepository.isContextCurrent(proof)) throw CancellationException("History identity changed")
                     }
+                    val previousCount = allDrives.size
                     allDrives = remoteDrives
                     val granularity = determineGranularity(startDate, endDate)
 
@@ -464,7 +501,11 @@ class DrivesViewModel @Inject constructor(
                             error = null,
                             historySyncWarning = result.data.drivesSyncError,
                             localArchiveLinkPending = result.data.localArchiveLinkPending,
-                            driveMetrics = localMetrics
+                            driveMetrics = localMetrics,
+                            canLoadMore = if (isLoadMore) (allDrives.size > previousCount) else (state.dateFilter != DriveDateFilter.ALL_TIME),
+                            isLoading = false,
+                            isFilterLoading = false,
+                            isLoadingMore = false
                         )
                     }
 
@@ -521,7 +562,8 @@ class DrivesViewModel @Inject constructor(
                             isLoading = false,
                             isRefreshing = false,
                             isFilterLoading = false,
-                            error = result.message
+                            isLoadingMore = false,
+                            error = if (allDrives.isEmpty()) result.message else null
                         )
                     }
                 }
@@ -564,6 +606,7 @@ class DrivesViewModel @Inject constructor(
                 isLoading = false,
                 isRefreshing = false,
                 isFilterLoading = false,
+                isLoadingMore = false,
                 drives = displayDrives,
                 summary = summary,
                 chartData = chartData

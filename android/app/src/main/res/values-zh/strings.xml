@@ -320,6 +320,7 @@
     <!-- Common -->
     <string name="back">返回</string>
     <string name="loading">加载中…</string>
+    <string name="loading_more_history">正在加载更多历史记录…</string>
     <string name="no_data">暂无数据</string>
     <string name="offline">离线 - 显示缓存数据</string>
     <string name="ok">确定</string>

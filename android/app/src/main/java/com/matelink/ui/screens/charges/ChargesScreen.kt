@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Paid
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,6 +56,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -161,46 +163,47 @@ fun ChargesScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            if (uiState.isLoading && !uiState.isRefreshing) {
-                MateLinkLoadingPlaceholder(color = palette.accent)
-            } else {
-                ChargesContent(
-                    historySyncWarning = uiState.historySyncWarning,
-                    localArchiveLinkPending = uiState.localArchiveLinkPending,
-                    charges = uiState.charges,
-                    dcChargeIds = uiState.dcChargeIds,
-                    processedChargeIds = uiState.processedChargeIds,
-                    chartData = uiState.chartData,
-                    chartGranularity = uiState.chartGranularity,
-                    summary = uiState.summary,
-                    currencySymbol = uiState.currencySymbol,
-                    selectedDateFilter = uiState.selectedFilter,
-                    selectedChargeTypeFilter = uiState.chargeTypeFilter,
-                    selectedCostFilter = uiState.costFilter,
-                    freeSupercharging = uiState.freeSupercharging,
-                    priceOverrides = uiState.priceOverrides,
-                    defaultChargePrice = uiState.defaultChargePrice,
-                    customStartDate = uiState.customStartDate,
-                    customEndDate = uiState.customEndDate,
-                    initialScrollPosition = uiState.scrollPosition,
-                    initialScrollOffset = uiState.scrollOffset,
-                    palette = palette,
-                    isFilterLoading = uiState.isFilterLoading,
-                    onDateFilterSelected = { viewModel.setDateFilter(it) },
-                    onCustomRangeSelected = { start, end -> viewModel.setCustomDateRange(start, end) },
-                    availableLocations = uiState.availableLocations,
-                    selectedLocations = uiState.selectedLocations,
-                    onLocationFilterToggled = { viewModel.setLocationFilter(it) },
-                    onLocationFilterCleared = { viewModel.clearLocationFilter() },
-                    onChargeTypeFilterSelected = { viewModel.setChargeTypeFilter(it) },
-                    onCostFilterSelected = { viewModel.setCostFilter(it) },
-                    onEditCost = { charge -> priceEditTarget = charge },
-                    onChargeClick = { chargeId, scrollIndex, scrollOffset ->
-                        viewModel.saveScrollPosition(scrollIndex, scrollOffset)
-                        onNavigateToChargeDetail(chargeId)
-                    }
-                )
-            }
+            ChargesContent(
+                isLoading = uiState.isLoading,
+                isRefreshing = uiState.isRefreshing,
+                isLoadingMore = uiState.isLoadingMore,
+                canLoadMore = uiState.canLoadMore,
+                onLoadMore = { viewModel.loadMore() },
+                historySyncWarning = uiState.historySyncWarning,
+                localArchiveLinkPending = uiState.localArchiveLinkPending,
+                charges = uiState.charges,
+                dcChargeIds = uiState.dcChargeIds,
+                processedChargeIds = uiState.processedChargeIds,
+                chartData = uiState.chartData,
+                chartGranularity = uiState.chartGranularity,
+                summary = uiState.summary,
+                currencySymbol = uiState.currencySymbol,
+                selectedDateFilter = uiState.selectedFilter,
+                selectedChargeTypeFilter = uiState.chargeTypeFilter,
+                selectedCostFilter = uiState.costFilter,
+                freeSupercharging = uiState.freeSupercharging,
+                priceOverrides = uiState.priceOverrides,
+                defaultChargePrice = uiState.defaultChargePrice,
+                customStartDate = uiState.customStartDate,
+                customEndDate = uiState.customEndDate,
+                initialScrollPosition = uiState.scrollPosition,
+                initialScrollOffset = uiState.scrollOffset,
+                palette = palette,
+                isFilterLoading = uiState.isFilterLoading,
+                onDateFilterSelected = { viewModel.setDateFilter(it) },
+                onCustomRangeSelected = { start, end -> viewModel.setCustomDateRange(start, end) },
+                availableLocations = uiState.availableLocations,
+                selectedLocations = uiState.selectedLocations,
+                onLocationFilterToggled = { viewModel.setLocationFilter(it) },
+                onLocationFilterCleared = { viewModel.clearLocationFilter() },
+                onChargeTypeFilterSelected = { viewModel.setChargeTypeFilter(it) },
+                onCostFilterSelected = { viewModel.setCostFilter(it) },
+                onEditCost = { charge -> priceEditTarget = charge },
+                onChargeClick = { chargeId, scrollIndex, scrollOffset ->
+                    viewModel.saveScrollPosition(scrollIndex, scrollOffset)
+                    onNavigateToChargeDetail(chargeId)
+                }
+            )
         }
     }
 
@@ -224,6 +227,11 @@ fun ChargesScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChargesContent(
+    isLoading: Boolean = false,
+    isRefreshing: Boolean = false,
+    isLoadingMore: Boolean = false,
+    canLoadMore: Boolean = false,
+    onLoadMore: () -> Unit = {},
     historySyncWarning: String?,
     localArchiveLinkPending: Boolean,
     charges: List<ChargeData>,
@@ -390,6 +398,43 @@ private fun ChargesContent(
                 )
             }
         }
+
+        if (isLoadingMore) {
+            item(key = "loading_more_indicator") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = palette.accent
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.loading_more_history),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val totalItems = listState.layoutInfo.totalItemsCount
+            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            totalItems > headerCount + 1 && lastVisibleIndex >= totalItems - 2
+        }
+    }
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore && canLoadMore && !isLoadingMore && !isFilterLoading && !isLoading) {
+            onLoadMore()
+        }
     }
 
     MonthScrollIndicator(
@@ -404,20 +449,17 @@ private fun ChargesContent(
 
     // Sub-100ms loads never see a spinner — only sustained ones cross the
     // perceptual threshold worth giving feedback for.
-    val showSpinner = rememberDebouncedLoading(isFilterLoading)
+    val showSpinner = rememberDebouncedLoading(isFilterLoading || (isLoading && !isRefreshing))
     if (showSpinner) {
-        // Full-bleed dim scrim that sits above everything (chart cards inside
-        // the LazyColumn have shadow elevation, which puts them in their own
-        // graphics layer; without the explicit zIndex the spinner could end up
-        // rendered behind them). The list shows through at ~55% alpha.
+        // Overlay scrim lets the existing UI content show through clearly with a subtle dim.
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .zIndex(10f)
-                .background(Color.Black.copy(alpha = 0.45f)),
+                .background(Color.Black.copy(alpha = 0.20f)),
             contentAlignment = Alignment.Center,
         ) {
-            MateLinkLoadingMark()
+            MateLinkLoadingMark(size = 150.dp)
         }
     }
     }

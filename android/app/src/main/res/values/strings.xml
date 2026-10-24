@@ -320,6 +320,7 @@
     <!-- Common -->
     <string name="back">Back</string>
     <string name="loading">Loading…</string>
+    <string name="loading_more_history">Loading more history…</string>
     <string name="no_data">No data available</string>
     <string name="offline">Offline - showing cached data</string>
     <string name="ok">OK</string>
