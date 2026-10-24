@@ -12,6 +12,7 @@ import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import com.matelink.util.parseIsoInstant
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -31,7 +32,10 @@ enum class TemperatureTrendWindow(val days: Int) {
 data class TemperaturePoint(
     val timestampMs: Long,
     val insideTemp: Double?,
-    val outsideTemp: Double?
+    val outsideTemp: Double?,
+    /** The observation is a drive average anchored to the saved drive-start Instant. */
+    val source: String? = null,
+    val timeBasis: String = "drive_start_trip_average"
 )
 
 data class TemperatureTrendUiState(
@@ -46,6 +50,10 @@ data class TemperatureTrendUiState(
     val minInsideTemp: Double? = null,
     val minOutsideTemp: Double? = null,
     val points: List<TemperaturePoint> = emptyList(),
+    val historyDriveCount: Int = 0,
+    val historyQualifiedCount: Int = 0,
+    val latestHistoryObservedAtMs: Long? = null,
+    val historyUnavailableReason: String? = null,
     val error: String? = null
 ) {
     val isUnavailable: Boolean get() = points.isEmpty()
@@ -57,7 +65,7 @@ internal fun observedTemperaturePoints(
 ): List<TemperaturePoint> {
     val from = now.minus(window.days.toLong(), ChronoUnit.DAYS)
     return drives.mapNotNull { drive ->
-        val at = runCatching { Instant.parse(drive.startDate) }.getOrNull() ?: return@mapNotNull null
+        val at = parseIsoInstant(drive.startDate) ?: return@mapNotNull null
         if (at.isBefore(from) || at.isAfter(now)) return@mapNotNull null
         val temperatures = when (drive.qualityState) {
             "observed", "derived" -> drive.insideTempAvg to drive.outsideTempAvg
@@ -66,7 +74,10 @@ internal fun observedTemperaturePoints(
         }
         val inside = temperatures.first?.takeIf(Double::isFinite)
         val outside = temperatures.second?.takeIf(Double::isFinite)
-        if (inside == null && outside == null) null else TemperaturePoint(at.toEpochMilli(), inside, outside)
+        if (inside == null && outside == null) null else {
+            val source = drive.apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive)?.source
+            TemperaturePoint(at.toEpochMilli(), inside, outside, source)
+        }
     }.sortedBy { it.timestampMs }
 }
 
@@ -74,7 +85,7 @@ private fun DriveSummary.legacyRemoteTemperatures(now: Instant): Pair<Double?, D
     if (qualityReason != "remote_quality_unavailable") return null
     val raw = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive) ?: return null
     if (raw.driveId != driveId || raw.startDate != startDate || raw.endDate != endDate ||
-        raw.source !in setOf("teslamate_archive", "fleet_api", "telemetry_mqtt") ||
+        raw.source != "teslamate_archive" ||
         raw.qualityState != null || raw.qualityReason != null || raw.sourceRecordIdentity.conflicted) return null
     val start = runCatching { Instant.parse(startDate) }.getOrNull() ?: return null
     val end = runCatching { Instant.parse(endDate) }.getOrNull() ?: return null
@@ -87,6 +98,8 @@ internal data class TemperatureTrendSnapshot(
     val currentInsideTemp: Double? = null,
     val currentOutsideTemp: Double? = null,
     val currentStatusAvailable: Boolean = false,
+    val historyDriveCount: Int = points.size,
+    val historyUnavailableReason: String? = null,
     val stillCurrent: suspend () -> Boolean = { true }
 )
 
@@ -118,11 +131,20 @@ private class RepositoryTemperatureTrendSource(
         verify()
         val currentInside = status?.insideTemp?.toDouble()?.takeIf(Double::isFinite)
         val currentOutside = status?.outsideTemp?.toDouble()?.takeIf(Double::isFinite)
+        val from = now.minus(window.days.toLong(), ChronoUnit.DAYS)
+        val total = drives.count { row ->
+            parseIsoInstant(row.startDate)?.let { !it.isBefore(from) && !it.isAfter(now) } == true &&
+                row.qualityState != "quarantined"
+        }
+        val points = observedTemperaturePoints(drives, window, now)
         return TemperatureTrendSnapshot(
-            points = observedTemperaturePoints(drives, window, now),
+            points = points,
             currentInsideTemp = currentInside,
             currentOutsideTemp = currentOutside,
             currentStatusAvailable = currentInside != null || currentOutside != null,
+            historyDriveCount = total,
+            historyUnavailableReason = if (points.isNotEmpty()) null else
+                if (total == 0) "no_history_in_window" else "no_qualified_trip_temperatures",
             stillCurrent = { contexts.isHistoryContextCurrent(scope, context) }
         )
     }
@@ -138,7 +160,11 @@ private fun TemperatureTrendSnapshot.toUiState(window: TemperatureTrendWindow): 
         maxOutsideTemp = points.mapNotNull { it.outsideTemp }.maxOrNull()?.roundOne(),
         minInsideTemp = points.mapNotNull { it.insideTemp }.minOrNull()?.roundOne(),
         minOutsideTemp = points.mapNotNull { it.outsideTemp }.minOrNull()?.roundOne(),
-        points = points
+        points = points,
+        historyDriveCount = historyDriveCount,
+        historyQualifiedCount = points.size,
+        latestHistoryObservedAtMs = points.lastOrNull()?.timestampMs,
+        historyUnavailableReason = historyUnavailableReason
     )
 }
 
