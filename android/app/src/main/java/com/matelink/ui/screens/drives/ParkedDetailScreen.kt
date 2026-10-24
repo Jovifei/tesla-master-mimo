@@ -93,11 +93,25 @@ fun ParkedDetailScreen(
     ) { padding ->
         when {
             state.isLoading -> MateLinkLoadingPlaceholder(modifier = Modifier.padding(padding))
-            state.data != null -> ParkedDetailContent(
-                data = state.data!!,
-                modifier = Modifier.padding(padding),
-                onNavigateToChargeDetail = onNavigateToChargeDetail
-            )
+            state.data != null -> Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                state.syncWarning?.let { warning ->
+                    Text(
+                        text = warning,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp)
+                    )
+                }
+                ParkedDetailContent(
+                    data = state.data!!,
+                    modifier = Modifier,
+                    onNavigateToChargeDetail = onNavigateToChargeDetail
+                )
+            }
             else -> Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -111,6 +125,9 @@ fun ParkedDetailScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                TextButton(onClick = { viewModel.load(carId, olderDriveId, newerDriveId) }) {
+                    Text(stringResource(R.string.retry))
+                }
             }
         }
     }
@@ -407,7 +424,8 @@ private fun ParkedDetailContent(
         }
 
         Text(
-            text = "数据来源：${if (data.source == "database_latest") "TeslaMate 历史遥测" else data.source}",
+            text = if (data.source == "local_room_cache") stringResource(R.string.parked_detail_local_source_note)
+            else "数据来源：${if (data.source == "database_latest") "TeslaMate 历史遥测" else data.source}",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp)
