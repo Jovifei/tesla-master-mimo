@@ -167,6 +167,7 @@ class DashboardViewModel @Inject constructor(
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
     private var requestGeneration = 0L
+    private var activePhotoProof: Pair<com.matelink.data.local.HistoryReadScope, com.matelink.data.local.VehicleContext>? = null
 
     init {
         val hasAmap = amapSettingsStore.currentKey().isNotBlank()
@@ -175,9 +176,13 @@ class DashboardViewModel @Inject constructor(
         startPolling()
         viewModelScope.launch {
             vehiclePhotoStore.photoUpdateSignal.collect {
-                val carId = _uiState.value.car?.carId ?: return@collect
-                val photo = vehiclePhotoStore.getCustomPhotoFile(carId)
-                _uiState.update { it.copy(customPhotoFile = photo) }
+                val (scope, vehicle) = activePhotoProof ?: return@collect
+                if (!vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) return@collect
+                val photo = vehiclePhotoStore.getScopedPhoto(scope, vehicle)
+                _uiState.update { state ->
+                    if (activePhotoProof == (scope to vehicle)) state.copy(customPhotoFile = photo)
+                    else state
+                }
             }
         }
         viewModelScope.launch {
@@ -190,6 +195,7 @@ class DashboardViewModel @Inject constructor(
             vehicleContextRepository.historyScopeChanges.collect {
                 if (first) { first = false; return@collect }
                 requestGeneration++
+                activePhotoProof = null
                 val current = _uiState.value
                 _uiState.value = DashboardUiState(isHudDismissed = current.isHudDismissed,
                     isAmapConfigured = current.isAmapConfigured)
@@ -364,6 +370,7 @@ class DashboardViewModel @Inject constructor(
                     (cacheContext != null &&
                      !statusIdentityCurrent(tpmsScope, cacheContext, effectiveCarId, generation)))
                     return@launch
+                activePhotoProof = if (cacheVerified) tpmsScope!! to cacheContext!! else null
                 _uiState.value = DashboardUiState(
                     isLoading = false,
                     car = car,
@@ -381,7 +388,9 @@ class DashboardViewModel @Inject constructor(
                     snapshotMixedSources = displayEvidence.isMixed,
                     units = units,
                     cachedAddress = resolvedAddress,
-                    customPhotoFile = vehiclePhotoStore.getCustomPhotoFile(effectiveCarId),
+                    customPhotoFile = activePhotoProof?.let { (scope, vehicle) ->
+                        vehiclePhotoStore.getScopedPhoto(scope, vehicle)
+                    },
                     isAmapConfigured = hasAmap,
                     isHudDismissed = _uiState.value.isHudDismissed
                 )
@@ -499,18 +508,37 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun saveCustomPhoto(inputStream: java.io.InputStream) {
-        val carId = _uiState.value.car?.carId ?: return
+        val proof = activePhotoProof ?: return
         viewModelScope.launch {
-            val file = vehiclePhotoStore.saveCustomPhoto(carId, inputStream)
-            _uiState.update { it.copy(customPhotoFile = file) }
+            val (scope, vehicle) = proof
+            if (activePhotoProof != proof ||
+                !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) return@launch
+            try {
+                val file = vehiclePhotoStore.saveScopedPhoto(scope, vehicle, inputStream)
+                if (activePhotoProof != proof ||
+                    !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) return@launch
+                _uiState.update { it.copy(customPhotoFile = file) }
+            } catch (e: CancellationException) { throw e }
+              catch (_: Exception) {
+                if (activePhotoProof == proof)
+                    _uiState.update { it.copy(error = "photo_local_save_failed") }
+            }
         }
     }
 
     fun clearCustomPhoto() {
-        val carId = _uiState.value.car?.carId ?: return
+        val proof = activePhotoProof ?: return
         viewModelScope.launch {
-            vehiclePhotoStore.clearCustomPhoto(carId)
-            _uiState.update { it.copy(customPhotoFile = null) }
+            val (scope, vehicle) = proof
+            if (activePhotoProof != proof ||
+                !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) return@launch
+            try {
+                vehiclePhotoStore.clearScopedPhoto(scope, vehicle)
+                if (activePhotoProof != proof ||
+                    !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) return@launch
+                _uiState.update { it.copy(customPhotoFile = null) }
+            } catch (e: CancellationException) { throw e }
+              catch (_: Exception) { }
         }
     }
 
