@@ -265,9 +265,13 @@ class DashboardViewModel @Inject constructor(
     private fun loadDashboard() {
         val generation = ++requestGeneration
         viewModelScope.launch {
+            var capturedScope: com.matelink.data.local.HistoryReadScope? = null
+            var requestedCarId: Int? = null
             try {
                 val carId = settingsRepository.currentCarId.first()
+                requestedCarId = carId
                 val tpmsScope = captureTpmsScope()
+                capturedScope = tpmsScope
 
                 val carsResult = repository.getCars()
                 var car = when (carsResult) {
@@ -405,7 +409,7 @@ class DashboardViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (!liveScopeCurrent(captureTpmsScope(), settingsRepository.currentCarId.first(),
+                if (!liveScopeCurrent(capturedScope, requestedCarId ?: return@launch,
                         generation)) return@launch
                 _uiState.value = DashboardUiState(
                     isLoading = false,
@@ -434,9 +438,13 @@ class DashboardViewModel @Inject constructor(
                 }
                 delay(delayMs)
                 val generation = requestGeneration
+                var capturedScope: com.matelink.data.local.HistoryReadScope? = null
+                var requestedCarId: Int? = null
                 try {
                     val carId = settingsRepository.currentCarId.first()
+                    requestedCarId = carId
                     val scope = captureTpmsScope()
+                    capturedScope = scope
                     if (!liveScopeCurrent(scope, carId, generation)) continue
                     val snapshot = repository.getAdapterSnapshot(carId)
                     val legacy = if (snapshot is ApiResult.Error) repository.getCarStatus(carId) else null
@@ -475,9 +483,7 @@ class DashboardViewModel @Inject constructor(
                 catch (_: Exception) {
                     // Request generation alone is not sufficient after a new login.
                     if (generation == requestGeneration) {
-                        val carId = settingsRepository.currentCarId.first()
-                        val scope = captureTpmsScope()
-                        if (!liveScopeCurrent(scope, carId, generation)) continue
+                        if (!liveScopeCurrent(capturedScope, requestedCarId ?: continue, generation)) continue
                         _uiState.update { ui -> ui.copy(
                             snapshotFreshness = failedSnapshotFreshness(
                                 ui.observedAt, ui.status != null, clock.instant()),
