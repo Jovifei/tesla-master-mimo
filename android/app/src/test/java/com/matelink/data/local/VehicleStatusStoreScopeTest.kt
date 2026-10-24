@@ -72,7 +72,7 @@ class VehicleStatusStoreScopeTest {
         assertNull(current.latitude)
         val reopened = VehicleStatusStore(app, Moshi.Builder().build())
         assertNull(reopened.getCachedStatus(scope, car)?.latitude)
-        assertEquals(21.0, reopened.getCachedStatus(scope, car)!!.insideTemp!!)
+        assertEquals(21.0, reopened.getCachedStatus(scope, car)!!.insideTemp!!, 0.0)
         assertEquals("2026-10-23T02:00:00Z", reopened.getCachedObservedAt(scope, car))
         assertEquals(40.0, reopened.getCachedPosition(scope, car)!!.latitude, 0.0)
         assertEquals("2026-10-23T01:00:00Z", reopened.getCachedPosition(scope, car)!!.observedAt)
