@@ -49,6 +49,10 @@ jobs:
             --tests '*VehicleStatusStoreScopeTest' \
             --tests '*VehiclePhotoStoreScopeTest' \
             --tests '*HistorySourceConflictArchiveRoomTest' \
+            --tests '*RawHistoryEvidencePersistenceTest' \
+            --tests '*DetailSyncResourceRecoveryTest' \
+            --tests '*HistoryRefreshIntegrationContractTest' \
+            --tests '*DataReadinessReviewContractTest' \
             --tests '*ChargeSourceInstanceAdmissionTest' \
             --tests '*HistoryDetailRoomIntegrationTest' \
             --tests '*TemperatureRoomHistoryConsumerTest' \
