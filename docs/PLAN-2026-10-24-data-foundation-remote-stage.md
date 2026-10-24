@@ -27,6 +27,15 @@
 
 当前 WIP 是 CHANGES_REQUIRED，远端需自行读取真实调用链、补 RED→GREEN，不能仅依赖现有纯策略测试：
 
+同一 `c2c_8f2d` 聊天对 PR #22 的已保存复审还指出以下四组 P1；网页答复在连接中断前未完整结束，故请按固定源码再次核实并和本次缺口合并处理，而不是另发四个小任务：
+
+| 旧复审缺口 | 真实反例与需要的消费者验证 |
+| --- | --- |
+| 同数值 ID、不同来源实例 | 当前 `charges_summary(carId, chargeId)` 主键可使 B 实例的会话覆盖 A 的唯一原始 receipt；要求 A→B→A、多页同步与 Room 重开均可核验旧新来源，不跨源提升能量或费用。Drive 同类路径一并检查。 |
+| 合格详情标量但缺点数组 | 一条会话有合格 24.02 kWh，却没有 `charge_details` 数组时，现有详情点准入可能回滚整个摘要事务；列表离线重开又变未知。会话摘要资格与曲线点完整度应独立，点真的损坏或截断则继续严格回滚；前台详情与后台 Sync 都需验证。 |
+| 年度 PDF 的混合快照 | 切年份或账号后，PDF ViewModel 可能从旧 `carStats` 和新 `uiState` 拼一份文件；导出应锁定同一账号、来源、车辆、年份、币种与 Room cohort，并核对真实生成的 PDF 内容。 |
+| 历史列表迟到发布 | `ChargesViewModel` 在同 numeric carId 换账号/来源时，异步 aggregate 或 car settings 返回可污染新列表；`DrivesViewModel.loadUnits` 也需同响应身份。用 A→B 相同 ID、迟到 DAO/设置与最终 UI 消费者验证。 |
+
 1. `DashboardViewModel` 的 legacy 轮询分支在完成身份检查后调用可挂起的 `loadCachedAddress`，返回后缺最终身份检查；A 账号旧地址仍可能覆盖 B 账号屏幕。
 2. 首页当前把“历史车辆 UID 证据尚不可用”当作拒绝整个实时状态的理由。应允许**当前账号、当前车、当前请求**的 live 响应只显示不落缓存；缓存读写仍须有已验证车辆身份。错误状态也不得覆盖新账号 UI。
 3. `VehicleStatusStore.reconcileAndSave` 将旧 GPS 与新无 GPS 快照合并，再以新 `observed_at` 保存整个对象：旧位置被伪装成新观测；部分实时响应还可能擦掉先前有效但未在本次返回的其他字段。须把原始实时状态与历史位置/字段证据分开，或选择 fail-closed 的最小方案；离线重开验证数值、位置时间和来源。
