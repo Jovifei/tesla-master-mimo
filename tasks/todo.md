@@ -1,3 +1,13 @@
+# 2026-10-25 实机 UI 审计与 build 68 修复（已装机验证）
+
+- [x] 实机审计 build 67（OnePlus `6e4fa92f`，uiautomator 逐页取证）：充电页 0 记录+永久"加载中"、行程卡单位 `kWh/100` 截断、驻车 SOC `33→32%` 格式不一致、"暂无数据"卡仍带来源徽标、仪表盘车内/车外无值占位为 `--`、电池健康/能耗/费用分析三页纯加载无缓存。
+- [x] 分支 `codex/ui-audit-fixes-20261025` 修复：20s 历史加载超时+缓存降级（充电/行程）、完整 `kWh/100km` 单位（长单位独立行）、SOC 格式统一、徽标条件对齐、温度"等待车辆"占位。提交 `6eaeff87`/`41a5c1a3`/`34320288`/`bcfbe74e`。
+- [x] Debug 1026 / Release 1026+8skip 全绿；lint 通过；签名 Release 构建证书与历史一致（APK SHA-256 `B7857...42FE`）。
+- [x] 同签 `install -r` 至 2.1.49/build 68，firstInstallTime 2026-08-31 22:36:47 保持，0 FATAL/ANR；实机复验：充电页恢复真实数据（67 次/920 kWh，与统计页一致）、单位/SOC/徽标/温度逐项通过。
+- [x] 版本台账补录：ANDROID-RELEASE-LOG.md 新增 build 68 条目 + build 32–67 欠账说明；docs/README.md 更新交付入口。
+- [ ] 待办：数据分析三页（电池健康/能耗/费用分析）Room 缓存化改造（同 build 67 行程/充电模式）；PR #22（codex/apk-data-foundation-remote-20261024，versionCode 62）合并前需变基 main 并升版本，避免降级安装冲突；弱网 TLS 间歇失败根因仍 OPEN。
+- 子 agent 通道本会话不可用（provider 映射 `zai-api` 失效，已修 `agents-state.json` 供下次会话生效），以上为亲自按子 agent 流程（实现→审查→测试）执行。
+
 # 2026-10-12 每趟行程能耗（源码/测试/手机安装已授权）
 
 - [x] 只读核查当前源码与官方字段；明确现有计算器和实际消费者缺口。
