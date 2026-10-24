@@ -51,6 +51,34 @@ jobs:
           p.write_text('\n'.join(v for v in p.read_text().splitlines()
               if v.split('=',1)[0] not in forbidden)+'\n')
           PY
+      - name: Start and independently health-check the existing synthetic fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Emulator 10.0.2.2 maps to this runner's loopback interface.
+          # This is the existing synthetic qualification fixture only, never a
+          # provider server or a user's network/vehicle.
+          nohup python3 -u tools/p0_qualification/fixture_server.py \
+            --host 127.0.0.1 --port 18080 --scenario normal \
+            > emulator-evidence/fixture.log 2>&1 </dev/null &
+          echo "$!" > emulator-evidence/fixture.pid
+          python3 - <<'PY'
+          import json,time,urllib.request,os
+          pid=int(open('emulator-evidence/fixture.pid').read())
+          for attempt in range(30):
+              os.kill(pid,0)
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:18080/_health',timeout=2) as response:
+                      result=json.load(response)
+                  if result.get('ok') is True and result.get('scenario')=='normal':
+                      print('synthetic_fixture_verified_on_loopback')
+                      break
+              except (OSError,ValueError,TimeoutError):
+                  pass
+              time.sleep(0.5)
+          else:
+              raise SystemExit('synthetic fixture was not listening; native tests must fail')
+          PY
       - name: Primary accelerated API35 native Room/Compose tests
         id: primary_api35
         continue-on-error: true
@@ -89,6 +117,13 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save -accel on
           script: bash tools/energy-stage/android-instrumentation-ci.sh
+      - name: Stop the isolated synthetic fixture
+        if: always()
+        shell: bash
+        run: |
+          if [[ -s emulator-evidence/fixture.pid ]]; then
+            kill "$(cat emulator-evidence/fixture.pid)" 2>/dev/null || true
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
