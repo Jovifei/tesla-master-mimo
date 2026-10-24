@@ -18,7 +18,11 @@ class HistoryRefreshIntegrationContractTest {
             assertTrue(source.contains("private val clock: Clock"))
             assertTrue(source.contains("refreshedHistoryWindow("))
             assertTrue(source.contains("latestLoad.launch(viewModelScope)"))
-            assertTrue(source.contains("val result = historyRepository.load(id, startDateStr, endDateStr)\n            ensureCurrent()"))
+            assertTrue(source.contains(
+                "val result = withTimeoutOrNull(HISTORY_LOAD_TIMEOUT_MS) {\n" +
+                    "                historyRepository.load(id, startDateStr, endDateStr)\n" +
+                    "            }"))
+            assertTrue(source.contains("historyTimeoutMessage("))
             assertTrue(source.contains("HISTORY_IDENTITY_UNAVAILABLE"))
         }
     }
