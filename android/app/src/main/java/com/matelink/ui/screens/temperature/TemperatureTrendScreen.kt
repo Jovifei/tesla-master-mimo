@@ -165,6 +165,22 @@ fun TemperatureTrendScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Text(
+                    text = stringResource(R.string.temperature_observed_coverage,
+                        state.historyQualifiedCount, state.historyDriveCount),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                state.latestHistoryObservedAtMs?.let { at ->
+                    val localTime = java.time.Instant.ofEpochMilli(at)
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+                    Text(
+                        text = stringResource(R.string.temperature_last_qualified_trip, localTime),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 if (state.isUnavailable) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -173,7 +189,11 @@ fun TemperatureTrendScreen(
                         )
                     ) {
                         Text(
-                            text = stringResource(R.string.temperature_trend_unavailable),
+                            text = stringResource(if (state.historyUnavailableReason == "no_history_in_window") {
+                                R.string.temperature_no_trip_history
+                            } else {
+                                R.string.temperature_no_qualified_trip_samples
+                            }),
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.padding(20.dp)
                         )
