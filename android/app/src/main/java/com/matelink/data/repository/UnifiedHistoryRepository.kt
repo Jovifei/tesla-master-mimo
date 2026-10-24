@@ -28,6 +28,7 @@ import com.matelink.domain.analytics.withSafeHistoryDisplay
 import com.matelink.domain.analytics.sameChargeSourceInstance
 import com.matelink.domain.analytics.withQualifiedEnergy
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.time.Instant
@@ -91,7 +92,8 @@ internal data class HistoryReadDependencies(
     val persistDrives: suspend (List<DriveSummary>) -> Unit,
     val persistCharges: suspend (List<ChargeSummary>) -> Unit,
     val reportFailure: (String, Instant, ApiResult.Error) -> Unit = { _, _, _ -> },
-    val legacyLinkPending: (Int, HistoryReadScope, VehicleContext) -> Boolean = { _, _, _ -> false }
+    val legacyLinkPending: (Int, HistoryReadScope, VehicleContext) -> Boolean = { _, _, _ -> false },
+    val scopeChanges: Flow<HistoryReadScope?>? = null
 )
 
 /** One read path for remote history plus the vehicle-scoped Room cache. */
@@ -117,8 +119,12 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         reportFailure = { stage, requestedAt, error ->
             Log.w("HistorySync", historyFailureDiagnostic(stage, requestedAt, error))
         },
-        legacyLinkPending = { id, scope, context -> vehicleContextRepository.hasUnlinkedLegacyHistoryContext(id, scope, context) }
+        legacyLinkPending = { id, scope, context -> vehicleContextRepository.hasUnlinkedLegacyHistoryContext(id, scope, context) },
+        scopeChanges = vehicleContextRepository.historyScopeChanges
     ))
+
+    /** Invalidates persistent UI consumers when account, origin or mode changes. */
+    internal val scopeChanges: Flow<HistoryReadScope?>? get() = reads.scopeChanges
 
     /** Identity-only read shared by lists and details; never loads history pages or aggregates. */
     internal suspend fun resolveContext(remoteApiCarId: Int): ApiResult<VerifiedHistoryReadContext> {
