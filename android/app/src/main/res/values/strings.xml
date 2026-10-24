@@ -1641,4 +1641,5 @@
     <string name="diagnostic_permission_detail">The API reports a missing permission. A valid login or vehicle binding does not prove all Tesla grants. Review the existing authorization flow manually.</string>
     <string name="history_source_show">Data source · details</string>
     <string name="history_source_hide">Data source · collapse</string>
+    <string name="amap_historical_position">Last verified position (not live): %1$s</string>
 </resources>
