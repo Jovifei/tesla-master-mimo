@@ -1,0 +1,71 @@
+name: Data foundation isolated API35 Android instrumentation
+on:
+  push:
+    branches: ['codex/apk-data-foundation-remote-20261024']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: data-foundation-emulator-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  api35-instrumentation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Record exact isolated runner source and prepare disposable SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p emulator-evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ > emulator-evidence/source.txt
+          cp android/gradle.properties emulator-evidence/gradle.properties.original
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/gradle.properties')
+          forbidden={'systemProp.http.proxyHost','systemProp.http.proxyPort',
+          'systemProp.https.proxyHost','systemProp.https.proxyPort','systemProp.http.nonProxyHosts'}
+          p.write_text('\n'.join(v for v in p.read_text().splitlines()
+              if v.split('=',1)[0] not in forbidden)+'\n')
+          PY
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_4
+          cores: 2
+          ram-size: 4096M
+          heap-size: 512M
+          disk-size: 8G
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: |
+            cd android
+            TZ=Asia/Shanghai bash ./gradlew :app:connectedDebugAndroidTest \
+              --no-daemon --max-workers=1 \
+              -Dorg.gradle.jvmargs='-Xmx5g -XX:MaxMetaspaceSize=1g -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
+              -Pkotlin.compiler.execution.strategy=in-process \
+              -PallowConnectedDeviceTests=isolated-device
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: data-foundation-api35-instrumentation
+          retention-days: 14
+          path: |
+            emulator-evidence/
+            android/app/build/outputs/androidTest-results/
+            android/app/build/reports/androidTests/
+            android/app/build/outputs/apk/androidTest/
