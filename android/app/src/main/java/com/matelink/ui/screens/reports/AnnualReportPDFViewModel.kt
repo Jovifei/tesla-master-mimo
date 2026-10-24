@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -64,6 +66,21 @@ class AnnualReportPDFViewModel @Inject constructor(
     private var yearsJob: Job? = null
     private var pdfJob: Job? = null
     private var delivered: ScopedAnnualPdf? = null
+
+    init {
+        viewModelScope.launch {
+            vehicleContexts.historyScopeChanges.drop(1).collect {
+                generation++
+                loadJob?.cancel()
+                yearsJob?.cancel()
+                pdfJob?.cancel()
+                delivered = null
+                _uiState.value = AnnualReportPDFUiState(
+                    year = _uiState.value.year, isLoading = false,
+                    error = "history_identity_unavailable")
+            }
+        }
+    }
 
     private suspend fun capture(car: Int): Pair<HistoryReadScope, VehicleContext> {
         val scope = vehicleContexts.captureReadScope()
