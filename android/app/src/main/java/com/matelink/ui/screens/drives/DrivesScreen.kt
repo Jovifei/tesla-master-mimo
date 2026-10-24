@@ -701,7 +701,7 @@ private fun DriveItem(
                             color = palette.onSurface
                         )
                     }
-                    energyPres.source?.takeIf { energyKwh != null }?.let { source ->
+                    energyPres.source?.takeIf { efficiency != null || energyKwh != null }?.let { source ->
                         val (sourceLabel, badgeBg, badgeTextColor) = when (source) {
                             DriveDetailEnergySource.POWER_SAMPLES -> {
                                 val coverage = if ((energyPres.coverageRatio ?: 0.0) > 0.0) {
@@ -766,7 +766,7 @@ private fun DriveItem(
                                 ?: energyKwh?.let { visualTripNumber(it) }
                                 ?: stringResource(R.string.not_available),
                             tint = Color(0xFF10B981),
-                            unit = if (efficiency != null) "kWh/100" else if (energyKwh != null) "kWh" else "",
+                            unit = if (efficiency != null) "kWh/100km" else if (energyKwh != null) "kWh" else "",
                             valueFontSize = 17.5.sp
                         ),
                         TelemetryMetricSpec(
@@ -868,7 +868,7 @@ private fun ParkedItem(
                 )
                 if (batteryStart != null && batteryEnd != null) {
                     Text(
-                        text = "$batteryStart→$batteryEnd%",
+                        text = UnitFormatter.formatSocRange(batteryStart, batteryEnd, ""),
                         style = MaterialTheme.typography.labelSmall,
                         color = palette.accent
                     )

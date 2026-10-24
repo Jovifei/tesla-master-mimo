@@ -229,7 +229,7 @@ private fun TelemetryMetricCell(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                displayedUnit?.takeIf(String::isNotBlank)?.let { unit ->
+                displayedUnit?.takeIf { compactUnitLine(it) == CompactUnitLine.INLINE }?.let { unit ->
                     Spacer(Modifier.width(1.5.dp))
                     Text(
                         text = unit,
@@ -240,6 +240,16 @@ private fun TelemetryMetricCell(
                         modifier = Modifier.padding(bottom = 1.dp)
                     )
                 }
+            }
+            displayedUnit?.takeIf { compactUnitLine(it) == CompactUnitLine.BELOW }?.let { unit ->
+                Text(
+                    text = unit,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.5.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    softWrap = false,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             Text(
                 text = metric.label,
