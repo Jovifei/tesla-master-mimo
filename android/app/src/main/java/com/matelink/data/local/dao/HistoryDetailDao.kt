@@ -21,6 +21,10 @@ interface HistoryDetailDao {
     @Query("SELECT * FROM history_detail_receipts WHERE identityKey = :identityKey AND state != 'failed' ORDER BY CASE WHEN state = 'partial' THEN 0 ELSE 1 END DESC, localRevision DESC LIMIT 1")
     suspend fun latestReadable(identityKey: String): HistoryDetailReceipt?
 
+    /** Bounded offline recovery of older complete receipts if a newer chunk is damaged. */
+    @Query("SELECT * FROM history_detail_receipts WHERE identityKey = :identityKey AND state IN ('response_complete_total_unverified', 'provider_complete_verified') ORDER BY localRevision DESC LIMIT :limit")
+    suspend fun latestCompleteCandidates(identityKey: String, limit: Int = 5): List<HistoryDetailReceipt>
+
     @Query("SELECT * FROM history_detail_chunks WHERE receiptId = :receiptId ORDER BY chunkIndex ASC")
     suspend fun chunks(receiptId: String): List<HistoryDetailChunk>
 

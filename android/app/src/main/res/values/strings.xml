@@ -724,8 +724,8 @@
     <string name="temperature_outside_legend">Outside</string>
     <string name="temperature_current_inside">Latest cabin status</string>
     <string name="temperature_current_outside">Latest outside status</string>
-    <string name="temperature_max_outside">Max Outside</string>
-    <string name="temperature_max_inside">Max Cabin</string>
+    <string name="temperature_max_outside">Highest Outside Trip Avg</string>
+    <string name="temperature_max_inside">Highest Cabin Trip Avg</string>
     <string name="temperature_min_outside">Min Outside</string>
     <string name="temperature_min_inside">Min Cabin</string>
     <string name="temperature_cabin_diff">Max Temp Diff</string>
@@ -1235,6 +1235,8 @@
     <string name="stats_analysis_energy_used">Driving energy</string>
     <string name="stats_analysis_energy_added">Charged energy</string>
     <string name="stats_analysis_cost">Recorded cost</string>
+    <string name="stats_cost_not_recorded">Not recorded</string>
+    <string name="stats_cost_recording_hint">Add a total in charge details</string>
     <string name="stats_analysis_samples">Source records</string>
     <string name="stats_analysis_sample_count">Drive and charge records</string>
     <string name="stats_analysis_observed">Observed</string>
@@ -1639,4 +1641,9 @@
     <string name="diagnostic_permission_detail">The API reports a missing permission. A valid login or vehicle binding does not prove all Tesla grants. Review the existing authorization flow manually.</string>
     <string name="history_source_show">Data source · details</string>
     <string name="history_source_hide">Data source · collapse</string>
+    <string name="amap_historical_position">Last verified position (not live): %1$s</string>
+    <string name="temperature_observed_coverage">Qualified trip-average temperatures: %1$d / %2$d eligible saved drives. Times are drive starts, not parked samples.</string>
+    <string name="temperature_last_qualified_trip">Latest qualified drive start: %1$s (local time)</string>
+    <string name="temperature_no_trip_history">No eligible saved drives in this period. Live temperature does not create historical samples.</string>
+    <string name="temperature_no_qualified_trip_samples">Saved drives exist, but their temperatures lack qualified source/time evidence. Import or record real drives; no values were generated.</string>
 </resources>

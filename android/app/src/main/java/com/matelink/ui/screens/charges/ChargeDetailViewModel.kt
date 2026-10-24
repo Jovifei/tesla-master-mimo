@@ -305,7 +305,8 @@ class ChargeDetailViewModel @Inject constructor(
                     }
                     val receipt = persisted?.receipt
                     val detailWarning = if (pointWriteFailed) "history_detail_points_missing" else when {
-                        receipt?.sourceInstanceVerified != true ||
+                        receipt == null -> "history_detail_points_missing"
+                        receipt.sourceInstanceVerified != true ||
                             receipt?.sourceIdVerified != true -> "history_detail_source_unverified"
                         receipt?.providerTotalVerified != true -> "history_detail_total_unverified"
                         else -> null

@@ -28,6 +28,7 @@ import com.matelink.domain.analytics.withSafeHistoryDisplay
 import com.matelink.domain.analytics.sameChargeSourceInstance
 import com.matelink.domain.analytics.withQualifiedEnergy
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.time.Instant
@@ -91,7 +92,8 @@ internal data class HistoryReadDependencies(
     val persistDrives: suspend (List<DriveSummary>) -> Unit,
     val persistCharges: suspend (List<ChargeSummary>) -> Unit,
     val reportFailure: (String, Instant, ApiResult.Error) -> Unit = { _, _, _ -> },
-    val legacyLinkPending: (Int, HistoryReadScope, VehicleContext) -> Boolean = { _, _, _ -> false }
+    val legacyLinkPending: (Int, HistoryReadScope, VehicleContext) -> Boolean = { _, _, _ -> false },
+    val scopeChanges: Flow<HistoryReadScope?>? = null
 )
 
 /** One read path for remote history plus the vehicle-scoped Room cache. */
@@ -117,8 +119,12 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         reportFailure = { stage, requestedAt, error ->
             Log.w("HistorySync", historyFailureDiagnostic(stage, requestedAt, error))
         },
-        legacyLinkPending = { id, scope, context -> vehicleContextRepository.hasUnlinkedLegacyHistoryContext(id, scope, context) }
+        legacyLinkPending = { id, scope, context -> vehicleContextRepository.hasUnlinkedLegacyHistoryContext(id, scope, context) },
+        scopeChanges = vehicleContextRepository.historyScopeChanges
     ))
+
+    /** Invalidates persistent UI consumers when account, origin or mode changes. */
+    internal val scopeChanges: Flow<HistoryReadScope?>? get() = reads.scopeChanges
 
     /** Identity-only read shared by lists and details; never loads history pages or aggregates. */
     internal suspend fun resolveContext(remoteApiCarId: Int): ApiResult<VerifiedHistoryReadContext> {
@@ -580,6 +586,36 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
     require(incoming.carId == cached.carId && incoming.driveId == cached.driveId)
     val inRaw = incoming.toRawAnalysisDriveData()
     val cachedRaw = cached.toRawAnalysisDriveData()
+    // A numeric ID is not a global session identity. When a different
+    // source-instance, source-record or physical window reuses it, preserve
+    // the incoming raw receipt byte-for-byte. The enclosing DAO transaction
+    // separately archives the superseded receipt before any upsert.
+    // Never encode a display-projection quality reason into the wire envelope.
+    val distinctSession = inRaw.source != cachedRaw.source ||
+        !sameChargeSourceInstance(inRaw.sourceInstanceId, inRaw.sourceRecordIdentity,
+            cachedRaw.sourceInstanceId, cachedRaw.sourceRecordIdentity) ||
+        !sameHistorySession(inRaw.startDate, inRaw.endDate,
+            cachedRaw.startDate, cachedRaw.endDate)
+    if (distinctSession) {
+        val incomingTrusted = hasTrustedHistoryEvidence(inRaw.qualityState, inRaw.source)
+        val cachedTrusted = hasTrustedHistoryEvidence(cachedRaw.qualityState, cachedRaw.source)
+        val foreign = inRaw.source != cachedRaw.source
+        // The numeric drive ID is not authority to replace a different source.
+        // Same-source instance A->B is handled as a separately archived session.
+        if (incomingTrusted && (!cachedTrusted || !foreign)) return incoming
+        if (foreign && cachedTrusted && !incomingTrusted) {
+            // A fully qualified zero, negative-regeneration or measured
+            // energy is protected from an untrusted foreign import.
+            if (cached.toAnalysisDriveData().netEnergyKwh != null) return cached
+            // Only old unsupported pre-contract scalars are unqualified.
+            // Preserve the byte-identical historical receipt but scrub only
+            // its scalar analysis columns (not its raw signed energy).
+            return cached.copy(energyConsumed = null, efficiency = null,
+                energySource = null, energyCoverageSeconds = 0L, energyCoverageRatio = 0.0)
+        }
+        return cached
+    }
+
     val raw = UnifiedHistoryRepository.mergeDrivesRaw(listOf(inRaw), listOf(cachedRaw)).single()
     val base = raw.toLocalSummary(incoming.carId) ?: return cached
     val incomingSnapshot = HistorySummaryEvidenceCodec.drivePresentation(
@@ -680,6 +716,26 @@ internal fun mergeStoredCharge(incoming: ChargeSummary, cached: ChargeSummary?):
     require(incoming.carId == cached.carId && incoming.chargeId == cached.chargeId)
     val inRaw = incoming.toRawAnalysisChargeData()
     val cachedRaw = cached.toRawAnalysisChargeData()
+    // A numeric ID is not a global session identity. When a different
+    // source-instance, source-record or physical window reuses it, preserve
+    // the incoming raw receipt byte-for-byte. The enclosing DAO transaction
+    // separately archives the superseded receipt before any upsert.
+    // Never encode a display-projection quality reason into the wire envelope.
+    val distinctSession = inRaw.source != cachedRaw.source ||
+        !sameChargeSourceInstance(inRaw.sourceInstanceId, inRaw.sourceRecordIdentity,
+            cachedRaw.sourceInstanceId, cachedRaw.sourceRecordIdentity) ||
+        !sameHistorySession(inRaw.startDate, inRaw.endDate,
+            cachedRaw.startDate, cachedRaw.endDate)
+    if (distinctSession) {
+        val incomingTrusted = hasTrustedHistoryEvidence(inRaw.qualityState, inRaw.source)
+        val cachedTrusted = hasTrustedHistoryEvidence(cachedRaw.qualityState, cachedRaw.source)
+        // A foreign TeslaMate/import source marked "observed" cannot replace
+        // a qualified Fleet detail/cost/address by numeric ID alone.
+        // Same-source distinct instances remain separate and archived.
+        return if (incomingTrusted && (!cachedTrusted || inRaw.source == cachedRaw.source))
+            incoming else cached
+    }
+
     val raw = UnifiedHistoryRepository.mergeChargesRaw(listOf(inRaw), listOf(cachedRaw)).single()
     val base = raw.toLocalSummary(incoming.carId) ?: return cached
     val incomingSnapshot = HistorySummaryEvidenceCodec.chargePresentation(

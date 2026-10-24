@@ -1,6 +1,13 @@
 package com.matelink.ui.screens.temperature
 
+import com.matelink.data.api.models.DriveData
 import com.matelink.data.local.entity.DriveSummary
+import com.matelink.data.repository.toLocalSummary
+import com.matelink.data.sync.toSyncSummary
+import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
+import com.matelink.data.local.HistoryReadScope
+import com.matelink.data.local.HistoryConnectionSource
+import com.matelink.domain.history.shouldInvalidateScopedView
 import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
@@ -15,6 +22,65 @@ import org.junit.Test
 
 class TemperatureTrendTruthTest {
     private val now = Instant.parse("2026-10-21T12:00:00Z")
+
+    @Test fun temperaturePlotAxisEnclosesObservedNegativeValuesAndValidZero() {
+        val bounds = requireNotNull(realTemperatureAxisBounds(listOf(-35.5, 0.0, 22.0)))
+        assertTrue(bounds.first < -35.5)
+        assertTrue(bounds.second > 22.0)
+        assertEquals(null, realTemperatureAxisBounds(listOf(Double.NaN, Double.POSITIVE_INFINITY)))
+    }
+
+    @Test fun legacyRemoteDriveKeepsItsOwnTemperatureDespiteMissingEnergyQuality() {
+        val raw = DriveData(
+            driveId = 7, startDate = "2026-10-20T10:00:00Z", endDate = "2026-10-20T10:20:00Z",
+            source = "teslamate_archive", insideTempAvg = 0.0, outsideTempAvg = -3.5
+        )
+        val stored = raw.toLocalSummary(1)!!
+        assertEquals("incomplete", stored.qualityState)
+        assertEquals("remote_quality_unavailable", stored.qualityReason)
+
+        // A stale Room projection cannot override the exact archived response.
+        val point = observedTemperaturePoints(listOf(stored.copy(insideTempAvg = 99.0)), TemperatureTrendWindow.SEVEN, now).single()
+        assertEquals(0.0, point.insideTemp!!, 0.0)
+        assertEquals(-3.5, point.outsideTemp!!, 0.0)
+    }
+
+    @Test fun missingOrUntrustedLegacyTemperatureReceiptCannotEnterTrend() {
+        val raw = DriveData(
+            driveId = 8, startDate = "2026-10-20T10:00:00Z", endDate = "2026-10-20T10:20:00Z",
+            source = "teslamate_archive", insideTempAvg = 22.0
+        )
+        val stored = raw.toLocalSummary(1)!!
+        val candidates = listOf(
+            stored.copy(apiEvidence = null),
+            raw.copy(source = "local_import").toLocalSummary(1)!!,
+            raw.copy(source = null).toLocalSummary(1)!!,
+            raw.copy(qualityState = "quarantined").toLocalSummary(1)!!,
+            stored.copy(apiEvidence = HistorySummaryEvidenceCodec.encode(raw.copy(qualityReason = "synthetic_provenance"))),
+            stored.copy(apiEvidence = HistorySummaryEvidenceCodec.encode(raw.copy(sourceId = "a", sourceRecordId = "b"))),
+            stored.copy(apiEvidence = HistorySummaryEvidenceCodec.encode(raw.copy(driveId = 9))),
+            stored.copy(apiEvidence = HistorySummaryEvidenceCodec.encode(raw.copy(endDate = "2026-10-20T10:21:00Z"))),
+            raw.copy(endDate = "2026-10-22T10:20:00Z").toLocalSummary(1)!!,
+            stored.copy(startDate = "not-a-time")
+        )
+        assertTrue(observedTemperaturePoints(candidates, TemperatureTrendWindow.SEVEN, now).isEmpty())
+    }
+
+    @Test fun legacyArchiveViaActualSyncMapperCanQualifyButForgedReasonCannot() {
+        val raw = DriveData(driveId = 70,
+            startDate = "2026-10-20T10:00:00Z",
+            endDate = "2026-10-20T10:20:00Z",
+            source = "teslamate_archive", insideTempAvg = 0.0, outsideTempAvg = -3.5)
+        val persisted = raw.toSyncSummary(1)
+        val row = requireNotNull(persisted)
+        assertEquals("observed", row.qualityState)
+        assertEquals("legacy_remote_api", row.qualityReason)
+        val valid = observedTemperaturePoints(listOf(row), TemperatureTrendWindow.SEVEN, now)
+        assertEquals(1, valid.size)
+        assertEquals(0.0, valid.single().insideTemp!!, 0.0)
+        assertTrue(observedTemperaturePoints(listOf(row.copy(qualityReason = "local_unverified")),
+            TemperatureTrendWindow.SEVEN, now).isEmpty())
+    }
 
     @Test fun historyUsesOnlyQualifiedTimestampedFiniteDriveAverages() {
         val points = observedTemperaturePoints(listOf(
@@ -62,6 +128,33 @@ class TemperatureTrendTruthTest {
         assertFalse(state.currentStatusAvailable)
         assertEquals(18.0, state.maxInsideTemp!!, 0.0)
         assertNull(state.currentInsideTemp)
+    }
+
+    @Test fun aFirstEmittedDifferentAccountRevokesPublishedTemperatureScope() = runTest {
+        val a = HistoryReadScope(HistoryConnectionSource.CLOUD, "cloud", "alice", "https://api.example")
+        val b = HistoryReadScope(HistoryConnectionSource.CLOUD, "cloud", "bob", "https://api.example")
+        var state = TemperatureTrendUiState()
+        var published: HistoryReadScope? = null
+        val source = Source { _, _ ->
+            TemperatureTrendSnapshot(
+                listOf(TemperaturePoint(now.minusSeconds(60).toEpochMilli(), 0.0, -4.0)),
+                verifiedReadScope = a)
+        }
+        val controller = TemperatureTrendRefreshController(
+            source, this, { now }, onVerifiedScope = { published = it }) { state = it }
+        controller.refresh(1, TemperatureTrendWindow.SEVEN)
+        runCurrent()
+        assertEquals(a, published)
+        assertEquals(0.0, state.points.single().insideTemp!!, 0.0)
+        // The first scope Flow emission is B. Blind drop(1) would leak A.
+        assertTrue(shouldInvalidateScopedView(published, b))
+        controller.invalidate()
+        published = null
+        state = TemperatureTrendUiState(
+            isLoading = false, selectedWindow = state.selectedWindow, error = "identity_changed")
+        assertTrue(state.points.isEmpty())
+        assertNull(state.currentInsideTemp)
+        assertFalse(shouldInvalidateScopedView(published, b))
     }
 
     @Test fun oldCarUncancellableResponseCannotReplaceNewCar() = runTest {
@@ -113,13 +206,22 @@ class TemperatureTrendTruthTest {
     private fun drive(
         id: Int, start: String, inside: Double? = null, outside: Double? = null,
         quality: String = "observed"
-    ) = DriveSummary(
-        driveId = id, carId = 1, startDate = start, endDate = start, durationMin = 1,
-        startAddress = "", endAddress = "", distance = 1.0, speedMax = 0, speedAvg = 0,
-        powerMax = 0, powerMin = 0, startBatteryLevel = 50, endBatteryLevel = 50,
-        outsideTempAvg = outside, insideTempAvg = inside, energyConsumed = null,
-        efficiency = null, qualityState = quality
-    )
+    ): DriveSummary {
+        val end = runCatching { Instant.parse(start).plusSeconds(60).toString() }.getOrDefault(start)
+        val source = if (quality == "incomplete") "local_import" else "teslamate_archive"
+        val raw = DriveData(id, startDate = start, endDate = end, source = source,
+            qualityState = if (quality == "incomplete") null else "observed",
+            insideTempAvg = inside?.takeIf(Double::isFinite),
+            outsideTempAvg = outside?.takeIf(Double::isFinite))
+        return DriveSummary(
+            driveId = id, carId = 1, startDate = start, endDate = end, durationMin = 1,
+            startAddress = "", endAddress = "", distance = 1.0, speedMax = 0, speedAvg = 0,
+            powerMax = 0, powerMin = 0, startBatteryLevel = 50, endBatteryLevel = 50,
+            outsideTempAvg = outside, insideTempAvg = inside, energyConsumed = null,
+            efficiency = null, apiEvidence = HistorySummaryEvidenceCodec.encode(raw),
+            qualityState = quality, qualityReason = if (quality == "incomplete") "unverified" else "api"
+        )
+    }
 
     private class Source(
         private val response: suspend (Int, TemperatureTrendWindow) -> TemperatureTrendSnapshot

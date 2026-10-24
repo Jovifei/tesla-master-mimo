@@ -246,22 +246,35 @@ class HistoryDetailRepository(
         decode: (HistoryDetailReceipt, List<com.matelink.data.local.entity.HistoryDetailChunk>) -> T?
     ): HistoryDetailRead<T> {
         if (identity.kind != kind) return HistoryDetailRead(null, null, "detail_kind_mismatch")
-        val (receipt, chunks) = dao.readBundle(identity.identityKey)
-            ?: return HistoryDetailRead(null, null, dao.latestAny(identity.identityKey)?.lastFailureCode ?: "detail_not_cached")
-        if (receipt.localHistoryCarId != identity.localHistoryCarId ||
-            receipt.scopeFingerprint != identity.scopeFingerprint || receipt.kind != kind ||
-            receipt.recordId != identity.recordId || receipt.sourceKey != identity.sourceKey ||
-            receipt.sourceInstanceKey != identity.sourceInstanceKey ||
-            receipt.sourceIdKey != identity.sourceIdKey ||
-            receipt.startInstant != identity.startInstant || receipt.endInstant != identity.endInstant)
-            return HistoryDetailRead(null, receipt, "detail_identity_mismatch")
-        val detail = runCatching { decode(receipt, chunks) }.getOrNull()
-            ?: return HistoryDetailRead(null, receipt, "detail_cache_corrupt")
-        val newest = dao.latestAny(identity.identityKey)
-        val reason = if (newest != null && newest.localRevision > receipt.localRevision &&
-            newest.state == HistoryDetailReceiptState.PARTIAL) "detail_partial_newer"
-            else receipt.lastFailureCode
-        return HistoryDetailRead(detail, receipt, reason)
+        val candidates = dao.latestCompleteCandidates(identity.identityKey, 5)
+        if (candidates.isEmpty())
+            return HistoryDetailRead(null, null,
+                dao.latestAny(identity.identityKey)?.lastFailureCode ?: "detail_not_cached")
+        var rejectedNewer = false
+        for (receipt in candidates) {
+            if (receipt.localHistoryCarId != identity.localHistoryCarId ||
+                receipt.scopeFingerprint != identity.scopeFingerprint || receipt.kind != kind ||
+                receipt.recordId != identity.recordId || receipt.sourceKey != identity.sourceKey ||
+                receipt.sourceInstanceKey != identity.sourceInstanceKey ||
+                receipt.sourceIdKey != identity.sourceIdKey ||
+                receipt.startInstant != identity.startInstant || receipt.endInstant != identity.endInstant)
+                return HistoryDetailRead(null, receipt, "detail_identity_mismatch")
+            val chunks = dao.chunks(receipt.receiptId)
+            val detail = runCatching { decode(receipt, chunks) }.getOrNull()
+            if (detail == null) {
+                rejectedNewer = true
+                continue
+            }
+            val newest = dao.latestAny(identity.identityKey)
+            val reason = when {
+                rejectedNewer -> "detail_recovered_older_revision"
+                newest != null && newest.localRevision > receipt.localRevision &&
+                    newest.state == HistoryDetailReceiptState.PARTIAL -> "detail_partial_newer"
+                else -> receipt.lastFailureCode
+            }
+            return HistoryDetailRead(detail, receipt, reason)
+        }
+        return HistoryDetailRead(null, candidates.first(), "detail_cache_corrupt")
     }
 
     suspend fun recordFailure(identity: HistoryDetailIdentity, code: String) {

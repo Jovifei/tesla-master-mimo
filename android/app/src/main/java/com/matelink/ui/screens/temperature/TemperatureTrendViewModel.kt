@@ -3,14 +3,18 @@ package com.matelink.ui.screens.temperature
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.local.HistoryIdentityUnavailableException
+import com.matelink.data.local.HistoryReadScope
+import com.matelink.domain.history.shouldInvalidateScopedView
 import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import com.matelink.util.parseIsoInstant
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -30,7 +34,10 @@ enum class TemperatureTrendWindow(val days: Int) {
 data class TemperaturePoint(
     val timestampMs: Long,
     val insideTemp: Double?,
-    val outsideTemp: Double?
+    val outsideTemp: Double?,
+    /** The observation is a drive average anchored to the saved drive-start Instant. */
+    val source: String? = null,
+    val timeBasis: String = "drive_start_trip_average"
 )
 
 data class TemperatureTrendUiState(
@@ -45,6 +52,10 @@ data class TemperatureTrendUiState(
     val minInsideTemp: Double? = null,
     val minOutsideTemp: Double? = null,
     val points: List<TemperaturePoint> = emptyList(),
+    val historyDriveCount: Int = 0,
+    val historyQualifiedCount: Int = 0,
+    val latestHistoryObservedAtMs: Long? = null,
+    val historyUnavailableReason: String? = null,
     val error: String? = null
 ) {
     val isUnavailable: Boolean get() = points.isEmpty()
@@ -56,13 +67,44 @@ internal fun observedTemperaturePoints(
 ): List<TemperaturePoint> {
     val from = now.minus(window.days.toLong(), ChronoUnit.DAYS)
     return drives.mapNotNull { drive ->
-        if (drive.qualityState !in setOf("observed", "derived")) return@mapNotNull null
-        val at = runCatching { Instant.parse(drive.startDate) }.getOrNull() ?: return@mapNotNull null
+        val at = parseIsoInstant(drive.startDate) ?: return@mapNotNull null
         if (at.isBefore(from) || at.isAfter(now)) return@mapNotNull null
-        val inside = drive.insideTempAvg?.takeIf(Double::isFinite)
-        val outside = drive.outsideTempAvg?.takeIf(Double::isFinite)
-        if (inside == null && outside == null) null else TemperaturePoint(at.toEpochMilli(), inside, outside)
+        val observation = drive.qualifiedTemperatureReceipt(now) ?: return@mapNotNull null
+        val inside = observation.first?.takeIf(Double::isFinite)
+        val outside = observation.second?.takeIf(Double::isFinite)
+        if (inside == null && outside == null) null else TemperaturePoint(
+            at.toEpochMilli(), inside, outside, observation.third)
     }.sortedBy { it.timestampMs }
+}
+
+/** The persisted raw drive is the only authority for historical temperature.
+ * Room quality labels and old non-null scalar columns alone do not prove it.
+ */
+private fun DriveSummary.qualifiedTemperatureReceipt(now: Instant): Triple<Double?, Double?, String>? {
+    val raw = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive) ?: return null
+    if (raw.driveId != driveId || raw.sourceRecordIdentity.conflicted) return null
+    val first = parseIsoInstant(raw.startDate) ?: return null
+    val last = parseIsoInstant(raw.endDate) ?: return null
+    if (first != parseIsoInstant(startDate) || last != parseIsoInstant(endDate) ||
+        !last.isAfter(first) || last.isAfter(now)) return null
+    val source = raw.source?.takeIf {
+        it in setOf("teslamate_archive", "fleet_api", "telemetry_mqtt")
+    } ?: return null
+    val admissible = when (qualityState) {
+        "observed", "derived" ->
+            raw.qualityState in setOf("observed", "derived") ||
+                (source == "teslamate_archive" && qualityReason == "legacy_remote_api" &&
+                    raw.qualityState == null && raw.qualityReason == null)
+        "incomplete" -> source == "teslamate_archive" &&
+            qualityReason == "remote_quality_unavailable" &&
+            raw.qualityState == null && raw.qualityReason == null
+        else -> false
+    }
+    if (!admissible) return null
+    val inside = raw.insideTempAvg?.takeIf(Double::isFinite)
+    val outside = raw.outsideTempAvg?.takeIf(Double::isFinite)
+    if (inside == null && outside == null) return null
+    return Triple(inside, outside, source)
 }
 
 internal data class TemperatureTrendSnapshot(
@@ -70,6 +112,9 @@ internal data class TemperatureTrendSnapshot(
     val currentInsideTemp: Double? = null,
     val currentOutsideTemp: Double? = null,
     val currentStatusAvailable: Boolean = false,
+    val historyDriveCount: Int = points.size,
+    val historyUnavailableReason: String? = null,
+    val verifiedReadScope: HistoryReadScope? = null,
     val stillCurrent: suspend () -> Boolean = { true }
 )
 
@@ -101,11 +146,21 @@ private class RepositoryTemperatureTrendSource(
         verify()
         val currentInside = status?.insideTemp?.toDouble()?.takeIf(Double::isFinite)
         val currentOutside = status?.outsideTemp?.toDouble()?.takeIf(Double::isFinite)
+        val from = now.minus(window.days.toLong(), ChronoUnit.DAYS)
+        val total = drives.count { row ->
+            parseIsoInstant(row.startDate)?.let { !it.isBefore(from) && !it.isAfter(now) } == true &&
+                row.qualityState != "quarantined"
+        }
+        val points = observedTemperaturePoints(drives, window, now)
         return TemperatureTrendSnapshot(
-            points = observedTemperaturePoints(drives, window, now),
+            points = points,
             currentInsideTemp = currentInside,
             currentOutsideTemp = currentOutside,
             currentStatusAvailable = currentInside != null || currentOutside != null,
+            historyDriveCount = total,
+            historyUnavailableReason = if (points.isNotEmpty()) null else
+                if (total == 0) "no_history_in_window" else "no_qualified_trip_temperatures",
+            verifiedReadScope = scope,
             stillCurrent = { contexts.isHistoryContextCurrent(scope, context) }
         )
     }
@@ -121,7 +176,11 @@ private fun TemperatureTrendSnapshot.toUiState(window: TemperatureTrendWindow): 
         maxOutsideTemp = points.mapNotNull { it.outsideTemp }.maxOrNull()?.roundOne(),
         minInsideTemp = points.mapNotNull { it.insideTemp }.minOrNull()?.roundOne(),
         minOutsideTemp = points.mapNotNull { it.outsideTemp }.minOrNull()?.roundOne(),
-        points = points
+        points = points,
+        historyDriveCount = historyDriveCount,
+        historyQualifiedCount = points.size,
+        latestHistoryObservedAtMs = points.lastOrNull()?.timestampMs,
+        historyUnavailableReason = historyUnavailableReason
     )
 }
 
@@ -129,6 +188,7 @@ internal class TemperatureTrendRefreshController(
     private val source: TemperatureTrendSource,
     private val scope: CoroutineScope,
     private val now: () -> Instant = Instant::now,
+    private val onVerifiedScope: (HistoryReadScope?) -> Unit = {},
     private val onState: (TemperatureTrendUiState) -> Unit
 ) {
     private var requestToken = 0L
@@ -142,7 +202,9 @@ internal class TemperatureTrendRefreshController(
             try {
                 val snapshot = source.load(carId, window, now())
                 if (token == requestToken) {
-                    onState(if (snapshot.stillCurrent()) snapshot.toUiState(window)
+                    val current = snapshot.stillCurrent()
+                    onVerifiedScope(if (current) snapshot.verifiedReadScope else null)
+                    onState(if (current) snapshot.toUiState(window)
                         else TemperatureTrendUiState(isLoading = false, selectedWindow = window, error = "identity_changed"))
                 }
             } catch (_: CancellationException) {
@@ -169,16 +231,22 @@ class TemperatureTrendViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(TemperatureTrendUiState())
     val uiState: StateFlow<TemperatureTrendUiState> = _uiState.asStateFlow()
     private var currentCarId: Int? = null
+    private var visibleScope: HistoryReadScope? = null
     private val refreshController = TemperatureTrendRefreshController(
         RepositoryTemperatureTrendSource(repository, driveSummaryDao, vehicleContextRepository),
         viewModelScope,
+        onVerifiedScope = { visibleScope = it },
         onState = { _uiState.value = it }
     )
 
     init {
         viewModelScope.launch {
-            vehicleContextRepository.historyScopeChanges.drop(1).collect {
+            vehicleContextRepository.historyScopeChanges.collect { next ->
+                // A first queued emission can ALREADY be the new account.
+                // Skip only when the actually displayed verified source matches.
+                if (!shouldInvalidateScopedView(visibleScope, next)) return@collect
                 refreshController.invalidate()
+                visibleScope = null
                 _uiState.value = TemperatureTrendUiState(
                     isLoading = false, selectedWindow = _uiState.value.selectedWindow, error = "identity_changed")
             }

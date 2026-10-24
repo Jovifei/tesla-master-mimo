@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.matelink.BuildConfig
 import com.matelink.data.api.models.TelemetryPairingStatus
 import com.matelink.data.api.validatedJourVoltApiBaseUrl
+import com.matelink.data.api.credentialHttpClientBuilder
 import com.matelink.data.local.ConnectionMode
 import com.matelink.data.local.ConnectionModeStore
 import com.matelink.data.local.JourVoltConsentStore
@@ -522,11 +523,7 @@ class TeslaLoginViewModel @Inject constructor(
             allowLocalHttp = usesDebugMockBaseUrl
         )
             ?: error("JourVolt cloud API must be an HTTPS root URL")
-        return Retrofit.Builder()
-            .baseUrl(baseUrl)
-            .addConverterFactory(MoshiConverterFactory.create(moshi))
-            .build()
-            .create(TeslaAuthApi::class.java)
+        return createTeslaAuthApi(moshi, baseUrl)
     }
 
     private fun beginRequest(): Long = requestGeneration.incrementAndGet()
@@ -885,6 +882,13 @@ class TeslaLoginViewModel @Inject constructor(
     }
 
 }
+
+internal fun createTeslaAuthApi(moshi: Moshi, baseUrl: String): TeslaAuthApi = Retrofit.Builder()
+    .baseUrl(baseUrl)
+    .client(credentialHttpClientBuilder().build())
+    .addConverterFactory(MoshiConverterFactory.create(moshi))
+    .build()
+    .create(TeslaAuthApi::class.java)
 
 internal fun teslaLoginErrorMessageRes(code: Int): Int = when (code) {
     400 -> R.string.tesla_login_error_request

@@ -190,7 +190,8 @@ class DriveDetailViewModel @Inject constructor(
                     val receipt = persisted?.receipt
                     _uiState.update { it.copy(historySyncWarning = if (pointWriteFailed)
                         "history_detail_points_missing" else when {
-                        receipt?.sourceInstanceVerified != true || receipt?.sourceIdVerified != true ->
+                        receipt == null -> "history_detail_points_missing"
+                        receipt.sourceInstanceVerified != true || receipt?.sourceIdVerified != true ->
                             "history_detail_source_unverified"
                         receipt?.providerTotalVerified != true -> "history_detail_total_unverified"
                         else -> null

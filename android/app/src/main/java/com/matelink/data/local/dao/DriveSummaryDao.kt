@@ -4,6 +4,10 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
 import androidx.room.Transaction
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import com.matelink.data.local.HistorySourceReceiptArchive
+import com.matelink.data.local.entity.HistoryDetailReceipt
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.data.repository.mergeStoredDrive
 import com.matelink.data.local.entity.DriveSummary
@@ -76,7 +80,10 @@ interface DriveSummaryDao {
     /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
     @Transaction
     suspend fun upsertPreservingEvidence(rows: List<DriveSummary>) {
-        persistDriveRowsWithoutEvidenceLoss(rows, ::get, ::upsert)
+        persistDriveRowsWithoutEvidenceLoss(rows, ::getAnyForPersistence, ::upsert) { previous ->
+            val original = HistorySourceReceiptArchive.capture(previous)
+            if (original != null) archivePrior(original)
+        }
     }
 
     /** Retain a missing detail as visible unknown; rollback a concurrent identity change. */
@@ -87,6 +94,26 @@ interface DriveSummaryDao {
         if (newest.apiEvidence != expectedEvidence) return
         upsert(newest.copy(apiEvidence = HistorySummaryEvidenceCodec.markDetailTerminal404(newest.apiEvidence, carId)))
         ensureCurrent()
+    }
+
+    @Query("SELECT COUNT(*) FROM history_detail_receipts WHERE receiptId = :receiptId")
+    suspend fun archiveExists(receiptId: String): Int
+
+    @Query("SELECT COALESCE(SUM(encodedByteCount), 0) FROM history_detail_receipts WHERE state='archived_source_conflict'")
+    suspend fun archiveUsedBytes(): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertConflictArchive(receipt: HistoryDetailReceipt)
+
+    suspend fun archivePrior(receipt: HistoryDetailReceipt) {
+        if (archiveExists(receipt.receiptId) > 0) return
+        val maxBytes = 64L * 1024 * 1024
+        val used = archiveUsedBytes()
+        check(receipt.encodedByteCount >= 0L && used <= maxBytes &&
+            receipt.encodedByteCount <= maxBytes - used) {
+            "history_conflict_archive_budget_exceeded"
+        }
+        insertConflictArchive(receipt)
     }
 
     // === CRUD Operations ===
@@ -116,6 +143,10 @@ interface DriveSummaryDao {
 
     @Query("SELECT * FROM drives_summary WHERE driveId = :driveId AND carId = :carId AND qualityState != 'quarantined'")
     suspend fun get(carId: Int, driveId: Int): DriveSummary?
+
+    /** Preserve quarantined raw receipts too; the presentation get() intentionally hides them. */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND driveId = :id LIMIT 1")
+    suspend fun getAnyForPersistence(carId: Int, id: Int): DriveSummary?
 
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
     fun observeAll(carId: Int): Flow<List<DriveSummary>>
@@ -560,11 +591,31 @@ data class MonthlyDriveAggregation(
 internal suspend fun persistDriveRowsWithoutEvidenceLoss(
     rows: List<DriveSummary>,
     get: suspend (Int, Int) -> DriveSummary?,
-    upsert: suspend (DriveSummary) -> Unit
+    upsert: suspend (DriveSummary) -> Unit,
+    archive: suspend (DriveSummary) -> Unit = {}
 ) {
     rows.forEach { incoming ->
         val prior = get(incoming.carId, incoming.driveId)
+        val superseded = prior != null && HistorySourceReceiptArchive.replaced(prior, incoming)
         val merged = mergeStoredDrive(incoming, prior)
+        if (superseded) {
+            // Archive the DISCARDED original, not always the prior row.
+            // A foreign observed-looking import can be correctly rejected by
+            // the resolver; silently dropping its distinct raw bytes would
+            // still lose history. Room's enclosing @Transaction is atomic.
+            val priorBytes = prior!!.apiEvidence
+            val incomingBytes = incoming.apiEvidence
+            when {
+                merged.apiEvidence == priorBytes && merged.apiEvidence != incomingBytes ->
+                    archive(incoming)
+                merged.apiEvidence == incomingBytes && merged.apiEvidence != priorBytes ->
+                    archive(prior)
+                else -> {
+                    archive(prior)
+                    archive(incoming)
+                }
+            }
+        }
         val marked = merged.copy(apiEvidence = HistorySummaryEvidenceCodec.carryDetailTerminal404(
             merged.apiEvidence, prior?.apiEvidence, incoming.carId))
         // Legacy terminal rows lost their original qualification in older code. Do not guess it back.

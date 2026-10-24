@@ -52,6 +52,22 @@ class JourVoltSessionStore internal constructor(private val prefs: SharedPrefere
         _session.value = session
     }
 
+    /** A late refresh must not replace a logout, re-login, or newer rotation. */
+    @Synchronized internal fun rotateIfCurrent(
+        expected: JourVoltSession, generation: Long,
+        accessToken: String, refreshToken: String, expiresInSeconds: Long
+    ): Boolean {
+        if (_session.value != expected || identityGeneration != generation) return false
+        save(accessToken, refreshToken, expiresInSeconds, expected.userId)
+        return true
+    }
+
+    @Synchronized internal fun clearIfCurrent(expected: JourVoltSession, generation: Long): Boolean {
+        if (_session.value != expected || identityGeneration != generation) return false
+        clear()
+        return true
+    }
+
     @Synchronized fun clear() {
         identityGeneration++
         val nextEpoch = Math.addExact(prefs.getLong(KEY_IDENTITY_EPOCH, 0L), 1L)

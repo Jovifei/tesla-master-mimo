@@ -14,6 +14,7 @@ import com.matelink.data.model.Currency
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.UnifiedHistoryRepository
+import com.matelink.data.repository.VerifiedHistoryReadContext
 import com.matelink.domain.LocalDayBoundaries
 import com.matelink.domain.analytics.ChargeCostSource
 import com.matelink.domain.analytics.EffectiveChargeCost
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -161,6 +163,7 @@ class ChargesViewModel @Inject constructor(
     private var carId: Int? = null
     private val latestLoad = LatestHistoryLoad()
     private var historyCarId: Int? = null
+    private var activeHistoryProof: VerifiedHistoryReadContext? = null
     private var showShortDrivesCharges: Boolean = false
     private var allCharges: List<ChargeData> = emptyList()
     private var allCostRecords: List<ChargeCostOverride> = emptyList()
@@ -204,6 +207,29 @@ class ChargesViewModel @Inject constructor(
     init {
         observeSettings()
         observeChargePriceOverrides()
+        viewModelScope.launch {
+            historyRepository.scopeChanges?.collect { scope ->
+                val id = carId ?: return@collect
+                val proof = activeHistoryProof
+                if (proof != null && scope == proof.scope) return@collect
+                if (proof == null && allCharges.isEmpty()) return@collect
+                latestLoad.invalidate()
+                activeHistoryProof = null
+                historyCarId = null
+                allCharges = emptyList()
+                allCostRecords = emptyList()
+                val state = _uiState.value
+                _uiState.value = state.copy(isLoading = true, charges = emptyList(),
+                    summary = ChargesSummary(), chartData = emptyList(),
+                    dcChargeIds = emptySet(), processedChargeIds = emptySet(),
+                    effectiveCosts = emptyMap(), priceOverrides = emptyMap(),
+                    pendingLegacyAmounts = emptyMap(), pendingBoundAmounts = emptyMap(),
+                    otherCurrencyAmounts = emptyMap(), freeSupercharging = false,
+                    historySyncWarning = null, error = "history_identity_unavailable")
+                loadCharges(state.startDate, state.endDate)
+                loadCarSettings(id)
+            }
+        }
     }
 
     private fun observeChargePriceOverrides() {
@@ -211,7 +237,9 @@ class ChargesViewModel @Inject constructor(
             chargeCostOverrideStore.ensureLegacyMigrated()
             chargeCostOverrideStore.observeAllRecords().collect { records ->
                 allCostRecords = records
-                if (allCharges.isNotEmpty()) applyFiltersAndUpdateState()
+                val proof = activeHistoryProof
+                if (allCharges.isNotEmpty() && proof != null &&
+                    historyRepository.isContextCurrent(proof)) applyFiltersAndUpdateState()
             }
         }
     }
@@ -241,6 +269,8 @@ class ChargesViewModel @Inject constructor(
         if (carId != id) {
             carId = id
             historyCarId = null
+            activeHistoryProof = null
+            latestLoad.invalidate()
             allCharges = emptyList()
             allCostRecords = emptyList()
             _uiState.update { it.copy(charges = emptyList(), freeSupercharging = false, priceOverrides = emptyMap(), effectiveCosts = emptyMap(), pendingLegacyAmounts = emptyMap(), pendingBoundAmounts = emptyMap(), otherCurrencyAmounts = emptyMap(), chartData = emptyList(), summary = ChargesSummary(), dcChargeIds = emptySet(), processedChargeIds = emptySet(), availableLocations = emptyList(), error = null, historySyncWarning = null, localArchiveLinkPending = false) }
@@ -260,16 +290,18 @@ class ChargesViewModel @Inject constructor(
 
     private fun loadCarSettings(id: Int) {
         viewModelScope.launch {
+            val resolved = historyRepository.resolveContext(id)
+            val proof = (resolved as? ApiResult.Success)?.data ?: return@launch
+            if (!historyRepository.isContextCurrent(proof) || carId != id) return@launch
             when (val result = repository.getCar(id)) {
                 is ApiResult.Success -> {
-                    if (carId != id) return@launch
-                    val free = result.data.carSettings?.freeSupercharging ?: false
+                    if (carId != id || !historyRepository.isContextCurrent(proof) ||
+                        !proof.matchesCar(result.data)) return@launch
+                    val free = result.data.carSettings?.freeSupercharging == true
                     _uiState.update { it.copy(freeSupercharging = free) }
                     if (allCharges.isNotEmpty()) applyFiltersAndUpdateState()
                 }
-                is ApiResult.Error -> {
-                    // Non-fatal — the hint is a nice-to-have, not load-critical
-                }
+                is ApiResult.Error -> Unit
             }
         }
     }
@@ -393,6 +425,13 @@ class ChargesViewModel @Inject constructor(
             ensureCurrent()
             when (result) {
                 is ApiResult.Success -> {
+                    val proof = result.data.verifiedReadContext ?: return@launch
+                    suspend fun checkProof() {
+                        ensureCurrent()
+                        if (carId != id || !historyRepository.isContextCurrent(proof))
+                            throw CancellationException("Charges history identity changed")
+                    }
+                    checkProof()
                     val dcChargeIds = try {
                         aggregateDao.getDcChargeIds(result.data.context.localHistoryCarId).toSet()
                     } catch (e: CancellationException) { throw e } catch (e: Exception) {
@@ -403,7 +442,8 @@ class ChargesViewModel @Inject constructor(
                     } catch (e: CancellationException) { throw e } catch (e: Exception) {
                         emptySet()
                     }
-                    ensureCurrent()
+                    checkProof()
+                    activeHistoryProof = proof
                     historyCarId = result.data.context.localHistoryCarId
                     allCharges = result.data.charges
                     val granularity = determineGranularity(startDate, endDate)
@@ -419,12 +459,14 @@ class ChargesViewModel @Inject constructor(
                         )
                     }
 
+                    checkProof()
                     applyFiltersAndUpdateState()
                 }
                 is ApiResult.Error -> {
                     if (result.message == com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE) {
                         allCharges = emptyList()
                         historyCarId = null
+                        activeHistoryProof = null
                         allCostRecords = emptyList()
                         _uiState.update { it.copy(charges = emptyList(), freeSupercharging = false, priceOverrides = emptyMap(), effectiveCosts = emptyMap(), pendingLegacyAmounts = emptyMap(), pendingBoundAmounts = emptyMap(), otherCurrencyAmounts = emptyMap(), chartData = emptyList(), summary = ChargesSummary(), dcChargeIds = emptySet(), processedChargeIds = emptySet(), availableLocations = emptyList(), localArchiveLinkPending = false, historySyncWarning = null) }
                     }

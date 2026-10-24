@@ -694,6 +694,9 @@ private fun AnalysisSummaryCard(
     units: Units?,
     onNavigateToMileage: () -> Unit
 ) {
+    val hasUnpricedCharges = coverage?.let {
+        it.chargeRecordCount > 0 && it.chargeCostSampleCount == 0
+    } == true
     StatsCard(
         title = stringResource(R.string.stats_analysis_summary),
         icon = Icons.Default.Analytics,
@@ -750,6 +753,8 @@ private fun AnalysisSummaryCard(
                 title = stringResource(R.string.stats_analysis_cost),
                 metric = summary.totalCost,
                 formatter = { String.format(Locale.getDefault(), "%.2f %s", it, currencySymbol) },
+                unavailableValue = if (hasUnpricedCharges) stringResource(R.string.stats_cost_not_recorded) else null,
+                unavailableDetail = if (hasUnpricedCharges) stringResource(R.string.stats_cost_recording_hint) else null,
                 modifier = Modifier.weight(1f)
             )
             SummaryMetricItem(
@@ -1043,6 +1048,8 @@ private fun SummaryMetricItem(
     formatter: ((Double) -> String)? = null,
     value: String? = null,
     detail: String? = null,
+    unavailableValue: String? = null,
+    unavailableDetail: String? = null,
     modifier: Modifier = Modifier
 ) {
     val available = metric as? MetricState.Available<*>
@@ -1051,7 +1058,7 @@ private fun SummaryMetricItem(
         is MetricState.Available<*> -> numericValue?.let { formatter?.invoke(it) }
             ?: stringResource(R.string.stats_analysis_unavailable)
         is MetricState.Collecting -> stringResource(R.string.stats_analysis_collecting_value)
-        is MetricState.Unavailable -> stringResource(R.string.stats_analysis_unavailable)
+        is MetricState.Unavailable -> unavailableValue ?: stringResource(R.string.stats_analysis_unavailable)
         is MetricState.Failed -> stringResource(R.string.stats_analysis_unavailable)
         null -> stringResource(R.string.analysis_no_records)
     }
@@ -1067,7 +1074,7 @@ private fun SummaryMetricItem(
             } ?: label
         }
         is MetricState.Collecting -> stringResource(R.string.stats_analysis_collecting)
-        is MetricState.Unavailable -> stringResource(R.string.stats_analysis_unavailable)
+        is MetricState.Unavailable -> unavailableDetail ?: stringResource(R.string.stats_analysis_unavailable)
         is MetricState.Failed -> if (metric.retryable) {
             stringResource(R.string.stats_analysis_retryable)
         } else {

@@ -50,6 +50,13 @@ import kotlin.math.roundToInt
 private val ColorCabin = Color(0xFF00897B)   // Teal for Cabin (Inside)
 private val ColorOutside = Color(0xFF1E88E5) // Blue for Outside
 
+/** Axes must enclose negative/zero and every qualified real sample, even below −20°C. */
+internal fun realTemperatureAxisBounds(values: List<Double>): Pair<Double, Double>? {
+    val finite = values.filter(Double::isFinite)
+    if (finite.isEmpty()) return null
+    return kotlin.math.floor(finite.min() - 3.0) to kotlin.math.ceil(finite.max() + 3.0)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TemperatureTrendScreen(
@@ -165,6 +172,22 @@ fun TemperatureTrendScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Text(
+                    text = stringResource(R.string.temperature_observed_coverage,
+                        state.historyQualifiedCount, state.historyDriveCount),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                state.latestHistoryObservedAtMs?.let { at ->
+                    val localTime = java.time.Instant.ofEpochMilli(at)
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+                    Text(
+                        text = stringResource(R.string.temperature_last_qualified_trip, localTime),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 if (state.isUnavailable) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -173,7 +196,11 @@ fun TemperatureTrendScreen(
                         )
                     ) {
                         Text(
-                            text = stringResource(R.string.temperature_trend_unavailable),
+                            text = stringResource(if (state.historyUnavailableReason == "no_history_in_window") {
+                                R.string.temperature_no_trip_history
+                            } else {
+                                R.string.temperature_no_qualified_trip_samples
+                            }),
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.padding(20.dp)
                         )
@@ -243,10 +270,7 @@ private fun TemperatureTrendChartCard(points: List<TemperaturePoint>) {
     val allValues = insideValues + outsideValues
     if (allValues.isEmpty()) return
 
-    val minVal = allValues.minOrNull() ?: 15.0
-    val maxVal = allValues.maxOrNull() ?: 35.0
-    val yMin = kotlin.math.floor(minVal - 3.0).coerceAtLeast(-20.0)
-    val yMax = kotlin.math.ceil(maxVal + 3.0)
+    val (yMin, yMax) = realTemperatureAxisBounds(allValues) ?: return
     val yRange = (yMax - yMin).takeIf { it > 0.0 } ?: 10.0
 
     val firstT = points.firstOrNull()?.timestampMs ?: 0L

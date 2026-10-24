@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.CarData
 import com.matelink.data.api.models.CarStatus
+import com.matelink.data.api.models.validHistoryVehicleUid
 import com.matelink.data.api.models.DataReadiness
 import com.matelink.data.api.models.Units
 import com.matelink.data.repository.ApiErrorKind
@@ -26,11 +27,12 @@ import com.matelink.domain.telemetry.SnapshotFreshness
 import com.matelink.domain.telemetry.snapshotEvidence
 import com.matelink.domain.telemetry.usableVehicleCoordinates
 import com.matelink.domain.map.VehiclePositionResolver
-import com.matelink.domain.map.mergeCarStatusPosition
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
@@ -112,6 +114,7 @@ class DashboardTpmsReceiptCollector @Inject constructor(
 data class DashboardUiState(
     val isLoading: Boolean = true,
     val car: CarData? = null,
+    val requestedCarId: Int? = null,
     val status: CarStatus? = null,
     val error: String? = null,
     val errorCode: Int? = null,
@@ -130,6 +133,20 @@ data class DashboardUiState(
     val isAmapConfigured: Boolean = false,
     val isHudDismissed: Boolean = false
 )
+
+/** Final publication fence: a late response from a previous login cannot reuse a numeric car id. */
+internal fun dashboardStatusMayPublish(
+    capturedScope: com.matelink.data.local.HistoryReadScope?,
+    vehicle: com.matelink.data.local.VehicleContext?,
+    currentScope: com.matelink.data.local.HistoryReadScope?,
+    requestedCarId: Int,
+    selectedCarId: Int,
+    requestGeneration: Long,
+    currentGeneration: Long,
+    vehicleCurrent: Boolean
+): Boolean = capturedScope != null && vehicle != null && capturedScope == currentScope &&
+    vehicleCurrent && requestedCarId == selectedCarId && vehicle.remoteApiCarId == requestedCarId &&
+    requestGeneration == currentGeneration
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
@@ -152,6 +169,7 @@ class DashboardViewModel @Inject constructor(
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
     private var requestGeneration = 0L
+    private var activePhotoProof: Pair<com.matelink.data.local.HistoryReadScope, com.matelink.data.local.VehicleContext>? = null
 
     init {
         val hasAmap = amapSettingsStore.currentKey().isNotBlank()
@@ -160,14 +178,30 @@ class DashboardViewModel @Inject constructor(
         startPolling()
         viewModelScope.launch {
             vehiclePhotoStore.photoUpdateSignal.collect {
-                val carId = _uiState.value.car?.carId ?: return@collect
-                val photo = vehiclePhotoStore.getCustomPhotoFile(carId)
-                _uiState.update { it.copy(customPhotoFile = photo) }
+                val (scope, vehicle) = activePhotoProof ?: return@collect
+                if (!vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) return@collect
+                val photo = vehiclePhotoStore.getScopedPhoto(scope, vehicle)
+                _uiState.update { state ->
+                    if (activePhotoProof == (scope to vehicle)) state.copy(customPhotoFile = photo)
+                    else state
+                }
             }
         }
         viewModelScope.launch {
             amapSettingsStore.settings.collect { settings ->
                 _uiState.update { it.copy(isAmapConfigured = settings.hasKey) }
+            }
+        }
+        viewModelScope.launch {
+            var first = true
+            vehicleContextRepository.historyScopeChanges.collect {
+                if (first) { first = false; return@collect }
+                requestGeneration++
+                activePhotoProof = null
+                val current = _uiState.value
+                _uiState.value = DashboardUiState(isHudDismissed = current.isHudDismissed,
+                    isAmapConfigured = current.isAmapConfigured)
+                loadDashboard()
             }
         }
     }
@@ -180,6 +214,48 @@ class DashboardViewModel @Inject constructor(
         vehicleContextRepository.captureReadScope()
     } catch (cancelled: CancellationException) { throw cancelled }
     catch (_: Exception) { null }
+
+    /** Only the current authenticated /cars row may authorize cache binding.
+     * No numeric-ID fallback can qualify a UID after failed discovery.
+     */
+    private fun statusCacheContext(scope: com.matelink.data.local.HistoryReadScope?,
+                                   carId: Int, verifiedCar: CarData?): com.matelink.data.local.VehicleContext? {
+        if (scope == null || verifiedCar?.carId != carId) return null
+        if (scope.source == com.matelink.data.local.HistoryConnectionSource.CLOUD &&
+            !validHistoryVehicleUid(verifiedCar.vehicleUid)) return null
+        return try {
+            vehicleContextRepository.resolve(verifiedCar, scope)
+                .takeIf { vehicleContextRepository.isHistoryContextCurrentNow(scope, it) }
+        } catch (e: CancellationException) { throw e }
+        catch (_: Exception) { null }
+    }
+
+    /** A received live status is displayable without durable UID proof, but
+     * may not be written to history, cache, or external geocoding.
+     */
+    private suspend fun liveScopeCurrent(scope: com.matelink.data.local.HistoryReadScope?,
+                                         carId: Int, generation: Long): Boolean {
+        if (scope == null || generation != requestGeneration) return false
+        return try {
+            val current = vehicleContextRepository.captureReadScope()
+            val selected = settingsRepository.currentCarId.first()
+            generation == requestGeneration && scope == current && carId == selected
+        } catch (e: CancellationException) { throw e }
+        catch (_: Exception) { false }
+    }
+
+    private suspend fun statusIdentityCurrent(scope: com.matelink.data.local.HistoryReadScope?,
+                                               vehicle: com.matelink.data.local.VehicleContext?,
+                                               carId: Int, generation: Long): Boolean {
+        if (scope == null || vehicle == null || generation != requestGeneration) return false
+        return try {
+            dashboardStatusMayPublish(scope, vehicle,
+                vehicleContextRepository.captureReadScope(),
+                carId, settingsRepository.currentCarId.first(), generation, requestGeneration,
+                vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle))
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { false }
+    }
 
     private suspend fun collectTpms(
         scope: com.matelink.data.local.HistoryReadScope?, car: CarData?, rawStatus: CarStatus?, generation: Long
@@ -198,9 +274,13 @@ class DashboardViewModel @Inject constructor(
     private fun loadDashboard() {
         val generation = ++requestGeneration
         viewModelScope.launch {
+            var capturedScope: com.matelink.data.local.HistoryReadScope? = null
+            var requestedCarId: Int? = null
             try {
                 val carId = settingsRepository.currentCarId.first()
+                requestedCarId = carId
                 val tpmsScope = captureTpmsScope()
+                capturedScope = tpmsScope
 
                 val carsResult = repository.getCars()
                 var car = when (carsResult) {
@@ -213,7 +293,7 @@ class DashboardViewModel @Inject constructor(
 
                 val effectiveCarId = car?.carId ?: carId
                 if (car == null && carsResult is ApiResult.Success) {
-                    if (generation != requestGeneration) return@launch
+                    if (!liveScopeCurrent(tpmsScope, carId, generation)) return@launch
                     _uiState.value = DashboardUiState(
                         isLoading = false,
                         error = "vehicle_not_found",
@@ -235,24 +315,34 @@ class DashboardViewModel @Inject constructor(
                     statusResult is ApiResult.Success -> statusResult.data.status
                     else -> null
                 }
-                collectTpms(tpmsScope, car, liveStatus, generation)
+                if (!liveScopeCurrent(tpmsScope, effectiveCarId, generation)) return@launch
                 // Vehicle discovery precedes the first live fetch; configuration may
                 // only have been persisted by that fetch. Refresh metadata, not OAuth.
                 if (liveStatus != null && car?.carDetails?.model.isNullOrBlank()) {
                     try {
                         val refreshed = repository.getCars()
-                        if (refreshed is ApiResult.Success) car = refreshedDashboardCar(car, refreshed.data)
+                        if (refreshed is ApiResult.Success) {
+                            car = if (dashboardUidReboundOrMissing(car, refreshed.data)) null
+                                else refreshedDashboardCar(car, refreshed.data)
+                        }
                     } catch (e: CancellationException) { throw e } catch (_: Exception) { /* keep live state */ }
                 }
-                if (generation != requestGeneration) return@launch
-                val cachedStatus = vehicleStatusStore.getCachedStatus(effectiveCarId)
-                val status = mergeCarStatusPosition(liveStatus, cachedStatus) ?: cachedStatus
-                val usesCachedPosition = usableVehicleCoordinates(liveStatus?.latitude, liveStatus?.longitude) == null &&
-                    usableVehicleCoordinates(cachedStatus?.latitude, cachedStatus?.longitude) != null
-                if (status != null && usableVehicleCoordinates(liveStatus?.latitude, liveStatus?.longitude) != null) {
-                    val observed = (adapterResult as? ApiResult.Success)?.data?.observedAt
-                    vehicleStatusStore.saveStatus(effectiveCarId, status, observed)
-                }
+                if (!liveScopeCurrent(tpmsScope, effectiveCarId, generation)) return@launch
+                // Rebinding between the original /cars lookup, snapshot and
+                // optional metadata refresh must not write TPMS or live cache
+                // under either vehicle identity. Live response remains visible.
+                collectTpms(tpmsScope, car.takeIf { carsResult is ApiResult.Success }, liveStatus, generation)
+                val cacheContext = statusCacheContext(tpmsScope, effectiveCarId,
+                    car.takeIf { carsResult is ApiResult.Success })
+                val cacheVerified = cacheContext != null &&
+                    statusIdentityCurrent(tpmsScope, cacheContext, effectiveCarId, generation)
+                val cachedStatus = if (cacheVerified) vehicleStatusStore.getCachedStatus(tpmsScope!!, cacheContext!!) else null
+                // The fresh response is usable without a UID. Only a fresh UID
+                // can authorize persistence or retrieval of a scoped cache.
+                val status = if (liveStatus != null && cacheVerified)
+                    vehicleStatusStore.reconcileAndSave(tpmsScope!!, cacheContext!!, liveStatus,
+                        (adapterResult as? ApiResult.Success)?.data?.observedAt)
+                else liveStatus ?: cachedStatus
 
                 val units = when {
                     adapterResult is ApiResult.Success -> adapterResult.data.units
@@ -270,9 +360,8 @@ class DashboardViewModel @Inject constructor(
                     )
                     else -> snapshotEvidence(null, null, emptyMap())
                 }
-                val displayEvidence = if (usesCachedPosition) {
-                    withCachedPositionEvidence(evidence)
-                } else evidence
+                // Previous GPS belongs to its own old receipt, never this response.
+                val displayEvidence = evidence
 
                 val primaryError = when {
                     carsResult is ApiResult.Error -> carsResult
@@ -280,29 +369,42 @@ class DashboardViewModel @Inject constructor(
                     adapterResult is ApiResult.Error && statusResult is ApiResult.Error -> statusResult
                     else -> null
                 }
-                if (generation != requestGeneration) return@launch
+                if (!liveScopeCurrent(tpmsScope, effectiveCarId, generation)) return@launch
                 val hasAmap = amapSettingsStore.currentKey().isNotBlank() || _uiState.value.isAmapConfigured
-                val resolvedAddress = loadCachedAddress(status, effectiveCarId)
+                // Only fresh, UID-qualified positions can be sent for geocoding.
+                val resolvedAddress = if (cacheVerified && liveStatus != null)
+                    loadCachedAddress(liveStatus, effectiveCarId) else null
+                if (!liveScopeCurrent(tpmsScope, effectiveCarId, generation) ||
+                    (cacheContext != null &&
+                     !statusIdentityCurrent(tpmsScope, cacheContext, effectiveCarId, generation)))
+                    return@launch
+                activePhotoProof = if (cacheVerified) tpmsScope!! to cacheContext!! else null
                 _uiState.value = DashboardUiState(
                     isLoading = false,
                     car = car,
+                    requestedCarId = effectiveCarId,
                     status = status,
                     error = if (status != null) null else primaryError?.message,
                     errorCode = if (status != null) null else primaryError?.code,
                     errorKind = if (status != null) null else primaryError?.kind,
-                    snapshotSource = displayEvidence.source ?: "cached",
-                    observedAt = displayEvidence.observedAt,
+                    snapshotSource = if (liveStatus != null) displayEvidence.source else "scoped_cached",
+                    observedAt = if (liveStatus != null) displayEvidence.observedAt
+                        else if (cacheVerified) vehicleStatusStore.getCachedObservedAt(tpmsScope!!, cacheContext!!) else null,
                     fieldSources = displayEvidence.fieldSources,
-                    snapshotFreshness = if (status != null) displayEvidence.freshness else SnapshotFreshness.UNAVAILABLE,
+                    snapshotFreshness = if (liveStatus != null) displayEvidence.freshness
+                        else if (cachedStatus != null) SnapshotFreshness.HISTORY else SnapshotFreshness.UNAVAILABLE,
                     snapshotMixedSources = displayEvidence.isMixed,
                     units = units,
                     cachedAddress = resolvedAddress,
-                    customPhotoFile = vehiclePhotoStore.getCustomPhotoFile(effectiveCarId),
+                    customPhotoFile = activePhotoProof?.let { (scope, vehicle) ->
+                        vehiclePhotoStore.getScopedPhoto(scope, vehicle)
+                    },
                     isAmapConfigured = hasAmap,
                     isHudDismissed = _uiState.value.isHudDismissed
                 )
 
                 launch {
+                    if (!cacheVerified) return@launch
                     val readinessResult = try {
                         repository.getDataReadiness(effectiveCarId)
                     } catch (e: CancellationException) {
@@ -311,7 +413,7 @@ class DashboardViewModel @Inject constructor(
                         null
                     }
                     val readiness = (readinessResult as? ApiResult.Success)?.data ?: return@launch
-                    if (generation != requestGeneration) return@launch
+                    if (!liveScopeCurrent(tpmsScope, effectiveCarId, generation)) return@launch
                     _uiState.update { current ->
                         if (current.car?.carId != effectiveCarId) {
                             current
@@ -327,7 +429,8 @@ class DashboardViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (generation != requestGeneration) return@launch
+                if (!liveScopeCurrent(capturedScope, requestedCarId ?: return@launch,
+                        generation)) return@launch
                 _uiState.value = DashboardUiState(
                     isLoading = false,
                     error = e.message,
@@ -339,115 +442,115 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /** Polling displays the request's raw status. Unlike the full /cars loader,
+     * it has no fresh UID proof; never persist or geocode it under an old mapping.
+     */
     private fun startPolling() {
         viewModelScope.launch {
             while (true) {
-                val currentState = _uiState.value.status?.state?.lowercase()
-                val currentSpeed = _uiState.value.status?.speed ?: 0.0
+                val state = _uiState.value.status
+                val speed = state?.speed ?: 0.0
                 val delayMs = when {
-                    currentState == "driving" || currentSpeed > 0.0 -> 8000L
-                    currentState == "charging" -> 15000L
-                    currentState == "asleep" -> 60000L
+                    state?.state?.lowercase() == "driving" || speed > 0.0 -> 8000L
+                    state?.state?.lowercase() == "charging" -> 15000L
+                    state?.state?.lowercase() == "asleep" -> 60000L
                     else -> 10000L
                 }
                 delay(delayMs)
                 val generation = requestGeneration
+                var capturedScope: com.matelink.data.local.HistoryReadScope? = null
+                var requestedCarId: Int? = null
                 try {
                     val carId = settingsRepository.currentCarId.first()
-                    val tpmsScope = captureTpmsScope()
-                    val tpmsCar = _uiState.value.car?.takeIf { it.carId == carId }
-                    when (val result = repository.getAdapterSnapshot(carId)) {
-                        is ApiResult.Success -> {
-                            val evidence = snapshotEvidence(result.data.source, result.data.observedAt, result.data.fieldSources)
-                            if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
-                            collectTpms(tpmsScope, tpmsCar, result.data.status, generation)
-                            var currentStatus = result.data.status
-                            val cachedStatus = vehicleStatusStore.getCachedStatus(carId)
-                            val resolvedStatus = mergeCarStatusPosition(currentStatus, cachedStatus) ?: currentStatus
-                            val usesCachedPosition = usableVehicleCoordinates(currentStatus.latitude, currentStatus.longitude) == null &&
-                                usableVehicleCoordinates(cachedStatus?.latitude, cachedStatus?.longitude) != null
-                            val displayEvidence = if (usesCachedPosition) {
-                                withCachedPositionEvidence(evidence)
-                            } else evidence
-                            _uiState.value = _uiState.value.copy(
-                                status = resolvedStatus,
-                                error = null,
-                                errorCode = null,
-                                errorKind = null,
-                                snapshotSource = displayEvidence.source,
-                                observedAt = displayEvidence.observedAt,
-                                fieldSources = displayEvidence.fieldSources,
-                                snapshotFreshness = displayEvidence.freshness,
-                                snapshotMixedSources = displayEvidence.isMixed,
-                                units = result.data.units,
-                                cachedAddress = loadCachedAddress(resolvedStatus, carId)
-                            )
-                            if (usableVehicleCoordinates(currentStatus.latitude, currentStatus.longitude) != null) {
-                                vehicleStatusStore.saveStatus(carId, resolvedStatus, result.data.observedAt)
-                            }
+                    requestedCarId = carId
+                    val scope = captureTpmsScope()
+                    capturedScope = scope
+                    if (!liveScopeCurrent(scope, carId, generation)) continue
+                    val snapshot = repository.getAdapterSnapshot(carId)
+                    val legacy = if (snapshot is ApiResult.Error) repository.getCarStatus(carId) else null
+                    if (!liveScopeCurrent(scope, carId, generation)) continue
+                    val raw = when {
+                        snapshot is ApiResult.Success -> snapshot.data.status
+                        legacy is ApiResult.Success -> legacy.data.status
+                        else -> null
+                    }
+                    if (raw != null) {
+                        val evidence = if (snapshot is ApiResult.Success) snapshotEvidence(
+                            snapshot.data.source, snapshot.data.observedAt, snapshot.data.fieldSources)
+                        else snapshotEvidence("teslamate_api", null, emptyMap())
+                        if (!liveScopeCurrent(scope, carId, generation)) continue
+                        _uiState.update { ui -> ui.copy(
+                            status = raw, error = null, errorCode = null, errorKind = null,
+                            snapshotSource = evidence.source, observedAt = evidence.observedAt,
+                            fieldSources = evidence.fieldSources, snapshotFreshness = evidence.freshness,
+                            snapshotMixedSources = evidence.isMixed,
+                            units = when {
+                                snapshot is ApiResult.Success -> snapshot.data.units
+                                legacy is ApiResult.Success -> legacy.data.units
+                                else -> ui.units
+                            }, cachedAddress = null)
                         }
-                        is ApiResult.Error -> {
-                            when (val legacy = repository.getCarStatus(carId)) {
-                                is ApiResult.Success -> {
-                                    if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
-                                    collectTpms(tpmsScope, tpmsCar, legacy.data.status, generation)
-                                    val resolvedStatus = mergeCarStatusPosition(legacy.data.status, vehicleStatusStore.getCachedStatus(carId)) ?: legacy.data.status
-                                    if (usableVehicleCoordinates(legacy.data.status.latitude, legacy.data.status.longitude) != null) {
-                                        vehicleStatusStore.saveStatus(carId, resolvedStatus, null)
-                                    }
-                                    _uiState.value = _uiState.value.copy(
-                                        status = resolvedStatus,
-                                        error = null,
-                                        errorCode = null,
-                                        errorKind = null,
-                                        snapshotSource = "teslamate_api",
-                                        observedAt = null,
-                                        fieldSources = emptyMap(),
-                                        snapshotFreshness = SnapshotFreshness.HISTORY,
-                                        snapshotMixedSources = false,
-                                        units = legacy.data.units,
-                                        cachedAddress = loadCachedAddress(resolvedStatus, carId)
-                                    )
-                                }
-                                is ApiResult.Error -> {
-                                    if (generation != requestGeneration || settingsRepository.currentCarId.first() != carId) continue
-                                    _uiState.update { current -> current.copy(
-                                        snapshotFreshness = failedSnapshotFreshness(current.observedAt, current.status != null, clock.instant()),
-                                        error = legacy.message,
-                                        errorCode = legacy.code,
-                                        errorKind = legacy.kind
-                                    ) }
-                                }
-                            }
+                    } else {
+                        val failure = (legacy as? ApiResult.Error) ?: (snapshot as? ApiResult.Error)
+                        if (!liveScopeCurrent(scope, carId, generation)) continue
+                        _uiState.update { ui -> ui.copy(
+                            snapshotFreshness = failedSnapshotFreshness(
+                                ui.observedAt, ui.status != null, clock.instant()),
+                            error = failure?.message, errorCode = failure?.code, errorKind = failure?.kind)
                         }
                     }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    if (generation != requestGeneration) continue
-                    _uiState.update { current -> current.copy(
-                        snapshotFreshness = failedSnapshotFreshness(current.observedAt, current.status != null, clock.instant()),
-                        error = e.message,
-                        errorKind = apiErrorKindFor(null, e.message)
-                    ) }
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) {
+                    // Request generation alone is not sufficient after a new login.
+                    if (generation == requestGeneration) {
+                        if (!liveScopeCurrent(capturedScope, requestedCarId ?: continue, generation)) continue
+                        _uiState.update { ui -> ui.copy(
+                            snapshotFreshness = failedSnapshotFreshness(
+                                ui.observedAt, ui.status != null, clock.instant()),
+                            error = "status_poll_unavailable")
+                        }
+                    }
                 }
             }
         }
     }
 
     fun saveCustomPhoto(inputStream: java.io.InputStream) {
-        val carId = _uiState.value.car?.carId ?: return
+        val proof = activePhotoProof ?: return
         viewModelScope.launch {
-            val file = vehiclePhotoStore.saveCustomPhoto(carId, inputStream)
-            _uiState.update { it.copy(customPhotoFile = file) }
+            val (scope, vehicle) = proof
+            if (activePhotoProof != proof ||
+                !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) return@launch
+            try {
+                val file = withContext(Dispatchers.IO) {
+                    vehiclePhotoStore.saveScopedPhoto(scope, vehicle, inputStream)
+                }
+                if (activePhotoProof != proof ||
+                    !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) return@launch
+                _uiState.update { it.copy(customPhotoFile = file) }
+            } catch (e: CancellationException) { throw e }
+              catch (_: Exception) {
+                if (activePhotoProof == proof)
+                    _uiState.update { it.copy(error = "photo_local_save_failed") }
+            }
         }
     }
 
     fun clearCustomPhoto() {
-        val carId = _uiState.value.car?.carId ?: return
+        val proof = activePhotoProof ?: return
         viewModelScope.launch {
-            vehiclePhotoStore.clearCustomPhoto(carId)
-            _uiState.update { it.copy(customPhotoFile = null) }
+            val (scope, vehicle) = proof
+            if (activePhotoProof != proof ||
+                !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) return@launch
+            try {
+                withContext(Dispatchers.IO) {
+                    vehiclePhotoStore.clearScopedPhoto(scope, vehicle)
+                }
+                if (activePhotoProof != proof ||
+                    !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) return@launch
+                _uiState.update { it.copy(customPhotoFile = null) }
+            } catch (e: CancellationException) { throw e }
+              catch (_: Exception) { }
         }
     }
 

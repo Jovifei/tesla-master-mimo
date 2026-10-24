@@ -54,7 +54,10 @@ class HistoryRefreshIntegrationContractTest {
     }
     @Test fun dashboardFailureUsesObservedTimeRatherThanPromotingCache() {
         val source = source("ui/screens/dashboard/DashboardViewModel.kt")
-        assertTrue(source.contains("failedSnapshotFreshness(current.observedAt, current.status != null, clock.instant())"))
+        // Source formatting is irrelevant. The failure consumer must pass
+        // the historical observedAt to freshness, never relabel with now().
+        assertTrue(Regex("""failedSnapshotFreshness\(\s*(?:current|ui)\.observedAt,\s*(?:current|ui)\.status\s*!=\s*null,\s*clock\.instant\(\)""",
+            RegexOption.DOT_MATCHES_ALL).containsMatchIn(source))
         assertFalse(source.contains("snapshotFreshness = SnapshotFreshness.RECENT"))
     }
     @Test fun listAndDetailsShareVerifiedContextAndCostWriteGuard() {

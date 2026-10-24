@@ -207,6 +207,51 @@ class HistoryDetailRoomIntegrationTest {
         } finally { db.close() }
     }
 
+    @Test fun validSessionEnergyWithoutApiPointsSurvivesRoomCloseAndKeepsPointReason() = runBlocking {
+        var db = open()
+        try {
+            val row = ChargeData(64, startDate = start, endDate = end,
+                source = "teslamate_archive", sourceInstanceId = "archive-A",
+                sourceId = "record-A", chargeEnergyAdded = null)
+            db.chargeSummaryDao().upsert(row.toSyncSummary(context.localHistoryCarId)!!)
+            val noPoints = detail(24.02).copy(sourceId = "record-A", chargePoints = null)
+            val saved = persistVerifiedChargeDetail(db,
+                HistoryDetailRepository(db.historyDetailDao()), context, noPoints) {}
+            assertTrue(saved != null)
+            assertNull(saved!!.receipt)
+            assertEquals(24.02, db.chargeSummaryDao().get(context.localHistoryCarId, 64)!!
+                .toAnalysisChargeData().batteryInputKwh!!, 0.0)
+            db.close(); db = open()
+            val restored = db.chargeSummaryDao().get(context.localHistoryCarId, 64)!!
+            assertEquals(24.02, restored.toAnalysisChargeData().batteryInputKwh!!, 0.0)
+            val result = HistoryDetailRepository(db.historyDetailDao()).readCharge(
+                restored.verifiedDetailIdentity(context)!!)
+            assertNull(result.detail)
+            assertEquals("charge_points_not_provided", result.reason)
+        } finally { db.close() }
+    }
+
+    @Test fun corruptedNewestCompleteFallsBackToPriorVerifiedChunkOnOfflineRead() = runBlocking {
+        var db = open()
+        try {
+            val key = identity()
+            val first = detail(24.02)
+            val second = detail(25.0)
+            val saved = HistoryDetailRepository(db.historyDetailDao())
+            val old = saved.saveCharge(key, first) as HistoryDetailWriteResult.Stored
+            val fresh = saved.saveCharge(key, second) as HistoryDetailWriteResult.Stored
+            assertFalse(old.receipt.receiptId == fresh.receipt.receiptId)
+            db.openHelper.writableDatabase.execSQL(
+                "UPDATE history_detail_chunks SET payload=X'00' WHERE receiptId=? AND chunkIndex=0",
+                arrayOf(fresh.receipt.receiptId))
+            db.close(); db = open()
+            val offline = HistoryDetailRepository(db.historyDetailDao()).readCharge(key)
+            assertEquals(first, offline.detail)
+            assertEquals(old.receipt.receiptId, offline.receipt!!.receiptId)
+            assertEquals("detail_recovered_older_revision", offline.reason)
+        } finally { db.close() }
+    }
+
     @Test fun sameResponseRedownloadRepairsDamagedChunkWithoutDeletingItsOldReceipt() = runBlocking {
         val db = open()
         try {

@@ -724,8 +724,8 @@
     <string name="temperature_outside_legend">车外</string>
     <string name="temperature_current_inside">最新状态·车内</string>
     <string name="temperature_current_outside">最新状态·车外</string>
-    <string name="temperature_max_outside">最高车外</string>
-    <string name="temperature_max_inside">最高车内</string>
+    <string name="temperature_max_outside">最高行程车外均温</string>
+    <string name="temperature_max_inside">最高行程车内均温</string>
     <string name="temperature_min_outside">最低车外</string>
     <string name="temperature_min_inside">最低车内</string>
     <string name="temperature_cabin_diff">最大温差</string>
@@ -1226,6 +1226,8 @@
     <string name="stats_analysis_energy_used">行驶能耗</string>
     <string name="stats_analysis_energy_added">充入电量</string>
     <string name="stats_analysis_cost">已记录费用</string>
+    <string name="stats_cost_not_recorded">未记录</string>
+    <string name="stats_cost_recording_hint">可在充电详情补录总价</string>
     <string name="stats_analysis_samples">数据记录</string>
     <string name="stats_analysis_sample_count">行程与充电记录</string>
     <string name="stats_analysis_observed">观测值</string>
@@ -1630,4 +1632,9 @@
     <string name="diagnostic_permission_detail">接口报告缺少权限。登录有效或车辆绑定不代表全部 Tesla 授权已满足。可手动查看既有授权流程。</string>
     <string name="history_source_show">数据来源 · 查看说明</string>
     <string name="history_source_hide">数据来源 · 收起说明</string>
+    <string name="amap_historical_position">上次已验证位置（非实时）：%1$s</string>
+    <string name="temperature_observed_coverage">合格行程均温：%1$d/%2$d 段非隔离已存行程。时间是行程开始，不是驻车采样。</string>
+    <string name="temperature_last_qualified_trip">最近合格行程开始：%1$s（本地时间）</string>
+    <string name="temperature_no_trip_history">当前时间段没有符合条件的已保存行程；实时温度不会生成历史样本。</string>
+    <string name="temperature_no_qualified_trip_samples">已有行程，但温度缺少合格来源或时间证据。需真实记录或导入行程，不会生成示意值。</string>
 </resources>

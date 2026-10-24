@@ -19,10 +19,13 @@ class DataReadinessReviewContractTest {
         assertTrue(readinessFetch >= 0)
         assertTrue("vehicle state must publish before readiness can block it", statePublication < readinessFetch)
         assertTrue(source.contains("requestGeneration"))
-        assertTrue(
-            "stale dashboard loads must not publish either success or error state",
-            Regex("if \\(generation != requestGeneration\\) return@launch").findAll(source).count() >= 3
-        )
+        // Check the stronger current generation+account+car gate, including
+        // early not-found and errors, instead of counting obsolete inline guards.
+        assertTrue(source.contains("scope == current && carId == selected"))
+        assertTrue(source.contains("if (!liveScopeCurrent(tpmsScope, carId, generation)) return@launch"))
+        assertTrue(source.contains("if (!liveScopeCurrent(tpmsScope, effectiveCarId, generation) ||"))
+        assertTrue(source.contains("if (!liveScopeCurrent(capturedScope, requestedCarId ?: return@launch,"))
+        assertTrue(source.contains("if (!liveScopeCurrent(tpmsScope, effectiveCarId, generation)) return@launch"))
     }
 
     @Test
