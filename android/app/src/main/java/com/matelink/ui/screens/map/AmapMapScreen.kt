@@ -60,6 +60,11 @@ fun AmapMapScreen(
                     }
                 }
                 if (uiState.mapLoaded) Text(stringResource(R.string.amap_status_loaded), Modifier.align(Alignment.TopCenter).padding(16.dp), color = MaterialTheme.colorScheme.primary)
+                if (uiState.positionHistorical) Text(
+                    stringResource(R.string.amap_historical_position, uiState.positionObservedAt.orEmpty()),
+                    Modifier.align(Alignment.BottomCenter).padding(16.dp),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
                 if (uiState.latitude == null || uiState.longitude == null) Text(stringResource(R.string.amap_no_position), Modifier.align(Alignment.BottomCenter).padding(16.dp), color = MaterialTheme.colorScheme.onSurface)
             }
         }
