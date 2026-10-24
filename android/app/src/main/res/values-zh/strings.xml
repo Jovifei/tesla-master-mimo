@@ -1632,4 +1632,5 @@
     <string name="diagnostic_permission_detail">接口报告缺少权限。登录有效或车辆绑定不代表全部 Tesla 授权已满足。可手动查看既有授权流程。</string>
     <string name="history_source_show">数据来源 · 查看说明</string>
     <string name="history_source_hide">数据来源 · 收起说明</string>
+    <string name="amap_historical_position">上次已验证位置（非实时）：%1$s</string>
 </resources>
