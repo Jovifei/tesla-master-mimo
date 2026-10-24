@@ -80,7 +80,7 @@ interface DriveSummaryDao {
     /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
     @Transaction
     suspend fun upsertPreservingEvidence(rows: List<DriveSummary>) {
-        persistDriveRowsWithoutEvidenceLoss(rows, ::get, ::upsert) { previous ->
+        persistDriveRowsWithoutEvidenceLoss(rows, ::getAnyForPersistence, ::upsert) { previous ->
             val original = HistorySourceReceiptArchive.capture(previous)
             if (original != null) archivePrior(original)
         }
@@ -143,6 +143,10 @@ interface DriveSummaryDao {
 
     @Query("SELECT * FROM drives_summary WHERE driveId = :driveId AND carId = :carId AND qualityState != 'quarantined'")
     suspend fun get(carId: Int, driveId: Int): DriveSummary?
+
+    /** Preserve quarantined raw receipts too; the presentation get() intentionally hides them. */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND driveId = :id LIMIT 1")
+    suspend fun getAnyForPersistence(carId: Int, id: Int): DriveSummary
 
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
     fun observeAll(carId: Int): Flow<List<DriveSummary>>

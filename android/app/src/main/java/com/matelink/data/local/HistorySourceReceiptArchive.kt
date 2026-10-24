@@ -29,6 +29,7 @@ internal object HistorySourceReceiptArchive {
 
     fun replaced(old: ChargeSummary, new: ChargeSummary): Boolean {
         if (old.carId != new.carId || old.chargeId != new.chargeId) return false
+        if (old.qualityState == "quarantined" && old.apiEvidence != new.apiEvidence) return true
         val a = old.toRawAnalysisChargeData()
         val b = new.toRawAnalysisChargeData()
         return a.source != b.source || a.sourceInstanceId?.trim() != b.sourceInstanceId?.trim() ||
@@ -38,6 +39,7 @@ internal object HistorySourceReceiptArchive {
 
     fun replaced(old: DriveSummary, new: DriveSummary): Boolean {
         if (old.carId != new.carId || old.driveId != new.driveId) return false
+        if (old.qualityState == "quarantined" && old.apiEvidence != new.apiEvidence) return true
         val a = old.toRawAnalysisDriveData()
         val b = new.toRawAnalysisDriveData()
         return a.source != b.source || a.sourceInstanceId?.trim() != b.sourceInstanceId?.trim() ||

@@ -28,7 +28,7 @@ interface ChargeSummaryDao {
     /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
     @Transaction
     suspend fun upsertPreservingEvidence(rows: List<ChargeSummary>) {
-        persistChargeRowsWithoutEvidenceLoss(rows, ::get, ::upsert) { previous ->
+        persistChargeRowsWithoutEvidenceLoss(rows, ::getAnyForPersistence, ::upsert) { previous ->
             val original = HistorySourceReceiptArchive.capture(previous)
             if (original != null) archivePrior(original)
         }
@@ -98,6 +98,10 @@ interface ChargeSummaryDao {
 
     @Query("SELECT * FROM charges_summary WHERE chargeId = :chargeId AND carId = :carId AND qualityState != 'quarantined'")
     suspend fun get(carId: Int, chargeId: Int): ChargeSummary?
+
+    /** Preserve quarantined raw receipts too; the presentation get() intentionally hides them. */
+    @Query("SELECT * FROM charges_summary WHERE carId = :carId AND chargeId = :id LIMIT 1")
+    suspend fun getAnyForPersistence(carId: Int, id: Int): ChargeSummary
 
     @Query("SELECT * FROM charges_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
     fun observeAll(carId: Int): Flow<List<ChargeSummary>>

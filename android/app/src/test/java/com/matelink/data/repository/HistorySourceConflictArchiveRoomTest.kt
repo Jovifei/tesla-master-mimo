@@ -41,6 +41,35 @@ class HistorySourceConflictArchiveRoomTest {
         source="teslamate_archive", sourceInstanceId=instance,sourceRecordId="drive-$instance",
         qualityState="observed",lengthUnit="km")
 
+    @Test fun quarantinedRawReceiptIsNotSilentlyOverwrittenByIdenticalNumericId() = runBlocking {
+        var db = open()
+        try {
+            val car = -71
+            val oldCharge = charge("A").copy(qualityState = "quarantined",
+                qualityReason = "synthetic_provenance", chargeEnergyAdded = null)
+            val oldDrive = drive("A").copy(qualityState = "quarantined",
+                qualityReason = "synthetic_provenance", energyConsumedNet = null)
+            db.chargeSummaryDao().upsert(oldCharge.toSyncSummary(car)!!)
+            db.driveSummaryDao().upsert(oldDrive.toSyncSummary(car)!!)
+            val beforeCharge = db.chargeSummaryDao().getAnyForPersistence(car, 9)!!.apiEvidence
+            val beforeDrive = db.driveSummaryDao().getAnyForPersistence(car, 8)!!.apiEvidence
+            assertTrue(beforeCharge != null && beforeDrive != null)
+            db.chargeSummaryDao().upsertPreservingEvidence(listOf(charge("B").toSyncSummary(car)!!))
+            db.driveSummaryDao().upsertPreservingEvidence(listOf(drive("B").toSyncSummary(car)!!))
+            db.close(); db = open()
+            db.openHelper.readableDatabase.query(
+                "SELECT kind,headerJson FROM history_detail_receipts WHERE state='archived_source_conflict'"
+            ).use { rows ->
+                val actual = mutableMapOf<String,String>()
+                while (rows.moveToNext()) actual[rows.getString(0)] = rows.getString(1)
+                assertEquals(beforeCharge,actual["archived_charge_source"])
+                assertEquals(beforeDrive,actual["archived_drive_source"])
+            }
+            assertTrue(db.chargeSummaryDao().get(car, 9) != null)
+            assertTrue(db.driveSummaryDao().get(car, 8) != null)
+        } finally { db.close() }
+    }
+
     @Test fun sourceConflictArchivesChargeAndDriveBeforeOverwritingThenReopensBoth() = runBlocking {
         var db = open()
         try {
