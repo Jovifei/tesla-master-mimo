@@ -316,16 +316,22 @@ class DashboardViewModel @Inject constructor(
                     else -> null
                 }
                 if (!liveScopeCurrent(tpmsScope, effectiveCarId, generation)) return@launch
-                collectTpms(tpmsScope, car.takeIf { carsResult is ApiResult.Success }, liveStatus, generation)
                 // Vehicle discovery precedes the first live fetch; configuration may
                 // only have been persisted by that fetch. Refresh metadata, not OAuth.
                 if (liveStatus != null && car?.carDetails?.model.isNullOrBlank()) {
                     try {
                         val refreshed = repository.getCars()
-                        if (refreshed is ApiResult.Success) car = refreshedDashboardCar(car, refreshed.data)
+                        if (refreshed is ApiResult.Success) {
+                            car = if (dashboardUidReboundOrMissing(car, refreshed.data)) null
+                                else refreshedDashboardCar(car, refreshed.data)
+                        }
                     } catch (e: CancellationException) { throw e } catch (_: Exception) { /* keep live state */ }
                 }
                 if (!liveScopeCurrent(tpmsScope, effectiveCarId, generation)) return@launch
+                // Rebinding between the original /cars lookup, snapshot and
+                // optional metadata refresh must not write TPMS or live cache
+                // under either vehicle identity. Live response remains visible.
+                collectTpms(tpmsScope, car.takeIf { carsResult is ApiResult.Success }, liveStatus, generation)
                 val cacheContext = statusCacheContext(tpmsScope, effectiveCarId,
                     car.takeIf { carsResult is ApiResult.Success })
                 val cacheVerified = cacheContext != null &&
