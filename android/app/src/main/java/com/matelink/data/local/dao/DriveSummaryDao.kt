@@ -81,7 +81,7 @@ interface DriveSummaryDao {
     @Transaction
     suspend fun upsertPreservingEvidence(rows: List<DriveSummary>) {
         persistDriveRowsWithoutEvidenceLoss(rows, ::get, ::upsert) { previous ->
-            HistorySourceReceiptArchive.capture(previous)?.let(::insertConflictArchive)
+            HistorySourceReceiptArchive.capture(previous)?.let(::archivePrior)
         }
     }
 
@@ -95,8 +95,25 @@ interface DriveSummaryDao {
         ensureCurrent()
     }
 
+    @Query("SELECT COUNT(*) FROM history_detail_receipts WHERE receiptId = :receiptId")
+    suspend fun archiveExists(receiptId: String): Int
+
+    @Query("SELECT COALESCE(SUM(encodedByteCount), 0) FROM history_detail_receipts WHERE state='archived_source_conflict'")
+    suspend fun archiveUsedBytes(): Long
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertConflictArchive(receipt: HistoryDetailReceipt)
+
+    suspend fun archivePrior(receipt: HistoryDetailReceipt) {
+        if (archiveExists(receipt.receiptId) > 0) return
+        val maxBytes = 64L * 1024 * 1024
+        val used = archiveUsedBytes()
+        check(receipt.encodedByteCount >= 0L && used <= maxBytes &&
+            receipt.encodedByteCount <= maxBytes - used) {
+            "history_conflict_archive_budget_exceeded"
+        }
+        insertConflictArchive(receipt)
+    }
 
     // === CRUD Operations ===
 

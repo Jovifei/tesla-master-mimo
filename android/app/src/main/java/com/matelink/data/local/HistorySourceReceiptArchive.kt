@@ -64,8 +64,11 @@ internal object HistorySourceReceiptArchive {
         instance: String?, sourceRecord: String?, start: String?, end: String?,
         original: String?
     ): HistoryDetailReceipt? {
-        if (original.isNullOrBlank()) return null
+        // A source switch must never silently destroy the only old summary
+        // when an old schema has no raw receipt. Roll back its enclosing Room txn.
+        check(!original.isNullOrBlank()) { "history_conflict_original_receipt_missing" }
         val bytes = original.toByteArray(Charsets.UTF_8)
+        check(bytes.size <= 512 * 1024) { "history_conflict_receipt_oversize" }
         // Input framed to eliminate ambiguous string concatenation and keep accounts isolated.
         val identity = sha256Framed("source-conflict-v1".toByteArray(Charsets.UTF_8), listOf(
             localCar.toString(), kind, recordId.toString(), source.orEmpty(),

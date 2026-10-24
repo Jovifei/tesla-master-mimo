@@ -231,6 +231,27 @@ class HistoryDetailRoomIntegrationTest {
         } finally { db.close() }
     }
 
+    @Test fun corruptedNewestCompleteFallsBackToPriorVerifiedChunkOnOfflineRead() = runBlocking {
+        var db = open()
+        try {
+            val key = identity()
+            val first = detail(24.02)
+            val second = detail(25.0)
+            val saved = HistoryDetailRepository(db.historyDetailDao())
+            val old = saved.saveCharge(key, first) as HistoryDetailWriteResult.Stored
+            val fresh = saved.saveCharge(key, second) as HistoryDetailWriteResult.Stored
+            assertFalse(old.receipt.receiptId == fresh.receipt.receiptId)
+            db.openHelper.writableDatabase.execSQL(
+                "UPDATE history_detail_chunks SET payload=X'00' WHERE receiptId=? AND chunkIndex=0",
+                arrayOf(fresh.receipt.receiptId))
+            db.close(); db = open()
+            val offline = HistoryDetailRepository(db.historyDetailDao()).readCharge(key)
+            assertEquals(first, offline.detail)
+            assertEquals(old.receipt.receiptId, offline.receipt!!.receiptId)
+            assertEquals("detail_recovered_older_revision", offline.reason)
+        } finally { db.close() }
+    }
+
     @Test fun sameResponseRedownloadRepairsDamagedChunkWithoutDeletingItsOldReceipt() = runBlocking {
         val db = open()
         try {
