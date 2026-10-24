@@ -81,7 +81,8 @@ interface DriveSummaryDao {
     @Transaction
     suspend fun upsertPreservingEvidence(rows: List<DriveSummary>) {
         persistDriveRowsWithoutEvidenceLoss(rows, ::get, ::upsert) { previous ->
-            HistorySourceReceiptArchive.capture(previous)?.let(::archivePrior)
+            val original = HistorySourceReceiptArchive.capture(previous)
+            if (original != null) archivePrior(original)
         }
     }
 

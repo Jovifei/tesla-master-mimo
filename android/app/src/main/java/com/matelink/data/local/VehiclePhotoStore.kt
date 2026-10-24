@@ -68,7 +68,7 @@ class VehiclePhotoStore @Inject constructor(
             .joinToString("") { "%02x".format(it) }
     }
 
-    fun getScopedPhoto(scope: HistoryReadScope, vehicle: VehicleContext): File? {
+    internal fun getScopedPhoto(scope: HistoryReadScope, vehicle: VehicleContext): File? {
         val key = scopedPhotoKey(scope, vehicle) ?: return null
         val target = File(photosDir, "scope_$key.jpg")
         return target.takeIf { it.exists() && it.isFile && it.length() > 0L &&
@@ -76,7 +76,7 @@ class VehiclePhotoStore @Inject constructor(
     }
 
     /** A failed write cannot replace the older verified scoped photo. */
-    fun saveScopedPhoto(scope: HistoryReadScope, vehicle: VehicleContext, input: InputStream): File {
+    internal fun saveScopedPhoto(scope: HistoryReadScope, vehicle: VehicleContext, input: InputStream): File {
         val key = requireNotNull(scopedPhotoKey(scope, vehicle)) { "photo_identity_missing" }
         val target = File(photosDir, "scope_$key.jpg")
         val staged = File(photosDir, "scope_$key.staged")
@@ -117,7 +117,7 @@ class VehiclePhotoStore @Inject constructor(
         }
     }
 
-    fun clearScopedPhoto(scope: HistoryReadScope, vehicle: VehicleContext) {
+    internal fun clearScopedPhoto(scope: HistoryReadScope, vehicle: VehicleContext) {
         val key = scopedPhotoKey(scope, vehicle) ?: return
         val file = File(photosDir, "scope_$key.jpg")
         // Never delete an original unscoped photo or any other vehicle's file.

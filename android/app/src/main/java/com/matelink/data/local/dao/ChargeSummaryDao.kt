@@ -29,7 +29,8 @@ interface ChargeSummaryDao {
     @Transaction
     suspend fun upsertPreservingEvidence(rows: List<ChargeSummary>) {
         persistChargeRowsWithoutEvidenceLoss(rows, ::get, ::upsert) { previous ->
-            HistorySourceReceiptArchive.capture(previous)?.let(::archivePrior)
+            val original = HistorySourceReceiptArchive.capture(previous)
+            if (original != null) archivePrior(original)
         }
     }
 
