@@ -142,6 +142,30 @@ val fillers = (100..162).map { id ->
         } finally { db.close() }
     }
 
+    @Test fun replacingSameNumericIdArchivesTheOldSourceReceiptWithoutPromotingIt() = runBlocking {
+        var db = open()
+        try {
+            val first = row("A")
+            db.chargeSummaryDao().upsertPreservingEvidence(listOf(first.toSyncSummary(localId)!!))
+            val old = db.chargeSummaryDao().get(localId, 17)!!.apiEvidence!!
+            val newer = row("B", energy = null)
+            db.chargeSummaryDao().upsertPreservingEvidence(listOf(newer.toSyncSummary(localId)!!))
+            assertNull(db.chargeSummaryDao().get(localId, 17)!!.toAnalysisChargeData().batteryInputKwh)
+            db.openHelper.writableDatabase.query(
+                "SELECT headerJson FROM history_detail_receipts WHERE kind='archived_charge_source' AND localHistoryCarId=-701"
+            ).use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals(old, c.getString(0))
+                assertFalse(c.moveToNext())
+            }
+            db.close(); db = open()
+            assertNull(db.chargeSummaryDao().get(localId, 17)!!.toAnalysisChargeData().batteryInputKwh)
+            db.openHelper.writableDatabase.query(
+                "SELECT headerJson FROM history_detail_receipts WHERE kind='archived_charge_source' AND localHistoryCarId=-701"
+            ).use { c -> assertTrue(c.moveToFirst()); assertEquals(old, c.getString(0)) }
+        } finally { db.close() }
+    }
+
     @Test fun localPresentationFromAnotherInstanceCannotCertifyRawReceipt() = runBlocking {
         val db = open()
         try {
