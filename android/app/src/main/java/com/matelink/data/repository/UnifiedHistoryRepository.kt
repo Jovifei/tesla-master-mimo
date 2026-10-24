@@ -597,9 +597,20 @@ internal fun mergeStoredDrive(incoming: DriveSummary, cached: DriveSummary?): Dr
         !sameHistorySession(inRaw.startDate, inRaw.endDate,
             cachedRaw.startDate, cachedRaw.endDate)
     if (distinctSession) {
-        return if (hasTrustedHistoryEvidence(inRaw.qualityState, inRaw.source) ||
-            !hasTrustedHistoryEvidence(cachedRaw.qualityState, cachedRaw.source)) incoming
-        else cached
+        val incomingTrusted = hasTrustedHistoryEvidence(inRaw.qualityState, inRaw.source)
+        val cachedTrusted = hasTrustedHistoryEvidence(cachedRaw.qualityState, cachedRaw.source)
+        val foreign = inRaw.source != cachedRaw.source
+        // The numeric drive ID is not authority to replace a different source.
+        // Same-source instance A->B is handled as a separately archived session.
+        if (incomingTrusted && (!cachedTrusted || !foreign)) return incoming
+        if (foreign && cachedTrusted && !incomingTrusted) {
+            // A weak local import cannot certify an older pre-contract 8 kWh.
+            // Preserve the byte-identical historical receipt but scrub only
+            // its scalar analysis columns (not its raw signed energy).
+            return cached.copy(energyConsumed = null, efficiency = null,
+                energySource = null, energyCoverageSeconds = 0L, energyCoverageRatio = 0.0)
+        }
+        return cached
     }
 
     val raw = UnifiedHistoryRepository.mergeDrivesRaw(listOf(inRaw), listOf(cachedRaw)).single()
@@ -713,9 +724,13 @@ internal fun mergeStoredCharge(incoming: ChargeSummary, cached: ChargeSummary?):
         !sameHistorySession(inRaw.startDate, inRaw.endDate,
             cachedRaw.startDate, cachedRaw.endDate)
     if (distinctSession) {
-        return if (hasTrustedHistoryEvidence(inRaw.qualityState, inRaw.source) ||
-            !hasTrustedHistoryEvidence(cachedRaw.qualityState, cachedRaw.source)) incoming
-        else cached
+        val incomingTrusted = hasTrustedHistoryEvidence(inRaw.qualityState, inRaw.source)
+        val cachedTrusted = hasTrustedHistoryEvidence(cachedRaw.qualityState, cachedRaw.source)
+        // A foreign TeslaMate/import source marked "observed" cannot replace
+        // a qualified Fleet detail/cost/address by numeric ID alone.
+        // Same-source distinct instances remain separate and archived.
+        return if (incomingTrusted && (!cachedTrusted || inRaw.source == cachedRaw.source))
+            incoming else cached
     }
 
     val raw = UnifiedHistoryRepository.mergeChargesRaw(listOf(inRaw), listOf(cachedRaw)).single()

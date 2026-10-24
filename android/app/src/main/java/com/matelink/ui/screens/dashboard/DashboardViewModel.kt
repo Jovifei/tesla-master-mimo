@@ -293,7 +293,7 @@ class DashboardViewModel @Inject constructor(
 
                 val effectiveCarId = car?.carId ?: carId
                 if (car == null && carsResult is ApiResult.Success) {
-                    if (generation != requestGeneration) return@launch
+                    if (!liveScopeCurrent(tpmsScope, carId, generation)) return@launch
                     _uiState.value = DashboardUiState(
                         isLoading = false,
                         error = "vehicle_not_found",

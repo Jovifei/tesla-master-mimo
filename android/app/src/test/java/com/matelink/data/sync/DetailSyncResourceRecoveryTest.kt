@@ -14,6 +14,7 @@ import com.matelink.data.local.*
 import com.matelink.data.repository.*
 import com.matelink.di.TeslamateApiFactory
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
+import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.notification.*
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.*
@@ -79,12 +80,36 @@ class DetailSyncResourceRecoveryTest {
                 "source":"teslamate_archive","source_instance_id":"archive-A","source_id":"record-65",
                 "charge_energy_added":25.0}}}
             """.trimIndent() else null }
+            // Valid qualified session kWh with no point array must be retained.
+            assertEquals(CarSyncResult.Complete,
+                fixture.repo.syncDetailsOnly(1, DriveDetailRequestBudget()))
+            assertEquals(25.0, fixture.db.chargeSummaryDao().get(car, 65)!!
+                .toAnalysisChargeData().batteryInputKwh!!, 0.0)
+            assertNotNull(fixture.db.aggregateDao().getChargeAggregate(car, 65))
+            val scalarIdentity = fixture.db.chargeSummaryDao().get(car, 65)!!
+                .verifiedDetailIdentity(context)!!
+            val scalarOnly = HistoryDetailRepository(fixture.db.historyDetailDao())
+                .readCharge(scalarIdentity)
+            assertNull(scalarOnly.detail)
+            assertEquals("charge_points_not_provided", scalarOnly.reason)
+            assertTrue(fixture.db.chargeSummaryDao().getUnprocessedChargeBatchIds(car,
+                com.matelink.data.local.entity.SchemaVersion.CURRENT, 20).isEmpty())
+
+            // A non-array CLAIMED point payload is invalid, not a scalar-only
+            // session. The actual Retrofit/Sync consumer must fail, preserving
+            // 66's old receipt and unadvanced progress.
+            fixture.db.chargeSummaryDao().upsert(list(66).toSyncSummary(car)!!)
+            fixture.detailResponse = { path -> if (path.endsWith("/charges/66")) """
+                {"data":{"charge":{"charge_id":66,"start_date":"$start","end_date":"$end",
+                "source":"teslamate_archive","source_instance_id":"archive-A","source_id":"record-66",
+                "charge_energy_added":26.0,"charge_details":{"date":"$start","charge_energy_added":26.0}}}}
+            """.trimIndent() else null }
             val failed = fixture.repo.syncDetailsOnly(1, DriveDetailRequestBudget())
-            assertTrue(failed is CarSyncResult.Failed)
-            assertNull(fixture.db.aggregateDao().getChargeAggregate(car, 65))
-            assertEquals(listOf(65), fixture.db.chargeSummaryDao().getUnprocessedChargeBatchIds(car,
+            assertTrue("Invalid supplied point list must reject", failed is CarSyncResult.Failed)
+            assertNull(fixture.db.aggregateDao().getChargeAggregate(car, 66))
+            assertEquals(listOf(66), fixture.db.chargeSummaryDao().getUnprocessedChargeBatchIds(car,
                 com.matelink.data.local.entity.SchemaVersion.CURRENT, 20))
-            assertEquals(24.0, fixture.db.chargeSummaryDao().get(car, 65)!!.energyAdded, 0.0)
+            assertEquals(24.0, fixture.db.chargeSummaryDao().get(car, 66)!!.energyAdded, 0.0)
         } finally { fixture.close() }
     }
 
