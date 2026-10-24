@@ -146,7 +146,7 @@ interface DriveSummaryDao {
 
     /** Preserve quarantined raw receipts too; the presentation get() intentionally hides them. */
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND driveId = :id LIMIT 1")
-    suspend fun getAnyForPersistence(carId: Int, id: Int): DriveSummary
+    suspend fun getAnyForPersistence(carId: Int, id: Int): DriveSummary?
 
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
     fun observeAll(carId: Int): Flow<List<DriveSummary>>

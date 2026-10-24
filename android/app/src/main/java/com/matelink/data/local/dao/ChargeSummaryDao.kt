@@ -101,7 +101,7 @@ interface ChargeSummaryDao {
 
     /** Preserve quarantined raw receipts too; the presentation get() intentionally hides them. */
     @Query("SELECT * FROM charges_summary WHERE carId = :carId AND chargeId = :id LIMIT 1")
-    suspend fun getAnyForPersistence(carId: Int, id: Int): ChargeSummary
+    suspend fun getAnyForPersistence(carId: Int, id: Int): ChargeSummary?
 
     @Query("SELECT * FROM charges_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
     fun observeAll(carId: Int): Flow<List<ChargeSummary>>
