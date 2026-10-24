@@ -96,7 +96,11 @@ class ParkedDetailViewModel @Inject constructor(
     }
 
     private suspend fun readDrive(carId: Int, driveId: Int): DriveSummary? = try {
+        // Rows are persisted under the scoped localHistoryCarId, which cold
+        // starts cannot resolve offline; fall back to an unambiguous drive-id
+        // match rather than showing nothing.
         driveSummaryDao.get(carId, driveId)
+            ?: driveSummaryDao.getByDriveId(driveId).takeIf { it.size == 1 }?.first()
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

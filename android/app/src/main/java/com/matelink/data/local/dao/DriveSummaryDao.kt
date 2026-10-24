@@ -117,6 +117,12 @@ interface DriveSummaryDao {
     @Query("SELECT * FROM drives_summary WHERE driveId = :driveId AND carId = :carId AND qualityState != 'quarantined'")
     suspend fun get(carId: Int, driveId: Int): DriveSummary?
 
+    /** Drive-id lookup across history car keys: local rows may live under the
+     * scoped localHistoryCarId while callers only hold the remote car id.
+     * Returns rows for all cars; a single unambiguous row is safe to use. */
+    @Query("SELECT * FROM drives_summary WHERE driveId = :driveId AND qualityState != 'quarantined'")
+    suspend fun getByDriveId(driveId: Int): List<DriveSummary>
+
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
     fun observeAll(carId: Int): Flow<List<DriveSummary>>
 
