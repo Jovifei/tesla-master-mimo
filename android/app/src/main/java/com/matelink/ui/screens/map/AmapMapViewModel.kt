@@ -27,6 +27,8 @@ data class AmapMapUiState(
     val key: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null,
+    val positionHistorical: Boolean = false,
+    val positionObservedAt: String? = null,
     val loading: Boolean = false,
     val mapLoaded: Boolean = false,
     val failed: Boolean = false
@@ -43,6 +45,8 @@ class AmapMapViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(AmapMapUiState())
     val uiState: StateFlow<AmapMapUiState> = _uiState.asStateFlow()
     private var positionGeneration = 0L
+    private var verifiedPosition: Pair<com.matelink.data.local.HistoryReadScope,
+        com.matelink.data.local.VehicleContext>? = null
 
     init {
         viewModelScope.launch {
@@ -76,7 +80,9 @@ class AmapMapViewModel @Inject constructor(
             vehicleContexts.historyScopeChanges.collectLatest {
                 if (first) { first = false; return@collectLatest }
                 positionGeneration++
-                _uiState.value = _uiState.value.copy(latitude = null, longitude = null)
+                verifiedPosition = null
+                _uiState.value = _uiState.value.copy(latitude = null, longitude = null,
+                    positionHistorical = false, positionObservedAt = null)
                 if (_uiState.value.setupState == AmapSetupState.READY_TO_PREVIEW)
                     loadVehiclePosition(fetch = true)
             }
@@ -88,38 +94,67 @@ class AmapMapViewModel @Inject constructor(
     fun onMapFailure() { _uiState.value = _uiState.value.copy(loading = false, mapLoaded = false, failed = true) }
 
     private fun loadVehiclePosition(carId: Int? = null, fetch: Boolean) {
-      val generation = ++positionGeneration
-      viewModelScope.launch {
-        val resolvedCarId = carId ?: settingsRepository.currentCarId.first()
-        val scope = try { vehicleContexts.captureReadScope() }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { null }
-        val vehicle = try {
-            if (scope == null) null else if (fetch) vehicleContexts.resolveRemote(resolvedCarId)
-            else vehicleContexts.cachedContextForRemote(resolvedCarId, scope)
-        } catch (cancelled: CancellationException) { throw cancelled }
-          catch (_: Exception) { null }
-        if (scope == null || vehicle == null ||
-            !vehicleContexts.isHistoryContextCurrentNow(scope, vehicle)) {
-            if (generation == positionGeneration)
-                _uiState.value = _uiState.value.copy(latitude = null, longitude = null)
-            return@launch
+        val generation = ++positionGeneration
+        viewModelScope.launch {
+            val id = carId ?: settingsRepository.currentCarId.first()
+            val scope = try { vehicleContexts.captureReadScope() }
+                catch (e: CancellationException) { throw e }
+                catch (_: Exception) { null } ?: return@launch
+            suspend fun current(vehicle: com.matelink.data.local.VehicleContext?): Boolean {
+                if (vehicle == null || generation != positionGeneration) return false
+                return try {
+                    settingsRepository.currentCarId.first() == id &&
+                        scope == vehicleContexts.captureReadScope() &&
+                        vehicleContexts.isHistoryContextCurrentNow(scope, vehicle) &&
+                        generation == positionGeneration
+                } catch (e: CancellationException) { throw e }
+                  catch (_: Exception) { false }
+            }
+            val vehicle = try {
+                if (fetch) {
+                    val response = repository.getCars()
+                    val car = when (response) {
+                        is ApiResult.Success -> response.data.filter { it.carId == id }.singleOrNull()
+                        is ApiResult.Error -> null
+                    }
+                    if (car == null || (scope.source == com.matelink.data.local.HistoryConnectionSource.CLOUD &&
+                            !com.matelink.data.api.models.validHistoryVehicleUid(car.vehicleUid))) null
+                    else vehicleContexts.resolve(car, scope)
+                } else verifiedPosition?.takeIf {
+                    it.first == scope && it.second.remoteApiCarId == id
+                }?.second
+            } catch (e: CancellationException) { throw e }
+              catch (_: Exception) { null }
+            if (!current(vehicle)) {
+                if (generation == positionGeneration) {
+                    verifiedPosition = null
+                    _uiState.value = _uiState.value.copy(latitude = null, longitude = null,
+                        positionHistorical = false, positionObservedAt = null)
+                }
+                return@launch
+            }
+            verifiedPosition = scope to vehicle!!
+            val snapshot = if (fetch) repository.getAdapterSnapshot(id) else null
+            val legacy = if (fetch && snapshot is ApiResult.Error) repository.getCarStatus(id) else null
+            if (!current(vehicle)) return@launch
+            val status = when {
+                snapshot is ApiResult.Success -> snapshot.data.status
+                legacy is ApiResult.Success -> legacy.data.status
+                else -> null
+            }
+            val live = com.matelink.domain.map.VehiclePositionResolver.resolve(
+                status?.latitude, status?.longitude, null, null)
+            val observedAt = (snapshot as? ApiResult.Success)?.data?.observedAt
+            if (status != null && current(vehicle))
+                vehicleStatusStore.saveStatus(scope, vehicle, status, observedAt)
+            val older = if (live == null)
+                vehicleStatusStore.getCachedPosition(scope, vehicle) else null
+            if (!current(vehicle)) return@launch
+            val position = live ?: older
+            _uiState.value = _uiState.value.copy(latitude = position?.latitude,
+                longitude = position?.longitude,
+                positionHistorical = live == null && older != null,
+                positionObservedAt = if (live != null) observedAt else older?.observedAt)
         }
-        val cached = vehicleStatusStore.getCachedStatus(scope, vehicle)
-        val snapshot = if (fetch) repository.getAdapterSnapshot(resolvedCarId) else null
-        val legacy = if (fetch && snapshot is ApiResult.Error) repository.getCarStatus(resolvedCarId) else null
-        if (generation != positionGeneration || settingsRepository.currentCarId.first() != resolvedCarId ||
-            !vehicleContexts.isHistoryContextCurrentNow(scope, vehicle)) return@launch
-        val status = when {
-            snapshot is ApiResult.Success -> snapshot.data.status
-            legacy is ApiResult.Success -> legacy.data.status
-            else -> null
-        }
-        val merged = status?.let { vehicleStatusStore.reconcileAndSave(scope, vehicle, it,
-            (snapshot as? ApiResult.Success)?.data?.observedAt) } ?: cached
-        val position = VehiclePositionResolver.resolve(merged?.latitude, merged?.longitude, cached?.latitude, cached?.longitude)
-        if (generation == positionGeneration && vehicleContexts.isHistoryContextCurrentNow(scope, vehicle))
-            _uiState.value = _uiState.value.copy(latitude = position?.latitude, longitude = position?.longitude)
-      }
     }
 }
