@@ -613,14 +613,16 @@ fun DashboardScreen(
             val onTempClick: () -> Unit = { onNavigateToTemperatureTrend(carId, exteriorColor) }
             InfoCard(
                 stringResource(R.string.inside_temp),
-                status.insideTemp?.let { UnitFormatter.formatTemperature(it, uiState.units, 1) } ?: "--",
+                status.insideTemp?.let { UnitFormatter.formatTemperature(it, uiState.units, 1) }
+                    ?: stringResource(R.string.data_readiness_status_waiting_vehicle),
                 Modifier.weight(1f),
                 icon = Icons.Default.Thermostat,
                 onClick = onTempClick
             )
             InfoCard(
                 stringResource(R.string.outside_temp),
-                status.outsideTemp?.let { UnitFormatter.formatTemperature(it, uiState.units, 1) } ?: "--",
+                status.outsideTemp?.let { UnitFormatter.formatTemperature(it, uiState.units, 1) }
+                    ?: stringResource(R.string.data_readiness_status_waiting_vehicle),
                 Modifier.weight(1f),
                 icon = Icons.Default.Thermostat,
                 onClick = onTempClick
