@@ -23,8 +23,8 @@ class ParkedDetailFullUiQualificationTest {
     @Test fun parkedDetailNavigatesFromDrivesAndRendersPartialValuesHonestly() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val parkedTitle = context.getString(R.string.drive_history_parked_at, "Fixture Office")
-        val energyTitle = context.getString(R.string.parked_energy_title)
-        val environmentTitle = context.getString(R.string.parked_environment_title)
+        val batteryTitle = context.getString(R.string.parked_battery_section_title)
+        val cloudTitle = context.getString(R.string.parked_cloud_section_title)
         runBlocking { prepareQualificationState(context, scenario = "normal") }
 
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -34,14 +34,16 @@ class ParkedDetailFullUiQualificationTest {
             composeRule.selectFixtureHistoryWindow(context)
             scrollUntilText(parkedTitle)
             composeRule.onNodeWithText(parkedTitle).performClick()
-            composeRule.waitForText(energyTitle)
-            composeRule.onNodeWithText(environmentTitle).assertExists()
+            composeRule.waitForText(batteryTitle)
+            composeRule.onNodeWithText(cloudTitle).assertExists()
+            composeRule.onNodeWithText(context.getString(R.string.parked_start_battery)).assertExists()
+            composeRule.onNodeWithText(context.getString(R.string.parked_end_battery)).assertExists()
             // Entirely synthetic fixture in the isolated API35 emulator, never
             // a phone screenshot or an address from a real user's history.
             captureFixtureScreen("matelink_fixture_parked_full")
 
             scenario.recreate()
-            composeRule.waitForText(energyTitle)
+            composeRule.waitForText(batteryTitle)
             InstrumentationRegistry.getInstrumentation().uiAutomation.performGlobalAction(
                 android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
             )
@@ -49,10 +51,10 @@ class ParkedDetailFullUiQualificationTest {
 
             setFixtureScenario("parked_partial")
             composeRule.onNodeWithText(parkedTitle).performClick()
-            composeRule.waitForText(context.getString(R.string.parked_no_energy_data))
-            composeRule.onNodeWithText(context.getString(R.string.parked_no_battery_data)).assertExists()
-            composeRule.onNodeWithText(context.getString(R.string.parked_no_temperature_data)).assertExists()
-            composeRule.onNodeWithText(energyTitle).assertExists()
+            composeRule.waitForText(context.getString(R.string.parked_cloud_detail_pending))
+            composeRule.onNodeWithText(batteryTitle).assertExists()
+            composeRule.onNodeWithText(cloudTitle).assertDoesNotExist()
+            composeRule.onNodeWithText(context.getString(R.string.parked_estimated_energy)).assertDoesNotExist()
             captureFixtureScreen("matelink_fixture_parked_partial")
         }
     }
