@@ -51,6 +51,8 @@ class EfficiencyMileageIdentityConsumerTest {
     private class EfficiencySource(val identity: Identity = Identity()) : EfficiencyPageSource {
         override val scopeChanges = identity.events.map { Unit }
         var calls = 0
+        var cachedBody: suspend (Int) -> ApiResult<AnalysisHistorySnapshot>? = { null }
+        override suspend fun loadCached(carId: Int): ApiResult<AnalysisHistorySnapshot>? = cachedBody(carId)
         var body: suspend (Int) -> ApiResult<AnalysisHistorySnapshot> = { id -> snapshot(identity.context(id), listOf(drive(22))) }
         override suspend fun identity(carId: Int) = identity.capture(carId)
         override suspend fun load(carId: Int): ApiResult<AnalysisHistorySnapshot> { calls++; return body(carId) }
@@ -79,6 +81,38 @@ class EfficiencyMileageIdentityConsumerTest {
             source = "teslamate_archive", qualityState = "observed", lengthUnit = "km")
         private fun snapshot(context: VehicleContext, drives: List<DriveData>) = ApiResult.Success(
             AnalysisHistorySnapshot(drives, emptyList(), Instant.now(), HistoryCoverage(drives.size, 0), context = context))
+    }
+
+    @Test fun efficiencyPublishesVerifiedRoomBeforePendingNetworkAndRetainsAfterOfflineError() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source = EfficiencySource()
+        val remote = CompletableDeferred<Unit>()
+        source.cachedBody = { id -> snapshot(source.identity.context(id), listOf(drive(77))) }
+        source.body = { withContext(NonCancellable) { remote.await() }; ApiResult.Error("offline") }
+        val vm = EfficiencyViewModel(source)
+        try {
+            vm.load(7); advanceUntilIdle()
+            assertEquals(listOf(77), vm.uiState.value.tripPositions.map { it.driveId })
+            assertFalse(vm.uiState.value.isLoading)
+            vm.selectCustomRange(LocalDate.now().minusDays(5), LocalDate.now())
+            assertEquals(listOf(77), vm.uiState.value.tripPositions.map { it.driveId })
+            remote.complete(Unit); advanceUntilIdle()
+            assertEquals(listOf(77), vm.uiState.value.tripPositions.map { it.driveId })
+            assertNull(vm.uiState.value.error)
+        } finally { remote.complete(Unit); vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
+    }
+
+    @Test fun efficiencyRejectsAnotherVehiclesCachedSnapshotEvenWhenRemoteIdMatches() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source = EfficiencySource()
+        val old = source.identity.context(7)
+        source.cachedBody = { snapshot(old.copy(stableIdentity = "foreign-account"), listOf(drive(88))) }
+        val vm = EfficiencyViewModel(source)
+        try {
+            vm.load(7); advanceUntilIdle()
+            assertTrue(vm.uiState.value.tripPositions.isEmpty())
+            assertNull(vm.uiState.value.avgEfficiencyWhKm)
+        } finally { vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
     }
 
     @Test fun efficiencySameRemoteIdAccountAtoBtoALateSuccessCannotReplaceNewA() = runTest {

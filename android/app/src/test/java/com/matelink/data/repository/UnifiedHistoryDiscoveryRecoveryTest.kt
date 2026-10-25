@@ -59,6 +59,7 @@ class UnifiedHistoryDiscoveryRecoveryTest {
         var fetchDrives: suspend (Int) -> ApiResult<List<DriveData>> = { ApiResult.Success(listOf(newDrive)) }
         var fetchCharges: suspend (Int) -> ApiResult<List<ChargeData>> = { ApiResult.Success(listOf(newCharge)) }
         var afterDrivePersist: () -> Unit = {}
+        var afterCacheRead: () -> Unit = {}
         fun repository() = UnifiedHistoryRepository(HistoryReadDependencies(
             captureScope = { scope ?: throw HistoryIdentityUnavailableException() },
             getCars = { carsCalls++; cars },
@@ -66,7 +67,7 @@ class UnifiedHistoryDiscoveryRecoveryTest {
             resolveCar = { car, expected -> check(car.carId == 7 && car.vehicleUid == "provider-a"); check(expected == scope); cached = context; context },
             cachedContext = { id, expected -> if (id == 7 && expected == original && scope == expected) cached else null },
             localDrives = { id -> localReads++; check(id == -7); localDriveOverride ?: listOf(oldDrive.toLocalSummary(id)!!) },
-            localCharges = { id -> localReads++; check(id == -7); localChargeOverride ?: listOf(oldCharge.toLocalSummary(id)!!) },
+            localCharges = { id -> localReads++; check(id == -7); afterCacheRead(); localChargeOverride ?: listOf(oldCharge.toLocalSummary(id)!!) },
             getDrives = { id, _, _, page -> check(id == 7); driveCalls += page; fetchDrives(page) },
             getCharges = { id, _, _, page -> check(id == 7); chargeCalls += page; fetchCharges(page) },
             persistDrives = { rows -> persistedDrives += rows; afterDrivePersist() },
@@ -75,6 +76,41 @@ class UnifiedHistoryDiscoveryRecoveryTest {
             legacyLinkPending = { _, _, _ -> legacyPending }
         ))
     }
+    @Test fun instantSavedHistoryRequiresPriorOriginVehicleProofAndNoProviderRequest() = runTest {
+        val f = Fixture()
+        val repo = f.repository()
+        val cached = (repo.loadCached(7) as ApiResult.Success).data
+        assertEquals(listOf(1), cached.drives.map { it.driveId })
+        assertEquals(listOf(1), cached.charges.map { it.chargeId })
+        assertFalse(cached.drivesFromRemote)
+        assertFalse(cached.chargesFromRemote)
+        assertEquals(java.time.Instant.EPOCH, cached.fetchedAt)
+        assertEquals(0, f.carsCalls)
+        assertEquals(0, f.identityCalls)
+        assertTrue(f.driveCalls.isEmpty())
+        assertTrue(f.chargeCalls.isEmpty())
+        assertTrue(f.persistedDrives.isEmpty())
+        assertTrue(f.persistedCharges.isEmpty())
+
+        f.cached = null
+        assertTrue(repo.loadCached(7) is ApiResult.Error)
+        assertEquals(2, f.localReads) // No unknown-identity data read.
+        f.cached = f.context
+        f.scope = null // Same numeric remote ID in a now-invalid session.
+        assertTrue(repo.loadCached(7) is ApiResult.Error)
+    }
+
+    @Test fun offlineCacheCannotPublishIfAccountScopeChangesDuringRoomRead() = runTest {
+        val f = Fixture()
+        f.afterCacheRead = { f.scope = null }
+        val result = f.repository().loadCached(7)
+        assertTrue(result is ApiResult.Error)
+        assertTrue(f.persistedDrives.isEmpty())
+        assertTrue(f.persistedCharges.isEmpty())
+        assertEquals(0, f.identityCalls)
+        assertTrue(f.driveCalls.isEmpty())
+    }
+
     @Test fun actualOfflineHistoryLoadProjectsUnknownYetPersistsRawSourceReceipt() = runTest {
         val f = Fixture()
         val old = DriveData(1, startDate = "2026-10-01T00:00:00Z",

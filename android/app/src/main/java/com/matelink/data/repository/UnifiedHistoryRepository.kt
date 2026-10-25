@@ -197,6 +197,45 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         } catch (_: HistoryIdentityUnavailableException) { false }
     }
 
+
+    /** A read-only, offline-first view of already persisted history. This never
+     * calls provider discovery, upgrades a legacy namespace, or writes evidence.
+     * A verified account/origin/vehicle mapping must exist from a prior read.
+     */
+    suspend fun loadCached(remoteApiCarId: Int): ApiResult<UnifiedHistory> {
+        if (remoteApiCarId <= 0) return historyIdentityUnavailableError()
+        val scope = try { reads.captureScope() }
+            catch (_: HistoryIdentityUnavailableException) { return historyIdentityUnavailableError() }
+        val context = reads.cachedContext(remoteApiCarId, scope)
+            ?: return historyIdentityUnavailableError()
+        if (context.remoteApiCarId != remoteApiCarId || context.localHistoryCarId >= 0 ||
+            context.connectionSource != scope.source || context.serverIdentity != scope.serverIdentity ||
+            context.stableIdentity.isBlank()) return historyIdentityUnavailableError()
+
+        val drives = reads.localDrives(context.localHistoryCarId)
+        val charges = reads.localCharges(context.localHistoryCarId)
+        currentCoroutineContext().ensureActive()
+        val stillBound = try {
+            reads.captureScope() == scope && reads.cachedContext(remoteApiCarId, scope) == context
+        } catch (_: HistoryIdentityUnavailableException) { false }
+        if (!stillBound) return historyIdentityUnavailableError()
+        if (drives.isEmpty() && charges.isEmpty()) {
+            return ApiResult.Error("history_cache_empty", kind = ApiErrorKind.CONFIGURATION)
+        }
+        val proof = VerifiedHistoryReadContext(scope, context, false, null, false)
+        return ApiResult.Success(UnifiedHistory(
+            context = context,
+            drives = drives.map { it.toAnalysisDriveData() },
+            charges = charges.map { it.toAnalysisChargeData() },
+            drivesFromRemote = false,
+            chargesFromRemote = false,
+            // Room has no complete last-fetch receipt: do not pretend this read
+            // observed history at the current instant.
+            fetchedAt = Instant.EPOCH,
+            drivesSyncError = "cached_only", chargesSyncError = "cached_only"
+        ).also { it.verifiedReadContext = proof })
+    }
+
     suspend fun load(
         remoteApiCarId: Int,
         startDate: String? = null,

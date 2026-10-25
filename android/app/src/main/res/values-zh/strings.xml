@@ -1689,4 +1689,5 @@
     <string name="temperature_last_qualified_trip">最近合格行程开始：%1$s（本地时间）</string>
     <string name="temperature_no_trip_history">当前时间段没有符合条件的已保存行程；实时温度不会生成历史样本。</string>
     <string name="temperature_no_qualified_trip_samples">已有行程，但温度缺少合格来源或时间证据。需真实记录或导入行程，不会生成示意值。</string>
+    <string name="battery_cached_scope_notice">本机已保存的状态与历史仅供离线查看，并非实时车辆测量；电池健康容量无合格观测时保持未知。</string>
 </resources>

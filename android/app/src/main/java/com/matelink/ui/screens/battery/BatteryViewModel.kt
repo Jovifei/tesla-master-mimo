@@ -12,6 +12,8 @@ import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.local.HistoryReadScope
 import com.matelink.data.local.VehicleContextRepository
+import com.matelink.data.local.VehicleStatusStore
+import com.matelink.domain.analytics.HistoryFreshness
 import com.matelink.domain.analytics.AnalysisHistoryRepository
 import com.matelink.domain.analytics.BatteryTrendEstimate
 import com.matelink.domain.analytics.BatteryTrendSample
@@ -107,6 +109,8 @@ data class BatteryUiState(
     val dataReadiness: DataReadiness? = null,
     val carStatus: CarStatus? = null,
     val batteryTrend: BatteryTrendEstimate? = null,
+    val isCachedStatus: Boolean = false,
+    val isCachedTrend: Boolean = false,
     val units: Units? = null,
     val originalCapacity: Double? = null,
     val ratedEfficiency: Double? = null,
@@ -179,7 +183,9 @@ data class BatteryStats(
 class BatteryViewModel @Inject constructor(
     private val repository: TeslamateRepository,
     private val historyRepository: AnalysisHistoryRepository,
-    private val vehicleContextRepository: VehicleContextRepository
+
+    private val vehicleContextRepository: VehicleContextRepository,
+    private val vehicleStatusStore: VehicleStatusStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BatteryUiState())
@@ -258,6 +264,24 @@ class BatteryViewModel @Inject constructor(
         loader.load(
             proof = { { carId == id && activeScope == scope && vehicleContextRepository.captureReadScope() == scope } },
             fetch = { request -> coroutineScope {
+                val cachedContext = vehicleContextRepository.cachedContextForRemote(id, scope)
+                if (cachedContext != null &&
+                    vehicleContextRepository.isHistoryContextCurrentNow(scope, cachedContext)) {
+                    val savedStatus = vehicleStatusStore.getCachedStatus(scope, cachedContext)
+                    request.requireCurrent()
+                    if (savedStatus != null) _uiState.update {
+                        it.copy(isLoading = false, carStatus = savedStatus, isCachedStatus = true)
+                    }
+                }
+                val cachedHistory = try { historyRepository.loadCached(id) }
+                    catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { null }
+                request.requireCurrent()
+                val cachedTrend = (cachedHistory as? ApiResult.Success)?.data?.drives
+                    ?.mapNotNull { it.toBatteryTrendSample() }?.let(::estimateBatteryTrend)
+                if (cachedTrend != null) _uiState.update {
+                    it.copy(isLoading = false, batteryTrend = cachedTrend, isCachedTrend = true)
+                }
                 // Readiness is optional and must not delay health/status rendering.
                 val readinessDeferred = async {
                     try {
@@ -285,9 +309,19 @@ class BatteryViewModel @Inject constructor(
                     ?.let(::estimateBatteryTrend)
 
                 request.requireCurrent()
-                _uiState.update { it.withHealthStatus(healthResult,
-                    (statusResult as? ApiResult.Success)?.data?.status,
-                    (statusResult as? ApiResult.Success)?.data?.units, batteryTrend) }
+                val latestStatus = (statusResult as? ApiResult.Success)?.data?.status
+                val latestUnits = (statusResult as? ApiResult.Success)?.data?.units
+                val historyFresh = (historyResult as? ApiResult.Success)?.data
+                    ?.freshness == HistoryFreshness.FRESH
+                _uiState.update { previous ->
+                    previous.withHealthStatus(healthResult,
+                        latestStatus ?: previous.carStatus,
+                        latestUnits ?: previous.units, batteryTrend).copy(
+                        isCachedStatus = latestStatus == null && previous.isCachedStatus,
+                        isCachedTrend = if (batteryTrend != null) !historyFresh
+                            else previous.isCachedTrend
+                    )
+                }
 
                 val readinessResult = readinessDeferred.await()
                 Pair(healthResult, (readinessResult as? ApiResult.Success)?.data)

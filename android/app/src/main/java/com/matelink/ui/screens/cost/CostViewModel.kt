@@ -181,7 +181,8 @@ class CostViewModel @Inject constructor(
             var capturedContext: VehicleContext? = null
             try {
                 val scope = vehicleContexts.captureReadScope()
-                val context = vehicleContexts.resolveRemote(carId)
+                val context = vehicleContexts.cachedContextForRemote(carId, scope)
+                    ?: vehicleContexts.resolveRemote(carId)
                 capturedScope = scope
                 capturedContext = context
                 suspend fun checkScope() {
@@ -196,39 +197,48 @@ class CostViewModel @Inject constructor(
                 }?.symbol ?: "?"
                 val records = chargeCostOverrideStore.getAllRecords()
                 checkScope()
-                when (val result = historyRepository.load(carId)) {
-                    is ApiResult.Success -> {
-                        checkScope()
-                        val scopedCarId = result.data.context?.localHistoryCarId
-                        if (scopedCarId != context.localHistoryCarId ||
-                            result.data.context?.stableIdentity != context.stableIdentity) return@launch
-                        val dcIds = scopedCarId?.let { id ->
-                            try { aggregateDao.getDcChargeIds(id).toSet() }
-                            catch (e: CancellationException) { throw e }
-                            catch (_: Exception) { emptySet() }
-                        } ?: emptySet()
-                        checkScope()
-                        activeScope = scope
-                        historyCarId = scopedCarId
-                        dcChargeIds = dcIds
-                        manualRecords = records
-                        currencyCode = settings.currencyCode
-                        defaultChargePrice = settings.defaultChargePrice
-                        historyRecordCount = result.data.charges.size
-                        historyReason = result.data.coverage.reason
-                        _uiState.value = _uiState.value.copy(
-                            currencySymbol = currencySymbol,
-                            historyFreshness = result.data.freshness,
-                            noDataReason = historyReason
-                        )
-                        charges = result.data.charges.mapNotNull { charge ->
-                            parseDate(charge)?.let { DatedCharge(it, charge) }
-                        }
-                        recalculate(_uiState.value.selectedWindow)
+                suspend fun publish(snapshot: com.matelink.domain.analytics.AnalysisHistorySnapshot) {
+                    checkScope()
+                    val scopedCarId = snapshot.context?.localHistoryCarId
+                    if (scopedCarId != context.localHistoryCarId ||
+                        snapshot.context?.stableIdentity != context.stableIdentity)
+                        throw com.matelink.data.local.HistoryIdentityUnavailableException()
+                    val dcIds = aggregateDao.getDcChargeIds(scopedCarId).toSet()
+                    checkScope()
+                    activeScope = scope
+                    historyCarId = scopedCarId
+                    dcChargeIds = dcIds
+                    manualRecords = records
+                    currencyCode = settings.currencyCode
+                    defaultChargePrice = settings.defaultChargePrice
+                    historyRecordCount = snapshot.charges.size
+                    historyReason = snapshot.coverage.reason
+                    _uiState.value = _uiState.value.copy(
+                        currencySymbol = currencySymbol,
+                        historyFreshness = snapshot.freshness,
+                        noDataReason = historyReason
+                    )
+                    charges = snapshot.charges.mapNotNull { charge ->
+                        parseDate(charge)?.let { DatedCharge(it, charge) }
                     }
+                    recalculate(_uiState.value.selectedWindow)
+                }
+                // Prefer already saved receipts when provider pages are slow/offline.
+                // Cost and tariff are still resolved by the same scoped resolver.
+                val saved = try { historyRepository.loadCached(carId) }
+                    catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { null }
+                var cachedPublished = false
+                if (saved is ApiResult.Success) {
+                    publish(saved.data)
+                    cachedPublished = true
+                }
+                when (val result = historyRepository.load(carId)) {
+                    is ApiResult.Success -> publish(result.data)
                     is ApiResult.Error -> {
                         checkScope()
-                        _uiState.value = CostUiState(loading = false, error = result.message)
+                        if (!cachedPublished) _uiState.value =
+                            CostUiState(loading = false, error = result.message)
                     }
                 }
             } catch (e: CancellationException) {

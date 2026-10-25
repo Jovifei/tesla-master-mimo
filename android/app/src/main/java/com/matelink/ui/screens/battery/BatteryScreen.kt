@@ -71,6 +71,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.domain.analytics.BatteryTrendSource
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.CachedHistoryBanner
 import com.matelink.ui.components.TelemetryGauge
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.TelemetrySectionHeader
@@ -159,6 +160,7 @@ fun BatteryScreen(
                             units = uiState.units,
                             palette = palette,
                             healthAvailability = uiState.batteryHealthAvailability,
+                            showCachedNotice = uiState.isCachedStatus || uiState.isCachedTrend,
                             onCardClick = { viewModel.showDetail() }
                         )
                     } else {
@@ -205,6 +207,7 @@ private fun BatteryHealthContent(
     units: com.matelink.data.api.models.Units?,
     palette: CarColorPalette,
     healthAvailability: BatteryHealthAvailability,
+    showCachedNotice: Boolean,
     onCardClick: () -> Unit
 ) {
     Column(
@@ -214,6 +217,10 @@ private fun BatteryHealthContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (showCachedNotice) CachedHistoryBanner(
+            title = stringResource(R.string.metric_state_cached_title),
+            body = stringResource(R.string.battery_cached_scope_notice)
+        )
         if (healthAvailability != BatteryHealthAvailability.AVAILABLE) {
             BatteryHealthAvailabilityCard(healthAvailability)
         }

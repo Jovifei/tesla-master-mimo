@@ -1698,4 +1698,5 @@
     <string name="temperature_last_qualified_trip">Latest qualified drive start: %1$s (local time)</string>
     <string name="temperature_no_trip_history">No eligible saved drives in this period. Live temperature does not create historical samples.</string>
     <string name="temperature_no_qualified_trip_samples">Saved drives exist, but their temperatures lack qualified source/time evidence. Import or record real drives; no values were generated.</string>
+    <string name="battery_cached_scope_notice">Saved status and history are offline records, not live vehicle measurements. Battery health capacity stays unknown without qualified evidence.</string>
 </resources>

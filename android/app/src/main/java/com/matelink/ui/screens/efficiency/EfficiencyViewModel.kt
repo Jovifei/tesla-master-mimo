@@ -75,6 +75,7 @@ internal interface EfficiencyPageSource {
     val scopeChanges: Flow<Unit>
     suspend fun identity(carId: Int): AnalysisPageIdentity
     suspend fun load(carId: Int): ApiResult<AnalysisHistorySnapshot>
+    suspend fun loadCached(carId: Int): ApiResult<AnalysisHistorySnapshot>? = null
 }
 
 @HiltViewModel
@@ -83,6 +84,7 @@ class EfficiencyViewModel internal constructor(private val source: EfficiencyPag
         override val scopeChanges = contexts.historyScopeChanges.map { Unit }
         override suspend fun identity(carId: Int) = contexts.captureAnalysisPageIdentity(carId)
         override suspend fun load(carId: Int) = historyRepository.load(carId)
+        override suspend fun loadCached(carId: Int) = historyRepository.loadCached(carId)
     })
     private val _uiState = MutableStateFlow(EfficiencyUiState())
     val uiState = _uiState.asStateFlow()
@@ -138,6 +140,7 @@ class EfficiencyViewModel internal constructor(private val source: EfficiencyPag
                     throw CancellationException("Efficiency identity changed")
                 }
             }
+            var cachedPublished = false
             try {
                 ensureCurrent()
                 val identity = source.identity(carId)
@@ -145,29 +148,42 @@ class EfficiencyViewModel internal constructor(private val source: EfficiencyPag
                 proof = identity
                 requireIdentity()
                 activeIdentity = identity
+                fun publish(snapshot: AnalysisHistorySnapshot) {
+                    requireIdentity()
+                    if (snapshot.context != identity.context) throw HistoryIdentityUnavailableException()
+                    val dated = snapshot.drives.mapNotNull { drive ->
+                        parseDate(drive)?.let { DatedEfficiency(it, drive) }
+                    }
+                    requireIdentity()
+                    historyRecordCount = snapshot.drives.size
+                    historyReason = snapshot.coverage.reason
+                    datedDrives = dated
+                    historyLoaded = true
+                    _uiState.value = _uiState.value.copy(historyFreshness = snapshot.freshness,
+                        noDataReason = historyReason, error = null)
+                    recalculate(_uiState.value.selectedWindow)
+                }
+                val saved = source.loadCached(carId)
+                ensureCurrent()
+                requireIdentity()
+                if (saved is ApiResult.Success) {
+                    publish(saved.data)
+                    cachedPublished = true
+                }
                 val result = source.load(carId)
                 ensureCurrent()
                 requireIdentity()
                 when (result) {
-                    is ApiResult.Success -> {
-                        if (result.data.context != identity.context) throw HistoryIdentityUnavailableException()
-                        val dated = result.data.drives.mapNotNull { drive -> parseDate(drive)?.let { DatedEfficiency(it, drive) } }
-                        requireIdentity()
-                        historyRecordCount = result.data.drives.size
-                        historyReason = result.data.coverage.reason
-                        datedDrives = dated
-                        historyLoaded = true
-                        _uiState.value = _uiState.value.copy(historyFreshness = result.data.freshness,
-                            noDataReason = historyReason, error = null)
-                        recalculate(_uiState.value.selectedWindow)
+                    is ApiResult.Success -> publish(result.data)
+                    is ApiResult.Error -> if (!cachedPublished) {
+                        _uiState.value = _uiState.value.copy(isLoading = false,
+                            noDataReason = NoDataReason.SOURCE_UNAVAILABLE, error = result.message)
                     }
-                    is ApiResult.Error -> _uiState.value = _uiState.value.copy(isLoading = false,
-                        noDataReason = NoDataReason.SOURCE_UNAVAILABLE, error = result.message)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                if (generation == loadGeneration && currentCarId == carId && execution.isActive) {
+                if (!cachedPublished && generation == loadGeneration && currentCarId == carId && execution.isActive) {
                     clearProjection()
                     _uiState.value = EfficiencyUiState(isLoading = false,
                         selectedWindow = _uiState.value.selectedWindow, noDataReason = NoDataReason.SOURCE_UNAVAILABLE)

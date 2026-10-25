@@ -79,8 +79,17 @@ class AnalysisHistoryRepository @Inject constructor(
 ) {
     private val cache = AnalysisHistorySnapshotCache()
 
-    suspend fun load(carId: Int): ApiResult<AnalysisHistorySnapshot> {
-        val result = historyRepository.load(carId)
+    suspend fun load(carId: Int): ApiResult<AnalysisHistorySnapshot> =
+        project(carId, historyRepository.load(carId))
+
+    /** Non-blocking page preload from verified Room receipts, always STALE. */
+    suspend fun loadCached(carId: Int): ApiResult<AnalysisHistorySnapshot> =
+        project(carId, historyRepository.loadCached(carId))
+
+    private suspend fun project(
+        carId: Int,
+        result: ApiResult<com.matelink.data.repository.UnifiedHistory>
+    ): ApiResult<AnalysisHistorySnapshot> {
         currentCoroutineContext().ensureActive()
         return when (result) {
             is ApiResult.Success -> {
