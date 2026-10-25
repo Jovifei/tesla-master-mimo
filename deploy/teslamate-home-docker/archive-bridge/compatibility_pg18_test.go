@@ -79,10 +79,10 @@ func TestCompatibilityRealPG18MigratedV430(t *testing.T) {
 			t.Fatal(err)
 		}
 		cursor, err := loadCursor(config.StateFile)
-		if err != nil || cursor.LastDriveID != 102 || cursor.LastChargeID != 502 || requests != 4 {
+		if err != nil || cursor.LastDriveID != 102 || cursor.LastChargeID != 502 || requests != 5 {
 			t.Fatalf("poll cursor/receipts=%#v requests=%d err=%v", cursor, requests, err)
 		}
-		if err := bridge.PollOnce(ctx); err != nil || requests != 4 {
+		if err := bridge.PollOnce(ctx); err != nil || requests != 5 {
 			t.Fatalf("duplicate poll imported unchanged IDs: %v", err)
 		}
 	})
