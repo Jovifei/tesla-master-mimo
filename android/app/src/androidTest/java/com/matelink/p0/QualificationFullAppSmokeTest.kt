@@ -40,7 +40,12 @@ class QualificationFullAppSmokeTest {
         composeRule.waitUntil(30_000) {
             composeRule.onAllNodes(list, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
-        composeRule.onNode(list, useUnmergedTree = true).performScrollToNode(hasText(text, substring = true))
+        composeRule.waitUntil(30_000) {
+            runCatching {
+                composeRule.onNode(list, useUnmergedTree = true)
+                    .performScrollToNode(hasText(text, substring = true))
+            }.isSuccess
+        }
         composeRule.waitForText(text)
     }
 }
