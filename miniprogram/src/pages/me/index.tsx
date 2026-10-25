@@ -5,6 +5,7 @@ import { useRef, useState } from 'react'
 import { ApiError, getApiSessionGeneration, JOURVOLT_PRIVACY_VERSION, JOURVOLT_TERMS_VERSION, matelinkApi } from '../../services/api'
 import { readAppSession, readPendingTeslaAuthorization, type AppSession } from '../../services/session'
 import { requestDataStatus } from '../../services/data_status_intent'
+import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
 
 const TERMS_VERSION = JOURVOLT_TERMS_VERSION
 const PRIVACY_VERSION = JOURVOLT_PRIVACY_VERSION
@@ -221,6 +222,7 @@ export default function MePage() {
   return (
     <View className="page more-page">
       <View className="app-toolbar"><Text className="title">更多</Text></View>
+      {MOCK_FIXTURE_ENABLED ? <Text className="muted">合成数据模式——账号状态为模拟，授权流程不可用；全部记录为 source=mock_fixture 的测试数据。</Text> : null}
       <View className="more-status">
         <VisualIcon name="shield" />
         <View className="more-status-copy">
@@ -302,6 +304,19 @@ export default function MePage() {
           <Button className="button" loading={loading} disabled={loading || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>重新授权 Tesla</Button>
           <Button className="button button-secondary" disabled={loading} onClick={logout}>退出登录</Button>
           <Button className="button button-danger" disabled={loading} onClick={() => { void deleteAccount() }}>注销账号</Button>
+        </View>
+      ) : null}
+      {session ? (
+        <View className="card">
+          <View className="visual-heading"><VisualIcon name="chart" /><Text className="section-title">数据分析</Text></View>
+          <Text className="muted">入口与 App 更多页一致；Mini 暂无对应页面的项（长途旅程、费用分析、续航分析、年度报告、导出数据、软件更新、哨兵历史）不提供假入口。</Text>
+          <Button className="button button-secondary" onClick={() => { void Taro.navigateTo({ url: '/pages/analysis/index?kind=stats' }) }}>统计概览</Button>
+          <Button className="button button-secondary" onClick={() => { void Taro.navigateTo({ url: '/pages/insights/index' }) }}>电池健康</Button>
+          <Button className="button button-secondary" onClick={() => { void Taro.navigateTo({ url: '/pages/analysis/index?kind=mileage' }) }}>里程统计</Button>
+          <Button className="button button-secondary" onClick={() => { void Taro.switchTab({ url: '/pages/drives/index' }) }}>行程历史</Button>
+          <Button className="button button-secondary" onClick={() => { void Taro.navigateTo({ url: '/pages/analysis/index?kind=efficiency' }) }}>能耗</Button>
+          <Button className="button button-secondary" onClick={() => { void Taro.navigateTo({ url: '/pages/analysis/index?kind=vampire' }) }}>待机能耗</Button>
+          <Button className="button button-secondary" onClick={() => { void Taro.navigateTo({ url: '/pages/analysis/index?kind=timeline' }) }}>时间线</Button>
         </View>
       ) : null}
       {error ? <Text className="error">{error}</Text> : null}

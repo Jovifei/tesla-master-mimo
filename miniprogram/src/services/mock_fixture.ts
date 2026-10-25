@@ -31,7 +31,9 @@ const END = Date.UTC(2026, 9, 25, 14, 0, 0)
 const DAY = 86_400_000
 const DAYS = 76
 
-type PlannedDrive = { id: number; start: number; end: number; km: number; minutes: number; speedMax: number; kwh: number; from: string; to: string }
+type PlannedDrive = { id: number; start: number; end: number; km: number; minutes: number; speedMax: number; kwh: number; from: string; to: string;
+  /** Scenario overrides: winter temperature and a net-regen (downhill) drain. */
+  outsideTempAvg?: number; netKwh?: number; quarantined?: boolean }
 type PlannedCharge = { id: number; start: number; end: number; kwhAdded: number; dc: boolean; free: boolean; teslamateZero: boolean; address: string; socStart: number; socEnd: number }
 
 function planTimeline(): { drives: PlannedDrive[]; charges: PlannedCharge[] } {
@@ -40,7 +42,13 @@ function planTimeline(): { drives: PlannedDrive[]; charges: PlannedCharge[] } {
   for (let day = 0; day < DAYS; day++) {
     const dayStart = clock + day * DAY
     const weekday = new Date(dayStart).getUTCDay()
-    const trips = weekday === 0 || weekday === 6 ? Math.floor(between(0, 3)) : Math.floor(between(2, 6))
+    // Month boundaries (8/31=day21, 9/1=day22, 9/30=day51, 10/1=day52) always get
+    // at least one drive so monthly chart groups never break.
+    const monthBoundary = [21, 22, 51, 52].includes(day)
+    const coldWeek = day >= 36 && day <= 41
+    const trips = monthBoundary ? Math.max(1, weekday === 0 || weekday === 6 ? 1 : Math.floor(between(2, 4)))
+      : coldWeek ? Math.max(2, weekday === 0 || weekday === 6 ? 2 : Math.floor(between(2, 4)))
+      : weekday === 0 || weekday === 6 ? Math.floor(between(0, 3)) : Math.floor(between(2, 6))
     for (let trip = 0; trip < trips; trip++) {
       if (soc < 22) {
         // Overnight-ish AC top-up most days; a DC stop roughly every fifth stop.
@@ -62,11 +70,50 @@ function planTimeline(): { drives: PlannedDrive[]; charges: PlannedCharge[] } {
       const from = trip === 0 ? (charges.length && rand() < 0.6 ? HOME : pick(PLACES)) : drives[drives.length - 1].to
       const to = pick(PLACES.filter(place => place !== from))
       const kwh = round1(km * between(128, 186) / 1000)
-      drives.push({ id: driveId++, start, end: start + minutes * 60_000, km, minutes, speedMax: Math.round(speed), kwh, from, to })
-      soc = Math.max(6, soc - kwh / 0.6)
+      // Winter-morning scenario: 12 drives around mid-September carry sub-zero
+      // outside temperatures (negative values must render unclamped).
+      const coldDay = day >= 36 && day <= 41
+      const outsideTempAvg = coldDay ? Math.round(between(-8.2, -0.4) * 10) / 10 : undefined
+      // Downhill scenario: two drives with genuine net regeneration (negative drain).
+      const regen = drives.filter(item => (item.netKwh ?? 0) < 0).length
+      const netKwh = regen < 2 && km < 8 && trip === trips - 1 ? -round1(between(0.2, 0.9)) : undefined
+      drives.push({ id: driveId++, start, end: start + minutes * 60_000, km, minutes, speedMax: Math.round(speed), kwh, from, to, outsideTempAvg, netKwh })
+      soc = Math.max(6, soc - Math.max(kwh, 0) / 0.6)
     }
   }
+  // Quarantine scenario: exactly one quarantined row that list/stat consumers must skip.
+  drives.push({ id: driveId++, start: END + 3_600_000, end: END + 3_600_000 + 9 * 60_000, km: 5.5, minutes: 9,
+    speedMax: 62, kwh: 1.1, from: PLACES[1], to: PLACES[3], quarantined: true })
   return { drives: drives.reverse(), charges: charges.reverse() }
+}
+
+/** Battery degradation steps aligned with the software-update timeline. */
+function currentCapacityFor(asOf: number): number {
+  if (asOf >= Date.UTC(2026, 8, 15)) return 59.2
+  if (asOf >= Date.UTC(2026, 7, 12)) return 59.6
+  return 60
+}
+
+/** Standby windows from adjacent planned drives (>= 60 min). Rows keep
+ * source=mock_fixture, so qualifyParked honestly reports unqualified energy. */
+function standbyWindows(): Record<string, unknown>[] {
+  const ordered = planned.drives
+  const windows: Record<string, unknown>[] = []
+  for (let index = 0; index + 1 < ordered.length && windows.length < 10; index++) {
+    const newer = ordered[index], older = ordered[index + 1]
+    const start = older.end, end = newer.start
+    const minutes = (end - start) / 60_000
+    if (!Number.isFinite(minutes) || minutes < 60) continue
+    const socStart = Math.round(100 - Math.max(older.kwh, 0) / 0.6), socEnd = Math.round(100 - Math.max(older.kwh, 0) / 0.6 - Math.max(newer.kwh, 0) / 0.6)
+    windows.push({ ...{ car_id: MOCK_CAR_ID, vehicle_uid: 'mock-vehicle-uid-7' },
+      older_drive_id: older.id, newer_drive_id: newer.id,
+      start_date: iso(older.end), end_date: iso(newer.start),
+      address: older.to, start_battery_level: socStart, end_battery_level: socEnd,
+      battery_delta: socEnd - socStart, inside_temp_average: older.outsideTempAvg ?? 24.5, outside_temp_average: older.outsideTempAvg ?? 23.8,
+      sample_count: 0, coverage_seconds: Math.round((end - start) / 1000), coverage_ratio: 0,
+      linked_charge: null, source: 'mock_fixture', energy_contract: { version: 1, stored_change: { reason: 'no_qualified_parked_energy' } } })
+  }
+  return windows
 }
 
 const planned = planTimeline()
@@ -103,8 +150,10 @@ function rawDrive(row: PlannedDrive, withRoute: boolean): RawDrive {
     speed_sample_count: Math.max(6, row.minutes), speed_metrics_source: 'observed_route_samples', speed_unit: 'km/h',
     odometer_details: { odometer_distance: row.km },
     battery_details: { start_battery_level: Math.round(100 - (row.kwh / 0.6)), end_battery_level: Math.round(100 - (row.kwh / 0.6) - row.kwh / 0.6) },
-    energy_consumed_net: row.kwh, consumption_net: Math.round(row.kwh * 1000 / row.km),
-    source: 'mock_fixture', quality_state: 'observed', quality_reason: 'mock_fixture_observed',
+    energy_consumed_net: row.netKwh ?? row.kwh, consumption_net: Math.round((row.netKwh ?? row.kwh) * 1000 / row.km),
+    outside_temp_avg: row.outsideTempAvg ?? null,
+    source: 'mock_fixture', quality_state: row.quarantined ? 'quarantined' : 'observed',
+    quality_reason: row.quarantined ? 'mock_fixture_quarantine_scenario' : 'mock_fixture_observed',
     ...(withRoute ? { drive_details: routePoints(row) } : {}),
   }
 }
@@ -179,6 +228,22 @@ export function mockRequest(path: string, enabled: boolean = MOCK_FIXTURE_ENABLE
   if (path === `${carPrefix}/data-readiness`) return { data: readiness }
   if (path === `${carPrefix}/telemetry/pairing`) return { data: { status: 'paired', source: 'mock_fixture' } }
   if (path === `${carPrefix}/charges/current`) return { data: { charge: null } }
+  // Analysis endpoints (analysis_api.ts shapes). car_id/vehicle_uid satisfy assertVehicle.
+  const vehicleKeys = { car_id: MOCK_CAR_ID, vehicle_uid: 'mock-vehicle-uid-7' }
+  if (path === `${carPrefix}/battery-health`) return { data: { ...vehicleKeys, battery_health: { ...vehicleKeys,
+    max_range: 298, current_range: 289, max_capacity: 60, current_capacity: currentCapacityFor(END), rated_efficiency: 142, battery_health_percentage: 99.3 },
+    units: { unit_of_length: 'km' } } }
+  if (/^\/api\/v1\/cars\/\d+\/updates\?page=(\d+)&show=20$/.test(path)) {
+    const updates = [
+      { ...vehicleKeys, update_id: 'mock-update-3', version: '2026.38.2', start_date: iso(Date.UTC(2026, 9, 8, 2, 10)), end_date: iso(Date.UTC(2026, 9, 8, 3, 5)) },
+      { ...vehicleKeys, update_id: 'mock-update-2', version: '2026.32.1', start_date: iso(Date.UTC(2026, 8, 15, 1, 30)), end_date: iso(Date.UTC(2026, 8, 15, 2, 25)) },
+      { ...vehicleKeys, update_id: 'mock-update-1', version: '2026.26.3', start_date: iso(Date.UTC(2026, 7, 12, 3, 0)), end_date: iso(Date.UTC(2026, 7, 12, 3, 55)) },
+    ]
+    const match = /page=(\d+)/.exec(path), updatePage = match ? Number(match[1]) : 1
+    return { data: { ...vehicleKeys, updates: updatePage === 1 ? updates : [] }, meta: { page: updatePage, show: 20, total: updates.length, total_pages: 1, source: 'mock_fixture' } }
+  }
+  if (path === `/api/matelink/v1/cars/${MOCK_CAR_ID}/history-context`) return { data: { ...vehicleKeys, capability_version: 1 } }
+  if (path === `${carPrefix.replace('/api/v1', '/api/matelink/v1')}/standby`) return { data: { ...vehicleKeys, windows: standbyWindows(), units: { unit_of_length: 'km', unit_of_temperature: 'C' } } }
   if (path.startsWith('/api/v1/tesla/authorization') || path.includes('/authorization/status')) return { authorized: true, state: 'authorized', source: 'mock_fixture' }
   const history = /^\/api\/v1\/cars\/\d+\/(drives|charges)\?page=(\d+)&show=(\d+)$/.exec(path)
   if (history) {
