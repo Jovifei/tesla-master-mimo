@@ -27,10 +27,11 @@
   .history-route-stops .history-route-end::before { background: #5f6670; }
   .history-summary-primary, .history-record-metrics { background: #f4f5f6; border-radius: 18px; padding: 16px 0; }
   .history-record-metrics .metric, .history-summary-primary .metric { background: transparent; border-radius: 0; padding: 8px; }
-  .history-record-metrics .metric:nth-child(odd), .history-summary-primary .metric:nth-child(odd) { border-right: 1px solid #e9edf2; }
+  .history-record-metrics .metric:not(:last-child) { border-right: 1px solid #e9edf2; }
+  .history-summary-primary .metric:nth-child(odd) { border-right: 1px solid #e9edf2; }
   .history-record-metrics .metric-heading, .history-record-metrics .metric-reading, .history-summary-primary .metric-heading, .history-summary-primary .metric-reading { align-items: center; justify-content: center; }
   .history-record-metrics .metric-label, .history-record-metrics .metric-value, .history-record-metrics .metric-unit, .history-summary-primary .metric-label, .history-summary-primary .metric-value, .history-summary-primary .metric-unit { text-align: center; }
-  .history-record-metrics .metric-value { font-size: 44px; font-family: monospace; }
+  .history-record-metrics .metric-value { font-size: 34px; font-family: monospace; }
   .history-summary-primary .metric-value { font-size: 52px; font-family: monospace; }
   .history-summary-secondary { border-top: 1px solid #e9edf2; padding-top: 12px; }
   .history-charge-heading { display: flex; gap: 18px; align-items: center; margin-bottom: 20px; }
@@ -41,11 +42,30 @@
   .history-record-top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
   .history-soc { font-size: 34px; font-weight: 650; color: #1f2937; }
   .history-route { margin-top: 14px; }
-  .history-record-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+  .history-record-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin-top: 16px; }
   .history-record-metrics text { display: block; }
   .history-energy-negative { color: #168552; }
   .history-source { display: inline-block; font-size: 22px; color: #6b7280; background: #f5f7f9; border-radius: 8px; padding: 4px 10px; margin-top: 6px; }
 }
+  .parked-heading { display: flex; align-items: center; gap: 16px; }
+  .parked-icon { width: 64px; height: 64px; border-radius: 50%; background: #e9eef4; display: flex; align-items: center; justify-content: center; flex: none; }
+  .parked-main { flex: 1 1 auto; min-width: 0; }
+  .parked-title { display: block; font-size: 30px; font-weight: 650; color: #1f2937; }
+  .parked-date { display: block; margin-top: 6px; font-size: 22px; color: #6b7280; }
+  .parked-end { flex: none; text-align: right; }
+  .parked-duration { display: block; font-size: 32px; font-weight: 650; color: #1f2937; font-family: monospace; }
+  .parked-soc { display: block; margin-top: 6px; font-size: 22px; color: #157a86; font-weight: 600; }
+  .detail-back { width: auto; display: inline-flex; align-items: center; padding: 8px 20px; margin: 0 16px 0 0; border-radius: 999px; background: #eef1f4; color: #1f2937; font-size: 26px; line-height: 1.4; }
+  .history-detail-heading { display: flex; align-items: center; }
+  .history-detail-heading .section-title { flex: 1 1 auto; }
+  .parked-detail-summary { margin-bottom: 16px; }
+  .parked-detail-hero-title { display: block; font-size: 36px; font-weight: 700; color: #1f2937; }
+  .parked-detail-timeline { display: block; margin-top: 8px; font-family: monospace; font-size: 24px; color: #6b7280; }
+  .parked-detail-badge { display: inline-block; margin-top: 10px; padding: 4px 14px; border-radius: 999px; font-size: 22px; font-weight: 650; }
+  .parked-detail-badge.charge { background: #dcf5e7; color: #10893e; }
+  .parked-detail-badge.drain { background: #fbe3e6; color: #c2213b; }
+  .parked-detail-note { display: block; margin: 6px 0 10px; font-size: 24px; color: #6b7280; }
+  .parked-detail-cloud-pending { display: block; padding: 16px; border-radius: 16px; background: #f5f7f9; font-size: 24px; color: #6b7280; }
 @media (min-width: 640PX) { .history-page .history-record-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
 .drives-page {

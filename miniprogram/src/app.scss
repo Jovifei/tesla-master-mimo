@@ -408,3 +408,8 @@ button {
 @media (prefers-color-scheme: dark) {
  .tpms-settings input { background: #15181c; color: #f5f6f7; border-color: #323840; }
 }
+
+/* Shared detail navigation: App keeps a small leading back control. */
+.detail-back { width: auto; display: inline-flex; align-items: center; padding: 8px 20px; margin: 0 16px 0 0; border-radius: 999px; background: #eef1f4; color: #1f2937; font-size: 26px; line-height: 1.4; }
+.history-detail-heading { display: flex; align-items: center; }
+.history-detail-heading .section-title { flex: 1 1 auto; }

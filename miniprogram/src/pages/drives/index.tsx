@@ -3,6 +3,7 @@ import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/
 import { useRef, useState } from 'react'
 import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
 import { buildDriveHistoryItems, type DriveHistoryItem } from '../../domain/drive_history'
+import { toChineseDisplayAddress } from '../../domain/address_display'
 import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, reconcileHistoryCache, type HistoryInterval } from '../../domain/history_controller'
 import { emptyHistoryQuery, filterHistory, historyDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
@@ -539,24 +540,25 @@ export default function DrivesPage() {
           {historyItems.length === 0 && visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的行程</Text> : null}
           {historyItems.map(item => item.kind === 'parked' ? (
             <View key={item.key} className="history-record history-parked" onClick={() => { void openParked(item) }}>
-              <Text className="history-record-date">{historyEditorialDate(item.startDate)}</Text>
-              <View className="history-route"><VisualIcon name="vehicle" /><Text className="muted">驻车于 {item.address ?? '位置未知'}</Text></View>
-              <View className="history-record-metrics">
-                <MetricValue label="时长" value={item.minutes >= 60 ? `${Math.floor(item.minutes / 60)}h ${item.minutes % 60}m` : `${item.minutes}m`} icon="clock" />
-                <MetricValue label="起始电量" value={item.older.endBatteryLevel} unit="%" icon="battery" digits={0} />
-                <MetricValue label="结束电量" value={item.newer.startBatteryLevel} unit="%" icon="battery" digits={0} />
+              <View className="parked-heading">
+                <View className="parked-icon"><VisualIcon name="vehicle" /></View>
+                <View className="parked-main"><Text className="parked-title">驻车于 {item.address ?? '未知位置'}</Text>
+                  <Text className="parked-date">{historyEditorialDate(item.startDate)}</Text></View>
+                <View className="parked-end"><Text className="parked-duration">{item.minutes >= 60 ? `${Math.floor(item.minutes / 60)}h ${item.minutes % 60}m` : `${item.minutes}m`}</Text>
+                  {item.older.endBatteryLevel != null && item.newer.startBatteryLevel != null
+                    ? <Text className="parked-soc">{item.older.endBatteryLevel}% → {item.newer.startBatteryLevel}%</Text> : null}</View>
               </View>
             </View>
           ) : (
             <View key={item.key} className="history-record" onClick={() => { void openDetail(item.drive) }}>
               <Text className="history-record-date">{historyEditorialDate(item.drive.startDate)}</Text>
               <View className="history-record-evidence"><Text className="history-soc">{battery(item.drive.startBatteryLevel)} → {battery(item.drive.endBatteryLevel)}</Text><Text className="history-source">{energyLabel(item.drive)} · {sourceLabel(item.drive.source)}</Text></View>
-              <View className="history-route"><View className="history-route-stops"><Text className="history-route-start">{value(item.drive.startAddress)}</Text><Text className="history-route-end">{value(item.drive.endAddress)}</Text></View><VisualIcon name="route" /></View>
+              <View className="history-route"><View className="history-route-stops"><Text className="history-route-start">{value(toChineseDisplayAddress(item.drive.startAddress))}</Text><Text className="history-route-end">{value(toChineseDisplayAddress(item.drive.endAddress))}</Text></View><VisualIcon name="route" /></View>
               <View className="history-record-metrics">
-                <MetricValue label="时长" value={duration(item.drive.durationMinutes).value} unit={duration(item.drive.durationMinutes).unit} icon="clock" digits={Number.isInteger(item.drive.durationMinutes) ? 0 : 1} />
+                <MetricValue label="能量" value={efficiency(item.drive)} unit={efficiency(item.drive) != null ? "kWh/100km" : undefined} icon="energy" digits={1} negative={(efficiency(item.drive) ?? 0) < 0} />
                 <MetricValue label="距离" value={item.drive.distanceKm} unit="km" icon="distance" digits={1} />
                 <MetricValue label="最高速度" value={peakSpeedKmh(item.drive)} unit="km/h" icon="speed" digits={Number.isInteger(peakSpeedKmh(item.drive)) ? 0 : 1} />
-                <MetricValue label="平均能耗" value={efficiency(item.drive)} unit="kWh/100km" icon="energy" digits={1} negative={(efficiency(item.drive) ?? 0) < 0} />
+                <MetricValue label="时长" value={duration(item.drive.durationMinutes).value} unit={duration(item.drive.durationMinutes).unit} icon="clock" digits={Number.isInteger(item.drive.durationMinutes) ? 0 : 1} />
               </View>
               {peakSpeedKmh(item.drive) != null ? <Text className="metric-source">最高速度来自行程观测样本</Text> : null}
             </View>
@@ -568,9 +570,9 @@ export default function DrivesPage() {
       {selected && !isHistoryQuarantined(selected) ? (
         <ScrollView className="history-detail-overlay" scrollY scrollTop={detailScrollTop.current} onScroll={event => { detailScrollTop.current = event.detail.scrollTop }} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%' }} ariaLabel="行程详情">
         <View className="history-detail-surface">
-          <View className="history-detail-heading"><Text className="section-title">行程详情</Text><Button className="button" onClick={closeDetail}>返回列表</Button></View>
+          <View className="history-detail-heading"><Button className="detail-back" onClick={closeDetail}>‹ 返回</Button><Text className="section-title">行程详情</Text></View>
           <Button className="button-secondary" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=curves&id=${encodeURIComponent(selected.id)}` }) }}>行程曲线</Button>
-          <Text className="muted">{value(selected.startAddress)} → {value(selected.endAddress)}</Text>
+          <Text className="muted">{value(toChineseDisplayAddress(selected.startAddress))} → {value(toChineseDisplayAddress(selected.endAddress))}</Text>
           <View className="metric-grid">
             <MetricValue label="距离" value={selected.distanceKm} unit="km" icon="distance" digits={1} />
             <MetricValue label="时长" value={duration(selected.durationMinutes).value} unit={duration(selected.durationMinutes).unit} icon="clock" digits={Number.isInteger(selected.durationMinutes) ? 0 : 1} />
@@ -594,23 +596,43 @@ export default function DrivesPage() {
       {parkedOpen && parkedOpen.kind === 'parked' ? (
         <ScrollView className="history-detail-overlay" scrollY style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%' }} ariaLabel="驻车详情">
         <View className="history-detail-surface">
-          <View className="history-detail-heading"><Text className="section-title">驻车详情</Text><Button className="button" onClick={closeParked}>返回列表</Button></View>
-          <Text className="muted">驻车于 {parkedOpen.address ?? '位置未知'}</Text>
-          <View className="metric-grid">
-            <MetricValue label="驻车时长" value={parkedOpen.minutes >= 60 ? `${Math.floor(parkedOpen.minutes / 60)}h ${parkedOpen.minutes % 60}m` : `${parkedOpen.minutes}m`} icon="clock" />
-            <MetricValue label="起始电量" value={parkedOpen.older.endBatteryLevel} unit="%" icon="battery" digits={0} />
-            <MetricValue label="结束电量" value={parkedOpen.newer.startBatteryLevel} unit="%" icon="battery" digits={0} />
-            <MetricValue label="电量变化" value={parkedCloud?.batteryDelta ?? (parkedOpen.older.endBatteryLevel != null && parkedOpen.newer.startBatteryLevel != null ? parkedOpen.newer.startBatteryLevel - parkedOpen.older.endBatteryLevel : null)} unit="%" icon="battery" digits={0} />
-            <MetricValue label="估算能耗" value={parkedCloud?.energyKwh ?? null} unit="kWh" icon="energy" digits={2} />
-            <MetricValue label="平均功率" value={parkedCloud?.averagePowerW ?? null} unit="W" icon="energy" digits={0} />
-            <MetricValue label="车内温度" value={parkedCloud?.insideTempC ?? null} unit="°C" icon="info" digits={1} />
-            <MetricValue label="车外温度" value={parkedCloud?.outsideTempC ?? null} unit="°C" icon="info" digits={1} />
-            <MetricValue label="覆盖率" value={parkedCloud?.coverageRatio == null ? null : parkedCloud.coverageRatio * 100} unit="%" icon="clock" digits={0} />
-            <MetricValue label="采样数" value={parkedCloud?.sampleCount ?? null} icon="clock" digits={0} />
-          </View>
-          {parkedCloud ? <Text className="muted">数据来源：{parkedCloud.source ?? '云端驻车明细'}</Text>
-            : parkedCloudFailed ? <Text className="muted">云端明细暂不可用；以上为本机相邻行程推得的驻车事实。</Text>
-            : <Text className="muted">正在读取云端驻车明细（温度、功率与关联充电）…</Text>}
+          <View className="history-detail-heading"><Button className="detail-back" onClick={closeParked}>‹ 返回</Button><Text className="section-title">驻车详情</Text></View>
+          {(() => {
+            // App build70 layered design: hero (address/time/duration/badge) →
+            // battery boundaries → cloud detail that shows one honest pending
+            // line instead of a wall of per-cell "no data".
+            const delta = parkedCloud?.batteryDelta ?? (parkedOpen.older.endBatteryLevel != null && parkedOpen.newer.startBatteryLevel != null
+              ? parkedOpen.newer.startBatteryLevel - parkedOpen.older.endBatteryLevel : null)
+            const duration = parkedOpen.minutes >= 60 ? `${Math.floor(parkedOpen.minutes / 60)}h ${parkedOpen.minutes % 60}m` : `${parkedOpen.minutes}m`
+            const cloudDetail = parkedCloud != null && (parkedCloud.energyKwh != null || parkedCloud.averagePowerW != null ||
+              parkedCloud.insideTempC != null || parkedCloud.outsideTempC != null || (parkedCloud.sampleCount ?? 0) > 0)
+            return <>
+              <View className="card parked-detail-summary">
+                <Text className="parked-detail-hero-title">驻车于 {parkedOpen.address ?? '未知位置'}</Text>
+                <Text className="parked-detail-timeline">{historyDateTime(parkedOpen.startDate)} → {historyDateTime(parkedOpen.endDate)}</Text>
+                <Text className="parked-detail-note">共驻车 {duration}{delta != null ? ' ' : ''}{delta != null ? (delta > 0
+                  ? <Text className="parked-detail-badge charge">⚡ 充电 +{delta}%</Text>
+                  : <Text className="parked-detail-badge drain">耗电 −{Math.abs(delta)}%</Text>) : null}</Text>
+              </View>
+              <Text className="section-title">起止电量</Text>
+              <View className="history-record-metrics">
+                <MetricValue label="起始电量" value={parkedOpen.older.endBatteryLevel} unit="%" icon="battery" digits={0} />
+                <MetricValue label="结束电量" value={parkedOpen.newer.startBatteryLevel} unit="%" icon="battery" digits={0} />
+                <MetricValue label="电量变化" value={delta} unit="%" icon="battery" digits={0} />
+              </View>
+              <Text className="section-title">能耗与环境</Text>
+              {cloudDetail && parkedCloud ? <View className="history-record-metrics">
+                <MetricValue label="估算能耗" value={parkedCloud.energyKwh} unit="kWh" icon="energy" digits={2} />
+                <MetricValue label="平均功率" value={parkedCloud.averagePowerW} unit="W" icon="energy" digits={0} />
+                <MetricValue label="车内温度" value={parkedCloud.insideTempC} unit="°C" icon="cloud" digits={1} />
+                <MetricValue label="车外温度" value={parkedCloud.outsideTempC} unit="°C" icon="cloud" digits={1} />
+              </View> : <Text className="parked-detail-cloud-pending">{parkedCloudFailed
+                ? '云端明细暂不可用；以上为本机相邻行程推得的驻车事实。'
+                : '云端明细待同步：温度、功率与采样分析将在网络恢复后补全；可下拉重试。'}</Text>}
+              <Text className="muted">{parkedCloud ? `数据来源：${parkedCloud.source ?? '云端驻车明细'}`
+                : parkedCloudFailed ? '数据来源：本机相邻行程推得的驻车事实' : '正在读取云端驻车明细（温度、功率与关联充电）…'}</Text>
+            </>
+          })()}
           {error ? <Text className="error">{error}</Text> : null}
         </View>
         </ScrollView>
