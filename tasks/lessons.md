@@ -579,3 +579,9 @@
 ## 2026-10-15 生产Compose归档容器识别
 - 定向升级前按com.docker.compose.project/service标签枚举所有状态容器，不只看当前规范名称；历史归档容器可能仍有相同标签并被Compose误选。
 - 归档桥保留原活跃容器与游标，生产桥使用独立matelink-archive-production项目；后续部署使用private/archive-production-compose.json，不再由原home项目批量重建桥。
+## 2026-10-25 新源码与实机页面复核
+
+- 收到“项目代码已更新”的纠正后，先核对原工作区 HEAD、远端分支、手机实际 versionCode 与截图，再决定是否沿用上一轮结论；旧 SHA 的审核结论不能直接判定新页面。
+- 离线 Room 回退不能凭全库 `driveId` 唯一就认定当前车辆：必须通过当前账号、来源、API origin 与车辆映射得到本地 history car key，再读取同一键下的两端行程。
+- 行程历史里用户指定的 SOC 位置和技术徽标要以实机渲染核验，源码单测与签名安装本身不能证明布局符合要求。
+
