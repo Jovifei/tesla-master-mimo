@@ -339,7 +339,7 @@ it('uses the full charging HUD and lower three-column card without replacing mis
   expect(hud.findAllByType('text').map(node => node.children.join('')).join(' ')).not.toContain('0 kWh')
   expect(hud.findByProps({ ariaLabel: '充电电压电流 230 V / 暂无数据 A' })).toBeDefined()
   const lower = page.root.findByProps({ className: 'dashboard-current-charge' })
-  expect(lower.findByProps({ ariaLabel: '剩余时间 1小时30分钟' })).toBeDefined()
+  expect(lower.findByProps({ ariaLabel: '剩余时间 1.5h' })).toBeDefined()
   expect(lower.findByProps({ ariaLabel: '已充入 暂无数据 kWh' })).toBeDefined()
   expect(snapshotBadge().children.join('')).not.toContain('实时')
   const dismiss = hud.findAllByType('button').find(node => node.children.join('') === '关闭浮窗')!

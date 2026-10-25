@@ -403,6 +403,11 @@ export default function VehiclePage() {
   }, [visual.assetKey, car?.stableId, imageRetry, appearanceRevision, loading, imageActivation])
 
   const readiness = readinessViewFor(readinessItems)
+  // Per-wheel readiness wording comes from the same items the app reads ("tpms" key).
+  const tpmsReadiness = (() => {
+    const view = readinessViewFor(readinessItems, 'tpms')
+    return { status: view.status, lastObservedAt: view.lastObservedAt }
+  })()
   const tpmsHistory = car && currentSession?.userId && pageOrigin.current &&
     pageOwner.current === `${currentSession.userId}:${getApiSessionGeneration()}`
     ? readTpmsCache(Taro, currentSession.userId, pageOrigin.current, car.stableId) : null
@@ -435,7 +440,7 @@ export default function VehiclePage() {
         {loading ? <LoadingIndicator label="正在读取最新数据…" compact /> : null}
         <View className="dashboard-location-row"><DashboardInfoCard label="里程" value={dashboardMetric(status.odometer, 'km', 0)} icon="speed" onClick={() => navigate('/pages/analysis/index?kind=mileage')} /><DashboardInfoCard label="位置" value={location} icon="location" onClick={() => { if (map) navigate('/pages/tools/index?kind=location'); else { focusDiagnostics.current = true; setShowDiagnostics(true) } }} /></View>
         <View className="dashboard-temperature-row"><DashboardInfoCard label="车内" value={dashboardTemperature(status.insideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /><DashboardInfoCard label="车外" value={dashboardTemperature(status.outsideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /></View>
-        <DashboardTpms snapshot={status.tpms} report={status.tpmsReport} warnings={tpmsAlerts} onOpen={() => navigate('/pages/tools/index?kind=tpms')} />
+        <DashboardTpms snapshot={status.tpms} report={status.tpmsReport} warnings={tpmsAlerts} readiness={tpmsReadiness} onOpen={() => navigate('/pages/tools/index?kind=tpms')} />
         {map ? <View className="dashboard-map-card">{!mapFailed ? <Map id="dashboard-map" latitude={map.latitude} longitude={map.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...map, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24, title: car.displayName || car.name || '车辆' }]} onError={() => setMapFailed(true)} /> : <View className="dashboard-map-unavailable"><Text>地图暂时无法载入</Text><Button className="dashboard-text-button" onClick={() => setMapFailed(false)}>重试地图</Button></View>}</View> : null}
         <View className="dashboard-history-entry" onClick={() => navigate('/pages/analysis/index?kind=stats')}><DashboardIcon name="bolt" /><View><Text>7天电量趋势</Text><Text>查看已记录的电池历史与容量详情</Text></View></View>
         {activeCharging ? <DashboardCurrentCharge status={status} onOpen={() => { void Taro.switchTab({ url: '/pages/charges/index' }) }} /> : null}

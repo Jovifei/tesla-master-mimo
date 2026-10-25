@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest'
 vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view' }))
 import type { CarStatus } from '../../services/types'
-import { dashboardRange, dashboardSnapshot, dashboardVehicleSubtitle, dashboardPower, dashboardShift, dashboardMetric, dashboardTemperature } from './presentation'
+import { dashboardRange, dashboardSnapshot, dashboardVehicleSubtitle, dashboardPower, dashboardShift, dashboardMetric, dashboardTemperature, dashboardTpmsPlaceholder, hudRemaining, rawChargeHours } from './presentation'
 it('groups the App odometer while preserving an observed zero', () => {
  expect(dashboardMetric(19992, 'km', 0)).toBe('19,992 km')
  expect(dashboardMetric(0, 'km', 0)).toBe('0 km')
@@ -9,7 +9,27 @@ it('groups the App odometer while preserving an observed zero', () => {
 it('uses the App one-decimal temperature presentation only for observed values', () => {
  expect(dashboardTemperature(28)).toBe('28.0°C')
  expect(dashboardTemperature(27.9)).toBe('27.9°C')
- expect(dashboardTemperature(null)).toBe('--')
+ expect(dashboardTemperature(0)).toBe('0.0°C')
+ expect(dashboardTemperature(null)).toBe('等待车辆')
+})
+it('mirrors the App charging HUD `Xh Ym` / `Xm` remaining format', () => {
+ expect(hudRemaining(2.5)).toBe('2h 30m')
+ expect(hudRemaining(0.4)).toBe('24m')
+ expect(hudRemaining(null)).toBe('暂无数据')
+ expect(hudRemaining(-1)).toBe('暂无数据')
+})
+it('keeps the bottom charging card on the App raw hours rendering', () => {
+ expect(rawChargeHours(3)).toBe('3h')
+ expect(rawChargeHours(3.5)).toBe('3.5h')
+ expect(rawChargeHours(null)).toBe('暂无数据')
+})
+it('shows accurate readiness wording for missing TPMS wheels and plain data for available', () => {
+ expect(dashboardTpmsPlaceholder({ status: 'collecting', lastObservedAt: null })).toBe('收集中')
+ expect(dashboardTpmsPlaceholder({ status: 'waiting_vehicle', lastObservedAt: null })).toBe('等待车辆')
+ expect(dashboardTpmsPlaceholder({ status: 'permission_required', lastObservedAt: null })).toBe('需要 Tesla 授权')
+ expect(dashboardTpmsPlaceholder({ status: 'unsupported', lastObservedAt: null })).toBe('不支持')
+ expect(dashboardTpmsPlaceholder({ status: 'telemetry_error', lastObservedAt: null })).toBe('暂不可用')
+ expect(dashboardTpmsPlaceholder({ status: 'collecting', lastObservedAt: '2026-10-25T01:00:00Z' })).toBe('收集中 · 最近观测：2026-10-25T01:00:00Z')
 })
 it.each([['74D','长续航版'],['50','标准续航版'],['P100D','性能版'],['Long Range','长续航版'],['unknown',null]])('matches actual App trim rule %s without exposing raw trim', (raw, expected) => { expect(dashboardVehicleSubtitle(null,raw)).toBe(expected); expect(dashboardVehicleSubtitle('Model Y',raw)).toBe(expected ? `Model Y · ${expected}` : 'Model Y') })
 it('retains zero range, signed direction and missing shift without guessing', () => {
