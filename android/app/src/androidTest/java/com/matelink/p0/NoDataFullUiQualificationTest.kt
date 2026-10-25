@@ -33,6 +33,7 @@ class NoDataFullUiQualificationTest {
         resetFixtureRequests()
         ActivityScenario.launch(MainActivity::class.java).use {
             openHistory(context.getString(R.string.nav_drives))
+            composeRule.selectFixtureHistoryWindow(context)
             assertPullRefresh("drives") { showNormalDrive() }
         }
     }
