@@ -159,7 +159,7 @@ private fun ComposeTestRule.scrollMoreTo(text: String) {
     }
 }
 
-/** Choose a real UI date range that includes the fixed October 1 synthetic history. */
+/** Choose a real UI date range that includes the fixed July 18 synthetic history. */
 internal fun ComposeTestRule.selectFixtureHistoryWindow(context: Context) {
     val label = context.getString(R.string.filter_all_time)
     val horizontal = hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)
