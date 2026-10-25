@@ -19,9 +19,10 @@ it('mirrors the App charging HUD `Xh Ym` / `Xm` remaining format', () => {
  expect(hudRemaining(-1)).toBe('暂无数据')
 })
 it('keeps the bottom charging card on the App raw hours rendering', () => {
- expect(rawChargeHours(3)).toBe('3h')
+ expect(rawChargeHours(3)).toBe('3.0h')
  expect(rawChargeHours(3.5)).toBe('3.5h')
- expect(rawChargeHours(null)).toBe('暂无数据')
+ expect(rawChargeHours(0)).toBe('0.0h')
+ expect(rawChargeHours(null)).toBe('--')
 })
 it('shows accurate readiness wording for missing TPMS wheels and plain data for available', () => {
  expect(dashboardTpmsPlaceholder({ status: 'collecting', lastObservedAt: null })).toBe('收集中')

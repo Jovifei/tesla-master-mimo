@@ -26,10 +26,12 @@ export function hudRemaining(hours: number | null | undefined): string {
   const minutes = Math.floor(hours * 60)
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`
 }
-/** Bottom charging card keeps the App's raw hours rendering (`${it}h`). */
+/** Bottom charging card mirrors App `"${it}h"` on a Kotlin Double (3.0 → "3.0h",
+ * 0.0 → "0.0h") with the same `?: "--"` fallback. */
 export function rawChargeHours(hours: number | null | undefined): string {
-  if (hours == null || !Number.isFinite(hours) || hours < 0) return '暂无数据'
-  return `${hours}h`
+  if (hours == null || !Number.isFinite(hours) || hours < 0) return '--'
+  const text = String(hours)
+  return text.includes('.') ? `${text}h` : `${text}.0h`
 }
 /** App DashboardScreen.readinessDashboardValue wording for missing per-wheel values. */
 export function dashboardTpmsPlaceholder(readiness: { status: string; lastObservedAt: string | null }): string {

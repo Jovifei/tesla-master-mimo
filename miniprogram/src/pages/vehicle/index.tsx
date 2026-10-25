@@ -15,7 +15,7 @@ import { DEFAULT_VEHICLE_APPEARANCE, clearVehicleAppearance, readVehicleAppearan
 import './index.scss'
 import { observeTpmsCache, readTpmsCache } from '../../services/tpms_cache'
 import LoadingIndicator from '../../components/LoadingIndicator'
-import { readinessViewFor } from '../../domain/readiness'
+import { findReadinessItem, readinessViewFor, toReadinessView } from '../../domain/readiness'
 import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { carSelectionStorageKey, type Car, type CarStatus, type ReadinessItem, type TelemetryPairing } from '../../services/types'
 import { readAppSession } from '../../services/session'
@@ -403,9 +403,12 @@ export default function VehiclePage() {
   }, [visual.assetKey, car?.stableId, imageRetry, appearanceRevision, loading, imageActivation])
 
   const readiness = readinessViewFor(readinessItems)
-  // Per-wheel readiness wording comes from the same items the app reads ("tpms" key).
+  // Per-wheel readiness wording mirrors App readinessDashboardValue: a missing
+  // "tpms" item reads as 等待车辆, while an existing unknown item stays 暂不可用.
   const tpmsReadiness = (() => {
-    const view = readinessViewFor(readinessItems, 'tpms')
+    const item = findReadinessItem(readinessItems, 'tpms')
+    if (!item) return { status: 'waiting_vehicle', lastObservedAt: null }
+    const view = toReadinessView(item.status, item)
     return { status: view.status, lastObservedAt: view.lastObservedAt }
   })()
   const tpmsHistory = car && currentSession?.userId && pageOrigin.current &&
