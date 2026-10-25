@@ -153,9 +153,12 @@ private fun ParkedDetailContent(
         formatDuration(context.resources, it.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
     } ?: unavailable
 
-    val batteryDeltaVal = data.batteryDelta ?: if (data.startBatteryLevel != null && data.endBatteryLevel != null) {
+    // Derive the delta from the displayed boundaries first so the hero badge and
+    // the battery card can never disagree; fall back to the server scalar only
+    // when either boundary is unknown.
+    val batteryDeltaVal = if (data.startBatteryLevel != null && data.endBatteryLevel != null) {
         data.endBatteryLevel - data.startBatteryLevel
-    } else null
+    } else data.batteryDelta
     // A positive delta means the battery grew while parked — that is charging,
     // not consumption; the flat-rate drain estimate only models a discharge,
     // so it must stay unknown for gains.
