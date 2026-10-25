@@ -63,8 +63,10 @@ class ParkedDetailFullUiQualificationTest {
 
             setFixtureScenario("parked_partial")
             composeRule.onNodeWithText(parkedTitle).performClick()
+            composeRule.waitForText(batteryTitle)
+            composeRule.waitForText(context.getString(R.string.parked_telemetry_missing_note))
             composeRule.waitUntil(30_000) {
-                composeRule.onAllNodesWithText(context.getString(R.string.not_available))
+                composeRule.onAllNodesWithText("—")
                     .fetchSemanticsNodes().size >= 3
             }
             composeRule.onNodeWithText(batteryTitle).assertExists()

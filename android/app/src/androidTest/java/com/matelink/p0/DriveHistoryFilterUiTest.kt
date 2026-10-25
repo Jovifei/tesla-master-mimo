@@ -1,11 +1,15 @@
 package com.matelink.p0
 
-import androidx.compose.ui.test.junit4.createEmptyComposeRule
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import com.matelink.MainActivity
@@ -19,6 +23,8 @@ class DriveHistoryFilterUiTest {
 
     @Test fun restoredDistanceChipsChangeTheActualDriveList() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val verticalList = hasScrollAction() and
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
         runBlocking { prepareQualificationState(context, scenario = "normal") }
         ActivityScenario.launch(MainActivity::class.java).use {
             composeRule.onNodeWithText(context.getString(R.string.nav_drives), useUnmergedTree = true).performClick()
@@ -29,6 +35,10 @@ class DriveHistoryFilterUiTest {
             composeRule.selectFixtureHistoryWindow(context)
             composeRule.scrollUntilText("Fixture Garage")
             composeRule.waitForText("Fixture Garage")
+
+            // Scroll back to top so distance filter chips are composed and reachable
+            composeRule.onNode(verticalList, useUnmergedTree = true).performScrollToIndex(0)
+            composeRule.waitForIdle()
 
             val commute = context.getString(R.string.filter_commute_km)
             val dayTrip = context.getString(R.string.filter_day_trip_km)
