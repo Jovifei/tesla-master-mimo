@@ -25,6 +25,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.LocalParking
@@ -44,6 +45,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -51,10 +53,10 @@ import androidx.compose.runtime.Composable
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +64,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -97,6 +100,7 @@ import com.matelink.ui.theme.telemetryPalette
 import java.time.Duration
 import java.time.LocalDate
 import java.time.OffsetDateTime
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,6 +114,7 @@ fun DrivesScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val palette = telemetryPalette()
+    val scope = rememberCoroutineScope()
 
     // Remember scroll state and restore from ViewModel
     val listState = rememberLazyListState(
@@ -179,6 +184,7 @@ fun DrivesScreen(
                 localArchiveLinkPending = uiState.localArchiveLinkPending,
                 drives = uiState.drives,
                 parkedPairs = uiState.parkedPairs,
+                historySequence = uiState.historySequence,
                 chartData = uiState.chartData,
                 chartGranularity = uiState.chartGranularity,
                 summary = uiState.summary,
@@ -191,9 +197,18 @@ fun DrivesScreen(
                 listState = listState,
                 isFilterLoading = uiState.isFilterLoading,
                 driveMetrics = uiState.driveMetrics,
-                onDateFilterSelected = { viewModel.setDateFilter(it) },
-                onCustomRangeSelected = { start, end -> viewModel.setCustomDateRange(start, end) },
-                onDistanceFilterSelected = { viewModel.setDistanceFilter(it) },
+                onDateFilterSelected = { filter ->
+                    viewModel.setDateFilter(filter)
+                    scope.launch { listState.scrollToItem(0) }
+                },
+                onCustomRangeSelected = { start, end ->
+                    viewModel.setCustomDateRange(start, end)
+                    scope.launch { listState.scrollToItem(0) }
+                },
+                onDistanceFilterSelected = { filter ->
+                    viewModel.setDistanceFilter(filter)
+                    scope.launch { listState.scrollToItem(0) }
+                },
                 onDriveClick = onNavigateToDriveDetail,
                 onParkedClick = onNavigateToParkedDetail
             )
@@ -213,6 +228,7 @@ private fun DrivesContent(
     localArchiveLinkPending: Boolean,
     drives: List<DriveData>,
     parkedPairs: Set<Pair<Int, Int>>,
+    historySequence: List<DriveData>,
     chartData: List<DriveChartData>,
     chartGranularity: DriveChartGranularity,
     summary: DrivesSummary,
@@ -231,10 +247,12 @@ private fun DrivesContent(
     onDriveClick: (driveId: Int) -> Unit,
     onParkedClick: (olderDriveId: Int, newerDriveId: Int) -> Unit
 ) {
-    val historyItems = remember(drives, parkedPairs) { buildDriveHistoryItems(drives, parkedPairs) }
-    // Header items in this LazyColumn, in render order: date chips, distance chips,
-    // summary, charts (conditional), history header. Adjust if items are added.
-    val headerCount = 3 + (if (chartData.isNotEmpty()) 1 else 0) +
+    val historyItems = remember(historySequence, drives, parkedPairs) {
+        selectVisibleDriveHistoryItems(historySequence, drives, parkedPairs)
+    }
+    // Header items in render order: date chips, distance chips, summary,
+    // charts (conditional), history header. Adjust if items are added.
+    val headerCount = 4 + (if (chartData.isNotEmpty()) 1 else 0) +
         (if (historySyncWarning != null || localArchiveLinkPending) 1 else 0)
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -261,7 +279,9 @@ private fun DrivesContent(
             )
         }
 
-
+        item {
+            DistanceFilterChips(selectedDistanceFilter, units, palette, onDistanceFilterSelected)
+        }
 
         item {
             SummaryCard(summary = summary, units = units, palette = palette)
@@ -357,18 +377,14 @@ private fun DrivesContent(
                 }
             }
         }
-    }
-
-    val shouldLoadMore by remember {
-        derivedStateOf {
-            val totalItems = listState.layoutInfo.totalItemsCount
-            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            totalItems > headerCount + 1 && lastVisibleIndex >= totalItems - 2
-        }
-    }
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore && canLoadMore && !isLoadingMore && !isFilterLoading && !isLoading) {
-            onLoadMore()
+        if (canLoadMore && !isLoadingMore) {
+            item(key = "show_earlier_history") {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    TextButton(onClick = onLoadMore) {
+                        Text(stringResource(R.string.history_show_earlier))
+                    }
+                }
+            }
         }
     }
 
@@ -459,6 +475,20 @@ internal fun buildDriveHistoryItems(
     return items
 }
 
+/** Preserve original parking adjacency while filtering the route cards. */
+internal fun selectVisibleDriveHistoryItems(
+    historySequence: List<DriveData>, visibleDrives: List<DriveData>,
+    parkedPairs: Set<Pair<Int, Int>> = verifiedParkedPairs(historySequence)
+): List<DriveHistoryItem> {
+    val visible = visibleDrives.toSet()
+    return buildDriveHistoryItems(historySequence, parkedPairs).filter { item ->
+        when (item) {
+            is DriveHistoryItem.Drive -> item.drive in visible
+            is DriveHistoryItem.Parked -> item.olderDrive in visible && item.newerDrive in visible
+        }
+    }
+}
+
 private fun createParkedSegment(
     olderDrive: DriveData,
     newerDrive: DriveData
@@ -500,9 +530,7 @@ private fun DateFilterChips(
     ) {
         val orderedFilters = listOf(
             DriveDateFilter.LAST_7_DAYS,
-            DriveDateFilter.TODAY,
-            DriveDateFilter.LAST_30_DAYS,
-            DriveDateFilter.ALL_TIME
+            DriveDateFilter.LAST_30_DAYS
         )
         items(orderedFilters) { filter ->
             FilterChip(
@@ -519,12 +547,25 @@ private fun DateFilterChips(
             val label = if (selectedFilter == DriveDateFilter.CUSTOM && customStartDate != null && customEndDate != null) {
                 "${formatShortDate(customStartDate)} – ${formatShortDate(customEndDate)}"
             } else {
-                stringResource(R.string.filter_custom)
+                stringResource(R.string.history_choose_date)
             }
             FilterChip(
                 selected = selectedFilter == DriveDateFilter.CUSTOM,
                 onClick = { showDatePicker = true },
                 label = { Text(label) },
+                leadingIcon = { Icon(Icons.Default.DateRange, contentDescription = null,
+                    modifier = Modifier.size(16.dp)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = palette.surface,
+                    selectedLabelColor = palette.onSurface
+                )
+            )
+        }
+        items(listOf(DriveDateFilter.TODAY, DriveDateFilter.ALL_TIME)) { filter ->
+            FilterChip(
+                selected = filter == selectedFilter,
+                onClick = { onFilterSelected(filter) },
+                label = { Text(stringResource(filter.labelRes)) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = palette.surface,
                     selectedLabelColor = palette.onSurface
@@ -566,6 +607,7 @@ private fun DistanceFilterChips(
     onFilterSelected: (DriveDistanceFilter) -> Unit
 ) {
     LazyRow(
+        modifier = Modifier.testTag("drive_distance_filters"),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(DriveDistanceFilter.entries.toList()) { filter ->

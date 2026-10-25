@@ -8,6 +8,40 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DrivesHistoryVisibilityTest {
+    @Test fun filteringOutAMiddleDriveNeverInventsAParkedInterval() {
+        val full = historyWithDistances(newestKm = 20.0, middleKm = 5.0, oldestKm = 30.0)
+        val visible = full.filter { it.matchesDistanceFilter(DriveDistanceFilter.DAY_TRIP) }
+
+        val items = selectVisibleDriveHistoryItems(full, visible)
+
+        assertEquals(listOf(3, 1), items.filterIsInstance<DriveHistoryItem.Drive>().map { it.drive.id })
+        assertTrue(items.none { it is DriveHistoryItem.Parked })
+    }
+
+    @Test fun originallyAdjacentVisibleDrivesRetainTheirParkedIntervals() {
+        val full = historyWithDistances(newestKm = 20.0, middleKm = 15.0, oldestKm = 30.0)
+        val visible = full.filter { it.matchesDistanceFilter(DriveDistanceFilter.DAY_TRIP) }
+
+        val parked = selectVisibleDriveHistoryItems(full, visible)
+            .filterIsInstance<DriveHistoryItem.Parked>()
+
+        assertEquals(listOf(2 to 3, 1 to 2), parked.map { it.olderDrive.id to it.newerDrive.id })
+    }
+
+    private fun historyWithDistances(newestKm: Double, middleKm: Double, oldestKm: Double): List<DriveData> =
+        listOf(
+            historyDrive(3, "2026-10-20T12:00:00+08:00", "2026-10-20T12:30:00+08:00", newestKm),
+            historyDrive(2, "2026-10-20T10:00:00+08:00", "2026-10-20T10:30:00+08:00", middleKm),
+            historyDrive(1, "2026-10-20T08:00:00+08:00", "2026-10-20T08:30:00+08:00", oldestKm)
+        )
+
+    private fun historyDrive(id: Int, start: String, end: String, distance: Double) = DriveData(
+        driveId = id, startDate = start, endDate = end,
+        source = "teslamate_archive", sourceInstanceId = "instance-A",
+        qualityState = "observed", lengthUnit = "km",
+        odometerDetails = DriveOdometerDetails(distance = distance)
+    )
+
     @Test
     fun shortDrivePreferenceChangesOnlyTheVisibleRouteSet() {
         val short = DriveData(

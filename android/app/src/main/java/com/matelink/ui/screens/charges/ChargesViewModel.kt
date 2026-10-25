@@ -44,11 +44,12 @@ import com.matelink.domain.history.LatestHistoryLoad
 import com.matelink.domain.history.historyTimeoutMessage
 import com.matelink.domain.history.refreshedHistoryWindow
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.YearMonth
 import com.matelink.util.formatMonthYear
 import com.matelink.util.formatShortNoYear
 import com.matelink.util.formatWeekLabel
-import com.matelink.util.parseIsoDate
+import com.matelink.util.parseIsoInstant
 import java.util.Locale
 import java.time.temporal.ChronoUnit
 import java.time.temporal.WeekFields
@@ -80,6 +81,14 @@ enum class CostFilter(@get:StringRes val labelRes: Int) {
     NO_COST(R.string.cost_filter_no_cost)
 }
 
+/** Include only events whose observed start falls inside the selected local calendar window. */
+internal fun chargeInHistoryWindow(value: String?, start: LocalDate?, end: LocalDate?, zone: ZoneId): Boolean {
+    if (start == null && end == null) return true
+    val instant = parseIsoInstant(value) ?: return false
+    return (start == null || !instant.isBefore(start.atStartOfDay(zone).toInstant())) &&
+        (end == null || instant.isBefore(end.plusDays(1).atStartOfDay(zone).toInstant()))
+}
+
 data class LocationFilter(val name: String) // null name = All locations
 
 data class ChargeChartData(
@@ -98,6 +107,7 @@ data class ChargeChartData(
     val totalCost: Double,
     val sortKey: Long, // For sorting (epoch day, week number, or year-month)
     val costCoverage: Int = 0,
+    val estimatedCostCount: Int = 0,
     val energyCoverage: Int = 0
 )
 
@@ -149,8 +159,33 @@ data class ChargesSummary(
     val totalCost: Double? = null,
     val avgEnergyPerCharge: Double? = null,
     val avgCostPerCharge: Double? = null,
-    val costCoverage: Int = 0
+    val costCoverage: Int = 0,
+    val estimatedCostCount: Int = 0
 )
+
+internal data class ProjectedChargeCosts(
+    val total: Double?, val average: Double?, val coveredCount: Int, val estimatedCount: Int
+)
+
+/** List cards, selected-window summary and chart consume the same qualified cost projection. */
+internal fun summarizeProjectedChargeCosts(values: List<EffectiveChargeCost>): ProjectedChargeCosts {
+    val included = values.filter { it.source != ChargeCostSource.UNAVAILABLE &&
+        it.cost?.let { cost -> cost.isFinite() && cost >= 0.0 } == true }
+    val total = observedCostSumOrNull(included.map { it.cost!! })
+    return ProjectedChargeCosts(
+        total = total,
+        average = total?.div(included.size),
+        coveredCount = included.size,
+        estimatedCount = included.count { it.source == ChargeCostSource.ESTIMATE }
+    )
+}
+
+internal fun projectedCostMatchesFilter(cost: EffectiveChargeCost, filter: CostFilter): Boolean =
+    when (filter) {
+        CostFilter.ALL -> true
+        CostFilter.HAS_COST -> cost.cost?.let { it > 0.0 } == true
+        CostFilter.NO_COST -> cost.cost?.let { it > 0.0 } != true
+    }
 
 @HiltViewModel
 class ChargesViewModel @Inject constructor(
@@ -348,20 +383,29 @@ class ChargesViewModel @Inject constructor(
         val newStart = currentStart.minusDays(stepDays)
         _uiState.update {
             it.copy(
+                selectedFilter = DateFilter.CUSTOM,
                 startDate = newStart,
+                endDate = endDate,
+                customStartDate = newStart,
+                customEndDate = endDate,
                 isLoadingMore = true
             )
         }
+        savedStateHandle[KEY_DATE_FILTER] = DateFilter.CUSTOM.name
+        savedStateHandle[KEY_CUSTOM_START] = newStart.toString()
+        savedStateHandle[KEY_CUSTOM_END] = endDate.toString()
         loadCharges(newStart, endDate, isLoadMore = true)
     }
 
     fun setCustomDateRange(start: LocalDate, end: LocalDate) {
+        require(!start.isAfter(end))
         _uiState.update { it.copy(
             selectedFilter = DateFilter.CUSTOM,
             startDate = start,
             endDate = end,
             customStartDate = start,
-            customEndDate = end
+            customEndDate = end,
+            canLoadMore = true
         )}
         savedStateHandle[KEY_DATE_FILTER] = DateFilter.CUSTOM.name
         savedStateHandle[KEY_CUSTOM_START] = start.toString()
@@ -430,23 +474,26 @@ class ChargesViewModel @Inject constructor(
         val requestZone = clock.zone
         latestLoad.launch(viewModelScope) {
             val state = _uiState.value
-            // 1. Immediately read local SQLite cached data if allCharges is empty
-            if (allCharges.isEmpty()) {
-                val localRows = try {
-                    val scope = vehicleContextRepository.captureReadScope()
-                    val context = vehicleContextRepository.cachedContextForRemote(id, scope)
-                    val rows = context?.let { chargeSummaryDao.getAllForCar(it.localHistoryCarId) }
-                        ?: emptyList()
-                    if (context != null && !vehicleContextRepository.isHistoryContextCurrentNow(scope, context))
-                        throw CancellationException("Charge history identity changed")
-                    rows
-                } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
-                if (localRows.isNotEmpty()) {
-                    allCharges = localRows.map { it.toAnalysisChargeData() }
-                    applyFiltersAndUpdateState()
-                }
-            }
-            val hasData = allCharges.isNotEmpty()
+            // Re-read verified Room rows for every selected window. A previous
+            // recent in-memory result cannot hide an older day while offline.
+            var verifiedLocalId: Int? = null
+            val localRows = try {
+                val scope = vehicleContextRepository.captureReadScope()
+                val context = vehicleContextRepository.cachedContextForRemote(id, scope)
+                val rows = context?.let { chargeSummaryDao.getAllForCar(it.localHistoryCarId) }
+                    ?: emptyList()
+                if (context != null && !vehicleContextRepository.isHistoryContextCurrentNow(scope, context))
+                    throw CancellationException("Charge history identity changed")
+                verifiedLocalId = context?.localHistoryCarId
+                rows
+            } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
+            ensureCurrent()
+            historyCarId = verifiedLocalId
+            if (verifiedLocalId == null) activeHistoryProof = null
+            allCharges = localRows.map { it.toAnalysisChargeData() }
+            _uiState.update { it.copy(chartGranularity = determineGranularity(startDate, endDate)) }
+            applyFiltersAndUpdateState()
+            val hasData = _uiState.value.charges.isNotEmpty()
             if (!isLoadMore) {
                 _uiState.update {
                     it.copy(
@@ -475,7 +522,7 @@ class ChargesViewModel @Inject constructor(
                 // Sync timed out: keep the already-rendered cache visible and surface
                 // a stale-data warning; only an empty cache escalates to a blocking error.
                 val placement = historyTimeoutMessage(
-                    hasCache = allCharges.isNotEmpty(),
+                    hasCache = _uiState.value.charges.isNotEmpty(),
                     timeoutText = appContext.getString(R.string.history_sync_timeout),
                     currentWarning = _uiState.value.historySyncWarning
                 )
@@ -513,7 +560,6 @@ class ChargesViewModel @Inject constructor(
                     checkProof()
                     activeHistoryProof = proof
                     historyCarId = result.data.context.localHistoryCarId
-                    val previousCount = allCharges.size
                     allCharges = result.data.charges
                     val granularity = determineGranularity(startDate, endDate)
 
@@ -525,7 +571,7 @@ class ChargesViewModel @Inject constructor(
                             error = null,
                             historySyncWarning = result.data.chargesSyncError,
                             localArchiveLinkPending = result.data.localArchiveLinkPending,
-                            canLoadMore = if (isLoadMore) (allCharges.size > previousCount) else (state.selectedFilter != DateFilter.ALL_TIME),
+                            canLoadMore = state.selectedFilter != DateFilter.ALL_TIME,
                             isLoading = false,
                             isFilterLoading = false,
                             isLoadingMore = false
@@ -549,7 +595,7 @@ class ChargesViewModel @Inject constructor(
                             isRefreshing = false,
                             isFilterLoading = false,
                             isLoadingMore = false,
-                            error = if (allCharges.isEmpty()) result.message else null
+                            error = if (_uiState.value.charges.isEmpty()) result.message else null
                         )
                     }
                 }
@@ -566,7 +612,10 @@ class ChargesViewModel @Inject constructor(
         val typeOf: (ChargeData) -> ChargeType = { historyChargeType(it, dcChargeIds, processedChargeIds) }
         val granularity = state.chartGranularity
 
-        val visibleCharges = allCharges.filter { it.qualityState != "quarantined" }
+        val visibleCharges = allCharges.filter { charge ->
+            charge.qualityState != "quarantined" &&
+                chargeInHistoryWindow(charge.startDate, state.startDate, state.endDate, clock.zone)
+        }
         // Incomplete imports remain visible, but cannot produce stats or charts.
         // Eligibility is about observed source quality, not a non-zero SOC delta.
         // A valid zero-energy session remains a session; unknown energy is not zero.
@@ -618,25 +667,25 @@ class ChargesViewModel @Inject constructor(
         val displayChargesFiltered = when (costFilter) {
             CostFilter.ALL -> displayChargesLocFiltered
             CostFilter.HAS_COST -> displayChargesLocFiltered.filter {
-                effectiveCost(it, state)?.let { cost -> cost > 0.0 } == true
+                projectedCostMatchesFilter(projectedCost(it, state), costFilter)
             }
             CostFilter.NO_COST -> displayChargesLocFiltered.filter {
-                effectiveCost(it, state)?.let { cost -> cost == 0.0 } != false
+                projectedCostMatchesFilter(projectedCost(it, state), costFilter)
             }
         }
         val chargesForStatsFiltered = when (costFilter) {
             CostFilter.ALL -> chargesForStatsLocFiltered
             CostFilter.HAS_COST -> chargesForStatsLocFiltered.filter {
-                effectiveCost(it, state)?.let { cost -> cost > 0.0 } == true
+                projectedCostMatchesFilter(projectedCost(it, state), costFilter)
             }
             CostFilter.NO_COST -> chargesForStatsLocFiltered.filter {
-                effectiveCost(it, state)?.let { cost -> cost == 0.0 } != false
+                projectedCostMatchesFilter(projectedCost(it, state), costFilter)
             }
         }
 
         // Calculate summary and chart data from filtered charges
         val summary = calculateSummary(chargesForStatsFiltered)
-        val chartData = calculateChartData(chargesForStatsFiltered, granularity, state.startDate)
+        val chartData = calculateChartData(chargesForStatsFiltered, granularity, state.startDate, state.endDate)
         val projections = allCharges.associate { charge -> charge.chargeId to projectedCost(charge, state) }
         val prices = allCharges.mapNotNull { charge ->
             projections[charge.chargeId]?.takeIf { it.source == ChargeCostSource.MANUAL }
@@ -689,22 +738,23 @@ class ChargesViewModel @Inject constructor(
         }
     }
 
-    private fun calculateChartData(charges: List<ChargeData>, granularity: ChartGranularity, startDate: LocalDate?): List<ChargeChartData> {
+    private fun calculateChartData(charges: List<ChargeData>, granularity: ChartGranularity,
+        startDate: LocalDate?, endDate: LocalDate?): List<ChargeChartData> {
         if (charges.isEmpty()) return emptyList()
 
         val weekFields = WeekFields.of(Locale.getDefault())
 
         // Group the charges by day
         val chargesByDay = charges.mapNotNull { charge ->
-            charge.startDate?.let { parseIsoDate(it)?.toEpochDay()?.let { day -> day to charge } }
+            charge.startDate?.let { parseIsoInstant(it)?.atZone(clock.zone)?.toLocalDate()?.toEpochDay()?.let { day -> day to charge } }
         }.groupBy({ it.first }, { it.second })
 
         return when (granularity) {
             ChartGranularity.DAILY -> {
                 // DAILY ranges (today, last 7 and last 30 days)
                 // If not startDate (All Time), get the first trip, or today
-                val start = startDate ?: (chargesByDay.keys.minOrNull()?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now())
-                val end = LocalDate.now()
+                val start = startDate ?: (chargesByDay.keys.minOrNull()?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now(clock))
+                val end = endDate ?: LocalDate.now(clock)
                 val result = mutableListOf<ChargeChartData>()
                 var current = start
                 while (!current.isAfter(end)) {
@@ -725,20 +775,16 @@ class ChargesViewModel @Inject constructor(
             }
             ChartGranularity.WEEKLY -> {
                 // WEEKLY range (last 90 days = ~13 weeks)
-                val start = startDate ?: (chargesByDay.keys.minOrNull()?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now())
-                val end = LocalDate.now()
+                val start = startDate ?: (chargesByDay.keys.minOrNull()?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now(clock))
+                val end = endDate ?: LocalDate.now(clock)
 
                 // Get first day of the week for start date
-                var weekStart = start.with(weekFields.dayOfWeek(), 1)
-                // If weekStart is before start, advance to the next week
-                if (weekStart.isBefore(start)) {
-                    weekStart = weekStart.plusWeeks(1)
-                }
+                val weekStart = start.with(weekFields.dayOfWeek(), 1)
 
                 // Group charges by week
                 val chargesByWeek = charges.mapNotNull { charge ->
                     charge.startDate?.let { dateStr ->
-                        parseIsoDate(dateStr)?.let { date ->
+                        parseIsoInstant(dateStr)?.atZone(clock.zone)?.toLocalDate()?.let { date ->
                             val firstDayOfWeek = date.with(weekFields.dayOfWeek(), 1)
                             firstDayOfWeek.toEpochDay() to charge
                         }
@@ -768,8 +814,8 @@ class ChargesViewModel @Inject constructor(
 
             ChartGranularity.MONTHLY -> {
                 // MONTHLY range (last year = 12 months)
-                val start = startDate ?: (chargesByDay.keys.minOrNull()?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now())
-                val end = LocalDate.now()
+                val start = startDate ?: (chargesByDay.keys.minOrNull()?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now(clock))
+                val end = endDate ?: LocalDate.now(clock)
 
                 // Get first day of month for start date
                 val monthStart = YearMonth.from(start).atDay(1)
@@ -778,7 +824,7 @@ class ChargesViewModel @Inject constructor(
                 // Group charges by month
                 val chargesByMonth = charges.mapNotNull { charge ->
                     charge.startDate?.let { dateStr ->
-                        parseIsoDate(dateStr)?.let { date ->
+                        parseIsoInstant(dateStr)?.atZone(clock.zone)?.toLocalDate()?.let { date ->
                             val firstDayOfMonth = YearMonth.from(date).atDay(1)
                             firstDayOfMonth.toEpochDay() to charge
                         }
@@ -825,32 +871,29 @@ class ChargesViewModel @Inject constructor(
         val energyValues = charges.mapNotNull { observedChargeEnergy(it.batteryInputKwh) }
         val energyTotal = energyValues.sum()
         val state = _uiState.value
-        val dcCosts = dcCharges.mapNotNull { effectiveCost(it, state) }
-        val acCosts = acCharges.mapNotNull { effectiveCost(it, state) }
-        val unknownCosts = unknownCharges.mapNotNull { effectiveCost(it, state) }
-        val costs = charges.mapNotNull { effectiveCost(it, state) }
-        val costDc = observedCostSumOrNull(dcCosts) ?: 0.0
-        val costAc = observedCostSumOrNull(acCosts) ?: 0.0
-        val costUnknown = observedCostSumOrNull(unknownCosts) ?: 0.0
-        val costTotal = observedCostSumOrNull(costs) ?: 0.0
+        val dcCosts = summarizeProjectedChargeCosts(dcCharges.map { projectedCost(it, state) })
+        val acCosts = summarizeProjectedChargeCosts(acCharges.map { projectedCost(it, state) })
+        val unknownCosts = summarizeProjectedChargeCosts(unknownCharges.map { projectedCost(it, state) })
+        val costs = summarizeProjectedChargeCosts(charges.map { projectedCost(it, state) })
         val countDc = dcCharges.size
         val countTotal = charges.size
         return ChargeChartData(
             label = label,
             totalEnergy = energyTotal,
-            totalCost = costTotal,
+            totalCost = costs.total ?: 0.0,
             count = countTotal,
             sortKey = sortKey,
             energyDc = energyDc,
             energyAc = energyAc,
             energyUnknown = energyUnknown,
-            costDc = costDc,
-            costAc = costAc,
-            costUnknown = costUnknown,
+            costDc = dcCosts.total ?: 0.0,
+            costAc = acCosts.total ?: 0.0,
+            costUnknown = unknownCosts.total ?: 0.0,
             countDc = countDc,
             countAc = acCharges.size,
             countUnknown = unknownCharges.size,
-            costCoverage = costs.size,
+            costCoverage = costs.coveredCount,
+            estimatedCostCount = costs.estimatedCount,
             energyCoverage = energyValues.size
         )
     }
@@ -891,23 +934,18 @@ class ChargesViewModel @Inject constructor(
         val energyValues = charges.mapNotNull { observedChargeEnergy(it.batteryInputKwh) }
         val totalEnergy = energyValues.takeIf { it.isNotEmpty() }?.sum()
         val state = _uiState.value
-        val costs = charges.mapNotNull { effectiveCost(it, state) }
-        val totalCost = observedCostSumOrNull(costs)
+        val costs = summarizeProjectedChargeCosts(charges.map { projectedCost(it, state) })
         val count = charges.size
 
         return ChargesSummary(
             totalCharges = count,
             totalEnergyAdded = totalEnergy,
-            totalCost = totalCost,
+            totalCost = costs.total,
             avgEnergyPerCharge = totalEnergy?.let { it / energyValues.size },
-            avgCostPerCharge = totalCost?.let { it / costs.size },
-            costCoverage = costs.size
+            avgCostPerCharge = costs.average,
+            costCoverage = costs.coveredCount,
+            estimatedCostCount = costs.estimatedCount
         )
-    }
-
-    private fun effectiveCost(charge: ChargeData, state: ChargesUiState): Double? {
-        val projection = projectedCost(charge, state)
-        return projection.cost.takeUnless { projection.source == ChargeCostSource.ESTIMATE }
     }
 
     private fun projectedCost(charge: ChargeData, state: ChargesUiState): EffectiveChargeCost {

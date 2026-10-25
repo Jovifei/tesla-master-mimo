@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryStd
 import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ElectricBolt
@@ -50,12 +51,12 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -425,18 +426,16 @@ private fun ChargesContent(
                 }
             }
         }
-    }
-
-    val shouldLoadMore by remember {
-        derivedStateOf {
-            val totalItems = listState.layoutInfo.totalItemsCount
-            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            totalItems > headerCount + 1 && lastVisibleIndex >= totalItems - 2
-        }
-    }
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore && canLoadMore && !isLoadingMore && !isFilterLoading && !isLoading) {
-            onLoadMore()
+        if (canLoadMore && !isLoadingMore) {
+            item(key = "show_earlier_history") {
+                TextButton(
+                    onClick = onLoadMore,
+                    enabled = !isLoading && !isRefreshing && !isFilterLoading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.history_show_earlier))
+                }
+            }
         }
     }
 
@@ -480,41 +479,39 @@ private fun DateFilterChips(
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
 
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(
-            listOf(
-                DateFilter.LAST_7_DAYS,
-                DateFilter.LAST_30_DAYS,
-                DateFilter.LAST_90_DAYS,
-                DateFilter.ALL_TIME
-            )) { filter ->
-            FilterChip(
-                selected = filter == selectedFilter,
-                onClick = { onFilterSelected(filter) },
-                label = { Text(stringResource(filter.labelRes)) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = palette.surface,
-                    selectedLabelColor = palette.onSurface
-                )
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        val customLabel = if (selectedFilter == DateFilter.CUSTOM &&
+            customStartDate != null && customEndDate != null) {
+            "${formatShortDate(customStartDate)} – ${formatShortDate(customEndDate)}"
+        } else stringResource(R.string.history_choose_date)
+        FilterChip(
+            selected = selectedFilter == DateFilter.CUSTOM,
+            onClick = { showDatePicker = true },
+            label = { Text(customLabel) },
+            leadingIcon = {
+                Icon(Icons.Default.CalendarMonth, contentDescription = null,
+                    modifier = Modifier.size(16.dp))
+            },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = palette.surface,
+                selectedLabelColor = palette.onSurface
             )
-        }
-        item {
-            val label = if (selectedFilter == DateFilter.CUSTOM && customStartDate != null && customEndDate != null) {
-                "${formatShortDate(customStartDate)} – ${formatShortDate(customEndDate)}"
-            } else {
-                stringResource(R.string.filter_custom)
+        )
+        LazyRow(modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(listOf(DateFilter.LAST_7_DAYS, DateFilter.LAST_30_DAYS,
+                DateFilter.LAST_90_DAYS, DateFilter.ALL_TIME)) { filter ->
+                FilterChip(
+                    selected = filter == selectedFilter,
+                    onClick = { onFilterSelected(filter) },
+                    label = { Text(stringResource(filter.labelRes)) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = palette.surface,
+                        selectedLabelColor = palette.onSurface
+                    )
+                )
             }
-            FilterChip(
-                selected = selectedFilter == DateFilter.CUSTOM,
-                onClick = { showDatePicker = true },
-                label = { Text(label) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = palette.surface,
-                    selectedLabelColor = palette.onSurface
-                )
-            )
         }
     }
 
@@ -695,11 +692,12 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                             Icons.Default.Paid,
                             stringResource(R.string.cost),
                             summary.totalCost?.let { cost ->
-                                when {
+                                val value = when {
                                     cost < 100 -> "$currencySymbol%.2f".format(cost)
                                     cost < 1000 -> "$currencySymbol%.1f".format(cost)
                                     else -> "$currencySymbol%.0f".format(cost)
                                 }
+                                if (summary.estimatedCostCount > 0) "≈$value" else value
                             } ?: stringResource(R.string.not_available),
                             Color(0xFF22C55E)
                         ),
@@ -707,7 +705,8 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                             Icons.Default.Paid,
                             stringResource(R.string.summary_avg_charge_compact),
                             summary.avgCostPerCharge?.let { cost ->
-                                "$currencySymbol%.2f".format(cost)
+                                val value = "$currencySymbol%.2f".format(cost)
+                                if (summary.estimatedCostCount > 0) "≈$value" else value
                             } ?: stringResource(R.string.not_available),
                             palette.dcColor
                         )
@@ -715,6 +714,17 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                     modifier = Modifier.padding(vertical = 4.dp),
                     adaptive = false,
                     maxColumns = 4
+                )
+            }
+            if (summary.totalCharges > 0) {
+                Text(
+                    text = "${stringResource(R.string.stats_analysis_cost_coverage)} " +
+                        "${summary.costCoverage}/${summary.totalCharges}" +
+                        if (summary.estimatedCostCount > 0)
+                            " · ${stringResource(R.string.cost_estimate_coverage, summary.estimatedCostCount)}"
+                        else "",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -1067,7 +1077,8 @@ private fun ChargesChartPage(
                     label = data.label,
                     value = data.totalCost,
                     displayValue = if (data.costCoverage > 0) {
-                        "$currencySymbol%.2f".format(data.totalCost)
+                        val value = "$currencySymbol%.2f".format(data.totalCost)
+                        if (data.estimatedCostCount > 0) "≈$value" else value
                     } else stringResource(R.string.not_available),
                     segments = listOf(
                         BarSegment(data.costAc, palette.acColor, "AC"),

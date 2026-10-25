@@ -79,6 +79,7 @@ import com.matelink.data.api.models.Units
 import com.matelink.data.repository.WeatherPoint
 import com.matelink.domain.model.UnitFormatter
 import com.matelink.data.api.models.drivePresentationUnits
+import com.matelink.domain.map.AmapConfiguration
 import com.matelink.ui.components.AmapRouteView
 import com.matelink.ui.components.FullscreenLineChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
@@ -226,9 +227,7 @@ private fun DriveDetailContent(
         HistoryReadNotices(localArchiveLinkPending, historySyncWarning)
 
         // Map showing the route
-        if (!detail.positions.isNullOrEmpty()) {
-            DriveMapCard(positions = detail.positions, routeColor = routeColor)
-        }
+        DriveMapCard(positions = detail.positions.orEmpty(), routeColor = routeColor)
 
         // Route header card
         RouteHeaderCard(detail = detail)
@@ -479,9 +478,7 @@ private fun DetailTimeValue(
 private fun DriveMapCard(positions: List<DrivePosition>, routeColor: Color) {
     val startLabel = stringResource(R.string.start)
     val endLabel = stringResource(R.string.end)
-    val validPositions = positions.filter { it.latitude != null && it.longitude != null }
-
-    if (validPositions.isEmpty()) return
+    val routePoints = remember(positions) { usableDriveRoutePoints(positions) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -499,29 +496,35 @@ private fun DriveMapCard(positions: List<DrivePosition>, routeColor: Color) {
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(250.dp)
-                    .clip(RoundedCornerShape(8.dp))
-            ) {
-                // Route map using AmapRouteView (高德)
-                val routePoints = validPositions.mapNotNull { pos ->
-                    val lat = pos.latitude
-                    val lng = pos.longitude
-                    if (lat != null && lng != null) Pair(lat, lng) else null
+            if (routePoints.size < 2) {
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.LocationOn, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp))
+                    Text(stringResource(R.string.drive_route_points_insufficient, routePoints.size),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                AmapRouteView(
-                    modifier = Modifier.fillMaxSize(),
-                    routePoints = routePoints,
-                    startTitle = startLabel,
-                    endTitle = endLabel,
-                    routeColor = routeColor
-                )
+            } else {
+                Box(modifier = Modifier.fillMaxWidth().height(250.dp)
+                    .clip(RoundedCornerShape(8.dp))) {
+                    AmapRouteView(modifier = Modifier.fillMaxSize(), routePoints = routePoints,
+                        startTitle = startLabel, endTitle = endLabel, routeColor = routeColor)
+                }
             }
         }
     }
 }
+
+/** A single or repeated GPS point is not a travelled A-to-B route. */
+internal fun usableDriveRoutePoints(positions: List<DrivePosition>): List<Pair<Double, Double>> =
+    positions.mapNotNull { position ->
+        val lat = position.latitude
+        val lon = position.longitude
+        if (lat != null && lon != null && AmapConfiguration.isUsableCoordinate(lat, lon))
+            lat to lon else null
+    }.distinct()
 
 data class StatItem(
     val label: String,

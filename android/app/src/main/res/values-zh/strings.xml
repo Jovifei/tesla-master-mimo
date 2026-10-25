@@ -337,6 +337,8 @@
     <string name="back">返回</string>
     <string name="loading">加载中…</string>
     <string name="loading_more_history">正在加载更多历史记录…</string>
+    <string name="history_choose_date">选日期</string>
+    <string name="history_show_earlier">查看更多历史</string>
     <string name="no_data">暂无数据</string>
     <string name="offline">离线 - 显示缓存数据</string>
     <string name="ok">确定</string>
@@ -926,6 +928,7 @@
     <string name="parked_noncharging_soc_gain_rate">停车期间电量回升估算 %1$.1f 个百分点/小时（按已记录充电段扣除）</string>
     <string name="parked_noncharging_segment_missing">充电前后缺少完整实测电量，暂不能单独计算停车耗电；已记录充电外时间也可能漏记充电。</string>
     <string name="parked_charge_sessions_incomplete">充电记录可能不完整，部分时段或结束时间尚未确认。</string>
+    <string name="parked_no_confirmed_charges">本段没有可确认的完整充电记录；不能据此判断是否发生过充电。</string>
     <string name="charge_parked_summary">该驻车时段与一条真实充电记录重叠。</string>
     <string name="charge_parked_view">查看本次充电</string>
     <string name="parked_battery_title">驻车电量</string>
@@ -1123,6 +1126,7 @@
     <string name="record_top_speed">最高速度</string>
     <string name="regions_visited_title">已到访地区</string>
     <string name="route_map">路线地图</string>
+    <string name="drive_route_points_insufficient">本次只收到 %1$d 个不同的有效定位点；至少需要 2 个才能绘制实际路线。</string>
     <string name="search">搜索</string>
     <string name="select_all">全选</string>
     <string name="sentry_alert_detected">检测到警报</string>
@@ -1637,6 +1641,8 @@
     <string name="parked_sample_count">采样数</string>
     <string name="parked_sample_unit">次</string>
     <string name="parked_cloud_detail_pending">本段尚无合格的驻车温度或能量观测。</string>
+    <string name="parked_telemetry_missing_note">— 表示本段缺少合格的历史观测；不会用车辆当前状态填充过去的数值。</string>
+    <string name="parked_boundary_missing_note">本段起止时刻缺少对应的历史电量；车辆当前电量不能用于补写过去的数值。</string>
     <string name="history_sync_partial">云端历史仅恢复了一部分，本机旧记录已保留；下拉刷新可重试剩余记录。</string>
     <string name="history_archive_link_pending">此列表使用已验证的云端来源。原手机记录、费用修改和本地分析仍保留，暂未关联到此列表。</string>
     <string name="completed_charge_title">充电已完成</string>

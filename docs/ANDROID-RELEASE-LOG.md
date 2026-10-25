@@ -10,22 +10,14 @@
 
 ---
 
-## [build 71 / PR #27] — 2026-10-25 远端 Room-first 分析候选（未签名、未安装）
+## [2.1.52 / build 71] — 2026-10-25 已同签覆盖安装，页面回归修复中
 
-- 固定 PR #27 增量：修正云端驻车 SOC 净变化方向、同一充电 ID 的冲突重放/去重；打通电池、效率、费用三页的 account+API origin+stable vehicle 作用域 Room 先读，远端刷新不中断旧缓存，失败保留标注旧数据。
-- 本机历史数据不证明官方 Fleet、真实能量或电池健康；电池容量缺少观测时保持未知；保留 kWh、% 与百分点/小时估算边界。
-- 完整阶段方案见 `docs/PLAN-2026-10-25-room-first-analytics.md`；同 SHA GitHub Actions Debug/Release/lint/R8、API35 合成界面截图、Go/PG16/PG18/race/TLS/Web、Mini、源码审计须以最终作业结果判定；真机签名、保数据安装、生产/提供方/Fleet 验收仍独立。
-- 绝不将本候选写作手机 build 71 已覆盖安装；Owner E 盘未跟踪文件、现装 build 70 和原账户存储未触碰。
-
----
-
-## [2.1.52 / build 71] — 2026-10-25 当前候选，待完整 CI 与实机复核
-
-- 将已通过固定 SHA 检查的数据底座与 build 70 页面改动在独立 E 盘分支整合。行程 SOC 回右侧，移除“功率积分100%”历史徽标；驻车离线读取必须先取得当前账号、来源、车辆的本地 history key，不再跨车辆按行程 ID 猜归属。
-- 驻车页分列同窗多次充电，每次充电的 kWh/h 使用本次充电时长；已记录充电以外的停车耗电仅在各段真实 SOC 边界证据充分时以“百分点/小时估算”展示，不用整段净 SOC 或固定容量冒充停车 kWh。
-- 当前已验证：手机原 build 70 页面截图；整合检查点聚焦单测；本地 Debug/Release 各 1259 项 0 fail/error（Release 8 skip），lint 两变体 0 error，R8、Debug/Release 与 AndroidTest APK 构建 PASS；资格 Release 已核对 `com.matelink`、71/2.1.52、不可调试与现装同证书。此包嵌入提交前的 SHA，不作为最终固定源码安装包。
-- 原生 Room/模拟器、同 SHA CI、固定提交后的最终签名包与保数据覆盖安装仍以各自实际回执为准，不提前标记通过。
-- 原 E 盘、现装 build 70、现有 Room 数据和生产服务均保持；本段在最终验证后补固定 SHA、包哈希与安装结果。
+- **实际安装源码**：PR #27 Draft/open 的 `af6fe089a57c95b3839dc304bb0385c3ba4e8e29`，tree `d400bc920bd6e05205022d40459da2ac4f965dea`，parent `24a1141ad1bcf7eb7a01ab8e7baafd0995ac68d2`。较早的 `84e3ca91` 是整合候选，不能当最终包。PR 此后若前进，新 SHA 是另一候选，不自动成为手机安装版。
+- **本版变化**：整合 build70 页面与数据底座；行程 SOC 回到右侧并移除历史“功率积分100%”徽标；同一驻车内逐次显示充电及各自 kWh/h，停车段仅在完整 SOC 边界证据下显示百分点/小时；电池、效率、费用走作用域 Room-first 消费。跨来源驻车/充电、Battery UID 缓存与 Cost 临时错误保留已补真实回归。
+- **同 SHA 验证**：[完整 Actions 40174354397](https://github.com/Jovifei/tesla-master-mimo/actions/runs/40174354397) 18/18 SUCCESS；Android Debug/Release 各 1271 项 0 fail/error，Release 8 项既有 skip，双 lint 0 error，R8 PASS；Go、隔离 PG18、race、TLS、Web、Mini 和源码审计成功。[API35 40174354371](https://github.com/Jovifei/tesla-master-mimo/actions/runs/40174354371) XML 80/0/0/2，三张 Compose 合成画面非黑且哈希不同。它们证明固定源码和隔离界面，不代替自然 Fleet。
+- **正式候选包与真机**：`com.matelink` 71/2.1.52，Release 不可调试；APK SHA256 `BB8DFBB30C8A2DE1721C74DA9942B81AF22D640CBF84355BFAC5AC378E8C6FF1`，与已安装包证书一致。保留数据的 `adb install -r` 成功，`firstInstallTime` 未变；启动进程存活，限定日志未见 FATAL/ANR/Room 迁移错误。未清除或导入用户历史。
+- **安装后发现的回归仍 OPEN/WIP**：同页充电卡有估算费用而摘要费用/单次均价缺失；日期按钮与摘要/图表/列表不同窗且滚动暗中扩窗；驻车六项遥测整块隐藏、起止历史 SOC 证据缺失与图标状态色回退；行程类型筛选入口丢失。根因、当前未提交修复及防复发测试见 [Bug 根因索引](BUG-REGISTER.md)。这些本轮修复未获新固定 SHA/同 SHA CI/签名装机，**不能用上述 af6 绿色结果为其背书**。
+- **发布门**：PR 仍 Draft，main 与生产未因本包变更。真实多账号 Fleet 首事件、自然行程/充电、逐字段历史采样及页面交互仍独立验收。逐提交记录见 [变更索引](CHANGE-INDEX.md)。
 
 ---
 

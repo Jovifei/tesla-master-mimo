@@ -337,6 +337,8 @@
     <string name="back">Back</string>
     <string name="loading">Loading…</string>
     <string name="loading_more_history">Loading more history…</string>
+    <string name="history_choose_date">Choose date</string>
+    <string name="history_show_earlier">Show earlier history</string>
     <string name="no_data">No data available</string>
     <string name="offline">Offline - showing cached data</string>
     <string name="ok">OK</string>
@@ -930,6 +932,7 @@
     <string name="parked_noncharging_soc_gain_rate">Estimated parked SOC gain: %1$.1f pp/hour (excluding recorded charging)</string>
     <string name="parked_noncharging_segment_missing">Complete observed SOC around each charge is missing, so parked drain cannot be isolated; time outside recorded charges may omit other charging.</string>
     <string name="parked_charge_sessions_incomplete">Charging records may be incomplete; some intervals or end times are unconfirmed.</string>
+    <string name="parked_no_confirmed_charges">No complete charging session is confirmed for this period; this does not establish whether charging occurred.</string>
     <string name="charge_parked_summary">A charging session overlaps this parked period.</string>
     <string name="charge_parked_view">View this charge</string>
     <string name="parked_battery_title">Battery during parking</string>
@@ -1132,6 +1135,7 @@
     <string name="record_top_speed">Top Speed</string>
     <string name="regions_visited_title">Regions Visited</string>
     <string name="route_map">Route Map</string>
+    <string name="drive_route_points_insufficient">Only %1$d distinct valid GPS points were received; at least 2 are needed to draw the actual route.</string>
     <string name="search">Search</string>
     <string name="select_all">Select All</string>
     <string name="sentry_alert_detected">Alert Detected</string>
@@ -1646,6 +1650,8 @@
     <string name="parked_sample_count">Samples</string>
     <string name="parked_sample_unit">ct</string>
     <string name="parked_cloud_detail_pending">No qualified parked temperature or energy observations for this period.</string>
+    <string name="parked_telemetry_missing_note">— means this parked period has no qualified historical observation for that metric; the current vehicle status is not used as a past value.</string>
+    <string name="parked_boundary_missing_note">A timestamped battery level is missing at one or both boundaries of this parked period. The current level cannot fill past values.</string>
     <string name="history_sync_partial">Only part of cloud history was restored. Saved history is preserved; pull to refresh to retry the remaining pages.</string>
     <string name="history_archive_link_pending">This list uses the verified server. Previous phone records, manual costs and local analysis are preserved but are not yet linked to this list.</string>
     <string name="completed_charge_title">Charge completed</string>

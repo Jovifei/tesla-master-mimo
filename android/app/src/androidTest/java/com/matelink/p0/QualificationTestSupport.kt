@@ -164,6 +164,8 @@ internal fun ComposeTestRule.selectFixtureHistoryWindow(context: Context) {
     val label = context.getString(R.string.filter_all_time)
     val horizontal = hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)
     waitUntil(15_000) { onAllNodes(horizontal, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-    onNode(horizontal, useUnmergedTree = true).performScrollToNode(hasText(label))
+    // History may also have a horizontal type/distance filter row. The date
+    // filters are the first horizontal list; do not target an ambiguous node.
+    onAllNodes(horizontal, useUnmergedTree = true)[0].performScrollToNode(hasText(label))
     onNodeWithText(label).performClick()
 }

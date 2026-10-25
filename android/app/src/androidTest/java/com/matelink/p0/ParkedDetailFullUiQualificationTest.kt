@@ -1,5 +1,6 @@
 package com.matelink.p0
 
+import android.content.Context
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -41,10 +42,14 @@ class ParkedDetailFullUiQualificationTest {
             scrollUntilText(parkedTitle)
             composeRule.onNodeWithText(parkedTitle).performClick()
             composeRule.waitForText(batteryTitle)
-            // The local Room battery section can render before the remote telemetry receipt.
-            composeRule.waitForText(cloudTitle)
+            // Wait for the server's synthetic historical temperatures, not the
+            // immediately visible Room-only placeholder panel.
+            composeRule.waitForText("21.8")
+            composeRule.onNodeWithText(cloudTitle).assertExists()
             composeRule.onNodeWithText(context.getString(R.string.parked_start_battery)).assertExists()
             composeRule.onNodeWithText(context.getString(R.string.parked_end_battery)).assertExists()
+            assertSixTelemetryLabels(context)
+            composeRule.onNodeWithText("12 ${context.getString(R.string.parked_sample_unit)}").assertExists()
             // Entirely synthetic fixture in the isolated API35 emulator, never
             // a phone screenshot or an address from a real user's history.
             captureFixtureScreen("matelink_fixture_parked_full")
@@ -58,10 +63,14 @@ class ParkedDetailFullUiQualificationTest {
 
             setFixtureScenario("parked_partial")
             composeRule.onNodeWithText(parkedTitle).performClick()
-            composeRule.waitForText(context.getString(R.string.parked_cloud_detail_pending))
+            composeRule.waitUntil(30_000) {
+                composeRule.onAllNodesWithText(context.getString(R.string.not_available))
+                    .fetchSemanticsNodes().size >= 3
+            }
             composeRule.onNodeWithText(batteryTitle).assertExists()
-            composeRule.onNodeWithText(cloudTitle).assertDoesNotExist()
-            composeRule.onNodeWithText(context.getString(R.string.parked_estimated_energy)).assertDoesNotExist()
+            composeRule.onNodeWithText(cloudTitle).assertExists()
+            assertSixTelemetryLabels(context)
+            composeRule.onNodeWithText(context.getString(R.string.parked_telemetry_missing_note)).assertExists()
             captureFixtureScreen("matelink_fixture_parked_partial")
         }
     }
@@ -79,8 +88,17 @@ class ParkedDetailFullUiQualificationTest {
             composeRule.onNodeWithText("6.00 kWh/hour", substring = true).assertExists()
             composeRule.onNodeWithText("4.00 kWh/hour", substring = true).assertExists()
             composeRule.onNodeWithText("1.7 pp/hour", substring = true).assertExists()
-            composeRule.onNodeWithText(context.getString(R.string.parked_estimated_energy)).assertDoesNotExist()
+            assertSixTelemetryLabels(context)
+            composeRule.onNodeWithText(context.getString(R.string.parked_telemetry_missing_note)).assertExists()
             captureFixtureScreen("matelink_fixture_parked_multi_charge")
+        }
+    }
+
+    private fun assertSixTelemetryLabels(context: Context) {
+        listOf(R.string.parked_estimated_energy, R.string.parked_energy_per_hour,
+            R.string.parked_inside_temp, R.string.parked_outside_temp,
+            R.string.parked_coverage, R.string.parked_sample_count).forEach { label ->
+            composeRule.onNodeWithText(context.getString(label)).assertExists()
         }
     }
 
