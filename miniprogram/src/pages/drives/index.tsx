@@ -72,6 +72,8 @@ export default function DrivesPage() {
   const [parkedOpen, setParkedOpen] = useState<DriveHistoryItem | null>(null)
   const [parkedCloud, setParkedCloud] = useState<ParkedDetail | null>(null)
   const [parkedCloudFailed, setParkedCloudFailed] = useState(false)
+  // A late cloud response must never overwrite a different parked card opened next.
+  const parkedRequestRef = useRef<string | null>(null)
   const detailContext = useRef<{ user: string; origin: string; uid: string; generation: number; row: Drive } | null>(null)
   const detailCacheBaseline = useRef<Map<string, string> | null>(null)
   const listScrollTop = useRef(0), detailScrollTop = useRef(0), pageVisible = useRef(false)
@@ -393,9 +395,9 @@ export default function DrivesPage() {
         detailCacheBaseline.current = new Map(readHistoryCache<Drive>(Taro, key).map(row => [historyRowKey(row), JSON.stringify(row)]))
       } catch { /* Fail closed: keep current memory rather than replay an unproven disk version. */ }
     }
-    pageVisible.current = false; invalidatePage(); setSelectedState(null); void nativeTabBar(false)
+    pageVisible.current = false; invalidatePage(); setSelectedState(null); closeParked(); void nativeTabBar(false)
   })
-  useUnload(() => { pageVisible.current = false; detailContext.current = null; detailCacheBaseline.current = null; invalidatePage(); void nativeTabBar(false) })
+  useUnload(() => { pageVisible.current = false; detailContext.current = null; detailCacheBaseline.current = null; invalidatePage(); closeParked(); void nativeTabBar(false) })
   usePageScroll(event => { if (pageVisible.current && !detailContext.current) listScrollTop.current = event.scrollTop })
 
   const selectCar = (event: { detail: { value: number | string } }) => {
@@ -424,17 +426,21 @@ export default function DrivesPage() {
 
   const openParked = async (item: DriveHistoryItem & { kind: 'parked' }) => {
     if (!car) return
+    const requestKey = item.key
+    parkedRequestRef.current = requestKey
     setParkedOpen(item); setParkedCloud(null); setParkedCloudFailed(false)
     try {
       const result = await analysisApi.getParkedDetail(car, item.older.id, item.newer.id)
+      if (parkedRequestRef.current !== requestKey) return
       setParkedCloud(result.detail)
       setParkedCloudFailed(result.detail == null)
     } catch {
+      if (parkedRequestRef.current !== requestKey) return
       // Local facts stay on screen; cloud-only fields remain honestly missing.
       setParkedCloudFailed(true)
     }
   }
-  const closeParked = () => { setParkedOpen(null); setParkedCloud(null); setParkedCloudFailed(false) }
+  const closeParked = () => { parkedRequestRef.current = null; setParkedOpen(null); setParkedCloud(null); setParkedCloudFailed(false) }
 
   const openDetail = async (item: Drive) => {
     if (!car) return

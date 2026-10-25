@@ -144,7 +144,14 @@ const status = {
   inside_temp: 25.1, outside_temp: 23.5,
   latitude: 30.2901, longitude: 120.0021,
   shift_state: 'P', charger_voltage: null, charger_actual_current: null, charge_energy_added: null, charger_power: null,
-  tpms: { fl: { pressure_bar: 2.8, observed_at: iso(END - 3600_000) }, fr: { pressure_bar: 2.8, observed_at: iso(END - 3600_000) }, rl: { pressure_bar: 2.8, observed_at: iso(END - 3600_000) }, rr: { pressure_bar: 2.7, observed_at: iso(END - 3600_000) } },
+  // Wire shape mirrors parseTpmsDetails: flat tpms_pressure_* keys inside tpms_details.
+  tpms_details: {
+    tpms_pressure_fl: 2.8, tpms_pressure_fl_observed_at: iso(END - 3600_000),
+    tpms_pressure_fr: 2.8, tpms_pressure_fr_observed_at: iso(END - 3600_000),
+    tpms_pressure_rl: 2.8, tpms_pressure_rl_observed_at: iso(END - 3600_000),
+    tpms_pressure_rr: 2.7, tpms_pressure_rr_observed_at: iso(END - 3600_000),
+    pressure_unit: 'bar', source: 'mock_fixture', time_basis: 'collector_received_at',
+  },
   observed_at: iso(END - 120_000), source: 'mock_fixture',
   field_sources: { battery_level: 'mock_fixture', location: 'mock_fixture', climate: 'mock_fixture' },
 }
@@ -167,6 +174,8 @@ export function mockRequest(path: string, enabled: boolean = MOCK_FIXTURE_ENABLE
   const carPrefix = `/api/v1/cars/${MOCK_CAR_ID}`
   if (path === '/api/v1/cars') return { data: { cars: [car] } }
   if (path === `${carPrefix}/snapshot`) return { data: { status, observed_at: status.observed_at, source: status.source, units: { unit_of_length: 'km', unit_of_temperature: 'C' }, field_sources: status.field_sources } }
+  // Trend tools and insights read the legacy status payload; same evidence.
+  if (path === `${carPrefix}/status`) return { data: { status, observed_at: status.observed_at, source: status.source, units: { unit_of_length: 'km', unit_of_temperature: 'C' }, field_sources: status.field_sources } }
   if (path === `${carPrefix}/data-readiness`) return { data: readiness }
   if (path === `${carPrefix}/telemetry/pairing`) return { data: { status: 'paired', source: 'mock_fixture' } }
   if (path === `${carPrefix}/charges/current`) return { data: { charge: null } }

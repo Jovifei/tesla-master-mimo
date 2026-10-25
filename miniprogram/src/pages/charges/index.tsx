@@ -327,7 +327,8 @@ export default function ChargesPage() {
   const pollCurrentTick = async () => {
     const nextCar = pollCarRef.current
     if (!nextCar) return
-    const ticket = scopeGate.current.begin('current-poll')
+    let ticket: { isCurrent(): boolean }
+    try { ticket = scopeGate.current.begin('current-poll') } catch { stopCurrentPolling(); return }
     try {
       const [chargeResult, statusResult] = await Promise.allSettled([
         matelinkApi.getCurrentCharge(nextCar.id, nextCar),
@@ -400,6 +401,7 @@ export default function ChargesPage() {
       setCar(nextCar)
       loadingMoreRef.current = false
       await Promise.all([loadHistory(nextCar), loadCurrentCharge(nextCar)])
+      startCurrentPolling(nextCar)
     } catch (reason) {
       if (pageEpoch !== lifecycleEpoch.current || sessionGeneration !== getApiSessionGeneration() || readAppSession(Taro)?.userId !== session.userId) return
       verifiedCarRef.current = false
