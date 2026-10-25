@@ -1065,9 +1065,9 @@ private fun BatteryDetailScreen(
 @Composable
 private fun BatteryStatusCard(stats: BatteryStats) {
     var showTooltip by remember { mutableStateOf(false) }
-    val currentChargeTitle = stringResource(R.string.current_charge_title)
-    val currentChargeMessage = stringResource(R.string.current_charge_message)
-    val currentChargeLabel = stringResource(R.string.current_charge)
+    val currentChargeTitle = stringResource(R.string.current_battery_level_title)
+    val currentChargeMessage = stringResource(R.string.current_battery_level_message)
+    val currentChargeLabel = stringResource(R.string.current_battery_level_title)
     val usablePercentLabel = stringResource(R.string.usable_percent, stats.usableBatteryLevel)
     val infoLabel = stringResource(R.string.info)
     val gotItLabel = stringResource(R.string.got_it)

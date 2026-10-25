@@ -4,108 +4,168 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.R
-import com.matelink.data.api.models.ParkedDetailData
+import com.matelink.data.local.VehicleContextRepository
+import com.matelink.data.local.HistoryIdentityUnavailableException
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.entity.DriveSummary
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import com.matelink.data.api.models.ParkedDetailData
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.util.parseIsoInstant
 import com.matelink.util.toChineseDisplayAddress
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withTimeoutOrNull
+import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import javax.inject.Inject
 
 data class ParkedDetailUiState(
     val isLoading: Boolean = true,
     val data: ParkedDetailData? = null,
     val error: String? = null,
-    // True while the screen shows the locally derived fallback; cloud-only
-    // details (temperatures, power, linked charge) are still pending.
     val degraded: Boolean = false,
     val syncWarning: String? = null
 )
 
+internal data class ParkedPageIdentity(val stillCurrent: () -> Boolean, val localHistoryCarId: Int? = null)
+
+internal interface ParkedPageSource {
+    val scopeChanges: Flow<Unit>
+    val timeoutMs: Long get() = Long.MAX_VALUE
+    suspend fun identity(carId: Int): ParkedPageIdentity
+    suspend fun localDetail(localHistoryCarId: Int, olderDriveId: Int, newerDriveId: Int): ParkedDetailData? = null
+    suspend fun detail(carId: Int, olderDriveId: Int, newerDriveId: Int): ApiResult<ParkedDetailData>
+}
+
 @HiltViewModel
-class ParkedDetailViewModel @Inject constructor(
-    @ApplicationContext private val appContext: Context,
-    private val repository: TeslamateRepository,
-    private val driveSummaryDao: DriveSummaryDao
+class ParkedDetailViewModel private constructor(
+    private val source: ParkedPageSource,
+    private val appContext: Context?
 ) : ViewModel() {
+    internal constructor(source: ParkedPageSource) : this(source, null)
+
+    @Inject constructor(
+        @ApplicationContext appContext: Context,
+        repository: TeslamateRepository,
+        vehicleContexts: VehicleContextRepository,
+        driveSummaryDao: DriveSummaryDao
+    ) : this(object : ParkedPageSource {
+        override val scopeChanges = vehicleContexts.historyScopeChanges.map { Unit }
+        override val timeoutMs = 20_000L
+        override suspend fun identity(carId: Int): ParkedPageIdentity {
+            val scope = vehicleContexts.captureReadScope()
+            val context = vehicleContexts.cachedContextForRemote(carId, scope)
+                ?: throw HistoryIdentityUnavailableException()
+            return ParkedPageIdentity(
+                stillCurrent = { vehicleContexts.isHistoryContextCurrentNow(scope, context) },
+                localHistoryCarId = context.localHistoryCarId
+            )
+        }
+        override suspend fun localDetail(localHistoryCarId: Int, olderDriveId: Int, newerDriveId: Int): ParkedDetailData? {
+            return readLocalParkedDetail(driveSummaryDao, localHistoryCarId, olderDriveId, newerDriveId)
+        }
+        override suspend fun detail(carId: Int, olderDriveId: Int, newerDriveId: Int) =
+            repository.getParkedDetail(carId, olderDriveId, newerDriveId)
+    }, appContext)
     private val _uiState = MutableStateFlow(ParkedDetailUiState())
     val uiState: StateFlow<ParkedDetailUiState> = _uiState.asStateFlow()
 
-    private var currentLoad: Triple<Int, Int, Int>? = null
+    private var generation = 0L
+    private var loadJob: Job? = null
+    private var activeIdentity: ParkedPageIdentity? = null
+    private var request: Triple<Int, Int, Int>? = null
 
-    companion object {
-        // Weak networks can leave the cloud detail request hanging for minutes;
-        // 20s is slower than any healthy request but earlier than a user gives up.
-        private const val PARKED_DETAIL_TIMEOUT_MS = 20_000L
-    }
-
-    fun load(carId: Int, olderDriveId: Int, newerDriveId: Int) {
-        currentLoad = Triple(carId, olderDriveId, newerDriveId)
+    init {
         viewModelScope.launch {
-            fun stale() = currentLoad != Triple(carId, olderDriveId, newerDriveId)
-
-            // 1. Render immediately from the adjacent local drive rows — the same
-            //    facts the parked list card already shows without any network.
-            val local = localParkedDetail(carId, olderDriveId, newerDriveId)
-            if (stale()) return@launch
-            if (local != null) {
-                _uiState.value = ParkedDetailUiState(isLoading = false, data = local, degraded = true)
-            }
-
-            // 2. Enrich from the cloud with a bounded wait; on failure keep the
-            //    local fallback visible with an honest stale-data warning.
-            val result = withTimeoutOrNull(PARKED_DETAIL_TIMEOUT_MS) {
-                repository.getParkedDetail(carId, olderDriveId, newerDriveId)
-            }
-            if (stale()) return@launch
-            val hasLocal = local != null
-            _uiState.value = when {
-                result is ApiResult.Success -> ParkedDetailUiState(
-                    isLoading = false, data = result.data, degraded = false, syncWarning = null
-                )
-                result is ApiResult.Error -> ParkedDetailUiState(
-                    isLoading = false,
-                    data = local,
-                    degraded = hasLocal,
-                    syncWarning = if (hasLocal) appContext.getString(R.string.history_sync_cached) else null,
-                    error = if (hasLocal) null else result.message
-                )
-                else -> ParkedDetailUiState(
-                    isLoading = false,
-                    data = local,
-                    degraded = hasLocal,
-                    syncWarning = if (hasLocal) appContext.getString(R.string.history_sync_timeout) else null,
-                    error = if (hasLocal) null else appContext.getString(R.string.history_sync_timeout)
-                )
+            source.scopeChanges.collect {
+                if (activeIdentity?.stillCurrent() == false) request?.let { load(it.first, it.second, it.third) }
             }
         }
     }
 
-    private suspend fun localParkedDetail(carId: Int, olderDriveId: Int, newerDriveId: Int): ParkedDetailData? {
-        val older = readDrive(carId, olderDriveId) ?: return null
-        val newer = readDrive(carId, newerDriveId) ?: return null
-        return buildLocalParkedDetail(olderDriveId, newerDriveId, older, newer)
+    fun load(carId: Int, olderDriveId: Int, newerDriveId: Int) {
+        request = Triple(carId, olderDriveId, newerDriveId)
+        val currentGeneration = ++generation
+        loadJob?.cancel()
+        activeIdentity = null
+        _uiState.value = ParkedDetailUiState(isLoading = true)
+        loadJob = viewModelScope.launch {
+            val execution = currentCoroutineContext()
+            var identity: ParkedPageIdentity? = null
+            fun requireCurrent() {
+                execution.ensureActive()
+                if (currentGeneration != generation || identity?.stillCurrent() != true)
+                    throw HistoryIdentityUnavailableException()
+            }
+            try {
+                identity = source.identity(carId)
+                requireCurrent()
+                activeIdentity = identity
+                val local = identity.localHistoryCarId?.let { localCarId ->
+                    try {
+                        source.localDetail(localCarId, olderDriveId, newerDriveId)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+                requireCurrent()
+                if (local != null)
+                    _uiState.value = ParkedDetailUiState(isLoading = false, data = local, degraded = true)
+
+                val result = if (source.timeoutMs == Long.MAX_VALUE)
+                    source.detail(carId, olderDriveId, newerDriveId)
+                else withTimeoutOrNull(source.timeoutMs) {
+                    source.detail(carId, olderDriveId, newerDriveId)
+                }
+                requireCurrent()
+                _uiState.value = when (result) {
+                    is ApiResult.Success -> ParkedDetailUiState(isLoading = false, data = result.data)
+                    is ApiResult.Error -> ParkedDetailUiState(
+                        isLoading = false, data = local, degraded = local != null,
+                        syncWarning = if (local != null) message(R.string.history_sync_cached, "Cloud detail unavailable") else null,
+                        error = if (local == null) result.message else null
+                    )
+                    null -> ParkedDetailUiState(
+                        isLoading = false, data = local, degraded = local != null,
+                        syncWarning = if (local != null) message(R.string.history_sync_timeout, "Cloud detail timed out") else null,
+                        error = if (local == null) message(R.string.history_sync_timeout, "Cloud detail timed out") else null
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                if (currentGeneration == generation && execution.isActive)
+                    _uiState.value = ParkedDetailUiState(isLoading = false, error = HISTORY_IDENTITY_UNAVAILABLE)
+            }
+        }
     }
 
-    private suspend fun readDrive(carId: Int, driveId: Int): DriveSummary? = try {
-        // Rows are persisted under the scoped localHistoryCarId, which cold
-        // starts cannot resolve offline; fall back to an unambiguous drive-id
-        // match rather than showing nothing.
-        driveSummaryDao.get(carId, driveId)
-            ?: driveSummaryDao.getByDriveId(driveId).takeIf { it.size == 1 }?.first()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        null
-    }
+    private fun message(id: Int, fallback: String): String = appContext?.getString(id) ?: fallback
+}
+
+internal suspend fun readLocalParkedDetail(
+    dao: DriveSummaryDao,
+    localHistoryCarId: Int,
+    olderDriveId: Int,
+    newerDriveId: Int
+): ParkedDetailData? {
+    val older = dao.get(localHistoryCarId, olderDriveId) ?: return null
+    val newer = dao.get(localHistoryCarId, newerDriveId) ?: return null
+    return buildLocalParkedDetail(olderDriveId, newerDriveId, older, newer)
 }
 
 internal fun buildLocalParkedDetail(
@@ -113,7 +173,11 @@ internal fun buildLocalParkedDetail(
     newerDriveId: Int,
     older: DriveSummary,
     newer: DriveSummary
-): ParkedDetailData {
+): ParkedDetailData? {
+    if (older.carId != newer.carId || older.driveId != olderDriveId || newer.driveId != newerDriveId) return null
+    val start = parseIsoInstant(older.endDate) ?: return null
+    val end = parseIsoInstant(newer.startDate) ?: return null
+    if (!start.isBefore(end)) return null
     val startBattery = older.endBatteryLevel.takeIf { it in 0..100 }
     val endBattery = newer.startBatteryLevel.takeIf { it in 0..100 }
     return ParkedDetailData(

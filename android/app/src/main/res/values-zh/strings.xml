@@ -9,6 +9,13 @@
     <string name="energy_endpoint_coverage">起止端点观测；不代表连续功率覆盖</string>
     <string name="energy_nominal_estimate">剩余电量变化估算</string>
     <string name="history_energy_cache_failed">能耗保存失败，请下拉刷新重试。</string>
+    <string name="history_detail_waiting_for_summary">该详情暂时无法与已保存的同一会话匹配，请刷新历史列表后重试。</string>
+    <string name="history_detail_points_missing">详情采样点未能保存，离线时曲线可能不可用。</string>
+    <string name="history_detail_cache_corrupt">本机详情点未通过完整性校验，当前仅显示摘要，不绘制曲线。</string>
+    <string name="history_detail_source_unverified">已保存本次收到的详情点，但来源实例或来源记录 ID 未核实，服务端总点数也未知。</string>
+    <string name="history_detail_total_unverified">已保存本次收到的详情点；服务端未提供总点数，完整覆盖尚未核实。</string>
+    <string name="history_detail_cached_source_unverified">离线显示本机保存的详情点；来源实例或记录 ID 与服务端完整覆盖尚未核实。</string>
+    <string name="history_detail_cached_total_unverified">离线显示本机保存的详情点；服务端完整覆盖尚未核实。</string>
     <string name="energy_source_api_reported">接口报告值</string>
     <string name="energy_source_energy_remaining_delta">剩余电量端点差</string>
     <string name="energy_source_soc_estimate">容量估算</string>
@@ -238,6 +245,15 @@
     <!-- Charging -->
     <string name="charges_title">充电历史</string>
     <string name="charge_detail">充电详情</string>
+    <string name="charge_soc_first_observed">首次观测电量</string>
+    <string name="charge_soc_last_observed">末次观测电量</string>
+    <string name="charge_soc_observed_change">观测电量变化</string>
+    <string name="charge_sample_average">采样均值</string>
+    <string name="charge_single_observation">单次观测</string>
+    <string name="charge_electrical_samples">电学采样</string>
+    <string name="software_interval_unknown">更新样本不足</string>
+    <string name="software_duration_unknown">未记录耗时</string>
+    <string name="trip_route_deferred_budget">组合路线较长，未自动加载。可打开单段行程查看已记录路线。</string>
     <string name="charging_in_progress">正在充电</string>
     <string name="charge_power">功率</string>
     <string name="charge_added">已充入</string>
@@ -251,7 +267,7 @@
     <string name="timeline_distance_value">%.1f km</string>
     <string name="timeline_battery_end">%d%%</string>
     <string name="timeline_energy_added">%.1f kWh</string>
-    <string name="timeline_cost_value">¥%.2f</string>
+    <string name="timeline_cost_value">%1$s%2$.2f</string>
     <string name="timeline_unknown_route">未知路线</string>
     <string name="timeline_unknown_location">未知地点</string>
 
@@ -350,6 +366,7 @@
     <string name="efficiency_avg_label">平均能耗</string>
     <string name="efficiency_drive_count">行程数</string>
     <string name="efficiency_total_distance">总里程</string>
+    <string name="efficiency_paired_distance">参与能耗计算的里程</string>
     <string name="efficiency_by_speed_title">分速能耗</string>
     <string name="efficiency_by_speed_subtitle">不同速度区间的能耗 (Wh/km)</string>
     <string name="efficiency_windows_title">时间区间</string>
@@ -403,6 +420,14 @@
     <string name="cost_average_session_hint">包含人工总价</string>
     <string name="cost_average_kwh">平均每度</string>
     <string name="cost_average_kwh_hint">按有效费用计算</string>
+    <string name="cost_recorded_manual_total">已记录及手工总价</string>
+    <string name="cost_default_rate_estimate">按默认费率估算</string>
+    <string name="cost_paired_battery_unit">同笔配对每电池充入 kWh 成本</string>
+    <string name="cost_coverage_counts">费用 %1$d/%2$d · 电量 %3$d/%2$d · 同笔配对 %4$d</string>
+    <string name="cost_estimate_coverage">估算 %1$d 笔</string>
+    <string name="cost_mode_unknown">类型未知</string>
+    <string name="cost_no_paired_values">暂无同笔具备已知总价和合格正充入电量的记录</string>
+    <string name="cost_current_currency_assumption">金额按当前币种设置显示；历史单笔币种尚未逐项核实。</string>
 
     <!-- Range Analysis -->
     <string name="range_analysis_title">续航分析</string>
@@ -437,10 +462,11 @@
     <string name="standby_range_7_days">近 7 天</string>
     <string name="standby_range_30_days">近 30 天</string>
     <string name="standby_range_year">近 1 年</string>
-    <string name="standby_insufficient_detail">当前范围有 %1$d 个停车窗口、%2$.1f 小时合格覆盖。首次登录后，车辆重新联网并由数据源持续收集观测，行程和充电历史会逐步显示；稳定结论至少需要 5 个有效窗口和 20 小时合格覆盖。</string>
+    <string name="standby_insufficient_detail">当前范围有 %1$d 个停车窗口、%2$.1f 小时有效端点跨度。形成趋势至少需 5 个有效窗口、跨 20 小时；这些不是连续功率采样。</string>
     <string name="standby_evidence_title">证据与覆盖</string>
-    <string name="standby_evidence_summary">已观测 %1$d 个停车窗口；%2$d 个有效窗口；%3$.1f 小时合格覆盖。</string>
-    <string name="standby_stable_conclusion">数据已足够形成稳定结论</string>
+    <string name="standby_evidence_summary">已观测 %1$d 个停车窗口；%2$d 个有效窗口；%3$.1f 小时端点跨度。</string>
+    <string name="standby_stable_conclusion">SOC 端点趋势可参考；能耗原因仍未验证</string>
+    <string name="standby_soc_points">%1$d 个百分点</string>
     <string name="standby_preliminary_observation">目前仅为初步观察</string>
     <string name="standby_attribution_title">已观测原因</string>
     <string name="standby_climate_observed">至少一个有效窗口记录到空调活动。</string>
@@ -546,7 +572,7 @@
 
     <!-- Trips -->
     <string name="trip_summary">行程摘要</string>
-    <string name="trips_title">行程</string>
+    <string name="trips_title">组合旅程</string>
     <string name="total_distance">总距离</string>
     <string name="trip_driving_time">行驶时间</string>
     <string name="trip_energy_charged">充电能量</string>
@@ -590,12 +616,12 @@
     <string name="trip_edit_delete_confirm_body">确定要删除这个行程吗？</string>
     <string name="delete">删除</string>
     <string name="trip_create_cd">创建行程</string>
-    <string name="trips_empty_title">暂无行程</string>
-    <string name="trips_empty_intro">创建你的第一个行程，开始记录旅程。</string>
-    <string name="trips_empty_rule_drives">使用 Tesla 记录行驶</string>
-    <string name="trips_empty_rule_charge">在不同地点充电</string>
-    <string name="trips_empty_rule_distance">随时间积累里程</string>
-    <string name="trips_empty_create_hint">点击 + 按钮创建行程</string>
+    <string name="trips_empty_title">尚未创建组合旅程</string>
+    <string name="trips_empty_intro">把已有行程和充电记录组合起来，无需重新采集车辆数据。</string>
+    <string name="trips_empty_rule_drives">选择已有行程</string>
+    <string name="trips_empty_rule_charge">加入已有充电停靠</string>
+    <string name="trips_empty_rule_distance">查看组合后的总里程</string>
+    <string name="trips_empty_create_hint">点击 + 创建组合旅程</string>
 
     <!-- Currency -->
     <string name="currency_format">%1$s %2$.2f</string>
@@ -690,22 +716,20 @@
     <string name="temperature_trend_window_7">近 7 天</string>
     <string name="temperature_trend_window_30">近 30 天</string>
     <string name="temperature_trend_load_failed">温度历史加载失败，请重试。</string>
-    <string name="temperature_trend_unavailable">此时间范围内没有可用的温度历史记录。</string>
-    <string name="temperature_trend_chart_title">车内 / 车外温度变化曲线</string>
+    <string name="temperature_trend_unavailable">此时间范围内没有合格的行程温度样本。</string>
+    <string name="temperature_trend_chart_title">行程温度样本</string>
+    <string name="temperature_current_status_note">以下为接口最新状态，传感器采样时间未核实，不计入历史。</string>
+    <string name="temperature_current_unavailable">最新温度状态暂不可用；下方仍可查看已保存的历史。</string>
+    <string name="temperature_history_note">已保存的行程平均温度（°C）。每个点代表一次行程，不推算行程间温度。</string>
     <string name="temperature_inside_legend">车内</string>
     <string name="temperature_outside_legend">车外</string>
-    <string name="temperature_current_inside">当前车内</string>
-    <string name="temperature_current_outside">当前车外</string>
-    <string name="temperature_max_outside">最高车外</string>
-    <string name="temperature_max_inside">最高车内</string>
+    <string name="temperature_current_inside">最新状态·车内</string>
+    <string name="temperature_current_outside">最新状态·车外</string>
+    <string name="temperature_max_outside">最高行程车外均温</string>
+    <string name="temperature_max_inside">最高行程车内均温</string>
     <string name="temperature_min_outside">最低车外</string>
     <string name="temperature_min_inside">最低车内</string>
     <string name="temperature_cabin_diff">最大温差</string>
-    <string name="temperature_insights_title">温度分析与环境洞察</string>
-    <string name="temperature_insights_solar_gain">暴晒升温指数</string>
-    <string name="temperature_insights_solar_desc">车内在阳光直射下升温较快，建议在高温天气提前使用 App 开启驾驶室过热保护或提前开启空调降温。</string>
-    <string name="temperature_insights_climate_good">空调温控表现</string>
-    <string name="temperature_insights_climate_good_desc">行程中车内温度维持在适宜区间，空调系统温控调节正常。</string>
     <string name="tpms_pressure_unit">bar</string>
     <string name="settings_tpms_entry_subtitle">目标胎压与高低压提醒阈值</string>
     <string name="tpms_profile_title">每辆车的冷态胎压设置</string>
@@ -832,10 +856,12 @@
     <!-- Battery extra -->
     <string name="range">续航</string>
     <string name="max_range_new">最大续航（新）</string>
-    <string name="max_range_now">最大续航（当前）</string>
+    <string name="max_range_now">满电额定续航估算</string>
     <string name="range_loss">续航损失</string>
     <string name="battery_detail_title">电池详情</string>
     <string name="current_charge_title">当前充电</string>
+    <string name="current_battery_level_title">当前电量</string>
+    <string name="current_battery_level_message">最近一次上报的电池电量百分比，不代表正在充电。</string>
     <string name="current_charge_message">当前充电信息。</string>
     <string name="current_charge">当前充电</string>
     <string name="usable_percent">可用（%1$d%%）</string>
@@ -845,6 +871,17 @@
     <string name="charge_cost_manual">人工总价</string>
     <string name="edit_charge_cost">修改总价</string>
     <string name="charge_total_amount">本次充电总价</string>
+    <string name="charge_cost_legacy_pending">旧手工金额 %1$.2f 的币种和会话未确认。请按当前币种重新输入并保存，以绑定本次充电。</string>
+    <string name="charge_cost_instance_unverified">仅绑定本地充电会话；上游来源实例未验证</string>
+    <string name="charge_cost_edit_conflict">该费用已在其他位置修改，请重新打开后保存。</string>
+    <string name="charge_cost_currency_unverified">请先选择有效币种，再编辑该费用。</string>
+    <string name="charge_cost_saved_unconfirmed">已存手工金额 %1$.2f · 币种待确认，不计入可比总额</string>
+    <string name="charge_cost_saved_unbound">已存手工金额 %1$s %2$.2f · 会话或来源证据待确认，不计入可比总额</string>
+    <string name="charge_cost_other_currency">已存手工金额 %1$s %2$.2f · 不计入当前币种总额</string>
+    <string name="charge_cost_source_unconfirmed">来源金额 %1$.2f · 币种待确认，不计入可比总额</string>
+    <string name="charge_cost_source_identity_unverified">来源金额 %1$.2f · 来源身份待确认，不计入可比总额</string>
+    <string name="charge_cost_source_other_currency">来源金额 %1$s %2$.2f · 不计入当前币种总额</string>
+    <string name="charge_cost_source_zero_unverified">来源返回 0.00，尚不能确认免费</string>
     <string name="charge_total_amount_hint">输入本次充电的人民币总价</string>
     <string name="charge_price_invalid">请输入有效的非负价格</string>
     <string name="charge_price_saved">总价已保存</string>
@@ -859,9 +896,9 @@
     <string name="estimated_range">预估续航</string>
     <string name="estimated_range_subtitle">基于近期驾驶</string>
     <string name="rated_range">额定续航</string>
-    <string name="rated_range_subtitle">EPA 额定续航</string>
+    <string name="rated_range_subtitle">车辆上报的额定续航</string>
     <string name="ideal_range">理想续航</string>
-    <string name="ideal_range_subtitle">WLTP 理想续航</string>
+    <string name="ideal_range_subtitle">车辆上报的理想续航</string>
     <string name="estimated_total_capacity_title">预估总容量</string>
     <string name="estimated_total_capacity_message">基于充电数据分析。</string>
     <string name="estimated_total_capacity">预估总容量</string>
@@ -871,6 +908,7 @@
     <!-- All missing strings batch -->
     <string name="all_years">全部年份</string>
     <string name="average">平均</string>
+    <string name="drive_detail_sample_mean">采样均值</string>
     <string name="avg_cost_per_session">平均每次费用</string>
     <string name="avg_distance">全程均速</string>
     <string name="charge_details_title">充电详情</string>
@@ -878,6 +916,26 @@
     <string name="charge_parked_title">充电驻车</string>
     <string name="charge_parked_summary">该驻车时段与一条真实充电记录重叠。</string>
     <string name="charge_parked_view">查看本次充电</string>
+    <string name="parked_battery_title">驻车电量</string>
+    <string name="parked_energy_title">能量与功率</string>
+    <string name="parked_environment_title">驻车温度</string>
+    <string name="parked_start_soc">开始电量</string>
+    <string name="parked_end_soc">结束电量</string>
+    <string name="parked_soc_change">电量下降</string>
+    <string name="parked_percentage_points">%1$d 个百分点</string>
+    <string name="parked_soc_drop">下降 %1$d 个百分点</string>
+    <string name="parked_soc_gain">上升 %1$d 个百分点</string>
+    <string name="parked_soc_same">无变化</string>
+    <string name="parked_energy_change">能量变化（估算）</string>
+    <string name="parked_average_power">平均功率（估算）</string>
+    <string name="parked_peak_power">峰值功率</string>
+    <string name="parked_inside_temperature">车内温度</string>
+    <string name="parked_outside_temperature">车外温度</string>
+    <string name="parked_no_battery_data">这段驻车尚无起止电量观测。</string>
+    <string name="parked_no_energy_data">这段驻车尚无合格能量或功率采样。</string>
+    <string name="parked_no_temperature_data">这段驻车尚无车内外温度采样。</string>
+    <string name="parked_power_coverage">功率采样：%1$d · 功率覆盖：%2$.0f%%</string>
+    <string name="parked_power_coverage_unknown">功率采样覆盖范围未知。</string>
     <string name="charge_history">充电历史</string>
     <string name="charge_location">位置</string>
     <string name="charger">充电桩</string>
@@ -1057,8 +1115,9 @@
     <string name="select_all">全选</string>
     <string name="sentry_alert_detected">检测到警报</string>
     <string name="sentry_history_current_session">当前会话</string>
-    <string name="sentry_history_empty">暂无历史</string>
-    <string name="sentry_history_no_alerts">无警报</string>
+    <string name="sentry_history_empty">本机暂无已记录历史</string>
+    <string name="sentry_history_no_alerts">本机本次会话尚无已记录警报</string>
+    <string name="sentry_history_identity_unavailable">车辆历史身份暂不可验证，当前无法核对已记录警报。</string>
     <string name="sentry_history_past">历史</string>
     <string name="sentry_history_title">哨兵历史</string>
     <string name="sentry_history_today">今天</string>
@@ -1100,7 +1159,8 @@
     <string name="settings_release_notes_close">知道了</string>
     <string name="settings_switch_to_cloud">切换到 MateLink 云端</string>
     <string name="settings_switch_to_self_hosted">切换到本地 TeslaMate</string>
-<string name="settings_release_notes_body" formatted="false">• 自动历史同步与缓存刷新保留已验证的用户车辆身份、观测来源和时间边界。
+<string name="settings_release_notes_body" formatted="false">• 同一充电的详情证据可安全保存，弱列表刷新不再抹去合格电量；总价编辑移入右侧费用格。\n• 温度趋势只画真实历史；胎压复用已有状态响应保存，不新增周期 Fleet 状态请求；哨兵历史按已验证的本地车辆身份读取。\n• 年度与费用统计区分未知、真实零和负净回收，月柱图不把未知画成零；时间线按本地日期显示。\n• 行程与充电历史首屏先看摘要和最近记录；筛选更紧凑，原月度柱状图保留在摘要后、历史列表前。\n• 摘要与充电历史统一四列，数字加大，日期筛选精简并保留完整选项。\n• 行程历史的四项指标改为紧凑一行，详情保留完整面板，大字体可横滑查看，不截断数字和单位。
+• 自动历史同步与缓存刷新保留已验证的用户车辆身份、观测来源和时间边界。
 • 行驶和充电能耗区分真实零值、负净回收与未知；推算与估算明确标记，不冒充实测。
 • 充电损耗与效率仅在整段 AC 模式和计数时段均有观测证明时计算；未知或混合 AC/DC 模式保留未知。
 • 驻车能量、迟到记录与通知保留来源和质量限制；自然 Fleet 事件与后台自动送达仍需独立真机验收。</string>
@@ -1167,6 +1227,8 @@
     <string name="stats_analysis_energy_used">行驶能耗</string>
     <string name="stats_analysis_energy_added">充入电量</string>
     <string name="stats_analysis_cost">已记录费用</string>
+    <string name="stats_cost_not_recorded">未记录</string>
+    <string name="stats_cost_recording_hint">可在充电详情补录总价</string>
     <string name="stats_analysis_samples">数据记录</string>
     <string name="stats_analysis_sample_count">行程与充电记录</string>
     <string name="stats_analysis_observed">观测值</string>
@@ -1247,8 +1309,13 @@
     <string name="total_cost">总费用</string>
     <string name="total_energy">充电量</string>
     <string name="total_sessions">充电次数</string>
+    <string name="summary_sessions_compact">充电次数</string>
+    <string name="summary_avg_charge_compact">单次均价</string>
+    <string name="charge_session_unit">次</string>
+    <string name="charge_sessions_unit">次</string>
     <string name="total_time">总时间</string>
     <string name="total_trips">总行程数</string>
+    <string name="summary_trips_compact">行程</string>
     <string name="trip">行程</string>
     <string name="unknown_location">未知位置</string>
     <string name="used">已用</string>
@@ -1522,22 +1589,42 @@
     <string name="history_sync_timeout">云端同步超时，已显示本地缓存数据；下拉刷新可重试。</string>
     <string name="retry">重试</string>
     <string name="parked_detail_local_source_note">数据来源：本机缓存（由相邻行程推得）；云端明细待同步</string>
+    <string name="parked_detail_archive_source_note">数据来源：TeslaMate 历史归档</string>
+    <string name="parked_detail_other_source_note">数据来源：当前历史响应；来源仍待核实</string>
     <string name="parked_duration_total">共驻车 %1$s</string>
-    <string name="parked_charge_badge">⚡ 充电 +%1$d%%</string>
+    <string name="parked_duration_zero">0 秒</string>
+    <string name="parked_duration_under_minute">少于 1 分钟</string>
+    <string name="parked_gain_badge">↑%1$d 个百分点</string>
+    <string name="parked_drop_badge">↓%1$d 个百分点</string>
+    <string name="parked_no_change_badge">±%1$d 个百分点</string>
+    <string name="parked_soc_point_unit">百分点</string>
+    <string name="parked_soc_rate">每小时电量变化</string>
+    <string name="parked_soc_rate_charge">充电电量上升</string>
+    <string name="parked_soc_rate_gain">电量上升</string>
+    <string name="parked_soc_rate_drain">驻车电量下降</string>
+    <string name="parked_soc_rate_same">电量不变</string>
+    <string name="parked_drain_energy_per_hour">每小时驻车耗电</string>
+    <string name="parked_power_sample_average">观测期平均净功率</string>
+    <string name="parked_soc_rate_unit">百分点/小时</string>
+    <string name="parked_soc_only_note">按起止电量推算；本段没有合格的 kWh 观测。</string>
+    <string name="parked_soc_gain_unlinked_note">充电记录待同步；仅确认电量上升，未换算为度电。</string>
+    <string name="parked_energy_per_hour">驻车全程净电量/小时</string>
+    <string name="parked_energy_per_hour_unit">kWh/小时</string>
+    <string name="parked_charge_badge">⚡ 充电 +%1$d百分点</string>
     <string name="parked_drain_badge">耗电 −%1$d%%</string>
     <string name="parked_battery_section_title">起止电量</string>
     <string name="parked_start_battery">起始电量</string>
     <string name="parked_end_battery">结束电量</string>
     <string name="parked_battery_delta">电量变化</string>
     <string name="parked_cloud_section_title">能耗与环境</string>
-    <string name="parked_estimated_energy">估算能耗</string>
+    <string name="parked_estimated_energy">净电量变化</string>
     <string name="parked_avg_power">平均功率</string>
     <string name="parked_inside_temp">车内温度</string>
     <string name="parked_outside_temp">车外温度</string>
     <string name="parked_coverage">覆盖率</string>
     <string name="parked_sample_count">采样数</string>
     <string name="parked_sample_unit">次</string>
-    <string name="parked_cloud_detail_pending">云端明细待同步：温度、功率与采样分析将在网络恢复后补全；可下拉重试。</string>
+    <string name="parked_cloud_detail_pending">本段尚无合格的驻车温度或能量观测。</string>
     <string name="history_sync_partial">云端历史仅恢复了一部分，本机旧记录已保留；下拉刷新可重试剩余记录。</string>
     <string name="history_archive_link_pending">此列表使用已验证的云端来源。原手机记录、费用修改和本地分析仍保留，暂未关联到此列表。</string>
     <string name="completed_charge_title">充电已完成</string>
@@ -1583,4 +1670,11 @@
     <string name="diagnostic_source_projection">存储的合格性投影与已验证胎压</string>
     <string name="diagnostic_projection_detail">已验证胎压记录存在：%1$d；行程能耗合格投影：%2$d；充电能耗合格投影：%3$d。投影数读取既有质量与来源字段，本诊断未重新验证原始能量契约。解读数值前可查看现有详情证据。</string>
     <string name="diagnostic_permission_detail">接口报告缺少权限。登录有效或车辆绑定不代表全部 Tesla 授权已满足。可手动查看既有授权流程。</string>
+    <string name="history_source_show">数据来源 · 查看说明</string>
+    <string name="history_source_hide">数据来源 · 收起说明</string>
+    <string name="amap_historical_position">上次已验证位置（非实时）：%1$s</string>
+    <string name="temperature_observed_coverage">合格行程均温：%1$d/%2$d 段非隔离已存行程。时间是行程开始，不是驻车采样。</string>
+    <string name="temperature_last_qualified_trip">最近合格行程开始：%1$s（本地时间）</string>
+    <string name="temperature_no_trip_history">当前时间段没有符合条件的已保存行程；实时温度不会生成历史样本。</string>
+    <string name="temperature_no_qualified_trip_samples">已有行程，但温度缺少合格来源或时间证据。需真实记录或导入行程，不会生成示意值。</string>
 </resources>

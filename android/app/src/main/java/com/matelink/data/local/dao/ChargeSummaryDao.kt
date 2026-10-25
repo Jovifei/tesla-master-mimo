@@ -4,9 +4,14 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
 import androidx.room.Transaction
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import com.matelink.data.local.HistorySourceReceiptArchive
+import com.matelink.data.local.entity.HistoryDetailReceipt
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.data.repository.mergeStoredCharge
 import com.matelink.data.api.models.ChargeDetail
+import com.matelink.domain.analytics.acceptsDetail
 import com.matelink.domain.analytics.withDetailEvidence
 import com.matelink.data.local.entity.ChargeSummary
 import kotlinx.coroutines.flow.Flow
@@ -23,13 +28,17 @@ interface ChargeSummaryDao {
     /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
     @Transaction
     suspend fun upsertPreservingEvidence(rows: List<ChargeSummary>) {
-        persistChargeRowsWithoutEvidenceLoss(rows, ::get, ::upsert)
+        persistChargeRowsWithoutEvidenceLoss(rows, ::getAnyForPersistence, ::upsert) { previous ->
+            val original = HistorySourceReceiptArchive.capture(previous)
+            if (original != null) archivePrior(original)
+        }
     }
 
     @Transaction
     suspend fun mergeDetail(carId: Int, detail: ChargeDetail, ensureCurrent: suspend () -> Unit): Boolean {
         ensureCurrent()
         val newest = get(carId, detail.chargeId) ?: return false
+        if (!newest.acceptsDetail(detail)) return false
         upsert(newest.withDetailEvidence(detail))
         ensureCurrent()
         return true
@@ -43,6 +52,27 @@ interface ChargeSummaryDao {
         if (newest.apiEvidence != expectedEvidence) return
         upsert(newest.copy(apiEvidence = HistorySummaryEvidenceCodec.markDetailTerminal404(newest.apiEvidence, carId)))
         ensureCurrent()
+    }
+
+    /** No overwrite: collisions remain independent read-only historical receipts. */
+    @Query("SELECT COUNT(*) FROM history_detail_receipts WHERE receiptId = :receiptId")
+    suspend fun archiveExists(receiptId: String): Int
+
+    @Query("SELECT COALESCE(SUM(encodedByteCount), 0) FROM history_detail_receipts WHERE state='archived_source_conflict'")
+    suspend fun archiveUsedBytes(): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertConflictArchive(receipt: HistoryDetailReceipt)
+
+    suspend fun archivePrior(receipt: HistoryDetailReceipt) {
+        if (archiveExists(receipt.receiptId) > 0) return
+        val maxBytes = 64L * 1024 * 1024
+        val used = archiveUsedBytes()
+        check(receipt.encodedByteCount >= 0L && used <= maxBytes &&
+            receipt.encodedByteCount <= maxBytes - used) {
+            "history_conflict_archive_budget_exceeded"
+        }
+        insertConflictArchive(receipt)
     }
 
     // === CRUD Operations ===
@@ -68,6 +98,10 @@ interface ChargeSummaryDao {
 
     @Query("SELECT * FROM charges_summary WHERE chargeId = :chargeId AND carId = :carId AND qualityState != 'quarantined'")
     suspend fun get(carId: Int, chargeId: Int): ChargeSummary?
+
+    /** Preserve quarantined raw receipts too; the presentation get() intentionally hides them. */
+    @Query("SELECT * FROM charges_summary WHERE carId = :carId AND chargeId = :id LIMIT 1")
+    suspend fun getAnyForPersistence(carId: Int, id: Int): ChargeSummary?
 
     @Query("SELECT * FROM charges_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
     fun observeAll(carId: Int): Flow<List<ChargeSummary>>
@@ -113,6 +147,15 @@ interface ChargeSummaryDao {
         ORDER BY startDate ASC
     """)
     suspend fun getChargesInRange(carId: Int, startDate: String, endDate: String): List<ChargeSummary>
+
+    /** Bounded history read for local-time year projection, including trusted legacy rows. */
+    @Query("""
+        SELECT * FROM charges_summary
+        WHERE carId = :carId AND qualityState != 'quarantined'
+        AND startDate >= :startDate AND startDate < :endDate
+        ORDER BY startDate ASC
+    """)
+    suspend fun getHistoryChargesInRange(carId: Int, startDate: String, endDate: String): List<ChargeSummary>
 
     // Total energy added
     @Query("SELECT COALESCE(SUM(energyAdded), 0) FROM charges_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
@@ -428,19 +471,6 @@ interface ChargeSummaryDao {
         endDate: String
     ): ChargeSummary?
 
-    // === Monthly Aggregation Queries ===
-
-    @Query("""
-        SELECT CAST(strftime('%m', startDate) AS INTEGER) as month,
-               COALESCE(SUM(energyAdded), 0) as totalEnergy,
-               COALESCE(SUM(cost), 0) as totalCost,
-               COUNT(*) as chargeCount
-        FROM charges_summary
-        WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND strftime('%Y', startDate) = :year
-        GROUP BY strftime('%m', startDate)
-        ORDER BY month ASC
-    """)
-    suspend fun getMonthlyAggregation(carId: Int, year: String): List<MonthlyChargeAggregation>
 }
 
 /**
@@ -467,9 +497,13 @@ data class GapBetweenChargesResult(
 
 data class MonthlyChargeAggregation(
     val month: Int,
-    val totalEnergy: Double,
-    val totalCost: Double,
-    val chargeCount: Int
+    /** Null means the month has records but no qualified battery-energy sample. */
+    val totalEnergy: Double?,
+    val chargeCount: Int,
+    val energySampleCount: Int,
+    /** Source-reported prices only; the annual cost headline resolves manual overrides separately. */
+    val totalCost: Double? = null,
+    val costSampleCount: Int = 0
 )
 
 /**
@@ -480,11 +514,31 @@ data class MonthlyChargeAggregation(
 internal suspend fun persistChargeRowsWithoutEvidenceLoss(
     rows: List<ChargeSummary>,
     get: suspend (Int, Int) -> ChargeSummary?,
-    upsert: suspend (ChargeSummary) -> Unit
+    upsert: suspend (ChargeSummary) -> Unit,
+    archive: suspend (ChargeSummary) -> Unit = {}
 ) {
     rows.forEach { incoming ->
         val prior = get(incoming.carId, incoming.chargeId)
+        val superseded = prior != null && HistorySourceReceiptArchive.replaced(prior, incoming)
         val merged = mergeStoredCharge(incoming, prior)
+        if (superseded) {
+            // Archive the DISCARDED original, not always the prior row.
+            // A foreign observed-looking import can be correctly rejected by
+            // the resolver; silently dropping its distinct raw bytes would
+            // still lose history. Room's enclosing @Transaction is atomic.
+            val priorBytes = prior!!.apiEvidence
+            val incomingBytes = incoming.apiEvidence
+            when {
+                merged.apiEvidence == priorBytes && merged.apiEvidence != incomingBytes ->
+                    archive(incoming)
+                merged.apiEvidence == incomingBytes && merged.apiEvidence != priorBytes ->
+                    archive(prior)
+                else -> {
+                    archive(prior)
+                    archive(incoming)
+                }
+            }
+        }
         val marked = merged.copy(apiEvidence = HistorySummaryEvidenceCodec.carryDetailTerminal404(
             merged.apiEvidence, prior?.apiEvidence, incoming.carId))
         // Legacy terminal rows lost their original qualification in older code. Do not guess it back.

@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.matelink.R
@@ -48,18 +49,17 @@ class AmapSetupGuideContentTest {
         composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_progress, 1, 3)).assertIsDisplayed()
         composeRule.onNodeWithContentDescription(context.getString(R.string.amap_setup_platform_illustration)).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.amap_setup_warning), substring = true).assertIsDisplayed()
-        composeRule.onNodeWithText(context.getString(R.string.amap_copy_package)).performClick()
-        assertEquals("package", copied)
-
-        composeRule.onNodeWithText(context.getString(R.string.amap_setup_next)).assertIsDisplayed().performClick()
-        composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_2_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_next)).performScrollTo().assertIsDisplayed().performClick()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_2_title)).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_2_body)).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_progress, 2, 3)).assertIsDisplayed()
         composeRule.onNodeWithContentDescription(context.getString(R.string.amap_setup_previous)).assertIsDisplayed()
         composeRule.onNodeWithContentDescription(context.getString(R.string.amap_setup_next)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.amap_copy_package)).performScrollTo().performClick()
+        assertEquals("package", copied)
 
-        composeRule.onNodeWithText(context.getString(R.string.amap_setup_next)).performClick()
-        composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_3_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_next)).performScrollTo().performClick()
+        composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_3_title)).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_3_body)).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.amap_setup_step_progress, 3, 3)).assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.amap_key_not_saved)).fetchSemanticsNode()

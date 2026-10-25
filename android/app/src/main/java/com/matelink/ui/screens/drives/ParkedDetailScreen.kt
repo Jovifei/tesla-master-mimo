@@ -145,35 +145,39 @@ private fun ParkedDetailContent(
 
     val startDt = parseIsoDateTime(data.startDate)
     val endDt = parseIsoDateTime(data.endDate)
-    val durationMin = if (startDt != null && endDt != null) {
-        Duration.between(startDt, endDt).toMinutes().coerceAtLeast(0)
+    val duration = if (startDt != null && endDt != null) {
+        Duration.between(startDt, endDt).takeIf { !it.isNegative }
     } else null
+    val durationMin = duration?.toMinutes()
 
-    val durationText = durationMin?.let {
-        formatDuration(context.resources, it.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
-    } ?: unavailable
+    val durationText = when {
+        duration == null -> unavailable
+        duration.isZero -> stringResource(R.string.parked_duration_zero)
+        duration.seconds < 60 -> stringResource(R.string.parked_duration_under_minute)
+        else -> formatDuration(context.resources, durationMin!!.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+    }
 
     // Derive the delta from the displayed boundaries first so the hero badge and
     // the battery card can never disagree; fall back to the server scalar only
     // when either boundary is unknown.
-    val batteryDeltaVal = if (data.startBatteryLevel != null && data.endBatteryLevel != null) {
-        data.endBatteryLevel - data.startBatteryLevel
-    } else data.batteryDelta
-    // A positive delta means the battery grew while parked — that is charging,
-    // not consumption; the flat-rate drain estimate only models a discharge,
-    // so it must stay unknown for gains.
-    val estEnergy = data.qualifiedParkedEnergyKwh
-        ?: batteryDeltaVal?.takeIf { it <= 0 }?.let { kotlin.math.abs(it) * 0.60 }
-    val estEnergyStr = estEnergy?.let { "%.2f".format(it) } ?: unavailable
-
-    val avgPowerStr = data.qualifiedAveragePowerW?.let { "%.0f".format(it) }
-        ?: data.averagePowerKw?.let { "%.0f".format(it * 1000.0) }
-        ?: unavailable
-
-    val hasCloudDetail = data.qualifiedParkedEnergyKwh != null ||
-        data.averagePowerKw != null || data.qualifiedAveragePowerW != null ||
-        data.insideTempAverage != null || data.outsideTempAverage != null ||
-        data.sampleCount > 0 || estEnergy != null
+    val startSoc = data.startBatteryLevel?.takeIf { it in 0..100 }
+    val endSoc = data.endBatteryLevel?.takeIf { it in 0..100 }
+    val batteryDeltaVal = if (startSoc != null && endSoc != null) {
+        endSoc - startSoc
+    } else data.batteryDelta?.takeIf { it in -100..100 }
+    val qualifiedEnergy = data.qualifiedParkedEnergyKwh?.takeIf(Double::isFinite)
+    val energyPerHour = parkedEnergyKwhPerHour(
+        qualifiedEnergy, data.qualifiedAveragePowerW, duration
+    )
+    val energyRateFromTotal = qualifiedEnergy != null && duration != null && !duration.isZero
+    val socPointsPerHour = parkedSocPointsPerHour(
+        if (startSoc != null && endSoc != null) endSoc - startSoc else null,
+        duration
+    )
+    val insideTemp = data.insideTempAverage?.takeIf(Double::isFinite)
+    val outsideTemp = data.outsideTempAverage?.takeIf(Double::isFinite)
+    val hasCloudDetail = qualifiedEnergy != null || energyPerHour != null ||
+        insideTemp != null || outsideTemp != null
 
     Column(
         modifier = modifier
@@ -237,20 +241,24 @@ private fun ParkedDetailContent(
                         modifier = Modifier.weight(1f)
                     )
                     batteryDeltaVal?.let { delta ->
-                        val charged = delta > 0
                         Text(
                             text = stringResource(
-                                if (charged) R.string.parked_charge_badge else R.string.parked_drain_badge,
+                                when {
+                                    delta > 0 && data.linkedCharge != null -> R.string.parked_charge_badge
+                                    delta > 0 -> R.string.parked_gain_badge
+                                    delta < 0 -> R.string.parked_drop_badge
+                                    else -> R.string.parked_no_change_badge
+                                },
                                 kotlin.math.abs(delta)
                             ),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
-                            color = if (charged) Color(0xFF10B981) else Color(0xFFE11D48),
+                            color = if (delta > 0) Color(0xFF10B981) else palette.onSurface,
                             modifier = Modifier
                                 .clip(CircleShape)
                                 .background(
-                                    if (charged) Color(0xFF10B981).copy(alpha = 0.12f)
-                                    else Color(0xFFE11D48).copy(alpha = 0.12f)
+                                    if (delta > 0) Color(0xFF10B981).copy(alpha = 0.12f)
+                                    else palette.onSurface.copy(alpha = 0.08f)
                                 )
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         )
@@ -295,25 +303,25 @@ private fun ParkedDetailContent(
                             TelemetryMetricSpec(
                                 icon = Icons.Default.BatteryChargingFull,
                                 label = stringResource(R.string.parked_start_battery),
-                                value = data.startBatteryLevel?.takeIf { it in 0..100 }?.toString() ?: unavailable,
+                                value = startSoc?.toString() ?: unavailable,
                                 tint = Color(0xFF0284C7),
-                                unit = if (data.startBatteryLevel != null) "%" else null,
+                                unit = if (startSoc != null) "%" else null,
                                 valueFontSize = 17.sp
                             ),
                             TelemetryMetricSpec(
                                 icon = Icons.Default.BatteryChargingFull,
                                 label = stringResource(R.string.parked_end_battery),
-                                value = data.endBatteryLevel?.takeIf { it in 0..100 }?.toString() ?: unavailable,
+                                value = endSoc?.toString() ?: unavailable,
                                 tint = Color(0xFF0284C7),
-                                unit = if (data.endBatteryLevel != null) "%" else null,
+                                unit = if (endSoc != null) "%" else null,
                                 valueFontSize = 17.sp
                             ),
                             TelemetryMetricSpec(
                                 icon = Icons.Default.BatteryAlert,
                                 label = stringResource(R.string.parked_battery_delta),
                                 value = batteryDeltaVal?.let { if (it > 0) "+$it" else "$it" } ?: unavailable,
-                                tint = if ((batteryDeltaVal ?: 0) < 0) Color(0xFFE11D48) else Color(0xFF10B981),
-                                unit = if (batteryDeltaVal != null) "%" else null,
+                                tint = if ((batteryDeltaVal ?: 0) > 0) Color(0xFF10B981) else palette.onSurface,
+                                unit = if (batteryDeltaVal != null) stringResource(R.string.parked_soc_point_unit) else null,
                                 valueFontSize = 17.sp
                             )
                         ),
@@ -321,6 +329,29 @@ private fun ParkedDetailContent(
                         adaptive = false,
                         maxColumns = 3
                     )
+                }
+                socPointsPerHour?.let { rate ->
+                    val label = when {
+                        rate > 0.0 && data.linkedCharge != null -> R.string.parked_soc_rate_charge
+                        rate > 0.0 -> R.string.parked_soc_rate_gain
+                        rate < 0.0 -> R.string.parked_soc_rate_drain
+                        else -> R.string.parked_soc_rate_same
+                    }
+                    Text(
+                        text = "${stringResource(label)} ${"%.1f".format(kotlin.math.abs(rate))} " +
+                            stringResource(R.string.parked_soc_rate_unit),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (rate > 0.0) Color(0xFF10B981) else palette.onSurface
+                    )
+                }
+                if (socPointsPerHour != null && qualifiedEnergy == null) {
+                    Text(stringResource(
+                        if (socPointsPerHour > 0.0 && data.linkedCharge == null)
+                            R.string.parked_soc_gain_unlinked_note
+                        else R.string.parked_soc_only_note
+                    ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -333,108 +364,92 @@ private fun ParkedDetailContent(
             )
         }
 
-        // 4. Cloud telemetry detail: one honest pending line replaces a wall of
-        // per-cell "no data" when nothing cloud-derived arrived yet.
-        TelemetryPanel(
-            modifier = Modifier.fillMaxWidth(),
-            accent = MaterialTheme.colorScheme.tertiary
-        ) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+        // 4. Show only qualified telemetry; missing cloud history is one compact explanation.
+        if (hasCloudDetail) {
+            TelemetryPanel(
+                modifier = Modifier.fillMaxWidth(),
+                accent = MaterialTheme.colorScheme.tertiary
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Thermostat,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.tertiary
-                    )
-                    Text(
-                        text = stringResource(R.string.parked_cloud_section_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                if (hasCloudDetail) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(MaterialTheme.shapes.medium)
-                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        TelemetryMetricStrip(
-                            metrics = listOf(
-                                TelemetryMetricSpec(
-                                    icon = Icons.Default.Eco,
-                                    label = stringResource(R.string.parked_estimated_energy),
-                                    value = estEnergyStr,
-                                    tint = Color(0xFF10B981),
-                                    unit = if (estEnergy != null) "kWh" else null,
-                                    valueFontSize = 17.sp
-                                ),
-                                TelemetryMetricSpec(
-                                    icon = Icons.Default.Power,
-                                    label = stringResource(R.string.parked_avg_power),
-                                    value = avgPowerStr,
-                                    tint = Color(0xFF6366F1),
-                                    unit = if (avgPowerStr != unavailable) "W" else null,
-                                    valueFontSize = 17.sp
-                                ),
-                                TelemetryMetricSpec(
-                                    icon = Icons.Default.Thermostat,
-                                    label = stringResource(R.string.parked_inside_temp),
-                                    value = data.insideTempAverage?.let { "%.1f".format(it) } ?: unavailable,
-                                    tint = Color(0xFF0D9488),
-                                    unit = if (data.insideTempAverage != null) "°C" else null,
-                                    valueFontSize = 17.sp
-                                ),
-                                TelemetryMetricSpec(
-                                    icon = Icons.Default.Thermostat,
-                                    label = stringResource(R.string.parked_outside_temp),
-                                    value = data.outsideTempAverage?.let { "%.1f".format(it) } ?: unavailable,
-                                    tint = Color(0xFF0284C7),
-                                    unit = if (data.outsideTempAverage != null) "°C" else null,
-                                    valueFontSize = 17.sp
-                                ),
-                                TelemetryMetricSpec(
-                                    icon = Icons.Default.Schedule,
-                                    label = stringResource(R.string.parked_coverage),
-                                    value = "%.0f".format(data.coverageRatio * 100),
-                                    tint = Color(0xFF10B981),
-                                    unit = "%",
-                                    valueFontSize = 17.sp
-                                ),
-                                TelemetryMetricSpec(
-                                    icon = Icons.Default.Schedule,
-                                    label = stringResource(R.string.parked_sample_count),
-                                    value = "%,d".format(data.sampleCount),
-                                    tint = Color(0xFF6366F1),
-                                    unit = stringResource(R.string.parked_sample_unit),
-                                    valueFontSize = 17.sp
-                                )
-                            ),
-                            modifier = Modifier.padding(vertical = 4.dp),
-                            adaptive = false,
-                            maxColumns = 4
-                        )
+                        Icon(Icons.Default.Thermostat, contentDescription = null,
+                            modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
+                        Text(stringResource(R.string.parked_cloud_section_title),
+                            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     }
-                } else {
-                    Text(
-                        text = stringResource(R.string.parked_cloud_detail_pending),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    TelemetryMetricStrip(
+                        metrics = listOfNotNull(
+                            qualifiedEnergy?.let { energy -> TelemetryMetricSpec(
+                                icon = Icons.Default.Eco,
+                                label = stringResource(R.string.parked_estimated_energy),
+                                value = "%.2f".format(energy),
+                                tint = if (energy < 0.0) Color(0xFF10B981) else palette.accent,
+                                unit = "kWh", valueFontSize = 18.sp
+                            ) },
+                            energyPerHour?.let { rate -> TelemetryMetricSpec(
+                                icon = Icons.Default.Power,
+                                label = stringResource(when {
+                                    !energyRateFromTotal -> R.string.parked_power_sample_average
+                                    rate > 0.0 && data.linkedCharge == null -> R.string.parked_drain_energy_per_hour
+                                    else -> R.string.parked_energy_per_hour
+                                }),
+                                value = "%.2f".format(rate),
+                                tint = if (rate < 0.0) Color(0xFF10B981) else palette.accent,
+                                unit = if (energyRateFromTotal) stringResource(R.string.parked_energy_per_hour_unit)
+                                    else "kW",
+                                valueFontSize = 18.sp
+                            ) },
+                            insideTemp?.let { temperature -> TelemetryMetricSpec(
+                                icon = Icons.Default.Thermostat,
+                                label = stringResource(R.string.parked_inside_temp),
+                                value = "%.1f".format(temperature), tint = Color(0xFF0D9488),
+                                unit = "°C", valueFontSize = 18.sp
+                            ) },
+                            outsideTemp?.let { temperature -> TelemetryMetricSpec(
+                                icon = Icons.Default.Thermostat,
+                                label = stringResource(R.string.parked_outside_temp),
+                                value = "%.1f".format(temperature), tint = Color(0xFF0284C7),
+                                unit = "°C", valueFontSize = 18.sp
+                            ) }
+                        ),
+                        adaptive = true,
+                        maxColumns = 2
                     )
+                    if (data.sampleCount > 0 && data.coverageRatio.isFinite() &&
+                        data.coverageRatio in 0.0..1.0) {
+                        Text(stringResource(R.string.parked_power_coverage,
+                            data.sampleCount, data.coverageRatio * 100),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
+            }
+        } else {
+            Row(
+                modifier = Modifier.padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Thermostat, contentDescription = null,
+                    modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.parked_cloud_detail_pending),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 
         Text(
-            text = if (data.source == "local_room_cache") stringResource(R.string.parked_detail_local_source_note)
-            else "数据来源：${if (data.source == "database_latest") "TeslaMate 历史遥测" else data.source}",
+            text = when (data.source) {
+                "local_room_cache" -> stringResource(R.string.parked_detail_local_source_note)
+                "database_latest", "teslamate_archive" -> stringResource(R.string.parked_detail_archive_source_note)
+                else -> stringResource(R.string.parked_detail_other_source_note)
+            },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp)
@@ -482,6 +497,26 @@ private fun ChargeParkedCard(
             }
         }
     }
+}
+
+private fun parkedHours(duration: Duration?): Double? = duration
+    ?.takeIf { !it.isNegative && !it.isZero }
+    ?.let { (it.seconds + it.nano / 1_000_000_000.0) / 3600.0 }
+    ?.takeIf { it.isFinite() && it > 0.0 }
+
+internal fun parkedSocPointsPerHour(deltaPoints: Int?, duration: Duration?): Double? {
+    val hours = parkedHours(duration) ?: return null
+    return deltaPoints?.takeIf { it in -100..100 }?.div(hours)?.takeIf(Double::isFinite)
+}
+
+internal fun parkedEnergyKwhPerHour(
+    qualifiedEnergyKwh: Double?, qualifiedAveragePowerW: Double?, duration: Duration?
+): Double? {
+    val hours = parkedHours(duration) ?: return null
+    val energy = qualifiedEnergyKwh?.takeIf(Double::isFinite)
+    val fromEnergy = energy?.div(hours)
+    return (fromEnergy ?: qualifiedAveragePowerW?.takeIf(Double::isFinite)?.div(1000.0))
+        ?.takeIf(Double::isFinite)
 }
 
 internal fun parkedErrorLabel(error: String?, unavailable: String): String = when (error) {

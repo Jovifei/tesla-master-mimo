@@ -180,7 +180,7 @@ fun DashboardScreen(
         return
     }
 
-    val carId = car?.carId ?: 1
+    val carId = car?.carId ?: uiState.requestedCarId ?: return
     val exteriorColor = car?.carExterior?.exteriorColor
     val heroProfile = remember(
         car?.carDetails?.model,

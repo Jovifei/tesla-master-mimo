@@ -5,6 +5,10 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.UnifiedHistoryRepository
 import com.matelink.data.local.VehicleContext
+import com.matelink.data.local.VehicleContextRepository
+import com.matelink.data.local.HistoryIdentityUnavailableException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import com.matelink.domain.history.isAnalysisEligible
 import java.time.Instant
 import javax.inject.Inject
@@ -20,6 +24,17 @@ data class AnalysisHistorySnapshot(
     val staleReason: String? = null,
     val context: VehicleContext? = null
 )
+
+/** The pure fence retains origin, account, source, stable mapping and ABA generations. */
+internal data class AnalysisPageIdentity(val context: VehicleContext, val stillCurrent: () -> Boolean)
+
+internal suspend fun VehicleContextRepository.captureAnalysisPageIdentity(remoteCarId: Int): AnalysisPageIdentity {
+    val scope = captureReadScope()
+    val context = cachedContextForRemote(remoteCarId, scope) ?: resolveRemote(remoteCarId)
+    currentCoroutineContext().ensureActive()
+    if (!isHistoryContextCurrentNow(scope, context)) throw HistoryIdentityUnavailableException()
+    return AnalysisPageIdentity(context) { isHistoryContextCurrentNow(scope, context) }
+}
 
 internal fun buildPersistedHistorySnapshot(
     drives: List<com.matelink.data.local.entity.DriveSummary>,
@@ -59,14 +74,21 @@ internal class AnalysisHistorySnapshotCache {
 
 @Singleton
 class AnalysisHistoryRepository @Inject constructor(
-    private val historyRepository: UnifiedHistoryRepository
+    private val historyRepository: UnifiedHistoryRepository,
+    private val vehicleContexts: VehicleContextRepository
 ) {
     private val cache = AnalysisHistorySnapshotCache()
 
     suspend fun load(carId: Int): ApiResult<AnalysisHistorySnapshot> {
-        return when (val result = historyRepository.load(carId)) {
+        val result = historyRepository.load(carId)
+        currentCoroutineContext().ensureActive()
+        return when (result) {
             is ApiResult.Success -> {
                 val history = result.data
+                val proof = history.verifiedReadContext
+                if (proof == null || proof.context != history.context || history.context.remoteApiCarId != carId ||
+                    !vehicleContexts.isHistoryContextCurrentNow(proof.scope, proof.context))
+                    return com.matelink.data.repository.historyIdentityUnavailableError()
                 val eligibleDrives = history.drives.filter { isAnalysisEligible(it.qualityState, it.qualityReason) }
                 val eligibleCharges = history.charges.filter { isAnalysisEligible(it.qualityState, it.qualityReason) }
                 val snapshot = AnalysisHistorySnapshot(
@@ -89,6 +111,9 @@ class AnalysisHistoryRepository @Inject constructor(
                     staleReason = if (history.drivesFromRemote && history.chargesFromRemote) null else "remote unavailable",
                     context = history.context
                 )
+                currentCoroutineContext().ensureActive()
+                if (!vehicleContexts.isHistoryContextCurrentNow(proof.scope, proof.context))
+                    return com.matelink.data.repository.historyIdentityUnavailableError()
                 cache.put(history.context.stableIdentity, snapshot)
                 ApiResult.Success(snapshot)
             }

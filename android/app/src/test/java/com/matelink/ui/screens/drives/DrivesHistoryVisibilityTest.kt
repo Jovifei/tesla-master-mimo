@@ -3,9 +3,26 @@ package com.matelink.ui.screens.drives
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.DriveOdometerDetails
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DrivesHistoryVisibilityTest {
+    @Test
+    fun shortDrivePreferenceChangesOnlyTheVisibleRouteSet() {
+        val short = DriveData(
+            driveId = 103,
+            qualityState = "observed",
+            durationMin = 0,
+            odometerDetails = DriveOdometerDetails(distance = 0.1)
+        )
+        val unknown = short.copy(driveId = 104, qualityState = "unknown")
+
+        assertFalse(DrivesViewModel.isVisibleHistoryDrive(short, showShort = false))
+        assertTrue(DrivesViewModel.isVisibleHistoryDrive(short, showShort = true))
+        assertTrue(DrivesViewModel.isVisibleHistoryDrive(unknown, showShort = false))
+    }
+
     @Test
     fun unknownDistanceAlreadyVisibleFromViewModelRemainsVisibleInHistoryCards() {
         val drive = DriveData(

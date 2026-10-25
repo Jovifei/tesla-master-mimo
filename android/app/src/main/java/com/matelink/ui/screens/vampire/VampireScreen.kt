@@ -185,7 +185,8 @@ fun VampireScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = if (uiState.idlePeriods.isNotEmpty()) "${uiState.totalDrainPercent}%"
+                        text = if (uiState.idlePeriods.isNotEmpty())
+                            stringResource(R.string.standby_soc_points, uiState.totalDrainPercent)
                         else stringResource(R.string.analysis_no_records),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold,

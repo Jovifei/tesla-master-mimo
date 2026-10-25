@@ -12,6 +12,17 @@ class DashboardCarMetadataTest {
         assertEquals("Y", refreshedDashboardCar(original, listOf(fresh))?.carDetails?.model)
         assertEquals("Saved name", refreshedDashboardCar(original, listOf(fresh.copy(name = "")))?.name)
     }
+    @Test fun aSecondCarsResponseRebindingTheUidInvalidatesTheOldSnapshotProof() {
+        val original = CarData(1, vehicleUid = "opaque-a")
+        assertTrue(dashboardUidReboundOrMissing(original,
+            listOf(CarData(1, vehicleUid = "opaque-b"))))
+        assertTrue(dashboardUidReboundOrMissing(original, emptyList()))
+        assertTrue(dashboardUidReboundOrMissing(original,
+            listOf(original, original)))
+        assertFalse(dashboardUidReboundOrMissing(original, listOf(original)))
+        assertFalse(dashboardUidReboundOrMissing(null, listOf(original)))
+    }
+
     @Test fun mismatchedIdentityCannotReplaceTheDashboardVehicle() {
         val original = CarData(1, vehicleUid = "opaque-a")
         val other = CarData(1, vehicleUid = "opaque-b", carDetails = CarDetails(model = "3"))

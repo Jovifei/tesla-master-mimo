@@ -89,6 +89,7 @@ def body_for(path: str, scenario: str):
             return {"data": {"drives": []}}
         return {
             "data": {
+                "units": {"unit_of_length": "km"},
                 "drives": [
                     {
                         "drive_id": 702,

@@ -10,6 +10,7 @@ import com.matelink.data.api.models.CarData
 import com.matelink.data.api.models.CarStatus
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.ChargeDetail
+import com.matelink.data.api.models.ChargeDetailResponse
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.api.models.receivedDrives
@@ -51,6 +52,22 @@ enum class ApiErrorKind {
     CONFIGURATION,
     INVALID_RESPONSE,
     UNKNOWN
+}
+
+internal fun chargeDetailResultForResponse(
+    response: Response<ChargeDetailResponse>, requestedCarId: Int, requestedChargeId: Int
+): ApiResult<ChargeDetail> {
+    if (!response.isSuccessful) return ApiResult.Error(
+        "Failed to fetch charge detail: ${response.code()}", response.code())
+    val data = response.body()?.data
+    val detail = data?.charge ?: return ApiResult.Error(
+        "No charge detail returned", response.code(), kind = ApiErrorKind.INVALID_RESPONSE)
+    if (detail.chargeId != requestedChargeId ||
+        data.car?.carId?.let { it != requestedCarId } == true) {
+        return ApiResult.Error("charge_detail_identity_invalid", response.code(),
+            kind = ApiErrorKind.INVALID_RESPONSE)
+    }
+    return ApiResult.Success(detail)
 }
 
 fun apiErrorKindFor(code: Int?, message: String? = null): ApiErrorKind = when {
@@ -557,16 +574,7 @@ class TeslamateRepository @Inject constructor(
         return executeWithFallback { api ->
             try {
                 val response = api.getChargeDetail(carId, chargeId)
-                if (response.isSuccessful) {
-                    val detail = response.body()?.data?.charge
-                    if (detail != null) {
-                        ApiResult.Success(detail)
-                    } else {
-                        ApiResult.Error("No charge detail returned", response.code(), kind = ApiErrorKind.INVALID_RESPONSE)
-                    }
-                } else {
-                    ApiResult.Error("Failed to fetch charge detail: ${response.code()}", response.code())
-                }
+                chargeDetailResultForResponse(response, carId, chargeId)
             } catch (e: Exception) {
                 throw e
             }

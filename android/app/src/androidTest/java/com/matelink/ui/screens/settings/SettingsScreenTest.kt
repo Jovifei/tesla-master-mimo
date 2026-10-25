@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.matelink.ui.theme.MateLinkTheme
 import org.junit.Rule
 import org.junit.Test
@@ -33,12 +34,13 @@ class SettingsScreenTest {
                     onCurrencyChange = {},
                     onShowShortDrivesChargesChange = {},
                     onTestConnection = {},
-                    onSave = {}
+                    onSave = {},
+                    amapSettingsEntry = {}
                 )
             }
         }
 
-        composeRule.onNodeWithTag("advancedNetworkSection").performClick()
+        composeRule.onNodeWithTag("advancedNetworkSection").performScrollTo().performClick()
         composeRule.onNodeWithTag("serverAddressInput").assertExists()
         composeRule.onNodeWithTag("tokenInput").assertExists()
         composeRule.onNodeWithTag("testConnectionButton").assertExists()
@@ -71,13 +73,14 @@ class SettingsScreenTest {
                     onCurrencyChange = {},
                     onShowShortDrivesChargesChange = {},
                     onTestConnection = { testClicks += 1 },
-                    onSave = { saveClicks += 1 }
+                    onSave = { saveClicks += 1 },
+                    amapSettingsEntry = {}
                 )
             }
         }
 
-        composeRule.onNodeWithTag("testConnectionButton").performClick()
-        composeRule.onNodeWithTag("saveConfigurationButton").performClick()
+        composeRule.onNodeWithTag("testConnectionButton").performScrollTo().performClick()
+        composeRule.onNodeWithTag("saveConfigurationButton").performScrollTo().performClick()
 
         assert(testClicks == 1)
         assert(saveClicks == 1)

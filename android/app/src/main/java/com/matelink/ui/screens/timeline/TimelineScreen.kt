@@ -181,7 +181,7 @@ private fun TimelineEventCard(event: TimelineEvent, palette: CarColorPalette) {
 
             // Time
             Text(
-                text = formatTime(event.timestamp),
+                text = event.time,
                 style = MaterialTheme.typography.bodySmall,
                 color = palette.onSurfaceVariant
             )
@@ -268,7 +268,7 @@ private fun ChargeEventContent(event: TimelineEvent.ChargeEvent, palette: CarCol
         }
         event.cost?.let { cost ->
             Text(
-                text = stringResource(R.string.timeline_cost_value, cost),
+                text = stringResource(R.string.timeline_cost_value, event.currencySymbol.orEmpty(), cost),
                 style = MaterialTheme.typography.bodySmall,
                 color = palette.onSurfaceVariant
             )
@@ -291,15 +291,5 @@ private fun formatDisplayDate(isoDate: String): String {
         date?.let { outputFormat.format(it) } ?: isoDate
     } catch (e: Exception) {
         isoDate
-    }
-}
-
-private fun formatTime(isoTimestamp: String): String {
-    return try {
-        if (isoTimestamp.length < 16) return ""
-        val timePart = isoTimestamp.substring(11, 16)
-        timePart
-    } catch (e: Exception) {
-        ""
     }
 }

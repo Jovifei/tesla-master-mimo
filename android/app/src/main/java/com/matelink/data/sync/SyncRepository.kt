@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.matelink.data.local.HistoryReadScope
+import com.matelink.data.local.StatsDatabase
+import com.matelink.data.local.VehicleContext
 import com.matelink.data.local.completionScopeKey
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.ChargeData
@@ -22,8 +24,15 @@ import com.matelink.domain.analytics.withDetailEvidence
 import com.matelink.domain.analytics.withQualifiedEnergy
 import com.matelink.data.api.models.driveEnergySource
 import com.matelink.data.repository.ApiResult
+import com.matelink.data.repository.HistoryDetailRepository
+import com.matelink.data.repository.HistoryDetailPointSaveRejected
+import com.matelink.data.repository.persistVerifiedChargeDetail
+import com.matelink.data.repository.persistVerifiedDriveDetail
 import com.matelink.data.repository.GeocodingRepository
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.domain.analytics.toRawAnalysisChargeData
+import com.matelink.domain.analytics.toRawAnalysisDriveData
+import com.matelink.util.parseIsoInstant
 import com.matelink.notification.TripNotificationManager
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -85,7 +94,9 @@ class SyncRepository @Inject constructor(
     private val tripNotificationManager: TripNotificationManager,
     private val vehicleContextRepository: VehicleContextRepository,
     private val chargeEventStore: com.matelink.data.local.CompletedChargeEventStore,
-    private val chargeNotifier: com.matelink.notification.CompletedChargeNotificationManager
+    private val chargeNotifier: com.matelink.notification.CompletedChargeNotificationManager,
+    private val statsDatabase: StatsDatabase,
+    private val historyDetailStore: HistoryDetailRepository
 ) {
     companion object { private const val TAG = "SyncRepository" }
     private val chargeDeliveryMutex = Mutex()
@@ -140,9 +151,9 @@ class SyncRepository @Inject constructor(
         val context = vehicleContextRepository.cachedContextForRemote(carId, scope)
             ?: return CarSyncResult.Failed(ApiResult.Error("history_vehicle_identity_unavailable", kind = com.matelink.data.repository.ApiErrorKind.INVALID_RESPONSE))
         val historyCarId = context.localHistoryCarId
-        val drive = syncDriveDetails(context.remoteApiCarId, historyCarId, scope, budget, 1)
+        val drive = syncDriveDetails(context.remoteApiCarId, historyCarId, scope, context, budget, 1)
         drive.failure?.let { return CarSyncResult.Failed(it) }
-        val chargeFailure = syncChargeDetails(context.remoteApiCarId, historyCarId, scope, budget, 1)
+        val chargeFailure = syncChargeDetails(context.remoteApiCarId, historyCarId, scope, context, budget, 1)
         chargeFailure?.let { return CarSyncResult.Failed(it) }
         requireIdentity(scope, historyCarId, context.remoteApiCarId)
         val pending = pendingDetails(historyCarId)
@@ -241,6 +252,7 @@ class SyncRepository @Inject constructor(
         }
     }
     private suspend fun syncDriveDetails(remoteApiCarId: Int, historyCarId: Int, scope: HistoryReadScope,
+        context: VehicleContext,
         budget: DriveDetailRequestBudget, maxRequests: Int = 20): DriveDetailBatchResult {
         val version = com.matelink.data.local.entity.SchemaVersion.DRIVE_ENERGY
         val receipts = mutableMapOf<Int, String?>()
@@ -252,9 +264,19 @@ class SyncRepository @Inject constructor(
                 teslamateRepository.getDriveDetail(remoteApiCarId, id)
             },
             persist = { detail ->
-                val saved = driveSummaryDao.mergeResolvedDetail(historyCarId, detail) {
-                    requireIdentity(scope, historyCarId, remoteApiCarId)
-                }
+                val before = driveSummaryDao.get(historyCarId, detail.driveId)
+                val rawSource = before?.toRawAnalysisDriveData()?.source
+                val legacyWindow = before != null && rawSource == null &&
+                    detail.source == "teslamate_archive" &&
+                    parseIsoInstant(before.startDate) == parseIsoInstant(detail.startDate) &&
+                    parseIsoInstant(before.endDate) == parseIsoInstant(detail.endDate)
+                val saved = if (legacyWindow) {
+                    // Older untagged summaries may still feed Deep Stats, but cannot certify raw points.
+                    driveSummaryDao.mergeResolvedDetail(historyCarId, detail) {
+                        requireIdentity(scope, historyCarId, remoteApiCarId)
+                    }
+                } else persistVerifiedDriveDetail(statsDatabase, historyDetailStore,
+                    context, detail) { requireIdentity(scope, historyCarId, remoteApiCarId) }?.summary
                 if (saved == null) false else {
                     requireIdentity(scope, historyCarId, remoteApiCarId)
                     aggregateDao.upsertDriveAggregate(detail.toAggregate(carId = historyCarId, computedAt = System.currentTimeMillis()))
@@ -275,6 +297,7 @@ class SyncRepository @Inject constructor(
         return result
     }
     private suspend fun syncChargeDetails(remoteApiCarId: Int, historyCarId: Int, scope: HistoryReadScope,
+        context: VehicleContext,
         budget: DriveDetailRequestBudget, maxRequests: Int): ApiResult.Error? {
         val limit = minOf(budget.remaining, maxRequests)
         requireIdentity(scope, historyCarId, remoteApiCarId)
@@ -292,9 +315,26 @@ class SyncRepository @Inject constructor(
                     if (result.data.chargeId != id) return ApiResult.Error("charge_detail_identity_invalid",
                         kind = com.matelink.data.repository.ApiErrorKind.INVALID_RESPONSE)
                     val detail = result.data.withQualifiedEnergy()
-                    if (!chargeSummaryDao.mergeDetail(historyCarId, detail) {
-                        requireIdentity(scope, historyCarId, remoteApiCarId)
-                    }) return ApiResult.Error("charge_detail_write_rejected", kind = com.matelink.data.repository.ApiErrorKind.INVALID_RESPONSE)
+                    val rawSource = summary.toRawAnalysisChargeData().source
+                    val legacyWindow = rawSource == null && result.data.source == "teslamate_archive" &&
+                        parseIsoInstant(summary.startDate) == parseIsoInstant(result.data.startDate) &&
+                        parseIsoInstant(summary.endDate) == parseIsoInstant(result.data.endDate)
+                    val saved = try {
+                        if (legacyWindow) {
+                            chargeSummaryDao.mergeDetail(historyCarId, result.data) {
+                                requireIdentity(scope, historyCarId, remoteApiCarId)
+                            }
+                        } else persistVerifiedChargeDetail(statsDatabase, historyDetailStore,
+                            context, result.data) {
+                            requireIdentity(scope, historyCarId, remoteApiCarId)
+                        } != null
+                    } catch (e: CancellationException) { throw e }
+                    catch (_: HistoryDetailPointSaveRejected) {
+                        return ApiResult.Error("charge_detail_points_not_saved",
+                            kind = com.matelink.data.repository.ApiErrorKind.INVALID_RESPONSE)
+                    }
+                    if (!saved) return ApiResult.Error("charge_detail_write_rejected",
+                        kind = com.matelink.data.repository.ApiErrorKind.INVALID_RESPONSE)
                     requireIdentity(scope, historyCarId, remoteApiCarId)
                     aggregateDao.upsertChargeAggregate(detail.toAggregate(carId = historyCarId, computedAt = System.currentTimeMillis()))
                     requireIdentity(scope, historyCarId, remoteApiCarId)

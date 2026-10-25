@@ -7,6 +7,7 @@ import com.matelink.data.api.OpenMeteoApi
 import com.matelink.data.api.OpenMeteoWeatherResponse
 import com.matelink.data.api.TeslamateApi
 import com.matelink.data.api.UrlSecurity
+import com.matelink.data.api.credentialHttpClientBuilder
 import com.matelink.data.local.ConnectionMode
 import com.matelink.data.local.ConnectionModeStore
 import com.matelink.data.local.SettingsDataStore
@@ -250,7 +251,7 @@ class TeslamateApiFactory(
         apiToken: String,
         cloudMode: Boolean
     ): OkHttpClient {
-        val builder = OkHttpClient.Builder()
+        val builder = credentialHttpClientBuilder()
             .addInterceptor { chain ->
                 val requestBuilder = chain.request().newBuilder()
                     .header("User-Agent", "MateLink/${BuildConfig.VERSION_NAME}")

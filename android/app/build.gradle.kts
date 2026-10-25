@@ -68,6 +68,11 @@ android {
         buildConfigField("String", "JOURVOLT_AUTH_HOST", quoteBuildConfigString(jourVoltAuthHost))
         manifestPlaceholders["jourvoltAuthHost"] = jourVoltAuthHost
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunnerArguments["qualificationFixturePort"] = providers.gradleProperty(
+            "MATELINK_QUALIFICATION_FIXTURE_PORT").orElse("18080").get()
+        providers.gradleProperty("MATELINK_INSTRUMENTATION_CLASSES").orNull?.let {
+            testInstrumentationRunnerArguments["class"] = it
+        }
     }
 
     val formalReleaseSigningConfig = providers.gradleProperty("MATELINK_SIGNING_PROPERTIES_FILE")

@@ -22,6 +22,7 @@ import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.GeocodingRepository
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.UnifiedHistoryRepository
+import com.matelink.data.repository.VerifiedHistoryReadContext
 import com.matelink.domain.LocalDayBoundaries
 import com.matelink.R
 import android.content.Context
@@ -288,6 +289,7 @@ class DrivesViewModel @Inject constructor(
     private val latestLoad = LatestHistoryLoad()
     private var metricsObservation: Job? = null
     private var observationGeneration = 0L
+    private var activeHistoryProof: VerifiedHistoryReadContext? = null
 
     companion object {
         private const val MIN_DURATION_MINUTES = 1
@@ -296,6 +298,13 @@ class DrivesViewModel @Inject constructor(
         // Weak networks can leave the cloud history request hanging for minutes;
         // 20s is slower than any healthy request but earlier than a user gives up.
         private const val HISTORY_LOAD_TIMEOUT_MS = 20_000L
+
+        internal fun isVisibleHistoryDrive(drive: DriveData, showShort: Boolean): Boolean {
+            if (showShort || !isAnalysisEligible(drive.qualityState, drive.qualityReason)) return true
+            val duration = drive.durationMin ?: return true
+            val distance = drive.distanceKm ?: return true
+            return duration >= MIN_DURATION_MINUTES && distance >= MIN_ROUTE_DISTANCE_KM
+        }
 
         private const val KEY_DATE_FILTER = "filter_date"
         private const val KEY_DISTANCE_FILTER = "filter_distance"
@@ -322,12 +331,40 @@ class DrivesViewModel @Inject constructor(
         }
     }
 
+    init {
+        viewModelScope.launch {
+            historyRepository.scopeChanges?.collect { scope ->
+                val id = carId ?: return@collect
+                val proof = activeHistoryProof
+                if (proof != null && proof.scope == scope) return@collect
+                if (proof == null && allDrives.isEmpty()) return@collect
+                latestLoad.invalidate()
+                metricsObservation?.cancel()
+                observationGeneration++
+                activeHistoryProof = null
+                allDrives = emptyList()
+                _uiState.update { state -> state.copy(
+                    drives = emptyList(), units = null, driveMetrics = emptyMap(),
+                    chartData = emptyList(), summary = DrivesSummary(),
+                    error = "history_identity_unavailable", isLoading = true,
+                    historySyncWarning = null, localArchiveLinkPending = false) }
+                val state = _uiState.value
+                loadDrives(state.startDate, state.endDate)
+                loadUnits(id)
+            }
+        }
+    }
+
     fun setCarId(id: Int) {
         if (carId == id && isInitialized) {
             refresh()
             return
         }
         carId = id
+        activeHistoryProof = null
+        latestLoad.invalidate()
+        metricsObservation?.cancel()
+        observationGeneration++
         loadUnits(id)
 
         // A reused VM must not keep the previous vehicle's history.
@@ -421,12 +458,19 @@ class DrivesViewModel @Inject constructor(
 
     private fun loadUnits(carId: Int) {
         viewModelScope.launch {
+            val proof = when (val context = historyRepository.resolveContext(carId)) {
+                is ApiResult.Success -> context.data
+                is ApiResult.Error -> return@launch
+            }
+            if (this@DrivesViewModel.carId != carId ||
+                !historyRepository.isContextCurrent(proof)) return@launch
             when (val result = repository.getCarStatus(carId)) {
                 is ApiResult.Success -> {
-                    if (this@DrivesViewModel.carId != carId) return@launch
+                    if (this@DrivesViewModel.carId != carId ||
+                        !historyRepository.isContextCurrent(proof)) return@launch
                     _uiState.update { it.copy(units = result.data.units) }
                 }
-                is ApiResult.Error -> { /* ignore, units will default to metric */ }
+                is ApiResult.Error -> Unit
             }
         }
     }
@@ -446,13 +490,13 @@ class DrivesViewModel @Inject constructor(
             // 1. Immediately read local SQLite cached data if allDrives is empty
             if (allDrives.isEmpty()) {
                 val localRows = try {
-                    driveSummaryDao.getAllChronological(id).ifEmpty {
-                        // Rows persist under the scoped localHistoryCarId; on a cold
-                        // start resolve that mapping offline instead of showing nothing.
-                        vehicleContextRepository.cachedContextForRemote(id)
-                            ?.let { context -> driveSummaryDao.getAllChronological(context.localHistoryCarId) }
-                            ?: emptyList()
-                    }
+                    val scope = vehicleContextRepository.captureReadScope()
+                    val context = vehicleContextRepository.cachedContextForRemote(id, scope)
+                    val rows = context?.let { driveSummaryDao.getAllChronological(it.localHistoryCarId) }
+                        ?: emptyList()
+                    if (context != null && !vehicleContextRepository.isHistoryContextCurrentNow(scope, context))
+                        throw CancellationException("Drive history identity changed")
+                    rows
                 } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
                 if (localRows.isNotEmpty()) {
                     allDrives = localRows.map { it.toAnalysisDriveData() }
@@ -517,16 +561,22 @@ class DrivesViewModel @Inject constructor(
             }
             when (result) {
                 is ApiResult.Success -> {
+                    val proof = result.data.verifiedReadContext ?: throw CancellationException("Drive scope missing")
+                    suspend fun checkProof() {
+                        ensureCurrent()
+                        if (this@DrivesViewModel.carId != id ||
+                            !historyRepository.isContextCurrent(proof))
+                            throw CancellationException("Drive history account/source changed")
+                    }
+                    checkProof()
                     val remoteDrives = result.data.drives
                     val localRows = driveSummaryDao.getAllChronological(result.data.context.localHistoryCarId)
                     val baselineRows = localRows.associateBy { it.driveId }
                     val localMetrics = localRows.associate { summary ->
                         summary.driveId to summary.toQualifiedHistoryMetrics()
                     }
-                    ensureCurrent()
-                    result.data.verifiedReadContext?.let { proof ->
-                        if (!historyRepository.isContextCurrent(proof)) throw CancellationException("History identity changed")
-                    }
+                    checkProof()
+                    activeHistoryProof = proof
                     val previousCount = allDrives.size
                     allDrives = remoteDrives
                     val granularity = determineGranularity(startDate, endDate)
@@ -581,7 +631,7 @@ class DrivesViewModel @Inject constructor(
                     val enrichedDrives = enrichDriveAddresses(remoteDrives) { latitude, longitude ->
                         geocodingRepository.reverseGeocode(latitude, longitude)
                     }
-                    ensureCurrent()
+                    checkProof()
                     val addresses = enrichedDrives.associateBy { it.driveId }
                     allDrives = allDrives.map { drive -> drive.copy(
                         startAddress = addresses[drive.driveId]?.startAddress ?: drive.startAddress,
@@ -617,10 +667,7 @@ class DrivesViewModel @Inject constructor(
         // interval, not a user-visible route.
         val visibleDrives = allDrives.filter { it.qualityState != "quarantined" }
         val routeDrives = visibleDrives.filter { drive ->
-            !isAnalysisEligible(drive.qualityState, drive.qualityReason) ||
-            drive.durationMin == null || drive.distanceKm == null ||
-            (drive.durationMin ?: 0) >= MIN_DURATION_MINUTES &&
-                (drive.distanceKm ?: 0.0) >= MIN_ROUTE_DISTANCE_KM
+            isVisibleHistoryDrive(drive, showShortDrivesCharges)
         }
 
         // Apply distance filter for list display, sorted newest first
@@ -628,7 +675,7 @@ class DrivesViewModel @Inject constructor(
             drive.matchesDistanceFilter(distanceFilter)
         }.sortedByDescending { it.startDate }
 
-        // Apply distance filter to all drives for summary/charts (include short drives)
+        // The summary and charts describe the same visible, qualified routes.
         val drivesForStats = routeDrives.filter { drive ->
             isAnalysisEligible(drive.qualityState, drive.qualityReason) && drive.matchesDistanceFilter(distanceFilter)
         }

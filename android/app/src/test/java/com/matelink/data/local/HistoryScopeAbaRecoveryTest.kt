@@ -11,6 +11,7 @@ import java.time.Instant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -250,6 +251,24 @@ class HistoryScopeAbaRecoveryTest {
             fixture.repo.isHistoryContextCurrent(before, context))
         assertTrue(fixture.repo.isHistoryContextCurrent(after, context))
         assertEquals(key, completionScopeKey(after, context.localHistoryCarId, 7))
+    }
+
+    @Test fun tpmsCloudIdentityDoesNotDependOnSelfHostedUrl() = runBlocking {
+        val fixture = Fixture()
+        fixture.modes.set(ConnectionMode.TESLA_CLOUD)
+        fixture.save("synthetic-account-a")
+        assertFalse(fixture.settings.settings.first().isConfigured)
+        val scope = fixture.repo.captureReadScope()
+        assertEquals(HistoryConnectionSource.CLOUD, scope.source)
+        assertEquals("synthetic-account-a", scope.accountNamespace)
+    }
+
+    @Test fun tpmsSelfHostedIdentityRejectsBlankServerUrl() = runBlocking {
+        val fixture = Fixture()
+        fixture.modes.set(ConnectionMode.SELF_HOSTED)
+        assertFalse(fixture.settings.settings.first().isConfigured)
+        val failure = runCatching { fixture.repo.captureReadScope() }.exceptionOrNull()
+        assertTrue(failure is HistoryIdentityUnavailableException)
     }
 
     private class Fixture {

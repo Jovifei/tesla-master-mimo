@@ -10,7 +10,10 @@ data class EffectiveChargeCostInput(
 
 data class EffectiveChargeCost(
     val cost: Double?,
-    val source: ChargeCostSource
+    val source: ChargeCostSource,
+    val currencyCode: String? = null,
+    val qualificationReason: String? = null,
+    val sourceInstanceVerified: Boolean = false
 )
 
 enum class ChargeCostSource {

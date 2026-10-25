@@ -22,13 +22,14 @@ class ParkedDetailLocalFallbackTest {
     private fun older(endBatteryLevel: Int, endDate: String = "2026-10-23T20:59:00Z") =
         drive(10, endBatteryLevel).copy(endDate = endDate)
 
-    private fun newer(startBatteryLevel: Int) = drive(11, 99, startBatteryLevel)
+    private fun newer(startBatteryLevel: Int) =
+        drive(11, 99, startBatteryLevel).copy(startDate = "2026-10-23T22:20:00Z")
 
     @Test fun localDetailDerivesBoundariesFromAdjacentDrives() {
-        val detail = buildLocalParkedDetail(10, 11, older(31), newer(100))
+        val detail = requireNotNull(buildLocalParkedDetail(10, 11, older(31), newer(100)))
 
         assertEquals("2026-10-23T20:59:00Z", detail.startDate)
-        assertEquals("2026-10-23T18:40:00Z", detail.endDate)
+        assertEquals("2026-10-23T22:20:00Z", detail.endDate)
         assertEquals("访云街 西蔡庙", detail.address)
         assertEquals(31, detail.startBatteryLevel)
         assertEquals(100, detail.endBatteryLevel)
@@ -41,7 +42,7 @@ class ParkedDetailLocalFallbackTest {
     }
 
     @Test fun outOfRangeBatteryStaysUnknownInsteadOfFabricating() {
-        val detail = buildLocalParkedDetail(10, 11, older(130), newer(-1))
+        val detail = requireNotNull(buildLocalParkedDetail(10, 11, older(130), newer(-1)))
 
         assertNull(detail.startBatteryLevel)
         assertNull(detail.endBatteryLevel)
@@ -49,8 +50,14 @@ class ParkedDetailLocalFallbackTest {
     }
 
     @Test fun nonChineseAddressFallsBackToRawAddress() {
-        val detail = buildLocalParkedDetail(10, 11, older(31).copy(endAddress = "123 Main Street, Springfield"), newer(32))
+        val detail = requireNotNull(buildLocalParkedDetail(10, 11, older(31).copy(endAddress = "123 Main Street, Springfield"), newer(32)))
 
         assertEquals("123 Main Street, Springfield", detail.address)
+    }
+
+    @Test fun differentLocalCarKeysOrReversedWindowCannotBeCombined() {
+        assertNull(buildLocalParkedDetail(10, 11, older(31), newer(32).copy(carId = 2)))
+        assertNull(buildLocalParkedDetail(10, 11, older(31), newer(32).copy(startDate = "2026-10-23T20:00:00Z")))
+        assertNull(buildLocalParkedDetail(10, 11, older(31), newer(32).copy(driveId = 12)))
     }
 }
