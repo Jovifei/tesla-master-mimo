@@ -29,7 +29,7 @@ class ParkedDetailFullUiQualificationTest {
 
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             composeRule.onNodeWithText(context.getString(R.string.nav_drives), useUnmergedTree = true).performClick()
-            // The archived synthetic October 1 events are older than the default seven-day window.
+            // The archived synthetic July 18 events are older than the default seven-day window.
             // Explicitly select a history window that includes the fixture before asserting cards.
             composeRule.selectFixtureHistoryWindow(context)
             scrollUntilText(parkedTitle)
