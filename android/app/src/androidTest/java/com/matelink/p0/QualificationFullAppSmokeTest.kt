@@ -26,6 +26,9 @@ class QualificationFullAppSmokeTest {
             composeRule.waitForText(SYNTHETIC_VEHICLE_NAME)
             composeRule.onNodeWithText(SYNTHETIC_VEHICLE_NAME, substring = true).assertExists()
             composeRule.onNodeWithText(context.getString(R.string.nav_drives), useUnmergedTree = true).performClick()
+            // The archived synthetic October 1 events are older than the default seven-day window.
+            // Explicitly select a history window that includes the fixture before asserting cards.
+            composeRule.selectFixtureHistoryWindow(context)
             showHistoryRecord("Fixture Office")
             composeRule.onNodeWithText(context.getString(R.string.nav_charges), useUnmergedTree = true).performClick()
             showHistoryRecord("Fixture Charger")
