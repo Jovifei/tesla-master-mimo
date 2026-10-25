@@ -3,7 +3,11 @@ import type { RawCar, RawCharge, RawDrive } from './types'
 /** Synthetic review fixture. Every row carries source `mock_fixture` so the UI
  * labels it 本地模拟/合成测试数据 — nothing here may pass as a real Tesla record. */
 
-export const MOCK_FIXTURE_ENABLED: boolean = process.env.TARO_APP_MOCK_FIXTURE === 'true'
+declare const process: { env?: Record<string, string | undefined> } | undefined
+/** Compile-time defineConstants substitution is the normal path; the typeof guard keeps
+ * a bare mini-program runtime (no process global) from throwing at module load. */
+export const MOCK_FIXTURE_ENABLED: boolean =
+  typeof process !== 'undefined' && process?.env?.TARO_APP_MOCK_FIXTURE === 'true'
 export const MOCK_USER_ID = 'mock-fixture-user'
 export const MOCK_CAR_ID = 7
 

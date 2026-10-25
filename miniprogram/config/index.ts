@@ -4,6 +4,9 @@ import { resolve } from 'node:path'
 import { vehicleAssetPackages } from '../vehicle-assets.config'
 
 const apiBaseUrl = process.env.TARO_APP_API_BASE_URL ?? ''
+// Compile-time constant: mini-program runtime has no process global; a bare
+// process.env reference would throw at module load and blank every page.
+const mockFixture = process.env.TARO_APP_MOCK_FIXTURE === 'true' ? 'true' : 'false'
 const sourceRevision = (() => {
   try {
     const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
@@ -39,6 +42,7 @@ export default defineConfig({
   ],
   defineConstants: {
     'process.env.TARO_APP_API_BASE_URL': JSON.stringify(apiBaseUrl),
+    'process.env.TARO_APP_MOCK_FIXTURE': JSON.stringify(mockFixture),
     'process.env.TARO_APP_SOURCE_REVISION': JSON.stringify(sourceRevision),
   },
   mini: {
