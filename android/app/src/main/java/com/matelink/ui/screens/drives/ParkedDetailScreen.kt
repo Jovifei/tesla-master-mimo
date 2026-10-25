@@ -1,6 +1,8 @@
 package com.matelink.ui.screens.drives
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,11 +13,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.BatteryAlert
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bolt
@@ -32,11 +36,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,7 +55,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
-import com.matelink.data.api.models.LinkedCharge
 import com.matelink.data.api.models.ParkedDetailData
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.TelemetryMetricSpec
@@ -56,8 +63,10 @@ import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.theme.StatusWarning
 import com.matelink.ui.theme.telemetryPalette
 import com.matelink.util.formatDuration
-import com.matelink.util.parseIsoDateTime
+import com.matelink.util.parseIsoInstant
 import java.time.Duration
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,6 +117,7 @@ fun ParkedDetailScreen(
                 }
                 ParkedDetailContent(
                     data = state.data!!,
+                    chargeBreakdown = state.chargeBreakdown,
                     modifier = Modifier,
                     onNavigateToChargeDetail = onNavigateToChargeDetail
                 )
@@ -136,6 +146,7 @@ fun ParkedDetailScreen(
 @Composable
 private fun ParkedDetailContent(
     data: ParkedDetailData,
+    chargeBreakdown: ParkedChargeBreakdown?,
     modifier: Modifier = Modifier,
     onNavigateToChargeDetail: (Int) -> Unit
 ) {
@@ -143,8 +154,8 @@ private fun ParkedDetailContent(
     val context = androidx.compose.ui.platform.LocalContext.current
     val palette = telemetryPalette()
 
-    val startDt = parseIsoDateTime(data.startDate)
-    val endDt = parseIsoDateTime(data.endDate)
+    val startDt = parseIsoInstant(data.startDate)
+    val endDt = parseIsoInstant(data.endDate)
     val duration = if (startDt != null && endDt != null) {
         Duration.between(startDt, endDt).takeIf { !it.isNegative }
     } else null
@@ -165,9 +176,12 @@ private fun ParkedDetailContent(
     val batteryDeltaVal = if (startSoc != null && endSoc != null) {
         endSoc - startSoc
     } else data.batteryDelta?.takeIf { it in -100..100 }
-    val qualifiedEnergy = data.qualifiedParkedEnergyKwh?.takeIf(Double::isFinite)
+    val hasRecordedCharge = chargeBreakdown?.sessions?.isNotEmpty() == true
+    val hasChargeEvidence = hasRecordedCharge || data.linkedCharge != null ||
+        !data.linkedCharges.isNullOrEmpty() || chargeBreakdown?.hasPartialOrInvalidSessions == true
+    val qualifiedEnergy = if (hasChargeEvidence) null else data.qualifiedParkedEnergyKwh?.takeIf(Double::isFinite)
     val energyPerHour = parkedEnergyKwhPerHour(
-        qualifiedEnergy, data.qualifiedAveragePowerW, duration
+        qualifiedEnergy, if (hasChargeEvidence) null else data.qualifiedAveragePowerW, duration
     )
     val energyRateFromTotal = qualifiedEnergy != null && duration != null && !duration.isZero
     val socPointsPerHour = parkedSocPointsPerHour(
@@ -244,7 +258,7 @@ private fun ParkedDetailContent(
                         Text(
                             text = stringResource(
                                 when {
-                                    delta > 0 && data.linkedCharge != null -> R.string.parked_charge_badge
+                                    delta > 0 && hasRecordedCharge -> R.string.parked_charge_badge
                                     delta > 0 -> R.string.parked_gain_badge
                                     delta < 0 -> R.string.parked_drop_badge
                                     else -> R.string.parked_no_change_badge
@@ -330,9 +344,8 @@ private fun ParkedDetailContent(
                         maxColumns = 3
                     )
                 }
-                socPointsPerHour?.let { rate ->
+                socPointsPerHour?.takeUnless { hasChargeEvidence }?.let { rate ->
                     val label = when {
-                        rate > 0.0 && data.linkedCharge != null -> R.string.parked_soc_rate_charge
                         rate > 0.0 -> R.string.parked_soc_rate_gain
                         rate < 0.0 -> R.string.parked_soc_rate_drain
                         else -> R.string.parked_soc_rate_same
@@ -344,9 +357,9 @@ private fun ParkedDetailContent(
                         color = if (rate > 0.0) Color(0xFF10B981) else palette.onSurface
                     )
                 }
-                if (socPointsPerHour != null && qualifiedEnergy == null) {
+                if (socPointsPerHour != null && !hasChargeEvidence && qualifiedEnergy == null) {
                     Text(stringResource(
-                        if (socPointsPerHour > 0.0 && data.linkedCharge == null)
+                        if (socPointsPerHour > 0.0)
                             R.string.parked_soc_gain_unlinked_note
                         else R.string.parked_soc_only_note
                     ),
@@ -356,12 +369,14 @@ private fun ParkedDetailContent(
             }
         }
 
-        // 3. Linked charge card if charging occurred while parked.
-        data.linkedCharge?.let { linkedCharge ->
-            ChargeParkedCard(
-                linkedCharge = linkedCharge,
-                onNavigateToChargeDetail = onNavigateToChargeDetail
-            )
+        // 3. Separate recorded charging sessions; a whole-parked SOC rate is
+        // not a non-charging drain rate when any session overlaps this window.
+        if (hasRecordedCharge && chargeBreakdown != null) {
+            ParkedChargeSessionsCard(chargeBreakdown, onNavigateToChargeDetail)
+        } else if (chargeBreakdown != null && !chargeBreakdown.storedSessionsComplete) {
+            Text(stringResource(R.string.parked_charge_sessions_incomplete),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         // 4. Show only qualified telemetry; missing cloud history is one compact explanation.
@@ -396,7 +411,7 @@ private fun ParkedDetailContent(
                                 icon = Icons.Default.Power,
                                 label = stringResource(when {
                                     !energyRateFromTotal -> R.string.parked_power_sample_average
-                                    rate > 0.0 && data.linkedCharge == null -> R.string.parked_drain_energy_per_hour
+                                    rate > 0.0 && !hasRecordedCharge -> R.string.parked_drain_energy_per_hour
                                     else -> R.string.parked_energy_per_hour
                                 }),
                                 value = "%.2f".format(rate),
@@ -458,42 +473,116 @@ private fun ParkedDetailContent(
     }
 }
 @Composable
-private fun ChargeParkedCard(
-    linkedCharge: LinkedCharge,
+private fun ParkedChargeSessionsCard(
+    breakdown: ParkedChargeBreakdown,
     onNavigateToChargeDetail: (Int) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var expanded by remember(breakdown.sessions) { mutableStateOf(false) }
+    val sessions = if (expanded) breakdown.sessions else breakdown.sessions.take(3)
+    val zone = ZoneId.systemDefault()
+    val dayTime = DateTimeFormatter.ofPattern("MM-dd HH:mm")
+    val clockTime = DateTimeFormatter.ofPattern("HH:mm")
+    fun durationLabel(value: Duration): String = when {
+        value.isZero -> context.getString(R.string.parked_duration_zero)
+        value.seconds < 60 -> context.getString(R.string.parked_duration_under_minute)
+        else -> formatDuration(context.resources,
+            value.toMinutes().coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+    }
     TelemetryPanel(accent = StatusWarning) {
         Column(
             modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.BatteryChargingFull,
-                    contentDescription = null,
-                    tint = StatusWarning
-                )
-                Text(
-                    text = stringResource(R.string.charge_parked_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.BatteryChargingFull, contentDescription = null,
+                    tint = StatusWarning, modifier = Modifier.size(18.dp))
+                Text(stringResource(R.string.parked_recorded_charge_count, breakdown.sessions.size),
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
-            Text(
-                text = stringResource(R.string.charge_parked_summary),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            linkedCharge.energyAddedKwh?.takeIf { it.isFinite() && it >= 0.0 }?.let { energy ->
-                Text(
-                    text = "%.1f kWh".format(energy),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = StatusWarning
-                )
+            sessions.forEachIndexed { index, session ->
+                if (index > 0) HorizontalDivider()
+                val start = session.start.atZone(zone)
+                val end = session.end?.atZone(zone)
+                val timeRange = start.format(dayTime) + " → " +
+                    (end?.format(if (end.toLocalDate() == start.toLocalDate()) clockTime else dayTime)
+                        ?: stringResource(R.string.parked_charge_end_unrecorded))
+                val duration = session.duration?.let(::durationLabel)
+                val energy = session.energyAddedKwh?.let { "%.2f kWh".format(it) }
+                    ?: stringResource(R.string.parked_charge_energy_unrecorded)
+                val rate = session.energyPerHourKwh?.let {
+                    "%.2f %s".format(it, stringResource(R.string.parked_energy_per_hour_unit))
+                }
+                val detail = listOfNotNull(duration, energy, rate).joinToString(" · ")
+                Column(
+                    modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 48.dp)
+                        .clickable { onNavigateToChargeDetail(session.chargeId) }
+                        .padding(vertical = 5.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(timeRange, modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null,
+                            modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(detail,
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, softWrap = false)
+                }
             }
-            TextButton(onClick = { onNavigateToChargeDetail(linkedCharge.chargeId) }) {
-                Text(stringResource(R.string.charge_parked_view))
+            if (breakdown.sessions.size > 3) {
+                TextButton(onClick = { expanded = !expanded }) {
+                    Text(stringResource(
+                        if (expanded) R.string.parked_charge_show_less
+                        else R.string.parked_charge_show_all,
+                        breakdown.sessions.size
+                    ))
+                }
+            }
+            breakdown.recordedChargingDuration?.let { recorded ->
+                Text(stringResource(R.string.parked_recorded_charge_duration,
+                    durationLabel(recorded)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            breakdown.outsideRecordedChargingDuration?.let { outside ->
+                Text(stringResource(R.string.parked_outside_recorded_charge_duration,
+                    durationLabel(outside)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            val nonChargingRate = breakdown.nonChargingConsumptionPointsPerHour
+                ?.takeIf(Double::isFinite)
+            if (nonChargingRate != null) {
+                Text(stringResource(
+                    if (nonChargingRate < 0.0) R.string.parked_noncharging_soc_gain_rate
+                    else R.string.parked_noncharging_soc_rate,
+                    kotlin.math.abs(nonChargingRate)
+                ),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface)
+                Text(stringResource(R.string.parked_noncharging_energy_not_isolated),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Text(stringResource(R.string.parked_noncharging_segment_missing),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (!breakdown.storedSessionsComplete || breakdown.hasPartialOrInvalidSessions) {
+                Text(stringResource(R.string.parked_charge_sessions_incomplete),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

@@ -43,6 +43,7 @@ class EnergyWindowAndParkingRegressionTest {
         val archive = parked.copy(source = "teslamate_archive")
         assertNull(archive.qualifiedParkedEnergyKwh)
         assertNull(parked.copy(linkedCharge = com.matelink.data.api.models.LinkedCharge(9)).qualifiedParkedEnergyKwh)
+        assertNull(parked.copy(linkedCharges = listOf(com.matelink.data.api.models.LinkedCharge(9))).qualifiedParkedEnergyKwh)
     }
 
     @Test fun onlyExplicitContinuousDriveMayUseNominalEstimateAsNet() {

@@ -28,31 +28,133 @@ type snapshot struct {
 }
 
 type parkedDetail struct {
-	OlderDriveID       int           `json:"older_drive_id"`
-	NewerDriveID       int           `json:"newer_drive_id"`
-	StartDate          string        `json:"start_date"`
-	EndDate            string        `json:"end_date"`
-	Address            *string       `json:"address"`
-	StartBatteryLevel  *int          `json:"start_battery_level"`
-	EndBatteryLevel    *int          `json:"end_battery_level"`
-	BatteryDelta       *int          `json:"battery_delta"`
-	EnergyKWh          *float64      `json:"energy_kwh"`
-	AveragePowerKW     *float64      `json:"average_power_kw"`
-	PeakPowerKW        *float64      `json:"peak_power_kw"`
-	InsideTempAverage  *float64      `json:"inside_temp_average"`
-	OutsideTempAverage *float64      `json:"outside_temp_average"`
-	SampleCount        int           `json:"sample_count"`
-	CoverageSeconds    int64         `json:"coverage_seconds"`
-	CoverageRatio      float64       `json:"coverage_ratio"`
-	LinkedCharge       *linkedCharge `json:"linked_charge,omitempty"`
-	Source             string        `json:"source"`
+	OlderDriveID           int            `json:"older_drive_id"`
+	NewerDriveID           int            `json:"newer_drive_id"`
+	StartDate              string         `json:"start_date"`
+	EndDate                string         `json:"end_date"`
+	Address                *string        `json:"address"`
+	StartBatteryLevel      *int           `json:"start_battery_level"`
+	EndBatteryLevel        *int           `json:"end_battery_level"`
+	BatteryDelta           *int           `json:"battery_delta"`
+	EnergyKWh              *float64       `json:"energy_kwh"`
+	AveragePowerKW         *float64       `json:"average_power_kw"`
+	PeakPowerKW            *float64       `json:"peak_power_kw"`
+	InsideTempAverage      *float64       `json:"inside_temp_average"`
+	OutsideTempAverage     *float64       `json:"outside_temp_average"`
+	SampleCount            int            `json:"sample_count"`
+	CoverageSeconds        int64          `json:"coverage_seconds"`
+	CoverageRatio          float64        `json:"coverage_ratio"`
+	LinkedCharge           *linkedCharge  `json:"linked_charge,omitempty"`
+	LinkedCharges          []linkedCharge `json:"linked_charges"`
+	ChargeSessionsComplete bool           `json:"charge_sessions_complete"`
+	Source                 string         `json:"source"`
 }
 
 type linkedCharge struct {
-	ChargeID       int      `json:"charge_id"`
-	StartDate      string   `json:"start_date"`
-	EndDate        string   `json:"end_date"`
-	EnergyAddedKWh *float64 `json:"energy_added_kwh"`
+	ChargeID           int      `json:"charge_id"`
+	StartDate          string   `json:"start_date"`
+	EndDate            *string  `json:"end_date"`
+	EnergyAddedKWh     *float64 `json:"energy_added_kwh"`
+	StartBatteryLevel  *int     `json:"start_battery_level"`
+	EndBatteryLevel    *int     `json:"end_battery_level"`
+	StartSOCObservedAt *string  `json:"start_soc_observed_at"`
+	EndSOCObservedAt   *string  `json:"end_soc_observed_at"`
+}
+
+const maxParkedChargeSessions = 64
+const maxChargeSOCBoundaryDistance = 5 * time.Minute
+
+type chargeSOCSample struct {
+	at    time.Time
+	level int
+}
+
+func nearestChargeSOC(samples []chargeSOCSample, boundary time.Time) (*int, *time.Time) {
+	// Actual same-process samples only. A tie cannot prove which SOC belongs to the boundary.
+	var chosen *chargeSOCSample
+	var nearest time.Duration
+	ambiguous := false
+	for i := range samples {
+		distance := samples[i].at.Sub(boundary)
+		if distance < 0 {
+			distance = -distance
+		}
+		if distance > maxChargeSOCBoundaryDistance || samples[i].level < 0 || samples[i].level > 100 {
+			continue
+		}
+		if chosen == nil || distance < nearest {
+			chosen, nearest, ambiguous = &samples[i], distance, false
+		} else if distance == nearest {
+			ambiguous = true
+		}
+	}
+	if chosen == nil || ambiguous {
+		return nil, nil
+	}
+	level, observedAt := chosen.level, chosen.at
+	return &level, &observedAt
+}
+
+func (p *postgresStore) nearestChargeSOC(ctx context.Context, carID, chargeID int, boundary time.Time) (*int, *string, error) {
+	rows, err := p.db.QueryContext(ctx, `SELECT c.date,c.battery_level FROM charges c JOIN charging_processes cp ON cp.id=c.charging_process_id WHERE cp.car_id=$1 AND cp.id=$2 AND c.battery_level BETWEEN 0 AND 100 AND c.date BETWEEN $3 - INTERVAL '5 minutes' AND $3 + INTERVAL '5 minutes' ORDER BY ABS(EXTRACT(EPOCH FROM (c.date - $3))),c.date,c.id LIMIT 2`, carID, chargeID, boundary)
+	if err != nil {
+		return nil, nil, err
+	}
+	var samples []chargeSOCSample
+	for rows.Next() {
+		var sample chargeSOCSample
+		if err := rows.Scan(&sample.at, &sample.level); err != nil {
+			rows.Close()
+			return nil, nil, err
+		}
+		samples = append(samples, sample)
+	}
+	readErr := rows.Err()
+	closeErr := rows.Close()
+	if readErr != nil {
+		return nil, nil, readErr
+	}
+	if closeErr != nil {
+		return nil, nil, closeErr
+	}
+	level, observedAt := nearestChargeSOC(samples, boundary)
+	if observedAt == nil {
+		return nil, nil, nil
+	}
+	formatted := formatTime(*observedAt, p.loc)
+	return level, &formatted, nil
+}
+
+type parkedChargeRows interface {
+	Next() bool
+	Scan(...any) error
+	Err() error
+}
+
+func collectParkedCharges(rows parkedChargeRows, loc *time.Location) ([]linkedCharge, bool, error) {
+	charges := make([]linkedCharge, 0)
+	for rows.Next() {
+		var id int
+		var start time.Time
+		var end sql.NullTime
+		var energy sql.NullFloat64
+		if err := rows.Scan(&id, &start, &end, &energy); err != nil {
+			return nil, false, err
+		}
+		if len(charges) == maxParkedChargeSessions {
+			return charges, false, rows.Err()
+		}
+		charge := linkedCharge{ChargeID: id, StartDate: formatTime(start, loc), EnergyAddedKWh: nullFloatPtr(energy)}
+		if end.Valid {
+			formatted := formatTime(end.Time, loc)
+			charge.EndDate = &formatted
+		}
+		charges = append(charges, charge)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	return charges, true, nil
 }
 
 type standbyWindow struct {
@@ -193,6 +295,13 @@ func (s *server) parked(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "parked data unavailable")
 		return
 	}
+	if value.LinkedCharges == nil {
+		value.LinkedCharges = []linkedCharge{}
+		if value.LinkedCharge != nil {
+			value.LinkedCharges = append(value.LinkedCharges, *value.LinkedCharge)
+		}
+		value.ChargeSessionsComplete = false
+	}
 	writeJSON(w, 200, map[string]any{"data": value})
 }
 
@@ -262,20 +371,49 @@ func (p *postgresStore) Parked(ctx context.Context, carID, olderID, newerID int)
 	if err := rows.Err(); err != nil {
 		return parkedDetail{}, err
 	}
-	result := parkedDetail{OlderDriveID: olderID, NewerDriveID: newerID, StartDate: formatTime(start, p.loc), EndDate: formatTime(end, p.loc), Address: nullStringPtr(address), StartBatteryLevel: nullIntPtr(startBattery), EndBatteryLevel: nullIntPtr(endBattery), SampleCount: len(values), Source: "database_latest"}
-	var chargeID int
-	var chargeStart, chargeEnd time.Time
-	var chargeEnergy sql.NullFloat64
-	chargeErr := p.db.QueryRowContext(ctx, `SELECT id,start_date,end_date,charge_energy_added FROM charging_processes WHERE car_id=$1 AND start_date<$3 AND COALESCE(end_date,start_date)>$2 ORDER BY start_date LIMIT 1`, carID, start, end).Scan(&chargeID, &chargeStart, &chargeEnd, &chargeEnergy)
-	if chargeErr == nil {
-		result.LinkedCharge = &linkedCharge{
-			ChargeID:       chargeID,
-			StartDate:      formatTime(chargeStart, p.loc),
-			EndDate:        formatTime(chargeEnd, p.loc),
-			EnergyAddedKWh: nullFloatPtr(chargeEnergy),
+	if err := rows.Close(); err != nil {
+		return parkedDetail{}, err
+	}
+	result := parkedDetail{OlderDriveID: olderID, NewerDriveID: newerID, StartDate: formatTime(start, p.loc), EndDate: formatTime(end, p.loc), Address: nullStringPtr(address), StartBatteryLevel: nullIntPtr(startBattery), EndBatteryLevel: nullIntPtr(endBattery), SampleCount: len(values), Source: "database_latest", LinkedCharges: []linkedCharge{}}
+	// Fetch one extra row to distinguish complete evidence from a truncated window.
+	chargeRows, err := p.db.QueryContext(ctx, `SELECT id,start_date,end_date,charge_energy_added FROM charging_processes WHERE car_id=$1 AND start_date<$3 AND COALESCE(end_date,$3)>$2 ORDER BY start_date,id LIMIT $4`, carID, start, end, maxParkedChargeSessions+1)
+	if err != nil {
+		return parkedDetail{}, err
+	}
+	charges, complete, readErr := collectParkedCharges(chargeRows, p.loc)
+	closeErr := chargeRows.Close()
+	if readErr != nil {
+		return parkedDetail{}, readErr
+	}
+	if closeErr != nil {
+		return parkedDetail{}, closeErr
+	}
+	for i := range charges {
+		startAt, err := time.Parse(time.RFC3339Nano, charges[i].StartDate)
+		if err != nil {
+			return parkedDetail{}, err
 		}
-	} else if !errors.Is(chargeErr, sql.ErrNoRows) {
-		return parkedDetail{}, chargeErr
+		charges[i].StartBatteryLevel, charges[i].StartSOCObservedAt, err =
+			p.nearestChargeSOC(ctx, carID, charges[i].ChargeID, startAt)
+		if err != nil {
+			return parkedDetail{}, err
+		}
+		if charges[i].EndDate != nil {
+			endAt, err := time.Parse(time.RFC3339Nano, *charges[i].EndDate)
+			if err != nil {
+				return parkedDetail{}, err
+			}
+			charges[i].EndBatteryLevel, charges[i].EndSOCObservedAt, err =
+				p.nearestChargeSOC(ctx, carID, charges[i].ChargeID, endAt)
+			if err != nil {
+				return parkedDetail{}, err
+			}
+		}
+	}
+	result.LinkedCharges = charges
+	result.ChargeSessionsComplete = complete
+	if len(charges) > 0 {
+		result.LinkedCharge = &result.LinkedCharges[0]
 	}
 	if result.StartBatteryLevel != nil && result.EndBatteryLevel != nil {
 		d := *result.EndBatteryLevel - *result.StartBatteryLevel

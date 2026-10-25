@@ -78,4 +78,28 @@ class ParkedDetailScopedLocalPublicationTest {
             Dispatchers.resetMain()
         }
     }
+
+    @Test fun mismatchedRemoteDrivePairCannotReplaceScopedLocalDetail() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source = object : ParkedPageSource {
+            override val scopeChanges = MutableStateFlow(0).map { Unit }
+            override suspend fun identity(carId: Int) = ParkedPageIdentity({ true }, -101)
+            override suspend fun localDetail(localHistoryCarId: Int, olderDriveId: Int, newerDriveId: Int) =
+                parked("local")
+            override suspend fun detail(carId: Int, olderDriveId: Int, newerDriveId: Int) =
+                ApiResult.Success(parked("foreign").copy(olderDriveId = 999))
+        }
+        val vm = ParkedDetailViewModel(source)
+        try {
+            vm.load(7, 10, 11)
+            advanceUntilIdle()
+            assertEquals("local", vm.uiState.value.data?.address)
+            assertEquals(true, vm.uiState.value.degraded)
+            assertNull(vm.uiState.value.error)
+        } finally {
+            vm.viewModelScope.cancel()
+            advanceUntilIdle()
+            Dispatchers.resetMain()
+        }
+    }
 }

@@ -54,6 +54,23 @@ func TestCompatibilityRealPG18MigratedV430(t *testing.T) {
 		if value.LinkedCharge == nil || value.LinkedCharge.ChargeID != 501 || value.LinkedCharge.EnergyAddedKWh == nil || *value.LinkedCharge.EnergyAddedKWh != 0 {
 			t.Fatal("linked charging_process missing or zero coerced")
 		}
+		if !value.ChargeSessionsComplete || len(value.LinkedCharges) != 2 ||
+			value.LinkedCharges[0].ChargeID != 501 || value.LinkedCharges[1].ChargeID != 502 ||
+			value.LinkedCharges[1].EnergyAddedKWh == nil || *value.LinkedCharges[1].EnergyAddedKWh != 2.5 {
+			t.Fatalf("two car 7 sessions must remain ordered, exclude car 8 and preserve zero: %+v", value.LinkedCharges)
+		}
+		first, second := value.LinkedCharges[0], value.LinkedCharges[1]
+		if first.StartBatteryLevel == nil || *first.StartBatteryLevel != 69 ||
+			first.EndBatteryLevel == nil || *first.EndBatteryLevel != 69 ||
+			first.StartSOCObservedAt == nil || *first.StartSOCObservedAt != "2026-10-01T00:19:00Z" ||
+			first.EndSOCObservedAt == nil || *first.EndSOCObservedAt != "2026-10-01T00:40:00Z" {
+			t.Fatalf("exact first-process SOC samples were not retained: %+v", first)
+		}
+		if second.StartBatteryLevel == nil || *second.StartBatteryLevel != 69 ||
+			second.StartSOCObservedAt == nil || *second.StartSOCObservedAt != "2026-10-01T00:45:00Z" ||
+			second.EndBatteryLevel != nil || second.EndSOCObservedAt != nil {
+			t.Fatalf("ambiguous second-process end SOC must remain unknown: %+v", second)
+		}
 	})
 	t.Run("standby", func(t *testing.T) {
 		value, err := store.Standby(ctx, 7)
