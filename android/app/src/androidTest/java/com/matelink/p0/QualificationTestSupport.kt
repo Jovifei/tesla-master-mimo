@@ -2,6 +2,10 @@ package com.matelink.p0
 
 import android.content.Context
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -153,4 +157,13 @@ private fun ComposeTestRule.scrollMoreTo(text: String) {
         if (onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty()) return
         onNode(hasScrollAction(), useUnmergedTree = true).performTouchInput { swipeUp() }
     }
+}
+
+/** Choose a real UI date range that includes the fixed October 1 synthetic history. */
+internal fun ComposeTestRule.selectFixtureHistoryWindow(context: Context) {
+    val label = context.getString(R.string.filter_all_time)
+    val horizontal = hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)
+    waitUntil(15_000) { onAllNodes(horizontal, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+    onNode(horizontal, useUnmergedTree = true).performScrollToNode(hasText(label))
+    onNodeWithText(label).performClick()
 }
