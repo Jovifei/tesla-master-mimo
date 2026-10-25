@@ -30,8 +30,9 @@ class DriveHistoryFilterUiTest {
             composeRule.onNodeWithText(context.getString(R.string.nav_drives), useUnmergedTree = true).performClick()
             // The fixture is outside the default seven-day window. Cached Room
             // rows must not leak into that window's list or summary.
-            composeRule.waitForText(context.getString(R.string.no_drives_found))
+            composeRule.scrollUntilText(context.getString(R.string.no_drives_found))
             composeRule.onNodeWithText("Fixture Garage").assertDoesNotExist()
+
             composeRule.selectFixtureHistoryWindow(context)
             composeRule.scrollUntilText("Fixture Garage")
             composeRule.waitForText("Fixture Garage")
@@ -45,8 +46,12 @@ class DriveHistoryFilterUiTest {
             // Day Trip (50–200km) excludes the 18km and 12km fixture drives.
             composeRule.onNodeWithTag("drive_distance_filters").performScrollToNode(hasText(dayTrip))
             composeRule.onNodeWithText(dayTrip).assertExists().performClick()
-            composeRule.waitForText(context.getString(R.string.no_drives_found))
+            composeRule.scrollUntilText(context.getString(R.string.no_drives_found))
             composeRule.onNodeWithText("Fixture Garage").assertDoesNotExist()
+
+            // Scroll back to top so distance filter chips are reachable again
+            composeRule.onNode(verticalList, useUnmergedTree = true).performScrollToIndex(0)
+            composeRule.waitForIdle()
 
             // Commute (< 50km) includes both 18km and 12km fixture drives.
             composeRule.onNodeWithTag("drive_distance_filters").performScrollToNode(hasText(commute))
