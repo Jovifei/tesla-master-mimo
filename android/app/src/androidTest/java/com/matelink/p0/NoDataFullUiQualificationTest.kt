@@ -106,7 +106,12 @@ class NoDataFullUiQualificationTest {
     }
 
     private fun showNormalDrive() {
-        composeRule.onNode(historyList, useUnmergedTree = true).performScrollToNode(hasText("Fixture Office", substring = true))
+        composeRule.waitUntil(30_000) {
+            runCatching {
+                composeRule.onNode(historyList, useUnmergedTree = true)
+                    .performScrollToNode(hasText("Fixture Office", substring = true))
+            }.isSuccess
+        }
         composeRule.waitForText("Fixture Office")
     }
 
