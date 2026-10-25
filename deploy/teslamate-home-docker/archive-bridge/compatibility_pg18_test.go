@@ -45,7 +45,7 @@ func TestCompatibilityRealPG18MigratedV430(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(charges) != 1 || charges[0].ID != 501 || charges[0].Cost == nil || *charges[0].Cost != -1 || charges[0].EnergyAdded == nil || *charges[0].EnergyAdded != 0 || len(charges[0].ChargePoints) != 1 || charges[0].ChargePoints[0].BatteryLevel != nil {
+	if len(charges) != 2 || charges[0].ID != 501 || charges[0].Cost == nil || *charges[0].Cost != -1 || charges[0].EnergyAdded == nil || *charges[0].EnergyAdded != 0 || len(charges[0].ChargePoints) != 3 || charges[0].ChargePoints[0].BatteryLevel == nil || *charges[0].ChargePoints[0].BatteryLevel != 69 || charges[0].ChargePoints[1].BatteryLevel != nil || charges[1].ID != 502 || charges[1].EnergyAdded == nil || *charges[1].EnergyAdded != 2.5 || len(charges[1].ChargePoints) != 4 || charges[1].ChargePoints[1].BatteryLevel != nil {
 		t.Fatalf("charge scope/null/zero/negative changed: %#v", charges)
 	}
 	foreign := NewPostgresSource(pool, 8)
@@ -79,7 +79,7 @@ func TestCompatibilityRealPG18MigratedV430(t *testing.T) {
 			t.Fatal(err)
 		}
 		cursor, err := loadCursor(config.StateFile)
-		if err != nil || cursor.LastDriveID != 102 || cursor.LastChargeID != 501 || requests != 4 {
+		if err != nil || cursor.LastDriveID != 102 || cursor.LastChargeID != 502 || requests != 4 {
 			t.Fatalf("poll cursor/receipts=%#v requests=%d err=%v", cursor, requests, err)
 		}
 		if err := bridge.PollOnce(ctx); err != nil || requests != 4 {
