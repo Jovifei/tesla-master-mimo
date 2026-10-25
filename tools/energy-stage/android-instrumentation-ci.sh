@@ -36,7 +36,7 @@ if [[ "$status" != 0 ]]; then exit "$status"; fi
 # Pull only screenshots captured by the explicit synthetic fixture native test.
 # Never screenshot a connected phone or a real user address into artifacts.
 for shot in matelink_fixture_parked_full matelink_fixture_parked_partial; do
-  adb pull "/sdcard/Download/${shot}.png" "../emulator-evidence/${shot}.png"
+  adb pull "/sdcard/Android/data/com.matelink/files/${shot}.png" "../emulator-evidence/${shot}.png"
 done
 python3 - <<'PYSCREEN'
 from pathlib import Path
