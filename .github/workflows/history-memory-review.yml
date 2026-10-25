@@ -1,7 +1,7 @@
 name: History memory isolated verification
 on:
   push:
-    branches: [main, fix/20261002-history-metadata-memory, codex/history-resource-stage2-20261002, codex/reliable-data-stage-20261007, codex/per-drive-energy-20261012, 'codex/miniprogram-*', 'codex/apk-*']
+    branches: [main, fix/20261002-history-metadata-memory, codex/history-resource-stage2-20261002, codex/reliable-data-stage-20261007, codex/per-drive-energy-20261012, codex/app-foundation-ui-integrate-20261025, 'codex/miniprogram-*', 'codex/apk-*']
   workflow_dispatch:
 permissions:
   contents: read
@@ -274,7 +274,7 @@ jobs:
           retention-days: 14
           path: evidence/
   android:
-    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || (startsWith(github.ref, 'refs/heads/codex/miniprogram-') || startsWith(github.ref, 'refs/heads/codex/apk-'))
+    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/app-foundation-ui-integrate-20261025' || (startsWith(github.ref, 'refs/heads/codex/miniprogram-') || startsWith(github.ref, 'refs/heads/codex/apk-'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -310,7 +310,7 @@ jobs:
             android/app/build/outputs/apk/
             android/app/schemas/
   android-summary:
-    if: always() && (github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || (startsWith(github.ref, 'refs/heads/codex/miniprogram-') || startsWith(github.ref, 'refs/heads/codex/apk-')))
+    if: always() && (github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/app-foundation-ui-integrate-20261025' || (startsWith(github.ref, 'refs/heads/codex/miniprogram-') || startsWith(github.ref, 'refs/heads/codex/apk-')))
     needs: android
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -338,7 +338,7 @@ jobs:
           print('COUNTS',counts)
           PY
   source-audit:
-    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || (startsWith(github.ref, 'refs/heads/codex/miniprogram-') || startsWith(github.ref, 'refs/heads/codex/apk-'))
+    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/app-foundation-ui-integrate-20261025' || (startsWith(github.ref, 'refs/heads/codex/miniprogram-') || startsWith(github.ref, 'refs/heads/codex/apk-'))
     strategy:
       fail-fast: false
       max-parallel: 3

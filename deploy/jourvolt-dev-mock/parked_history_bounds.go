@@ -160,7 +160,7 @@ func parkedHistoryBoundaryData(older, newer parkedHistoryBound) map[string]any {
 	}
 	var delta any
 	if older.EndSOC != nil && newer.StartSOC != nil {
-		delta = *older.EndSOC - *newer.StartSOC
+		delta = *newer.StartSOC - *older.EndSOC
 	}
 	return map[string]any{
 		"older_drive_id": a.PublicID, "newer_drive_id": b.PublicID,

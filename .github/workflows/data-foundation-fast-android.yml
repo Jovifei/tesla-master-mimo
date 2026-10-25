@@ -1,7 +1,7 @@
 name: Data foundation fast Android source regression
 on:
   push:
-    branches: ['codex/apk-data-foundation-remote-20261024']
+    branches: ['codex/apk-data-foundation-remote-20261024', 'codex/app-foundation-ui-integrate-20261025']
   workflow_dispatch:
 permissions:
   contents: read

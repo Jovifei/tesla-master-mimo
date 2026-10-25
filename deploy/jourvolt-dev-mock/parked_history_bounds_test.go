@@ -138,7 +138,7 @@ func TestParkedHistoryBoundsPostgresHTTPMemoryParityAndUnknown(t *testing.T) {
 	if err != nil || data == nil {
 		t.Fatalf("data=%v err=%v", data, err)
 	}
-	if data["start_date"] != base.Add(17*time.Minute).Format(time.RFC3339) || data["end_date"] != base.Add(time.Hour).Format(time.RFC3339) || data["start_battery_level"] != 0 || data["end_battery_level"] != 10 || data["battery_delta"] != -10 {
+	if data["start_date"] != base.Add(17*time.Minute).Format(time.RFC3339) || data["end_date"] != base.Add(time.Hour).Format(time.RFC3339) || data["start_battery_level"] != 0 || data["end_battery_level"] != 10 || data["battery_delta"] != 10 {
 		t.Fatalf("bounds=%v", data)
 	}
 	for _, key := range []string{"energy_kwh", "average_power_kw", "peak_power_kw", "inside_temp_average", "outside_temp_average", "linked_charge"} {

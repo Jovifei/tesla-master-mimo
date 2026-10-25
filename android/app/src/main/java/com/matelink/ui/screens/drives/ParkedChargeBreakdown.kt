@@ -69,7 +69,7 @@ internal fun parkedChargeBreakdown(
     fun normalize(charge: LinkedCharge, fromServer: Boolean): ParkedChargeSession? {
         val start = parseIsoInstant(charge.startDate)
         val end = parseIsoInstant(charge.endDate)
-        if (start == null || (end != null && !end.isAfter(start))) {
+        if (charge.chargeId <= 0 || start == null || (end != null && !end.isAfter(start))) {
             invalid = true
             return null
         }
@@ -91,9 +91,21 @@ internal fun parkedChargeBreakdown(
     val serverRows = server.mapNotNull { normalize(it, true) }
     val localRows = localCharges.mapNotNull { normalize(it, false) }
     fun key(row: ParkedChargeSession) = Triple(row.chargeId, row.start, row.end)
-    val serverKeys = serverRows.map(::key).toSet()
-    val missingLocal = localRows.any { key(it) !in serverKeys }
-    val combined = (serverRows + localRows.filter { key(it) !in serverKeys })
+    // A session id is unique within the verified history car. If a cached
+    // receipt disagrees on the end time, it must not become a second charge.
+    // Prefer the scoped server row for display but revoke completeness.
+    val byId = linkedMapOf<Int, ParkedChargeSession>()
+    for (row in serverRows) {
+        if (byId.putIfAbsent(row.chargeId, row) != null) invalid = true
+    }
+    val missingLocal = localRows.any { row ->
+        byId[row.chargeId]?.let { key(it) != key(row) } ?: true
+    }
+    for (row in localRows) {
+        val existing = byId.putIfAbsent(row.chargeId, row)
+        if (existing != null && key(existing) != key(row)) invalid = true
+    }
+    val combined = byId.values
         .sortedWith(compareBy<ParkedChargeSession> { it.start }.thenBy { it.chargeId })
     val capped = combined.take(MAX_PARKED_CHARGE_SESSIONS)
     val complete = serverComplete && !missingLocal && !invalid && combined.size <= MAX_PARKED_CHARGE_SESSIONS

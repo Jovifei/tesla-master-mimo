@@ -74,6 +74,15 @@ class ParkedChargeBreakdownTest {
         val changedWindow = parkedChargeBreakdown(parked(listOf(first), true),
             listOf(first.copy(endDate = "2026-10-23T03:05:00Z")))
         assertFalse(changedWindow.storedSessionsComplete)
+        assertEquals(1, changedWindow.sessions.size)
+        assertEquals(Duration.ofHours(2), changedWindow.recordedChargingDuration)
+        val duplicatedServer = parkedChargeBreakdown(parked(
+            listOf(first, first.copy(startDate = "2026-10-23T01:10:00Z")), true), emptyList())
+        assertEquals(1, duplicatedServer.sessions.size)
+        assertFalse(duplicatedServer.storedSessionsComplete)
+        val noIdentity = parkedChargeBreakdown(parked(listOf(first.copy(chargeId = -2)), true), emptyList())
+        assertTrue(noIdentity.sessions.isEmpty())
+        assertFalse(noIdentity.storedSessionsComplete)
     }
 
     @Test fun overlappingOrOpenSessionsNeverInflateChargeDurationOrInventRate() {
