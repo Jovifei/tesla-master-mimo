@@ -70,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -282,7 +283,7 @@ private fun ChargesContent(
     // Header items in render order: date chips, dropdowns, free hint (conditional),
     // summary, charts (conditional), history header. Adjust if items are added.
     val showFreeHint = freeSupercharging && selectedCostFilter == CostFilter.NO_COST
-    val headerCount = 3 +
+    val headerCount = 4 +
         (if (historySyncWarning != null || localArchiveLinkPending) 1 else 0) +
         (if (showFreeHint) 1 else 0) +
         (if (chartData.isNotEmpty()) 1 else 0)
@@ -309,6 +310,34 @@ private fun ChargesContent(
                 onFilterSelected = onDateFilterSelected,
                 onCustomRangeSelected = onCustomRangeSelected
             )
+        }
+
+        // Secondary filters: charge type, cost and location all stay reachable so a
+        // narrowed list can be widened again without leaving the page.
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ChargeTypeFilterDropdown(
+                    selectedFilter = selectedChargeTypeFilter,
+                    palette = palette,
+                    onFilterSelected = onChargeTypeFilterSelected
+                )
+                CostFilterDropdown(
+                    selectedFilter = selectedCostFilter,
+                    palette = palette,
+                    onFilterSelected = onCostFilterSelected
+                )
+                LocationFilterDropdown(
+                    availableLocations = availableLocations,
+                    selectedLocations = selectedLocations,
+                    palette = palette,
+                    onLocationToggled = onLocationFilterToggled,
+                    onClearAll = onLocationFilterCleared
+                )
+            }
         }
 
         if (freeSupercharging && selectedCostFilter == CostFilter.NO_COST) {
@@ -498,7 +527,7 @@ private fun DateFilterChips(
                 selectedLabelColor = palette.onSurface
             )
         )
-        LazyRow(modifier = Modifier.weight(1f),
+        LazyRow(modifier = Modifier.weight(1f).testTag("charge_date_filters"),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(listOf(DateFilter.LAST_7_DAYS, DateFilter.LAST_30_DAYS,
                 DateFilter.LAST_90_DAYS, DateFilter.ALL_TIME)) { filter ->

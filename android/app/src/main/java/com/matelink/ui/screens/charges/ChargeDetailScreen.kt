@@ -190,11 +190,13 @@ internal fun ChargeDetailContent(
     val freeLabel = stringResource(R.string.charge_free)
     val actualLabel = stringResource(R.string.charge_cost_actual)
     val manualLabel = stringResource(R.string.charge_cost_manual)
-    val costText = when {
-        costPresentation.state == ChargeDetailCostState.FREE -> freeLabel
-        costPresentation.cost != null -> "$currencySymbol%.2f".format(costPresentation.cost)
-        else -> unavailableLabel
-    }
+    val costText = formatChargeDetailCostText(
+        state = costPresentation.state,
+        cost = costPresentation.cost,
+        currencySymbol = currencySymbol,
+        freeLabel = freeLabel,
+        unavailableLabel = unavailableLabel
+    )
     val costSourceText = when (costPresentation.state) {
         ChargeDetailCostState.ESTIMATE -> stringResource(R.string.charge_cost_estimate)
         ChargeDetailCostState.ACTUAL -> actualLabel
@@ -1108,4 +1110,22 @@ private fun formatObservationTime(at: Instant, is24Hour: Boolean): String =
 
 private fun formatDateTime(dateStr: String?, unknownLabel: String = "Unknown", is24Hour: Boolean? = null): String {
     return formatMonthDayTime(dateStr, is24Hour = is24Hour) ?: unknownLabel
+}
+
+/**
+ * Amount shown on the detail card. Estimated amounts keep the `≈` marker used by the
+ * list, summary and chart so a default-rate figure is never mistaken for a billed one.
+ */
+internal fun formatChargeDetailCostText(
+    state: ChargeDetailCostState,
+    cost: Double?,
+    currencySymbol: String,
+    freeLabel: String,
+    unavailableLabel: String
+): String = when {
+    state == ChargeDetailCostState.FREE -> freeLabel
+    cost != null ->
+        (if (state == ChargeDetailCostState.ESTIMATE) "≈" else "") +
+            "$currencySymbol%.2f".format(cost)
+    else -> unavailableLabel
 }

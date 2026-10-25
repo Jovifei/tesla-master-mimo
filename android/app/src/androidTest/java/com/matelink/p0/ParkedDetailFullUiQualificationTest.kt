@@ -39,7 +39,7 @@ class ParkedDetailFullUiQualificationTest {
             // The archived synthetic July 18 events are older than the default seven-day window.
             // Explicitly select a history window that includes the fixture before asserting cards.
             composeRule.selectFixtureHistoryWindow(context)
-            scrollUntilText(parkedTitle)
+            composeRule.scrollUntilText(parkedTitle)
             composeRule.onNodeWithText(parkedTitle).performClick()
             composeRule.waitForText(batteryTitle)
             // Wait for the server's synthetic historical temperatures, not the
@@ -59,7 +59,7 @@ class ParkedDetailFullUiQualificationTest {
             InstrumentationRegistry.getInstrumentation().uiAutomation.performGlobalAction(
                 android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
             )
-            scrollUntilText(parkedTitle)
+            composeRule.scrollUntilText(parkedTitle)
 
             setFixtureScenario("parked_partial")
             composeRule.onNodeWithText(parkedTitle).performClick()
@@ -82,7 +82,7 @@ class ParkedDetailFullUiQualificationTest {
         ActivityScenario.launch(MainActivity::class.java).use {
             composeRule.onNodeWithText(context.getString(R.string.nav_drives), useUnmergedTree = true).performClick()
             composeRule.selectFixtureHistoryWindow(context)
-            scrollUntilText(parkedTitle)
+            composeRule.scrollUntilText(parkedTitle)
             composeRule.onNodeWithText(parkedTitle).performClick()
             composeRule.waitForText(context.getString(R.string.parked_recorded_charge_count, 2))
             composeRule.onNodeWithText("6.00 kWh/hour", substring = true).assertExists()
@@ -142,16 +142,4 @@ class ParkedDetailFullUiQualificationTest {
         check(dark > 30 && bright > 30) { "synthetic Compose screenshot lacks visible UI contrast" }
     }
 
-    private fun scrollUntilText(text: String) {
-        val verticalList = hasScrollAction() and
-            SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
-        composeRule.waitUntil(30_000) {
-            composeRule.onAllNodes(verticalList, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
-        }
-        repeat(8) {
-            if (composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()) return
-            composeRule.onNode(verticalList, useUnmergedTree = true).performTouchInput { swipeUp() }
-        }
-        composeRule.waitForText(text)
-    }
 }

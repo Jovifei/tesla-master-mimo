@@ -27,16 +27,21 @@ class DriveHistoryFilterUiTest {
             composeRule.waitForText(context.getString(R.string.no_drives_found))
             composeRule.onNodeWithText("Fixture Garage").assertDoesNotExist()
             composeRule.selectFixtureHistoryWindow(context)
+            composeRule.scrollUntilText("Fixture Garage")
             composeRule.waitForText("Fixture Garage")
 
             val commute = context.getString(R.string.filter_commute_km)
             val dayTrip = context.getString(R.string.filter_day_trip_km)
-            composeRule.onNodeWithText(commute).assertExists().performClick()
+            // Day Trip (50–200km) excludes the 18km and 12km fixture drives.
+            composeRule.onNodeWithTag("drive_distance_filters").performScrollToNode(hasText(dayTrip))
+            composeRule.onNodeWithText(dayTrip).assertExists().performClick()
             composeRule.waitForText(context.getString(R.string.no_drives_found))
             composeRule.onNodeWithText("Fixture Garage").assertDoesNotExist()
 
-            composeRule.onNodeWithTag("drive_distance_filters").performScrollToNode(hasText(dayTrip))
-            composeRule.onNodeWithText(dayTrip).assertExists().performClick()
+            // Commute (< 50km) includes both 18km and 12km fixture drives.
+            composeRule.onNodeWithTag("drive_distance_filters").performScrollToNode(hasText(commute))
+            composeRule.onNodeWithText(commute).assertExists().performClick()
+            composeRule.scrollUntilText("Fixture Garage")
             composeRule.waitForText("Fixture Garage")
             composeRule.onNodeWithText(context.getString(R.string.no_drives_found)).assertDoesNotExist()
         }

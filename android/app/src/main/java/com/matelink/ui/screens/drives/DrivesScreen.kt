@@ -526,11 +526,14 @@ private fun DateFilterChips(
     var showDatePicker by remember { mutableStateOf(false) }
 
     LazyRow(
+        modifier = Modifier.testTag("drive_date_filters"),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         val orderedFilters = listOf(
             DriveDateFilter.LAST_7_DAYS,
-            DriveDateFilter.LAST_30_DAYS
+            DriveDateFilter.LAST_30_DAYS,
+            DriveDateFilter.ALL_TIME,
+            DriveDateFilter.TODAY
         )
         items(orderedFilters) { filter ->
             FilterChip(
@@ -555,17 +558,6 @@ private fun DateFilterChips(
                 label = { Text(label) },
                 leadingIcon = { Icon(Icons.Default.DateRange, contentDescription = null,
                     modifier = Modifier.size(16.dp)) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = palette.surface,
-                    selectedLabelColor = palette.onSurface
-                )
-            )
-        }
-        items(listOf(DriveDateFilter.TODAY, DriveDateFilter.ALL_TIME)) { filter ->
-            FilterChip(
-                selected = filter == selectedFilter,
-                onClick = { onFilterSelected(filter) },
-                label = { Text(stringResource(filter.labelRes)) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = palette.surface,
                     selectedLabelColor = palette.onSurface

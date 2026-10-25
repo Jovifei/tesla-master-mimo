@@ -152,20 +152,49 @@ internal fun ComposeTestRule.navigateToAbout(context: Context) {
     onNodeWithTag("helpLink").assertExists()
 }
 
-private fun ComposeTestRule.scrollMoreTo(text: String) {
-    repeat(4) {
-        if (onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty()) return
-        onNode(hasScrollAction(), useUnmergedTree = true).performTouchInput { swipeUp() }
+/**
+ * Repeatedly swipes up until [text] (exact or substring) is composed and visible in the vertical list.
+ * This waits for asynchronous network loading while continuously keeping the list scrolled.
+ */
+internal fun ComposeTestRule.scrollUntilText(text: String, timeoutMillis: Long = 30_000) {
+    val verticalList = hasScrollAction() and
+        SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
+    waitUntil(timeoutMillis) {
+        onAllNodes(verticalList, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     }
+    waitUntil(timeoutMillis) {
+        if (onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty() ||
+            onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()) {
+            true
+        } else {
+            runCatching {
+                onNode(verticalList, useUnmergedTree = true).performTouchInput { swipeUp() }
+            }
+            onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty() ||
+                onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+    waitForText(text, timeoutMillis = timeoutMillis)
+}
+
+private fun ComposeTestRule.scrollMoreTo(text: String) {
+    scrollUntilText(text)
 }
 
 /** Choose a real UI date range that includes the fixed July 18 synthetic history. */
 internal fun ComposeTestRule.selectFixtureHistoryWindow(context: Context) {
     val label = context.getString(R.string.filter_all_time)
-    val horizontal = hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)
-    waitUntil(15_000) { onAllNodes(horizontal, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-    // History may also have a horizontal type/distance filter row. The date
-    // filters are the first horizontal list; do not target an ambiguous node.
-    onAllNodes(horizontal, useUnmergedTree = true)[0].performScrollToNode(hasText(label))
+    val dateRow = if (onAllNodesWithTag("drive_date_filters", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()) {
+        onNodeWithTag("drive_date_filters", useUnmergedTree = true)
+    } else if (onAllNodesWithTag("charge_date_filters", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()) {
+        onNodeWithTag("charge_date_filters", useUnmergedTree = true)
+    } else {
+        val horizontal = hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)
+        waitUntil(15_000) { onAllNodes(horizontal, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        onAllNodes(horizontal, useUnmergedTree = true)[0]
+    }
+    dateRow.performScrollToNode(hasText(label))
+    waitForIdle()
     onNodeWithText(label).performClick()
+    waitForIdle()
 }

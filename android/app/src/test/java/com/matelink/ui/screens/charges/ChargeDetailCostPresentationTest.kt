@@ -96,4 +96,56 @@ class ChargeDetailCostPresentationTest {
             presentChargeDetailCost(teslaMateCost = null, energyKwh = 8.0)
         )
     }
+
+    @Test
+    fun estimatedAmountKeepsTheApproxMarker() {
+        val text = formatChargeDetailCostText(
+            state = ChargeDetailCostState.ESTIMATE,
+            cost = 2.39,
+            currencySymbol = "¥",
+            freeLabel = "免费",
+            unavailableLabel = "暂无数据"
+        )
+
+        assertEquals("≈¥2.39", text)
+    }
+
+    @Test
+    fun billedAmountsCarryNoApproxMarker() {
+        listOf(ChargeDetailCostState.ACTUAL, ChargeDetailCostState.MANUAL).forEach { state ->
+            val text = formatChargeDetailCostText(
+                state = state,
+                cost = 6.5,
+                currencySymbol = "¥",
+                freeLabel = "免费",
+                unavailableLabel = "暂无数据"
+            )
+
+            assertEquals("¥6.50", text)
+        }
+    }
+
+    @Test
+    fun freeAndUnavailableStatesShowLabelsInsteadOfAmounts() {
+        assertEquals(
+            "免费",
+            formatChargeDetailCostText(
+                state = ChargeDetailCostState.FREE,
+                cost = 0.0,
+                currencySymbol = "¥",
+                freeLabel = "免费",
+                unavailableLabel = "暂无数据"
+            )
+        )
+        assertEquals(
+            "暂无数据",
+            formatChargeDetailCostText(
+                state = ChargeDetailCostState.UNAVAILABLE,
+                cost = null,
+                currencySymbol = "¥",
+                freeLabel = "免费",
+                unavailableLabel = "暂无数据"
+            )
+        )
+    }
 }
