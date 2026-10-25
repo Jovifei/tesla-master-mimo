@@ -46,6 +46,7 @@ export type Car = {
   wheelType: string | null
   displayName: string | null
   remoteVerified?: boolean
+  freeSupercharging?: boolean | null
   capacityKwh?: number | null
   capacityBasis?: string | null
   capacitySourceField?: string | null
@@ -67,6 +68,7 @@ export type RawCar = {
   battery_health?: { current_capacity?: number | null } | null
   car_details?: { model?: string | null; trim_badging?: string | null }
   car_exterior?: { exterior_color?: string | null; wheel_type?: string | null }
+  car_settings?: { free_supercharging?: boolean | null } | null
 }
 
 export type CarStatus = {

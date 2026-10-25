@@ -111,3 +111,18 @@ it('enforces serialized64KiB before the200row ceiling and retains the earliest s
   expect(refused).toBe(true); expect(stored).toBeLessThan(200)
   expect(readChargeCostOverride(storage, scope, original)?.amount).toBe(0)
 })
+
+it('mirrors the App free-supercharging priority: free DC beats actual bill and estimate, AC stays billed', () => {
+  const dc = { ...charge, chargeMode: 'dc' } as Charge, ac = { ...charge, chargeMode: 'ac' } as Charge
+  const free = overlayChargeCosts(store(), scope, [dc], appDefault, true)
+  expect(free[0]).toMatchObject({ cost: 0, costProvenance: 'free' })
+  expect(free[0].reportedCost).toBe(10)
+  const manualWins = store()
+  expect(writeChargeCostOverride(manualWins, scope, dc, 5, 'CNY', () => true)).toBe(true)
+  expect(overlayChargeCosts(manualWins, scope, [dc], appDefault, true)[0]).toMatchObject({ cost: 5, costProvenance: 'manual' })
+  expect(overlayChargeCosts(store(), scope, [ac], appDefault, true)[0]).toMatchObject({ cost: 10, costProvenance: 'actual' })
+  const noFlag = overlayChargeCosts(store(), scope, [dc], appDefault, null)
+  expect(noFlag[0]).toMatchObject({ cost: 10, costProvenance: 'actual' })
+  const estimated = overlayChargeCosts(store(), scope, [{ ...charge, chargeMode: 'dc', cost: 0 }], appDefault, true)
+  expect(estimated[0]).toMatchObject({ cost: 0, costProvenance: 'free' })
+})

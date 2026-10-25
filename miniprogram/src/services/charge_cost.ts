@@ -6,7 +6,7 @@ import { resolveChargeEnergy } from '../domain/drive_energy'
 export type ChargeCostScope = { userId: string; origin: string; stableId: string }
 export type ChargeCostOverride = { identity: string; source: string; amount: number; currency: string; updatedAt: string }
 export type ChargeEstimatePrice = { amount: number; currency: string; source: 'app_default' | 'saved_default' }
-export type CostedCharge = Charge & { costProvenance: 'manual' | 'actual' | 'estimate' | 'unknown'; reportedCost: number | null; reportedCurrency: string | null; manualCostUpdatedAt: string | null;
+export type CostedCharge = Charge & { costProvenance: 'manual' | 'free' | 'actual' | 'estimate' | 'unknown'; reportedCost: number | null; reportedCurrency: string | null; manualCostUpdatedAt: string | null;
   estimatedUnitPrice: number | null; estimatePriceSource: ChargeEstimatePrice['source'] | null }
 export const CHARGE_COST_MAX_ROWS = 200, CHARGE_COST_MAX_BYTES = 64 * 1024
 export const APP_DEFAULT_CHARGE_PRICE_CNY = 1.14
@@ -58,8 +58,10 @@ export function estimateAppDefaultChargeCost(charge: Charge, price = APP_DEFAULT
     : charge.source === 'teslamate_archive' && charge.energy?.quality === 'reported' ? charge.energy.batteryInputKwh : null
   return finite(battery) && battery >= 0 ? battery * price : null
 }
-/** Copies only the cost view. Energy, source, quality, receipt and original upstream bill stay unchanged. */
-export function overlayChargeCosts(storage: Pick<WechatStorage, 'getStorageSync'>, scope: ChargeCostScope, charges: readonly Charge[], estimatePrice: ChargeEstimatePrice | null = null): CostedCharge[] {
+/** Copies only the cost view. Energy, source, quality, receipt and original upstream bill stay unchanged.
+ * Priority mirrors the App EffectiveChargeCostResolver: manual → free (free
+ * supercharging on DC) → actual upstream bill → estimate → unknown. */
+export function overlayChargeCosts(storage: Pick<WechatStorage, 'getStorageSync'>, scope: ChargeCostScope, charges: readonly Charge[], estimatePrice: ChargeEstimatePrice | null = null, freeSupercharging: boolean | null = null): CostedCharge[] {
   const key = chargeCostKey(scope), rows = key ? archive(storage, key)?.rows ?? [] : [], byKey = new Map(rows.map(row => [rowKey(row), row]))
   return charges.map(charge => {
     const target = identity(charge), manual = target ? byKey.get(rowKey(target)) : null
@@ -68,10 +70,11 @@ export function overlayChargeCosts(storage: Pick<WechatStorage, 'getStorageSync'
     // Other consumers (such as Cost analysis) keep the raw reported zero when no estimate contract is requested.
     const blankTeslaMatePrice = estimatePrice != null && charge.source === 'teslamate_archive' && reportedCost === 0
     const actualCost = reportedCost !== null && reportedCost >= 0 && !blankTeslaMatePrice ? reportedCost : null
-    const estimate = manual || actualCost != null || !estimatePrice ? null : estimateAppDefaultChargeCost(charge, estimatePrice.amount, estimatePrice.currency)
+    const manuallyFree = freeSupercharging === true && charge.chargeMode === 'dc'
+    const estimate = manual || manuallyFree || actualCost != null || !estimatePrice ? null : estimateAppDefaultChargeCost(charge, estimatePrice.amount, estimatePrice.currency)
     return { ...charge, reportedCost, reportedCurrency, manualCostUpdatedAt: manual?.updatedAt ?? null,
-      cost: manual?.amount ?? actualCost ?? estimate, currency: manual?.currency ?? (estimate != null ? estimatePrice!.currency : charge.currency), currencyCode: manual?.currency ?? (estimate != null ? estimatePrice!.currency : charge.currencyCode),
-      costProvenance: manual ? 'manual' : actualCost != null ? 'actual' : estimate != null ? 'estimate' : 'unknown',
+      cost: manual ? manual.amount : manuallyFree ? 0 : actualCost ?? estimate, currency: manual?.currency ?? (estimate != null ? estimatePrice!.currency : charge.currency), currencyCode: manual?.currency ?? (estimate != null ? estimatePrice!.currency : charge.currencyCode),
+      costProvenance: manual ? 'manual' : manuallyFree ? 'free' : actualCost != null ? 'actual' : estimate != null ? 'estimate' : 'unknown',
       estimatedUnitPrice: estimate != null ? estimatePrice!.amount : null, estimatePriceSource: estimate != null ? estimatePrice!.source : null }
   })
 }

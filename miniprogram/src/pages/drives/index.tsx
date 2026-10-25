@@ -2,12 +2,15 @@ import { Button, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
+import { buildDriveHistoryItems, type DriveHistoryItem } from '../../domain/drive_history'
 import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, reconcileHistoryCache, type HistoryInterval } from '../../domain/history_controller'
 import { emptyHistoryQuery, filterHistory, historyDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
 import './index.scss'
 import { createRequestScopeGate } from '../../domain/request_scope'
 import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
+import { analysisApi } from '../../services/analysis_api'
+import type { ParkedDetail } from '../../services/analysis_types'
 import { carSelectionStorageKey, type Car, type Drive, type HistoryPage, type HistoryPageMeta } from '../../services/types'
 import { readAppSession } from '../../services/session'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
@@ -64,6 +67,11 @@ export default function DrivesPage() {
   const [items, setItems] = useState<Drive[]>([])
   const [meta, setMeta] = useState<HistoryPageMeta | null>(null)
   const [selected, setSelectedState] = useState<Drive | null>(null)
+  // Parked window detail: local facts render instantly, cloud enrichment
+  // (temperatures, power, linked charge) fills in from the exact endpoint.
+  const [parkedOpen, setParkedOpen] = useState<DriveHistoryItem | null>(null)
+  const [parkedCloud, setParkedCloud] = useState<ParkedDetail | null>(null)
+  const [parkedCloudFailed, setParkedCloudFailed] = useState(false)
   const detailContext = useRef<{ user: string; origin: string; uid: string; generation: number; row: Drive } | null>(null)
   const detailCacheBaseline = useRef<Map<string, string> | null>(null)
   const listScrollTop = useRef(0), detailScrollTop = useRef(0), pageVisible = useRef(false)
@@ -414,6 +422,20 @@ export default function DrivesPage() {
     void loadHistory(car, true)
   }
 
+  const openParked = async (item: DriveHistoryItem & { kind: 'parked' }) => {
+    if (!car) return
+    setParkedOpen(item); setParkedCloud(null); setParkedCloudFailed(false)
+    try {
+      const result = await analysisApi.getParkedDetail(car, item.older.id, item.newer.id)
+      setParkedCloud(result.detail)
+      setParkedCloudFailed(result.detail == null)
+    } catch {
+      // Local facts stay on screen; cloud-only fields remain honestly missing.
+      setParkedCloudFailed(true)
+    }
+  }
+  const closeParked = () => { setParkedOpen(null); setParkedCloud(null); setParkedCloudFailed(false) }
+
   const openDetail = async (item: Drive) => {
     if (!car) return
     const canonical = itemsRef.current.find(row => historyRowKey(row) === historyRowKey(item) || row.id === item.id)
@@ -443,6 +465,8 @@ export default function DrivesPage() {
 
   const trustedItems = filterHistory(items.filter(isAppRouteDrive), emptyHistoryQuery())
   const visibleItems = filterHistory(trustedItems, query)
+  // App DrivesScreen builds list rows (drives + parking windows) from the visible set.
+  const historyItems = buildDriveHistoryItems(visibleItems)
   const statisticsInterval = interval ? { ...interval, items: interval.items.filter(isAppStatisticsDrive) } : null
   const chartRows = statisticsInterval ? filterHistory(statisticsInterval.items, query) : []
   return (
@@ -506,19 +530,29 @@ export default function DrivesPage() {
         <View className="history-list">
           <Text className="section-title">行程历史</Text>
           {loading ? <LoadingIndicator label="正在读取行程…" compact /> : null}
-          {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的行程</Text> : null}
-          {visibleItems.map(item => (
-            <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
+          {historyItems.length === 0 && visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的行程</Text> : null}
+          {historyItems.map(item => item.kind === 'parked' ? (
+            <View key={item.key} className="history-record history-parked" onClick={() => { void openParked(item) }}>
               <Text className="history-record-date">{historyEditorialDate(item.startDate)}</Text>
-              <View className="history-record-evidence"><Text className="history-soc">{battery(item.startBatteryLevel)} → {battery(item.endBatteryLevel)}</Text><Text className="history-source">{energyLabel(item)} · {sourceLabel(item.source)}</Text></View>
-              <View className="history-route"><View className="history-route-stops"><Text className="history-route-start">{value(item.startAddress)}</Text><Text className="history-route-end">{value(item.endAddress)}</Text></View><VisualIcon name="route" /></View>
+              <View className="history-route"><VisualIcon name="vehicle" /><Text className="muted">驻车于 {item.address ?? '位置未知'}</Text></View>
               <View className="history-record-metrics">
-                <MetricValue label="时长" value={duration(item.durationMinutes).value} unit={duration(item.durationMinutes).unit} icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
-                <MetricValue label="距离" value={item.distanceKm} unit="km" icon="distance" digits={1} />
-                <MetricValue label="最高速度" value={peakSpeedKmh(item)} unit="km/h" icon="speed" digits={Number.isInteger(peakSpeedKmh(item)) ? 0 : 1} />
-                <MetricValue label="平均能耗" value={efficiency(item)} unit="kWh/100km" icon="energy" digits={1} negative={(efficiency(item) ?? 0) < 0} />
+                <MetricValue label="时长" value={item.minutes >= 60 ? `${Math.floor(item.minutes / 60)}h ${item.minutes % 60}m` : `${item.minutes}m`} icon="clock" />
+                <MetricValue label="起始电量" value={item.older.endBatteryLevel} unit="%" icon="battery" digits={0} />
+                <MetricValue label="结束电量" value={item.newer.startBatteryLevel} unit="%" icon="battery" digits={0} />
               </View>
-              {peakSpeedKmh(item) != null ? <Text className="metric-source">最高速度来自行程观测样本</Text> : null}
+            </View>
+          ) : (
+            <View key={item.key} className="history-record" onClick={() => { void openDetail(item.drive) }}>
+              <Text className="history-record-date">{historyEditorialDate(item.drive.startDate)}</Text>
+              <View className="history-record-evidence"><Text className="history-soc">{battery(item.drive.startBatteryLevel)} → {battery(item.drive.endBatteryLevel)}</Text><Text className="history-source">{energyLabel(item.drive)} · {sourceLabel(item.drive.source)}</Text></View>
+              <View className="history-route"><View className="history-route-stops"><Text className="history-route-start">{value(item.drive.startAddress)}</Text><Text className="history-route-end">{value(item.drive.endAddress)}</Text></View><VisualIcon name="route" /></View>
+              <View className="history-record-metrics">
+                <MetricValue label="时长" value={duration(item.drive.durationMinutes).value} unit={duration(item.drive.durationMinutes).unit} icon="clock" digits={Number.isInteger(item.drive.durationMinutes) ? 0 : 1} />
+                <MetricValue label="距离" value={item.drive.distanceKm} unit="km" icon="distance" digits={1} />
+                <MetricValue label="最高速度" value={peakSpeedKmh(item.drive)} unit="km/h" icon="speed" digits={Number.isInteger(peakSpeedKmh(item.drive)) ? 0 : 1} />
+                <MetricValue label="平均能耗" value={efficiency(item.drive)} unit="kWh/100km" icon="energy" digits={1} negative={(efficiency(item.drive) ?? 0) < 0} />
+              </View>
+              {peakSpeedKmh(item.drive) != null ? <Text className="metric-source">最高速度来自行程观测样本</Text> : null}
             </View>
           ))}
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
@@ -547,6 +581,30 @@ export default function DrivesPage() {
           {selected.energy?.quality === 'unknown' ? <Text className="muted">能耗证据不足，暂无可用数值。</Text> : null}
           {selected.qualityState ? <Text className="muted">记录质量：{qualityLabel(selected.qualityState)}</Text> : null}
           {cacheWarning ? <Text className="error">当前详情尚未保存到本机。</Text> : null}
+          {error ? <Text className="error">{error}</Text> : null}
+        </View>
+        </ScrollView>
+      ) : null}
+      {parkedOpen && parkedOpen.kind === 'parked' ? (
+        <ScrollView className="history-detail-overlay" scrollY style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%' }} ariaLabel="驻车详情">
+        <View className="history-detail-surface">
+          <View className="history-detail-heading"><Text className="section-title">驻车详情</Text><Button className="button" onClick={closeParked}>返回列表</Button></View>
+          <Text className="muted">驻车于 {parkedOpen.address ?? '位置未知'}</Text>
+          <View className="metric-grid">
+            <MetricValue label="驻车时长" value={parkedOpen.minutes >= 60 ? `${Math.floor(parkedOpen.minutes / 60)}h ${parkedOpen.minutes % 60}m` : `${parkedOpen.minutes}m`} icon="clock" />
+            <MetricValue label="起始电量" value={parkedOpen.older.endBatteryLevel} unit="%" icon="battery" digits={0} />
+            <MetricValue label="结束电量" value={parkedOpen.newer.startBatteryLevel} unit="%" icon="battery" digits={0} />
+            <MetricValue label="电量变化" value={parkedCloud?.batteryDelta ?? (parkedOpen.older.endBatteryLevel != null && parkedOpen.newer.startBatteryLevel != null ? parkedOpen.newer.startBatteryLevel - parkedOpen.older.endBatteryLevel : null)} unit="%" icon="battery" digits={0} />
+            <MetricValue label="估算能耗" value={parkedCloud?.energyKwh ?? null} unit="kWh" icon="energy" digits={2} />
+            <MetricValue label="平均功率" value={parkedCloud?.averagePowerW ?? null} unit="W" icon="energy" digits={0} />
+            <MetricValue label="车内温度" value={parkedCloud?.insideTempC ?? null} unit="°C" icon="info" digits={1} />
+            <MetricValue label="车外温度" value={parkedCloud?.outsideTempC ?? null} unit="°C" icon="info" digits={1} />
+            <MetricValue label="覆盖率" value={parkedCloud?.coverageRatio == null ? null : parkedCloud.coverageRatio * 100} unit="%" icon="clock" digits={0} />
+            <MetricValue label="采样数" value={parkedCloud?.sampleCount ?? null} icon="clock" digits={0} />
+          </View>
+          {parkedCloud ? <Text className="muted">数据来源：{parkedCloud.source ?? '云端驻车明细'}</Text>
+            : parkedCloudFailed ? <Text className="muted">云端明细暂不可用；以上为本机相邻行程推得的驻车事实。</Text>
+            : <Text className="muted">正在读取云端驻车明细（温度、功率与关联充电）…</Text>}
           {error ? <Text className="error">{error}</Text> : null}
         </View>
         </ScrollView>

@@ -419,6 +419,7 @@ function normalizeCar(raw: RawCar): Car | null {
     exteriorColor: stringValue(raw.car_exterior?.exterior_color),
     wheelType: stringValue(raw.car_exterior?.wheel_type),
     displayName: name?.trim() || (model ? `Model ${model}` : 'Tesla'),
+    freeSupercharging: raw.car_settings?.free_supercharging === true ? true : raw.car_settings?.free_supercharging === false ? false : null,
     capacityKwh: finite(raw.current_capacity ?? raw.battery_health?.current_capacity, Number.MIN_VALUE),
     capacityBasis: finite(raw.current_capacity ?? raw.battery_health?.current_capacity, Number.MIN_VALUE) != null
       ? 'api_reported_current_capacity' : undefined,

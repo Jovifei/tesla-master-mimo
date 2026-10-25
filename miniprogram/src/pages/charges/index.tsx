@@ -28,6 +28,10 @@ import { readTariff } from '../../domain/tariff'
 import { appChargeListRows, appChargeStatisticsRows } from '../../domain/app_history_projection'
 
 const PAGE_SIZE = 20
+// App CurrentChargeViewModel cadence: 30s steady, 4s while waiting for a
+// just-started charge session to materialize in the API.
+const CURRENT_CHARGE_REFRESH_INTERVAL_MS = 30_000
+const CHARGE_STARTING_REFRESH_INTERVAL_MS = 4_000
 
 function errorMessage(reason: unknown): string {
   if (reason instanceof ApiError) return reason.message
@@ -56,6 +60,7 @@ function displayAddress(address: string | null): string {
   return chineseParts.length ? chineseParts.join(' ') : original
 }
 function costLabel(charge: CostedCharge): { value: string | number | null; unit?: string } {
+  if (charge.costProvenance === 'free') return { value: '免费' }
   if (charge.costProvenance === 'estimate' && charge.cost != null) return charge.currencyCode === 'CNY'
     ? { value: `≈¥${charge.cost.toFixed(2)}` } : { value: `≈${charge.cost.toFixed(2)}`, unit: charge.currencyCode || '币种未知' }
   return { value: charge.cost, unit: charge.currencyCode || charge.currency || '币种未知' }
@@ -85,6 +90,12 @@ export default function ChargesPage() {
   const [items, setItems] = useState<Charge[]>([])
   const [showShortCharges, setShowShortCharges] = useState(false)
   const [current, setCurrent] = useState<Charge | null>(null)
+  // App CurrentChargeViewModel polls while visible; a fast loop covers the
+  // window where the car reports charging but the session is not materialized.
+  const [chargeStarting, setChargeStarting] = useState(false)
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pollCarRef = useRef<Car | null>(null)
+  const pollStartingRef = useRef(false)
   const [meta, setMeta] = useState<HistoryPageMeta | null>(null)
   const [selected, setSelectedState] = useState<Charge | null>(null)
   const detailContext = useRef<{ user: string; origin: string; uid: string; generation: number; row: Charge } | null>(null)
@@ -308,6 +319,38 @@ export default function ChargesPage() {
     }
   }
 
+  const stopCurrentPolling = () => {
+    if (pollTimer.current) { clearTimeout(pollTimer.current); pollTimer.current = null }
+    pollCarRef.current = null
+    setChargeStarting(false); pollStartingRef.current = false
+  }
+  const pollCurrentTick = async () => {
+    const nextCar = pollCarRef.current
+    if (!nextCar) return
+    const ticket = scopeGate.current.begin('current-poll')
+    try {
+      const [chargeResult, statusResult] = await Promise.allSettled([
+        matelinkApi.getCurrentCharge(nextCar.id, nextCar),
+        matelinkApi.getCarSnapshot(nextCar.id, nextCar),
+      ])
+      if (!ticket.isCurrent() || pollCarRef.current !== nextCar) return
+      const charge = chargeResult.status === 'fulfilled' ? chargeResult.value : null
+      const status = statusResult.status === 'fulfilled' ? statusResult.value : null
+      if (chargeResult.status === 'fulfilled') setCurrent(charge)
+      // App: "car charging but TeslaMate has not materialized the session yet".
+      const starting = charge == null && status?.chargingState?.toLowerCase() === 'charging'
+      setChargeStarting(starting); pollStartingRef.current = starting
+    } catch { /* App keeps the last data on screen and keeps polling. */ }
+    if (pollTimer.current) clearTimeout(pollTimer.current)
+    pollTimer.current = setTimeout(() => { void pollCurrentTick() },
+      pollStartingRef.current ? CHARGE_STARTING_REFRESH_INTERVAL_MS : CURRENT_CHARGE_REFRESH_INTERVAL_MS)
+  }
+  const startCurrentPolling = (nextCar: Car | null) => {
+    if (pollTimer.current) { clearTimeout(pollTimer.current); pollTimer.current = null }
+    pollCarRef.current = nextCar
+    if (nextCar) void pollCurrentTick()
+  }
+
   const load = async () => {
     invalidatePage()
     verifiedCarRef.current = false
@@ -426,8 +469,8 @@ export default function ChargesPage() {
       setError('在线车辆暂时无法重新验证；当前为本机已读取详情。')
     } finally { if (epoch === lifecycleEpoch.current) setLoading(false) }
   }
-  useDidShow(() => { void showPage() })
-  useDidHide(() => {
+  useDidShow(() => { void showPage(); if (car) startCurrentPolling(car) })
+  useDidHide(() => { stopCurrentPolling()
     const context = detailContext.current
     detailCacheBaseline.current = null
     if (context) {
@@ -439,7 +482,7 @@ export default function ChargesPage() {
     }
     pageVisible.current = false; invalidatePage(); setSelectedState(null); void nativeTabBar(false)
   })
-  useUnload(() => { pageVisible.current = false; detailContext.current = null; detailCacheBaseline.current = null; invalidatePage(); void nativeTabBar(false) })
+  useUnload(() => { pageVisible.current = false; detailContext.current = null; detailCacheBaseline.current = null; invalidatePage(); stopCurrentPolling(); void nativeTabBar(false) })
   usePageScroll(event => { if (pageVisible.current && !detailContext.current) listScrollTop.current = event.scrollTop })
 
   const selectCar = (event: { detail: { value: number | string } }) => {
@@ -458,8 +501,9 @@ export default function ChargesPage() {
     setCurrent(null)
     resetHistoryState()
     setError(null)
-    if (!verifiedCarRef.current || next.remoteVerified === false) { restoreCached(next); return }
+    if (!verifiedCarRef.current || next.remoteVerified === false) { restoreCached(next); stopCurrentPolling(); return }
     void Promise.all([loadHistory(next), loadCurrentCharge(next)])
+    startCurrentPolling(next)
   }
 
   const loadMore = () => {
@@ -502,7 +546,7 @@ export default function ChargesPage() {
   const estimatePrice: ChargeEstimatePrice = savedTariff?.defaultPrice != null
     ? { amount: savedTariff.defaultPrice, currency: savedTariff.currency, source: 'saved_default' }
     : { amount: APP_DEFAULT_CHARGE_PRICE_CNY, currency: 'CNY', source: 'app_default' }
-  const costRows = (rows: readonly Charge[]): CostedCharge[] => costScope ? overlayChargeCosts(Taro, costScope, rows, estimatePrice) : []
+  const costRows = (rows: readonly Charge[]): CostedCharge[] => costScope ? overlayChargeCosts(Taro, costScope, rows, estimatePrice, car?.freeSupercharging ?? null) : []
   const selectedView = selected ? costRows([selected])[0] : null
   const intervalView = interval ? { ...interval, items: costRows(appChargeStatisticsRows(interval.items)) } : null
   const costState = selectedView
@@ -614,6 +658,12 @@ export default function ChargesPage() {
       </View> : null}
       {noticeLimited ? <Text className="muted history-notice-limit">本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看</Text> : null}
 
+      {chargeStarting && !current ? (
+        <View className="history-list">
+          <View className="visual-heading"><VisualIcon name="energy" /><Text className="section-title">充电即将开始</Text></View>
+          <Text className="muted">车辆已报告充电，充电会话尚未在历史接口中生成；正在以 4 秒间隔确认。</Text>
+        </View>
+      ) : null}
       {current && !isHistoryQuarantined(current) ? (
         <View className="history-list">
           <View className="visual-heading"><VisualIcon name="energy" /><Text className="section-title">正在充电</Text></View>
@@ -660,7 +710,7 @@ export default function ChargesPage() {
           <View className="card charge-detail-intro"><Text className="section-title">位置与费用</Text><Text className="charge-detail-address">{displayAddress(selected.address)}</Text>
             <Text className="muted">{historyDateTime(selected.startDate)} → {historyDateTime(selected.endDate)} · {modeLabel(selected)}</Text>
             <MetricValue label="充电费用" {...costLabel(selectedView)} icon="account" />
-            <Text className="muted">费用来源：{costState?.costProvenance === 'manual' ? '本机手动设置' : costState?.costProvenance === 'actual' ? selectedView.cost === 0 ? '服务端报告0费用' : '服务端账单报告' : costState?.costProvenance === 'estimate' ? `按 ${estimateBasis(costState)} 与合格电池充入量估算` : costState?.reportedCost === 0 && selected.source === 'teslamate_archive' ? 'TeslaMate 原始0表示未填，当前无合格估算' : '未知'}</Text>
+            <Text className="muted">费用来源：{costState?.costProvenance === 'manual' ? '本机手动设置' : costState?.costProvenance === 'free' ? '免费（免费超级充电 · DC）' : costState?.costProvenance === 'actual' ? selectedView.cost === 0 ? '服务端报告0费用' : '服务端账单报告' : costState?.costProvenance === 'estimate' ? `按 ${estimateBasis(costState)} 与合格电池充入量估算` : costState?.reportedCost === 0 && selected.source === 'teslamate_archive' ? 'TeslaMate 原始0表示未填，当前无合格估算' : '未知'}</Text>
             {costState?.costProvenance === 'manual' ? <Text className="metric-source">原服务端账单：{costState.reportedCost ?? '未知'} {costState.reportedCurrency || '币种未知'} · 本机编辑时间：{historyDateTime(costState.manualCostUpdatedAt)}</Text> : null}
             <Button className="button-secondary" onClick={startCostEdit}>编辑本机费用</Button>
             {costEditing ? <View className="card"><Text className="section-title">本机手动费用</Text><Text className="muted">仅保存当前记录的本机费用；不修改服务端账单或合格能量。</Text>
