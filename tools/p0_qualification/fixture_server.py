@@ -16,6 +16,7 @@ SCENARIOS = {
     "no_drives",
     "no_charges",
     "parked_partial",
+    "parked_multi_charge",
     # P0.7 compatibility aliases.
     "empty",
     "missing",
@@ -87,6 +88,11 @@ def body_for(path: str, scenario: str):
     if path == "/api/v1/cars/101/drives" or path == "/api/v1/cars/1/drives":
         if scenario in {"empty", "no_drives"}:
             return {"data": {"drives": []}}
+        if scenario == "parked_multi_charge":
+            response = body_for(path, "normal")
+            response["data"]["drives"][0]["battery_details"]["start_battery_level"] = 41
+            response["data"]["drives"][1]["battery_details"]["end_battery_level"] = 31
+            return response
         return {
             "data": {
                 "units": {"unit_of_length": "km"},
@@ -159,6 +165,37 @@ def body_for(path: str, scenario: str):
         path == "/api/matelink/v1/cars/101/parked/701/702"
         or path == "/api/matelink/v1/cars/1/parked/701/702"
     ):
+        if scenario == "parked_multi_charge":
+            first = {
+                "charge_id": 501,
+                "start_date": "2026-07-18T08:35:00Z",
+                "end_date": "2026-07-18T09:15:00Z",
+                "energy_added_kwh": 4.0,
+                "start_battery_level": 31,
+                "end_battery_level": 39,
+                "start_soc_observed_at": "2026-07-18T08:35:00Z",
+                "end_soc_observed_at": "2026-07-18T09:15:00Z",
+            }
+            second = {
+                "charge_id": 502,
+                "start_date": "2026-07-18T09:40:00Z",
+                "end_date": "2026-07-18T09:55:00Z",
+                "energy_added_kwh": 1.0,
+                "start_battery_level": 38,
+                "end_battery_level": 41,
+                "start_soc_observed_at": "2026-07-18T09:40:00Z",
+                "end_soc_observed_at": "2026-07-18T09:55:00Z",
+            }
+            return {"data": {
+                "older_drive_id": 701, "newer_drive_id": 702,
+                "start_date": "2026-07-18T08:30:00Z", "end_date": "2026-07-18T10:00:00Z",
+                "address": "Fixture Office", "start_battery_level": 31,
+                "end_battery_level": 41, "battery_delta": 10,
+                "linked_charge": first, "linked_charges": [first, second],
+                "charge_sessions_complete": True,
+                "sample_count": 0, "coverage_seconds": 0, "coverage_ratio": 0.0,
+                "source": "fixture",
+            }}
         if scenario in {"missing", "parked_partial"}:
             return {
                 "data": {

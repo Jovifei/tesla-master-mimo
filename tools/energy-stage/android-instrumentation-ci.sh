@@ -40,7 +40,7 @@ for attempt in 1 2; do
   fi
   # Keep a failing synthetic Compose capture for diagnosis, while the native
   # assertion remains red. Missing files are expected for earlier failures.
-  for shot in matelink_fixture_parked_full matelink_fixture_parked_partial; do
+  for shot in matelink_fixture_parked_full matelink_fixture_parked_partial matelink_fixture_parked_multi_charge; do
     adb pull "/sdcard/Download/${shot}.png" "../emulator-evidence/${shot}.png" >/dev/null 2>&1 || true
     adb pull "/sdcard/Download/${shot}.proof" "../emulator-evidence/${shot}.proof" >/dev/null 2>&1 || true
   done
@@ -49,7 +49,7 @@ done
 if [[ "$status" != 0 ]]; then exit "$status"; fi
 # Pull only screenshots captured by the explicit synthetic fixture native test.
 # Never screenshot a connected phone or a real user address into artifacts.
-for shot in matelink_fixture_parked_full matelink_fixture_parked_partial; do
+for shot in matelink_fixture_parked_full matelink_fixture_parked_partial matelink_fixture_parked_multi_charge; do
   adb pull "/sdcard/Download/${shot}.png" "../emulator-evidence/${shot}.png"
   adb pull "/sdcard/Download/${shot}.proof" "../emulator-evidence/${shot}.proof"
 done
@@ -58,7 +58,7 @@ from pathlib import Path
 import hashlib
 import struct
 digests=[]
-for name in ('matelink_fixture_parked_full','matelink_fixture_parked_partial'):
+for name in ('matelink_fixture_parked_full','matelink_fixture_parked_partial','matelink_fixture_parked_multi_charge'):
     p=Path('../emulator-evidence')/(name+'.png')
     data=p.read_bytes()
     if len(data)<10000 or data[:8]!=b'\x89PNG\r\n\x1a\n':
@@ -77,8 +77,8 @@ for name in ('matelink_fixture_parked_full','matelink_fixture_parked_partial'):
         raise SystemExit('Screenshot is blank/black and cannot qualify UI: '+name)
     digests.append(digest)
     print('API35_COMPOSE_SCREENSHOT',name,width,height,len(data),dark,bright)
-if digests[0]==digests[1]:
-    raise SystemExit('Full and partial parked UI screenshots are identical')
+if len(set(digests))!=len(digests):
+    raise SystemExit('Parked UI screenshots from distinct fixture states are identical')
 PYSCREEN
 # Building AndroidTest APKs or returning 0 without actually running a single
 # instrumentation assertion is explicitly NOT a native-test pass.

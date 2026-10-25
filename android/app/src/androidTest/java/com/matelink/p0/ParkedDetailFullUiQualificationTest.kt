@@ -66,8 +66,27 @@ class ParkedDetailFullUiQualificationTest {
         }
     }
 
+    @Test fun parkedDetailShowsTwoDistinctChargeSessionsAndOnlyQualifiedIdleSocRate() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val parkedTitle = context.getString(R.string.drive_history_parked_at, "Fixture Office")
+        runBlocking { prepareQualificationState(context, scenario = "parked_multi_charge") }
+        ActivityScenario.launch(MainActivity::class.java).use {
+            composeRule.onNodeWithText(context.getString(R.string.nav_drives), useUnmergedTree = true).performClick()
+            composeRule.selectFixtureHistoryWindow(context)
+            scrollUntilText(parkedTitle)
+            composeRule.onNodeWithText(parkedTitle).performClick()
+            composeRule.waitForText(context.getString(R.string.parked_recorded_charge_count, 2))
+            composeRule.onNodeWithText("6.00 kWh/hour", substring = true).assertExists()
+            composeRule.onNodeWithText("4.00 kWh/hour", substring = true).assertExists()
+            composeRule.onNodeWithText("1.7 pp/hour", substring = true).assertExists()
+            composeRule.onNodeWithText(context.getString(R.string.parked_estimated_energy)).assertDoesNotExist()
+            captureFixtureScreen("matelink_fixture_parked_multi_charge")
+        }
+    }
+
     private fun captureFixtureScreen(name: String) {
-        check(name in setOf("matelink_fixture_parked_full", "matelink_fixture_parked_partial"))
+        check(name in setOf("matelink_fixture_parked_full", "matelink_fixture_parked_partial",
+            "matelink_fixture_parked_multi_charge"))
         val wake = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
             "input keyevent KEYCODE_WAKEUP"
         )

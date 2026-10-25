@@ -4161,8 +4161,9 @@ Review：这是 2026-10-24 远端阶段的旧候选记录，后续最终源码�
 - [x] 用真实消费者/Room 正反例复现并修复跨来源驻车行程拼接及本地充电混源；同来源合成正例保留，未知来源不猜认领。
 - [x] 云端 Battery 在线 UID 保存→冷启动同车读取改为验证身份摘要映射，换 UID/账号负例与 SharedPreferences 重建测试通过。
 - [x] Cost 缓存先发布后临时异常、云端 opaque→UID 正常刷新、同数字 ID 车辆重绑由真实 ViewModel＋Room 三项测试验证；不跨币种合计，不显示原始异常。
-- [x] API35 黑图已在候选改为 Compose 根图与像素/哈希证明，并加 emulator-only 唤醒；原生源码与 AndroidTest APK 编译 PASS。**真实截图 CI 待验证；本机 AVD 因可用内存降至 18 MB 被安全终止，NOT_RUN。**
+- [x] `24a1141a` API35 实际 XML 79/0/0/2，full/partial 两张 Compose 截图有可见像素、SHA不同且独立下载校验；本机 AVD 因可用内存降至 18 MB 被安全终止，原生本机 NOT_RUN。
+- [x] “充电→停充→复充”第三个隔离合成场景、逐次 6.00/4.00 kWh/hour 与非充电 1.7 pp/hour 的实际 UI 断言/截图已写入并完成 AndroidTest APK 编译；新 SHA 的真正 API35 CI 仍待运行，不发布真实车主地址。
 - [x] 本地完整 Debug 1271/1271、0 fail/error/skip，AndroidTest APK 构建 PASS；早期 RED 的假 Preferences putString、跨币种夹具和异步缓存时序均按真实原因修复，原有断言未删。
 - [ ] 接收远端最新 SHA，解决截图测试合并冲突；再跑 Debug/Release/lint/R8 与新 SHA 的隔离 CI，只有最终源码通过后才推送 PR #27。
 
-Review（进行中）：本工作树是独立候选，当前基线 `29793c80`；原 PR #27 当前远端 `c0ca45ac` 仍 Draft，完整 CI 16/16 success 但 API35 截图 FAIL。本地候选未提交/推送，原 E 盘/手机/生产保持。截图须来自可见像素的最终 SHA，不以 PNG 头或 JUnit 单独背书视觉。
+Review（进行中）：本工作树从 `29793c80` 起并已正常合并远端 `c0ca45ac`；PR #27 `24a1141a` 仍 Draft，API35 full/partial 实际通过，新第三场景需要下一 SHA 验收。本地 Debug 1271 与原生测试 APK 编译通过，原 E 盘小程序分支/手机/生产保持。截图须来自可见像素的最终 SHA，不以 PNG 头或 JUnit 单独背书视觉。
