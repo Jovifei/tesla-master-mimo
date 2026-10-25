@@ -177,6 +177,7 @@ fun DrivesScreen(
                 historySyncWarning = uiState.historySyncWarning,
                 localArchiveLinkPending = uiState.localArchiveLinkPending,
                 drives = uiState.drives,
+                parkedPairs = uiState.parkedPairs,
                 chartData = uiState.chartData,
                 chartGranularity = uiState.chartGranularity,
                 summary = uiState.summary,
@@ -210,6 +211,7 @@ private fun DrivesContent(
     historySyncWarning: String?,
     localArchiveLinkPending: Boolean,
     drives: List<DriveData>,
+    parkedPairs: Set<Pair<Int, Int>>,
     chartData: List<DriveChartData>,
     chartGranularity: DriveChartGranularity,
     summary: DrivesSummary,
@@ -228,7 +230,7 @@ private fun DrivesContent(
     onDriveClick: (driveId: Int) -> Unit,
     onParkedClick: (olderDriveId: Int, newerDriveId: Int) -> Unit
 ) {
-    val historyItems = remember(drives) { buildDriveHistoryItems(drives) }
+    val historyItems = remember(drives, parkedPairs) { buildDriveHistoryItems(drives, parkedPairs) }
     // Header items in this LazyColumn, in render order: date chips, distance chips,
     // summary, charts (conditional), history header. Adjust if items are added.
     val headerCount = 3 + (if (chartData.isNotEmpty()) 1 else 0) +
@@ -418,15 +420,34 @@ internal sealed interface DriveHistoryItem {
     }
 }
 
-internal fun buildDriveHistoryItems(drives: List<DriveData>): List<DriveHistoryItem> {
-    // DrivesViewModel owns card visibility. Parking keeps its older >=0.5 km
-    // route boundary so newly visible unknown/short drives do not change parked inference.
+/** A short, hidden, unknown-distance, or quarantined drive still breaks adjacency. */
+internal fun verifiedParkedPairs(fullHistory: List<DriveData>): Set<Pair<Int, Int>> {
+    // Without ordered timestamps, absence of an intervening drive cannot be proved.
+    if (fullHistory.any { parseIsoInstant(it.startDate) == null || parseIsoInstant(it.endDate) == null })
+        return emptySet()
+    val sorted = fullHistory.sortedWith(compareByDescending<DriveData> { parseIsoInstant(it.startDate) }
+        .thenByDescending { it.driveId })
+    return sorted.zipWithNext().mapNotNull { (newer, older) ->
+        val bothRoutes = listOf(newer, older).all { drive ->
+            drive.distanceKm?.let { it.isFinite() && it >= 0.5 } == true &&
+                drive.qualityState != "quarantined"
+        }
+        if (bothRoutes && createParkedSegment(older, newer) != null)
+            older.driveId to newer.driveId else null
+    }.toSet()
+}
+
+internal fun buildDriveHistoryItems(
+    drives: List<DriveData>,
+    parkedPairs: Set<Pair<Int, Int>> = verifiedParkedPairs(drives)
+): List<DriveHistoryItem> {
     if (drives.isEmpty()) return emptyList()
-    val parkingEligibleIndices = drives.indices.filter { index ->
-        drives[index].distance?.let { distance -> distance >= 0.5 } == true
-    }
-    val parkedAfterIndex = parkingEligibleIndices.zipWithNext().mapNotNull { (newerIndex, olderIndex) ->
-        createParkedSegment(drives[olderIndex], drives[newerIndex])?.let { newerIndex to it }
+    // A filtered-out middle drive must not become invisible to the parking proof.
+    val parkedAfterIndex = drives.indices.zipWithNext().mapNotNull { (newerIndex, olderIndex) ->
+        val older = drives[olderIndex]
+        val newer = drives[newerIndex]
+        if ((older.driveId to newer.driveId) !in parkedPairs) null
+        else createParkedSegment(older, newer)?.let { newerIndex to it }
     }.toMap()
 
     val items = mutableListOf<DriveHistoryItem>()

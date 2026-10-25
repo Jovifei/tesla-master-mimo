@@ -141,6 +141,18 @@ interface DriveSummaryDao {
     """)
     suspend fun copyFromLegacy(legacyCarId: Int, targetCarId: Int)
 
+    /** Bounded, all-quality adjacency veto. DATE parsing handles offset timestamps, not string ordering. */
+    @Query("""
+        SELECT EXISTS(SELECT 1 FROM drives_summary
+        WHERE carId = :carId AND driveId NOT IN (:olderDriveId, :newerDriveId)
+          AND (julianday(startDate) IS NULL OR julianday(startDate) < julianday(:newerDriveEnd))
+          AND (julianday(endDate) IS NULL OR julianday(endDate) > julianday(:olderDriveStart)))
+    """)
+    suspend fun hasInterveningParkedDrive(
+        carId: Int, olderDriveId: Int, newerDriveId: Int,
+        olderDriveStart: String, newerDriveEnd: String
+    ): Boolean
+
     @Query("SELECT * FROM drives_summary WHERE driveId = :driveId AND carId = :carId AND qualityState != 'quarantined'")
     suspend fun get(carId: Int, driveId: Int): DriveSummary?
 

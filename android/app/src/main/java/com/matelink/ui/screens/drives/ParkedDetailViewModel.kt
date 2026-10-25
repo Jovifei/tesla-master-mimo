@@ -221,6 +221,8 @@ internal suspend fun readLocalParkedCharges(
     val older = driveDao.get(localHistoryCarId, olderDriveId) ?: return emptyList()
     val newer = driveDao.get(localHistoryCarId, newerDriveId) ?: return emptyList()
     val proof = localParkedSourceProof(olderDriveId, newerDriveId, older, newer) ?: return emptyList()
+    if (hasInterveningLocalDrive(driveDao, localHistoryCarId, olderDriveId, newerDriveId, older, newer))
+        return emptyList()
     return chargeDao.getAllForCar(localHistoryCarId).mapNotNull { row ->
         runCatching { row.toParkedLinkedCharge(proof) }.getOrNull()
     }
@@ -234,7 +236,23 @@ internal suspend fun readLocalParkedDetail(
 ): ParkedDetailData? {
     val older = dao.get(localHistoryCarId, olderDriveId) ?: return null
     val newer = dao.get(localHistoryCarId, newerDriveId) ?: return null
+    if (hasInterveningLocalDrive(dao, localHistoryCarId, olderDriveId, newerDriveId, older, newer)) return null
     return buildLocalParkedDetail(olderDriveId, newerDriveId, older, newer)
+}
+
+/** Same account/source/car scoped Room query as the visible parked consumer; all qualities block. */
+private suspend fun hasInterveningLocalDrive(
+    dao: DriveSummaryDao, localHistoryCarId: Int, olderDriveId: Int, newerDriveId: Int,
+    older: DriveSummary, newer: DriveSummary
+): Boolean {
+    val olderStart = parseIsoInstant(older.startDate) ?: return true
+    val olderEnd = parseIsoInstant(older.endDate) ?: return true
+    val newerStart = parseIsoInstant(newer.startDate) ?: return true
+    val newerEnd = parseIsoInstant(newer.endDate) ?: return true
+    if (!olderStart.isBefore(olderEnd) || !olderEnd.isBefore(newerStart) ||
+        !newerStart.isBefore(newerEnd)) return true
+    return dao.hasInterveningParkedDrive(localHistoryCarId, olderDriveId, newerDriveId,
+        olderStart.toString(), newerEnd.toString())
 }
 
 internal fun buildLocalParkedDetail(

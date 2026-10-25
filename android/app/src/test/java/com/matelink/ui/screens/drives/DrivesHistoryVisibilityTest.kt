@@ -129,4 +129,28 @@ class DrivesHistoryVisibilityTest {
         assertEquals(0, parkedCount(newer.copy(source = null)))
         assertEquals(0, parkedCount(newer.copy(sourceId = "record-A", sourceRecordId = "record-B")))
     }
+
+    @Test fun hiddenShortDriveAndDistanceFilterCannotBridgeANonAdjacentParkingGap() {
+        val older = DriveData(driveId = 501, startDate = "2026-10-06T08:00:00Z",
+            endDate = "2026-10-06T08:10:00Z", durationMin = 10,
+            qualityState = "observed", source = "teslamate_archive", sourceInstanceId = "instance-A",
+            odometerDetails = DriveOdometerDetails(distance = 2.0))
+        val newer = older.copy(driveId = 503, startDate = "2026-10-06T10:00:00Z",
+            endDate = "2026-10-06T10:10:00Z")
+        val middle = older.copy(driveId = 502, startDate = "2026-10-06T09:00:00Z",
+            endDate = "2026-10-06T09:01:00Z", durationMin = 0,
+            odometerDetails = DriveOdometerDetails(distance = 0.1))
+        val visibleOnly = listOf(newer, older)
+        assertEquals(1, buildDriveHistoryItems(visibleOnly).filterIsInstance<DriveHistoryItem.Parked>().size)
+        assertFalse(DrivesViewModel.isVisibleHistoryDrive(middle, showShort = false))
+        val fullProof = verifiedParkedPairs(listOf(newer, middle, older))
+        assertTrue(fullProof.isEmpty())
+        assertEquals(0, buildDriveHistoryItems(visibleOnly, fullProof)
+            .filterIsInstance<DriveHistoryItem.Parked>().size)
+        assertEquals(0, buildDriveHistoryItems(listOf(newer, middle, older))
+            .filterIsInstance<DriveHistoryItem.Parked>().size)
+        assertTrue(verifiedParkedPairs(listOf(newer, middle.copy(qualityState = "quarantined"), older)).isEmpty())
+        assertTrue(verifiedParkedPairs(listOf(newer, middle.copy(sourceInstanceId = "instance-B"), older)).isEmpty())
+        assertEquals(setOf(501 to 503), verifiedParkedPairs(visibleOnly))
+    }
 }

@@ -119,6 +119,8 @@ data class DrivesUiState(
     val isLoadingMore: Boolean = false,
     val canLoadMore: Boolean = true,
     val drives: List<DriveData> = emptyList(),
+    /** Qualified pairs from the full, unfiltered history. A hidden drive still blocks parking. */
+    val parkedPairs: Set<Pair<Int, Int>> = emptySet(),
     val chartData: List<DriveChartData> = emptyList(),
     val chartGranularity: DriveChartGranularity = DriveChartGranularity.MONTHLY,
     val error: String? = null,
@@ -344,7 +346,7 @@ class DrivesViewModel @Inject constructor(
                 activeHistoryProof = null
                 allDrives = emptyList()
                 _uiState.update { state -> state.copy(
-                    drives = emptyList(), units = null, driveMetrics = emptyMap(),
+                    drives = emptyList(), parkedPairs = emptySet(), units = null, driveMetrics = emptyMap(),
                     chartData = emptyList(), summary = DrivesSummary(),
                     error = "history_identity_unavailable", isLoading = true,
                     historySyncWarning = null, localArchiveLinkPending = false) }
@@ -369,7 +371,7 @@ class DrivesViewModel @Inject constructor(
 
         // A reused VM must not keep the previous vehicle's history.
         allDrives = emptyList()
-        _uiState.update { it.copy(drives = emptyList(), units = null, driveMetrics = emptyMap(), chartData = emptyList(), summary = DrivesSummary(), error = null, historySyncWarning = null, localArchiveLinkPending = false) }
+        _uiState.update { it.copy(drives = emptyList(), parkedPairs = emptySet(), units = null, driveMetrics = emptyMap(), chartData = emptyList(), summary = DrivesSummary(), error = null, historySyncWarning = null, localArchiveLinkPending = false) }
         isInitialized = true
         val state = _uiState.value
         val customStart = state.customStartDate
@@ -605,7 +607,7 @@ class DrivesViewModel @Inject constructor(
                                 onContextChanged = {
                                     if (generation == observationGeneration) {
                                         allDrives = emptyList()
-                                        _uiState.update { it.copy(drives = emptyList(), driveMetrics = emptyMap(),
+                                        _uiState.update { it.copy(drives = emptyList(), parkedPairs = emptySet(), driveMetrics = emptyMap(),
                                             summary = DrivesSummary(), chartData = emptyList(), error = "history_identity_unavailable") }
                                     }
                                 }) { rows ->
@@ -641,7 +643,7 @@ class DrivesViewModel @Inject constructor(
                 is ApiResult.Error -> {
                     if (result.message == com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE) {
                         allDrives = emptyList()
-                        _uiState.update { it.copy(drives = emptyList(), units = null, driveMetrics = emptyMap(), chartData = emptyList(), summary = DrivesSummary(), localArchiveLinkPending = false, historySyncWarning = null) }
+                        _uiState.update { it.copy(drives = emptyList(), parkedPairs = emptySet(), units = null, driveMetrics = emptyMap(), chartData = emptyList(), summary = DrivesSummary(), localArchiveLinkPending = false, historySyncWarning = null) }
                     }
                     _uiState.update {
                         it.copy(
@@ -691,6 +693,7 @@ class DrivesViewModel @Inject constructor(
                 isFilterLoading = false,
                 isLoadingMore = false,
                 drives = displayDrives,
+                parkedPairs = verifiedParkedPairs(allDrives),
                 summary = summary,
                 chartData = chartData
             )

@@ -70,4 +70,35 @@ class ParkedDetailScopedRoomAndroidTest {
             db.close()
         }
     }
+
+    @Test fun interveningShortOrQuarantinedDriveStopsLocalParkedAndChargePublication() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(
+            InstrumentationRegistry.getInstrumentation().targetContext, StatsDatabase::class.java
+        ).build()
+        try {
+            val dao = db.driveSummaryDao()
+            val older = drive(-101, 10, "2026-10-23T20:58:00Z", "2026-10-23T20:59:00Z", 32, 31)
+            val newer = drive(-101, 11, "2026-10-23T22:20:00Z", "2026-10-23T22:21:00Z", 30, 29)
+            dao.upsertAll(listOf(older, newer))
+            db.chargeSummaryDao().upsert(charge(-101, 501, "instance-A"))
+            assertEquals(-1, requireNotNull(readLocalParkedDetail(dao, -101, 10, 11)).batteryDelta)
+            assertEquals(listOf(501), readLocalParkedCharges(dao, db.chargeSummaryDao(), -101, 10, 11)
+                .map { it.chargeId })
+
+            val short = drive(-101, 12, "2026-10-23T21:00:00+00:00",
+                "2026-10-23T21:01:00Z", 31, 31).copy(distance = 0.1,
+                    qualityState = "quarantined")
+            dao.upsert(short)
+            assertNull(readLocalParkedDetail(dao, -101, 10, 11))
+            assertEquals(emptyList<Int>(), readLocalParkedCharges(dao, db.chargeSummaryDao(), -101, 10, 11)
+                .map { it.chargeId })
+            dao.deleteDriveById(-101, 12)
+            dao.upsert(short.copy(carId = -202))
+            assertEquals(-1, requireNotNull(readLocalParkedDetail(dao, -101, 10, 11)).batteryDelta)
+            assertEquals(listOf(501), readLocalParkedCharges(dao, db.chargeSummaryDao(), -101, 10, 11)
+                .map { it.chargeId })
+        } finally {
+            db.close()
+        }
+    }
 }
