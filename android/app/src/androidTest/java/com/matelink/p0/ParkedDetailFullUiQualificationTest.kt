@@ -33,6 +33,9 @@ class ParkedDetailFullUiQualificationTest {
             composeRule.onNodeWithText(parkedTitle).performClick()
             composeRule.waitForText(energyTitle)
             composeRule.onNodeWithText(environmentTitle).assertExists()
+            // Entirely synthetic fixture in the isolated API35 emulator, never
+            // a phone screenshot or an address from a real user's history.
+            captureFixtureScreen("matelink_fixture_parked_full")
 
             scenario.recreate()
             composeRule.waitForText(energyTitle)
@@ -47,6 +50,20 @@ class ParkedDetailFullUiQualificationTest {
             composeRule.onNodeWithText(context.getString(R.string.parked_no_battery_data)).assertExists()
             composeRule.onNodeWithText(context.getString(R.string.parked_no_temperature_data)).assertExists()
             composeRule.onNodeWithText(energyTitle).assertExists()
+            captureFixtureScreen("matelink_fixture_parked_partial")
+        }
+    }
+
+    private fun captureFixtureScreen(name: String) {
+        check(name in setOf("matelink_fixture_parked_full", "matelink_fixture_parked_partial"))
+        composeRule.waitForIdle()
+        // screencap runs under the emulator shell identity and writes outside
+        // test app data; later tests may reset their own isolated Room state.
+        val fd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
+            "screencap -p /sdcard/Download/$name.png"
+        )
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).use { stream ->
+            stream.copyTo(java.io.ByteArrayOutputStream())
         }
     }
 

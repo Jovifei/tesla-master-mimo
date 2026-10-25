@@ -96,7 +96,12 @@ func nearestChargeSOC(samples []chargeSOCSample, boundary time.Time) (*int, *tim
 }
 
 func (p *postgresStore) nearestChargeSOC(ctx context.Context, carID, chargeID int, boundary time.Time) (*int, *string, error) {
-	rows, err := p.db.QueryContext(ctx, `SELECT c.date,c.battery_level FROM charges c JOIN charging_processes cp ON cp.id=c.charging_process_id WHERE cp.car_id=$1 AND cp.id=$2 AND c.battery_level BETWEEN 0 AND 100 AND c.date BETWEEN $3 - INTERVAL '5 minutes' AND $3 + INTERVAL '5 minutes' ORDER BY ABS(EXTRACT(EPOCH FROM (c.date - $3))),c.date,c.id LIMIT 2`, carID, chargeID, boundary)
+	// Upstream TeslaMate stores c.date as timestamp WITHOUT time zone.
+    // An untyped $3 is inferred as interval by PG18 in this arithmetic,
+    // rejecting a real scoped charge lookup. Pass an explicit local wall
+    // timestamp; never mutate global connection time zones or date storage.
+    localBoundary := boundary.In(p.loc).Format("2006-01-02 15:04:05.999999999")
+    rows, err := p.db.QueryContext(ctx, `SELECT c.date,c.battery_level FROM charges c JOIN charging_processes cp ON cp.id=c.charging_process_id WHERE cp.car_id=$1 AND cp.id=$2 AND c.battery_level BETWEEN 0 AND 100 AND c.date BETWEEN $3::timestamp - INTERVAL '5 minutes' AND $3::timestamp + INTERVAL '5 minutes' ORDER BY ABS(EXTRACT(EPOCH FROM (c.date - $3::timestamp))),c.date,c.id LIMIT 2`, carID, chargeID, localBoundary)
 	if err != nil {
 		return nil, nil, err
 	}

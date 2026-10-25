@@ -200,10 +200,13 @@ class CostViewModel @Inject constructor(
                 suspend fun publish(snapshot: com.matelink.domain.analytics.AnalysisHistorySnapshot) {
                     checkScope()
                     val scopedCarId = snapshot.context?.localHistoryCarId
+                        ?: throw com.matelink.data.local.HistoryIdentityUnavailableException()
                     if (scopedCarId != context.localHistoryCarId ||
-                        snapshot.context?.stableIdentity != context.stableIdentity)
+                        snapshot.context.stableIdentity != context.stableIdentity)
                         throw com.matelink.data.local.HistoryIdentityUnavailableException()
-                    val dcIds = aggregateDao.getDcChargeIds(scopedCarId).toSet()
+                    val dcIds = try { aggregateDao.getDcChargeIds(scopedCarId).toSet() }
+                        catch (e: CancellationException) { throw e }
+                        catch (_: Exception) { emptySet() }
                     checkScope()
                     activeScope = scope
                     historyCarId = scopedCarId

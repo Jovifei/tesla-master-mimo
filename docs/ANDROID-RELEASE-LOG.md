@@ -10,6 +10,15 @@
 
 ---
 
+## [build 71 / PR #27] — 2026-10-25 远端 Room-first 分析候选（未签名、未安装）
+
+- 固定 PR #27 增量：修正云端驻车 SOC 净变化方向、同一充电 ID 的冲突重放/去重；打通电池、效率、费用三页的 account+API origin+stable vehicle 作用域 Room 先读，远端刷新不中断旧缓存，失败保留标注旧数据。
+- 本机历史数据不证明官方 Fleet、真实能量或电池健康；电池容量缺少观测时保持未知；保留 kWh、% 与百分点/小时估算边界。
+- 完整阶段方案见 `docs/PLAN-2026-10-25-room-first-analytics.md`；同 SHA GitHub Actions Debug/Release/lint/R8、API35 合成界面截图、Go/PG16/PG18/race/TLS/Web、Mini、源码审计须以最终作业结果判定；真机签名、保数据安装、生产/提供方/Fleet 验收仍独立。
+- 绝不将本候选写作手机 build 71 已覆盖安装；Owner E 盘未跟踪文件、现装 build 70 和原账户存储未触碰。
+
+---
+
 ## [2.1.52 / build 71] — 2026-10-25 当前候选，待完整 CI 与实机复核
 
 - 将已通过固定 SHA 检查的数据底座与 build 70 页面改动在独立 E 盘分支整合。行程 SOC 回右侧，移除“功率积分100%”历史徽标；驻车离线读取必须先取得当前账号、来源、车辆的本地 history key，不再跨车辆按行程 ID 猜归属。

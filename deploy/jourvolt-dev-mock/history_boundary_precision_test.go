@@ -134,7 +134,7 @@ func TestParkedArchiveAdjacentWindowPreservesFractionalEndPointsWithoutInventing
         t.Fatal("parked boundaries rounded to seconds")
     }
     if item["energy_kwh"] != nil || item["average_power_kw"] != nil ||
-       item["battery_delta"] != 1 {
+       item["battery_delta"] != -1 {
         t.Fatal("adjacent SOC must not invent a battery kWh measurement")
     }
 }
