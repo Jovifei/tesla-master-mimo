@@ -8,6 +8,7 @@ import com.matelink.data.api.models.ChargeData
 import com.matelink.domain.history.isAnalysisEligible
 import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.local.dao.AggregateDao
 import com.matelink.data.local.dao.ChargeSummaryDao
 import com.matelink.domain.analytics.toAnalysisChargeData
@@ -150,6 +151,7 @@ class ChargesViewModel @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val chargeCostOverrideStore: ChargeCostOverrideStore,
     private val aggregateDao: AggregateDao,
+    private val vehicleContextRepository: VehicleContextRepository,
     private val clock: Clock,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -398,7 +400,13 @@ class ChargesViewModel @Inject constructor(
             // 1. Immediately read local SQLite cached data if allCharges is empty
             if (allCharges.isEmpty()) {
                 val localRows = try {
-                    chargeSummaryDao.getAllForCar(id)
+                    chargeSummaryDao.getAllForCar(id).ifEmpty {
+                        // Rows persist under the scoped localHistoryCarId; on a cold
+                        // start resolve that mapping offline instead of showing nothing.
+                        vehicleContextRepository.cachedContextForRemote(id)
+                            ?.let { context -> chargeSummaryDao.getAllForCar(context.localHistoryCarId) }
+                            ?: emptyList()
+                    }
                 } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
                 if (localRows.isNotEmpty()) {
                     allCharges = localRows.map { it.toAnalysisChargeData() }

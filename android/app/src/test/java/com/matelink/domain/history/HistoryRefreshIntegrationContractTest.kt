@@ -18,6 +18,9 @@ class HistoryRefreshIntegrationContractTest {
             assertTrue(source.contains("private val clock: Clock"))
             assertTrue(source.contains("refreshedHistoryWindow("))
             assertTrue(source.contains("latestLoad.launch(viewModelScope)"))
+            // Cold starts must resolve the localHistoryCarId mapping offline before
+            // reading the Room cache; the remote car id alone cannot hit those rows.
+            assertTrue(source.contains("cachedContextForRemote("))
             assertTrue(source.contains(
                 "val result = withTimeoutOrNull(HISTORY_LOAD_TIMEOUT_MS) {\n" +
                     "                historyRepository.load(id, startDateStr, endDateStr)\n" +

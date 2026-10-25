@@ -15,6 +15,7 @@ import com.matelink.domain.analytics.toRawAnalysisDriveData
 import com.matelink.domain.history.isAnalysisEligible
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.repository.ApiResult
@@ -272,6 +273,7 @@ class DrivesViewModel @Inject constructor(
     private val geocodingRepository: GeocodingRepository,
     private val settingsDataStore: SettingsDataStore,
     private val driveSummaryDao: DriveSummaryDao,
+    private val vehicleContextRepository: VehicleContextRepository,
     private val clock: Clock,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -444,7 +446,13 @@ class DrivesViewModel @Inject constructor(
             // 1. Immediately read local SQLite cached data if allDrives is empty
             if (allDrives.isEmpty()) {
                 val localRows = try {
-                    driveSummaryDao.getAllChronological(id)
+                    driveSummaryDao.getAllChronological(id).ifEmpty {
+                        // Rows persist under the scoped localHistoryCarId; on a cold
+                        // start resolve that mapping offline instead of showing nothing.
+                        vehicleContextRepository.cachedContextForRemote(id)
+                            ?.let { context -> driveSummaryDao.getAllChronological(context.localHistoryCarId) }
+                            ?: emptyList()
+                    }
                 } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
                 if (localRows.isNotEmpty()) {
                     allDrives = localRows.map { it.toAnalysisDriveData() }
