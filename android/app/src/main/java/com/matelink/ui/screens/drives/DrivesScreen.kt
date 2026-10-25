@@ -90,6 +90,7 @@ import com.matelink.ui.components.formatEditorialDate
 import com.matelink.ui.components.formatShortDate
 import com.matelink.ui.components.parseListItemDate
 import com.matelink.util.formatDuration
+import com.matelink.util.parseIsoInstant
 import com.matelink.util.toChineseDisplayAddress
 import com.matelink.ui.theme.CarColorPalette
 import com.matelink.ui.theme.telemetryPalette

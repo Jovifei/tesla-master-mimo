@@ -16,7 +16,10 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -100,6 +103,49 @@ class ParkedDetailScopedLocalPublicationTest {
             vm.viewModelScope.cancel()
             advanceUntilIdle()
             Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun networkExceptionRetainsScopedRoomFirstCardWithoutExposingThrowable() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source = object : ParkedPageSource {
+            override val scopeChanges = MutableStateFlow(0).map { Unit }
+            override suspend fun identity(carId: Int) = ParkedPageIdentity({ true }, -101)
+            override suspend fun localDetail(localHistoryCarId: Int, olderDriveId: Int, newerDriveId: Int) =
+                parked("retained-room")
+            override suspend fun detail(carId: Int, olderDriveId: Int, newerDriveId: Int): ApiResult<ParkedDetailData> =
+                throw IllegalStateException("PRIVATE_ADDRESS_EXCEPTION_MUST_NOT_ESCAPE")
+        }
+        val vm = ParkedDetailViewModel(source)
+        try {
+            vm.load(7, 10, 11); advanceUntilIdle()
+            assertEquals("retained-room", vm.uiState.value.data?.address)
+            assertTrue(vm.uiState.value.degraded)
+            assertFalse(vm.uiState.value.isLoading)
+            assertNotNull(vm.uiState.value.syncWarning)
+            assertNull(vm.uiState.value.error)
+            assertFalse(vm.uiState.value.toString().contains("PRIVATE_ADDRESS_EXCEPTION"))
+        } finally {
+            vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun networkExceptionWithoutLocalReceiptShowsSafeUnavailableNotIdentityFailure() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source = object : ParkedPageSource {
+            override val scopeChanges = MutableStateFlow(0).map { Unit }
+            override suspend fun identity(carId: Int) = ParkedPageIdentity({ true }, -101)
+            override suspend fun detail(carId: Int, olderDriveId: Int, newerDriveId: Int): ApiResult<ParkedDetailData> =
+                throw IllegalStateException("PRIVATE_EXCEPTION_MUST_NOT_ESCAPE")
+        }
+        val vm = ParkedDetailViewModel(source)
+        try {
+            vm.load(7, 10, 11); advanceUntilIdle()
+            assertNull(vm.uiState.value.data)
+            assertNotNull(vm.uiState.value.error)
+            assertFalse(vm.uiState.value.error!!.contains("PRIVATE_EXCEPTION"))
+        } finally {
+            vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain()
         }
     }
 }

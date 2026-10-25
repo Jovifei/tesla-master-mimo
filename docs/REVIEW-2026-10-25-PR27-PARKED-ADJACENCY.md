@@ -21,6 +21,9 @@ Production, the owner's E-drive worktree, device state and main branch are out o
   otherwise valid pair. No history row is deleted or reclassified by the patch.
 - True two-drive same-instance windows, exact zero kWh charge receipts and the
   server's distinct charge-stop-recharge sessions remain intact.
+- During cold-start recovery, a thrown provider exception no longer clears a
+  scoped Room-first parked card or leaks exception text. Efficiency tolerates an
+  unreadable cached snapshot and attempts current-identity network recovery.
 
 ## Regressions added
 
@@ -31,6 +34,10 @@ Production, the owner's E-drive worktree, device state and main branch are out o
   middle blocks both; foreign car retains valid window and saved history.
 - Android instrumentation `ParkedDetailScopedRoomAndroidTest.interveningShortOrQuarantinedDriveStopsLocalParkedAndChargePublication`:
   real Room positive/negative scope and local charge publication.
+- JVM `ParkedDetailScopedLocalPublicationTest`: thrown provider exception
+  preserves cached detail and sanitizes errors, with/without a local record.
+- JVM `EfficiencyMileageIdentityConsumerTest.efficiencyUnreadableLocalRoomDoesNotSuppressVerifiedRemoteRecovery`:
+  cache read exception, genuine VM remote success and coverage.
 
 Exact-SHA Actions results must be checked independently before SOURCE_APPROVED.
 The separate Fleet natural-data, permissions, two-account, TPMS, notification,

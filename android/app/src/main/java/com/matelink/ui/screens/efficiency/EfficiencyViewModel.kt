@@ -163,7 +163,11 @@ class EfficiencyViewModel internal constructor(private val source: EfficiencyPag
                         noDataReason = historyReason, error = null)
                     recalculate(_uiState.value.selectedWindow)
                 }
-                val saved = source.loadCached(carId)
+                // A corrupt/unreadable Room snapshot must not prevent a valid remote
+                // load for the same verified identity; cancellation remains fatal.
+                val saved = try { source.loadCached(carId) }
+                    catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { null }
                 ensureCurrent()
                 requireIdentity()
                 if (saved is ApiResult.Success) {

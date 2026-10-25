@@ -147,10 +147,18 @@ class ParkedDetailViewModel private constructor(
                     _uiState.value = ParkedDetailUiState(isLoading = false, data = local, degraded = true,
                         chargeBreakdown = parkedChargeBreakdown(local, localCharges))
 
-                val result = if (source.timeoutMs == Long.MAX_VALUE)
-                    source.detail(carId, olderDriveId, newerDriveId)
-                else withTimeoutOrNull(source.timeoutMs) {
-                    source.detail(carId, olderDriveId, newerDriveId)
+                // A provider exception must not discard verified Room-first parking.
+                // Cancellation and identity changes still invalidate the projection.
+                val result = try {
+                    if (source.timeoutMs == Long.MAX_VALUE)
+                        source.detail(carId, olderDriveId, newerDriveId)
+                    else withTimeoutOrNull(source.timeoutMs) {
+                        source.detail(carId, olderDriveId, newerDriveId)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    ApiResult.Error(message(R.string.error_loading_data, "Cloud detail unavailable"))
                 }
                 requireCurrent()
                 _uiState.value = when (result) {

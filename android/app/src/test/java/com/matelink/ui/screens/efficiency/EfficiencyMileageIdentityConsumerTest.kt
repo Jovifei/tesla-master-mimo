@@ -102,6 +102,24 @@ class EfficiencyMileageIdentityConsumerTest {
         } finally { remote.complete(Unit); vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
     }
 
+    @Test fun efficiencyUnreadableLocalRoomDoesNotSuppressVerifiedRemoteRecovery() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source = EfficiencySource()
+        source.cachedBody = { throw IllegalStateException("synthetic_room_io_failure_private") }
+        source.body = { id -> snapshot(source.identity.context(id), listOf(drive(127))) }
+        val vm = EfficiencyViewModel(source)
+        try {
+            vm.load(7); advanceUntilIdle()
+            assertEquals(1, source.calls)
+            assertEquals(listOf(127), vm.uiState.value.tripPositions.map { it.driveId })
+            assertEquals(1, vm.uiState.value.driveCount)
+            assertNull(vm.uiState.value.error)
+            assertFalse(vm.uiState.value.isLoading)
+        } finally {
+            vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain()
+        }
+    }
+
     @Test fun efficiencyRejectsAnotherVehiclesCachedSnapshotEvenWhenRemoteIdMatches() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val source = EfficiencySource()
