@@ -1,6 +1,9 @@
 package com.matelink.p0
 
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasScrollAction
@@ -63,13 +66,20 @@ class ParkedDetailFullUiQualificationTest {
     private fun captureFixtureScreen(name: String) {
         check(name in setOf("matelink_fixture_parked_full", "matelink_fixture_parked_partial"))
         composeRule.waitForIdle()
-        // screencap runs under the emulator shell identity and writes outside
-        // test app data; later tests may reset their own isolated Room state.
-        val fd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
-            "screencap -p /sdcard/Download/$name.png"
+        // Capture the actual Compose surface. Shell screencap can produce valid
+        // full-black PNGs under the headless API35 graphics backend.
+        val bitmap = composeRule.onRoot().captureToImage().asAndroidBitmap()
+        check(bitmap.width >= 320 && bitmap.height >= 480)
+        val observed = mutableSetOf<Int>()
+        for (iy in 1..9) for (ix in 1..9) {
+            observed += bitmap.getPixel(bitmap.width * ix / 10, bitmap.height * iy / 10)
+        }
+        check(observed.size >= 3) { "Synthetic Compose screenshot has no visible page content" }
+        val dir = checkNotNull(
+            InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null)
         )
-        android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).use { stream ->
-            stream.copyTo(java.io.ByteArrayOutputStream())
+        java.io.File(dir, "$name.png").outputStream().use { output ->
+            check(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output))
         }
     }
 
