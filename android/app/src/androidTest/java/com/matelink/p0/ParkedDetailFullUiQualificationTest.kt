@@ -35,7 +35,8 @@ class ParkedDetailFullUiQualificationTest {
             scrollUntilText(parkedTitle)
             composeRule.onNodeWithText(parkedTitle).performClick()
             composeRule.waitForText(batteryTitle)
-            composeRule.onNodeWithText(cloudTitle).assertExists()
+            // The local Room battery section can render before the remote telemetry receipt.
+            composeRule.waitForText(cloudTitle)
             composeRule.onNodeWithText(context.getString(R.string.parked_start_battery)).assertExists()
             composeRule.onNodeWithText(context.getString(R.string.parked_end_battery)).assertExists()
             // Entirely synthetic fixture in the isolated API35 emulator, never
