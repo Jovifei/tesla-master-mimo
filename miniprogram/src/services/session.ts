@@ -1,3 +1,5 @@
+import { MOCK_FIXTURE_ENABLED, MOCK_USER_ID } from './mock_fixture'
+
 const SESSION_KEY = 'matelink.wechat.session.v1'
 const PENDING_LINK_KEY = 'matelink.wechat.link.v1'
 const PENDING_TESLA_AUTH_KEY = 'matelink.wechat.tesla-auth.v1'
@@ -22,6 +24,12 @@ function matchesOrigin(value: unknown): value is string {
 }
 
 export function readAppSession(storage: Pick<WechatStorage, 'getStorageSync'>): AppSession | null {
+  // Review fixture: a stable local session so pages render synthetic data
+  // without a Tesla login. Only active when the build enables the fixture.
+  if (MOCK_FIXTURE_ENABLED) {
+    return { apiOrigin: 'https://api.teslalink.joviluma.com', accessToken: 'mock-fixture-token',
+      refreshToken: null, expiresAt: null, userId: MOCK_USER_ID, linkRequired: false }
+  }
   const value = storage.getStorageSync(SESSION_KEY) as Partial<AppSession> | undefined
   if (!value || !matchesOrigin(value.apiOrigin) || typeof value.accessToken !== 'string' || value.accessToken.length === 0) return null
   return {

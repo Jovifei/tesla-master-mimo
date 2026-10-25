@@ -1,0 +1,207 @@
+import type { RawCar, RawCharge, RawDrive } from './types'
+
+/** Synthetic review fixture. Every row carries source `mock_fixture` so the UI
+ * labels it 本地模拟/合成测试数据 — nothing here may pass as a real Tesla record. */
+
+export const MOCK_FIXTURE_ENABLED: boolean = process.env.TARO_APP_MOCK_FIXTURE === 'true'
+export const MOCK_USER_ID = 'mock-fixture-user'
+export const MOCK_CAR_ID = 7
+
+function mulberry32(seed: number) {
+  let state = seed >>> 0
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0
+    let t = state
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+const rand = mulberry32(20261025)
+const pick = <T,>(rows: readonly T[]): T => rows[Math.floor(rand() * rows.length)]
+const between = (low: number, high: number) => low + rand() * (high - low)
+const round1 = (value: number) => Math.round(value * 10) / 10
+
+const PLACES = ['余杭塘路 朱庙社区', '访云街 西蔡庙', '景兴路 葛巷社区', '向往社区', '仓前街道 钱腾云都', '龙泉路 仓前工业园', '文一西路 杭师大', '海曙路 未来科技城']
+const HOME = PLACES[0]
+const iso = (time: number) => new Date(time).toISOString().replace(/\.\d{3}Z$/, 'Z')
+
+// 76 days ending 2026-10-25; weekday commuting + occasional trips, ~2-5 drives/day.
+const END = Date.UTC(2026, 9, 25, 14, 0, 0)
+const DAY = 86_400_000
+const DAYS = 76
+
+type PlannedDrive = { id: number; start: number; end: number; km: number; minutes: number; speedMax: number; kwh: number; from: string; to: string }
+type PlannedCharge = { id: number; start: number; end: number; kwhAdded: number; dc: boolean; free: boolean; teslamateZero: boolean; address: string; socStart: number; socEnd: number }
+
+function planTimeline(): { drives: PlannedDrive[]; charges: PlannedCharge[] } {
+  const drives: PlannedDrive[] = [], charges: PlannedCharge[] = []
+  let driveId = 6100, chargeId = 9100, soc = 86, clock = END - DAYS * DAY
+  for (let day = 0; day < DAYS; day++) {
+    const dayStart = clock + day * DAY
+    const weekday = new Date(dayStart).getUTCDay()
+    const trips = weekday === 0 || weekday === 6 ? Math.floor(between(0, 3)) : Math.floor(between(2, 6))
+    for (let trip = 0; trip < trips; trip++) {
+      if (soc < 22) {
+        // Overnight-ish AC top-up most days; a DC stop roughly every fifth stop.
+        const dc = charges.length % 5 === 4
+        const kwhAdded = dc ? between(38, 58) : between(16, 34)
+        const socStart = Math.round(soc), socEnd = Math.min(100, Math.round(soc + kwhAdded / 0.6))
+        const minutes = Math.round(dc ? between(24, 42) : between(95, 190))
+        const start = dayStart + between(1, 12) * 3_600_000
+        // Deterministic coverage: every third DC stop is free supercharging, every
+        // fifth AC stop carries an unfilled TeslaMate zero bill for the estimate path.
+        const dcIndex = charges.filter(item => item.dc).length, acIndex = charges.length - dcIndex
+        charges.push({ id: chargeId++, start, end: start + minutes * 60_000, kwhAdded: round1(kwhAdded), dc,
+          free: dc && dcIndex % 3 === 2, teslamateZero: !dc && acIndex % 5 === 4, address: dc ? '访云街 西蔡庙' : HOME, socStart, socEnd })
+        soc = socEnd
+      }
+      const km = round1(between(2.2, 44)), speed = weekday === 0 ? between(38, 88) : between(52, 118)
+      const minutes = Math.max(4, Math.round(km / (speed / 60) + between(2, 9)))
+      const start = dayStart + (trip + between(0.4, 0.9)) * (12 * 3_600_000 / Math.max(trips, 1))
+      const from = trip === 0 ? (charges.length && rand() < 0.6 ? HOME : pick(PLACES)) : drives[drives.length - 1].to
+      const to = pick(PLACES.filter(place => place !== from))
+      const kwh = round1(km * between(128, 186) / 1000)
+      drives.push({ id: driveId++, start, end: start + minutes * 60_000, km, minutes, speedMax: Math.round(speed), kwh, from, to })
+      soc = Math.max(6, soc - kwh / 0.6)
+    }
+  }
+  return { drives: drives.reverse(), charges: charges.reverse() }
+}
+
+const planned = planTimeline()
+
+function routePoints(drive: PlannedDrive) {
+  const rows: { date: string; latitude: number; longitude: number; speed: number; power: number; battery_level: number }[] = []
+  const lat0 = 30.276 + (hashCode(drive.from) % 90) / 3000, lon0 = 119.985 + (hashCode(drive.to) % 120) / 4000
+  const steps = Math.max(8, Math.min(36, Math.round(drive.minutes / 1.5)))
+  const socDrain = drive.kwh / 0.6
+  for (let step = 0; step <= steps; step++) {
+    const fraction = step / steps
+    const speed = Math.round(drive.speedMax * Math.sin(Math.PI * Math.min(1, fraction * 1.15)) * between(0.55, 0.95))
+    rows.push({ date: iso(drive.start + fraction * drive.minutes * 60_000),
+      latitude: round1((lat0 + fraction * 0.012) * 10000) / 10000, longitude: round1((lon0 + fraction * 0.014) * 10000) / 10000,
+      speed, power: Math.round(speed > 4 ? between(6, 42) * (1 - fraction * 0.3) : -between(2, 18)),
+      battery_level: Math.round(100 - socDrain * fraction) })
+  }
+  return rows
+}
+
+function hashCode(value: string) {
+  let hash = 0
+  for (let index = 0; index < value.length; index++) hash = (hash * 31 + value.charCodeAt(index)) | 0
+  return Math.abs(hash)
+}
+
+function rawDrive(row: PlannedDrive, withRoute: boolean): RawDrive {
+  return {
+    drive_id: row.id, session_id: `mock-session-${row.id}`,
+    start_date: iso(row.start), end_date: iso(row.end),
+    start_address: row.from, end_address: row.to,
+    duration_min: row.minutes,
+    speed_max: row.speedMax, speed_avg: Math.round(row.speedMax * 0.62),
+    speed_sample_count: Math.max(6, row.minutes), speed_metrics_source: 'observed_route_samples', speed_unit: 'km/h',
+    odometer_details: { odometer_distance: row.km },
+    battery_details: { start_battery_level: Math.round(100 - (row.kwh / 0.6)), end_battery_level: Math.round(100 - (row.kwh / 0.6) - row.kwh / 0.6) },
+    energy_consumed_net: row.kwh, consumption_net: Math.round(row.kwh * 1000 / row.km),
+    source: 'mock_fixture', quality_state: 'observed', quality_reason: 'mock_fixture_observed',
+    ...(withRoute ? { drive_details: routePoints(row) } : {}),
+  }
+}
+
+function rawCharge(row: PlannedCharge): RawCharge {
+  return {
+    charge_id: row.id, session_id: `mock-charge-${row.id}`,
+    start_date: iso(row.start), end_date: iso(row.end),
+    address: row.address, duration_min: Math.round((row.end - row.start) / 60_000),
+    charge_energy_added: row.kwhAdded, charge_energy_used: round1(row.kwhAdded * between(1.03, 1.12)),
+    cost: row.free ? 0 : row.teslamateZero ? 0 : round1(row.kwhAdded * (row.dc ? 1.6 : 1.14)),
+    currency: 'CNY', currency_code: 'CNY', cost_currency: 'CNY',
+    latitude: 30.281, longitude: 119.991,
+    charger_power: row.dc ? Math.round(between(96, 138)) : 7,
+    charge_type: row.dc ? 'dc' : 'ac', fast_charger_present: row.dc,
+    charger_phases: row.dc ? null : 3,
+    source: 'mock_fixture', quality_state: 'observed', quality_reason: 'mock_fixture_observed',
+    battery_details: { start_battery_level: row.socStart, end_battery_level: row.socEnd },
+    energy_contract: { version: 1, charge_mode: row.dc ? 'dc' : 'ac', charge_mode_evidence: 'mock_fixture_boundary_modes',
+      battery_input: { value_kwh: row.kwhAdded, source: 'mock_fixture', quality: 'reported', coverage_ratio: 1, coverage_seconds: Math.round((row.end - row.start) / 1000) } },
+  }
+}
+
+const car: RawCar = {
+  car_id: MOCK_CAR_ID, vehicle_uid: 'mock-vehicle-uid-7', display_name: '合成测试车',
+  model: 'Y', car_details: { model: 'Y', trim_badging: '50' },
+  car_exterior: { exterior_color: '珍珠白', wheel_type: '19" Gemini' },
+  car_settings: { free_supercharging: true },
+  current_capacity: 60, battery_health: { current_capacity: 60 }, capacity_source_field: 'mock_fixture',
+}
+
+const status = {
+  state: 'online', battery_level: 72, rated_range: 297, odometer: 20118,
+  speed: 0, power: 0, charge_limit_soc: 90,
+  locked: true, plugged_in: false, is_climate_on: false, sentry_mode: true,
+  is_charging: false, charging_state: 'disconnected', time_to_full_charge: null,
+  inside_temp: 25.1, outside_temp: 23.5,
+  latitude: 30.2901, longitude: 120.0021,
+  shift_state: 'P', charger_voltage: null, charger_actual_current: null, charge_energy_added: null, charger_power: null,
+  tpms: { fl: { pressure_bar: 2.8, observed_at: iso(END - 3600_000) }, fr: { pressure_bar: 2.8, observed_at: iso(END - 3600_000) }, rl: { pressure_bar: 2.8, observed_at: iso(END - 3600_000) }, rr: { pressure_bar: 2.7, observed_at: iso(END - 3600_000) } },
+  observed_at: iso(END - 120_000), source: 'mock_fixture',
+  field_sources: { battery_level: 'mock_fixture', location: 'mock_fixture', climate: 'mock_fixture' },
+}
+
+const readiness = {
+  items: [
+    { key: 'telemetry', status: 'available', source: 'mock_fixture', last_observed_at: iso(END - 120_000), message: null, action: null, message_key: null },
+    { key: 'tpms', status: 'available', source: 'mock_fixture', last_observed_at: iso(END - 3600_000), message: null, action: null, message_key: null },
+  ],
+}
+
+function page<T>(kind: 'drives' | 'charges', rows: T[], page: number, show: number) {
+  const start = (page - 1) * show
+  return { data: { [kind]: rows.slice(start, start + show), meta: { page, show, total: rows.length, total_pages: Math.max(1, Math.ceil(rows.length / show)), availability: 'available', source: 'mock_fixture', quality_state: 'observed' } } }
+}
+
+/** Wire-shaped response router; `null` means "no fixture for this path". */
+export function mockRequest(path: string, enabled: boolean = MOCK_FIXTURE_ENABLED): Record<string, unknown> | null {
+  if (!enabled) return null
+  const carPrefix = `/api/v1/cars/${MOCK_CAR_ID}`
+  if (path === '/api/v1/cars') return { data: { cars: [car] } }
+  if (path === `${carPrefix}/snapshot`) return { data: { status, observed_at: status.observed_at, source: status.source, units: { unit_of_length: 'km', unit_of_temperature: 'C' }, field_sources: status.field_sources } }
+  if (path === `${carPrefix}/data-readiness`) return { data: readiness }
+  if (path === `${carPrefix}/telemetry/pairing`) return { data: { status: 'paired', source: 'mock_fixture' } }
+  if (path === `${carPrefix}/charges/current`) return { data: { charge: null } }
+  if (path.startsWith('/api/v1/tesla/authorization') || path.includes('/authorization/status')) return { authorized: true, state: 'authorized', source: 'mock_fixture' }
+  const history = /^\/api\/v1\/cars\/\d+\/(drives|charges)\?page=(\d+)&show=(\d+)$/.exec(path)
+  if (history) {
+    const [, kind, pageText, showText] = history
+    if (kind === 'drives') return page('drives', planned.drives.map(row => rawDrive(row, false)), Number(pageText), Number(showText))
+    return page('charges', planned.charges.map(rawCharge), Number(pageText), Number(showText))
+  }
+  const driveDetail = /^\/api\/v1\/cars\/\d+\/drives\/(\d+)$/.exec(path)
+  if (driveDetail) {
+    const row = planned.drives.find(item => String(item.id) === driveDetail[1])
+    return row ? { data: { drive: rawDrive(row, true) } } : { error: 'history_unavailable' }
+  }
+  const chargeDetail = /^\/api\/v1\/cars\/\d+\/charges\/(\d+)$/.exec(path)
+  if (chargeDetail) {
+    const row = planned.charges.find(item => String(item.id) === chargeDetail[1])
+    return row ? { data: { charge: rawCharge(row) } } : { error: 'history_unavailable' }
+  }
+  const parked = /^\/api\/matelink\/v1\/cars\/\d+\/parked\/(\d+)\/(\d+)$/.exec(path)
+  if (parked) {
+    const older = planned.drives.find(item => String(item.id) === parked[1])
+    const newer = planned.drives.find(item => String(item.id) === parked[2])
+    if (!older || !newer) return { error: 'parked_history_bounds_unavailable' }
+    const minutes = Math.round((Date.parse(iso(newer.start)) - Date.parse(iso(older.end))) / 60_000)
+    return { data: { older_drive_id: older.id, newer_drive_id: newer.id, start_date: iso(older.end), end_date: iso(newer.start),
+      address: older.to, start_battery_level: Math.round(100 - older.kwh / 0.6), end_battery_level: Math.round(100 - older.kwh / 0.6 - newer.kwh / 0.6),
+      battery_delta: Math.round(newer.kwh / 0.6 - older.kwh / 0.6), energy_kwh: null, average_power_kw: null, peak_power_kw: null,
+      inside_temp_average: null, outside_temp_average: null, sample_count: 0, coverage_seconds: 0, coverage_ratio: 0,
+      linked_charge: null, source: 'mock_fixture' } }
+  }
+  return null
+}
+
+export const mockFixtureStats = { drives: planned.drives.length, charges: planned.charges.length, days: DAYS }
+export const mockPlanned = planned
+export const mockIso = iso

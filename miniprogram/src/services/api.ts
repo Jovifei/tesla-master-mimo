@@ -7,6 +7,7 @@ import { clearCarsCacheForAccount, writeCarsCache } from './cars_cache'
 import { clearVehicleCachesForAccount } from './vehicle_cache'
 import { clearNewAccountCaches } from './account_cache_cleanup'
 import { driveDistanceKm, driveEnergyReceipt, resolveDriveEnergy, resolveChargeEnergy } from '../domain/drive_energy'
+import { MOCK_FIXTURE_ENABLED, mockRequest } from './mock_fixture'
 import type {
   ApiEnvelope,
   AuthSessionResponse,
@@ -357,6 +358,12 @@ export async function requestJson<T extends TaroGeneral.IAnyObject>(path: string
   let clearedOwnSession = false
   const attempt = async (allowRefresh: boolean): Promise<T> => {
     assertCurrent()
+    if (MOCK_FIXTURE_ENABLED) {
+      // Review fixture: wire-shaped synthetic data through the real normalize
+      // pipeline; rows carry source mock_fixture and never pass as real records.
+      const hit = mockRequest(path)
+      if (hit !== null) return hit as T
+    }
     const sentSession = readAppSession(Taro)
     const response = await rawRequest<T>(path, {
       ...options,
