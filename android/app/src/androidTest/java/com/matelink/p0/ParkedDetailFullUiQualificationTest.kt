@@ -6,6 +6,9 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
@@ -16,6 +19,9 @@ import com.matelink.R
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.security.MessageDigest
 
 class ParkedDetailFullUiQualificationTest {
     @get:Rule val composeRule = createEmptyComposeRule()
@@ -62,15 +68,41 @@ class ParkedDetailFullUiQualificationTest {
 
     private fun captureFixtureScreen(name: String) {
         check(name in setOf("matelink_fixture_parked_full", "matelink_fixture_parked_partial"))
-        composeRule.waitForIdle()
-        // screencap runs under the emulator shell identity and writes outside
-        // test app data; later tests may reset their own isolated Room state.
-        val fd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
-            "screencap -p /sdcard/Download/$name.png"
+        val wake = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
+            "input keyevent KEYCODE_WAKEUP"
         )
-        android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).use { stream ->
-            stream.copyTo(java.io.ByteArrayOutputStream())
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(wake).use { it.readBytes() }
+        composeRule.waitForIdle()
+        // Capture the actual Compose root. Headless emulator framebuffer
+        // screencap can be an all-black PNG even after semantics assertions pass.
+        val bitmap = composeRule.onRoot(useUnmergedTree = true).captureToImage().asAndroidBitmap()
+        var dark = 0
+        var bright = 0
+        for (y in 0 until bitmap.height step 4) for (x in 0 until bitmap.width step 4) {
+            val color = bitmap.getPixel(x, y)
+            val level = (android.graphics.Color.red(color) + android.graphics.Color.green(color) +
+                android.graphics.Color.blue(color)) / 3
+            if (level < 80) dark++
+            if (level > 180) bright++
         }
+        val output = ByteArrayOutputStream()
+        check(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output))
+        val bytes = output.toByteArray()
+        val sha = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        val dir = checkNotNull(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null))
+        val image = File(dir, "$name.png").apply { writeBytes(bytes) }
+        val proof = File(dir, "$name.proof").apply {
+            writeText("$sha ${bitmap.width} ${bitmap.height} $dark $bright")
+        }
+        // Public Download is limited to synthetic emulator artifacts. No real
+        // phone or owner history is read or copied by this instrumentation.
+        for (file in listOf(image, proof)) {
+            val fd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
+                "cp ${file.absolutePath} /sdcard/Download/${file.name}"
+            )
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).use { it.readBytes() }
+        }
+        check(dark > 30 && bright > 30) { "synthetic Compose screenshot lacks visible UI contrast" }
     }
 
     private fun scrollUntilText(text: String) {

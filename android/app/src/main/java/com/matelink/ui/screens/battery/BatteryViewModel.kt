@@ -11,6 +11,8 @@ import com.matelink.data.api.models.Units
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.local.HistoryReadScope
+import com.matelink.data.local.HistoryConnectionSource
+import com.matelink.data.local.VehicleContext
 import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.local.VehicleStatusStore
 import com.matelink.domain.analytics.HistoryFreshness
@@ -99,6 +101,14 @@ fun classifyBatteryHealth(
         BatteryHealthAvailability.COLLECTING
     else -> BatteryHealthAvailability.UNAVAILABLE
 }
+
+/** The Battery page consumes only a previously UID-verified cloud binding. */
+internal fun readCachedBatteryStatus(
+    scope: HistoryReadScope, vehicle: VehicleContext, verifiedIdentityDigest: String?,
+    statusStore: VehicleStatusStore
+): CarStatus? = if (scope.source == HistoryConnectionSource.CLOUD) {
+    verifiedIdentityDigest?.let { statusStore.getCachedStatusForVerifiedIdentity(scope, vehicle, it) }
+} else statusStore.getCachedStatus(scope, vehicle)
 
 data class BatteryUiState(
     val isLoading: Boolean = true,
@@ -267,8 +277,13 @@ class BatteryViewModel @Inject constructor(
                 val cachedContext = vehicleContextRepository.cachedContextForRemote(id, scope)
                 if (cachedContext != null &&
                     vehicleContextRepository.isHistoryContextCurrentNow(scope, cachedContext)) {
-                    val savedStatus = vehicleStatusStore.getCachedStatus(scope, cachedContext)
+                    val digest = if (scope.source == HistoryConnectionSource.CLOUD)
+                        vehicleContextRepository.cachedVerifiedStatusIdentityDigest(id, scope, cachedContext)
+                    else null
+                    val savedStatus = readCachedBatteryStatus(scope, cachedContext, digest, vehicleStatusStore)
                     request.requireCurrent()
+                    if (!vehicleContextRepository.isHistoryContextCurrentNow(scope, cachedContext))
+                        throw CancellationException("Battery history identity changed")
                     if (savedStatus != null) _uiState.update {
                         it.copy(isLoading = false, carStatus = savedStatus, isCachedStatus = true)
                     }

@@ -93,6 +93,9 @@ def body_for(path: str, scenario: str):
                 "drives": [
                     {
                         "drive_id": 702,
+                        "source": "fixture",
+                        "source_instance_id": "synthetic-instance-A",
+                        "source_vehicle_id": "synthetic-vehicle-101",
                         "start_date": "2026-07-18T10:00:00Z",
                         "end_date": "2026-07-18T10:25:00Z",
                         "start_address": "Fixture Office",
@@ -108,6 +111,9 @@ def body_for(path: str, scenario: str):
                     },
                     {
                         "drive_id": 701,
+                        "source": "fixture",
+                        "source_instance_id": "synthetic-instance-A",
+                        "source_vehicle_id": "synthetic-vehicle-101",
                         "start_date": "2026-07-18T08:00:00Z",
                         "end_date": "2026-07-18T08:30:00Z",
                         "start_address": "Fixture Garage",
@@ -130,6 +136,9 @@ def body_for(path: str, scenario: str):
                 "car": {"car_id": 101, "car_name": "Synthetic Qualification Vehicle"},
                 "drive": {
                     "drive_id": 701,
+                    "source": "fixture",
+                    "source_instance_id": "synthetic-instance-A",
+                    "source_vehicle_id": "synthetic-vehicle-101",
                     "start_date": "2026-07-18T08:00:00Z",
                     "end_date": "2026-07-18T08:30:00Z",
                     "start_address": "Fixture Garage",
@@ -192,6 +201,9 @@ def body_for(path: str, scenario: str):
                 "charges": [
                     {
                         "charge_id": 801,
+                        "source": "fixture",
+                        "source_instance_id": "synthetic-instance-A",
+                        "source_vehicle_id": "synthetic-vehicle-101",
                         "start_date": "2026-07-18T12:00:00Z",
                         "end_date": "2026-07-18T12:45:00Z",
                         "address": "Fixture Charger",
@@ -215,6 +227,9 @@ def body_for(path: str, scenario: str):
                 "car": {"car_id": 101, "car_name": "Synthetic Qualification Vehicle"},
                 "charge": {
                     "charge_id": 801,
+                    "source": "fixture",
+                    "source_instance_id": "synthetic-instance-A",
+                    "source_vehicle_id": "synthetic-vehicle-101",
                     "start_date": "2026-07-18T12:00:00Z",
                     "end_date": "2026-07-18T12:45:00Z",
                     "address": "Fixture Charger",

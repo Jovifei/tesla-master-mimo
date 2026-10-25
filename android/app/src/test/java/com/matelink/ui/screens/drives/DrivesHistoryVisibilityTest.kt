@@ -89,6 +89,8 @@ class DrivesHistoryVisibilityTest {
             endDate = "2026-10-06T10:02:00+08:00",
             durationMin = 2,
             qualityState = "observed",
+            source = "teslamate_archive",
+            sourceInstanceId = "instance-A",
             odometerDetails = DriveOdometerDetails(distance = 0.6)
         )
         val older = DriveData(
@@ -97,6 +99,8 @@ class DrivesHistoryVisibilityTest {
             endDate = "2026-10-06T08:10:00+08:00",
             durationMin = 10,
             qualityState = "observed",
+            source = "teslamate_archive",
+            sourceInstanceId = "instance-A",
             odometerDetails = DriveOdometerDetails(distance = 0.7)
         )
 
@@ -107,5 +111,22 @@ class DrivesHistoryVisibilityTest {
         assertEquals(302, parked.olderDrive.id)
         assertEquals(301, parked.newerDrive.id)
         assertEquals(110L, parked.durationMin)
+    }
+
+    @Test fun differentOrUnverifiedCollectorsCannotCreateAParkedWindow() {
+        val older = DriveData(driveId = 401,
+            startDate = "2026-10-06T08:00:00+08:00", endDate = "2026-10-06T08:10:00+08:00",
+            source = "teslamate_archive", sourceInstanceId = "instance-A",
+            qualityState = "observed", odometerDetails = DriveOdometerDetails(distance = 1.0))
+        val newer = older.copy(driveId = 402,
+            startDate = "2026-10-06T10:00:00+08:00", endDate = "2026-10-06T10:10:00+08:00")
+        fun parkedCount(next: DriveData) = buildDriveHistoryItems(listOf(next, older))
+            .filterIsInstance<DriveHistoryItem.Parked>().size
+        assertEquals(1, parkedCount(newer))
+        assertEquals(0, parkedCount(newer.copy(sourceInstanceId = "instance-B")))
+        assertEquals(0, parkedCount(newer.copy(source = "fleet_telemetry")))
+        assertEquals(0, parkedCount(newer.copy(sourceInstanceId = null)))
+        assertEquals(0, parkedCount(newer.copy(source = null)))
+        assertEquals(0, parkedCount(newer.copy(sourceId = "record-A", sourceRecordId = "record-B")))
     }
 }

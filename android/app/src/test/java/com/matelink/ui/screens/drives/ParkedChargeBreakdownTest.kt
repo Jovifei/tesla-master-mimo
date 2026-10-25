@@ -2,6 +2,7 @@ package com.matelink.ui.screens.drives
 
 import com.matelink.data.api.models.LinkedCharge
 import com.matelink.data.api.models.ParkedDetailData
+import com.matelink.data.local.entity.ChargeSummary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -18,6 +19,28 @@ class ParkedChargeBreakdownTest {
         linkedCharges = charges, chargeSessionsComplete = complete,
         source = "teslamate_archive"
     )
+
+    @Test fun localChargeReceiptMustMatchParkedCollectorBeforeBecomingASession() {
+        val start = "2026-10-23T01:00:00Z"
+        val end = "2026-10-23T03:00:00Z"
+        fun row(instance: String?, source: String = "teslamate_archive") = ChargeSummary(
+            chargeId = 501, carId = -101, startDate = start, endDate = end,
+            durationMin = 120, address = "", latitude = 0.0, longitude = 0.0,
+            energyAdded = 0.0, energyUsed = null, cost = null,
+            startBatteryLevel = 31, endBatteryLevel = 32, outsideTempAvg = null,
+            odometer = 0.0, qualityState = "observed",
+            apiEvidence = instance?.let {
+                """{"charge_id":501,"start_date":"$start","end_date":"$end","source":"$source","source_instance_id":"$it","charge_energy_added":0.0}"""
+            }
+        )
+        val proof = ParkedSourceProof("teslamate_archive", "instance-A")
+        assertEquals(501, row("instance-A").toParkedLinkedCharge(proof)?.chargeId)
+        assertNull(row("instance-B").toParkedLinkedCharge(proof))
+        assertNull(row("instance-A", source = "fleet_telemetry").toParkedLinkedCharge(proof))
+        assertNull(row(null).toParkedLinkedCharge(proof))
+        assertNull(row("instance-A").copy(endDate = "2026-10-23T03:01:00Z")
+            .toParkedLinkedCharge(proof))
+    }
 
     @Test fun twoSeparateChargesRetainSeparateRatesAndNonchargeTime() {
         val first = LinkedCharge(1, "2026-10-23T01:00:00Z", "2026-10-23T03:00:00Z", 10.0)

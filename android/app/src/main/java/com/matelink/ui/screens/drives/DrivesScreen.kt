@@ -441,6 +441,7 @@ private fun createParkedSegment(
     olderDrive: DriveData,
     newerDrive: DriveData
 ): DriveHistoryItem.Parked? {
+    if (sharedParkedSource(olderDrive, newerDrive) == null) return null
     val startDate = olderDrive.endDate ?: return null
     val endDate = newerDrive.startDate ?: return null
     val start = parseOffsetDateTime(startDate) ?: return null

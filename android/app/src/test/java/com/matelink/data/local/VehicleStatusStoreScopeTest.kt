@@ -3,6 +3,8 @@ package com.matelink.data.local
 import android.app.Application
 import android.content.Context
 import com.matelink.data.api.models.CarStatus
+import com.matelink.data.api.models.CarData
+import com.matelink.ui.screens.battery.readCachedBatteryStatus
 import com.squareup.moshi.Moshi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -21,6 +23,7 @@ class VehicleStatusStoreScopeTest {
 
     @Before fun clearStore() {
         app.getSharedPreferences("vehicle_cached_status", Context.MODE_PRIVATE).edit().clear().commit()
+        app.getSharedPreferences("vehicle_history_identity", Context.MODE_PRIVATE).edit().clear().commit()
     }
 
     @Test fun sameNumericCarNeverCrossesAccountOriginOrVerifiedVehicle() {
@@ -90,6 +93,45 @@ class VehicleStatusStoreScopeTest {
                 latitude = 41.0, longitude = -72.0)), "2026-10-23T03:00:00Z")
         assertNull(store.getCachedPosition(cloudScope("bob", "https://one.example"), car))
         assertNull(store.getCachedPosition(scope, vehicle(-2)))
+    }
+
+    @Test fun uidVerifiedCloudStatusReopensViaScopedDigestWithoutClaimingAnotherVehicle() {
+        val scope = cloudScope("alice", "https://one.example")
+        val car = CarData(1, vehicleUid = "provider-a")
+        val contexts = VehicleContextStore(app)
+        val verified = contexts.resolveVerifiedHistoryCar(car, scope.accountNamespace,
+            scope.source, scope.serverIdentity, scope.effectiveApiOrigin)
+        store.saveStatus(scope, verified, CarStatus(displayName = "Verified A"), "2026-10-23T01:00:00Z")
+
+        val reopenedContexts = VehicleContextStore(app)
+        val reopenedStatus = VehicleStatusStore(app, Moshi.Builder().build())
+        val localId = reopenedContexts.findOriginCloudLocalHistoryCarId("alice", scope.effectiveApiOrigin, 1)!!
+        val opaque = VehicleContext(1,
+            reopenedContexts.originCloudRemoteOpaqueIdentity("alice", scope.effectiveApiOrigin, 1),
+            localId, scope.source, scope.serverIdentity)
+        val digest = reopenedContexts.findVerifiedOriginCloudIdentityDigest("alice", scope.effectiveApiOrigin, 1, localId)!!
+        assertNull(reopenedStatus.getCachedStatus(scope, opaque))
+        assertEquals("Verified A", readCachedBatteryStatus(scope, opaque, digest, reopenedStatus)?.displayName)
+        assertNull(readCachedBatteryStatus(cloudScope("bob", scope.effectiveApiOrigin), opaque, digest, reopenedStatus))
+        assertNull(reopenedContexts.findVerifiedOriginCloudIdentityDigest("alice", "https://other.example", 1, localId))
+
+        val rebound = reopenedContexts.resolveVerifiedHistoryCar(car.copy(vehicleUid = "provider-b"),
+            scope.accountNamespace, scope.source, scope.serverIdentity, scope.effectiveApiOrigin)
+        assertNull(reopenedContexts.findVerifiedOriginCloudIdentityDigest("alice", scope.effectiveApiOrigin, 1, localId))
+        val reboundDigest = reopenedContexts.findVerifiedOriginCloudIdentityDigest("alice",
+            scope.effectiveApiOrigin, 1, rebound.localHistoryCarId)!!
+        val reboundOpaque = opaque.copy(localHistoryCarId = rebound.localHistoryCarId)
+        assertNull(readCachedBatteryStatus(scope, reboundOpaque, reboundDigest, reopenedStatus))
+    }
+
+    @Test fun selfHostedBatteryConsumerKeepsItsExistingScopedStatusPath() {
+        val scope = HistoryReadScope(HistoryConnectionSource.SELF_HOSTED,
+            "https://self.example", null, "https://self.example")
+        val vehicle = VehicleContext(1, selfHostedVehicleStableIdentity(scope.serverIdentity, 1),
+            -11, scope.source, scope.serverIdentity)
+        store.saveStatus(scope, vehicle, CarStatus(displayName = "Self hosted"))
+        assertEquals("Self hosted", readCachedBatteryStatus(scope, vehicle, null,
+            VehicleStatusStore(app, Moshi.Builder().build()))?.displayName)
     }
 
     private fun cloudScope(account: String, origin: String) =

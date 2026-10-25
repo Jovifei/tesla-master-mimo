@@ -12,6 +12,14 @@ git rev-parse HEAD HEAD^{tree} HEAD^ > emulator-evidence/source.txt
 touch emulator-evidence/instrumentation-started
 cd android
 export TZ=Asia/Shanghai
+# This script only runs against the disposable API35 emulator. Keep its display
+# awake for Compose pixel capture after the full native suite has been running.
+[[ "$(adb shell getprop ro.kernel.qemu | tr -d '\r')" == "1" ]] || {
+  echo "Refusing screenshot setup on a non-emulator" >&2; exit 2;
+}
+adb shell input keyevent KEYCODE_WAKEUP
+adb shell svc power stayon true
+adb shell settings put system screen_off_timeout 1800000
 status=1
 for attempt in 1 2; do
   set +e
@@ -30,6 +38,12 @@ for attempt in 1 2; do
     sleep 20
     continue
   fi
+  # Keep a failing synthetic Compose capture for diagnosis, while the native
+  # assertion remains red. Missing files are expected for earlier failures.
+  for shot in matelink_fixture_parked_full matelink_fixture_parked_partial; do
+    adb pull "/sdcard/Download/${shot}.png" "../emulator-evidence/${shot}.png" >/dev/null 2>&1 || true
+    adb pull "/sdcard/Download/${shot}.proof" "../emulator-evidence/${shot}.proof" >/dev/null 2>&1 || true
+  done
   exit "$status"
 done
 if [[ "$status" != 0 ]]; then exit "$status"; fi
@@ -37,10 +51,13 @@ if [[ "$status" != 0 ]]; then exit "$status"; fi
 # Never screenshot a connected phone or a real user address into artifacts.
 for shot in matelink_fixture_parked_full matelink_fixture_parked_partial; do
   adb pull "/sdcard/Download/${shot}.png" "../emulator-evidence/${shot}.png"
+  adb pull "/sdcard/Download/${shot}.proof" "../emulator-evidence/${shot}.proof"
 done
 python3 - <<'PYSCREEN'
 from pathlib import Path
+import hashlib
 import struct
+digests=[]
 for name in ('matelink_fixture_parked_full','matelink_fixture_parked_partial'):
     p=Path('../emulator-evidence')/(name+'.png')
     data=p.read_bytes()
@@ -49,7 +66,19 @@ for name in ('matelink_fixture_parked_full','matelink_fixture_parked_partial'):
     width,height=struct.unpack('>II',data[16:24])
     if width<320 or height<480:
         raise SystemExit('Invalid emulator viewport: '+name)
-    print('API35_SYNTHETIC_SCREENSHOT',name,width,height,len(data))
+    proof=(p.with_suffix('.proof')).read_text().split()
+    if len(proof)!=5:
+        raise SystemExit('Missing Compose pixel proof: '+name)
+    digest=hashlib.sha256(data).hexdigest()
+    if digest!=proof[0] or (width,height)!=(int(proof[1]),int(proof[2])):
+        raise SystemExit('Screenshot pixels do not match tested Compose root: '+name)
+    dark,bright=int(proof[3]),int(proof[4])
+    if dark<=30 or bright<=30:
+        raise SystemExit('Screenshot is blank/black and cannot qualify UI: '+name)
+    digests.append(digest)
+    print('API35_COMPOSE_SCREENSHOT',name,width,height,len(data),dark,bright)
+if digests[0]==digests[1]:
+    raise SystemExit('Full and partial parked UI screenshots are identical')
 PYSCREEN
 # Building AndroidTest APKs or returning 0 without actually running a single
 # instrumentation assertion is explicitly NOT a native-test pass.

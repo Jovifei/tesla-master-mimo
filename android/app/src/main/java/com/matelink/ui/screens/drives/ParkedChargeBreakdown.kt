@@ -2,13 +2,26 @@ package com.matelink.ui.screens.drives
 
 import com.matelink.data.api.models.LinkedCharge
 import com.matelink.data.api.models.ParkedDetailData
+import com.matelink.data.api.models.DriveData
 import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.domain.analytics.toAnalysisChargeData
+import com.matelink.domain.analytics.toRawAnalysisChargeData
 import com.matelink.util.parseIsoInstant
 import java.time.Duration
 import java.time.Instant
 
 internal const val MAX_PARKED_CHARGE_SESSIONS = 100
+
+internal data class ParkedSourceProof(val source: String, val sourceInstanceId: String)
+
+/** A numeric car/drive id and a time gap never prove two receipts share a collector. */
+internal fun sharedParkedSource(older: DriveData, newer: DriveData): ParkedSourceProof? {
+    if (older.sourceRecordIdentity.conflicted || newer.sourceRecordIdentity.conflicted) return null
+    val source = older.source?.takeIf(String::isNotBlank) ?: return null
+    val instance = older.sourceInstanceId?.takeIf(String::isNotBlank) ?: return null
+    if (newer.source != source || newer.sourceInstanceId != instance) return null
+    return ParkedSourceProof(source, instance)
+}
 
 data class ParkedChargeSession(
     val chargeId: Int,
@@ -40,8 +53,14 @@ data class ParkedChargeBreakdown(
 )
 
 /** Local receipt projection retains unknown energy as null and never grants it from a raw scalar. */
-internal fun ChargeSummary.toParkedLinkedCharge(): LinkedCharge? {
+internal fun ChargeSummary.toParkedLinkedCharge(proof: ParkedSourceProof): LinkedCharge? {
     if (qualityState == "quarantined") return null
+    val raw = toRawAnalysisChargeData()
+    val start = parseIsoInstant(startDate) ?: return null
+    val end = parseIsoInstant(endDate)?.takeIf { it.isAfter(start) } ?: return null
+    if (raw.chargeId != chargeId || raw.sourceRecordIdentity.conflicted ||
+        raw.source != proof.source || raw.sourceInstanceId != proof.sourceInstanceId ||
+        parseIsoInstant(raw.startDate) != start || parseIsoInstant(raw.endDate) != end) return null
     val safe = toAnalysisChargeData()
     return LinkedCharge(
         chargeId = chargeId,

@@ -10,6 +10,8 @@ class VerifiedHistoryContextStoreTest {
     private class MemoryPreferences {
         val ints = mutableMapOf<String, Int>()
         private val writes = mutableMapOf<String, Int>()
+        val strings = mutableMapOf<String, String>()
+        private val stringWrites = mutableMapOf<String, String?>()
         private lateinit var editor: SharedPreferences.Editor
         val preferences: SharedPreferences
         init {
@@ -17,7 +19,15 @@ class VerifiedHistoryContextStoreTest {
                 arrayOf(SharedPreferences.Editor::class.java)) { _, method, args ->
                 when (method.name) {
                     "putInt" -> { writes[args[0] as String] = args[1] as Int; editor }
-                    "commit" -> { ints.putAll(writes); writes.clear(); true }
+                    "putString" -> { stringWrites[args[0] as String] = args[1] as String?; editor }
+                    "commit" -> {
+                        ints.putAll(writes); writes.clear()
+                        stringWrites.forEach { (key, value) ->
+                            if (value == null) strings.remove(key) else strings[key] = value
+                        }
+                        stringWrites.clear()
+                        true
+                    }
                     else -> error("unexpected editor method ${method.name}")
                 }
             } as SharedPreferences.Editor
@@ -25,6 +35,7 @@ class VerifiedHistoryContextStoreTest {
                 arrayOf(SharedPreferences::class.java)) { _, method, args ->
                 when (method.name) {
                     "getInt" -> ints[args[0] as String] ?: args[1]
+                    "getString" -> strings[args[0] as String] ?: args[1]
                     "edit" -> editor
                     else -> error("unexpected preferences method ${method.name}")
                 }
@@ -43,6 +54,8 @@ class VerifiedHistoryContextStoreTest {
         assertEquals(old.localHistoryCarId, store.resolveCar(car, "account-a", source, "cloud").localHistoryCarId)
         assertEquals(verified.localHistoryCarId, store.findOriginCloudLocalHistoryCarId("account-a", "https://api.example", 7))
         assertTrue(memory.ints.keys.none { it.contains("account-a") || it.contains("api.example") || it.contains("provider-a") })
+        assertTrue(memory.strings.keys.none { it.contains("account-a") || it.contains("api.example") || it.contains("provider-a") })
+        assertTrue(memory.strings.values.all { it.matches(Regex("[0-9a-f]{64}")) })
     }
     @Test fun originsAccountsAndUidsCannotShareTheVerifiedNamespace() {
         val store = VehicleContextStore(MemoryPreferences().preferences)

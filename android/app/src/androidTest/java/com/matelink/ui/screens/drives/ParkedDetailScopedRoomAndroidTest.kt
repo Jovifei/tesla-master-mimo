@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.matelink.data.local.StatsDatabase
+import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.DriveSummary
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -13,13 +14,26 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ParkedDetailScopedRoomAndroidTest {
-    private fun drive(carId: Int, driveId: Int, start: String, end: String, startSoc: Int, endSoc: Int) =
+    private fun drive(carId: Int, driveId: Int, start: String, end: String, startSoc: Int, endSoc: Int,
+                      instance: String = "instance-A") =
         DriveSummary(
             driveId = driveId, carId = carId, startDate = start, endDate = end, durationMin = 1,
             startAddress = "", endAddress = "", distance = 1.0, speedMax = 20, speedAvg = 10,
             powerMax = 5, powerMin = -2, startBatteryLevel = startSoc, endBatteryLevel = endSoc,
-            outsideTempAvg = null, insideTempAvg = null, energyConsumed = null, efficiency = null
+            outsideTempAvg = null, insideTempAvg = null, energyConsumed = null, efficiency = null,
+            apiEvidence = """{"drive_id":$driveId,"start_date":"$start","end_date":"$end","source":"teslamate_archive","source_instance_id":"$instance"}"""
         )
+
+    private fun charge(carId: Int, id: Int, instance: String?) : ChargeSummary {
+        val start = "2026-10-23T21:10:00Z"
+        val end = "2026-10-23T21:30:00Z"
+        val receipt = instance?.let {
+            """{"charge_id":$id,"start_date":"$start","end_date":"$end","source":"teslamate_archive","source_instance_id":"$it","charge_energy_added":0.0}"""
+        }
+        return ChargeSummary(id, carId, start, end, 20, "", 0.0, 0.0,
+            0.0, null, null, 31, 32, null, 0.0,
+            apiEvidence = receipt, qualityState = "observed")
+    }
 
     @Test fun localParkedReaderUsesOneVerifiedHistoryCarKeyForBothBoundaries() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(
@@ -33,12 +47,22 @@ class ParkedDetailScopedRoomAndroidTest {
             assertNull(readLocalParkedDetail(dao, -101, 10, 11))
             assertNull(readLocalParkedDetail(dao, -202, 10, 11))
 
-            dao.upsert(foreignNewer.copy(carId = -101, startBatteryLevel = 30))
+            dao.upsert(drive(-101, 11, "2026-10-23T22:20:00Z", "2026-10-23T22:21:00Z", 30, 79,
+                instance = "instance-B"))
+            assertNull(readLocalParkedDetail(dao, -101, 10, 11))
+            dao.upsert(drive(-101, 11, "2026-10-23T22:20:00Z", "2026-10-23T22:21:00Z", 30, 79))
             val own = requireNotNull(readLocalParkedDetail(dao, -101, 10, 11))
             assertEquals(31, own.startBatteryLevel)
             assertEquals(30, own.endBatteryLevel)
             assertEquals(-1, own.batteryDelta)
             assertEquals("local_room_cache", own.source)
+
+            db.chargeSummaryDao().upsertAll(listOf(
+                charge(-101, 501, "instance-A"), charge(-101, 502, "instance-B"),
+                charge(-101, 503, null), charge(-202, 504, "instance-A")
+            ))
+            assertEquals(listOf(501), readLocalParkedCharges(dao, db.chargeSummaryDao(), -101, 10, 11)
+                .map { it.chargeId })
 
             dao.upsert(older.copy(qualityState = "quarantined"))
             assertNull(readLocalParkedDetail(dao, -101, 10, 11))

@@ -4155,3 +4155,14 @@ Review: 审查进行中；源码发现不冒充手机实测，既有温度示意
 - [ ] 接收远端最终固定提交，在 E 盘独立做全量构建、消费者回归与原 Owner UI 合成验证；手机/生产/真实 Fleet 分别验收。
 
 Review：这是 2026-10-24 远端阶段的旧候选记录，后续最终源码和验证以固定 `66bccabb` 的交接与当前整合阶段记录为准。首轮聚焦 Gradle 在 Kotlin 编译阶段发生 OOM，没有到测试断言；停止本轮孤立 daemon 后，单进程重跑的 5 组 XML 共 20/20 PASS。独立源码复审发现新 P1，旧候选当时仍 CHANGES_REQUIRED；完整远端合同见 `docs/PLAN-2026-10-24-data-foundation-remote-stage.md`。
+# 2026-10-25 PR #27 独立源码补缺候选（隔离工作树，暂不推送）
+
+- [x] 固定远端检查点 `29793c80af64de3f0417239e43a5f57139209882`；原 E 盘 586 个 Owner 文件已校验备份，手机/生产保持。
+- [x] 用真实消费者/Room 正反例复现并修复跨来源驻车行程拼接及本地充电混源；同来源合成正例保留，未知来源不猜认领。
+- [x] 云端 Battery 在线 UID 保存→冷启动同车读取改为验证身份摘要映射，换 UID/账号负例与 SharedPreferences 重建测试通过。
+- [x] Cost 缓存先发布后临时异常、云端 opaque→UID 正常刷新、同数字 ID 车辆重绑由真实 ViewModel＋Room 三项测试验证；不跨币种合计，不显示原始异常。
+- [x] API35 黑图已在候选改为 Compose 根图与像素/哈希证明，并加 emulator-only 唤醒；原生源码与 AndroidTest APK 编译 PASS。**真实截图 CI 待验证；本机 AVD 因可用内存降至 18 MB 被安全终止，NOT_RUN。**
+- [x] 本地完整 Debug 1271/1271、0 fail/error/skip，AndroidTest APK 构建 PASS；早期 RED 的假 Preferences putString、跨币种夹具和异步缓存时序均按真实原因修复，原有断言未删。
+- [ ] 接收远端最新 SHA，解决截图测试合并冲突；再跑 Debug/Release/lint/R8 与新 SHA 的隔离 CI，只有最终源码通过后才推送 PR #27。
+
+Review（进行中）：本工作树是独立候选，当前基线 `29793c80`；原 PR #27 当前远端 `c0ca45ac` 仍 Draft，完整 CI 16/16 success 但 API35 截图 FAIL。本地候选未提交/推送，原 E 盘/手机/生产保持。截图须来自可见像素的最终 SHA，不以 PNG 头或 JUnit 单独背书视觉。

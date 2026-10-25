@@ -40,6 +40,20 @@ class VehicleStatusStore @Inject constructor(
             .joinToString("") { "%02x".format(it) }
     }
 
+    private fun verifiedAliasKey(scope: HistoryReadScope, vehicle: VehicleContext, digest: String): String? {
+        if (scope.source != HistoryConnectionSource.CLOUD || !digest.matches(Regex("[0-9a-f]{64}"))) return null
+        return key(scope, vehicle.copy(stableIdentity = "verified-sha256:$digest"))
+    }
+
+    /** Used only with the current origin/account/car binding's persisted UID digest. */
+    internal fun getCachedStatusForVerifiedIdentity(
+        scope: HistoryReadScope, vehicle: VehicleContext, digest: String
+    ): CarStatus? {
+        val alias = verifiedAliasKey(scope, vehicle, digest) ?: return null
+        val json = prefs.getString("status_v3_$alias", null) ?: return null
+        return runCatching { adapter.fromJson(json) }.getOrNull()
+    }
+
     internal fun getCachedStatus(scope: HistoryReadScope, vehicle: VehicleContext): CarStatus? {
         val key = key(scope, vehicle) ?: return null
         val json = prefs.getString("status_v2_$key", null)
@@ -63,6 +77,16 @@ class VehicleStatusStore @Inject constructor(
             val editor = prefs.edit()
                 .putString("status_v2_$key", json)
                 .putString("observed_at_v2_$key", observedAt)
+            if (scope.source == HistoryConnectionSource.CLOUD &&
+                vehicle.stableIdentity.startsWith("cloud-origin:")) {
+                val digest = MessageDigest.getInstance("SHA-256")
+                    .digest(vehicle.stableIdentity.toByteArray(Charsets.UTF_8))
+                    .joinToString("") { "%02x".format(it) }
+                verifiedAliasKey(scope, vehicle, digest)?.let { alias ->
+                    editor.putString("status_v3_$alias", json)
+                        .putString("observed_at_v3_$alias", observedAt)
+                }
+            }
             // Independent last verified position: keep its OLD observation time.
             val positionAt = parseIsoInstant(observedAt)?.toString()
             if (positionAt != null &&

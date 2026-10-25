@@ -9,6 +9,7 @@ import com.matelink.data.local.HistoryIdentityUnavailableException
 import com.matelink.data.local.dao.ChargeSummaryDao
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.entity.DriveSummary
+import com.matelink.domain.analytics.toRawAnalysisDriveData
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import com.matelink.data.api.models.ParkedDetailData
@@ -49,7 +50,7 @@ internal interface ParkedPageSource {
     val timeoutMs: Long get() = Long.MAX_VALUE
     suspend fun identity(carId: Int): ParkedPageIdentity
     suspend fun localDetail(localHistoryCarId: Int, olderDriveId: Int, newerDriveId: Int): ParkedDetailData? = null
-    suspend fun localCharges(localHistoryCarId: Int): List<LinkedCharge> = emptyList()
+    suspend fun localCharges(localHistoryCarId: Int, olderDriveId: Int, newerDriveId: Int): List<LinkedCharge> = emptyList()
     suspend fun detail(carId: Int, olderDriveId: Int, newerDriveId: Int): ApiResult<ParkedDetailData>
 }
 
@@ -81,10 +82,8 @@ class ParkedDetailViewModel private constructor(
         override suspend fun localDetail(localHistoryCarId: Int, olderDriveId: Int, newerDriveId: Int): ParkedDetailData? {
             return readLocalParkedDetail(driveSummaryDao, localHistoryCarId, olderDriveId, newerDriveId)
         }
-        override suspend fun localCharges(localHistoryCarId: Int): List<LinkedCharge> =
-            chargeSummaryDao.getAllForCar(localHistoryCarId).mapNotNull {
-                runCatching { it.toParkedLinkedCharge() }.getOrNull()
-            }
+        override suspend fun localCharges(localHistoryCarId: Int, olderDriveId: Int, newerDriveId: Int): List<LinkedCharge> =
+            readLocalParkedCharges(driveSummaryDao, chargeSummaryDao, localHistoryCarId, olderDriveId, newerDriveId)
         override suspend fun detail(carId: Int, olderDriveId: Int, newerDriveId: Int) =
             repository.getParkedDetail(carId, olderDriveId, newerDriveId)
     }, appContext)
@@ -134,9 +133,9 @@ class ParkedDetailViewModel private constructor(
                 requireCurrent()
                 if (local != null)
                     _uiState.value = ParkedDetailUiState(isLoading = false, data = local, degraded = true)
-                val localCharges = identity.localHistoryCarId?.let { localCarId ->
+                val localCharges = identity.localHistoryCarId?.takeIf { local != null }?.let { localCarId ->
                     try {
-                        source.localCharges(localCarId)
+                        source.localCharges(localCarId, olderDriveId, newerDriveId)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {
@@ -158,7 +157,9 @@ class ParkedDetailViewModel private constructor(
                     is ApiResult.Success -> if (result.data.olderDriveId == olderDriveId &&
                         result.data.newerDriveId == newerDriveId) {
                         ParkedDetailUiState(isLoading = false, data = result.data,
-                            chargeBreakdown = parkedChargeBreakdown(result.data, localCharges))
+                            // Server sessions have no wire source-instance proof for
+                            // merging with local receipts; never mix both lists.
+                            chargeBreakdown = parkedChargeBreakdown(result.data, emptyList()))
                     } else {
                         ParkedDetailUiState(isLoading = false, data = local, degraded = local != null,
                             chargeBreakdown = local?.let { parkedChargeBreakdown(it, localCharges) },
@@ -190,6 +191,41 @@ class ParkedDetailViewModel private constructor(
     private fun message(id: Int, fallback: String): String = appContext?.getString(id) ?: fallback
 }
 
+internal fun localParkedSourceProof(
+    olderDriveId: Int,
+    newerDriveId: Int,
+    older: DriveSummary,
+    newer: DriveSummary
+): ParkedSourceProof? {
+    if (older.carId != newer.carId || older.driveId != olderDriveId || newer.driveId != newerDriveId ||
+        older.qualityState == "quarantined" || newer.qualityState == "quarantined") return null
+    val olderRaw = older.toRawAnalysisDriveData()
+    val newerRaw = newer.toRawAnalysisDriveData()
+    fun matchesReceipt(raw: com.matelink.data.api.models.DriveData, row: DriveSummary): Boolean {
+        val start = parseIsoInstant(row.startDate) ?: return false
+        val end = parseIsoInstant(row.endDate) ?: return false
+        return raw.driveId == row.driveId && parseIsoInstant(raw.startDate) == start &&
+            parseIsoInstant(raw.endDate) == end
+    }
+    if (!matchesReceipt(olderRaw, older) || !matchesReceipt(newerRaw, newer)) return null
+    return sharedParkedSource(olderRaw, newerRaw)
+}
+
+internal suspend fun readLocalParkedCharges(
+    driveDao: DriveSummaryDao,
+    chargeDao: ChargeSummaryDao,
+    localHistoryCarId: Int,
+    olderDriveId: Int,
+    newerDriveId: Int
+): List<LinkedCharge> {
+    val older = driveDao.get(localHistoryCarId, olderDriveId) ?: return emptyList()
+    val newer = driveDao.get(localHistoryCarId, newerDriveId) ?: return emptyList()
+    val proof = localParkedSourceProof(olderDriveId, newerDriveId, older, newer) ?: return emptyList()
+    return chargeDao.getAllForCar(localHistoryCarId).mapNotNull { row ->
+        runCatching { row.toParkedLinkedCharge(proof) }.getOrNull()
+    }
+}
+
 internal suspend fun readLocalParkedDetail(
     dao: DriveSummaryDao,
     localHistoryCarId: Int,
@@ -207,7 +243,7 @@ internal fun buildLocalParkedDetail(
     older: DriveSummary,
     newer: DriveSummary
 ): ParkedDetailData? {
-    if (older.carId != newer.carId || older.driveId != olderDriveId || newer.driveId != newerDriveId) return null
+    if (localParkedSourceProof(olderDriveId, newerDriveId, older, newer) == null) return null
     val start = parseIsoInstant(older.endDate) ?: return null
     val end = parseIsoInstant(newer.startDate) ?: return null
     if (!start.isBefore(end)) return null

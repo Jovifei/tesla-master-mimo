@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.VehicleContextRepository
+import com.matelink.data.local.HistoryIdentityUnavailableException
 import com.matelink.data.local.HistoryReadScope
 import com.matelink.data.local.VehicleContext
 import com.matelink.data.local.entity.ChargeCostOverride
@@ -12,6 +13,7 @@ import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.dao.AggregateDao
 import com.matelink.data.model.Currency
 import com.matelink.data.repository.ApiResult
+import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.domain.analytics.AnalysisHistoryRepository
 import com.matelink.domain.analytics.AnalysisWindow
 import com.matelink.domain.analytics.DatedSourceRecord
@@ -149,6 +151,7 @@ class CostViewModel @Inject constructor(
     private var currencyCode: String = "CNY"
     private val latestLoad = LatestHistoryLoad()
     private var activeScope: HistoryReadScope? = null
+    private var activeContext: VehicleContext? = null
     private var defaultChargePrice: Double? = null
     private var customStart: LocalDate? = null
     private var customEnd: LocalDate? = null
@@ -158,8 +161,7 @@ class CostViewModel @Inject constructor(
             vehicleContexts.historyScopeChanges.collect { scope ->
                 val id = currentCarId ?: return@collect
                 if (activeScope != null && activeScope != scope) {
-                    charges = emptyList()
-                    manualRecords = emptyList()
+                    clearProjection()
                     load(id)
                 }
             }
@@ -172,13 +174,14 @@ class CostViewModel @Inject constructor(
         if (!sameCar) {
             customStart = null
             customEnd = null
-            charges = emptyList()
         }
+        clearProjection()
         currentCarId = carId
+        _uiState.value = CostUiState(loading = true, selectedWindow = window)
         latestLoad.launch(viewModelScope) {
-            _uiState.value = CostUiState(loading = true, selectedWindow = window)
             var capturedScope: HistoryReadScope? = null
             var capturedContext: VehicleContext? = null
+            var cachedPublished = false
             try {
                 val scope = vehicleContexts.captureReadScope()
                 val context = vehicleContexts.cachedContextForRemote(carId, scope)
@@ -187,8 +190,11 @@ class CostViewModel @Inject constructor(
                 capturedContext = context
                 suspend fun checkScope() {
                     ensureCurrent()
-                    if (currentCarId != carId || !vehicleContexts.isHistoryContextCurrent(scope, context))
+                    if (currentCarId != carId) throw CancellationException("Cost history request superseded")
+                    if (!vehicleContexts.isHistoryContextCurrent(scope, context)) {
+                        publishIdentityUnavailable(window)
                         throw CancellationException("Cost history scope changed")
+                    }
                 }
                 checkScope()
                 val settings = settingsDataStore.settings.first()
@@ -199,16 +205,22 @@ class CostViewModel @Inject constructor(
                 checkScope()
                 suspend fun publish(snapshot: com.matelink.domain.analytics.AnalysisHistorySnapshot) {
                     checkScope()
-                    val scopedCarId = snapshot.context?.localHistoryCarId
-                        ?: throw com.matelink.data.local.HistoryIdentityUnavailableException()
+                    val publishedContext = snapshot.context ?: throw HistoryIdentityUnavailableException()
+                    val scopedCarId = publishedContext.localHistoryCarId
                     if (scopedCarId != context.localHistoryCarId ||
-                        snapshot.context.stableIdentity != context.stableIdentity)
-                        throw com.matelink.data.local.HistoryIdentityUnavailableException()
+                        publishedContext.remoteApiCarId != carId ||
+                        publishedContext.connectionSource != scope.source ||
+                        publishedContext.serverIdentity != scope.serverIdentity ||
+                        !vehicleContexts.isHistoryContextCurrent(scope, publishedContext))
+                        throw HistoryIdentityUnavailableException()
                     val dcIds = try { aggregateDao.getDcChargeIds(scopedCarId).toSet() }
                         catch (e: CancellationException) { throw e }
                         catch (_: Exception) { emptySet() }
                     checkScope()
+                    if (!vehicleContexts.isHistoryContextCurrent(scope, publishedContext))
+                        throw HistoryIdentityUnavailableException()
                     activeScope = scope
+                    activeContext = publishedContext
                     historyCarId = scopedCarId
                     dcChargeIds = dcIds
                     manualRecords = records
@@ -231,7 +243,6 @@ class CostViewModel @Inject constructor(
                 val saved = try { historyRepository.loadCached(carId) }
                     catch (e: CancellationException) { throw e }
                     catch (_: Exception) { null }
-                var cachedPublished = false
                 if (saved is ApiResult.Success) {
                     publish(saved.data)
                     cachedPublished = true
@@ -240,8 +251,12 @@ class CostViewModel @Inject constructor(
                     is ApiResult.Success -> publish(result.data)
                     is ApiResult.Error -> {
                         checkScope()
-                        if (!cachedPublished) _uiState.value =
-                            CostUiState(loading = false, error = result.message)
+                        if (result.message == HISTORY_IDENTITY_UNAVAILABLE) {
+                            publishIdentityUnavailable(window)
+                        } else if (!cachedPublished) {
+                            _uiState.value = CostUiState(loading = false,
+                                selectedWindow = window, noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
+                        }
                     }
                 }
             } catch (e: CancellationException) {
@@ -250,11 +265,40 @@ class CostViewModel @Inject constructor(
                 ensureCurrent()
                 val scope = capturedScope
                 val context = capturedContext
+                if (currentCarId != carId) return@launch
                 if (scope != null && context != null &&
-                    !vehicleContexts.isHistoryContextCurrent(scope, context)) return@launch
-                if (currentCarId == carId) _uiState.value = CostUiState(loading = false, error = e.message)
+                    !vehicleContexts.isHistoryContextCurrent(scope, context)) {
+                    publishIdentityUnavailable(window)
+                } else if (e is HistoryIdentityUnavailableException) {
+                    publishIdentityUnavailable(window)
+                } else if (cachedPublished) {
+                    _uiState.value = _uiState.value.copy(loading = false,
+                        historyFreshness = HistoryFreshness.STALE, error = null)
+                } else {
+                    _uiState.value = CostUiState(loading = false,
+                        selectedWindow = window, noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
+                }
             }
         }
+    }
+
+    private fun clearProjection() {
+        charges = emptyList()
+        manualRecords = emptyList()
+        historyCarId = null
+        historyRecordCount = 0
+        historyReason = null
+        dcChargeIds = emptySet()
+        activeScope = null
+        activeContext = null
+        defaultChargePrice = null
+        currencyCode = "CNY"
+    }
+
+    private fun publishIdentityUnavailable(window: AnalysisWindow) {
+        clearProjection()
+        _uiState.value = CostUiState(loading = false, selectedWindow = window,
+            error = HISTORY_IDENTITY_UNAVAILABLE)
     }
 
     fun selectWindow(window: AnalysisWindow) {
@@ -272,6 +316,13 @@ class CostViewModel @Inject constructor(
     }
 
     private fun recalculate(window: AnalysisWindow) {
+        val scope = activeScope
+        val context = activeContext
+        if (scope != null && context != null &&
+            !vehicleContexts.isHistoryContextCurrentNow(scope, context)) {
+            publishIdentityUnavailable(window)
+            return
+        }
         val selected = selectWindow(charges, window, LocalDate.now(), customStart, customEnd).map { it.charge }
         fun costFor(charge: ChargeData): Double? {
             val car = historyCarId ?: return null
