@@ -37,15 +37,16 @@ class DriveHistoryFilterUiTest {
             composeRule.scrollUntilText("Fixture Garage")
             composeRule.waitForText("Fixture Garage")
 
-            // Scroll back to top so distance filter chips are composed and reachable
+            // Scroll back to top so distance filter chips are reachable
             composeRule.onNode(verticalList, useUnmergedTree = true).performScrollToIndex(0)
             composeRule.waitForIdle()
 
             val commute = context.getString(R.string.filter_commute_km)
             val dayTrip = context.getString(R.string.filter_day_trip_km)
-            // Day Trip (50–200km) excludes the 18km and 12km fixture drives.
-            composeRule.onNodeWithTag("drive_distance_filters").performScrollToNode(hasText(dayTrip))
-            composeRule.onNodeWithText(dayTrip).assertExists().performClick()
+
+            // Commute (< 10km) excludes both the 18km and 12km fixture drives.
+            composeRule.onNodeWithTag("drive_distance_filters").performScrollToNode(hasText(commute))
+            composeRule.onNodeWithText(commute).assertExists().performClick()
             composeRule.scrollUntilText(context.getString(R.string.no_drives_found))
             composeRule.onNodeWithText("Fixture Garage").assertDoesNotExist()
 
@@ -53,9 +54,9 @@ class DriveHistoryFilterUiTest {
             composeRule.onNode(verticalList, useUnmergedTree = true).performScrollToIndex(0)
             composeRule.waitForIdle()
 
-            // Commute (< 50km) includes both 18km and 12km fixture drives.
-            composeRule.onNodeWithTag("drive_distance_filters").performScrollToNode(hasText(commute))
-            composeRule.onNodeWithText(commute).assertExists().performClick()
+            // Day Trip (10–100km) includes both the 18km and 12km fixture drives.
+            composeRule.onNodeWithTag("drive_distance_filters").performScrollToNode(hasText(dayTrip))
+            composeRule.onNodeWithText(dayTrip).assertExists().performClick()
             composeRule.scrollUntilText("Fixture Garage")
             composeRule.waitForText("Fixture Garage")
             composeRule.onNodeWithText(context.getString(R.string.no_drives_found)).assertDoesNotExist()
