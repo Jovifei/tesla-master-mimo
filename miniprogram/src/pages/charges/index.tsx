@@ -671,7 +671,7 @@ export default function ChargesPage() {
       {current && !isHistoryQuarantined(current) ? (
         <View className="history-list">
           <View className="visual-heading"><VisualIcon name="energy" /><Text className="section-title">正在充电</Text></View>
-          <Text className="muted">开始：{historyDateTime(current.startDate)} · 地点：{value(current.address)}</Text>
+          <Text className="muted">开始：{historyDateTime(current.startDate)} · 地点：{displayAddress(current.address)}</Text>
           <View className="metric-grid">
             <MetricValue label="已充入" value={current.energyAddedKwh} unit="kWh" icon="battery" />
             <MetricValue label="功率" value={current.chargerPowerKw} unit="kW" icon="energy" />

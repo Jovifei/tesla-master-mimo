@@ -276,7 +276,22 @@
   box-sizing: border-box;
 
   .history-page-header { margin: -24rpx -24rpx 16rpx; padding: 24rpx 24rpx 16rpx; }
-  .charge-short-toggle { margin: 8rpx 0; font-size: 24rpx; }
+  .charge-short-toggle {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 10rpx 24rpx !important;
+    border-radius: 999rpx !important;
+    border: 1rpx solid #e9edf2 !important;
+    background: #ffffff !important;
+    color: #6b7280 !important;
+    font-size: 24rpx !important;
+    font-weight: 500 !important;
+    margin: 8rpx 0 !important;
+    width: auto !important;
+    line-height: 1.4 !important;
+    &::after { border: none !important; }
+  }
   .charge-history-heading { display: block; margin: 24rpx 0 16rpx; font-size: 34rpx; font-weight: 700; color: #1f2937; }
   .charge-history-list .history-record { background: #fff; margin: 16rpx 0; }
 }

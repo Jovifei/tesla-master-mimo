@@ -496,7 +496,7 @@ export default function DrivesPage() {
       {car ? <View className="history-controls">
         <HistoryDateChips kind="drives" query={query} onChange={updateQuery} />
         <View className="history-distance-chips">
-          {[{ label: '全部', min: 0, max: undefined }, { label: '通勤 (<50km)', min: 0, max: 50 },
+          {[{ label: '全部', min: 0, max: undefined }, { label: '通勤 (< 50km)', min: 0, max: 50 },
             { label: '短途 (50–200km)', min: 50, max: 200 }, { label: '长途 (200km+)', min: 200, max: undefined }].map(option =>
             <Button key={option.label} className={`history-chip ${query.minDistanceKm === option.min && query.maxDistanceKm === option.max ? 'history-chip-selected' : ''}`} onClick={() => updateQuery({ minDistanceKm: option.min, maxDistanceKm: option.max })}>{option.label}</Button>)}
         </View>
@@ -540,7 +540,7 @@ export default function DrivesPage() {
             <View key={item.key} className="history-record history-parked" onClick={() => { void openParked(item) }}>
               <View className="parked-heading">
                 <View className="parked-icon"><VisualIcon name="vehicle" /></View>
-                <View className="parked-main"><Text className="parked-title">驻车于 {item.address ?? '未知位置'}</Text>
+                <View className="parked-main"><Text className="parked-title">驻车于 {toChineseDisplayAddress(item.address) ?? '未知位置'}</Text>
                   <Text className="parked-date">{historyEditorialDate(item.startDate)}</Text></View>
                 <View className="parked-end"><Text className="parked-duration">{item.minutes >= 60 ? `${Math.floor(item.minutes / 60)}h ${item.minutes % 60}m` : `${item.minutes}m`}</Text>
                   {item.older.endBatteryLevel != null && item.newer.startBatteryLevel != null
@@ -734,7 +734,7 @@ export default function DrivesPage() {
               parkedCloud.insideTempC != null || parkedCloud.outsideTempC != null || (parkedCloud.sampleCount ?? 0) > 0)
             return <>
               <View className="card parked-detail-summary">
-                <Text className="parked-detail-hero-title">驻车于 {parkedOpen.address ?? '未知位置'}</Text>
+                <Text className="parked-detail-hero-title">驻车于 {toChineseDisplayAddress(parkedOpen.address) ?? '未知位置'}</Text>
                 <Text className="parked-detail-timeline">{historyDateTime(parkedOpen.startDate)} → {historyDateTime(parkedOpen.endDate)}</Text>
                 <Text className="parked-detail-note">共驻车 {duration}{delta != null ? ' ' : ''}{delta != null ? (delta > 0
                   ? <Text className="parked-detail-badge charge">⚡ 充电 +{delta}%</Text>
