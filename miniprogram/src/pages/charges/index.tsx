@@ -2,6 +2,7 @@ import { Button, Input, Map as TaroMap, Picker, ScrollView, Text, View } from '@
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 import { toChineseDisplayAddress } from '../../domain/address_display'
+import { getAppNavGeometry } from '../../services/nav_geometry'
 import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
 import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, reconcileHistoryCache, type HistoryInterval } from '../../domain/history_controller'
 import { emptyHistoryQuery, filterHistory, historyDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
@@ -611,9 +612,10 @@ export default function ChargesPage() {
     if (!success) { setError('费用未保存：请核对非负金额、三字母币种与当前会话；本机最多200条/64KiB且受共享缓存预算限制，已有记录保留。'); return }
     setCostVersion(value => value + 1); setCostEditing(false); costEdit.current = null; setError(null)
   }
+  const navGeo = getAppNavGeometry()
   return (
     <View className="page history-page charges-page">
-      <View className="history-page-header">
+      <View className="history-page-header" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px` }}>
         <Text className="title">充电历史</Text>
         {cars.length > 1 ? (
           <Picker mode="selector" range={cars.map(item => item.displayName || item.name || `车辆 ${item.stableId}`)} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}>
@@ -719,7 +721,7 @@ export default function ChargesPage() {
       {selected && selectedView && !isHistoryQuarantined(selected) ? (
         <ScrollView className="history-detail-overlay" scrollY scrollTop={detailScrollTop.current} onScroll={event => { detailScrollTop.current = event.detail.scrollTop }} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%' }} ariaLabel="充电详情">
         <View className="history-detail-surface">
-          <View className="history-detail-heading"><Button className="detail-back" onClick={closeDetail}>‹ 返回</Button><Text className="section-title">充电详情</Text></View>
+          <View className="history-detail-heading" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px`, minHeight: `${navGeo.headerTotalHeight}px` }}><Button className="detail-back" onClick={closeDetail}>‹ 返回</Button><Text className="section-title">充电详情</Text></View>
           <View className="card charge-detail-intro"><Text className="section-title">位置与费用</Text><Text className="charge-detail-address">{displayAddress(selected.address)}</Text>
             <Text className="muted">{historyDateTime(selected.startDate)} → {historyDateTime(selected.endDate)} · {modeLabel(selected)}</Text>
             <MetricValue label="充电费用" {...costLabel(selectedView)} icon="account" />

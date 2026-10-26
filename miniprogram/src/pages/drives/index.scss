@@ -15,43 +15,50 @@
     top: 0;
     z-index: 100;
     background: #ffffff;
-    padding: calc(16rpx + env(safe-area-inset-top)) 24rpx 16rpx;
+    padding-top: max(88rpx, calc(20rpx + env(safe-area-inset-top)));
+    padding-right: max(192rpx, calc(160rpx + env(safe-area-inset-right)));
+    padding-bottom: 16rpx;
+    padding-left: 24rpx;
     margin: 0 -24rpx 24rpx;
     display: flex;
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
     border-bottom: 1rpx solid #e9edf2;
+    box-sizing: border-box;
   }
   .history-detail-surface .section-title {
-    font-size: 32rpx;
-    font-weight: 600;
+    font-size: 34rpx;
+    font-weight: 700;
     color: #1f2937;
     margin: 0;
     flex: 1;
-    text-align: center;
+    text-align: left;
   }
   .history-detail-heading .detail-curves-btn {
     font-size: 24rpx;
     font-weight: 600;
     color: #157a86;
     background: rgba(21, 122, 134, 0.1);
-    padding: 8rpx 20rpx;
+    padding: 10rpx 22rpx;
     border-radius: 999rpx;
     border: none;
     margin: 0;
-    line-height: 1.4;
+    line-height: 1.2;
+    flex-shrink: 0;
     &::after { border: none; }
+    &:active { background: rgba(21, 122, 134, 0.2); }
   }
   
   .history-page-header {
     margin: -16rpx -16rpx 16rpx;
-    padding: 24rpx 24rpx 16rpx;
+    padding: max(88rpx, calc(24rpx + env(safe-area-inset-top))) max(192rpx, calc(160rpx + env(safe-area-inset-right))) 16rpx 24rpx;
     background: #ffffff;
     border-bottom: 1rpx solid #e9edf2;
+    box-sizing: border-box;
     .title {
       margin: 0;
-      font-size: 40rpx;
+      font-size: 44rpx;
       font-weight: 700;
       color: #1f2937;
     }
@@ -338,17 +345,18 @@
   }
   .parked-title {
     display: block;
-    font-size: 28rpx;
-    font-weight: 500;
+    font-size: 30rpx;
+    font-weight: 600;
     color: #1f2937;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    line-height: 1.35;
   }
   .parked-date {
     display: block;
     margin-top: 4rpx;
-    font-size: 22rpx;
+    font-size: 24rpx;
     color: #6b7280;
   }
   .parked-end {
@@ -357,37 +365,42 @@
   }
   .parked-duration {
     display: block;
-    font-size: 28rpx;
-    font-weight: 600;
+    font-size: 30rpx;
+    font-weight: 700;
     color: #1f2937;
     font-family: monospace;
+    line-height: 1.35;
   }
   .parked-soc {
     display: block;
     margin-top: 4rpx;
-    font-size: 22rpx;
+    font-size: 24rpx;
     color: #157a86;
     font-weight: 500;
+    font-family: monospace;
   }
 }
 
 .detail-back {
-  width: 60rpx !important;
-  height: 60rpx !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  border-radius: 50% !important;
-  background: #f0f2f5 !important;
+  width: auto !important;
+  height: 64rpx !important;
+  min-height: 64rpx !important;
+  padding: 0 24rpx !important;
+  margin: 0 16rpx 0 0 !important;
+  border-radius: 32rpx !important;
+  background: #eef1f4 !important;
   color: #1f2937 !important;
-  font-size: 36rpx !important;
-  line-height: 60rpx !important;
-  text-align: center !important;
+  font-size: 28rpx !important;
+  font-weight: 500 !important;
+  line-height: 1 !important;
   border: none !important;
+  box-sizing: border-box !important;
   flex: none !important;
-  display: flex !important;
+  display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   &::after { border: none !important; }
+  &:active { background: #e2e5e9 !important; }
 }
 
 .drive-map-card {

@@ -6,6 +6,7 @@ import { ApiError, getApiSessionGeneration, JOURVOLT_PRIVACY_VERSION, JOURVOLT_T
 import { readAppSession, readPendingTeslaAuthorization, type AppSession } from '../../services/session'
 import { requestDataStatus } from '../../services/data_status_intent'
 import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
+import { getAppNavGeometry } from '../../services/nav_geometry'
 
 const TERMS_VERSION = JOURVOLT_TERMS_VERSION
 const PRIVACY_VERSION = JOURVOLT_PRIVACY_VERSION
@@ -219,9 +220,10 @@ export default function MePage() {
   useDidHide(invalidatePage)
   useUnload(invalidatePage)
 
+  const navGeo = getAppNavGeometry()
   return (
     <View className="page more-page">
-      <View className="app-toolbar"><Text className="title">更多</Text></View>
+      <View className="app-toolbar" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px` }}><Text className="title">更多</Text></View>
       {MOCK_FIXTURE_ENABLED ? <Text className="muted">合成数据模式——账号状态为模拟，授权流程不可用；全部记录为 source=mock_fixture 的测试数据。</Text> : null}
       <View className="more-status">
         <VisualIcon name="shield" />

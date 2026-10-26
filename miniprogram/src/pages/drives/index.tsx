@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
 import { buildDriveHistoryItems, type DriveHistoryItem } from '../../domain/drive_history'
 import { toChineseDisplayAddress } from '../../domain/address_display'
+import { getAppNavGeometry } from '../../services/nav_geometry'
 import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, reconcileHistoryCache, type HistoryInterval } from '../../domain/history_controller'
 import { emptyHistoryQuery, filterHistory, historyDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
@@ -481,9 +482,10 @@ export default function DrivesPage() {
   const historyItems = buildDriveHistoryItems(visibleItems)
   const statisticsInterval = interval ? { ...interval, items: interval.items.filter(isAppStatisticsDrive) } : null
   const chartRows = statisticsInterval ? filterHistory(statisticsInterval.items, query) : []
+  const navGeo = getAppNavGeometry()
   return (
     <View className="page history-page drives-page">
-      <View className="history-page-header">
+      <View className="history-page-header" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px` }}>
         <Text className="title">行程记录</Text>
         {cars.length > 1 ? (
           <Picker mode="selector" range={cars.map(item => item.displayName || item.name || `车辆 ${item.stableId}`)} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}>
@@ -578,7 +580,7 @@ export default function DrivesPage() {
       {selected && !isHistoryQuarantined(selected) ? (
         <ScrollView className="history-detail-overlay" scrollY scrollTop={detailScrollTop.current} onScroll={event => { detailScrollTop.current = event.detail.scrollTop }} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%' }} ariaLabel="行程详情">
         <View className="history-detail-surface">
-          <View className="history-detail-heading">
+          <View className="history-detail-heading" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px`, minHeight: `${navGeo.headerTotalHeight}px` }}>
             <Button className="detail-back" onClick={closeDetail}>‹ 返回</Button>
             <Text className="section-title">行程详情</Text>
             <Button className="detail-curves-btn" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=curves&id=${encodeURIComponent(selected.id)}` }) }}>行程曲线</Button>
@@ -722,7 +724,7 @@ export default function DrivesPage() {
       {parkedOpen && parkedOpen.kind === 'parked' ? (
         <ScrollView className="history-detail-overlay" scrollY style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%' }} ariaLabel="驻车详情">
         <View className="history-detail-surface">
-          <View className="history-detail-heading"><Button className="detail-back" onClick={closeParked}>‹ 返回</Button><Text className="section-title">驻车详情</Text></View>
+          <View className="history-detail-heading" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px`, minHeight: `${navGeo.headerTotalHeight}px` }}><Button className="detail-back" onClick={closeParked}>‹ 返回</Button><Text className="section-title">驻车详情</Text></View>
           {(() => {
             // App build70 layered design: hero (address/time/duration/badge) →
             // battery boundaries → cloud detail that shows one honest pending

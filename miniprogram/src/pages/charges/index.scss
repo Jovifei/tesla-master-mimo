@@ -15,31 +15,36 @@
     top: 0;
     z-index: 100;
     background: #ffffff;
-    padding: calc(16rpx + env(safe-area-inset-top)) 24rpx 16rpx;
+    padding-top: max(88rpx, calc(20rpx + env(safe-area-inset-top)));
+    padding-right: max(192rpx, calc(160rpx + env(safe-area-inset-right)));
+    padding-bottom: 16rpx;
+    padding-left: 24rpx;
     margin: 0 -24rpx 24rpx;
     display: flex;
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
     border-bottom: 1rpx solid #e9edf2;
+    box-sizing: border-box;
   }
   .history-detail-surface .section-title {
-    font-size: 32rpx;
-    font-weight: 600;
+    font-size: 34rpx;
+    font-weight: 700;
     color: #1f2937;
     margin: 0;
     flex: 1;
-    text-align: center;
+    text-align: left;
   }
 
   .history-page-header {
     margin: -16rpx -16rpx 16rpx;
-    padding: 24rpx 24rpx 16rpx;
+    padding: max(88rpx, calc(24rpx + env(safe-area-inset-top))) max(192rpx, calc(160rpx + env(safe-area-inset-right))) 16rpx 24rpx;
     background: #ffffff;
     border-bottom: 1rpx solid #e9edf2;
+    box-sizing: border-box;
     .title {
       margin: 0;
-      font-size: 40rpx;
+      font-size: 44rpx;
       font-weight: 700;
       color: #1f2937;
     }
@@ -125,26 +130,26 @@
   }
   .location-name {
     display: block;
-    font-size: 28rpx;
-    font-weight: 500;
+    font-size: 30rpx;
+    font-weight: 600;
     color: #1f2937;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    line-height: 1.3;
+    line-height: 1.35;
   }
   .location-date {
     display: block;
-    font-size: 22rpx;
+    font-size: 24rpx;
     color: #6b7280;
     margin-top: 4rpx;
   }
   .history-charge-mode {
     border-radius: 999rpx;
-    padding: 4rpx 16rpx;
+    padding: 6rpx 18rpx;
     background: #ddf0f1;
     color: #157a86;
-    font-size: 22rpx;
+    font-size: 24rpx;
     font-weight: 600;
     flex: none;
   }
