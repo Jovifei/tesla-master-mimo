@@ -5,7 +5,8 @@
 - 发现基准为2.1.53/build72已审候选；本轮在E盘 `matelink-release-data-audit-20261026`、App分支 `codex/app-release-data-fixes-20261027` 实施，原候选基线提交 `e53a2d01`。
 - [逐问题版本台账](APP-ISSUE-VERSIONS.md)保存发现日期、版本、改法、验证与提交；[批次记录](releases/2026-10-27-app-data-fixes.md)及F1–F7分组记录对应来源→资格/计算→持久化→展示链。
 - 本轮只修数据、元信息、计算、并发及现有位置formatter/路由绑定；保持原页面参数排列、尺寸、字体、间距与既有颜色。
-- 状态：分组及真实Room/VM/Notification负例已逐批RED→GREEN，full-debug-22 1555方法/17失败，正在修旧契约fixture及缓存头真实回归后复跑。候选包、最终本地提交与实际APK hash待最终验收回填。
+- **代码提交**：`161d77cea4d110aac93b52956644ab3ea5603733`。Debug/Release各1556方法0fail/0error（Release8既有skip），双lint0error，AndroidTest源码编译、两个Go模块tests/vet和R8通过。
+- **签名候选**：`com.matelink` 73/2.1.54，debuggable=false，证书与既有包一致；APK SHA256 `425072A9A5C46DD9F54901FEE07170A6FEAE3C1DA2C6BFE3A48214B68A726482`。包内GIT_SHA=161d77ce，文件位于批准下载目录。安装、provider和生产验收分别保留待验。
 - 软件修复不等于真实历史补采；未曾采集的旧样本、未提供的来源实例/事件脉冲保持明确边界。本轮未安装手机或部署生产，Hub当前拒绝连接未成功上报。
 
 

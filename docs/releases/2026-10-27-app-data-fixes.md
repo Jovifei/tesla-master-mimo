@@ -46,3 +46,15 @@
 现有布局参数与e53a2d01逐文件净差0；两处新增错误Panel已撤回，保原布局并以已有消息反馈。未知/真实0/估算、输出单位及真实曲线形状是数据绑定变化。
 
 代码提交后构建R8签名APK，确保BuildConfig.GIT_SHA指向真正修复commit；包hash/签名和后续文档回填commit另记。正式配置沿用既有发布产物的显式API/auth/publicInfo地址，未修改项目绑定。私有签名配置在仓库外；没有安装、生产部署或push。
+
+### 代码与签名候选
+
+- 代码commit：161d77cea4d110aac93b52956644ab3ea5603733，App分支本地提交。
+- R8/assembleRelease实际退出0；build wrapper的PARTIAL仅表示SkipTests避免重复已经独立完成的单测/lint，不是构建失败。
+- APK com.matelink 73/2.1.54，debuggable=false，signature PASS；SHA256 425072A9A5C46DD9F54901FEE07170A6FEAE3C1DA2C6BFE3A48214B68A726482；cert SHA256 9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774（历史一致）。
+- 文件：E:\Claude_allow\Download\matelink-app-release-fixes-20261027\MateLink-2.1.54-build73-161d77ce.apk，DEX内已找到161d77ce。最终docs-only回填提交不改变该APK源码身份。
+- 实机、自然Fleet/旧历史缺测、provider source-instance及事件脉冲、地图运行时配置仍是独立门，未写成通过；本轮无手机安装、生产部署或远端push。
+
+### Obsidian与报告边界
+
+既有tesla-master-mimo项目的progress/decisions/workflow经DryRun、hash复核与no-arg wrapper成功MEMORY_UPDATED；历史managed内容保留并追加本候选。详细Markdown镜像已过滤校验，实际结果以verification.json为准。Hub因未取得当前revision而未能生成/发送正式事件，离线摘要保留在本次task evidence，不自动重试或伪报成功。

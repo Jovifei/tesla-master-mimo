@@ -9,11 +9,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "01-auth-home.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "只在当前已验证车单恢复selection并在导航前写回真实首车ID；拒绝无UID/重复/迟到车单",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -38,6 +38,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F1-auth-cache.md"
@@ -48,11 +64,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "01-auth-home.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "缓存v4同时保存原status、units/source/observedAt；旧无单位保raw但显示投影屏蔽单位敏感值",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -77,6 +93,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F1-auth-cache.md"
@@ -87,11 +119,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "01-auth-home.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "HUD缺速度/能量/电流保留unknown，真实0保留，不以默认0生成观测",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -116,6 +148,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F1-auth-cache.md"
@@ -126,11 +174,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "01-auth-home.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "登录后过期由当前认证状态触发重定向，不依赖冷启动初始页",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -155,6 +203,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F1-auth-cache.md"
@@ -165,11 +229,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "01-auth-home.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "持久login epoch区分同登录token轮换与新登录/ABA，原子条件退出",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -194,6 +258,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F1-auth-cache.md"
@@ -204,11 +284,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "01-auth-home.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "识别真实telemetry_mqtt来源词表并使用原始观测时间",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -233,6 +313,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F1-auth-cache.md"
@@ -243,11 +339,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "01-auth-home.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "RECENT、服务失败和显式车辆休眠独立判断",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -272,6 +368,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F1-auth-cache.md"
@@ -282,11 +394,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "02-charging.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "用正向phase/fast证据与合同共享AC/DC/UNKNOWN；processed不当AC，冷开读本地模式索引",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -311,6 +423,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F2-charging.md"
@@ -321,11 +449,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "02-charging.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "有效手工/单次实付优先；车级免费权益不足以免费历史DC，免费0需会话证明",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -350,6 +478,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F2-charging.md"
@@ -360,11 +504,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "02-charging.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "raw融合前校同源/实例/record/精确window，持久化使用实际remote receipt而非预合并值",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -389,6 +533,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F2-charging.md"
@@ -399,11 +559,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "02-charging.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "current scope/generation栅栏、真实clock/value/gaps、独立current counter；快照不覆起点/历史曲线；失败仅历史不装饰新快照",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -428,6 +588,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F2-charging.md"
@@ -438,11 +614,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "02-charging.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "离线从nullable receipt恢复时长，同响应温标/长度单位进入缓存；points按自己的单位转换",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -467,6 +643,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F2-charging.md"
@@ -477,11 +669,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "02-charging.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "地图仅接有效完整pair；同窗同源receipt可回退，不再借任意相邻行程",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -506,6 +698,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F2-charging.md"
@@ -516,11 +724,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "02-charging.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "列表/摘要/图共用短会话筛选，现有覆盖文案增加known energy/records，真实0不当缺失",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -545,6 +753,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F2-charging.md"
@@ -555,11 +779,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "删除无观测支持的固定145Wh/km；保留有资格SOC/容量估计与真实0/负净回收",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -584,6 +808,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -594,11 +834,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "驻车SOC从nullable receipt读取，primitive0不能变观测；缺wire采样元信息保持null",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -623,6 +863,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -633,11 +889,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "统一timestamp/value/index/gap投影、有限范围、原indices downsample和同clock统计",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -662,6 +918,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -672,11 +944,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "raw preferred mph曲线不重复乘0.621371；未知单位不猜km/h",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -701,6 +973,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -711,11 +999,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "只去相邻GPS重复，保留A→B→A，非法/断档分段不拉直",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -740,6 +1028,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -750,11 +1054,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "远端pair须匹配当前本地邻接proof/来源/精确window；显式car/instance冲突拒绝，legacy instance缺失标未证",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -779,6 +1083,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -789,11 +1109,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "完整all-qualities chronology用于邻接证明，quarantine中间行阻断，显示仍隔离",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -818,6 +1138,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -828,11 +1164,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "两侧地址各自fallbackunknown，仅完整边界pair可反查，不借另一侧或中途GPS",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -857,6 +1193,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -867,11 +1219,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "合格同窗report极值优先，缺report的样本极值在原位置标样本，不拼整程覆盖",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -896,6 +1248,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -906,11 +1274,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "距离曲线仅按实际speed和dt积分，首点0，缺时刻/速度不造线性中点",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -935,6 +1303,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -967,11 +1351,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "已验证Room summary/完整header/points先显，有限时刷新失败保留并拒迟到UID",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -996,6 +1380,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -1006,11 +1406,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "speed/power/SOC/duration各自有限范围门；非法点留gap，不污染轴与tooltip",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1035,6 +1435,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -1045,11 +1461,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "透传speed metric method/sample count，样本均值保持样本语义",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1074,6 +1490,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -1084,11 +1516,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "最近SOC等距候选冲突则unknown，不依赖原数组顺序",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1113,6 +1545,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -1123,11 +1571,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "缺/未知天气码UNKNOWN；真实point clock→明确GMT/C查询→用户本地显示，缺时刻不插值",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1152,6 +1600,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -1162,11 +1626,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "03-driving-parked.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "同proof/window/source有界追加v23 parked header receipt+SHA，冷重开优先读取，坏/写失败保旧，不扩schema",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1191,6 +1655,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F3-driving.md"
@@ -1201,11 +1681,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "04-analysis.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "Vampire使用路由car及验证proof，scope/代次阻断晚结果，失败清内部旧投影",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1230,6 +1710,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F4-analysis.md"
@@ -1240,11 +1736,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "04-analysis.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "usable SOC缺失不代入主要SOC，真实usable0仍已知",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1269,6 +1765,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F4-analysis.md"
@@ -1279,11 +1791,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "04-analysis.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "SOC/rated range只同端点配对，日期/温度/单位来自同receipt",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1308,6 +1820,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F4-analysis.md"
@@ -1318,11 +1846,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "04-analysis.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "canonical km通过formatDistanceKm转mi一次",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1347,6 +1875,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F4-analysis.md"
@@ -1357,11 +1901,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "04-analysis.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "同响应温标先canonicalC再消费，不借长度偏好猜温标",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1386,6 +1930,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F4-analysis.md"
@@ -1396,11 +1956,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "04-analysis.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "候选样本覆盖与已采用模型样本分开，未成模不把候选覆盖清零",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1425,6 +1985,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F4-analysis.md"
@@ -1435,11 +2011,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "04-analysis.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "温差用同drive内外配对，不用独立极值或固定空调好坏结论",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1464,6 +2040,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F4-analysis.md"
@@ -1474,11 +2066,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "04-analysis.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "standby producer完整有限功率区间的真实0保留，缺失/断档/NaN/Inf不能造0",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1503,6 +2095,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F4-analysis.md"
@@ -1513,11 +2121,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "04-analysis.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "按Instant降序后取近期10条",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1542,6 +2150,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F4-analysis.md"
@@ -1552,11 +2176,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "05-statistics.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "Countries/Regions捕获scope/request/boundary/units代次，先清旧内容再安全重读",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1581,6 +2205,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F5-statistics.md"
@@ -1591,11 +2231,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "05-statistics.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "国家/地区canonical km正确转偏好；C字段转F一次，物理单位和标签一致",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1620,6 +2260,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F5-statistics.md"
@@ -1630,11 +2286,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "05-statistics.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "Geo复用同Room qualified cohort，nullable总量与sample count、坐标/quality门、UNKNOWN模式贯通",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1659,6 +2315,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F5-statistics.md"
@@ -1669,11 +2341,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "05-statistics.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "同一captured local-year Instant筛选，首次/最近按时间顺序，不用ISO字符串排序",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1698,6 +2370,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F5-statistics.md"
@@ -1708,11 +2396,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "05-statistics.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "只补合法durationMin的现有位置回退；能量原资格化链不改",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1737,6 +2425,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F5-statistics.md"
@@ -1747,11 +2451,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "05-statistics.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "CarStats带同次currencyCode，金额与符号同次发布，拒迟到settings重贴标签",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1776,6 +2480,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F5-statistics.md"
@@ -1786,11 +2506,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "Create/Export使用verified local key、冻结scope与请求，晚save/export不得写或发布旧身份",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1815,6 +2535,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -1825,11 +2561,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "Trips本地先显与scope失效清投影，units/refresh前后复核",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1854,6 +2590,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -1864,11 +2616,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "Annual callback携当前selectedYear到PDF冻结snapshot",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1893,6 +2645,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -1903,11 +2671,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "Trip复用verified immutable detail receipts及revision/hash；每drive slot保留、内部parts断档、不复用仅ID旧线",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1932,6 +2700,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -1942,11 +2726,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "失败drive保空slot，weather以driveId/window/真实observedAt配对，首末失败不冒用中段",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -1971,6 +2755,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -1981,11 +2781,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "浏览不删除仅drive集合相同但name/charges不同的保存记录；精确saved row ID用于修改/删除",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2010,6 +2810,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -2020,11 +2836,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "导出明确raw summary与qualified/effective字段，nullable/币种/来源/覆盖可追踪，不把混合币种当总账",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2049,6 +2865,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -2059,11 +2891,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "成员按Instant排序与union时间边界，不用原ISO字符串",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2088,6 +2920,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -2098,11 +2946,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "创建/详情canonical km正确转mi，100unit费用分母先转显示单位",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2127,6 +2975,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -2137,11 +3001,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "三态mode用于timeline/map/功率组；未知duration不算0kW，真实0独立",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2166,6 +3030,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -2176,11 +3056,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "保存事务核验当前scope、成员仍存在/未用，失败保草稿并反馈，成功后带真实saved ID导航",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2205,6 +3085,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -2215,11 +3111,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "Trip/Annual/PDF用qualified nullable指标及已知覆盖，不把部分数据写全量",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2244,6 +3140,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -2254,11 +3166,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "年度图固定12个月时轴，unknown留gap，不压缩月份或补零",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2283,6 +3195,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -2293,11 +3221,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "PDF预览保有资格0/负均耗，与导出计算一致",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2322,6 +3250,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -2332,11 +3276,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "CSV/JSON冻结同一cohort/count/window/format，输出与MIME绑定，scope改动撤回旧URI",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2361,6 +3305,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -2371,11 +3331,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "06-trips-reports.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "PDF/导出每次独立文件，分享URI不被同名后续生成覆盖",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2400,6 +3360,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F6-trips-reports.md"
@@ -2410,11 +3386,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "07-system.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "分时配置进入共享estimate，App时区按时长加权；缺window仅明确default-rate估计，实付优先",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2439,6 +3415,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F2-charging.md"
@@ -2449,11 +3441,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "07-system.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "价格仅接受有限非负数，非法配置不参与计算",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2478,6 +3470,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F2-charging.md"
@@ -2488,11 +3496,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "07-system.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "重置保当前币种符号",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2517,6 +3525,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F2-charging.md"
@@ -2527,11 +3551,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "07-system.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "profile Settings writer/worker统一verified local key，旧未归属正ID保留不猜迁移",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2556,6 +3580,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F7-observation-boundaries.md"
@@ -2632,11 +3672,11 @@
       "found_date": "2026-10-26（27日复现/复核）",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "07-system.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "未知sentry_mode不当off；Cloud读已存观测、selfhost固定scope client，告警水位/跃迁原子防重",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-26",
@@ -2661,6 +3701,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ],
       "group_record": "groups/F7-observation-boundaries.md"
@@ -2737,11 +3793,11 @@
       "found_date": "2026-10-27",
       "found_version": "2.1.54 / build73工作候选",
       "source_ref": "groups/F7-observation-boundaries.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "持久同车display跃迁、水位及Mutex全环消费；不以整份snapshot新时间证明新脉冲",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-27",
@@ -2766,6 +3822,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ]
     },
@@ -2775,11 +3847,11 @@
       "found_date": "2026-10-27",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "groups/independent-data-fixes-review.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "固定selfhost API、请求/HTTP admission/写入/通知前复核scope；Cloud仅消费已有本地观测",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-27",
@@ -2804,6 +3876,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ]
     },
@@ -2813,11 +3901,11 @@
       "found_date": "2026-10-27",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "groups/independent-data-fixes-review.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "nullable真实字段、UNKNOWN类型及indeterminate进度；保留真实0",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-27",
@@ -2842,6 +3930,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ]
     },
@@ -2851,11 +3955,11 @@
       "found_date": "2026-10-27",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "groups/independent-data-fixes-review.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "notification local身份与remote路由分开，接收端核验当前缓存映射/账号/UID，零额外HTTP",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-27",
@@ -2880,6 +3984,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ]
     },
@@ -2889,11 +4009,11 @@
       "found_date": "2026-10-27",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "groups/independent-data-fixes-review.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "哨兵type tag与成对cancel、type/local data URI隔离PI，保留原前台native槽",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-27",
@@ -2918,6 +4038,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ]
     },
@@ -2927,11 +4063,11 @@
       "found_date": "2026-10-27",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "groups/F2-charging.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "Cost估算也经同一费用资格resolver；currency mismatch不降级为本币假设账单",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-27",
@@ -2956,6 +4092,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ]
     },
@@ -2965,11 +4117,11 @@
       "found_date": "2026-10-27",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "groups/F2-charging.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "同scope缓存summary/points先发布，有限时刷新失败保留，迟到/换UID拒绝",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-27",
@@ -2994,6 +4146,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ]
     },
@@ -3003,11 +4171,11 @@
       "found_date": "2026-10-27",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "groups/F2-charging.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "首帧同时读合格AC/DC索引并绑定cached proof，当前scope首发不能清有效缓存",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-27",
@@ -3032,6 +4200,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ]
     },
@@ -3041,11 +4225,11 @@
       "found_date": "2026-10-27",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "groups/F2-units.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "同response温标归一C，processing version7定向重算；旧未证温度仅内存unknown，渲染转偏好一次",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-27",
@@ -3070,6 +4254,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ]
     },
@@ -3079,11 +4279,11 @@
       "found_date": "2026-10-27",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "groups/F2-units.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "字段与receipt元信息共同仲裁；保raw和单位，不借后来status猜单位",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-27",
@@ -3108,6 +4308,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ]
     },
@@ -3117,11 +4333,11 @@
       "found_date": "2026-10-27",
       "found_version": "2.1.53 / build72候选",
       "source_ref": "groups/F3-driving.md",
-      "status": "UNIT_LINT_VERIFIED_APK_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.54 / build73候选",
       "change": "每drive保持slot、parts断线、真实point observedAt配所属drive/window；GMT/C查询并显示本地时刻",
       "verification": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
-      "commit": null,
+      "commit": "161d77cea4d110aac93b52956644ab3ea5603733",
       "history": [
         {
           "date": "2026-10-27",
@@ -3146,6 +4362,22 @@
           "detail": "Debug1556/0/0/0；Release1556/0/0/8；双lint0error；AndroidTest源码编译PASS；Go tests/vet PASS；设备/provider未验",
           "evidence": "2026-10-27-build73-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "已验证的软件修复提交；APK构建/设备/provider/生产门独立",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "R8/签名/包名/版本/debuggable核验通过；不是装机/provider/生产验收",
+          "evidence": "2026-10-27-build73-verification.json",
+          "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ]
     }
@@ -3156,6 +4388,11 @@
     "versionName": "2.1.54",
     "versionCode": 73,
     "installation": "NOT_PERFORMED_THIS_RUN",
-    "production": "NOT_DEPLOYED_THIS_RUN"
-  }
+    "production": "NOT_DEPLOYED_THIS_RUN",
+    "apk_sha256": "425072A9A5C46DD9F54901FEE07170A6FEAE3C1DA2C6BFE3A48214B68A726482",
+    "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
+    "debuggable": false,
+    "package": "com.matelink"
+  },
+  "code_commit": "161d77cea4d110aac93b52956644ab3ea5603733"
 }
