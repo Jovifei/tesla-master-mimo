@@ -1,7 +1,7 @@
 {
   "name": "@matelink/wechat-miniprogram",
   "private": true,
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "MateLink WeChat Mini Program client",
   "scripts": {
     "build:weapp": "node ../tools/miniprogram/build-vehicle-assets.mjs --check && taro build --type weapp && node ../tools/miniprogram/build-vehicle-assets.mjs --check-dist",
