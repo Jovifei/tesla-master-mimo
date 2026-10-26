@@ -553,7 +553,17 @@ export default function DrivesPage() {
             <View key={item.key} className="history-record" onClick={() => { void openDetail(item.drive) }}>
               <Text className="history-record-date">{historyEditorialDate(item.drive.startDate)}</Text>
               <View className="history-record-evidence"><Text className="history-soc">{battery(item.drive.startBatteryLevel)} → {battery(item.drive.endBatteryLevel)}</Text><Text className="history-source">{energyLabel(item.drive)} · {sourceLabel(item.drive.source)}</Text></View>
-              <View className="history-route"><View className="history-route-stops"><Text className="history-route-start">{value(toChineseDisplayAddress(item.drive.startAddress))}</Text><Text className="history-route-end">{value(toChineseDisplayAddress(item.drive.endAddress))}</Text></View><VisualIcon name="route" /></View>
+              <View className="history-route">
+                <View className="route-indicator-dots">
+                  <View className="dot-start" />
+                  <View className="line-connector" />
+                  <View className="dot-end" />
+                </View>
+                <View className="history-route-stops">
+                  <Text className="history-route-start">{value(toChineseDisplayAddress(item.drive.startAddress))}</Text>
+                  <Text className="history-route-end">{value(toChineseDisplayAddress(item.drive.endAddress))}</Text>
+                </View>
+              </View>
               <View className="history-record-metrics">
                 <MetricValue label="能量" value={efficiency(item.drive)} unit={efficiency(item.drive) != null ? "kWh/100km" : undefined} icon="energy" digits={1} negative={(efficiency(item.drive) ?? 0) < 0} />
                 <MetricValue label="距离" value={item.drive.distanceKm} unit="km" icon="distance" digits={1} />
@@ -572,7 +582,23 @@ export default function DrivesPage() {
         <View className="history-detail-surface">
           <View className="history-detail-heading"><Button className="detail-back" onClick={closeDetail}>‹ 返回</Button><Text className="section-title">行程详情</Text></View>
           <Button className="button-secondary" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=curves&id=${encodeURIComponent(selected.id)}` }) }}>行程曲线</Button>
-          <Text className="muted">{value(toChineseDisplayAddress(selected.startAddress))} → {value(toChineseDisplayAddress(selected.endAddress))}</Text>
+          <View className="card route-header-card">
+            <View className="history-route">
+              <View className="route-indicator-dots">
+                <View className="dot-start" />
+                <View className="line-connector" />
+                <View className="dot-end" />
+              </View>
+              <View className="history-route-stops">
+                <Text className="history-route-start">{value(toChineseDisplayAddress(selected.startAddress))}</Text>
+                <Text className="history-route-end">{value(toChineseDisplayAddress(selected.endAddress))}</Text>
+              </View>
+            </View>
+            <View className="route-time-row">
+              <View className="route-time-col"><Text className="time-label">开始时间</Text><Text className="time-val">{historyDateTime(selected.startDate)}</Text></View>
+              <View className="route-time-col"><Text className="time-label">结束时间</Text><Text className="time-val">{historyDateTime(selected.endDate)}</Text></View>
+            </View>
+          </View>
           <View className="metric-grid">
             <MetricValue label="距离" value={selected.distanceKm} unit="km" icon="distance" digits={1} />
             <MetricValue label="时长" value={duration(selected.durationMinutes).value} unit={duration(selected.durationMinutes).unit} icon="clock" digits={Number.isInteger(selected.durationMinutes) ? 0 : 1} />

@@ -16,11 +16,12 @@ button {
 }
 
 .card {
-  margin-bottom: 24px;
-  padding: 28px;
-  border-radius: 20px;
+  margin-bottom: 12px;
+  padding: 16px;
+  border-radius: 16px;
   background: #ffffff;
-  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.06);
+  border: 1px solid rgba(233, 237, 242, 0.7);
+  box-shadow: 0 1px 3px rgba(17, 24, 39, 0.04);
 }
 
 .title {

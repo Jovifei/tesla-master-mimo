@@ -1,6 +1,7 @@
 import { Button, Input, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
+import { toChineseDisplayAddress } from '../../domain/address_display'
 import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
 import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, reconcileHistoryCache, type HistoryInterval } from '../../domain/history_controller'
 import { emptyHistoryQuery, filterHistory, historyDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
@@ -690,7 +691,16 @@ export default function ChargesPage() {
           {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的充电记录</Text> : null}
           {visibleItems.map(item => (
             <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
-              <View className="history-charge-heading"><VisualIcon name="distance" /><View className="history-charge-location"><Text>{displayAddress(item.address)}</Text><Text className="history-record-date">{historyEditorialDate(item.startDate, false)}</Text></View><Text className="history-charge-mode">{modeLabel(item) === '模式未确认' ? '暂无数据' : modeLabel(item)}</Text></View>
+              <View className="history-charge-heading">
+                <View className="history-charge-location-box">
+                  <View className="location-circle"><VisualIcon name="distance" /></View>
+                  <View className="history-charge-location">
+                    <Text className="location-name">{displayAddress(item.address)}</Text>
+                    <Text className="location-date">{historyEditorialDate(item.startDate, false)}</Text>
+                  </View>
+                </View>
+                <Text className="history-charge-mode">{modeLabel(item) === '模式未确认' ? '暂无数据' : modeLabel(item)}</Text>
+              </View>
               <View className="history-record-metrics">
                 <MetricValue label="时长" value={item.durationMinutes != null && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0 ? item.durationMinutes : null} unit="m" icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
                 <MetricValue label="能量" value={oneDecimal(item.energyAddedKwh)} unit="kWh" icon="energy" />

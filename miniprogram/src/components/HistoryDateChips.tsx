@@ -7,7 +7,7 @@ function civil(date: Date) { return `${date.getFullYear()}-${String(date.getMont
 export default function HistoryDateChips({ kind, query, onChange }: {
   kind: 'drives' | 'charges'; query: HistoryQuery; onChange: (patch: Partial<HistoryQuery>) => void
 }) {
-  const choices = kind === 'drives' ? [0, 7, 30, null, 90, 365] : [null, 7, 30, 90]
+  const choices = kind === 'drives' ? [7, 30, null, 0] : [30, 7, 90, null]
   const today = new Date(), endDate = civil(today)
   return <View className="history-date-chips">{choices.map(days => {
     const start = new Date(today.getFullYear(), today.getMonth(), today.getDate())
