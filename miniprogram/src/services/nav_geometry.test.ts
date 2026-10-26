@@ -28,7 +28,7 @@ describe('getAppNavGeometry', () => {
     expect(geo.statusBarHeight).toBe(44)
     expect(geo.navBarTop).toBe(48)
     expect(geo.navBarHeight).toBe(32)
-    expect(geo.headerTotalHeight).toBe(84) // 80 + 4
+    expect(geo.headerTotalHeight).toBe(88) // max(80 + 4, 48 + 32 + 8, 88)
     expect(geo.capsuleRightPadding).toBe(375 - 288 + 12) // 99
   })
 
@@ -41,9 +41,9 @@ describe('getAppNavGeometry', () => {
 
     const geo = getAppNavGeometry()
     expect(geo.statusBarHeight).toBe(30)
-    expect(geo.navBarTop).toBe(36)
-    expect(geo.headerTotalHeight).toBe(78)
-    expect(geo.capsuleRightPadding).toBe(96)
+    expect(geo.navBarTop).toBe(44) // Math.max(30 + 6, 44) = 44
+    expect(geo.headerTotalHeight).toBe(88) // Math.max(30 + 48, 44 + 36 + 8, 88) = 88
+    expect(geo.capsuleRightPadding).toBe(100)
   })
 
   it('safely handles complete exception / empty host gracefully', () => {
@@ -52,8 +52,9 @@ describe('getAppNavGeometry', () => {
 
     const geo = getAppNavGeometry()
     expect(geo.statusBarHeight).toBe(24)
-    expect(geo.navBarTop).toBe(30)
-    expect(geo.headerTotalHeight).toBe(72)
-    expect(geo.capsuleRightPadding).toBe(96)
+    expect(geo.navBarTop).toBe(44)
+    expect(geo.navBarHeight).toBe(36)
+    expect(geo.headerTotalHeight).toBe(88)
+    expect(geo.capsuleRightPadding).toBe(100)
   })
 })
