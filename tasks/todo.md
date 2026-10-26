@@ -4180,3 +4180,44 @@ Review（进行中）：本工作树从 `29793c80` 起并已正常合并远端 `
 - [ ] 真实 ViewModel/Room/UI 正反回归→双变体/lint/R8/Mini/Go/隔离数据库/API35→新 SHA GitHub CI；再独立复审、同签安装和实机复核。
 
 Review：本节为 Jovi 指出的 build71 回归修复计划，现仅完成实机复现与范围冻结，不能引用旧 af6 CI 为新代码背书。涉及删除现有字段或能力须先和 Jovi 确认；本阶段以恢复为目标。
+# 2026-10-25 原 E盘接力核验（本会话，仅文档及只读）
+
+- [x] 阅读项目5/6最近接力、父级/当前 AGENTS、lessons 与 Obsidian 项目记录。
+- [x] 确认项目6已将 build72 源码接回原目录，当前分支 `codex/app-build72-original-20261025`、SHA `cdfe0b26`。
+- [x] 独立查询 PR27 同 SHA 18项检查 success；核对原目录源码一致与 APK 哈希。本轮未重跑旧测试。
+- [x] Owner manifest 586/586哈希一致；只读ADB确认手机72/2.1.53、首次安装时间未变；Hub事件已接收revision1。
+- [ ] build72 逐页行为/真实 Fleet 门待验；任何新源码变更前先向 Jovi 提交具体授权范围。
+
+Review：接力与证据边界见 `tasks/plans/2026-10-25-original-root-relay.md`；Obsidian及部分版本台账仍停 build71，不以旧 WIP 重开已交付修复。本轮未修改产品源码。
+# 2026-10-25 Range/Mileage Room-first 方案审核（仅审核）
+
+- [x] 核对当前固定SHA与充电页既有改动，确认无需重复重放。
+- [x] 审核缓存/远端顺序、本地费用投影、Mileage freshness UI与年/月/日并发风险。
+- [x] 形成修订执行范围、负例与验证门：`docs/REVIEW-2026-10-25-range-mileage-room-first.md`。
+- [ ] 执行方按修订方案列实际产品与测试diff；产品源码实施仍需Jovi明确授权。
+
+Review：认可Room-first方向，原方案CHANGES_REQUIRED。本轮未运行产品测试或修改产品源码；当前SHA CI状态已实时查询。
+# 2026-10-26 Room-first逻辑续修（保持现有页面布局）
+
+- [x] Jovi授权继续修改；冻结所有Screen/资源/其他main文件哈希，只修改Range/Mileage VM与测试。
+- [x] 接续已有半成品，补Range异常/增强/身份回归及修复。
+- [x] 补Mileage费用降级、投影与所选层级并发回归及修复。
+- [x] 最终聚焦88/0；双变体各1356/0fail/0error（Release8skip），双lint0error、R8及Release/AndroidTest编译通过；两轮复审闭合。
+- [x] 502个受保护main文件及821个冻结输入哈希一致，页面布局未改；Hub按本轮证据上报。
+
+Review：本轮逻辑修复和本地验证完成；无提交/推送、无手机安装、无生产操作。回执：`docs/RPT-2026-10-26-room-first-no-layout.md`。
+# 2026-10-26 上线前39路由逐参数数据链路审查
+
+- [x] 建立完整路由范围与七组分工，使用Jovi指定GPT-6.1 Sol/xhigh子agent，产品与布局只读。
+- [x] 完成登录/首页、充电、行程/曲线/驻车逐字段矩阵。
+- [x] 完成“我的”分析、统计、长途/报告及系统子页；39注册路由、503检查记录。
+- [x] 两轮独立反证，撤回Timeline能量旁路等不成立初判，记录条件性/潜伏项。
+- [x] Kotlin11条件8失败3对照，DAO SQL7条件4失败3对照；954候选文件哈希无变化；README与FIX-PLAN已保存。Hub后续未上报成功，原因见00-scope-and-isolation，不自动重试。
+
+Review：本次审查完成，当前候选NO_GO，新增代码修复待单独授权。本次根据Jovi新授权在E盘独立审查worktree继续，未改产品或布局、未安装/发布。
+# 2026-10-27 已授权App数据修复与版本留痕
+
+- [x] 切换`codex/app-release-data-fixes-20261027`，保留E盘隔离和原始954文件基线。
+- [ ] 按F1–F7完成最小数据逻辑修复及真实消费者回归，不改布局。
+- [ ] 每个审查ID建立发现日期/版本、改法、回归、修复版本与Git提交记录。
+- [ ] 双变体/lint/R8和独立复审通过后提交；安装、生产与发布另验。

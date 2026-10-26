@@ -183,6 +183,14 @@ interface DriveSummaryDao {
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' AND endAddress != '' ORDER BY startDate DESC LIMIT 1")
     suspend fun getLatestWithEndAddress(carId: Int): DriveSummary?
 
+    /** Drive ending immediately on or before a given timestamp (e.g. arrival before charge). */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' AND endDate <= :beforeDate ORDER BY endDate DESC LIMIT 1")
+    suspend fun getDriveEndingBefore(carId: Int, beforeDate: String): DriveSummary?
+
+    /** Drive starting immediately on or after a given timestamp (e.g. departure after charge). */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' AND startDate >= :afterDate ORDER BY startDate ASC LIMIT 1")
+    suspend fun getDriveStartingAfter(carId: Int, afterDate: String): DriveSummary?
+
     // === Quick Stats Queries ===
 
     // Total count

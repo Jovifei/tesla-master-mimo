@@ -82,6 +82,13 @@ import com.matelink.ui.components.FullscreenLineChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.screens.trips.displayName
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.IconButtonDefaults
+import com.matelink.domain.map.AmapConfiguration
+import com.matelink.ui.components.launchExternalIntentSafely
 import com.matelink.ui.components.AmapPointView
 import com.matelink.util.formatDurationCompact
 import com.matelink.util.formatMonthDayTime
@@ -236,9 +243,11 @@ internal fun ChargeDetailContent(
         }
 
         // Map showing charge location
-        if (detail.latitude != null && detail.longitude != null) {
-            ChargeMapCard(latitude = detail.latitude, longitude = detail.longitude)
-        }
+        ChargeMapCard(
+            latitude = detail.latitude,
+            longitude = detail.longitude,
+            address = detail.address
+        )
 
         // Stats grid
         stats?.let { s ->
@@ -723,40 +732,102 @@ internal fun ChargePriceDialog(
 }
 
 @Composable
-private fun ChargeMapCard(latitude: Double, longitude: Double) {
-    val locationTitle = stringResource(R.string.location)
-    val chargeLocationMarker = stringResource(R.string.charge_location)
+private fun ChargeMapCard(
+    latitude: Double?,
+    longitude: Double?,
+    address: String?,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val locationTitle = stringResource(R.string.charge_location)
+    val openInMapsLabel = stringResource(R.string.where_was_i_open_in_maps)
+    val hasValidCoords = AmapConfiguration.isUsableCoordinate(latitude, longitude)
+    val displayAddress = address?.toChineseDisplayAddress() ?: address
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
             modifier = Modifier.padding(12.dp)
         ) {
-            Text(
-                text = locationTitle,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-                    .clip(RoundedCornerShape(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Charge location map using AmapPointView (高德)
-                AmapPointView(
-                    modifier = Modifier.fillMaxSize(),
-                    latitude = latitude,
-                    longitude = longitude,
-                    title = chargeLocationMarker,
-                    zoom = 16f
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = locationTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (!displayAddress.isNullOrBlank()) {
+                        Text(
+                            text = displayAddress,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                if (hasValidCoords && latitude != null && longitude != null) {
+                    FilledIconButton(
+                        onClick = {
+                            val geoUri = Uri.parse("geo:$latitude,$longitude?q=$latitude,$longitude")
+                            context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, geoUri))
+                        },
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = openInMapsLabel,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (!hasValidCoords || latitude == null || longitude == null) {
+                Row(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.LocationOn,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = stringResource(R.string.amap_no_position),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(250.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                ) {
+                    AmapPointView(
+                        modifier = Modifier.fillMaxSize(),
+                        latitude = latitude,
+                        longitude = longitude,
+                        title = displayAddress ?: locationTitle,
+                        zoom = 16f
+                    )
+                }
             }
         }
     }

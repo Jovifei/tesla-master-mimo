@@ -13,6 +13,7 @@ import com.matelink.domain.analytics.toRawAnalysisDriveData
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import com.matelink.data.api.models.ParkedDetailData
+import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.data.api.models.LinkedCharge
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
@@ -40,7 +41,9 @@ data class ParkedDetailUiState(
     val error: String? = null,
     val degraded: Boolean = false,
     val syncWarning: String? = null,
-    val chargeBreakdown: ParkedChargeBreakdown? = null
+    val chargeBreakdown: ParkedChargeBreakdown? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )
 
 internal data class ParkedPageIdentity(val stillCurrent: () -> Boolean, val localHistoryCarId: Int? = null)
@@ -51,6 +54,7 @@ internal interface ParkedPageSource {
     suspend fun identity(carId: Int): ParkedPageIdentity
     suspend fun localDetail(localHistoryCarId: Int, olderDriveId: Int, newerDriveId: Int): ParkedDetailData? = null
     suspend fun localCharges(localHistoryCarId: Int, olderDriveId: Int, newerDriveId: Int): List<LinkedCharge> = emptyList()
+    suspend fun coordinates(localHistoryCarId: Int, olderDriveId: Int, newerDriveId: Int): Pair<Double, Double>? = null
     suspend fun detail(carId: Int, olderDriveId: Int, newerDriveId: Int): ApiResult<ParkedDetailData>
 }
 
@@ -84,6 +88,15 @@ class ParkedDetailViewModel private constructor(
         }
         override suspend fun localCharges(localHistoryCarId: Int, olderDriveId: Int, newerDriveId: Int): List<LinkedCharge> =
             readLocalParkedCharges(driveSummaryDao, chargeSummaryDao, localHistoryCarId, olderDriveId, newerDriveId)
+        override suspend fun coordinates(localHistoryCarId: Int, olderDriveId: Int, newerDriveId: Int): Pair<Double, Double>? {
+            val older = driveSummaryDao.get(localHistoryCarId, olderDriveId)?.toAnalysisDriveData()
+            val newer = driveSummaryDao.get(localHistoryCarId, newerDriveId)?.toAnalysisDriveData()
+            val lat = older?.endLatitude?.takeIf { it.isFinite() && it != 0.0 }
+                ?: newer?.startLatitude?.takeIf { it.isFinite() && it != 0.0 }
+            val lon = older?.endLongitude?.takeIf { it.isFinite() && it != 0.0 }
+                ?: newer?.startLongitude?.takeIf { it.isFinite() && it != 0.0 }
+            return if (lat != null && lon != null) lat to lon else null
+        }
         override suspend fun detail(carId: Int, olderDriveId: Int, newerDriveId: Int) =
             repository.getParkedDetail(carId, olderDriveId, newerDriveId)
     }, appContext)
@@ -131,8 +144,11 @@ class ParkedDetailViewModel private constructor(
                     }
                 }
                 requireCurrent()
+                val coords = identity.localHistoryCarId?.let { localCarId ->
+                    try { source.coordinates(localCarId, olderDriveId, newerDriveId) } catch (_: Exception) { null }
+                }
                 if (local != null)
-                    _uiState.value = ParkedDetailUiState(isLoading = false, data = local, degraded = true)
+                    _uiState.value = ParkedDetailUiState(isLoading = false, data = local, degraded = true, latitude = coords?.first, longitude = coords?.second)
                 val localCharges = identity.localHistoryCarId?.takeIf { local != null }?.let { localCarId ->
                     try {
                         source.localCharges(localCarId, olderDriveId, newerDriveId)
@@ -144,7 +160,7 @@ class ParkedDetailViewModel private constructor(
                 } ?: emptyList()
                 requireCurrent()
                 if (local != null)
-                    _uiState.value = ParkedDetailUiState(isLoading = false, data = local, degraded = true,
+                    _uiState.value = ParkedDetailUiState(isLoading = false, data = local, degraded = true, latitude = coords?.first, longitude = coords?.second,
                         chargeBreakdown = parkedChargeBreakdown(local, localCharges))
 
                 // A provider exception must not discard verified Room-first parking.
@@ -164,7 +180,7 @@ class ParkedDetailViewModel private constructor(
                 _uiState.value = when (result) {
                     is ApiResult.Success -> if (result.data.olderDriveId == olderDriveId &&
                         result.data.newerDriveId == newerDriveId) {
-                        ParkedDetailUiState(isLoading = false, data = result.data,
+                        ParkedDetailUiState(isLoading = false, data = result.data, latitude = coords?.first, longitude = coords?.second,
                             // Server sessions have no wire source-instance proof for
                             // merging with local receipts; never mix both lists.
                             chargeBreakdown = parkedChargeBreakdown(result.data, emptyList()))

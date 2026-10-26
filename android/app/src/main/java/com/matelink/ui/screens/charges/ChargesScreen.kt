@@ -882,54 +882,49 @@ private fun ChargeItem(
                     onMetricClick = onEditCost,
                     metricClickLabel = stringResource(R.string.edit_charge_cost)
                 )
-                if (effectiveCost.source == ChargeCostSource.MANUAL &&
-                    effectiveCost.qualificationReason == "instance_unverified") {
-                    Text(stringResource(R.string.charge_cost_instance_unverified),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.onSurfaceVariant)
-                }
-                pendingLegacyAmount?.let { amount ->
-                    Text(stringResource(R.string.charge_cost_saved_unconfirmed, amount),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.onSurfaceVariant)
-                }
-                pendingBoundAmount?.let { (code, amount) ->
-                    Text(stringResource(R.string.charge_cost_saved_unbound, code ?: "?", amount),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.onSurfaceVariant)
-                }
-                otherCurrencyAmount?.let { (code, amount) ->
-                    Text(stringResource(R.string.charge_cost_other_currency, code, amount),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.onSurfaceVariant)
-                }
-                charge.cost?.takeIf { it.isFinite() && it >= 0.0 &&
-                    charge.currencyCode.isNullOrBlank() && !charge.source.isNullOrBlank() }
-                    ?.let { amount ->
-                        Text(stringResource(R.string.charge_cost_source_unconfirmed, amount),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.onSurfaceVariant)
+                val isEstimated = effectiveCost.source == ChargeCostSource.ESTIMATE
+                if (onEditCost != null || isEstimated) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isEstimated) {
+                            Text(
+                                text = stringResource(R.string.charge_cost_estimate),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.onSurfaceVariant
+                            )
+                        } else {
+                            Spacer(Modifier.width(1.dp))
+                        }
+                        onEditCost?.let { editCost ->
+                            Surface(
+                                modifier = Modifier.clickable(onClick = editCost),
+                                color = accent.copy(alpha = 0.12f),
+                                shape = MaterialTheme.shapes.extraLarge
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Paid,
+                                        contentDescription = null,
+                                        tint = accent,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.edit_charge_cost),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = accent,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
                     }
-                if (effectiveCost.qualificationReason == "source_unverified") {
-                    charge.cost?.takeIf { it.isFinite() && it >= 0.0 }?.let { amount ->
-                        Text(stringResource(R.string.charge_cost_source_identity_unverified, amount),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.onSurfaceVariant)
-                    }
-                }
-                if (effectiveCost.qualificationReason == "currency_mismatch") {
-                    charge.cost?.takeIf { it.isFinite() && it > 0.0 }?.let { amount ->
-                        Text(stringResource(R.string.charge_cost_source_other_currency,
-                            charge.currencyCode.orEmpty(), amount),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.onSurfaceVariant)
-                    }
-                }
-                if (effectiveCost.qualificationReason == "provider_zero_unverified" &&
-                    !charge.currencyCode.isNullOrBlank()) {
-                    Text(stringResource(R.string.charge_cost_source_zero_unverified),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.onSurfaceVariant)
                 }
             }
         }

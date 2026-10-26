@@ -9,6 +9,8 @@ import com.matelink.data.local.VehicleContext
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.CarStatusWithUnits
 import com.matelink.domain.analytics.*
+import com.matelink.data.api.models.CarStatus
+import com.matelink.data.api.models.Units
 import com.matelink.ui.screens.drives.ParkedDetailViewModel
 import com.matelink.ui.screens.drives.ParkedPageIdentity
 import com.matelink.ui.screens.drives.ParkedPageSource
@@ -45,15 +47,18 @@ class RangeParkedRequestIsolationTest {
             return { available && captured==epoch && context==vehicle }
         }
     }
-    private class RangeSource(val identity:Identity=Identity()):RangePageSource {
+    private class RangeSource(val identity: Identity=Identity()):RangePageSource {
         override val scopeChanges=identity.changes.map { Unit }
-        var histories=0; var healthCalls=0; var statusCalls=0
+        var histories=0; var healthCalls=0; var statusCalls=0; var cachedCalls=0
         var historyBody:suspend ()->ApiResult<AnalysisHistorySnapshot> = { snapshot(identity.context,22) }
+        var cachedBody:suspend ()->ApiResult<AnalysisHistorySnapshot>? = { null }
         var healthBody:suspend ()->ApiResult<BatteryHealth> = { ApiResult.Success(BatteryHealth(currentCapacity=60.0)) }
+        var status1:suspend ()->ApiResult<CarStatusWithUnits> = { ApiResult.Error("no synthetic status") }
         override suspend fun identity(carId:Int)=RangePageIdentity(identity.context,identity.proof())
         override suspend fun history(carId:Int):ApiResult<AnalysisHistorySnapshot> { histories++; return historyBody() }
+        override suspend fun loadCached(carId:Int):ApiResult<AnalysisHistorySnapshot>? { cachedCalls++; return cachedBody() }
         override suspend fun health(carId:Int):ApiResult<BatteryHealth> { healthCalls++; return healthBody() }
-        override suspend fun status(carId:Int):ApiResult<CarStatusWithUnits> { statusCalls++; return ApiResult.Error("no synthetic status") }
+        override suspend fun status(carId:Int):ApiResult<CarStatusWithUnits> { statusCalls++; return status1() }
     }
     private class ParkedSource(val identity:Identity=Identity()):ParkedPageSource {
         override val scopeChanges=identity.changes.map { Unit }
@@ -183,7 +188,7 @@ class RangeParkedRequestIsolationTest {
         } finally { gate.complete(Unit); vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
     }
 
-    @Test fun rangeHealthCancellationMustNotBecomeAStatusRequestOrSuccessfulPublication() = runTest {
+    @Test fun rangeHealthCancellationMustNotBecomeAStatusRequestOrErasePublishedHistory() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val source=RangeSource()
         source.healthBody={ throw CancellationException("synthetic cancelled health") }
@@ -191,7 +196,9 @@ class RangeParkedRequestIsolationTest {
         try {
             vm.setCarId(7); advanceUntilIdle()
             assertEquals(0,source.statusCalls)
-            assertTrue(vm.uiState.value.trips.isEmpty())
+            // Room-first: the verified history is already visible; the optional health
+            // enhancement being cancelled must not erase it nor trigger a status request.
+            assertEquals(listOf(22),vm.uiState.value.trips.map { it.driveId })
         } finally { vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
     }
 
@@ -252,5 +259,106 @@ class RangeParkedRequestIsolationTest {
             assertTrue(rangeVm.uiState.value.trips.isEmpty()); assertNull(parkedVm.uiState.value.data)
             assertFalse(rangeVm.uiState.value.isLoading); assertFalse(parkedVm.uiState.value.isLoading)
         } finally { rangeVm.viewModelScope.cancel(); parkedVm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
+    }
+
+    @Test fun rangePublishesVerifiedCachedHistoryBeforePendingNetworkAndRetainsAfterOfflineError() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source=RangeSource(); val remote=CompletableDeferred<Unit>()
+        source.cachedBody={ snapshot(source.identity.context,77) }
+        source.historyBody={ withContext(NonCancellable) { remote.await() }; ApiResult.Error("offline") }
+        val vm=RangeViewModel(source)
+        try {
+            vm.setCarId(7); advanceUntilIdle()
+            assertEquals(listOf(77),vm.uiState.value.trips.map { it.driveId })
+            assertFalse(vm.uiState.value.isLoading)
+            assertEquals(HistoryFreshness.STALE,vm.uiState.value.historyFreshness)
+            vm.selectCustomRange(LocalDate.now().minusDays(5),LocalDate.now())
+            assertEquals(listOf(77),vm.uiState.value.trips.map { it.driveId })
+            remote.complete(Unit); advanceUntilIdle()
+            assertEquals(listOf(77),vm.uiState.value.trips.map { it.driveId })
+            assertNull(vm.uiState.value.error)
+            assertEquals(1,source.cachedCalls); assertEquals(1,source.histories)
+        } finally { remote.complete(Unit); vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
+    }
+
+    @Test fun rangeCachedRefreshedToFreshWhenRemoteSuccessArrives() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source=RangeSource(); val remote=CompletableDeferred<Unit>()
+        source.cachedBody={ snapshot(source.identity.context,77) }
+        source.historyBody={ withContext(NonCancellable) { remote.await() }; snapshot(source.identity.context,22) }
+        val vm=RangeViewModel(source)
+        try {
+            vm.setCarId(7); advanceUntilIdle()
+            assertEquals(listOf(77),vm.uiState.value.trips.map { it.driveId })
+            assertEquals(HistoryFreshness.STALE,vm.uiState.value.historyFreshness)
+            remote.complete(Unit); advanceUntilIdle()
+            assertEquals(listOf(22),vm.uiState.value.trips.map { it.driveId })
+            assertEquals(HistoryFreshness.FRESH,vm.uiState.value.historyFreshness)
+            assertNull(vm.uiState.value.error)
+        } finally { remote.complete(Unit); vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
+    }
+
+    @Test fun rangeUnreadableCachedHistoryDoesNotSuppressVerifiedRemoteRecovery() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source=RangeSource()
+        source.cachedBody={ throw IllegalStateException("synthetic_room_io_failure_private") }
+        val vm=RangeViewModel(source)
+        try {
+            vm.setCarId(7); advanceUntilIdle()
+            assertEquals(1,source.histories)
+            assertEquals(listOf(22),vm.uiState.value.trips.map { it.driveId })
+            assertNull(vm.uiState.value.error)
+            assertFalse(vm.uiState.value.isLoading)
+        } finally { vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
+    }
+
+    @Test fun rangeRejectsAnotherVehiclesCachedSnapshotEvenWhenRemoteIdMatches() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source=RangeSource(); val old=source.identity.context
+        source.cachedBody={ snapshot(old.copy(stableIdentity="foreign-account"),88) }
+        val vm=RangeViewModel(source)
+        try {
+            vm.setCarId(7); advanceUntilIdle()
+            // A cached snapshot bound to another account/vehicle must be rejected outright — it
+            // must never surface cached rows nor fall through to the remote for the same numeric id.
+            assertTrue(vm.uiState.value.trips.isEmpty())
+            assertEquals(0,source.histories)
+            assertNull(vm.uiState.value.error)
+        } finally { vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
+    }
+
+    @Test fun rangeNetworkFailureWithoutCacheShowsErrorEmptyState() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source=RangeSource(); val remote=CompletableDeferred<Unit>()
+        source.historyBody={ withContext(NonCancellable) { remote.await() }; ApiResult.Error("synthetic offline") }
+        val vm=RangeViewModel(source)
+        try {
+            vm.setCarId(7); advanceUntilIdle()
+            assertTrue(vm.uiState.value.trips.isEmpty())
+            remote.complete(Unit); advanceUntilIdle()
+            assertEquals("synthetic offline",vm.uiState.value.error)
+            assertFalse(vm.uiState.value.isLoading)
+        } finally { remote.complete(Unit); vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
+    }
+
+    @Test fun rangeEnhancementPendingKeepsUpdatedHistoryVisible() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source=RangeSource(); val healthGate=CompletableDeferred<Unit>(); val statusGate=CompletableDeferred<Unit>()
+        source.cachedBody={ snapshot(source.identity.context,77) }
+        source.historyBody={ snapshot(source.identity.context,22) }
+        source.healthBody={ withContext(NonCancellable) { healthGate.await() }; ApiResult.Success(BatteryHealth(currentCapacity=99.0)) }
+        source.status1={ withContext(NonCancellable) { statusGate.await() };
+            ApiResult.Success(CarStatusWithUnits(CarStatus(),Units(unitOfLength="mi"))) }
+        val vm=RangeViewModel(source)
+        try {
+            vm.setCarId(7); advanceUntilIdle()
+            // The verified remote history replaces the cached projection immediately, even while
+            // the optional health/status enhancement is still pending.
+            assertEquals(listOf(22),vm.uiState.value.trips.map { it.driveId })
+            healthGate.complete(Unit); statusGate.complete(Unit); advanceUntilIdle()
+            assertEquals(listOf(22),vm.uiState.value.trips.map { it.driveId })
+            assertNull(vm.uiState.value.error)
+            assertEquals(1,source.healthCalls); assertEquals(1,source.statusCalls)
+        } finally { healthGate.complete(Unit); statusGate.complete(Unit); vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
     }
 }

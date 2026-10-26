@@ -53,6 +53,31 @@ internal fun presentDriveDetailEnergy(
         coverageSeconds?.takeIf { it >= 0L }, ratio, evidence)
 }
 
+/**
+ * How far from a drive boundary an observed SOC sample may sit and still describe that boundary.
+ *
+ * Mirrors the server's SOC boundary convention (`maxChargeSOCBoundaryDistance`) so a collector that
+ * stamps its first/last sample slightly outside the recorded drive window still yields a real
+ * measurement. The window is also capped at a tenth of the drive duration, because a sample taken
+ * minutes into a short trip describes mid-drive SOC, not the boundary value. Beyond the window the
+ * boundary is genuinely unobserved and stays null rather than becoming a made-up number.
+ */
+private val batteryBoundaryToleranceCap: java.time.Duration = java.time.Duration.ofMinutes(5)
+private val batteryBoundaryToleranceFloor: java.time.Duration = java.time.Duration.ofSeconds(30)
+
+private fun batteryBoundaryTolerance(detail: DriveDetail): java.time.Duration {
+    val start = detail.startDate?.let(::parseIsoInstant)
+    val end = detail.endDate?.let(::parseIsoInstant)
+    val window = if (start != null && end != null && end.isAfter(start))
+        java.time.Duration.between(start, end) else return batteryBoundaryToleranceFloor
+    val fraction = window.dividedBy(10)
+    return when {
+        fraction < batteryBoundaryToleranceFloor -> batteryBoundaryToleranceFloor
+        fraction > batteryBoundaryToleranceCap -> batteryBoundaryToleranceCap
+        else -> fraction
+    }
+}
+
 /** Arithmetic means describe the received samples, never an evenly sampled whole journey. */
 internal fun driveDetailSpeedAverageLabel(detail: DriveDetail): Int {
     val reported = detail.speedAvg?.takeIf { detail.hasKnownLengthUnit && it.isFinite() && it >= 0.0 }
@@ -71,9 +96,24 @@ internal fun calculateDriveDetailStats(detail: DriveDetail, energy: DriveDetailE
     val (gain, loss) = elevationChange(elevations)
     fun batteryAt(boundary: String?): Int? {
         val at = boundary?.let(::parseIsoInstant) ?: return null
-        val values = positions.filter { it.date?.let(::parseIsoInstant) == at }
-            .map { it.batteryLevel?.takeIf { value -> value in 0..100 } }
-        return values.firstOrNull()?.takeIf { value -> values.all { it == value } }
+        val samples = positions.mapNotNull { position ->
+            val date = position.date?.let(::parseIsoInstant) ?: return@mapNotNull null
+            val level = position.batteryLevel?.takeIf { value -> value in 0..100 } ?: return@mapNotNull null
+            date to level
+        }
+        // Conflicting observations stamped exactly on the boundary stay unknown.
+        val exact = samples.filter { it.first == at }.map { it.second }
+        if (exact.isNotEmpty()) return exact.first().takeIf { value -> exact.all { it == value } }
+        // The closest real sample inside the tolerance window describes the boundary without
+        // inventing a value; a gap larger than that is genuinely unobserved.
+        val tolerance = batteryBoundaryTolerance(detail)
+        return samples
+            .mapNotNull { (date, level) ->
+                java.time.Duration.between(date, at).abs()
+                    .takeIf { it <= tolerance }?.let { it to level }
+            }
+            .minByOrNull { it.first }
+            ?.second
     }
     val startBattery = detail.startBatteryLevel?.takeIf { it in 0..100 } ?: batteryAt(detail.startDate)
     val endBattery = detail.endBatteryLevel?.takeIf { it in 0..100 } ?: batteryAt(detail.endDate)

@@ -234,9 +234,8 @@ private fun ParkedDetailContent(
                     )
                 }
                 Text(
-                    text = "${parkedBoundaryTimeLabel(data.startDate, unavailable, includeYear = true)} → " +
-                        parkedBoundaryTimeLabel(data.endDate, unavailable, includeYear = true),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = com.matelink.ui.theme.MetricMono),
+                    text = formatParkedDateRange(data.startDate, data.endDate, unavailable),
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Row(
@@ -642,6 +641,39 @@ internal fun parkedTelemetryPresentation(
 internal fun parkedErrorLabel(error: String?, unavailable: String): String = when (error) {
     "history_not_collected", "history_not_connected" -> "暂无可验证的驻车详情；行程历史仍可查看"
     else -> unavailable
+}
+
+internal fun formatParkedDateRange(
+    startDate: String?,
+    endDate: String?,
+    unavailable: String,
+    locale: java.util.Locale = java.util.Locale.getDefault()
+): String {
+    val startInstant = com.matelink.util.parseIsoInstant(startDate)
+    val endInstant = com.matelink.util.parseIsoInstant(endDate)
+    if (startInstant == null && endInstant == null) return unavailable
+    val zone = java.time.ZoneId.systemDefault()
+    val startZdt = startInstant?.atZone(zone)
+    val endZdt = endInstant?.atZone(zone)
+
+    val patternDayTime = java.time.format.DateTimeFormatter.ofPattern("MM月dd日 HH:mm", locale)
+    val patternTimeOnly = java.time.format.DateTimeFormatter.ofPattern("HH:mm", locale)
+
+    return when {
+        startZdt != null && endZdt != null -> {
+            val startText = startZdt.format(patternDayTime)
+            if (startZdt.toLocalDate() == endZdt.toLocalDate()) {
+                val endText = endZdt.format(patternTimeOnly)
+                "$startText → $endText"
+            } else {
+                val endText = endZdt.format(patternDayTime)
+                "$startText → $endText"
+            }
+        }
+        startZdt != null -> "${startZdt.format(patternDayTime)} → $unavailable"
+        endZdt != null -> "$unavailable → ${endZdt.format(patternDayTime)}"
+        else -> unavailable
+    }
 }
 
 internal fun parkedBoundaryTimeLabel(value: String?, unavailable: String, includeYear: Boolean = true): String =

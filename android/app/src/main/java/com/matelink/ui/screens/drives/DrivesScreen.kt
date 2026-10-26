@@ -50,6 +50,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -262,11 +263,7 @@ private fun DrivesContent(
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        if (historySyncWarning != null || localArchiveLinkPending) {
-            item(key = "history_sync_warning") {
-                HistoryReadNotices(localArchiveLinkPending, historySyncWarning)
-            }
-        }
+
 
         item {
             DateFilterChips(
@@ -377,15 +374,7 @@ private fun DrivesContent(
                 }
             }
         }
-        if (canLoadMore && !isLoadingMore) {
-            item(key = "show_earlier_history") {
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    TextButton(onClick = onLoadMore) {
-                        Text(stringResource(R.string.history_show_earlier))
-                    }
-                }
-            }
-        }
+
     }
 
     MonthScrollIndicator(
@@ -767,12 +756,14 @@ private fun DriveItem(
                 CompactHistoryMetricStrip(
                     metrics = listOf(
                         TelemetryMetricSpec(
-                            icon = Icons.Default.Timer,
-                            label = stringResource(R.string.duration),
-                            value = drive.durationMin?.takeIf { it >= 0 }?.let { "%,d".format(it) }
+                            icon = Icons.Default.Bolt,
+                            label = stringResource(R.string.energy),
+                            value = efficiency
+                                ?.takeIf(Double::isFinite)
+                                ?.let { visualTripNumber(it / 10.0) }
                                 ?: stringResource(R.string.not_available),
-                            tint = palette.accent,
-                            unit = stringResource(R.string.visual_trip_duration_unit),
+                            tint = Color(0xFF10B981),
+                            unit = "kWh/100km",
                             valueFontSize = 16.sp
                         ),
                         TelemetryMetricSpec(
@@ -782,7 +773,7 @@ private fun DriveItem(
                                 ?.takeIf { it.isFinite() && it >= 0.0 }
                                 ?.let { visualTripNumber(it) }
                                 ?: stringResource(R.string.not_available),
-                            tint = palette.accent,
+                            tint = Color(0xFF0284C7),
                             unit = UnitFormatter.getDistanceUnit(receiptUnits),
                             valueFontSize = 16.sp
                         ),
@@ -791,19 +782,17 @@ private fun DriveItem(
                             label = stringResource(R.string.max_speed),
                             value = drive.speedMax?.takeIf { drive.hasKnownLengthUnit && it >= 0 }?.let { "%,d".format(it) }
                                 ?: stringResource(R.string.not_available),
-                            tint = palette.accent,
+                            tint = Color(0xFF6366F1),
                             unit = UnitFormatter.getSpeedUnit(receiptUnits),
                             valueFontSize = 16.sp
                         ),
                         TelemetryMetricSpec(
-                            icon = Icons.Default.Eco,
-                            label = stringResource(R.string.efficiency),
-                            value = efficiency
-                                ?.takeIf(Double::isFinite)
-                                ?.let { visualTripNumber(it / 10.0) }
+                            icon = Icons.Default.Timer,
+                            label = stringResource(R.string.duration),
+                            value = drive.durationMin?.takeIf { it >= 0 }?.let { "%,d".format(it) }
                                 ?: stringResource(R.string.not_available),
-                            tint = if (efficiency != null && efficiency < 0.0) Color(0xFF10B981) else palette.accent,
-                            unit = "kWh/100km",
+                            tint = Color(0xFFD97706),
+                            unit = stringResource(R.string.visual_trip_duration_unit),
                             valueFontSize = 16.sp
                         )
                     ),

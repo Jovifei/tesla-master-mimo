@@ -36,6 +36,7 @@ import com.matelink.domain.analytics.projectEffectiveChargeCost
 import com.matelink.domain.analytics.toCostChargeData
 import com.matelink.domain.analytics.validManualChargeTotal
 import com.matelink.domain.analytics.toAnalysisChargeData
+import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.analytics.withQualifiedEnergy
 import com.matelink.domain.model.Trip
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -283,7 +284,14 @@ class ChargeDetailViewModel @Inject constructor(
             when (detailResult) {
                 is ApiResult.Success -> {
                     val rawDetail = detailResult.data
-                    val detail = rawDetail.withQualifiedEnergy()
+                    val qualified = rawDetail.withQualifiedEnergy()
+                    val coords = resolveChargeCoordinates(
+                        qualified.latitude, qualified.longitude,
+                        localHistoryCarId, chargeId, qualified.startDate, qualified.endDate
+                    )
+                    val detail = if (coords != null) {
+                        qualified.copy(latitude = coords.first, longitude = coords.second)
+                    } else qualified
                     var pointWriteFailed = false
                     val persisted = try {
                         persistVerifiedChargeDetail(statsDatabase, historyDetailStore,
@@ -368,8 +376,16 @@ class ChargeDetailViewModel @Inject constructor(
                             batteryDetails = cached.batteryDetails,
                             outsideTempAvg = localSummary.outsideTempAvg,
                             odometer = localSummary.odometer,
-                            latitude = localSummary.latitude.takeIf { it != 0.0 },
-                            longitude = localSummary.longitude.takeIf { it != 0.0 },
+                            latitude = (resolveChargeCoordinates(
+                                localSummary.latitude.takeIf { it != 0.0 },
+                                localSummary.longitude.takeIf { it != 0.0 },
+                                localHistoryCarId, chargeId, localSummary.startDate, localSummary.endDate
+                            )?.first ?: localSummary.latitude).takeIf { it != 0.0 },
+                            longitude = (resolveChargeCoordinates(
+                                localSummary.latitude.takeIf { it != 0.0 },
+                                localSummary.longitude.takeIf { it != 0.0 },
+                                localHistoryCarId, chargeId, localSummary.startDate, localSummary.endDate
+                            )?.second ?: localSummary.longitude).takeIf { it != 0.0 },
                             chargePoints = pointCache?.detail?.chargePoints ?: emptyList(),
                             isCharging = false,
                             source = cached.source,
@@ -473,6 +489,46 @@ class ChargeDetailViewModel @Inject constructor(
         }
     }
 
+private suspend fun resolveChargeCoordinates(
+        currentLat: Double?,
+        currentLon: Double?,
+        carId: Int,
+        chargeId: Int,
+        startDate: String?,
+        endDate: String?
+    ): Pair<Double, Double>? {
+        if (currentLat != null && currentLon != null &&
+            currentLat.isFinite() && currentLon.isFinite() &&
+            (currentLat != 0.0 || currentLon != 0.0)) {
+            return currentLat to currentLon
+        }
+        val local = chargeSummaryDao.get(carId, chargeId)
+        val localLat = local?.latitude?.takeIf { it.isFinite() && it != 0.0 }
+        val localLon = local?.longitude?.takeIf { it.isFinite() && it != 0.0 }
+        if (localLat != null && localLon != null) {
+            return localLat to localLon
+        }
+        val start = startDate ?: local?.startDate
+        if (!start.isNullOrBlank()) {
+            val before = statsDatabase.driveSummaryDao().getDriveEndingBefore(carId, start)?.toAnalysisDriveData()
+            val beforeLat = before?.endLatitude?.takeIf { it.isFinite() && it != 0.0 }
+            val beforeLon = before?.endLongitude?.takeIf { it.isFinite() && it != 0.0 }
+            if (beforeLat != null && beforeLon != null) {
+                return beforeLat to beforeLon
+            }
+        }
+        val end = endDate ?: local?.endDate
+        if (!end.isNullOrBlank()) {
+            val after = statsDatabase.driveSummaryDao().getDriveStartingAfter(carId, end)?.toAnalysisDriveData()
+            val afterLat = after?.startLatitude?.takeIf { it.isFinite() && it != 0.0 }
+            val afterLon = after?.startLongitude?.takeIf { it.isFinite() && it != 0.0 }
+            if (afterLat != null && afterLon != null) {
+                return afterLat to afterLon
+            }
+        }
+        return null
+    }
+
     /** Detach this charge from its containing saved trip (auto-transitions the trip to USER_EDITED). */
     fun removeFromTrip() {
         val proof = historyProof ?: return
@@ -492,4 +548,5 @@ private fun ChargeType.toDcFlag(): Boolean? = when (this) {
     ChargeType.DC -> true
     ChargeType.AC -> false
     ChargeType.UNKNOWN -> null
+
 }

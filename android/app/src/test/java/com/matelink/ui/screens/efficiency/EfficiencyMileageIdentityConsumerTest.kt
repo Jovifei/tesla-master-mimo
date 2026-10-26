@@ -61,13 +61,19 @@ class EfficiencyMileageIdentityConsumerTest {
         override val scopeChanges = identity.events.map { Unit }
         val statuses = mutableListOf<Int>()
         val histories = mutableListOf<Int>()
+        val cachedReads = mutableListOf<Int>()
         var statusBody: suspend (Int) -> ApiResult<CarStatusWithUnits> = { ApiResult.Success(CarStatusWithUnits(CarStatus(), Units(unitOfLength = "km"))) }
+        var cachedBody: suspend (Int) -> ApiResult<UnifiedHistory> = { ApiResult.Error("mileage_no_cache") }
         override suspend fun identity(carId: Int) = identity.capture(carId)
         override suspend fun status(carId: Int): ApiResult<CarStatusWithUnits> { statuses += carId; return statusBody(carId) }
         override suspend fun history(carId: Int): ApiResult<UnifiedHistory> {
             histories += carId
             return ApiResult.Success(UnifiedHistory(identity.context(carId), listOf(drive(carId * 10)), emptyList(), true, true)
                 .also { it.verifiedReadContext = identity.proof(carId) })
+        }
+        override suspend fun loadCached(carId: Int): ApiResult<UnifiedHistory> {
+            cachedReads += carId
+            return cachedBody(carId)
         }
         override suspend fun isContextCurrent(proof: VerifiedHistoryReadContext) = identity.current(proof)
         override fun isContextCurrentNow(proof: VerifiedHistoryReadContext) = identity.current(proof)

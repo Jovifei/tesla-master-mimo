@@ -39,6 +39,8 @@ import com.matelink.ui.components.formatTelemetryNumber
 import com.matelink.ui.icons.CustomIcons
 import com.matelink.ui.components.MetricPanelKind
 import com.matelink.ui.components.MetricStatusPanel
+import com.matelink.ui.components.CachedHistoryBanner
+import com.matelink.domain.analytics.HistoryFreshness
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
@@ -260,6 +262,14 @@ private fun YearOverviewContent(
                 )
             }
         } else {
+            if (uiState.historyFreshness == HistoryFreshness.STALE) {
+                item {
+                    CachedHistoryBanner(
+                        title = stringResource(R.string.metric_state_cached_title),
+                        body = stringResource(R.string.metric_state_cached_body)
+                    )
+                }
+            }
             // Lifetime summary stats
             item {
                 SummaryRow(

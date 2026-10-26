@@ -732,6 +732,11 @@
     <string name="temperature_min_outside">Min Outside</string>
     <string name="temperature_min_inside">Min Cabin</string>
     <string name="temperature_cabin_diff">Max Temp Diff</string>
+    <string name="temperature_insights_title">Temperature &amp; Climate Insights</string>
+    <string name="temperature_insights_solar_gain">Cabin Solar Heat Gain</string>
+    <string name="temperature_insights_solar_desc">Cabin temperature rises quickly under direct sunlight. Consider enabling Cabin Overheat Protection or pre-cooling before driving.</string>
+    <string name="temperature_insights_climate_good">Climate Performance</string>
+    <string name="temperature_insights_climate_good_desc">Cabin temperature remained in comfortable range during drives with efficient climate regulation.</string>
     <string name="tpms_pressure_unit">bar</string>
     <string name="settings_tpms_entry_subtitle">Target pressure &amp; alert thresholds per car</string>
     <string name="tpms_profile_title">Per-car cold tire-pressure profile</string>
@@ -1705,4 +1710,5 @@
     <string name="temperature_no_trip_history">No eligible saved drives in this period. Live temperature does not create historical samples.</string>
     <string name="temperature_no_qualified_trip_samples">Saved drives exist, but their temperatures lack qualified source/time evidence. Import or record real drives; no values were generated.</string>
     <string name="battery_cached_scope_notice">Saved status and history are offline records, not live vehicle measurements. Battery health capacity stays unknown without qualified evidence.</string>
+    <string name="parked_map_title">Parked Location</string>
 </resources>
