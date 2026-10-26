@@ -626,9 +626,9 @@ internal fun parkedTelemetryPresentation(
     val energy = if (hasChargeEvidence) null else data.qualifiedParkedEnergyKwh?.takeIf(Double::isFinite)
     val rate = parkedEnergyKwhPerHour(energy,
         if (hasChargeEvidence) null else data.qualifiedAveragePowerW, duration)
-    val samples = data.sampleCount.takeIf { it >= 0 && data.source != "local_room_cache" }
+    val samples = data.sampleCount?.takeIf { it >= 0 && data.source != "local_room_cache" }
     val coverage = samples?.let {
-        data.coverageRatio.takeIf { ratio -> ratio.isFinite() && ratio in 0.0..1.0 &&
+        data.coverageRatio?.takeIf { ratio -> ratio.isFinite() && ratio in 0.0..1.0 &&
             (it > 0 || ratio == 0.0) }?.times(100.0)
     }
     return ParkedTelemetryPresentation(

@@ -179,6 +179,10 @@ interface DriveSummaryDao {
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate ASC")
     suspend fun getAllChronological(carId: Int): List<DriveSummary>
 
+    /** Display filtering must happen after adjacency is proved against every stored quality. */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId ORDER BY startDate ASC")
+    suspend fun getAllChronologicalForAdjacency(carId: Int): List<DriveSummary>
+
     /** Latest drive with a non-empty endAddress to resolve last known parked location. */
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' AND endAddress != '' ORDER BY startDate DESC LIMIT 1")
     suspend fun getLatestWithEndAddress(carId: Int): DriveSummary?

@@ -104,16 +104,21 @@ fun ChargeSummary.withDetailEvidence(detail: ChargeDetail): ChargeSummary {
     ) ?: EnergyContract()
     // Keep the raw charge scalar and opaque old fields separate from
     // current user-visible address/SOC/cost/odometer and new counters.
+    val sameLengthUnit = com.matelink.data.api.models.sameChargeLengthUnit(current.lengthUnit, detail.lengthUnit)
+    val sameTemperatureUnit = com.matelink.data.api.models.sameHistoryTemperatureUnit(
+        detail.temperatureUnit, detail.source, current.temperatureUnit, current.source)
     val presentation = current.copy(
         startDate = nextStart, endDate = nextEnd,
         address = detail.address ?: current.address,
         durationMin = detail.durationMin ?: current.durationMin,
         durationStr = detail.durationStr ?: current.durationStr,
         batteryDetails = detail.batteryDetails ?: current.batteryDetails,
-        rangeIdeal = detail.rangeIdeal ?: current.rangeIdeal,
-        rangeRated = detail.rangeRated ?: current.rangeRated,
-        outsideTempAvg = detail.outsideTempAvg ?: current.outsideTempAvg,
-        odometer = detail.odometer ?: current.odometer,
+        rangeIdeal = detail.rangeIdeal ?: current.rangeIdeal.takeIf { sameLengthUnit },
+        rangeRated = detail.rangeRated ?: current.rangeRated.takeIf { sameLengthUnit },
+        lengthUnit = detail.lengthUnit,
+        outsideTempAvg = detail.outsideTempAvg ?: current.outsideTempAvg.takeIf { sameTemperatureUnit },
+        temperatureUnit = detail.temperatureUnit,
+        odometer = detail.odometer ?: current.odometer.takeIf { sameLengthUnit },
         latitude = detail.latitude ?: current.latitude,
         longitude = detail.longitude ?: current.longitude,
         chargeType = detail.chargeType ?: current.chargeType,

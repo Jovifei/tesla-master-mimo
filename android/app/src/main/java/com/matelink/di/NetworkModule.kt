@@ -153,7 +153,9 @@ private fun <T> unavailableExternalService(): retrofit2.Response<T> {
  */
 private data class ApiCacheKey(
     val baseUrl: String,
-    val apiToken: String
+    val apiToken: String,
+    val requiredCloudMode: Boolean? = null,
+    val pinnedModeGeneration: Long? = null
 )
 
 internal fun normalizedApiToken(value: String): String = value.trim()
@@ -184,9 +186,13 @@ class TeslamateApiFactory(
     suspend fun create(
         baseUrl: String,
         @Suppress("UNUSED_PARAMETER") acceptInvalidCerts: Boolean? = null,
-        apiTokenOverride: String? = null
+        apiTokenOverride: String? = null,
+        requiredCloudMode: Boolean? = null
     ): TeslamateApi {
-        val cloudMode = connectionModeStore.mode.first() == ConnectionMode.TESLA_CLOUD
+        val (capturedMode, modeGeneration) = connectionModeStore.identitySnapshot()
+        val cloudMode = capturedMode == ConnectionMode.TESLA_CLOUD
+        if (requiredCloudMode != null && requiredCloudMode != cloudMode)
+            throw com.matelink.data.local.HistoryIdentityUnavailableException()
         val requestedUrl = if (cloudMode) {
             BuildConfig.JOURVOLT_API_BASE_URL
         } else {
@@ -212,13 +218,14 @@ class TeslamateApiFactory(
             normalizedApiToken(apiTokenOverride ?: settings.apiToken)
         }
 
-        val cacheKey = ApiCacheKey(normalizedUrl, apiToken)
+        val cacheKey = ApiCacheKey(normalizedUrl, apiToken, requiredCloudMode,
+            modeGeneration.takeIf { requiredCloudMode != null })
 
         // Return cached API if available
-        apiCache[cacheKey]?.let { return it }
+        synchronized(apiCache) { apiCache[cacheKey] }?.let { return it }
 
         // Create new API instance
-        val okHttpClient = createOkHttpClient(apiToken, cloudMode)
+        val okHttpClient = createOkHttpClient(apiToken, cloudMode, requiredCloudMode, modeGeneration)
 
         val api = Retrofit.Builder()
             .baseUrl(normalizedUrl)
@@ -228,15 +235,17 @@ class TeslamateApiFactory(
             .create(TeslamateApi::class.java)
 
         // Cache the API instance
-        apiCache[cacheKey] = api
-
-        // Limit cache size to prevent memory leaks (keep last 4 configurations)
-        if (apiCache.size > 4) {
-            val oldestKey = apiCache.keys.first()
-            apiCache.remove(oldestKey)
+        if (requiredCloudMode != null) {
+            val (latestMode, latestGeneration) = connectionModeStore.identitySnapshot()
+            if ((latestMode == ConnectionMode.TESLA_CLOUD) != requiredCloudMode || latestGeneration != modeGeneration)
+                throw com.matelink.data.local.HistoryIdentityUnavailableException()
         }
-
-        return api
+        return synchronized(apiCache) {
+            apiCache[cacheKey] ?: api.also {
+                apiCache[cacheKey] = it
+                if (apiCache.size > 4) apiCache.remove(apiCache.keys.first())
+            }
+        }
     }
 
     /**
@@ -244,15 +253,22 @@ class TeslamateApiFactory(
      * Call this when settings change that require recreating the API clients.
      */
     fun invalidateCache() {
-        apiCache.clear()
+        synchronized(apiCache) { apiCache.clear() }
     }
 
     private fun createOkHttpClient(
         apiToken: String,
-        cloudMode: Boolean
+        cloudMode: Boolean,
+        requiredCloudMode: Boolean? = null,
+        pinnedModeGeneration: Long = 0L
     ): OkHttpClient {
         val builder = credentialHttpClientBuilder()
             .addInterceptor { chain ->
+                if (requiredCloudMode != null) {
+                    val (mode, generation) = kotlinx.coroutines.runBlocking { connectionModeStore.identitySnapshot() }
+                    if ((mode == ConnectionMode.TESLA_CLOUD) != requiredCloudMode || generation != pinnedModeGeneration)
+                        throw java.io.IOException("notification_source_changed")
+                }
                 val requestBuilder = chain.request().newBuilder()
                     .header("User-Agent", "MateLink/${BuildConfig.VERSION_NAME}")
                 val currentToken = if (cloudMode) {

@@ -81,14 +81,19 @@ sealed class TripTimelineSegment {
     data class Drive(
         override val durationMin: Int,
         val index: Int,
-        val distanceKm: Double
+        val distanceKm: Double,
+        val knownDistanceKm: Double? = distanceKm,
+        val knownDurationMin: Int? = durationMin
     ) : TripTimelineSegment()
 
     data class Charge(
         override val durationMin: Int,
         val index: Int,
         val energyKwh: Double,
-        val isDc: Boolean
+        val isDc: Boolean,
+        val mode: String? = if (isDc) "dc" else null,
+        val knownEnergyKwh: Double? = energyKwh,
+        val knownDurationMin: Int? = durationMin
     ) : TripTimelineSegment()
 
     data class Parking(
@@ -129,8 +134,8 @@ fun TripTimeline(
     countries: List<TripTimelineCountry>,
     palette: CarColorPalette,
     totalDurationMin: Int,
-    totalDrivingDurationMin: Int,
-    totalChargingDurationMin: Int,
+    totalDrivingDurationMin: Int?,
+    totalChargingDurationMin: Int?,
     onCountryClick: (countryCode: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -233,8 +238,8 @@ fun TripTimeline(
 @Composable
 private fun DurationSummary(
     totalDurationMin: Int,
-    totalDrivingDurationMin: Int,
-    totalChargingDurationMin: Int,
+    totalDrivingDurationMin: Int?,
+    totalChargingDurationMin: Int?,
     palette: CarColorPalette,
     modifier: Modifier = Modifier
 ) {
@@ -246,10 +251,10 @@ private fun DurationSummary(
     ) {
         DurationItem(
             icon = CustomIcons.SteeringWheel,
-            text = formatDuration(resources, totalDrivingDurationMin),
+            text = totalDrivingDurationMin?.let { formatDuration(resources, it) } ?: "—",
             tint = palette.accent
         )
-        if (totalChargingDurationMin > 0) {
+        if (totalChargingDurationMin != null) {
             DurationItem(
                 icon = Icons.Filled.ElectricBolt,
                 text = formatDuration(resources, totalChargingDurationMin),
@@ -336,24 +341,20 @@ private fun SegmentInfoContent(
         is TripTimelineSegment.Drive -> {
             title = "${stringResource(R.string.trip_timeline_driving)} · " +
                     stringResource(R.string.trip_leg_drive, segment.index)
-            subtitle = "%.1f km · %s".format(
-                segment.distanceKm,
-                formatDuration(resources, segment.durationMin)
-            )
+            subtitle = (segment.knownDistanceKm?.let { "%.1f km".format(it) } ?: "— km") +
+                " · " + (segment.knownDurationMin?.let { formatDuration(resources, it) } ?: "—")
             dotColor = palette.accent
         }
         is TripTimelineSegment.Charge -> {
-            val chargeLabel = if (segment.isDc) {
-                stringResource(R.string.trip_timeline_charging_dc)
-            } else {
-                stringResource(R.string.trip_timeline_charging_ac)
+            val chargeLabel = when (segment.mode) {
+                "dc" -> stringResource(R.string.trip_timeline_charging_dc)
+                "ac" -> stringResource(R.string.trip_timeline_charging_ac)
+                else -> stringResource(R.string.cost_mode_unknown)
             }
             title = "$chargeLabel · " +
                     stringResource(R.string.trip_leg_charge, segment.index)
-            subtitle = "+%.1f kWh · %s".format(
-                segment.energyKwh,
-                formatDuration(resources, segment.durationMin)
-            )
+            subtitle = (segment.knownEnergyKwh?.let { "+%.1f kWh".format(it) } ?: "— kWh") +
+                " · " + (segment.knownDurationMin?.let { formatDuration(resources, it) } ?: "—")
             dotColor = if (segment.isDc) palette.dcColor else palette.acColor
         }
         is TripTimelineSegment.Parking -> {

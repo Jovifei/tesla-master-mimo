@@ -80,6 +80,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.data.api.models.Units
+import com.matelink.domain.analytics.qualifiedChargeMode
+import com.matelink.data.local.entity.ChargeSummary
+import java.util.Locale
+import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.model.Trip
 import com.matelink.domain.model.UnitFormatter
 import com.matelink.domain.analytics.toAnalysisChargeData
@@ -112,13 +116,14 @@ fun TripDetailScreen(
     onNavigateToDriveDetail: (driveId: Int) -> Unit = {},
     onNavigateToChargeDetail: (chargeId: Int) -> Unit = {},
     onNavigateToCountryStats: (countryCode: String) -> Unit = {},
+    savedTripId: Long? = null,
     viewModel: TripDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val isDarkTheme = isSystemInDarkTheme()
     val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
 
-    LaunchedEffect(carId, tripStartDate) { viewModel.loadTrip(carId, tripStartDate) }
+    LaunchedEffect(carId, tripStartDate, savedTripId) { viewModel.loadTrip(carId, tripStartDate, savedTripId) }
 
     LaunchedEffect(uiState.justDeleted) {
         if (uiState.justDeleted) onNavigateBack()
@@ -218,6 +223,7 @@ fun TripDetailScreen(
                         units = uiState.units,
                         palette = palette,
                         dcChargeIds = uiState.dcChargeIds,
+                        acChargeIds = uiState.acChargeIds,
                         chargeCosts = uiState.chargeCosts,
                         canEdit = uiState.savedTripId != null,
                         weatherPoints = uiState.weatherPoints,
@@ -238,6 +244,7 @@ fun TripDetailScreen(
         AddLegSheet(
             eligible = uiState.eligibleLegs!!,
             dcChargeIds = uiState.dcChargeIds,
+                        acChargeIds = uiState.acChargeIds,
             palette = palette,
             onPickLegs = viewModel::pickLegs,
             onDismiss = viewModel::closeAddLegSheet
@@ -284,6 +291,7 @@ private fun TripDetailContent(
     units: Units?,
     palette: CarColorPalette,
     dcChargeIds: Set<Int>,
+    acChargeIds: Set<Int>,
     chargeCosts: TripChargeCostProjection?,
     canEdit: Boolean,
     weatherPoints: List<com.matelink.data.repository.TripWeatherPoint>,
@@ -305,17 +313,18 @@ private fun TripDetailContent(
         val dateRangeLabel = remember(trip.startDate, trip.endDate) {
             formatTripDateRange(trip.startDate, trip.endDate)
         }
-        val distanceLabel = remember(trip.totalDistance, units) {
-            UnitFormatter.formatDistanceKm(trip.totalDistance, units, decimals = 0)
+        val distanceLabel = remember(trip.knownDistanceKm, trip.distanceSampleCount, trip.expectedDriveCount, units) {
+            (trip.knownDistanceKm?.let { UnitFormatter.formatDistanceKm(it, units, decimals = 0) } ?: "—") + if(trip.distanceSampleCount < trip.expectedDriveCount) " · ${trip.distanceSampleCount}/${trip.expectedDriveCount}" else ""
         }
         val startCity = remember(trip.startAddress) { extractCity(trip.startAddress) }
         val endCity = remember(trip.endAddress) { extractCity(trip.endAddress) }
-        val timelineSegments = remember(trip, dcChargeIds) { buildTimelineSegments(trip, dcChargeIds) }
+        val timelineSegments = remember(trip, dcChargeIds, acChargeIds) { buildTimelineSegments(trip, dcChargeIds, acChargeIds) }
         val timelineCountries = remember(countries) {
             countries.map { TripTimelineCountry(it.countryCode, it.flagEmoji) }
         }
         val totalChargingDurationMin = remember(trip.charges) {
-            trip.charges.sumOf { it.durationMin }
+            trip.charges.mapNotNull { it.toAnalysisChargeData().durationMin?.takeIf { v -> v >= 0 } }
+                .takeIf { it.isNotEmpty() }?.sumOf { it.toLong() }?.takeIf { it <= Int.MAX_VALUE }?.toInt()
         }
 
         TripMapCard(
@@ -338,7 +347,7 @@ private fun TripDetailContent(
             countries = timelineCountries,
             palette = palette,
             totalDurationMin = trip.totalDurationMin,
-            totalDrivingDurationMin = trip.totalDrivingDurationMin,
+            totalDrivingDurationMin = trip.knownDrivingDurationMin,
             totalChargingDurationMin = totalChargingDurationMin,
             onCountryClick = onCountryClick
         )
@@ -350,6 +359,7 @@ private fun TripDetailContent(
                 currencySymbol = currencySymbol,
                 palette = palette,
                 dcChargeIds = dcChargeIds,
+                acChargeIds = acChargeIds,
                 units = units,
                 onChargeClick = onChargeClick
             )
@@ -358,6 +368,7 @@ private fun TripDetailContent(
         BatteryEnergyFlowCard(
             trip = trip,
             dcChargeIds = dcChargeIds,
+                acChargeIds = acChargeIds,
             palette = palette
         )
 
@@ -456,7 +467,7 @@ private fun TripDetailContent(
                             is TripLeg.Charge -> ChargeLegCard(
                                 leg = leg,
                                 palette = palette,
-                                isDc = leg.charge.chargeId in dcChargeIds
+                                mode = qualifiedChargeMode(leg.charge.toAnalysisChargeData(), leg.charge.chargeId in dcChargeIds, leg.charge.chargeId in acChargeIds)
                             ) {
                                 onChargeClick(leg.charge.chargeId)
                             }
@@ -492,6 +503,7 @@ private fun ChargeCostCard(
     currencySymbol: String,
     palette: CarColorPalette,
     dcChargeIds: Set<Int>,
+    acChargeIds: Set<Int>,
     units: Units?,
     onChargeClick: (chargeId: Int) -> Unit
 ) {
@@ -503,13 +515,12 @@ private fun ChargeCostCard(
         label = "chevron"
     )
 
-    val canClassifyEveryStop = remember(costs, dcChargeIds) {
+    val canClassifyEveryStop = remember(costs, dcChargeIds, acChargeIds) {
         costs.pricedCharges.all { item ->
-            item.energyKwh != null && (item.charge.chargeId in dcChargeIds ||
-                item.charge.toAnalysisChargeData().chargeType == "ac")
+            item.energyKwh != null && qualifiedChargeMode(item.charge.toAnalysisChargeData(), item.charge.chargeId in dcChargeIds, item.charge.chargeId in acChargeIds) != null
         }
     }
-    val costStops = remember(costs, dcChargeIds, canClassifyEveryStop) {
+    val costStops = remember(costs, dcChargeIds, acChargeIds, canClassifyEveryStop) {
         if (!canClassifyEveryStop) emptyList() else
         costs.pricedCharges
             .filter { it.cost > 0.0 }
@@ -520,7 +531,7 @@ private fun ChargeCostCard(
                     cost = cost,
                     durationMin = charge.durationMin,
                     energyAddedKwh = requireNotNull(energyKwh),
-                    isDc = charge.chargeId in dcChargeIds
+                    isDc = qualifiedChargeMode(charge.toAnalysisChargeData(), charge.chargeId in dcChargeIds, charge.chargeId in acChargeIds) == "dc"
                 )
             }
     }
@@ -585,7 +596,7 @@ private fun ChargeCostCard(
             }
             Text(
                 text = stringResource(R.string.cost_coverage_counts, costCharges.size,
-                    trip.charges.size, costs.energyCount, costs.pairedCount),
+                    trip.expectedChargeCount, costs.energyCount, costs.pairedCount),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -593,8 +604,10 @@ private fun ChargeCostCard(
             // Distance needs complete price coverage; kWh uses only priced and
             // qualified energy from the same charge, never the raw trip total.
             val distanceUnit = UnitFormatter.getDistanceUnit(units)
-            val per100 = totalCost.takeIf { costs.allPriced && trip.totalDistance > 0.0 }
-                ?.let { it / trip.totalDistance * 100.0 }
+            val distanceValue = UnitFormatter.distanceKmDisplayValue(trip.knownDistanceKm ?: 0.0, units)
+            val per100 = totalCost.takeIf { costs.allPriced && distanceValue > 0.0 &&
+                trip.distanceSampleCount == trip.expectedDriveCount }
+                ?.let { it / distanceValue * 100.0 }
             val perKwh = costs.pairedUnitCost
             if (per100 != null || perKwh != null) {
                 Row(
@@ -719,19 +732,35 @@ private fun EfficiencyPill(
 private fun BatteryEnergyFlowCard(
     trip: Trip,
     dcChargeIds: Set<Int>,
+    acChargeIds: Set<Int>,
     palette: CarColorPalette
 ) {
-    val dcCharges = remember(trip, dcChargeIds) { trip.charges.filter { it.chargeId in dcChargeIds } }
-    val acCharges = remember(trip, dcChargeIds) { trip.charges.filter { it.chargeId !in dcChargeIds } }
-    val dcKwh = dcCharges.sumOf { it.energyAdded }
-    val acKwh = acCharges.sumOf { it.energyAdded }
-    val dcDurationMin = dcCharges.sumOf { it.durationMin }
-    val acDurationMin = acCharges.sumOf { it.durationMin }
-    val dcAvgKw = if (dcDurationMin > 0) dcKwh * 60.0 / dcDurationMin else 0.0
-    val acAvgKw = if (acDurationMin > 0) acKwh * 60.0 / acDurationMin else 0.0
+    fun mode(row: ChargeSummary) = qualifiedChargeMode(row.toAnalysisChargeData(),
+        row.chargeId in dcChargeIds, row.chargeId in acChargeIds)
+    val dcCharges = trip.charges.filter { mode(it) == "dc" }
+    val acCharges = trip.charges.filter { mode(it) == "ac" }
+    fun knownEnergy(rows: List<ChargeSummary>): Double? = rows.mapNotNull {
+        it.toAnalysisChargeData().batteryInputKwh?.takeIf { v -> v.isFinite() && v >= 0.0 }
+    }.takeIf { it.isNotEmpty() }?.sum()?.takeIf(Double::isFinite)
+    fun averagePower(rows: List<ChargeSummary>): Double? {
+        val pairs = rows.mapNotNull { row ->
+            val data = row.toAnalysisChargeData()
+            val energy = data.batteryInputKwh?.takeIf { it.isFinite() && it >= 0.0 }
+            val minutes = data.durationMin?.takeIf { it > 0 }
+            if (energy != null && minutes != null) energy to minutes else null
+        }
+        return pairs.takeIf { it.isNotEmpty() }?.let {
+            (it.sumOf { pair -> pair.first } * 60.0 / it.sumOf { pair -> pair.second.toLong() })
+                .takeIf(Double::isFinite)
+        }
+    }
+    val dcKwh = knownEnergy(dcCharges)
+    val acKwh = knownEnergy(acCharges)
+    val dcAvgKw = averagePower(dcCharges)
+    val acAvgKw = averagePower(acCharges)
     val usedKwh = trip.totalEnergyConsumed
     val usedEnergyLabel = stringResource(
-        if (trip.energySampleCount == trip.drives.size) R.string.combined_trip_energy_label
+        if (trip.energySampleCount == trip.expectedDriveCount) R.string.combined_trip_energy_label
         else R.string.combined_trip_known_energy_label
     )
 
@@ -760,8 +789,9 @@ private fun BatteryEnergyFlowCard(
             Spacer(Modifier.height(12.dp))
 
             HorizontalEnergyFlow(
-                dcKwh = dcKwh, dcAvgKw = dcAvgKw,
-                acKwh = acKwh, acAvgKw = acAvgKw,
+                knownDcKwh = dcKwh, dcAvgKw = dcAvgKw,
+                knownAcKwh = acKwh, acAvgKw = acAvgKw,
+                totalKnownCharged = trip.knownChargeEnergyKwh,
                 usedKwh = usedKwh,
                 usedEnergyLabel = usedEnergyLabel,
                 palette = palette
@@ -774,12 +804,15 @@ private fun BatteryEnergyFlowCard(
 
 @Composable
 private fun HorizontalEnergyFlow(
-    dcKwh: Double, dcAvgKw: Double,
-    acKwh: Double, acAvgKw: Double,
+    knownDcKwh: Double?, dcAvgKw: Double?,
+    knownAcKwh: Double?, acAvgKw: Double?,
+    totalKnownCharged: Double?,
     usedKwh: Double?,
     usedEnergyLabel: String,
     palette: CarColorPalette
 ) {
+    val dcKwh = knownDcKwh ?: 0.0
+    val acKwh = knownAcKwh ?: 0.0
     val totalCharged = dcKwh + acKwh
 
     // Layout constants (dp). A little taller so labels can sit above/below the thin leads
@@ -984,9 +1017,9 @@ private fun HorizontalEnergyFlow(
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (totalCharged > 0) {
+            if (totalKnownCharged != null) {
                 Text(
-                    text = "%.1f".format(totalCharged),
+                    text = "%.1f".format(totalKnownCharged),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = accent
@@ -1006,7 +1039,7 @@ private fun HorizontalEnergyFlow(
         }
 
         // DC label (top-left) — above the thin DC stream
-        if (dcKwh > 0) {
+        if (knownDcKwh != null) {
             Column(
                 modifier = Modifier.offset(
                     x = 6.dp,
@@ -1020,7 +1053,7 @@ private fun HorizontalEnergyFlow(
                     color = dcColor
                 )
                 Text(
-                    text = "%.0f kW avg".format(dcAvgKw),
+                    text = dcAvgKw?.let { "%.0f kW avg".format(it) } ?: "— kW",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1028,7 +1061,7 @@ private fun HorizontalEnergyFlow(
         }
 
         // AC label (bottom-left) — below the thin AC stream
-        if (acKwh > 0) {
+        if (knownAcKwh != null) {
             Column(
                 modifier = Modifier.offset(
                     x = 6.dp,
@@ -1114,10 +1147,9 @@ private fun TripMapCard(
         }
     }
 
-    // Flatten route segments into a single list of coordinate pairs for AmapRouteView
-    val routePoints = remember(routeSegments) {
+    val routeParts = remember(routeSegments) {
         routeSegments.flatMap { seg ->
-            seg.points.map { Pair(it.latitude, it.longitude) }
+            seg.parts.map { part -> part.map { Pair(it.latitude, it.longitude) } }
         }
     }
 
@@ -1135,7 +1167,12 @@ private fun TripMapCard(
         ) {
                 AmapRouteView(
                     modifier = Modifier.fillMaxSize(),
-                    routePoints = routePoints,
+                    routeSegments = routeParts,
+                    explicitEndpoints = true,
+                    startPoint = markers.firstOrNull { it.type == TripMapPointType.START }
+                        ?.let { it.latitude to it.longitude },
+                    endPoint = markers.firstOrNull { it.type == TripMapPointType.END }
+                        ?.let { it.latitude to it.longitude },
                     startTitle = markers.firstOrNull { it.type == TripMapPointType.START }?.label ?: "Start",
                     endTitle = markers.firstOrNull { it.type == TripMapPointType.END }?.label ?: "End"
                 )
@@ -1252,15 +1289,15 @@ private fun DriveLegCard(
             )
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = "%.1f %s".format(
-                        UnitFormatter.distanceKmDisplayValue(leg.drive.distance, units),
+                    text = if (leg.drive.toAnalysisDriveData().distanceKm == null) "—" else "%.1f %s".format(
+                        UnitFormatter.distanceKmDisplayValue(leg.drive.toAnalysisDriveData().distanceKm ?: 0.0, units),
                         UnitFormatter.getDistanceUnit(units)
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = formatDuration(LocalContext.current.resources, leg.drive.durationMin),
+                    text = leg.drive.toAnalysisDriveData().durationMin?.let { formatDuration(LocalContext.current.resources, it) } ?: "—",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1279,10 +1316,10 @@ private fun DriveLegCard(
 private fun ChargeLegCard(
     leg: TripLeg.Charge,
     palette: CarColorPalette,
-    isDc: Boolean,
+    mode: String?,
     onClick: () -> Unit
 ) {
-    val chipColor = if (isDc) palette.dcColor else palette.acColor
+    val chipColor = if (mode == "dc") palette.dcColor else palette.acColor
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -1309,7 +1346,7 @@ private fun ChargeLegCard(
                     .padding(horizontal = 5.dp, vertical = 1.dp)
             ) {
                 Text(
-                    text = if (isDc) "DC" else "AC",
+                    text = mode?.uppercase(Locale.ROOT) ?: stringResource(R.string.cost_mode_unknown),
                     style = MaterialTheme.typography.labelSmall,
                     color = androidx.compose.ui.graphics.Color.White,
                     fontWeight = FontWeight.Bold
@@ -1326,13 +1363,13 @@ private fun ChargeLegCard(
             )
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = "+%.1f kWh".format(leg.charge.energyAdded),
+                    text = leg.charge.toAnalysisChargeData().batteryInputKwh?.let { "+%.1f kWh".format(it) } ?: "— kWh",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold,
                     color = chipColor
                 )
                 Text(
-                    text = formatDuration(LocalContext.current.resources, leg.charge.durationMin),
+                    text = leg.charge.toAnalysisChargeData().durationMin?.let { formatDuration(LocalContext.current.resources, it) } ?: "—",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

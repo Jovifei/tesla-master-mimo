@@ -180,6 +180,8 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
     // Current metadata is a separate scoped display snapshot, never a raw
     // Tesla receipt. Explicit nulls retain genuinely unknown SOC.
     val sameLengthUnit = com.matelink.data.api.models.sameDriveLengthUnit(current.lengthUnit, detail.lengthUnit)
+    val hasTemperatures = detail.outsideTempAvg != null || detail.insideTempAvg != null
+    val sameTemperatureUnit = current.temperatureUnit == detail.temperatureUnit
     val presentation = current.copy(
         startDate = nextStart, endDate = nextEnd,
         startAddress = detail.startAddress ?: current.startAddress,
@@ -190,13 +192,16 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
         durationStr = detail.durationStr ?: current.durationStr,
         speedMax = detail.speedMax ?: current.speedMax.takeIf { sameLengthUnit },
         speedAvg = detail.speedAvg ?: current.speedAvg.takeIf { sameLengthUnit },
+        speedMetricsSource = if (detail.speedAvg != null) detail.speedMetricsSource else current.speedMetricsSource,
+        speedSampleCount = if (detail.speedAvg != null) detail.speedSampleCount else current.speedSampleCount,
         powerMax = detail.powerMax ?: current.powerMax,
         powerMin = detail.powerMin ?: current.powerMin,
         batteryDetails = detail.batteryDetails ?: current.batteryDetails,
         rangeIdeal = detail.rangeIdeal ?: current.rangeIdeal.takeIf { sameLengthUnit },
         rangeRated = detail.rangeRated ?: current.rangeRated.takeIf { sameLengthUnit },
-        outsideTempAvg = detail.outsideTempAvg ?: current.outsideTempAvg,
-        insideTempAvg = detail.insideTempAvg ?: current.insideTempAvg,
+        outsideTempAvg = detail.outsideTempAvg ?: current.outsideTempAvg.takeIf { !hasTemperatures || sameTemperatureUnit },
+        insideTempAvg = detail.insideTempAvg ?: current.insideTempAvg.takeIf { !hasTemperatures || sameTemperatureUnit },
+        temperatureUnit = if (hasTemperatures) detail.temperatureUnit else current.temperatureUnit,
         startLatitude = detail.startLatitude ?: current.startLatitude,
         startLongitude = detail.startLongitude ?: current.startLongitude,
         endLatitude = detail.endLatitude ?: current.endLatitude,
@@ -254,7 +259,7 @@ fun DriveData.asCachedDetail(): DriveDetail = DriveDetail(
     sourceInstanceId = sourceInstanceId, sourceId = sourceId, sourceRecordId = sourceRecordId,
     startLatitude = startLatitude, startLongitude = startLongitude,
     endLatitude = endLatitude, endLongitude = endLongitude, energyContract = energyContract,
-    lengthUnit = lengthUnit
+    lengthUnit = lengthUnit, temperatureUnit = temperatureUnit, speedMetricsSource = speedMetricsSource, speedSampleCount = speedSampleCount
 )
 
 /** Normalize legacy scalar consumers without throwing away the original provenance. */

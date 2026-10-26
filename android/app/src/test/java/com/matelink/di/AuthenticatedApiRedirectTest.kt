@@ -1,21 +1,29 @@
 package com.matelink.di
 
+import android.app.Application
+import com.matelink.data.sync.HistoryResourceFixture
 import com.matelink.ui.screens.auth.TeslaAuthExchangeRequest
 import com.matelink.ui.screens.auth.createTeslaAuthApi
 import com.squareup.moshi.Moshi
+import java.io.File
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.runBlocking
-import okhttp3.Interceptor
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(application = Application::class, sdk = [28])
 class AuthenticatedApiRedirectTest {
+    @get:Rule val temporary = TemporaryFolder()
     private class LoopbackServer(
         private val status: Int,
         private val location: String? = null,
@@ -64,36 +72,22 @@ class AuthenticatedApiRedirectTest {
         }
     }
 
-    private fun authenticatedClient(): OkHttpClient {
-        // Exercise the factory's real client policy without constructing unrelated DataStores.
-        val field = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe").apply { isAccessible = true }
-        val unsafe = field.get(null)
-        val factory = unsafe.javaClass.getMethod("allocateInstance", Class::class.java)
-            .invoke(unsafe, TeslamateApiFactory::class.java) as TeslamateApiFactory
-        val method = TeslamateApiFactory::class.java
-            .getDeclaredMethod("createOkHttpClient", String::class.java, java.lang.Boolean.TYPE)
-            .apply { isAccessible = true }
-        return method.invoke(factory, "fixture-token", false) as OkHttpClient
-    }
-
-    @Test fun bearerApiNeverVisitsRedirectTarget() {
-        for (status in listOf(301, 302, 303, 307, 308)) {
-            LoopbackServer(200).use { target ->
-                LoopbackServer(status, target.url).use { origin ->
-                    val client = authenticatedClient().newBuilder()
-                        .addInterceptor(Interceptor { chain ->
-                            chain.proceed(chain.request().newBuilder().url(origin.url).build())
-                        }).build()
-                    val request = Request.Builder().url("https://unused.invalid/history").get().build()
-                    client.newCall(request).execute().use { response ->
-                        assertEquals("redirect=$status", status, response.code)
+    @Test fun bearerApiNeverVisitsRedirectTarget() = runBlocking {
+        val fixture = HistoryResourceFixture(File(temporary.root, "authenticated-api-redirect.db"))
+        fixture.initialize(cloud = false)
+        try {
+            for (status in listOf(301, 302, 303, 307, 308)) {
+                LoopbackServer(200, payload = """{"data":{"cars":[]}}""").use { target ->
+                    LoopbackServer(status, target.url).use { origin ->
+                        val api = fixture.apiFactory.create(origin.baseUrl, apiTokenOverride = "fixture-token")
+                        assertEquals("redirect=$status", status, api.getCars().code())
+                        assertEquals("redirect=$status", 1, origin.hits.get())
+                        assertEquals("Bearer fixture-token", origin.authorization)
+                        assertEquals("redirect=$status", 0, target.hits.get())
                     }
-                    assertEquals("redirect=$status", 1, origin.hits.get())
-                    assertEquals("Bearer fixture-token", origin.authorization)
-                    assertEquals("redirect=$status", 0, target.hits.get())
                 }
             }
-        }
+        } finally { fixture.close() }
     }
 
     @Test fun exchangeTicketAndLogoutBearerNeverVisitRedirectTarget() = runBlocking {

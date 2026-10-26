@@ -277,7 +277,7 @@ class DashboardViewModel @Inject constructor(
             var capturedScope: com.matelink.data.local.HistoryReadScope? = null
             var requestedCarId: Int? = null
             try {
-                val carId = settingsRepository.currentCarId.first()
+                var carId = settingsRepository.currentCarId.first()
                 requestedCarId = carId
                 val tpmsScope = captureTpmsScope()
                 capturedScope = tpmsScope
@@ -286,12 +286,16 @@ class DashboardViewModel @Inject constructor(
                 var car = when (carsResult) {
                     is ApiResult.Success -> {
                         val cars = carsResult.data
-                        cars.find { it.carId == carId }
+                        if (tpmsScope == null) null else settingsRepository.selectVerifiedCurrentCar(tpmsScope, cars) {
+                            generation == requestGeneration && captureTpmsScope() == tpmsScope
+                        }
                     }
                     is ApiResult.Error -> null
                 }
 
-                val effectiveCarId = car?.carId ?: carId
+                carId = car?.carId ?: carId
+                requestedCarId = carId
+                val effectiveCarId = carId
                 if (car == null && carsResult is ApiResult.Success) {
                     if (!liveScopeCurrent(tpmsScope, carId, generation)) return@launch
                     _uiState.value = DashboardUiState(
@@ -336,18 +340,12 @@ class DashboardViewModel @Inject constructor(
                     car.takeIf { carsResult is ApiResult.Success })
                 val cacheVerified = cacheContext != null &&
                     statusIdentityCurrent(tpmsScope, cacheContext, effectiveCarId, generation)
-                val cachedStatus = if (cacheVerified) vehicleStatusStore.getCachedStatus(tpmsScope!!, cacheContext!!) else null
-                // The fresh response is usable without a UID. Only a fresh UID
-                // can authorize persistence or retrieval of a scoped cache.
-                val status = if (liveStatus != null && cacheVerified)
-                    vehicleStatusStore.reconcileAndSave(tpmsScope!!, cacheContext!!, liveStatus,
-                        (adapterResult as? ApiResult.Success)?.data?.observedAt)
-                else liveStatus ?: cachedStatus
-
+                val cachedReceipt = if (cacheVerified) vehicleStatusStore.getCachedReceipt(tpmsScope!!, cacheContext!!) else null
+                val cachedStatus = cachedReceipt?.displayStatus
                 val units = when {
                     adapterResult is ApiResult.Success -> adapterResult.data.units
                     statusResult is ApiResult.Success -> statusResult.data.units
-                    else -> Units()
+                    else -> cachedReceipt?.units ?: Units()
                 }
                 val evidence = when {
                     adapterResult is ApiResult.Success -> snapshotEvidence(
@@ -356,10 +354,16 @@ class DashboardViewModel @Inject constructor(
                         adapterResult.data.fieldSources
                     )
                     statusResult is ApiResult.Success -> snapshotEvidence(
-                        "teslamate_api", null, emptyMap()
+                        statusResult.metadata?.source ?: "teslamate_api",
+                        statusResult.metadata?.observedAt, emptyMap()
                     )
                     else -> snapshotEvidence(null, null, emptyMap())
                 }
+                // Persist the whole raw receipt; later preferences or responses cannot label it.
+                val status = if (liveStatus != null && cacheVerified)
+                    vehicleStatusStore.reconcileAndSave(tpmsScope!!, cacheContext!!, liveStatus,
+                        evidence.observedAt, units, evidence.source, evidence.fieldSources)
+                else liveStatus ?: cachedStatus
                 // Previous GPS belongs to its own old receipt, never this response.
                 val displayEvidence = evidence
 
@@ -387,13 +391,15 @@ class DashboardViewModel @Inject constructor(
                     error = if (status != null) null else primaryError?.message,
                     errorCode = if (status != null) null else primaryError?.code,
                     errorKind = if (status != null) null else primaryError?.kind,
-                    snapshotSource = if (liveStatus != null) displayEvidence.source else "scoped_cached",
+                    snapshotSource = if (liveStatus != null) displayEvidence.source else cachedReceipt?.source,
                     observedAt = if (liveStatus != null) displayEvidence.observedAt
-                        else if (cacheVerified) vehicleStatusStore.getCachedObservedAt(tpmsScope!!, cacheContext!!) else null,
-                    fieldSources = displayEvidence.fieldSources,
+                        else cachedReceipt?.observedAt,
+                    fieldSources = if (liveStatus != null) displayEvidence.fieldSources else cachedReceipt?.fieldSources.orEmpty(),
                     snapshotFreshness = if (liveStatus != null) displayEvidence.freshness
                         else if (cachedStatus != null) SnapshotFreshness.HISTORY else SnapshotFreshness.UNAVAILABLE,
-                    snapshotMixedSources = displayEvidence.isMixed,
+                    snapshotMixedSources = if (liveStatus != null) displayEvidence.isMixed else
+                        snapshotEvidence(cachedReceipt?.source, cachedReceipt?.observedAt,
+                            cachedReceipt?.fieldSources.orEmpty()).isMixed,
                     units = units,
                     cachedAddress = resolvedAddress,
                     customPhotoFile = activePhotoProof?.let { (scope, vehicle) ->
@@ -477,7 +483,8 @@ class DashboardViewModel @Inject constructor(
                     if (raw != null) {
                         val evidence = if (snapshot is ApiResult.Success) snapshotEvidence(
                             snapshot.data.source, snapshot.data.observedAt, snapshot.data.fieldSources)
-                        else snapshotEvidence("teslamate_api", null, emptyMap())
+                        else snapshotEvidence((legacy as? ApiResult.Success)?.metadata?.source ?: "teslamate_api",
+                            (legacy as? ApiResult.Success)?.metadata?.observedAt, emptyMap())
                         if (!liveScopeCurrent(scope, carId, generation)) continue
                         _uiState.update { ui -> ui.copy(
                             status = raw, error = null, errorCode = null, errorKind = null,

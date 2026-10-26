@@ -311,9 +311,18 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
             }
         }
         val priorCharges = localCharges.associateBy { it.chargeId }
+        val remoteChargeCandidates = remoteCharges.items.associateBy { it.chargeId }
         val chargeRows = rawCharges.mapNotNull { raw ->
-            raw.toLocalSummary(context.localHistoryCarId)?.let { row ->
-                mergeStoredCharge(row, priorCharges[raw.chargeId])
+            val prior = priorCharges[raw.chargeId]
+            val actual = remoteChargeCandidates[raw.chargeId]
+            val reconciledId = actual != null && prior == null && localCharges.any {
+                actual.sameSession(it.toRawAnalysisChargeData())
+            }
+            val candidate = (if (reconciledId) raw else actual?.withLegacyRemoteQuality())
+                ?.toLocalSummary(context.localHistoryCarId)
+                ?: prior ?: raw.toLocalSummary(context.localHistoryCarId)
+            candidate?.let { row ->
+                mergeStoredCharge(row, prior)
             }
         }
         // A historic incomplete session lacking either boundary cannot be
@@ -417,6 +426,8 @@ private fun ChargeData.withLegacyRemoteQuality(): ChargeData =
 
 private fun DriveData.mergeWith(cached: DriveData?): DriveData = cached?.let {
     val sameLengthUnit = com.matelink.data.api.models.sameDriveLengthUnit(lengthUnit, it.lengthUnit)
+    val sameTemperatureUnit = com.matelink.data.api.models.sameHistoryTemperatureUnit(temperatureUnit, source, it.temperatureUnit, it.source)
+    val usesCachedAverage = speedAvg == null && sameLengthUnit && it.speedAvg != null
     if (qualityState == "quarantined") return this
     // Record ID alone cannot join different source instances. A local import
     // retains archival provenance even if it claims quality="observed".
@@ -425,6 +436,7 @@ private fun DriveData.mergeWith(cached: DriveData?): DriveData = cached?.let {
             !hasTrustedHistoryEvidence(it.qualityState, it.source)) this else it
     }
     if (!sameChargeSourceInstance(sourceInstanceId, sourceRecordIdentity, it.sourceInstanceId, it.sourceRecordIdentity)) return this
+    if (!sameSession(it)) return this
     if (hasTrustedHistoryEvidence(it.qualityState, it.source) && !hasTrustedHistoryEvidence(qualityState, source)) return it.copy(driveId = driveId)
     if (hasTrustedHistoryEvidence(qualityState, source) && !hasTrustedHistoryEvidence(it.qualityState, it.source)) return this
     copy(
@@ -437,13 +449,15 @@ private fun DriveData.mergeWith(cached: DriveData?): DriveData = cached?.let {
         durationStr = durationStr ?: it.durationStr,
         speedMax = speedMax ?: it.speedMax.takeIf { sameLengthUnit },
         speedAvg = speedAvg ?: it.speedAvg.takeIf { sameLengthUnit },
+        speedMetricsSource = if (usesCachedAverage) it.speedMetricsSource else speedMetricsSource,
+        speedSampleCount = if (usesCachedAverage) it.speedSampleCount else speedSampleCount,
         powerMax = powerMax ?: it.powerMax,
         powerMin = powerMin ?: it.powerMin,
         batteryDetails = batteryDetails.mergeWith(it.batteryDetails),
         rangeIdeal = if (sameLengthUnit) rangeIdeal.mergeWith(it.rangeIdeal) else rangeIdeal,
         rangeRated = if (sameLengthUnit) rangeRated.mergeWith(it.rangeRated) else rangeRated,
-        outsideTempAvg = outsideTempAvg ?: it.outsideTempAvg,
-        insideTempAvg = insideTempAvg ?: it.insideTempAvg,
+        outsideTempAvg = outsideTempAvg ?: it.outsideTempAvg.takeIf { sameTemperatureUnit },
+        insideTempAvg = insideTempAvg ?: it.insideTempAvg.takeIf { sameTemperatureUnit },
         energyConsumedNet = energyConsumedNet ?: it.energyConsumedNet,
         consumptionNet = consumptionNet ?: it.consumptionNet.takeIf { sameLengthUnit },
         energyContract = energyContract ?: it.energyContract,
@@ -458,6 +472,8 @@ private fun DriveData.mergeWith(cached: DriveData?): DriveData = cached?.let {
 } ?: this
 
 private fun ChargeData.mergeWith(cached: ChargeData?): ChargeData = cached?.let {
+    val sameLengthUnit = com.matelink.data.api.models.sameChargeLengthUnit(lengthUnit, it.lengthUnit)
+    val sameTemperatureUnit = com.matelink.data.api.models.sameHistoryTemperatureUnit(temperatureUnit, source, it.temperatureUnit, it.source)
     if (qualityState == "quarantined") return this
     // Record ID alone cannot join different source instances. A local import
     // retains archival provenance even if it claims quality="observed".
@@ -468,6 +484,7 @@ private fun ChargeData.mergeWith(cached: ChargeData?): ChargeData = cached?.let 
     // A new receipt from a different (or newly unknown) instance stands alone.
     // Never fill its absent proof, costs or presentation from the saved instance.
     if (!sameChargeSourceInstance(sourceInstanceId, sourceRecordIdentity, it.sourceInstanceId, it.sourceRecordIdentity)) return this
+    if (!sameSession(it)) return this
     if (hasTrustedHistoryEvidence(it.qualityState, it.source) && !hasTrustedHistoryEvidence(qualityState, source)) return it.copy(chargeId = chargeId)
     if (hasTrustedHistoryEvidence(qualityState, source) && !hasTrustedHistoryEvidence(it.qualityState, it.source)) return this
     copy(
@@ -482,10 +499,10 @@ private fun ChargeData.mergeWith(cached: ChargeData?): ChargeData = cached?.let 
         durationMin = durationMin ?: it.durationMin,
         durationStr = durationStr ?: it.durationStr,
         batteryDetails = batteryDetails.mergeWith(it.batteryDetails),
-        rangeIdeal = rangeIdeal.mergeWith(it.rangeIdeal),
-        rangeRated = rangeRated.mergeWith(it.rangeRated),
-        outsideTempAvg = outsideTempAvg ?: it.outsideTempAvg,
-        odometer = odometer ?: it.odometer,
+        rangeIdeal = if (sameLengthUnit) rangeIdeal.mergeWith(it.rangeIdeal) else rangeIdeal,
+        rangeRated = if (sameLengthUnit) rangeRated.mergeWith(it.rangeRated) else rangeRated,
+        outsideTempAvg = outsideTempAvg ?: it.outsideTempAvg.takeIf { sameTemperatureUnit },
+        odometer = odometer ?: it.odometer.takeIf { sameLengthUnit },
         latitude = latitude ?: it.latitude,
         longitude = longitude ?: it.longitude,
         source = source ?: it.source,

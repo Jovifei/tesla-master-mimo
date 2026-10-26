@@ -1,5 +1,7 @@
 package com.matelink.ui.screens.drives
 
+import androidx.compose.material.icons.filled.HelpOutline
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -239,6 +241,7 @@ private fun getWeatherIcon(condition: WeatherCondition): ImageVector {
         WeatherCondition.RAIN -> CustomIcons.WeatherRain
         WeatherCondition.SNOW -> CustomIcons.WeatherSnow
         WeatherCondition.THUNDERSTORM -> CustomIcons.WeatherThunderstorm
+        WeatherCondition.UNKNOWN -> androidx.compose.material.icons.Icons.Default.HelpOutline
     }
 }
 
@@ -255,6 +258,7 @@ private fun getWeatherIconColor(condition: WeatherCondition): Color {
         WeatherCondition.RAIN -> Color(0xFF1E88E5) // Blue
         WeatherCondition.SNOW -> Color(0xFF42A5F5) // Light Blue
         WeatherCondition.THUNDERSTORM -> Color(0xFF7E57C2) // Purple
+        WeatherCondition.UNKNOWN -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 }
 
@@ -271,6 +275,7 @@ private fun getWeatherDescription(condition: WeatherCondition): String {
         WeatherCondition.RAIN -> stringResource(R.string.weather_rain)
         WeatherCondition.SNOW -> stringResource(R.string.weather_snow)
         WeatherCondition.THUNDERSTORM -> stringResource(R.string.weather_thunderstorm)
+        WeatherCondition.UNKNOWN -> stringResource(R.string.status_unknown)
     }
 }
 

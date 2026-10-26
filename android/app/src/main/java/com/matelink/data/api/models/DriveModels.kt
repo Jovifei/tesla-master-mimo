@@ -46,7 +46,11 @@ data class DriveData(
     @Json(name = "source_id") val sourceId: String? = null,
     /** Same-response metadata, persisted separately from the raw receipt. */
     @Json(ignore = true) val lengthUnit: String? = null,
-    @Json(name = "source_record_id") val sourceRecordId: String? = null
+    @Json(name = "source_record_id") val sourceRecordId: String? = null,
+    /** Captured at the response boundary; retained in local receipts, never today's preference. */
+    @Json(name = "_matelink_received_temperature_unit") val temperatureUnit: String? = null,
+    @Json(name = "speed_metrics_source") val speedMetricsSource: String? = null,
+    @Json(name = "speed_sample_count") val speedSampleCount: Int? = null
 ) {
     val sourceRecordIdentity: SourceRecordIdentity get() = resolveSourceRecordIdentity(sourceId, sourceRecordId)
     val id: Int get() = driveId
@@ -59,6 +63,8 @@ data class DriveData(
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
     val startRatedRangeKm: Double? get() = driveDistanceKm(rangeRated?.startRange, lengthUnit)
     val endRatedRangeKm: Double? get() = driveDistanceKm(rangeRated?.endRange, lengthUnit)
+    val outsideTempC: Double? get() = driveTemperatureC(outsideTempAvg, temperatureUnit, source)
+    val insideTempC: Double? get() = driveTemperatureC(insideTempAvg, temperatureUnit, source)
     // Explicit unknown/unsupported contracts must not fall back to an old scalar.
     val netEnergyKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else if (energyContract != null)
         energyContract.netValueForWindow(startDate, endDate)
@@ -146,7 +152,10 @@ data class DriveDetail(
     @Json(name = "source_instance_id") val sourceInstanceId: String? = null,
     @Json(name = "source_id") val sourceId: String? = null,
     @Json(ignore = true) val lengthUnit: String? = null,
-    @Json(name = "source_record_id") val sourceRecordId: String? = null
+    @Json(name = "source_record_id") val sourceRecordId: String? = null,
+    @Json(name = "_matelink_received_temperature_unit") val temperatureUnit: String? = null,
+    @Json(name = "speed_metrics_source") val speedMetricsSource: String? = null,
+    @Json(name = "speed_sample_count") val speedSampleCount: Int? = null
 ) {
     val sourceRecordIdentity: SourceRecordIdentity get() = resolveSourceRecordIdentity(sourceId, sourceRecordId)
     val id: Int get() = driveId
@@ -157,6 +166,8 @@ data class DriveDetail(
     val speedAvgKmh: Double? get() = driveDistanceKm(speedAvg, lengthUnit)
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
+    val outsideTempC: Double? get() = driveTemperatureC(outsideTempAvg, temperatureUnit, source)
+    val insideTempC: Double? get() = driveTemperatureC(insideTempAvg, temperatureUnit, source)
     val netEnergyKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else if (energyContract != null)
         energyContract.netValueForWindow(startDate, endDate)
             ?.takeIf { source == null || energyContract.netEnergy?.source == source }

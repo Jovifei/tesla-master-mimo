@@ -54,6 +54,9 @@ import com.matelink.R
 import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.SavedTripLeg
+import com.matelink.domain.analytics.qualifiedChargeMode
+import com.matelink.domain.analytics.toAnalysisChargeData
+import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.LegRef
 import com.matelink.domain.model.Trip
 import com.matelink.domain.model.UnitFormatter
@@ -75,16 +78,24 @@ fun CreateTripScreen(
     carId: Int,
     exteriorColor: String? = null,
     onNavigateBack: () -> Unit = {},
-    onTripCreated: (startDate: String) -> Unit = {},
+    onTripCreated: (startDate: String, savedTripId: Long?) -> Unit = { _, _ -> },
     viewModel: CreateTripViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val isDark = isSystemInDarkTheme()
     val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDark)
+    val context = LocalContext.current
 
     LaunchedEffect(carId) { viewModel.start(carId) }
     LaunchedEffect(uiState.createdStartDate) {
-        uiState.createdStartDate?.let { onTripCreated(it) }
+        uiState.createdStartDate?.let { onTripCreated(it, uiState.createdSavedTripId) }
+    }
+    LaunchedEffect(uiState.error) {
+        if (uiState.error != null) {
+            android.widget.Toast.makeText(context, context.getString(R.string.trip_save_failed),
+                android.widget.Toast.LENGTH_LONG).show()
+            viewModel.clearError()
+        }
     }
 
     Scaffold(
@@ -138,6 +149,7 @@ fun CreateTripScreen(
                     drives = uiState.drives,
                     charges = uiState.charges,
                     dcChargeIds = uiState.dcChargeIds,
+                    acChargeIds = uiState.acChargeIds,
                     palette = palette,
                     onRemove = viewModel::removeLeg
                 )
@@ -166,6 +178,7 @@ fun CreateTripScreen(
         AddLegSheet(
             eligible = uiState.eligibleLegs!!,
             dcChargeIds = uiState.dcChargeIds,
+                    acChargeIds = uiState.acChargeIds,
             palette = palette,
             startInMultiSelect = true,
             onPickLegs = viewModel::pickLegs,
@@ -192,13 +205,13 @@ private fun PreviewSummary(preview: Trip?, units: com.matelink.data.api.models.U
             Spacer(Modifier.height(4.dp))
             val meta = if (preview != null) {
                 val dist = "%,.0f %s".format(
-                    UnitFormatter.formatDistanceValue(preview.totalDistance, units, 0),
+                    UnitFormatter.distanceKmDisplayValue(preview.knownDistanceKm ?: 0.0, units),
                     UnitFormatter.getDistanceUnit(units)
                 )
                 val dur = formatDuration(LocalContext.current.resources, preview.totalDurationMin)
                 val day = parseIsoDateTime(preview.startDate)?.toLocalDate()
                     ?.formatMediumNoYear(Locale.getDefault()) ?: ""
-                "$dist · $dur · $day"
+                "${if(preview.knownDistanceKm == null) "—" else dist} · $dur · $day"
             } else {
                 "—"
             }
@@ -262,12 +275,13 @@ private fun LegList(
     drives: List<DriveSummary>,
     charges: List<ChargeSummary>,
     dcChargeIds: Set<Int>,
+    acChargeIds: Set<Int>,
     palette: CarColorPalette,
     onRemove: (LegRef) -> Unit
 ) {
     val context = LocalContext.current
     val entries = (drives.map { DraftDrive(it) } + charges.map { DraftCharge(it) })
-        .sortedBy { it.startDate }
+        .sortedBy { com.matelink.util.parseIsoInstant(it.startDate) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         for (entry in entries) {
@@ -299,9 +313,8 @@ private fun LegList(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "%.1f km · %s".format(
-                                    d.distance,
-                                    formatDuration(context.resources, d.durationMin)
+                                text = "${d.toAnalysisDriveData().distanceKm?.let { "%.1f km".format(it) } ?: "— km"} · %s".format(
+                                    d.toAnalysisDriveData().durationMin?.let { formatDuration(context.resources, it) } ?: "—"
                                 ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = palette.onSurfaceVariant
@@ -318,7 +331,8 @@ private fun LegList(
                     }
                     is DraftCharge -> {
                         val c = entry.charge
-                        val isDc = c.chargeId in dcChargeIds
+                        val mode = qualifiedChargeMode(c.toAnalysisChargeData(), c.chargeId in dcChargeIds, c.chargeId in acChargeIds)
+                        val isDc = mode == "dc"
                         val chip = if (isDc) palette.dcColor else palette.acColor
                         Icon(
                             Icons.Filled.ElectricBolt,
@@ -338,9 +352,9 @@ private fun LegList(
                             )
                             Text(
                                 text = "%s · +%.1f kWh · %s".format(
-                                    if (isDc) "DC" else "AC",
+                                    mode?.uppercase(Locale.ROOT) ?: stringResource(R.string.cost_mode_unknown),
                                     c.energyAdded,
-                                    formatDuration(context.resources, c.durationMin)
+                                    c.toAnalysisChargeData().durationMin?.let { formatDuration(context.resources, it) } ?: "—"
                                 ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = palette.onSurfaceVariant

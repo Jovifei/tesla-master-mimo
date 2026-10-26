@@ -30,6 +30,9 @@ import com.matelink.ui.theme.SwissOutline
 import java.text.SimpleDateFormat
 import java.util.Locale
 
+internal fun timelineDurationText(raw: String?, minutes: Int?): String? = raw?.takeIf { it.isNotBlank() }
+    ?: minutes?.takeIf { it >= 0 }?.let { com.matelink.util.formatDurationCompact(it) }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimelineScreen(
@@ -221,7 +224,7 @@ private fun DriveEventContent(event: TimelineEvent.DriveEvent, palette: CarColor
                 color = palette.onSurfaceVariant
             )
         }
-        event.durationStr?.let { dur ->
+        timelineDurationText(event.durationStr, event.durationMin)?.let { dur ->
             Text(
                 text = dur,
                 style = MaterialTheme.typography.bodySmall,
@@ -273,7 +276,7 @@ private fun ChargeEventContent(event: TimelineEvent.ChargeEvent, palette: CarCol
                 color = palette.onSurfaceVariant
             )
         }
-        event.durationStr?.let { dur ->
+        timelineDurationText(event.durationStr, event.durationMin)?.let { dur ->
             Text(
                 text = dur,
                 style = MaterialTheme.typography.bodySmall,

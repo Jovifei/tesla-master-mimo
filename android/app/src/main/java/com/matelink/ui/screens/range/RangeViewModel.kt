@@ -277,7 +277,7 @@ class RangeViewModel internal constructor(private val source: RangePageSource) :
                         requireCurrent()
                         usableEnergyKwh = health?.currentCapacity?.takeIf { it.isFinite() && it > 0.0 }
                         ratedRangeKm = current.ratedRangeKm?.takeIf { it.isFinite() && it > 0.0 }
-                        currentTemperatureC = status?.status?.outsideTemp
+                        currentTemperatureC = current.temperatureC
                         currentSpeedKmh = current.speedKmh
                         recalculate(_uiState.value.selectedWindow)
                         publishEnhancement()
@@ -411,14 +411,14 @@ internal fun DriveData.toRangeTrip(): RangeTrip? {
         estimatedRangeKm = estimated,
         actualDistanceKm = distance,
         speedAvgKmh = speedAvgKmh,
-        outsideTempC = outsideTempAvg,
+        outsideTempC = outsideTempC,
         energyConsumedKwh = netEnergyKwh,
         deviationPercent = deviation
     )
 }
 
 internal fun DriveData.toPersonalizedRangeSample(date: LocalDate): PersonalizedRangeSample =
-    PersonalizedRangeSample(date, distanceKm, netEnergyKwh, speedAvgKmh, outsideTempAvg)
+    PersonalizedRangeSample(date, distanceKm, netEnergyKwh, speedAvgKmh, outsideTempC)
 
 internal fun rangeSpeedDeviations(trips: List<RangeTrip>): Pair<Double?, Double?> {
     fun average(items: List<RangeTrip>) = items.takeIf { it.isNotEmpty() }?.map { it.deviationPercent }?.average()
@@ -427,11 +427,12 @@ internal fun rangeSpeedDeviations(trips: List<RangeTrip>): Pair<Double?, Double?
     return average(low) to average(high)
 }
 
-internal data class RangeStatusInputs(val speedKmh: Double?, val ratedRangeKm: Double?)
+internal data class RangeStatusInputs(val speedKmh: Double?, val ratedRangeKm: Double?, val temperatureC: Double? = null)
 
 /** The current-condition consumer retains the status response's own units. */
 internal fun rangeStatusInputs(response: CarStatusWithUnits?): RangeStatusInputs {
     val unit = response?.units?.unitOfLength?.trim()?.lowercase() ?: ""
     return RangeStatusInputs(driveDistanceKm(response?.status?.speed, unit),
-        driveDistanceKm(response?.status?.ratedBatteryRangeKm, unit))
+        driveDistanceKm(response?.status?.ratedBatteryRangeKm, unit),
+        com.matelink.domain.analytics.canonicalTemperatureC(response?.status?.outsideTemp, response?.units?.unitOfTemperature))
 }

@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-27",
+  "candidate": "2.1.54/build73",
+  "evidence_level": "local source/fixture/Room/VM/notification verification; not device/provider acceptance",
+  "tests": {
+    "Debug": {
+      "tests": 1556,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "Release": {
+      "tests": 1556,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 8
+    }
+  },
+  "lint": {
+    "Debug": {
+      "Warning": 276,
+      "Information": 9
+    },
+    "Release": {
+      "Warning": 275,
+      "Information": 8
+    }
+  },
+  "android_test_source_compile": "PASS; not installed/executed",
+  "go": {
+    "backend_full_test": "PASS",
+    "backend_vet": "PASS",
+    "adapter_full_test": "PASS",
+    "adapter_vet": "PASS"
+  },
+  "layout_parameter_review": "PASS; no net changes to existing geometry/spacing/font/style parameters vs e53a2d01",
+  "release_build": "PENDING_AFTER_CODE_COMMIT"
+}

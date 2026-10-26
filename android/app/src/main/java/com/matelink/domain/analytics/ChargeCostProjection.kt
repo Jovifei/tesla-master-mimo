@@ -78,7 +78,9 @@ fun projectEffectiveChargeCost(
     selectedCurrencyCode: String,
     freeSupercharging: Boolean = false,
     isDcCharge: Boolean = false,
-    defaultPricePerKwh: Double? = null
+    defaultPricePerKwh: Double? = null,
+    sessionFreeVerified: Boolean = false,
+    tariffEstimate: ChargeTariffEstimate? = null
 ): EffectiveChargeCost {
     if (charge.sourceRecordIdentity.conflicted) return unavailable("source_record_conflict")
     val currency = selectedCurrencyCode.trim().uppercase(Locale.ROOT)
@@ -94,9 +96,6 @@ fun projectEffectiveChargeCost(
             sourceInstanceVerified = reason == null
         )
     }
-    if (freeSupercharging && isDcCharge) {
-        return EffectiveChargeCost(0.0, ChargeCostSource.FREE, currency, "explicit_free")
-    }
     val sourceCost = charge.cost?.takeIf { it.isFinite() && it > 0.0 }
     if (sourceCost != null) {
         if (charge.source.isNullOrBlank()) return unavailable("source_unverified")
@@ -109,10 +108,16 @@ fun projectEffectiveChargeCost(
         if (sourceCurrency == null) return unavailable("currency_unverified")
         return unavailable("currency_mismatch")
     }
-    val estimated = manualChargeAmount(defaultPricePerKwh, charge.batteryInputKwh)
+    // A current vehicle entitlement is not evidence about every historic DC
+    // session. An observed bill (including non-energy fees) takes precedence.
+    if (freeSupercharging && isDcCharge && sessionFreeVerified) {
+        return EffectiveChargeCost(0.0, ChargeCostSource.FREE, currency, "verified_session_free")
+    }
+    val estimated = (if (tariffEstimate != null) tariffEstimate.amount else
+        manualChargeAmount(defaultPricePerKwh, charge.batteryInputKwh))
         ?.takeIf(Double::isFinite)
     if (estimated != null) return EffectiveChargeCost(estimated, ChargeCostSource.ESTIMATE,
-        currency, "estimate")
+        currency, tariffEstimate?.reason ?: "estimate")
     return unavailable(if (charge.cost == 0.0) "provider_zero_unverified" else "price_unavailable")
 }
 

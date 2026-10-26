@@ -44,6 +44,23 @@ import java.io.File
 class CostRoomFirstViewModelTest {
     @get:Rule val temp = TemporaryFolder()
 
+    @Test fun aKnownForeignBillCannotBecomeAnUnpricedLocalCurrencyEstimate() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val f = fixture("cost-foreign-bill-estimate")
+        f.db.chargeSummaryDao().upsert(ChargeData(64,
+            startDate = "2026-10-20T10:00:00Z", endDate = "2026-10-20T11:00:00Z",
+            chargeEnergyAdded = 8.0, cost = 12.0, currencyCode = "USD", source = "teslamate_archive",
+            qualityState = "observed", qualityReason = "api").toSyncSummary(f.localId(1))!!)
+        val vm = viewModel(f, { "synthetic-vehicle-1" })
+        try {
+            vm.load(1); advanceUntilIdle()
+            val state = awaitState(vm) { !it.loading && it.totalCharges == 1 }
+            assertNull(state.totalCost)
+            assertEquals(0, state.estimatedCoverage)
+            assertNull(state.estimatedCost)
+        } finally { vm.viewModelScope.cancel(); advanceUntilIdle(); f.close(); Dispatchers.resetMain() }
+    }
+
     private suspend fun fixture(name: String): HistoryResourceFixture {
         val f = HistoryResourceFixture(File(temp.root, "$name.db"))
         f.initialize(cloud = true)

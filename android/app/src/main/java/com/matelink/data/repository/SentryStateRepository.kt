@@ -1,5 +1,10 @@
 package com.matelink.data.repository
 
+import com.matelink.data.local.SentryState
+import com.matelink.data.api.models.CarStatus
+import com.matelink.data.sync.isNewSentryObservation
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.matelink.data.local.SentryStateDataStore
 import com.matelink.data.local.HistoryCarIdResolver
 import com.matelink.data.local.LegacyHistoryCarIdResolver
@@ -45,6 +50,7 @@ class SentryStateRepository @Inject constructor(
         /** Debounce window for all event processing (counting, logging, alerting).
          *  Slightly over 60s because the car screen stays on for exactly 1 minute per event. */
         private const val NOTIFY_DEBOUNCE_MS = 65_000L
+        private val observationMutex = Mutex()
     }
 
     /**
@@ -56,60 +62,86 @@ class SentryStateRepository @Inject constructor(
      * @return A [SentryEvent] if something noteworthy happened, null otherwise
      */
     suspend fun processStatus(
-        carId: Int,
-        sentryMode: Boolean,
-        isSentryAlerted: Boolean,
-        latitude: Double? = null,
-        longitude: Double? = null,
-        geofence: String? = null
+        carId: Int, sentryMode: Boolean?, isSentryAlerted: Boolean,
+        latitude: Double? = null, longitude: Double? = null, geofence: String? = null
     ): SentryEvent? {
-        val historyCarId = historyId(carId)
+        if (sentryMode == null) return null
+        return processLocalStatus(historyId(carId), sentryMode, isSentryAlerted, latitude, longitude, geofence)
+    }
+
+    /** Caller already holds the verified local account/source/vehicle namespace. */
+    internal suspend fun processLocalStatus(
+        historyCarId: Int, sentryMode: Boolean?, isSentryAlerted: Boolean,
+        latitude: Double? = null, longitude: Double? = null, geofence: String? = null,
+        ensureCurrent: suspend () -> Unit = {}
+    ): SentryEvent? = observationMutex.withLock {
+        if (sentryMode == null) return@withLock null
+        ensureCurrent()
         val state = dataStore.getState(historyCarId)
+        ensureCurrent()
+        val now = System.currentTimeMillis()
+        val (next, event) = transition(state, sentryMode, isSentryAlerted, now)
+        dataStore.saveState(historyCarId, next, ensureCurrent)
+        logEvent(historyCarId, next, event, now, latitude, longitude, geofence, ensureCurrent)
+        event
+    }
 
-        // Sentry mode just turned off — reset session
-        if (!sentryMode && state.sentryActive) {
-            dataStore.resetSession(historyCarId)
-            return SentryEvent.SessionEnded
+    /** Claim and persist one already-qualified local observation, never a Fleet request.
+     * The counter, display latch and watermark share one atomic DataStore edit.
+     * Dispatch stays under the same mutex so older observations cannot notify last.
+     */
+    internal suspend fun consumeObservation(
+        historyCarId: Int, status: CarStatus, observedAt: Long,
+        legacyWatermark: Long = 0L, ensureCurrent: suspend () -> Unit = {},
+        onAdmitted: suspend (SentryEvent?) -> Unit = {}
+    ): Boolean = observationMutex.withLock {
+        ensureCurrent()
+        val state = dataStore.getState(historyCarId)
+        ensureCurrent()
+        if (observedAt <= maxOf(state.lastObservationAt, legacyWatermark)) return@withLock false
+        // A pre-latch active session with recorded events already observed 7.
+        // Do not invent another first event merely because the app was upgraded.
+        val previous = state.lastObservedDisplay ?:
+            "7".takeIf { state.sentryActive && state.eventCount > 0 }
+        val now = System.currentTimeMillis()
+        val (changed, event) = transition(state, status.sentryMode,
+            isNewSentryObservation(previous, status), now)
+        val display = status.centerDisplayState?.toIntOrNull()?.takeIf { it >= 0 }?.toString()
+        val nextDisplay = when {
+            status.sentryMode == false -> null
+            status.sentryMode == true && display != null -> display
+            else -> previous
         }
+        val next = changed.copy(lastObservedDisplay = nextDisplay, lastObservationAt = observedAt)
+        dataStore.saveState(historyCarId, next, ensureCurrent)
+        logEvent(historyCarId, next, event, now, status.latitude, status.longitude, status.geofence, ensureCurrent)
+        ensureCurrent()
+        onAdmitted(event)
+        ensureCurrent()
+        true
+    }
 
-        // Sentry mode is off and was already off — nothing to do
-        if (!sentryMode) return null
+    private fun transition(state: SentryState, mode: Boolean?, alert: Boolean,
+        now: Long): Pair<SentryState, SentryEvent?> {
+        if (mode == null) return state to null
+        if (!mode) return state.copy(sentryActive = false, eventCount = 0,
+            lastEventAt = 0, sessionStartedAt = 0, lastObservedDisplay = null) to
+            SentryEvent.SessionEnded.takeIf { state.sentryActive }
+        val active = if (state.sentryActive) state else state.copy(sentryActive = true, sessionStartedAt = now)
+        if (!alert || now - active.lastEventAt < NOTIFY_DEBOUNCE_MS) return active to null
+        val next = active.copy(eventCount = Math.addExact(active.eventCount, 1), lastEventAt = now)
+        return next to SentryEvent.AlertDetected(next.eventCount, true)
+    }
 
-        // Mark sentry as active if not already, recording session start time
-        val sessionStartedAt: Long
-        if (!state.sentryActive) {
-            val now = System.currentTimeMillis()
-            sessionStartedAt = now
-            dataStore.saveState(historyCarId, state.copy(sentryActive = true, sessionStartedAt = now))
-        } else {
-            sessionStartedAt = state.sessionStartedAt
-        }
-
-        // Check for a sentry alert event
-        if (isSentryAlerted) {
-            val now = System.currentTimeMillis()
-            val timeSinceLastEvent = now - state.lastEventAt
-            val shouldNotify = timeSinceLastEvent >= NOTIFY_DEBOUNCE_MS
-
-            if (shouldNotify) {
-                // Increment counter and log to history only when we actually notify
-                val updated = dataStore.incrementEventCount(historyCarId)
-                alertLogDao.insert(
-                    SentryAlertLog(
-                        carId = historyCarId,
-                        detectedAt = now,
-                        sessionStartedAt = sessionStartedAt,
-                        latitude = latitude,
-                        longitude = longitude,
-                        address = geofence?.ifBlank { null }
-                    )
-                )
-                return SentryEvent.AlertDetected(updated.eventCount, true)
-            }
-            // Within debounce window — duplicate poll for the same event, ignore
-        }
-
-        return null
+    private suspend fun logEvent(local: Int, state: SentryState, event: SentryEvent?, now: Long,
+        latitude: Double?, longitude: Double?, geofence: String?, ensureCurrent: suspend () -> Unit) {
+        if (event !is SentryEvent.AlertDetected) return
+        ensureCurrent()
+        val coordinates = com.matelink.domain.telemetry.usableVehicleCoordinates(latitude, longitude)
+        alertLogDao.insert(SentryAlertLog(carId = local, detectedAt = now,
+            sessionStartedAt = state.sessionStartedAt, latitude = coordinates?.first, longitude = coordinates?.second,
+            address = geofence?.ifBlank { null }))
+        ensureCurrent()
     }
 
     /**

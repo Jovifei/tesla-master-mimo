@@ -37,6 +37,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -112,25 +114,43 @@ class SettingsViewModel @Inject constructor(
     private val syncManager: SyncManager,
     private val tpmsStateRepository: TpmsStateRepository,
     private val sentryStateRepository: SentryStateRepository,
-    private val sentryNotificationManager: SentryNotificationManager
+    private val sentryNotificationManager: SentryNotificationManager,
+    private val vehicleContexts: com.matelink.data.local.VehicleContextRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+    private var tpmsBinding: TpmsProfileBinding? = null
+    private var settingsLoadGeneration = 0L
 
     init {
         loadSettings()
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(vehicleContexts.historyScopeChanges, settingsRepository.currentCarId) { scope, car -> scope to car }
+                .drop(1).collect {
+                    tpmsBinding = null
+                    _uiState.value = _uiState.value.copy(tpmsProfileEnabled = false,
+                        tpmsTargetBar = "2.9", tpmsLowBar = "2.6", tpmsHighBar = "3.4")
+                    loadSettings()
+                }
+        }
     }
 
     private fun loadSettings() {
+        val generation = ++settingsLoadGeneration
         viewModelScope.launch {
             val settings = settingsDataStore.settings.first()
             val mockMode = settingsRepository.mockMode.first()
             val connectionMode = connectionModeStore.mode.first()
                 ?: if (settings.serverUrl.isBlank()) ConnectionMode.TESLA_CLOUD else ConnectionMode.SELF_HOSTED
             val tpmsCarId = settingsRepository.currentCarId.first()
-            val tpmsProfile = settingsDataStore.getTpmsAlertProfile(tpmsCarId)
+            val binding = runCatching { resolveTpmsProfileBinding(tpmsCarId, vehicleContexts) }.getOrNull()
+            val savedProfile = binding?.let { settingsDataStore.getTpmsAlertProfile(tpmsProfileStorageKey(it)) }
+            val tpmsProfile = savedProfile
                 ?: TpmsAlertProfile.modelYSuggestion
+            if (generation != settingsLoadGeneration || (binding != null &&
+                    !vehicleContexts.isHistoryContextCurrentNow(binding.scope, binding.vehicle))) return@launch
+            tpmsBinding = binding
             _uiState.value = _uiState.value.copy(
                 serverUrl = if (connectionMode == ConnectionMode.TESLA_CLOUD && settings.serverUrl.isBlank()) {
                     ""
@@ -148,7 +168,7 @@ class SettingsViewModel @Inject constructor(
                 tpmsTargetBar = tpmsProfile.targetBar.toDisplayString(),
                 tpmsLowBar = tpmsProfile.lowBar.toDisplayString(),
                 tpmsHighBar = tpmsProfile.highBar.toDisplayString(),
-                tpmsProfileEnabled = settingsDataStore.getTpmsAlertProfile(tpmsCarId)?.enabled == true,
+                tpmsProfileEnabled = savedProfile?.enabled == true,
                 isFirstRunSetup = !settings.isConfigured && !mockMode && connectionMode == ConnectionMode.SELF_HOSTED,
                 isLoading = false
             )
@@ -281,6 +301,7 @@ class SettingsViewModel @Inject constructor(
     /** Explicitly saves and enables the per-car App custom reminder profile. */
     fun saveTpmsAlertProfile() {
         val current = _uiState.value
+        val capturedBinding = tpmsBinding
         val target = current.tpmsTargetBar.toDoubleOrNull()
         val low = current.tpmsLowBar.toDoubleOrNull()
         val high = current.tpmsHighBar.toDoubleOrNull()
@@ -295,10 +316,10 @@ class SettingsViewModel @Inject constructor(
 
         viewModelScope.launch {
             runCatching {
-                settingsDataStore.saveTpmsAlertProfile(
-                    carId = current.tpmsCarId,
-                    profile = TpmsAlertProfile(target, low, high, enabled = true)
-                )
+                val binding = checkNotNull(capturedBinding) { "history_identity_unavailable" }
+                check(binding.vehicle.remoteApiCarId == current.tpmsCarId)
+                saveBoundTpmsProfile(settingsDataStore, vehicleContexts, binding,
+                    TpmsAlertProfile(target, low, high, enabled = true))
             }.onSuccess {
                 _uiState.value = _uiState.value.copy(
                     tpmsProfileEnabled = true,

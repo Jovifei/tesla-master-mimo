@@ -15,6 +15,8 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.api.models.receivedDrives
 import com.matelink.data.api.models.receivedDrive
+import com.matelink.data.api.models.receivedCharges
+import com.matelink.data.api.models.receivedCharge
 import com.matelink.data.api.models.DataReadiness
 import com.matelink.data.api.models.DataReadinessItem
 import com.matelink.data.api.models.DataReadinessResponse
@@ -67,7 +69,27 @@ internal fun chargeDetailResultForResponse(
         return ApiResult.Error("charge_detail_identity_invalid", response.code(),
             kind = ApiErrorKind.INVALID_RESPONSE)
     }
-    return ApiResult.Success(detail)
+    return ApiResult.Success(requireNotNull(data.receivedCharge()))
+}
+
+internal fun currentChargeResultForResponse(response: Response<ChargeDetailResponse>, requestedCarId: Int): ApiResult<CurrentChargeOutcome> {
+    return if (response.isSuccessful) {
+        val body = response.body()
+        val detail = body?.data?.charge
+        when {
+            body?.data?.car?.carId?.let { it != requestedCarId } == true -> ApiResult.Error(
+                "current_charge_identity_invalid", response.code(), kind = ApiErrorKind.INVALID_RESPONSE)
+            detail != null -> ApiResult.Success(CurrentChargeOutcome.Active(requireNotNull(body?.data?.receivedCharge())))
+            // TeslamateAPI answers 200 + {"error": "..."} (or 204) when there is
+            // no active charge — an authoritative answer, not a failure. At charge
+            // start this is returned for a short while before the charge appears.
+            body?.error != null || response.code() == 204 ->
+                ApiResult.Success(CurrentChargeOutcome.NoActiveCharge)
+            else -> ApiResult.Error("No current charge data returned")
+        }
+    } else {
+        ApiResult.Error("Failed to fetch current charge: ${response.code()}", response.code())
+    }
 }
 
 fun apiErrorKindFor(code: Int?, message: String? = null): ApiErrorKind = when {
@@ -457,7 +479,7 @@ class TeslamateRepository @Inject constructor(
                     val status = data?.status
                     val units = data?.units ?: Units()
                     if (status != null) {
-                        ApiResult.Success(CarStatusWithUnits(status, units))
+                        ApiResult.Success(CarStatusWithUnits(status, units), data?.meta?.toApiResponseMetadata())
                     } else {
                         ApiResult.Error(body?.error ?: "No status data returned")
                     }
@@ -520,7 +542,7 @@ class TeslamateRepository @Inject constructor(
     ): ApiResult<List<ChargeData>> {
         if (isMockMode()) {
             return ApiResult.Success(
-                MockDataProvider.getCharges(),
+                com.matelink.data.api.models.ChargesData(MockDataProvider.getCharges(), units = MockDataProvider.getUnits()).receivedCharges(),
                 ApiResponseMetadata(availability = "available", source = BuildConfig.JOURVOLT_MOCK_SOURCE, coveragePercent = 100.0)
             )
         }
@@ -530,7 +552,7 @@ class TeslamateRepository @Inject constructor(
                 if (response.isSuccessful) {
                     val body = response.body()?.data
                     ApiResult.Success(
-                        body?.charges ?: emptyList(),
+                        body?.receivedCharges().orEmpty(),
                         body?.meta?.toApiResponseMetadata()
                     )
                 } else {
@@ -547,21 +569,7 @@ class TeslamateRepository @Inject constructor(
         return executeWithFallback { api ->
             try {
                 val response = api.getCurrentCharge(carId)
-                if (response.isSuccessful) {
-                    val body = response.body()
-                    val detail = body?.data?.charge
-                    when {
-                        detail != null -> ApiResult.Success(CurrentChargeOutcome.Active(detail))
-                        // TeslamateAPI answers 200 + {"error": "..."} (or 204) when there is
-                        // no active charge — an authoritative answer, not a failure. At charge
-                        // start this is returned for a short while before the charge appears.
-                        body?.error != null || response.code() == 204 ->
-                            ApiResult.Success(CurrentChargeOutcome.NoActiveCharge)
-                        else -> ApiResult.Error("No current charge data returned")
-                    }
-                } else {
-                    ApiResult.Error("Failed to fetch current charge: ${response.code()}", response.code())
-                }
+                currentChargeResultForResponse(response, carId)
             } catch (e: Exception) {
                 throw e
             }
@@ -569,7 +577,8 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getChargeDetail(carId: Int, chargeId: Int): ApiResult<ChargeDetail> {
-        if (isMockMode()) return ApiResult.Success(MockDataProvider.getChargeDetail(chargeId))
+        if (isMockMode()) return ApiResult.Success(requireNotNull(com.matelink.data.api.models.ChargeDetailData(
+            charge = MockDataProvider.getChargeDetail(chargeId), units = MockDataProvider.getUnits()).receivedCharge()))
         val requestedAt = java.time.Instant.now()
         return executeWithFallback { api ->
             try {
@@ -596,7 +605,7 @@ class TeslamateRepository @Inject constructor(
     ): ApiResult<List<DriveData>> {
         if (isMockMode()) {
             return ApiResult.Success(
-                MockDataProvider.getDrives(),
+                com.matelink.data.api.models.DrivesData(MockDataProvider.getDrives(), units = MockDataProvider.getUnits()).receivedDrives(),
                 ApiResponseMetadata(availability = "available", source = BuildConfig.JOURVOLT_MOCK_SOURCE, coveragePercent = 100.0)
             )
         }
@@ -619,7 +628,8 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getDriveDetail(carId: Int, driveId: Int): ApiResult<DriveDetail> {
-        if (isMockMode()) return ApiResult.Success(MockDataProvider.getDriveDetail(driveId))
+        if (isMockMode()) return ApiResult.Success(requireNotNull(com.matelink.data.api.models.DriveDetailData(
+            drive = MockDataProvider.getDriveDetail(driveId), units = MockDataProvider.getUnits()).receivedDrive()))
         val requestedAt = java.time.Instant.now()
         return executeWithFallback { api ->
             try {

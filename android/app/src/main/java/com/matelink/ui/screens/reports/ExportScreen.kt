@@ -174,9 +174,10 @@ fun ExportScreen(
             // Share intent launcher
             uiState.shareUri?.let { uri ->
                 LaunchedEffect(uri) {
+                    val outputFormat = uiState.shareFormat ?: return@LaunchedEffect
                     viewModel.clearShareUri() // clear first to prevent re-trigger
                     try {
-                        val shareIntent = DataExporter.createShareIntent(uri, uiState.format)
+                        val shareIntent = DataExporter.createShareIntent(uri, outputFormat)
                         context.launchExternalIntentSafely(
                             Intent.createChooser(shareIntent, context.getString(R.string.export_share_title))
                         )

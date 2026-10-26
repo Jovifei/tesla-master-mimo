@@ -22,6 +22,9 @@ import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.domain.analytics.withDetailEvidence
 import com.matelink.domain.analytics.withQualifiedEnergy
+import com.matelink.domain.analytics.acceptsDetail
+import com.matelink.domain.history.isAnalysisEligible
+import com.matelink.domain.telemetry.usableVehicleCoordinates
 import com.matelink.data.api.models.driveEnergySource
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.HistoryDetailRepository
@@ -279,7 +282,12 @@ class SyncRepository @Inject constructor(
                     context, detail) { requireIdentity(scope, historyCarId, remoteApiCarId) }?.summary
                 if (saved == null) false else {
                     requireIdentity(scope, historyCarId, remoteApiCarId)
-                    aggregateDao.upsertDriveAggregate(detail.toAggregate(carId = historyCarId, computedAt = System.currentTimeMillis()))
+                    val aggregate = detail.toAggregate(carId = historyCarId, computedAt = System.currentTimeMillis())
+                    val coordinates = usableVehicleCoordinates(aggregate.startLatitude, aggregate.startLongitude)
+                    val location = coordinates?.let { geocodingRepository.getFromCache(it.first, it.second) }
+                    requireIdentity(scope, historyCarId, remoteApiCarId)
+                    aggregateDao.upsertDriveAggregate(aggregate.copy(startCountryCode = location?.countryCode,
+                        startCountryName = location?.countryName, startRegionName = location?.regionName, startCity = location?.city))
                     requireIdentity(scope, historyCarId, remoteApiCarId)
                     syncManager.updateDriveDetailProgress(historyCarId, detail.driveId)
                     true
@@ -336,7 +344,17 @@ class SyncRepository @Inject constructor(
                     if (!saved) return ApiResult.Error("charge_detail_write_rejected",
                         kind = com.matelink.data.repository.ApiErrorKind.INVALID_RESPONSE)
                     requireIdentity(scope, historyCarId, remoteApiCarId)
-                    aggregateDao.upsertChargeAggregate(detail.toAggregate(carId = historyCarId, computedAt = System.currentTimeMillis()))
+                    val aggregate = detail.toAggregate(carId = historyCarId, computedAt = System.currentTimeMillis())
+                    val rawSummary = summary.toRawAnalysisChargeData()
+                    val currentCoordinates = usableVehicleCoordinates(detail.latitude, detail.longitude)
+                    val earlierCoordinates = if (isAnalysisEligible(summary.qualityState, summary.qualityReason) &&
+                        summary.acceptsDetail(result.data)) usableVehicleCoordinates(rawSummary.latitude, rawSummary.longitude) else null
+                    // A complete genuine same-record pair may fill a missing pair; never mix components or old names.
+                    val coordinates = currentCoordinates ?: earlierCoordinates
+                    val location = coordinates?.let { geocodingRepository.getFromCache(it.first, it.second) }
+                    requireIdentity(scope, historyCarId, remoteApiCarId)
+                    aggregateDao.upsertChargeAggregate(aggregate.copy(countryCode = location?.countryCode,
+                        countryName = location?.countryName, regionName = location?.regionName, city = location?.city))
                     requireIdentity(scope, historyCarId, remoteApiCarId)
                     syncManager.updateChargeDetailProgress(historyCarId, id)
                 }

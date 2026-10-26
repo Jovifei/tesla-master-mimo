@@ -32,7 +32,7 @@ class ChargeSummaryMetricTest {
         fun project(row: ChargeData, free: Boolean = false) = projectEffectiveChargeCost(
             charge = row, localHistoryCarId = 42, manual = null,
             selectedCurrencyCode = "CNY", freeSupercharging = free, isDcCharge = free,
-            defaultPricePerKwh = 1.14
+            defaultPricePerKwh = 1.14, sessionFreeVerified = free
         )
 
         val estimate = project(charge(1, 2.0))

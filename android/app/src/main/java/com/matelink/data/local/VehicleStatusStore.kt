@@ -7,12 +7,41 @@ import com.matelink.domain.map.VehiclePosition
 import com.matelink.domain.map.VehiclePositionResolver
 import com.matelink.util.parseIsoInstant
 import com.squareup.moshi.Moshi
+import com.squareup.moshi.JsonClass
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+
+/** The status and its unit/provenance context are one received observation. */
+@JsonClass(generateAdapter = true)
+internal data class CachedVehicleStatusReceipt(
+    val status: CarStatus,
+    val units: Units? = null,
+    val source: String? = null,
+    val observedAt: String? = null,
+    val fieldSources: Map<String, String> = emptyMap()
+) {
+    /** Keep the original raw record; unknown preferred units cannot label its values. */
+    val displayStatus: CarStatus get() {
+        val lengthKnown = units?.unitOfLength in setOf("km", "mi")
+        val temperatureKnown = units?.unitOfTemperature in setOf("C", "F")
+        val pressureKnown = units?.unitOfPressure in setOf("bar", "psi")
+        return status.copy(
+            odometer = status.odometer.takeIf { lengthKnown },
+            batteryDetails = status.batteryDetails?.let { battery -> if (lengthKnown) battery else battery.copy(
+                ratedBatteryRange = null, estBatteryRange = null, idealBatteryRange = null) },
+            drivingDetails = status.drivingDetails?.let { driving -> if (lengthKnown) driving else driving.copy(
+                speed = null, elevation = null) },
+            climateDetails = status.climateDetails?.let { climate -> if (temperatureKnown) climate else climate.copy(
+                insideTemp = null, outsideTemp = null) },
+            tpmsDetails = status.tpmsDetails?.let { tpms -> if (pressureKnown) tpms else tpms.copy(
+                pressureFl = null, pressureFr = null, pressureRl = null, pressureRr = null) }
+        )
+    }
+}
 
 @Singleton
 class VehicleStatusStore @Inject constructor(
@@ -24,6 +53,7 @@ class VehicleStatusStore @Inject constructor(
         Context.MODE_PRIVATE
     )
     private val adapter = moshi.adapter(CarStatus::class.java)
+    private val receiptAdapter = moshi.adapter(CachedVehicleStatusReceipt::class.java)
     private val _updates = MutableSharedFlow<Int>(extraBufferCapacity = 8)
     val updates: SharedFlow<Int> = _updates
 
@@ -48,35 +78,42 @@ class VehicleStatusStore @Inject constructor(
     /** Used only with the current origin/account/car binding's persisted UID digest. */
     internal fun getCachedStatusForVerifiedIdentity(
         scope: HistoryReadScope, vehicle: VehicleContext, digest: String
-    ): CarStatus? {
-        val alias = verifiedAliasKey(scope, vehicle, digest) ?: return null
-        val json = prefs.getString("status_v3_$alias", null) ?: return null
-        return runCatching { adapter.fromJson(json) }.getOrNull()
-    }
+    ): CarStatus? = getCachedReceiptForVerifiedIdentity(scope, vehicle, digest)?.status
 
-    internal fun getCachedStatus(scope: HistoryReadScope, vehicle: VehicleContext): CarStatus? {
-        val key = key(scope, vehicle) ?: return null
-        val json = prefs.getString("status_v2_$key", null)
-        if (!json.isNullOrBlank()) {
-            try {
-                val parsed = adapter.fromJson(json)
-                if (parsed != null) return parsed
-            } catch (_: Exception) {
-            }
-        }
-        return null
-    }
+    internal fun getCachedStatus(scope: HistoryReadScope, vehicle: VehicleContext): CarStatus? =
+        getCachedReceipt(scope, vehicle)?.status
 
     internal fun getCachedObservedAt(scope: HistoryReadScope, vehicle: VehicleContext): String? =
-        key(scope, vehicle)?.let { prefs.getString("observed_at_v2_$it", null) }
+        getCachedReceipt(scope, vehicle)?.observedAt
 
-    internal fun saveStatus(scope: HistoryReadScope, vehicle: VehicleContext, status: CarStatus, observedAt: String? = null) {
+    internal fun getCachedReceipt(scope: HistoryReadScope, vehicle: VehicleContext): CachedVehicleStatusReceipt? =
+        key(scope, vehicle)?.let { readReceipt(it, 2) }
+
+    internal fun getCachedReceiptForVerifiedIdentity(
+        scope: HistoryReadScope, vehicle: VehicleContext, digest: String
+    ): CachedVehicleStatusReceipt? = verifiedAliasKey(scope, vehicle, digest)?.let { readReceipt(it, 3) }
+
+    private fun readReceipt(key: String, legacyVersion: Int): CachedVehicleStatusReceipt? {
+        prefs.getString("receipt_v4_$key", null)?.let { json ->
+            runCatching { receiptAdapter.fromJson(json) }.getOrNull()?.let { return it }
+        }
+        // Legacy raw bytes remain available, with their original time and explicitly unknown units.
+        val json = prefs.getString("status_v${legacyVersion}_$key", null) ?: return null
+        val status = runCatching { adapter.fromJson(json) }.getOrNull() ?: return null
+        return CachedVehicleStatusReceipt(status,
+            observedAt = prefs.getString("observed_at_v${legacyVersion}_$key", null))
+    }
+
+    internal fun saveStatus(scope: HistoryReadScope, vehicle: VehicleContext, status: CarStatus, observedAt: String? = null,
+                            units: Units? = null, source: String? = null, fieldSources: Map<String, String> = emptyMap()) {
         val key = key(scope, vehicle) ?: return
         try {
             val json = adapter.toJson(status)
+            val receipt = receiptAdapter.toJson(CachedVehicleStatusReceipt(status, units, source, observedAt, fieldSources))
             val editor = prefs.edit()
                 .putString("status_v2_$key", json)
                 .putString("observed_at_v2_$key", observedAt)
+                .putString("receipt_v4_$key", receipt)
             if (scope.source == HistoryConnectionSource.CLOUD &&
                 vehicle.stableIdentity.startsWith("cloud-origin:")) {
                 val digest = MessageDigest.getInstance("SHA-256")
@@ -85,6 +122,7 @@ class VehicleStatusStore @Inject constructor(
                 verifiedAliasKey(scope, vehicle, digest)?.let { alias ->
                     editor.putString("status_v3_$alias", json)
                         .putString("observed_at_v3_$alias", observedAt)
+                        .putString("receipt_v4_$alias", receipt)
                 }
             }
             // Independent last verified position: keep its OLD observation time.
@@ -115,8 +153,9 @@ class VehicleStatusStore @Inject constructor(
 
     /** Never re-date old GPS or other sparse fields as a new observation. */
     internal fun reconcileAndSave(scope: HistoryReadScope, vehicle: VehicleContext,
-                                  live: CarStatus, observedAt: String?): CarStatus {
-        saveStatus(scope, vehicle, live, observedAt)
+                                  live: CarStatus, observedAt: String?, units: Units? = null,
+                                  source: String? = null, fieldSources: Map<String, String> = emptyMap()): CarStatus {
+        saveStatus(scope, vehicle, live, observedAt, units, source, fieldSources)
         return live
     }
 

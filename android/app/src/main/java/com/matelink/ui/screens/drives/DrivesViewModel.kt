@@ -224,21 +224,6 @@ internal fun DriveData.historyEnergy(
             coverageRatio = resolved.coverageRatio
         )
     }
-    val distance = distanceKm
-    if (resolved.energyKwh == null && distance != null && distance > 0.0 &&
-        startBatteryLevel != null && endBatteryLevel != null && startBatteryLevel == endBatteryLevel) {
-        val capacity = batteryCapacityKwh?.takeIf { it > 0.0 && it.isFinite() }
-            ?: DriveEnergyResolver.resolveBatteryCapacity(model, trimBadging)
-        val nominalWhKm = 145.0
-        val estKwh = minOf((distance * nominalWhKm) / 1000.0, capacity * 0.009)
-        return DriveDetailEnergyPresentation(
-            energyKwh = estKwh.takeIf(Double::isFinite),
-            efficiencyWhKm = (estKwh / distance * 1000.0).takeIf(Double::isFinite),
-            source = DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE,
-            coverageSeconds = null,
-            coverageRatio = null
-        )
-    }
     return presentDriveDetailEnergy(null, null, null, null, null, null)
 }
 
@@ -509,16 +494,19 @@ class DrivesViewModel @Inject constructor(
             val state = _uiState.value
             // Every window change reads its own verified Room rows first. A previous
             // in-memory seven-day result cannot stand in for an older offline day.
+            var cachedProof: VerifiedHistoryReadContext? = null
             val localRows = try {
                 val scope = vehicleContextRepository.captureReadScope()
                 val context = vehicleContextRepository.cachedContextForRemote(id, scope)
-                val rows = context?.let { driveSummaryDao.getAllChronological(it.localHistoryCarId) }
+                val rows = context?.let { driveSummaryDao.getAllChronologicalForAdjacency(it.localHistoryCarId) }
                     ?: emptyList()
                 if (context != null && !vehicleContextRepository.isHistoryContextCurrentNow(scope, context))
                     throw CancellationException("Drive history identity changed")
+                if (context != null) cachedProof = VerifiedHistoryReadContext(scope, context, false, null, false)
                 rows
             } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
             ensureCurrent()
+            activeHistoryProof = cachedProof
             val windowRows = localRows.filter {
                 driveInHistoryWindow(it.startDate, startDate, endDate, requestZone)
             }
@@ -585,14 +573,15 @@ class DrivesViewModel @Inject constructor(
                     }
                     checkProof()
                     val remoteDrives = result.data.drives
-                    val localRows = driveSummaryDao.getAllChronological(result.data.context.localHistoryCarId)
+                    val localRows = driveSummaryDao.getAllChronologicalForAdjacency(result.data.context.localHistoryCarId)
                     val baselineRows = localRows.associateBy { it.driveId }
                     val localMetrics = localRows.associate { summary ->
                         summary.driveId to summary.toQualifiedHistoryMetrics()
                     }
                     checkProof()
                     activeHistoryProof = proof
-                    allDrives = remoteDrives
+                    allDrives = (remoteDrives + localRows.filter { it.qualityState == "quarantined" }
+                        .map { it.toAnalysisDriveData() }).distinctBy { it.driveId }
                     val granularity = determineGranularity(startDate, endDate)
 
                     _uiState.update {

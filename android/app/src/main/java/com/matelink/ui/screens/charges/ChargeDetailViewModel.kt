@@ -18,6 +18,8 @@ import com.matelink.data.repository.VerifiedHistoryReadContext
 import com.matelink.data.repository.historyIdentityUnavailableError
 import com.matelink.domain.history.LatestHistoryLoad
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.collect
 import com.matelink.data.local.dao.ChargeSummaryDao
 import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.SavedTripLeg
@@ -37,6 +39,7 @@ import com.matelink.domain.analytics.toCostChargeData
 import com.matelink.domain.analytics.validManualChargeTotal
 import com.matelink.domain.analytics.toAnalysisChargeData
 import com.matelink.domain.analytics.toAnalysisDriveData
+import com.matelink.domain.analytics.acceptsDetail
 import com.matelink.domain.analytics.withQualifiedEnergy
 import com.matelink.domain.model.Trip
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -51,6 +54,7 @@ import javax.inject.Inject
 
 data class ChargeDetailUiState(
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val localArchiveLinkPending: Boolean = false,
     val historySyncWarning: String? = null,
     val error: String? = null,
@@ -164,7 +168,8 @@ class ChargeDetailViewModel @Inject constructor(
     private val historyRepository: UnifiedHistoryRepository,
     private val chargeSummaryDao: ChargeSummaryDao,
     private val statsDatabase: StatsDatabase,
-    private val historyDetailStore: HistoryDetailRepository
+    private val historyDetailStore: HistoryDetailRepository,
+    private val vehicleContexts: com.matelink.data.local.VehicleContextRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChargeDetailUiState())
@@ -176,6 +181,22 @@ class ChargeDetailViewModel @Inject constructor(
     private var chargeId: Int? = null
     private var historyCarId: Int? = null
     private var defaultChargePrice = 1.14
+    private var tariffSettings: com.matelink.data.local.AppSettings? = null
+
+    init {
+        viewModelScope.launch {
+            historyRepository.scopeChanges?.collect { scope ->
+                val proof = historyProof ?: return@collect
+                if (scope == proof.scope && historyRepository.isContextCurrent(proof)) return@collect
+                latestLoad.invalidate()
+                historyProof = null
+                historyCarId = null
+                _uiState.value = ChargeDetailUiState(isLoading = false, error = "history_identity_unavailable")
+                val car = carId; val charge = chargeId
+                if (car != null && charge != null) loadChargeDetail(car, charge)
+            }
+        }
+    }
 
     private data class LoadedCost(
         val presentation: ChargeDetailCostPresentation,
@@ -197,7 +218,8 @@ class ChargeDetailViewModel @Inject constructor(
         val other = findOtherCurrencyChargeCostOverride(records, localCarId, charge, currencyCode)
         val legacy = records.firstOrNull { it.sessionKey == "legacy" && !it.deleted }
         val effective = projectEffectiveChargeCost(charge, localCarId, bound, currencyCode,
-            isExplicitlyFree, isDcCharge, defaultChargePrice)
+            isExplicitlyFree, isDcCharge, defaultChargePrice,
+            tariffEstimate = tariffSettings?.let { com.matelink.domain.analytics.estimateChargeTariff(charge, it) })
         return LoadedCost(
             presentation = effective.toDetailCostPresentation(),
             manualTotal = bound?.manualTotalAmount?.takeIf { !bound.deleted && effective.source == ChargeCostSource.MANUAL },
@@ -219,12 +241,58 @@ class ChargeDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val settings = settingsDataStore.settings.first()
             defaultChargePrice = settings.defaultChargePrice
+            tariffSettings = settings
             val currency = Currency.entries.firstOrNull {
                 it.code.equals(settings.currencyCode, ignoreCase = true)
             }
             _uiState.update { it.copy(currencySymbol = currency?.symbol ?: "?",
                 currencyCode = currency?.code ?: settings.currencyCode) }
         }
+    }
+
+    private suspend fun publishColdCache(remoteId: Int, recordId: Int, ensureCurrent: suspend () -> Unit): Boolean {
+        val contexts = vehicleContexts
+        val proof = if (contexts != null) {
+            val scope = contexts.captureReadScope()
+            val context = contexts.cachedContextForRemote(remoteId, scope) ?: return false
+            VerifiedHistoryReadContext(scope, context, false, null, false)
+        } else (historyRepository.loadCached(remoteId) as? ApiResult.Success)?.data?.verifiedReadContext ?: return false
+        suspend fun check() {
+            ensureCurrent()
+            if (!historyRepository.isContextCurrent(proof)) throw com.matelink.data.local.HistoryIdentityUnavailableException()
+        }
+        check()
+        val row = chargeSummaryDao.get(proof.context.localHistoryCarId, recordId) ?: return false
+        if (row.qualityState == "quarantined") return false
+        val settings = settingsDataStore.settings.first()
+        check()
+        val saved = row.verifiedDetailIdentity(proof.context)?.let { historyDetailStore.readCharge(it) }
+        check()
+        val (detail, units) = presentChargeTemperature(cachedChargeDetail(row, saved?.detail), null)
+        defaultChargePrice = settings.defaultChargePrice
+        tariffSettings = settings
+        val cost = loadCost(proof.context.localHistoryCarId, detail, settings.currencyCode,
+            false, ChargeStatsCalculator.detectChargeType(detail) == ChargeType.DC)
+        check()
+        if (settingsDataStore.settings.first().currencyCode != settings.currencyCode) return false
+        check()
+        historyProof = proof
+        historyCarId = proof.context.localHistoryCarId
+        val warning = when {
+            saved?.reason == "detail_cache_corrupt" -> "history_detail_cache_corrupt"
+            saved?.detail == null -> "history_cached"
+            saved.receipt?.sourceInstanceVerified != true || saved.receipt?.sourceIdVerified != true -> "history_detail_cached_source_unverified"
+            saved.receipt?.providerTotalVerified != true -> "history_detail_cached_total_unverified"
+            else -> "history_cached"
+        }
+        _uiState.update { it.copy(isLoading = false, isRefreshing = true, chargeDetail = detail,
+            stats = ChargeStatsCalculator.calculateStats(detail), units = units, historySyncWarning = warning,
+            currencyCode = settings.currencyCode, currencySymbol = Currency.entries.firstOrNull { c -> c.code == settings.currencyCode }?.symbol ?: "?",
+            isDcCharge = ChargeStatsCalculator.detectChargeType(detail).toDcFlag(), costPresentation = cost.presentation,
+            manualTotalAmount = cost.manualTotal, manualVersion = cost.version, pendingLegacyAmount = cost.pendingLegacy,
+            pendingBoundAmount = cost.pendingBound, otherCurrencyAmount = cost.otherCurrency,
+            sourceUnconfirmedAmount = cost.sourceUnconfirmed, error = null) }
+        return true
     }
 
     fun loadChargeDetail(carId: Int, chargeId: Int) {
@@ -235,10 +303,16 @@ class ChargeDetailViewModel @Inject constructor(
         _uiState.value = ChargeDetailUiState(currencySymbol = _uiState.value.currencySymbol,
             currencyCode = _uiState.value.currencyCode)
         latestLoad.launch(viewModelScope) {
-            val resolved = when (val result = historyRepository.resolveContext(carId)) {
+            val cachedPublished = try { publishColdCache(carId, chargeId) { ensureCurrent() } }
+                catch (e: CancellationException) { throw e } catch (_: Exception) { false }
+            val resolved = when (val result = withTimeoutOrNull(20_000L) { historyRepository.resolveContext(carId) }
+                    ?: ApiResult.Error("history_sync_timeout")) {
                 is ApiResult.Error -> {
                     ensureCurrent()
-                    _uiState.update { it.copy(isLoading = false, error = result.message) }
+                    val cachedProof = historyProof
+                    if (cachedPublished && cachedProof != null && historyRepository.isContextCurrent(cachedProof))
+                        _uiState.update { it.copy(isLoading = false, isRefreshing = false, historySyncWarning = "history_cached", error = null) }
+                    else _uiState.value = ChargeDetailUiState(isLoading = false, error = result.message)
                     return@launch
                 }
                 is ApiResult.Success -> result.data
@@ -252,11 +326,15 @@ class ChargeDetailViewModel @Inject constructor(
                 }
             }
             checkContext()
+            val previous = historyProof
+            if (previous != null && (previous.scope != resolved.scope || previous.context.localHistoryCarId != resolved.context.localHistoryCarId))
+                _uiState.value = ChargeDetailUiState()
             historyProof = resolved
             val localHistoryCarId = resolved.context.localHistoryCarId
             historyCarId = localHistoryCarId
             val settings = settingsDataStore.settings.first()
             defaultChargePrice = settings.defaultChargePrice
+            tariffSettings = settings
             checkContext()
             _uiState.update { it.copy(currencySymbol = Currency.entries.firstOrNull { currency ->
                     currency.code.equals(settings.currencyCode, ignoreCase = true)
@@ -268,10 +346,12 @@ class ChargeDetailViewModel @Inject constructor(
             _uiState.update { it.copy(containingTrip = containing) }
 
             // Fetch charge detail and units in parallel
-            val detailResult = if (resolved.remoteAuthorized) repository.getChargeDetail(carId, chargeId)
+            val detailResult = if (resolved.remoteAuthorized) withTimeoutOrNull(20_000L) { repository.getChargeDetail(carId, chargeId) }
+                ?: ApiResult.Error("history_sync_timeout")
                 else resolved.identityError ?: historyIdentityUnavailableError()
             checkContext()
-            val statusResult = if (resolved.remoteAuthorized) repository.getCarStatus(carId) else historyIdentityUnavailableError()
+            val statusResult = if (resolved.remoteAuthorized) withTimeoutOrNull(5_000L) { repository.getCarStatus(carId) }
+                ?: ApiResult.Error("history_sync_timeout") else historyIdentityUnavailableError()
             checkContext()
             val carResult = if (resolved.remoteAuthorized) repository.getCar(carId) else historyIdentityUnavailableError()
             checkContext()
@@ -284,11 +364,8 @@ class ChargeDetailViewModel @Inject constructor(
             when (detailResult) {
                 is ApiResult.Success -> {
                     val rawDetail = detailResult.data
-                    val qualified = rawDetail.withQualifiedEnergy()
-                    val coords = resolveChargeCoordinates(
-                        qualified.latitude, qualified.longitude,
-                        localHistoryCarId, chargeId, qualified.startDate, qualified.endDate
-                    )
+                    val qualified = presentChargeTemperature(rawDetail.withQualifiedEnergy(), units).first
+                    val coords = resolveChargeCoordinates(qualified, localHistoryCarId)
                     val detail = if (coords != null) {
                         qualified.copy(latitude = coords.first, longitude = coords.second)
                     } else qualified
@@ -331,10 +408,10 @@ class ChargeDetailViewModel @Inject constructor(
                     checkContext()
                     _uiState.update {
                         it.copy(
-                            isLoading = false,
+                            isLoading = false, isRefreshing = false,
                             historySyncWarning = detailWarning,
                             chargeDetail = detail,
-                            units = units,
+                            units = presentChargeTemperature(detail, units).second,
                             stats = stats,
                             costPresentation = loadedCost.presentation,
                             isDcCharge = isDcCharge,
@@ -363,39 +440,11 @@ class ChargeDetailViewModel @Inject constructor(
                         // A local summary is a bounded offline fallback only. Never
                         // fabricate an electrical trace from aggregate values.
                         val cached = localSummary.toAnalysisChargeData()
-                        val localDetail = ChargeDetail(
-                            chargeId = localSummary.chargeId,
-                            startDate = localSummary.startDate,
-                            endDate = localSummary.endDate,
-                            address = localSummary.address.ifBlank { null },
-                            chargeEnergyAdded = cached.batteryInputKwh,
-                            chargeEnergyUsed = cached.inputEnergyKwh,
-                            cost = localSummary.cost,
-                            durationMin = localSummary.durationMin,
-                            durationStr = "${localSummary.durationMin}m",
-                            batteryDetails = cached.batteryDetails,
-                            outsideTempAvg = localSummary.outsideTempAvg,
-                            odometer = localSummary.odometer,
-                            latitude = (resolveChargeCoordinates(
-                                localSummary.latitude.takeIf { it != 0.0 },
-                                localSummary.longitude.takeIf { it != 0.0 },
-                                localHistoryCarId, chargeId, localSummary.startDate, localSummary.endDate
-                            )?.first ?: localSummary.latitude).takeIf { it != 0.0 },
-                            longitude = (resolveChargeCoordinates(
-                                localSummary.latitude.takeIf { it != 0.0 },
-                                localSummary.longitude.takeIf { it != 0.0 },
-                                localHistoryCarId, chargeId, localSummary.startDate, localSummary.endDate
-                            )?.second ?: localSummary.longitude).takeIf { it != 0.0 },
-                            chargePoints = pointCache?.detail?.chargePoints ?: emptyList(),
-                            isCharging = false,
-                            source = cached.source,
-                            sourceInstanceId = cached.sourceInstanceId,
-                            sourceId = cached.sourceId,
-                            sourceRecordId = cached.sourceRecordId,
-                            currencyCode = cached.currencyCode,
-                            chargeType = cached.chargeType,
-                            energyContract = cached.energyContract
-                        )
+                        val localDetail = presentChargeTemperature(cachedChargeDetail(localSummary, pointCache?.detail), units).first
+                            .let { detail ->
+                                val coords = resolveChargeCoordinates(detail, localHistoryCarId)
+                                if (coords == null) detail else detail.copy(latitude = coords.first, longitude = coords.second)
+                            }
                         val stats = ChargeStatsCalculator.calculateStats(localDetail)
                         val isDcCharge = ChargeStatsCalculator.detectChargeType(localDetail).toDcFlag()
                         val loadedCost = loadCost(localHistoryCarId, localDetail, settings.currencyCode,
@@ -403,7 +452,7 @@ class ChargeDetailViewModel @Inject constructor(
                         checkContext()
                         _uiState.update {
                             it.copy(
-                                isLoading = false,
+                                isLoading = false, isRefreshing = false,
                                 historySyncWarning = when {
                                     pointCache?.reason == "detail_cache_corrupt" ->
                                         "history_detail_cache_corrupt"
@@ -416,7 +465,7 @@ class ChargeDetailViewModel @Inject constructor(
                                     else -> "history_cached"
                                 },
                                 chargeDetail = localDetail,
-                                units = units,
+                                units = presentChargeTemperature(localDetail, units).second,
                                 stats = stats,
                                 costPresentation = loadedCost.presentation,
                                 isDcCharge = isDcCharge,
@@ -432,7 +481,7 @@ class ChargeDetailViewModel @Inject constructor(
                     } else {
                         _uiState.update {
                             it.copy(
-                                isLoading = false,
+                                isLoading = false, isRefreshing = false,
                                 error = detailResult.message
                             )
                         }
@@ -489,45 +538,8 @@ class ChargeDetailViewModel @Inject constructor(
         }
     }
 
-private suspend fun resolveChargeCoordinates(
-        currentLat: Double?,
-        currentLon: Double?,
-        carId: Int,
-        chargeId: Int,
-        startDate: String?,
-        endDate: String?
-    ): Pair<Double, Double>? {
-        if (currentLat != null && currentLon != null &&
-            currentLat.isFinite() && currentLon.isFinite() &&
-            (currentLat != 0.0 || currentLon != 0.0)) {
-            return currentLat to currentLon
-        }
-        val local = chargeSummaryDao.get(carId, chargeId)
-        val localLat = local?.latitude?.takeIf { it.isFinite() && it != 0.0 }
-        val localLon = local?.longitude?.takeIf { it.isFinite() && it != 0.0 }
-        if (localLat != null && localLon != null) {
-            return localLat to localLon
-        }
-        val start = startDate ?: local?.startDate
-        if (!start.isNullOrBlank()) {
-            val before = statsDatabase.driveSummaryDao().getDriveEndingBefore(carId, start)?.toAnalysisDriveData()
-            val beforeLat = before?.endLatitude?.takeIf { it.isFinite() && it != 0.0 }
-            val beforeLon = before?.endLongitude?.takeIf { it.isFinite() && it != 0.0 }
-            if (beforeLat != null && beforeLon != null) {
-                return beforeLat to beforeLon
-            }
-        }
-        val end = endDate ?: local?.endDate
-        if (!end.isNullOrBlank()) {
-            val after = statsDatabase.driveSummaryDao().getDriveStartingAfter(carId, end)?.toAnalysisDriveData()
-            val afterLat = after?.startLatitude?.takeIf { it.isFinite() && it != 0.0 }
-            val afterLon = after?.startLongitude?.takeIf { it.isFinite() && it != 0.0 }
-            if (afterLat != null && afterLon != null) {
-                return afterLat to afterLon
-            }
-        }
-        return null
-    }
+    private suspend fun resolveChargeCoordinates(detail: ChargeDetail, carId: Int): Pair<Double, Double>? =
+        chooseChargeCoordinates(detail, chargeSummaryDao.get(carId, detail.chargeId))
 
     /** Detach this charge from its containing saved trip (auto-transitions the trip to USER_EDITED). */
     fun removeFromTrip() {
@@ -549,4 +561,73 @@ private fun ChargeType.toDcFlag(): Boolean? = when (this) {
     ChargeType.AC -> false
     ChargeType.UNKNOWN -> null
 
+}
+
+internal fun cachedChargeDetail(localSummary: com.matelink.data.local.entity.ChargeSummary,
+    pointHeader: ChargeDetail? = null): ChargeDetail {
+    val cached = localSummary.toAnalysisChargeData()
+    val summaryUnit = receivedChargeTemperatureUnit(cached.temperatureUnit, cached.source)
+    val pointUnit = receivedChargeTemperatureUnit(pointHeader?.temperatureUnit, pointHeader?.source)
+    val displayUnit = summaryUnit ?: pointUnit
+    val points = pointHeader?.chargePoints.orEmpty().map { point ->
+        point.copy(outsideTemp = translateChargeTemperature(point.outsideTemp, pointUnit, displayUnit))
+    }
+    return ChargeDetail(
+                            chargeId = cached.chargeId,
+                            startDate = cached.startDate,
+                            endDate = cached.endDate,
+                            address = cached.address?.takeIf(String::isNotBlank),
+                            chargeEnergyAdded = cached.batteryInputKwh,
+                            chargeEnergyUsed = cached.inputEnergyKwh,
+                            cost = cached.cost,
+                            durationMin = cached.durationMin,
+                            durationStr = cached.durationStr,
+                            batteryDetails = cached.batteryDetails,
+                            outsideTempAvg = translateChargeTemperature(cached.outsideTempAvg, summaryUnit, displayUnit),
+                            odometer = cached.odometer,
+                            latitude = cached.latitude,
+                            longitude = cached.longitude,
+                            chargePoints = points,
+                            isCharging = false,
+                            source = cached.source,
+                            sourceInstanceId = cached.sourceInstanceId,
+                            sourceId = cached.sourceId,
+                            sourceRecordId = cached.sourceRecordId,
+                            currencyCode = cached.currencyCode,
+                            chargeType = cached.chargeType,
+                            temperatureUnit = displayUnit ?: "",
+                            lengthUnit = cached.lengthUnit,
+                            energyContract = cached.energyContract
+                        )
+}
+
+internal fun chooseChargeCoordinates(detail: ChargeDetail, local: ChargeSummary?): Pair<Double, Double>? {
+    if (detail.sourceRecordIdentity.conflicted) return null
+    com.matelink.domain.telemetry.usableVehicleCoordinates(detail.latitude, detail.longitude)?.let { return it }
+    if (local == null || !com.matelink.domain.history.isAnalysisEligible(local.qualityState, local.qualityReason) ||
+        !local.acceptsDetail(detail)) return null
+    val saved = local.toAnalysisChargeData()
+    return com.matelink.domain.telemetry.usableVehicleCoordinates(saved.latitude, saved.longitude)
+}
+
+internal fun presentChargeTemperature(detail: ChargeDetail, preferred: Units?): Pair<ChargeDetail, Units?> {
+    val unit = receivedChargeTemperatureUnit(detail.temperatureUnit, detail.source)
+    val display = if (unit != null) detail else detail.copy(outsideTempAvg = null,
+        chargePoints = detail.chargePoints?.map { it.copy(outsideTemp = null) })
+    return display to (preferred ?: Units()).copy(unitOfTemperature = unit ?: "")
+}
+
+private fun receivedChargeTemperatureUnit(unit: String?, source: String?): String? =
+    when (val received = unit?.trim()?.uppercase()?.removePrefix("°")) {
+        "C", "F" -> received
+        null -> if (source in setOf("fleet_api", "telemetry_mqtt")) "C" else null
+        else -> null
+    }
+
+private fun translateChargeTemperature(value: Double?, from: String?, to: String?): Double? {
+    val raw = value?.takeIf(Double::isFinite) ?: return null
+    if (from !in setOf("C", "F") || to !in setOf("C", "F")) return null
+    if (from == to) return raw
+    return (if (from == "F") (raw - 32.0) * (5.0 / 9.0) else raw * (9.0 / 5.0) + 32.0)
+        .takeIf(Double::isFinite)
 }

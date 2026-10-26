@@ -423,7 +423,7 @@
     <string name="cost_average_kwh">平均每度</string>
     <string name="cost_average_kwh_hint">按有效费用计算</string>
     <string name="cost_recorded_manual_total">已记录及手工总价</string>
-    <string name="cost_default_rate_estimate">按默认费率估算</string>
+    <string name="cost_default_rate_estimate">充电费用估算</string>
     <string name="cost_paired_battery_unit">同笔配对每电池充入 kWh 成本</string>
     <string name="cost_coverage_counts">费用 %1$d/%2$d · 电量 %3$d/%2$d · 同笔配对 %4$d</string>
     <string name="cost_estimate_coverage">估算 %1$d 笔</string>
@@ -1180,11 +1180,7 @@
     <string name="settings_release_notes_close">知道了</string>
     <string name="settings_switch_to_cloud">切换到 MateLink 云端</string>
     <string name="settings_switch_to_self_hosted">切换到本地 TeslaMate</string>
-<string name="settings_release_notes_body" formatted="false">• 同一充电的详情证据可安全保存，弱列表刷新不再抹去合格电量；总价编辑移入右侧费用格。\n• 温度趋势只画真实历史；胎压复用已有状态响应保存，不新增周期 Fleet 状态请求；哨兵历史按已验证的本地车辆身份读取。\n• 年度与费用统计区分未知、真实零和负净回收，月柱图不把未知画成零；时间线按本地日期显示。\n• 行程与充电历史首屏先看摘要和最近记录；筛选更紧凑，原月度柱状图保留在摘要后、历史列表前。\n• 摘要与充电历史统一四列，数字加大，日期筛选精简并保留完整选项。\n• 行程历史的四项指标改为紧凑一行，详情保留完整面板，大字体可横滑查看，不截断数字和单位。
-• 自动历史同步与缓存刷新保留已验证的用户车辆身份、观测来源和时间边界。
-• 行驶和充电能耗区分真实零值、负净回收与未知；推算与估算明确标记，不冒充实测。
-• 充电损耗与效率仅在整段 AC 模式和计数时段均有观测证明时计算；未知或混合 AC/DC 模式保留未知。
-• 驻车能量、迟到记录与通知保留来源和质量限制；自然 Fleet 事件与后台自动送达仍需独立真机验收。</string>
+<string name="settings_release_notes_body" formatted="false">• 优化弱网冷启动，已有历史可自动先显示缓存，刷新失败时保留。\n• 修正充电费用、行程能耗、温标和曲线时间；分时电价用于明确的估算，不覆盖已有账单。\n• 区分未知、真实零和已采样数据，不补造缺失历史。\n• 切换账号或车辆时隔离旧数据，告警按实际观测防重。\n• 修正汇总、报告年份和导出一致性，保留原有页面布局。</string>
     <string name="settings_resync_button">重新同步</string>
     <string name="settings_resync_confirm">确认重新同步</string>
     <string name="settings_resync_dialog_text_delete">这将删除所有本地数据。</string>
@@ -1702,4 +1698,12 @@
     <string name="temperature_no_qualified_trip_samples">已有行程，但温度缺少合格来源或时间证据。需真实记录或导入行程，不会生成示意值。</string>
     <string name="battery_cached_scope_notice">本机已保存的状态与历史仅供离线查看，并非实时车辆测量；电池健康容量无合格观测时保持未知。</string>
     <string name="parked_map_title">停驶位置</string>
+    <string name="trip_save_failed">旅途保存失败，草稿已保留，请重试。</string>
+    <string name="temperature_observed_pair_delta_title">行程均温差</string>
+    <string name="temperature_observed_pair_delta_note">同程内外均温差，非空调性能。</string>
+    <string name="usable_percent_unavailable">可用（—）</string>
+    <string name="parked_receipt_source_unverified">本地邻接和时间窗已匹配；上游来源实例未确认。</string>
+    <string name="parked_receipt_save_failed">详情未能保存，离线时保留先前缓存。</string>
+    <string name="drive_detail_sample_maximum">样本最高</string>
+    <string name="drive_detail_sample_minimum">样本最低</string>
 </resources>

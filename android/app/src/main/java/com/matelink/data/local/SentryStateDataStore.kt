@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
@@ -23,7 +24,9 @@ data class SentryState(
     val sentryActive: Boolean = false,
     val eventCount: Int = 0,
     val lastEventAt: Long = 0L,
-    val sessionStartedAt: Long = 0L
+    val sessionStartedAt: Long = 0L,
+    val lastObservedDisplay: String? = null,
+    val lastObservationAt: Long = 0L
 )
 
 /**
@@ -38,6 +41,8 @@ class SentryStateDataStore @Inject constructor(
     private fun eventCountKey(carId: Int) = intPreferencesKey("sentry_event_count_$carId")
     private fun lastEventKey(carId: Int) = longPreferencesKey("sentry_last_event_$carId")
     private fun sessionStartedAtKey(carId: Int) = longPreferencesKey("sentry_session_started_$carId")
+    private fun displayKey(carId: Int) = stringPreferencesKey("sentry_observed_display_$carId")
+    private fun observationKey(carId: Int) = longPreferencesKey("sentry_observed_at_$carId")
 
     /**
      * Get the current sentry state for a specific car.
@@ -48,7 +53,9 @@ class SentryStateDataStore @Inject constructor(
                 sentryActive = preferences[activeKey(carId)] ?: false,
                 eventCount = preferences[eventCountKey(carId)] ?: 0,
                 lastEventAt = preferences[lastEventKey(carId)] ?: 0L,
-                sessionStartedAt = preferences[sessionStartedAtKey(carId)] ?: 0L
+                sessionStartedAt = preferences[sessionStartedAtKey(carId)] ?: 0L,
+                lastObservedDisplay = preferences[displayKey(carId)],
+                lastObservationAt = preferences[observationKey(carId)] ?: 0L
             )
         }.first()
     }
@@ -56,12 +63,17 @@ class SentryStateDataStore @Inject constructor(
     /**
      * Save the sentry state for a specific car.
      */
-    suspend fun saveState(carId: Int, state: SentryState) {
+    suspend fun saveState(carId: Int, state: SentryState, ensureCurrent: suspend () -> Unit = {}) {
         context.sentryDataStore.edit { preferences ->
+            ensureCurrent()
             preferences[activeKey(carId)] = state.sentryActive
             preferences[eventCountKey(carId)] = state.eventCount
             preferences[lastEventKey(carId)] = state.lastEventAt
             preferences[sessionStartedAtKey(carId)] = state.sessionStartedAt
+            if (state.lastObservedDisplay == null) preferences.remove(displayKey(carId))
+            else preferences[displayKey(carId)] = state.lastObservedDisplay
+            preferences[observationKey(carId)] = state.lastObservationAt
+            ensureCurrent()
         }
     }
 
@@ -87,6 +99,7 @@ class SentryStateDataStore @Inject constructor(
             preferences[eventCountKey(carId)] = 0
             preferences[lastEventKey(carId)] = 0L
             preferences[sessionStartedAtKey(carId)] = 0L
+            preferences.remove(displayKey(carId))
         }
     }
 }

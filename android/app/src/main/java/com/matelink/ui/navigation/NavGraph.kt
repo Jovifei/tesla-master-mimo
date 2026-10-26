@@ -188,7 +188,8 @@ sealed interface Screen {
     data class Trips(val carId: Int, val exteriorColor: String? = null) : Screen
 
     @Serializable
-    data class TripDetail(val carId: Int, val tripStartDate: String, val exteriorColor: String? = null) : Screen
+    data class TripDetail(val carId: Int, val tripStartDate: String, val exteriorColor: String? = null,
+        val savedTripId: Long? = null) : Screen
 
     @Serializable
     data class CreateTrip(val carId: Int, val exteriorColor: String? = null) : Screen
@@ -254,7 +255,7 @@ internal fun shouldRedirectToTeslaLogin(
     currentRoute: String,
     suppressAutoRedirect: Boolean = false
 ): Boolean = !suppressAutoRedirect &&
-    startDestination == Screen.Dashboard &&
+    startDestination != null &&
     connectionMode == ConnectionMode.TESLA_CLOUD &&
     !isAuthenticated &&
     !currentRoute.contains("TeslaLogin")
@@ -300,6 +301,7 @@ fun NavGraph(
     val currentCarId by startViewModel.currentCarId.collectAsState()
     val notificationPermissionAsked by startViewModel.notificationPermissionAsked.collectAsState()
     val teslaLoginViewModel: TeslaLoginViewModel = hiltViewModel()
+    val notificationTargets: NotificationTargetViewModel = hiltViewModel()
     val isTeslaSessionAuthenticated by teslaLoginViewModel.isAuthenticated.collectAsState()
     val sessionAccountId by teslaLoginViewModel.accountId.collectAsState()
     val openDashboardAfterLogin by teslaLoginViewModel.openDashboardAfterLogin.collectAsState()
@@ -420,6 +422,9 @@ fun NavGraph(
             val carId = it.getIntExtra("EXTRA_CAR_ID", -1)
             val exteriorColor = it.getStringExtra("EXTRA_EXTERIOR_COLOR")
             val driveId = it.getIntExtra("EXTRA_DRIVE_ID", -1)
+            val owner = if (it.hasExtra("EXTRA_LOCAL_HISTORY_CAR_ID")) it.getIntExtra("EXTRA_LOCAL_HISTORY_CAR_ID", 0) else null
+            if ((owner != null || navigateTo in setOf("current_charge", "sentry_history")) &&
+                !notificationTargets.isCurrentTarget(carId, owner)) return@let
             notificationScreen(navigateTo, carId, exteriorColor, driveId)?.let { screen ->
                 navController.navigate(screen) {
                     launchSingleTop = true
@@ -884,8 +889,8 @@ fun NavGraph(
                 carId = route.carId,
                 exteriorColor = route.exteriorColor,
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateToTripDetail = { tripStartDate ->
-                    navController.navigate(Screen.TripDetail(route.carId, tripStartDate, route.exteriorColor))
+                onNavigateToTripDetail = { tripStartDate, savedTripId ->
+                    navController.navigate(Screen.TripDetail(route.carId, tripStartDate, route.exteriorColor, savedTripId))
                 },
                 onNavigateToCreateTrip = {
                     navController.navigate(Screen.CreateTrip(route.carId, route.exteriorColor))
@@ -899,8 +904,8 @@ fun NavGraph(
                 carId = route.carId,
                 exteriorColor = route.exteriorColor,
                 onNavigateBack = { navController.popBackStack() },
-                onTripCreated = { startDate ->
-                    navController.navigate(Screen.TripDetail(route.carId, startDate, route.exteriorColor)) {
+                onTripCreated = { startDate, savedTripId ->
+                    navController.navigate(Screen.TripDetail(route.carId, startDate, route.exteriorColor, savedTripId)) {
                         popUpTo<Screen.CreateTrip> { inclusive = true }
                     }
                 }
@@ -912,6 +917,7 @@ fun NavGraph(
             TripDetailScreen(
                 carId = route.carId,
                 tripStartDate = route.tripStartDate,
+                savedTripId = route.savedTripId,
                 exteriorColor = route.exteriorColor,
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToDriveDetail = { driveId ->
@@ -962,8 +968,8 @@ fun NavGraph(
                 carId = route.carId,
                 year = route.year,
                 onBack = { navController.popBackStack() },
-                onNavigateToPDF = {
-                    navController.navigate(Screen.AnnualReportPDF(route.carId, route.year))
+                onNavigateToPDF = { selectedYear ->
+                    navController.navigate(Screen.AnnualReportPDF(route.carId, selectedYear))
                 }
             )
         }
@@ -1020,6 +1026,7 @@ fun NavGraph(
         composable<Screen.Vampire> { backStackEntry ->
             val route = backStackEntry.toRoute<Screen.Vampire>()
             VampireScreen(
+                carId = route.carId,
                 onNavigateBack = { navController.popBackStack() }
             )
         }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -212,35 +213,61 @@ func currentChargeMap(session telemetrySession) map[string]any {
 // deliberately emits a single observed point only when the provider supplied
 // an electrical field; no nominal voltage/current/curve is inferred.
 func currentChargeMapFromStatus(vehicleID int, status vehicleStatus) map[string]any {
-	start := status.ObservedAt
-	if start.IsZero() {
-		start = time.Now().UTC()
-	}
 	source := status.Source
 	if source == "" {
 		source = "fleet_api"
 	}
-	item := currentChargeMap(telemetrySession{
-		PublicID: vehicleID, Kind: "charge", StartAt: start, Source: source,
-		QualityState: "observed", QualityReason: "live_provider_snapshot", EnergyAdded: status.ChargeEnergyAdded,
-	})
+	// A snapshot knows its observation time, not when this plug session began.
+	item := map[string]any{"charge_id": vehicleID, "start_date": nil, "end_date": nil,
+		"is_charging": true, "source": source, "quality_state": "incomplete",
+		"quality_reason": "session_start_unobserved",
+		"energy_contract": map[string]any{"version": 1, "battery_input": map[string]any{
+			"quality": "unknown", "reason": "session_start_unobserved"}},
+	}
 	mergeCurrentChargeStatus(item, status)
 	return item
 }
 
 func mergeCurrentChargeStatus(item map[string]any, status vehicleStatus) {
-	item["battery_details"] = map[string]any{
-		"current_battery_level": status.BatteryLevel,
+	battery, _ := item["battery_details"].(map[string]any)
+	if battery == nil {
+		battery = map[string]any{}
+		item["battery_details"] = battery
+	}
+	if status.BatteryLevel != nil {
+		battery["current_battery_level"] = status.BatteryLevel
 	}
 	if status.ChargeEnergyAdded != nil {
 		item["charge_energy_added"] = status.ChargeEnergyAdded
+		// Official Fleet field is a reported current-session counter. It does
+		// not prove plug-in time or a complete energy window for history/stats.
+		if status.Source == "fleet_api" && !status.ObservedAt.IsZero() &&
+			!math.IsNaN(*status.ChargeEnergyAdded) && !math.IsInf(*status.ChargeEnergyAdded, 0) && *status.ChargeEnergyAdded >= 0 {
+			item["current_energy_receipt"] = map[string]any{"version": 1, "unit": "kWh",
+				"source": "fleet_api", "source_field": "charge_state.charge_energy_added",
+				"method": "provider_current_plug_counter", "quality": "reported",
+				"value_kwh": status.ChargeEnergyAdded, "observed_at": status.ObservedAt.UTC().Format(time.RFC3339Nano)}
+		}
 	}
 	if status.ChargingState != nil {
 		item["is_charging"] = isChargingState(status.ChargingState)
 	}
-	item["range_ideal"] = map[string]any{"end_range": status.IdealBatteryRange}
-	item["range_rated"] = map[string]any{"end_range": status.RatedBatteryRange}
-	item["latitude"], item["longitude"] = status.Latitude, status.Longitude
+	for name, value := range map[string]*float64{"range_ideal": status.IdealBatteryRange, "range_rated": status.RatedBatteryRange} {
+		if value == nil || math.IsNaN(*value) || math.IsInf(*value, 0) {
+			continue
+		}
+		ranges, _ := item[name].(map[string]any)
+		if ranges == nil {
+			ranges = map[string]any{}
+			item[name] = ranges
+		}
+		ranges["end_range"] = value
+	}
+	if status.Latitude != nil && status.Longitude != nil &&
+		!math.IsNaN(*status.Latitude) && !math.IsNaN(*status.Longitude) &&
+		*status.Latitude >= -90 && *status.Latitude <= 90 && *status.Longitude >= -180 && *status.Longitude <= 180 {
+		item["latitude"], item["longitude"] = status.Latitude, status.Longitude
+	}
 	item["odometer"] = status.Odometer
 	item["charge_limit_soc"] = status.ChargeLimitSOC
 	item["time_to_full_charge"] = status.TimeToFullCharge
@@ -267,7 +294,11 @@ func mergeCurrentChargeStatus(item map[string]any, status vehicleStatus) {
 		"charger_actual_current": status.ChargerActualCurrent, "charger_phases": status.ChargerPhases,
 		"fast_charger_present": status.FastChargerPresent,
 	}
-	if status.ChargerPower != nil || status.ChargerVoltage != nil || status.ChargerActualCurrent != nil || status.ChargerPhases != nil || status.ChargeEnergyAdded != nil {
+	// A live snapshot cannot replace, truncate or join a stored session curve.
+	if _, exists := item["charge_details"]; exists {
+		return
+	}
+	if !status.ObservedAt.IsZero() && (status.ChargerPower != nil || status.ChargerVoltage != nil || status.ChargerActualCurrent != nil || status.ChargerPhases != nil || status.ChargeEnergyAdded != nil) {
 		item["charge_details"] = []map[string]any{point}
 	} else {
 		item["charge_details"] = []map[string]any{}

@@ -549,7 +549,7 @@ func (p *postgresStore) Standby(ctx context.Context, carID int) ([]standbyWindow
 		var climateActive bool
 		var coverage int64
 		for index, value := range values {
-			if value.power.Valid {
+			if value.power.Valid && finite(value.power.Float64) {
 				power := math.Max(value.power.Float64, 0)
 				if power > peak {
 					peak = power
@@ -570,20 +570,24 @@ func (p *postgresStore) Standby(ctx context.Context, carID int) ([]standbyWindow
 					climateActive = true
 				}
 			}
-			if index > 0 && values[index-1].power.Valid && value.power.Valid {
+			if index > 0 && values[index-1].power.Valid && value.power.Valid &&
+				finite(values[index-1].power.Float64) && finite(value.power.Float64) {
 				seconds := int64(value.at.Sub(values[index-1].at).Seconds())
 				if seconds > 0 && seconds <= 900 {
 					previous := math.Max(values[index-1].power.Float64, 0)
 					current := math.Max(value.power.Float64, 0)
-					energy += (previous + current) / 2 * float64(seconds) / 3600
-					coverage += seconds
+					intervalEnergy := (previous/2 + current/2) * (float64(seconds) / 3600)
+					if finite(intervalEnergy) && finite(energy+intervalEnergy) {
+						energy += intervalEnergy
+						coverage += seconds
+					}
 				}
 			}
 		}
 		if total := window.DurationSeconds; total > 0 {
 			window.CoverageRatio = math.Min(float64(coverage)/float64(total), 1)
 		}
-		if energy > 0 {
+		if coverage > 0 {
 			window.EnergyKWh = &energy
 		}
 		if coverage > 0 {

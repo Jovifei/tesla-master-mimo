@@ -221,6 +221,8 @@ class HistorySourceRecordWireAliasTest {
             // The point header uses the other spelling. Keep that pair whole, rather than coalescing aliases.
             val identity = fixture.db.driveSummaryDao().get(vehicle.localHistoryCarId, 17)!!.verifiedDetailIdentity(vehicle)!!
             val pointDetail = summary.asCachedDetail().copy(sourceId = "record-A", sourceRecordId = null,
+                startAddress = "rich header A", endAddress = "rich header B", durationMin = 1,
+                speedMax = 100, powerMax = 200, outsideTempAvg = 68.0, temperatureUnit = "F",
                 positions = listOf(DrivePosition(date = start, power = 0.0)))
             assertTrue(HistoryDetailRepository(fixture.db.historyDetailDao()).saveDrive(identity, pointDetail) is HistoryDetailWriteResult.Stored)
             viewModel.loadDriveDetail(1, 17)
@@ -228,6 +230,12 @@ class HistorySourceRecordWireAliasTest {
             assertEquals("record-A", withPoints.driveDetail!!.sourceId)
             assertNull(withPoints.driveDetail!!.sourceRecordId)
             assertEquals(1, withPoints.driveDetail!!.positions!!.size)
+            assertEquals("rich header A", withPoints.driveDetail!!.startAddress)
+            assertEquals("rich header B", withPoints.driveDetail!!.endAddress)
+            assertEquals(1, withPoints.driveDetail!!.durationMin)
+            assertEquals(100, withPoints.stats!!.speedMax)
+            assertEquals(200, withPoints.stats!!.powerMax)
+            assertEquals(20.0, withPoints.stats!!.outsideTempAvg!!, 1e-9)
         } finally { vm?.viewModelScope?.cancel(); fixture.close(); Dispatchers.resetMain() }
     }
 

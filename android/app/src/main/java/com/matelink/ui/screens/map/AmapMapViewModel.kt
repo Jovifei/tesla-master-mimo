@@ -148,8 +148,20 @@ class AmapMapViewModel @Inject constructor(
             val live = com.matelink.domain.map.VehiclePositionResolver.resolve(
                 status?.latitude, status?.longitude, null, null)
             val observedAt = (snapshot as? ApiResult.Success)?.data?.observedAt
+                ?: (legacy as? ApiResult.Success)?.metadata?.observedAt
+            val units = when {
+                snapshot is ApiResult.Success -> snapshot.data.units
+                legacy is ApiResult.Success -> legacy.data.units
+                else -> null
+            }
+            val source = when {
+                snapshot is ApiResult.Success -> snapshot.data.source
+                legacy is ApiResult.Success -> legacy.metadata?.source ?: "teslamate_api"
+                else -> null
+            }
+            val fieldSources = (snapshot as? ApiResult.Success)?.data?.fieldSources.orEmpty()
             if (status != null && current(verified))
-                vehicleStatusStore.saveStatus(scope, verified, status, observedAt)
+                vehicleStatusStore.saveStatus(scope, verified, status, observedAt, units, source, fieldSources)
             val older = if (live == null)
                 vehicleStatusStore.getCachedPosition(scope, verified) else null
             if (!current(verified)) return@launch

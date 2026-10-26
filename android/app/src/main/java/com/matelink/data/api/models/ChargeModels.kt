@@ -10,7 +10,8 @@ data class ChargesResponse(@Json(name = "data") val data: ChargesData? = null)
 @JsonClass(generateAdapter = true)
 data class ChargesData(
     @Json(name = "charges") val charges: List<ChargeData>? = null,
-    @Json(name = "meta") val meta: ApiDataMeta? = null
+    @Json(name = "meta") val meta: ApiDataMeta? = null,
+    @Json(name = "units") val units: Units? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -39,13 +40,19 @@ data class ChargeData(
     @Json(name = "source_instance_id") val sourceInstanceId: String? = null,
     @Json(name = "source_id") val sourceId: String? = null,
     @Json(name = "currency_code") val currencyCode: String? = null,
-    @Json(name = "source_record_id") val sourceRecordId: String? = null
+    @Json(name = "source_record_id") val sourceRecordId: String? = null,
+    @Json(name = "_matelink_received_temperature_unit") val temperatureUnit: String? = null,
+    @Json(name = "_matelink_received_length_unit") val lengthUnit: String? = null
 ) {
     val sourceRecordIdentity: SourceRecordIdentity get() = resolveSourceRecordIdentity(sourceId, sourceRecordId)
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
-    val startRatedRangeKm: Double? get() = rangeRated?.startRange
-    val endRatedRangeKm: Double? get() = rangeRated?.endRange
+    val startRatedRangeKm: Double? get() = chargeDistanceKm(rangeRated?.startRange, lengthUnit)
+    val endRatedRangeKm: Double? get() = chargeDistanceKm(rangeRated?.endRange, lengthUnit)
+    val startIdealRangeKm: Double? get() = chargeDistanceKm(rangeIdeal?.startRange, lengthUnit)
+    val endIdealRangeKm: Double? get() = chargeDistanceKm(rangeIdeal?.endRange, lengthUnit)
+    val odometerKm: Double? get() = chargeDistanceKm(odometer, lengthUnit)
+    val hasKnownLengthUnit: Boolean get() = knownChargeLengthUnit(lengthUnit)
     val batteryInputKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate, "battery_input", source)
     val inputEnergyKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate, "ac_charger_input", source)
 }
@@ -72,7 +79,8 @@ data class ChargeDetailResponse(
 @JsonClass(generateAdapter = true)
 data class ChargeDetailData(
     @Json(name = "car") val car: ChargeDetailCar? = null,
-    @Json(name = "charge") val charge: ChargeDetail? = null
+    @Json(name = "charge") val charge: ChargeDetail? = null,
+    @Json(name = "units") val units: Units? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -117,16 +125,39 @@ data class ChargeDetail(
     @Json(name = "source_instance_id") val sourceInstanceId: String? = null,
     @Json(name = "source_id") val sourceId: String? = null,
     @Json(name = "currency_code") val currencyCode: String? = null,
-    @Json(name = "source_record_id") val sourceRecordId: String? = null
+    @Json(name = "source_record_id") val sourceRecordId: String? = null,
+    @Json(name = "_matelink_received_temperature_unit") val temperatureUnit: String? = null,
+    @Json(name = "_matelink_received_length_unit") val lengthUnit: String? = null,
+    /** Provider's current plug-session counter, separate from whole-window energy. */
+    @Json(name = "current_energy_receipt") val currentEnergyReceipt: CurrentChargeEnergyReceipt? = null,
+    @Json(name = "observed_at") val observedAt: String? = null
 ) {
     val sourceRecordIdentity: SourceRecordIdentity get() = resolveSourceRecordIdentity(sourceId, sourceRecordId)
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
     val currentBatteryLevel: Int? get() = batteryDetails?.currentBatteryLevel
     val currentOrEndBatteryLevel: Int? get() = currentBatteryLevel ?: endBatteryLevel
+    val startRatedRangeKm: Double? get() = chargeDistanceKm(rangeRated?.startRange, lengthUnit)
+    val endRatedRangeKm: Double? get() = chargeDistanceKm(rangeRated?.endRange, lengthUnit)
+    val startIdealRangeKm: Double? get() = chargeDistanceKm(rangeIdeal?.startRange, lengthUnit)
+    val endIdealRangeKm: Double? get() = chargeDistanceKm(rangeIdeal?.endRange, lengthUnit)
+    val odometerKm: Double? get() = chargeDistanceKm(odometer, lengthUnit)
+    val hasKnownLengthUnit: Boolean get() = knownChargeLengthUnit(lengthUnit)
     val batteryInputKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate, "battery_input", source)
     val inputEnergyKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate, "ac_charger_input", source)
 }
+
+@JsonClass(generateAdapter = true)
+data class CurrentChargeEnergyReceipt(
+    @Json(name = "version") val version: Int = 1,
+    @Json(name = "value_kwh") val valueKwh: Double? = null,
+    @Json(name = "unit") val unit: String? = null,
+    @Json(name = "source") val source: String? = null,
+    @Json(name = "source_field") val sourceField: String? = null,
+    @Json(name = "method") val method: String? = null,
+    @Json(name = "quality") val quality: String? = null,
+    @Json(name = "observed_at") val observedAt: String? = null
+)
 
 /** An explicit unknown contract must never resurrect a historical scalar. */
 private fun qualifiedChargeValue(

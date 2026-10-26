@@ -153,6 +153,7 @@ class CostViewModel @Inject constructor(
     private var activeScope: HistoryReadScope? = null
     private var activeContext: VehicleContext? = null
     private var defaultChargePrice: Double? = null
+    private var tariffSettings: com.matelink.data.local.AppSettings? = null
     private var customStart: LocalDate? = null
     private var customEnd: LocalDate? = null
 
@@ -226,6 +227,7 @@ class CostViewModel @Inject constructor(
                     manualRecords = records
                     currencyCode = settings.currencyCode
                     defaultChargePrice = settings.defaultChargePrice
+                    tariffSettings = settings
                     historyRecordCount = snapshot.charges.size
                     historyReason = snapshot.coverage.reason
                     _uiState.value = _uiState.value.copy(
@@ -292,6 +294,7 @@ class CostViewModel @Inject constructor(
         activeScope = null
         activeContext = null
         defaultChargePrice = null
+        tariffSettings = null
         currencyCode = "CNY"
     }
 
@@ -332,7 +335,15 @@ class CostViewModel @Inject constructor(
 
         val monthly = buildMonthlyCosts(selected, dcChargeIds, costFor = ::costFor)
         val locations = buildLocationCosts(selected, ::costFor)
-        val totals = calculateCostTotals(selected, ::costFor, defaultChargePrice)
+        val totals = calculateCostTotals(selected, ::costFor, defaultChargePrice,
+            estimateFor = tariffSettings?.let { settings -> { charge ->
+                historyCarId?.let { car ->
+                    projectEffectiveChargeCost(charge, car,
+                        findChargeCostOverride(manualRecords, car, charge, currencyCode), currencyCode,
+                        tariffEstimate = com.matelink.domain.analytics.estimateChargeTariff(charge, settings))
+                        .takeIf { it.source == ChargeCostSource.ESTIMATE }?.cost
+                }
+            } })
         val manualCostCount = historyCarId?.let { id ->
             selected.count { charge ->
                 projectEffectiveChargeCost(charge, id,

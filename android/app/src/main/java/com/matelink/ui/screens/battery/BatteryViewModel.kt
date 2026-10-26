@@ -20,6 +20,7 @@ import com.matelink.domain.analytics.AnalysisHistoryRepository
 import com.matelink.domain.analytics.BatteryTrendEstimate
 import com.matelink.domain.analytics.BatteryTrendSample
 import com.matelink.domain.analytics.estimateBatteryTrend
+import com.matelink.domain.analytics.qualifiedBatteryTrendSample
 import com.matelink.util.parseIsoDateTime
 import com.matelink.ui.screens.readiness.ReadinessItemStatus
 import com.matelink.ui.screens.readiness.readinessItemStatus
@@ -103,6 +104,13 @@ fun classifyBatteryHealth(
 }
 
 /** The Battery page consumes only a previously UID-verified cloud binding. */
+internal fun readCachedBatteryReceipt(
+    scope: HistoryReadScope, vehicle: VehicleContext, verifiedIdentityDigest: String?,
+    statusStore: VehicleStatusStore
+): com.matelink.data.local.CachedVehicleStatusReceipt? = if (scope.source == HistoryConnectionSource.CLOUD) {
+    verifiedIdentityDigest?.let { statusStore.getCachedReceiptForVerifiedIdentity(scope, vehicle, it) }
+} else statusStore.getCachedReceipt(scope, vehicle)
+
 internal fun readCachedBatteryStatus(
     scope: HistoryReadScope, vehicle: VehicleContext, verifiedIdentityDigest: String?,
     statusStore: VehicleStatusStore
@@ -156,7 +164,7 @@ data class BatteryStats(
     val ratedEfficiency: Double,
     // Current status
     val batteryLevel: Int,
-    val usableBatteryLevel: Int,
+    val usableBatteryLevel: Int?,
     val estimatedRange: Double,
     val ratedRange: Double,
     val idealRange: Double,
@@ -280,12 +288,13 @@ class BatteryViewModel @Inject constructor(
                     val digest = if (scope.source == HistoryConnectionSource.CLOUD)
                         vehicleContextRepository.cachedVerifiedStatusIdentityDigest(id, scope, cachedContext)
                     else null
-                    val savedStatus = readCachedBatteryStatus(scope, cachedContext, digest, vehicleStatusStore)
+                    val savedReceipt = readCachedBatteryReceipt(scope, cachedContext, digest, vehicleStatusStore)
                     request.requireCurrent()
                     if (!vehicleContextRepository.isHistoryContextCurrentNow(scope, cachedContext))
                         throw CancellationException("Battery history identity changed")
-                    if (savedStatus != null) _uiState.update {
-                        it.copy(isLoading = false, carStatus = savedStatus, isCachedStatus = true)
+                    if (savedReceipt != null) _uiState.update {
+                        it.copy(isLoading = false, carStatus = savedReceipt.displayStatus,
+                            units = savedReceipt.units, isCachedStatus = true)
                     }
                 }
                 val cachedHistory = try { historyRepository.loadCached(id) }
@@ -362,94 +371,94 @@ class BatteryViewModel @Inject constructor(
         )
     }
 
-    fun computeStats(): BatteryStats? {
-        val state = _uiState.value
-        val health = state.batteryHealth
-        val status = state.carStatus
+    fun computeStats(): BatteryStats? = computeBatteryStats(_uiState.value)
+}
 
-        // Capacity health remains unavailable without measured capacity inputs, but
-        // real live SOC/range and history-derived trend evidence must still render.
-        val baseOriginalCapacity = health?.maxCapacity?.takeIf { it > 0.0 }
-        val currentCapacity = health?.currentCapacity?.takeIf { it > 0.0 }
-        val hasCapacityInputs = baseOriginalCapacity != null && currentCapacity != null
-        val apiHealthPercent = health?.batteryHealthPercentage?.takeIf { it in 0.0..100.0 }
+/** Pure projection shared by the actual VM and focused data-contract regressions. */
+internal fun computeBatteryStats(state: BatteryUiState): BatteryStats? {
+    val health = state.batteryHealth
+    val status = state.carStatus
 
-        // Current status from CarStatus
-        val batteryLevel = status?.batteryLevel ?: 0
-        val usableBatteryLevel = status?.usableBatteryLevel ?: batteryLevel
-        val estimatedRange = status?.estBatteryRangeKm ?: 0.0
-        val ratedRange = status?.ratedBatteryRangeKm ?: 0.0
-        val idealRange = status?.idealBatteryRangeKm ?: 0.0
+    // Capacity health remains unavailable without measured capacity inputs, but
+    // real live SOC/range and history-derived trend evidence must still render.
+    val baseOriginalCapacity = health?.maxCapacity?.takeIf { it > 0.0 }
+    val currentCapacity = health?.currentCapacity?.takeIf { it > 0.0 }
+    val hasCapacityInputs = baseOriginalCapacity != null && currentCapacity != null
+    val apiHealthPercent = health?.batteryHealthPercentage?.takeIf { it in 0.0..100.0 }
 
-        // Estimate range at 100% only when both live SOC and rated range were observed.
-        val rangeAt100 = if (status?.batteryLevel != null && status.ratedBatteryRangeKm != null &&
-            batteryLevel >= 10 && ratedRange > 0
-        ) {
-            (ratedRange / batteryLevel) * 100.0
-        } else null
+    // Current status from CarStatus
+    val batteryLevelObserved = status?.batteryLevel?.takeIf { it in 0..100 }
+    val batteryLevel = batteryLevelObserved ?: 0
+    val usableBatteryLevel = status?.usableBatteryLevel?.takeIf { it in 0..100 }
+    val estimatedRange = status?.estBatteryRangeKm ?: 0.0
+    val ratedRange = status?.ratedBatteryRangeKm ?: 0.0
+    val idealRange = status?.idealBatteryRangeKm ?: 0.0
 
-        val healthPercent = when {
-            !hasCapacityInputs -> 0.0
-            apiHealthPercent != null -> apiHealthPercent
-            else -> (currentCapacity!! / baseOriginalCapacity!!) * 100.0
-        }
+    // Estimate range at 100% only when both live SOC and rated range were observed.
+    val rangeAt100 = if (batteryLevelObserved != null && status?.ratedBatteryRangeKm != null &&
+        batteryLevel >= 10 && ratedRange > 0
+    ) {
+        (ratedRange / batteryLevel) * 100.0
+    } else null
 
-        val originalCapacity = baseOriginalCapacity ?: 0.0
-        val effectiveCurrentCapacity = currentCapacity ?: 0.0
-        val lossKwh = if (hasCapacityInputs) (originalCapacity - effectiveCurrentCapacity).coerceAtLeast(0.0) else 0.0
-        val lossPercent = if (hasCapacityInputs) (100.0 - healthPercent).coerceAtLeast(0.0) else 0.0
-
-        // Range from API or computed
-        val rangeMetrics = BatteryRangeMetrics.from(
-            maxRangeKm = health?.maxRange,
-            currentRangeKm = health?.currentRange
-        )
-        val maxRangeNew = rangeMetrics.maxRangeKm
-        val maxRangeNow = rangeMetrics.currentRangeKm ?: rangeAt100
-        val rangeLoss = rangeMetrics.rangeLossKm ?: if (maxRangeNew != null && maxRangeNow != null) {
-            (maxRangeNew - maxRangeNow).coerceAtLeast(0.0)
-        } else null
-
-        // Efficiency is optional when only live/trend evidence is available.
-        val ratedEfficiency = health?.ratedEfficiency?.takeIf { it > 0.0 }
-            ?: state.ratedEfficiency?.takeIf { it > 0.0 }
-            ?: 0.0
-        val hasLiveEvidence = status?.batteryLevel != null || status?.estBatteryRangeKm != null ||
-            status?.ratedBatteryRangeKm != null || status?.idealBatteryRangeKm != null
-        val hasRangeEvidence = maxRangeNew != null || maxRangeNow != null
-        if (!hasCapacityInputs && !hasLiveEvidence && !hasRangeEvidence && state.batteryTrend == null) return null
-
-        return BatteryStats(
-            currentCapacity = effectiveCurrentCapacity,
-            originalCapacity = originalCapacity,
-            healthPercent = healthPercent,
-            lossKwh = lossKwh,
-            lossPercent = lossPercent,
-            maxRangeNew = maxRangeNew,
-            maxRangeNow = maxRangeNow,
-            rangeLoss = rangeLoss,
-            ratedEfficiency = ratedEfficiency,
-            batteryLevel = batteryLevel,
-            usableBatteryLevel = usableBatteryLevel,
-            estimatedRange = estimatedRange,
-            ratedRange = ratedRange,
-            idealRange = idealRange,
-            rangeAt100 = rangeAt100,
-            batteryTrend = state.batteryTrend,
-            batteryLevelObserved = status?.batteryLevel,
-            estimatedRangeObserved = status?.estBatteryRangeKm,
-            ratedRangeObserved = status?.ratedBatteryRangeKm,
-            idealRangeObserved = status?.idealBatteryRangeKm
-        )
+    val healthPercent = when {
+        !hasCapacityInputs -> 0.0
+        apiHealthPercent != null -> apiHealthPercent
+        else -> (currentCapacity!! / baseOriginalCapacity!!) * 100.0
     }
 
-    private fun DriveData.toBatteryTrendSample(): BatteryTrendSample? {
-        val date = parseIsoDateTime(startDate ?: endDate)?.toLocalDate() ?: return null
-        return BatteryTrendSample(
-            date = date,
-            socPercent = (startBatteryLevel ?: endBatteryLevel)?.toDouble(),
-            ratedRangeKm = startRatedRangeKm ?: endRatedRangeKm,
-            temperatureC = outsideTempAvg
-        )
-    }
+    val originalCapacity = baseOriginalCapacity ?: 0.0
+    val effectiveCurrentCapacity = currentCapacity ?: 0.0
+    val lossKwh = if (hasCapacityInputs) (originalCapacity - effectiveCurrentCapacity).coerceAtLeast(0.0) else 0.0
+    val lossPercent = if (hasCapacityInputs) (100.0 - healthPercent).coerceAtLeast(0.0) else 0.0
+
+    // Range from API or computed
+    val rangeMetrics = BatteryRangeMetrics.from(
+        maxRangeKm = health?.maxRange,
+        currentRangeKm = health?.currentRange
+    )
+    val maxRangeNew = rangeMetrics.maxRangeKm
+    val maxRangeNow = rangeMetrics.currentRangeKm ?: rangeAt100
+    val rangeLoss = rangeMetrics.rangeLossKm ?: if (maxRangeNew != null && maxRangeNow != null) {
+        (maxRangeNew - maxRangeNow).coerceAtLeast(0.0)
+    } else null
+
+    // Efficiency is optional when only live/trend evidence is available.
+    val ratedEfficiency = health?.ratedEfficiency?.takeIf { it > 0.0 }
+        ?: state.ratedEfficiency?.takeIf { it > 0.0 }
+        ?: 0.0
+    val hasLiveEvidence = status?.batteryLevel != null || status?.estBatteryRangeKm != null ||
+        status?.ratedBatteryRangeKm != null || status?.idealBatteryRangeKm != null
+    val hasRangeEvidence = maxRangeNew != null || maxRangeNow != null
+    if (!hasCapacityInputs && !hasLiveEvidence && !hasRangeEvidence && state.batteryTrend == null) return null
+
+    return BatteryStats(
+        currentCapacity = effectiveCurrentCapacity,
+        originalCapacity = originalCapacity,
+        healthPercent = healthPercent,
+        lossKwh = lossKwh,
+        lossPercent = lossPercent,
+        maxRangeNew = maxRangeNew,
+        maxRangeNow = maxRangeNow,
+        rangeLoss = rangeLoss,
+        ratedEfficiency = ratedEfficiency,
+        batteryLevel = batteryLevel,
+        usableBatteryLevel = usableBatteryLevel,
+        estimatedRange = estimatedRange,
+        ratedRange = ratedRange,
+        idealRange = idealRange,
+        rangeAt100 = rangeAt100,
+        batteryTrend = state.batteryTrend,
+        batteryLevelObserved = batteryLevelObserved,
+        estimatedRangeObserved = status?.estBatteryRangeKm,
+        ratedRangeObserved = status?.ratedBatteryRangeKm,
+        idealRangeObserved = status?.idealBatteryRangeKm
+    )
+}
+
+internal fun DriveData.toBatteryTrendSample(): BatteryTrendSample? {
+    return qualifiedBatteryTrendSample(parseIsoDateTime(startDate)?.toLocalDate(),
+        startBatteryLevel?.toDouble(), startRatedRangeKm, outsideTempC)
+        ?: qualifiedBatteryTrendSample(parseIsoDateTime(endDate)?.toLocalDate(),
+            endBatteryLevel?.toDouble(), endRatedRangeKm, outsideTempC)
 }

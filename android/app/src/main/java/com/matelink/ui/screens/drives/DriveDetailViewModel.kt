@@ -8,6 +8,7 @@ import com.matelink.data.api.models.CarData
 import com.matelink.data.api.models.BatteryHealth
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.StatsDatabase
+import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.local.entity.SavedTripLeg
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.GeocodingRepository
@@ -36,6 +37,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
@@ -64,6 +66,7 @@ internal fun VerifiedHistoryReadContext.capacityMetadata(
 
 data class DriveDetailUiState(
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val localArchiveLinkPending: Boolean = false,
     val historySyncWarning: String? = null,
     val error: String? = null,
@@ -94,7 +97,8 @@ class DriveDetailViewModel @Inject constructor(
     private val tripRepository: TripRepository,
     private val geocodingRepository: GeocodingRepository,
     private val statsDatabase: StatsDatabase,
-    private val historyDetailStore: HistoryDetailRepository
+    private val historyDetailStore: HistoryDetailRepository,
+    private val vehicleContexts: VehicleContextRepository? = null
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DriveDetailUiState())
     val uiState: StateFlow<DriveDetailUiState> = _uiState.asStateFlow()
@@ -103,17 +107,63 @@ class DriveDetailViewModel @Inject constructor(
     private var carId: Int? = null
     private var driveId: Int? = null
 
+    init {
+        viewModelScope.launch {
+            historyRepository.scopeChanges?.collect { next ->
+                val proof = historyProof ?: return@collect
+                if (next != proof.scope || vehicleContexts?.isHistoryContextCurrentNow(proof.scope, proof.context) == false) {
+                    latestLoad.invalidate()
+                    historyProof = null
+                    _uiState.value = DriveDetailUiState(isLoading = false, error = historyIdentityUnavailableError().message)
+                }
+            }
+        }
+    }
+
     fun loadDriveDetail(carId: Int, driveId: Int) {
+        val previous = historyProof
+        val keep = this.carId == carId && this.driveId == driveId && previous != null &&
+            vehicleContexts?.isHistoryContextCurrentNow(previous.scope, previous.context) == true
         this.carId = carId
         this.driveId = driveId
-        historyProof = null
-        _uiState.value = DriveDetailUiState()
+        if (!keep) historyProof = null
+        _uiState.value = if (keep) _uiState.value.copy(isLoading = false, isRefreshing = true, isLoadingWeather = false, error = null) else DriveDetailUiState()
         latestLoad.launch(viewModelScope) {
             try {
-                val resolved = when (val result = historyRepository.resolveContext(carId)) {
+                // Cache identity discovery uses only a previously verified local binding, never HTTP.
+                val cachedProof = try { cachedReadProof(carId) } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+                ensureCurrent()
+                if (cachedProof != null) {
+                    suspend fun checkCached() {
+                        ensureCurrent()
+                        val current = historyRepository.isContextCurrent(cachedProof)
+                        ensureCurrent()
+                        if (!current || vehicleContexts?.isHistoryContextCurrentNow(cachedProof.scope, cachedProof.context) == false) {
+                            historyProof = null
+                            _uiState.value = DriveDetailUiState(isLoading = false, error = historyIdentityUnavailableError().message)
+                            throw CancellationException("Cached drive identity changed")
+                        }
+                    }
+                    checkCached()
+                    historyProof = cachedProof
+                    val cached = readCachedDetail(cachedProof, driveId, ::checkCached)
+                    cached?.let { (detail, warning) ->
+                        checkCached()
+                        publishCached(detail, warning)
+                    }
+                    if (cached == null && keep) _uiState.value = DriveDetailUiState()
+                }
+                val identity = withTimeoutOrNull(20_000L) { historyRepository.resolveContext(carId) }
+                    ?: ApiResult.Error("history_sync_timeout", 408)
+                val resolved = when (val result = identity) {
                     is ApiResult.Error -> {
                         ensureCurrent()
-                        _uiState.update { it.copy(isLoading = false, error = result.message) }
+                        if (result.message == com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE) {
+                            historyProof = null
+                            _uiState.value = DriveDetailUiState(isLoading = false, error = result.message)
+                        } else _uiState.update { it.copy(isLoading = false, isRefreshing = false,
+                            historySyncWarning = if (it.driveDetail != null) "history_cached" else it.historySyncWarning,
+                            error = if (it.driveDetail == null) result.message else null) }
                         return@launch
                     }
                     is ApiResult.Success -> result.data
@@ -122,52 +172,31 @@ class DriveDetailViewModel @Inject constructor(
                     ensureCurrent()
                     val current = historyRepository.isContextCurrent(resolved)
                     ensureCurrent()
-                    if (!current) {
+                    if (!current || vehicleContexts?.isHistoryContextCurrentNow(resolved.scope, resolved.context) == false) {
                         historyProof = null
                         _uiState.value = DriveDetailUiState(isLoading = false, error = historyIdentityUnavailableError().message)
                         throw CancellationException("History identity changed")
                     }
                 }
                 checkContext()
+                if (cachedProof != null && (cachedProof.scope != resolved.scope || cachedProof.context != resolved.context))
+                    _uiState.value = DriveDetailUiState()
                 historyProof = resolved
                 _uiState.update { it.copy(localArchiveLinkPending = resolved.localArchiveLinkPending) }
-                val remote = if (resolved.remoteAuthorized) repository.getDriveDetail(carId, driveId)
+                val remote = if (resolved.remoteAuthorized) withTimeoutOrNull(20_000L) { repository.getDriveDetail(carId, driveId) }
+                    ?: ApiResult.Error("history_sync_timeout", 408)
                     else resolved.identityError ?: historyIdentityUnavailableError()
                 checkContext()
                 val detail = when (remote) {
                     is ApiResult.Success -> remote.data
                     is ApiResult.Error -> {
-                        val cached = driveSummaryDao.get(resolved.context.localHistoryCarId, driveId)
-                        checkContext()
+                        val cached = readCachedDetail(resolved, driveId, ::checkContext)
                         if (cached == null) {
-                            _uiState.update { it.copy(isLoading = false, error = remote.message) }
+                            _uiState.value = DriveDetailUiState(isLoading = false, error = remote.message)
                             return@launch
                         }
-                        val pointCache = try {
-                            cached.verifiedDetailIdentity(resolved.context)
-                                ?.let { historyDetailStore.readDrive(it) }
-                        } catch (e: CancellationException) { throw e }
-                        catch (_: Exception) { null }
-                        checkContext()
-                        _uiState.update { it.copy(historySyncWarning = when {
-                            pointCache?.reason == "detail_cache_corrupt" ->
-                                "history_detail_cache_corrupt"
-                            pointCache?.detail == null -> "history_cached"
-                            pointCache?.receipt?.sourceInstanceVerified != true ||
-                                pointCache?.receipt?.sourceIdVerified != true ->
-                                "history_detail_cached_source_unverified"
-                            pointCache?.receipt?.providerTotalVerified != true ->
-                                "history_detail_cached_total_unverified"
-                            else -> "history_cached"
-                        }) }
-                        val summaryDetail = cached.toAnalysisDriveData().asCachedDetail()
-                        val header = pointCache?.detail ?: summaryDetail
-                        summaryDetail.copy(
-                            positions = pointCache?.detail?.positions,
-                            sourceInstanceId = header.sourceInstanceId,
-                            sourceId = header.sourceId,
-                            sourceRecordId = header.sourceRecordId,
-                            lengthUnit = pointCache?.detail?.lengthUnit ?: summaryDetail.lengthUnit)
+                        _uiState.update { it.copy(historySyncWarning = cached.second) }
+                        cached.first
                     }
                 }
                 require(detail.driveId == driveId) { "history_detail_id_mismatch" }
@@ -183,7 +212,7 @@ class DriveDetailViewModel @Inject constructor(
                     }
                     checkContext()
                     if (persisted == null && !pointWriteFailed) {
-                        _uiState.update { it.copy(isLoading = false,
+                        _uiState.update { it.copy(isLoading = false, isRefreshing = false,
                             historySyncWarning = "history_detail_waiting_for_summary") }
                         return@launch
                     }
@@ -204,7 +233,7 @@ class DriveDetailViewModel @Inject constructor(
                     energy.energyKwh, energy.efficiencyWhKm, energy.source.name.lowercase(),
                     energy.coverageSeconds, energy.coverageRatio, resolvedEnergy.evidence))
                 checkContext()
-                _uiState.update { it.copy(isLoading = false, driveDetail = detail, stats = stats, error = null) }
+                _uiState.update { it.copy(isLoading = false, isRefreshing = false, driveDetail = detail, stats = stats, error = null) }
                 // Optional metadata, units and geocoding cannot delay energy publication.
                 loadOptionalMetadata(detail, resolved)
                 loadWeatherData(detail, resolved)
@@ -212,9 +241,76 @@ class DriveDetailViewModel @Inject constructor(
                 throw e
             } catch (_: Exception) {
                 ensureCurrent()
-                _uiState.update { it.copy(isLoading = false, error = "history_read_failed") }
+                val proof = historyProof
+                if (proof != null && vehicleContexts?.isHistoryContextCurrentNow(proof.scope, proof.context) == false) {
+                    historyProof = null
+                    _uiState.value = DriveDetailUiState(isLoading = false, error = historyIdentityUnavailableError().message)
+                } else _uiState.update { it.copy(isLoading = false, isRefreshing = false,
+                    historySyncWarning = if (it.driveDetail != null) "history_cached" else it.historySyncWarning,
+                    error = if (it.driveDetail == null) "history_read_failed" else null) }
             }
         }
+    }
+
+    private suspend fun cachedReadProof(remoteId: Int): VerifiedHistoryReadContext? {
+        val contexts = vehicleContexts
+        if (contexts != null) {
+            val scope = contexts.captureReadScope()
+            val context = contexts.cachedContextForRemote(remoteId, scope) ?: return null
+            if (!contexts.isHistoryContextCurrentNow(scope, context)) return null
+            return VerifiedHistoryReadContext(scope, context, false, null, false)
+        }
+        return when (val result = historyRepository.loadCached(remoteId)) {
+            is ApiResult.Success -> result.data.verifiedReadContext
+            is ApiResult.Error -> null
+        }
+    }
+
+    private suspend fun readCachedDetail(
+        proof: VerifiedHistoryReadContext, id: Int, check: suspend () -> Unit
+    ): Pair<DriveDetail, String>? {
+        val cached = driveSummaryDao.get(proof.context.localHistoryCarId, id) ?: return null
+        check()
+        val points = try { cached.verifiedDetailIdentity(proof.context)?.let { historyDetailStore.readDrive(it) } }
+        catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+        check()
+        val summary = cached.toAnalysisDriveData().asCachedDetail()
+        val header = points?.detail
+        val sameLength = header == null || com.matelink.data.api.models.sameDriveLengthUnit(summary.lengthUnit, header.lengthUnit)
+        // The complete point header is one received record, including alias spellings and
+        // its own units. A sparse list projection must not erase its richer parameters.
+        val detail = header?.copy(
+            startAddress = summary.startAddress?.takeIf(String::isNotBlank) ?: header.startAddress,
+            endAddress = summary.endAddress?.takeIf(String::isNotBlank) ?: header.endAddress,
+            durationMin = summary.durationMin ?: header.durationMin,
+            durationStr = summary.durationStr ?: header.durationStr,
+            odometerDetails = if (sameLength) summary.odometerDetails ?: header.odometerDetails else header.odometerDetails,
+            speedMax = if (sameLength) summary.speedMax ?: header.speedMax else header.speedMax,
+            speedAvg = if (sameLength) summary.speedAvg ?: header.speedAvg else header.speedAvg,
+            speedMetricsSource = if (sameLength && summary.speedAvg != null) summary.speedMetricsSource else header.speedMetricsSource,
+            speedSampleCount = if (sameLength && summary.speedAvg != null) summary.speedSampleCount else header.speedSampleCount,
+            powerMax = summary.powerMax ?: header.powerMax, powerMin = summary.powerMin ?: header.powerMin,
+            // A current explicit unknown energy contract still revokes an older scalar.
+            energyContract = summary.energyContract, energyConsumedNet = summary.energyConsumedNet,
+            consumptionNet = summary.consumptionNet.takeIf { sameLength }
+        ) ?: summary
+        val warning = when {
+            points?.reason == "detail_cache_corrupt" -> "history_detail_cache_corrupt"
+            header == null -> "history_cached"
+            points?.receipt?.sourceInstanceVerified != true || points?.receipt?.sourceIdVerified != true -> "history_detail_cached_source_unverified"
+            points?.receipt?.providerTotalVerified != true -> "history_detail_cached_total_unverified"
+            else -> "history_cached"
+        }
+        return detail to warning
+    }
+
+    private fun publishCached(detail: DriveDetail, warning: String) {
+        val resolved = detail.resolveDriveEnergy()
+        val energy = resolved.estimate
+        val stats = calculateDriveDetailStats(detail, presentDriveDetailEnergy(energy.energyKwh,
+            energy.efficiencyWhKm, energy.source.name.lowercase(), energy.coverageSeconds, energy.coverageRatio, resolved.evidence))
+        _uiState.update { it.copy(isLoading = false, isRefreshing = true, driveDetail = detail,
+            stats = stats, historySyncWarning = warning, error = null) }
     }
 
     private fun loadOptionalMetadata(detail: DriveDetail, proof: VerifiedHistoryReadContext) {
@@ -282,12 +378,11 @@ class DriveDetailViewModel @Inject constructor(
             if (latitude == null || longitude == null) return null
             return geocodingRepository.reverseGeocode(latitude, longitude)
         }
-        val positions = detail.positions.orEmpty()
-        val first = positions.firstOrNull { it.latitude != null && it.longitude != null }
-        val last = positions.lastOrNull { it.latitude != null && it.longitude != null }
+        val first = com.matelink.domain.map.driveBoundaryCoordinates(detail, true)
+        val last = com.matelink.domain.map.driveBoundaryCoordinates(detail, false)
         return detail.copy(
-            startAddress = address(detail.startLatitude ?: first?.latitude, detail.startLongitude ?: first?.longitude, detail.startAddress),
-            endAddress = address(detail.endLatitude ?: last?.latitude, detail.endLongitude ?: last?.longitude, detail.endAddress)
+            startAddress = address(first?.first, first?.second, detail.startAddress),
+            endAddress = address(last?.first, last?.second, detail.endAddress)
         )
     }
 

@@ -65,6 +65,9 @@ class RangeParkedRequestIsolationTest {
         var calls=0
         var body:suspend (Int,Int)->ApiResult<ParkedDetailData> = { older,newer -> ApiResult.Success(parked(older,newer,"new")) }
         override suspend fun identity(carId:Int)=ParkedPageIdentity(identity.proof())
+        // This fixture tests request/scope races with admitted immutable server records.
+        // Real local-boundary/source/window admission has independent VM + Room regressions.
+        override suspend fun acceptsRemote(identity:ParkedPageIdentity,local:ParkedDetailData?,received:ParkedDetailData)=true
         override suspend fun detail(carId:Int,olderDriveId:Int,newerDriveId:Int):ApiResult<ParkedDetailData> {
             calls++; return body(olderDriveId,newerDriveId)
         }

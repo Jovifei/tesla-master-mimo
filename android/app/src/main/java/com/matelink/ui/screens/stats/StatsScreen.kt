@@ -1547,16 +1547,16 @@ private fun RecordsCard(
         weatherRecords.add(RecordData("⛰️", labelMostClimbing, record.elevationGainM?.let { "+" + UnitFormatter.formatElevation(it, units) } ?: "N/A", record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
     }
     deepStats?.hottestDrive?.let { record ->
-        weatherRecords.add(RecordData("🌡️", labelHottestDrive, record.tempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
+        weatherRecords.add(RecordData("🌡️", labelHottestDrive, record.tempC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
     }
     deepStats?.coldestDrive?.let { record ->
-        weatherRecords.add(RecordData("🧊", labelColdestDrive, record.tempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
+        weatherRecords.add(RecordData("🧊", labelColdestDrive, record.tempC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
     }
     deepStats?.hottestCharge?.let { record ->
-        weatherRecords.add(RecordData("☀️", labelHottestCharge, record.tempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
+        weatherRecords.add(RecordData("☀️", labelHottestCharge, record.tempC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
     }
     deepStats?.coldestCharge?.let { record ->
-        weatherRecords.add(RecordData("❄️", labelColdestCharge, record.tempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
+        weatherRecords.add(RecordData("❄️", labelColdestCharge, record.tempC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
     }
 
     // Category 4: Miscelaneous
@@ -1786,6 +1786,10 @@ private fun RecordCategoryPage(
 
 // Note: ElevationStatsCard removed - highest point now shown in Records section
 
+internal fun formatStatsTemperatureC(valueC: Double, units: Units?, decimals: Int = 1): String =
+    UnitFormatter.formatTemperature(if (units?.unitOfTemperature == "F") valueC * 9.0 / 5.0 + 32.0 else valueC,
+        units, decimals)
+
 @Composable
 private fun TemperatureStatsCard(deepStats: DeepStats, palette: CarColorPalette, units: Units?) {
     if (deepStats.maxOutsideTempDrivingC == null && deepStats.minOutsideTempDrivingC == null) {
@@ -1807,12 +1811,12 @@ private fun TemperatureStatsCard(deepStats: DeepStats, palette: CarColorPalette,
         Row(modifier = Modifier.fillMaxWidth()) {
             StatItem(
                 label = stringResource(R.string.stats_hottest),
-                value = deepStats.maxOutsideTempDrivingC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A",
+                value = deepStats.maxOutsideTempDrivingC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A",
                 modifier = Modifier.weight(1f)
             )
             StatItem(
                 label = stringResource(R.string.stats_coldest),
-                value = deepStats.minOutsideTempDrivingC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A",
+                value = deepStats.minOutsideTempDrivingC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A",
                 modifier = Modifier.weight(1f)
             )
         }
@@ -1829,12 +1833,12 @@ private fun TemperatureStatsCard(deepStats: DeepStats, palette: CarColorPalette,
             Row(modifier = Modifier.fillMaxWidth()) {
                 StatItem(
                     label = stringResource(R.string.stats_hottest),
-                    value = deepStats.maxCabinTempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A",
+                    value = deepStats.maxCabinTempC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A",
                     modifier = Modifier.weight(1f)
                 )
                 StatItem(
                     label = stringResource(R.string.stats_coldest),
-                    value = deepStats.minCabinTempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A",
+                    value = deepStats.minCabinTempC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A",
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1852,12 +1856,14 @@ private fun formatEnergy(kwh: Double): String {
 
 @Composable
 private fun AcDcRatioCard(deepStats: DeepStats, palette: CarColorPalette) {
-    val totalEnergy = deepStats.acChargeEnergyKwh + deepStats.dcChargeEnergyKwh
+    val acEnergy = deepStats.qualifiedAcChargeEnergyKwh
+    val dcEnergy = deepStats.qualifiedDcChargeEnergyKwh
+    val totalEnergy = listOfNotNull(acEnergy, dcEnergy).sum()
     if (deepStats.chargeDetailsProcessed <= 0) return
 
     val unknownCount = (deepStats.chargeDetailsProcessed - deepStats.acChargeCount - deepStats.dcChargeCount)
         .coerceAtLeast(0)
-    val acRatio = if (totalEnergy > 0.0) (deepStats.acChargeEnergyKwh / totalEnergy).toFloat() else 0f
+    val acRatio = if (totalEnergy > 0.0) ((acEnergy ?: 0.0) / totalEnergy).toFloat() else 0f
     val acColor = palette.acColor
     val dcColor = palette.dcColor
 
@@ -1870,12 +1876,12 @@ private fun AcDcRatioCard(deepStats: DeepStats, palette: CarColorPalette) {
         Row(modifier = Modifier.fillMaxWidth()) {
             StatItem(
                 label = stringResource(R.string.stats_ac_energy),
-                value = formatEnergy(deepStats.acChargeEnergyKwh),
+                value = acEnergy?.let { formatEnergy(it) } ?: "--",
                 modifier = Modifier.weight(1f)
             )
             StatItem(
                 label = stringResource(R.string.stats_dc_energy),
-                value = formatEnergy(deepStats.dcChargeEnergyKwh),
+                value = dcEnergy?.let { formatEnergy(it) } ?: "--",
                 modifier = Modifier.weight(1f)
             )
         }

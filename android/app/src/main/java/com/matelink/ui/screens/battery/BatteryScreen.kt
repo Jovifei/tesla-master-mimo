@@ -92,6 +92,9 @@ private val DetailCyan = Color(0xFF00BCD4)
 private fun formatRange(value: Double?, units: com.matelink.data.api.models.Units?, unavailable: String): String =
     value?.let { UnitFormatter.formatDistance(it, units) } ?: unavailable
 
+internal fun formatBatteryTrendRangeKm(value: Double, units: com.matelink.data.api.models.Units?): String =
+    UnitFormatter.formatDistanceKm(value, units)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BatteryScreen(
@@ -448,14 +451,14 @@ private fun BatteryTrendCard(
             trend.normalizedCurrentRangeKm?.let { currentRange ->
                 BatteryTrendValueRow(
                     label = currentLabel,
-                    value = UnitFormatter.formatDistance(currentRange, units),
+                    value = formatBatteryTrendRangeKm(currentRange, units),
                     palette = palette
                 )
             }
             trend.baselineRangeKm?.let { baselineRange ->
                 BatteryTrendValueRow(
                     label = baselineLabel,
-                    value = UnitFormatter.formatDistance(baselineRange, units),
+                    value = formatBatteryTrendRangeKm(baselineRange, units),
                     palette = palette
                 )
             }
@@ -1075,7 +1078,8 @@ private fun BatteryStatusCard(stats: BatteryStats) {
     val currentChargeTitle = stringResource(R.string.current_battery_level_title)
     val currentChargeMessage = stringResource(R.string.current_battery_level_message)
     val currentChargeLabel = stringResource(R.string.current_battery_level_title)
-    val usablePercentLabel = stringResource(R.string.usable_percent, stats.usableBatteryLevel)
+    val usablePercentLabel = stats.usableBatteryLevel?.let { stringResource(R.string.usable_percent, it) }
+        ?: stringResource(R.string.usable_percent_unavailable)
     val infoLabel = stringResource(R.string.info)
     val gotItLabel = stringResource(R.string.got_it)
 

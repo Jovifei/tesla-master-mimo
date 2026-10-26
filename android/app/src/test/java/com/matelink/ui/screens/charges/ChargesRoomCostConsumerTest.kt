@@ -4,6 +4,12 @@ import android.app.Application
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.ChargeData
+import com.matelink.data.api.models.ChargeDetail
+import com.matelink.data.api.models.ChargePoint
+import com.matelink.data.api.models.ChargerDetails
+import com.matelink.data.sync.toAggregate
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.test.runCurrent
 import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.HistoryReadDependencies
@@ -23,6 +29,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -42,6 +49,58 @@ import java.time.ZoneId
 class ChargesRoomCostConsumerTest {
     @get:Rule val temp = TemporaryFolder()
 
+    @Test fun visibleListSummaryAndChartShareShortSessionPolicyAndKnownEnergyCoverage() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val f = HistoryResourceFixture(File(temp.root, "charges-known-coverage.db"))
+        f.initialize(cloud = true)
+        f.settings.saveShowShortDrivesCharges(false)
+        val localId = f.localId(1)
+        for ((id, energy) in listOf(101 to 10.0, 102 to null, 103 to 0.0)) {
+            f.db.chargeSummaryDao().upsert(ChargeData(id,
+                startDate = "2026-10-20T10:00:00Z", endDate = "2026-10-20T11:00:00Z",
+                chargeEnergyAdded = energy, source = "teslamate_archive",
+                qualityState = "observed", qualityReason = "api").toSyncSummary(localId)!!)
+        }
+        f.status = { 503 }
+        val vm = viewModel(f)
+        try {
+            vm.setCarId(1); awaitCharges(vm, listOf(101, 102))
+            val state = vm.uiState.value
+            assertEquals(2, state.summary.totalCharges)
+            assertEquals(1, state.summary.energyCoverage)
+            assertEquals(10.0, state.summary.totalEnergyAdded!!, 0.0)
+            assertEquals(2, state.chartData.sumOf { it.count })
+            assertEquals(1, state.chartData.sumOf { it.energyCoverage })
+        } finally { vm.viewModelScope.cancel(); advanceUntilIdle(); f.close(); Dispatchers.resetMain() }
+    }
+
+    @Test fun cachedAcFilterUsesQualifiedRoomModeBeforeSlowRefresh() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val f = HistoryResourceFixture(File(temp.root, "charges-cached-mode.db"))
+        f.initialize(cloud = true)
+        val local = f.localId(1)
+        f.db.chargeSummaryDao().upsert(ChargeData(201, startDate = "2026-10-20T10:00:00Z",
+            endDate = "2026-10-20T11:00:00Z", address = "CACHED_AC_SOURCE", chargeEnergyAdded = 10.0, source = "teslamate_archive",
+            qualityState = "observed", qualityReason = "api").toSyncSummary(local)!!)
+        f.db.aggregateDao().upsertChargeAggregate(ChargeDetail(201, chargePoints = listOf(
+            ChargePoint(chargerDetails = ChargerDetails(chargerPhases = 1)))).toAggregate(local, 0L))
+        val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val vm = viewModel(f) { entered.complete(Unit); release.await() }
+        try {
+            vm.setChargeTypeFilter(ChargeTypeFilter.AC)
+            vm.setCarId(1)
+            repeat(500) {
+                runCurrent()
+                if (!entered.isCompleted || "CACHED_AC_SOURCE" !in vm.uiState.value.availableLocations) Thread.sleep(10)
+            }
+            assertTrue("The provider refresh must still be held", entered.isCompleted && !release.isCompleted)
+            assertTrue("The actual Room frame must have been published", "CACHED_AC_SOURCE" in vm.uiState.value.availableLocations)
+            assertEquals(ChargeTypeFilter.AC, vm.uiState.value.chargeTypeFilter)
+            assertEquals("Cached AC evidence must be usable in the first Room frame; state=${vm.uiState.value}", listOf(201),
+                vm.uiState.value.charges.map { it.chargeId })
+        } finally { release.complete(Unit); vm.viewModelScope.cancel(); advanceUntilIdle(); f.close(); Dispatchers.resetMain() }
+    }
+
     private fun TestScope.awaitCharges(vm: ChargesViewModel, ids: List<Int>) {
         repeat(100) {
             advanceUntilIdle()
@@ -52,11 +111,11 @@ class ChargesRoomCostConsumerTest {
         throw AssertionError("Expected charge IDs $ids; actual ${vm.uiState.value.charges.map { it.chargeId }}")
     }
 
-    private fun viewModel(f: HistoryResourceFixture): ChargesViewModel {
+    private fun viewModel(f: HistoryResourceFixture, beforeDiscovery: suspend () -> Unit = {}): ChargesViewModel {
         val history = UnifiedHistoryRepository(HistoryReadDependencies(
             captureScope = { f.vehicleContexts.captureReadScope() },
-            getCars = { ApiResult.Error("synthetic-offline", 503) },
-            getHistoryContext = { ApiResult.Error("synthetic-offline", 503) },
+            getCars = { beforeDiscovery(); ApiResult.Error("synthetic-offline", 503) },
+            getHistoryContext = { beforeDiscovery(); ApiResult.Error("synthetic-offline", 503) },
             resolveCar = { car, scope -> f.vehicleContexts.resolveVerifiedHistoryCar(car, scope) },
             cachedContext = { id, scope -> f.vehicleContexts.cachedContextForRemote(id, scope) },
             localDrives = { f.db.driveSummaryDao().getAllChronological(it) },
@@ -79,6 +138,8 @@ class ChargesRoomCostConsumerTest {
         f.initialize(cloud = true)
         f.settings.saveCurrency("CNY")
         f.settings.saveDefaultChargePrice(1.14)
+        // This existing contract covers the default rate; hourly tariffs have their own consumer tests.
+        f.settings.saveTariffConfig(false, 1.0, 0.7, 0.3, "[[10,14],[18,20]]", "[[7,9],[15,17],[21,22]]", "[[23,23],[0,6]]")
         assertEquals("CNY", f.settings.settings.first().currencyCode)
         val localId = f.localId(1)
         val start = "2026-10-20T10:00:00Z"
@@ -125,6 +186,8 @@ class ChargesRoomCostConsumerTest {
         f.initialize(cloud = true)
         f.settings.saveCurrency("CNY")
         f.settings.saveDefaultChargePrice(1.14)
+        // This existing contract covers the default rate; hourly tariffs have their own consumer tests.
+        f.settings.saveTariffConfig(false, 1.0, 0.7, 0.3, "[[10,14],[18,20]]", "[[7,9],[15,17],[21,22]]", "[[23,23],[0,6]]")
         val localId = f.localId(1)
         for ((id, date, energy) in listOf(
             Triple(71, "2026-10-24T10:00:00Z", 2.0),

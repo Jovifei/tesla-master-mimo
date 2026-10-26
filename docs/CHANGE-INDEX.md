@@ -1,5 +1,14 @@
 # MateLink 变更与版本索引
 
+## 2026-10-27 App数据链路修复候选（2.1.54 / build73）
+
+- 发现基准为2.1.53/build72已审候选；本轮在E盘 `matelink-release-data-audit-20261026`、App分支 `codex/app-release-data-fixes-20261027` 实施，原候选基线提交 `e53a2d01`。
+- [逐问题版本台账](APP-ISSUE-VERSIONS.md)保存发现日期、版本、改法、验证与提交；[批次记录](releases/2026-10-27-app-data-fixes.md)及F1–F7分组记录对应来源→资格/计算→持久化→展示链。
+- 本轮只修数据、元信息、计算、并发及现有位置formatter/路由绑定；保持原页面参数排列、尺寸、字体、间距与既有颜色。
+- 状态：分组及真实Room/VM/Notification负例已逐批RED→GREEN，full-debug-22 1555方法/17失败，正在修旧契约fixture及缓存头真实回归后复跑。候选包、最终本地提交与实际APK hash待最终验收回填。
+- 软件修复不等于真实历史补采；未曾采集的旧样本、未提供的来源实例/事件脉冲保持明确边界。本轮未安装手机或部署生产，Hub当前拒绝连接未成功上报。
+
+
 本页把**源码提交、Android 包、测试和手机安装**分别绑定。Git 提交历史是逐提交的完整事实；本页为近期关键变更提供可检索入口，不能用旧 SHA 的绿色 CI 为新提交背书。Bug 根因与复发检查见 [BUG-REGISTER.md](BUG-REGISTER.md)，Android 旧版本详情见 [ANDROID-RELEASE-LOG.md](ANDROID-RELEASE-LOG.md)。更新日期：2026-10-25。
 
 ## 已安装检查点与正在开发的版本

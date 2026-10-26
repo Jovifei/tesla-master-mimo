@@ -58,7 +58,13 @@ fun FullscreenDualAxisLineChart(
     timeLabels: List<String> = emptyList(),
     externalSelectedFraction: Float? = null,
     onXSelected: ((Float?) -> Unit)? = null,
-    fractionToTimeLabel: ((Float) -> String)? = null
+    fractionToTimeLabel: ((Float) -> String)? = null,
+    leftXFractions: List<Float> = emptyList(),
+    rightXFractions: List<Float> = emptyList(),
+    leftSourceIndices: List<Int> = emptyList(),
+    rightSourceIndices: List<Int> = emptyList(),
+    leftGaps: Set<Int> = emptySet(),
+    rightGaps: Set<Int> = emptySet()
 ) {
     if (dataLeft.size < 2 && dataRight.size < 2) return
 
@@ -78,6 +84,9 @@ fun FullscreenDualAxisLineChart(
             externalSelectedFraction = externalSelectedFraction,
             onXSelected = onXSelected,
             fractionToTimeLabel = fractionToTimeLabel,
+            leftXFractions = leftXFractions, rightXFractions = rightXFractions,
+            leftSourceIndices = leftSourceIndices, rightSourceIndices = rightSourceIndices,
+            leftGaps = leftGaps, rightGaps = rightGaps,
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -115,6 +124,10 @@ fun FullscreenDualAxisLineChart(
             unitLeft = unitLeft,
             unitRight = unitRight,
             timeLabels = timeLabels,
+            fractionToTimeLabel = fractionToTimeLabel,
+            leftXFractions = leftXFractions, rightXFractions = rightXFractions,
+            leftSourceIndices = leftSourceIndices, rightSourceIndices = rightSourceIndices,
+            leftGaps = leftGaps, rightGaps = rightGaps,
             activity = activity,
             onDismiss = { isFullscreen = false }
         )
@@ -130,6 +143,10 @@ private fun FullscreenDualChartOverlay(
     unitLeft: String,
     unitRight: String,
     timeLabels: List<String>,
+    fractionToTimeLabel: ((Float) -> String)?,
+    leftXFractions: List<Float>, rightXFractions: List<Float>,
+    leftSourceIndices: List<Int>, rightSourceIndices: List<Int>,
+    leftGaps: Set<Int>, rightGaps: Set<Int>,
     activity: Activity?,
     onDismiss: () -> Unit
 ) {
@@ -183,6 +200,10 @@ private fun FullscreenDualChartOverlay(
                 unitLeft = unitLeft,
                 unitRight = unitRight,
                 timeLabels = timeLabels,
+                fractionToTimeLabel = fractionToTimeLabel,
+                leftXFractions = leftXFractions, rightXFractions = rightXFractions,
+                leftSourceIndices = leftSourceIndices, rightSourceIndices = rightSourceIndices,
+                leftGaps = leftGaps, rightGaps = rightGaps,
                 chartHeight = availableChartHeight,
                 modifier = Modifier
                     .fillMaxWidth()

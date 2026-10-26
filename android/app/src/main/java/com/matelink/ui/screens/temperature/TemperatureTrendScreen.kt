@@ -436,10 +436,8 @@ private fun TemperatureInsightsCard(state: TemperatureTrendUiState) {
                 )
             }
 
-            // Insight Item 1: Solar Gain
-            val maxCabinGain = if (state.maxInsideTemp != null && state.maxOutsideTemp != null && state.maxInsideTemp > state.maxOutsideTemp) {
-                ((state.maxInsideTemp - state.maxOutsideTemp) * 10.0).roundToInt() / 10.0
-            } else null
+            // Same-observation averages cannot establish solar or climate-performance causality.
+            val maxCabinGain = state.maxPairedDifferenceC
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -453,13 +451,13 @@ private fun TemperatureInsightsCard(state: TemperatureTrendUiState) {
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        text = stringResource(R.string.temperature_insights_solar_gain) +
-                                (maxCabinGain?.let { " (+${it}°C)" } ?: ""),
+                        text = stringResource(R.string.temperature_observed_pair_delta_title) +
+                                (maxCabinGain?.let { " (%+.1f°C)".format(it) } ?: ""),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = stringResource(R.string.temperature_insights_solar_desc),
+                        text = stringResource(R.string.temperature_observed_pair_delta_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -484,7 +482,7 @@ private fun TemperatureInsightsCard(state: TemperatureTrendUiState) {
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = stringResource(R.string.temperature_insights_climate_good_desc),
+                        text = stringResource(R.string.analysis_coverage_insufficient),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

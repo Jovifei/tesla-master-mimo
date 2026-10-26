@@ -423,7 +423,7 @@
     <string name="cost_average_kwh">Average/kWh</string>
     <string name="cost_average_kwh_hint">Effective cost</string>
     <string name="cost_recorded_manual_total">Recorded and manual totals</string>
-    <string name="cost_default_rate_estimate">Default-rate estimate</string>
+    <string name="cost_default_rate_estimate">Estimated charging cost</string>
     <string name="cost_paired_battery_unit">Cost per battery kWh (paired)</string>
     <string name="cost_coverage_counts">Priced %1$d/%2$d · energy %3$d/%2$d · paired %4$d</string>
     <string name="cost_estimate_coverage">Estimated %1$d sessions</string>
@@ -1190,11 +1190,7 @@
     <string name="settings_release_notes_close">Got it</string>
     <string name="settings_switch_to_cloud">Switch to MateLink Cloud</string>
     <string name="settings_switch_to_self_hosted">Switch to local TeslaMate</string>
-<string name="settings_release_notes_body" formatted="false">• Qualified charge detail can be saved safely; a weak list refresh no longer erases its energy. Edit the total inside the right-side fee cell.\n• Temperature history uses real observations only. Tire-pressure history reuses existing status responses without automatic periodic Fleet data requests. Sentry history uses verified local vehicle identity.\n• Annual and cost statistics separate unknown, real zero and signed recovery; unknown monthly values are not zero bars. Timeline dates use local time.\n• History now opens with the summary and recent records; compact filters and the original monthly charts remain above the history list.\n• Four-column summaries and charging history, larger numbers and compact date filters.\n• Drive history metrics now fit a compact single row; details retain their full panels and enlarged text can scroll without truncation.
-• Automatic history syncing and cached history now preserve validated vehicle identity and observed data evidence across refreshes.
-• Driving and charging energy display keeps real zero, signed recovery and unknown distinct; estimated values are explicitly labeled, never upgraded to measurements.
-• AC charging loss and efficiency require complete matching observed AC-only mode and counter windows; unknown or mixed-mode charging remains unavailable.
-• Parking energy, late updates and notifications retain their source and quality limits. New natural Fleet events and passive background delivery still require independent device validation.</string>
+<string name="settings_release_notes_body" formatted="false">• Improved weak-network startup: saved history can appear automatically before refresh completes.\n• Corrected charging costs, drive energy, temperature units and chart timing. Time-of-use prices provide estimated costs and never replace a known bill.\n• Unknown values, real zero and sampled data stay distinct; missing history is not invented.\n• Account and vehicle changes isolate old data; alerts are deduplicated from real observations.\n• Summary, report-year and export consistency are corrected while existing page layouts are retained.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>
     <string name="settings_resync_dialog_text_delete">This will delete all local data.</string>
@@ -1711,4 +1707,12 @@
     <string name="temperature_no_qualified_trip_samples">Saved drives exist, but their temperatures lack qualified source/time evidence. Import or record real drives; no values were generated.</string>
     <string name="battery_cached_scope_notice">Saved status and history are offline records, not live vehicle measurements. Battery health capacity stays unknown without qualified evidence.</string>
     <string name="parked_map_title">Parked Location</string>
+    <string name="trip_save_failed">Trip could not be saved. Your draft is kept; try again.</string>
+    <string name="temperature_observed_pair_delta_title">Drive mean temperature difference</string>
+    <string name="temperature_observed_pair_delta_note">Difference of recorded means from the same drive, not evidence of A/C performance.</string>
+    <string name="usable_percent_unavailable">Usable (—)</string>
+    <string name="parked_receipt_source_unverified">Verified local boundaries and window; upstream source instance remains unverified.</string>
+    <string name="parked_receipt_save_failed">Detail could not be saved; earlier cached history is preserved offline.</string>
+    <string name="drive_detail_sample_maximum">Sample maximum</string>
+    <string name="drive_detail_sample_minimum">Sample minimum</string>
 </resources>

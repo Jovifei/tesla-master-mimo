@@ -3,6 +3,9 @@ package com.matelink.ui.screens.temperature
 import android.app.Application
 import androidx.room.Room
 import com.matelink.data.api.models.DriveData
+import com.matelink.data.api.models.DrivesResponse
+import com.matelink.data.api.models.receivedDrives
+import com.squareup.moshi.Moshi
 import com.matelink.data.local.StatsDatabase
 import com.matelink.data.sync.toSyncSummary
 import java.io.File
@@ -28,6 +31,34 @@ class TemperatureRoomHistoryConsumerTest {
     private fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(),
         StatsDatabase::class.java, File(temp.root, "temperature-receipts.db").absolutePath)
         .allowMainThreadQueries().build()
+
+    @Test fun fahrenheitReceiptKeepsItsOwnUnitAcrossRoomReopenAndProjectsCanonicalC() = runBlocking {
+        val receipt = Moshi.Builder().build().adapter(DrivesResponse::class.java).fromJson("""{
+            "data":{"units":{"unit_of_length":"km","unit_of_temperature":"F"},"drives":[{
+                "drive_id":71,"source":"teslamate_archive","quality_state":"observed",
+                "start_date":"2026-10-23T01:00:00Z","end_date":"2026-10-23T01:20:00Z",
+                "inside_temp_avg":86.0,"outside_temp_avg":68.0}]}}
+        """)!!.data!!.receivedDrives().single()
+        assertEquals(86.0, receipt.insideTempAvg!!, 0.0)
+        assertEquals("F", receipt.temperatureUnit)
+        var db = open()
+        try {
+            db.driveSummaryDao().upsert(receipt.toSyncSummary(-71)!!)
+            db.close()
+            db = open()
+            val point = observedTemperaturePoints(db.driveSummaryDao().getAllChronological(-71),
+                TemperatureTrendWindow.SEVEN, now).single()
+            assertEquals(30.0, point.insideTemp!!, 1e-9)
+            assertEquals(20.0, point.outsideTemp!!, 1e-9)
+        } finally { db.close() }
+    }
+
+    @Test fun explicitUnknownTemperatureMetadataCannotBorrowLegacySourceCelsius() {
+        val raw = DriveData(72, startDate="2026-10-23T01:00:00Z", endDate="2026-10-23T01:20:00Z",
+            source="teslamate_archive", outsideTempAvg=68.0, temperatureUnit="")
+        val points = observedTemperaturePoints(listOf(raw.toSyncSummary(-71)!!), TemperatureTrendWindow.SEVEN, now)
+        assertTrue(points.isEmpty())
+    }
 
     @Test fun savedArchiveAverageRetainsSourceTimeZeroAndNegativeAcrossReopen() = runBlocking {
         var db = open()

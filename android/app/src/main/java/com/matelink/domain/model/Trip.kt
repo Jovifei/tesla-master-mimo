@@ -36,5 +36,18 @@ data class Trip(
     /** Qualified distance divided by all known finite positive distance, not unknown distance. */
     val efficiencyDistanceCoveragePercent: Double? = null,
     /** Known finite energy receipts, independent of efficiency's valid-distance requirement. */
-    val energySampleCount: Int? = null
+    val energySampleCount: Int? = null,
+    /** Stable saved-row identity is independent of a drive-set fingerprint. */
+    val savedTripId: Long? = null,
+    val knownDistanceKm: Double? = totalDistance,
+    val distanceSampleCount: Int = drives.size,
+    val knownDrivingDurationMin: Int? = totalDrivingDurationMin,
+    val durationSampleCount: Int = drives.size,
+    val knownChargeEnergyKwh: Double? = totalEnergyCharged,
+    val chargeEnergySampleCount: Int = charges.size,
+    val observedStartBatteryLevel: Int? = startBatteryLevel,
+    val observedEndBatteryLevel: Int? = endBatteryLevel,
+    val observedMaxSpeedKmh: Int? = maxSpeed,
+    val expectedDriveCount: Int = drives.size,
+    val expectedChargeCount: Int = charges.size
 )

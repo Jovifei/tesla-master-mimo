@@ -285,6 +285,9 @@ internal object HistorySummaryEvidenceCodec {
         fun <T> changed(value: T?, previous: T?): T? = value?.takeIf { it != previous }
         fun <T> changedLength(value: T?, previous: T?): T? =
             if (!com.matelink.data.api.models.sameDriveLengthUnit(next.lengthUnit, old.lengthUnit)) value else changed(value, previous)
+        fun changedTemperature(value: Double?, previous: Double?): Double? =
+            if (!com.matelink.data.api.models.sameHistoryTemperatureUnit(next.temperatureUnit, next.source,
+                    old.temperatureUnit, old.source)) value else changed(value, previous)
         // Repeated summary values are not corrections to richer detail.
         val changes = next.copy(
             startAddress = changed(next.startAddress, old.startAddress),
@@ -315,8 +318,8 @@ internal object HistorySummaryEvidenceCodec {
             speedAvg = changedLength(next.speedAvg, old.speedAvg),
             powerMax = changed(next.powerMax, old.powerMax),
             powerMin = changed(next.powerMin, old.powerMin),
-            outsideTempAvg = changed(next.outsideTempAvg, old.outsideTempAvg),
-            insideTempAvg = changed(next.insideTempAvg, old.insideTempAvg))
+            outsideTempAvg = changedTemperature(next.outsideTempAvg, old.outsideTempAvg),
+            insideTempAvg = changedTemperature(next.insideTempAvg, old.insideTempAvg))
         val corrected = com.matelink.data.repository.UnifiedHistoryRepository.mergeDrivesRaw(
             listOf(changes), listOf(presentation)
         ).single().copy(energyConsumedNet = null, consumptionNet = null, energyContract = null,

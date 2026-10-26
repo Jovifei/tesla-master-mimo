@@ -10,7 +10,8 @@ internal data class CostTotals(
 
 /** Price and qualified battery energy must belong to the same session before division. */
 internal fun calculateCostTotals(
-    charges: List<ChargeData>, costFor: (ChargeData) -> Double?, defaultPricePerKwh: Double?
+    charges: List<ChargeData>, costFor: (ChargeData) -> Double?, defaultPricePerKwh: Double?,
+    estimateFor: ((ChargeData) -> Double?)? = null
 ): CostTotals {
     val rate = defaultPricePerKwh?.takeIf { it.isFinite() && it >= 0.0 }
     val records = charges.map { charge ->
@@ -21,8 +22,11 @@ internal fun calculateCostTotals(
     val energies = records.mapNotNull { it.second }
     val paired = records.filter { it.first != null && (it.second ?: 0.0) > 0.0 }
     val pairedEnergy = paired.sumOf { it.second!! }
-    val estimates = if (rate == null) emptyList() else records.mapNotNull { (price, energy) ->
-        if (price != null || energy == null) null else (rate * energy).takeIf(Double::isFinite)
+    val estimates = charges.zip(records).mapNotNull { (charge, values) ->
+        val (price, energy) = values
+        if (price != null || energy == null) null else
+            (if (estimateFor != null) estimateFor(charge) else rate?.times(energy))
+                ?.takeIf { it.isFinite() && it >= 0.0 }
     }
     val known = prices.takeIf { it.isNotEmpty() }?.sum()?.takeIf(Double::isFinite)
     return CostTotals(

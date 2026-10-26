@@ -712,7 +712,7 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                                 when {
                                     energy > 999 -> "%.2f MWh".format(energy / 1000)
                                     energy < 10 -> "%.1f kWh".format(energy)
-                                    else -> "%.0f kWh".format(energy)
+                                    else -> "%.1f kWh".format(energy)
                                 }
                             } ?: stringResource(R.string.not_available),
                             palette.acColor
@@ -749,9 +749,10 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
                 Text(
                     text = "${stringResource(R.string.stats_analysis_cost_coverage)} " +
                         "${summary.costCoverage}/${summary.totalCharges}" +
-                        if (summary.estimatedCostCount > 0)
+                        " · ${stringResource(R.string.energy_coverage)} ${summary.energyCoverage}/${summary.totalCharges}" +
+                        (if (summary.estimatedCostCount > 0)
                             " · ${stringResource(R.string.cost_estimate_coverage, summary.estimatedCostCount)}"
-                        else "",
+                        else ""),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

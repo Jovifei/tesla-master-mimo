@@ -51,6 +51,8 @@ data class TemperatureTrendUiState(
     val maxOutsideTemp: Double? = null,
     val minInsideTemp: Double? = null,
     val minOutsideTemp: Double? = null,
+    /** Same-trip inside minus outside average; not a solar or climate-performance claim. */
+    val maxPairedDifferenceC: Double? = null,
     val points: List<TemperaturePoint> = emptyList(),
     val historyDriveCount: Int = 0,
     val historyQualifiedCount: Int = 0,
@@ -101,8 +103,8 @@ private fun DriveSummary.qualifiedTemperatureReceipt(now: Instant): Triple<Doubl
         else -> false
     }
     if (!admissible) return null
-    val inside = raw.insideTempAvg?.takeIf(Double::isFinite)
-    val outside = raw.outsideTempAvg?.takeIf(Double::isFinite)
+    val inside = raw.insideTempC?.takeIf(Double::isFinite)
+    val outside = raw.outsideTempC?.takeIf(Double::isFinite)
     if (inside == null && outside == null) return null
     return Triple(inside, outside, source)
 }
@@ -136,16 +138,18 @@ private class RepositoryTemperatureTrendSource(
         verify()
         val drives = driveSummaryDao.getAllChronological(context.localHistoryCarId)
         verify()
-        val status = try {
-            (repository.getCarStatus(context.remoteApiCarId) as? ApiResult.Success)?.data?.status
+        val response = try {
+            (repository.getCarStatus(context.remoteApiCarId) as? ApiResult.Success)?.data
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             null
         }
         verify()
-        val currentInside = status?.insideTemp?.toDouble()?.takeIf(Double::isFinite)
-        val currentOutside = status?.outsideTemp?.toDouble()?.takeIf(Double::isFinite)
+        val currentInside = com.matelink.domain.analytics.canonicalTemperatureC(
+            response?.status?.insideTemp, response?.units?.unitOfTemperature)
+        val currentOutside = com.matelink.domain.analytics.canonicalTemperatureC(
+            response?.status?.outsideTemp, response?.units?.unitOfTemperature)
         val from = now.minus(window.days.toLong(), ChronoUnit.DAYS)
         val total = drives.count { row ->
             parseIsoInstant(row.startDate)?.let { !it.isBefore(from) && !it.isAfter(now) } == true &&
@@ -176,6 +180,11 @@ private fun TemperatureTrendSnapshot.toUiState(window: TemperatureTrendWindow): 
         maxOutsideTemp = points.mapNotNull { it.outsideTemp }.maxOrNull()?.roundOne(),
         minInsideTemp = points.mapNotNull { it.insideTemp }.minOrNull()?.roundOne(),
         minOutsideTemp = points.mapNotNull { it.outsideTemp }.minOrNull()?.roundOne(),
+        maxPairedDifferenceC = points.mapNotNull { point ->
+            val inside = point.insideTemp?.takeIf(Double::isFinite)
+            val outside = point.outsideTemp?.takeIf(Double::isFinite)
+            if (inside != null && outside != null) (inside - outside).takeIf(Double::isFinite) else null
+        }.maxOrNull()?.roundOne(),
         points = points,
         historyDriveCount = historyDriveCount,
         historyQualifiedCount = points.size,

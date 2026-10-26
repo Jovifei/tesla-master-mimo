@@ -38,7 +38,7 @@ fun AnnualReportScreen(
     carId: Int = 1,
     year: Int = java.time.Year.now().value,
     onBack: () -> Unit = {},
-    onNavigateToPDF: () -> Unit = {},
+    onNavigateToPDF: (Int) -> Unit = {},
     viewModel: AnnualReportViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -120,7 +120,7 @@ fun AnnualReportScreen(
                 // T-104: Generate PDF
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
-                    onClick = onNavigateToPDF,
+                    onClick = { onNavigateToPDF(uiState.year) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(stringResource(R.string.annual_report_generate_pdf))
@@ -252,7 +252,8 @@ private fun HonestAnnualSummarySection(
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SummaryCard(
             title = stringResource(R.string.total_distance),
-            value = if (hasDistance) String.format(Locale.getDefault(), "%,.0f km", qs.totalDistanceKm) else noData,
+            value = if (hasDistance) String.format(Locale.getDefault(), "%,.0f km", qs.totalDistanceKm) +
+                (if (driveDistanceSamples < qs.totalDrives) " · $driveDistanceSamples/${qs.totalDrives}" else "") else noData,
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
@@ -264,7 +265,8 @@ private fun HonestAnnualSummarySection(
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SummaryCard(
             title = stringResource(R.string.stats_energy_used),
-            value = if (hasDrivingEnergy && qs.totalEnergyConsumedKwh != null) String.format(Locale.getDefault(), "%,.1f kWh", qs.totalEnergyConsumedKwh) else noData,
+            value = if (hasDrivingEnergy && qs.totalEnergyConsumedKwh != null) String.format(Locale.getDefault(), "%,.1f kWh", qs.totalEnergyConsumedKwh) +
+                (if (driveEnergySamples < qs.totalDrives) " · $driveEnergySamples/${qs.totalDrives}" else "") else noData,
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
@@ -281,7 +283,8 @@ private fun HonestAnnualSummarySection(
         )
         SummaryCard(
             title = stringResource(R.string.energy_added),
-            value = if (hasChargeEnergy) String.format(Locale.getDefault(), "%,.1f kWh", qs.totalEnergyAddedKwh) else noData,
+            value = if (hasChargeEnergy) String.format(Locale.getDefault(), "%,.1f kWh", qs.totalEnergyAddedKwh) +
+                (if (chargeEnergySamples < qs.totalCharges) " · $chargeEnergySamples/${qs.totalCharges}" else "") else noData,
             modifier = Modifier.weight(1f)
         )
     }
@@ -499,8 +502,8 @@ private fun MonthlyTrendsSection(
     if (monthlyDrives.isNotEmpty()) {
         Text(stringResource(R.string.annual_report_distance_km), style = MaterialTheme.typography.labelMedium)
         if (monthlyDrives.any { it.totalDistance != null }) BarChart(
-            data = monthlyDrives.map { it.totalDistance?.toFloat() },
-            labels = monthlyDrives.map { monthLabel(it.month) },
+            data = (1..12).map { month -> monthlyDrives.firstOrNull { it.month == month }?.totalDistance?.toFloat() },
+            labels = (1..12).map { monthLabel(it) },
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.fillMaxWidth().height(160.dp)
         ) else Text(stringResource(R.string.analysis_coverage_insufficient))
@@ -510,8 +513,8 @@ private fun MonthlyTrendsSection(
         // Drive count line chart
         Text(stringResource(R.string.annual_report_drives_per_month), style = MaterialTheme.typography.labelMedium)
         LineChart(
-            data = monthlyDrives.map { it.driveCount.toFloat() },
-            labels = monthlyDrives.map { monthLabel(it.month) },
+            data = (1..12).map { month -> monthlyDrives.firstOrNull { it.month == month }?.driveCount?.toFloat() },
+            labels = (1..12).map { monthLabel(it) },
             color = MaterialTheme.colorScheme.tertiary,
             modifier = Modifier.fillMaxWidth().height(120.dp)
         )
@@ -522,8 +525,8 @@ private fun MonthlyTrendsSection(
         Spacer(modifier = Modifier.height(12.dp))
         Text(stringResource(R.string.annual_report_energy_added_kwh), style = MaterialTheme.typography.labelMedium)
         if (monthlyCharges.any { it.totalEnergy != null }) BarChart(
-            data = monthlyCharges.map { it.totalEnergy?.toFloat() },
-            labels = monthlyCharges.map { monthLabel(it.month) },
+            data = (1..12).map { month -> monthlyCharges.firstOrNull { it.month == month }?.totalEnergy?.toFloat() },
+            labels = (1..12).map { monthLabel(it) },
             color = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.fillMaxWidth().height(160.dp)
         ) else Text(stringResource(R.string.analysis_coverage_insufficient))
@@ -585,27 +588,31 @@ private fun BarChart(
 
 @Composable
 private fun LineChart(
-    data: List<Float>,
+    data: List<Float?>,
     labels: List<String>,
     color: Color,
     modifier: Modifier = Modifier
 ) {
-    val maxVal = data.maxOrNull()?.coerceAtLeast(1f) ?: 1f
+    val maxVal = data.filterNotNull().maxOrNull()?.coerceAtLeast(1f) ?: 1f
 
     Canvas(modifier = modifier) {
         val chartHeight = size.height - 16f
         val stepX = size.width / (data.size - 1).coerceAtLeast(1)
 
         val path = Path()
+        var connected = false
         data.forEachIndexed { index, value ->
+            if (value == null) { connected = false; return@forEachIndexed }
             val x = index * stepX
             val y = chartHeight - (value / maxVal) * chartHeight
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            if (!connected) path.moveTo(x, y) else path.lineTo(x, y)
+            connected = true
         }
         drawPath(path, color = color, style = Stroke(width = 3f))
 
         // Dots
         data.forEachIndexed { index, value ->
+            if (value == null) return@forEachIndexed
             val x = index * stepX
             val y = chartHeight - (value / maxVal) * chartHeight
             drawCircle(color = color, radius = 5f, center = Offset(x, y))

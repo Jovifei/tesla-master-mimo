@@ -78,6 +78,13 @@ fun DriveCurvesScreen(
     val uiState by viewModel.uiState.collectAsState()
     val isDarkTheme = isSystemInDarkTheme()
     val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
+    val context = LocalContext.current
+    LaunchedEffect(uiState.error) {
+        if (uiState.error != null) {
+            android.widget.Toast.makeText(context, context.getString(R.string.stats_analysis_retryable), android.widget.Toast.LENGTH_SHORT).show()
+            viewModel.clearError()
+        }
+    }
 
     LaunchedEffect(carId, driveId) {
         viewModel.loadDriveDetail(carId, driveId)
@@ -97,7 +104,7 @@ fun DriveCurvesScreen(
                             val distStr = detail.distance?.takeIf { it.isFinite() && it >= 0.0 }?.let {
                                 UnitFormatter.formatDistance(it, drivePresentationUnits(detail.lengthUnit, uiState.units))
                             }
-                            val durationStr = detail.durationMin?.let(::formatDurationCompact)
+                            val durationStr = detail.durationMin?.takeIf { it >= 0 }?.let(::formatDurationCompact)
                             val summary = listOfNotNull(distStr, durationStr).joinToString(" · ")
                             if (summary.isNotBlank()) {
                                 Text(
@@ -153,25 +160,11 @@ internal fun DriveCurvesContent(
     val scrollState = rememberScrollState()
     var sharedXFraction by remember { mutableStateOf<Float?>(null) }
     val positions = detail.positions.orEmpty()
-    val hasChartData = positions.size > 2
-
-    val timeLabels = remember(positions, is24Hour) {
-        if (hasChartData) extractTimeLabels(positions, is24Hour) else emptyList()
-    }
-    val fractionToTimeLabel: (Float) -> String = remember(positions, is24Hour) {
-        { fraction: Float ->
-            if (positions.isEmpty()) {
-                ""
-            } else {
-                val index = (fraction * positions.lastIndex).roundToInt()
-                    .coerceIn(0, positions.lastIndex)
-                positions[index].date?.let { dateStr ->
-                    parseIsoDateTime(dateStr)
-                        ?.formatTime(java.util.Locale.getDefault(), is24Hour)
-                        ?: ""
-                } ?: ""
-            }
-        }
+    val projection = remember(detail) { projectDriveCurves(detail) }
+    val hasChartData = projection.hasChartData
+    val timeLabels = remember(projection, is24Hour) { timedDriveAxisLabels(projection.speed, is24Hour) }
+    val fractionToTimeLabel: (Float) -> String = remember(projection, is24Hour) {
+        { fraction -> timedDriveCurveLabel(projection.speed, fraction, is24Hour) }
     }
 
     LaunchedEffect(scrollState) {
@@ -193,7 +186,7 @@ internal fun DriveCurvesContent(
         if (hasChartData) {
             // 1. 速度变化曲线
             if (detail.hasKnownLengthUnit) SpeedCurveCard(
-                positions = positions,
+                positions = positions, projected = projection.speed,
                 units = receiptUnits,
                 timeLabels = timeLabels,
                 externalSelectedFraction = sharedXFraction,
@@ -204,7 +197,7 @@ internal fun DriveCurvesContent(
             // 2. 行程距离变化曲线
             val knownDistance = detail.distance?.takeIf { it.isFinite() && it >= 0.0 }
             if (knownDistance != null) DistanceCurveCard(
-                positions = positions,
+                positions = positions, projected = projection.distance,
                 totalDistance = knownDistance,
                 units = receiptUnits,
                 timeLabels = timeLabels,
@@ -215,7 +208,7 @@ internal fun DriveCurvesContent(
 
             // 3. 功率输出与动能回收曲线
             PowerCurveCard(
-                positions = positions,
+                positions = positions, projected = projection.power,
                 timeLabels = timeLabels,
                 externalSelectedFraction = sharedXFraction,
                 onXSelected = { sharedXFraction = it },
@@ -224,7 +217,7 @@ internal fun DriveCurvesContent(
 
             // 4. 电量消耗变化曲线
             BatteryCurveCard(
-                positions = positions,
+                positions = positions, projected = projection.battery,
                 timeLabels = timeLabels,
                 externalSelectedFraction = sharedXFraction,
                 onXSelected = { sharedXFraction = it },
@@ -234,7 +227,7 @@ internal fun DriveCurvesContent(
             // 5. 海拔高度变化曲线
             if (positions.any { it.elevation != null }) {
                 ElevationCurveCard(
-                    positions = positions,
+                    positions = positions, projected = projection.elevation,
                     timeLabels = timeLabels,
                     externalSelectedFraction = sharedXFraction,
                     onXSelected = { sharedXFraction = it },
@@ -286,8 +279,8 @@ private fun CurvesKpiOverviewCard(
             val unknownLocation = stringResource(R.string.unknown_location)
             val defaultStart = detail.startAddress?.takeIf { it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" }?.toChineseDisplayAddress()
             val defaultEnd = detail.endAddress?.takeIf { it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" }?.toChineseDisplayAddress()
-            val startName = defaultStart ?: defaultEnd ?: unknownLocation
-            val endName = defaultEnd ?: defaultStart ?: unknownLocation
+            val startName = defaultStart ?: unknownLocation
+            val endName = defaultEnd ?: unknownLocation
 
             Text(
                 text = "$startName → $endName",
@@ -310,8 +303,8 @@ private fun CurvesKpiOverviewCard(
                     modifier = Modifier.weight(1f)
                 )
                 KpiItem(
-                    label = stringResource(R.string.maximum),
-                    value = (detail.speedMax ?: stats?.speedMax)?.takeIf { detail.hasKnownLengthUnit && it >= 0 }?.let {
+                    label = stringResource(driveDetailSpeedMaximumLabel(detail)),
+                    value = (detail.speedMax?.takeIf { detail.hasKnownLengthUnit && it >= 0 } ?: stats?.speedMax)?.let {
                         UnitFormatter.formatSpeed(it.toDouble(), units)
                     } ?: "—",
                     modifier = Modifier.weight(1f)
@@ -324,7 +317,7 @@ private fun CurvesKpiOverviewCard(
                     modifier = Modifier.weight(1f)
                 )
                 KpiItem(
-                    label = stringResource(R.string.average),
+                    label = stringResource(R.string.drive_detail_sample_mean),
                     value = stats?.powerAvg?.let { "%.1f kW".format(it) } ?: "—",
                     modifier = Modifier.weight(1f)
                 )
@@ -361,15 +354,16 @@ internal fun SpeedCurveCard(
     timeLabels: List<String>,
     externalSelectedFraction: Float?,
     onXSelected: (Float?) -> Unit,
-    fractionToTimeLabel: (Float) -> String
+    fractionToTimeLabel: (Float) -> String,
+    projected: com.matelink.ui.components.TimedChartSeries? = null
 ) {
-    val speeds = remember(positions) { positions.mapNotNull { it.speed?.takeIf { value -> value.isFinite() && value >= 0.0 }?.toFloat()?.takeIf(Float::isFinite) } }
-    if (speeds.size < 2) return
+    val series = projected ?: projectDriveCurves(DriveDetail(0, positions = positions, lengthUnit = units?.unitOfLength)).speed
+    if (series.validCount < 2) return
 
     CurveContainerCard(
         title = stringResource(R.string.speed_profile),
         icon = Icons.Default.Speed,
-        data = speeds,
+        data = series.values, series = series,
         color = MaterialTheme.colorScheme.primary,
         unit = UnitFormatter.getSpeedUnit(units),
         timeLabels = timeLabels,
@@ -387,33 +381,16 @@ internal fun DistanceCurveCard(
     timeLabels: List<String>,
     externalSelectedFraction: Float?,
     onXSelected: (Float?) -> Unit,
-    fractionToTimeLabel: (Float) -> String
+    fractionToTimeLabel: (Float) -> String,
+    projected: com.matelink.ui.components.TimedChartSeries? = null
 ) {
-    val distancePoints = remember(positions, totalDistance) {
-        val totalDist = totalDistance.toFloat()
-        if (positions.size < 2 || !totalDist.isFinite() || totalDist <= 0f) {
-            emptyList()
-        } else {
-            val speeds = positions.map { (it.speed ?: 0).toFloat().coerceAtLeast(0f) }
-            val totalSpeedSum = speeds.sum()
-            if (totalSpeedSum > 0f) {
-                var accumulated = 0f
-                speeds.map { spd ->
-                    accumulated += spd
-                    (accumulated / totalSpeedSum) * totalDist
-                }
-            } else {
-                val step = totalDist / (positions.size - 1)
-                List(positions.size) { i -> i * step }
-            }
-        }
-    }
-    if (distancePoints.size < 2) return
+    val series = projected ?: projectDriveCurves(DriveDetail(0, positions = positions, lengthUnit = units?.unitOfLength, odometerDetails = com.matelink.data.api.models.DriveOdometerDetails(distance = totalDistance))).distance
+    if (series.validCount < 2) return
 
     CurveContainerCard(
         title = stringResource(R.string.distance_profile) + " · " + stringResource(R.string.range_estimated),
         icon = CustomIcons.SteeringWheel,
-        data = distancePoints,
+        data = series.values, series = series,
         color = Color(0xFF00897B), // Teal
         unit = UnitFormatter.getDistanceUnit(units),
         timeLabels = timeLabels,
@@ -429,15 +406,16 @@ private fun PowerCurveCard(
     timeLabels: List<String>,
     externalSelectedFraction: Float?,
     onXSelected: (Float?) -> Unit,
-    fractionToTimeLabel: (Float) -> String
+    fractionToTimeLabel: (Float) -> String,
+    projected: com.matelink.ui.components.TimedChartSeries? = null
 ) {
-    val powers = remember(positions) { positions.mapNotNull { it.power?.toFloat() } }
-    if (powers.size < 2) return
+    val series = projected ?: projectDriveCurves(DriveDetail(0, positions = positions)).power
+    if (series.validCount < 2) return
 
     CurveContainerCard(
         title = stringResource(R.string.power_profile),
         icon = Icons.Default.Bolt,
-        data = powers,
+        data = series.values, series = series,
         color = MaterialTheme.colorScheme.tertiary,
         unit = "kW",
         showZeroLine = true,
@@ -454,9 +432,11 @@ private fun BatteryCurveCard(
     timeLabels: List<String>,
     externalSelectedFraction: Float?,
     onXSelected: (Float?) -> Unit,
-    fractionToTimeLabel: (Float) -> String
+    fractionToTimeLabel: (Float) -> String,
+    projected: com.matelink.ui.components.TimedChartSeries? = null
 ) {
-    val batteryLevels = remember(positions) { positions.mapNotNull { it.batteryLevel?.toFloat() } }
+    val series = projected ?: projectDriveCurves(DriveDetail(0, positions = positions)).battery
+    val batteryLevels = series.values.filter(Float::isFinite)
     if (batteryLevels.size < 2) return
     val fixedMinMax = remember(batteryLevels) {
         var yMin = (kotlin.math.floor(batteryLevels.min() / 10.0) * 10).toFloat()
@@ -471,7 +451,7 @@ private fun BatteryCurveCard(
     CurveContainerCard(
         title = stringResource(R.string.battery_level),
         icon = Icons.Default.BatteryChargingFull,
-        data = batteryLevels,
+        data = series.values, series = series,
         color = MaterialTheme.colorScheme.secondary,
         unit = "%",
         fixedMinMax = fixedMinMax,
@@ -488,15 +468,16 @@ private fun ElevationCurveCard(
     timeLabels: List<String>,
     externalSelectedFraction: Float?,
     onXSelected: (Float?) -> Unit,
-    fractionToTimeLabel: (Float) -> String
+    fractionToTimeLabel: (Float) -> String,
+    projected: com.matelink.ui.components.TimedChartSeries? = null
 ) {
-    val elevations = remember(positions) { positions.mapNotNull { it.elevation?.toFloat() } }
-    if (elevations.size < 2) return
+    val series = projected ?: projectDriveCurves(DriveDetail(0, positions = positions)).elevation
+    if (series.validCount < 2) return
 
     CurveContainerCard(
         title = stringResource(R.string.elevation_profile),
         icon = Icons.Default.Landscape,
-        data = elevations,
+        data = series.values, series = series,
         color = Color(0xFF8B4513), // Brown for terrain
         unit = "m",
         timeLabels = timeLabels,
@@ -519,7 +500,8 @@ private fun CurveContainerCard(
     convertValue: (Float) -> Float = { it },
     externalSelectedFraction: Float? = null,
     onXSelected: ((Float?) -> Unit)? = null,
-    fractionToTimeLabel: ((Float) -> String)? = null
+    fractionToTimeLabel: ((Float) -> String)? = null,
+    series: com.matelink.ui.components.TimedChartSeries? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -549,6 +531,9 @@ private fun CurveContainerCard(
 
             FullscreenLineChart(
                 data = data,
+                xFractions = series?.xFractions.orEmpty(),
+                sourceIndices = series?.sourceIndices.orEmpty(),
+                gaps = series?.gaps.orEmpty(),
                 color = color,
                 unit = unit,
                 showZeroLine = showZeroLine,
