@@ -27,11 +27,13 @@
   .history-route-stops .history-route-end::before { background: #5f6670; }
   .history-summary-primary, .history-record-metrics { background: #f4f5f6; border-radius: 18px; padding: 16px 0; }
   .history-record-metrics .metric, .history-summary-primary .metric { background: transparent; border-radius: 0; padding: 8px; }
-  .history-record-metrics .metric:nth-child(odd), .history-summary-primary .metric:nth-child(odd) { border-right: 1px solid #e9edf2; }
+  .history-record-metrics .metric:not(:last-child) { border-right: 1px solid #e9edf2; }
+  .history-summary-primary { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; }
+  .history-summary-primary .metric:not(:last-child) { border-right: 1px solid #e9edf2; }
   .history-record-metrics .metric-heading, .history-record-metrics .metric-reading, .history-summary-primary .metric-heading, .history-summary-primary .metric-reading { align-items: center; justify-content: center; }
   .history-record-metrics .metric-label, .history-record-metrics .metric-value, .history-record-metrics .metric-unit, .history-summary-primary .metric-label, .history-summary-primary .metric-value, .history-summary-primary .metric-unit { text-align: center; }
-  .history-record-metrics .metric-value { font-size: 44px; font-family: monospace; }
-  .history-summary-primary .metric-value { font-size: 52px; font-family: monospace; }
+  .history-record-metrics .metric-value { font-size: 32px; font-family: monospace; }
+  .history-summary-primary .metric-value { font-size: 36px; font-family: monospace; }
   .history-summary-secondary { border-top: 1px solid #e9edf2; padding-top: 12px; }
   .history-charge-heading { display: flex; gap: 18px; align-items: center; margin-bottom: 20px; }
   .history-charge-location { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -42,7 +44,7 @@
   .history-statistics-coverage { margin-top: 14px; }
   .history-record-top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
   .history-soc { font-size: 34px; font-weight: 650; color: #1f2937; }
-  .history-record-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+  .history-record-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin-top: 16px; }
   .history-record-metrics text { display: block; }
   .history-energy-negative { color: #168552; }
   .history-source { display: inline-block; font-size: 22px; color: #6b7280; background: #f5f7f9; border-radius: 8px; padding: 4px 10px; margin-top: 6px; }

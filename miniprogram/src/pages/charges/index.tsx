@@ -694,7 +694,7 @@ export default function ChargesPage() {
               <View className="history-record-metrics">
                 <MetricValue label="时长" value={item.durationMinutes != null && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0 ? item.durationMinutes : null} unit="m" icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
                 <MetricValue label="能量" value={oneDecimal(item.energyAddedKwh)} unit="kWh" icon="energy" />
-                <MetricValue label="费用" {...costLabel(item)} icon="account" />
+                <MetricValue label="充电费用" {...costLabel(item)} icon="account" />
                 <MetricValue label="电量" value={`${battery(item.startBatteryLevel)} → ${battery(item.endBatteryLevel)}`} icon="battery" />
               </View>
               <Text className="history-source">{sourceLabel(item.source)}{item.costProvenance === 'estimate' ? ` · 费用按 ${estimateBasis(item)} 估算` : ''} · {inputLabel(item)}：{inputNumber(item) == null ? '暂无数据' : `${inputNumber(item)} kWh`}</Text>

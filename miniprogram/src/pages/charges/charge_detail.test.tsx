@@ -125,7 +125,7 @@ it('renders actual parsed charge detail in App section order, real sample extrem
 it('edits manual amount/currency through actual page, retains upstream zero, reopens offline and clears back to actual zero', async () => {
   await mount(); await detail(); await edit('5.25', 'USD'); await click('保存本机费用')
   const row = tree!.root.findByProps({ className: 'history-record' })
-  expect(row.findByProps({ ariaLabel: '费用 5.25 USD' })).toBeDefined()
+  expect(row.findByProps({ ariaLabel: '充电费用 5.25 USD' })).toBeDefined()
   expect(shown()).toContain('本机手动费用')
   const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
   const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
@@ -133,18 +133,18 @@ it('edits manual amount/currency through actual page, retains upstream zero, reo
   expect(raw[0]).toMatchObject({ cost: 0, currencyCode: 'EUR' })
   await act(async () => { platform.unload(); tree!.unmount() }); tree = null; offline = true
   await mount(); await detail()
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 5.25 USD' })).toBeDefined()
+  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 5.25 USD' })).toBeDefined()
   await click('编辑本机费用'); await click('清除本机费用并恢复账单')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 0 EUR' })).toBeDefined()
+  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 0 EUR' })).toBeDefined()
   expect(shown()).toContain('服务端报告0费用')
 })
 it('keeps manual zero distinct from actual zero and rejects a missing explicit currency', async () => {
   await mount(); await detail(); await edit('0', 'USD'); await click('保存本机费用')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 0 USD' })).toBeDefined()
+  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 0 USD' })).toBeDefined()
   expect(shown()).toContain('费用来源：本机手动设置')
   await edit('10', ''); await click('保存本机费用')
   expect(shown()).toContain('费用未保存')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 0 USD' })).toBeDefined()
+  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 0 USD' })).toBeDefined()
 })
 it('rejects a queued old cost editor save after hide/account change even when a new editor has opened', async () => {
   await mount(); await detail(); await edit('999', 'USD')
@@ -153,7 +153,7 @@ it('rejects a queued old cost editor save after hide/account change even when a 
   await act(async () => { oldSave() }); await flush()
   expect([...platform.values.keys()].filter(key => key.startsWith('matelink.charge-cost.'))).toEqual([])
   await click('保存本机费用')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 2 EUR' })).toBeDefined()
+  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 2 EUR' })).toBeDefined()
 })
 it('shows an App-style short address, marked default-price estimate and only returned-month chart data', async () => {
   const legacy = { ...charge, source: 'teslamate_archive', cost: null, currency_code: null, charge_type: null, energy_contract: null,
@@ -167,11 +167,11 @@ it('shows an App-style short address, marked default-price estimate and only ret
   await mount()
   const row = tree!.root.findByProps({ className: 'history-record' })
   expect(row.findByProps({ className: 'history-charge-location' }).findAllByType('text')[0].children.join('')).toBe('合成路')
-  expect(row.findByProps({ ariaLabel: '费用 ≈¥27.38' })).toBeDefined()
+  expect(row.findByProps({ ariaLabel: '充电费用 ≈¥27.38' })).toBeDefined()
   expect(row.findByProps({ ariaLabel: '能量 24.0 kWh' })).toBeDefined()
   const summary = tree!.root.findByProps({ className: 'card history-interval' })
-  expect(summary.findByProps({ ariaLabel: '总费用（含估算） ≈27.38 CNY' })).toBeDefined()
-  expect(summary.findByProps({ ariaLabel: '平均每次费用（含估算） ≈27.38 CNY' })).toBeDefined()
+  expect(summary.findByProps({ ariaLabel: '费用（含估算） ≈27.38 CNY' })).toBeDefined()
+  expect(summary.findByProps({ ariaLabel: '单次均价（含估算） ≈27.38 CNY' })).toBeDefined()
   expect(shown()).toContain('费用按 App 默认 ¥1.14/kWh 估算')
   await click('费用')
   const chart = tree!.root.findByProps({ className: 'card charge-month-chart' })
@@ -214,7 +214,7 @@ it('keeps a missing CNY bill estimate separate from an actual foreign-currency z
   expect(summaryText).toContain('实际/手填费用覆盖 1/2 条；估算费用覆盖 1/2 条')
   expect(summaryText).toContain('CNY ≈27.38（实际/手填 0 条，估算 1 条）')
   expect(summaryText).toContain('EUR 0.00（实际/手填 1 条，估算 0 条）')
-  expect(summary.findByProps({ ariaLabel: '总费用 暂无数据 多币种' })).toBeDefined()
+  expect(summary.findByProps({ ariaLabel: '费用 暂无数据 多币种' })).toBeDefined()
   const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
   const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
   const raw = readHistoryCache<{ cost: number | null }>(storage, historyCacheKey('charges', 'owner', 'uid7', origin))
@@ -222,8 +222,8 @@ it('keeps a missing CNY bill estimate separate from an actual foreign-currency z
   expect(raw.find(row => row.cost === 0)).toBeDefined()
 })
 it.each([
-  { currency: 'CNY', defaultPrice: 0, card: '费用 ≈¥0.00', chart: '¥0.00', source: '已保存默认电价 ¥0/kWh' },
-  { currency: 'EUR', defaultPrice: 2, card: '费用 ≈20.00 EUR', chart: '20.00 EUR', source: '已保存默认电价 2 EUR/kWh' },
+  { currency: 'CNY', defaultPrice: 0, card: '充电费用 ≈¥0.00', chart: '¥0.00', source: '已保存默认电价 ¥0/kWh' },
+  { currency: 'EUR', defaultPrice: 2, card: '充电费用 ≈20.00 EUR', chart: '20.00 EUR', source: '已保存默认电价 2 EUR/kWh' },
 ])('uses scoped saved $currency default price $defaultPrice before the App fallback, without using TOU rates', async ({ currency, defaultPrice, card, chart, source }) => {
   const { tariffKey } = await import('../../domain/tariff')
   platform.values.set(tariffKey('owner', origin), { currency, defaultPrice, enabled: true, peak: 9, flat: 8, valley: 7, timeZone: 'Asia/Shanghai' })
@@ -258,7 +258,7 @@ it('does not adopt a default price saved by another account or origin', async ()
     return response({ charges: [legacy], meta: { page: 1, show: 20, total_pages: 1 } })
   })
   await mount()
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 ≈¥11.40' })).toBeDefined()
+  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 ≈¥11.40' })).toBeDefined()
   expect(shown()).toContain('费用按 App 默认 ¥1.14/kWh 估算')
 })
 it('shows TeslaMate unfilled raw zero as an estimate until the owner explicitly saves manual zero', async () => {
@@ -271,12 +271,12 @@ it('shows TeslaMate unfilled raw zero as an estimate until the owner explicitly 
     return response({ charges: [legacy], meta: { page: 1, show: 20, total_pages: 1 } })
   })
   await mount()
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 ≈¥11.40' })).toBeDefined()
+  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 ≈¥11.40' })).toBeDefined()
   expect(shown()).toContain('实际/手填费用覆盖 0/1 条；估算费用覆盖 1/1 条')
   await detail()
   expect(shown()).toContain('费用来源：按 App 默认 ¥1.14/kWh 与合格电池充入量估算')
   await edit('0', 'CNY'); await click('保存本机费用')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 0 CNY' })).toBeDefined()
+  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 0 CNY' })).toBeDefined()
   expect(shown()).toContain('费用来源：本机手动设置')
   const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
   const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }

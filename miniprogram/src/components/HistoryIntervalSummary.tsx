@@ -47,9 +47,9 @@ export default function HistoryIntervalSummary({ interval, query, kind }: {
         <MetricValue label="最高速度" value={speeds.length ? Math.max(...speeds) : null} unit="km/h" icon="speed" />
       </> : <>
         <MetricValue label="充电次数" value={rows.length} unit="次" icon="energy" digits={0} />
-        <MetricValue label="充电量" value={battery!.value} unit="kWh" icon="battery" />
-        <MetricValue label={hasEstimateInTotal ? '总费用（含估算）' : '总费用'} value={hasEstimateInTotal ? `≈${cost.value!.toFixed(2)}` : cost.value} unit={currency} icon="account" />
-        <MetricValue label={hasEstimateInTotal ? '平均每次费用（含估算）' : '平均每次费用'} value={cost.value != null && cost.known > 0 ? hasEstimateInTotal ? `≈${(cost.value / cost.known).toFixed(2)}` : cost.value / cost.known : null} unit={currency} icon="account" />
+        <MetricValue label="能量" value={battery!.value} unit="kWh" icon="energy" />
+        <MetricValue label={hasEstimateInTotal ? '费用（含估算）' : '费用'} value={hasEstimateInTotal ? `≈${cost.value!.toFixed(2)}` : cost.value} unit={currency} icon="account" />
+        <MetricValue label={hasEstimateInTotal ? '单次均价（含估算）' : '单次均价'} value={cost.value != null && cost.known > 0 ? hasEstimateInTotal ? `≈${(cost.value / cost.known).toFixed(2)}` : cost.value / cost.known : null} unit={currency} icon="account" />
       </>}
     </View>
     <Text className="muted history-statistics-coverage">{status}</Text>
