@@ -567,8 +567,9 @@ export function normalizeDrive(raw: RawDrive, car?: Car, distanceUnit?: string |
       ? finite(averageSpeed * (speedUnit === 'mph' ? 1.609344 : 1), 0) : null,
     outsideTempC: outside !== null && (temp === 'C' || temp === 'F') ? finite(temp === 'F' ? (outside - 32) * 5 / 9 : outside, -100, 100) : null,
     // A peak belongs to this drive's observed samples, never its average or the current vehicle.
-    speedMaxKmh: raw.speed_metrics_source === 'observed_route_samples' &&
-      Number.isSafeInteger(raw.speed_sample_count) && (raw.speed_sample_count ?? 0) > 0 &&
+    // App build70 shows archive speed_max directly (hasKnownLengthUnit && >= 0);
+    // the unit validation above already rejects knots and unparseable units.
+    speedMaxKmh: speedKmh !== null &&
       (distanceUnit === undefined || distanceUnit === 'km' || distanceUnit === 'mi') ? speedKmh : null,
     speedSampleCount: Number.isSafeInteger(raw.speed_sample_count) && (raw.speed_sample_count ?? -1) >= 0 ? raw.speed_sample_count! : null,
     speedMetricsSource: stringValue(raw.speed_metrics_source),

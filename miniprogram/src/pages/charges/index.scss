@@ -423,3 +423,7 @@
     &::after { border: none !important; }
   }
 }
+
+.charge-time-row { display: flex; justify-content: space-between; margin: 8px 0; }
+.charge-time-col .time-label { display: block; font-size: 11px; color: #6b7280; }
+.charge-time-col .time-val { display: block; font-size: 13px; font-weight: 600; color: #1f2937; margin-top: 2px; }

@@ -8,7 +8,8 @@ import { analysisDay, analysisGroups, analysisKind, analysisTitles, buildParkedW
 import { isAppDriveAnalysisEligible } from '../../domain/app_history_projection'
 import { aggregateDriveHistory, coveredTotal, historyRowKey, isHistoryQuarantined, mergeHistoryByKey } from '../../domain/history'
 import { acceptHistoryDetail } from '../../domain/history_controller'
-import { emptyHistoryQuery, filterHistory, historyDateTime, normalizeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
+import { emptyHistoryQuery, filterHistory, historyDateTime, historyShortDateTime, normalizeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
+import { toChineseDisplayAddress } from '../../domain/address_display'
 import { sourceLabel } from '../../domain/data_labels'
 import { analysisApi } from '../../services/analysis_api'
 import type { ChargeEvidence, DriveEvidence, ParkedDetail } from '../../services/analysis_types'
@@ -147,6 +148,14 @@ export default function AnalysisPage() {
       if (!selected) { setError('当前账号尚未绑定车辆'); return }
       setCar(selected); selectedStable.current = selected.stableId
       try { Taro.setStorageSync(carSelectionStorageKey(session.userId), selected.stableId) } catch { /* online use remains available */ }
+      // Cache-first: show cached rows instantly while the bounded fetch runs in background.
+      const cachedDrives = readHistoryCache<Drive>(Taro, historyCacheKey('drives', session.userId, selected.stableId, origin))
+      const cachedCharges = readHistoryCache<Charge>(Taro, historyCacheKey('charges', session.userId, selected.stableId, origin))
+      if (cachedDrives.length || cachedCharges.length) {
+        drivesRef.current = cachedDrives; chargesRef.current = cachedCharges
+        setDrives(cachedDrives); setCharges(cachedCharges)
+        setStatus({ ...initialStatus, cached: true, reason: 'cached' })
+      }
       const results = await Promise.allSettled([
         analysisApi.getHistory(selected, 'drives', { isCurrent: active }),
         analysisApi.getHistory(selected, 'charges', { isCurrent: active }),
@@ -276,10 +285,9 @@ export default function AnalysisPage() {
     const rows = efficiencyDrives.filter(row => known(row.outsideTempC) != null && row.outsideTempC! >= group.min && row.outsideTempC! < group.max)
     return { ...group, ...aggregateDriveHistory(rows).efficiency }
   })
-  const driveRows = (rows: readonly Drive[]) => rows.map(row => <View className="analysis-record" key={historyRowKey(row)}>
-    <Text>{historyDateTime(row.startDate)}</Text><Text className="muted">{row.startAddress || '起点未知'} → {row.endAddress || '终点未知'}</Text>
+  const driveRows = (rows: readonly Drive[]) => rows.map(row => <View className="analysis-record" key={historyRowKey(row)} onClick={() => navigateDrive(row)}>
+    <Text>{historyShortDateTime(row.startDate)}</Text><Text className="muted">{toChineseDisplayAddress(row.startAddress) || '起点未知'} → {toChineseDisplayAddress(row.endAddress) || '终点未知'}</Text>
     <Text className="muted">{shown(row.distanceKm, 'km')} · {shown(row.energy?.energyKwh, 'kWh')} · {sourceLabel(row.source)}{row.energy?.quality === 'estimated' ? ' · 估算' : ''}</Text>
-    <Button className="button-secondary" onClick={() => navigateDrive(row)}>查看行程 {row.id}</Button>
   </View>)
   return <View className="page analysis-page">
     <View className="app-toolbar"><Button className="analysis-back" onClick={() => { void Taro.navigateBack() }}>返回</Button><Text className="title">{analysisTitles[kind]}</Text></View>
@@ -290,10 +298,7 @@ export default function AnalysisPage() {
       <Button className="button-secondary" loading={loading} onClick={() => { void load() }}>刷新</Button>
     </View></View> : null}
     {loading ? <LoadingIndicator label="正在读取当前车辆分析…" compact /> : null}
-    {car ? <View className="analysis-coverage"><Text>{status.offline ? '本机缓存 · 部分覆盖' : status.cached ? '在线验证 · 本机缓存部分覆盖' : status.drivesComplete && status.chargesComplete ? '当前返回范围分页完整' : status.reason === 'limit' ? '部分覆盖 · 达到500条/25页上限' : status.reason === 'request_failed' ? '部分覆盖 · 后续分页读取失败' : '部分覆盖 · 分页尚未完整'}</Text>
-      <Text className="muted">已加载行程 {drives.length} 条 · 已加载充电 {charges.length} 条；字段覆盖独立计算，日期使用本机时区。{status.offline ? '离线不读取路线采样或在线详情。' : ''}</Text>
-      <Text className="muted">记录来源：{sources.length ? sources.join('、') : '暂无可验证记录'}</Text>
-    </View> : null}
+    {car && !(status.drivesComplete && status.chargesComplete) && !status.offline ? <View className="analysis-coverage"><Text>{status.cached ? '在线验证 · 本机缓存部分覆盖' : status.reason === 'limit' ? '部分覆盖 · 达到500条/25页上限' : status.reason === 'request_failed' ? '部分覆盖 · 后续分页读取失败' : '正在加载历史记录…'}</Text></View> : null}
     {error ? <Text className="error">{error}</Text> : null}
     {car && kind === 'stats' ? <>
       <View className="card"><Text className="section-title">综合分析</Text><View className="metric-grid">
@@ -308,15 +313,14 @@ export default function AnalysisPage() {
       <View className="card"><Text className="section-title">行程概览</Text><View className="metric-grid"><MetricValue label="行程次数" value={driveCount} unit="次" icon="route" /><MetricValue label="总时间" value={totals.duration.value} unit="分钟" icon="clock" /><MetricValue label="平均行程距离" value={totals.distance.value != null && totals.distance.known ? totals.distance.value / totals.distance.known : null} unit="km" icon="distance" /></View></View>
       <View className="card"><Text className="section-title">充电概览</Text><View className="metric-grid"><MetricValue label="充电次数" value={chargeCount} unit="次" icon="energy" /><MetricValue label="电池充入" value={chargeEnergy.value} unit="kWh" icon="battery" /></View>
         {moneyCurrencies.map(currency => { const total = coveredTotal(visibleCharges, row => row.currency === currency ? row.cost : null); return <MetricValue key={currency} label={`已知费用 ${total.known}/${visibleCharges.length} 条`} value={total.value} unit={currency} icon="account" /> })}
-        <Text className="muted">未知币种不折合人民币；多币种分别显示，不自动换汇。</Text>
-        <Text className="muted">费用来源：本机手动 {visibleCharges.filter(row => row.costProvenance === 'manual').length} 条 · 上游实际 {visibleCharges.filter(row => row.costProvenance === 'actual').length} 条 · 未知 {visibleCharges.filter(row => row.costProvenance === 'unknown').length} 条。</Text>
+
       </View>
       <View className="card"><Text className="section-title">AC / DC 充电</Text><View className="metric-grid">{(['ac', 'dc', 'unknown'] as const).map(mode => {
         const rows = visibleCharges.filter(row => (row.energy?.chargeMode ?? 'unknown') === mode)
         const energy = coveredTotal(rows, row => row.energyAddedKwh)
         return <View key={mode}><MetricValue label={mode === 'unknown' ? '模式未知' : mode.toUpperCase()} value={chargeCount == null ? null : rows.length} unit="次" icon="energy" /><Text className="muted">{shown(energy.value, 'kWh')} · 电量覆盖 {energy.known}/{rows.length}</Text></View>
-      })}</View><Text className="muted">仅已确认边界模式计入 AC/DC；其他记录单列未知。</Text></View>
-      <View className="card"><Text className="section-title">温度与能耗</Text><View className="metric-grid">{temperatureGroups.map(group => <MetricValue key={group.label} label={`${group.label} · 配对${group.known}/${group.total}`} value={group.value} unit="kWh/100km" />)}</View><Text className="muted">按实际行程外温字段分组，使用同条合格能量与里程；未知外温不分配到温度组。</Text></View>
+      })}</View></View>
+      <View className="card"><Text className="section-title">温度与能耗</Text><View className="metric-grid">{temperatureGroups.map(group => <MetricValue key={group.label} label={`${group.label} · 配对${group.known}/${group.total}`} value={group.value} unit="kWh/100km" />)}</View></View>
       <GroupBars title="里程趋势" groups={monthly} />
     </> : null}
     {car && kind === 'mileage' ? <>
@@ -343,7 +347,7 @@ export default function AnalysisPage() {
       {events.map((event, index) => <View key={`${event.kind}:${event.kind === 'parked' ? `${event.row.olderId}:${event.row.newerId}` : event.row.id}`} className="timeline-group">
         {index === 0 || analysisDay(event.date) !== analysisDay(events[index - 1].date) ? <View className="timeline-day"><Text>{analysisDay(event.date) ?? '日期未知'}</Text>{analysisDay(event.date) ? <Button className="button-secondary" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=mileage&day=${analysisDay(event.date)}` }) }}>查看当日里程</Button> : null}</View> : null}
         <View className="card timeline-event"><Text className="timeline-date">{historyDateTime(event.date)}</Text>
-        {event.kind === 'drive' ? <><Text className="section-title">行程</Text><Text>{event.row.startAddress || '起点未知'} → {event.row.endAddress || '终点未知'}</Text><Text>{shown(event.row.distanceKm, 'km')} · {sourceLabel(event.row.source)}</Text><Button className="button-secondary" onClick={() => navigateDrive(event.row)}>查看行程 {event.row.id}</Button></>
+        {event.kind === 'drive' ? <><Text className="section-title">行程</Text><Text>{toChineseDisplayAddress(event.row.startAddress) || '起点未知'} → {toChineseDisplayAddress(event.row.endAddress) || '终点未知'}</Text><Text>{shown(event.row.distanceKm, 'km')} · {sourceLabel(event.row.source)}</Text><Button className="button-secondary" onClick={() => navigateDrive(event.row)}>查看行程 {event.row.id}</Button></>
           : event.kind === 'charge' ? <><Text className="section-title">充电</Text><Text>{event.row.address || '地点未知'}</Text><Text>{shown(event.row.energyAddedKwh, 'kWh')} · {shown(event.row.cost, event.row.currency || '币种未知')}</Text><Text className="muted">{costSource(event.row)}</Text><Button className="button-secondary" onClick={() => { void openCharge(event.row) }}>查看充电 {event.row.id}</Button></>
             : <><Text className="section-title">{event.row.chargeOverlap ? '含充电的驻车窗口' : '驻车窗口'}</Text><Text>{shown(event.row.minutes, '分钟')} · SOC变化 {shown(event.row.socDelta, '%')}</Text><Button className="button-secondary" onClick={() => navigateParked(event.row.olderId, event.row.newerId)}>查看驻车详情</Button></>}
       </View></View>)}{events.length === 0 ? <View className="card"><Text className="muted">当前读取范围没有对应事件；未生成示例记录。</Text></View> : null}
@@ -362,7 +366,7 @@ export default function AnalysisPage() {
     {car && kind === 'curves' ? <>
       {!params.id ? <View className="card"><Text className="section-title">选择行程</Text>{driveRows(visibleDrives)}</View> : null}
       {detailLoading ? <LoadingIndicator label="正在读取行程采样…" compact /> : null}
-      {evidence?.drive ? <View className="card"><Text className="section-title">行程概览</Text><Text>{historyDateTime(evidence.drive.startDate)} → {historyDateTime(evidence.drive.endDate)}</Text><View className="metric-grid"><MetricValue label="距离" value={evidence.drive.distanceKm} unit="km" /><MetricValue label="时长" value={evidence.drive.durationMinutes} unit="分钟" /><MetricValue label="最高速度" value={peakSpeedKmh(evidence.drive)} unit="km/h" /><MetricValue label="合格净能量" value={evidence.drive.energy?.energyKwh} unit="kWh" /></View><Text className="muted">{sourceLabel(evidence.source)} · {evidence.points.length} 个实际采样 · {evidence.pointsComplete ? '本响应采样完整' : '采样部分覆盖'}</Text></View> : null}
+      {evidence?.drive ? <View className="card"><Text className="section-title">行程概览</Text><Text>{historyShortDateTime(evidence.drive.startDate)} → {historyShortDateTime(evidence.drive.endDate)}</Text><View className="metric-grid"><MetricValue label="距离" value={evidence.drive.distanceKm} unit="km" /><MetricValue label="时长" value={evidence.drive.durationMinutes} unit="分钟" /><MetricValue label="最高速度" value={peakSpeedKmh(evidence.drive)} unit="km/h" /><MetricValue label="合格净能量" value={evidence.drive.energy?.energyKwh} unit="kWh" /></View><Text className="muted">{sourceLabel(evidence.source)} · {evidence.points.length} 个实际采样 · {evidence.pointsComplete ? '本响应采样完整' : '采样部分覆盖'}</Text></View> : null}
       {evidence ? <><EvidenceCurve {...curveProps} id="analysis-speed" title="速度变化" unit="km/h" points={evidence.points} valueOf={point => point.speedKmh} /><EvidenceCurve {...curveProps} id="analysis-distance" title="行程距离变化 · 估算" unit="km" points={evidence.points} valueOf={point => distanceByPoint.get(point) ?? null} /><View className="analysis-distance-basis"><Text className="muted">距离分布按实际时间间隔积分速度，并以合格总距离归一；属于估算，缺失速度不作均匀分配。</Text></View><EvidenceCurve {...curveProps} id="analysis-power" title="功率输出与回收" unit="kW" points={evidence.points} valueOf={point => point.powerKw} /><EvidenceCurve {...curveProps} id="analysis-soc" title="电量变化" unit="%" points={evidence.points} valueOf={point => point.batteryLevel} /><EvidenceCurve {...curveProps} id="analysis-elevation" title="海拔高度" unit="m" points={evidence.points} valueOf={point => point.elevationM} /></> : params.id && !detailLoading ? <View className="card"><Text className="muted">暂无可验证的行程采样；离线缓存不保存精确位置或轨迹。</Text></View> : null}
     </> : null}
     {car && kind === 'parked' ? <>
@@ -377,7 +381,7 @@ export default function AnalysisPage() {
     {car && kind === 'chargeCurves' ? <>
       {!params.chargeId ? <View className="card"><Text className="section-title">选择充电记录</Text>{visibleCharges.map(row => <View className="analysis-record" key={historyRowKey(row)}><Text>{historyDateTime(row.startDate)} · {row.address || '地点未知'}</Text><Button className="button-secondary" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=chargeCurves&chargeId=${encodeURIComponent(row.id)}` }) }}>查看充电曲线 {row.id}</Button></View>)}</View> : null}
       {detailLoading ? <LoadingIndicator label="正在读取充电采样…" compact /> : null}
-      {chargeEvidence?.charge && displayedCurveCharge ? <View className="card"><Text className="section-title">充电概览</Text><Text>{historyDateTime(chargeEvidence.charge.startDate)} → {historyDateTime(chargeEvidence.charge.endDate)}</Text><Text>{chargeEvidence.charge.address || '地点未知'}</Text><View className="metric-grid"><MetricValue label="电池充入" value={chargeEvidence.charge.energyAddedKwh} unit="kWh" /><MetricValue label="时长" value={chargeEvidence.charge.durationMinutes} unit="分钟" /><MetricValue label="费用" value={displayedCurveCharge.cost} unit={displayedCurveCharge.currency || '币种未知'} /><MetricValue label="采样数" value={chargeEvidence.points.length} unit="个" /></View><Text className="muted">{sourceLabel(chargeEvidence.source)} · {costSource(displayedCurveCharge)} · 响应采样部分覆盖；不把功率、电压或电流冒充充入电量。</Text></View> : null}
+      {chargeEvidence?.charge && displayedCurveCharge ? <View className="card"><Text className="section-title">充电概览</Text><Text>{historyShortDateTime(chargeEvidence.charge.startDate)} → {historyShortDateTime(chargeEvidence.charge.endDate)}</Text><Text>{chargeEvidence.charge.address || '地点未知'}</Text><View className="metric-grid"><MetricValue label="电池充入" value={chargeEvidence.charge.energyAddedKwh} unit="kWh" /><MetricValue label="时长" value={chargeEvidence.charge.durationMinutes} unit="分钟" /><MetricValue label="费用" value={displayedCurveCharge.cost} unit={displayedCurveCharge.currency || '币种未知'} /><MetricValue label="采样数" value={chargeEvidence.points.length} unit="个" /></View><Text className="muted">{sourceLabel(chargeEvidence.source)} · {costSource(displayedCurveCharge)} · 响应采样部分覆盖；不把功率、电压或电流冒充充入电量。</Text></View> : null}
       {chargeEvidence ? <>
         <EvidenceCurve {...curveProps} id="charge-soc" title="充电电量变化" unit="%" points={chargeEvidence.points} valueOf={point => point.batteryLevel} />
         <EvidenceCurve {...curveProps} id="charge-power" title="充电功率" unit="kW" points={chargeEvidence.points} valueOf={point => point.powerKw} />

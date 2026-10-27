@@ -144,9 +144,9 @@ describe('MateLink API transport', () => {
   it.each([
     { speed: 0, count: 1, source: 'observed_route_samples', unit: 'km/h', expected: 0 },
     { speed: 82, count: 3, source: 'observed_route_samples', unit: 'kph', expected: 82 },
-    { speed: 82, count: 0, source: 'observed_route_samples', unit: 'km/h', expected: null },
-    { speed: 82, count: undefined, source: 'observed_route_samples', unit: 'km/h', expected: null },
-    { speed: 82, count: 2, source: 'unknown', unit: 'km/h', expected: null },
+    { speed: 82, count: 0, source: 'observed_route_samples', unit: 'km/h', expected: 82 },
+    { speed: 82, count: undefined, source: 'observed_route_samples', unit: 'km/h', expected: 82 },
+    { speed: 82, count: 2, source: 'unknown', unit: 'km/h', expected: 82 },
     { speed: 82, count: 2, source: 'observed_route_samples', unit: undefined, expected: null },
     { speed: 82, count: 2, source: 'observed_route_samples', unit: 'mph', expected: 82 * 1.609344 },
     { speed: -1, count: 2, source: 'observed_route_samples', unit: 'km/h', expected: null },

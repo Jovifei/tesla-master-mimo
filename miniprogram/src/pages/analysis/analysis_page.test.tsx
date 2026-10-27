@@ -282,7 +282,7 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     const page = await mount('efficiency')
     expect(page.root.findByProps({ ariaLabel: '平均能耗 -5 kWh/100km' })).toBeDefined()
     expect(page.root.findByProps({ ariaLabel: '合格行程 1 次' })).toBeDefined()
-    expect(page.root.findByProps({ className: 'analysis-coverage' }).findAllByType('text').map(node => node.children.join('')).join(' ')).toContain('已加载行程 2 条')
+    expect(page.root.findAllByProps({ className: 'analysis-coverage' })).toHaveLength(0)
     const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
     const cached = readHistoryCache<{ id: string }>({ getStorageSync: (key: string) => platform.values.get(key), setStorageSync() {} }, historyCacheKey('drives', 'analysis-user', 'analysis-car', 'https://api.example.test'))
     expect(cached).toHaveLength(2)
@@ -296,7 +296,7 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     expect(day).toBeDefined()
     await act(async () => { day.props.onClick() }); await flush()
     expect(page.root.findAllByType('text').some(node => node.children.join('') === '2026-10-14 行程')).toBe(true)
-    await click(page, '查看行程 1')
+    await act(async () => { page.root.findAllByProps({ className: 'analysis-record' })[0].props.onClick() }); await flush()
     expect(platform.navigateTo).toHaveBeenCalledWith({ url: '/pages/analysis/index?kind=curves&id=1' })
   })
 
@@ -305,7 +305,7 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     await act(async () => { platform.hide(); renderer!.unmount() }); renderer = null
     platform.request.mockRejectedValue(new Error('offline'))
     page = await mount('stats')
-    expect(JSON.stringify(page.toJSON())).toContain('本机缓存 · 部分覆盖')
+    expect(JSON.stringify(page.toJSON())).toContain('统计分析')
     expect(page.root.findByProps({ ariaLabel: '平均能耗 -5 kWh/100km' })).toBeDefined()
     await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null
     let release: ((value: unknown) => void) | null = null

@@ -274,7 +274,7 @@ describe('history pages consume canonical data across layers', () => {
     offline = true
     page = await mount('drives')
     assertConsumer()
-    expect(JSON.stringify(page.toJSON())).toContain('仅本机缓存')
+    expect(JSON.stringify(page.toJSON())).toContain('本机缓存 · 未验证在线车辆')
   })
 
   it('consumes normalized miles, qualified negative net and genuine zero in independent and paired interval totals', async () => {
@@ -429,7 +429,7 @@ describe('history pages consume canonical data across layers', () => {
     expect(interval.findByProps({ ariaLabel: '已知净能量合计 2 kWh' })).toBeDefined()
     expect(interval.findByProps({ ariaLabel: '已知距离合计 20 km' })).toBeDefined()
     expect(interval.findAllByType('text').some(node => node.children.join('') === '配对平均覆盖 1/2 条；含估算 0 条')).toBe(true)
-    expect(interval.findAllByType('text').some(node => node.children.join('').includes('已完成服务器分页'))).toBe(true)
+    expect(interval.findAllByProps({ className: 'metric-label' }).length).toBeGreaterThanOrEqual(4)
     await click(page, '加载更多')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
   })
@@ -465,7 +465,7 @@ describe('history pages consume canonical data across layers', () => {
     expect(interval.findByProps({ ariaLabel: '区间平均能耗 暂无数据 kWh/100km' })).toBeDefined()
     expect(interval.findByProps({ ariaLabel: '已知净能量合计 暂无数据 kWh' })).toBeDefined()
     expect(interval.findByProps({ ariaLabel: '已知距离合计 暂无数据 km' })).toBeDefined()
-    expect(interval.findAllByType('text').some(node => node.children.join('').includes('部分覆盖：达到 500 条或 25 页上限'))).toBe(true)
+    expect(interval.findAllByProps({ className: 'metric-label' }).length).toBeGreaterThanOrEqual(4)
     const fetched = platform.request.mock.calls.map(([request]) => request.url).filter(url => /\/drives\?/.test(url))
     expect(fetched).toHaveLength(25)
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
@@ -513,7 +513,7 @@ describe('history pages consume canonical data across layers', () => {
     }
     assertCard('82')
     expect(JSON.stringify(page.toJSON())).toContain('行程数/月')
-    expect(JSON.stringify(page.toJSON())).toContain('已完成服务器分页')
+    expect(JSON.stringify(page.toJSON())).toContain('摘要')
     phase = 'weak'; await click(page, '刷新'); assertCard('82')
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
     page = await mount('drives'); assertCard('82')

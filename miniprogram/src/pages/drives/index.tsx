@@ -6,7 +6,7 @@ import { buildDriveHistoryItems, type DriveHistoryItem } from '../../domain/driv
 import { toChineseDisplayAddress } from '../../domain/address_display'
 import { getAppNavGeometry } from '../../services/nav_geometry'
 import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, reconcileHistoryCache, type HistoryInterval } from '../../domain/history_controller'
-import { emptyHistoryQuery, filterHistory, historyDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
+import { emptyHistoryQuery, filterHistory, historyDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery , historyShortDateTime } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
 import './index.scss'
 import { createRequestScopeGate } from '../../domain/request_scope'
@@ -34,7 +34,7 @@ function errorMessage(reason: unknown): string {
   return '无法读取行程数据'
 }
 
-function battery(number: number | null): string { return number != null && Number.isFinite(number) && number >= 0 && number <= 100 ? `${number}%` : '暂无电量' }
+function battery(number: number | null): string { return number != null && Number.isFinite(number) && number >= 0 && number <= 100 ? `${number}%` : '—' }
 
 function value(value: string | number | null | undefined): string {
   return value == null || value === '' || (typeof value === 'number' && !Number.isFinite(value)) ? '暂无数据' : String(value)
@@ -552,7 +552,7 @@ export default function DrivesPage() {
           ) : (
             <View key={item.key} className="history-record" onClick={() => { void openDetail(item.drive) }}>
               <Text className="history-record-date">{historyEditorialDate(item.drive.startDate)}</Text>
-              <View className="history-record-evidence"><Text className="history-soc">{battery(item.drive.startBatteryLevel)} → {battery(item.drive.endBatteryLevel)}</Text><Text className="history-source">{energyLabel(item.drive)} · {sourceLabel(item.drive.source)}</Text></View>
+              {(item.drive.startBatteryLevel != null || item.drive.endBatteryLevel != null) ? <View className="history-record-evidence"><Text className="history-soc">{battery(item.drive.startBatteryLevel)} → {battery(item.drive.endBatteryLevel)}</Text><Text className="history-source">{energyLabel(item.drive)} · {sourceLabel(item.drive.source)}</Text></View> : <View className="history-record-evidence"><Text className="history-source">{energyLabel(item.drive)} · {sourceLabel(item.drive.source)}</Text></View>}
               <View className="history-route">
                 <View className="route-indicator-dots">
                   <View className="dot-start" />
@@ -625,8 +625,8 @@ export default function DrivesPage() {
               </View>
             </View>
             <View className="route-time-row">
-              <View className="route-time-col"><Text className="time-label">开始时间</Text><Text className="time-val">{historyDateTime(selected.startDate)}</Text></View>
-              <View className="route-time-col"><Text className="time-label">结束时间</Text><Text className="time-val">{historyDateTime(selected.endDate)}</Text></View>
+              <View className="route-time-col"><Text className="time-label">开始时间</Text><Text className="time-val">{historyShortDateTime(selected.startDate)}</Text></View>
+              <View className="route-time-col"><Text className="time-label">结束时间</Text><Text className="time-val">{historyShortDateTime(selected.endDate)}</Text></View>
               <View className="route-time-col"><Text className="time-label">时长</Text><Text className="time-val">{duration(selected.durationMinutes).value ? `${duration(selected.durationMinutes).value} 分钟` : '暂无数据'}</Text></View>
             </View>
           </View>
@@ -764,7 +764,7 @@ export default function DrivesPage() {
                 </View> : <Text className="parked-detail-cloud-pending">{parkedCloudFailed
                   ? '云端明细暂不可用；以上为本机相邻行程推得的驻车事实。'
                   : '云端明细待同步：温度、功率与采样分析将在网络恢复后补全；可下拉重试。'}</Text>}
-                <Text className="muted" style={{ display: 'block', fontSize: '22rpx', marginTop: '12rpx' }}>{parkedCloud ? `数据来源：${parkedCloud.source ?? '云端驻车明细'}`
+                <Text className="muted" style={{ display: 'block', fontSize: '22rpx', marginTop: '12rpx' }}>{parkedCloud ? `数据来源：${sourceLabel(parkedCloud.source)}`
                   : parkedCloudFailed ? '数据来源：本机相邻行程推得的驻车事实' : '正在读取云端驻车明细（温度、功率与关联充电）…'}</Text>
               </View>
             </>
