@@ -11,14 +11,21 @@
   }
   .analysis-back {
     margin: 0;
-    padding: 8rpx 24rpx;
+    padding: 0 24rpx;
+    height: 64rpx;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-size: 28rpx;
-    line-height: 1.5;
-    color: #157a86;
-    background: transparent;
-    border-radius: 999rpx;
+    font-weight: 500;
+    color: #1f2937;
+    background: #eef1f4;
+    border-radius: 32rpx;
     border: none;
+    box-sizing: border-box;
+    line-height: 1;
     &::after { border: 0; }
+    &:active { background: #e2e5e9; }
   }
   .analysis-controls { margin-bottom: 24rpx; }
   .history-date-chips {

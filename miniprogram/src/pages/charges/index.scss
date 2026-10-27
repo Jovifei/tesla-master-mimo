@@ -16,7 +16,8 @@
     z-index: 100;
     background: #ffffff;
     padding-top: max(88rpx, calc(20rpx + env(safe-area-inset-top)));
-    padding-right: max(192rpx, calc(160rpx + env(safe-area-inset-right)));
+    padding-right: max(200rpx, calc(160rpx + env(safe-area-inset-right)));
+    min-height: 88rpx;
     padding-bottom: 16rpx;
     padding-left: 24rpx;
     margin: 0 -24rpx 24rpx;
@@ -38,7 +39,7 @@
 
   .history-page-header {
     margin: -16rpx -16rpx 16rpx;
-    padding: max(88rpx, calc(24rpx + env(safe-area-inset-top))) max(192rpx, calc(160rpx + env(safe-area-inset-right))) 16rpx 24rpx;
+    padding: max(88rpx, calc(24rpx + env(safe-area-inset-top))) max(200rpx, calc(160rpx + env(safe-area-inset-right))) 16rpx 24rpx;
     background: #ffffff;
     border-bottom: 1rpx solid #e9edf2;
     box-sizing: border-box;
