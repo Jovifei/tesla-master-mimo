@@ -1035,8 +1035,12 @@ internal fun dashboardHudSpeed(status: CarStatus, units: Units): String =
 internal fun dashboardHudChargeEnergy(status: CarStatus): String =
     status.chargeEnergyAdded?.let { "%.1f kWh".format(Locale.ROOT, it) } ?: "--"
 
-internal fun dashboardHudVoltageCurrent(status: CarStatus): String? =
-    status.chargerVoltage?.let { "${it}V / ${status.chargerActualCurrent?.toString() ?: "--"}A" }
+internal fun dashboardHudVoltageCurrent(status: CarStatus): String? {
+    val voltage = status.chargerVoltage
+    val current = status.chargerActualCurrent
+    if (voltage == null && current == null) return null
+    return "${voltage?.toString() ?: "--"}V / ${current?.toString() ?: "--"}A"
+}
 
 @Suppress("UNUSED_PARAMETER")
 internal fun dashboardIsAsleep(state: String?, errorKind: ApiErrorKind?, freshness: SnapshotFreshness): Boolean =
@@ -1393,10 +1397,10 @@ private fun ActiveChargingHudCard(
                     )
                 }
 
-                status.chargerVoltage?.let {
+                dashboardHudVoltageCurrent(status)?.let { voltageCurrent ->
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = dashboardHudVoltageCurrent(status).orEmpty(),
+                            text = voltageCurrent,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface

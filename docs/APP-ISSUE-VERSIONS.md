@@ -2,9 +2,15 @@
 
 更新：2026-10-27。发现版本是审查/复现时的源码候选，不等于首次引入版本；提交、APK、安装与生产分别记录。完整逐次事件见[JSON账本](releases/app-issue-versions.json)。
 
-共 84 条：原73审查ID含历史/潜在/撤回，另11条交叉复核根因。App分支 `codex/app-release-data-fixes-20261027`，修复候选 `2.1.54 / build73`，基线导入 `e53a2d01`。
+共 87 条：build73交付记录84条（含历史/潜在/撤回），本轮显示验收续查追加3条。App分支 `codex/app-release-data-fixes-20261027`，最新本地已验证修复候选 `2.1.55 / build74`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
 
 每条都有具体改法与回归；raw receipt/旧记录保留，source gates与发布门不混称已验收。
+
+| 新增问题 | 发现日期 / 版本 | 状态 | 改法 / 验证记录 | 修复版本 / commit |
+|---|---|---|---|---|
+| ACC-AUTH-01 新ticket兑换失败会借旧session打开旧账号首页 | 2026-10-27 / 2.1.54 build73 | LOCAL_QA_PASS_BUILD_PENDING | 删除未绑定ticket的失败成功兜底，实际VM两项RED；成功/在途重复保留；[验收续查](releases/2026-10-27-display-acceptance.md) | 2.1.55 build74候选 / 待提交 |
+| ACC-HUD-01 缺电压时隐藏已有16A/0A电流 | 2026-10-27 / 2.1.54 build73 | LOCAL_QA_PASS_BUILD_PENDING | 现有HUD位置显示谓词改任一观测存在，两项RED；全空仍unknown；[验收续查](releases/2026-10-27-display-acceptance.md) | 2.1.55 build74候选 / 待提交 |
+| ACC-MILEAGE-01 年详情漏计无行程月份的合格充电费用 | 2026-10-27 / 2.1.54 build73 | LOCAL_QA_PASS_BUILD_PENDING | 所选年份全部合格费用求和，三项RED；10对3/跨年/真实0；[验收续查](releases/2026-10-27-display-acceptance.md) | 2.1.55 build74候选 / 待提交 |
 
 | 问题 | 发现日期 / 版本 | 状态 | 改法 / 验证记录 | 修复版本 / commit |
 |---|---|---|---|---|

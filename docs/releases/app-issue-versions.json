@@ -4380,6 +4380,96 @@
           "commit": "161d77cea4d110aac93b52956644ab3ea5603733"
         }
       ]
+    },
+    {
+      "id": "ACC-AUTH-01",
+      "title": "新授权ticket失败401/403被旧session误当成功并打开旧账号",
+      "found_date": "2026-10-27",
+      "found_version": "2.1.54 / build73候选",
+      "source_ref": "2026-10-27-display-acceptance.md",
+      "status": "LOCAL_QA_PASS_BUILD_PENDING",
+      "fix_version": "2.1.55 / build74候选",
+      "change": "移除未绑定ticket的失败成功兜底；保留已成功相同ticket和在途重复幂等",
+      "verification": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "REPRODUCED_RED",
+          "detail": "acceptance-red-02: actual VM 2 failures; positive duplicate success passed",
+          "evidence": "2026-10-27-display-acceptance.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.55 / build74候选",
+          "action": "LOCAL_QA",
+          "detail": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending",
+          "evidence": "2026-10-27-build74-verification.json",
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "ACC-HUD-01",
+      "title": "首页缺电压时隐藏已有电流含真实0A",
+      "found_date": "2026-10-27",
+      "found_version": "2.1.54 / build73候选",
+      "source_ref": "2026-10-27-display-acceptance.md",
+      "status": "LOCAL_QA_PASS_BUILD_PENDING",
+      "fix_version": "2.1.55 / build74候选",
+      "change": "只改现有HUD值与显示条件，任一观测存在即显示，未知部分保持--",
+      "verification": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "REPRODUCED_RED",
+          "detail": "acceptance-red-02: current-only16A/0A 2 failures; both missing control passed",
+          "evidence": "2026-10-27-display-acceptance.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.55 / build74候选",
+          "action": "LOCAL_QA",
+          "detail": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending",
+          "evidence": "2026-10-27-build74-verification.json",
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "ACC-MILEAGE-01",
+      "title": "年详情总费用遗漏无行程月份的合格充电",
+      "found_date": "2026-10-27",
+      "found_version": "2.1.54 / build73候选",
+      "source_ref": "2026-10-27-display-acceptance.md",
+      "status": "LOCAL_QA_PASS_BUILD_PENDING",
+      "fix_version": "2.1.55 / build74候选",
+      "change": "所选年份全部合格充电费用直接求和，保留原里程月日列表",
+      "verification": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-10-27",
+          "version": "2.1.54 / build73候选",
+          "action": "REPRODUCED_RED",
+          "detail": "acceptance-red-02: known bills/outside year/manual zero 3 failures; unknown control passed",
+          "evidence": "2026-10-27-display-acceptance.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.55 / build74候选",
+          "action": "LOCAL_QA",
+          "detail": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending",
+          "evidence": "2026-10-27-build74-verification.json",
+          "commit": null
+        }
+      ]
     }
   ],
   "baseline_checkpoint": "e53a2d01a54d55c554019fb861d69f3737d4b5bb",

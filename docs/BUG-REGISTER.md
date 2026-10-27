@@ -1,5 +1,12 @@
 # MateLink Bug 根因索引
 
+## 2026-10-27 build73续查新增三项
+
+- ACC-AUTH-01：重新授权的新ticket返回401/403时，仅凭已有session误认成功，实际VM会进入旧账号首页；删除该未绑定ticket的失败兜底，保留真正重复回调的幂等。
+- ACC-HUD-01：电压作为整个电流位置的显示门，导致有16A或0A仍隐藏；任一真实观测存在即可显示，缺失部分保持未知。
+- ACC-MILEAGE-01：年详情从仅有行程的月份合计费用，漏掉其他月份真实充电；改为该年已合格费用求和，0/null/跨年保持。
+- 三项先实际复现7个失败，再最小修复；发现日期2026-10-27，发现版本2.1.54/build73，修复候选2.1.55/build74。[逐次验证与设备边界](releases/2026-10-27-display-acceptance.md)，[版本账本](APP-ISSUE-VERSIONS.md)。
+
 ## 2026-10-27 App数据链路修复候选（2.1.54 / build73）
 
 - 发现基准为2.1.53/build72已审候选；本轮在E盘 `matelink-release-data-audit-20261026`、App分支 `codex/app-release-data-fixes-20261027` 实施，原候选基线提交 `e53a2d01`。

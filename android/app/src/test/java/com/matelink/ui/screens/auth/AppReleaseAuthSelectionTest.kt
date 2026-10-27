@@ -2,6 +2,8 @@ package com.matelink.ui.screens.auth
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
@@ -27,6 +29,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import okhttp3.ResponseBody.Companion.toResponseBody
 import retrofit2.Response
 
 /** Actual login VM -> repository -> API adapter -> durable settings; no HTTP or provider I/O. */
@@ -98,6 +101,120 @@ class AppReleaseAuthSelectionTest {
     }
     private suspend fun awaitReady(vm: TeslaLoginViewModel) {
         withTimeout(5000) { vm.postLoginOnboarding.first { it == TeslaLoginOnboardingState.Ready || it is TeslaLoginOnboardingState.Blocked } }
+    }
+
+    private class ExchangeAuthApi(
+        private val onExchange: suspend (TeslaAuthExchangeRequest) -> Response<TeslaAuthSessionResponse>
+    ) : TeslaAuthApi {
+        override suspend fun startAuthorization(termsVersion: String, privacyVersion: String): Response<TeslaAuthStartResponse> =
+            error("Unexpected authorization start")
+        override suspend fun exchange(request: TeslaAuthExchangeRequest): Response<TeslaAuthSessionResponse> = onExchange(request)
+        override suspend fun logout(authorization: String): Response<Unit> = error("Unexpected logout")
+        override suspend fun deleteAccount(authorization: String): Response<TeslaAccountDeletionResponse> = error("Unexpected account deletion")
+    }
+
+    private fun callback(ticket: String) = Intent(Intent.ACTION_VIEW,
+        Uri.parse("https://${BuildConfig.JOURVOLT_AUTH_HOST}/oauth/callback?ticket=$ticket"))
+
+    private suspend fun awaitRequest(vm: TeslaLoginViewModel) {
+        val job = vm.javaClass.getDeclaredField("requestJob").apply { isAccessible = true }.get(vm) as Job
+        withTimeout(5000) { job.join() }
+    }
+
+    private suspend fun assertNewTicketFailureDoesNotOpenOldAccount(httpStatus: Int) {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val f = Fixture()
+        f.onboard.save(TeslaOnboardingSnapshot())
+        f.selection.setCurrentCarId(7)
+        f.login("alice")
+        val priorLogin = f.sessions.loginIdentitySnapshot()
+        val exchangeCalls = AtomicInteger()
+        val ticket = "fresh-failed-$httpStatus"
+        val auth = ExchangeAuthApi { request ->
+            assertEquals(ticket, request.ticket)
+            exchangeCalls.incrementAndGet()
+            Response.error(httpStatus, "".toResponseBody())
+        }
+        val vm = f.vm(auth)
+        try {
+            withTimeout(5000) { vm.onboardingStateRestored.first { it } }
+            vm.reauthorize { }
+            assertTrue(vm.reauthorizing.value)
+            vm.handleAuthorizationCallback(callback(ticket))
+            awaitRequest(vm)
+
+            assertEquals(1, exchangeCalls.get())
+            assertEquals("A failed new ticket must preserve the existing login", priorLogin,
+                f.sessions.loginIdentitySnapshot())
+            assertFalse("HTTP $httpStatus for a new ticket must not navigate using Alice's session",
+                vm.openDashboardAfterLogin.value)
+            assertTrue("A rejected ticket must remain in the explicit authorization flow", vm.reauthorizing.value)
+            assertTrue(vm.uiState.value is TeslaLoginUiState.Error)
+            assertTrue(vm.revealLoginError.value)
+            assertEquals(TeslaLoginOnboardingState.Idle, vm.postLoginOnboarding.value)
+            assertEquals("A failed ticket must not start onboarding for the old account", 0, f.pairingReads.get())
+            assertEquals(7, f.selection.currentCarId.first())
+        } finally { vm.viewModelScope.cancel(); Dispatchers.resetMain() }
+    }
+
+    @Test fun newTicket401CannotNavigateUsingAnExistingAliceSession() = runBlocking {
+        assertNewTicketFailureDoesNotOpenOldAccount(401)
+    }
+
+    @Test fun newTicket403CannotNavigateUsingAnExistingAliceSession() = runBlocking {
+        assertNewTicketFailureDoesNotOpenOldAccount(403)
+    }
+
+    @Test fun successfulNewTicketChangesAccountAndDuplicateCallbacksDoNotExchangeAgain() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val f = Fixture()
+        f.onboard.save(TeslaOnboardingSnapshot())
+        f.selection.setCurrentCarId(7)
+        f.login("alice")
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val exchangeCalls = AtomicInteger()
+        val ticket = "fresh-success-bob"
+        val auth = ExchangeAuthApi { request ->
+            assertEquals(ticket, request.ticket)
+            exchangeCalls.incrementAndGet()
+            entered.complete(Unit)
+            release.await()
+            f.cars = listOf(CarData(22, vehicleUid = "bob-twenty-two"))
+            Response.success(TeslaAuthSessionResponse("bob-access", "bob-refresh", 3600, TeslaAuthUser("bob")))
+        }
+        val vm = f.vm(auth)
+        try {
+            withTimeout(5000) { vm.onboardingStateRestored.first { it } }
+            vm.reauthorize { }
+            vm.handleAuthorizationCallback(callback(ticket))
+            withTimeout(5000) { entered.await() }
+            vm.handleAuthorizationCallback(callback(ticket))
+            assertEquals("An in-flight duplicate must not exchange again", 1, exchangeCalls.get())
+            assertEquals("alice", f.sessions.current()?.userId)
+            assertFalse(vm.openDashboardAfterLogin.value)
+
+            release.complete(Unit)
+            awaitRequest(vm)
+            assertEquals("bob", f.sessions.current()?.userId)
+            assertEquals("bob-access", f.sessions.current()?.accessToken)
+            assertEquals(22, f.selection.currentCarId.first())
+            assertEquals(TeslaLoginOnboardingState.Ready, vm.postLoginOnboarding.value)
+            assertFalse(vm.reauthorizing.value)
+            assertTrue(vm.openDashboardAfterLogin.value)
+            assertEquals(1, f.pairingReads.get())
+            val acceptedLogin = f.sessions.loginIdentitySnapshot()
+
+            vm.consumeDashboardAfterLogin()
+            assertFalse(vm.openDashboardAfterLogin.value)
+            vm.handleAuthorizationCallback(callback(ticket))
+            awaitRequest(vm)
+            assertEquals("A successfully handled ticket must not exchange again", 1, exchangeCalls.get())
+            assertEquals(acceptedLogin, f.sessions.loginIdentitySnapshot())
+            assertEquals(22, f.selection.currentCarId.first())
+            assertEquals(TeslaLoginOnboardingState.Ready, vm.postLoginOnboarding.value)
+            assertTrue(vm.openDashboardAfterLogin.value)
+        } finally { release.complete(Unit); vm.viewModelScope.cancel(); Dispatchers.resetMain() }
     }
 
     @Test fun nonOneFirstCarIsPersistedBeforeDashboardNavigationAndSurvivesRecreation() = runBlocking {

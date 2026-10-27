@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-27",
+  "candidate": "2.1.55/build74",
+  "evidence_level": "local synthetic/JVM/Room; device/provider not accepted",
+  "full_run": "acceptance-green-full-04.log",
+  "exit_code": 0,
+  "tests": {
+    "Debug": {
+      "suites": 319,
+      "tests": 1566,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "Release": {
+      "suites": 319,
+      "tests": 1566,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 8
+    }
+  },
+  "lint": {
+    "Debug": {
+      "Warning": 276,
+      "Information": 9,
+      "Error": 0
+    },
+    "Release": {
+      "Warning": 275,
+      "Information": 8,
+      "Error": 0
+    }
+  },
+  "layout_parameter_changes": 0,
+  "independent_review": "APPROVE",
+  "device_status": "NO_ADB_DEVICE",
+  "apk_status": "BUILD_PENDING",
+  "code_commit": null
+}

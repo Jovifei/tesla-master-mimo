@@ -320,20 +320,6 @@ class TeslaLoginViewModel @Inject constructor(
                 val response = authApi().exchange(TeslaAuthExchangeRequest(ticket))
                 val body = response.body()
                 if (!response.isSuccessful || body == null) {
-                    if (shouldTreatTeslaExchangeFailureAsSuccess(
-                            httpStatus = response.code(),
-                            hasSession = sessionStore.current() != null
-                        )
-                    ) {
-                        handledCallbackTicket = ticket
-                        callbackTicketInFlight = null
-                        _postLoginOnboarding.value = TeslaLoginOnboardingState.Checking
-                        _reauthorizing.value = false
-                        _uiState.value = TeslaLoginUiState.Idle
-                        _openDashboardAfterLogin.value = false
-                        runPostLoginOnboardingSafely(requestId)
-                        return@runCatching
-                    }
                     error(context.getString(teslaLoginErrorMessageRes(response.code())))
                 }
                 if (!shouldPublishTeslaRequest(requestId, requestGeneration)) {
@@ -994,11 +980,6 @@ internal fun shouldIgnoreTeslaCallbackTicket(
     handledTicket = handledTicket,
     hasSession = false
 ) != TeslaCallbackReplayDecision.Process
-
-internal fun shouldTreatTeslaExchangeFailureAsSuccess(
-    httpStatus: Int,
-    hasSession: Boolean
-): Boolean = hasSession && httpStatus in setOf(401, 403)
 
 internal fun shouldPublishTeslaRequest(requestId: Long, currentRequestId: Long): Boolean =
     requestId == currentRequestId

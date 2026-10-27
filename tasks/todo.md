@@ -4242,3 +4242,17 @@ Review：本次审查完成，当前候选NO_GO，新增代码修复待单独授
 代码161d77cea4d110aac93b52956644ab3ea5603733；com.matelink 2.1.54/build73签名候选已核验。Debug1556/0/0/0，Release1556/0/0/8，双lint0error，AndroidTest源码编译、Go tests/vet和R8通过。原布局参数净差0。问题84条版本history已回填，Obsidian checkpoint已成功。真实手机/自然provider/生产及地图配置验收仍单列，未执行安装/部署/push；不能把本次软件交付当上线验收。Hub离线摘要保留而未发正式事件。
 
 - 最终Obsidian：MEMORY_UPDATED，3 slots + 28 Markdown；实际源码manifest重验一致。signed APK核验PASS；本次代码与文档交付完成，外部实机/配置/provider/生产门未冒称通过。
+
+## 2026-10-27 Jovi反馈后的实际显示验收
+
+- [x] 确认本轮仍在App分支，核对build73源码/候选/上轮验证边界。
+- [x] 读取父级与工作树AGENTS、lessons、Obsidian记录和设备SOP；记录ADB无设备。
+- [ ] 确认Jovi所指页面/字段与“账户数据”的实际含义；获取手机实际版本和原始显示证据。
+- [x] 按登录首页、充电行程、“我的”三组复核真实消费者正例/空态/身份隔离，重跑20类95方法通过。
+- [x] 复现成立的漏数按最小源头修复，三项7个RED→GREEN，完整双变体/lint通过；版本账本新增3条。
+- [ ] 手机接入后核对同签Release与安装版本，逐页记录值/来源/计算/再次进入及离线结果。
+- [ ] 分别报告本地测试与实际设备结果；未取得证据的项目不得标验收通过。
+
+计划：[2026-10-27-display-acceptance.md](plans/2026-10-27-display-acceptance.md)。
+
+新增ACC-AUTH-01/HUD-01/MILEAGE-01：21方法7断言失败先RED，随后最小源头修复，Debug1566/0fail/0error/0skip、Release1566/0fail/0error/8skip、双lint0error。新候选2.1.55/build74，签名构建待完成；手机仍未连接，DEVICE_PENDING。

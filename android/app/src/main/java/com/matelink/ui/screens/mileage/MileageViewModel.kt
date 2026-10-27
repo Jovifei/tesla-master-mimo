@@ -733,7 +733,7 @@ private fun computeMonthAggregation(
     val avgMonthlyDistance = if (monthlyData.isNotEmpty()) yearTotalDistance / monthlyData.size else 0.0
     val yearTotalEnergy = monthlyData.sumOf { it.totalEnergy }
     val avgYearEnergyDistance = buildMileageEvidence(yearDrives.map { it.drive }).efficiencyWhKm ?: 0.0
-    val yearTotalEnergyCost = observedCostSumOrNull(monthlyData.map { it.totalEnergyCost })
+    val yearTotalEnergyCost = observedCostSumOrNull(charges.filter { it.dateTime.year == year }.map { it.effectiveCost })
 
     return MonthAggregation(
         monthlyData = monthlyData,

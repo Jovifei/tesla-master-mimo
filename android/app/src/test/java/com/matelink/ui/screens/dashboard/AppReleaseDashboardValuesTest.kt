@@ -24,6 +24,21 @@ class AppReleaseDashboardValuesTest {
         assertEquals("230V / 0A", dashboardHudVoltageCurrent(zero))
     }
 
+    @Test fun currentOnlyHudRetainsObservedAmpsWhenVoltageIsUnavailable() {
+        val status = CarStatus(state = "charging", chargingDetails = ChargingDetails(chargerActualCurrent = 16.0))
+        assertEquals("--V / 16A", dashboardHudVoltageCurrent(status))
+    }
+
+    @Test fun currentOnlyHudRetainsObservedZeroWhenVoltageIsUnavailable() {
+        val status = CarStatus(state = "charging", chargingDetails = ChargingDetails(chargerActualCurrent = 0.0))
+        assertEquals("--V / 0A", dashboardHudVoltageCurrent(status))
+    }
+
+    @Test fun voltageCurrentHudRemainsAbsentWhenNeitherMeasurementWasObserved() {
+        assertNull(dashboardHudVoltageCurrent(CarStatus(state = "charging")))
+        assertNull(dashboardHudVoltageCurrent(CarStatus(state = "charging", chargingDetails = ChargingDetails())))
+    }
+
     @Test fun recentOrUnavailableHttpResponseDoesNotAssertVehicleSleep() {
         assertFalse(dashboardIsAsleep("online", ApiErrorKind.SERVICE_UNAVAILABLE, SnapshotFreshness.RECENT))
         assertFalse(dashboardIsAsleep(null, ApiErrorKind.SERVICE_UNAVAILABLE, SnapshotFreshness.UNAVAILABLE))
