@@ -4,6 +4,7 @@
 
 - 同一App分支保留build73，追加三项经RED复现的消费者修复：新授权失败/旧会话、首页电流显示、年度费用漏计；布局参数不改。
 - 当前为软件候选；[验收记录](releases/2026-10-27-display-acceptance.md)记录实际测试、打包、SHA和安装状态，三项发现/修复版本分别进入[87条问题账本](APP-ISSUE-VERSIONS.md)。
+- 代码63cdb8ee；Debug1566/0/0/0、Release1566/0/0/8，双lint0error，R8/assembleRelease和签名核验PASS。APK为MateLink-2.1.55-build74-63cdb8ee.apk，SHA256 AA2DDD82F008DCCB6F31C71634972DD8FD291A2177AFB4D8FF5BA59918F2ADC6；设备尚未安装验收。
 - 原始目录配置仍72，实际手机版本尚不能读取；本轮无ADB设备，未安装或清理用户数据，不因本地回归通过声称真实逐页验收完成。
 
 ## 2026-10-27 App数据链路修复候选（2.1.54 / build73）

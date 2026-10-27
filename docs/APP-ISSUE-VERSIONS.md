@@ -8,9 +8,9 @@
 
 | 新增问题 | 发现日期 / 版本 | 状态 | 改法 / 验证记录 | 修复版本 / commit |
 |---|---|---|---|---|
-| ACC-AUTH-01 新ticket兑换失败会借旧session打开旧账号首页 | 2026-10-27 / 2.1.54 build73 | LOCAL_QA_PASS_BUILD_PENDING | 删除未绑定ticket的失败成功兜底，实际VM两项RED；成功/在途重复保留；[验收续查](releases/2026-10-27-display-acceptance.md) | 2.1.55 build74候选 / 待提交 |
-| ACC-HUD-01 缺电压时隐藏已有16A/0A电流 | 2026-10-27 / 2.1.54 build73 | LOCAL_QA_PASS_BUILD_PENDING | 现有HUD位置显示谓词改任一观测存在，两项RED；全空仍unknown；[验收续查](releases/2026-10-27-display-acceptance.md) | 2.1.55 build74候选 / 待提交 |
-| ACC-MILEAGE-01 年详情漏计无行程月份的合格充电费用 | 2026-10-27 / 2.1.54 build73 | LOCAL_QA_PASS_BUILD_PENDING | 所选年份全部合格费用求和，三项RED；10对3/跨年/真实0；[验收续查](releases/2026-10-27-display-acceptance.md) | 2.1.55 build74候选 / 待提交 |
+| ACC-AUTH-01 新ticket兑换失败会借旧session打开旧账号首页 | 2026-10-27 / 2.1.54 build73 | CODE_COMMITTED_LOCAL_QA_PASS | 删除未绑定ticket的失败成功兜底，实际VM两项RED→GREEN；成功/在途重复保留；[验收续查](releases/2026-10-27-display-acceptance.md) | 2.1.55 build74候选 / 63cdb8ee |
+| ACC-HUD-01 缺电压时隐藏已有16A/0A电流 | 2026-10-27 / 2.1.54 build73 | CODE_COMMITTED_LOCAL_QA_PASS | 现有HUD位置显示谓词改任一观测存在，两项RED→GREEN；全空仍unknown；[验收续查](releases/2026-10-27-display-acceptance.md) | 2.1.55 build74候选 / 63cdb8ee |
+| ACC-MILEAGE-01 年详情漏计无行程月份的合格充电费用 | 2026-10-27 / 2.1.54 build73 | CODE_COMMITTED_LOCAL_QA_PASS | 所选年份全部合格费用求和，三项RED→GREEN；10对3/跨年/真实0；[验收续查](releases/2026-10-27-display-acceptance.md) | 2.1.55 build74候选 / 63cdb8ee |
 
 | 问题 | 发现日期 / 版本 | 状态 | 改法 / 验证记录 | 修复版本 / commit |
 |---|---|---|---|---|

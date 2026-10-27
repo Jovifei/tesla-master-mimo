@@ -35,6 +35,63 @@
   "layout_parameter_changes": 0,
   "independent_review": "APPROVE",
   "device_status": "NO_ADB_DEVICE",
-  "apk_status": "BUILD_PENDING",
-  "code_commit": null
+  "apk_status": "SIGNED_CANDIDATE_VERIFIED",
+  "code_commit": "63cdb8eecb3140e815ad415356926a6b89184e37",
+  "apk": {
+    "status": "PASS",
+    "apk_path": "E:\\project\\_worktrees\\matelink-release-data-audit-20261026\\android\\app\\build\\outputs\\apk\\release\\app-release.apk",
+    "package_name": "com.matelink",
+    "version_code": "74",
+    "version_name": "2.1.55",
+    "debuggable": false,
+    "signed": true,
+    "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
+    "sha256": "AA2DDD82F008DCCB6F31C71634972DD8FD291A2177AFB4D8FF5BA59918F2ADC6",
+    "sdk_root": "C:\\Users\\Admin\\AppData\\Local\\Android\\Sdk",
+    "build_tools": "C:\\Users\\Admin\\AppData\\Local\\Android\\Sdk\\build-tools\\37.0.0",
+    "aapt2_exit_code": 0,
+    "apksigner_exit_code": 0,
+    "blockers": [],
+    "security": [
+      "Only public APK metadata and certificate fingerprints were read; no keystore material was accessed."
+    ]
+  },
+  "artifact_path": "E:\\Claude_allow\\Download\\matelink-display-acceptance-20261027\\MateLink-2.1.55-build74-63cdb8ee.apk",
+  "build": {
+    "first_attempt": "FAIL:1280m GC thrashing; stale build73 not accepted",
+    "second_attempt": "PASS:2048m, assembleRelease/R8 exit0,2m53s",
+    "wrapper": "PARTIAL solely for SkipTests; local tests/lint independently passed",
+    "dex_commit_found": true,
+    "source_manifest_matches_after_build": true
+  },
+  "device": {
+    "status": "BLOCKED",
+    "adb_path": "C:\\Users\\Admin\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe",
+    "device_count": 0,
+    "devices": [],
+    "selected_serial": null,
+    "selected_state": null,
+    "model": null,
+    "package": null,
+    "blockers": [
+      "No ADB device is connected."
+    ],
+    "safety": [
+      "Read-only ADB preflight; no package data or log buffer was changed.",
+      "A serial is required for multi-device environments."
+    ]
+  },
+  "obsidian": {
+    "document_mirror": "MEMORY_UPDATED",
+    "selected_unique_markdown": 5,
+    "checkpoint": "MEMORY_SYNC_BLOCKED",
+    "reason": "CONFLICT: expected archive plan does not match current operation",
+    "retained_operation": "E:\\Claude_allow\\Download\\matelink-display-acceptance-20261027\\obsidian-checkpoint-pending-conflict.json",
+    "pending_slot_released_after_archiving_own_operation": true
+  },
+  "hub": {
+    "status": "UNSENT_NEEDS_CURRENT_HUB_REVISION",
+    "reason": "WinError10061 connection refused; no retries",
+    "pending_summary": "tasks/release-fixes-20261027/hub-display-pending-summary.json"
+  }
 }

@@ -4387,11 +4387,11 @@
       "found_date": "2026-10-27",
       "found_version": "2.1.54 / build73候选",
       "source_ref": "2026-10-27-display-acceptance.md",
-      "status": "LOCAL_QA_PASS_BUILD_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.55 / build74候选",
       "change": "移除未绑定ticket的失败成功兜底；保留已成功相同ticket和在途重复幂等",
-      "verification": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending",
-      "commit": null,
+      "verification": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending; signed build74/R8/package/cert/dex PASS; no device connected",
+      "commit": "63cdb8eecb3140e815ad415356926a6b89184e37",
       "history": [
         {
           "date": "2026-10-27",
@@ -4408,6 +4408,22 @@
           "detail": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending",
           "evidence": "2026-10-27-build74-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.55 / build74候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "Minimal source fixes and actual RED/GREEN committed; device still pending",
+          "evidence": "2026-10-27-display-acceptance.md",
+          "commit": "63cdb8eecb3140e815ad415356926a6b89184e37"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.55 / build74候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "Signed non-debuggable com.matelink; preserved certificate; source943 and DEX commit verified; device/provider still pending",
+          "evidence": "2026-10-27-build74-verification.json",
+          "commit": "63cdb8eecb3140e815ad415356926a6b89184e37"
         }
       ]
     },
@@ -4417,11 +4433,11 @@
       "found_date": "2026-10-27",
       "found_version": "2.1.54 / build73候选",
       "source_ref": "2026-10-27-display-acceptance.md",
-      "status": "LOCAL_QA_PASS_BUILD_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.55 / build74候选",
       "change": "只改现有HUD值与显示条件，任一观测存在即显示，未知部分保持--",
-      "verification": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending",
-      "commit": null,
+      "verification": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending; signed build74/R8/package/cert/dex PASS; no device connected",
+      "commit": "63cdb8eecb3140e815ad415356926a6b89184e37",
       "history": [
         {
           "date": "2026-10-27",
@@ -4438,6 +4454,22 @@
           "detail": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending",
           "evidence": "2026-10-27-build74-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.55 / build74候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "Minimal source fixes and actual RED/GREEN committed; device still pending",
+          "evidence": "2026-10-27-display-acceptance.md",
+          "commit": "63cdb8eecb3140e815ad415356926a6b89184e37"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.55 / build74候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "Signed non-debuggable com.matelink; preserved certificate; source943 and DEX commit verified; device/provider still pending",
+          "evidence": "2026-10-27-build74-verification.json",
+          "commit": "63cdb8eecb3140e815ad415356926a6b89184e37"
         }
       ]
     },
@@ -4447,11 +4479,11 @@
       "found_date": "2026-10-27",
       "found_version": "2.1.54 / build73候选",
       "source_ref": "2026-10-27-display-acceptance.md",
-      "status": "LOCAL_QA_PASS_BUILD_PENDING",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
       "fix_version": "2.1.55 / build74候选",
       "change": "所选年份全部合格充电费用直接求和，保留原里程月日列表",
-      "verification": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending",
-      "commit": null,
+      "verification": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending; signed build74/R8/package/cert/dex PASS; no device connected",
+      "commit": "63cdb8eecb3140e815ad415356926a6b89184e37",
       "history": [
         {
           "date": "2026-10-27",
@@ -4468,6 +4500,22 @@
           "detail": "RED21/7fail/0error -> GREEN Debug1566/0/0/0 and Release1566/0/0/8; dual lint0error; actual device pending",
           "evidence": "2026-10-27-build74-verification.json",
           "commit": null
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.55 / build74候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "Minimal source fixes and actual RED/GREEN committed; device still pending",
+          "evidence": "2026-10-27-display-acceptance.md",
+          "commit": "63cdb8eecb3140e815ad415356926a6b89184e37"
+        },
+        {
+          "date": "2026-10-27",
+          "version": "2.1.55 / build74候选",
+          "action": "SIGNED_CANDIDATE_VERIFIED",
+          "detail": "Signed non-debuggable com.matelink; preserved certificate; source943 and DEX commit verified; device/provider still pending",
+          "evidence": "2026-10-27-build74-verification.json",
+          "commit": "63cdb8eecb3140e815ad415356926a6b89184e37"
         }
       ]
     }

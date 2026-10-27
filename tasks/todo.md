@@ -4255,4 +4255,8 @@ Review：本次审查完成，当前候选NO_GO，新增代码修复待单独授
 
 计划：[2026-10-27-display-acceptance.md](plans/2026-10-27-display-acceptance.md)。
 
-新增ACC-AUTH-01/HUD-01/MILEAGE-01：21方法7断言失败先RED，随后最小源头修复，Debug1566/0fail/0error/0skip、Release1566/0fail/0error/8skip、双lint0error。新候选2.1.55/build74，签名构建待完成；手机仍未连接，DEVICE_PENDING。
+新增ACC-AUTH-01/HUD-01/MILEAGE-01：21方法7断言失败先RED，随后最小源头修复，Debug1566/0fail/0error/0skip、Release1566/0fail/0error/8skip、双lint0error。代码63cdb8ee，签名候选2.1.55/build74的R8/assembleRelease、签名/DEX提交号、构建后943源码hash均通过；手机仍未连接，DEVICE_PENDING。第一次1280m构建GC失败保留，第二次原2048m成功，未把旧73当本轮产物。
+
+Review：本轮本地软件回归闭环，逐页真机验收未完成；仍等待Jovi接入设备及明确受影响页面/字段。不得把此项勾成验收通过。
+
+本轮记录：5份Markdown已镜像Obsidian；progress/workflow checkpoint发生archive-plan冲突，未覆盖，操作已保留且不自动重试。Hub10061未发送，离线摘要保留。两项同步异常不冒称成功。
