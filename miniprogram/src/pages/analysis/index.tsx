@@ -10,6 +10,7 @@ import { aggregateDriveHistory, coveredTotal, historyRowKey, isHistoryQuarantine
 import { acceptHistoryDetail } from '../../domain/history_controller'
 import { emptyHistoryQuery, filterHistory, historyDateTime, normalizeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { sourceLabel } from '../../domain/data_labels'
+import { toChineseDisplayAddress } from '../../domain/address_display'
 import { analysisApi } from '../../services/analysis_api'
 import type { ChargeEvidence, DriveEvidence, ParkedDetail } from '../../services/analysis_types'
 import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
@@ -277,12 +278,12 @@ export default function AnalysisPage() {
     return { ...group, ...aggregateDriveHistory(rows).efficiency }
   })
   const driveRows = (rows: readonly Drive[]) => rows.map(row => <View className="analysis-record" key={historyRowKey(row)}>
-    <Text>{historyDateTime(row.startDate)}</Text><Text className="muted">{row.startAddress || '起点未知'} → {row.endAddress || '终点未知'}</Text>
+    <Text>{historyDateTime(row.startDate)}</Text><Text className="muted">{toChineseDisplayAddress(row.startAddress) || '起点未知'} → {toChineseDisplayAddress(row.endAddress) || '终点未知'}</Text>
     <Text className="muted">{shown(row.distanceKm, 'km')} · {shown(row.energy?.energyKwh, 'kWh')} · {sourceLabel(row.source)}{row.energy?.quality === 'estimated' ? ' · 估算' : ''}</Text>
     <Button className="button-secondary" onClick={() => navigateDrive(row)}>查看行程 {row.id}</Button>
   </View>)
   return <View className="page analysis-page">
-    <View className="app-toolbar"><Button className="analysis-back" onClick={() => { void Taro.navigateBack() }}>返回</Button><Text className="title">{analysisTitles[kind]}</Text></View>
+    <View className="page-header"><Text className="title">{analysisTitles[kind]}</Text></View>
     {cars.length > 1 ? <Picker mode="selector" range={cars.map(row => row.displayName || row.name || '车辆')} onChange={event => { selectedStable.current = cars[Number(event.detail.value)]?.stableId ?? null; void load() }}><View className="analysis-car">{car?.displayName || car?.name || '选择车辆'}</View></Picker> : null}
     {car ? <View className="analysis-controls"><HistoryDateChips kind="drives" query={query} onChange={updateQuery} /><View className="analysis-date-range">
       <Picker mode="date" value={query.startDate} onChange={event => updateQuery({ startDate: event.detail.value })}><View>开始：{query.startDate || '不限'}</View></Picker>

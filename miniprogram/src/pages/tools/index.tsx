@@ -1,7 +1,7 @@
 import { Button, Input, Map, Picker, Slider, Switch, Text, View } from '@tarojs/components'
 const APP_MINIPROGRAM_VERSION: string = process.env.TARO_APP_MINIPROGRAM_VERSION ?? '未确认'
 import Taro, { useDidHide, useDidShow, useRouter, useUnload } from '@tarojs/taro'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import MetricValue from '../../components/MetricValue'
 import TpmsPanel from '../../components/TpmsPanel'
 import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
@@ -35,6 +35,15 @@ export default function ToolsPage() {
   const params = useRouter().params
   const requested = params.kind || 'settings'
   const kind = Object.prototype.hasOwnProperty.call(titles, requested) ? requested : 'settings'
+  useEffect(() => {
+    try {
+      if (typeof Taro.setNavigationBarTitle === 'function') {
+        void Taro.setNavigationBarTitle({ title: titles[kind] })
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [kind])
   const [car, setCar] = useState<Car | null>(null), [status, setStatus] = useState<CarStatus | null>(null)
   const [drives, setDrives] = useState<Drive[]>([]), [charges, setCharges] = useState<Charge[]>([])
   const [updates, setUpdates] = useState<SoftwareUpdate[]>([]), [page, setPage] = useState(1)
@@ -168,7 +177,7 @@ export default function ToolsPage() {
   const historicCoordinate = mapCoordinate(historicPosition?.latitude, historicPosition?.longitude)
   const profileEpoch = epoch.current
   return <View className="page tools-page">
-    <View className="app-toolbar"><Text className="title">{titles[kind]}</Text><Button className="toolbar-button" onClick={() => Taro.navigateBack()}>返回</Button></View>
+    <View className="page-header"><Text className="title">{titles[kind]}</Text></View>
     {!noFetch.has(kind) ? <Button className="button button-secondary" loading={loading} onClick={() => { void load() }}>刷新数据</Button> : null}
     {error ? <Text className="error">{error}</Text> : null}
     {kind === 'settings' ? <View className="card">

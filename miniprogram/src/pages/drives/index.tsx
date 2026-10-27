@@ -20,7 +20,7 @@ import LoadingIndicator from '../../components/LoadingIndicator'
 import HistoryIntervalSummary from '../../components/HistoryIntervalSummary'
 import HistoryDateChips from '../../components/HistoryDateChips'
 import { inspectForegroundEvents, observeForegroundEvents, type ForegroundNotice } from '../../services/foreground_events'
-import MetricValue, { displayNumber, peakSpeedKmh } from '../../components/MetricValue'
+import MetricValue, { displayNumber, formatSocRange, peakSpeedKmh } from '../../components/MetricValue'
 import VisualIcon from '../../components/VisualIcon'
 import LoadedDriveChart from '../../components/LoadedDriveChart'
 import { availabilityLabel, capacityLabel, energyMethodLabel, qualityLabel, sourceLabel } from '../../domain/data_labels'
@@ -552,7 +552,10 @@ export default function DrivesPage() {
           ) : (
             <View key={item.key} className="history-record" onClick={() => { void openDetail(item.drive) }}>
               <Text className="history-record-date">{historyEditorialDate(item.drive.startDate)}</Text>
-              <View className="history-record-evidence"><Text className="history-soc">{battery(item.drive.startBatteryLevel)} → {battery(item.drive.endBatteryLevel)}</Text><Text className="history-source">{energyLabel(item.drive)} · {sourceLabel(item.drive.source)}</Text></View>
+              <View className="history-record-evidence">
+                <Text className="history-soc">{formatSocRange(item.drive.startBatteryLevel, item.drive.endBatteryLevel)}</Text>
+                {item.drive.energy?.quality === 'estimated' ? <Text className="history-source">估算能耗</Text> : null}
+              </View>
               <View className="history-route">
                 <View className="route-indicator-dots">
                   <View className="dot-start" />
@@ -570,7 +573,6 @@ export default function DrivesPage() {
                 <MetricValue label="最高速度" value={peakSpeedKmh(item.drive)} unit="km/h" icon="speed" digits={Number.isInteger(peakSpeedKmh(item.drive)) ? 0 : 1} />
                 <MetricValue label="时长" value={duration(item.drive.durationMinutes).value} unit={duration(item.drive.durationMinutes).unit} icon="clock" digits={Number.isInteger(item.drive.durationMinutes) ? 0 : 1} />
               </View>
-              {peakSpeedKmh(item.drive) != null ? <Text className="metric-source">最高速度来自行程观测样本</Text> : null}
             </View>
           ))}
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
@@ -611,7 +613,7 @@ export default function DrivesPage() {
           <View className="card route-header-card">
             <View className="route-header-top">
               <VisualIcon name="route" />
-              <Text>行程</Text>
+              <Text>路线</Text>
             </View>
             <View className="history-route">
               <View className="route-indicator-dots">
@@ -693,14 +695,15 @@ export default function DrivesPage() {
                 <MetricValue label="已用电量" value={usedSoc} unit="%" digits={0} />
                 <MetricValue label="总电耗" value={energyValue(selected)} unit="kWh" negative={(energyValue(selected) ?? 0) < 0} />
               </View>
-              <View style={{ marginTop: '16rpx' }}>
-                <Text className="history-source">{energyLabel(selected)} · {sourceLabel(selected.source)}</Text>
-                <Text className="muted" style={{ display: 'block', fontSize: '22rpx', marginTop: '8rpx' }}>计算依据：{energyMethodLabel(selected.energy?.evidence?.method)}</Text>
-                {selected.energy?.evidence?.capacity_kwh != null ? <Text className="muted" style={{ display: 'block', fontSize: '22rpx', marginTop: '4rpx' }}>容量：{metric(selected.energy.evidence.capacity_kwh, 'kWh')} · {capacityLabel(selected.energy.evidence.capacity_basis)}</Text> : null}
-                <Text className="muted" style={{ display: 'block', fontSize: '22rpx', marginTop: '4rpx' }}>覆盖：{metric(selected.energy?.coverageRatio == null ? null : selected.energy.coverageRatio * 100, '%')} · {metric(selected.energy?.coverageSeconds, '秒')}</Text>
-                {selected.energy?.quality === 'unknown' ? <Text className="muted" style={{ display: 'block', fontSize: '22rpx', marginTop: '4rpx' }}>能耗证据不足，暂无可用数值。</Text> : null}
-                {selected.qualityState ? <Text className="muted" style={{ display: 'block', fontSize: '22rpx', marginTop: '4rpx' }}>记录质量：{qualityLabel(selected.qualityState)}</Text> : null}
-              </View>
+              {selected.energy?.evidence?.method ? (
+                <View style={{ marginTop: '16rpx' }}>
+                  <Text className="history-source">计算依据：{energyMethodLabel(selected.energy.evidence.method)}</Text>
+                </View>
+              ) : selected.energy?.quality === 'estimated' ? (
+                <View style={{ marginTop: '16rpx' }}>
+                  <Text className="history-source">估算能耗</Text>
+                </View>
+              ) : null}
             </View>
           })()}
 

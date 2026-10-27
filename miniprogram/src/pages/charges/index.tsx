@@ -17,7 +17,7 @@ import LoadingIndicator from '../../components/LoadingIndicator'
 import HistoryIntervalSummary from '../../components/HistoryIntervalSummary'
 import HistoryDateChips from '../../components/HistoryDateChips'
 import { inspectForegroundEvents, observeForegroundEvents, type ForegroundNotice } from '../../services/foreground_events'
-import MetricValue from '../../components/MetricValue'
+import MetricValue, { formatSocRange } from '../../components/MetricValue'
 import VisualIcon from '../../components/VisualIcon'
 import { availabilityLabel, qualityLabel, sourceLabel } from '../../domain/data_labels'
 import { resolveChargeEnergy } from '../../domain/drive_energy'
@@ -622,7 +622,7 @@ export default function ChargesPage() {
             <View className="status"><Text className="status-label">车辆</Text><Text className="status-value">{car?.displayName || '请选择车辆'}</Text></View>
           </Picker>
         ) : null}
-        {meta?.availability ? <Text className="muted">历史状态：{availabilityLabel(meta.availability)} · {sourceLabel(meta.source)}</Text> : null}
+        
         {cacheWarning ? <Text className="error">在线数据已读到，但未保存到本机。</Text> : null}
       </View>
 
@@ -660,7 +660,7 @@ export default function ChargesPage() {
             <Text className="charge-chart-month">{month.label}</Text>
           </View>)}
         </View>
-        <Text className="muted">仅统计当前筛选中已返回的 {chartItems.length} 条记录；{interval?.complete ? '已完成当前区间分页' : '当前为部分覆盖'}。费用仅在同币种时合计，含明确标记的估算；多币种与未知费用不合计。</Text>
+        <Text className="muted">统计已返回的 {chartItems.length} 条记录；费用仅在同币种时合计。</Text>
       </View> : null}
       {noticeLimited ? <Text className="muted history-notice-limit">本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看</Text> : null}
 
@@ -702,16 +702,22 @@ export default function ChargesPage() {
                     <Text className="location-date">{historyEditorialDate(item.startDate, false)}</Text>
                   </View>
                 </View>
-                <Text className="history-charge-mode">{modeLabel(item) === '模式未确认' ? '暂无数据' : modeLabel(item)}</Text>
+                {modeLabel(item) !== '模式未确认' ? <Text className="history-charge-mode">{modeLabel(item)}</Text> : null}
               </View>
               <View className="history-record-metrics">
                 <MetricValue label="时长" value={item.durationMinutes != null && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0 ? item.durationMinutes : null} unit="m" icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
                 <MetricValue label="能量" value={oneDecimal(item.energyAddedKwh)} unit="kWh" icon="energy" />
                 <MetricValue label="充电费用" {...costLabel(item)} icon="account" />
-                <MetricValue label="电量" value={`${battery(item.startBatteryLevel)} → ${battery(item.endBatteryLevel)}`} icon="battery" />
+                <MetricValue label="电量" value={formatSocRange(item.startBatteryLevel, item.endBatteryLevel)} icon="battery" />
               </View>
-              <Text className="history-source">{sourceLabel(item.source)}{item.costProvenance === 'estimate' ? ` · 费用按 ${estimateBasis(item)} 估算` : ''} · {inputLabel(item)}：{inputNumber(item) == null ? '暂无数据' : `${inputNumber(item)} kWh`}</Text>
-              {'costProvenance' in item && item.costProvenance === 'manual' ? <Text className="metric-source">本机手动费用 · 原服务端账单保留</Text> : null}
+              {(item.costProvenance === 'estimate' || inputNumber(item) != null) ? (
+                <Text className="history-source">
+                  {item.costProvenance === 'estimate' ? `费用按 ${estimateBasis(item)} 估算` : ''}
+                  {item.costProvenance === 'estimate' && inputNumber(item) != null ? ' · ' : ''}
+                  {inputNumber(item) != null ? `${inputLabel(item)}：${inputNumber(item)} kWh` : ''}
+                </Text>
+              ) : null}
+              {'costProvenance' in item && item.costProvenance === 'manual' ? <Text className="metric-source">本机手动费用</Text> : null}
             </View>
           ))}
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}

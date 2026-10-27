@@ -52,6 +52,9 @@
   }
   
   .history-page-header {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
     margin: -16rpx -16rpx 16rpx;
     padding: max(88rpx, calc(24rpx + env(safe-area-inset-top))) max(200rpx, calc(160rpx + env(safe-area-inset-right))) 16rpx 24rpx;
     background: #ffffff;
@@ -84,9 +87,14 @@
     border-radius: 999rpx;
     background: #ffffff;
     color: #6b7280;
-    padding: 10rpx 24rpx;
+    padding: 6rpx 22rpx;
     font-size: 24rpx;
     line-height: 1.4;
+    height: 52rpx;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
     &::after { border: none; }
   }
   .history-chip-selected {
@@ -104,6 +112,13 @@
     border-radius: 28rpx;
     background: #ffffff;
     box-shadow: 0 2rpx 6rpx rgba(17, 24, 39, 0.04);
+  }
+  .history-record-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8rpx;
   }
   .history-record-date {
     display: block;

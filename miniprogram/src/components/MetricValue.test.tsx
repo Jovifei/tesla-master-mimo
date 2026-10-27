@@ -2,7 +2,7 @@ import React from 'react'
 import renderer from 'react-test-renderer'
 import { expect, it, vi } from 'vitest'
 vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view', Image: 'image', Picker: 'picker' }))
-import MetricValue, { displayNumber, peakSpeedKmh } from './MetricValue'
+import MetricValue, { displayNumber, formatSocRange, peakSpeedKmh } from './MetricValue'
 import LoadedDriveChart, { loadedDriveGroups } from './LoadedDriveChart'
 import type { Drive } from '../services/types'
 
@@ -16,6 +16,12 @@ it('renders large value and complete smaller unit independently, including zero/
   }
   expect(displayNumber(0.000001)).not.toBe('0')
   expect(displayNumber(-0.000001)).not.toBe('0')
+})
+
+it('formats SOC ranges cleanly with arrows and dashes', () => {
+  expect(formatSocRange(90, 80)).toBe('90% → 80%')
+  expect(formatSocRange(90, null)).toBe('90% → —')
+  expect(formatSocRange(null, null)).toBe('暂无数据')
 })
 
 it('loaded date groups retain zero and partial known distances without inventing unknown peaks or dates', () => {
