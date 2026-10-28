@@ -1,5 +1,14 @@
 # MateLink Bug 根因索引
 
+## 2026-10-28 行程缺失与同步链路
+
+- `OCT28-SOURCE-GAP`：手机 build74 的 10 月 28 日行程未展示；个人 TeslaMate 与云端均无对应源记录，Fleet 尚无首事件。不能凭当前状态伪造历史。
+- `OCT28-ARCHIVE-EXPIRY`：个人归档绑定于 22:05 过期，晚于用户反馈的行程；影响之后的归档，需安全重绑。
+- `OCT28-DRIVE-CHARGE-BLOCK`、`OCT28-ROOM-NEW-DRIVES`、`OCT28-NEW-IDENTITY`、`OCT28-UID-REMAP`、`OCT28-ADDRESS-COLLISION`、`OCT28-ADDRESS-LATE`、`OCT28-TIMEOUT-MESSAGE`：本地提交 `4e9d5cb4`，34 项定向及双变体全量测试通过；避免慢请求、首次映射、换车及同 ID 不同会话导致漏显或串数据。
+- `OCT28-PG-FINALIZER`：线上对应源码可能因 PostgreSQL 游标占用连接导致已采到的行程无法结束；本地提交 `1d4fdb58`，真实隔离数据库测试通过，生产未部署。其与本次三条未被采集并非同一已证实原因。
+- `OCT29-TIMELINE-ROUTE`：源级条件性路由风险，车辆发现迟到时 More 与时间线可能读取不同车号；未运行复现，不能认作本次漏采原因。
+- [完整排查和版本记录](RPT-2026-10-28-missing-drives.md)。
+
 ## 2026-10-27 build73续查新增三项
 
 - ACC-AUTH-01：重新授权的新ticket返回401/403时，仅凭已有session误认成功，实际VM会进入旧账号首页；删除该未绑定ticket的失败兜底，保留真正重复回调的幂等。

@@ -1,10 +1,25 @@
 # App问题与版本记录
 
-更新：2026-10-27。发现版本是审查/复现时的源码候选，不等于首次引入版本；提交、APK、安装与生产分别记录。完整逐次事件见[JSON账本](releases/app-issue-versions.json)。
+更新：2026-10-29。发现版本是审查/复现时的源码候选，不等于首次引入版本；提交、APK、安装与生产分别记录。完整逐次事件见[JSON账本](releases/app-issue-versions.json)。
 
-共 87 条：build73交付记录84条（含历史/潜在/撤回），本轮显示验收续查追加3条。App分支 `codex/app-release-data-fixes-20261027`，最新本地已验证修复候选 `2.1.55 / build74`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
+共 100 条：保留此前 87 条，2026-10-28 至 29 排查追加 13 条（含未关闭的采集、绑定和路由待核项）。App分支 `codex/app-release-data-fixes-20261027`，最新本地已验证修复候选 `2.1.55 / build74`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
 
 每条都有具体改法与回归；raw receipt/旧记录保留，source gates与发布门不混称已验收。
+
+## 2026-10-28 行程缺失与独立缺陷
+
+发现版本和实际安装包不同于修复候选；本轮 App / 服务端修复已本地提交并通过全量源码测试；未安装或部署。细节、证据边界和后续见[当天行程排查报告](RPT-2026-10-28-missing-drives.md)。
+
+| 问题 ID | 发现版本 | 当前状态 | 下一步 |
+| --- | --- | --- | --- |
+| OCT28-SOURCE-GAP | 2.1.55 / build74 实机 | 源记录缺失，开放 | 恢复可靠采集，核验自然新行程；不编造旧行程 |
+| OCT28-ARCHIVE-EXPIRY | 服务端 2c8b7655 | 绑定已过期 | 经确认安全重绑；不直接修改线上到期字段 |
+| OCT28-DRIVE-CHARGE-BLOCK / ROOM-NEW-DRIVES | build74 源码 | 本地提交 4e9d5cb4；全量测试通过 | 完成未来真实记录及设备验证 |
+| OCT28-NEW-IDENTITY / UID-REMAP / ADDRESS-COLLISION / TIMEOUT-MESSAGE | build74 基础上的本轮 WIP | 本地提交 4e9d5cb4；消费者回归通过 | 完成未来真实记录及设备验证 |
+| OCT28-ADDRESS-LATE | 本轮 WIP | 本地提交 4e9d5cb4；正反例通过 | 避免迟到反查覆盖后续 Room 地址 |
+| OCT28-REFRESH-STATE / TIMELINE-CAR | 本轮及继承的 App WIP | 本地提交 4e9d5cb4；消费者回归通过 | 保持刷新状态，并以真实车辆 proof 防止时间线串车 |
+| OCT29-TIMELINE-ROUTE | 继承源码 | 条件性路由风险，待运行复现 | 验证车辆发现迟到时 More 与时间线使用同一已验证车辆 |
+| OCT28-PG-FINALIZER | 服务端 2c8b7655 源码 | 本地提交 1d4fdb58，独立 PostgreSQL 集成测试通过，未部署 | 完成评审与后续部署验收；不是当天缺源的已证实原因 |
 
 | 新增问题 | 发现日期 / 版本 | 状态 | 改法 / 验证记录 | 修复版本 / commit |
 |---|---|---|---|---|

@@ -1,0 +1,25 @@
+{
+  "kind": "local_pending_summary_not_a_hub_event",
+  "recorded_at_local": "2026-10-29",
+  "project": "matelink",
+  "worktree": "E:\\project\\_worktrees\\matelink-release-data-audit-20261026",
+  "branch": "codex/app-release-data-fixes-20261027",
+  "base_revision": "fd84f8877eb31c6fbc148a57ccaf3783c9722378",
+  "hub_revision_read": "failed: connection refused WinError 10061; automatic retries stopped",
+  "current": [
+    "Investigated October 28 missing trips through device and read-only cloud/source aggregates",
+    "Committed App 4e9d5cb4 and backend 1d4fdb58 locally",
+    "Debug/Release 1592 tests each, zero failures; dual lint zero errors; isolated PostgreSQL integration passed"
+  ],
+  "next": [
+    "Securely restore the existing personal archive binding and validate a future natural trip",
+    "Investigate Fleet first event and conditional Timeline route concern independently"
+  ],
+  "blockers": [
+    "Reported trips have no source records in checked stores",
+    "Archive binding expired; production changes not performed",
+    "Project hub unavailable"
+  ],
+  "evidence": "docs/RPT-2026-10-28-missing-drives.md",
+  "source_code_revision": "1d4fdb5828271dfc7e1d92c130542235f3b27084"
+}

@@ -4518,10 +4518,448 @@
           "commit": "63cdb8eecb3140e815ad415356926a6b89184e37"
         }
       ]
+    },
+    {
+      "id": "OCT28-SOURCE-GAP",
+      "title": "10月28日三次行程的采集源缺少记录",
+      "found_date": "2026-10-28",
+      "found_version": "2.1.55 / build74 实机",
+      "source_ref": "../RPT-2026-10-28-missing-drives.md",
+      "status": "OPEN_SOURCE_GAP",
+      "fix_version": null,
+      "change": "持续采集、核验 Fleet 首事件；不根据当前状态编造历史",
+      "verification": "TeslaMate 源库与云端均无三次行程；当前 Fleet awaiting_first_event",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-10-28",
+          "version": "2.1.55 / build74 实机",
+          "action": "OBSERVED_AND_TRIAGED",
+          "detail": "TeslaMate 源库与云端均无三次行程；当前 Fleet awaiting_first_event",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "OCT28-ARCHIVE-EXPIRY",
+      "title": "个人 TeslaMate 归档绑定到期",
+      "found_date": "2026-10-28",
+      "found_version": "服务端 2c8b7655",
+      "source_ref": "../RPT-2026-10-28-missing-drives.md",
+      "status": "OPEN_BINDING_EXPIRED",
+      "fix_version": null,
+      "change": "安全地经用户确认重新建立同账号、车辆、来源受限绑定；保留原桥接断点",
+      "verification": "2026-10-28 22:05 过期，晚于反馈的三次行程，尚未重新绑定",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-10-28",
+          "version": "服务端 2c8b7655",
+          "action": "OBSERVED_AND_TRIAGED",
+          "detail": "2026-10-28 22:05 过期，晚于反馈的三次行程，尚未重新绑定",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "OCT28-DRIVE-CHARGE-BLOCK",
+      "title": "成功获取行程受充电接口阻塞",
+      "found_date": "2026-10-28",
+      "found_version": "2.1.55 / build74 源码",
+      "source_ref": "../RPT-2026-10-28-missing-drives.md",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
+      "fix_version": "未发布源码；2.1.55 / build74 基础，App 代码 4e9d5cb4；尚未生成或安装新包",
+      "change": "验证当前身份后先安全保存本次已获取行程",
+      "verification": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验；提交后树 1d4fdb58 的关键回归 34/0",
+      "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01",
+      "history": [
+        {
+          "date": "2026-10-28",
+          "version": "2.1.55 / build74 源码",
+          "action": "OBSERVED_AND_TRIAGED",
+          "detail": "本轮最初定向合成回归 RED 后 GREEN；最终回归待确认",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "未发布源码 / 4e9d5cb4",
+          "action": "LOCAL_CODE_COMMIT_AND_QA",
+          "detail": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "提交后源码树 / 1d4fdb58",
+          "action": "COMMITTED_TREE_TARGET_QA",
+          "detail": "关键消费者和合同 34 项 0 失败、0 跳过；非设备或生产验收",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "1d4fdb5828271dfc7e1d92c130542235f3b27084"
+        }
+      ]
+    },
+    {
+      "id": "OCT28-ROOM-NEW-DRIVES",
+      "title": "打开的行程列表遗漏同车新增 Room 行程",
+      "found_date": "2026-10-28",
+      "found_version": "2.1.55 / build74 源码",
+      "source_ref": "../RPT-2026-10-28-missing-drives.md",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
+      "fix_version": "未发布源码；2.1.55 / build74 基础，App 代码 4e9d5cb4；尚未生成或安装新包",
+      "change": "观察同车可信新增行程，同时保留隔离行程的驻车邻接阻断",
+      "verification": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验；提交后树 1d4fdb58 的关键回归 34/0",
+      "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01",
+      "history": [
+        {
+          "date": "2026-10-28",
+          "version": "2.1.55 / build74 源码",
+          "action": "OBSERVED_AND_TRIAGED",
+          "detail": "本轮最初定向合成回归 RED 后 GREEN；最终回归待确认",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "未发布源码 / 4e9d5cb4",
+          "action": "LOCAL_CODE_COMMIT_AND_QA",
+          "detail": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "提交后源码树 / 1d4fdb58",
+          "action": "COMMITTED_TREE_TARGET_QA",
+          "detail": "关键消费者和合同 34 项 0 失败、0 跳过；非设备或生产验收",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "1d4fdb5828271dfc7e1d92c130542235f3b27084"
+        }
+      ]
+    },
+    {
+      "id": "OCT28-NEW-IDENTITY",
+      "title": "首次无车辆本地映射时慢充电影响行程显示",
+      "found_date": "2026-10-28",
+      "found_version": "2.1.55 / build74 基础上的本轮 WIP",
+      "source_ref": "../RPT-2026-10-28-missing-drives.md",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
+      "fix_version": "未发布源码；2.1.55 / build74 基础，App 代码 4e9d5cb4；尚未生成或安装新包",
+      "change": "已验证身份后启动 Room 观察，在同一时限内读取",
+      "verification": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验；提交后树 1d4fdb58 的关键回归 34/0",
+      "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01",
+      "history": [
+        {
+          "date": "2026-10-28",
+          "version": "2.1.55 / build74 基础上的本轮 WIP",
+          "action": "OBSERVED_AND_TRIAGED",
+          "detail": "新增空映射和慢充电消费者回归，待测试",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "未发布源码 / 4e9d5cb4",
+          "action": "LOCAL_CODE_COMMIT_AND_QA",
+          "detail": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "提交后源码树 / 1d4fdb58",
+          "action": "COMMITTED_TREE_TARGET_QA",
+          "detail": "关键消费者和合同 34 项 0 失败、0 跳过；非设备或生产验收",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "1d4fdb5828271dfc7e1d92c130542235f3b27084"
+        }
+      ]
+    },
+    {
+      "id": "OCT28-UID-REMAP",
+      "title": "相同远端车号重新映射时可能残留旧车行程",
+      "found_date": "2026-10-28",
+      "found_version": "2.1.55 / build74 基础上的本轮 WIP",
+      "source_ref": "../RPT-2026-10-28-missing-drives.md",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
+      "fix_version": "未发布源码；2.1.55 / build74 基础，App 代码 4e9d5cb4；尚未生成或安装新包",
+      "change": "接纳不同真实车辆身份前清除旧车数据与基线",
+      "verification": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验；提交后树 1d4fdb58 的关键回归 34/0",
+      "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01",
+      "history": [
+        {
+          "date": "2026-10-28",
+          "version": "2.1.55 / build74 基础上的本轮 WIP",
+          "action": "OBSERVED_AND_TRIAGED",
+          "detail": "新增 UID-A 到 UID-B 空历史消费者回归，待测试",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "未发布源码 / 4e9d5cb4",
+          "action": "LOCAL_CODE_COMMIT_AND_QA",
+          "detail": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "提交后源码树 / 1d4fdb58",
+          "action": "COMMITTED_TREE_TARGET_QA",
+          "detail": "关键消费者和合同 34 项 0 失败、0 跳过；非设备或生产验收",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "1d4fdb5828271dfc7e1d92c130542235f3b27084"
+        }
+      ]
+    },
+    {
+      "id": "OCT28-ADDRESS-COLLISION",
+      "title": "不同会话同数字 ID 的地址补全可能污染旧行程",
+      "found_date": "2026-10-28",
+      "found_version": "2.1.55 / build74 基础上的本轮 WIP",
+      "source_ref": "../RPT-2026-10-28-missing-drives.md",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
+      "fix_version": "未发布源码；2.1.55 / build74 基础，App 代码 4e9d5cb4；尚未生成或安装新包",
+      "change": "地址补全复用来源、实例及时间窗口证明",
+      "verification": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验；提交后树 1d4fdb58 的关键回归 34/0",
+      "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01",
+      "history": [
+        {
+          "date": "2026-10-28",
+          "version": "2.1.55 / build74 基础上的本轮 WIP",
+          "action": "OBSERVED_AND_TRIAGED",
+          "detail": "新增真实网络返回碰撞消费者回归，待测试",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "未发布源码 / 4e9d5cb4",
+          "action": "LOCAL_CODE_COMMIT_AND_QA",
+          "detail": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "提交后源码树 / 1d4fdb58",
+          "action": "COMMITTED_TREE_TARGET_QA",
+          "detail": "关键消费者和合同 34 项 0 失败、0 跳过；非设备或生产验收",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "1d4fdb5828271dfc7e1d92c130542235f3b27084"
+        }
+      ]
+    },
+    {
+      "id": "OCT28-TIMEOUT-MESSAGE",
+      "title": "行程同步超时状态与 UI 提示映射不一致",
+      "found_date": "2026-10-28",
+      "found_version": "2.1.55 / build74 基础上的本轮 WIP",
+      "source_ref": "../RPT-2026-10-28-missing-drives.md",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
+      "fix_version": "未发布源码；2.1.55 / build74 基础，App 代码 4e9d5cb4；尚未生成或安装新包",
+      "change": "统一超时提示键及现有页面映射，不改布局",
+      "verification": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验；提交后树 1d4fdb58 的关键回归 34/0",
+      "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01",
+      "history": [
+        {
+          "date": "2026-10-28",
+          "version": "2.1.55 / build74 基础上的本轮 WIP",
+          "action": "OBSERVED_AND_TRIAGED",
+          "detail": "新增超时提示消费者断言，待测试",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "未发布源码 / 4e9d5cb4",
+          "action": "LOCAL_CODE_COMMIT_AND_QA",
+          "detail": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "提交后源码树 / 1d4fdb58",
+          "action": "COMMITTED_TREE_TARGET_QA",
+          "detail": "关键消费者和合同 34 项 0 失败、0 跳过；非设备或生产验收",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "1d4fdb5828271dfc7e1d92c130542235f3b27084"
+        }
+      ]
+    },
+    {
+      "id": "OCT28-PG-FINALIZER",
+      "title": "PostgreSQL 游标未关闭即在同连接更新行程",
+      "found_date": "2026-10-28",
+      "found_version": "服务端 2c8b7655 源码",
+      "source_ref": "../RPT-2026-10-28-missing-drives.md",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS_NOT_DEPLOYED",
+      "fix_version": "本地服务端源码 1d4fdb58；线上仍为 2c8b7655",
+      "change": "同事务中先读完并关闭结果集，再更新候选行程",
+      "verification": "Go test ./...、go vet ./...、真实 PostgreSQL 16 隔离集成测试通过；未部署；不认作当天缺源根因",
+      "commit": "1d4fdb5828271dfc7e1d92c130542235f3b27084",
+      "history": [
+        {
+          "date": "2026-10-28",
+          "version": "服务端 2c8b7655 源码",
+          "action": "OBSERVED_AND_TRIAGED",
+          "detail": "驱动模拟 RED 到 GREEN；独立 PostgreSQL 16 真实 ingest 和历史读取集成测试通过；线上当日无 open session，不能认作本次漏采原因",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "未部署服务端源码 / 1d4fdb58",
+          "action": "LOCAL_CODE_COMMIT_AND_QA",
+          "detail": "Go test ./...、go vet ./...、真实 PostgreSQL 16 隔离集成测试通过；未部署；不认作当天缺源根因",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "1d4fdb5828271dfc7e1d92c130542235f3b27084"
+        }
+      ]
+    },
+    {
+      "id": "OCT28-REFRESH-STATE",
+      "title": "Room 更新提前清除仍在进行的刷新状态",
+      "found_date": "2026-10-29",
+      "found_version": "本轮 WIP",
+      "source_ref": "../RPT-2026-10-28-missing-drives.md",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
+      "fix_version": "未发布源码；2.1.55 / build74 基础，App 代码 4e9d5cb4；尚未生成或安装新包",
+      "change": "数据投影不提前结束请求标志，终态统一清除",
+      "verification": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验；提交后树 1d4fdb58 的关键回归 34/0",
+      "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01",
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "本轮 WIP",
+          "action": "OBSERVED_AND_TRIAGED",
+          "detail": "已确认调用链，回归正在补充",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "未发布源码 / 4e9d5cb4",
+          "action": "LOCAL_CODE_COMMIT_AND_QA",
+          "detail": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "提交后源码树 / 1d4fdb58",
+          "action": "COMMITTED_TREE_TARGET_QA",
+          "detail": "关键消费者和合同 34 项 0 失败、0 跳过；非设备或生产验收",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "1d4fdb5828271dfc7e1d92c130542235f3b27084"
+        }
+      ]
+    },
+    {
+      "id": "OCT28-TIMELINE-CAR",
+      "title": "时间线失败保留旧数据缺少车辆 proof",
+      "found_date": "2026-10-29",
+      "found_version": "继承的 App WIP",
+      "source_ref": "../RPT-2026-10-28-missing-drives.md",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
+      "fix_version": "未发布源码；2.1.55 / build74 基础，App 代码 4e9d5cb4；尚未生成或安装新包",
+      "change": "只在完整车辆 proof 仍有效时保留已发布事件",
+      "verification": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验；提交后树 1d4fdb58 的关键回归 34/0",
+      "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01",
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "继承的 App WIP",
+          "action": "OBSERVED_AND_TRIAGED",
+          "detail": "三项真实消费者换车/UID 回归 RED，原两项同车控制通过",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "未发布源码 / 4e9d5cb4",
+          "action": "LOCAL_CODE_COMMIT_AND_QA",
+          "detail": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "提交后源码树 / 1d4fdb58",
+          "action": "COMMITTED_TREE_TARGET_QA",
+          "detail": "关键消费者和合同 34 项 0 失败、0 跳过；非设备或生产验收",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "1d4fdb5828271dfc7e1d92c130542235f3b27084"
+        }
+      ]
+    },
+    {
+      "id": "OCT28-ADDRESS-LATE",
+      "title": "迟到的同会话地理反查可能覆盖后续 Room 地址",
+      "found_date": "2026-10-29",
+      "found_version": "本轮 WIP",
+      "source_ref": "../RPT-2026-10-28-missing-drives.md",
+      "status": "CODE_COMMITTED_LOCAL_QA_PASS",
+      "fix_version": "未发布源码；2.1.55 / build74 基础，App 代码 4e9d5cb4；尚未生成或安装新包",
+      "change": "仅在同会话当前地址仍缺失时补入地理反查结果",
+      "verification": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验；提交后树 1d4fdb58 的关键回归 34/0",
+      "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01",
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "本轮 WIP",
+          "action": "SOURCE_REVIEW",
+          "detail": "地理反查返回前同会话地址已更新时，旧结果仍可能覆盖",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "未发布源码 / 4e9d5cb4",
+          "action": "LOCAL_CODE_COMMIT_AND_QA",
+          "detail": "干净源码树 3a914c86：Debug 1592/0/0/0，Release 1592/0/0/8；双 lint 0 错误（276/275 警告）；针对性 34/0；手机和真实采集待验",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "4e9d5cb437be6c1620901a9f2db443737b310e01"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "提交后源码树 / 1d4fdb58",
+          "action": "COMMITTED_TREE_TARGET_QA",
+          "detail": "关键消费者和合同 34 项 0 失败、0 跳过；非设备或生产验收",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": "1d4fdb5828271dfc7e1d92c130542235f3b27084"
+        }
+      ]
+    },
+    {
+      "id": "OCT29-TIMELINE-ROUTE",
+      "title": "车辆发现迟到时 More 与时间线路由车辆可能不一致",
+      "found_date": "2026-10-29",
+      "found_version": "2.1.55 / build74 继承源码",
+      "source_ref": "../RPT-2026-10-28-missing-drives.md",
+      "status": "OPEN_REVIEW",
+      "fix_version": null,
+      "change": "先以真实导航消费者复现；确保 More 与时间线共享已验证的当前车辆，不盲目信任失效路由车号",
+      "verification": "源码可达条件已核查；未运行或设备复现，不能认作本次漏采原因",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "2.1.55 / build74 继承源码",
+          "action": "SOURCE_REVIEW",
+          "detail": "自托管车辆发现延迟并在用户打开 More 后修复全局选择时，More 路由与时间线读取的车号可能不同",
+          "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": null
+        }
+      ]
     }
   ],
   "baseline_checkpoint": "e53a2d01a54d55c554019fb861d69f3737d4b5bb",
-  "updated_date": "2026-10-27",
+  "updated_date": "2026-10-29",
   "candidate": {
     "versionName": "2.1.54",
     "versionCode": 73,
