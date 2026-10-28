@@ -139,12 +139,14 @@ fun DrivesScreen(
 
     val serverNotConfiguredMessage = stringResource(R.string.server_not_configured_message)
     val historyIdentityUnavailableMessage = stringResource(R.string.history_identity_unavailable_message)
+    val historySyncTimeoutMessage = stringResource(R.string.settings_connection_timeout)
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
             snackbarHostState.showSnackbar(
                 when (error) {
                     "Server not configured" -> serverNotConfiguredMessage
                     HISTORY_IDENTITY_UNAVAILABLE -> historyIdentityUnavailableMessage
+                    "history_sync_timeout" -> historySyncTimeoutMessage
                     else -> error
                 }
             )

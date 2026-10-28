@@ -21,10 +21,10 @@ class HistoryRefreshIntegrationContractTest {
             // Cold starts must resolve the localHistoryCarId mapping offline before
             // reading the Room cache; the remote car id alone cannot hit those rows.
             assertTrue(source.contains("cachedContextForRemote("))
-            assertTrue(source.contains(
-                "val result = withTimeoutOrNull(HISTORY_LOAD_TIMEOUT_MS) {\n" +
-                    "                historyRepository.load(id, startDateStr, endDateStr)\n" +
-                    "            }"))
+            // Behavior tests cover timeout and in-flight Room publication; do not
+            // require the timeout block to contain only the network call.
+            assertTrue(source.contains("val result = withTimeoutOrNull(HISTORY_LOAD_TIMEOUT_MS) {"))
+            assertTrue(source.contains("historyRepository.load(id, startDateStr, endDateStr)"))
             assertTrue(source.contains("historyTimeoutMessage("))
             assertTrue(source.contains("HISTORY_IDENTITY_UNAVAILABLE"))
         }

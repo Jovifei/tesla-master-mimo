@@ -163,6 +163,10 @@ interface DriveSummaryDao {
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
     fun observeAll(carId: Int): Flow<List<DriveSummary>>
 
+    /** Hidden rows must remain in the live chronology so they can block parking adjacency. */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId ORDER BY startDate ASC")
+    fun observeAllForAdjacency(carId: Int): Flow<List<DriveSummary>>
+
     @Query("SELECT MAX(driveId) FROM drives_summary WHERE carId = :carId")
     suspend fun getMaxDriveId(carId: Int): Int?
 

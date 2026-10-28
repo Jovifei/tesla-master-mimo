@@ -12,6 +12,8 @@ import com.matelink.domain.analytics.DriveEnergyResolver
 import com.matelink.domain.analytics.DriveEnergySource
 import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.analytics.toRawAnalysisDriveData
+import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
+import com.matelink.domain.analytics.sameChargeSourceInstance
 import com.matelink.domain.history.isAnalysisEligible
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.SettingsDataStore
@@ -246,9 +248,37 @@ internal fun DriveSummary.matchesHistoryWindow(previous: DriveSummary): Boolean 
     if (carId != previous.carId || driveId != previous.driveId) return false
     val raw = toRawAnalysisDriveData()
     val old = previous.toRawAnalysisDriveData()
-    return raw.source == old.source && parseIsoInstant(raw.startDate) != null && parseIsoInstant(raw.endDate) != null &&
-        parseIsoInstant(raw.startDate) == parseIsoInstant(old.startDate) &&
-        parseIsoInstant(raw.endDate) == parseIsoInstant(old.endDate)
+    return raw.matchesHistoryIdentity(old) &&
+        parseIsoInstant(startDate) == parseIsoInstant(previous.startDate) &&
+        parseIsoInstant(endDate) == parseIsoInstant(previous.endDate)
+}
+
+private fun DriveData.matchesHistoryIdentity(previous: DriveData): Boolean =
+    driveId == previous.driveId && source == previous.source &&
+        sameChargeSourceInstance(sourceInstanceId, sourceRecordIdentity, previous.sourceInstanceId, previous.sourceRecordIdentity) &&
+        parseIsoInstant(startDate) != null && parseIsoInstant(endDate) != null &&
+        parseIsoInstant(startDate) == parseIsoInstant(previous.startDate) &&
+        parseIsoInstant(endDate) == parseIsoInstant(previous.endDate)
+
+/** New live IDs require a genuine receipt for this scoped row, including nullable legacy source. */
+private fun DriveSummary.hasMatchingHistoryReceipt(historyCarId: Int): Boolean {
+    if (carId != historyCarId) return false
+    val raw = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive) ?: return false
+    val start = parseIsoInstant(startDate) ?: return false
+    val end = parseIsoInstant(endDate) ?: return false
+    return raw.driveId == driveId && !raw.sourceRecordIdentity.conflicted && !end.isBefore(start) &&
+        parseIsoInstant(raw.startDate) == start && parseIsoInstant(raw.endDate) == end
+}
+
+private fun admitLiveDriveRows(
+    rows: List<DriveSummary>, historyCarId: Int, baselines: MutableMap<Int, DriveSummary>
+): List<DriveSummary> = rows.filter { row ->
+    val baseline = baselines[row.driveId]
+    if (baseline != null) row.matchesHistoryWindow(baseline)
+    else if (row.hasMatchingHistoryReceipt(historyCarId)) {
+        baselines[row.driveId] = row
+        true
+    } else false
 }
 
 data class DrivesSummary(
@@ -281,6 +311,7 @@ class DrivesViewModel @Inject constructor(
     private var carId: Int? = null
     private var showShortDrivesCharges: Boolean = false
     private var allDrives: List<DriveData> = emptyList()
+    private var hasUnverifiedHistoryRows = false
     private var isInitialized: Boolean = false
     private val latestLoad = LatestHistoryLoad()
     private var metricsObservation: Job? = null
@@ -486,6 +517,7 @@ class DrivesViewModel @Inject constructor(
         isLoadMore: Boolean = false
     ) {
         val id = carId ?: return
+        hasUnverifiedHistoryRows = false
         metricsObservation?.cancel()
         val generation = ++observationGeneration
 
@@ -507,6 +539,7 @@ class DrivesViewModel @Inject constructor(
             } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
             ensureCurrent()
             activeHistoryProof = cachedProof
+            val baselineRows = localRows.associateBy { it.driveId }.toMutableMap()
             val windowRows = localRows.filter {
                 driveInHistoryWindow(it.startDate, startDate, endDate, requestZone)
             }
@@ -538,16 +571,43 @@ class DrivesViewModel @Inject constructor(
             val startDateStr = startDate?.let { LocalDayBoundaries.startOfDay(it, requestZone) }
             val endDateStr = endDate?.let { LocalDayBoundaries.endOfDay(it, requestZone) }
 
+            // Drive persistence can finish while another history endpoint is still waiting.
+            // Keep the verified local subscription alive even if that network stage times out.
+            cachedProof?.let { observeDriveHistory(id, generation, it, baselineRows) }
+
             val result = withTimeoutOrNull(HISTORY_LOAD_TIMEOUT_MS) {
-                historyRepository.load(id, startDateStr, endDateStr)
+                historyRepository.load(id, startDateStr, endDateStr) { proof ->
+                    ensureCurrent()
+                    if (generation != observationGeneration || this@DrivesViewModel.carId != id ||
+                        !historyRepository.isContextCurrent(proof))
+                        throw CancellationException("Drive history account/source changed")
+                    ensureCurrent()
+                    adoptDriveHistoryProof(proof, baselineRows)
+                    observeDriveHistory(id, generation, proof, baselineRows)
+                }
             }
             ensureCurrent()
             if (result == null) {
+                val contextCurrent = activeHistoryProof?.let { historyRepository.isContextCurrent(it) } ?: true
+                ensureCurrent()
+                if (!contextCurrent) {
+                    metricsObservation?.cancel()
+                    activeHistoryProof = null
+                    allDrives = emptyList()
+                    baselineRows.clear()
+                    hasUnverifiedHistoryRows = false
+                    _uiState.update { it.copy(drives = emptyList(), parkedPairs = emptySet(), historySequence = emptyList(),
+                        units = null, driveMetrics = emptyMap(), chartData = emptyList(), summary = DrivesSummary(),
+                        isLoading = false, isRefreshing = false, isFilterLoading = false, isLoadingMore = false,
+                        localArchiveLinkPending = false, historySyncWarning = null,
+                        error = com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE) }
+                    return@launch
+                }
                 // Sync timed out: keep the already-rendered cache visible and surface
                 // a stale-data warning; only an empty cache escalates to a blocking error.
                 val placement = historyTimeoutMessage(
                     hasCache = _uiState.value.drives.isNotEmpty(),
-                    timeoutText = appContext.getString(R.string.history_sync_timeout),
+                    timeoutText = "history_sync_timeout",
                     currentWarning = _uiState.value.historySyncWarning
                 )
                 _uiState.update {
@@ -574,14 +634,25 @@ class DrivesViewModel @Inject constructor(
                     checkProof()
                     val remoteDrives = result.data.drives
                     val localRows = driveSummaryDao.getAllChronologicalForAdjacency(result.data.context.localHistoryCarId)
-                    val baselineRows = localRows.associateBy { it.driveId }
-                    val localMetrics = localRows.associate { summary ->
+                    checkProof()
+                    adoptDriveHistoryProof(proof, baselineRows)
+                    val acceptedRows = admitLiveDriveRows(localRows, result.data.context.localHistoryCarId, baselineRows)
+                    val localMetrics = acceptedRows.associate { summary ->
                         summary.driveId to summary.toQualifiedHistoryMetrics()
                     }
-                    checkProof()
-                    activeHistoryProof = proof
-                    allDrives = (remoteDrives + localRows.filter { it.qualityState == "quarantined" }
-                        .map { it.toAnalysisDriveData() }).distinctBy { it.driveId }
+                    hasUnverifiedHistoryRows = acceptedRows.size != localRows.size
+                    val previous = allDrives.associateBy { it.driveId }
+                    val currentRows = acceptedRows.associateBy { it.driveId }
+                    val acceptedRemote = remoteDrives.map { drive ->
+                        val baseline = baselineRows[drive.driveId]
+                        if (baseline != null && !drive.matchesHistoryIdentity(baseline.toRawAnalysisDriveData())) {
+                            hasUnverifiedHistoryRows = true
+                            previous[drive.driveId] ?: baseline.toAnalysisDriveData()
+                        } else currentRows[drive.driveId]?.toAnalysisDriveData() ?: drive
+                    }
+                    // Do not drop live IDs admitted while the network was still using its older snapshot.
+                    allDrives = (acceptedRemote + allDrives + acceptedRows.map { it.toAnalysisDriveData() })
+                        .distinctBy { it.driveId }
                     val granularity = determineGranularity(startDate, endDate)
 
                     _uiState.update {
@@ -593,6 +664,7 @@ class DrivesViewModel @Inject constructor(
                             driveMetrics = localMetrics,
                             canLoadMore = state.dateFilter != DriveDateFilter.ALL_TIME,
                             isLoading = false,
+                            isRefreshing = false,
                             isFilterLoading = false,
                             isLoadingMore = false
                         )
@@ -600,49 +672,24 @@ class DrivesViewModel @Inject constructor(
 
                     applyFiltersAndUpdateState()
 
-                    result.data.verifiedReadContext?.let { proof ->
-                        metricsObservation = viewModelScope.launch {
-                            observeScopedDriveRows(driveSummaryDao.observeAll(result.data.context.localHistoryCarId),
-                                { generation == observationGeneration && this@DrivesViewModel.carId == id &&
-                                    historyRepository.isContextCurrent(proof) },
-                                onContextChanged = {
-                                    if (generation == observationGeneration) {
-                                        allDrives = emptyList()
-                                        _uiState.update { it.copy(drives = emptyList(), parkedPairs = emptySet(), historySequence = emptyList(), driveMetrics = emptyMap(),
-                                            summary = DrivesSummary(), chartData = emptyList(), error = "history_identity_unavailable") }
-                                    }
-                                }) { rows ->
-                                val compatibleRows = rows.filter { row ->
-                                    baselineRows[row.driveId]?.let(row::matchesHistoryWindow) == true
-                                }
-                                val cached = compatibleRows.associateBy { it.driveId }
-                                val replacedIds = rows.map { it.driveId }.toSet() - cached.keys
-                                allDrives = allDrives.map { drive ->
-                                    val next = cached[drive.driveId]?.toAnalysisDriveData()
-                                    if (drive.driveId in replacedIds) drive.copy(energyConsumedNet = null, consumptionNet = null,
-                                        energyContract = EnergyContract(netEnergy = EnergyMetric(reason = "history_source_window_changed")))
-                                    else if (next == null || next.source != drive.source) drive else next.copy(
-                                        startAddress = drive.startAddress?.takeIf(String::isNotBlank) ?: next.startAddress,
-                                        endAddress = drive.endAddress?.takeIf(String::isNotBlank) ?: next.endAddress)
-                                }
-                                _uiState.update { it.copy(driveMetrics = compatibleRows.associate { row -> row.driveId to row.toQualifiedHistoryMetrics() }) }
-                                applyFiltersAndUpdateState()
-                            }
-                        }
-                    }
+                    observeDriveHistory(id, generation, proof, baselineRows)
 
                     val enrichedDrives = enrichDriveAddresses(remoteDrives) { latitude, longitude ->
                         geocodingRepository.reverseGeocode(latitude, longitude)
                     }
                     checkProof()
                     val addresses = enrichedDrives.associateBy { it.driveId }
-                    allDrives = allDrives.map { drive -> drive.copy(
-                        startAddress = addresses[drive.driveId]?.startAddress ?: drive.startAddress,
-                        endAddress = addresses[drive.driveId]?.endAddress ?: drive.endAddress) }
+                    allDrives = allDrives.map { drive ->
+                        val address = addresses[drive.driveId]?.takeIf { it.matchesHistoryIdentity(drive) }
+                        drive.copy(startAddress = drive.startAddress?.takeIf(String::isNotBlank) ?: address?.startAddress ?: drive.startAddress,
+                            endAddress = drive.endAddress?.takeIf(String::isNotBlank) ?: address?.endAddress ?: drive.endAddress)
+                    }
                     applyFiltersAndUpdateState()
                 }
                 is ApiResult.Error -> {
                     if (result.message == com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE) {
+                        metricsObservation?.cancel()
+                        activeHistoryProof = null
                         allDrives = emptyList()
                         _uiState.update { it.copy(drives = emptyList(), parkedPairs = emptySet(), historySequence = emptyList(), units = null, driveMetrics = emptyMap(), chartData = emptyList(), summary = DrivesSummary(), localArchiveLinkPending = false, historySyncWarning = null) }
                     }
@@ -656,6 +703,57 @@ class DrivesViewModel @Inject constructor(
                         )
                     }
                 }
+            }
+        }
+    }
+
+    private fun adoptDriveHistoryProof(proof: VerifiedHistoryReadContext, baselines: MutableMap<Int, DriveSummary>) {
+        val previous = activeHistoryProof
+        if (previous != null && (previous.scope != proof.scope ||
+                previous.context.remoteApiCarId != proof.context.remoteApiCarId ||
+                previous.context.localHistoryCarId != proof.context.localHistoryCarId)) {
+            metricsObservation?.cancel()
+            allDrives = emptyList()
+            baselines.clear()
+            hasUnverifiedHistoryRows = false
+            _uiState.update { it.copy(drives = emptyList(), parkedPairs = emptySet(), historySequence = emptyList(),
+                driveMetrics = emptyMap(), summary = DrivesSummary(), chartData = emptyList(),
+                error = null, historySyncWarning = null, localArchiveLinkPending = proof.localArchiveLinkPending) }
+        }
+        activeHistoryProof = proof
+    }
+
+    private fun observeDriveHistory(
+        id: Int, generation: Long, proof: VerifiedHistoryReadContext, baselines: MutableMap<Int, DriveSummary>
+    ) {
+        metricsObservation?.cancel()
+        metricsObservation = viewModelScope.launch {
+            observeScopedDriveRows(driveSummaryDao.observeAllForAdjacency(proof.context.localHistoryCarId),
+                { generation == observationGeneration && this@DrivesViewModel.carId == id &&
+                    historyRepository.isContextCurrent(proof) },
+                onContextChanged = {
+                    if (generation == observationGeneration) {
+                        allDrives = emptyList()
+                        _uiState.update { it.copy(drives = emptyList(), parkedPairs = emptySet(), historySequence = emptyList(), driveMetrics = emptyMap(),
+                            summary = DrivesSummary(), chartData = emptyList(), error = "history_identity_unavailable") }
+                    }
+                }) { rows ->
+                val compatibleRows = admitLiveDriveRows(rows, proof.context.localHistoryCarId, baselines)
+                val cached = compatibleRows.associateBy { it.driveId }
+                val replacedIds = rows.map { it.driveId }.toSet() - cached.keys
+                // An unaccepted row cannot disappear from the absence-of-intervening-drive proof.
+                hasUnverifiedHistoryRows = replacedIds.isNotEmpty()
+                val existingIds = allDrives.map { it.driveId }.toSet()
+                allDrives = allDrives.map { drive ->
+                    val next = cached[drive.driveId]?.toAnalysisDriveData()
+                    if (drive.driveId in replacedIds) drive.copy(energyConsumedNet = null, consumptionNet = null,
+                        energyContract = EnergyContract(netEnergy = EnergyMetric(reason = "history_source_window_changed")))
+                    else if (next == null || next.source != drive.source) drive else next.copy(
+                        startAddress = drive.startAddress?.takeIf(String::isNotBlank) ?: next.startAddress,
+                        endAddress = drive.endAddress?.takeIf(String::isNotBlank) ?: next.endAddress)
+                } + compatibleRows.filter { it.driveId !in existingIds }.map { it.toAnalysisDriveData() }
+                _uiState.update { it.copy(driveMetrics = compatibleRows.associate { row -> row.driveId to row.toQualifiedHistoryMetrics() }) }
+                applyFiltersAndUpdateState()
             }
         }
     }
@@ -697,12 +795,8 @@ class DrivesViewModel @Inject constructor(
 
         _uiState.update {
             it.copy(
-                isLoading = false,
-                isRefreshing = false,
-                isFilterLoading = false,
-                isLoadingMore = false,
                 drives = displayDrives,
-                parkedPairs = verifiedParkedPairs(allDrives),
+                parkedPairs = if (hasUnverifiedHistoryRows) emptySet() else verifiedParkedPairs(allDrives),
                 historySequence = historySequence,
                 summary = summary,
                 chartData = chartData

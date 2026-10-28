@@ -9,6 +9,7 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.UnifiedHistoryRepository
+import com.matelink.data.repository.VerifiedHistoryReadContext
 import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.VehicleContextRepository
@@ -91,13 +92,24 @@ class TimelineViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(TimelineUiState())
     val uiState: StateFlow<TimelineUiState> = _uiState.asStateFlow()
     private val latestLoad = LatestHistoryLoad()
-    private var activeScope: HistoryReadScope? = null
+    private var activeHistoryProof: VerifiedHistoryReadContext? = null
 
     init {
-        viewModelScope.launch { settingsRepository.currentCarId.collect { loadTimeline() } }
+        viewModelScope.launch {
+            settingsRepository.currentCarId.collect { carId ->
+                val proof = activeHistoryProof
+                if (proof != null && proof.context.remoteApiCarId != carId) {
+                    activeHistoryProof = null
+                    _uiState.value = TimelineUiState(isLoading = true)
+                }
+                loadTimeline()
+            }
+        }
         viewModelScope.launch {
             vehicleContexts.historyScopeChanges.collect { scope ->
-                if (activeScope != null && activeScope != scope) {
+                val proof = activeHistoryProof
+                if (proof != null && proof.scope != scope) {
+                    activeHistoryProof = null
                     _uiState.value = TimelineUiState(isLoading = true)
                     loadTimeline()
                 }
@@ -113,9 +125,27 @@ class TimelineViewModel @Inject constructor(
         latestLoad.launch(viewModelScope) {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             var capturedScope: HistoryReadScope? = null
+            var requestedCarId: Int? = null
+            suspend fun publishFailure(message: String) {
+                val retain = canRetainPublishedHistory(requestedCarId, capturedScope)
+                ensureCurrent()
+                val previous = _uiState.value
+                _uiState.value = if (retain && previous.events.isNotEmpty()) {
+                    previous.copy(isLoading = false, error = message)
+                } else {
+                    activeHistoryProof = null
+                    TimelineUiState(isLoading = false, error = message)
+                }
+            }
             try {
                 val carId = settingsRepository.currentCarId.first()
+                requestedCarId = carId
                 capturedScope = vehicleContexts.captureReadScope()
+                if (activeHistoryProof != null && !canRetainPublishedHistory(carId, capturedScope)) {
+                    ensureCurrent()
+                    activeHistoryProof = null
+                    _uiState.value = TimelineUiState(isLoading = true)
+                }
 
                 val history = when (val result = repository.load(carId)) {
                     is ApiResult.Success -> result.data
@@ -123,15 +153,14 @@ class TimelineViewModel @Inject constructor(
                         ensureCurrent()
                         if (vehicleContexts.captureReadScope() != capturedScope) return@launch
                         if (settingsRepository.currentCarId.first() != carId) return@launch
-                        _uiState.value = TimelineUiState(
-                            isLoading = false, error = appContext.getString(R.string.error_loading_data)
-                        )
+                        publishFailure(appContext.getString(R.string.error_loading_data))
                         return@launch
                     }
                 }
 
                 val proof = history.verifiedReadContext ?: run {
                     ensureCurrent()
+                    activeHistoryProof = null
                     _uiState.value = TimelineUiState(isLoading = false, error = "history_identity_unavailable")
                     return@launch
                 }
@@ -152,7 +181,7 @@ class TimelineViewModel @Inject constructor(
                 val grouped = events.groupBy { it.date }
                 val warning = history.drivesSyncError ?: history.chargesSyncError
                 checkProof()
-                activeScope = proof.scope
+                activeHistoryProof = proof
                 _uiState.value = TimelineUiState(
                     isLoading = false,
                     events = events,
@@ -168,12 +197,17 @@ class TimelineViewModel @Inject constructor(
                 val scope = capturedScope
                 if (scope != null && runCatching { vehicleContexts.captureReadScope() }.getOrNull() != scope)
                     return@launch
-                _uiState.value = TimelineUiState(
-                    isLoading = false,
-                    error = e.message
-                )
+                publishFailure(e.message ?: appContext.getString(R.string.error_loading_data))
             }
         }
+    }
+
+    /** An account scope alone cannot authorize retaining another vehicle's published events. */
+    private suspend fun canRetainPublishedHistory(carId: Int?, scope: HistoryReadScope?): Boolean {
+        val proof = activeHistoryProof ?: return false
+        if (carId == null || scope == null || proof.scope != scope || proof.context.remoteApiCarId != carId)
+            return false
+        return settingsRepository.currentCarId.first() == carId && repository.isContextCurrent(proof)
     }
 }
 

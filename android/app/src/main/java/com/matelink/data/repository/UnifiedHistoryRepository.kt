@@ -240,6 +240,14 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         remoteApiCarId: Int,
         startDate: String? = null,
         endDate: String? = null
+    ): ApiResult<UnifiedHistory> = load(remoteApiCarId, startDate, endDate) {}
+
+    /** Live consumers adopt this read's identity before any history endpoint can stall. */
+    internal suspend fun load(
+        remoteApiCarId: Int,
+        startDate: String?,
+        endDate: String?,
+        onResolvedContext: suspend (VerifiedHistoryReadContext) -> Unit
     ): ApiResult<UnifiedHistory> {
         val resolved = when (val result = resolveContext(remoteApiCarId)) {
             is ApiResult.Error -> return result
@@ -247,6 +255,9 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         }
         val context = resolved.context
         suspend fun scopeUnchanged() = isContextCurrent(resolved)
+        if (!scopeUnchanged()) return historyIdentityUnavailableError()
+        onResolvedContext(resolved)
+        if (!scopeUnchanged()) return historyIdentityUnavailableError()
         fun recordFailure(stage: String, requestedAt: Instant, error: ApiResult.Error?) {
             if (error != null) reads.reportFailure(stage, requestedAt, error)
         }
@@ -271,25 +282,12 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
                 response
             }
         } else HistoryPageLoad<DriveData>(emptyList(), unavailable)
-        val remoteCharges = if (canReadHistory) {
-            loadHistoryPages(id = ChargeData::chargeId) { page ->
-                if (!scopeUnchanged()) return@loadHistoryPages historyIdentityUnavailableError()
-                val requestedAt = Instant.now()
-                val response = reads.getCharges(context.remoteApiCarId, startDate, endDate, page)
-                recordFailure("charges", requestedAt, response as? ApiResult.Error)
-                if (!scopeUnchanged()) return@loadHistoryPages historyIdentityUnavailableError()
-                response
-            }
-        } else HistoryPageLoad<ChargeData>(emptyList(), unavailable)
-
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
         // Keep the wire/Room archive raw while the displayed projection hides
         // unqualified energy. Re-encoding a projected value destroys the only
         // recoverable source scalar and can contaminate a same-ID cache upsert.
         val rawDrives = mergeDrivesRaw(remoteDrives.items.map { it.withLegacyRemoteQuality() },
             localDrives.map { it.toRawAnalysisDriveData() })
-        val rawCharges = mergeChargesRaw(remoteCharges.items.map { it.withLegacyRemoteQuality() },
-            localCharges.map { it.toRawAnalysisChargeData() })
         // The EXACT same DAO read/merge/transaction projection that writes
         // Room also constructs the visible list. Raw bytes remain in apiEvidence;
         // detail metadata/energy is a separately guarded snapshot.
@@ -310,6 +308,25 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
                 mergeStoredDrive(row, prior)
             }
         }
+        // A completed drive read belongs to this verified vehicle even if the independent
+        // charge endpoint later stalls or the caller cancels its remaining read budget.
+        if (!scopeUnchanged()) return historyIdentityUnavailableError()
+        reads.persistDrives(driveRows)
+        if (!scopeUnchanged()) return historyIdentityUnavailableError()
+
+        val remoteCharges = if (canReadHistory) {
+            loadHistoryPages(id = ChargeData::chargeId) { page ->
+                if (!scopeUnchanged()) return@loadHistoryPages historyIdentityUnavailableError()
+                val requestedAt = Instant.now()
+                val response = reads.getCharges(context.remoteApiCarId, startDate, endDate, page)
+                recordFailure("charges", requestedAt, response as? ApiResult.Error)
+                if (!scopeUnchanged()) return@loadHistoryPages historyIdentityUnavailableError()
+                response
+            }
+        } else HistoryPageLoad<ChargeData>(emptyList(), unavailable)
+        if (!scopeUnchanged()) return historyIdentityUnavailableError()
+        val rawCharges = mergeChargesRaw(remoteCharges.items.map { it.withLegacyRemoteQuality() },
+            localCharges.map { it.toRawAnalysisChargeData() })
         val priorCharges = localCharges.associateBy { it.chargeId }
         val remoteChargeCandidates = remoteCharges.items.associateBy { it.chargeId }
         val chargeRows = rawCharges.mapNotNull { raw ->
@@ -338,7 +355,6 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
             byChargeId[raw.chargeId]?.toAnalysisChargeData() ?: raw.withQualifiedEnergy()
         }
         // Do not delete old data when a remote page, identity or source is absent.
-        reads.persistDrives(driveRows)
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
         reads.persistCharges(chargeRows)
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
