@@ -1,9 +1,11 @@
 import { PropsWithChildren, useEffect } from 'react'
 import Taro from '@tarojs/taro'
+import { ensureWechatSession } from './services/api'
 import './app.scss'
 
 export default function App({ children }: PropsWithChildren<unknown>) {
   useEffect(() => {
+    void ensureWechatSession()
     const applyTheme = ({ theme }: { theme: string }) => {
       const dark = theme === 'dark'
       void Taro.setNavigationBarColor({ frontColor: dark ? '#ffffff' : '#000000', backgroundColor: dark ? '#111315' : '#f5f7f9' }).catch(() => {})

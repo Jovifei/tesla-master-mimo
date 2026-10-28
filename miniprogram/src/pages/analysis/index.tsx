@@ -13,8 +13,9 @@ import { sourceLabel } from '../../domain/data_labels'
 import { toChineseDisplayAddress } from '../../domain/address_display'
 import { analysisApi } from '../../services/analysis_api'
 import type { ChargeEvidence, DriveEvidence, ParkedDetail } from '../../services/analysis_types'
-import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
+import { ApiError, ensureWechatSession, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { readAppSession } from '../../services/session'
+import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 import { readCarsCache } from '../../services/cars_cache'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 import { overlayChargeCosts, type CostedCharge } from '../../services/charge_cost'
@@ -115,7 +116,7 @@ export default function AnalysisPage() {
   const [chargeDetail, setChargeDetail] = useState<Charge | null>(null), [detailLoading, setDetailLoading] = useState(false)
   const [sampleIndex, setSampleIndex] = useState(0), [recordCategory, setRecordCategory] = useState<'distance' | 'duration' | 'energy' | 'charge'>('distance')
   const evidenceEpoch = useRef<number | null>(null)
-  const requestEpoch = useRef(0), detailEpoch = useRef(0), selectedStable = useRef<string | null>(null)
+  const requestEpoch = useRef(0), detailEpoch = useRef(0), selectedStable = useRef<string | null>(null), pageVisible = useRef(false)
   const owner = useRef<{ user: string; origin: string; generation: number; epoch: number } | null>(null)
   const drivesRef = useRef<Drive[]>([]), chargesRef = useRef<Charge[]>([])
   const current = () => {
@@ -126,10 +127,14 @@ export default function AnalysisPage() {
   const updateQuery = (patch: Partial<HistoryQuery>) => setQuery(previous => normalizeHistoryQuery({ ...previous, ...patch }))
   const load = async () => {
     invalidate(); clear(); setError(null)
-    const epoch = requestEpoch.current, session = readAppSession(Taro)
-    if (!session?.userId) { setError('请先在“更多”中完成特斯拉账号登录'); return }
+    const epoch = requestEpoch.current
+    setLoading(true)
+    await ensureWechatSession()
+    if (epoch !== requestEpoch.current) return
+    const session = readAppSession(Taro)
+    if (!session?.userId) { setLoading(false); setError('请先在“更多”中完成特斯拉账号登录'); return }
     let origin: string
-    try { origin = getApiOrigin() } catch { setError('无法验证当前服务地址'); return }
+    try { origin = getApiOrigin() } catch { setLoading(false); setError('无法验证当前服务地址'); return }
     owner.current = { user: session.userId, origin, generation: getApiSessionGeneration(), epoch }
     const active = () => requestEpoch.current === epoch && current()
     setLoading(true)
@@ -220,7 +225,10 @@ export default function AnalysisPage() {
       else if (requestEpoch.current === epoch) { setLoading(false); clear(); setError('会话或服务地址已变化，请重新验证登录。') }
     }
   }
-  useDidShow(() => { void load() }); useDidHide(invalidate); useUnload(invalidate)
+  useSessionRecoveryReload(() => { if (pageVisible.current) void load() })
+  useDidShow(() => { pageVisible.current = true; void load() })
+  useDidHide(() => { pageVisible.current = false; invalidate() })
+  useUnload(() => { pageVisible.current = false; invalidate() })
   const navigateDrive = (row: Drive) => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=curves&id=${encodeURIComponent(row.id)}` }) }
   const navigateParked = (olderId: string, newerId: string) => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=parked&olderId=${encodeURIComponent(olderId)}&newerId=${encodeURIComponent(newerId)}` }) }
   const openCharge = async (row: Charge) => {

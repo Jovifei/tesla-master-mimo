@@ -48,6 +48,18 @@ async function mount(kind: string) {
   return tree!
 }
 const shown = () => tree!.root.findAllByType('text').map(node => node.children.join('')).join('\n')
+it('hides the previous account metrics while a replacement account refresh is pending', async () => {
+  await mount('battery')
+  expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => String(node.props.ariaLabel).includes('123 km'))).toBe(true)
+  await act(async () => { platform.hide() })
+  platform.values.set('matelink.wechat.session.v1', { apiOrigin: 'https://api.example.test', userId: 'other', accessToken: 'other-access', refreshToken: 'other-refresh', expiresAt: '2000-01-01T00:00:00Z', linkRequired: false })
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/v1/session/refresh')
+    ? new Promise(resolve => { release = resolve }) : Promise.resolve(response({ cars: [] })))
+  await act(async () => { platform.show(); await new Promise(resolve => setTimeout(resolve, 0)) })
+  expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => String(node.props.ariaLabel).includes('123 km'))).toBe(false)
+  await act(async () => { release({ statusCode: 200, data: { access_token: 'fresh-other', refresh_token: 'next' }, header: {} }); await new Promise(resolve => setTimeout(resolve, 0)) })
+})
 async function click(label: string) {
   const button = tree!.root.findAllByType('button').find(node => node.children.join('') === label)
   expect(button, label).toBeDefined()

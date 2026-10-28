@@ -3654,3 +3654,34 @@ Review：报告中的“列表修改总价”在当前 0.5.1 已降级到详情�
 - [x] 微信开发者工具体验版上传成功：AppID `wxc84899ab6146f1be`，版本 `0.5.2`。
 - [x] 微信绑定车辆方案记录：微信身份绑定 MateLink 用户，Tesla 授权凭证服务端加密保存；小程序不保存 Tesla 密码。
 - [ ] 真实 Tesla 账号同窗口逐页数据验收；正式发布审核仍需微信公众平台管理员操作。
+
+# 2026-10-28 小程序 App 对齐与微信绑定执行计划
+
+基线：小程序 worktree E:\Claude_allow\Download\mp-parity-wt-20261025，当前 HEAD 由执行前重新读取；Android App E:\project\_worktrees\matelink-release-data-audit-20261026 只读。所有实现限定在小程序 worktree 及其后端目录，不触碰 App 工作树。
+
+## 阶段 A：身份与微信绑定
+- [x] A1 审查现有 Tesla OAuth、Mini transaction、session 存储与 API 合同，确认最小微信身份模型。
+- [x] A2 服务端实现微信 code exchange/session restore、显式绑定/解绑、冲突与账号隔离；微信会话只恢复 MateLink 用户，Tesla 长期凭证只留服务端加密存储。
+- [x] A3 小程序调用 wx.login 恢复会话；首次 Tesla 授权后提供绑定确认；授权过期回退官方 Tesla 登录。
+- [x] A4 用 Go/TS 回归覆盖 code 重放、旧会话、退出竞态、解绑、换号、跨账号车辆隔离。
+
+## 阶段 B：逐页 App 对齐
+- [x] B1 以 App build74 源码和已有截图证据建立车辆、行程、充电、更多/分析逐项矩阵。
+- [ ] B2 修正布局/文案/筛选高度/未知值/费用卡/加载空态/数据来源显示，保持 App 的计算和资格规则。
+- [ ] B3 在微信开发者工具导入固定 dist，逐页截图检查首屏、中段、详情、滚动和返回；真实账号未完成时明确标注 NOT_VERIFIED。
+
+## 阶段 C：验证与交付
+- [ ] C1 运行 Go 测试、Mini 测试、typecheck、build:weapp、资源/API 域名检查。
+- [ ] C2 复核 diff、提交、推送体验版；记录 SHA、版本、包大小和限制。
+- [ ] C3 形成逐页报告，区分实测 PASS、源码 PASS、待真实 Tesla 验证和阻塞项。
+
+## 约束
+- Tesla 密码、refresh token、微信 session_key/openid 不进入小程序日志或普通缓存。
+- 不把微信身份作为 Tesla 主登录前置；微信绑定是可选的会话恢复能力。
+- 不把合成数据截图当真实账号验收；不宣称全页面已一比一通过，除非有同账号同窗口证据。
+
+## Review
+- 实现任务需经过规格审查和代码质量审查。
+- 所有测试、构建、开发者工具结果与未完成项在最终报告中记录。
+
+阶段结果：微信绑定前后端规格与质量复审均 PASS；最终 Mini 807/807、资源6项、类型检查通过，完整 Go/PostgreSQL 465 PASS、0 FAIL、0 SKIP。候选微信构建通过。线上 API `/healthz` 固定在 `2c8b7655`，与本轮基线的既有后端源码一致；本轮只新增身份恢复能力，未部署生产或改 Android。源码提交、固定 SHA 产物与体验版上传记录随后独立追加。真实微信 AppSecret/服务器接入及本人 Tesla 联调仍待外部配置。

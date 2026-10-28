@@ -1,11 +1,11 @@
 import React from 'react'
 import renderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), navigateTo: vi.fn(),
+const platform = vi.hoisted(() => ({ request: vi.fn(), login: vi.fn(), values: new Map<string, unknown>(), navigateTo: vi.fn(),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Input: 'input', Image: 'image', Map: 'map', ScrollView: 'scroll-view' }))
 vi.mock('@tarojs/taro', () => ({ default: {
-  request: platform.request, getStorageSync: (key: string) => platform.values.get(key),
+  request: platform.request, login: platform.login, getStorageSync: (key: string) => platform.values.get(key),
   setStorageSync: (key: string, value: unknown) => { platform.values.set(key, JSON.parse(JSON.stringify(value))) },
   removeStorageSync: (key: string) => { platform.values.delete(key) }, getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }), navigateTo: platform.navigateTo,
 }, useDidShow: (callback: () => void) => { platform.show = callback }, useDidHide: (callback: () => void) => { platform.hide = callback }, useUnload: (callback: () => void) => { platform.unload = callback }, usePageScroll: () => {} }))
@@ -24,7 +24,7 @@ const response = (data: unknown) => ({ statusCode: 200, header: {}, data: { data
 function session(userId: string) { return { apiOrigin: origin, userId, accessToken: `synthetic-${userId}`, refreshToken: null, expiresAt: null, linkRequired: false } }
 let offline = false
 beforeEach(() => {
-  vi.resetModules(); platform.values.clear(); platform.request.mockReset(); platform.navigateTo.mockReset(); offline = false
+  vi.resetModules(); platform.values.clear(); platform.request.mockReset(); platform.login.mockReset(); platform.navigateTo.mockReset(); offline = false
   vi.stubEnv('TARO_APP_API_BASE_URL', origin); platform.values.set('matelink.wechat.session.v1', session('owner'))
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
     if (offline) throw new Error('synthetic offline')
@@ -52,6 +52,45 @@ async function edit(amount: string, currency: string) {
   await act(async () => { const fields = tree!.root.findAllByType('input'); fields[0].props.onInput({ detail: { value: amount } }); fields[1].props.onInput({ detail: { value: currency } }) })
 }
 const shown = () => tree!.root.findAllByType('text').map(node => node.children.join('')).join('\n')
+it('hides the previous account charge records while a replacement account refresh is pending', async () => {
+  await mount()
+  expect(tree!.root.findAllByProps({ className: 'history-record' }).length).toBeGreaterThan(0)
+  await act(async () => { platform.hide() })
+  platform.values.set('matelink.wechat.session.v1', { ...session('other'), refreshToken: 'refresh-other', expiresAt: '2000-01-01T00:00:00Z' })
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/v1/session/refresh')
+    ? new Promise(resolve => { release = resolve }) : Promise.resolve(response({ cars: [] })))
+  await act(async () => { platform.show() }); await flush()
+  expect(tree!.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+  await act(async () => { release({ statusCode: 200, data: { access_token: 'fresh-other', refresh_token: 'next' }, header: {} }) }); await flush()
+})
+it('clears old charge records after expired refresh rejection until the shared recovery completes', async () => {
+  const storage = await import('../../services/session')
+  storage.writeWechatRecoveryPreference({ setStorageSync: (name, value) => platform.values.set(name, value) },
+    { apiOrigin: origin, boundUserId: 'owner', enabled: true })
+  platform.values.set('matelink.wechat.session.v1', { ...session('owner'), refreshToken: 'refresh-owner' })
+  await mount()
+  expect(tree!.root.findAllByProps({ className: 'history-record' }).length).toBeGreaterThan(0)
+  await act(async () => { platform.hide() })
+  platform.values.set('matelink.wechat.session.v1', { ...session('owner'), refreshToken: 'refresh-owner', expiresAt: '2000-01-01T00:00:00Z' })
+  platform.login.mockResolvedValue({ code: 'fresh-code' })
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/v1/session/refresh')) return Promise.resolve({ statusCode: 401, data: { error: 'session_required' }, header: {} })
+    if (url.endsWith('/v1/auth/wechat/restore')) return new Promise(resolve => { release = resolve })
+    if (url.endsWith('/cars')) return Promise.resolve(response({ cars: [{ car_id: 7, vehicle_uid: 'uid7', name: '合成车辆' }] }))
+    if (url.endsWith('/current')) return Promise.resolve(response({ charge: null }))
+    return Promise.resolve(response({ charges: [charge], meta: { page: 1, show: 20, total_pages: 1 } }))
+  })
+  await act(async () => { platform.show() })
+  await vi.waitFor(() => expect(platform.request.mock.calls.some(([request]) => request.url.endsWith('/v1/auth/wechat/restore'))).toBe(true))
+  expect(tree!.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+  await act(async () => { release({ statusCode: 200, data: { access_token: 'restored', user: { id: 'owner' } }, header: {} }) }); await flush()
+  expect(tree!.root.findAllByProps({ className: 'history-record' }).length).toBeGreaterThan(0)
+  expect(platform.login).toHaveBeenCalledTimes(1)
+  const lastCars = platform.request.mock.calls.filter(([request]) => request.url.endsWith('/cars')).slice(-1)[0][0]
+  expect(lastCars.header.Authorization).toBe('Bearer restored')
+})
 it.each(['missing-mode', 'dc-mode', 'uppercase-mode', 'mismatched-basis', 'blank-basis', 'missing-observed', 'submillisecond-shift'])('keeps independently qualified energies but withholds AC efficiency for %s', async reason => {
   const altered = JSON.parse(JSON.stringify(charge))
   if (reason === 'missing-mode') delete altered.charge_type

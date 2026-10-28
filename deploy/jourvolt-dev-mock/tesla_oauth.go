@@ -328,6 +328,10 @@ func (o *teslaOAuth) consentRevokeURL() string {
 }
 
 func (a *app) authRoute(w http.ResponseWriter, r *http.Request) bool {
+	if strings.HasPrefix(r.URL.Path, "/v1/auth/wechat/") {
+		a.wechatAuthRoute(w, r)
+		return true
+	}
 	if strings.HasPrefix(r.URL.Path, "/v1/auth/miniprogram/") {
 		a.miniProgramAuthRoute(w, r)
 		return true

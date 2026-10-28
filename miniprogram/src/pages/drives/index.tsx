@@ -10,11 +10,12 @@ import { emptyHistoryQuery, filterHistory, historyDateTime, historyDetailDateTim
 import { readCarsCache } from '../../services/cars_cache'
 import './index.scss'
 import { createRequestScopeGate } from '../../domain/request_scope'
-import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
+import { ApiError, ensureWechatSession, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { analysisApi } from '../../services/analysis_api'
 import type { ParkedDetail } from '../../services/analysis_types'
 import { carSelectionStorageKey, type Car, type Drive, type HistoryPage, type HistoryPageMeta } from '../../services/types'
 import { readAppSession } from '../../services/session'
+import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 import LoadingIndicator from '../../components/LoadingIndicator'
 import HistoryIntervalSummary from '../../components/HistoryIntervalSummary'
@@ -117,7 +118,12 @@ export default function DrivesPage() {
   const loadingMoreRef = useRef(false)
   const pageRef = useRef(0)
   const lifecycleEpoch = useRef(0)
+  const displayOwner = useRef<string | null>(null)
   const scopeGate = useRef(createRequestScopeGate())
+  const currentOwner = () => {
+    try { const current = readAppSession(Taro); return current?.userId ? JSON.stringify([getApiOrigin(), current.userId, getApiSessionGeneration()]) : null }
+    catch { return null }
+  }
 
   const resetHistoryState = () => {
     itemsRef.current = []
@@ -288,6 +294,7 @@ export default function DrivesPage() {
     const sessionGeneration = getApiSessionGeneration()
     const session = readAppSession(Taro)
     if (!session?.userId) {
+      displayOwner.current = null
       invalidatePage()
       setCars([])
       setCar(null)
@@ -295,6 +302,7 @@ export default function DrivesPage() {
       setError('请先在“更多”中完成特斯拉账号登录')
       return
     }
+    displayOwner.current = currentOwner()
     setError(null)
     setLoading(true)
     try {
@@ -344,6 +352,14 @@ export default function DrivesPage() {
 
   const showPage = async () => {
     pageVisible.current = true
+    if (displayOwner.current && displayOwner.current !== currentOwner()) {
+      invalidatePage(); displayOwner.current = null
+      setCars([]); setCar(null); resetHistoryState(); setSelectedEvidence(null); closeParked(); setError(null)
+    }
+    const showEpoch = ++lifecycleEpoch.current
+    setLoading(true)
+    await ensureWechatSession()
+    if (!pageVisible.current || showEpoch !== lifecycleEpoch.current) return
     const context = detailContext.current
     const sameOwner = () => {
       try {
@@ -388,6 +404,7 @@ export default function DrivesPage() {
       setError('在线车辆暂时无法重新验证；当前为本机已读取详情。')
     } finally { if (epoch === lifecycleEpoch.current) setLoading(false) }
   }
+  useSessionRecoveryReload(() => { if (pageVisible.current) void showPage() })
   useDidShow(() => { void showPage() })
   useDidHide(() => {
     const context = detailContext.current
@@ -527,7 +544,7 @@ export default function DrivesPage() {
         ? <AppDriveMonthChart rows={chartRows} partial={!statisticsInterval?.complete} />
         : car && visibleItems.length > 0 && (query.startDate || query.endDate) ? <LoadedDriveChart items={visibleItems.filter(isAppStatisticsDrive)} /> : null}
 
-      {!readAppSession(Taro) ? (
+      {!readAppSession(Taro) && loading ? <LoadingIndicator label="正在恢复会话…" /> : !readAppSession(Taro) ? (
         <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待特斯拉账号登录</Text><Text className="muted">请先在“更多”中建立会话。</Text></View>
       ) : trustedItems.length === 0 && !loading ? (
         <View className="card empty-state"><VisualIcon name="route" /><Text className="section-title">暂无可展示的行程</Text><Text className="muted">当前没有可展示的行程记录，空响应不会生成示例数据。</Text>

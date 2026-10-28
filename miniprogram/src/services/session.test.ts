@@ -5,9 +5,11 @@ import {
   readAppSession,
   readPendingWechatLink,
   readPendingTeslaAuthorization,
+  readWechatRecoveryPreference,
   writeAppSession,
   writePendingWechatLink,
   writePendingTeslaAuthorization,
+  writeWechatRecoveryPreference,
 } from './session'
 
 function storage() {
@@ -66,5 +68,22 @@ describe('session storage', () => {
     const store = storage()
     store.setStorageSync('matelink.wechat.session.v1', { refreshToken: 'refresh' })
     expect(readAppSession(store)).toBeNull()
+  })
+
+  it('isolates and validates the non-secret recovery preference per API origin', () => {
+    const store = storage()
+    const first = { apiOrigin: 'https://api.example.test', boundUserId: 'a', enabled: true }
+    writeWechatRecoveryPreference(store, first)
+    expect(readWechatRecoveryPreference(store, first.apiOrigin)).toEqual(first)
+    vi.stubEnv('TARO_APP_API_BASE_URL', 'https://other.example.test')
+    expect(readWechatRecoveryPreference(store, first.apiOrigin)).toBeNull()
+    expect(readWechatRecoveryPreference(store, 'https://other.example.test')).toBeNull()
+    writeWechatRecoveryPreference(store, { apiOrigin: 'https://other.example.test', boundUserId: 'b', enabled: false })
+    vi.stubEnv('TARO_APP_API_BASE_URL', first.apiOrigin)
+    expect(readWechatRecoveryPreference(store, first.apiOrigin)).toEqual(first)
+    const key = [...store.values.keys()].find(value => value.startsWith('matelink.wechat.recovery.v1.') && value.includes('api.example.test'))!
+    store.values.set(key, { ...first, enabled: 'yes' })
+    expect(readWechatRecoveryPreference(store, first.apiOrigin)).toBeNull()
+    expect(readWechatRecoveryPreference({ getStorageSync: () => { throw Error('storage unavailable') } }, first.apiOrigin)).toBeNull()
   })
 })
