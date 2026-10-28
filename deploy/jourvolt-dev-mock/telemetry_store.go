@@ -689,13 +689,17 @@ func (s *telemetryService) finalizeDuePostgres(ctx context.Context, now time.Tim
 	if err != nil {
 		return 0, err
 	}
+	return finalizeDuePostgresTx(ctx, tx, now, debounce)
+}
+
+func finalizeDuePostgresTx(ctx context.Context, tx pgx.Tx, now time.Time, debounce time.Duration) (int, error) {
 	defer tx.Rollback(ctx)
 	rows, err := tx.Query(ctx, `SELECT id, public_id, started_at, stop_candidate_at FROM jourvolt_telemetry_sessions WHERE kind='drive' AND ended_at IS NULL AND stop_candidate_at IS NOT NULL FOR UPDATE`)
 	if err != nil {
 		return 0, err
 	}
 	defer rows.Close()
-	completed := 0
+	due := make([]telemetrySession, 0)
 	for rows.Next() {
 		var session telemetrySession
 		var candidate time.Time
@@ -707,15 +711,20 @@ func (s *telemetryService) finalizeDuePostgres(ctx context.Context, now time.Tim
 		}
 		end := candidate.Add(debounce)
 		session.Kind, session.EndAt = "drive", &end
+		due = append(due, session)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	rows.Close()
+	completed := 0
+	for _, session := range due {
 		key := sessionCompletionKey(session)
-		tag, err := tx.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET ended_at=$1, stop_candidate_at=NULL, completion_key=$2 WHERE id=$3 AND ended_at IS NULL`, end, key, session.ID)
+		tag, err := tx.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET ended_at=$1, stop_candidate_at=NULL, completion_key=$2 WHERE id=$3 AND ended_at IS NULL`, *session.EndAt, key, session.ID)
 		if err != nil {
 			return 0, err
 		}
 		completed += int(tag.RowsAffected())
-	}
-	if err := rows.Err(); err != nil {
-		return 0, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, err
