@@ -91,3 +91,11 @@
 - 分析页 AC/DC 统计复用 `Charge.chargeMode` 的已有降级解析（`charge_type`/`fast_charger_present`），不再只看 energy contract；没有明确字段仍保留“模式未知”，不猜测。
 - 真实开发者工具逐页未登录态继续通过；MCP 客户端授权弹窗仍等待用户确认，真实 Tesla 数据运行时核对尚未开始。
 - 本轮最终 `npm test` 733/733、`tsc --noEmit`、`build:weapp` 通过，构建已同步到开发者工具目录。
+
+## 体验版上传与微信绑定方案
+
+- 版本 `0.5.2` 已完成全量测试、类型检查和微信构建。
+- 当前小程序分支提交：`ee7cf818`，已推送到 `origin/codex/tesla-auth-devtools-fallback-20261024`。
+- 微信开发者工具体验版上传成功，AppID `wxc84899ab6146f1be`，上传版本 `0.5.2`，包大小约 11.36 MB。
+- 微信绑定车辆的正确实现：首次仍由用户在 Tesla 官方页面授权；服务端在授权领取后把微信 openid/unionid 绑定到 MateLink 用户和车辆关系，Tesla 授权凭证只在服务端加密保存。后续小程序通过微信会话恢复 MateLink 会话并读取绑定车辆，凭证过期/撤销/账号切换时重新要求 Tesla 授权。小程序本地不保存 Tesla 密码或长期 refresh token。
+- 当前代码已具备 Tesla 官方事务授权、服务端 claim 和作用域会话保护；微信身份绑定的持久化映射需要服务端新增/确认微信登录会话接口，不能只靠前端改造完成。
