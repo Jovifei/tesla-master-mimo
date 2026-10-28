@@ -161,8 +161,8 @@ export default function InsightsPage() {
       <MetricValue label="行驶时长" value={result.duration.value} unit="分钟" />
       <MetricValue label="合格净能量" value={result.energy.value} unit="kWh" negative={(result.energy.value ?? 0) < 0} />
       <MetricValue label="配对平均能耗" value={result.efficiency.value} unit="kWh/100km" negative={(result.efficiency.value ?? 0) < 0} />
-      <Text className="muted">能量覆盖 {result.energy.known}/{result.energy.total} · 能耗配对 {result.efficiency.known}/{result.efficiency.total} · 含估算 {result.estimatedEnergy} 段</Text>
-      <Text className="muted">里程覆盖 {result.distance.known}/{result.distance.total} · 时长覆盖 {result.duration.known}/{result.duration.total}</Text>
+      <Text className="muted">{result.energy.total === 0 ? '暂无能耗样本' : `能量覆盖 ${result.energy.known}/${result.energy.total}`} · {result.efficiency.total === 0 ? '无配对' : `能耗配对 ${result.efficiency.known}/${result.efficiency.total}`} · 含估算 {result.estimatedEnergy} 段</Text>
+      <Text className="muted">{result.distance.total === 0 ? '暂无里程样本' : `里程覆盖 ${result.distance.known}/${result.distance.total}`} · {result.duration.total === 0 ? '无时长' : `时长覆盖 ${result.duration.known}/${result.duration.total}`}</Text>
       <Text className="muted">{result.driveCount} 段行驶 · {result.chargeCount} 次充电</Text>
       {view.legs.some(leg => leg.kind === 'charge' && 'costProvenance' in leg.charge && leg.charge.costProvenance === 'manual') ? <Text className="muted">包含本机手动费用，原服务端账单保留。</Text> : null}
       {result.costs.groups.map(group => <MetricValue key={group.currency} label="所选充电费用" value={group.cost} unit={group.currency} />)}

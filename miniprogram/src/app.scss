@@ -12,7 +12,8 @@ button {
 
 .page {
   min-height: 100vh;
-  padding: 32rpx;
+  padding: 32rpx 32rpx calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
 }
 
 .card {
