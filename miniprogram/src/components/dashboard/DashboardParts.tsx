@@ -40,7 +40,7 @@ export function DashboardHud({ status, dismissed, onDismiss, onExpand, onOpen }:
       {status.power != null ? <HudValue label={power.label} value={dashboardMetric(power.value, 'kW')} className="dashboard-hud-right" /> : null}
     </> : <>
       <HudValue label="已充入" value={dashboardMetric(status.chargeEnergyAdded, 'kWh')} className="dashboard-hud-primary" />
-      {status.chargerVoltage != null ? <HudValue label="充电电压电流" value={`${dashboardNumber(status.chargerVoltage, 0)} V / ${dashboardNumber(status.chargerActualCurrent, 0)} A`} /> : null}
+      {status.chargerVoltage != null ? <HudValue label="充电电压电流" value={`${dashboardMetric(status.chargerVoltage, 'V', 0)} / ${dashboardMetric(status.chargerActualCurrent, 'A', 0)}`} /> : null}
       {status.timeToFullChargeHours != null ? <HudValue label="剩余时间" value={hudRemaining(status.timeToFullChargeHours)} className="dashboard-hud-right" /> : null}
     </>}</View>
   </View>

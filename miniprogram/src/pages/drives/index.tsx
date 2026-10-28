@@ -6,7 +6,7 @@ import { buildDriveHistoryItems, type DriveHistoryItem } from '../../domain/driv
 import { toChineseDisplayAddress } from '../../domain/address_display'
 import { getAppNavGeometry } from '../../services/nav_geometry'
 import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, reconcileHistoryCache, type HistoryInterval } from '../../domain/history_controller'
-import { emptyHistoryQuery, filterHistory, historyDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
+import { emptyHistoryQuery, filterHistory, historyDateTime, historyDetailDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
 import './index.scss'
 import { createRequestScopeGate } from '../../domain/request_scope'
@@ -520,7 +520,7 @@ export default function DrivesPage() {
         }}>查看新行程</Button>
         <Button className="button" onClick={() => setNotices([])}>关闭提示</Button>
       </View> : null}
-      {car ? <HistoryIntervalSummary interval={statisticsInterval} query={query} kind="drives" /> : null}
+      {car && !loading ? <HistoryIntervalSummary interval={statisticsInterval} query={query} kind="drives" /> : null}
       {noticeLimited ? <Text className="muted history-notice-limit">本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看</Text> : null}
 
       {car && chartRows.length > 0 && !query.startDate && !query.endDate
@@ -627,8 +627,8 @@ export default function DrivesPage() {
               </View>
             </View>
             <View className="route-time-row">
-              <View className="route-time-col"><Text className="time-label">开始时间</Text><Text className="time-val">{historyDateTime(selected.startDate)}</Text></View>
-              <View className="route-time-col"><Text className="time-label">结束时间</Text><Text className="time-val">{historyDateTime(selected.endDate)}</Text></View>
+              <View className="route-time-col"><Text className="time-label">开始时间</Text><Text className="time-val">{historyDetailDateTime(selected.startDate)}</Text></View>
+              <View className="route-time-col"><Text className="time-label">结束时间</Text><Text className="time-val">{historyDetailDateTime(selected.endDate)}</Text></View>
               <View className="route-time-col"><Text className="time-label">时长</Text><Text className="time-val">{duration(selected.durationMinutes).value ? `${duration(selected.durationMinutes).value} 分钟` : '暂无数据'}</Text></View>
             </View>
           </View>
@@ -740,7 +740,7 @@ export default function DrivesPage() {
             return <>
               <View className="card parked-detail-summary">
                 <Text className="parked-detail-hero-title">驻车于 {toChineseDisplayAddress(parkedOpen.address) ?? '未知位置'}</Text>
-                <Text className="parked-detail-timeline">{historyDateTime(parkedOpen.startDate)} → {historyDateTime(parkedOpen.endDate)}</Text>
+                <Text className="parked-detail-timeline">{historyDetailDateTime(parkedOpen.startDate)} → {historyDetailDateTime(parkedOpen.endDate)}</Text>
                 <Text className="parked-detail-note">共驻车 {duration}{delta != null ? ' ' : ''}{delta != null ? (delta > 0
                   ? <Text className="parked-detail-badge charge">⚡ 充电 +{delta}%</Text>
                   : <Text className="parked-detail-badge drain">耗电 −{Math.abs(delta)}%</Text>) : null}</Text>
@@ -767,7 +767,7 @@ export default function DrivesPage() {
                 </View> : <Text className="parked-detail-cloud-pending">{parkedCloudFailed
                   ? '云端明细暂不可用；以上为本机相邻行程推得的驻车事实。'
                   : '云端明细待同步：温度、功率与采样分析将在网络恢复后补全；可下拉重试。'}</Text>}
-                <Text className="muted" style={{ display: 'block', fontSize: '22rpx', marginTop: '12rpx' }}>{parkedCloud ? `数据来源：${parkedCloud.source ?? '云端驻车明细'}`
+                <Text className="muted" style={{ display: 'block', fontSize: '22rpx', marginTop: '12rpx' }}>{parkedCloud ? `数据来源：${sourceLabel(parkedCloud.source)}`
                   : parkedCloudFailed ? '数据来源：本机相邻行程推得的驻车事实' : '正在读取云端驻车明细（温度、功率与关联充电）…'}</Text>
               </View>
             </>
@@ -776,7 +776,7 @@ export default function DrivesPage() {
         </View>
         </ScrollView>
       ) : null}
-      {error ? <Text className="error">{error}</Text> : null}
+      {error && readAppSession(Taro) ? <Text className="error">{error}</Text> : null}
     </View>
   )
 }

@@ -90,7 +90,7 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     expect(curves[2].findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('230 V')
     expect(curves[3].findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('16 A')
     expect(curves[4].findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('10 °C')
-    expect(page.root.findByProps({ ariaLabel: '费用 暂无数据 币种未知' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '费用 暂无数据' })).toBeDefined()
     expect(JSON.stringify([...platform.values.values()])).not.toMatch(/charge_details|charger_actual_current|outside_temp/)
   })
 
@@ -222,8 +222,8 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     platform.values.set('matelink.wechat.session.v1', { apiOrigin: 'https://api.example.test', accessToken: 'synthetic', userId: 'analysis-user', expiresAt: null })
     platform.request.mockImplementation(async ({ url }: { url: string }) => { if (url.endsWith('/cars')) return respond({ cars: [car] }); throw new Error('offline') })
     page = await mount('stats')
-    expect(page.root.findByProps({ ariaLabel: '行程次数 暂无数据 次' })).toBeDefined()
-    expect(page.root.findByProps({ ariaLabel: '充电次数 暂无数据 次' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '行程次数 暂无数据' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '充电次数 暂无数据' })).toBeDefined()
   })
   it('renders real adjacent parked evidence without capacity guesses and excludes a charging overlap from vampire totals', async () => {
     const drives = [{ ...raw(1), start_date: '2026-10-14T00:00:00Z', end_date: '2026-10-14T00:10:00Z' },
@@ -238,13 +238,13 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     })
     let page = await mount('parked', { olderId: '1', newerId: '2' })
     expect(page.root.findByProps({ ariaLabel: '电量变化 -1%' })).toBeDefined()
-    expect(page.root.findByProps({ ariaLabel: '合格储能变化 暂无数据 kWh' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '合格储能变化 暂无数据' })).toBeDefined()
     expect(JSON.stringify(page.toJSON())).toContain('与充电记录重叠')
     expect(JSON.stringify(page.toJSON())).not.toContain('99 kWh')
     await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null
     page = await mount('vampire')
     expect(JSON.stringify(page.toJSON())).toContain('含充电重叠的窗口已排除损耗计算')
-    expect(page.root.findByProps({ ariaLabel: '合格能量变化 暂无数据 kWh' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '合格能量变化 暂无数据' })).toBeDefined()
   })
 
   it('opens a deep-linked actual charge detail outside a bounded history list and preserves fresh cache rows', async () => {
@@ -282,7 +282,7 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     const page = await mount('efficiency')
     expect(page.root.findByProps({ ariaLabel: '平均能耗 -5 kWh/100km' })).toBeDefined()
     expect(page.root.findByProps({ ariaLabel: '合格行程 1 次' })).toBeDefined()
-    expect(page.root.findByProps({ className: 'analysis-coverage' }).findAllByType('text').map(node => node.children.join('')).join(' ')).toContain('已加载行程 2 条')
+    expect(page.root.findByProps({ className: 'analysis-coverage' }).findAllByType('text').map(node => node.children.join('')).join(' ')).toContain('行程 2 条')
     const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
     const cached = readHistoryCache<{ id: string }>({ getStorageSync: (key: string) => platform.values.get(key), setStorageSync() {} }, historyCacheKey('drives', 'analysis-user', 'analysis-car', 'https://api.example.test'))
     expect(cached).toHaveLength(2)
@@ -305,7 +305,7 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     await act(async () => { platform.hide(); renderer!.unmount() }); renderer = null
     platform.request.mockRejectedValue(new Error('offline'))
     page = await mount('stats')
-    expect(JSON.stringify(page.toJSON())).toContain('本机缓存 · 部分覆盖')
+    expect(JSON.stringify(page.toJSON())).toContain('本机缓存')
     expect(page.root.findByProps({ ariaLabel: '平均能耗 -5 kWh/100km' })).toBeDefined()
     await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null
     let release: ((value: unknown) => void) | null = null

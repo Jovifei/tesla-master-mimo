@@ -22,7 +22,7 @@ it('renders real parsed evidence through persistence rebuild with zero, stale, m
   expect(tree.root.findAllByProps({ className: 'tpms-wheel-card' })).toHaveLength(4)
   expect(tree.root.findAllByProps({ className: 'tpms-evidence' })).toHaveLength(0)
   expect(tree.root.findAllByProps({ className: 'metric-value' }).map(node => node.children.join(''))).toEqual(['0', '2.9', '暂无数据', '暂无数据'])
-  expect(tree.root.findAllByProps({ className: 'metric-unit' }).map(node => node.children.join(''))).toEqual(['bar', 'bar', 'bar', 'bar'])
+  expect(tree.root.findAllByProps({ className: 'metric-unit' }).map(node => node.children.join(''))).toEqual(['bar', 'bar'])
   act(() => tree.root.findByType('button').props.onClick())
   expect(tree.root.findAllByProps({ className: 'tpms-evidence' })).toHaveLength(1)
   const text = JSON.stringify(tree.toJSON())

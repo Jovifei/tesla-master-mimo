@@ -27,6 +27,13 @@ export function historyDateTime(value: string | null | undefined): string {
   if (!date || !Number.isFinite(date.getTime())) return '暂无日期'
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
+/** Compact timestamp used inside App detail cards and chart cursors. */
+export function historyDetailDateTime(value: string | null | undefined): string {
+  const date = typeof value === 'string' && value ? new Date(value) : null
+  if (!date || !Number.isFinite(date.getTime())) return '暂无日期'
+  const pad = (number: number) => String(number).padStart(2, '0')
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
 /** Android formatEditorialDate: the card date follows the device's local calendar. */
 export function historyEditorialDate(value: string | null | undefined, is24Hour = true): string {
   const date = typeof value === 'string' && value ? new Date(value) : null

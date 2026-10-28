@@ -98,14 +98,14 @@ it('shows the App odometer and state wording without accepting an unusable zero 
   expect(visible()).toContain('哨兵已开启')
   expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
 })
-it('uses the App raw-coordinate fallback without presenting it as a resolved address', async () => {
+it('keeps the App location card concise and leaves raw coordinates to the map page', async () => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/snapshot')
     ? respond({ status: { state: 'online', car_geodata: { latitude: 31.2, longitude: 121.5 } } })
     : online(url))
   await mount(false)
   const location = renderer!.root.findAllByProps({ className: 'dashboard-info-card' })
     .find(card => card.findByProps({ className: 'dashboard-info-label' }).children.join('') === '位置')!
-  expect(location.findByProps({ className: 'dashboard-info-value' }).children.join('')).toBe('31.2000, 121.5000')
+  expect(location.findByProps({ className: 'dashboard-info-value' }).children.join('')).toBe('已获取位置 · 点击查看地图')
   expect(renderer!.root.findByType('map' as React.ElementType)).toBeDefined()
 })
 const snapshotBadge = () => renderer!.root.findAll(node => node.type === 'text' && String(node.props.className ?? '').split(' ').includes('dashboard-snapshot-badge'))[0]
@@ -337,10 +337,10 @@ it('uses the full charging HUD and lower three-column card without replacing mis
   const page = await mount(false)
   const hud = page.root.findByProps({ className: 'dashboard-hud dashboard-hud-charging' })
   expect(hud.findAllByType('text').map(node => node.children.join('')).join(' ')).not.toContain('0 kWh')
-  expect(hud.findByProps({ ariaLabel: '充电电压电流 230 V / 暂无数据 A' })).toBeDefined()
+  expect(hud.findByProps({ ariaLabel: '充电电压电流 230 V / 暂无数据' })).toBeDefined()
   const lower = page.root.findByProps({ className: 'dashboard-current-charge' })
   expect(lower.findByProps({ ariaLabel: '剩余时间 1.5h' })).toBeDefined()
-  expect(lower.findByProps({ ariaLabel: '已充入 暂无数据 kWh' })).toBeDefined()
+  expect(lower.findByProps({ ariaLabel: '已充入 暂无数据' })).toBeDefined()
   expect(snapshotBadge().children.join('')).not.toContain('实时')
   const dismiss = hud.findAllByType('button').find(node => node.children.join('') === '关闭浮窗')!
   await act(async () => { dismiss.props.onClick({ stopPropagation() {} }) })
@@ -585,7 +585,7 @@ it('map render failure preserves location evidence and offers an actual retry wi
  const page = await mount(false)
  await act(async () => { page.root.findByType('map' as React.ElementType).props.onError() })
  expect(page.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
-  expect(visible()).toContain('31.2000, 121.5000')
+  expect(page.root.findAllByProps({ className: 'dashboard-info-value' }).some(node => node.children.join('') === '已获取位置 · 点击查看地图')).toBe(true)
  await act(async () => { page.root.findAllByType('button').find(node => node.children.join('') === '重试地图')!.props.onClick() })
  expect(page.root.findByType('map' as React.ElementType).props.showLocation).toBe(false)
 })

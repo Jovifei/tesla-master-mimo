@@ -425,8 +425,7 @@ export default function VehiclePage() {
   const navigate = (url: string) => { void Taro.navigateTo({ url }) }
   const settings = () => navigate('/pages/tools/index?kind=settings')
   const openBattery = () => navigate('/pages/insights/index?kind=battery')
-  const location = status?.geofence?.trim() || (status?.location
-    ? `${status.location.latitude.toFixed(4)}, ${status.location.longitude.toFixed(4)}` : '暂无数据')
+  const location = status?.geofence?.trim() || (status?.location ? '已获取位置 · 点击查看地图' : '暂无数据')
   const headerGeometry = dashboardHeaderGeometry()
   return (
     <View className="page vehicle-page" style={{ paddingTop: `${headerGeometry.top}px` }}>

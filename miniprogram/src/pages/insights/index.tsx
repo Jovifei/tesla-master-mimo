@@ -169,7 +169,7 @@ export default function InsightsPage() {
       {result.costs.unknownCurrency ? <Text className="muted">{result.costs.unknownCurrency} 条费用币种未知，未并入合计</Text> : null}
     </View>
   }
-  const coverage = (value: Coverage, noun: string, rows: number) => <Text className="insight-coverage">{offline ? '本机缓存' : value.complete ? '分页读取完成' : '部分覆盖'} · {noun}已加载 {rows} 条 / {value.pages} 页{value.complete ? '' : '，仅分析这些记录'}</Text>
+  const coverage = (value: Coverage, noun: string, rows: number) => <Text className="insight-coverage">{offline ? '本机缓存' : value.complete ? '数据读取完成' : '部分覆盖'} · {noun} {rows} 条</Text>
 
   return <View className="page insights-page">
     <View className="insight-header"><Text className="title">{titles[kind]}</Text><Text className="muted">{carName(car)}</Text></View>

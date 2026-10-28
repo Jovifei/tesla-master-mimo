@@ -22,9 +22,7 @@ export function displayNumber(value: number, digits = 2): string {
 }
 export function peakSpeedKmh(item: Drive): number | null {
   const number = item.speedMaxKmh
-  return item.speedMetricsSource === 'observed_route_samples' &&
-    Number.isSafeInteger(item.speedSampleCount) && (item.speedSampleCount ?? 0) > 0 &&
-    (item.speedUnit === 'km/h' || item.speedUnit === 'kph') &&
+  return (item.speedUnit === 'km/h' || item.speedUnit === 'kph') &&
     number != null && Number.isFinite(number) && number >= 0 ? number : null
 }
 
@@ -38,12 +36,13 @@ export function formatSocRange(start: number | null | undefined, end: number | n
 export default function MetricValue({ label, value, source, unit, icon, negative = false, digits = 2 }: Props) {
   const valid = value != null && value !== '' && (typeof value !== 'number' || Number.isFinite(value))
   const shown = valid ? (typeof value === 'number' ? displayNumber(value, digits) : value) : '暂无数据'
+  const shownUnit = valid ? unit : undefined
   return (
-    <View className="metric" ariaLabel={`${label} ${shown}${unit ? `${unit === '%' ? '' : ' '}${unit}` : ''}`}>
+    <View className="metric" ariaLabel={`${label} ${shown}${shownUnit ? `${shownUnit === '%' ? '' : ' '}${shownUnit}` : ''}`}>
       <View className="metric-heading">{icon ? <VisualIcon name={icon} /> : null}</View>
       <View className={`metric-reading ${negative && valid ? 'history-energy-negative' : ''}`}>
         <Text className="metric-value">{shown}</Text>
-        {unit ? <Text className="metric-unit">{unit}</Text> : null}
+        {shownUnit ? <Text className="metric-unit">{shownUnit}</Text> : null}
       </View>
       <Text className="metric-label">{label}</Text>
       {source !== undefined ? <Text className="metric-source">{sourceLabel(source)}</Text> : null}

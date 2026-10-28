@@ -3626,3 +3626,22 @@ Jovi authorized the API request legal-domain addition and real WeChat qualificat
 2026-10-18 review:48 files/612 Mini tests plus3 original-asset integrity checks, types/build PASS. Independent review found lowercase/model-alias editor crash; canonical initialization and actual consumer regressions fix it. Native DevTools verifies default black refreshedY and greyY/black3/red refreshedY Image loads, actual vehiclePicker switches, appearance editor and saved black refreshed3 Image, all with separate synthetic account/data labeling. Owner1870 hashes/head92cb unchanged. No production change, callback/subscription send, upload, release or main merge.
 
 Final native review: package-level hung Promise retry defect reproduced against the old Git source in memory (RED), fixed with expiry and request identity, and independently rechecked. Three actual native-component VM cases PASS in addition to3 original-asset cases; the612 Mini cases remain PASS. Final source identity/CI/package signoff is recorded outside the frozen tree in the delivery evidence directory.
+
+# 2026-10-28 跨端审查修复追加
+
+- [x] 核实当前小程序 worktree 为 `f2834fc3` / 0.5.1；旧报告 `8870df49` / 0.4.9 已过时。
+- [x] 修复共享指标与图表未知值不拼接单位；保留真实 0。
+- [x] 修复仪表盘充电 HUD 未知电流的单位拼接。
+- [x] 首次历史分页期间隐藏区间摘要加载卡，避免与列表加载提示重复。
+- [ ] 清理并完成跨页回归测试；再执行类型检查、微信构建和开发者工具产物检查。
+- [ ] 输出当前 SHA 的逐页 PASS/CHANGES_REQUIRED/BLOCKED 审核报告。
+
+Review：报告中的“列表修改总价”在当前 0.5.1 已降级到详情页，未重复修改；充电费用来源、历史合格母集和曲线采样仍需回归验证。
+
+## 2026-10-28 Review
+
+- [x] 19 张 0.4.9 截图重新归类并与 App build74 源码只读对照。
+- [x] 修复未知值单位拼接、摘要技术文字墙、首次分页重复加载、详情时间、速度峰值门控和驻车来源显示。
+- [x] 全量测试 733/733、TypeScript、微信生产构建和 dist API 域名检查通过。
+- [x] 生成 `docs/MP-ALIGNMENT-AUDIT-20261028.md` 与 `docs/audit-contact-sheet.jpg`。
+- [ ] 统计/电池健康/更多页的真实同账号同窗口 App/小程序截图复核仍待完成；不能标记全页面一比一 PASS。

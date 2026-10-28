@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyHistoryQuery, filterHistory, historyDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery } from './history_query'
+import { emptyHistoryQuery, filterHistory, historyDateTime, historyDetailDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery } from './history_query'
 
 describe('persisted local calendar history query', () => {
   it('formats charge and drive card dates like the App without changing stored instants', () => {
@@ -7,6 +7,10 @@ describe('persisted local calendar history query', () => {
     expect(historyEditorialDate(instant, false)).toBe('周日 · 10月18日 · 07:03 下午')
     expect(historyEditorialDate(instant, true)).toBe('周日 · 10月18日 · 19:03')
     expect(historyEditorialDate(null)).toBe('暂无日期')
+  })
+  it('formats detail timestamps compactly like the App', () => {
+    expect(historyDetailDateTime('2026-10-27T18:54:00+08:00')).toBe('10-27 18:54')
+    expect(historyDetailDateTime(null)).toBe('暂无日期')
   })
   it('excludes quarantined drive and charge records without hiding legitimate zero or missing-energy summaries', () => {
     const rows = [

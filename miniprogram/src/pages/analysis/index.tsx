@@ -8,7 +8,7 @@ import { analysisDay, analysisGroups, analysisKind, analysisTitles, buildParkedW
 import { isAppDriveAnalysisEligible } from '../../domain/app_history_projection'
 import { aggregateDriveHistory, coveredTotal, historyRowKey, isHistoryQuarantined, mergeHistoryByKey } from '../../domain/history'
 import { acceptHistoryDetail } from '../../domain/history_controller'
-import { emptyHistoryQuery, filterHistory, historyDateTime, normalizeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
+import { emptyHistoryQuery, filterHistory, historyDateTime, historyDetailDateTime, normalizeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { sourceLabel } from '../../domain/data_labels'
 import { toChineseDisplayAddress } from '../../domain/address_display'
 import { analysisApi } from '../../services/analysis_api'
@@ -291,10 +291,7 @@ export default function AnalysisPage() {
       <Button className="button-secondary" loading={loading} onClick={() => { void load() }}>刷新</Button>
     </View></View> : null}
     {loading ? <LoadingIndicator label="正在读取当前车辆分析…" compact /> : null}
-    {car ? <View className="analysis-coverage"><Text>{status.offline ? '本机缓存 · 部分覆盖' : status.cached ? '在线验证 · 本机缓存部分覆盖' : status.drivesComplete && status.chargesComplete ? '当前返回范围分页完整' : status.reason === 'limit' ? '部分覆盖 · 达到500条/25页上限' : status.reason === 'request_failed' ? '部分覆盖 · 后续分页读取失败' : '部分覆盖 · 分页尚未完整'}</Text>
-      <Text className="muted">已加载行程 {drives.length} 条 · 已加载充电 {charges.length} 条；字段覆盖独立计算，日期使用本机时区。{status.offline ? '离线不读取路线采样或在线详情。' : ''}</Text>
-      <Text className="muted">记录来源：{sources.length ? sources.join('、') : '暂无可验证记录'}</Text>
-    </View> : null}
+    {car ? <View className="analysis-coverage"><Text>{status.offline ? '本机缓存' : status.cached ? '在线验证 · 缓存部分覆盖' : status.drivesComplete && status.chargesComplete ? '数据读取完成' : status.reason === 'request_failed' ? '部分数据读取失败' : '数据正在补全'} · 行程 {drives.length} 条 · 充电 {charges.length} 条</Text></View> : null}
     {error ? <Text className="error">{error}</Text> : null}
     {car && kind === 'stats' ? <>
       <View className="card"><Text className="section-title">综合分析</Text><View className="metric-grid">
@@ -313,7 +310,7 @@ export default function AnalysisPage() {
         <Text className="muted">费用来源：本机手动 {visibleCharges.filter(row => row.costProvenance === 'manual').length} 条 · 上游实际 {visibleCharges.filter(row => row.costProvenance === 'actual').length} 条 · 未知 {visibleCharges.filter(row => row.costProvenance === 'unknown').length} 条。</Text>
       </View>
       <View className="card"><Text className="section-title">AC / DC 充电</Text><View className="metric-grid">{(['ac', 'dc', 'unknown'] as const).map(mode => {
-        const rows = visibleCharges.filter(row => (row.energy?.chargeMode ?? 'unknown') === mode)
+        const rows = visibleCharges.filter(row => (row.energy?.chargeMode ?? row.chargeMode ?? 'unknown') === mode)
         const energy = coveredTotal(rows, row => row.energyAddedKwh)
         return <View key={mode}><MetricValue label={mode === 'unknown' ? '模式未知' : mode.toUpperCase()} value={chargeCount == null ? null : rows.length} unit="次" icon="energy" /><Text className="muted">{shown(energy.value, 'kWh')} · {rows.length === 0 ? '暂无可计算样本' : `电量覆盖 ${energy.known}/${rows.length} 条`}</Text></View>
       })}</View><Text className="muted">仅已确认边界模式计入 AC/DC；其他记录单列未知。</Text></View>
@@ -363,7 +360,7 @@ export default function AnalysisPage() {
     {car && kind === 'curves' ? <>
       {!params.id ? <View className="card"><Text className="section-title">选择行程</Text>{driveRows(visibleDrives)}</View> : null}
       {detailLoading ? <LoadingIndicator label="正在读取行程采样…" compact /> : null}
-      {evidence?.drive ? <View className="card"><Text className="section-title">行程概览</Text><Text>{historyDateTime(evidence.drive.startDate)} → {historyDateTime(evidence.drive.endDate)}</Text><View className="metric-grid"><MetricValue label="距离" value={evidence.drive.distanceKm} unit="km" /><MetricValue label="时长" value={evidence.drive.durationMinutes} unit="分钟" /><MetricValue label="最高速度" value={peakSpeedKmh(evidence.drive)} unit="km/h" /><MetricValue label="合格净能量" value={evidence.drive.energy?.energyKwh} unit="kWh" /></View><Text className="muted">{sourceLabel(evidence.source)} · {evidence.points.length} 个实际采样 · {evidence.pointsComplete ? '本响应采样完整' : '采样部分覆盖'}</Text></View> : null}
+      {evidence?.drive ? <View className="card"><Text className="section-title">行程概览</Text><Text>开始 {historyDetailDateTime(evidence.drive.startDate)} · 结束 {historyDetailDateTime(evidence.drive.endDate)}</Text><View className="metric-grid"><MetricValue label="距离" value={evidence.drive.distanceKm} unit="km" /><MetricValue label="时长" value={evidence.drive.durationMinutes} unit="分钟" /><MetricValue label="最高速度" value={peakSpeedKmh(evidence.drive)} unit="km/h" /><MetricValue label="合格净能量" value={evidence.drive.energy?.energyKwh} unit="kWh" /></View><Text className="muted">{sourceLabel(evidence.source)} · {evidence.points.length} 个实际采样 · {evidence.pointsComplete ? '本响应采样完整' : '采样部分覆盖'}</Text></View> : null}
       {evidence ? <><EvidenceCurve {...curveProps} id="analysis-speed" title="速度变化" unit="km/h" points={evidence.points} valueOf={point => point.speedKmh} /><EvidenceCurve {...curveProps} id="analysis-distance" title="行程距离变化 · 估算" unit="km" points={evidence.points} valueOf={point => distanceByPoint.get(point) ?? null} /><View className="analysis-distance-basis"><Text className="muted">距离分布按实际时间间隔积分速度，并以合格总距离归一；属于估算，缺失速度不作均匀分配。</Text></View><EvidenceCurve {...curveProps} id="analysis-power" title="功率输出与回收" unit="kW" points={evidence.points} valueOf={point => point.powerKw} /><EvidenceCurve {...curveProps} id="analysis-soc" title="电量变化" unit="%" points={evidence.points} valueOf={point => point.batteryLevel} /><EvidenceCurve {...curveProps} id="analysis-elevation" title="海拔高度" unit="m" points={evidence.points} valueOf={point => point.elevationM} /></> : params.id && !detailLoading ? <View className="card"><Text className="muted">暂无可验证的行程采样；离线缓存不保存精确位置或轨迹。</Text></View> : null}
     </> : null}
     {car && kind === 'parked' ? <>
@@ -378,7 +375,7 @@ export default function AnalysisPage() {
     {car && kind === 'chargeCurves' ? <>
       {!params.chargeId ? <View className="card"><Text className="section-title">选择充电记录</Text>{visibleCharges.map(row => <View className="analysis-record" key={historyRowKey(row)}><Text>{historyDateTime(row.startDate)} · {row.address || '地点未知'}</Text><Button className="button-secondary" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=chargeCurves&chargeId=${encodeURIComponent(row.id)}` }) }}>查看充电曲线 {row.id}</Button></View>)}</View> : null}
       {detailLoading ? <LoadingIndicator label="正在读取充电采样…" compact /> : null}
-      {chargeEvidence?.charge && displayedCurveCharge ? <View className="card"><Text className="section-title">充电概览</Text><Text>{historyDateTime(chargeEvidence.charge.startDate)} → {historyDateTime(chargeEvidence.charge.endDate)}</Text><Text>{chargeEvidence.charge.address || '地点未知'}</Text><View className="metric-grid"><MetricValue label="电池充入" value={chargeEvidence.charge.energyAddedKwh} unit="kWh" /><MetricValue label="时长" value={chargeEvidence.charge.durationMinutes} unit="分钟" /><MetricValue label="费用" value={displayedCurveCharge.cost} unit={displayedCurveCharge.currency || '币种未知'} /><MetricValue label="采样数" value={chargeEvidence.points.length} unit="个" /></View><Text className="muted">{sourceLabel(chargeEvidence.source)} · {costSource(displayedCurveCharge)} · 响应采样部分覆盖；不把功率、电压或电流冒充充入电量。</Text></View> : null}
+      {chargeEvidence?.charge && displayedCurveCharge ? <View className="card"><Text className="section-title">充电概览</Text><Text>开始 {historyDetailDateTime(chargeEvidence.charge.startDate)} · 结束 {historyDetailDateTime(chargeEvidence.charge.endDate)}</Text><Text>{chargeEvidence.charge.address || '地点未知'}</Text><View className="metric-grid"><MetricValue label="电池充入" value={chargeEvidence.charge.energyAddedKwh} unit="kWh" /><MetricValue label="时长" value={chargeEvidence.charge.durationMinutes} unit="分钟" /><MetricValue label="费用" value={displayedCurveCharge.cost} unit={displayedCurveCharge.currency || '币种未知'} /><MetricValue label="采样数" value={chargeEvidence.points.length} unit="个" /></View><Text className="muted">{sourceLabel(chargeEvidence.source)} · {costSource(displayedCurveCharge)} · 响应采样部分覆盖；不把功率、电压或电流冒充充入电量。</Text></View> : null}
       {chargeEvidence ? <>
         <EvidenceCurve {...curveProps} id="charge-soc" title="充电电量变化" unit="%" points={chargeEvidence.points} valueOf={point => point.batteryLevel} />
         <EvidenceCurve {...curveProps} id="charge-power" title="充电功率" unit="kW" points={chargeEvidence.points} valueOf={point => point.powerKw} />

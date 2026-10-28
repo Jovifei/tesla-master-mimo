@@ -8,7 +8,10 @@ export const dashboardNumber = (value: number | null | undefined, digits = 1): s
  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
  return fraction === undefined ? grouped : `${grouped}.${fraction}`
 }
-export const dashboardMetric = (value: number | null | undefined, unit: string, digits = 1): string => `${dashboardNumber(value, digits)}${unit ? ` ${unit}` : ''}`
+export const dashboardMetric = (value: number | null | undefined, unit: string, digits = 1): string => {
+ const number = dashboardNumber(value, digits)
+ return number === '暂无数据' ? number : `${number}${unit ? ` ${unit}` : ''}`
+}
 /** Missing observation shows the readiness wording, never a fake reason; a real 0 °C still renders. */
 export const dashboardTemperature = (value: number | null | undefined): string => value == null || !Number.isFinite(value) ? '等待车辆' : `${value.toFixed(1)}°C`
 export function dashboardRange(status: CarStatus) { return status.ratedRange ?? status.idealRange ?? status.estimatedRange ?? null }

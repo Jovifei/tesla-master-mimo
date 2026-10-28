@@ -65,7 +65,7 @@ it('actual parsed charge histories render separate currencies and genuine zero w
   expect(rendered).toContain('EUR 费用'); expect(rendered).toContain('USD 费用'); expect(rendered).toContain('币种未知 1 次')
   expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '费用合计 0 EUR')).toBe(true)
   expect(rendered).not.toContain('CNY')
-  expect(rendered).toContain('分页读取完成')
+  expect(rendered).toContain('数据读取完成')
 })
 it('actual range proof and capacity response reach personalized range and rated endpoint consumers', async () => {
   drives = Array.from({ length: 5 }, (_, i) => rawDrive(i + 1, 4, 20))
@@ -86,14 +86,14 @@ it('excludes incomplete history from App range and cost analysis while keeping s
   await mount('range')
   expect(tree!.root.findByProps({ ariaLabel: '合格能耗与容量估算 300 km' })).toBeDefined()
   expect(shown()).toContain('当前条件分组 · 5 段')
-  expect(shown()).toContain('行驶已加载 6 条')
+  expect(shown()).toContain('行驶 6 条')
   await act(async () => { platform.unload(); tree!.unmount() }); tree = null
 
   charges = [rawCharge(1, 0, 'EUR'), { ...rawCharge(2, 500, 'EUR'), quality_state: 'incomplete' }]
   await mount('cost')
   expect(tree!.root.findByProps({ ariaLabel: '费用合计 0 EUR' })).toBeDefined()
   expect(shown()).toContain('已加载 1 次')
-  expect(shown()).toContain('充电已加载 2 条')
+  expect(shown()).toContain('充电 2 条')
   const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
   const cached = readHistoryCache<{ id: string }>({ getStorageSync: (key: string) => platform.values.get(key), setStorageSync() {} }, historyCacheKey('charges', 'owner', 'uid7', 'https://api.example.test'))
   expect(cached).toHaveLength(2)
