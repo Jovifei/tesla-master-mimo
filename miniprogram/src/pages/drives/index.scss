@@ -69,13 +69,13 @@
   }
 
   .history-controls {
-    margin-bottom: 16rpx;
+    margin-bottom: 8rpx;
   }
   .history-date-chips, .history-distance-chips {
     display: flex;
-    gap: 12rpx;
+    gap: 10rpx;
     overflow-x: auto;
-    padding: 6rpx 0 12rpx;
+    padding: 4rpx 0 8rpx;
     white-space: nowrap;
     -webkit-overflow-scrolling: touch;
     &::-webkit-scrollbar { display: none; }
@@ -87,10 +87,10 @@
     border-radius: 999rpx;
     background: #ffffff;
     color: #6b7280;
-    padding: 6rpx 22rpx;
-    font-size: 24rpx;
-    line-height: 1.4;
-    height: 52rpx;
+    padding: 4rpx 18rpx;
+    font-size: 22rpx;
+    line-height: 1.35;
+    height: 44rpx;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -539,56 +539,56 @@
 }
 
 .app-drive-month-chart {
-  margin-top: 16rpx;
-  padding: 24rpx;
+  margin-top: 12rpx;
+  padding: 16rpx 20rpx;
   background: #ffffff;
-  border-radius: 28rpx;
+  border-radius: 24rpx;
   border: 1rpx solid rgba(233, 237, 242, 0.7);
 
   .app-drive-month-scroll {
     width: 100%;
-    margin: 16rpx 0 12rpx;
+    margin: 8rpx 0 6rpx;
     white-space: nowrap;
   }
   .app-drive-month-bars {
     display: inline-flex;
     align-items: flex-end;
-    height: 200rpx;
-    gap: 16rpx;
-    padding: 20rpx 8rpx;
+    height: 120rpx;
+    gap: 14rpx;
+    padding: 8rpx 4rpx;
     min-width: 100%;
   }
   .app-drive-month-column {
     flex: 1;
-    min-width: 56rpx;
+    min-width: 50rpx;
     display: flex;
     flex-direction: column;
     align-items: center;
     height: 100%;
   }
   .app-drive-month-value {
-    font-size: 20rpx;
+    font-size: 18rpx;
     color: #1f2937;
     font-weight: 600;
     font-family: monospace;
   }
   .app-drive-month-track {
     flex: 1;
-    width: 28rpx;
+    width: 20rpx;
     background: #f0f2f5;
-    border-radius: 14rpx;
+    border-radius: 10rpx;
     display: flex;
     align-items: flex-end;
     overflow: hidden;
-    margin: 8rpx 0;
+    margin: 4rpx 0;
   }
   .app-drive-month-bar {
     width: 100%;
     background: #157a86;
-    border-radius: 14rpx;
+    border-radius: 10rpx;
   }
   .app-drive-month-label {
-    font-size: 22rpx;
+    font-size: 20rpx;
     color: #6b7280;
   }
 }

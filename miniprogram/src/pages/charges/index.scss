@@ -59,9 +59,9 @@
   }
   .history-date-chips, .history-charge-type-chips, .history-cost-chips {
     display: flex;
-    gap: 12rpx;
+    gap: 10rpx;
     overflow-x: auto;
-    padding: 6rpx 0 12rpx;
+    padding: 4rpx 0 8rpx;
     white-space: nowrap;
     -webkit-overflow-scrolling: touch;
     &::-webkit-scrollbar { display: none; }
@@ -73,10 +73,10 @@
     border-radius: 999rpx;
     background: #ffffff;
     color: #6b7280;
-    padding: 6rpx 22rpx;
-    font-size: 24rpx;
-    line-height: 1.4;
-    height: 52rpx;
+    padding: 4rpx 18rpx;
+    font-size: 22rpx;
+    line-height: 1.35;
+    height: 44rpx;
     display: inline-flex;
     align-items: center;
     justify-content: center;

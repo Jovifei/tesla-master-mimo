@@ -161,38 +161,10 @@ it('renders actual parsed charge detail in App section order, real sample extrem
   const serialized = JSON.stringify([...platform.values.values()])
   expect(serialized).not.toContain('charge_details'); expect(serialized).not.toContain('charger_voltage')
 })
-it('edits manual amount/currency through actual page, retains upstream zero, reopens offline and clears back to actual zero', async () => {
-  await mount(); await detail(); await edit('5.25', 'USD'); await click('保存本机费用')
-  const row = tree!.root.findByProps({ className: 'history-record' })
-  expect(row.findByProps({ ariaLabel: '充电费用 5.25 USD' })).toBeDefined()
-  expect(shown()).toContain('本机手动费用')
-  const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
-  const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
-  const raw = readHistoryCache<{ cost: number; currencyCode: string }>(storage, historyCacheKey('charges', 'owner', 'uid7', origin))
-  expect(raw[0]).toMatchObject({ cost: 0, currencyCode: 'EUR' })
-  await act(async () => { platform.unload(); tree!.unmount() }); tree = null; offline = true
+it('does not expose manual cost editing to users, keeping read-only accounting detail', async () => {
   await mount(); await detail()
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 5.25 USD' })).toBeDefined()
-  await click('编辑本机费用'); await click('清除本机费用并恢复账单')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 0 EUR' })).toBeDefined()
-  expect(shown()).toContain('服务端报告0费用')
-})
-it('keeps manual zero distinct from actual zero and rejects a missing explicit currency', async () => {
-  await mount(); await detail(); await edit('0', 'USD'); await click('保存本机费用')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 0 USD' })).toBeDefined()
-  expect(shown()).toContain('费用来源：本机手动设置')
-  await edit('10', ''); await click('保存本机费用')
-  expect(shown()).toContain('费用未保存')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 0 USD' })).toBeDefined()
-})
-it('rejects a queued old cost editor save after hide/account change even when a new editor has opened', async () => {
-  await mount(); await detail(); await edit('999', 'USD')
-  const oldSave = tree!.root.findAllByType('button').find(node => node.children.join('') === '保存本机费用')!.props.onClick
-  await act(async () => { platform.hide(); platform.values.set('matelink.wechat.session.v1', session('other')); platform.show() }); await flush(); await detail(); await edit('2', 'EUR')
-  await act(async () => { oldSave() }); await flush()
-  expect([...platform.values.keys()].filter(key => key.startsWith('matelink.charge-cost.'))).toEqual([])
-  await click('保存本机费用')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 2 EUR' })).toBeDefined()
+  expect(tree!.root.findAllByType('button').some(node => node.children.join('') === '编辑本机费用')).toBe(false)
+  expect(shown()).not.toContain('本机手动费用')
 })
 it('shows an App-style short address, marked default-price estimate and only returned-month chart data', async () => {
   const legacy = { ...charge, source: 'teslamate_archive', cost: null, currency_code: null, charge_type: null, energy_contract: null,
@@ -313,10 +285,5 @@ it('shows TeslaMate unfilled raw zero as an estimate until the owner explicitly 
   expect(shown()).toContain('费用按 App 默认 ¥1.14/kWh 估算')
   await detail()
   expect(shown()).toContain('费用来源：按 App 默认 ¥1.14/kWh 与合格电池充入量估算')
-  await edit('0', 'CNY'); await click('保存本机费用')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 0 CNY' })).toBeDefined()
-  expect(shown()).toContain('费用来源：本机手动设置')
-  const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
-  const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
-  expect(readHistoryCache<{ cost: number }>(storage, historyCacheKey('charges', 'owner', 'uid7', origin))[0].cost).toBe(0)
+  expect(tree!.root.findAllByType('button').some(node => node.children.join('') === '编辑本机费用')).toBe(false)
 })

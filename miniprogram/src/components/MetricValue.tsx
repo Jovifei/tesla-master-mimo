@@ -33,6 +33,13 @@ export function formatSocRange(start: number | null | undefined, end: number | n
   return `${first ?? '—'} → ${last ?? '—'}`
 }
 
+export function formatSocRangeMetric(start: number | null | undefined, end: number | null | undefined, unavailable = '暂无'): { value: string; unit?: string } {
+  const first = start != null && Number.isFinite(start) && start >= 0 && start <= 100 ? `${Math.round(start)}` : null
+  const last = end != null && Number.isFinite(end) && end >= 0 && end <= 100 ? `${Math.round(end)}` : null
+  if (!first && !last) return { value: unavailable }
+  return { value: `${first ?? '—'}→${last ?? '—'}`, unit: '%' }
+}
+
 export default function MetricValue({ label, value, source, unit, icon, negative = false, digits = 2 }: Props) {
   const valid = value != null && value !== '' && (typeof value !== 'number' || Number.isFinite(value))
   const shown = valid ? (typeof value === 'number' ? displayNumber(value, digits) : value) : '暂无数据'

@@ -1,4 +1,4 @@
-import { Button, Input, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
+import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 import { toChineseDisplayAddress } from '../../domain/address_display'
@@ -18,14 +18,14 @@ import LoadingIndicator from '../../components/LoadingIndicator'
 import HistoryIntervalSummary from '../../components/HistoryIntervalSummary'
 import HistoryDateChips from '../../components/HistoryDateChips'
 import { inspectForegroundEvents, observeForegroundEvents, type ForegroundNotice } from '../../services/foreground_events'
-import MetricValue, { formatSocRange } from '../../components/MetricValue'
+import MetricValue, { formatSocRange, formatSocRangeMetric } from '../../components/MetricValue'
 import VisualIcon from '../../components/VisualIcon'
 import { availabilityLabel, qualityLabel, sourceLabel } from '../../domain/data_labels'
 import { resolveChargeEnergy } from '../../domain/drive_energy'
 import { qualifiedAcEnergyBalance } from '../../domain/charge_energy_balance'
 import { analysisApi } from '../../services/analysis_api'
 import type { ChargeEvidence } from '../../services/analysis_types'
-import { APP_DEFAULT_CHARGE_PRICE_CNY, clearChargeCostOverride, overlayChargeCosts, readChargeCostOverride, writeChargeCostOverride, type ChargeCostScope, type ChargeEstimatePrice, type CostedCharge } from '../../services/charge_cost'
+import { APP_DEFAULT_CHARGE_PRICE_CNY, overlayChargeCosts, type ChargeEstimatePrice, type CostedCharge } from '../../services/charge_cost'
 import { mapCoordinate } from '../../domain/map_coordinate'
 import { readTariff } from '../../domain/tariff'
 import { appChargeListRows, appChargeStatisticsRows } from '../../domain/app_history_projection'
@@ -121,13 +121,11 @@ export default function ChargesPage() {
     return nativeTabBar(Boolean(row))
   }
   const [selectedEvidence, setSelectedEvidence] = useState<ChargeEvidence | null>(null)
-  const [costEditing, setCostEditing] = useState(false), [costAmount, setCostAmount] = useState(''), [costCurrency, setCostCurrency] = useState('')
   const [chartKind, setChartKind] = useState<'energy' | 'cost' | 'count'>('energy')
   const [mapFailed, setMapFailed] = useState(false)
   const [, setCostVersion] = useState(0)
   const selectedRef = useRef(selected), carRef = useRef(car)
   selectedRef.current = selected; carRef.current = car
-  const costEdit = useRef<{ scope: ChargeCostScope; charge: Charge; generation: number; epoch: number; isCurrent: () => boolean } | null>(null)
   const [interval, setInterval] = useState<HistoryInterval<Charge> | null>(null)
   const [notices, setNotices] = useState<ForegroundNotice[]>([])
   const notice = notices[0] ?? null
@@ -161,7 +159,7 @@ export default function ChargesPage() {
     setItems([])
     setMeta(null)
     void setSelected(null)
-    setSelectedEvidence(null); setCostEditing(false); costEdit.current = null; setMapFailed(false)
+    setSelectedEvidence(null); setMapFailed(false)
     setInterval(null)
     setNotices([])
     setNoticeLimited(false)
@@ -178,7 +176,6 @@ export default function ChargesPage() {
     setLoadingMore(false)
     setNotices([])
     setNoticeLimited(false)
-    setCostEditing(false); costEdit.current = null
   }
 
   const restoreCached = (nextCar: Car) => {
@@ -204,8 +201,7 @@ export default function ChargesPage() {
   const closeDetail = () => {
     const scrollEpoch = lifecycleEpoch.current
     try { scopeGate.current.begin('detail') } catch { /* no bound remote scope */ }
-    try { scopeGate.current.begin('cost-editor') } catch { /* no bound remote scope */ }
-    setSelectedEvidence(null); setCostEditing(false); costEdit.current = null
+    setSelectedEvidence(null)
     void setSelected(null).then(() => {
       if (scrollEpoch !== lifecycleEpoch.current || !pageVisible.current || detailContext.current || typeof Taro.pageScrollTo !== 'function') return
       try { void Taro.pageScrollTo({ scrollTop: listScrollTop.current, duration: 0 }).catch(() => {}) } catch { /* optional native scroll restoration */ }
@@ -538,7 +534,7 @@ export default function ChargesPage() {
     if (!canonical || canonical.id !== item.id || isHistoryQuarantined(canonical) || isHistoryQuarantined(item)) return
     let ticket: { isCurrent(): boolean }
     try { ticket = scopeGate.current.begin('detail') } catch { return }
-    if (ticket.isCurrent()) { setSelected(canonical); setSelectedEvidence(null); setCostEditing(false); costEdit.current = null; setMapFailed(false) }
+    if (ticket.isCurrent()) { setSelected(canonical); setSelectedEvidence(null); setMapFailed(false) }
     try {
       if (!verifiedCarRef.current || car.remoteVerified === false) return
       const evidence = await analysisApi.getChargeEvidence(car, item.id, { isCurrent: ticket.isCurrent })
@@ -571,7 +567,6 @@ export default function ChargesPage() {
   const selectedView = selected ? costRows([selected])[0] : null
   const intervalView = interval ? { ...interval, items: costRows(appChargeStatisticsRows(interval.items)) } : null
   const costState = selectedView
-  const renderedCostEdit = costEdit.current
   const acEfficiency = selected ? qualifiedAcEnergyBalance(selected)?.efficiencyPercent ?? null : null
   const trustedItems = costRows(appChargeListRows(filterHistory(items, emptyHistoryQuery()), showShortCharges))
   const visibleItems = filterHistory(trustedItems, query)
@@ -600,35 +595,6 @@ export default function ChargesPage() {
       average: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null, count: values.length }
   }
   const powerStats = sampleStats('powerKw'), voltageStats = sampleStats('voltageV'), currentStats = sampleStats('currentA'), temperatureStats = sampleStats('temperatureC')
-  const startCostEdit = () => {
-    const currentSession = readAppSession(Taro)
-    if (!selected || !car || !currentSession?.userId) return
-    let ticket: { isCurrent(): boolean }
-    try { ticket = scopeGate.current.begin('cost-editor') } catch { return }
-    const scope = { userId: currentSession.userId, origin: getApiOrigin(), stableId: car.stableId }
-    const manual = readChargeCostOverride(Taro, scope, selected)
-    costEdit.current = { scope, charge: selected, generation: getApiSessionGeneration(), epoch: lifecycleEpoch.current, isCurrent: ticket.isCurrent }
-    setCostAmount(manual != null ? String(manual.amount) : '')
-    setCostCurrency(manual?.currency ?? selected.currencyCode ?? selected.currency ?? (selectedView?.costProvenance === 'estimate' ? selectedView.currencyCode ?? '' : ''))
-    setCostEditing(true)
-  }
-  const saveCost = (clear = false) => {
-    const context = renderedCostEdit
-    if (!context || context !== costEdit.current) return
-    const isCurrent = () => {
-      try {
-        const currentSession = readAppSession(Taro), row = selectedRef.current
-        return context.isCurrent() && context.epoch === lifecycleEpoch.current && context.generation === getApiSessionGeneration() &&
-          currentSession?.userId === context.scope.userId && getApiOrigin() === context.scope.origin && carRef.current?.stableId === context.scope.stableId &&
-          row?.source === context.charge.source && historyRowKey(row) === historyRowKey(context.charge)
-      } catch { return false }
-    }
-    const input = costAmount.trim().replace(',', '.'), amount = /^(?:\d+(?:\.\d*)?|\.\d+)$/.test(input) ? Number(input) : NaN
-    const success = clear ? clearChargeCostOverride(Taro, context.scope, context.charge, isCurrent)
-      : writeChargeCostOverride(Taro, context.scope, context.charge, amount, costCurrency.trim().toUpperCase(), isCurrent)
-    if (!success) { setError('费用未保存：请核对非负金额、三字母币种与当前会话；本机最多200条/64KiB且受共享缓存预算限制，已有记录保留。'); return }
-    setCostVersion(value => value + 1); setCostEditing(false); costEdit.current = null; setError(null)
-  }
   const navGeo = getAppNavGeometry()
   return (
     <View className="page history-page charges-page">
@@ -725,7 +691,7 @@ export default function ChargesPage() {
                 <MetricValue label="时长" value={item.durationMinutes != null && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0 ? item.durationMinutes : null} unit="m" icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
                 <MetricValue label="能量" value={oneDecimal(item.energyAddedKwh)} unit="kWh" icon="energy" />
                 <MetricValue label="充电费用" {...costLabel(item)} icon="account" />
-                <MetricValue label="电量" value={formatSocRange(item.startBatteryLevel, item.endBatteryLevel)} icon="battery" />
+                <MetricValue label="电量" {...formatSocRangeMetric(item.startBatteryLevel, item.endBatteryLevel)} icon="battery" />
               </View>
               {(item.costProvenance === 'estimate' || inputNumber(item) != null) ? (
                 <Text className="history-source">
@@ -749,13 +715,6 @@ export default function ChargesPage() {
             <Text className="muted">开始 {historyDetailDateTime(selected.startDate)} · 结束 {historyDetailDateTime(selected.endDate)} · {modeLabel(selected)}</Text>
             <MetricValue label="充电费用" {...costLabel(selectedView)} icon="account" />
             <Text className="muted">费用来源：{costState?.costProvenance === 'manual' ? '本机手动设置' : costState?.costProvenance === 'free' ? '免费（免费超级充电 · DC）' : costState?.costProvenance === 'actual' ? selectedView.cost === 0 ? '服务端报告0费用' : '服务端账单报告' : costState?.costProvenance === 'estimate' ? `按 ${estimateBasis(costState)} 与合格电池充入量估算` : costState?.reportedCost === 0 && selected.source === 'teslamate_archive' ? 'TeslaMate 原始0表示未填，当前无合格估算' : '未知'}</Text>
-            {costState?.costProvenance === 'manual' ? <Text className="metric-source">原服务端账单：{costState.reportedCost ?? '未知'} {costState.reportedCurrency || '币种未知'} · 本机编辑时间：{historyDateTime(costState.manualCostUpdatedAt)}</Text> : null}
-            <Button className="button-secondary" onClick={startCostEdit}>编辑本机费用</Button>
-            {costEditing ? <View className="card"><Text className="section-title">本机手动费用</Text><Text className="muted">仅保存当前记录的本机费用；不修改服务端账单或合格能量。</Text>
-              <Input type="digit" value={costAmount} placeholder="非负总金额（允许0）" onInput={event => setCostAmount(event.detail.value)} />
-              <Input value={costCurrency} maxlength={3} placeholder="币种代码，如 EUR / CNY" onInput={event => setCostCurrency(event.detail.value)} />
-              <Button className="button" onClick={() => saveCost()}>保存本机费用</Button><Button className="button-secondary" onClick={() => saveCost(true)}>清除本机费用并恢复账单</Button><Button className="button-secondary" onClick={() => { setCostEditing(false); costEdit.current = null }}>取消费用编辑</Button>
-            </View> : null}
           </View>
           {detailCoordinate ? <View className="card charge-detail-map-card"><Text className="section-title">充电地点</Text>
             {mapFailed ? <Text className="muted">地图暂时无法载入</Text> : <TaroMap className="charge-detail-map" latitude={detailCoordinate.latitude} longitude={detailCoordinate.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...detailCoordinate, iconPath: '/assets/tabs/energy-selected.png', width: 24, height: 24 }]} onError={() => setMapFailed(true)} />}
