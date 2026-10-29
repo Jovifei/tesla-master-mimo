@@ -551,10 +551,9 @@ class TeslamateRepository @Inject constructor(
                 val response = api.getCharges(carId, startDate, endDate, page = page, show = show)
                 if (response.isSuccessful) {
                     val body = response.body()?.data
-                    ApiResult.Success(
-                        body?.receivedCharges().orEmpty(),
-                        body?.meta?.toApiResponseMetadata()
-                    )
+                    if (body == null || body.charges == null) {
+                        ApiResult.Error("Charges response invalid", response.code(), kind = ApiErrorKind.INVALID_RESPONSE)
+                    } else ApiResult.Success(body.receivedCharges(), body.meta?.toApiResponseMetadata())
                 } else {
                     ApiResult.Error("Failed to fetch charges: ${response.code()}", response.code())
                 }
@@ -614,10 +613,9 @@ class TeslamateRepository @Inject constructor(
                 val response = api.getDrives(carId, startDate, endDate, page = page, show = show)
                 if (response.isSuccessful) {
                     val body = response.body()?.data
-                    ApiResult.Success(
-                        body?.receivedDrives() ?: emptyList(),
-                        body?.meta?.toApiResponseMetadata()
-                    )
+                    if (body == null || body.drives == null) {
+                        ApiResult.Error("Drives response invalid", response.code(), kind = ApiErrorKind.INVALID_RESPONSE)
+                    } else ApiResult.Success(body.receivedDrives(), body.meta?.toApiResponseMetadata())
                 } else {
                     ApiResult.Error("Failed to fetch drives: ${response.code()}", response.code())
                 }

@@ -51,7 +51,7 @@ import androidx.compose.runtime.Composable
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import com.matelink.ui.components.HistoryReadNotices
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,6 +80,7 @@ import com.matelink.data.api.models.Units
 import com.matelink.domain.model.UnitFormatter
 import com.matelink.ui.components.FullscreenLineChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.showHistoryReadFailure
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.screens.trips.displayName
 import android.content.Intent
@@ -108,8 +109,9 @@ fun ChargeDetailScreen(
     onNavigateToTripDetail: (tripStartDate: String) -> Unit = {},
     viewModel: ChargeDetailViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val feedbackContext = LocalContext.current
 
     HistoryForegroundRefreshEffect { viewModel.loadChargeDetail(carId, chargeId) }
     LaunchedEffect(carId, chargeId) {
@@ -118,8 +120,12 @@ fun ChargeDetailScreen(
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(error)
-            viewModel.clearError()
+            val hasContent = uiState.chargeDetail != null
+            val retried = snackbarHostState.showHistoryReadFailure(feedbackContext, error, hasContent) {
+                viewModel.clearError()
+                viewModel.loadChargeDetail(carId, chargeId)
+            }
+            if (!retried && hasContent) viewModel.clearError()
         }
     }
 

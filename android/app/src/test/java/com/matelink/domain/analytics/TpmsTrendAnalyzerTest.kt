@@ -105,6 +105,37 @@ class TpmsTrendAnalyzerTest {
     }
 
     @Test
+    fun ambiguousWallTimeWithoutOffsetCannotProveARecentHighwayDrive() {
+        val result = analyzer.analyze(
+            samples = listOf(
+                sample(1_000_000L, 2.5, 2.5, 2.5, 2.5),
+                sample(2_000_000L, 2.7, 2.6, 2.8, 2.7)
+            ),
+            drives = listOf(drive(startDate = "1970-01-01T00:00:01",
+                endDate = "1970-01-01T00:16:40", speedMax = 100))
+        )
+
+        assertTrue(result.possibleFactors.none { it.factor == TpmsTrendFactor.HIGHWAY })
+    }
+
+    @Test
+    fun explicitOffsetAndZAtTheSameInstantRetainTheSameHighwayEvidence() {
+        val samples = listOf(
+            sample(1_000_000L, 2.5, 2.5, 2.5, 2.5),
+            sample(2_000_000L, 2.7, 2.6, 2.8, 2.7)
+        )
+        val utc = analyzer.analyze(samples,
+            listOf(drive(startDate = "1970-01-01T00:00:01Z",
+                endDate = "1970-01-01T00:16:40Z", speedMax = 100)))
+        val offset = analyzer.analyze(samples,
+            listOf(drive(startDate = "1970-01-01T08:00:01+08:00",
+                endDate = "1970-01-01T08:16:40+08:00", speedMax = 100)))
+
+        assertTrue(utc.possibleFactors.any { it.factor == TpmsTrendFactor.HIGHWAY })
+        assertEquals(utc.possibleFactors, offset.possibleFactors)
+    }
+
+    @Test
     fun doesNotReportHighwayWhenFastDriveFollowsLatestCompleteSampleBeforeLaterPartialSample() {
         val result = analyzer.analyze(
             samples = listOf(

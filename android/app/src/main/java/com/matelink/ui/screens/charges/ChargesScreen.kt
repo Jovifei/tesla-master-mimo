@@ -1,5 +1,7 @@
 package com.matelink.ui.screens.charges
 
+import com.matelink.ui.components.historyReadErrorMessageRes
+import com.matelink.ui.components.showHistoryReadFailure
 import com.matelink.domain.model.UnitFormatter
 
 import androidx.compose.foundation.background
@@ -59,7 +61,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -117,8 +119,9 @@ fun ChargesScreen(
     onNavigateToChargeDetail: (Int) -> Unit = {},
     viewModel: ChargesViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val feedbackContext = LocalContext.current
     val isDarkTheme = isSystemInDarkTheme()
     val palette = telemetryPalette()
     var priceEditTarget by remember { mutableStateOf<ChargeData?>(null) }
@@ -128,18 +131,14 @@ fun ChargesScreen(
         viewModel.setCarId(carId)
     }
 
-    val serverNotConfiguredMessage = stringResource(R.string.server_not_configured_message)
-    val historyIdentityUnavailableMessage = stringResource(R.string.history_identity_unavailable_message)
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(
-                when (error) {
-                    "Server not configured" -> serverNotConfiguredMessage
-                    HISTORY_IDENTITY_UNAVAILABLE -> historyIdentityUnavailableMessage
-                    else -> error
-                }
-            )
-            viewModel.clearError()
+            val hasContent = uiState.charges.isNotEmpty()
+            val retried = snackbarHostState.showHistoryReadFailure(feedbackContext, error, hasContent) {
+                viewModel.clearError()
+                viewModel.refresh()
+            }
+            if (!retried && hasContent) viewModel.clearError()
         }
     }
 
@@ -173,6 +172,7 @@ fun ChargesScreen(
                 canLoadMore = uiState.canLoadMore,
                 onLoadMore = { viewModel.loadMore() },
                 historySyncWarning = uiState.historySyncWarning,
+                readError = uiState.error,
                 localArchiveLinkPending = uiState.localArchiveLinkPending,
                 charges = uiState.charges,
                 dcChargeIds = uiState.dcChargeIds,
@@ -242,6 +242,7 @@ private fun ChargesContent(
     canLoadMore: Boolean = false,
     onLoadMore: () -> Unit = {},
     historySyncWarning: String?,
+    readError: String?,
     localArchiveLinkPending: Boolean,
     charges: List<ChargeData>,
     dcChargeIds: Set<Int>,
@@ -397,7 +398,7 @@ private fun ChargesContent(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = stringResource(R.string.no_charges_found),
+                            text = stringResource(readError?.let(::historyReadErrorMessageRes) ?: R.string.no_charges_found),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

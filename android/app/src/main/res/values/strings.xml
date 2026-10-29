@@ -911,7 +911,7 @@
     <string name="ideal_range">Ideal Range</string>
     <string name="ideal_range_subtitle">Reported ideal range</string>
     <string name="estimated_total_capacity_title">Estimated Total Capacity</string>
-    <string name="estimated_total_capacity_message">Based on charging data analysis.</string>
+    <string name="estimated_total_capacity_message">At %1$d%% SOC, this is a linear estimate from rated range, not a measured battery capacity.</string>
     <string name="estimated_total_capacity">Estimated Total Capacity</string>
     <string name="capacity_kwh">Capacity (kWh)</string>
     <string name="capacity_percent">Capacity (%)</string>
@@ -1046,7 +1046,7 @@
     <string name="energy">Energy</string>
     <string name="energy_added">Energy Added</string>
     <string name="energy_added_header">Energy Added</string>
-    <string name="estimated_range_description">Based on recent driving patterns</string>
+    <string name="estimated_range_description">Estimated from current SOC and rated range</string>
     <string name="expand">Expand</string>
     <string name="filter_all">All</string>
     <string name="filter_commute_km">Commute (&lt; 50km)</string>
@@ -1715,4 +1715,6 @@
     <string name="parked_receipt_save_failed">Detail could not be saved; earlier cached history is preserved offline.</string>
     <string name="drive_detail_sample_maximum">Sample maximum</string>
     <string name="drive_detail_sample_minimum">Sample minimum</string>
+    <string name="history_read_incomplete_title">History is not fully available</string>
+    <string name="history_read_retry_hint">Check the connection, then return to this page to retry.</string>
 </resources>

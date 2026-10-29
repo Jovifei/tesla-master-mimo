@@ -13,8 +13,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** Process-local ownership only; durable detail cursors remain in Room. */
+class SyncRun internal constructor(internal val id: Long)
 
 /**
  * Manages sync state and emits progress updates.
@@ -31,6 +35,31 @@ class SyncManager @Inject constructor(
     val syncStatus: StateFlow<OverallSyncStatus> = _syncStatus.asStateFlow()
 
     private val _carProgress = MutableStateFlow<Map<Int, SyncProgress>>(emptyMap())
+    private val runSequence = AtomicLong()
+    private val progressLock = Any()
+    private val owners = mutableMapOf<Int, Long>()
+
+    internal fun newRun(): SyncRun = SyncRun(runSequence.incrementAndGet())
+
+    internal fun claimCar(run: SyncRun, carId: Int) = synchronized(progressLock) {
+        if ((owners[carId] ?: Long.MIN_VALUE) <= run.id) owners[carId] = run.id
+    }
+
+    internal fun failRun(run: SyncRun, reason: String) = finishRun(run, SyncPhase.ERROR, reason)
+
+    internal fun cancelRun(run: SyncRun) = finishRun(run, SyncPhase.IDLE, null)
+
+    private fun finishRun(run: SyncRun, phase: SyncPhase, message: String?) = synchronized(progressLock) {
+        _carProgress.update { map -> map.mapValues { (car, progress) ->
+            if (owners[car] == run.id && progress.phase !in setOf(SyncPhase.COMPLETE, SyncPhase.ERROR, SyncPhase.IDLE))
+                progress.copy(phase = phase, message = message) else progress
+        } }
+        updateOverallStatus()
+    }
+
+    private fun canPublish(carId: Int, run: SyncRun?): Boolean = synchronized(progressLock) {
+        run == null || owners[carId] == run.id
+    }
 
     /**
      * Get sync progress for a specific car.
@@ -63,14 +92,15 @@ class SyncManager @Inject constructor(
     /**
      * Update progress for summary sync phase.
      */
-    fun updateSummaryProgress(carId: Int, message: String? = null) {
-        updateProgress(carId, SyncPhase.SYNCING_SUMMARIES, 0, 1, message)
+    fun updateSummaryProgress(carId: Int, message: String? = null, run: SyncRun? = null) {
+        updateProgress(carId, SyncPhase.SYNCING_SUMMARIES, 0, 1, message, run)
     }
 
     /**
      * Mark summaries as synced and calculate total items to process.
      */
-    suspend fun markSummariesComplete(carId: Int) {
+    suspend fun markSummariesComplete(carId: Int, run: SyncRun? = null) {
+        if (!canPublish(carId, run)) return
         syncStateDao.markSummariesSynced(carId, System.currentTimeMillis())
 
         // Calculate total items to process for detail sync
@@ -94,13 +124,14 @@ class SyncManager @Inject constructor(
 
         // If nothing to process, mark as complete
         if (!hasItemsToProcess) {
-            markSyncComplete(carId)
+            markSyncComplete(carId, run)
         } else {
             updateProgress(
                 carId,
                 SyncPhase.SYNCING_DRIVE_DETAILS,
                 0,
-                unprocessedDrives + unprocessedCharges
+                unprocessedDrives + unprocessedCharges,
+                run = run
             )
         }
     }
@@ -108,20 +139,22 @@ class SyncManager @Inject constructor(
     /**
      * Update progress for drive detail sync.
      */
-    suspend fun updateDriveDetailProgress(carId: Int, driveId: Int) {
+    suspend fun updateDriveDetailProgress(carId: Int, driveId: Int, run: SyncRun? = null) {
+        if (!canPublish(carId, run)) return
         syncStateDao.updateDriveDetailProgress(carId, driveId)
 
         val state = syncStateDao.get(carId) ?: return
         val total = state.totalDrivesToProcess + state.totalChargesToProcess
         val current = state.drivesProcessed + 1
 
-        updateProgress(carId, SyncPhase.SYNCING_DRIVE_DETAILS, current, total)
+        updateProgress(carId, SyncPhase.SYNCING_DRIVE_DETAILS, current, total, run = run)
     }
 
     /**
      * Mark drive details as complete and start charge details.
      */
-    suspend fun markDriveDetailsComplete(carId: Int) {
+    suspend fun markDriveDetailsComplete(carId: Int, run: SyncRun? = null) {
+        if (!canPublish(carId, run)) return
         val state = syncStateDao.get(carId) ?: return
         val total = state.totalDrivesToProcess + state.totalChargesToProcess
 
@@ -130,32 +163,35 @@ class SyncManager @Inject constructor(
                 carId,
                 SyncPhase.SYNCING_CHARGE_DETAILS,
                 state.drivesProcessed,
-                total
+                total,
+                run = run
             )
         } else {
-            markSyncComplete(carId)
+            markSyncComplete(carId, run)
         }
     }
 
     /**
      * Update progress for charge detail sync.
      */
-    suspend fun updateChargeDetailProgress(carId: Int, chargeId: Int) {
+    suspend fun updateChargeDetailProgress(carId: Int, chargeId: Int, run: SyncRun? = null) {
+        if (!canPublish(carId, run)) return
         syncStateDao.updateChargeDetailProgress(carId, chargeId)
 
         val state = syncStateDao.get(carId) ?: return
         val total = state.totalDrivesToProcess + state.totalChargesToProcess
         val current = state.drivesProcessed + state.chargesProcessed + 1
 
-        updateProgress(carId, SyncPhase.SYNCING_CHARGE_DETAILS, current, total)
+        updateProgress(carId, SyncPhase.SYNCING_CHARGE_DETAILS, current, total, run = run)
     }
 
     /**
      * Mark sync as complete for a car.
      */
-    suspend fun markSyncComplete(carId: Int) {
+    suspend fun markSyncComplete(carId: Int, run: SyncRun? = null) {
+        if (!canPublish(carId, run)) return
         syncStateDao.markDetailsSynced(carId)
-        updateProgress(carId, SyncPhase.COMPLETE, 1, 1)
+        updateProgress(carId, SyncPhase.COMPLETE, 1, 1, run = run)
         updateOverallStatus()
     }
 
@@ -199,8 +235,10 @@ class SyncManager @Inject constructor(
         phase: SyncPhase,
         current: Int,
         total: Int,
-        message: String? = null
-    ) {
+        message: String? = null,
+        run: SyncRun? = null
+    ) = synchronized(progressLock) {
+        if (!canPublish(carId, run)) return@synchronized
         val progress = SyncProgress(
             carId = carId,
             phase = phase,

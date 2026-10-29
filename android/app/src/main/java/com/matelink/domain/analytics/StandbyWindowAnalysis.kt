@@ -85,7 +85,9 @@ fun summarizeStandbyWindows(
     val selected = selectStandbyWindows(windows, range, asOf, customStart, customEnd)
     val eligible = selected.filter { it.isEligible }
     val hours = eligible.sumOf { it.input.durationHours }
-    val powers = eligible.mapNotNull { it.averagePowerW }
+    val powerWindows = eligible.filter { it.averagePowerW != null }
+    val powerHours = powerWindows.sumOf { it.input.durationHours }
+        .takeIf { it.isFinite() && it > 0.0 }
     val energies = eligible.mapNotNull { it.energyKwh }
     return StandbyWindowSummary(
         eligibleWindowCount = eligible.size,
@@ -93,7 +95,10 @@ fun summarizeStandbyWindows(
         hasStableConclusion = eligible.size >= 5 && hours >= 20.0,
         totalSocDeltaPercent = eligible.sumOf { it.socDeltaPercent ?: 0 },
         totalEnergyKwh = energies.takeIf { it.isNotEmpty() }?.sum(),
-        averagePowerW = powers.takeIf { it.isNotEmpty() }?.average()
+        averagePowerW = powerHours?.let { knownHours ->
+            (powerWindows.sumOf { it.averagePowerW!! * it.input.durationHours } / knownHours)
+                .takeIf(Double::isFinite)
+        }
     )
 }
 

@@ -311,6 +311,7 @@ fun NavGraph(
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route.orEmpty()
     var suppressLoginRedirect by rememberSaveable { mutableStateOf(false) }
+    var notificationPermissionDeferred by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -396,11 +397,12 @@ fun NavGraph(
     // One-time notification permission dialog (Android 13+)
     if (startDestination == Screen.Dashboard &&
         !notificationPermissionAsked &&
+        !notificationPermissionDeferred &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     ) {
         AlertDialog(
             onDismissRequest = {
-                coroutineScope.launch { startViewModel.markNotificationPermissionAsked() }
+                notificationPermissionDeferred = true
             },
             title = { Text(stringResource(R.string.notification_permission_title)) },
             text = { Text(stringResource(R.string.notification_permission_message)) },

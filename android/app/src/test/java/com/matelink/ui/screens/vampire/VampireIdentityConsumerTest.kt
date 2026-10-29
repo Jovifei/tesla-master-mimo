@@ -24,6 +24,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -158,7 +159,71 @@ class VampireIdentityConsumerTest {
         } finally { store.clear(); Dispatchers.resetMain() }
     }
 
+    @Test fun actualVmPublishesTimeWeightedPowerForUnequalObservedWindows() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val end = OffsetDateTime.now(ZoneOffset.UTC).minusHours(1)
+        val source = Source().apply { result = { ApiResult.Success(listOf(
+            powerWindow(end, 2, 400.0), powerWindow(end.minusHours(3), 20, 100.0)
+        )) } }
+        val vm = VampireViewModel(source)
+        val store = ViewModelStore().apply { put("vampire", vm) }
+        try {
+            vm.load(1); runCurrent()
+            val state = vm.uiState.value
+            assertEquals(listOf(1), source.requested)
+            assertEquals(2, state.idlePeriods.size)
+            assertEquals(22.0, state.qualifiedHours, 0.0)
+            assertEquals(2.8, state.totalDrainKwh ?: Double.NaN, 1e-12)
+            assertEquals(2800.0 / 22.0, state.avgPowerW ?: Double.NaN, 1e-9)
+        } finally { store.clear(); Dispatchers.resetMain() }
+    }
+
+    @Test fun actualVmKeepsTrueZeroDurationButExcludesUnknownPowerDuration() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val end = OffsetDateTime.now(ZoneOffset.UTC).minusHours(1)
+        val source = Source().apply { result = { ApiResult.Success(listOf(
+            powerWindow(end, 2, 400.0), powerWindow(end.minusHours(3), 6, 0.0),
+            powerWindow(end.minusHours(10), 20, null),
+            powerWindow(end.minusHours(31), 10, 900.0, coverageRatio = 0.45)
+        )) } }
+        val vm = VampireViewModel(source)
+        val store = ViewModelStore().apply { put("vampire", vm) }
+        try {
+            vm.load(1); runCurrent()
+            val state = vm.uiState.value
+            assertEquals(4, state.idlePeriods.size)
+            assertEquals(38.0, state.qualifiedHours, 0.0)
+            assertEquals(2, state.idlePeriods.count { it.avgPowerW == null })
+            assertEquals(1, state.idlePeriods.count { it.avgPowerW == 0.0 })
+            assertEquals(0.8, state.totalDrainKwh ?: Double.NaN, 1e-12)
+            assertEquals(100.0, state.avgPowerW ?: Double.NaN, 1e-9)
+        } finally { store.clear(); Dispatchers.resetMain() }
+    }
+
+    @Test fun actualVmDoesNotCreatePowerFromSocOnlyWindows() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val end = OffsetDateTime.now(ZoneOffset.UTC).minusHours(1)
+        val source = Source().apply { result = { ApiResult.Success(listOf(
+            powerWindow(end, 2, null), powerWindow(end.minusHours(3), 20, null)
+        )) } }
+        val vm = VampireViewModel(source)
+        val store = ViewModelStore().apply { put("vampire", vm) }
+        try {
+            vm.load(1); runCurrent()
+            assertEquals(2, vm.uiState.value.idlePeriods.size)
+            assertNull(vm.uiState.value.avgPowerW)
+            assertNull(vm.uiState.value.totalDrainKwh)
+        } finally { store.clear(); Dispatchers.resetMain() }
+    }
+
     companion object {
+        private fun powerWindow(end: OffsetDateTime, hours: Long, powerW: Double?, coverageRatio: Double = 1.0) =
+            StandbyWindowData(end.minusHours(hours).toString(), end.toString(), address = "observed standby",
+                durationSeconds = hours * 3600, startBatteryLevel = 80, endBatteryLevel = 79,
+                batteryDelta = -1, energyKwh = powerW?.let { it * hours / 1000.0 },
+                averagePowerW = powerW, peakPowerW = powerW, coverageRatio = coverageRatio,
+                source = "telemetry_mqtt")
+
         private fun window(car: Int): StandbyWindowData {
             val end = OffsetDateTime.now(ZoneOffset.UTC).minusHours(1)
             return StandbyWindowData(end.minusHours(3).toString(), end.toString(), address = "car $car",

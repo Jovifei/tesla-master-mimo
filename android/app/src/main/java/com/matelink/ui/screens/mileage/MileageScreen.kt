@@ -1,5 +1,7 @@
 package com.matelink.ui.screens.mileage
 
+import com.matelink.ui.components.historyReadErrorMessageRes
+import com.matelink.ui.components.showHistoryReadFailure
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -65,7 +67,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -109,8 +111,9 @@ fun MileageScreen(
     onNavigateToDriveDetail: (Int) -> Unit = {},
     viewModel: MileageViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val feedbackContext = LocalContext.current
     val isDarkTheme = isSystemInDarkTheme()
     val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
 
@@ -132,8 +135,12 @@ fun MileageScreen(
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(error)
-            viewModel.clearError()
+            val hasContent = uiState.allDrives.isNotEmpty()
+            val retried = snackbarHostState.showHistoryReadFailure(feedbackContext, error, hasContent) {
+                viewModel.clearError()
+                viewModel.refresh()
+            }
+            if (!retried && hasContent) viewModel.clearError()
         }
     }
 
@@ -257,8 +264,8 @@ private fun YearOverviewContent(
             item {
                 MetricStatusPanel(
                     kind = MetricPanelKind.EMPTY,
-                    title = stringResource(R.string.metric_state_empty_title),
-                    body = stringResource(R.string.metric_state_empty_body)
+                    title = stringResource(if (uiState.error != null) R.string.metric_state_error_title else R.string.metric_state_empty_title),
+                    body = stringResource(uiState.error?.let(::historyReadErrorMessageRes) ?: R.string.metric_state_empty_body)
                 )
             }
         } else {
@@ -929,8 +936,11 @@ private fun formatObservedDistance(
 private fun formatObservedEnergy(value: Double, sampleCount: Int): String =
     if (sampleCount > 0 && value.isFinite()) formatEnergy(value) else UNKNOWN_METRIC
 
-private fun formatObservedBattery(value: Double, sampleCount: Int): String =
+internal fun formatObservedBattery(value: Double, sampleCount: Int): String =
     if (sampleCount > 0 && value.isFinite() && value >= 0.0) "%.0f%%".format(value) else UNKNOWN_METRIC
+
+internal fun formatMileageDayRowBattery(value: Double, sampleCount: Int): String =
+    formatObservedBattery(value, sampleCount)
 
 @Composable
 private fun formatKnownEfficiency(evidence: MileageEvidence): String =
@@ -1394,7 +1404,7 @@ private fun DayTripRow(
                         )
                         Spacer(modifier = Modifier.width(2.dp))
                         Text(
-                            text = "%.0f%%".format(dayData.totalBatteryUsage),
+                            text = formatMileageDayRowBattery(dayData.totalBatteryUsage, evidence.batterySampleCount),
                             style = MaterialTheme.typography.bodySmall
                         )
                     }

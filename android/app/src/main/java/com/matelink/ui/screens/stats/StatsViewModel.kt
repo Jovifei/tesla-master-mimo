@@ -356,11 +356,6 @@ class StatsViewModel @Inject constructor(
      * Uses KEEP policy to avoid interrupting a running sync.
      */
     fun triggerSync() {
-        // Skip if sync is already running
-        if (syncManager.syncStatus.value.isAnySyncing) {
-            return
-        }
-
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()

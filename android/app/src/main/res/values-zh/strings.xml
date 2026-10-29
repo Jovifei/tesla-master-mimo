@@ -210,7 +210,7 @@
     <string name="snapshot_source_mixed">混合来源</string>
     <string name="snapshot_source_unavailable">数据不可用</string>
     <string name="snapshot_source_asleep">车辆休眠</string>
-    <string name="status_unknown">暂无数据</string>
+    <string name="status_unknown">未知</string>
     <string name="battery_history_navigation_note">查看已记录的电池历史与容量详情</string>
     <string name="vehicle_model_3">Model 3</string>
     <string name="vehicle_model_y">Model Y</string>
@@ -872,7 +872,7 @@
     <string name="current_charge_message">当前充电信息。</string>
     <string name="current_charge">当前充电</string>
     <string name="usable_percent">可用（%1$d%%）</string>
-    <string name="not_available">暂无数据</string>
+    <string name="not_available">暂不可用</string>
     <string name="external_action_unavailable">没有可用应用打开此链接。</string>
     <string name="charge_cost_actual">实际记录</string>
     <string name="charge_cost_manual">人工总价</string>
@@ -907,7 +907,7 @@
     <string name="ideal_range">理想续航</string>
     <string name="ideal_range_subtitle">车辆上报的理想续航</string>
     <string name="estimated_total_capacity_title">预估总容量</string>
-    <string name="estimated_total_capacity_message">基于充电数据分析。</string>
+    <string name="estimated_total_capacity_message">当前SOC为%1$d%%，按额定续航线性推算，不代表实测电池容量。</string>
     <string name="estimated_total_capacity">预估总容量</string>
     <string name="capacity_kwh">容量 (kWh)</string>
     <string name="capacity_percent">容量 (%)</string>
@@ -1040,7 +1040,7 @@
     <string name="energy">能量</string>
     <string name="energy_added">已充能量</string>
     <string name="energy_added_header">已充能量</string>
-    <string name="estimated_range_description">基于近期驾驶习惯</string>
+    <string name="estimated_range_description">按当前SOC与额定续航估算</string>
     <string name="expand">展开</string>
     <string name="filter_all">全部</string>
     <string name="filter_commute_km">通勤 (&lt; 50km)</string>
@@ -1706,4 +1706,6 @@
     <string name="parked_receipt_save_failed">详情未能保存，离线时保留先前缓存。</string>
     <string name="drive_detail_sample_maximum">样本最高</string>
     <string name="drive_detail_sample_minimum">样本最低</string>
+    <string name="history_read_incomplete_title">历史数据尚未就绪</string>
+    <string name="history_read_retry_hint">请检查连接，再返回此页重试。</string>
 </resources>

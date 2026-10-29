@@ -50,7 +50,7 @@ import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import com.matelink.ui.components.HistoryReadNotices
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,6 +83,7 @@ import com.matelink.domain.map.AmapConfiguration
 import com.matelink.ui.components.AmapRouteView
 import com.matelink.ui.components.FullscreenLineChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.showHistoryReadFailure
 import com.matelink.ui.components.RouteIndicator
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.TelemetrySectionHeader
@@ -105,8 +106,9 @@ fun DriveDetailScreen(
     onNavigateToDriveCurves: () -> Unit = {},
     viewModel: DriveDetailViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val feedbackContext = LocalContext.current
     val palette = telemetryPalette()
 
     HistoryForegroundRefreshEffect { viewModel.loadDriveDetail(carId, driveId) }
@@ -116,8 +118,12 @@ fun DriveDetailScreen(
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(error)
-            viewModel.clearError()
+            val hasContent = uiState.driveDetail != null
+            val retried = snackbarHostState.showHistoryReadFailure(feedbackContext, error, hasContent) {
+                viewModel.clearError()
+                viewModel.loadDriveDetail(carId, driveId)
+            }
+            if (!retried && hasContent) viewModel.clearError()
         }
     }
 

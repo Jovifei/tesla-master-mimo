@@ -46,7 +46,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.matelink.ui.components.historyReadWarningMessageRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -91,11 +92,18 @@ fun TripsScreen(
     onNavigateToCreateTrip: () -> Unit = {},
     viewModel: TripsViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val feedbackContext = LocalContext.current
     val isDarkTheme = isSystemInDarkTheme()
     val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
 
     LaunchedEffect(carId) { viewModel.setCarId(carId) }
+    LaunchedEffect(uiState.historySyncWarning) {
+        uiState.historySyncWarning?.let { warning ->
+            android.widget.Toast.makeText(feedbackContext,
+                feedbackContext.getString(historyReadWarningMessageRes(warning)), android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 
     // Reload trips when returning from a child screen — merges / edits in the trip detail
     // invalidate this screen's cached list. The VM ignores the first ON_RESUME to avoid
@@ -167,7 +175,7 @@ fun TripsScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = stringResource(R.string.trips_empty_title),
+                            text = stringResource(if (uiState.historySyncWarning != null) R.string.history_read_incomplete_title else R.string.trips_empty_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -175,7 +183,7 @@ fun TripsScreen(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = stringResource(R.string.trips_empty_intro),
+                            text = stringResource(uiState.historySyncWarning?.let(::historyReadWarningMessageRes) ?: R.string.trips_empty_intro),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -191,7 +199,7 @@ fun TripsScreen(
                         }
                         Spacer(modifier = Modifier.height(20.dp))
                         Text(
-                            text = stringResource(R.string.trips_empty_create_hint),
+                            text = stringResource(if (uiState.historySyncWarning != null) R.string.history_read_retry_hint else R.string.trips_empty_create_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center

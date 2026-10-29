@@ -67,32 +67,46 @@ class DataSyncWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         log("Starting data sync worker (attempt ${runAttemptCount})")
+        val run = syncManager.newRun()
+        fun failure(reason: String): Result {
+            syncManager.failRun(run, reason)
+            return Result.failure(terminalData("failed", reason))
+        }
+        fun apiFailure(error: ApiResult.Error): Result {
+            syncManager.failRun(run, "history_sync_failed")
+            return if (isTerminalDriveDetailFailure(error)) {
+                Result.failure(terminalData("failed", error.kind.name.lowercase(java.util.Locale.ROOT)))
+            } else {
+                Result.retry()
+            }
+        }
 
         // Run as foreground service to prevent being killed when screen is off
         // This shows a persistent notification during sync
         // On Android 14+, this may fail if started from background
         foregroundAvailable = trySetForeground("Starting sync...")
 
+        var continuationQueued = false
         try {
             val intent = inputData.getString("history_sync_intent") ?: "FULL_SYNC"
-            if (intent !in setOf("FULL_SYNC", "DETAIL_CONTINUATION")) return Result.failure()
+            if (intent !in setOf("FULL_SYNC", "DETAIL_CONTINUATION")) return failure("invalid_intent")
             val continuation = intent == "DETAIL_CONTINUATION"
-            val fence = if (continuation) inputData.getString("history_scope_epoch") ?: return Result.failure()
+            val fence = if (continuation) inputData.getString("history_scope_epoch") ?: return failure("missing_scope")
                 else syncRepository.captureContinuationFence()
-            if (syncRepository.captureContinuationFence() != fence) return Result.failure()
-            val carIds = if (continuation) inputData.getIntArray("history_car_ids")?.toList() ?: return Result.failure()
+            if (syncRepository.captureContinuationFence() != fence) return failure("scope_changed")
+            val carIds = if (continuation) inputData.getIntArray("history_car_ids")?.toList() ?: return failure("missing_cars")
                 else when (val cars = teslamateRepository.getCars()) {
-                    is ApiResult.Error -> return driveDetailFailureWorkerResult(cars)
+                    is ApiResult.Error -> return apiFailure(cars)
                     is ApiResult.Success -> cars.data.map { it.carId }
                 }
-            if (carIds.isEmpty()) return if (continuation) Result.failure() else Result.success()
-            if (carIds.distinct().size != carIds.size) return Result.failure()
-            val proof = if (continuation) inputData.getString("history_car_proof") ?: return Result.failure()
+            if (carIds.isEmpty()) return if (continuation) failure("empty_cars") else Result.success(terminalData("complete", "no_cars"))
+            if (carIds.distinct().size != carIds.size) return failure("duplicate_cars")
+            val proof = if (continuation) inputData.getString("history_car_proof") ?: return failure("missing_car_proof")
                 else {
                     for (id in carIds) {
-                        if (syncRepository.captureContinuationFence() != fence) return Result.failure()
-                        when (val prepared = syncRepository.syncCar(id, summariesOnly = true)) {
-                            is CarSyncResult.Failed -> return driveDetailFailureWorkerResult(prepared.error)
+                        if (syncRepository.captureContinuationFence() != fence) return failure("scope_changed")
+                        when (val prepared = syncRepository.syncCar(id, summariesOnly = true, run = run)) {
+                            is CarSyncResult.Failed -> return apiFailure(prepared.error)
                             else -> Unit
                         }
                     }
@@ -100,33 +114,44 @@ class DataSyncWorker @AssistedInject constructor(
                 }
             suspend fun current() = syncRepository.captureContinuationFence() == fence &&
                 syncRepository.continuationCarProof(carIds) == proof && syncRepository.captureContinuationFence() == fence
-            if (!current()) return Result.failure()
+            if (!current()) return failure("identity_changed")
+            syncRepository.claimRunCars(run, carIds)
             val offset = Math.floorMod(inputData.getInt("history_car_cursor", 0), carIds.size)
             val ordered = carIds.drop(offset) + carIds.take(offset)
             val outcome = runHistoryDetailBatch(ordered) { car, budget ->
                 if (!current()) throw CancellationException("History continuation fence changed")
-                syncRepository.syncDetailsOnly(car, budget)
+                syncRepository.syncDetailsOnly(car, budget, run)
             }
-            if (!current()) return Result.failure()
+            if (!current()) return failure("identity_changed")
             return when (outcome) {
-                is CarSyncResult.Failed -> driveDetailFailureWorkerResult(outcome.error)
+                is CarSyncResult.Failed -> apiFailure(outcome.error)
                 is CarSyncResult.Deferred -> finishDataSyncBatch(outcome.pendingDrives) {
                     scheduleDetailContinuation(fence, carIds, proof, (offset + 10) % carIds.size)
-                }
-                CarSyncResult.Complete -> { scheduleGeocoding(); Result.success() }
+                }.also { continuationQueued = true }
+                CarSyncResult.Complete -> { scheduleGeocoding(); Result.success(terminalData("complete", "complete")) }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            syncManager.failRun(run, "history_sync_failed")
             logError("Unexpected error in sync worker", e)
             return if (isNetworkException(e)) {
                 log("Network error, will retry...")
                 Result.retry()
             } else {
-                Result.failure()
+                failure("unexpected_failure")
             }
+        } finally {
+            // Completed/error phases are retained. Only a durably queued
+            // continuation keeps this run's unfinished phases active.
+            if (!continuationQueued) syncManager.cancelRun(run)
         }
     }
+
+    /** WorkManager persists only bounded codes/times, never exception text, identities or URLs. */
+    private fun terminalData(state: String, reason: String) = androidx.work.workDataOf(
+        "history_sync_state" to state, "history_sync_reason" to reason,
+        "history_sync_finished_at" to System.currentTimeMillis())
 
     /** A normal batch is continued without using network-error exponential retry attempts. */
     internal suspend fun scheduleDetailContinuation(fence: String, carIds: List<Int>, proof: String, cursor: Int) {

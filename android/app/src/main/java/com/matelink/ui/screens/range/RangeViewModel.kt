@@ -295,7 +295,8 @@ class RangeViewModel internal constructor(private val source: RangePageSource) :
                             // the failure.
                             _uiState.update {
                                 if (cachedPublished) it.copy(isLoading = false, isRefreshing = false)
-                                else it.copy(isLoading = false, isRefreshing = false, error = result.message)
+                                else it.copy(isLoading = false, isRefreshing = false, error = result.message,
+                                    noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
                             }
                         }
                     }

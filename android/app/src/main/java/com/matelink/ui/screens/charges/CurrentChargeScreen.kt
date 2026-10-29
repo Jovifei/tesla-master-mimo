@@ -39,7 +39,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +69,7 @@ import com.matelink.ui.components.projectTimedChartSeries
 import com.matelink.util.parseIsoInstant
 import com.matelink.ui.components.FullscreenLineChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.showHistoryReadFailure
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.TelemetrySectionHeader
 import com.matelink.util.formatDuration
@@ -87,7 +88,7 @@ fun CurrentChargeScreen(
     onNavigateBack: () -> Unit,
     viewModel: CurrentChargeViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -97,14 +98,12 @@ fun CurrentChargeScreen(
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            val message = when (error) {
-                "history_identity_unavailable", "current_charge_identity_invalid" -> context.getString(R.string.history_identity_unavailable_message)
-                "history_sync_timeout" -> context.getString(R.string.settings_connection_timeout)
-                "history_read_failed" -> context.getString(R.string.error_loading_data)
-                else -> error
+            val hasContent = uiState.chargeDetail != null
+            val retried = snackbarHostState.showHistoryReadFailure(context, error, hasContent) {
+                viewModel.clearError()
+                viewModel.loadCurrentCharge(carId)
             }
-            snackbarHostState.showSnackbar(message)
-            viewModel.clearError()
+            if (!retried && hasContent) viewModel.clearError()
         }
     }
 

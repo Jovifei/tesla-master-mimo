@@ -1,5 +1,8 @@
 package com.matelink.ui.screens.timeline
 
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
+import com.matelink.ui.components.historyReadErrorMessageRes
+import com.matelink.ui.components.showHistoryReadFailure
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -42,11 +45,13 @@ fun TimelineScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val feedbackContext = androidx.compose.ui.platform.LocalContext.current
+    HistoryForegroundRefreshEffect { viewModel.refresh() }
     val listState = rememberLazyListState()
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let {
-            snackbarHostState.showSnackbar(it)
+            snackbarHostState.showHistoryReadFailure(feedbackContext, it, uiState.events.isNotEmpty()) { viewModel.refresh() }
         }
     }
 
@@ -79,7 +84,7 @@ fun TimelineScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = stringResource(R.string.timeline_empty),
+                    text = stringResource(uiState.error?.let(::historyReadErrorMessageRes) ?: R.string.timeline_empty),
                     style = MaterialTheme.typography.bodyLarge,
                     color = palette.onSurfaceVariant
                 )

@@ -65,7 +65,9 @@ class ChargingNotificationWorker @AssistedInject constructor(
          * 1. Self-rescheduling OneTimeWorkRequest for frequent checks (30s)
          * 2. PeriodicWorkRequest (15min) as reliable fallback when app is killed
          */
-        fun schedulePeriodicWork(context: Context) {
+        fun ensureScheduled(context: Context) = schedulePeriodicWork(context)
+
+        fun schedulePeriodicWork(context: Context, appendAfterCurrent: Boolean = false) {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
@@ -79,7 +81,7 @@ class ChargingNotificationWorker @AssistedInject constructor(
 
             WorkManager.getInstance(context).enqueueUniqueWork(
                 WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
+                if (appendAfterCurrent) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP,
                 oneTimeRequest
             )
 
@@ -269,6 +271,8 @@ class ChargingNotificationWorker @AssistedInject constructor(
      * Schedule the next check using self-rescheduling pattern.
      */
     private fun scheduleNextCheck() {
-        schedulePeriodicWork(appContext)
+        // Only the unique one-time pass appends a successor. Bootstrap/boot,
+        // immediate checks and the periodic safety net retain an existing chain.
+        schedulePeriodicWork(appContext, appendAfterCurrent = tags.contains(TAG))
     }
 }

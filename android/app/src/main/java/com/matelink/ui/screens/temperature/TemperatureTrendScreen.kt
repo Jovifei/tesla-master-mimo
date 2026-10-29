@@ -1,5 +1,6 @@
 package com.matelink.ui.screens.temperature
 
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -70,6 +71,7 @@ fun TemperatureTrendScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(carId) { viewModel.load(carId) }
+    HistoryForegroundRefreshEffect { viewModel.retry() }
 
     Scaffold(
         topBar = {

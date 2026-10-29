@@ -1,5 +1,8 @@
 package com.matelink.ui.screens.drives
 
+import com.matelink.ui.components.historyReadWarningMessageRes
+import com.matelink.ui.components.historyReadErrorMessageRes
+import com.matelink.ui.components.showHistoryReadFailure
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,7 +56,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,7 +83,6 @@ import com.matelink.data.api.models.drivePresentationUnits
 import com.matelink.ui.components.BarChartData
 import com.matelink.ui.components.DateRangePickerDialog
 import com.matelink.ui.components.CompactHistoryMetricStrip
-import com.matelink.ui.components.HistoryReadNotices
 import com.matelink.ui.components.InteractiveBarChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.MateLinkLoadingMark
@@ -112,8 +114,9 @@ fun DrivesScreen(
     onNavigateToParkedDetail: (olderDriveId: Int, newerDriveId: Int) -> Unit = { _, _ -> },
     viewModel: DrivesViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val feedbackContext = LocalContext.current
     val palette = telemetryPalette()
     val scope = rememberCoroutineScope()
 
@@ -137,21 +140,23 @@ fun DrivesScreen(
         )
     }
 
-    val serverNotConfiguredMessage = stringResource(R.string.server_not_configured_message)
-    val historyIdentityUnavailableMessage = stringResource(R.string.history_identity_unavailable_message)
-    val historySyncTimeoutMessage = stringResource(R.string.settings_connection_timeout)
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(
-                when (error) {
-                    "Server not configured" -> serverNotConfiguredMessage
-                    HISTORY_IDENTITY_UNAVAILABLE -> historyIdentityUnavailableMessage
-                    "history_sync_timeout" -> historySyncTimeoutMessage
-                    else -> error
-                }
-            )
-            viewModel.clearError()
+            val hasContent = uiState.drives.isNotEmpty()
+            val retried = snackbarHostState.showHistoryReadFailure(feedbackContext, error, hasContent) {
+                viewModel.clearError()
+                viewModel.refresh()
+            }
+            if (!retried && hasContent) viewModel.clearError()
         }
+    }
+
+    LaunchedEffect(uiState.historySyncWarning, uiState.localArchiveLinkPending) {
+        val messages = listOfNotNull(
+            R.string.history_archive_link_pending.takeIf { uiState.localArchiveLinkPending },
+            uiState.historySyncWarning?.let(::historyReadWarningMessageRes)
+        ).map(feedbackContext::getString)
+        if (messages.isNotEmpty()) snackbarHostState.showSnackbar(messages.joinToString("\n"))
     }
 
     Scaffold(
@@ -183,8 +188,7 @@ fun DrivesScreen(
                 isLoadingMore = uiState.isLoadingMore,
                 canLoadMore = uiState.canLoadMore,
                 onLoadMore = { viewModel.loadMore() },
-                historySyncWarning = uiState.historySyncWarning,
-                localArchiveLinkPending = uiState.localArchiveLinkPending,
+                readError = uiState.error,
                 drives = uiState.drives,
                 parkedPairs = uiState.parkedPairs,
                 historySequence = uiState.historySequence,
@@ -227,8 +231,7 @@ private fun DrivesContent(
     isLoadingMore: Boolean = false,
     canLoadMore: Boolean = false,
     onLoadMore: () -> Unit = {},
-    historySyncWarning: String?,
-    localArchiveLinkPending: Boolean,
+    readError: String?,
     drives: List<DriveData>,
     parkedPairs: Set<Pair<Int, Int>>,
     historySequence: List<DriveData>,
@@ -255,8 +258,7 @@ private fun DrivesContent(
     }
     // Header items in render order: date chips, distance chips, summary,
     // charts (conditional), history header. Adjust if items are added.
-    val headerCount = 4 + (if (chartData.isNotEmpty()) 1 else 0) +
-        (if (historySyncWarning != null || localArchiveLinkPending) 1 else 0)
+    val headerCount = 4 + (if (chartData.isNotEmpty()) 1 else 0)
 
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
@@ -327,7 +329,7 @@ private fun DrivesContent(
                             modifier = Modifier.size(36.dp)
                         )
                         Text(
-                            text = stringResource(R.string.no_drives_found),
+                            text = stringResource(readError?.let(::historyReadErrorMessageRes) ?: R.string.no_drives_found),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
