@@ -55,7 +55,7 @@ class SettingsExperienceContractTest {
         val version = Regex("versionName\\s*=\\s*\"([^\"]+)\"").find(gradle)
             ?.groupValues?.get(1)
         assertEquals(75, code)
-        assertEquals("2.1.56", version)
+        assertEquals("2.1.57", version)
         assertEquals(version, com.matelink.BuildConfig.VERSION_NAME)
         val settings = File("src/main/java/com/matelink/ui/screens/settings/SettingsScreen.kt").readText()
         assertEquals(2, Regex("stringResource\\(R\\.string\\.settings_release_notes_version,\\s*com\\.matelink\\.BuildConfig\\.VERSION_NAME\\)")

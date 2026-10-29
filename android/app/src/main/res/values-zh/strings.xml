@@ -1219,10 +1219,10 @@
     <string name="settings_first_run_title">连接 API</string>
     <string name="settings_root_url_hint">使用 API 根地址，例如 https://teslamate-api.example.com。不要填写 Grafana 或 TeslaMate Web UI，也不要添加 /api/v1。</string>
     <string name="settings_server_url_placeholder">https://teslamate-api.example.com</string>
-    <string name="settings_short_dialog_text">确定吗？</string>
-    <string name="settings_short_dialog_title">确认</string>
-    <string name="settings_show_short_hint">显示缩写值</string>
-    <string name="settings_show_short_label">简短值</string>
+    <string name="settings_short_dialog_text">关闭后隐藏时长&lt;1分钟或里程&lt;0.2公里的行程，以及≤0.1kWh充电。未知或不完整数据不受此过滤。</string>
+    <string name="settings_short_dialog_title">短记录显示</string>
+    <string name="settings_show_short_hint">关闭可隐藏短行程和少量充电</string>
+    <string name="settings_show_short_label">显示短记录</string>
     <string name="settings_test_connection">测试连接</string>
     <string name="settings_save_untested_warning">连接尚未验证。再次点击保存仍可保存，或先测试连接。</string>
     <string name="settings_enter_app">进入应用</string>

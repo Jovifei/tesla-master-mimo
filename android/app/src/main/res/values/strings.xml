@@ -1229,10 +1229,10 @@
     <string name="settings_root_url_hint">Use the API root URL, for example https://teslamate-api.example.com. Do not use Grafana or TeslaMate Web UI, and do not add /api/v1.</string>
     <string name="settings_save_untested_warning">Connection has not been verified. Tap Save again to save anyway, or test the connection first.</string>
     <string name="settings_server_url_placeholder">https://teslamate-api.example.com</string>
-    <string name="settings_short_dialog_text">Are you sure?</string>
-    <string name="settings_short_dialog_title">Confirm</string>
-    <string name="settings_show_short_hint">Show abbreviated values</string>
-    <string name="settings_show_short_label">Short Values</string>
+    <string name="settings_short_dialog_text">When off, hide trips under 1 minute or 0.2 km and charges of 0.1 kWh or less. Records with unknown or incomplete data are not filtered out.</string>
+    <string name="settings_short_dialog_title">Short Records</string>
+    <string name="settings_show_short_hint">Turn off to hide short trips and small charges</string>
+    <string name="settings_show_short_label">Show Short Records</string>
     <string name="settings_test_connection">Test Connection</string>
     <string name="settings_enter_app">Enter App</string>
     <string name="show_password">Show Password</string>
