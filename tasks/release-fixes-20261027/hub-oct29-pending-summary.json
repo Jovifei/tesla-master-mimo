@@ -1,0 +1,24 @@
+{
+  "kind": "local_pending_summary_not_a_hub_event",
+  "recorded_date": "2026-10-29",
+  "project": "matelink",
+  "worktree": "E:\\project\\_worktrees\\matelink-app-collection-recovery-20261029",
+  "branch": "codex/app-collection-recovery-20261029",
+  "hub_revision": "not obtained: WinError 10061 connection refused; automatic retries stopped",
+  "current": [
+    "API ab9a245c deployed and health-checked; Fleet first event pending",
+    "App 26b7f6fe: Debug and Release 1705 tests each, zero failures; both lints zero errors; helper 74 synthetic tests passed",
+    "Signed 2.1.56/build75 installed with data-preserving upgrade; original first-install time preserved; owner confirmation dialog open"
+  ],
+  "next": [
+    "Wait for owner decision on phone",
+    "If approved, install scoped bridge credential and verify natural uploads and phone display",
+    "Inspect Fleet provider diagnostics without configuration changes"
+  ],
+  "blockers": [
+    "Archive credential remains expired until owner-approved enrollment",
+    "Fleet provider first-event evidence remains pending",
+    "Hub revision unavailable: WinError 10061; no automatic retries"
+  ],
+  "evidence": "docs/RPT-2026-10-29-fleet-archive-recovery.md"
+}

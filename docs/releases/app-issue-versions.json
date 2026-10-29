@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "branch": "codex/app-release-data-fixes-20261027",
-  "observation_note": "发现版本不等于首次引入版本；尚未发布",
+  "branch": "codex/app-collection-recovery-20261029",
+  "observation_note": "发现版本不等于首次引入版本；build75已安装测试，归档续绑和自然行程仍待实际验收",
   "issues": [
     {
       "id": "H01",
@@ -4560,6 +4560,14 @@
           "detail": "2026-10-28 22:05 过期，晚于反馈的三次行程，尚未重新绑定",
           "evidence": "../RPT-2026-10-28-missing-drives.md",
           "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "线上350e1b7f / App build74",
+          "action": "OWNER_CONSENT_AND_PROTOCOL_IMPLEMENTATION",
+          "detail": "现行桥真实403且游标不动；用户接受独立确认弹层，同scope设备授权后端ab9a245c经隔离PG验证，仍未续期或上传",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "ab9a245c77658fd1adc051bb9218234a1ccc6182"
         }
       ]
     },
@@ -4797,8 +4805,8 @@
       "found_date": "2026-10-28",
       "found_version": "服务端 2c8b7655 源码",
       "source_ref": "../RPT-2026-10-28-missing-drives.md",
-      "status": "CODE_COMMITTED_LOCAL_QA_PASS_NOT_DEPLOYED",
-      "fix_version": "本地服务端源码 1d4fdb58；线上仍为 2c8b7655",
+      "status": "PRODUCTION_DEPLOYED_LOCAL_QA_PASS",
+      "fix_version": "服务端 350e1b7f（基于当前生产 a2bac）；真实Fleet自然事件待验",
       "change": "同事务中先读完并关闭结果集，再更新候选行程",
       "verification": "Go test ./...、go vet ./...、真实 PostgreSQL 16 隔离集成测试通过；未部署；不认作当天缺源根因",
       "commit": "1d4fdb5828271dfc7e1d92c130542235f3b27084",
@@ -4818,6 +4826,14 @@
           "detail": "Go test ./...、go vet ./...、真实 PostgreSQL 16 隔离集成测试通过；未部署；不认作当天缺源根因",
           "evidence": "../RPT-2026-10-28-missing-drives.md",
           "commit": "1d4fdb5828271dfc7e1d92c130542235f3b27084"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "线上服务端 350e1b7f",
+          "action": "PRODUCTION_DEPLOYED",
+          "detail": "从当前生产a2bac精确重放finalizer为a0d51a9c，独立PG回归通过；合并只读诊断后定向API更新，公网健康版本匹配，未变更其他容器或数据库schema",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "350e1b7fb8add01405e8189dc27739544ec0cdb7"
         }
       ]
     },
@@ -4956,11 +4972,318 @@
           "commit": null
         }
       ]
+    },
+    {
+      "id": "OCT29-BRIDGE-DUAL-WRITER",
+      "title": "两套归档桥并行读写同一游标",
+      "found_date": "2026-10-29",
+      "found_version": "bridge-92cbf11及历史桥并行运行",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "RUNTIME_MITIGATION_VERIFIED",
+      "fix_version": null,
+      "change": "停用旧桥自动重启并停止，保留容器镜像和共享游标，现行生产桥持续运行",
+      "verification": "前后游标SHA一致，旧桥false/no，生产桥true/always；续绑和自然上传尚待验",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "bridge-92cbf11及历史桥并行运行",
+          "action": "CURRENT_RECOVERY",
+          "detail": "前后游标SHA一致，旧桥false/no，生产桥true/always；续绑和自然上传尚待验",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "OCT29-FLEET-STALE-DIAGNOSTICS",
+      "title": "旧配置标志替代当前官方Fleet状态且页面读取有副作用",
+      "found_date": "2026-10-29",
+      "found_version": "线上a2bac32c / App2.1.55 build74",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "BACKEND_DEPLOYED_CLIENT_QA_PENDING",
+      "fix_version": null,
+      "change": "增加独立owner认证只读诊断、限制官方origin/无刷新/无写；App复用原详情文案读取",
+      "verification": "服务端19项定向和全量Go/vet通过，独立审查修正空对象promotion及任意origin；线上350e1b7f健康，客户端回归进行中",
+      "commit": "350e1b7fb8add01405e8189dc27739544ec0cdb7",
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "线上a2bac32c / App2.1.55 build74",
+          "action": "CURRENT_RECOVERY",
+          "detail": "服务端19项定向和全量Go/vet通过，独立审查修正空对象promotion及任意origin；线上350e1b7f健康，客户端回归进行中",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "350e1b7fb8add01405e8189dc27739544ec0cdb7"
+        }
+      ]
+    },
+    {
+      "id": "OCT29-APP-WIP-PROVENANCE",
+      "title": "干净候选覆盖手机脏树包会撤回已安装功能",
+      "found_date": "2026-10-29",
+      "found_version": "已安装2.1.55/build74 SHA7264FB76",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "CANDIDATE_INTEGRATED_QA_PENDING",
+      "fix_version": null,
+      "change": "哈希固定旧WIP后在E盘隔离App分支集成，保留已安装功能并升2.1.56/build75",
+      "verification": "旧APK资源反证确认widget configure已安装；29生产+9测试路径固定复制；95项定向通过，新诊断及全量打包待验",
+      "commit": "6b40db37",
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "已安装2.1.55/build74 SHA7264FB76",
+          "action": "CURRENT_RECOVERY",
+          "detail": "旧APK资源反证确认widget configure已安装；29生产+9测试路径固定复制；95项定向通过，新诊断及全量打包待验",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "6b40db37"
+        }
+      ]
+    },
+    {
+      "id": "OCT29-ARCHIVE-ENROLLMENT",
+      "title": "归档凭据到期后缺少安全的本人授权续期通路",
+      "found_date": "2026-10-29",
+      "found_version": "线上350e1b7f / App2.1.55 build74",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "BACKEND_DEPLOYED_CLIENT_QA_PENDING",
+      "fix_version": "线上服务端 ab9a245c；手机 App75 候选待完整验证安装",
+      "change": "新增短期请求、本人确认弹层、受限credential幂等领取和本机单桥安全安装",
+      "verification": "合并后离线Go 409 PASS/103 SKIP、独立PG 8组22子例PASS；线上ready200/build匹配、未认证预览401、非法创建400；App及人工确认与自然上传待验",
+      "commit": "ab9a245c77658fd1adc051bb9218234a1ccc6182",
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "线上350e1b7f / App2.1.55 build74",
+          "action": "IMPLEMENTATION_IN_PROGRESS",
+          "detail": "用户接受独立确认弹层；后端同scope CAS、撤销、重领和真实PG测试通过，App/助手/部署/本人实际批准及自然上传仍待验",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "ab9a245c77658fd1adc051bb9218234a1ccc6182"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "线上服务端 ab9a245c",
+          "action": "BACKEND_DEPLOYED",
+          "detail": "合并后离线Go 409 PASS/103 SKIP、独立PG 8组22子例PASS；线上ready200/build匹配、未认证预览401、非法创建400；App及人工确认与自然上传待验",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "ab9a245c77658fd1adc051bb9218234a1ccc6182"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "2.1.56 / build75 候选",
+          "action": "APP_AND_HELPER_COMMITTED",
+          "detail": "App 确认弹层及受限助手本地提交；完整测试、本人批准和自然上传待验",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "2.1.56 / build75 设备测试",
+          "action": "INSTALLED_CONFIRMATION_PENDING",
+          "detail": "同签名保数据升级、启动及进程采样通过；本人批准和自然行程上传仍待验",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e"
+        }
+      ]
+    },
+    {
+      "id": "OCT29-FLEET-READINESS-SIDE-EFFECT",
+      "title": "云端诊断页旧readiness/car/status读取可能调用车辆查询和自动配置",
+      "found_date": "2026-10-29",
+      "found_version": "App2.1.56 build75 候选 / 线上350e1b7f",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "CODE_IN_PROGRESS",
+      "fix_version": "线上服务端 ab9a245c；App75 候选待完整验证安装",
+      "change": "复用已认证诊断的readiness_context，普通云端读取仅1次安全GET，不回退旧接口",
+      "verification": "只读存储bundle已部署；云端VM安全单GET回归6项通过，身份匹配与会话请求fence复核修正中",
+      "commit": "90d9de00",
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "App2.1.56 build75 候选 / 线上350e1b7f",
+          "action": "IMPLEMENTATION_IN_PROGRESS",
+          "detail": "真实VM回归先4失败后6通过，后端限定只读存储上下文与source/clock/单位资格，合并部署与全量验收待完成",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "90d9de00"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "线上服务端 ab9a245c",
+          "action": "READ_ONLY_BUNDLE_DEPLOYED",
+          "detail": "只读存储bundle已部署；云端VM安全单GET回归6项通过，身份匹配与会话请求fence复核修正中",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "ab9a245c77658fd1adc051bb9218234a1ccc6182"
+        }
+      ]
+    },
+    {
+      "id": "OCT29-ENROLL-HTTP-REPLAY",
+      "title": "续绑确认请求可能在身份失效后由 HTTP 自动重发",
+      "found_date": "2026-10-29",
+      "found_version": "2.1.56/build75 未发布候选",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "LOCAL_QA_PASS_DEVICE_PENDING",
+      "fix_version": "2.1.56 / build75 候选",
+      "change": "确认预览与决定固定使用 noRetry 客户端；在请求发出前绑定账号、会话代次与车辆",
+      "verification": "Debug 1705/0 失败/0 跳过；Release 1705/0 失败/8 跳过；双 lint 0 错误；助手 74 项合成测试通过；签名包、本人批准及设备待验",
+      "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e",
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "2.1.56/build75 未发布候选",
+          "action": "CANDIDATE_REVIEW_AND_FIX",
+          "detail": "配置选择回归先 RED；401、503 和断连的真实本地 socket 回归及全量测试进行中",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "2.1.56 / build75 候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "旧候选配置检查 RED；修复后 8 项定向测试通过，覆盖 GET/POST 401、503、断连与身份变化；全量及真机待验",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "2.1.56 / build75 候选",
+          "action": "LOCAL_QA",
+          "detail": "Debug 1705/0 失败/0 跳过；Release 1705/0 失败/8 跳过；双 lint 0 错误；助手 74 项合成测试通过；签名包、本人批准及设备待验",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e"
+        }
+      ]
+    },
+    {
+      "id": "OCT29-ENROLL-APP-LIFECYCLE",
+      "title": "独立确认弹层可能在 Activity 重建后重复打开旧请求",
+      "found_date": "2026-10-29",
+      "found_version": "2.1.56/build75 未发布候选",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "LOCAL_QA_PASS_DEVICE_PENDING",
+      "fix_version": "2.1.56 / build75 候选",
+      "change": "记录已消费链接并按生命周期取消旧确认；明确重新打开链接才重建预览",
+      "verification": "Debug 1705/0 失败/0 跳过；Release 1705/0 失败/8 跳过；双 lint 0 错误；助手 74 项合成测试通过；签名包、本人批准及设备待验",
+      "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e",
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "2.1.56/build75 未发布候选",
+          "action": "CANDIDATE_REVIEW_AND_FIX",
+          "detail": "合成生命周期测试通过；设备确认尚待验证",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "2.1.56 / build75 候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "合成生命周期测试通过；设备确认尚待验证",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "2.1.56 / build75 候选",
+          "action": "LOCAL_QA",
+          "detail": "Debug 1705/0 失败/0 跳过；Release 1705/0 失败/8 跳过；双 lint 0 错误；助手 74 项合成测试通过；签名包、本人批准及设备待验",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e"
+        }
+      ]
+    },
+    {
+      "id": "OCT29-ENROLL-RETRY-RECOVERY",
+      "title": "单桥重建中断或 ACK 响应丢失后，恢复流程可能卡住或误报",
+      "found_date": "2026-10-29",
+      "found_version": "2.1.56/build75 未发布助手候选",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "LOCAL_QA_PASS_DEVICE_PENDING",
+      "fix_version": "2.1.56 / build75 候选",
+      "change": "持久化目标配置及运行指纹，严格核验容器缺失或已运行后再重建、确认回执",
+      "verification": "Debug 1705/0 失败/0 跳过；Release 1705/0 失败/8 跳过；双 lint 0 错误；助手 74 项合成测试通过；签名包、本人批准及设备待验",
+      "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e",
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "2.1.56/build75 未发布助手候选",
+          "action": "CANDIDATE_REVIEW_AND_FIX",
+          "detail": "隔离合成 74 项通过；未在生产执行续绑",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "2.1.56 / build75 候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "隔离合成 74 项通过；未在生产执行续绑",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "2.1.56 / build75 候选",
+          "action": "LOCAL_QA",
+          "detail": "Debug 1705/0 失败/0 跳过；Release 1705/0 失败/8 跳过；双 lint 0 错误；助手 74 项合成测试通过；签名包、本人批准及设备待验",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e"
+        }
+      ]
+    },
+    {
+      "id": "OCT29-FLEET-ID-SCOPE",
+      "title": "只读诊断把摘要车辆身份与 provider 身份直接比较，可能丢弃有效数据",
+      "found_date": "2026-10-29",
+      "found_version": "2.1.56/build75 未发布候选",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "LOCAL_QA_PASS_DEVICE_PENDING",
+      "fix_version": "2.1.56 / build75 候选",
+      "change": "分别验证摘要与 provider ID，并使用本地已验证的同账号、来源和车辆映射；过期里程不伪装为新值",
+      "verification": "Debug 1705/0 失败/0 跳过；Release 1705/0 失败/8 跳过；双 lint 0 错误；助手 74 项合成测试通过；签名包、本人批准及设备待验",
+      "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e",
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "2.1.56/build75 未发布候选",
+          "action": "CANDIDATE_REVIEW_AND_FIX",
+          "detail": "独立定向测试通过；合并后测试和设备实测进行中",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "2.1.56 / build75 候选",
+          "action": "LOCAL_CODE_COMMIT",
+          "detail": "独立定向测试通过；合并后测试和设备实测进行中",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "2.1.56 / build75 候选",
+          "action": "LOCAL_QA",
+          "detail": "Debug 1705/0 失败/0 跳过；Release 1705/0 失败/8 跳过；双 lint 0 错误；助手 74 项合成测试通过；签名包、本人批准及设备待验",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e"
+        }
+      ]
     }
   ],
   "baseline_checkpoint": "e53a2d01a54d55c554019fb861d69f3737d4b5bb",
   "updated_date": "2026-10-29",
   "candidate": {
+    "versionName": "2.1.56",
+    "versionCode": 75,
+    "installation": "INSTALLED_DEVICE_CONFIRMATION_PENDING",
+    "production": "API_DEPLOYED_APP_NOT_PUBLISHED",
+    "apk_sha256": "68F71F0802FE956D0C6FD4EC1EBD74C9553F9C1E2AB3077B7E04D047384154B0",
+    "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
+    "debuggable": false,
+    "package": "com.matelink",
+    "source_commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e",
+    "first_install_time_preserved": true
+  },
+  "code_commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e",
+  "previous_candidate": {
     "versionName": "2.1.54",
     "versionCode": 73,
     "installation": "NOT_PERFORMED_THIS_RUN",
@@ -4969,6 +5292,5 @@
     "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
     "debuggable": false,
     "package": "com.matelink"
-  },
-  "code_commit": "161d77cea4d110aac93b52956644ab3ea5603733"
+  }
 }
