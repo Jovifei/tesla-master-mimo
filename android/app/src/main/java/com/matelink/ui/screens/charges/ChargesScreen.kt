@@ -884,50 +884,6 @@ private fun ChargeItem(
                     onMetricClick = onEditCost,
                     metricClickLabel = stringResource(R.string.edit_charge_cost)
                 )
-                val isEstimated = effectiveCost.source == ChargeCostSource.ESTIMATE
-                if (onEditCost != null || isEstimated) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (isEstimated) {
-                            Text(
-                                text = stringResource(R.string.charge_cost_estimate),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = palette.onSurfaceVariant
-                            )
-                        } else {
-                            Spacer(Modifier.width(1.dp))
-                        }
-                        onEditCost?.let { editCost ->
-                            Surface(
-                                modifier = Modifier.clickable(onClick = editCost),
-                                color = accent.copy(alpha = 0.12f),
-                                shape = MaterialTheme.shapes.extraLarge
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Paid,
-                                        contentDescription = null,
-                                        tint = accent,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.edit_charge_cost),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = accent,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
     }
