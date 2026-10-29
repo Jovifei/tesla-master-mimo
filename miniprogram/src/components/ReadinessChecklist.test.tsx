@@ -1,7 +1,7 @@
 import React from 'react'
 import renderer, { act } from 'react-test-renderer'
 import { expect, it, vi } from 'vitest'
-vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view' }))
+vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view', Image: 'image' }))
 import ReadinessChecklist from './ReadinessChecklist'
 it('renders six independent evidence steps with read-only collapsible details and explicit unsupported capabilities', () => {
   const tree = renderer.create(<ReadinessChecklist />)
@@ -30,9 +30,9 @@ it('shows actual readiness rows without confusing live TPMS with stored history 
     { key: 'drives', status: 'collecting', message: null, action: null },
     { key: 'charges', status: 'SERVER_PRIVATE_DETAIL', message: null, action: null },
   ]} />)
-  const text = JSON.stringify(tree.toJSON())
+  const text = tree.root.findAllByType('text').map(node => node.children.join('')).join(' ')
   expect(text).toContain('实时胎压状态')
-  expect(text).toContain('小程序胎压历史尚未接入')
+  expect(text).toContain('胎压为有界本机前台观测历史')
   expect(text).toContain('正在采集')
   expect(text).toContain('状态未知')
   expect(text).not.toContain('SERVER_PRIVATE_DETAIL')

@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { emptyHistoryQuery, filterHistory, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery } from './history_query'
+import { emptyHistoryQuery, filterHistory, historyDateTime, historyDetailDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery } from './history_query'
 
 describe('persisted local calendar history query', () => {
+  it('formats charge and drive card dates like the App without changing stored instants', () => {
+    const instant = new Date(2026, 9, 18, 19, 3).toISOString()
+    expect(historyEditorialDate(instant, false)).toBe('周日 · 10月18日 · 07:03 下午')
+    expect(historyEditorialDate(instant, true)).toBe('周日 · 10月18日 · 19:03')
+    expect(historyEditorialDate(null)).toBe('暂无日期')
+  })
+  it('formats detail timestamps compactly like the App', () => {
+    expect(historyDetailDateTime('2026-10-27T18:54:00+08:00')).toBe('10-27 18:54')
+    expect(historyDetailDateTime(null)).toBe('暂无日期')
+  })
   it('excludes quarantined drive and charge records without hiding legitimate zero or missing-energy summaries', () => {
     const rows = [
       { id: 'observed-zero', qualityState: 'observed', startDate: '2026-10-14T00:00:00Z', distanceKm: 0 },
@@ -19,6 +29,17 @@ describe('persisted local calendar history query', () => {
     expect(filterHistory(rows, { startDate: '2026-10-14', endDate: '2026-10-14', minDistanceKm: 0 }).map(row => row.id)).toEqual(['today'])
     expect(filterHistory(rows, { ...emptyHistoryQuery(), minDistanceKm: 1 }).map(row => row.id)).toEqual(['yesterday'])
   })
+  it('keeps equivalent explicit-offset observations together across month/year midnight boundaries', () => {
+    for (const date of [new Date(2027, 0, 1, 0, 30), new Date(2026, 10, 1, 0, 15)]) {
+      const iso = date.toISOString()
+      const offset = new Date(date.getTime() + 8 * 3600000).toISOString().replace('Z', '+08:00')
+      const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      expect(historyDateTime(iso)).toBe(historyDateTime(offset))
+      expect(filterHistory([{ startDate: iso }, { startDate: offset }], { ...emptyHistoryQuery(), startDate: day, endDate: day })).toHaveLength(2)
+      const yesterday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - 1, 23, 59).toISOString()
+      expect(filterHistory([{ startDate: yesterday }], { ...emptyHistoryQuery(), startDate: day, endDate: day })).toHaveLength(0)
+    }
+  })
   it('normalizes invalid dates/distances and swaps reversed civil boundaries', () => {
     expect(normalizeHistoryQuery({ startDate: '2026-02-30', endDate: 'invalid', minDistanceKm: Infinity })).toEqual(emptyHistoryQuery())
     expect(normalizeHistoryQuery({ startDate: '2026-10-20', endDate: '2026-10-14', minDistanceKm: 5 })).toEqual({ startDate: '2026-10-14', endDate: '2026-10-20', minDistanceKm: 5 })
@@ -31,5 +52,12 @@ describe('persisted local calendar history query', () => {
     expect(readHistoryQuery(storage, 'origin:account:vehicle-a:drives')).toEqual(query)
     expect(readHistoryQuery(storage, 'origin:account:vehicle-b:drives')).toEqual(emptyHistoryQuery())
     expect(writeHistoryQuery({ setStorageSync() { throw new Error('quota') } }, 'scope', query)).toBe(false)
+  })
+  it('matches the App actual distance category boundaries without assigning missing distance', () => {
+    const rows = [null, 0, 9.99, 10, 99.99, 100].map((distanceKm, id) => ({ id, distanceKm }))
+    expect(filterHistory(rows, { ...emptyHistoryQuery(), maxDistanceKm: 10 }).map(row => row.id)).toEqual([1, 2])
+    expect(filterHistory(rows, { ...emptyHistoryQuery(), minDistanceKm: 10, maxDistanceKm: 100 }).map(row => row.id)).toEqual([3, 4])
+    expect(filterHistory(rows, { ...emptyHistoryQuery(), minDistanceKm: 100 }).map(row => row.id)).toEqual([5])
+    expect(normalizeHistoryQuery({ ...emptyHistoryQuery(), minDistanceKm: 10, maxDistanceKm: 100 })).toEqual({ ...emptyHistoryQuery(), minDistanceKm: 10, maxDistanceKm: 100 })
   })
 })

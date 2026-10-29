@@ -1,3 +1,5 @@
+import type { TpmsReport, TpmsSnapshot } from '../domain/tpms'
+
 export type ApiEnvelope<T> = {
   data?: T
   error?: string
@@ -44,6 +46,7 @@ export type Car = {
   wheelType: string | null
   displayName: string | null
   remoteVerified?: boolean
+  freeSupercharging?: boolean | null
   capacityKwh?: number | null
   capacityBasis?: string | null
   capacitySourceField?: string | null
@@ -65,9 +68,29 @@ export type RawCar = {
   battery_health?: { current_capacity?: number | null } | null
   car_details?: { model?: string | null; trim_badging?: string | null }
   car_exterior?: { exterior_color?: string | null; wheel_type?: string | null }
+  car_settings?: { free_supercharging?: boolean | null } | null
 }
 
 export type CarStatus = {
+  idealRange?: number | null
+  estimatedRange?: number | null
+  chargerVoltage?: number | null
+  chargerActualCurrent?: number | null
+  /** Tesla's time_to_full_charge is hours, not minutes. */
+  timeToFullChargeHours?: number | null
+  chargeLimitSoc?: number | null
+  chargerPhases?: number | null
+  chargeCurrentRequest?: number | null
+  chargeCurrentRequestMax?: number | null
+  chargePortDoorOpen?: boolean | null
+  isPreconditioning?: boolean | null
+  /** Online-only location label; never persisted in the vehicle snapshot cache. */
+  geofence?: string | null
+  /** Source identifiers only; package observedAt is not a field observation clock. */
+  fieldSources?: Record<string, string>
+  tpms?: TpmsSnapshot
+  /** Online-only reported pressure; missing wheel time keeps it out of alerts and history. */
+  tpmsReport?: TpmsReport
   state: string | null
   model: string | null
   trim: string | null
@@ -99,6 +122,7 @@ export type CarStatus = {
 }
 
 export type RawCarStatus = {
+  tpms_details?: RawTpmsDetails | null
   display_name?: string | null
   state?: string | null
   model?: string | null
@@ -117,10 +141,13 @@ export type RawCarStatus = {
   battery_details?: {
     battery_level?: number | null
     rated_battery_range?: number | null
+    ideal_battery_range?: number | null
+    est_battery_range?: number | null
   }
   car_geodata?: {
     latitude?: number | null
     longitude?: number | null
+    geofence?: string | null
   }
   driving_details?: {
     shift_state?: string | null
@@ -130,6 +157,7 @@ export type RawCarStatus = {
   }
   climate_details?: {
     is_climate_on?: boolean | null
+    is_preconditioning?: boolean | null
     inside_temp?: number | null
     outside_temp?: number | null
   }
@@ -138,7 +166,38 @@ export type RawCarStatus = {
     charging_state?: string | null
     charge_energy_added?: number | null
     charger_power?: number | null
+    charger_voltage?: number | null
+    charger_actual_current?: number | null
+    time_to_full_charge?: number | null
+    charge_limit_soc?: number | null
+    charger_phases?: number | null
+    charge_current_request?: number | null
+    charge_current_request_max?: number | null
+    charge_port_door_open?: boolean | null
   }
+}
+
+export type RawStatusPayload = { status?: RawCarStatus | null; observed_at?: string | null; source?: string | null; units?: unknown; field_sources?: unknown }
+
+/** Bounded provenance map projection, shared by HTTP parsing and cache reopening. */
+export function statusFieldSources(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value).filter(([key, source]) =>
+    /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key) && !['constructor', 'prototype', '__proto__'].includes(key) &&
+    typeof source === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(source)).slice(0, 64))
+}
+
+export type RawTpmsDetails = {
+  tpms_pressure_fl?: number | null; tpms_pressure_fr?: number | null
+  tpms_pressure_rl?: number | null; tpms_pressure_rr?: number | null
+  tpms_pressure_fl_observed_at?: string | null; tpms_pressure_fr_observed_at?: string | null
+  tpms_pressure_rl_observed_at?: string | null; tpms_pressure_rr_observed_at?: string | null
+  pressure_unit?: string | null; source?: string | null; time_basis?: string | null
+  tpms_soft_warning_fl?: boolean | null; tpms_soft_warning_fr?: boolean | null
+  tpms_soft_warning_rl?: boolean | null; tpms_soft_warning_rr?: boolean | null
+  tpms_soft_warning_fl_observed_at?: string | null; tpms_soft_warning_fr_observed_at?: string | null
+  tpms_soft_warning_rl_observed_at?: string | null; tpms_soft_warning_rr_observed_at?: string | null
+  warning_source?: string | null; warning_time_basis?: string | null
 }
 
 export type ReadinessItem = {
@@ -181,19 +240,21 @@ export type AuthSessionResponse = {
 
 export type TeslaAuthorization = {
   authorization_url: string
-  web_authorization_url?: string | null
   transaction_id: string | null
   client_proof?: string | null
-  channel?: string | null
   expires_at: string | null
 }
 
-export type WechatAuthorizationStatus = {
-  status: 'pending' | 'ready' | 'claimed' | 'failed' | 'expired' | 'none' | string
+export type TeslaAuthorizationStatus = {
+  status: 'pending' | 'ready' | 'consumed' | 'cancelled' | 'failed' | 'expired' | 'none' | string
   expiresAt: string | null
 }
 
 export type Drive = {
+  startRatedRangeKm?: number | null
+  endRatedRangeKm?: number | null
+  speedAvgKmh?: number | null
+  outsideTempC?: number | null
   id: string
   sessionId: string | null
   startDate: string | null
@@ -222,6 +283,9 @@ export type Drive = {
 }
 
 export type RawDrive = {
+  range_rated?: { start_range?: number | null; end_range?: number | null; range_diff?: number | null } | null
+  speed_avg?: number | null
+  outside_temp_avg?: number | null
   drive_id?: number | string | null
   session_id?: string | null
   start_date?: string | null
@@ -277,6 +341,8 @@ export type Charge = {
   currency?: string | null
   currencyCode?: string | null
   chargeMode?: 'ac' | 'dc' | null
+  /** Exact provider charge_type, kept separate from the evidence-derived display mode. */
+  reportedChargeMode?: string | null
 }
 
 export type RawCharge = {

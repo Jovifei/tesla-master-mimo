@@ -31,7 +31,7 @@ it('historical persistence is independent of qualification and never confers cur
   const input = { car, sessionReady: true, history: { rows: 2, qualified: 0, quarantined: 1, savedAt: null } }
   expect(states(input)).toMatchObject({ receive: 'UNKNOWN', qualification: 'WARNING', history: 'PASS', display: 'UNKNOWN' })
   expect(states({ ...input, history: { ...input.history, qualified: 1 } }).qualification).toBe('PASS')
-  expect(diagnosticSteps(input)[4].detail).toContain('小程序胎压历史尚未接入（UNSUPPORTED）')
+  expect(diagnosticSteps(input)[4].detail).toContain('胎压仅有本机前台观测历史')
   expect(states({ history: input.history }).history).toBe('UNKNOWN')
 })
 
@@ -40,4 +40,12 @@ it.each(['tpms','charges','location'])('capability %s permission overrides aggre
 })
 it('pairing permission error overrides its available status',()=>{
  expect(states({sessionReady:true,pairing:{status:'available',virtual_key_url:null,config_synced:true,updated_at:null,error_class:'permission_required'}}).authorization).toBe('WARNING')
+})
+
+it('snapshot metadata alone is not a vehicle observation; real zero and false remain received', () => {
+ const metadata = { source: 'fleet_api', observedAt: '2026-10-16T00:00:00Z', fieldSources: { Soc: 'fleet_api' } } as unknown as CarStatus
+ expect(states({ car, sessionReady: true, status: metadata }).receive).toBe('UNKNOWN')
+ expect(states({ car, sessionReady: true, status: { ...metadata, batteryLevel: 0 } }).receive).toBe('PASS')
+ expect(states({ car, sessionReady: true, status: { ...metadata, locked: false } }).receive).toBe('PASS')
+ expect(states({ car, sessionReady: true, status: { ...metadata, tpms: { wheels: {} } } as CarStatus }).receive).toBe('UNKNOWN')
 })

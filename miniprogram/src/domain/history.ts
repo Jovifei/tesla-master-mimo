@@ -195,3 +195,33 @@ export function mergeHistoryPages<T>(localItems: readonly T[], pages: readonly H
 }
 
 export function pageCanContinue<T>(page: HistoryPage<T> | null): boolean { return Boolean(page?.meta.hasMore) }
+
+export type CoveredMetric = { value: number | null; known: number; total: number }
+const finite = (value: number | null | undefined): number | null => value != null && Number.isFinite(value) ? value : null
+export function coveredTotal<T>(rows: readonly T[], valueOf: (row: T) => number | null): CoveredMetric {
+  let value: number | null = null, known = 0
+  for (const row of rows) {
+    const number = valueOf(row)
+    if (number == null || !Number.isFinite(number)) continue
+    value = (value ?? 0) + number
+    known += 1
+  }
+  return { value: finite(value), known, total: rows.length }
+}
+
+/** Independent totals and paired efficiency have deliberately different denominators. */
+export function aggregateDriveHistory(items: readonly Drive[]) {
+  const rows = items.filter(item => !isHistoryQuarantined(item))
+  const distanceOf = (row: Drive) => row.distanceKm != null && row.distanceKm >= 0 ? finite(row.distanceKm) : null
+  const energyOf = (row: Drive) => row.energy && row.energy.quality !== 'unknown' ? finite(row.energy.energyKwh) : null
+  const distance = coveredTotal(rows, distanceOf)
+  const energy = coveredTotal(rows, energyOf)
+  const duration = coveredTotal(rows, row => row.durationMinutes != null && row.durationMinutes >= 0 ? finite(row.durationMinutes) : null)
+  const paired = rows.filter(row => energyOf(row) != null && (distanceOf(row) ?? 0) > 0)
+  const pairedEnergy = coveredTotal(paired, energyOf).value
+  const pairedDistance = coveredTotal(paired, distanceOf).value
+  const estimated = paired.filter(row => row.energy?.quality === 'estimated').length
+  return { distance, energy, duration, efficiency: { value: pairedEnergy != null && pairedDistance != null && pairedDistance > 0
+    ? finite(100 * pairedEnergy / pairedDistance) : null, known: paired.length, total: rows.length, estimated },
+    estimatedEnergy: rows.filter(row => energyOf(row) != null && row.energy?.quality === 'estimated').length }
+}

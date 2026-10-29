@@ -1,23 +1,40 @@
-import { Button, Picker, Text, View } from '@tarojs/components'
-import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
+import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
+import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
+import { toChineseDisplayAddress } from '../../domain/address_display'
+import { getAppNavGeometry } from '../../services/nav_geometry'
 import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
-import { acceptHistoryDetail, acceptHistoryPage } from '../../domain/history_controller'
-import { emptyHistoryQuery, filterHistory, historyDateTime, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
+import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, reconcileHistoryCache, type HistoryInterval } from '../../domain/history_controller'
+import { emptyHistoryQuery, filterHistory, historyDateTime, historyDetailDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
 import './index.scss'
 import { createRequestScopeGate } from '../../domain/request_scope'
-import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
+import { ApiError, ensureWechatSession, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { carSelectionStorageKey, type Car, type Charge, type HistoryPage, type HistoryPageMeta } from '../../services/types'
 import { readAppSession } from '../../services/session'
+import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 import LoadingIndicator from '../../components/LoadingIndicator'
-import MetricValue from '../../components/MetricValue'
+import HistoryIntervalSummary from '../../components/HistoryIntervalSummary'
+import HistoryDateChips from '../../components/HistoryDateChips'
+import { inspectForegroundEvents, observeForegroundEvents, type ForegroundNotice } from '../../services/foreground_events'
+import MetricValue, { formatSocRange, formatSocRangeMetric } from '../../components/MetricValue'
 import VisualIcon from '../../components/VisualIcon'
 import { availabilityLabel, qualityLabel, sourceLabel } from '../../domain/data_labels'
 import { resolveChargeEnergy } from '../../domain/drive_energy'
+import { qualifiedAcEnergyBalance } from '../../domain/charge_energy_balance'
+import { analysisApi } from '../../services/analysis_api'
+import type { ChargeEvidence } from '../../services/analysis_types'
+import { APP_DEFAULT_CHARGE_PRICE_CNY, overlayChargeCosts, type ChargeEstimatePrice, type CostedCharge } from '../../services/charge_cost'
+import { mapCoordinate } from '../../domain/map_coordinate'
+import { readTariff } from '../../domain/tariff'
+import { appChargeListRows, appChargeStatisticsRows } from '../../domain/app_history_projection'
 
 const PAGE_SIZE = 20
+// App CurrentChargeViewModel cadence: 30s steady, 4s while waiting for a
+// just-started charge session to materialize in the API.
+const CURRENT_CHARGE_REFRESH_INTERVAL_MS = 30_000
+const CHARGE_STARTING_REFRESH_INTERVAL_MS = 4_000
 
 function errorMessage(reason: unknown): string {
   if (reason instanceof ApiError) return reason.message
@@ -39,6 +56,27 @@ function modeLabel(charge: Charge): string {
   const mode = verifiedEnergy(charge)?.chargeMode
   return mode === 'ac' ? 'AC 充电' : mode === 'dc' ? 'DC 充电' : '模式未确认'
 }
+function displayAddress(address: string | null): string {
+  const original = address?.trim()
+  if (!original) return '位置未知'
+  const chineseParts = original.split(/[,，]/).map(part => part.trim()).filter(part => /[\u4e00-\u9fff]/.test(part))
+  return chineseParts.length ? chineseParts.join(' ') : original
+}
+function costLabel(charge: CostedCharge): { value: string | number | null; unit?: string } {
+  if (charge.costProvenance === 'free') return { value: '免费' }
+  if (charge.costProvenance === 'estimate' && charge.cost != null) return charge.currencyCode === 'CNY'
+    ? { value: `≈¥${charge.cost.toFixed(2)}` } : { value: `≈${charge.cost.toFixed(2)}`, unit: charge.currencyCode || '币种未知' }
+  return { value: charge.cost, unit: charge.currencyCode || charge.currency || '币种未知' }
+}
+function estimateBasis(charge: CostedCharge): string {
+  if (charge.costProvenance !== 'estimate' || charge.estimatedUnitPrice == null) return ''
+  const price = charge.currencyCode === 'CNY' ? `¥${charge.estimatedUnitPrice}` : `${charge.estimatedUnitPrice} ${charge.currencyCode}`
+  return `${charge.estimatePriceSource === 'saved_default' ? '已保存默认电价' : 'App 默认'} ${price}/kWh`
+}
+function oneDecimal(value: number | null): string | null {
+  if (value == null || !Number.isFinite(value)) return null
+  return Number(value.toFixed(1)) === 0 && value !== 0 ? String(value) : value.toFixed(1)
+}
 
 function value(value: string | number | null | undefined): string {
   return value == null || value === '' || (typeof value === 'number' && !Number.isFinite(value)) ? '暂无数据' : String(value)
@@ -53,9 +91,45 @@ export default function ChargesPage() {
   const [cars, setCars] = useState<Car[]>([])
   const [car, setCar] = useState<Car | null>(null)
   const [items, setItems] = useState<Charge[]>([])
+  const [showShortCharges, setShowShortCharges] = useState(false)
   const [current, setCurrent] = useState<Charge | null>(null)
+  // App CurrentChargeViewModel polls while visible; a fast loop covers the
+  // window where the car reports charging but the session is not materialized.
+  const [chargeStarting, setChargeStarting] = useState(false)
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pollCarRef = useRef<Car | null>(null)
+  const pollStartingRef = useRef(false)
   const [meta, setMeta] = useState<HistoryPageMeta | null>(null)
-  const [selected, setSelected] = useState<Charge | null>(null)
+  const [selected, setSelectedState] = useState<Charge | null>(null)
+  const detailContext = useRef<{ user: string; origin: string; uid: string; generation: number; row: Charge } | null>(null)
+  const detailCacheBaseline = useRef<Map<string, string> | null>(null)
+  const listScrollTop = useRef(0), detailScrollTop = useRef(0), pageVisible = useRef(false)
+  const nativeTabBar = async (hidden: boolean) => {
+    try {
+      const action = hidden ? Taro.hideTabBar : Taro.showTabBar
+      if (typeof action === 'function') await action({ animation: false })
+    } catch { /* Non-tab hosts and unavailable native APIs keep the panel usable. */ }
+  }
+  const setSelected = (row: Charge | null) => {
+    if (row) {
+      const session = readAppSession(Taro)
+      if (!session?.userId || !car) return Promise.resolve()
+      if (!detailContext.current || historyRowKey(detailContext.current.row) !== historyRowKey(row)) detailScrollTop.current = 0
+      detailContext.current = { user: session.userId, origin: getApiOrigin(), uid: car.stableId, generation: getApiSessionGeneration(), row }
+    } else { detailContext.current = null; detailCacheBaseline.current = null }
+    setSelectedState(row)
+    return nativeTabBar(Boolean(row))
+  }
+  const [selectedEvidence, setSelectedEvidence] = useState<ChargeEvidence | null>(null)
+  const [chartKind, setChartKind] = useState<'energy' | 'cost' | 'count'>('energy')
+  const [mapFailed, setMapFailed] = useState(false)
+  const [, setCostVersion] = useState(0)
+  const selectedRef = useRef(selected), carRef = useRef(car)
+  selectedRef.current = selected; carRef.current = car
+  const [interval, setInterval] = useState<HistoryInterval<Charge> | null>(null)
+  const [notices, setNotices] = useState<ForegroundNotice[]>([])
+  const notice = notices[0] ?? null
+  const [noticeLimited, setNoticeLimited] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [query, setQueryState] = useState<HistoryQuery>(emptyHistoryQuery())
   const queryRef = useRef(query)
@@ -71,7 +145,12 @@ export default function ChargesPage() {
   const loadingMoreRef = useRef(false)
   const pageRef = useRef(0)
   const lifecycleEpoch = useRef(0)
+  const displayOwner = useRef<string | null>(null)
   const scopeGate = useRef(createRequestScopeGate())
+  const currentOwner = () => {
+    try { const current = readAppSession(Taro); return current?.userId ? JSON.stringify([getApiOrigin(), current.userId, getApiSessionGeneration()]) : null }
+    catch { return null }
+  }
 
   const resetHistoryState = () => {
     itemsRef.current = []
@@ -79,7 +158,11 @@ export default function ChargesPage() {
     pageRef.current = 0
     setItems([])
     setMeta(null)
-    setSelected(null)
+    void setSelected(null)
+    setSelectedEvidence(null); setMapFailed(false)
+    setInterval(null)
+    setNotices([])
+    setNoticeLimited(false)
     setCacheWarning(false)
     queryScopeRef.current = null
     setQuery(emptyHistoryQuery())
@@ -91,6 +174,8 @@ export default function ChargesPage() {
     loadingMoreRef.current = false
     setLoading(false)
     setLoadingMore(false)
+    setNotices([])
+    setNoticeLimited(false)
   }
 
   const restoreCached = (nextCar: Car) => {
@@ -104,6 +189,7 @@ export default function ChargesPage() {
     pagesRef.current = []
     pageRef.current = 0
     setItems(cached)
+    setInterval({ items: cached, complete: false, receivedPages: 0, reason: 'cached' })
     setMeta({ ...emptyMeta, availability: 'cached', source: 'local_history', hasMore: false })
   }
 
@@ -113,8 +199,13 @@ export default function ChargesPage() {
     setQuery(next)
   }
   const closeDetail = () => {
+    const scrollEpoch = lifecycleEpoch.current
     try { scopeGate.current.begin('detail') } catch { /* no bound remote scope */ }
-    setSelected(null)
+    setSelectedEvidence(null)
+    void setSelected(null).then(() => {
+      if (scrollEpoch !== lifecycleEpoch.current || !pageVisible.current || detailContext.current || typeof Taro.pageScrollTo !== 'function') return
+      try { void Taro.pageScrollTo({ scrollTop: listScrollTop.current, duration: 0 }).catch(() => {}) } catch { /* optional native scroll restoration */ }
+    })
   }
 
   const loadHistory = async (nextCar: Car, append = false) => {
@@ -141,6 +232,10 @@ export default function ChargesPage() {
     setQuery(readHistoryQuery(Taro, cacheKey))
 
     if (!append) {
+      setInterval(null)
+      setNotices([])
+      setNoticeLimited(false)
+      scopeGate.current.begin('interval')
       loadingMoreRef.current = false
       itemsRef.current = []
       pagesRef.current = []
@@ -183,10 +278,25 @@ export default function ChargesPage() {
       pagesRef.current = decision.state.pages
       pageRef.current = decision.state.page
       setItems(decision.state.items)
+      setInterval(snapshot => snapshot ? { ...snapshot, items: snapshot.items.map(row => decision.state.items.find(item => historyRowKey(item) === historyRowKey(row) || item.id === row.id) ?? row) } : snapshot)
       const saved = writeHistoryCache(Taro, cacheKey, decision.state.items)
       setCacheWarning(!saved)
       setMeta({ ...result.meta, hasMore: decision.hasMore })
       setError(null)
+      if (!append) {
+        const admittedRows = result.items.map(row => decision.state.items.find(item => historyRowKey(item) === historyRowKey(row) || item.id === row.id) ?? row)
+        const notices = observeForegroundEvents(Taro, { origin: apiOrigin, userId: session.userId, stableId: nextCar.stableId }, 'charges', admittedRows)
+        setNotices(notices)
+        setNoticeLimited(inspectForegroundEvents(Taro, { origin: apiOrigin, userId: session.userId, stableId: nextCar.stableId }, 'charges').limited)
+        const intervalTicket = scopeGate.current.begin('interval')
+        const canonicalPage = { ...result, items: enrichHistoryInterval(result.items, decision.state.items) }
+        void collectHistoryInterval(canonicalPage, async page => {
+          const response = await matelinkApi.getCharges(nextCar.id, page, PAGE_SIZE, nextCar)
+          return { ...response, items: enrichHistoryInterval(response.items, itemsRef.current) }
+        }, intervalTicket.isCurrent).then(snapshot => {
+          if (snapshot && intervalTicket.isCurrent()) setInterval({ ...snapshot, items: snapshot.items.map(row => itemsRef.current.find(item => historyRowKey(item) === historyRowKey(row) || item.id === row.id) ?? row) })
+        })
+      }
     } catch (reason) {
       if (!ticket.isCurrent()) return
       setError(errorMessage(reason))
@@ -213,6 +323,39 @@ export default function ChargesPage() {
     }
   }
 
+  const stopCurrentPolling = () => {
+    if (pollTimer.current) { clearTimeout(pollTimer.current); pollTimer.current = null }
+    pollCarRef.current = null
+    setChargeStarting(false); pollStartingRef.current = false
+  }
+  const pollCurrentTick = async () => {
+    const nextCar = pollCarRef.current
+    if (!nextCar) return
+    let ticket: { isCurrent(): boolean }
+    try { ticket = scopeGate.current.begin('current-poll') } catch { stopCurrentPolling(); return }
+    try {
+      const [chargeResult, statusResult] = await Promise.allSettled([
+        matelinkApi.getCurrentCharge(nextCar.id, nextCar),
+        matelinkApi.getCarSnapshot(nextCar.id, nextCar),
+      ])
+      if (!ticket.isCurrent() || pollCarRef.current !== nextCar) return
+      const charge = chargeResult.status === 'fulfilled' ? chargeResult.value : null
+      const status = statusResult.status === 'fulfilled' ? statusResult.value : null
+      if (chargeResult.status === 'fulfilled') setCurrent(charge)
+      // App: "car charging but TeslaMate has not materialized the session yet".
+      const starting = charge == null && status?.chargingState?.toLowerCase() === 'charging'
+      setChargeStarting(starting); pollStartingRef.current = starting
+    } catch { /* App keeps the last data on screen and keeps polling. */ }
+    if (pollTimer.current) clearTimeout(pollTimer.current)
+    pollTimer.current = setTimeout(() => { void pollCurrentTick() },
+      pollStartingRef.current ? CHARGE_STARTING_REFRESH_INTERVAL_MS : CURRENT_CHARGE_REFRESH_INTERVAL_MS)
+  }
+  const startCurrentPolling = (nextCar: Car | null) => {
+    if (pollTimer.current) { clearTimeout(pollTimer.current); pollTimer.current = null }
+    pollCarRef.current = nextCar
+    if (nextCar) void pollCurrentTick()
+  }
+
   const load = async () => {
     invalidatePage()
     verifiedCarRef.current = false
@@ -225,14 +368,16 @@ export default function ChargesPage() {
     const sessionGeneration = getApiSessionGeneration()
     const session = readAppSession(Taro)
     if (!session?.userId) {
+      displayOwner.current = null
       invalidatePage()
       setCars([])
       setCar(null)
       setCurrent(null)
       resetHistoryState()
-      setError('请先在“我的”中完成微信登录')
+      setError('请先在“更多”中登录特斯拉账号')
       return
     }
+    displayOwner.current = currentOwner()
     setError(null)
     setLoading(true)
     try {
@@ -262,6 +407,7 @@ export default function ChargesPage() {
       setCar(nextCar)
       loadingMoreRef.current = false
       await Promise.all([loadHistory(nextCar), loadCurrentCharge(nextCar)])
+      startCurrentPolling(nextCar)
     } catch (reason) {
       if (pageEpoch !== lifecycleEpoch.current || sessionGeneration !== getApiSessionGeneration() || readAppSession(Taro)?.userId !== session.userId) return
       verifiedCarRef.current = false
@@ -282,9 +428,79 @@ export default function ChargesPage() {
     }
   }
 
-  useDidShow(() => { void load() })
-  useDidHide(invalidatePage)
-  useUnload(invalidatePage)
+  const showPage = async () => {
+    pageVisible.current = true
+    if (displayOwner.current && displayOwner.current !== currentOwner()) {
+      invalidatePage(); stopCurrentPolling(); displayOwner.current = null
+      setCars([]); setCar(null); setCurrent(null); resetHistoryState(); setError(null)
+    }
+    const showEpoch = ++lifecycleEpoch.current
+    setLoading(true)
+    await ensureWechatSession()
+    if (!pageVisible.current || showEpoch !== lifecycleEpoch.current) return
+    const context = detailContext.current
+    const sameOwner = () => {
+      try {
+        const session = readAppSession(Taro), stored = session?.userId ? Taro.getStorageSync(carSelectionStorageKey(session.userId)) : null
+        return Boolean(context && session?.userId === context.user && getApiOrigin() === context.origin &&
+          getApiSessionGeneration() === context.generation && (!stored || String(stored) === context.uid))
+      } catch { return false }
+    }
+    if (!context || !sameOwner()) { void setSelected(null); await load(); return }
+    const baseline = detailCacheBaseline.current
+    const reconcileCached = () => {
+      const cached = readHistoryCache<Charge>(Taro, historyCacheKey('charges', context.user, context.uid, context.origin))
+        .filter(row => baseline !== null && baseline.get(historyRowKey(row)) !== JSON.stringify(row))
+      const replay = (initial: { pages: HistoryPage<Charge>[]; items: Charge[]; page: number }) => reconcileHistoryCache(initial, cached)
+      const state = replay({ pages: pagesRef.current, items: itemsRef.current, page: pageRef.current })
+      itemsRef.current = state.items; pagesRef.current = state.pages
+      setItems(state.items)
+      setInterval(snapshot => snapshot ? { ...snapshot, items: replay({ pages: [], items: snapshot.items, page: 0 }).items } : snapshot)
+      const row = state.items.find(item => historyRowKey(item) === historyRowKey(context.row) || item.id === context.row.id)
+      if (row && selectedEvidence?.charge && ['id', 'source', 'qualityState', 'startDate', 'endDate', 'chargerPowerKw', 'startBatteryLevel', 'endBatteryLevel', 'energy'].some(key =>
+        JSON.stringify((row as unknown as Record<string, unknown>)[key] ?? null) !== JSON.stringify((selectedEvidence.charge as unknown as Record<string, unknown>)[key] ?? null))) setSelectedEvidence(null)
+      return row
+    }
+    invalidatePage()
+    const epoch = lifecycleEpoch.current
+    setLoading(true)
+    try {
+      const nextCars = await matelinkApi.getCars()
+      if (epoch !== lifecycleEpoch.current || context !== detailContext.current) return
+      const nextCar = nextCars.find(item => item.stableId === context.uid)
+      if (!sameOwner() || !nextCar) { void setSelected(null); await load(); return }
+      scopeGate.current.bind({ accountId: context.user, stableVehicleId: nextCar.stableId, apiOrigin: context.origin, sessionGeneration: context.generation })
+      setCars(nextCars); setCar(nextCar); verifiedCarRef.current = true; setOffline(false)
+      const row = reconcileCached()
+      if (!row || isHistoryQuarantined(row)) { void setSelected(null); return }
+      void setSelected(row)
+    } catch {
+      if (epoch !== lifecycleEpoch.current) return
+      if (!sameOwner()) { void setSelected(null); await load(); return }
+      verifiedCarRef.current = false; setOffline(true)
+      scopeGate.current.bind({ accountId: context.user, stableVehicleId: context.uid, apiOrigin: context.origin, sessionGeneration: context.generation })
+      const row = reconcileCached()
+      if (!row || isHistoryQuarantined(row)) { void setSelected(null); return }
+      void setSelected(row)
+      setError('在线车辆暂时无法重新验证；当前为本机已读取详情。')
+    } finally { if (epoch === lifecycleEpoch.current) setLoading(false) }
+  }
+  useSessionRecoveryReload(() => { if (pageVisible.current) void showPage() })
+  useDidShow(() => { void showPage(); if (car) startCurrentPolling(car) })
+  useDidHide(() => { stopCurrentPolling()
+    const context = detailContext.current
+    detailCacheBaseline.current = null
+    if (context) {
+      try {
+        const key = historyCacheKey('charges', context.user, context.uid, context.origin)
+        Taro.getStorageSync(key) // An unreadable baseline cannot prove a later cache record is newer.
+        detailCacheBaseline.current = new Map(readHistoryCache<Charge>(Taro, key).map(row => [historyRowKey(row), JSON.stringify(row)]))
+      } catch { /* Fail closed: keep current memory rather than replay an unproven disk version. */ }
+    }
+    pageVisible.current = false; invalidatePage(); setSelectedState(null); void nativeTabBar(false)
+  })
+  useUnload(() => { pageVisible.current = false; detailContext.current = null; detailCacheBaseline.current = null; invalidatePage(); stopCurrentPolling(); void nativeTabBar(false) })
+  usePageScroll(event => { if (pageVisible.current && !detailContext.current) listScrollTop.current = event.scrollTop })
 
   const selectCar = (event: { detail: { value: number | string } }) => {
     const next = cars[Number(event.detail.value)]
@@ -302,8 +518,9 @@ export default function ChargesPage() {
     setCurrent(null)
     resetHistoryState()
     setError(null)
-    if (!verifiedCarRef.current || next.remoteVerified === false) { restoreCached(next); return }
+    if (!verifiedCarRef.current || next.remoteVerified === false) { restoreCached(next); stopCurrentPolling(); return }
     void Promise.all([loadHistory(next), loadCurrentCharge(next)])
+    startCurrentPolling(next)
   }
 
   const loadMore = () => {
@@ -317,16 +534,19 @@ export default function ChargesPage() {
     if (!canonical || canonical.id !== item.id || isHistoryQuarantined(canonical) || isHistoryQuarantined(item)) return
     let ticket: { isCurrent(): boolean }
     try { ticket = scopeGate.current.begin('detail') } catch { return }
-    if (ticket.isCurrent()) setSelected(canonical)
+    if (ticket.isCurrent()) { setSelected(canonical); setSelectedEvidence(null); setMapFailed(false) }
     try {
       if (!verifiedCarRef.current || car.remoteVerified === false) return
-      const detail = await matelinkApi.getChargeDetail(car.id, item.id, car)
+      const evidence = await analysisApi.getChargeEvidence(car, item.id, { isCurrent: ticket.isCurrent })
+      const detail = evidence.charge
       if (ticket.isCurrent() && detail) {
+        setSelectedEvidence(evidence)
         const state = acceptHistoryDetail({ pages: pagesRef.current, items: itemsRef.current, page: pageRef.current }, canonical, detail)
         if (state.items === itemsRef.current) return
         itemsRef.current = state.items
         pagesRef.current = state.pages
         setItems(state.items)
+        setInterval(snapshot => snapshot ? { ...snapshot, items: snapshot.items.map(row => state.items.find(item => historyRowKey(item) === historyRowKey(row) || item.id === row.id) ?? row) } : snapshot)
         const selectedRow = state.items.find(row => historyRowKey(row) === historyRowKey(detail) || row.id === detail.id)
         setSelected(selectedRow && !isHistoryQuarantined(selectedRow) ? selectedRow : null)
         const session = readAppSession(Taro)
@@ -337,36 +557,106 @@ export default function ChargesPage() {
     }
   }
 
-  const trustedItems = filterHistory(items, emptyHistoryQuery())
+  const session = readAppSession(Taro)
+  const costScope = car && session?.userId ? { userId: session.userId, origin: getApiOrigin(), stableId: car.stableId } : null
+  const savedTariff = costScope ? readTariff(Taro, costScope.userId, costScope.origin) : null
+  const estimatePrice: ChargeEstimatePrice = savedTariff?.defaultPrice != null
+    ? { amount: savedTariff.defaultPrice, currency: savedTariff.currency, source: 'saved_default' }
+    : { amount: APP_DEFAULT_CHARGE_PRICE_CNY, currency: 'CNY', source: 'app_default' }
+  const costRows = (rows: readonly Charge[]): CostedCharge[] => costScope ? overlayChargeCosts(Taro, costScope, rows, estimatePrice, car?.freeSupercharging ?? null) : []
+  const selectedView = selected ? costRows([selected])[0] : null
+  const intervalView = interval ? { ...interval, items: costRows(appChargeStatisticsRows(interval.items)) } : null
+  const costState = selectedView
+  const acEfficiency = selected ? qualifiedAcEnergyBalance(selected)?.efficiencyPercent ?? null : null
+  const trustedItems = costRows(appChargeListRows(filterHistory(items, emptyHistoryQuery()), showShortCharges))
   const visibleItems = filterHistory(trustedItems, query)
+  const chartItems = filterHistory(intervalView?.items ?? costRows(appChargeStatisticsRows(items)), query)
+  const chartCurrencies = [...new Set(chartItems.filter(row => row.cost != null && Number.isFinite(row.cost) && row.cost >= 0).map(row => row.currencyCode ?? row.currency).filter((code): code is string => Boolean(code)))]
+  const chartCurrency = chartCurrencies.length === 1 ? chartCurrencies[0] : null
+  const months = new Map<string, { label: string; energy: number; energyKnown: number; cost: number; costKnown: number; count: number }>()
+  for (const row of chartItems) {
+    const date = row.startDate ? new Date(row.startDate) : null
+    if (!date || !Number.isFinite(date.getTime())) continue
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    const month = months.get(key) ?? { label: `${date.getMonth() + 1}月`, energy: 0, energyKnown: 0, cost: 0, costKnown: 0, count: 0 }
+    month.count++
+    if (row.energyAddedKwh != null && Number.isFinite(row.energyAddedKwh) && row.energyAddedKwh >= 0) { month.energy += row.energyAddedKwh; month.energyKnown++ }
+    if (row.cost != null && Number.isFinite(row.cost) && row.cost >= 0 && chartCurrency != null && (row.currencyCode ?? row.currency) === chartCurrency) { month.cost += row.cost; month.costKnown++ }
+    months.set(key, month)
+  }
+  const chartMonths = [...months.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-6).map(([, month]) => month)
+  const chartValue = (month: typeof chartMonths[number]) => chartKind === 'energy' ? month.energy : chartKind === 'cost' ? month.cost : month.count
+  const chartKnown = (month: typeof chartMonths[number]) => chartKind === 'energy' ? month.energyKnown : chartKind === 'cost' ? month.costKnown : month.count
+  const chartMaximum = Math.max(0, ...chartMonths.map(chartValue))
+  const detailCoordinate = selectedEvidence?.charge ? mapCoordinate(selectedEvidence.charge.latitude, selectedEvidence.charge.longitude) : null
+  const sampleStats = (key: 'powerKw' | 'voltageV' | 'currentA' | 'temperatureC') => {
+    const values = (selectedEvidence?.points ?? []).map(point => point[key]).filter((value): value is number => value != null && Number.isFinite(value))
+    return { max: values.length ? Math.max(...values) : null, min: values.length ? Math.min(...values) : null,
+      average: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null, count: values.length }
+  }
+  const powerStats = sampleStats('powerKw'), voltageStats = sampleStats('voltageV'), currentStats = sampleStats('currentA'), temperatureStats = sampleStats('temperatureC')
+  const navGeo = getAppNavGeometry()
   return (
-    <View className="page history-page">
-      <View className="card">
-        <View className="visual-heading"><VisualIcon name="energy" /><Text className="title">充电</Text></View>
-        <Text className="muted">{car ? `${car.displayName || '当前车辆'} · ` : ''}只展示服务端返回的真实充电记录；能量、费用、功率和地点缺失时保持暂无数据。</Text>
+    <View className="page history-page charges-page">
+      <View className="history-page-header" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px` }}>
+        <Text className="title">充电历史</Text>
         {cars.length > 1 ? (
           <Picker mode="selector" range={cars.map(item => item.displayName || item.name || `车辆 ${item.stableId}`)} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}>
             <View className="status"><Text className="status-label">车辆</Text><Text className="status-value">{car?.displayName || '请选择车辆'}</Text></View>
           </Picker>
         ) : null}
-        {meta?.availability ? <Text className="muted">历史状态：{availabilityLabel(meta.availability)} · {sourceLabel(meta.source)}</Text> : null}
-        <Text className="muted">本机缓存保留最近最多 500 条且不超过 800 KiB，其他记录请在线加载。</Text>
+
         {cacheWarning ? <Text className="error">在线数据已读到，但未保存到本机。</Text> : null}
       </View>
 
-      {car ? <View className="card history-controls">
-        <View className="history-filter-row">
+      {car ? <View className="history-controls">
+        <HistoryDateChips kind="charges" query={query} onChange={updateQuery} />
+        <Button className="button-secondary charge-short-toggle" onClick={() => setShowShortCharges(value => !value)}>{showShortCharges ? '隐藏短充' : '显示短充'}</Button>
+        <View className="history-actions-hidden">
           <Picker mode="date" value={query.startDate} onChange={event => updateQuery({ startDate: event.detail.value })}><View>开始日期：{query.startDate || '不限'}</View></Picker>
           <Picker mode="date" value={query.endDate} onChange={event => updateQuery({ endDate: event.detail.value })}><View>结束日期：{query.endDate || '不限'}</View></Picker>
+          <Button className="button" onClick={() => updateQuery(emptyHistoryQuery())}>清除筛选</Button>
+          <Button className="button" loading={loading} onClick={() => { void load() }}>刷新</Button>
         </View>
-        <View className="history-actions"><Button className="button" onClick={() => updateQuery(emptyHistoryQuery())}>清除筛选</Button><Button className="button" loading={loading} onClick={() => { void load() }}>刷新</Button></View>
         {offline ? <Text className="muted">本机缓存 · 未验证在线车辆</Text> : null}
       </View> : null}
+      {notice ? <View className="card history-notice">
+        <Text className="muted">前台发现一条新的已完成充电，仅本次打开时检查。</Text>
+        <Button className="button" onClick={() => {
+          const row = itemsRef.current.find(item => item.id === notice.id && item.sessionId === notice.sessionId && item.source === notice.source)
+          setNotices(current => current.slice(1))
+          if (row) void openDetail(row)
+        }}>查看新充电</Button>
+        <Button className="button" onClick={() => setNotices([])}>关闭提示</Button>
+      </View> : null}
+      {car && !loading ? <HistoryIntervalSummary interval={intervalView} query={query} kind="charges" /> : null}
+      {car && chartMonths.length ? <View className="card charge-month-chart">
+        <Text className="section-title">充电趋势</Text>
+        <View className="charge-chart-tabs">
+          {([['energy', '电量'], ['cost', '费用'], ['count', '次数']] as const).map(([kind, label]) =>
+            <Button key={kind} className={`charge-chart-tab ${chartKind === kind ? 'charge-chart-tab-active' : ''}`} onClick={() => setChartKind(kind)}>{label}</Button>)}
+        </View>
+        <View className="charge-chart-bars">
+          {chartMonths.map((month, index) => <View className="charge-chart-column" key={`${index}-${month.label}`}>
+            <Text className="charge-chart-value">{chartKnown(month) ? chartKind === 'count' ? String(month.count) : chartKind === 'energy' ? `${month.energy.toFixed(1)} kWh` : chartCurrency === 'CNY' ? `¥${month.cost.toFixed(2)}` : `${month.cost.toFixed(2)} ${chartCurrency}` : '—'}</Text>
+            <View className="charge-chart-track"><View className="charge-chart-bar" style={{ height: chartKnown(month) && chartMaximum > 0 ? `${Math.max(5, chartValue(month) / chartMaximum * 100)}%` : '0%' }} /></View>
+            <Text className="charge-chart-month">{month.label}</Text>
+          </View>)}
+        </View>
+        <Text className="muted">统计已返回的 {chartItems.length} 条记录；费用仅在同币种时合计。</Text>
+      </View> : null}
+      {noticeLimited ? <Text className="muted history-notice-limit">本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看</Text> : null}
 
+      {chargeStarting && !current ? (
+        <View className="history-list">
+          <View className="visual-heading"><VisualIcon name="energy" /><Text className="section-title">充电即将开始</Text></View>
+          <Text className="muted">车辆已报告充电，充电会话尚未在历史接口中生成；正在以 4 秒间隔确认。</Text>
+        </View>
+      ) : null}
       {current && !isHistoryQuarantined(current) ? (
-        <View className="card">
+        <View className="history-list">
           <View className="visual-heading"><VisualIcon name="energy" /><Text className="section-title">正在充电</Text></View>
-          <Text className="muted">开始：{historyDateTime(current.startDate)} · 地点：{value(current.address)}</Text>
+          <Text className="muted">开始：{historyDateTime(current.startDate)} · 地点：{displayAddress(current.address)}</Text>
           <View className="metric-grid">
             <MetricValue label="已充入" value={current.energyAddedKwh} unit="kWh" icon="battery" />
             <MetricValue label="功率" value={current.chargerPowerKw} unit="kW" icon="energy" />
@@ -374,50 +664,93 @@ export default function ChargesPage() {
         </View>
       ) : null}
 
-      {!readAppSession(Taro) ? (
-        <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待微信登录</Text><Text className="muted">请先在“我的”中建立会话。</Text></View>
+      {!readAppSession(Taro) && loading ? <LoadingIndicator label="正在恢复会话…" /> : !readAppSession(Taro) ? (
+        <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待特斯拉账号登录</Text><Text className="muted">请先在“更多”中登录特斯拉账号。</Text></View>
       ) : trustedItems.length === 0 && !loading ? (
-        <View className="card empty-state"><VisualIcon name="energy" /><Text className="section-title">暂无可展示的充电记录</Text><Text className="muted">当前没有可展示的充电记录，空响应不会生成示例数据。</Text>
+        <View className="card empty-state"><VisualIcon name="energy" /><Text className="section-title">暂无可展示的充电记录</Text><Text className="muted">{items.length && !showShortCharges ? '当前记录均为短充；可选择“显示短充”查看。' : '当前没有可展示的充电记录，空响应不会生成示例数据。'}</Text>
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
         </View>
       ) : (
-        <View className="card">
-          <Text className="section-title">充电记录 {trustedItems.length ? `（${trustedItems.length}）` : ''}</Text>
+        <View className="history-list charge-history-list">
+          <Text className="section-title charge-history-heading">充电历史</Text>
           {loading ? <LoadingIndicator label="正在读取充电记录…" compact /> : null}
           {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的充电记录</Text> : null}
           {visibleItems.map(item => (
             <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
-              <View className="history-record-top"><Text>{historyDateTime(item.startDate)}</Text><Text className="history-soc">{battery(item.startBatteryLevel)} → {battery(item.endBatteryLevel)}</Text></View>
-              <Text className="muted">{value(item.address)}</Text>
-              <Text className="history-source">{sourceLabel(item.source)}</Text>
-              <Text className="muted">{modeLabel(item)}</Text>
-              <View className="history-record-metrics">
-                <MetricValue label="时长" value={item.durationMinutes != null && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0 ? item.durationMinutes : null} unit="分钟" icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
-                <MetricValue label="电池充入" value={item.energyAddedKwh} unit="kWh" icon="battery" />
-                <MetricValue label={inputLabel(item)} value={inputNumber(item)} unit="kWh" icon="energy" />
-                <MetricValue label="费用" value={item.cost} unit={item.currency || '币种未知'} icon="account" />
+              <View className="history-charge-heading">
+                <View className="history-charge-location-box">
+                  <View className="location-circle"><VisualIcon name="distance" /></View>
+                  <View className="history-charge-location">
+                    <Text className="location-name">{displayAddress(item.address)}</Text>
+                    <Text className="location-date">{historyEditorialDate(item.startDate, false)}</Text>
+                  </View>
+                </View>
+                {modeLabel(item) !== '模式未确认' ? <Text className="history-charge-mode">{modeLabel(item)}</Text> : null}
               </View>
+              <View className="history-record-metrics">
+                <MetricValue label="时长" value={item.durationMinutes != null && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0 ? item.durationMinutes : null} unit="m" icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
+                <MetricValue label="能量" value={oneDecimal(item.energyAddedKwh)} unit="kWh" icon="energy" />
+                <MetricValue label="充电费用" {...costLabel(item)} icon="account" />
+                <MetricValue label="电量" {...formatSocRangeMetric(item.startBatteryLevel, item.endBatteryLevel)} icon="battery" />
+              </View>
+              {(item.costProvenance === 'estimate' || inputNumber(item) != null) ? (
+                <Text className="history-source">
+                  {item.costProvenance === 'estimate' ? `费用按 ${estimateBasis(item)} 估算` : ''}
+                  {item.costProvenance === 'estimate' && inputNumber(item) != null ? ' · ' : ''}
+                  {inputNumber(item) != null ? `${inputLabel(item)}：${inputNumber(item)} kWh` : ''}
+                </Text>
+              ) : null}
+              {'costProvenance' in item && item.costProvenance === 'manual' ? <Text className="metric-source">本机手动费用</Text> : null}
             </View>
           ))}
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
         </View>
       )}
 
-      {selected && !isHistoryQuarantined(selected) ? (
-        <View className="card">
-          <View className="history-detail-heading"><Text className="section-title">充电详情</Text><Button className="button" onClick={closeDetail}>返回列表</Button></View>
-          <Text className="muted">{value(selected.address)} · {historyDateTime(selected.startDate)} → {historyDateTime(selected.endDate)}</Text>
-          <Text className="muted">{modeLabel(selected)}</Text>
-          <View className="metric-grid">
+      {selected && selectedView && !isHistoryQuarantined(selected) ? (
+        <ScrollView className="history-detail-overlay" scrollY scrollTop={detailScrollTop.current} onScroll={event => { detailScrollTop.current = event.detail.scrollTop }} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%' }} ariaLabel="充电详情">
+        <View className="history-detail-surface">
+          <View className="history-detail-heading" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px`, minHeight: `${navGeo.headerTotalHeight}px` }}><Button className="detail-back" onClick={closeDetail}>‹ 返回</Button><Text className="section-title">充电详情</Text></View>
+          <View className="card charge-detail-intro"><Text className="section-title">位置与费用</Text><Text className="charge-detail-address">{displayAddress(selected.address)}</Text>
+            <Text className="muted">开始 {historyDetailDateTime(selected.startDate)} · 结束 {historyDetailDateTime(selected.endDate)} · {modeLabel(selected)}</Text>
+            <MetricValue label="充电费用" {...costLabel(selectedView)} icon="account" />
+            <Text className="muted">费用来源：{costState?.costProvenance === 'manual' ? '本机手动设置' : costState?.costProvenance === 'free' ? '免费（免费超级充电 · DC）' : costState?.costProvenance === 'actual' ? selectedView.cost === 0 ? '服务端报告0费用' : '服务端账单报告' : costState?.costProvenance === 'estimate' ? `按 ${estimateBasis(costState)} 与合格电池充入量估算` : costState?.reportedCost === 0 && selected.source === 'teslamate_archive' ? 'TeslaMate 原始0表示未填，当前无合格估算' : '未知'}</Text>
+          </View>
+          {detailCoordinate ? <View className="card charge-detail-map-card"><Text className="section-title">充电地点</Text>
+            {mapFailed ? <Text className="muted">地图暂时无法载入</Text> : <TaroMap className="charge-detail-map" latitude={detailCoordinate.latitude} longitude={detailCoordinate.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...detailCoordinate, iconPath: '/assets/tabs/energy-selected.png', width: 24, height: 24 }]} onError={() => setMapFailed(true)} />}
+            <Text className="muted">仅展示本次在线详情返回的有效位置。</Text></View> : null}
+          <Text className="section-title">电量</Text>
+          <View className="telemetry-metric-strip metric-grid">
             <MetricValue label="电池充入" value={selected.energyAddedKwh} unit="kWh" icon="battery" />
             <MetricValue label={inputLabel(selected)} value={inputNumber(selected)} unit="kWh" icon="energy" />
-            <MetricValue label="费用" value={selected.cost} unit={selected.currency || '币种未知'} icon="account" />
-            <MetricValue label="功率" value={selected.chargerPowerKw} unit="kW" icon="energy" />
+            <MetricValue label="AC输入效率" value={acEfficiency} unit="%" />
           </View>
+          <Text className="section-title">电池</Text>
+          <View className="telemetry-metric-strip metric-grid">
+            <MetricValue label="起始SOC" value={selected.startBatteryLevel} unit="%" /><MetricValue label="结束SOC" value={selected.endBatteryLevel} unit="%" />
+            <MetricValue label="SOC变化" value={selected.startBatteryLevel != null && selected.endBatteryLevel != null ? selected.endBatteryLevel - selected.startBatteryLevel : null} unit="%" /><MetricValue label="充电时长" value={selected.durationMinutes} unit="分钟" />
+          </View>
+          <Text className="section-title">功率</Text>
+          <View className="telemetry-metric-strip metric-grid">
+            <MetricValue label="报告功率" value={selectedEvidence?.summary.chargerPowerKw ?? selected.chargerPowerKw} unit="kW" icon="energy" />
+            <MetricValue label="样本最高功率" value={powerStats.max} unit="kW" /><MetricValue label="样本最低功率" value={powerStats.min} unit="kW" /><MetricValue label="样本平均功率" value={powerStats.average} unit="kW" />
+          </View>
+          {selected.energy?.chargeMode === 'ac' && qualifiedAcEnergyBalance(selected) ? <><Text className="section-title">电压与电流</Text><View className="telemetry-metric-strip metric-grid">
+            <MetricValue label="报告电压" value={selectedEvidence?.summary.chargerVoltageV ?? null} unit="V" /><MetricValue label="报告电流" value={selectedEvidence?.summary.currentA ?? null} unit="A" />
+            <MetricValue label="样本最高电压" value={voltageStats.max} unit="V" /><MetricValue label="样本最低电压" value={voltageStats.min} unit="V" /><MetricValue label="样本平均电压" value={voltageStats.average} unit="V" />
+            <MetricValue label="样本最高电流" value={currentStats.max} unit="A" /><MetricValue label="样本最低电流" value={currentStats.min} unit="A" /><MetricValue label="样本平均电流" value={currentStats.average} unit="A" />
+          </View></> : null}
+          <Text className="section-title">温度</Text>
+          <View className="telemetry-metric-strip metric-grid"><MetricValue label="报告环境温度" value={selectedEvidence?.summary.outsideTempC ?? null} unit="°C" /><MetricValue label="样本最高温度" value={temperatureStats.max} unit="°C" /><MetricValue label="样本最低温度" value={temperatureStats.min} unit="°C" /><MetricValue label="样本平均温度" value={temperatureStats.average} unit="°C" /></View>
+          <Text className="muted">仅基于本次响应的有效采样：功率 {powerStats.count} / 电压 {voltageStats.count} / 电流 {currentStats.count} / 温度 {temperatureStats.count} 点；缺失不补0，均值为样本均值。</Text>
+          <Button className="button-secondary" disabled={offline || !verifiedCarRef.current} onClick={() => Taro.navigateTo({ url: `/pages/analysis/index?kind=chargeCurves&chargeId=${encodeURIComponent(selected.id)}` })}>查看SOC、功率、电压、电流、温度曲线</Button>
           {selected.qualityState ? <Text className="muted">记录质量：{qualityLabel(selected.qualityState)}</Text> : null}
+          {cacheWarning ? <Text className="error">当前详情尚未保存到本机。</Text> : null}
+          {error ? <Text className="error">{error}</Text> : null}
         </View>
+        </ScrollView>
       ) : null}
-      {error ? <Text className="error">{error}</Text> : null}
+      {error && readAppSession(Taro) ? <Text className="error">{error}</Text> : null}
     </View>
   )
 }

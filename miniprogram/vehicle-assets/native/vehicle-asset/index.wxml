@@ -1,0 +1,1 @@
+<image wx:if="{{src}}" class="vehicle-image" src="{{src}}" mode="aspectFit" data-generation="{{generation}}" data-asset-key="{{assetKey}}" bindload="_onImageLoad" binderror="_onImageError" />

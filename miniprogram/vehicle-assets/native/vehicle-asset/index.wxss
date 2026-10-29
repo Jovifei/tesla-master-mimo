@@ -1,0 +1,2 @@
+:host { display: block; width: 96%; height: 310rpx; }
+.vehicle-image { display: block; width: 100%; height: 100%; }

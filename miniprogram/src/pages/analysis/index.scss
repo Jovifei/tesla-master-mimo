@@ -1,0 +1,212 @@
+.analysis-page {
+  padding: 32rpx;
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+
+  .app-toolbar {
+    display: flex;
+    gap: 20rpx;
+    align-items: center;
+    margin-bottom: 24rpx;
+  }
+  .analysis-back {
+    margin: 0;
+    padding: 0 24rpx;
+    height: 64rpx;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28rpx;
+    font-weight: 500;
+    color: #1f2937;
+    background: #eef1f4;
+    border-radius: 32rpx;
+    border: none;
+    box-sizing: border-box;
+    line-height: 1;
+    &::after { border: 0; }
+    &:active { background: #e2e5e9; }
+  }
+  .analysis-controls { margin-bottom: 24rpx; }
+  .history-date-chips {
+    display: flex;
+    gap: 16rpx;
+    overflow-x: auto;
+    padding-bottom: 16rpx;
+    white-space: nowrap;
+  }
+  .history-chip {
+    flex: none;
+    margin: 0;
+    padding: 10rpx 24rpx;
+    background: #ffffff;
+    border: 1rpx solid #e9edf2;
+    color: #6b7280;
+    font-size: 26rpx;
+    border-radius: 999rpx;
+    line-height: 1.4;
+    &::after { border: 0; }
+  }
+  .history-chip-selected {
+    color: #157a86;
+    background: #ddf0f1;
+    font-weight: 600;
+  }
+  .analysis-date-range {
+    display: flex;
+    gap: 20rpx;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    picker {
+      font-size: 26rpx;
+      color: #6b7280;
+    }
+  }
+  .analysis-coverage {
+    padding: 16rpx 0 20rpx;
+    color: #6b7280;
+    font-size: 26rpx;
+    line-height: 1.5;
+    > text { display: block; overflow-wrap: anywhere; }
+  }
+  .analysis-record {
+    border-top: 1rpx solid #e9edf2;
+    padding: 24rpx 0;
+    line-height: 1.6;
+    > text { display: block; overflow-wrap: anywhere; }
+  }
+  .analysis-bars .analysis-bar-row {
+    display: grid;
+    grid-template-columns: 160rpx minmax(0, 1fr) 160rpx;
+    gap: 16rpx;
+    align-items: center;
+    margin-top: 20rpx;
+    font-size: 26rpx;
+    text { overflow-wrap: anywhere; }
+  }
+  .analysis-bar-track {
+    height: 24rpx;
+    background: #eef0f3;
+    border-radius: 12rpx;
+    overflow: hidden;
+  }
+  .analysis-bar {
+    height: 100%;
+    background: #157a86;
+    border-radius: 12rpx;
+  }
+  .analysis-bar-negative {
+    background: #047857;
+  }
+  .analysis-percentile-track {
+    height: 18rpx;
+    background: #e9edf2;
+    border-radius: 9rpx;
+    overflow: hidden;
+    > view {
+      height: 100%;
+      background: #157a86;
+    }
+  }
+  .analysis-canvas {
+    display: block;
+    width: 100%;
+    height: 400rpx;
+    margin-top: 20rpx;
+  }
+  .analysis-curve-expand {
+    display: inline-block;
+    margin: 0;
+    padding: 8rpx 20rpx;
+    color: #157a86;
+    background: #ddf0f1;
+    border: 0;
+    border-radius: 999rpx;
+    font-size: 24rpx;
+    line-height: 1.4;
+    &::after { border: none; }
+  }
+  .analysis-curve-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    margin: 0;
+    border-radius: 0;
+    overflow-y: auto;
+    background: #ffffff;
+    padding: 40rpx 32rpx;
+    padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
+    .analysis-canvas { height: 60vh; }
+  }
+  .analysis-axis {
+    display: flex;
+    justify-content: space-between;
+    gap: 16rpx;
+    font-size: 24rpx;
+    color: #6b7280;
+    > text {
+      flex: 1;
+      overflow-wrap: anywhere;
+      &:last-child { text-align: right; }
+    }
+  }
+  .analysis-cursor {
+    display: block;
+    color: #157a86;
+    font-size: 26rpx;
+    line-height: 1.5;
+  }
+  .calendar-week, .analysis-calendar {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 8rpx;
+  }
+  .calendar-week {
+    text-align: center;
+    font-size: 26rpx;
+    color: #6b7280;
+    margin: 24rpx 0 16rpx;
+  }
+  .calendar-day {
+    width: 100%;
+    padding: 16rpx 0;
+    border: 1rpx solid #e9edf2;
+    background: #f5f7f9;
+    font-size: 26rpx;
+    line-height: 1.5;
+    border-radius: 14rpx;
+    &::after { border: none; }
+    > text { display: block; }
+  }
+  .calendar-distance {
+    color: #157a86;
+    font-size: 22rpx;
+    overflow-wrap: anywhere;
+    font-weight: 600;
+  }
+  .timeline-event {
+    border-left: 6rpx solid #157a86;
+    padding-left: 16rpx;
+    > text { display: block; overflow-wrap: anywhere; }
+  }
+  .timeline-day {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20rpx;
+    flex-wrap: wrap;
+    padding: 16rpx 0;
+    font-weight: 600;
+    font-size: 28rpx;
+  }
+  .timeline-date {
+    color: #6b7280;
+    font-size: 24rpx;
+    margin-bottom: 12rpx;
+  }
+  .metric-grid .metric { text-align: center; }
+  .metric-heading, .metric-reading { justify-content: center; align-items: center; }
+  .button-secondary { margin-top: 16rpx; }
+  .section-title { display: block; }
+}

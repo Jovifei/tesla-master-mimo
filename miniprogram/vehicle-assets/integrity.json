@@ -1,0 +1,781 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "file": "m3_PBSB_W32D.png",
+      "bytes": 120490,
+      "sha256": "7e7b3f82d2dc48159a2682392e1d06474b21f78c2bb945ba2ae67c6e730bf998",
+      "assetKey": "m3_PBSB_W32D",
+      "assetPath": "/vehicle-assets-1/images/m3_PBSB_W32D.png",
+      "packageName": "vehicle-assets-1"
+    },
+    {
+      "file": "m3_PBSB_W32P.png",
+      "bytes": 124464,
+      "sha256": "67c98415dffa2a95a416ce61fcd8aa45326242278b148a7f28d3038008e3b4d7",
+      "assetKey": "m3_PBSB_W32P",
+      "assetPath": "/vehicle-assets-1/images/m3_PBSB_W32P.png",
+      "packageName": "vehicle-assets-1"
+    },
+    {
+      "file": "m3_PBSB_W38B.png",
+      "bytes": 117019,
+      "sha256": "1e3426983f7ae9a1ffadad622ce024a267ff3959da74784c247cdad34133d11d",
+      "assetKey": "m3_PBSB_W38B",
+      "assetPath": "/vehicle-assets-1/images/m3_PBSB_W38B.png",
+      "packageName": "vehicle-assets-1"
+    },
+    {
+      "file": "m3_PBSB_W39B.png",
+      "bytes": 123691,
+      "sha256": "e3009317577b6a766c323f610846f6faf4c0c8d2427b895dd2427d7d5525fd69",
+      "assetKey": "m3_PBSB_W39B",
+      "assetPath": "/vehicle-assets-1/images/m3_PBSB_W39B.png",
+      "packageName": "vehicle-assets-1"
+    },
+    {
+      "file": "m3_PMBL_W32D.png",
+      "bytes": 109449,
+      "sha256": "0ea98507adc7395b1c00e25ff80ef133ccec68ddb1d7c5dd9edf9043bd0c137f",
+      "assetKey": "m3_PMBL_W32D",
+      "assetPath": "/vehicle-assets-1/images/m3_PMBL_W32D.png",
+      "packageName": "vehicle-assets-1"
+    },
+    {
+      "file": "m3_PMBL_W32P.png",
+      "bytes": 124007,
+      "sha256": "d77f7ce511bba7b6ab85f4f51109376548ed4b39879ca8804a1026e73441e2b2",
+      "assetKey": "m3_PMBL_W32P",
+      "assetPath": "/vehicle-assets-1/images/m3_PMBL_W32P.png",
+      "packageName": "vehicle-assets-1"
+    },
+    {
+      "file": "m3_PMBL_W38B.png",
+      "bytes": 116688,
+      "sha256": "71767f938b6192d4bc6a10ee0596e073bb8ae51663ea7fecaba4a3545e21fadc",
+      "assetKey": "m3_PMBL_W38B",
+      "assetPath": "/vehicle-assets-1/images/m3_PMBL_W38B.png",
+      "packageName": "vehicle-assets-1"
+    },
+    {
+      "file": "m3_PMBL_W39B.png",
+      "bytes": 123364,
+      "sha256": "e8bb4b1b68aa135bd88a4fb36dc66fd4c9ea7936563422bcc324d30a87bc516d",
+      "assetKey": "m3_PMBL_W39B",
+      "assetPath": "/vehicle-assets-1/images/m3_PMBL_W39B.png",
+      "packageName": "vehicle-assets-1"
+    },
+    {
+      "file": "m3_PMNG_W32D.png",
+      "bytes": 129078,
+      "sha256": "aa513753cc24163b7abf0b7e5a9d6dafdad039207c32d6f38a80ae5066cedf62",
+      "assetKey": "m3_PMNG_W32D",
+      "assetPath": "/vehicle-assets-1/images/m3_PMNG_W32D.png",
+      "packageName": "vehicle-assets-1"
+    },
+    {
+      "file": "m3_PMNG_W32P.png",
+      "bytes": 133122,
+      "sha256": "781eee60f82d12ae96aca3d8259528711162157cab8fd9440f0b797cb1ba6953",
+      "assetKey": "m3_PMNG_W32P",
+      "assetPath": "/vehicle-assets-1/images/m3_PMNG_W32P.png",
+      "packageName": "vehicle-assets-1"
+    },
+    {
+      "file": "m3_PMNG_W38B.png",
+      "bytes": 126944,
+      "sha256": "fe8141d66f93524a7b039716dbfbd6e42b255f97ab7d8ed8d030ff42170b809c",
+      "assetKey": "m3_PMNG_W38B",
+      "assetPath": "/vehicle-assets-1/images/m3_PMNG_W38B.png",
+      "packageName": "vehicle-assets-1"
+    },
+    {
+      "file": "m3_PMNG_W39B.png",
+      "bytes": 132571,
+      "sha256": "6fd5eab4d2cc8dcbee895822c11bb3122586777df77d3fc943701bfa9ef6a4c1",
+      "assetKey": "m3_PMNG_W39B",
+      "assetPath": "/vehicle-assets-1/images/m3_PMNG_W39B.png",
+      "packageName": "vehicle-assets-1"
+    },
+    {
+      "file": "m3_PMSS_W32D.png",
+      "bytes": 128001,
+      "sha256": "35535fe8ae3535e2c4291aebbe1d7176dc8e3b64f6b737617edcd9971fd6aa4d",
+      "assetKey": "m3_PMSS_W32D",
+      "assetPath": "/vehicle-assets-1/images/m3_PMSS_W32D.png",
+      "packageName": "vehicle-assets-1"
+    },
+    {
+      "file": "m3_PMSS_W32P.png",
+      "bytes": 130501,
+      "sha256": "7fa2f47b85fbb78d33a7e2fb3f838dfd09ed77f25477247bc3b25727d92cc4e8",
+      "assetKey": "m3_PMSS_W32P",
+      "assetPath": "/vehicle-assets-1/images/m3_PMSS_W32P.png",
+      "packageName": "vehicle-assets-1"
+    },
+    {
+      "file": "m3_PMSS_W38B.png",
+      "bytes": 124790,
+      "sha256": "f5a050f5e5d057fe2705e2c495b8a2482ac7043c13784fef7610b5d1bf0e9326",
+      "assetKey": "m3_PMSS_W38B",
+      "assetPath": "/vehicle-assets-2/images/m3_PMSS_W38B.png",
+      "packageName": "vehicle-assets-2"
+    },
+    {
+      "file": "m3_PMSS_W39B.png",
+      "bytes": 129987,
+      "sha256": "866ec4c419a67c27f02fa8a6149ec950d03ed02eea57be41b1f050f940104743",
+      "assetKey": "m3_PMSS_W39B",
+      "assetPath": "/vehicle-assets-2/images/m3_PMSS_W39B.png",
+      "packageName": "vehicle-assets-2"
+    },
+    {
+      "file": "m3_PPMR_W32D.png",
+      "bytes": 136563,
+      "sha256": "2d9b0649b342dfd266efe0778a43771fec9302f2dddb4ec597a58ce623cab95d",
+      "assetKey": "m3_PPMR_W32D",
+      "assetPath": "/vehicle-assets-2/images/m3_PPMR_W32D.png",
+      "packageName": "vehicle-assets-2"
+    },
+    {
+      "file": "m3_PPMR_W32P.png",
+      "bytes": 140573,
+      "sha256": "61055e2b1f8ff22b5c4e219808a7c7ba7e2f82de2caedd6ca8919a34c83a2cdb",
+      "assetKey": "m3_PPMR_W32P",
+      "assetPath": "/vehicle-assets-2/images/m3_PPMR_W32P.png",
+      "packageName": "vehicle-assets-2"
+    },
+    {
+      "file": "m3_PPMR_W38B.png",
+      "bytes": 133391,
+      "sha256": "91561b18d8a34e51f75cad650ab943839d29f3fda5b7716a22bcf7d26e729057",
+      "assetKey": "m3_PPMR_W38B",
+      "assetPath": "/vehicle-assets-2/images/m3_PPMR_W38B.png",
+      "packageName": "vehicle-assets-2"
+    },
+    {
+      "file": "m3_PPMR_W39B.png",
+      "bytes": 139732,
+      "sha256": "7bbadf4697925f0c8b89030383d739edda2c594c4f602a6fcf6fe362255d829c",
+      "assetKey": "m3_PPMR_W39B",
+      "assetPath": "/vehicle-assets-2/images/m3_PPMR_W39B.png",
+      "packageName": "vehicle-assets-2"
+    },
+    {
+      "file": "m3_PPSB_W32D.png",
+      "bytes": 136060,
+      "sha256": "522213f51ed06d7ab707a142b31e747e4454ee1ac3b19246f9c2d6fb4a35fb34",
+      "assetKey": "m3_PPSB_W32D",
+      "assetPath": "/vehicle-assets-2/images/m3_PPSB_W32D.png",
+      "packageName": "vehicle-assets-2"
+    },
+    {
+      "file": "m3_PPSB_W32P.png",
+      "bytes": 139848,
+      "sha256": "d1794087647524c6ee7759f5302f550099f0021578d1a6917cbc427a02648cfd",
+      "assetKey": "m3_PPSB_W32P",
+      "assetPath": "/vehicle-assets-2/images/m3_PPSB_W32P.png",
+      "packageName": "vehicle-assets-2"
+    },
+    {
+      "file": "m3_PPSB_W38B.png",
+      "bytes": 132820,
+      "sha256": "dc2d76bc79c083769ce5cb3a3b87244eed5ef372427effb0cf3fe9d2925c43d0",
+      "assetKey": "m3_PPSB_W38B",
+      "assetPath": "/vehicle-assets-2/images/m3_PPSB_W38B.png",
+      "packageName": "vehicle-assets-2"
+    },
+    {
+      "file": "m3_PPSB_W39B.png",
+      "bytes": 139309,
+      "sha256": "6253f5db3d6c010f0ded6dbf5b5e1af1aaa5fd1a401faf60ac1254e46591a854",
+      "assetKey": "m3_PPSB_W39B",
+      "assetPath": "/vehicle-assets-2/images/m3_PPSB_W39B.png",
+      "packageName": "vehicle-assets-2"
+    },
+    {
+      "file": "m3_PPSW_W32D.png",
+      "bytes": 126795,
+      "sha256": "ea5e5db3ef2d454ecf723fd4f4956f72e2f5c0e9d14b32fbe664dc4e3006b068",
+      "assetKey": "m3_PPSW_W32D",
+      "assetPath": "/vehicle-assets-2/images/m3_PPSW_W32D.png",
+      "packageName": "vehicle-assets-2"
+    },
+    {
+      "file": "m3_PPSW_W32P.png",
+      "bytes": 129701,
+      "sha256": "03ae48f4fc316f6130a881ea4920d8bf0402107f44fd4c6548857d6f1b05cfbe",
+      "assetKey": "m3_PPSW_W32P",
+      "assetPath": "/vehicle-assets-2/images/m3_PPSW_W32P.png",
+      "packageName": "vehicle-assets-2"
+    },
+    {
+      "file": "m3_PPSW_W38B.png",
+      "bytes": 123607,
+      "sha256": "c3b8a67d15519d125c16c462bd837998cb06c829fcde11c8f8ca71fc8483c0fd",
+      "assetKey": "m3_PPSW_W38B",
+      "assetPath": "/vehicle-assets-2/images/m3_PPSW_W38B.png",
+      "packageName": "vehicle-assets-2"
+    },
+    {
+      "file": "m3_PPSW_W39B.png",
+      "bytes": 129091,
+      "sha256": "afdf3106566fa309254b409826dd31bd9a02ece5e76bbbb24baa5f9c9d0213f4",
+      "assetKey": "m3_PPSW_W39B",
+      "assetPath": "/vehicle-assets-3/images/m3_PPSW_W39B.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "m3h_PBSB_W38A.png",
+      "bytes": 66219,
+      "sha256": "f94cdb20d08d6fa44955005a69dc849f5f799792367ab0c231ff455b57c2cffc",
+      "assetKey": "m3h_PBSB_W38A",
+      "assetPath": "/vehicle-assets-3/images/m3h_PBSB_W38A.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "m3h_PN00_W38A.png",
+      "bytes": 69418,
+      "sha256": "8865b7929fc85b0a15118094bae593685d0e34e6a5c4e8dce8f30731af0d486d",
+      "assetKey": "m3h_PN00_W38A",
+      "assetPath": "/vehicle-assets-3/images/m3h_PN00_W38A.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "m3h_PN01_W38A.png",
+      "bytes": 70695,
+      "sha256": "cd844d77d50dde08d7da64342ee59ef48a321331dad949feaf28a4d3a81973e6",
+      "assetKey": "m3h_PN01_W38A",
+      "assetPath": "/vehicle-assets-3/images/m3h_PN01_W38A.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "m3h_PPSB_W38A.png",
+      "bytes": 78271,
+      "sha256": "3c971174f5c90ab8394ae1895fa7fe6dceb0f025adb25f735bf1a89266e806a2",
+      "assetKey": "m3h_PPSB_W38A",
+      "assetPath": "/vehicle-assets-3/images/m3h_PPSB_W38A.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "m3h_PPSW_W38A.png",
+      "bytes": 69009,
+      "sha256": "1a2c4f7f95b0ca8d997e1c2d7f106ab17ef90725709149082cbe461db5f33c5f",
+      "assetKey": "m3h_PPSW_W38A",
+      "assetPath": "/vehicle-assets-3/images/m3h_PPSW_W38A.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "m3h_PR01_W38A.png",
+      "bytes": 78509,
+      "sha256": "d8d1aa848cb69ecb6cb58fa0fb5d2a467db3d7ef1988de27d689d51602f9183f",
+      "assetKey": "m3h_PR01_W38A",
+      "assetPath": "/vehicle-assets-3/images/m3h_PR01_W38A.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "m3h_PX02_W38A.png",
+      "bytes": 67909,
+      "sha256": "c2f2838df8c8e1a71bd1fc54e2206724c2138e915e33ea82235996bc86f3475b",
+      "assetKey": "m3h_PX02_W38A",
+      "assetPath": "/vehicle-assets-3/images/m3h_PX02_W38A.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "m3hp_PBSB_W30P.png",
+      "bytes": 66748,
+      "sha256": "4ec645e7dec85c17c3951bb947754b56fa83c81ba31561d2650728718de56634",
+      "assetKey": "m3hp_PBSB_W30P",
+      "assetPath": "/vehicle-assets-3/images/m3hp_PBSB_W30P.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "m3hp_PN00_W30P.png",
+      "bytes": 70868,
+      "sha256": "3675e7d03abac5d9ca40d5c6b6742e4c5d9e1a3f43e5b9a1690fcc86f13934ea",
+      "assetKey": "m3hp_PN00_W30P",
+      "assetPath": "/vehicle-assets-3/images/m3hp_PN00_W30P.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "m3hp_PN01_W30P.png",
+      "bytes": 71799,
+      "sha256": "6a5dea0a93bade9d89118ba5f229bce9c4a1a61944b4d65542c8747e8420036b",
+      "assetKey": "m3hp_PN01_W30P",
+      "assetPath": "/vehicle-assets-3/images/m3hp_PN01_W30P.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "m3hp_PPSB_W30P.png",
+      "bytes": 79473,
+      "sha256": "532fb08cc898a9239108b84216961b6232b462e51567899fa2e9da4f5b53c0d4",
+      "assetKey": "m3hp_PPSB_W30P",
+      "assetPath": "/vehicle-assets-3/images/m3hp_PPSB_W30P.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "m3hp_PPSW_W30P.png",
+      "bytes": 69151,
+      "sha256": "18476d273eeda605e3c6c27336a00d3e3869b72d971edfa2b8f52600a66d5074",
+      "assetKey": "m3hp_PPSW_W30P",
+      "assetPath": "/vehicle-assets-3/images/m3hp_PPSW_W30P.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "m3hp_PR01_W30P.png",
+      "bytes": 80916,
+      "sha256": "08bcb146455a88820940778f2cc92fbdb44e187a618997069fd3eafb6fdc28bd",
+      "assetKey": "m3hp_PR01_W30P",
+      "assetPath": "/vehicle-assets-3/images/m3hp_PR01_W30P.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "m3hp_PX02_W30P.png",
+      "bytes": 69498,
+      "sha256": "4e432a963548e8e053d2bd8c1ea0cec3e52c115a2456f8368afb94b708c468e2",
+      "assetKey": "m3hp_PX02_W30P",
+      "assetPath": "/vehicle-assets-3/images/m3hp_PX02_W30P.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "ms_PBSB_WT19.png",
+      "bytes": 125195,
+      "sha256": "1f8eee6bc3a0622087e71ac81838ca641eb877b836ae53bb59c2e03d590dcf9c",
+      "assetKey": "ms_PBSB_WT19",
+      "assetPath": "/vehicle-assets-3/images/ms_PBSB_WT19.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "ms_PMNG_WT19.png",
+      "bytes": 130782,
+      "sha256": "728bb839064a40de948bbfcee52dfd959329461f6cb4224a18500b299031b3bc",
+      "assetKey": "ms_PMNG_WT19",
+      "assetPath": "/vehicle-assets-3/images/ms_PMNG_WT19.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "ms_PPMR_WT19.png",
+      "bytes": 137293,
+      "sha256": "0c35af96a8c7df7729db2baffac6e26cb7d502ec523288758256ba4511a32f0a",
+      "assetKey": "ms_PPMR_WT19",
+      "assetPath": "/vehicle-assets-3/images/ms_PPMR_WT19.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "ms_PPSB_WT19.png",
+      "bytes": 131674,
+      "sha256": "511c0e5a2ff5cdd64096fa5d38f8dd77ff76f787236014f1237849525e6e96dc",
+      "assetKey": "ms_PPSB_WT19",
+      "assetPath": "/vehicle-assets-3/images/ms_PPSB_WT19.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "ms_PPSW_WT19.png",
+      "bytes": 127605,
+      "sha256": "99c52a8b1d6666f1b20374171207947f47e90fff5a218d8b2b7924dc485c0317",
+      "assetKey": "ms_PPSW_WT19",
+      "assetPath": "/vehicle-assets-3/images/ms_PPSW_WT19.png",
+      "packageName": "vehicle-assets-3"
+    },
+    {
+      "file": "mx_PBSB_WT20.png",
+      "bytes": 69378,
+      "sha256": "7f10f071468db012050401ba5d2c633aaf5a0b8f235ceb833d30bae770462e42",
+      "assetKey": "mx_PBSB_WT20",
+      "assetPath": "/vehicle-assets-4/images/mx_PBSB_WT20.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "mx_PBSB_WT22.png",
+      "bytes": 69912,
+      "sha256": "583c26c515db7abc1f4337b2caeef9b3baea1bf36b664ebacb47f3428067b62b",
+      "assetKey": "mx_PBSB_WT22",
+      "assetPath": "/vehicle-assets-4/images/mx_PBSB_WT22.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "mx_PMNG_WT20.png",
+      "bytes": 78503,
+      "sha256": "4ff9d937d91fddec852551621d292383896b42bfc261b9778ac3f4e2bcb85e24",
+      "assetKey": "mx_PMNG_WT20",
+      "assetPath": "/vehicle-assets-4/images/mx_PMNG_WT20.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "mx_PMNG_WT22.png",
+      "bytes": 78839,
+      "sha256": "ff8de7c1dd30e7cc2f462db4016af01f935b2c4d5fcabb9c906c13a97f813ef3",
+      "assetKey": "mx_PMNG_WT22",
+      "assetPath": "/vehicle-assets-4/images/mx_PMNG_WT22.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "mx_PPMR_WT20.png",
+      "bytes": 82263,
+      "sha256": "6aef5537ee6e022a7d0adeab91da0be56a2f60c44b866c08a52a415eaef9f099",
+      "assetKey": "mx_PPMR_WT20",
+      "assetPath": "/vehicle-assets-4/images/mx_PPMR_WT20.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "mx_PPMR_WT22.png",
+      "bytes": 82874,
+      "sha256": "216f5ae3be0821d0deb4c9271f05941c0c2a61c0b624805b1b7bd7454a6e1083",
+      "assetKey": "mx_PPMR_WT22",
+      "assetPath": "/vehicle-assets-4/images/mx_PPMR_WT22.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "mx_PPSB_WT20.png",
+      "bytes": 83470,
+      "sha256": "ed6fe562aef0ec370825e4fb209107ecec96b1f7c932f6491acc25c2280ff722",
+      "assetKey": "mx_PPSB_WT20",
+      "assetPath": "/vehicle-assets-4/images/mx_PPSB_WT20.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "mx_PPSB_WT22.png",
+      "bytes": 84059,
+      "sha256": "dfd93e378e55835084d26049692a421d31ccb8a1f36f738dde6d6e467cefdca0",
+      "assetKey": "mx_PPSB_WT22",
+      "assetPath": "/vehicle-assets-4/images/mx_PPSB_WT22.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "mx_PPSW_WT20.png",
+      "bytes": 77864,
+      "sha256": "07621952f1c61609facd828087f86151b53cd25c13d01d70d7e8bebdb19091f0",
+      "assetKey": "mx_PPSW_WT20",
+      "assetPath": "/vehicle-assets-4/images/mx_PPSW_WT20.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "mx_PPSW_WT22.png",
+      "bytes": 78117,
+      "sha256": "0f36ece50d1fea19459c1b90fd698310dde6a3e64d2c76cefe8f437c1bd92b91",
+      "assetKey": "mx_PPSW_WT22",
+      "assetPath": "/vehicle-assets-4/images/mx_PPSW_WT22.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "my_PBSB_WY18B.png",
+      "bytes": 120182,
+      "sha256": "a77d5a18ed2a52487b5f97699412861eb7fb923e2eabba2c2aa5e701a2050318",
+      "assetKey": "my_PBSB_WY18B",
+      "assetPath": "/vehicle-assets-4/images/my_PBSB_WY18B.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "my_PBSB_WY19B.png",
+      "bytes": 124709,
+      "sha256": "f6a96a39be1c12eb076ca92b5459e8862fd6ee6658d0d0edea672814c7116d33",
+      "assetKey": "my_PBSB_WY19B",
+      "assetPath": "/vehicle-assets-4/images/my_PBSB_WY19B.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "my_PBSB_WY20P.png",
+      "bytes": 120246,
+      "sha256": "92aabdfb89e7e85b22a227ca0d51de1abacbbaa9902772d7dfc295e0541346a6",
+      "assetKey": "my_PBSB_WY20P",
+      "assetPath": "/vehicle-assets-4/images/my_PBSB_WY20P.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "my_PMNG_WY18B.png",
+      "bytes": 135450,
+      "sha256": "3f1be88d47d79dd1fcd1a1ffd23f31bb70a017b3377cc45c9ed3a89b40358c03",
+      "assetKey": "my_PMNG_WY18B",
+      "assetPath": "/vehicle-assets-4/images/my_PMNG_WY18B.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "my_PMNG_WY19B.png",
+      "bytes": 140181,
+      "sha256": "7cd4d9a09d19fb323e0059c913e2ebc01a7407e06ded7fcacd8e1401865557bb",
+      "assetKey": "my_PMNG_WY19B",
+      "assetPath": "/vehicle-assets-4/images/my_PMNG_WY19B.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "my_PMNG_WY20P.png",
+      "bytes": 135351,
+      "sha256": "0d494d18cc1c897aabd979cd9dc744c6604f57c8ceeca728905a97a8ee0c6722",
+      "assetKey": "my_PMNG_WY20P",
+      "assetPath": "/vehicle-assets-4/images/my_PMNG_WY20P.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "my_PPMR_WY18B.png",
+      "bytes": 146781,
+      "sha256": "1c0f0817f545b182f44e67c1ddb2bf077d06b45131920fedbaaae5f8e1729957",
+      "assetKey": "my_PPMR_WY18B",
+      "assetPath": "/vehicle-assets-4/images/my_PPMR_WY18B.png",
+      "packageName": "vehicle-assets-4"
+    },
+    {
+      "file": "my_PPMR_WY19B.png",
+      "bytes": 151084,
+      "sha256": "88cdd55d389d837ff95e71f49ce6419b41cb5ba0a83d59623284103b3200996e",
+      "assetKey": "my_PPMR_WY19B",
+      "assetPath": "/vehicle-assets-5/images/my_PPMR_WY19B.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "my_PPMR_WY20P.png",
+      "bytes": 146569,
+      "sha256": "2c15983cf39a3a41de1fa1706c86939d8f70d4934b09c33d34ea30dae9af9c78",
+      "assetKey": "my_PPMR_WY20P",
+      "assetPath": "/vehicle-assets-5/images/my_PPMR_WY20P.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "my_PPSB_WY18B.png",
+      "bytes": 148203,
+      "sha256": "4d903058519e08a4d701eb3b75305d5a83855bd6425bb76605b0a5e5bf35af92",
+      "assetKey": "my_PPSB_WY18B",
+      "assetPath": "/vehicle-assets-5/images/my_PPSB_WY18B.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "my_PPSB_WY19B.png",
+      "bytes": 152528,
+      "sha256": "cd2e7348c48e1a97ced3176d322236fdbb32551121f6619576478ca6ff97f160",
+      "assetKey": "my_PPSB_WY19B",
+      "assetPath": "/vehicle-assets-5/images/my_PPSB_WY19B.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "my_PPSB_WY20P.png",
+      "bytes": 148116,
+      "sha256": "daf97878874633dbf77b9bd4d060a23e324e487ae3429b2e916edfa19e08e714",
+      "assetKey": "my_PPSB_WY20P",
+      "assetPath": "/vehicle-assets-5/images/my_PPSB_WY20P.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "my_PPSW_WY18B.png",
+      "bytes": 133756,
+      "sha256": "9c8d661f3189e2726a5767cff252274279332405acdf8c29b926e0a3f4f81fd5",
+      "assetKey": "my_PPSW_WY18B",
+      "assetPath": "/vehicle-assets-5/images/my_PPSW_WY18B.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "my_PPSW_WY19B.png",
+      "bytes": 137291,
+      "sha256": "039c7817a24d26402b599e0b377faa081b4e0ee12d2ed12befa6e2fdd9081040",
+      "assetKey": "my_PPSW_WY19B",
+      "assetPath": "/vehicle-assets-5/images/my_PPSW_WY19B.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "my_PPSW_WY20P.png",
+      "bytes": 133711,
+      "sha256": "db6fa56f97fbcad0e120326f0223a4bc423f3f1f71acdff5921a79ecdbdb6627",
+      "assetKey": "my_PPSW_WY20P",
+      "assetPath": "/vehicle-assets-5/images/my_PPSW_WY20P.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "myj_PB01_WY19P.png",
+      "bytes": 93944,
+      "sha256": "79c99f8e4d94944db2815b8f6e24ff703dd9366549da6bb12ea8db37c5b9e6c3",
+      "assetKey": "myj_PB01_WY19P",
+      "assetPath": "/vehicle-assets-5/images/myj_PB01_WY19P.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "myj_PB01_WY20A.png",
+      "bytes": 95868,
+      "sha256": "0734d382462d3e10f64dbfa208cfeb66bd06d3c6700e87a0754674813002a534",
+      "assetKey": "myj_PB01_WY20A",
+      "assetPath": "/vehicle-assets-5/images/myj_PB01_WY20A.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "myj_PN00_WY19P.png",
+      "bytes": 86557,
+      "sha256": "31d7ec14d6393114fa33ea9db1e415e4e950a38f0bbbce2c9077154e0cf82209",
+      "assetKey": "myj_PN00_WY19P",
+      "assetPath": "/vehicle-assets-5/images/myj_PN00_WY19P.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "myj_PN00_WY20A.png",
+      "bytes": 87719,
+      "sha256": "e1140d02045367227aebf7bdf430191e96555ca0962643121006baa4a6d00e7f",
+      "assetKey": "myj_PN00_WY20A",
+      "assetPath": "/vehicle-assets-5/images/myj_PN00_WY20A.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "myj_PN01_WY19P.png",
+      "bytes": 84650,
+      "sha256": "b65c145da1055b347d213967867b47296c6c96f2da6f9bfab598e018a770d1e9",
+      "assetKey": "myj_PN01_WY19P",
+      "assetPath": "/vehicle-assets-5/images/myj_PN01_WY19P.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "myj_PN01_WY20A.png",
+      "bytes": 87730,
+      "sha256": "d8a21ed268ac34fd49866995fd23283664ea2030393f09b7c5e32c068cced171",
+      "assetKey": "myj_PN01_WY20A",
+      "assetPath": "/vehicle-assets-5/images/myj_PN01_WY20A.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "myj_PPSW_WY19P.png",
+      "bytes": 82000,
+      "sha256": "450d729623ffdb4aa7f2936afd6b0522f918f0b1c8de1f81cdb90baf71a56d54",
+      "assetKey": "myj_PPSW_WY19P",
+      "assetPath": "/vehicle-assets-5/images/myj_PPSW_WY19P.png",
+      "packageName": "vehicle-assets-5"
+    },
+    {
+      "file": "myj_PPSW_WY20A.png",
+      "bytes": 84167,
+      "sha256": "b644f1521f81b1243efb40a452f78f5a0d5049f44f94a1fce841968b41ce805d",
+      "assetKey": "myj_PPSW_WY20A",
+      "assetPath": "/vehicle-assets-6/images/myj_PPSW_WY20A.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myj_PR01_WY19P.png",
+      "bytes": 94112,
+      "sha256": "d756c9973b3941162625c1b52c164a28aaa68aefbf15f64b35d49baa445fb6e4",
+      "assetKey": "myj_PR01_WY19P",
+      "assetPath": "/vehicle-assets-6/images/myj_PR01_WY19P.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myj_PR01_WY20A.png",
+      "bytes": 97007,
+      "sha256": "c43b1b49fc829252667917ce742e1d4a1ed0cbd300ffeb633ae5f8e216f7e399",
+      "assetKey": "myj_PR01_WY20A",
+      "assetPath": "/vehicle-assets-6/images/myj_PR01_WY20A.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myj_PX02_WY19P.png",
+      "bytes": 82628,
+      "sha256": "7ca847a56770bcc630cbec56b22a797e456756cb6aa5d845a1262fae7688c98c",
+      "assetKey": "myj_PX02_WY19P",
+      "assetPath": "/vehicle-assets-6/images/myj_PX02_WY19P.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myj_PX02_WY20A.png",
+      "bytes": 84802,
+      "sha256": "a7866e8ab1fc12ca50c7ced4bf51800a54fdfb30bc574b7b73f74c48883c351a",
+      "assetKey": "myj_PX02_WY20A",
+      "assetPath": "/vehicle-assets-6/images/myj_PX02_WY20A.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myjp_PB01_WY21A.png",
+      "bytes": 92874,
+      "sha256": "7a63631bfb7b5ff5b4c694547a1800b7b5b9c692b229559d2525176f16d2d489",
+      "assetKey": "myjp_PB01_WY21A",
+      "assetPath": "/vehicle-assets-6/images/myjp_PB01_WY21A.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myjp_PB02_WY21A.png",
+      "bytes": 91054,
+      "sha256": "8da45892630b621d665d978000edd3afc3d7f36f29e303b94571a1a9a498379a",
+      "assetKey": "myjp_PB02_WY21A",
+      "assetPath": "/vehicle-assets-6/images/myjp_PB02_WY21A.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myjp_PN00_WY21A.png",
+      "bytes": 85965,
+      "sha256": "77150eb11ec5ff040e6ae0b81f64a732a0fc1a1a4ff06d26bfeb6108c49a3bb1",
+      "assetKey": "myjp_PN00_WY21A",
+      "assetPath": "/vehicle-assets-6/images/myjp_PN00_WY21A.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myjp_PN01_WY21A.png",
+      "bytes": 87701,
+      "sha256": "36876301a2b50d06eeb3eaeb57d3206d22e8ce21a14a5ffeeab381ab00486119",
+      "assetKey": "myjp_PN01_WY21A",
+      "assetPath": "/vehicle-assets-6/images/myjp_PN01_WY21A.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myjp_PPSW_WY21A.png",
+      "bytes": 82599,
+      "sha256": "8ae1772000015f8cc098885fa63cdf235cbd05b24388cce93004b1aff3e198ca",
+      "assetKey": "myjp_PPSW_WY21A",
+      "assetPath": "/vehicle-assets-6/images/myjp_PPSW_WY21A.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myjp_PR01_WY21A.png",
+      "bytes": 95605,
+      "sha256": "a4f1aa13649790406cd1ed6a77ee1a4acb9bb3aac51940148225624320b57979",
+      "assetKey": "myjp_PR01_WY21A",
+      "assetPath": "/vehicle-assets-6/images/myjp_PR01_WY21A.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myjp_PX02_WY21A.png",
+      "bytes": 80907,
+      "sha256": "9dbbb7b63283da8703cfaefc6d09e8152754e46e1ad4539c84f9a32ffe405f3d",
+      "assetKey": "myjp_PX02_WY21A",
+      "assetPath": "/vehicle-assets-6/images/myjp_PX02_WY21A.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myjs_PN01_WY18P.png",
+      "bytes": 85487,
+      "sha256": "bb58c22134295ae8190cd5dfb4f37895bd0e52efcd280620b9606e6999188b42",
+      "assetKey": "myjs_PN01_WY18P",
+      "assetPath": "/vehicle-assets-6/images/myjs_PN01_WY18P.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myjs_PN01_WY19P.png",
+      "bytes": 83723,
+      "sha256": "6ef1a92df79e536c7d91ac3fa6d4627582507cb19bc78c7250e229b91e800ee7",
+      "assetKey": "myjs_PN01_WY19P",
+      "assetPath": "/vehicle-assets-6/images/myjs_PN01_WY19P.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myjs_PPSW_WY18P.png",
+      "bytes": 80154,
+      "sha256": "5326ca156c047fcb6155f2479aba03a095e10571a936d26a3f89e287e53d1d07",
+      "assetKey": "myjs_PPSW_WY18P",
+      "assetPath": "/vehicle-assets-6/images/myjs_PPSW_WY18P.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myjs_PPSW_WY19P.png",
+      "bytes": 79493,
+      "sha256": "fef115b9ac56df8f6198fbe134ef9d1738d6db891e2c91ea6ce47a11ffc5925b",
+      "assetKey": "myjs_PPSW_WY19P",
+      "assetPath": "/vehicle-assets-6/images/myjs_PPSW_WY19P.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myjs_PX02_WY18P.png",
+      "bytes": 80231,
+      "sha256": "29276e715322b11ad1a15abbbcff05c0f4a90c8514301f2034cc2885fb7c63e9",
+      "assetKey": "myjs_PX02_WY18P",
+      "assetPath": "/vehicle-assets-6/images/myjs_PX02_WY18P.png",
+      "packageName": "vehicle-assets-6"
+    },
+    {
+      "file": "myjs_PX02_WY19P.png",
+      "bytes": 78053,
+      "sha256": "48b084fa8bfc9cf4e62f51b9a848c64575d3593147c724cca93b83ac0b52292c",
+      "assetKey": "myjs_PX02_WY19P",
+      "assetPath": "/vehicle-assets-6/images/myjs_PX02_WY19P.png",
+      "packageName": "vehicle-assets-6"
+    }
+  ]
+}

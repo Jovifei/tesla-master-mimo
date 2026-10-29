@@ -42,10 +42,10 @@ export default function ReadinessChecklist({ items = [], pairing, sessionReady =
         <View onClick={() => setExpanded(expanded === step.key ? null : step.key)}><Text className="readiness-count">{expanded === step.key ? '收起详情' : '查看详情'} · {step.label}</Text></View>
         {expanded === step.key ? <Text className="muted">{step.detail}</Text> : null}
       </View>)}
-      <Text className="muted">小程序胎压历史尚未接入（UNSUPPORTED）；订阅通知尚未接入（UNSUPPORTED）。</Text>
+      <Text className="muted">胎压为有界本机前台观测历史；行程与充电提示仅在前台。订阅通知尚未接入（UNSUPPORTED）。</Text>
       <View className="status">
         <View className="visual-heading"><VisualIcon name="account" /><Text className="status-label">微信会话</Text></View>
-        <Text className="status-value">{sessionReady ? '本机会话可用' : '需要微信登录'}</Text>
+        <Text className="status-value">{sessionReady ? '本机会话可用' : '需要特斯拉账号登录'}</Text>
       </View>
       <View className="status">
         <View className="visual-heading"><VisualIcon name="cloud" /><Text className="status-label">持续采集配置</Text></View>
@@ -71,7 +71,7 @@ export default function ReadinessChecklist({ items = [], pairing, sessionReady =
           <Text className="muted">{state.detail}</Text>
           <Text className="metric-source">来源：{sourceLabel(state.source)}</Text>
           <Text className="metric-source">报告时间：{reportTime(state.lastObservedAt)}</Text>
-          {item.key === 'tpms' ? <Text className="muted">此项仅反映服务端实时状态；小程序胎压历史尚未接入。</Text> : null}
+          {item.key === 'tpms' ? <Text className="muted">此项仅反映服务端实时状态；本机逐轮历史的独立时间与保存范围请查看胎压卡片。</Text> : null}
         </View>
       })}
     </View>

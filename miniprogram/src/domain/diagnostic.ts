@@ -22,8 +22,8 @@ export function diagnosticSteps(input: DiagnosticInput = {}): DiagnosticStep[] {
   const history = input.history
   const identity = Boolean(input.sessionReady && input.car?.stableId.trim())
   const remoteIdentity = identity && input.car?.remoteVerified !== false
-  const fields = input.status && Object.entries(input.status).some(([key, value]) =>
-    !['source', 'observedAt', 'model', 'trim', 'exteriorColor', 'wheelType'].includes(key) && value !== null)
+  const observationKeys: ReadonlyArray<keyof CarStatus> = ['state', 'batteryLevel', 'ratedRange', 'idealRange', 'estimatedRange', 'odometer', 'location', 'geofence', 'locked', 'sentryMode', 'windowsOpen', 'doorsOpen', 'trunkOpen', 'frunkOpen', 'isClimateOn', 'isPreconditioning', 'insideTemp', 'outsideTemp', 'pluggedIn', 'speed', 'power', 'shiftState', 'heading', 'chargingState', 'chargeEnergyAdded', 'chargerPower', 'chargerVoltage', 'chargerActualCurrent', 'timeToFullChargeHours', 'chargeLimitSoc', 'chargerPhases', 'chargeCurrentRequest', 'chargeCurrentRequestMax', 'chargePortDoorOpen']
+  const fields = input.status && (observationKeys.some(key => input.status![key] != null) || Object.values(input.status.tpms?.wheels ?? {}).some(row => row.pressureBar != null))
   const received = identity && Boolean(fields)
   const time = input.status?.observedAt ?? null
   const observed = time && Number.isFinite(Date.parse(time))
@@ -34,7 +34,7 @@ export function diagnosticSteps(input: DiagnosticInput = {}): DiagnosticStep[] {
   return [
     { key: 'authorization', label: '1 · 授权', state: input.sessionReady && (input.pairing?.status === 'pairing_required' || permissionRequired) ? 'WARNING' : input.sessionReady && input.pairing?.status === 'available' ? 'PASS' : 'UNKNOWN',
       summary: input.sessionReady ? '本机会话可用' : '微信会话尚未确认', source: '本机会话', time: null,
-      action: input.sessionReady ? '在“我的”查看关联状态' : '前往“我的”完成登录',
+      action: input.sessionReady ? '在“更多”查看关联状态' : '前往“更多”完成登录',
       detail: `本机会话不代表 Tesla 权限或车辆钥匙已确认。${input.pairing?.status === 'pairing_required' ? '车辆钥匙需要确认。' : ''}服务端授权证据：${permissionBlocked ? '需要重新授权' : '仅保留当前服务端独立状态'}。` },
     { key: 'identity', label: '2 · 车辆身份', state: remoteIdentity ? 'PASS' : identity ? 'WARNING' : 'UNKNOWN',
       summary: remoteIdentity ? '当前响应已关联稳定车辆身份' : identity ? '仅有本机缓存车辆身份' : '稳定车辆身份尚未确认',
@@ -53,10 +53,10 @@ export function diagnosticSteps(input: DiagnosticInput = {}): DiagnosticStep[] {
     { key: 'history', label: '5 · 历史保存', state: identity && history?.rows ? 'PASS' : 'UNKNOWN',
       summary: identity && history?.rows ? `当前作用域本机缓存保存 ${history.rows} 条历史摘要` : '当前作用域未发现本机历史摘要',
       source: '本机行程与充电缓存', time: identity ? history?.savedAt ?? null : null,
-      action: '查看已有行程或充电历史', detail: '只读取已存在的当前版本缓存，不迁移、不补采。缓存存在不能证明历史完整或服务器已落库；小程序胎压历史尚未接入（UNSUPPORTED）。' },
+      action: '查看已有行程或充电历史', detail: '只读取已存在的当前版本缓存，不迁移、不补采。缓存存在不能证明历史完整或服务器已落库；胎压仅有本机前台观测历史，不代表 App 已保存的完整历史。' },
     { key: 'display', label: '6 · 展示与通知', state: received ? 'WARNING' : 'UNKNOWN',
       summary: received ? cache ? '页面展示缓存状态' : '页面展示当前状态响应' : '页面保留未知占位',
       source: '当前车辆页面', time, action: '查看页面中的来源与报告时间',
-      detail: '展示证据仅覆盖当前页面。小程序订阅通知尚未接入（UNSUPPORTED），不能推断 Android 通知权限、送达或告警链路通过。' },
+      detail: '展示证据仅覆盖当前页面。行程与充电有持久去重的前台提示；小程序订阅通知尚未接入（UNSUPPORTED），不能推断 Android 通知权限、送达或告警链路通过。' },
   ]
 }
