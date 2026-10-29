@@ -27,7 +27,7 @@ class ArchiveHelperTest(unittest.TestCase):
         self.root=Path(self.temp.name)
         self.allowed=patch.object(helper,'ALLOWED',self.root);self.allowed.start()
         self.acl=patch.object(helper,'protect');self.protect=self.acl.start()
-        self.bridge=patch.object(helper,'bridge_snapshot',return_value={'image':'synthetic:bridge','image_id':'sha256:'+'a'*64,'mounts_sha256':'synthetic-mounts'});self.bridge.start();self.addCleanup(self.bridge.stop)
+        self.bridge=patch.object(helper,'bridge_snapshot',return_value={'image':'synthetic:bridge','image_id':'sha256:'+'a'*64,'runtime_sha256':'c'*64,'mounts_sha256':'synthetic-mounts'});self.bridge.start();self.addCleanup(self.bridge.stop)
         self.addCleanup(self.allowed.stop);self.addCleanup(self.acl.stop);self.addCleanup(self.temp.cleanup)
         self.scope={'vehicle_id':7,'source_instance_id':'synthetic-collector','source_vehicle_id':'2'}
         self.compose={'services':{helper.SERVICE:{'image':'synthetic:bridge','environment':{
@@ -194,6 +194,8 @@ class BridgePreflightTest(unittest.TestCase):
         self.scope={'vehicle_id':7,'source_instance_id':'fixture-collector','source_vehicle_id':'2'}
         self.image='fixture:bridge';self.image_id='sha256:'+'a'*64;self.tag_image_id=self.image_id
         self.container_id='fixture-container-id'
+        self.container_present=True;self.container_project=helper.PROJECT
+        self.service_conflicts=[];self.fail_recreate_after_remove=False;self.container_running=True
         self.environment={'ARCHIVE_VEHICLE_ID':'7','ARCHIVE_SOURCE_INSTANCE_ID':'fixture-collector',
                           'ARCHIVE_SOURCE_VEHICLE_ID':'2','ARCHIVE_URL':helper.API,'ARCHIVE_TOKEN':'SYNTHETIC_OLD_ONLY',
                           'DATABASE_URL':'postgres://fixture-user:FIXTURE_DB_VALUE@fixture/db','STATE_FILE':'/state/cursor.json'}
@@ -214,11 +216,23 @@ class BridgePreflightTest(unittest.TestCase):
         self.commands.append(args)
         if args[:3]==['docker','container','ls']:
             if self.list_failure:raise helper.FlowError('fixture_docker_unavailable')
-            return 'matelink-archive-bridge-before-safety-20261015' if self.old_present else ''
+            if any(a.startswith('name=^/matelink-archive-bridge-before-safety-') for a in args):
+                return 'matelink-archive-bridge-before-safety-20261015' if self.old_present else ''
+            if 'name=^/'+helper.CONTAINER+'$' in args:return helper.CONTAINER if self.container_present else ''
+            if 'label=com.docker.compose.project='+helper.PROJECT in args:
+                names=([helper.CONTAINER] if self.container_present and self.container_project==helper.PROJECT else [])+self.service_conflicts
+                return '\n'.join(names)
+            self.fail('unexpected container inventory filter')
         if args[:3]==['docker','image','inspect']:
             return self.tag_image_id
         if args[:2]==['docker','compose']:
             if 'config' in args:return json.dumps(self.resolved)
+            if 'up' in args:
+                if self.fail_recreate_after_remove:
+                    self.fail_recreate_after_remove=False;self.container_present=False
+                    raise helper.FlowError('fixture_recreate_interrupted_after_remove')
+                if not self.container_present:
+                    self.container_present=True;self.container_id='recreated-fixture-container'
             return ''
         if args[:2]==['docker','stop']:return ''
         if args[:3]==['docker','inspect','--format']:
@@ -227,14 +241,15 @@ class BridgePreflightTest(unittest.TestCase):
                 if not self.old_present or self.old_inspect_failure:raise helper.FlowError('fixture_inspect_failed')
                 running='true' if self.old_running else 'false'
                 return running+'|'+self.old_restart if 'RestartPolicy' in template else running
+            if not self.container_present:raise helper.FlowError('fixture_target_missing')
             if '.Id' in template:
-                values=[self.container_id,helper.PROJECT,helper.SERVICE,self.image]
+                values=[self.container_id,self.container_project,helper.SERVICE,self.image]
                 if '{{.Image}}' in template:values.append(self.image_id)
                 return '|'.join(values)
             if '.Config.Env' in template:
                 return '\n'.join(k+'='+v for k,v in self.live_environment.items() if k!='ARCHIVE_TOKEN')
             if '.Mounts' in template:return json.dumps(self.mounts)
-            if '.State.Running' in template:return 'true'
+            if '.State.Running' in template:return 'true' if self.container_running else 'false'
         self.fail('unexpected external operation in synthetic Docker fixture')
 
     def prepare(self):
@@ -254,6 +269,212 @@ class BridgePreflightTest(unittest.TestCase):
         self.assertEqual(self.image_id,state.get('bridge_image_id'))
         for value in ('SYNTHETIC_OLD_ONLY','FIXTURE_DB_VALUE',self.environment['DATABASE_URL']):
             self.assertNotIn(value,json.dumps(state));self.assertNotIn(value,json.dumps(self.commands))
+
+    def test_prepare_persists_verified_resolved_runtime_digest(self):
+        self.prepare();state=helper.read_json(self.statepath)
+        self.assertRegex(state.get('bridge_runtime_sha256',''),r'^[0-9a-f]{64}$')
+        self.assertNotIn(self.environment['DATABASE_URL'],json.dumps(state))
+
+    def interrupted_recreate(self):
+        self.prepare();state=helper.read_json(self.statepath)
+        self.fail_recreate_after_remove=True
+        with self.assertRaisesRegex(helper.FlowError,'^fixture_recreate_interrupted_after_remove$'):
+            helper.install_credential(self.statepath,state,'SYNTHETIC_NEW_CREDENTIAL_ONLY')
+        durable=helper.read_json(self.statepath)
+        self.assertEqual('credential_installed_recreate_pending',durable['phase'])
+        self.assertEqual(durable['installed_compose_sha256'],helper.digest(self.composepath.read_bytes()))
+        self.assertFalse(self.container_present);self.commands.clear()
+        return durable
+
+    def issued(self,state,credential='SYNTHETIC_NEW_CREDENTIAL_ONLY'):
+        return 200,{'state':'issued','credential':credential,'scope_fingerprint':state['scope_fingerprint']}
+
+    def assert_no_recreate_or_http(self):
+        with patch.object(helper,'request') as request:
+            with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
+            request.assert_not_called()
+        self.assertFalse(any(c[:2]==['docker','compose'] and 'up' in c for c in self.commands))
+
+    def test_recreate_missing_target_reclaims_same_receipt_then_verifies_before_ack(self):
+        state=self.interrupted_recreate();installed=self.composepath.read_bytes()
+        def server(path,payload):
+            self.assertEqual({'device_secret':state['device_secret']},payload)
+            if path.endswith('/claim'):return self.issued(state)
+            self.assertTrue(path.endswith('/ack'));self.assertTrue(self.container_present)
+            self.assertTrue(any(c[:2]==['docker','inspect'] and '.Config.Env' in c[3] for c in self.commands))
+            return 200,{'state':'installed'}
+        with patch.object(helper,'request',side_effect=server) as request:
+            try:result=helper.claim_and_install(self.statepath)
+            except helper.FlowError:self.fail('a verified missing container must resume its durable issued installation')
+        self.assertEqual('installed_waiting_for_natural_upload',result['phase'])
+        self.assertEqual(installed,self.composepath.read_bytes());self.assertEqual(2,request.call_count)
+        self.assertNotIn('device_secret',helper.read_json(self.statepath))
+        self.assertFalse(any(c[:2]==['docker','stop'] for c in self.commands))
+
+    def test_missing_target_with_server_installed_never_claims_local_success(self):
+        state=self.interrupted_recreate()
+        with patch.object(helper,'request',return_value=(200,{'state':'installed'})) as request:
+            with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
+        self.assertEqual(1,request.call_count)
+        self.assertEqual(state,helper.read_json(self.statepath));self.assertFalse(self.container_present)
+        self.assertFalse(any(c[:2]==['docker','compose'] and 'up' in c for c in self.commands))
+
+    def test_missing_target_without_runtime_fingerprint_is_not_recovered(self):
+        state=self.interrupted_recreate();state.pop('bridge_runtime_sha256',None);helper.save_state(self.statepath,state)
+        self.assert_no_recreate_or_http()
+
+    def test_missing_target_outside_durable_recreate_phase_is_not_recovered(self):
+        state=self.interrupted_recreate();state['phase']='credential_replacement_pending';helper.save_state(self.statepath,state)
+        self.assert_no_recreate_or_http()
+
+    def test_missing_target_with_only_original_hash_is_not_recovered(self):
+        state=self.interrupted_recreate();state['installed_compose_sha256']=state['original_compose_sha256'];helper.save_state(self.statepath,state)
+        self.assert_no_recreate_or_http()
+
+    def test_missing_target_listing_failure_is_not_absence(self):
+        self.interrupted_recreate();self.list_failure=True
+        self.assert_no_recreate_or_http()
+
+    def test_missing_target_rejects_another_container_with_same_project_service(self):
+        self.interrupted_recreate();self.service_conflicts=['other-fixture-service-container']
+        self.assert_no_recreate_or_http()
+
+    def test_missing_recovery_rejects_conflicting_fixed_name(self):
+        self.interrupted_recreate();self.container_present=True;self.container_project='other-fixture-project'
+        self.assert_no_recreate_or_http()
+
+    def test_missing_target_rejects_database_interpolation_drift(self):
+        self.interrupted_recreate();self.resolved['services'][helper.SERVICE]['environment']['DATABASE_URL']='postgres://other-fixture/db'
+        self.assert_no_recreate_or_http()
+
+    def test_missing_target_rejects_state_file_interpolation_drift(self):
+        self.interrupted_recreate();self.resolved['services'][helper.SERVICE]['environment']['STATE_FILE']='/state/other.json'
+        self.assert_no_recreate_or_http()
+
+    def test_missing_target_rejects_mount_or_image_drift(self):
+        self.interrupted_recreate();self.resolved['volumes']['cursor']['name']='other-fixture-cursor'
+        self.assert_no_recreate_or_http()
+
+    def test_missing_target_rejects_retargeted_image_tag(self):
+        self.interrupted_recreate();self.tag_image_id='sha256:'+'b'*64
+        self.assert_no_recreate_or_http()
+
+    def test_missing_recovery_rejects_different_reissued_credential_without_writing(self):
+        state=self.interrupted_recreate();before=self.composepath.read_bytes()
+        with patch.object(helper,'request',return_value=self.issued(state,'SYNTHETIC_DIFFERENT_CREDENTIAL_ONLY')) as request:
+            with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
+        self.assertEqual(1,request.call_count);self.assertEqual(before,self.composepath.read_bytes())
+        self.assertFalse(any(c[:2]==['docker','compose'] and 'up' in c for c in self.commands))
+
+    def test_missing_recovery_rechecks_container_absence_after_claim(self):
+        state=self.interrupted_recreate();before=self.composepath.read_bytes()
+        def another_container(path,payload):
+            self.container_present=True
+            return self.issued(state)
+        with patch.object(helper,'request',side_effect=another_container) as request:
+            with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
+        self.assertEqual(1,request.call_count);self.assertEqual(before,self.composepath.read_bytes())
+        self.assertFalse(any(c[:2]==['docker','compose'] and 'up' in c for c in self.commands))
+
+    def test_missing_recovery_rechecks_compose_after_claim(self):
+        state=self.interrupted_recreate();external=self.composepath.read_bytes()+b'\n '
+        def external_write(path,payload):
+            self.composepath.write_bytes(external)
+            return self.issued(state)
+        with patch.object(helper,'request',side_effect=external_write) as request:
+            with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
+        self.assertEqual(1,request.call_count);self.assertEqual(external,self.composepath.read_bytes())
+        self.assertFalse(any(c[:2]==['docker','compose'] and 'up' in c for c in self.commands))
+
+    def test_missing_recovery_rechecks_resolved_database_after_claim(self):
+        state=self.interrupted_recreate()
+        def interpolation_change(path,payload):
+            self.resolved['services'][helper.SERVICE]['environment']['DATABASE_URL']='postgres://other-fixture/db'
+            return self.issued(state)
+        with patch.object(helper,'request',side_effect=interpolation_change) as request:
+            with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
+        self.assertEqual(1,request.call_count)
+        self.assertFalse(any(c[:2]==['docker','compose'] and 'up' in c for c in self.commands))
+
+    def test_missing_recovery_does_not_ack_a_created_but_stopped_container(self):
+        state=self.interrupted_recreate();self.container_running=False
+        with patch.object(helper,'request',return_value=self.issued(state)) as request:
+            with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
+        self.assertEqual(1,request.call_count);self.assertTrue(self.container_present)
+        self.assertEqual('credential_installed_recreate_pending',helper.read_json(self.statepath)['phase'])
+
+    def installed_before_local_ack_commit(self):
+        self.prepare()
+        helper.install_credential(self.statepath,helper.read_json(self.statepath),'SYNTHETIC_NEW_CREDENTIAL_ONLY')
+        state=helper.read_json(self.statepath)
+        self.assertEqual('credential_installed_recreate_pending',state['phase'])
+        self.assertEqual(state['installed_compose_sha256'],helper.digest(self.composepath.read_bytes()))
+        self.commands.clear()
+        return state
+
+    def test_server_installed_with_stopped_bridge_preserves_secret_and_durable_phase(self):
+        state=self.installed_before_local_ack_commit();self.container_running=False
+        with patch.object(helper,'request',return_value=(200,{'state':'installed'})) as request:
+            with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
+        self.assertEqual(1,request.call_count);self.assertEqual(state,helper.read_json(self.statepath))
+        self.assertFalse(any(c[:2]==['docker','compose'] and 'up' in c for c in self.commands))
+
+    def test_server_installed_requires_durable_install_phase(self):
+        state=self.installed_before_local_ack_commit();state['phase']='pending';helper.save_state(self.statepath,state)
+        with patch.object(helper,'request',return_value=(200,{'state':'installed'})):
+            with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
+        self.assertEqual(state,helper.read_json(self.statepath))
+
+    def test_server_installed_requires_saved_installed_hash(self):
+        state=self.installed_before_local_ack_commit()
+        state['original_compose_sha256']=state.pop('installed_compose_sha256');helper.save_state(self.statepath,state)
+        with patch.object(helper,'request',return_value=(200,{'state':'installed'})):
+            with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
+        self.assertEqual(state,helper.read_json(self.statepath))
+
+    def test_server_installed_requires_exact_installed_hash_even_when_original_hash_matches(self):
+        state=self.installed_before_local_ack_commit()
+        state['original_compose_sha256']=state['installed_compose_sha256'];state['installed_compose_sha256']='0'*64
+        helper.save_state(self.statepath,state)
+        with patch.object(helper,'request',return_value=(200,{'state':'installed'})):
+            with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
+        self.assertEqual(state,helper.read_json(self.statepath))
+
+    def test_server_installed_with_verified_running_bridge_can_finish_lost_ack(self):
+        state=self.installed_before_local_ack_commit()
+        with patch.object(helper,'request',return_value=(200,{'state':'installed'})) as request:
+            result=helper.claim_and_install(self.statepath)
+        self.assertEqual({'phase':'installed_waiting_for_natural_upload'},result)
+        self.assertEqual(1,request.call_count);self.assertNotIn('device_secret',helper.read_json(self.statepath))
+        self.assertEqual(state['installed_compose_sha256'],helper.digest(self.composepath.read_bytes()))
+        self.assertFalse(any(c[:2]==['docker','compose'] and 'up' in c for c in self.commands))
+
+    def test_server_installed_rechecks_running_after_claim_response(self):
+        state=self.installed_before_local_ack_commit()
+        def stop_during_claim(path,payload):
+            self.container_running=False
+            return 200,{'state':'installed'}
+        with patch.object(helper,'request',side_effect=stop_during_claim):
+            with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
+        self.assertEqual(state,helper.read_json(self.statepath))
+
+    def test_server_installed_rechecks_compose_after_claim_response(self):
+        state=self.installed_before_local_ack_commit();external=self.composepath.read_bytes()+b'\n '
+        def change_during_claim(path,payload):
+            self.composepath.write_bytes(external)
+            return 200,{'state':'installed'}
+        with patch.object(helper,'request',side_effect=change_during_claim):
+            with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
+        self.assertEqual(state,helper.read_json(self.statepath));self.assertEqual(external,self.composepath.read_bytes())
+
+    def test_server_installed_rechecks_runtime_scope_after_claim_response(self):
+        state=self.installed_before_local_ack_commit()
+        def change_during_claim(path,payload):
+            self.live_environment['DATABASE_URL']='postgres://other-fixture/db'
+            return 200,{'state':'installed'}
+        with patch.object(helper,'request',side_effect=change_during_claim):
+            with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
+        self.assertEqual(state,helper.read_json(self.statepath))
 
     def test_prepare_rejects_different_resolved_database_without_http(self):
         self.resolved['services'][helper.SERVICE]['environment']['DATABASE_URL']='postgres://other-fixture/db'

@@ -1,5 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="archive_enrollment_title">Renew archive connection</string>
+    <string name="archive_enrollment_loading">Checking this request…</string>
+    <string name="archive_enrollment_compare">Only approve if this code matches the archive helper you just opened. This renews the existing connection for this vehicle and source.</string>
+    <string name="archive_enrollment_vehicle">Vehicle: %1$s</string>
+    <string name="archive_enrollment_source">Source: %1$s</string>
+    <string name="archive_enrollment_fingerprint">Source fingerprint: %1$s</string>
+    <string name="archive_enrollment_expires">Request expires: %1$s</string>
+    <string name="archive_enrollment_approve">Codes match · Approve</string>
+    <string name="archive_enrollment_reject">Reject</string>
+    <string name="archive_enrollment_cancel">Cancel</string>
+    <string name="archive_enrollment_close">Close</string>
+    <string name="archive_enrollment_submitting">Sending your choice…</string>
+    <string name="archive_enrollment_approved">Approved. Continue in the archive helper to finish renewing the connection.</string>
+    <string name="archive_enrollment_rejected">Request rejected.</string>
+    <string name="archive_enrollment_identity_changed">Your account, source, session or selected vehicle changed. Open a fresh request after checking your current vehicle.</string>
+    <string name="archive_enrollment_expired">This request expired. Start a new request in the archive helper.</string>
+    <string name="archive_enrollment_forbidden">This request cannot renew your current vehicle’s existing archive connection.</string>
+    <string name="archive_enrollment_invalid">This archive request is invalid. Start again in the archive helper.</string>
+    <string name="archive_enrollment_unavailable">The request could not be confirmed. Check your connection and open the request again.</string>
     <string name="energy_capacity_description">SOC estimate · %1$.1f kWh · %2$s</string>
     <string name="energy_capacity_model_trim">model/trim assumption</string>
     <string name="energy_capacity_model">model assumption</string>

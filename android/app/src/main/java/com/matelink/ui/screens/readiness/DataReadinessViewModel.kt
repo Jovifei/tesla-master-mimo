@@ -7,6 +7,7 @@ import com.matelink.data.api.models.DataReadiness
 import com.matelink.data.api.models.TelemetryPairingStatus
 import com.matelink.data.local.VehicleContext
 import com.matelink.data.local.VehicleContextResolver
+import com.matelink.data.local.HistoryConnectionSource
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.DataReadinessDataSource
 import com.matelink.data.repository.LegacyHistoryMigrationEligibility
@@ -276,6 +277,7 @@ class DataReadinessViewModel @Inject constructor(
             data = null, diagnosticFacts = unknownDiagnosticFacts())
         loadJob = viewModelScope.launch {
             var diagnosticSession: ReadinessEvidenceSession? = null
+            var cloudReadOnly = false
             try {
                 diagnosticSession = diagnosticSource.capture(carId)
                 suspend fun current(): Boolean = isCurrentLoad(generation, carId) &&
@@ -290,28 +292,47 @@ class DataReadinessViewModel @Inject constructor(
                 }
                 val observeExplicitSetup = externalSetup != null || (setupWasPending && activeSetup != null)
                 if (!current()) return@launch
-                val readinessRequest = async { repository.getDataReadiness(carId) }
-                val officialRequest = async { repository.getTelemetryDiagnostics(carId) }
+                cloudReadOnly = diagnosticSession?.connectionSource == HistoryConnectionSource.CLOUD
+                val readinessRequest = if (!cloudReadOnly) async { repository.getDataReadiness(carId) } else null
+                val officialRequest = async {
+                    if (cloudReadOnly) repository.getCloudTelemetryDiagnostics(carId, diagnosticSession?.requestFence) else repository.getTelemetryDiagnostics(carId)
+                }
                 val pairingRequest = if (observeExplicitSetup)
                     async { repository.getTelemetryPairingStatus(carId) } else null
-                val readinessResult = readinessRequest.await()
-                val official = officialFleetDiagnosticsPresentation(officialRequest.await())
+                val officialResult = officialRequest.await()
+                val readOnlyContext = if (cloudReadOnly) readOnlyFleetReadinessContext(
+                    (officialResult as? ApiResult.Success)?.data, carId)?.takeIf {
+                    diagnosticSession?.verifies(it.readiness, it.car) == true
+                } else null
+                val readinessResult: ApiResult<DataReadiness> = if (cloudReadOnly) {
+                    readOnlyContext?.readiness?.let { ApiResult.Success(it) }
+                        ?: ApiResult.Error("Data readiness unavailable")
+                } else readinessRequest!!.await()
+                val official = officialFleetDiagnosticsPresentation(officialResult)
                 val pairingResult = pairingRequest?.await()
                 if (!current()) return@launch
 
-                val car = (repository.getCar(carId) as? ApiResult.Success)?.data
+                val car = if (cloudReadOnly) readOnlyContext?.car else
+                    (repository.getCar(carId) as? ApiResult.Success)?.data
                 if (!current()) return@launch
                 loadedCar = car
-                val context = car?.let { vehicleContextRepository.resolve(it) }
+                val readiness = (readinessResult as? ApiResult.Success)?.data
+                val context = if (cloudReadOnly) {
+                    diagnosticSession?.cachedContext?.takeIf { car != null &&
+                        it.remoteApiCarId == carId && it.connectionSource == HistoryConnectionSource.CLOUD &&
+                        diagnosticSession?.verifies(readiness, car) == true }
+                } else car?.let { vehicleContextRepository.resolve(it) }
                 if (!current()) return@launch
                 // Resolving the authenticated vehicle may populate the local
-                // identity cache. Capture its evidence again under the same scope.
-                val refreshedSession = diagnosticSource.capture(carId)
+                // identity cache on the legacy/self-hosted path only.
+                if (!cloudReadOnly) {
+                    val refreshedSession = diagnosticSource.capture(carId)
+                    if (!current()) return@launch
+                    diagnosticSession = refreshedSession
+                }
                 if (!current()) return@launch
-                diagnosticSession = refreshedSession
-                if (!current()) return@launch
-                val currentOdometer = (repository.getCarStatus(carId) as? ApiResult.Success)
-                    ?.data?.status?.odometer
+                val currentOdometer = if (cloudReadOnly) readOnlyFleetOdometerKm(readOnlyContext?.observedOdometer) else
+                    (repository.getCarStatus(carId) as? ApiResult.Success)?.data?.status?.odometer
                 if (!current()) return@launch
                 val eligibility = car?.let {
                     migrationRepository.inspect(
@@ -323,11 +344,10 @@ class DataReadinessViewModel @Inject constructor(
                 }
                 if (!current()) return@launch
 
-                val readiness = (readinessResult as? ApiResult.Success)?.data
                 val localEvidence = diagnosticSession?.localEvidence()
                 if (!current()) return@launch
                 val resolvedFacts = withOfficialFleetDiagnostics(resolveReadinessDiagnostics(readiness, true,
-                    diagnosticSession?.verifies(readiness) == true, localEvidence), official)
+                    diagnosticSession?.verifies(readiness, car) == true, localEvidence), official)
 
                 val pairing = (pairingResult as? ApiResult.Success)?.data ?: if (!observeExplicitSetup)
                     officialFleetSetupStatus(official) else null
@@ -354,6 +374,8 @@ class DataReadinessViewModel @Inject constructor(
                     )
                     is ApiResult.Error -> DataReadinessUiState(
                         isLoading = false,
+                        // Empty items keep the existing six rows unknown (0/6 reported).
+                        data = if (cloudReadOnly) DataReadiness() else null,
                         error = readinessResult.message,
                         diagnosticFacts = diagnosticFacts,
                         migrationEligibility = eligibility,
@@ -391,6 +413,7 @@ class DataReadinessViewModel @Inject constructor(
             } catch (e: Exception) {
                 if (isCurrentLoad(generation, carId) && (diagnosticSession == null || diagnosticSession?.isCurrent() == true)) {
                     _uiState.value = _uiState.value.copy(isLoading = false, error = "Data readiness unavailable",
+                        data = if (cloudReadOnly) DataReadiness() else null,
                         diagnosticFacts = unknownDiagnosticFacts())
                 }
             }

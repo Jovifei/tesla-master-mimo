@@ -1,5 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="archive_enrollment_title">续期归档连接</string>
+    <string name="archive_enrollment_loading">正在核对请求…</string>
+    <string name="archive_enrollment_compare">请与刚打开的归档助手比较确认码，仅在一致时批准。此操作只续期当前车辆、当前来源的既有连接。</string>
+    <string name="archive_enrollment_vehicle">车辆：%1$s</string>
+    <string name="archive_enrollment_source">来源：%1$s</string>
+    <string name="archive_enrollment_fingerprint">来源指纹：%1$s</string>
+    <string name="archive_enrollment_expires">请求到期：%1$s</string>
+    <string name="archive_enrollment_approve">确认码一致，批准</string>
+    <string name="archive_enrollment_reject">拒绝</string>
+    <string name="archive_enrollment_cancel">取消</string>
+    <string name="archive_enrollment_close">关闭</string>
+    <string name="archive_enrollment_submitting">正在提交选择…</string>
+    <string name="archive_enrollment_approved">已批准。请回到归档助手完成连接续期。</string>
+    <string name="archive_enrollment_rejected">已拒绝此请求。</string>
+    <string name="archive_enrollment_identity_changed">账号、来源、会话或当前车辆已改变。请核对当前车辆后重新打开请求。</string>
+    <string name="archive_enrollment_expired">此请求已过期，请在归档助手重新发起。</string>
+    <string name="archive_enrollment_forbidden">此请求无法续期当前车辆的既有归档连接。</string>
+    <string name="archive_enrollment_invalid">归档请求无效，请在归档助手重新发起。</string>
+    <string name="archive_enrollment_unavailable">未能确认请求，请检查网络后重新打开。</string>
     <string name="energy_capacity_description">SOC 估算 · %1$.1f kWh 容量 · %2$s</string>
     <string name="energy_capacity_model_trim">车型/版本容量假设</string>
     <string name="energy_capacity_model">车型容量假设</string>

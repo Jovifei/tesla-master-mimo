@@ -43,6 +43,7 @@ import com.matelink.data.local.ConnectionMode
 import com.matelink.ui.screens.auth.TeslaLoginScreen
 import com.matelink.ui.screens.auth.TeslaLoginOnboardingState
 import com.matelink.ui.screens.auth.TeslaLoginViewModel
+import com.matelink.ui.screens.archive.ArchiveEnrollmentDialogHost
 import com.matelink.ui.screens.about.AboutScreen
 import com.matelink.ui.screens.battery.BatteryScreen
 import com.matelink.ui.screens.charges.ChargeDetailScreen
@@ -315,6 +316,7 @@ fun NavGraph(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
+    ArchiveEnrollmentDialogHost(intent = intent)
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {

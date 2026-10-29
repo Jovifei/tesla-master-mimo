@@ -12,6 +12,9 @@ interface DataReadinessDataSource {
     /** Legacy/local implementations have no official proof; they must not fabricate one. */
     suspend fun getTelemetryDiagnostics(carId: Int): ApiResult<FleetTelemetryDiagnostics> =
         ApiResult.Error("Fleet diagnostics unavailable")
+    /** Production pins this safe request to the authenticated cloud origin. */
+    suspend fun getCloudTelemetryDiagnostics(carId: Int, fence: com.matelink.data.api.ArchiveEnrollmentRequestFence? = null): ApiResult<FleetTelemetryDiagnostics> =
+        getTelemetryDiagnostics(carId)
     suspend fun getTelemetryPairingStatus(carId: Int): ApiResult<TelemetryPairingStatus>
     suspend fun configureTelemetry(carId: Int): ApiResult<TelemetryConfigureResult>
     suspend fun getCar(carId: Int): ApiResult<CarData>

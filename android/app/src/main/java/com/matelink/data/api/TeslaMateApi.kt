@@ -34,6 +34,19 @@ import retrofit2.http.Query
 
 interface TeslamateApi {
 
+    @GET("api/v1/archive/enrollments/{handle}")
+    suspend fun getArchiveEnrollment(
+        @Path("handle") handle: String,
+        @retrofit2.http.Tag fence: ArchiveEnrollmentRequestFence
+    ): Response<com.matelink.data.api.models.ArchiveEnrollmentResponse>
+
+    @POST("api/v1/archive/enrollments/{handle}/decision")
+    suspend fun decideArchiveEnrollment(
+        @Path("handle") handle: String,
+        @Body decision: com.matelink.data.api.models.ArchiveEnrollmentDecision,
+        @retrofit2.http.Tag fence: ArchiveEnrollmentRequestFence
+    ): Response<com.matelink.data.api.models.ArchiveEnrollmentResponse>
+
     @GET("api/matelink/v1/cars/{carId}/history-context")
     suspend fun getHistoryContext(@Path("carId") carId: Int): Response<com.matelink.data.api.models.HistoryContextResponse>
 
@@ -124,7 +137,8 @@ interface TeslamateApi {
 
     @GET("api/v1/cars/{carId}/telemetry/diagnostics")
     suspend fun getTelemetryDiagnostics(
-        @Path("carId") carId: Int
+        @Path("carId") carId: Int,
+        @retrofit2.http.Tag fence: ArchiveEnrollmentRequestFence? = null
     ): Response<FleetTelemetryDiagnosticsResponse>
 
     @GET("api/v1/cars/{carId}/telemetry/pairing")

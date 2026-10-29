@@ -274,18 +274,23 @@ class TeslamateRepository @Inject constructor(
 
     private suspend fun getSettings(): AppSettings = settingsDataStore.settings.first()
 
-    private suspend fun getApiForUrl(url: String): TeslamateApi? {
+    private suspend fun getApiForUrl(url: String, requiredCloudMode: Boolean? = null, noRetry: Boolean = false): TeslamateApi? {
         if (url.isBlank()) return null
-        return apiFactory.create(url)
+        return apiFactory.create(url, requiredCloudMode = requiredCloudMode, noRetry = noRetry)
     }
 
     /** Executes requests only against the explicitly saved primary server. */
     private suspend fun <T> executeWithFallback(
+        requiredCloudMode: Boolean? = null,
+        noRetry: Boolean = false,
         apiCall: suspend (TeslamateApi) -> ApiResult<T>
     ): ApiResult<T> {
         return try {
             val settings = getSettings()
             val mode = connectionModeStore.mode.first()
+            if (requiredCloudMode != null && (mode == ConnectionMode.TESLA_CLOUD) != requiredCloudMode) {
+                return ApiResult.Error("Connection source changed", details = "source_changed")
+            }
             val serverUrl = if (mode == ConnectionMode.TESLA_CLOUD) {
                 BuildConfig.JOURVOLT_API_BASE_URL
             } else {
@@ -294,7 +299,7 @@ class TeslamateRepository @Inject constructor(
             if (serverUrl.isBlank()) {
                 return ApiResult.Error("Server not configured")
             }
-            val primaryApi = getApiForUrl(serverUrl)
+            val primaryApi = getApiForUrl(serverUrl, requiredCloudMode, noRetry)
                 ?: return ApiResult.Error("Server not configured")
             apiCall(primaryApi)
         } catch (e: CancellationException) {
@@ -708,6 +713,14 @@ class TeslamateRepository @Inject constructor(
         if (isMockMode()) return ApiResult.Error("Fleet diagnostics unavailable")
         return executeWithFallback { api ->
             fleetTelemetryDiagnosticsResultForResponse(api.getTelemetryDiagnostics(carId))
+        }
+    }
+
+    override suspend fun getCloudTelemetryDiagnostics(carId: Int, fence: com.matelink.data.api.ArchiveEnrollmentRequestFence?): ApiResult<FleetTelemetryDiagnostics> {
+        if (isMockMode()) return ApiResult.Error("Fleet diagnostics unavailable")
+        if (fence == null) return ApiResult.Error("Diagnostic identity unavailable")
+        return executeWithFallback(requiredCloudMode = true, noRetry = true) { api ->
+            fleetTelemetryDiagnosticsResultForResponse(api.getTelemetryDiagnostics(carId, fence))
         }
     }
 

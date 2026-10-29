@@ -3,6 +3,7 @@ package com.matelink.di
 import com.matelink.BuildConfig
 import com.matelink.data.api.NominatimApi
 import com.matelink.data.api.NominatimResult
+import com.matelink.data.api.ArchiveEnrollmentRequestFence
 import com.matelink.data.api.OpenMeteoApi
 import com.matelink.data.api.OpenMeteoWeatherResponse
 import com.matelink.data.api.TeslamateApi
@@ -155,8 +156,11 @@ private data class ApiCacheKey(
     val baseUrl: String,
     val apiToken: String,
     val requiredCloudMode: Boolean? = null,
-    val pinnedModeGeneration: Long? = null
+    val pinnedModeGeneration: Long? = null,
+    val noRetry: Boolean = false
 )
+
+private class DiagnosticRetryAfter { var original: String? = null }
 
 internal fun normalizedApiToken(value: String): String = value.trim()
 
@@ -187,7 +191,8 @@ class TeslamateApiFactory(
         baseUrl: String,
         @Suppress("UNUSED_PARAMETER") acceptInvalidCerts: Boolean? = null,
         apiTokenOverride: String? = null,
-        requiredCloudMode: Boolean? = null
+        requiredCloudMode: Boolean? = null,
+        noRetry: Boolean = false
     ): TeslamateApi {
         val (capturedMode, modeGeneration) = connectionModeStore.identitySnapshot()
         val cloudMode = capturedMode == ConnectionMode.TESLA_CLOUD
@@ -219,13 +224,13 @@ class TeslamateApiFactory(
         }
 
         val cacheKey = ApiCacheKey(normalizedUrl, apiToken, requiredCloudMode,
-            modeGeneration.takeIf { requiredCloudMode != null })
+            modeGeneration.takeIf { requiredCloudMode != null }, noRetry)
 
         // Return cached API if available
         synchronized(apiCache) { apiCache[cacheKey] }?.let { return it }
 
         // Create new API instance
-        val okHttpClient = createOkHttpClient(apiToken, cloudMode, requiredCloudMode, modeGeneration)
+        val okHttpClient = createOkHttpClient(apiToken, cloudMode, requiredCloudMode, modeGeneration, noRetry)
 
         val api = Retrofit.Builder()
             .baseUrl(normalizedUrl)
@@ -260,30 +265,47 @@ class TeslamateApiFactory(
         apiToken: String,
         cloudMode: Boolean,
         requiredCloudMode: Boolean? = null,
-        pinnedModeGeneration: Long = 0L
+        pinnedModeGeneration: Long = 0L,
+        noRetry: Boolean = false
     ): OkHttpClient {
         val builder = credentialHttpClientBuilder()
+            .retryOnConnectionFailure(!noRetry)
             .addInterceptor { chain ->
+                val enrollmentFence = chain.request().tag(ArchiveEnrollmentRequestFence::class.java)
+                if (enrollmentFence != null && (!cloudMode || requiredCloudMode != true ||
+                    !kotlinx.coroutines.runBlocking { enrollmentFence.isCurrent() }))
+                    throw java.io.IOException("archive_identity_changed")
                 if (requiredCloudMode != null) {
                     val (mode, generation) = kotlinx.coroutines.runBlocking { connectionModeStore.identitySnapshot() }
                     if ((mode == ConnectionMode.TESLA_CLOUD) != requiredCloudMode || generation != pinnedModeGeneration)
                         throw java.io.IOException("notification_source_changed")
                 }
+                val retryAfter = if (noRetry) DiagnosticRetryAfter() else null
                 val requestBuilder = chain.request().newBuilder()
                     .header("User-Agent", "MateLink/${BuildConfig.VERSION_NAME}")
+                if (retryAfter != null) requestBuilder.tag(DiagnosticRetryAfter::class.java, retryAfter)
                 val currentToken = if (cloudMode) {
-                    jourVoltSessionStore.current()?.accessToken.orEmpty()
+                    if (enrollmentFence == null) jourVoltSessionStore.current()?.accessToken.orEmpty()
+                    else {
+                        val (session, generation) = jourVoltSessionStore.identitySnapshot()
+                        if (session == null || session.userId != enrollmentFence.accountId || generation != enrollmentFence.sessionGeneration)
+                            throw java.io.IOException("archive_identity_changed")
+                        session.accessToken
+                    }
                 } else {
                     apiToken
                 }
                 if (currentToken.isNotBlank()) {
                     requestBuilder.header("Authorization", "Bearer $currentToken")
                 }
-                chain.proceed(requestBuilder.build())
+                if (enrollmentFence != null && !kotlinx.coroutines.runBlocking { enrollmentFence.isCurrent() })
+                    throw java.io.IOException("archive_identity_changed")
+                val response = chain.proceed(requestBuilder.build())
+                retryAfter?.original?.let { response.newBuilder().header("Retry-After", it).build() } ?: response
             }
             .authenticator { _, response ->
                 val request = response.request
-                if (!cloudMode || request.header("X-JourVolt-Retry") != null) {
+                if (noRetry || request.tag(ArchiveEnrollmentRequestFence::class.java) != null || !cloudMode || request.header("X-JourVolt-Retry") != null) {
                     return@authenticator null
                 }
                 val staleToken = request.header("Authorization")
@@ -315,6 +337,21 @@ class TeslamateApiFactory(
             builder.addInterceptor(loggingInterceptor)
         }
 
+        if (noRetry) {
+            builder.authenticator(okhttp3.Authenticator.NONE)
+            builder.proxyAuthenticator(okhttp3.Authenticator.NONE)
+            builder.connectionPool(okhttp3.ConnectionPool())
+            // OkHttp retries 503 Retry-After: 0 even when connection retries are disabled.
+            builder.addNetworkInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                val value = response.header("Retry-After")
+                val state = chain.request().tag(DiagnosticRetryAfter::class.java)
+                if (response.code == 503 && state != null && !value.isNullOrEmpty() && value.all { it == '0' }) {
+                    state.original = value
+                    response.newBuilder().header("Retry-After", "1").build()
+                } else response
+            }
+        }
         return builder.build()
     }
 }

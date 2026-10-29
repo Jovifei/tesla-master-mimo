@@ -117,8 +117,9 @@ class FleetTelemetryDiagnosticsConsumerTest {
                 override suspend fun capture(carId: Int): ReadinessEvidenceSession {
                     val captured = scope
                     return object : ReadinessEvidenceSession {
+                        override val connectionSource = com.matelink.data.local.HistoryConnectionSource.SELF_HOSTED
                         override suspend fun isCurrent() = captured == scope
-                        override fun verifies(readiness: DataReadiness?) = captured == scope
+                        override fun verifies(readiness: DataReadiness?, car: com.matelink.data.api.models.CarData?) = captured == scope
                         override suspend fun localEvidence(): ReadinessLocalEvidence? = null
                     }
                 }
@@ -198,8 +199,9 @@ class FleetTelemetryDiagnosticsConsumerTest {
                 override suspend fun capture(carId: Int): ReadinessEvidenceSession {
                     val captured = scope
                     return object : ReadinessEvidenceSession {
+                        override val connectionSource = com.matelink.data.local.HistoryConnectionSource.SELF_HOSTED
                         override suspend fun isCurrent() = captured == scope
-                        override fun verifies(readiness: DataReadiness?) = captured == scope
+                        override fun verifies(readiness: DataReadiness?, car: com.matelink.data.api.models.CarData?) = captured == scope
                         override suspend fun localEvidence(): ReadinessLocalEvidence? = null
                     }
                 }
@@ -296,8 +298,9 @@ class FleetTelemetryDiagnosticsConsumerTest {
                     override suspend fun capture(carId: Int): ReadinessEvidenceSession {
                         val captured = scope
                         return object : ReadinessEvidenceSession {
+                            override val connectionSource = com.matelink.data.local.HistoryConnectionSource.SELF_HOSTED
                             override suspend fun isCurrent() = captured == scope
-                            override fun verifies(readiness: DataReadiness?) = captured == scope
+                            override fun verifies(readiness: DataReadiness?, car: com.matelink.data.api.models.CarData?) = captured == scope
                             override suspend fun localEvidence(): ReadinessLocalEvidence? = null
                         }
                     }
@@ -376,8 +379,9 @@ class FleetTelemetryDiagnosticsConsumerTest {
     private object Evidence : ReadinessEvidenceSource {
         override val scopeChanges = flowOf(Unit)
         override suspend fun capture(carId: Int) = object : ReadinessEvidenceSession {
+            override val connectionSource = com.matelink.data.local.HistoryConnectionSource.SELF_HOSTED
             override suspend fun isCurrent() = true
-            override fun verifies(readiness: DataReadiness?) = true
+            override fun verifies(readiness: DataReadiness?, car: com.matelink.data.api.models.CarData?) = true
             override suspend fun localEvidence(): ReadinessLocalEvidence? = null
         }
     }

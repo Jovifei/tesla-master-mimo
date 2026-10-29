@@ -74,6 +74,17 @@ class AuthenticatedApiRedirectTest {
         }
     }
 
+    @Test fun cloudDiagnosticRepositoryRejectsSelfHostedModeWithoutSendingAnyRequest() = runBlocking {
+        val fixture = HistoryResourceFixture(File(temporary.root, "cloud-diagnostic-origin-fence.db"))
+        fixture.initialize(cloud = false)
+        try {
+            val result = fixture.apiRepo.getCloudTelemetryDiagnostics(17, com.matelink.data.api.ArchiveEnrollmentRequestFence("fixture", 0) { true })
+            assertTrue(result is com.matelink.data.repository.ApiResult.Error)
+            assertEquals("source_changed", (result as com.matelink.data.repository.ApiResult.Error).details)
+            assertTrue(fixture.calls.isEmpty())
+        } finally { fixture.close() }
+    }
+
     @Test fun officialDiagnosticsUsesOnlyAuthenticatedGetAndParsesUnknownFields() = runBlocking {
         val fixture = HistoryResourceFixture(File(temporary.root, "authenticated-diagnostics.db"))
         fixture.initialize(cloud = false)

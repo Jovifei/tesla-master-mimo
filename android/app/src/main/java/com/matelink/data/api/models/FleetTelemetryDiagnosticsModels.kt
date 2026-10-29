@@ -17,7 +17,25 @@ data class FleetTelemetryDiagnostics(
     @Json(name = "requests") val requests: FleetDiagnosticRequests? = null,
     @Json(name = "vehicle") val vehicle: FleetDiagnosticVehicle? = null,
     @Json(name = "configuration") val configuration: FleetDiagnosticConfiguration? = null,
-    @Json(name = "recent_errors") val recentErrors: FleetDiagnosticRecentErrors? = null
+    @Json(name = "recent_errors") val recentErrors: FleetDiagnosticRecentErrors? = null,
+    @Json(name = "readiness_context") val readinessContext: FleetReadinessContext? = null
+)
+
+/** Local owner-scoped evidence is independent of the official request results. */
+@JsonClass(generateAdapter = true)
+data class FleetReadinessContext(
+    @Json(name = "availability") val availability: String? = null,
+    @Json(name = "readiness") val readiness: DataReadiness? = null,
+    @Json(name = "car") val car: CarData? = null,
+    @Json(name = "observed_odometer") val observedOdometer: FleetReadinessObservedOdometer? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class FleetReadinessObservedOdometer(
+    @Json(name = "value") val value: Double? = null,
+    @Json(name = "unit") val unit: String? = null,
+    @Json(name = "observed_at") val observedAt: String? = null,
+    @Json(name = "source") val source: String? = null
 )
 
 @JsonClass(generateAdapter = true)

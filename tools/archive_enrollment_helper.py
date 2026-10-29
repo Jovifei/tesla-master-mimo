@@ -164,8 +164,8 @@ def canonical_bind_source(source):
         source = source.casefold()
     return source.rstrip('/') or '/'
 
-def mount_shapes(resolved, mounts):
-    expected, actual = [], []
+def expected_mount_shape(resolved):
+    expected = []
     for mount in resolved['services'][SERVICE].get('volumes', []):
         kind, source, target = mount['type'], mount.get('source'), mount['target']
         if kind == 'volume':
@@ -177,6 +177,12 @@ def mount_shapes(resolved, mounts):
         if not isinstance(source, str) or not source or not isinstance(target, str) or not target.startswith('/'):
             raise FlowError('production_mount_unverifiable')
         expected.append((kind, source, target, not mount.get('read_only', False)))
+    if not expected:
+        raise FlowError('production_mount_unverifiable')
+    return sorted(expected)
+
+def mount_shapes(resolved, mounts):
+    expected, actual = expected_mount_shape(resolved), []
     for mount in mounts:
         kind, source = mount['Type'], mount.get('Name')
         if kind == 'bind':
@@ -184,9 +190,40 @@ def mount_shapes(resolved, mounts):
         elif kind != 'volume' or not source:
             raise FlowError('production_mount_unverifiable')
         actual.append((kind, source, mount['Destination'], bool(mount['RW'])))
-    if not expected or sorted(expected) != sorted(actual):
+    if expected != sorted(actual):
         raise FlowError('production_mounts_changed')
     return sorted(actual)
+
+def resolved_bridge_snapshot(scope, compose_path):
+    # Only the one-way fingerprint is persisted; resolved environment values
+    # (including DATABASE_URL) are never put in request state or output.
+    resolved = json.loads(run(['docker', 'compose', '-p', PROJECT, '-f', str(bounded_path(compose_path)),
+                               'config', '--format', 'json']))
+    try:
+        service = resolved['services'][SERVICE]
+        environment = service['environment']
+        required = {'DATABASE_URL', 'STATE_FILE', 'ARCHIVE_URL', 'ARCHIVE_VEHICLE_ID',
+                    'ARCHIVE_SOURCE_INSTANCE_ID', 'ARCHIVE_SOURCE_VEHICLE_ID'}
+        if scope_of(resolved) != scope or not isinstance(environment, dict) or not required.issubset(environment):
+            raise FlowError('production_environment_unverifiable')
+        if not all(isinstance(environment[key], str) and environment[key] for key in required):
+            raise FlowError('production_environment_unverifiable')
+        image = service['image']
+        image_id = run(['docker', 'image', 'inspect', '--format', '{{.Id}}', image])
+        if not re.fullmatch(r'sha256:[0-9a-f]{64}', image_id):
+            raise FlowError('production_bridge_image_changed')
+        shape = expected_mount_shape(resolved)
+        runtime = dict(service)
+        runtime['environment'] = {key: value for key, value in environment.items() if key != 'ARCHIVE_TOKEN'}
+        runtime['volumes'] = shape
+        runtime['verified_image_id'] = image_id
+        runtime['volume_definitions'] = {mount['source']: resolved['volumes'][mount['source']]
+                                         for mount in service.get('volumes', []) if mount['type'] == 'volume'}
+        fingerprint = digest(json.dumps(runtime, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode())
+    except (KeyError, TypeError, ValueError, AttributeError):
+        raise FlowError('production_configuration_unverifiable')
+    return resolved, {'image': image, 'image_id': image_id, 'runtime_sha256': fingerprint,
+                      'mounts_sha256': digest(json.dumps(shape, separators=(',', ':')).encode())}
 
 def verify_duplicate_stopped():
     old = 'matelink-archive-bridge-before-safety-20261015'
@@ -219,8 +256,7 @@ def bridge_snapshot(scope, compose_path):
     if live != scope:
         raise FlowError('production_scope_changed')
     mounts = json.loads(run(['docker', 'inspect', '--format', '{{json .Mounts}}', CONTAINER]))
-    resolved = json.loads(run(['docker', 'compose', '-p', PROJECT, '-f', str(bounded_path(compose_path)),
-                               'config', '--format', 'json']))
+    resolved, snapshot = resolved_bridge_snapshot(scope, compose_path)
     try:
         service = resolved['services'][SERVICE]
         environment = service['environment']
@@ -233,21 +269,55 @@ def bridge_snapshot(scope, compose_path):
             raise FlowError('production_environment_changed')
         if not environment['DATABASE_URL'] or not environment['STATE_FILE'] or service['image'] != identity[3]:
             raise FlowError('production_configuration_changed')
-        desired_image_id = run(['docker', 'image', 'inspect', '--format', '{{.Id}}', service['image']])
-        if desired_image_id != identity[4]:
+        if snapshot['image_id'] != identity[4]:
             raise FlowError('production_bridge_image_changed')
-        shape = mount_shapes(resolved, mounts)
+        mount_shapes(resolved, mounts)
     except (KeyError, TypeError, ValueError, AttributeError):
         raise FlowError('production_configuration_unverifiable')
     verify_duplicate_stopped()
-    return {'image': identity[3], 'image_id': identity[4],
-            'mounts_sha256': digest(json.dumps(shape, separators=(',', ':')).encode())}
+    return snapshot
 
 def verify_bridge_snapshot(state):
+    if not re.fullmatch(r'[0-9a-f]{64}', state.get('bridge_runtime_sha256', '')):
+        raise FlowError('production_runtime_unverifiable')
     current = bridge_snapshot(state['scope'], state['compose_path'])
     if (current['image'] != state['bridge_image'] or current['image_id'] != state['bridge_image_id'] or
-            current['mounts_sha256'] != state['bridge_mounts_sha256']):
+            current['mounts_sha256'] != state['bridge_mounts_sha256'] or
+            current['runtime_sha256'] != state['bridge_runtime_sha256']):
         raise FlowError('production_bridge_changed')
+
+def verify_bridge_absent():
+    # Neither an inspect error nor a daemon failure proves absence. Both
+    # successful inventories must be empty, including renamed service instances.
+    by_name = run(['docker', 'container', 'ls', '--all', '--filter', 'name=^/' + CONTAINER + '$',
+                   '--format', '{{.Names}}'])
+    by_service = run(['docker', 'container', 'ls', '--all',
+                      '--filter', 'label=com.docker.compose.project=' + PROJECT,
+                      '--filter', 'label=com.docker.compose.service=' + SERVICE,
+                      '--format', '{{.Names}}'])
+    if by_name or by_service:
+        raise FlowError('production_bridge_conflict')
+
+def verify_missing_recreate_target(state):
+    if (state.get('phase') != 'credential_installed_recreate_pending' or
+            not re.fullmatch(r'[0-9a-f]{64}', state.get('bridge_runtime_sha256', '')) or
+            not re.fullmatch(r'[0-9a-f]{64}', state.get('installed_compose_sha256', ''))):
+        raise FlowError('missing_bridge_recovery_not_permitted')
+    compose_path = bounded_path(state['compose_path'])
+    if digest(compose_path.read_bytes()) != state['installed_compose_sha256']:
+        raise FlowError('production_compose_changed')
+    if scope_of(read_json(compose_path)) != state['scope'] or scope_fingerprint(state['scope']) != state['scope_fingerprint']:
+        raise FlowError('production_scope_changed')
+    verify_bridge_absent()
+    _, current = resolved_bridge_snapshot(state['scope'], compose_path)
+    if (current['image'] != state['bridge_image'] or current['image_id'] != state['bridge_image_id'] or
+            current['mounts_sha256'] != state['bridge_mounts_sha256'] or
+            current['runtime_sha256'] != state['bridge_runtime_sha256']):
+        raise FlowError('production_bridge_changed')
+    verify_duplicate_stopped()
+    verify_bridge_absent()
+    if digest(compose_path.read_bytes()) != state['installed_compose_sha256']:
+        raise FlowError('production_compose_changed')
 
 def prepare(compose_path, state_path):
     compose_path = bounded_path(compose_path)
@@ -269,7 +339,8 @@ def prepare(compose_path, state_path):
              'expires_at': data.get('expires_at'), 'scope': scope,
              'scope_fingerprint': scope_fingerprint(scope), 'compose_path': str(compose_path),
              'original_compose_sha256': digest(compose_path.read_bytes()), 'bridge_image': bridge['image'],
-             'bridge_image_id': bridge['image_id'], 'bridge_mounts_sha256': bridge['mounts_sha256'], 'phase': 'pending'}
+             'bridge_image_id': bridge['image_id'], 'bridge_mounts_sha256': bridge['mounts_sha256'],
+             'bridge_runtime_sha256': bridge['runtime_sha256'], 'phase': 'pending'}
     save_state(state_path, state)
     return public_summary(state)
 
@@ -302,6 +373,28 @@ def verify_install_target(compose_path, expected_hash, expected_identity):
         raise FlowError('production_bridge_identity_changed')
     if digest(compose_path.read_bytes()) != expected_hash:
         raise FlowError('production_compose_changed')
+
+def recreate_and_verify_bridge(state):
+    run(['docker', 'compose', '-p', PROJECT, '-f', str(bounded_path(state['compose_path'])), 'up', '-d', '--no-deps',
+         '--no-build', '--pull', 'never', '--force-recreate', SERVICE])
+    after = container_identity()
+    if (after[3:5] != [state['bridge_image'], state['bridge_image_id']] or
+            run(['docker', 'inspect', '--format', '{{.State.Running}}', CONTAINER]) != 'true'):
+        raise FlowError('production_bridge_not_running')
+    verify_bridge_snapshot(state)
+
+def recover_missing_bridge(state, credential):
+    if not isinstance(credential, str) or not re.fullmatch(r'[A-Za-z0-9_-]{24,512}', credential):
+        raise FlowError('credential_response_invalid')
+    compose = read_json(state['compose_path'])
+    compose['services'][SERVICE]['environment']['ARCHIVE_TOKEN'] = credential
+    replacement = (json.dumps(compose, ensure_ascii=False, indent=2) + '\n').encode()
+    if digest(replacement) != state['installed_compose_sha256']:
+        raise FlowError('issued_receipt_changed')
+    # The trusted installed file already contains exactly this receipt. Do not
+    # rewrite it or stop anything when the old container has truly disappeared.
+    verify_missing_recreate_target(state)
+    recreate_and_verify_bridge(state)
 
 def install_credential(state_path, state, credential):
     if not isinstance(credential, str) or not re.fullmatch(r'[A-Za-z0-9_-]{24,512}', credential):
@@ -344,12 +437,20 @@ def install_credential(state_path, state, credential):
     state['phase'] = 'credential_installed_recreate_pending'
     save_state(state_path, state)
     verify_install_target(compose_path, state['installed_compose_sha256'], identity)
-    run(['docker', 'compose', '-p', PROJECT, '-f', str(compose_path), 'up', '-d', '--no-deps',
-         '--no-build', '--pull', 'never', '--force-recreate', SERVICE])
-    after = container_identity()
-    if after[3:5] != identity[3:5] or run(['docker', 'inspect', '--format', '{{.State.Running}}', CONTAINER]) != 'true':
-        raise FlowError('production_bridge_not_running')
+    recreate_and_verify_bridge(state)
+
+def verify_installed_receipt_target(state):
+    # A server ACK can survive a lost response while the local bridge later
+    # stops. Confirm this durable installation and its current runtime before
+    # removing the only local device proof used for receipt reconciliation.
+    if (state.get('phase') != 'credential_installed_recreate_pending' or
+            not re.fullmatch(r'[0-9a-f]{64}', state.get('installed_compose_sha256', ''))):
+        raise FlowError('installed_receipt_unverifiable')
+    identity = container_identity()
     verify_bridge_snapshot(state)
+    if run(['docker', 'inspect', '--format', '{{.State.Running}}', CONTAINER]) != 'true':
+        raise FlowError('production_bridge_not_running')
+    verify_install_target(bounded_path(state['compose_path']), state['installed_compose_sha256'], identity)
 
 def claim_and_install(state_path):
     state = read_json(state_path)
@@ -359,19 +460,34 @@ def claim_and_install(state_path):
     if digest(compose_path.read_bytes()) not in {state['original_compose_sha256'], state.get('installed_compose_sha256'),
                                                state.get('pending_compose_sha256')}:
         raise FlowError('production_compose_changed')
-    verify_bridge_snapshot(state)
+    missing = False
+    try:
+        verify_bridge_snapshot(state)
+    except FlowError:
+        if state.get('phase') != 'credential_installed_recreate_pending':
+            raise
+        verify_missing_recreate_target(state)
+        missing = True
     _, data = request('/api/v1/archive/enrollments/' + state['handle'] + '/claim',
                       {'device_secret': state['device_secret']})
     if data.get('state') == 'pending':
+        if missing:
+            raise FlowError('issued_receipt_required')
         return {'phase': 'waiting_for_owner_confirmation'}
     if data.get('state') == 'installed':
+        if missing:
+            raise FlowError('production_bridge_missing')
+        verify_installed_receipt_target(state)
         state['phase'] = 'installed_waiting_for_natural_upload'
         state.pop('device_secret', None)
         save_state(state_path, state)
         return {'phase': state['phase']}
     if data.get('state') != 'issued' or data.get('scope_fingerprint') != state['scope_fingerprint']:
         raise FlowError('issued_scope_mismatch')
-    install_credential(state_path, state, data.get('credential'))
+    if missing:
+        recover_missing_bridge(state, data.get('credential'))
+    else:
+        install_credential(state_path, state, data.get('credential'))
     request('/api/v1/archive/enrollments/' + state['handle'] + '/ack',
             {'device_secret': state['device_secret']})
     state['phase'] = 'installed_waiting_for_natural_upload'
