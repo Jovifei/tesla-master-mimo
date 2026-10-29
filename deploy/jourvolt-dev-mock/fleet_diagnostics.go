@@ -68,13 +68,14 @@ type fleetDiagnosticErrors struct {
 }
 
 type fleetDiagnosticsResponse struct {
-	CheckedAt     string                            `json:"checked_at"`
-	BuildSHA      string                            `json:"build_sha"`
-	Availability  string                            `json:"availability"`
-	Requests      map[string]fleetDiagnosticRequest `json:"requests"`
-	Vehicle       fleetDiagnosticVehicle            `json:"vehicle"`
-	Configuration fleetDiagnosticConfiguration      `json:"configuration"`
-	RecentErrors  fleetDiagnosticErrors             `json:"recent_errors"`
+	CheckedAt        string                            `json:"checked_at"`
+	BuildSHA         string                            `json:"build_sha"`
+	Availability     string                            `json:"availability"`
+	Requests         map[string]fleetDiagnosticRequest `json:"requests"`
+	Vehicle          fleetDiagnosticVehicle            `json:"vehicle"`
+	Configuration    fleetDiagnosticConfiguration      `json:"configuration"`
+	RecentErrors     fleetDiagnosticErrors             `json:"recent_errors"`
+	ReadinessContext *diagnosticReadinessContext       `json:"readiness_context,omitempty"`
 }
 
 // This deliberately narrow reader cannot refresh, lock, or update tokens.
@@ -113,7 +114,12 @@ func (a *app) fleetTelemetryDiagnostics(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	a.json(w, http.StatusOK, map[string]any{"data": a.telemetry.readOnlyDiagnostics(ctx, userID, vinCiphertext, a.store)})
+	// Capture persisted evidence before bounded official requests. Local reads
+	// remain useful when Tesla access is expired or a provider request fails.
+	local := a.readOnlyReadinessContext(ctx, userID, carID)
+	response := a.telemetry.readOnlyDiagnostics(ctx, userID, vinCiphertext, a.store)
+	response.ReadinessContext = local
+	a.json(w, http.StatusOK, map[string]any{"data": response})
 }
 
 func diagnosticFailure(status string, httpStatus *int, class string) fleetDiagnosticRequest {

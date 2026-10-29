@@ -409,7 +409,12 @@ func TestFleetDiagnosticsEmptyErrorsAndUnknownNames(t *testing.T) {
 
 // A synthetic PostgreSQL wire endpoint exercises real pgx SELECTs and App
 // authentication without requiring a database or touching any real credentials.
-func diagnosticsTestStore(t *testing.T, vin, access string, authError bool) (*store, func() []string) {
+type diagnosticStoreOption struct {
+	expiry     time.Time
+	providerID string
+}
+
+func diagnosticsTestStore(t *testing.T, vin, access string, authError bool, options ...diagnosticStoreOption) (*store, func() []string) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -470,7 +475,27 @@ func diagnosticsTestStore(t *testing.T, vin, access string, authError bool) (*st
 						}
 					case strings.Contains(q, "SELECT access_ciphertext, access_expires_at"):
 						fields = []pgproto3.FieldDescription{{Name: []byte("access_ciphertext"), DataTypeOID: 25, DataTypeSize: -1}, {Name: []byte("access_expires_at"), DataTypeOID: 1184, DataTypeSize: 8}}
-						values = [][]byte{[]byte(access), []byte(time.Now().Add(time.Hour).Format("2006-01-02 15:04:05.999999Z07:00"))}
+						expires := time.Now().Add(time.Hour)
+						if len(options) > 0 && !options[0].expiry.IsZero() {
+							expires = options[0].expiry
+						}
+						values = [][]byte{[]byte(access), []byte(expires.Format("2006-01-02 15:04:05.999999Z07:00"))}
+					case strings.Contains(q, "SELECT provider_vehicle_id, display_name, model FROM jourvolt_vehicles"):
+						fields = []pgproto3.FieldDescription{{Name: []byte("provider_vehicle_id"), DataTypeOID: 25, DataTypeSize: -1}, {Name: []byte("display_name"), DataTypeOID: 25, DataTypeSize: -1}, {Name: []byte("model"), DataTypeOID: 25, DataTypeSize: -1}}
+						providerID := "provider-1"
+						if len(options) > 0 && options[0].providerID != "" {
+							providerID = options[0].providerID
+						}
+						values = [][]byte{[]byte(providerID), []byte("Example"), []byte("3")}
+					case strings.Contains(q, "SELECT field_name, value_json, observed_at, source FROM jourvolt_telemetry_latest"):
+						fields = []pgproto3.FieldDescription{{Name: []byte("field_name"), DataTypeOID: 25, DataTypeSize: -1}, {Name: []byte("value_json"), DataTypeOID: 3802, DataTypeSize: -1}, {Name: []byte("observed_at"), DataTypeOID: 1184, DataTypeSize: 8}, {Name: []byte("source"), DataTypeOID: 25, DataTypeSize: -1}}
+						values = [][]byte{[]byte("Odometer"), []byte("12345.6"), []byte(time.Now().Add(-time.Second).Format("2006-01-02 15:04:05.999999Z07:00")), []byte("telemetry_mqtt")}
+					case strings.Contains(q, "SELECT EXISTS (") && strings.Contains(q, "jourvolt_telemetry_sessions"):
+						fields = []pgproto3.FieldDescription{{Name: []byte("exists"), DataTypeOID: 16, DataTypeSize: 1}}
+						values = [][]byte{[]byte("t")}
+					case strings.Contains(q, "SELECT CASE") && strings.Contains(q, "jourvolt_telemetry_sessions"):
+						fields = []pgproto3.FieldDescription{{Name: []byte("source"), DataTypeOID: 25, DataTypeSize: -1}}
+						values = [][]byte{[]byte("telemetry_mqtt")}
 					default:
 						b.Send(&pgproto3.ErrorResponse{Severity: "ERROR", Code: "XX000", Message: "unexpected SQL"})
 					}
@@ -502,6 +527,81 @@ func diagnosticsTestStore(t *testing.T, vin, access string, authError bool) (*st
 	return &store{pool: pool}, func() []string { mu.Lock(); defer mu.Unlock(); return append([]string(nil), queries...) }
 }
 
+func TestFleetDiagnosticsReadinessContextIsLocalDuringExpiredTeslaAccess(t *testing.T) {
+	s, vin, access := diagnosticsFixture(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("expired token reached provider") }))
+	database, queries := diagnosticsTestStore(t, vin, access.ciphertext, false, diagnosticStoreOption{expiry: time.Now().Add(-time.Minute)})
+	p := &diagnosticsNoDiscovery{}
+	a := &app{store: database, telemetry: s, provider: p}
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/cars/1/telemetry/diagnostics", nil)
+	r.Header.Set("Authorization", "Bearer app-session")
+	w := httptest.NewRecorder()
+	a.ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("diagnostics status=%d", w.Code)
+	}
+	var result struct {
+		Data struct {
+			ReadinessContext *struct {
+				Availability string                `json:"availability"`
+				Readiness    dataReadinessResponse `json:"readiness"`
+				Car          struct {
+					CarID      int     `json:"car_id"`
+					VehicleUID string  `json:"vehicle_uid"`
+					Name       *string `json:"name"`
+					Details    struct {
+						Model *string `json:"model"`
+					} `json:"car_details"`
+				} `json:"car"`
+				Odometer struct {
+					Value      *float64 `json:"value"`
+					Unit       string   `json:"unit"`
+					ObservedAt *string  `json:"observed_at"`
+					Source     *string  `json:"source"`
+				} `json:"observed_odometer"`
+			} `json:"readiness_context"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	context := result.Data.ReadinessContext
+	if context == nil {
+		t.Fatal("missing local readiness_context when Tesla access expired")
+	}
+	if context.Availability != "available" || context.Car.CarID != 1 || context.Car.VehicleUID != "provider-1" || context.Car.Details.Model == nil || *context.Car.Details.Model != "3" {
+		t.Fatal("missing persisted car metadata")
+	}
+	if context.Readiness.CapabilityVersion != 1 || context.Readiness.VehicleUID == "" || len(context.Readiness.Items) != 6 {
+		t.Fatal("original readiness envelope lost")
+	}
+	items := map[string]dataReadinessItem{}
+	for _, item := range context.Readiness.Items {
+		items[item.Key] = item
+	}
+	for _, key := range []string{"live_status", "drives", "charges"} {
+		if items[key].Status != "available" {
+			t.Errorf("%s persisted evidence lost", key)
+		}
+	}
+	for _, key := range []string{"location", "tpms"} {
+		if items[key].Status != "unknown" || items[key].LastObservedAt != nil {
+			t.Errorf("%s unknown field promoted", key)
+		}
+	}
+	if context.Odometer.Value == nil || *context.Odometer.Value != 12345.6 || context.Odometer.Unit != "km" || context.Odometer.ObservedAt == nil || context.Odometer.Source == nil || *context.Odometer.Source != "telemetry_mqtt" {
+		t.Fatal("persisted canonical km/clock evidence lost")
+	}
+	if p.calls != 0 {
+		t.Fatal("readiness_context called provider")
+	}
+	for _, query := range queries() {
+		upper := strings.ToUpper(strings.TrimSpace(query))
+		if !strings.HasPrefix(upper, "SELECT ") || strings.Contains(upper, "FOR UPDATE") || strings.Contains(upper, "REFRESH_CIPHERTEXT") {
+			t.Fatal("readiness_context executed write/lock/refresh SQL")
+		}
+	}
+}
+
 func TestFleetDiagnosticsAuthenticatedOwnershipAndReadOnlySQL(t *testing.T) {
 	s, vin, access := diagnosticsFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, `{"response":{}}`) }))
 	database, queries := diagnosticsTestStore(t, vin, access.ciphertext, false)
@@ -526,8 +626,8 @@ func TestFleetDiagnosticsAuthenticatedOwnershipAndReadOnlySQL(t *testing.T) {
 	if p.calls != 0 {
 		t.Fatal("discovery or vehicle operation invoked")
 	}
-	if len(queries()) != 5 {
-		t.Fatalf("SQL count=%d want5", len(queries()))
+	if len(queries()) != 11 {
+		t.Fatalf("SQL count=%d want11", len(queries()))
 	}
 	for _, q := range queries() {
 		upper := strings.ToUpper(strings.TrimSpace(q))
