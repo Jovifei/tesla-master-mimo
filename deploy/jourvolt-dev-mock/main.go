@@ -562,8 +562,25 @@ func (a *app) auth(w http.ResponseWriter, r *http.Request) (string, bool) {
 		a.json(w, http.StatusUnauthorized, map[string]string{"error": "session_required"})
 		return "", false
 	}
-	userID, err := a.store.userForAccess(r.Context(), token)
+	diagnostics := strings.HasPrefix(r.URL.Path, "/api/v1/cars/") && strings.Contains(r.URL.Path, "/telemetry/diagnostics")
+	ctx := r.Context()
+	if diagnostics {
+		if a.store == nil || a.store.pool == nil {
+			a.json(w, http.StatusUnauthorized, map[string]string{"error": "session_required"})
+			return "", false
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+	}
+	userID, err := a.store.userForAccess(ctx, token)
 	if err != nil {
+		if diagnostics {
+			// Database errors can contain identity or credential text. The
+			// diagnostics boundary exposes only a fixed authentication class.
+			a.json(w, http.StatusUnauthorized, map[string]string{"error": "session_required"})
+			return "", false
+		}
 		a.json(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return "", false
 	}
@@ -703,6 +720,12 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 	}
 	if archiveImportParts(parts) {
 		a.archiveBindingResource(w, r, userID)
+		return
+	}
+	// Diagnostics has a local-only ownership check; requireVehicle can discover
+	// and configure vehicles on its cache-miss path.
+	if len(parts) >= 3 && parts[1] == "telemetry" && parts[2] == "diagnostics" {
+		a.fleetTelemetryDiagnostics(w, r, userID, carID, parts)
 		return
 	}
 	if !a.requireVehicle(w, r, userID, carID) {
