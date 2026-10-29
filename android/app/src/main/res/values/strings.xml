@@ -1717,4 +1717,18 @@
     <string name="drive_detail_sample_minimum">Sample minimum</string>
     <string name="history_read_incomplete_title">History is not fully available</string>
     <string name="history_read_retry_hint">Check the connection, then return to this page to retry.</string>
+    <string name="diagnostic_fleet_available">All official reads completed</string>
+    <string name="diagnostic_fleet_partial">Some official reads unavailable</string>
+    <string name="diagnostic_fleet_yes">Yes</string>
+    <string name="diagnostic_fleet_no">No</string>
+    <string name="diagnostic_fleet_read_ok">Read succeeded</string>
+    <string name="diagnostic_fleet_read_error">Read failed</string>
+    <string name="diagnostic_fleet_not_attempted">Not attempted</string>
+    <string name="diagnostic_fleet_matches">Matches</string>
+    <string name="diagnostic_fleet_mismatch">Does not match</string>
+    <string name="diagnostic_fleet_errors_present">Errors reported</string>
+    <string name="diagnostic_fleet_no_errors">No errors reported</string>
+    <string name="diagnostic_fleet_summary">Official Fleet reads: %1$s. Vehicle status: %2$s; configuration: %3$s; recent errors: %4$s. These reads do not configure or wake the vehicle.</string>
+    <string name="diagnostic_fleet_vehicle">Virtual key paired: %1$s; streaming enabled: %2$s. Unknown values remain unconfirmed.</string>
+    <string name="diagnostic_fleet_config">Configuration synced: %1$s. Desired service target: %2$s; fields: %3$s; CA: %4$s. Recent errors: %5$s. Configuration and streaming are not proof of received telemetry.</string>
 </resources>

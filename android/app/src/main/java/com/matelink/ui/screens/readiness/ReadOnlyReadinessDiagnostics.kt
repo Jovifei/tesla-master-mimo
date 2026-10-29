@@ -24,7 +24,8 @@ data class DiagnosticFact(
     val source: String = "unknown",
     val observedAt: String? = null,
     val detail: String = "unknown",
-    val olderReceipt: Boolean = false
+    val olderReceipt: Boolean = false,
+    val officialFleet: OfficialFleetDiagnosticPresentation? = null
 )
 
 data class ReadinessLocalEvidence(
@@ -44,8 +45,8 @@ data class ReadinessLocalEvidence(
 fun unknownDiagnosticFacts() = DiagnosticStep.entries.map(::DiagnosticFact)
 
 fun withDiagnosticPermissionBlocker(facts: List<DiagnosticFact>): List<DiagnosticFact> = facts.map {
-    if (it.step != DiagnosticStep.AUTHORIZATION) it else DiagnosticFact(
-        DiagnosticStep.AUTHORIZATION, DiagnosticResult.WAITING, "scoped_response", detail = "permission_required")
+    if (it.step != DiagnosticStep.AUTHORIZATION) it else it.copy(
+        result = DiagnosticResult.WAITING, source = "scoped_response", detail = "permission_required")
 }
 
 /** Only current, source-qualified facts promote their own step. No overall PASS exists. */

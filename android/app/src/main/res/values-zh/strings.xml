@@ -1708,4 +1708,18 @@
     <string name="drive_detail_sample_minimum">样本最低</string>
     <string name="history_read_incomplete_title">历史数据尚未就绪</string>
     <string name="history_read_retry_hint">请检查连接，再返回此页重试。</string>
+    <string name="diagnostic_fleet_available">官方读取均已完成</string>
+    <string name="diagnostic_fleet_partial">部分官方读取不可用</string>
+    <string name="diagnostic_fleet_yes">是</string>
+    <string name="diagnostic_fleet_no">否</string>
+    <string name="diagnostic_fleet_read_ok">读取成功</string>
+    <string name="diagnostic_fleet_read_error">读取失败</string>
+    <string name="diagnostic_fleet_not_attempted">未尝试</string>
+    <string name="diagnostic_fleet_matches">匹配</string>
+    <string name="diagnostic_fleet_mismatch">不匹配</string>
+    <string name="diagnostic_fleet_errors_present">有错误记录</string>
+    <string name="diagnostic_fleet_no_errors">未报告错误</string>
+    <string name="diagnostic_fleet_summary">Fleet 官方读取：%1$s。车辆状态：%2$s；配置：%3$s；近期错误：%4$s。这些读取不会配置或唤醒车辆。</string>
+    <string name="diagnostic_fleet_vehicle">虚拟钥匙已配对：%1$s；流式传输已启用：%2$s。未知值保持未确认。</string>
+    <string name="diagnostic_fleet_config">配置已同步：%1$s。期望服务目标：%2$s；采样字段：%3$s；CA：%4$s。近期错误：%5$s。配置与流式传输状态不代表已收到遥测。</string>
 </resources>

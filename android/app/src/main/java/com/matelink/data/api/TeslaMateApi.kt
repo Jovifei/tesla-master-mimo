@@ -6,6 +6,7 @@ import com.matelink.data.api.models.CarStatusResponse
 import com.matelink.data.api.models.ChargeDetailResponse
 import com.matelink.data.api.models.ChargesResponse
 import com.matelink.data.api.models.DataReadinessResponse
+import com.matelink.data.api.models.FleetTelemetryDiagnosticsResponse
 import com.matelink.data.api.models.DriveDetailResponse
 import com.matelink.data.api.models.DrivesResponse
 import com.matelink.data.api.models.GlobalSettingsResponse
@@ -120,6 +121,11 @@ interface TeslamateApi {
     suspend fun getDataReadiness(
         @Path("carId") carId: Int
     ): Response<DataReadinessResponse>
+
+    @GET("api/v1/cars/{carId}/telemetry/diagnostics")
+    suspend fun getTelemetryDiagnostics(
+        @Path("carId") carId: Int
+    ): Response<FleetTelemetryDiagnosticsResponse>
 
     @GET("api/v1/cars/{carId}/telemetry/pairing")
     suspend fun getTelemetryPairing(

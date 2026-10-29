@@ -1,6 +1,7 @@
 package com.matelink.ui.screens.readiness
 
 import android.content.Intent
+import android.content.ActivityNotFoundException
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -62,7 +63,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.matelink.R
 import com.matelink.data.api.models.DataReadiness
 import com.matelink.data.api.models.DataReadinessItem
-import com.matelink.ui.components.launchExternalIntentSafely
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 
 private val readinessKeys = listOf(
@@ -446,12 +446,15 @@ fun DataReadinessScreen(
                 FleetTelemetryCard(
                     state = uiState,
                     onOpenVirtualKey = {
-                        val officialUrl = officialTeslaVirtualKeyUrlOrNull(uiState.pairing?.virtualKeyUrl)
-                        if (officialUrl == null) {
-                            viewModel.reportPairingLinkUnavailable()
-                        } else {
-                            viewModel.reportExternalPairingFlowLaunched()
-                            context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(officialUrl)))
+                        viewModel.openExternalPairing { officialUrl ->
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(officialUrl)))
+                                true
+                            } catch (_: ActivityNotFoundException) {
+                                false
+                            } catch (_: SecurityException) {
+                                false
+                            }
                         }
                     },
                     onConfigure = viewModel::configureTelemetry,

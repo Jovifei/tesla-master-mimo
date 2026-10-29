@@ -311,23 +311,23 @@ class TelemetryPairingContractTest {
         runCurrent()
 
         assertTrue("the telemetry poll must start", source.suspendedPollStarted.isCompleted)
-        assertEquals(2, source.pairingStatusCalls)
+        assertEquals(1, source.pairingStatusCalls)
 
         advanceTimeBy(TelemetryPollingPolicy.MAXIMUM_WINDOW_MS)
         runCurrent()
 
         assertEquals("the suspended request must be cancelled at the deadline", 1, source.cancelledPollRequests)
-        assertEquals(2, source.pairingStatusCalls)
+        assertEquals(1, source.pairingStatusCalls)
         assertEquals("polling timeout must never invoke configure automatically", 1, source.configureCalls)
 
         advanceTimeBy(TelemetryPollingPolicy.POLL_INTERVAL_MS)
         runCurrent()
-        assertEquals("no poll request may start after the deadline", 2, source.pairingStatusCalls)
+        assertEquals("no poll request may start after the deadline", 1, source.pairingStatusCalls)
         assertEquals("the explicit initial tap remains the only configure invocation", 1, source.configureCalls)
     }
 
     @Test
-    fun backendSetupIsObservedAndRequiredConsentIsNeverHiddenAsWaiting() = runTest {
+    fun onlyExplicitSetupIsObservedAndRequiredConsentIsNeverHiddenAsWaiting() = runTest {
         Dispatchers.resetMain()
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         var reads = 0
@@ -348,8 +348,16 @@ class TelemetryPairingContractTest {
         val viewModel = DataReadinessViewModel(source, NoopVehicleContextResolver, NoopLegacyHistoryMigrationService, TestReadinessEvidenceSource)
         viewModel.setCarId(1)
         runCurrent()
-        assertEquals(2, reads)
+        assertEquals("opening diagnostics does not observe setup", 0, reads)
         assertEquals(0, configurations)
+        assertNull(viewModel.uiState.value.pairing)
+        viewModel.configureTelemetry()
+        runCurrent()
+        assertEquals(1, reads)
+        assertEquals(1, configurations)
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(2, reads)
         assertEquals("pairing_required", viewModel.uiState.value.pairing?.status)
         assertFalse(viewModel.uiState.value.isTelemetryActivationPending)
         advanceTimeBy(5_000)
@@ -492,7 +500,6 @@ class TelemetryPairingContractTest {
 
         override suspend fun getTelemetryPairingStatus(carId: Int): ApiResult<TelemetryPairingStatus> {
             pairingStatusCalls += 1
-            if (pairingStatusCalls == 1) awaitCancellation()
             suspendedPollStarted.complete(Unit)
             try {
                 awaitCancellation()

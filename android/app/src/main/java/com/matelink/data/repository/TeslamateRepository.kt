@@ -20,6 +20,8 @@ import com.matelink.data.api.models.receivedCharge
 import com.matelink.data.api.models.DataReadiness
 import com.matelink.data.api.models.DataReadinessItem
 import com.matelink.data.api.models.DataReadinessResponse
+import com.matelink.data.api.models.FleetTelemetryDiagnostics
+import com.matelink.data.api.models.FleetTelemetryDiagnosticsResponse
 import com.matelink.data.api.models.GlobalSettingsData
 import com.matelink.data.api.models.Units
 import com.matelink.data.api.models.AdapterSnapshot
@@ -142,6 +144,15 @@ internal fun dataReadinessResultForResponse(
     response.isSuccessful -> response.body()?.data?.let { ApiResult.Success(it) }
         ?: ApiResult.Error("Data readiness unavailable", response.code())
     else -> ApiResult.Error("Failed to fetch data readiness: ${response.code()}", response.code())
+}
+
+internal fun fleetTelemetryDiagnosticsResultForResponse(
+    response: Response<FleetTelemetryDiagnosticsResponse>
+): ApiResult<FleetTelemetryDiagnostics> = when {
+    response.isSuccessful -> response.body()?.data?.let { ApiResult.Success(it) }
+        ?: ApiResult.Error("Fleet diagnostics unavailable", response.code())
+    // A legacy 404 is unavailable, never a compatibility success or setup request.
+    else -> ApiResult.Error("Fleet diagnostics unavailable", response.code())
 }
 
 private val telemetryErrorCodes = setOf(
@@ -690,6 +701,13 @@ class TeslamateRepository @Inject constructor(
                 carId,
                 allowLegacyCompatibility
             )
+        }
+    }
+
+    override suspend fun getTelemetryDiagnostics(carId: Int): ApiResult<FleetTelemetryDiagnostics> {
+        if (isMockMode()) return ApiResult.Error("Fleet diagnostics unavailable")
+        return executeWithFallback { api ->
+            fleetTelemetryDiagnosticsResultForResponse(api.getTelemetryDiagnostics(carId))
         }
     }
 

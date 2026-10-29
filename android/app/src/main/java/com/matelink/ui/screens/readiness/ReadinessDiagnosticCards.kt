@@ -85,7 +85,7 @@ private fun DiagnosticCard(fact: DiagnosticFact) {
 @Composable
 private fun diagnosticDetail(fact: DiagnosticFact): String {
     val parts = fact.detail.split(':')
-    return when (parts.first()) {
+    val existing = when (parts.first()) {
         "scoped_authorization" -> stringResource(R.string.diagnostic_authorization_detail)
         "scoped_identity" -> stringResource(R.string.diagnostic_vehicle_detail)
         "cached_identity" -> stringResource(R.string.diagnostic_cached_vehicle_detail)
@@ -103,4 +103,51 @@ private fun diagnosticDetail(fact: DiagnosticFact): String {
             }), parts.getOrNull(2)?.toIntOrNull() ?: 0, parts.getOrNull(3)?.toIntOrNull() ?: 0, parts.getOrNull(4)?.toIntOrNull() ?: 0)
         else -> stringResource(R.string.diagnostic_unknown_detail)
     }
+    val official = fact.officialFleet ?: return existing
+    val detail = when (fact.step) {
+        DiagnosticStep.AUTHORIZATION -> stringResource(R.string.diagnostic_fleet_summary,
+            stringResource(when (official.availability) {
+                FleetDiagnosticAvailability.AVAILABLE -> R.string.diagnostic_fleet_available
+                FleetDiagnosticAvailability.PARTIAL -> R.string.diagnostic_fleet_partial
+                FleetDiagnosticAvailability.UNAVAILABLE -> R.string.data_readiness_status_unavailable
+                FleetDiagnosticAvailability.UNKNOWN -> R.string.visual_status_unknown
+            }),
+            fleetRequestText(official.statusRead), fleetRequestText(official.configRead), fleetRequestText(official.errorsRead))
+        DiagnosticStep.VEHICLE -> stringResource(R.string.diagnostic_fleet_vehicle,
+            fleetBooleanText(official.paired), fleetBooleanText(official.streamingEnabled))
+        DiagnosticStep.RECEIVE -> stringResource(R.string.diagnostic_fleet_config,
+            fleetBooleanText(official.configSynced), fleetMatchText(official.serviceTargetMatches),
+            fleetMatchText(official.fieldsMatch), fleetMatchText(official.caMatches),
+            stringResource(when {
+                official.recentErrorCount == null -> R.string.visual_status_unknown
+                official.recentErrorCount > 0 -> R.string.diagnostic_fleet_errors_present
+                else -> R.string.diagnostic_fleet_no_errors
+            }))
+        else -> return existing
+    }
+    return "$existing\n\n$detail"
 }
+
+@Composable
+private fun fleetBooleanText(value: Boolean?): String = stringResource(when (value) {
+    true -> R.string.diagnostic_fleet_yes
+    false -> R.string.diagnostic_fleet_no
+    null -> R.string.visual_status_unknown
+})
+
+@Composable
+private fun fleetRequestText(read: FleetDiagnosticRead): String {
+    return stringResource(when (read.state) {
+        FleetDiagnosticRequestState.OK -> R.string.diagnostic_fleet_read_ok
+        FleetDiagnosticRequestState.ERROR -> R.string.diagnostic_fleet_read_error
+        FleetDiagnosticRequestState.NOT_ATTEMPTED -> R.string.diagnostic_fleet_not_attempted
+        FleetDiagnosticRequestState.UNKNOWN -> R.string.visual_status_unknown
+    })
+}
+
+@Composable
+private fun fleetMatchText(matches: Boolean?): String = stringResource(when (matches) {
+    true -> R.string.diagnostic_fleet_matches
+    false -> R.string.diagnostic_fleet_mismatch
+    null -> R.string.visual_status_unknown
+})

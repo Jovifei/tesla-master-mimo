@@ -35,6 +35,7 @@ class AuthenticatedApiRedirectTest {
         val hits = AtomicInteger()
         @Volatile var authorization: String? = null
         @Volatile var requestBody: String? = null
+        @Volatile var requestLine: String? = null
         private val thread = Thread {
             try {
                 listener.accept().use { socket ->
@@ -44,6 +45,7 @@ class AuthenticatedApiRedirectTest {
                     while (true) {
                         val line = reader.readLine() ?: break
                         if (line.isEmpty()) break
+                        if (line.startsWith("GET ")) requestLine = line
                         if (line.startsWith("Authorization:", ignoreCase = true)) {
                             authorization = line.substringAfter(':').trim()
                         }
@@ -70,6 +72,24 @@ class AuthenticatedApiRedirectTest {
             listener.close()
             thread.join(1_000)
         }
+    }
+
+    @Test fun officialDiagnosticsUsesOnlyAuthenticatedGetAndParsesUnknownFields() = runBlocking {
+        val fixture = HistoryResourceFixture(File(temporary.root, "authenticated-diagnostics.db"))
+        fixture.initialize(cloud = false)
+        try {
+            LoopbackServer(200, payload = """{"data":{"availability":"partial","requests":{"fleet_status":{"status":"ok","http_status":200}},"vehicle":{"paired":false,"streaming_enabled":null}}}""").use { origin ->
+                val api = fixture.apiFactory.create(origin.baseUrl, apiTokenOverride = "fixture-token")
+                val response = api.getTelemetryDiagnostics(17)
+                assertEquals(200, response.code())
+                assertEquals(false, response.body()?.data?.vehicle?.paired)
+                assertNull(response.body()?.data?.vehicle?.streamingEnabled)
+                assertNull(response.body()?.data?.configuration)
+                assertEquals("GET /api/v1/cars/17/telemetry/diagnostics HTTP/1.1", origin.requestLine)
+                assertEquals(1, origin.hits.get())
+                assertEquals("Bearer fixture-token", origin.authorization)
+            }
+        } finally { fixture.close() }
     }
 
     @Test fun bearerApiNeverVisitsRedirectTarget() = runBlocking {
