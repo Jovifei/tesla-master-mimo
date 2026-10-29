@@ -48,6 +48,18 @@ async function mount(kind: string) {
   return tree!
 }
 const shown = () => tree!.root.findAllByType('text').map(node => node.children.join('')).join('\n')
+it('hides the previous account metrics while a replacement account refresh is pending', async () => {
+  await mount('battery')
+  expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => String(node.props.ariaLabel).includes('123 km'))).toBe(true)
+  await act(async () => { platform.hide() })
+  platform.values.set('matelink.wechat.session.v1', { apiOrigin: 'https://api.example.test', userId: 'other', accessToken: 'other-access', refreshToken: 'other-refresh', expiresAt: '2000-01-01T00:00:00Z', linkRequired: false })
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/v1/session/refresh')
+    ? new Promise(resolve => { release = resolve }) : Promise.resolve(response({ cars: [] })))
+  await act(async () => { platform.show(); await new Promise(resolve => setTimeout(resolve, 0)) })
+  expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => String(node.props.ariaLabel).includes('123 km'))).toBe(false)
+  await act(async () => { release({ statusCode: 200, data: { access_token: 'fresh-other', refresh_token: 'next' }, header: {} }); await new Promise(resolve => setTimeout(resolve, 0)) })
+})
 async function click(label: string) {
   const button = tree!.root.findAllByType('button').find(node => node.children.join('') === label)
   expect(button, label).toBeDefined()
@@ -65,7 +77,7 @@ it('actual parsed charge histories render separate currencies and genuine zero w
   expect(rendered).toContain('EUR 费用'); expect(rendered).toContain('USD 费用'); expect(rendered).toContain('币种未知 1 次')
   expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '费用合计 0 EUR')).toBe(true)
   expect(rendered).not.toContain('CNY')
-  expect(rendered).toContain('分页读取完成')
+  expect(rendered).toContain('数据读取完成')
 })
 it('actual range proof and capacity response reach personalized range and rated endpoint consumers', async () => {
   drives = Array.from({ length: 5 }, (_, i) => rawDrive(i + 1, 4, 20))
@@ -86,14 +98,14 @@ it('excludes incomplete history from App range and cost analysis while keeping s
   await mount('range')
   expect(tree!.root.findByProps({ ariaLabel: '合格能耗与容量估算 300 km' })).toBeDefined()
   expect(shown()).toContain('当前条件分组 · 5 段')
-  expect(shown()).toContain('行驶已加载 6 条')
+  expect(shown()).toContain('行驶 6 条')
   await act(async () => { platform.unload(); tree!.unmount() }); tree = null
 
   charges = [rawCharge(1, 0, 'EUR'), { ...rawCharge(2, 500, 'EUR'), quality_state: 'incomplete' }]
   await mount('cost')
   expect(tree!.root.findByProps({ ariaLabel: '费用合计 0 EUR' })).toBeDefined()
   expect(shown()).toContain('已加载 1 次')
-  expect(shown()).toContain('充电已加载 2 条')
+  expect(shown()).toContain('充电 2 条')
   const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
   const cached = readHistoryCache<{ id: string }>({ getStorageSync: (key: string) => platform.values.get(key), setStorageSync() {} }, historyCacheKey('charges', 'owner', 'uid7', 'https://api.example.test'))
   expect(cached).toHaveLength(2)

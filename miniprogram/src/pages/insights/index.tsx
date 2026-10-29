@@ -1,9 +1,10 @@
 import { Button, Input, Picker, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useRouter, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
-import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
+import { ApiError, ensureWechatSession, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { analysisApi } from '../../services/analysis_api'
 import { readAppSession } from '../../services/session'
+import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 import { readCarsCache } from '../../services/cars_cache'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 import { carSelectionStorageKey, type Car, type CarStatus, type Charge, type Drive } from '../../services/types'
@@ -47,18 +48,29 @@ export default function InsightsPage() {
   const [cacheWarning, setCacheWarning] = useState(false)
   const [rangeShown, setRangeShown] = useState(20)
   const epoch = useRef(0), currentCar = useRef<Car | null>(null), scope = useRef<TripScope | null>(null)
+  const displayGeneration = useRef<number | null>(null), pageVisible = useRef(false)
 
   const invalidate = () => { epoch.current++; setLoading(false) }
-  useDidHide(invalidate); useUnload(invalidate)
+  useDidHide(() => { pageVisible.current = false; invalidate() }); useUnload(() => { pageVisible.current = false; invalidate() })
   const clearDisplay = () => {
-    setCar(null); setDrives([]); setCharges([]); setTrips([]); setSelectedTrip(null); setHealth(null); setHealthEvidence(null)
+    setCars([]); setCar(null); setDrives([]); setCharges([]); setTrips([]); setSelectedTrip(null); setHealth(null); setHealthEvidence(null)
     setCurrentCharge(null); setStatus(null); currentCar.current = null; scope.current = null; setEditTrip(null); setChosen([]); setName(''); setCreating(false)
+    setDriveCoverage(emptyCoverage); setChargeCoverage(emptyCoverage); setOffline(false)
+    displayGeneration.current = null
   }
   const load = async (requested?: Car) => {
-    const operation = ++epoch.current, owner = readAppSession(Taro), generation = getApiSessionGeneration()
-    if (!owner?.userId) { setError('请先在“更多”中登录'); clearDisplay(); return }
+    const operation = ++epoch.current
+    try {
+      const current = readAppSession(Taro)
+      if (scope.current && (scope.current.userId !== current?.userId || scope.current.origin !== getApiOrigin() || displayGeneration.current !== getApiSessionGeneration())) clearDisplay()
+    } catch { clearDisplay() }
+    setLoading(true)
+    await ensureWechatSession()
+    if (operation !== epoch.current) return
+    const owner = readAppSession(Taro), generation = getApiSessionGeneration()
+    if (!owner?.userId) { setLoading(false); setError('请先在“更多”中登录'); clearDisplay(); return }
     let origin: string
-    try { origin = getApiOrigin() } catch (reason) { setError(message(reason)); clearDisplay(); return }
+    try { origin = getApiOrigin() } catch (reason) { setLoading(false); setError(message(reason)); clearDisplay(); return }
     if (scope.current && (scope.current.userId !== owner.userId || scope.current.origin !== origin || requested && requested.stableId !== scope.current.stableId)) clearDisplay()
     const valid = () => { try { return operation === epoch.current && generation === getApiSessionGeneration() && readAppSession(Taro)?.userId === owner.userId && getApiOrigin() === origin } catch { return false } }
     setLoading(true); setError(null); setCacheWarning(false)
@@ -78,7 +90,7 @@ export default function InsightsPage() {
     if (!next) { setCar(null); setLoading(false); setError('账号下没有可读取的车辆'); return }
     const nextScope = { userId: owner.userId, origin, stableId: next.stableId }
     const changed = currentCar.current?.stableId !== next.stableId || scope.current?.userId !== owner.userId || scope.current?.origin !== origin
-    currentCar.current = next; scope.current = nextScope; setCar(next); setOffline(!remote)
+    currentCar.current = next; scope.current = nextScope; displayGeneration.current = generation; setCar(next); setOffline(!remote)
     const saved = readManualTrips(Taro, nextScope); setTrips(saved)
     if (changed) { setCreating(params.mode === 'create'); setEditTrip(null); setName(''); setChosen([]); setLegPage(0); setRangeShown(20); setSelectedTrip(saved.find(trip => trip.id === params.tripId) ?? null); setQuery(emptyHistoryQuery()) }
     setHealth(null); setHealthEvidence(null); setStatus(null); setCurrentCharge(null)
@@ -106,7 +118,8 @@ export default function InsightsPage() {
     await Promise.all(work)
     if (valid()) { setLoading(false); if (failed.length) setError([...new Set(failed)].join('；')) }
   }
-  useDidShow(() => { void load() })
+  useSessionRecoveryReload(() => { if (pageVisible.current) void load() })
+  useDidShow(() => { pageVisible.current = true; void load() })
   const filteredDrives = filterHistory(drives, query).map(insightDrive), filteredCharges = filterHistory(charges, query)
   const activeSession = readAppSession(Taro)
   const costScope = activeSession?.userId && scope.current?.userId === activeSession.userId ? scope.current : null
@@ -161,15 +174,15 @@ export default function InsightsPage() {
       <MetricValue label="行驶时长" value={result.duration.value} unit="分钟" />
       <MetricValue label="合格净能量" value={result.energy.value} unit="kWh" negative={(result.energy.value ?? 0) < 0} />
       <MetricValue label="配对平均能耗" value={result.efficiency.value} unit="kWh/100km" negative={(result.efficiency.value ?? 0) < 0} />
-      <Text className="muted">能量覆盖 {result.energy.known}/{result.energy.total} · 能耗配对 {result.efficiency.known}/{result.efficiency.total} · 含估算 {result.estimatedEnergy} 段</Text>
-      <Text className="muted">里程覆盖 {result.distance.known}/{result.distance.total} · 时长覆盖 {result.duration.known}/{result.duration.total}</Text>
+      <Text className="muted">{result.energy.total === 0 ? '暂无能耗样本' : `能量覆盖 ${result.energy.known}/${result.energy.total}`} · {result.efficiency.total === 0 ? '无配对' : `能耗配对 ${result.efficiency.known}/${result.efficiency.total}`} · 含估算 {result.estimatedEnergy} 段</Text>
+      <Text className="muted">{result.distance.total === 0 ? '暂无里程样本' : `里程覆盖 ${result.distance.known}/${result.distance.total}`} · {result.duration.total === 0 ? '无时长' : `时长覆盖 ${result.duration.known}/${result.duration.total}`}</Text>
       <Text className="muted">{result.driveCount} 段行驶 · {result.chargeCount} 次充电</Text>
       {view.legs.some(leg => leg.kind === 'charge' && 'costProvenance' in leg.charge && leg.charge.costProvenance === 'manual') ? <Text className="muted">包含本机手动费用，原服务端账单保留。</Text> : null}
       {result.costs.groups.map(group => <MetricValue key={group.currency} label="所选充电费用" value={group.cost} unit={group.currency} />)}
       {result.costs.unknownCurrency ? <Text className="muted">{result.costs.unknownCurrency} 条费用币种未知，未并入合计</Text> : null}
     </View>
   }
-  const coverage = (value: Coverage, noun: string, rows: number) => <Text className="insight-coverage">{offline ? '本机缓存' : value.complete ? '分页读取完成' : '部分覆盖'} · {noun}已加载 {rows} 条 / {value.pages} 页{value.complete ? '' : '，仅分析这些记录'}</Text>
+  const coverage = (value: Coverage, noun: string, rows: number) => <Text className="insight-coverage">{offline ? '本机缓存' : value.complete ? '数据读取完成' : '部分覆盖'} · {noun} {rows} 条</Text>
 
   return <View className="page insights-page">
     <View className="insight-header"><Text className="title">{titles[kind]}</Text><Text className="muted">{carName(car)}</Text></View>

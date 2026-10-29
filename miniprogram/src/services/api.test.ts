@@ -144,9 +144,9 @@ describe('MateLink API transport', () => {
   it.each([
     { speed: 0, count: 1, source: 'observed_route_samples', unit: 'km/h', expected: 0 },
     { speed: 82, count: 3, source: 'observed_route_samples', unit: 'kph', expected: 82 },
-    { speed: 82, count: 0, source: 'observed_route_samples', unit: 'km/h', expected: null },
-    { speed: 82, count: undefined, source: 'observed_route_samples', unit: 'km/h', expected: null },
-    { speed: 82, count: 2, source: 'unknown', unit: 'km/h', expected: null },
+    { speed: 82, count: 0, source: 'observed_route_samples', unit: 'km/h', expected: 82 },
+    { speed: 82, count: undefined, source: 'observed_route_samples', unit: 'km/h', expected: 82 },
+    { speed: 82, count: 2, source: 'unknown', unit: 'km/h', expected: 82 },
     { speed: 82, count: 2, source: 'observed_route_samples', unit: undefined, expected: null },
     { speed: 82, count: 2, source: 'observed_route_samples', unit: 'mph', expected: 82 * 1.609344 },
     { speed: -1, count: 2, source: 'observed_route_samples', unit: 'km/h', expected: null },
@@ -168,6 +168,14 @@ describe('MateLink API transport', () => {
     const actual = (await api.matelinkApi.getDrives(7)).items[0]
     expect(actual.speedMaxKmh).toBe(source === 'telemetry_mqtt' ? 0 : null)
     expect(actual.speedUnit).toBe(source === 'telemetry_mqtt' ? 'km/h' : null)
+  })
+  it('keeps a reported archive peak when the response supplies a valid speed unit', async () => {
+    const { api } = await modules()
+    mocks.request.mockResolvedValue({ statusCode: 200, data: { data: { drives: [{ drive_id: 1,
+      source: 'teslamate_archive', quality_state: 'observed', speed_max: 158, speed_unit: 'km/h',
+      speed_sample_count: null, speed_metrics_source: null }] } }, header: {} })
+    const actual = (await api.matelinkApi.getDrives(7)).items[0]
+    expect(actual).toMatchObject({ speedMaxKmh: 158, speedUnit: 'km/h' })
   })
   it('preserves HTTP error code, message key and Retry-After', async () => {
     const { api } = await modules()

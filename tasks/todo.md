@@ -1,3 +1,11 @@
+# 2026-10-24 电脑开发者工具 Tesla 授权空白页回退
+
+- [x] 复现：固定仪表盘包的 Tesla start 返回 200；电脑开发者工具进入 auth 页后 WebView 空白，没有触发 onError；平台值为 devtools，手机不操作。
+- [x] 仅在 devtools 环境直接显示已有的“复制 Tesla 官方入口到浏览器”和“检查授权状态”控件；真实微信手机仍保留 WebView。
+- [ ] 授权页定向 18/18、类型检查通过；电脑模拟器已拍到回退控件，修正“入口就绪”文案后的固定构建复拍、单独提交/PR 仍待完成，不混入仪表盘 PR #24。
+
+Review：进行中。独立子代理未发现 P1/P2，已补浏览器返回后 status=ready→claim 主路径测试。用户本人在系统浏览器完成 Tesla 官方登录，密码和验证码不进入聊天；模拟器成功显示入口不等于真实账号回流已验收。
+
 # 2026-10-20 仪表盘单页对齐阶段（App 实机为准）
 
 - [x] 锁定本阶段范围和逐项验收条件；计划见 `tasks/plans/2026-10-20-dashboard-only-app-parity.md`。
@@ -3618,3 +3626,62 @@ Jovi authorized the API request legal-domain addition and real WeChat qualificat
 2026-10-18 review:48 files/612 Mini tests plus3 original-asset integrity checks, types/build PASS. Independent review found lowercase/model-alias editor crash; canonical initialization and actual consumer regressions fix it. Native DevTools verifies default black refreshedY and greyY/black3/red refreshedY Image loads, actual vehiclePicker switches, appearance editor and saved black refreshed3 Image, all with separate synthetic account/data labeling. Owner1870 hashes/head92cb unchanged. No production change, callback/subscription send, upload, release or main merge.
 
 Final native review: package-level hung Promise retry defect reproduced against the old Git source in memory (RED), fixed with expiry and request identity, and independently rechecked. Three actual native-component VM cases PASS in addition to3 original-asset cases; the612 Mini cases remain PASS. Final source identity/CI/package signoff is recorded outside the frozen tree in the delivery evidence directory.
+
+# 2026-10-28 跨端审查修复追加
+
+- [x] 核实当前小程序 worktree 为 `f2834fc3` / 0.5.1；旧报告 `8870df49` / 0.4.9 已过时。
+- [x] 修复共享指标与图表未知值不拼接单位；保留真实 0。
+- [x] 修复仪表盘充电 HUD 未知电流的单位拼接。
+- [x] 首次历史分页期间隐藏区间摘要加载卡，避免与列表加载提示重复。
+- [ ] 清理并完成跨页回归测试；再执行类型检查、微信构建和开发者工具产物检查。
+- [ ] 输出当前 SHA 的逐页 PASS/CHANGES_REQUIRED/BLOCKED 审核报告。
+
+Review：报告中的“列表修改总价”在当前 0.5.1 已降级到详情页，未重复修改；充电费用来源、历史合格母集和曲线采样仍需回归验证。
+
+## 2026-10-28 Review
+
+- [x] 19 张 0.4.9 截图重新归类并与 App build74 源码只读对照。
+- [x] 修复未知值单位拼接、摘要技术文字墙、首次分页重复加载、详情时间、速度峰值门控和驻车来源显示。
+- [x] 全量测试 733/733、TypeScript、微信生产构建和 dist API 域名检查通过。
+- [x] 生成 `docs/MP-ALIGNMENT-AUDIT-20261028.md` 与 `docs/audit-contact-sheet.jpg`。
+- [ ] 统计/电池健康/更多页的真实同账号同窗口 App/小程序截图复核仍待完成；不能标记全页面一比一 PASS。
+
+## 2026-10-28 体验版上传
+
+- [x] 小程序版本更新为 0.5.2，CHANGELOG 与关于页同步。
+- [x] 733/733 测试、类型检查、微信构建通过。
+- [x] 代码提交 `ee7cf818` 推送到当前小程序分支。
+- [x] 微信开发者工具体验版上传成功：AppID `wxc84899ab6146f1be`，版本 `0.5.2`。
+- [x] 微信绑定车辆方案记录：微信身份绑定 MateLink 用户，Tesla 授权凭证服务端加密保存；小程序不保存 Tesla 密码。
+- [ ] 真实 Tesla 账号同窗口逐页数据验收；正式发布审核仍需微信公众平台管理员操作。
+
+# 2026-10-28 小程序 App 对齐与微信绑定执行计划
+
+基线：小程序 worktree E:\Claude_allow\Download\mp-parity-wt-20261025，当前 HEAD 由执行前重新读取；Android App E:\project\_worktrees\matelink-release-data-audit-20261026 只读。所有实现限定在小程序 worktree 及其后端目录，不触碰 App 工作树。
+
+## 阶段 A：身份与微信绑定
+- [x] A1 审查现有 Tesla OAuth、Mini transaction、session 存储与 API 合同，确认最小微信身份模型。
+- [x] A2 服务端实现微信 code exchange/session restore、显式绑定/解绑、冲突与账号隔离；微信会话只恢复 MateLink 用户，Tesla 长期凭证只留服务端加密存储。
+- [x] A3 小程序调用 wx.login 恢复会话；首次 Tesla 授权后提供绑定确认；授权过期回退官方 Tesla 登录。
+- [x] A4 用 Go/TS 回归覆盖 code 重放、旧会话、退出竞态、解绑、换号、跨账号车辆隔离。
+
+## 阶段 B：逐页 App 对齐
+- [x] B1 以 App build74 源码和已有截图证据建立车辆、行程、充电、更多/分析逐项矩阵。
+- [ ] B2 修正布局/文案/筛选高度/未知值/费用卡/加载空态/数据来源显示，保持 App 的计算和资格规则。
+- [ ] B3 在微信开发者工具导入固定 dist，逐页截图检查首屏、中段、详情、滚动和返回；真实账号未完成时明确标注 NOT_VERIFIED。
+
+## 阶段 C：验证与交付
+- [x] C1 运行 Go 测试、Mini 测试、typecheck、build:weapp、资源/API 域名检查。
+- [x] C2 复核 diff、提交、推送并上传微信开发版本；记录 SHA、版本、包大小和限制。
+- [x] C3 形成逐页报告，区分源码复核、待真实 Tesla 验证和阻塞项。
+
+## 约束
+- Tesla 密码、refresh token、微信 session_key/openid 不进入小程序日志或普通缓存。
+- 不把微信身份作为 Tesla 主登录前置；微信绑定是可选的会话恢复能力。
+- 不把合成数据截图当真实账号验收；不宣称全页面已一比一通过，除非有同账号同窗口证据。
+
+## Review
+- 实现任务需经过规格审查和代码质量审查。
+- 所有测试、构建、开发者工具结果与未完成项在最终报告中记录。
+
+阶段结果：微信绑定前后端规格与质量复审均 PASS；最终 Mini 807/807、资源6项、类型检查通过，完整 Go/PostgreSQL 465 PASS、0 FAIL、0 SKIP。2026-10-29 版本 0.6.0 已由微信开发者工具上传为开发版本，线上 API `/healthz` 已更新为代码提交 `a2bac32c` 且健康。数据库和配置已备份，旧环境/挂载/端口保持；AppSecret 尚未配置，真实微信绑定、体验版设置和本人 Tesla 联调仍待完成。App 页面差异见复核报告，未宣称完全对齐。

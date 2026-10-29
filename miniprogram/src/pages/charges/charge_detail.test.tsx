@@ -1,11 +1,11 @@
 import React from 'react'
 import renderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), navigateTo: vi.fn(),
+const platform = vi.hoisted(() => ({ request: vi.fn(), login: vi.fn(), values: new Map<string, unknown>(), navigateTo: vi.fn(),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Input: 'input', Image: 'image', Map: 'map', ScrollView: 'scroll-view' }))
 vi.mock('@tarojs/taro', () => ({ default: {
-  request: platform.request, getStorageSync: (key: string) => platform.values.get(key),
+  request: platform.request, login: platform.login, getStorageSync: (key: string) => platform.values.get(key),
   setStorageSync: (key: string, value: unknown) => { platform.values.set(key, JSON.parse(JSON.stringify(value))) },
   removeStorageSync: (key: string) => { platform.values.delete(key) }, getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }), navigateTo: platform.navigateTo,
 }, useDidShow: (callback: () => void) => { platform.show = callback }, useDidHide: (callback: () => void) => { platform.hide = callback }, useUnload: (callback: () => void) => { platform.unload = callback }, usePageScroll: () => {} }))
@@ -24,7 +24,7 @@ const response = (data: unknown) => ({ statusCode: 200, header: {}, data: { data
 function session(userId: string) { return { apiOrigin: origin, userId, accessToken: `synthetic-${userId}`, refreshToken: null, expiresAt: null, linkRequired: false } }
 let offline = false
 beforeEach(() => {
-  vi.resetModules(); platform.values.clear(); platform.request.mockReset(); platform.navigateTo.mockReset(); offline = false
+  vi.resetModules(); platform.values.clear(); platform.request.mockReset(); platform.login.mockReset(); platform.navigateTo.mockReset(); offline = false
   vi.stubEnv('TARO_APP_API_BASE_URL', origin); platform.values.set('matelink.wechat.session.v1', session('owner'))
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
     if (offline) throw new Error('synthetic offline')
@@ -52,6 +52,45 @@ async function edit(amount: string, currency: string) {
   await act(async () => { const fields = tree!.root.findAllByType('input'); fields[0].props.onInput({ detail: { value: amount } }); fields[1].props.onInput({ detail: { value: currency } }) })
 }
 const shown = () => tree!.root.findAllByType('text').map(node => node.children.join('')).join('\n')
+it('hides the previous account charge records while a replacement account refresh is pending', async () => {
+  await mount()
+  expect(tree!.root.findAllByProps({ className: 'history-record' }).length).toBeGreaterThan(0)
+  await act(async () => { platform.hide() })
+  platform.values.set('matelink.wechat.session.v1', { ...session('other'), refreshToken: 'refresh-other', expiresAt: '2000-01-01T00:00:00Z' })
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/v1/session/refresh')
+    ? new Promise(resolve => { release = resolve }) : Promise.resolve(response({ cars: [] })))
+  await act(async () => { platform.show() }); await flush()
+  expect(tree!.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+  await act(async () => { release({ statusCode: 200, data: { access_token: 'fresh-other', refresh_token: 'next' }, header: {} }) }); await flush()
+})
+it('clears old charge records after expired refresh rejection until the shared recovery completes', async () => {
+  const storage = await import('../../services/session')
+  storage.writeWechatRecoveryPreference({ setStorageSync: (name, value) => platform.values.set(name, value) },
+    { apiOrigin: origin, boundUserId: 'owner', enabled: true })
+  platform.values.set('matelink.wechat.session.v1', { ...session('owner'), refreshToken: 'refresh-owner' })
+  await mount()
+  expect(tree!.root.findAllByProps({ className: 'history-record' }).length).toBeGreaterThan(0)
+  await act(async () => { platform.hide() })
+  platform.values.set('matelink.wechat.session.v1', { ...session('owner'), refreshToken: 'refresh-owner', expiresAt: '2000-01-01T00:00:00Z' })
+  platform.login.mockResolvedValue({ code: 'fresh-code' })
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/v1/session/refresh')) return Promise.resolve({ statusCode: 401, data: { error: 'session_required' }, header: {} })
+    if (url.endsWith('/v1/auth/wechat/restore')) return new Promise(resolve => { release = resolve })
+    if (url.endsWith('/cars')) return Promise.resolve(response({ cars: [{ car_id: 7, vehicle_uid: 'uid7', name: '合成车辆' }] }))
+    if (url.endsWith('/current')) return Promise.resolve(response({ charge: null }))
+    return Promise.resolve(response({ charges: [charge], meta: { page: 1, show: 20, total_pages: 1 } }))
+  })
+  await act(async () => { platform.show() })
+  await vi.waitFor(() => expect(platform.request.mock.calls.some(([request]) => request.url.endsWith('/v1/auth/wechat/restore'))).toBe(true))
+  expect(tree!.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+  await act(async () => { release({ statusCode: 200, data: { access_token: 'restored', user: { id: 'owner' } }, header: {} }) }); await flush()
+  expect(tree!.root.findAllByProps({ className: 'history-record' }).length).toBeGreaterThan(0)
+  expect(platform.login).toHaveBeenCalledTimes(1)
+  const lastCars = platform.request.mock.calls.filter(([request]) => request.url.endsWith('/cars')).slice(-1)[0][0]
+  expect(lastCars.header.Authorization).toBe('Bearer restored')
+})
 it.each(['missing-mode', 'dc-mode', 'uppercase-mode', 'mismatched-basis', 'blank-basis', 'missing-observed', 'submillisecond-shift'])('keeps independently qualified energies but withholds AC efficiency for %s', async reason => {
   const altered = JSON.parse(JSON.stringify(charge))
   if (reason === 'missing-mode') delete altered.charge_type
@@ -71,7 +110,7 @@ it.each(['missing-mode', 'dc-mode', 'uppercase-mode', 'mismatched-basis', 'blank
   const panel = tree!.root.findByProps({ className: 'history-detail-overlay' })
   expect(panel.findByProps({ ariaLabel: '电池充入 8 kWh' })).toBeDefined()
   expect(panel.findByProps({ ariaLabel: 'AC 输入 10 kWh' })).toBeDefined()
-  expect(panel.findByProps({ ariaLabel: 'AC输入效率 暂无数据%' })).toBeDefined()
+  expect(panel.findByProps({ ariaLabel: 'AC输入效率 暂无数据' })).toBeDefined()
 })
 it('preserves qualified zero battery input as zero percent efficiency', async () => {
   const altered = { ...charge, energy_contract: { ...charge.energy_contract, battery_input: metric(0, 'battery_input') } }
@@ -102,7 +141,7 @@ it.each([{ change: 'power', resumeOffline: false }, { change: 'window', resumeOf
   await act(async () => { platform.show() }); await flush()
   const panel = tree!.root.findByProps({ className: 'history-detail-overlay' })
   if (change === 'power') expect(panel.findByProps({ ariaLabel: '报告功率 225 kW' })).toBeDefined()
-  if (change === 'power' || change === 'window') expect(panel.findByProps({ ariaLabel: '样本平均功率 暂无数据 kW' })).toBeDefined()
+  if (change === 'power' || change === 'window') expect(panel.findByProps({ ariaLabel: '样本平均功率 暂无数据' })).toBeDefined()
   else {
     expect(panel.findByProps({ ariaLabel: '样本平均功率 5 kW' })).toBeDefined()
     expect(panel.findByProps({ ariaLabel: '电池充入 8 kWh' })).toBeDefined()
@@ -122,38 +161,10 @@ it('renders actual parsed charge detail in App section order, real sample extrem
   const serialized = JSON.stringify([...platform.values.values()])
   expect(serialized).not.toContain('charge_details'); expect(serialized).not.toContain('charger_voltage')
 })
-it('edits manual amount/currency through actual page, retains upstream zero, reopens offline and clears back to actual zero', async () => {
-  await mount(); await detail(); await edit('5.25', 'USD'); await click('保存本机费用')
-  const row = tree!.root.findByProps({ className: 'history-record' })
-  expect(row.findByProps({ ariaLabel: '费用 5.25 USD' })).toBeDefined()
-  expect(shown()).toContain('本机手动费用')
-  const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
-  const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
-  const raw = readHistoryCache<{ cost: number; currencyCode: string }>(storage, historyCacheKey('charges', 'owner', 'uid7', origin))
-  expect(raw[0]).toMatchObject({ cost: 0, currencyCode: 'EUR' })
-  await act(async () => { platform.unload(); tree!.unmount() }); tree = null; offline = true
+it('does not expose manual cost editing to users, keeping read-only accounting detail', async () => {
   await mount(); await detail()
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 5.25 USD' })).toBeDefined()
-  await click('编辑本机费用'); await click('清除本机费用并恢复账单')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 0 EUR' })).toBeDefined()
-  expect(shown()).toContain('服务端报告0费用')
-})
-it('keeps manual zero distinct from actual zero and rejects a missing explicit currency', async () => {
-  await mount(); await detail(); await edit('0', 'USD'); await click('保存本机费用')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 0 USD' })).toBeDefined()
-  expect(shown()).toContain('费用来源：本机手动设置')
-  await edit('10', ''); await click('保存本机费用')
-  expect(shown()).toContain('费用未保存')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 0 USD' })).toBeDefined()
-})
-it('rejects a queued old cost editor save after hide/account change even when a new editor has opened', async () => {
-  await mount(); await detail(); await edit('999', 'USD')
-  const oldSave = tree!.root.findAllByType('button').find(node => node.children.join('') === '保存本机费用')!.props.onClick
-  await act(async () => { platform.hide(); platform.values.set('matelink.wechat.session.v1', session('other')); platform.show() }); await flush(); await detail(); await edit('2', 'EUR')
-  await act(async () => { oldSave() }); await flush()
-  expect([...platform.values.keys()].filter(key => key.startsWith('matelink.charge-cost.'))).toEqual([])
-  await click('保存本机费用')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 2 EUR' })).toBeDefined()
+  expect(tree!.root.findAllByType('button').some(node => node.children.join('') === '编辑本机费用')).toBe(false)
+  expect(shown()).not.toContain('本机手动费用')
 })
 it('shows an App-style short address, marked default-price estimate and only returned-month chart data', async () => {
   const legacy = { ...charge, source: 'teslamate_archive', cost: null, currency_code: null, charge_type: null, energy_contract: null,
@@ -167,11 +178,11 @@ it('shows an App-style short address, marked default-price estimate and only ret
   await mount()
   const row = tree!.root.findByProps({ className: 'history-record' })
   expect(row.findByProps({ className: 'history-charge-location' }).findAllByType('text')[0].children.join('')).toBe('合成路')
-  expect(row.findByProps({ ariaLabel: '费用 ≈¥27.38' })).toBeDefined()
+  expect(row.findByProps({ ariaLabel: '充电费用 ≈¥27.38' })).toBeDefined()
   expect(row.findByProps({ ariaLabel: '能量 24.0 kWh' })).toBeDefined()
   const summary = tree!.root.findByProps({ className: 'card history-interval' })
-  expect(summary.findByProps({ ariaLabel: '总费用（含估算） ≈27.38 CNY' })).toBeDefined()
-  expect(summary.findByProps({ ariaLabel: '平均每次费用（含估算） ≈27.38 CNY' })).toBeDefined()
+  expect(summary.findByProps({ ariaLabel: '费用 ≈27.38 CNY' })).toBeDefined()
+  expect(summary.findByProps({ ariaLabel: '单次均价 ≈27.38 CNY' })).toBeDefined()
   expect(shown()).toContain('费用按 App 默认 ¥1.14/kWh 估算')
   await click('费用')
   const chart = tree!.root.findByProps({ className: 'card charge-month-chart' })
@@ -211,10 +222,9 @@ it('keeps a missing CNY bill estimate separate from an actual foreign-currency z
   await mount()
   const summary = tree!.root.findByProps({ className: 'card history-interval' })
   const summaryText = summary.findAllByType('text').map(node => node.children.join('')).join('\n')
-  expect(summaryText).toContain('实际/手填费用覆盖 1/2 条；估算费用覆盖 1/2 条')
-  expect(summaryText).toContain('CNY ≈27.38（实际/手填 0 条，估算 1 条）')
-  expect(summaryText).toContain('EUR 0.00（实际/手填 1 条，估算 0 条）')
-  expect(summary.findByProps({ ariaLabel: '总费用 暂无数据 多币种' })).toBeDefined()
+  expect(summaryText).toContain('费用')
+  expect(summaryText).not.toContain('实际/手填费用覆盖')
+  expect(summary.findByProps({ ariaLabel: '费用 暂无数据' })).toBeDefined()
   const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
   const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
   const raw = readHistoryCache<{ cost: number | null }>(storage, historyCacheKey('charges', 'owner', 'uid7', origin))
@@ -222,8 +232,8 @@ it('keeps a missing CNY bill estimate separate from an actual foreign-currency z
   expect(raw.find(row => row.cost === 0)).toBeDefined()
 })
 it.each([
-  { currency: 'CNY', defaultPrice: 0, card: '费用 ≈¥0.00', chart: '¥0.00', source: '已保存默认电价 ¥0/kWh' },
-  { currency: 'EUR', defaultPrice: 2, card: '费用 ≈20.00 EUR', chart: '20.00 EUR', source: '已保存默认电价 2 EUR/kWh' },
+  { currency: 'CNY', defaultPrice: 0, card: '充电费用 ≈¥0.00', chart: '¥0.00', source: '已保存默认电价 ¥0/kWh' },
+  { currency: 'EUR', defaultPrice: 2, card: '充电费用 ≈20.00 EUR', chart: '20.00 EUR', source: '已保存默认电价 2 EUR/kWh' },
 ])('uses scoped saved $currency default price $defaultPrice before the App fallback, without using TOU rates', async ({ currency, defaultPrice, card, chart, source }) => {
   const { tariffKey } = await import('../../domain/tariff')
   platform.values.set(tariffKey('owner', origin), { currency, defaultPrice, enabled: true, peak: 9, flat: 8, valley: 7, timeZone: 'Asia/Shanghai' })
@@ -258,7 +268,7 @@ it('does not adopt a default price saved by another account or origin', async ()
     return response({ charges: [legacy], meta: { page: 1, show: 20, total_pages: 1 } })
   })
   await mount()
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 ≈¥11.40' })).toBeDefined()
+  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 ≈¥11.40' })).toBeDefined()
   expect(shown()).toContain('费用按 App 默认 ¥1.14/kWh 估算')
 })
 it('shows TeslaMate unfilled raw zero as an estimate until the owner explicitly saves manual zero', async () => {
@@ -271,14 +281,9 @@ it('shows TeslaMate unfilled raw zero as an estimate until the owner explicitly 
     return response({ charges: [legacy], meta: { page: 1, show: 20, total_pages: 1 } })
   })
   await mount()
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 ≈¥11.40' })).toBeDefined()
-  expect(shown()).toContain('实际/手填费用覆盖 0/1 条；估算费用覆盖 1/1 条')
+  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 ≈¥11.40' })).toBeDefined()
+  expect(shown()).toContain('费用按 App 默认 ¥1.14/kWh 估算')
   await detail()
   expect(shown()).toContain('费用来源：按 App 默认 ¥1.14/kWh 与合格电池充入量估算')
-  await edit('0', 'CNY'); await click('保存本机费用')
-  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '费用 0 CNY' })).toBeDefined()
-  expect(shown()).toContain('费用来源：本机手动设置')
-  const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
-  const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
-  expect(readHistoryCache<{ cost: number }>(storage, historyCacheKey('charges', 'owner', 'uid7', origin))[0].cost).toBe(0)
+  expect(tree!.root.findAllByType('button').some(node => node.children.join('') === '编辑本机费用')).toBe(false)
 })

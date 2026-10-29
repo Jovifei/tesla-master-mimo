@@ -14,5 +14,6 @@
   "compileType": "miniprogram",
   "appid": "wxc84899ab6146f1be",
   "projectname": "MateLink车迹",
+  "miniprogramRoot": "dist/",
   "condition": {}
 }

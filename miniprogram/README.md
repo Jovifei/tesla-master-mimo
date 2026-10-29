@@ -1,4 +1,4 @@
-# MateLink 微信小程序（0.3.0，数据与能耗阶段）
+# MateLink 微信小程序（0.6.1，App 视觉与字段对齐）
 
 这是 MateLink 的微信小程序客户端。它复用既有 MateLink Go API 的业务语义，不复制 Android Compose、Room 或 Web DOM，也不直接访问 Tesla Fleet API、MQTT、mTLS 或服务器私钥。
 

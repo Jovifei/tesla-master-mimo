@@ -1,42 +1,212 @@
 .analysis-page {
-  .app-toolbar { display: flex; gap: 20px; align-items: center; margin-bottom: 20px; }
-  .analysis-back { margin: 0; padding: 0 18px; font-size: 25px; line-height: 1.7; color: #157a86; background: transparent; }
-  .analysis-back::after { border: 0; }
-  .analysis-controls { margin-bottom: 18px; }
-  .history-date-chips { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 16px; white-space: nowrap; }
-  .history-chip { flex: none; margin: 0; padding: 4px 18px; background: #fff; border: 1px solid #e9edf2; color: #6b7280; font-size: 24px; border-radius: 18px; line-height: 1.8; }
-  .history-chip-selected { color: #157a86; background: #ddf0f1; }
-  .analysis-date-range { display: flex; gap: 18px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
-  .analysis-date-range picker { font-size: 23px; color: #6b7280; }
-  .analysis-coverage { padding: 12px 0 20px; color: #6b7280; font-size: 24px; }
-  .analysis-coverage > text, .analysis-record > text, .timeline-event > text { display: block; overflow-wrap: anywhere; }
-  .analysis-record { border-top: 1px solid #e9edf2; padding: 20px 0; line-height: 1.7; }
-  .analysis-bars .analysis-bar-row { display: grid; grid-template-columns: 126px minmax(0,1fr) 140px; gap: 14px; align-items: center; margin-top: 18px; font-size: 22px; }
-  .analysis-bar-track { height: 20px; background: #eef0f3; border-radius: 6px; overflow: hidden; }
-  .analysis-bar { height: 100%; background: #157a86; }
-  .analysis-bar-negative { background: #047857; }
-  .analysis-percentile-track { height: 14px; background: #e9edf2; border-radius: 8px; overflow: hidden; }
-  .analysis-percentile-track > view { height: 100%; background: #157a86; }
-  .analysis-bar-row text { overflow-wrap: anywhere; }
-  .analysis-canvas { display: block; width: 100%; height: 320px; margin-top: 18px; }
-  .analysis-curve-expand { display: inline-block; margin: 0; padding: 4px 14px; color: #157a86; background: #ddf0f1; border: 0; border-radius: 12px; font-size: 23px; line-height: 1.7; }
-  .analysis-curve-fullscreen { position: fixed; inset: 0; z-index: 1000; margin: 0; border-radius: 0; overflow-y: auto; background: #fff; padding: 36px 24px; padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
-  .analysis-curve-fullscreen .analysis-canvas { height: 58vh; }
-  .analysis-axis { display: flex; justify-content: space-between; gap: 16px; font-size: 21px; color: #6b7280; }
-  .analysis-axis > text { flex: 1; overflow-wrap: anywhere; }
-  .analysis-axis > text:last-child { text-align: right; }
-  .analysis-cursor { display: block; color: #157a86; font-size: 24px; line-height: 1.5; }
-  .calendar-week, .analysis-calendar { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 6px; }
-  .calendar-week { text-align: center; font-size: 24px; color: #6b7280; margin: 22px 0 12px; }
-  .calendar-day { width: 100%; padding: 10px 0; border: 1px solid #e9edf2; background: #f5f7f9; font-size: 23px; line-height: 1.5; border-radius: 10px; }
-  .calendar-day::after { border: none; }
-  .calendar-day > text { display: block; }
-  .calendar-distance { color: #157a86; font-size: 18px; overflow-wrap: anywhere; }
-  .timeline-event { border-left: 4px solid #157a86; }
-  .timeline-day { display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; padding: 12px 0; font-weight: 600; }
-  .timeline-date { color: #6b7280; font-size: 23px; margin-bottom: 12px; }
+  padding: 32rpx;
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+
+  .app-toolbar {
+    display: flex;
+    gap: 20rpx;
+    align-items: center;
+    margin-bottom: 24rpx;
+  }
+  .analysis-back {
+    margin: 0;
+    padding: 0 24rpx;
+    height: 64rpx;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28rpx;
+    font-weight: 500;
+    color: #1f2937;
+    background: #eef1f4;
+    border-radius: 32rpx;
+    border: none;
+    box-sizing: border-box;
+    line-height: 1;
+    &::after { border: 0; }
+    &:active { background: #e2e5e9; }
+  }
+  .analysis-controls { margin-bottom: 24rpx; }
+  .history-date-chips {
+    display: flex;
+    gap: 16rpx;
+    overflow-x: auto;
+    padding-bottom: 16rpx;
+    white-space: nowrap;
+  }
+  .history-chip {
+    flex: none;
+    margin: 0;
+    padding: 10rpx 24rpx;
+    background: #ffffff;
+    border: 1rpx solid #e9edf2;
+    color: #6b7280;
+    font-size: 26rpx;
+    border-radius: 999rpx;
+    line-height: 1.4;
+    &::after { border: 0; }
+  }
+  .history-chip-selected {
+    color: #157a86;
+    background: #ddf0f1;
+    font-weight: 600;
+  }
+  .analysis-date-range {
+    display: flex;
+    gap: 20rpx;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    picker {
+      font-size: 26rpx;
+      color: #6b7280;
+    }
+  }
+  .analysis-coverage {
+    padding: 16rpx 0 20rpx;
+    color: #6b7280;
+    font-size: 26rpx;
+    line-height: 1.5;
+    > text { display: block; overflow-wrap: anywhere; }
+  }
+  .analysis-record {
+    border-top: 1rpx solid #e9edf2;
+    padding: 24rpx 0;
+    line-height: 1.6;
+    > text { display: block; overflow-wrap: anywhere; }
+  }
+  .analysis-bars .analysis-bar-row {
+    display: grid;
+    grid-template-columns: 160rpx minmax(0, 1fr) 160rpx;
+    gap: 16rpx;
+    align-items: center;
+    margin-top: 20rpx;
+    font-size: 26rpx;
+    text { overflow-wrap: anywhere; }
+  }
+  .analysis-bar-track {
+    height: 24rpx;
+    background: #eef0f3;
+    border-radius: 12rpx;
+    overflow: hidden;
+  }
+  .analysis-bar {
+    height: 100%;
+    background: #157a86;
+    border-radius: 12rpx;
+  }
+  .analysis-bar-negative {
+    background: #047857;
+  }
+  .analysis-percentile-track {
+    height: 18rpx;
+    background: #e9edf2;
+    border-radius: 9rpx;
+    overflow: hidden;
+    > view {
+      height: 100%;
+      background: #157a86;
+    }
+  }
+  .analysis-canvas {
+    display: block;
+    width: 100%;
+    height: 400rpx;
+    margin-top: 20rpx;
+  }
+  .analysis-curve-expand {
+    display: inline-block;
+    margin: 0;
+    padding: 8rpx 20rpx;
+    color: #157a86;
+    background: #ddf0f1;
+    border: 0;
+    border-radius: 999rpx;
+    font-size: 24rpx;
+    line-height: 1.4;
+    &::after { border: none; }
+  }
+  .analysis-curve-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    margin: 0;
+    border-radius: 0;
+    overflow-y: auto;
+    background: #ffffff;
+    padding: 40rpx 32rpx;
+    padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
+    .analysis-canvas { height: 60vh; }
+  }
+  .analysis-axis {
+    display: flex;
+    justify-content: space-between;
+    gap: 16rpx;
+    font-size: 24rpx;
+    color: #6b7280;
+    > text {
+      flex: 1;
+      overflow-wrap: anywhere;
+      &:last-child { text-align: right; }
+    }
+  }
+  .analysis-cursor {
+    display: block;
+    color: #157a86;
+    font-size: 26rpx;
+    line-height: 1.5;
+  }
+  .calendar-week, .analysis-calendar {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 8rpx;
+  }
+  .calendar-week {
+    text-align: center;
+    font-size: 26rpx;
+    color: #6b7280;
+    margin: 24rpx 0 16rpx;
+  }
+  .calendar-day {
+    width: 100%;
+    padding: 16rpx 0;
+    border: 1rpx solid #e9edf2;
+    background: #f5f7f9;
+    font-size: 26rpx;
+    line-height: 1.5;
+    border-radius: 14rpx;
+    &::after { border: none; }
+    > text { display: block; }
+  }
+  .calendar-distance {
+    color: #157a86;
+    font-size: 22rpx;
+    overflow-wrap: anywhere;
+    font-weight: 600;
+  }
+  .timeline-event {
+    border-left: 6rpx solid #157a86;
+    padding-left: 16rpx;
+    > text { display: block; overflow-wrap: anywhere; }
+  }
+  .timeline-day {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20rpx;
+    flex-wrap: wrap;
+    padding: 16rpx 0;
+    font-weight: 600;
+    font-size: 28rpx;
+  }
+  .timeline-date {
+    color: #6b7280;
+    font-size: 24rpx;
+    margin-bottom: 12rpx;
+  }
   .metric-grid .metric { text-align: center; }
   .metric-heading, .metric-reading { justify-content: center; align-items: center; }
-  .button-secondary { margin-top: 12px; }
+  .button-secondary { margin-top: 16rpx; }
   .section-title { display: block; }
 }

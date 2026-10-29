@@ -2,13 +2,14 @@ import React from 'react'
 import TestRenderer, { act, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), toast: vi.fn(), navigate: vi.fn(), switchTab: vi.fn(), clipboard: vi.fn(),
+const platform = vi.hoisted(() => ({ request: vi.fn(), bindingRequest: vi.fn(), login: vi.fn(), modal: vi.fn(), values: new Map<string, unknown>(), failPreferenceWrite: false, failPreferenceRemove: false, toast: vi.fn(), navigate: vi.fn(), switchTab: vi.fn(), clipboard: vi.fn(),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Image: 'image', Button: 'button', Checkbox: 'checkbox', CheckboxGroup: 'checkboxgroup' }))
 vi.mock('@tarojs/taro', () => ({ default: {
-  request: platform.request, getStorageSync: (key: string) => platform.values.get(key),
-  setStorageSync: (key: string, value: unknown) => platform.values.set(key, value),
-  removeStorageSync: (key: string) => platform.values.delete(key), showToast: platform.toast,
+  request: (options: { url: string }) => options.url.endsWith('/v1/auth/wechat/binding') ? platform.bindingRequest(options) : platform.request(options),
+  login: platform.login, showModal: platform.modal, getStorageSync: (key: string) => platform.values.get(key),
+  setStorageSync: (key: string, value: unknown) => { if (key.startsWith('matelink.wechat.recovery.v1.') && platform.failPreferenceWrite) throw Error('storage failed'); platform.values.set(key, value) },
+  removeStorageSync: (key: string) => { if (key.startsWith('matelink.wechat.recovery.v1.') && platform.failPreferenceRemove) throw Error('storage failed'); platform.values.delete(key) }, showToast: platform.toast,
   navigateTo: platform.navigate, switchTab: platform.switchTab, setClipboardData: platform.clipboard,
 }, useDidShow: (fn: () => void) => { platform.show = fn }, useDidHide: (fn: () => void) => { platform.hide = fn },
 useUnload: (fn: () => void) => { platform.unload = fn } }))
@@ -18,7 +19,8 @@ const respond = (statusCode: number, data: unknown) => ({ statusCode, data, head
 let renderer: ReactTestRenderer | null = null
 beforeEach(() => {
   vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test')
-  platform.values.clear(); platform.request.mockReset(); platform.toast.mockReset(); platform.navigate.mockReset().mockResolvedValue({}); platform.switchTab.mockReset().mockResolvedValue({}); platform.clipboard.mockReset().mockResolvedValue({})
+  platform.values.clear(); platform.request.mockReset(); platform.bindingRequest.mockReset().mockResolvedValue(respond(200, { bound: false, binding_version: '0' })); platform.login.mockReset(); platform.modal.mockReset(); platform.toast.mockReset(); platform.navigate.mockReset().mockResolvedValue({}); platform.switchTab.mockReset().mockResolvedValue({}); platform.clipboard.mockReset().mockResolvedValue({})
+  platform.failPreferenceWrite = false; platform.failPreferenceRemove = false
   platform.values.set(key, session('a'))
 })
 afterEach(async () => {
@@ -78,6 +80,19 @@ it.each(['network', 'http500'])('failed %s logout still synchronizes already-cle
   expect(platform.toast).not.toHaveBeenCalled()
 })
 
+it('shows that automatic recovery could resume after restart when logout and local storage both fail', async () => {
+  const storage = await import('../../services/session')
+  storage.writeWechatRecoveryPreference({ setStorageSync: (name, value) => platform.values.set(name, value) },
+    { apiOrigin: 'https://api.example.test', boundUserId: 'a', enabled: true })
+  platform.failPreferenceWrite = true; platform.failPreferenceRemove = true
+  platform.request.mockRejectedValue(Error('PRIVATE_TRANSPORT_DIAGNOSTIC'))
+  await mount(); await logout()
+  expect(visible()).toContain('重启后可能重新进入')
+  expect(visible()).toContain('退出请求未确认')
+  expect(visible()).not.toContain('PRIVATE_TRANSPORT_DIAGNOSTIC')
+  expect(platform.values.has(key)).toBe(false)
+})
+
 it('late successful logout synchronizes a newer local session instead of clearing its UI', async () => {
   const { matelinkApi } = await import('../../services/api')
   let release!: (value: unknown) => void
@@ -111,6 +126,196 @@ const button = (label: string) => renderer!.root.findAllByType('button').find(no
 async function consent() {
   await act(async () => { renderer!.root.findByType('checkboxgroup' as React.ElementType).props.onChange({ detail: { value: ['terms', 'privacy'] } }) })
 }
+it('asks for confirmation before binding the current WeChat identity', async () => {
+  platform.login.mockResolvedValue({ code: 'synthetic-code' })
+  platform.modal.mockResolvedValueOnce({ confirm: false }).mockResolvedValueOnce({ confirm: true })
+  platform.request.mockResolvedValue(respond(200, { status: 'bound' }))
+  await mount()
+  await act(async () => { button('绑定当前微信').props.onClick() }); await flush()
+  expect(platform.login).not.toHaveBeenCalled()
+  await act(async () => { button('绑定当前微信').props.onClick() }); await flush()
+  expect(platform.login).toHaveBeenCalledTimes(1)
+  expect(platform.request.mock.calls[0][0]).toMatchObject({ url: 'https://api.example.test/v1/auth/wechat/bind' })
+  expect(visible()).toContain('此账号已绑定微信')
+})
+
+it('shows the server binding and local failure when binding succeeds but preference storage fails', async () => {
+  const storage = await import('../../services/session')
+  storage.writeWechatRecoveryPreference({ setStorageSync: (name, value) => platform.values.set(name, value) },
+    { apiOrigin: 'https://api.example.test', boundUserId: 'a', enabled: true })
+  platform.failPreferenceWrite = true; platform.failPreferenceRemove = true
+  platform.bindingRequest.mockResolvedValueOnce(respond(200, { bound: false, binding_version: '0' }))
+    .mockResolvedValueOnce(respond(200, { bound: false, binding_version: '0' }))
+    .mockResolvedValueOnce(respond(200, { bound: true, binding_version: '1' }))
+  platform.login.mockResolvedValue({ code: 'fresh-code' })
+  platform.modal.mockResolvedValue({ confirm: true })
+  platform.request.mockResolvedValue(respond(200, { status: 'bound' }))
+  await mount()
+  await act(async () => { button('绑定当前微信').props.onClick() }); await flush()
+  expect(visible()).toContain('本机快捷进入设置无法保存')
+  expect(visible()).toContain('此账号已绑定微信')
+  expect(visible()).not.toContain('本机已启用快捷进入')
+  expect(button('解绑微信')).toBeDefined()
+})
+
+it('shows the server unbinding and local failure while retaining a Tesla session', async () => {
+  const storage = await import('../../services/session')
+  storage.writeWechatRecoveryPreference({ setStorageSync: (name, value) => platform.values.set(name, value) },
+    { apiOrigin: 'https://api.example.test', boundUserId: 'a', enabled: true })
+  platform.failPreferenceWrite = true; platform.failPreferenceRemove = true
+  platform.bindingRequest.mockResolvedValueOnce(respond(200, { bound: true, binding_version: '0' }))
+    .mockResolvedValueOnce(respond(200, { bound: false, binding_version: '1' }))
+  platform.modal.mockResolvedValue({ confirm: true })
+  platform.request.mockResolvedValue(respond(200, { status: 'unbound' }))
+  await mount()
+  await act(async () => { button('解绑微信').props.onClick() }); await flush()
+  expect(visible()).toContain('本机快捷进入设置无法保存')
+  expect(visible()).toContain('此账号尚未绑定微信')
+  expect(visible()).not.toContain('本机已启用快捷进入')
+  expect(platform.values.get(key)).toEqual(session('a'))
+})
+
+it('does not apply a delayed binding status from an account that has been replaced', async () => {
+  platform.failPreferenceWrite = true
+  let release!: (value: unknown) => void
+  platform.bindingRequest.mockResolvedValueOnce(respond(200, { bound: false, binding_version: '0' }))
+    .mockResolvedValueOnce(respond(200, { bound: false, binding_version: '0' }))
+    .mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    .mockResolvedValue(respond(200, { bound: false, binding_version: '0' }))
+  platform.login.mockResolvedValue({ code: 'fresh-code' })
+  platform.modal.mockResolvedValue({ confirm: true })
+  platform.request.mockResolvedValue(respond(200, { status: 'bound' }))
+  await mount()
+  await act(async () => { button('绑定当前微信').props.onClick() })
+  await vi.waitFor(() => expect(platform.bindingRequest).toHaveBeenCalledTimes(3))
+  await act(async () => { platform.hide(); platform.values.set(key, session('b')); platform.show() }); await flush()
+  await act(async () => { release(respond(200, { bound: true, binding_version: '1' })) }); await flush()
+  expect(visible()).toContain('此账号尚未绑定微信')
+  expect(visible()).not.toContain('此账号已绑定微信')
+})
+
+it('does not query binding again after unbinding revokes the current WeChat session', async () => {
+  platform.values.set(key, { ...session('a'), source: 'wechat' })
+  platform.failPreferenceWrite = true; platform.failPreferenceRemove = true
+  platform.bindingRequest.mockResolvedValue(respond(200, { bound: true, binding_version: '0' }))
+  platform.modal.mockResolvedValue({ confirm: true })
+  platform.request.mockResolvedValue(respond(200, { status: 'unbound' }))
+  await mount()
+  await act(async () => { button('解绑微信').props.onClick() }); await flush()
+  expect(platform.values.has(key)).toBe(false)
+  expect(visible()).toContain('尚未登录')
+  expect(visible()).toContain('本机快捷进入设置无法保存')
+  expect(platform.bindingRequest).toHaveBeenCalledTimes(1)
+})
+
+it('pins the binding version before confirmation and does not override a later unbind', async () => {
+  platform.bindingRequest.mockResolvedValue(respond(200, { bound: false, binding_version: '12' }))
+  let release!: (value: unknown) => void
+  platform.modal.mockImplementation(() => new Promise(resolve => { release = resolve }))
+  platform.login.mockResolvedValue({ code: 'fresh-code' })
+  platform.request.mockResolvedValue(respond(409, { error: 'wechat_bind_expired' }))
+  await mount()
+  await act(async () => { button('绑定当前微信').props.onClick() }); await flush()
+  expect(platform.bindingRequest).toHaveBeenCalledTimes(2)
+  expect(platform.login).not.toHaveBeenCalled()
+  await act(async () => { release({ confirm: true }) }); await flush()
+  expect(platform.request.mock.calls[0][0].data).toMatchObject({ code: 'fresh-code', binding_version: '12' })
+  expect(visible()).toContain('绑定操作已取消，请重新确认')
+})
+
+it('offers explicit WeChat entry after logout while Tesla remains the primary entry', async () => {
+  platform.values.delete(key)
+  await mount(); await consent()
+  platform.login.mockResolvedValue({ code: 'manual-code' })
+  platform.request.mockResolvedValue(respond(200, { access_token: 'manual-access', user: { id: 'a' } }))
+  await act(async () => { button('使用已绑定微信进入').props.onClick() }); await flush()
+  expect(platform.request.mock.calls[0][0].url).toBe('https://api.example.test/v1/auth/wechat/restore')
+  expect(visible()).toContain('会话已建立')
+})
+it('shows the restored account after the More page is hidden and shown during recovery', async () => {
+  platform.values.delete(key)
+  const storage = await import('../../services/session')
+  storage.writeWechatRecoveryPreference({ setStorageSync: (name, value) => platform.values.set(name, value) },
+    { apiOrigin: 'https://api.example.test', boundUserId: 'a', enabled: true })
+  platform.login.mockResolvedValue({ code: 'manual-code' })
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(() => new Promise(resolve => { release = resolve }))
+  await mount()
+  expect(visible()).toContain('正在恢复会话')
+  await act(async () => { platform.hide(); platform.show() })
+  await act(async () => { release(respond(200, { access_token: 'restored', user: { id: 'a' } })) }); await flush()
+  expect(visible()).toContain('会话已建立')
+  expect(platform.login).toHaveBeenCalledTimes(1)
+})
+
+it('disables WeChat binding while another Tesla authorization remains pending', async () => {
+  platform.values.set(pendingKey, pending('a'))
+  platform.request.mockResolvedValue(respond(200, { status: 'pending' }))
+  await mount()
+  expect(button('绑定当前微信').props.disabled).toBe(true)
+})
+
+it('opens the Tesla authorization page after a same-account token refresh completes', async () => {
+  const { refreshSession } = await import('../../services/api')
+  platform.values.set(key, { ...session('a'), refreshToken: 'refresh-a' })
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/v1/session/refresh')
+    ? new Promise(resolve => { release = resolve })
+    : Promise.resolve(respond(200, { authorization_url: 'https://auth.tesla.com/oauth2/v3/authorize?state=fixture', transaction_id: 'txn', client_proof: 'proof' })))
+  await mount()
+  const refreshing = refreshSession()
+  await act(async () => { button('重新授权 Tesla').props.onClick() })
+  expect(platform.navigate).not.toHaveBeenCalled()
+  await act(async () => { release(respond(200, { access_token: 'rotated-a', refresh_token: 'new-refresh' })); await refreshing }); await flush()
+  expect(platform.navigate).toHaveBeenCalledWith({ url: expect.stringContaining('/pages/auth/index?url=') })
+})
+
+it('returns a WeChat-restored account to Tesla login after unbinding', async () => {
+  platform.values.set(key, { ...session('a'), source: 'wechat' })
+  platform.bindingRequest.mockResolvedValue(respond(200, { bound: true, binding_version: '0' }))
+  platform.modal.mockResolvedValue({ confirm: true })
+  platform.request.mockResolvedValue(respond(200, { status: 'unbound' }))
+  await mount()
+  await act(async () => { button('解绑微信').props.onClick() }); await flush()
+  expect(platform.values.has(key)).toBe(false)
+  expect(visible()).toContain('尚未登录')
+})
+
+it('does not delete a replacement account when the delete confirmation was opened for another', async () => {
+  let release!: (value: unknown) => void
+  platform.modal.mockImplementation(() => new Promise(resolve => { release = resolve }))
+  await mount()
+  await act(async () => { button('注销账号').props.onClick() })
+  platform.values.set(key, session('b'))
+  await act(async () => { release({ confirm: true }) }); await flush()
+  expect(platform.request).not.toHaveBeenCalled()
+  expect(platform.values.get(key)).toEqual(session('b'))
+})
+
+it('does not let a stale binding status hide a successful binding', async () => {
+  let release!: (value: unknown) => void
+  platform.bindingRequest.mockImplementationOnce(() => new Promise(resolve => { release = resolve })).mockResolvedValue(respond(200, { bound: false, binding_version: '0' }))
+  platform.login.mockResolvedValue({ code: 'fresh-code' })
+  platform.modal.mockResolvedValue({ confirm: true })
+  platform.request.mockResolvedValue(respond(200, { status: 'bound' }))
+  await mount()
+  await act(async () => { button('绑定当前微信').props.onClick() }); await flush()
+  expect(visible()).toContain('此账号已绑定微信')
+  await act(async () => { release(respond(200, { bound: false, binding_version: '0' })) }); await flush()
+  expect(visible()).toContain('此账号已绑定微信')
+})
+
+it.each(['绑定当前微信', '解绑微信', '注销账号'])('ignores a stale %s confirmation after hide and show', async label => {
+  if (label === '解绑微信') platform.bindingRequest.mockResolvedValue(respond(200, { bound: true, binding_version: '0' }))
+  let release!: (value: unknown) => void
+  platform.modal.mockImplementation(() => new Promise(resolve => { release = resolve }))
+  await mount()
+  await act(async () => { button(label).props.onClick() })
+  await act(async () => { platform.hide(); platform.show() }); await flush()
+  await act(async () => { release({ confirm: true }) }); await flush()
+  expect(platform.login).not.toHaveBeenCalled()
+  expect(platform.request).not.toHaveBeenCalled()
+})
 it('anonymous primary login requires personal consent and starts Tesla directly without WeChat', async () => {
   platform.values.delete(key)
   await mount()

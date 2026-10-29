@@ -15,10 +15,11 @@ import { DEFAULT_VEHICLE_APPEARANCE, clearVehicleAppearance, readVehicleAppearan
 import './index.scss'
 import { observeTpmsCache, readTpmsCache } from '../../services/tpms_cache'
 import LoadingIndicator from '../../components/LoadingIndicator'
-import { readinessViewFor } from '../../domain/readiness'
-import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
+import { findReadinessItem, readinessViewFor, toReadinessView } from '../../domain/readiness'
+import { ApiError, ensureWechatSession, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { carSelectionStorageKey, type Car, type CarStatus, type ReadinessItem, type TelemetryPairing } from '../../services/types'
 import { readAppSession } from '../../services/session'
+import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 import { consumeDataStatus } from '../../services/data_status_intent'
 import { createRequestScopeGate } from '../../domain/request_scope'
 import { readCarsCache } from '../../services/cars_cache'
@@ -111,11 +112,31 @@ export default function VehiclePage() {
     setLoading(false)
   }
 
-  const load = async () => {
+  const load = async (consumeIntent = false) => {
     clearImage()
     setImageActivation(value => value + 1)
     setAppearanceOpen(false)
     const version = ++requestVersion.current
+    const current = readAppSession(Taro)
+    const incomingOwner = `${current?.userId ?? ''}:${getApiSessionGeneration()}`
+    let incomingOrigin: string | null = null
+    try { incomingOrigin = getApiOrigin() } catch { /* A changed or invalid origin cannot own the old display. */ }
+    if (pageOwner.current && (pageOwner.current !== incomingOwner || (pageOrigin.current && pageOrigin.current !== incomingOrigin))) {
+      scopeGate.current.invalidate(); pageOwner.current = null; pageOrigin.current = null; selectedStableId.current = null
+      setCars([]); setCar(null); setStatus(null); setHistoryEvidence(null); setReadinessItems([]); setPairing(null); setCached(false)
+    }
+    setLoading(true)
+    await ensureWechatSession()
+    if (!foreground.current || version !== requestVersion.current) return
+    if (consumeIntent) {
+      try {
+        const owner = readAppSession(Taro)?.userId
+        if (owner && consumeDataStatus(Taro, owner, getApiOrigin())) {
+          focusDiagnostics.current = true
+          setShowDiagnostics(true)
+        }
+      } catch { /* Invalid origin or unavailable storage cannot authorize a navigation hint. */ }
+    }
     const sessionGeneration = getApiSessionGeneration()
     try { getApiOrigin() } catch (reason) {
       scopeGate.current.invalidate()
@@ -150,6 +171,7 @@ export default function VehiclePage() {
       setPairing(null)
       setCached(false)
       setError(null)
+      setLoading(false)
       return
     }
     setLoading(true)
@@ -236,15 +258,10 @@ export default function VehiclePage() {
     }
   }
 
+  useSessionRecoveryReload(() => { if (foreground.current) void load(true) })
   useDidShow(() => {
     foreground.current = true; setVisible(true); setForegroundNow(Date.now())
-    try {
-      if (consumeDataStatus(Taro, readAppSession(Taro)?.userId ?? null, getApiOrigin())) {
-        focusDiagnostics.current = true
-        setShowDiagnostics(true)
-      }
-    } catch { /* invalid origin or unavailable storage cannot authorize a navigation hint */ }
-    void load()
+    void load(true)
   })
   useEffect(() => {
     if (!visible || !showDiagnostics || !focusDiagnostics.current) return
@@ -403,6 +420,14 @@ export default function VehiclePage() {
   }, [visual.assetKey, car?.stableId, imageRetry, appearanceRevision, loading, imageActivation])
 
   const readiness = readinessViewFor(readinessItems)
+  // Per-wheel readiness wording mirrors App readinessDashboardValue: a missing
+  // "tpms" item reads as 等待车辆, while an existing unknown item stays 暂不可用.
+  const tpmsReadiness = (() => {
+    const item = findReadinessItem(readinessItems, 'tpms')
+    if (!item) return { status: 'waiting_vehicle', lastObservedAt: null }
+    const view = toReadinessView(item.status, item)
+    return { status: view.status, lastObservedAt: view.lastObservedAt }
+  })()
   const tpmsHistory = car && currentSession?.userId && pageOrigin.current &&
     pageOwner.current === `${currentSession.userId}:${getApiSessionGeneration()}`
     ? readTpmsCache(Taro, currentSession.userId, pageOrigin.current, car.stableId) : null
@@ -417,8 +442,7 @@ export default function VehiclePage() {
   const navigate = (url: string) => { void Taro.navigateTo({ url }) }
   const settings = () => navigate('/pages/tools/index?kind=settings')
   const openBattery = () => navigate('/pages/insights/index?kind=battery')
-  const location = status?.geofence?.trim() || (status?.location
-    ? `${status.location.latitude.toFixed(4)}, ${status.location.longitude.toFixed(4)}` : '暂无数据')
+  const location = status?.geofence?.trim() || (status?.location ? '已获取位置 · 点击查看地图' : '暂无数据')
   const headerGeometry = dashboardHeaderGeometry()
   return (
     <View className="page vehicle-page" style={{ paddingTop: `${headerGeometry.top}px` }}>
@@ -435,7 +459,7 @@ export default function VehiclePage() {
         {loading ? <LoadingIndicator label="正在读取最新数据…" compact /> : null}
         <View className="dashboard-location-row"><DashboardInfoCard label="里程" value={dashboardMetric(status.odometer, 'km', 0)} icon="speed" onClick={() => navigate('/pages/analysis/index?kind=mileage')} /><DashboardInfoCard label="位置" value={location} icon="location" onClick={() => { if (map) navigate('/pages/tools/index?kind=location'); else { focusDiagnostics.current = true; setShowDiagnostics(true) } }} /></View>
         <View className="dashboard-temperature-row"><DashboardInfoCard label="车内" value={dashboardTemperature(status.insideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /><DashboardInfoCard label="车外" value={dashboardTemperature(status.outsideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /></View>
-        <DashboardTpms snapshot={status.tpms} report={status.tpmsReport} warnings={tpmsAlerts} onOpen={() => navigate('/pages/tools/index?kind=tpms')} />
+        <DashboardTpms snapshot={status.tpms} report={status.tpmsReport} warnings={tpmsAlerts} readiness={tpmsReadiness} onOpen={() => navigate('/pages/tools/index?kind=tpms')} />
         {map ? <View className="dashboard-map-card">{!mapFailed ? <Map id="dashboard-map" latitude={map.latitude} longitude={map.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...map, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24, title: car.displayName || car.name || '车辆' }]} onError={() => setMapFailed(true)} /> : <View className="dashboard-map-unavailable"><Text>地图暂时无法载入</Text><Button className="dashboard-text-button" onClick={() => setMapFailed(false)}>重试地图</Button></View>}</View> : null}
         <View className="dashboard-history-entry" onClick={() => navigate('/pages/analysis/index?kind=stats')}><DashboardIcon name="bolt" /><View><Text>7天电量趋势</Text><Text>查看已记录的电池历史与容量详情</Text></View></View>
         {activeCharging ? <DashboardCurrentCharge status={status} onOpen={() => { void Taro.switchTab({ url: '/pages/charges/index' }) }} /> : null}
@@ -445,7 +469,7 @@ export default function VehiclePage() {
         <View className="dashboard-temperature-row"><DashboardInfoCard label="总行程" value="暂无数据" /><DashboardInfoCard label="总充电" value="暂无数据" /></View>
         <DashboardInfoCard label="数据来源" value={cached ? '缓存车辆资料' : '已关联车辆资料'} />
         <View className="dashboard-partial-actions"><Button className="button" onClick={() => { void load() }}>刷新车辆</Button><Button className="button button-secondary" onClick={settings}>设置</Button></View>
-      </View> : <View className="card empty-state"><Text className="section-title">车辆外观预览</Text><DashboardVehicleArt car={{ model: appearance.model ?? null }} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} /><Text className="section-title">尚未绑定车辆</Text><Text className="muted">请先登录特斯拉账号并完成 Tesla 官方授权。外观预览不代表已绑定车辆，没有真实响应时不显示车辆数据。</Text><Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>去完成登录与授权</Button></View>}
+      </View> : loading ? <View className="card"><LoadingIndicator label="正在恢复会话并读取车辆…" /></View> : <View className="card empty-state"><Text className="section-title">车辆外观预览</Text><DashboardVehicleArt car={{ model: appearance.model ?? null }} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} /><Text className="section-title">尚未绑定车辆</Text><Text className="muted">请先登录特斯拉账号并完成 Tesla 官方授权。外观预览不代表已绑定车辆，没有真实响应时不显示车辆数据。</Text><Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>去完成登录与授权</Button></View>}
       {appearanceOpen && appearanceScope ? <AppearanceSelector key={`${appearanceScope.userId ?? 'preview'}:${appearanceScope.stableId ?? ''}`} initial={appearance} preview={!car} onClose={() => setAppearanceOpen(false)} onSave={value => {
         if (!appearanceEditorIsCurrent() || !writeVehicleAppearance(Taro, appearanceScope, value)) return false
         setAppearanceRevision(value => value + 1); return true

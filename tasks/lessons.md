@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-10-24 开发者工具空白 WebView 不一定触发 onError
+
+- Correction: Jovi 在电脑开发者工具的 Tesla 登录流程未完成；start 接口实际返回 200，但模拟器 WebView 只显示空白，原来的 onError 备用入口没有出现。
+- Rule: 对电脑开发者工具提供独立的可见浏览器入口和状态检查，不依赖 WebView 的 onError 才让用户恢复；真机微信保持原登录方式，官方凭据仅由用户在 Tesla 页面输入。
+
 ## 2026-10-23 模拟器截图先固定构建配置与源码版本
 
 - Pattern: 一次 Taro 构建漏传 `TARO_APP_API_BASE_URL`，截图出现“服务地址尚未配置”；随后微信开发者工具复用旧编译，画面仍显示已从源码删掉的“地址待解析”。编译成功和 `simulator_refresh` 成功都不等于画面来自当前代码。
@@ -480,3 +485,17 @@
 - 错误诊断端口保留typed category，HTTP为空不能把DNS/TLS/JSON/EOF一律合并。固定枚举与安全阶段足够，禁止异常正文/响应体/URL/身份进入日志。
 - Room的非空数值占位不是API观测；离线详情复用原证据mapper，未知null和真实0单独验，不能靠Int字段是否为0判断已观测。
 - Portable测试不能替代生成JSON adapter、Room、Hilt、Compose或APK验证；版本号、源码、签名、安装与真实复验各自记录。
+
+## 2026-10-25 小程序真机上传与 process.env 白屏
+
+- 上传通道：Windows 上 cli.bat 初始化要监听 127.0.0.1:3600，该端口常落在 Hyper-V 保留段（netsh interface ipv4 show excludedportrange protocol=tcp 查看，如 3508-3607）→ EACCES，改保留段需动系统网络栈，不做。改用开发者工具「设置→安全设置→服务端口」开启后的 HTTP API：GET http://127.0.0.1:<port>/v2/upload?project=<绝对路径>&appid=<appid>&version=<x.y.z>&desc=<备注>，成功返回 {success:true, info.size...}。参数名是 project（不是 projectpath），缺失报 code 31；project.config.json 无效报 code 19。GUI 手动上传（工具栏「上传」）是等价后备。
+- 上传≠发布：上传只生成「开发版本」；体验版/提交审核/发布需在公众平台 mp.weixin.qq.com 版本管理操作（管理员扫码），AI 无法代做。发布前必须先用体验版在真机验证真实登录链路。
+- 白屏根因：Taro defineConstants 未注入的 process.env.X 会原样留在 dist，小程序真机运行时没有 process 全局 → 模块加载即 ReferenceError → 所有 tab 空白（连未登录引导卡都渲染不出）。DevTools 模拟器有 process polyfill 掩盖此问题，所以只有真机暴露。规则：任何 process.env 读取必须进 config/index.ts 的 defineConstants 显式注入，且消费侧加 typeof process!=='undefined' 运行时防御双保险。新增构建期开关时同步补 defineConstants。
+- 未登录态：数据页/仪表盘/更多页本就设计了 empty-state 引导卡（「等待特斯拉账号登录」「尚未绑定车辆→去完成登录与授权」），白屏是崩溃而非缺设计；验证空白问题要区分「渲染逻辑缺失」与「加载崩溃」，量化用非背景像素占比（截图逐像素），uiautomator 对微信 XWeb 内容拿不到节点。
+
+## 2026-10-28 微信绑定恢复与冻结基线
+
+- Jovi明确授权新增微信绑定；Tesla仍为车辆授权主入口，可选微信身份用于恢复同一个MateLink账号，不另建可自动继承车辆的账号。
+- 自动恢复必须贯穿启动和页面读数入口；只异步写storage不会让已加载页面重新读取车辆。退出、注销、换号和解绑必须阻断迟到恢复。
+- 微信code只能消费一次；不能使用通用401自动重放旧code。会话需要刷新时须重新取得code，不能掩盖Tesla需要重新授权的错误。
+- 对照App时使用已冻结发布提交；工作树含其他任务未提交变更时不能直接称其为build74。费用免费资格、账单优先级、相邻驻车母集均需读完实际分支再下PASS结论。

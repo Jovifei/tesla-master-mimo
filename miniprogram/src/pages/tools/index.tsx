@@ -1,12 +1,14 @@
 import { Button, Input, Map, Picker, Slider, Switch, Text, View } from '@tarojs/components'
+const APP_MINIPROGRAM_VERSION: string = process.env.TARO_APP_MINIPROGRAM_VERSION ?? '未确认'
 import Taro, { useDidHide, useDidShow, useRouter, useUnload } from '@tarojs/taro'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import MetricValue from '../../components/MetricValue'
 import TpmsPanel from '../../components/TpmsPanel'
-import { ApiError, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
+import { ApiError, ensureWechatSession, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { analysisApi } from '../../services/analysis_api'
 import type { SoftwareUpdate } from '../../services/analysis_types'
 import { readAppSession } from '../../services/session'
+import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 import { carSelectionStorageKey, type Car, type CarStatus, type Charge, type Drive } from '../../services/types'
 import { readTpmsCache } from '../../services/tpms_cache'
 import { canStoreCache } from '../../services/cache_budget'
@@ -34,6 +36,15 @@ export default function ToolsPage() {
   const params = useRouter().params
   const requested = params.kind || 'settings'
   const kind = Object.prototype.hasOwnProperty.call(titles, requested) ? requested : 'settings'
+  useEffect(() => {
+    try {
+      if (typeof Taro.setNavigationBarTitle === 'function') {
+        void Taro.setNavigationBarTitle({ title: titles[kind] })
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [kind])
   const [car, setCar] = useState<Car | null>(null), [status, setStatus] = useState<CarStatus | null>(null)
   const [drives, setDrives] = useState<Drive[]>([]), [charges, setCharges] = useState<Charge[]>([])
   const [updates, setUpdates] = useState<SoftwareUpdate[]>([]), [page, setPage] = useState(1)
@@ -49,15 +60,21 @@ export default function ToolsPage() {
   const [targetDate, setTargetDate] = useState(target.slice(0, 10)), [targetTime, setTargetTime] = useState(target.slice(11, 16))
   const [historicPosition, setHistoricPosition] = useState<{ latitude: number; longitude: number; at: string | null; source: string | null; label: string } | null>(null)
   const [historicReason, setHistoricReason] = useState<string | null>(null)
-  const epoch = useRef(0), owner = useRef<string | null>(null)
+  const epoch = useRef(0), owner = useRef<string | null>(null), pageVisible = useRef(false)
   const invalidate = () => { epoch.current++; setLoading(false) }
   const scopeKey = () => { const session = readAppSession(Taro); return session?.userId ? JSON.stringify([getApiOrigin(), session.userId, getApiSessionGeneration()]) : null }
   const load = async (nextPage = 1) => {
     const operation = ++epoch.current
+    let beforeScope: string | null = null
+    try { beforeScope = scopeKey() } catch { /* An invalid origin cannot own the old display. */ }
+    if (owner.current && owner.current !== beforeScope) setTariff(blankTariff())
+    if (nextPage === 1) { setStatus(null); setDrives([]); setCharges([]); setUpdates([]); setCar(null); setComplete(false); setHistoricPosition(null); setHistoricReason(null) }
+    setLoading(true)
+    await ensureWechatSession()
+    if (epoch.current !== operation) return
     let loadScope: string | null | undefined
     const isCurrentOwner = () => { if (epoch.current !== operation) return false; try { return loadScope === undefined || scopeKey() === loadScope } catch { return false } }
     setError(null); setLoading(true)
-    if (nextPage === 1) { setStatus(null); setDrives([]); setCharges([]); setUpdates([]); setCar(null); setComplete(false); setHistoricPosition(null); setHistoricReason(null) }
     try {
       const scope = scopeKey(); loadScope = scope; owner.current = scope
       if (!scope && !noFetch.has(kind)) throw new Error('请先在更多中完成特斯拉账号登录')
@@ -92,7 +109,10 @@ export default function ToolsPage() {
       if (isCurrentOwner()) setError(reason instanceof ApiError ? reason.message : reason instanceof Error && ['请先在更多中完成特斯拉账号登录', '当前账号暂无车辆'].includes(reason.message) ? reason.message : '当前数据读取失败，请稍后重试')
     } finally { if (isCurrentOwner()) setLoading(false) }
   }
-  useDidShow(() => { void load() }); useDidHide(invalidate); useUnload(invalidate)
+  useSessionRecoveryReload(() => { if (pageVisible.current) void load() })
+  useDidShow(() => { pageVisible.current = true; void load() })
+  useDidHide(() => { pageVisible.current = false; invalidate() })
+  useUnload(() => { pageVisible.current = false; invalidate() })
   const session = readAppSession(Taro)
   const displayCharges = car && session?.userId ? overlayChargeCosts(Taro, { userId: session.userId, origin: getApiOrigin(), stableId: car.stableId }, charges) : charges
   const report = annualReport(drives, displayCharges, year)
@@ -167,7 +187,7 @@ export default function ToolsPage() {
   const historicCoordinate = mapCoordinate(historicPosition?.latitude, historicPosition?.longitude)
   const profileEpoch = epoch.current
   return <View className="page tools-page">
-    <View className="app-toolbar"><Text className="title">{titles[kind]}</Text><Button className="toolbar-button" onClick={() => Taro.navigateBack()}>返回</Button></View>
+    <View className="page-header"><Text className="title">{titles[kind]}</Text></View>
     {!noFetch.has(kind) ? <Button className="button button-secondary" loading={loading} onClick={() => { void load() }}>刷新数据</Button> : null}
     {error ? <Text className="error">{error}</Text> : null}
     {kind === 'settings' ? <View className="card">
@@ -183,7 +203,7 @@ export default function ToolsPage() {
       {(['currency', 'peak', 'flat', 'valley'] as const).map(key => <View className="tariff-field" key={key}><Text>{({ currency: '币种（例如 CNY）', peak: '峰价 / kWh', flat: '平价 / kWh', valley: '谷价 / kWh' })[key]}</Text><Input value={tariff[key]} type={key === 'currency' ? 'text' : 'digit'} onInput={event => setTariff({ ...tariff, [key]: key === 'currency' ? event.detail.value.toUpperCase() : event.detail.value })} /></View>)}
       <View className="status"><Text>启用分时电价</Text><Switch checked={tariff.enabled} onChange={event => setTariff({ ...tariff, enabled: event.detail.value })} /></View><View className="tariff-field"><Text>默认充电电价 / kWh（缺账单估算，关闭分时时也使用）</Text><Input value={tariff.defaultPrice} type="digit" onInput={event => setTariff({ ...tariff, defaultPrice: event.detail.value })} /></View>{(['peakRanges', 'flatRanges', 'valleyRanges'] as const).map(key => <View className="tariff-field" key={key}><Text>{({ peakRanges: '峰段小时', flatRanges: '平段小时', valleyRanges: '谷段小时' })[key]}</Text><Input value={tariff[key]} onInput={event => setTariff({ ...tariff, [key]: event.detail.value })} /></View>)}<Text className="muted">时段左闭右开、覆盖24小时且不重叠；跨午夜分两段。电价记录保存时本机IANA时区，估算不随设备移动改时区。关闭分时后只按明确默认电价估算。</Text><Button className="button button-secondary" onClick={() => setTariff({ ...tariff, currency: 'CNY', peak: '1', flat: '.7', valley: '.3', peakRanges: DEFAULT_TARIFF_PERIODS.peak, flatRanges: DEFAULT_TARIFF_PERIODS.flat, valleyRanges: DEFAULT_TARIFF_PERIODS.valley, enabled: true })}>恢复 App 默认时段和参考价格</Button>
       <Button className="button" onClick={saveTariff}>保存本机电价</Button></View> : null}
-    {kind === 'about' ? <View className="card"><Text className="section-title">MateLink 车迹</Text><Text>小程序 0.4.0</Text><Text className="metric-source">构建：{process.env.TARO_APP_SOURCE_REVISION?.slice(0, 12) || '未确认'}{process.env.TARO_APP_SOURCE_REVISION?.endsWith('-dirty') ? ' · 含未提交改动' : ''}</Text><Text className="muted">车辆、行程、充电与历史分析。记录的来源、时间和已知覆盖均单独展示。</Text><Text className="section-title">本版更新</Text><Text className="muted">按 App 层级对齐四 Tab；增加有界历史分析、逐轮前台胎压历史、长途行程与报告导出。订阅通知和实际平台验收单独确认。</Text><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/legal/index?kind=privacy' })}>隐私指引</Button><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/legal/index?kind=terms' })}>服务条款</Button><Button className="button button-secondary" onClick={() => { void Taro.setClipboardData({ data: 'https://github.com/Jovifei/tesla-master-mimo/issues' }) }}>复制问题反馈地址</Button></View> : null}
+    {kind === 'about' ? <View className="card"><Text className="section-title">MateLink 车迹</Text><Text>小程序 {APP_MINIPROGRAM_VERSION}</Text><Text className="metric-source">构建：{process.env.TARO_APP_SOURCE_REVISION?.slice(0, 12) || '未确认'}{process.env.TARO_APP_SOURCE_REVISION?.endsWith('-dirty') ? ' · 含未提交改动' : ''}</Text><Text className="muted">车辆、行程、充电与历史分析。记录的来源、时间和已知覆盖均单独展示。</Text><Text className="section-title">本版更新</Text><Text className="muted">0.6.1 对齐 App 行程与充电首屏布局，压缩筛选高度与行程趋势图，电量与费用紧凑排布杜绝文字重叠，移除手动费用编辑保持只读账单；保留微信车辆绑定与会话保持。</Text><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/legal/index?kind=privacy' })}>隐私指引</Button><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/legal/index?kind=terms' })}>服务条款</Button><Button className="button button-secondary" onClick={() => { void Taro.setClipboardData({ data: 'https://github.com/Jovifei/tesla-master-mimo/issues' }) }}>复制问题反馈地址</Button></View> : null}
     {kind === 'location' ? coordinate ? <View className="card"><Map onError={() => setError("地图暂时不可用，请检查微信权限后重试")} className="vehicle-map" latitude={coordinate.latitude} longitude={coordinate.longitude} scale={14} markers={[{ id: 1, ...coordinate, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24, title: car?.displayName || '车辆位置' }]} /><Text className="metric-source">状态报告时间（非位置独立观测时间） · {status?.observedAt || '未提供'}</Text><Text className="muted">地图使用一次转换后的坐标；位置仅在线显示，不写入本机历史缓存。</Text><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/tools/index?kind=whereWasI' })}>查询历史时刻的位置</Button></View> : <View className="card"><Text>暂无有效的位置观测</Text></View> : null}
     {kind === 'whereWasI' ? <View className="card"><Text className="muted">查询时刻使用本机显示时区；仅展示已有报告和实际采样，不插值或生成未知位置。{complete ? '已读历史已翻页完成。' : '当前为有界部分历史。'}</Text><View className="tools-actions"><Picker mode="date" value={targetDate} onChange={event => setTargetDate(event.detail.value)}><Text>{targetDate} ⌄</Text></Picker><Picker mode="time" value={targetTime} onChange={event => setTargetTime(event.detail.value)}><Text>{targetTime} ⌄</Text></Picker></View><Button className="button" loading={loading} disabled={!car} onClick={() => { void findHistoricPosition() }}>查询这个时刻</Button>{historicReason ? <Text className="muted">{historicReason}</Text> : null}{historicCoordinate && historicPosition ? <><Map className="vehicle-map" onError={() => setError('地图暂时不可用，位置报告已保留')} latitude={historicCoordinate.latitude} longitude={historicCoordinate.longitude} scale={14} markers={[{ id: 1, ...historicCoordinate, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24 }]} /><Text className="muted">{historicPosition.label}</Text><Text className="metric-source">{historicPosition.at || '独立位置观测时间未知'} · {historicPosition.source || '来源未标明'}</Text></> : null}</View> : null}
     {kind === 'tpmsSettings' && car && session?.userId ? <TpmsSettingsPanel scope={{ origin: getApiOrigin(), userId: session.userId, stableId: car.stableId }} snapshot={status?.tpms} history={readTpmsCache(Taro, session.userId, getApiOrigin(), car.stableId)} isCurrent={() => { try { return epoch.current === profileEpoch && owner.current === scopeKey() } catch { return false } }} /> : null}
@@ -206,3 +226,4 @@ export default function ToolsPage() {
       }}><View className="vehicle-wireframe" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) perspective(600px) rotateX(55deg) rotateY(${angle}deg)` }}><View className={previewOpen.frunk ? 'preview-open' : ''} /><View className={previewOpen.doors ? 'preview-open' : ''} /><View className={previewOpen.port ? 'preview-open' : ''} /></View></View><Slider min={-180} max={180} value={angle} onChange={event => setAngle(event.detail.value)} /><Slider min={50} max={300} value={zoom * 100} onChange={event => setZoom(event.detail.value / 100)} /><View className="tools-actions">{(['doors', 'frunk', 'port'] as const).map(key => <Button key={key} onClick={() => setPreviewOpen({ ...previewOpen, [key]: !previewOpen[key] })}>{({ doors: '车门示意', frunk: '前备箱示意', port: '充电口示意' })[key]}：{previewOpen[key] ? '开' : '关'}</Button>)}</View><Button className="button button-secondary" onClick={() => { setAngle(0); setZoom(1); setPan({ x: 0, y: 0 }); setPreviewOpen({ doors: false, frunk: false, port: false }) }}>重置预览</Button><Text className="muted">车辆线框示意 · 可旋转、拖移、缩放；示意开关不发送任何车辆命令，不表示已载入实车3D模型。</Text></View> : null}
   </View>
 }
+

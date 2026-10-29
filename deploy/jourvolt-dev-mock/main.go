@@ -122,6 +122,10 @@ ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS privacy_version 
 		pool.Close()
 		return nil, err
 	}
+	if err := ensureWeChatSchema(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
 	if err := ensureTelemetrySchema(ctx, pool); err != nil {
 		pool.Close()
 		return nil, err
@@ -191,6 +195,16 @@ WHERE access_hash=$1 AND revoked_at IS NULL AND access_expires_at > now()`, hash
 }
 
 func (s *store) rotateSession(ctx context.Context, refreshToken string) (session, error) {
+	// Expired aliases are unusable immediately; clean a bounded batch before
+	// acquiring any session lock so cleanup cannot invert the lock order.
+	_, err := s.pool.Exec(ctx, `WITH expired AS (
+SELECT access_hash FROM jourvolt_logout_aliases WHERE expires_at <= clock_timestamp()
+ORDER BY expires_at LIMIT 128 FOR UPDATE SKIP LOCKED
+)
+DELETE FROM jourvolt_logout_aliases a USING expired WHERE a.access_hash=expired.access_hash`)
+	if err != nil {
+		return session{}, err
+	}
 	access, err := randomToken()
 	if err != nil {
 		return session{}, err
@@ -204,14 +218,22 @@ func (s *store) rotateSession(ctx context.Context, refreshToken string) (session
 		return session{}, err
 	}
 	defer tx.Rollback(ctx)
-	var userID string
+	var userID, oldAccessHash string
+	var sessionID int64
 	err = tx.QueryRow(ctx, `
-SELECT user_id FROM jourvolt_sessions
+SELECT id,user_id,access_hash FROM jourvolt_sessions
 WHERE refresh_hash=$1 AND revoked_at IS NULL AND refresh_expires_at > now()
-FOR UPDATE`, hashToken(refreshToken)).Scan(&userID)
+FOR UPDATE`, hashToken(refreshToken)).Scan(&sessionID, &userID, &oldAccessHash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return session{}, errors.New("refresh_required")
 	}
+	if err != nil {
+		return session{}, err
+	}
+	// The old hash can revoke this same session briefly but cannot authenticate
+	// or refresh it. Insert and rotation commit atomically across restarts.
+	_, err = tx.Exec(ctx, `INSERT INTO jourvolt_logout_aliases(access_hash,session_id,expires_at)
+VALUES($1,$2,clock_timestamp()+interval '15 minutes')`, oldAccessHash, sessionID)
 	if err != nil {
 		return session{}, err
 	}
@@ -230,11 +252,7 @@ WHERE refresh_hash=$5`, hashToken(access), hashToken(newRefresh), now.Add(access
 }
 
 func (s *store) revokeSession(ctx context.Context, accessToken string) error {
-	_, err := s.pool.Exec(ctx, `
-UPDATE jourvolt_sessions
-SET revoked_at=COALESCE(revoked_at, now())
-WHERE access_hash=$1`, hashToken(accessToken))
-	return err
+	return s.revokeSessionWithWeChatFence(ctx, accessToken)
 }
 
 func (s *store) deleteUser(ctx context.Context, userID string) error {
@@ -391,6 +409,7 @@ type app struct {
 	mock               provider
 	provider           provider
 	oauth              *teslaOAuth
+	wechat             *wechatService
 	mockEnabled        bool
 	mockHistoryEnabled bool
 	mode               string
@@ -1054,6 +1073,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	wechatSettings, wechatConfigErr := loadWeChatConfig(os.Getenv)
+	if wechatConfigErr != nil {
+		// An incomplete optional configuration must not disable Tesla login.
+		log.Print("wechat authentication disabled: incomplete configuration")
+	}
 	telemetrySettings, err := loadTelemetryConfig(os.Getenv)
 	if err != nil {
 		log.Fatal(err)
@@ -1066,6 +1090,7 @@ func main() {
 	dataProvider := provider(unconfiguredProvider{})
 	mode := "unconfigured"
 	var oauth *teslaOAuth
+	var wechat *wechatService
 	telemetry := newTelemetryService(telemetrySettings, store)
 	if teslaSettings != nil {
 		cipher, err := newTokenCipher(teslaSettings.TokenKey)
@@ -1076,6 +1101,9 @@ func main() {
 			telemetry.cipher = cipher
 		}
 		tokenManager := &teslaTokenManager{store: store, cipher: cipher, config: teslaSettings, client: httpClient}
+		if wechatSettings != nil {
+			wechat = &wechatService{provider: newWeChatProvider(wechatSettings, nil), grants: tokenManager}
+		}
 		if telemetry != nil {
 			telemetry.tokens = tokenManager
 			telemetry.fleetAPIBase = teslaSettings.FleetAPIBase
@@ -1102,7 +1130,7 @@ func main() {
 		mode = "mock_only"
 	}
 	a := &app{
-		store: store, mock: mock, provider: dataProvider, oauth: oauth,
+		store: store, mock: mock, provider: dataProvider, oauth: oauth, wechat: wechat,
 		mockEnabled: enableMock, mockHistoryEnabled: enableMockHistory, mode: mode, telemetry: telemetry,
 	}
 	if telemetry != nil {

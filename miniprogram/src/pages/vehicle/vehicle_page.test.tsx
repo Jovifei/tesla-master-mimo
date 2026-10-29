@@ -11,14 +11,14 @@ const fixture = JSON.parse(readFileSync(resolve(process.cwd(), '../fixtures/safe
     readiness: { items: ReadinessItem[] }; pairing: TelemetryPairing | null; expected: { receive: string; qualification: string; history: string } }>
 }
 
-const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), quota: false,
+const platform = vi.hoisted(() => ({ request: vi.fn(), login: vi.fn(), values: new Map<string, unknown>(), quota: false,
   menuTop: null as number | null, menuLeft: null as number | null, menuBottom: 80,
   navigateTo: vi.fn(), switchTab: vi.fn(), showModal: vi.fn(), pageScrollTo: vi.fn(() => Promise.resolve()),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void,
   scroll: ((_event: { scrollTop: number }) => {}) as (event: { scrollTop: number }) => void }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Image: 'image', Map: 'map', ScrollView: 'scroll-view' }))
 vi.mock('@tarojs/taro', () => ({ default: {
-  request: platform.request, getStorageSync: (key: string) => platform.values.get(key),
+  request: platform.request, login: platform.login, getStorageSync: (key: string) => platform.values.get(key),
   setStorageSync: (key: string, value: unknown) => { if (platform.quota) throw Error('fixture quota'); platform.values.set(key, value) },
   removeStorageSync: (key: string) => platform.values.delete(key),
   getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }),
@@ -36,7 +36,7 @@ const report = (power: number) => ({ status: { state: 'online', battery_details:
   climate_details: { is_climate_on: false }, driving_details: { speed: 0, power }, charging_details: { charger_power: 0 } } })
 beforeEach(() => {
   vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test')
-  platform.values.clear(); platform.quota = false; platform.menuTop = null; platform.menuLeft = null; platform.menuBottom = 80; platform.request.mockReset()
+  platform.values.clear(); platform.quota = false; platform.menuTop = null; platform.menuLeft = null; platform.menuBottom = 80; platform.request.mockReset(); platform.login.mockReset()
   platform.navigateTo.mockReset(); platform.switchTab.mockReset(); platform.showModal.mockReset()
   platform.values.set('matelink.wechat.session.v1', session('a'))
 })
@@ -98,14 +98,14 @@ it('shows the App odometer and state wording without accepting an unusable zero 
   expect(visible()).toContain('哨兵已开启')
   expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
 })
-it('uses the App raw-coordinate fallback without presenting it as a resolved address', async () => {
+it('keeps the App location card concise and leaves raw coordinates to the map page', async () => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/snapshot')
     ? respond({ status: { state: 'online', car_geodata: { latitude: 31.2, longitude: 121.5 } } })
     : online(url))
   await mount(false)
   const location = renderer!.root.findAllByProps({ className: 'dashboard-info-card' })
     .find(card => card.findByProps({ className: 'dashboard-info-label' }).children.join('') === '位置')!
-  expect(location.findByProps({ className: 'dashboard-info-value' }).children.join('')).toBe('31.2000, 121.5000')
+  expect(location.findByProps({ className: 'dashboard-info-value' }).children.join('')).toBe('已获取位置 · 点击查看地图')
   expect(renderer!.root.findByType('map' as React.ElementType)).toBeDefined()
 })
 const snapshotBadge = () => renderer!.root.findAll(node => node.type === 'text' && String(node.props.className ?? '').split(' ').includes('dashboard-snapshot-badge'))[0]
@@ -271,6 +271,113 @@ function online(url: string) {
   return respond({ status: 'available' })
 }
 
+it('loads the dashboard after a delayed launch restore, even after a hide and show', async () => {
+  platform.values.delete('matelink.wechat.session.v1')
+  const storage = await import('../../services/session')
+  storage.writeWechatRecoveryPreference({ setStorageSync: (key, value) => platform.values.set(key, value) },
+    { apiOrigin: 'https://api.example.test', boundUserId: 'a', enabled: true })
+  platform.login.mockResolvedValue({ code: 'synthetic-code' })
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/v1/auth/wechat/restore')
+    ? new Promise(resolve => { release = resolve }) : Promise.resolve(online(url)))
+  await mount(false)
+  expect(platform.login).toHaveBeenCalledTimes(1)
+  expect(platform.request.mock.calls.some(([request]) => request.url.endsWith('/cars'))).toBe(false)
+  await act(async () => { platform.hide(); platform.show() })
+  await act(async () => { release({ statusCode: 200, data: { access_token: 'restored', user: { id: 'a' } }, header: {} }) }); await flush()
+  expect(platform.request.mock.calls.filter(([request]) => request.url.endsWith('/cars'))).toHaveLength(1)
+  expect(visible()).toContain('Car A')
+})
+
+it('consumes the data-status navigation hint only after the owner is restored', async () => {
+  platform.values.delete('matelink.wechat.session.v1')
+  const storage = await import('../../services/session'), intents = await import('../../services/data_status_intent')
+  const adapter = { setStorageSync: (key: string, value: unknown) => platform.values.set(key, value) }
+  storage.writeWechatRecoveryPreference(adapter, { apiOrigin: 'https://api.example.test', boundUserId: 'a', enabled: true })
+  intents.requestDataStatus(adapter, 'a', 'https://api.example.test')
+  platform.login.mockResolvedValue({ code: 'fresh-code' })
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/v1/auth/wechat/restore')
+    ? new Promise(resolve => { release = resolve }) : Promise.resolve(online(url)))
+  await mount(false)
+  expect(platform.values.has('matelink.ui.data-status.v1')).toBe(true)
+  await act(async () => { release({ statusCode: 200, data: { access_token: 'restored', user: { id: 'a' } }, header: {} }) }); await flush()
+  expect(visible()).toContain('收起数据状态')
+  expect(platform.values.has('matelink.ui.data-status.v1')).toBe(false)
+})
+
+it('hides the previous account vehicle while a replacement account refresh is pending', async () => {
+  platform.request.mockImplementation(({ url }: { url: string }) => Promise.resolve(online(url)))
+  await mount(false)
+  expect(visible()).toContain('Car A')
+  await act(async () => { platform.hide() })
+  platform.values.set('matelink.wechat.session.v1', { ...session('b'), refreshToken: 'refresh-b', expiresAt: '2000-01-01T00:00:00Z' })
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/v1/session/refresh')
+    ? new Promise(resolve => { release = resolve }) : Promise.resolve(online(url)))
+  await act(async () => { platform.show() }); await flush()
+  expect(visible()).not.toContain('Car A')
+  await act(async () => { release({ statusCode: 200, data: { access_token: 'fresh-b', refresh_token: 'next-b' }, header: {} }) }); await flush()
+})
+
+it('clears the old dashboard after expired refresh rejection and preserves the data-status intent during recovery', async () => {
+  const storage = await import('../../services/session'), intents = await import('../../services/data_status_intent')
+  const adapter = { setStorageSync: (key: string, value: unknown) => platform.values.set(key, value) }
+  storage.writeWechatRecoveryPreference(adapter, { apiOrigin: 'https://api.example.test', boundUserId: 'a', enabled: true })
+  platform.values.set('matelink.wechat.session.v1', { ...session('a'), refreshToken: 'refresh-a' })
+  platform.request.mockImplementation(({ url }: { url: string }) => Promise.resolve(online(url)))
+  await mount(false)
+  expect(visible()).toContain('Car A')
+  await act(async () => { platform.hide() })
+  platform.values.set('matelink.wechat.session.v1', { ...session('a'), refreshToken: 'refresh-a', expiresAt: '2000-01-01T00:00:00Z' })
+  intents.requestDataStatus(adapter, 'a', 'https://api.example.test')
+  platform.login.mockResolvedValue({ code: 'fresh-code' })
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/v1/session/refresh')) return Promise.resolve({ statusCode: 401, data: { error: 'session_required' }, header: {} })
+    if (url.endsWith('/v1/auth/wechat/restore')) return new Promise(resolve => { release = resolve })
+    return Promise.resolve(online(url))
+  })
+  await act(async () => { platform.show() })
+  await vi.waitFor(() => expect(platform.request.mock.calls.some(([request]) => request.url.endsWith('/v1/auth/wechat/restore'))).toBe(true))
+  expect(visible()).not.toContain('Car A')
+  expect(visible()).toContain('正在恢复会话')
+  expect(platform.values.has('matelink.ui.data-status.v1')).toBe(true)
+  await act(async () => { release({ statusCode: 200, data: { access_token: 'restored', user: { id: 'a' } }, header: {} }) }); await flush()
+  expect(visible()).toContain('Car A')
+  expect(visible()).toContain('收起数据状态')
+  expect(platform.values.has('matelink.ui.data-status.v1')).toBe(false)
+  expect(platform.login).toHaveBeenCalledTimes(1)
+  const lastCars = platform.request.mock.calls.filter(([request]) => request.url.endsWith('/cars')).slice(-1)[0][0]
+  expect(lastCars.header.Authorization).toBe('Bearer restored')
+})
+
+it('reloads the visible dashboard after an access and refresh rejection triggers recovery', async () => {
+  const storage = await import('../../services/session')
+  storage.writeWechatRecoveryPreference({ setStorageSync: (key, value) => platform.values.set(key, value) },
+    { apiOrigin: 'https://api.example.test', boundUserId: 'a', enabled: true })
+  platform.values.set('matelink.wechat.session.v1', { ...session('a'), refreshToken: 'refresh-a' })
+  platform.login.mockResolvedValue({ code: 'fresh-code' })
+  let phase = 'initial', release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (phase === 'expired' && url.endsWith('/cars')) return Promise.resolve({ statusCode: 401, data: { error: 'session_required' }, header: {} })
+    if (url.endsWith('/v1/session/refresh')) return Promise.resolve({ statusCode: 401, data: { error: 'session_required' }, header: {} })
+    if (url.endsWith('/v1/auth/wechat/restore')) return new Promise(resolve => { release = resolve })
+    return Promise.resolve(online(url))
+  })
+  const page = await mount(false)
+  expect(visible()).toContain('Car A')
+  phase = 'expired'
+  await act(async () => { page.root.findByProps({ ariaLabel: '刷新车辆' }).props.onClick() }); await flush()
+  await vi.waitFor(() => expect(platform.login).toHaveBeenCalledTimes(1))
+  expect(visible()).not.toContain('Car A')
+  phase = 'restored'
+  await act(async () => { release({ statusCode: 200, data: { access_token: 'restored', refresh_token: 'next', user: { id: 'a' } }, header: {} }) }); await flush()
+  expect(visible()).toContain('Car A')
+  const lastCars = platform.request.mock.calls.filter(([request]) => request.url.endsWith('/cars')).slice(-1)[0][0]
+  expect(lastCars.header.Authorization).toBe('Bearer restored')
+})
+
 it('matches the actual Dashboard hierarchy, App InfoCard ordering, four state chips, target line and real map placement', async () => {
   const stamp = new Date().toISOString()
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
@@ -337,10 +444,10 @@ it('uses the full charging HUD and lower three-column card without replacing mis
   const page = await mount(false)
   const hud = page.root.findByProps({ className: 'dashboard-hud dashboard-hud-charging' })
   expect(hud.findAllByType('text').map(node => node.children.join('')).join(' ')).not.toContain('0 kWh')
-  expect(hud.findByProps({ ariaLabel: '充电电压电流 230 V / 暂无数据 A' })).toBeDefined()
+  expect(hud.findByProps({ ariaLabel: '充电电压电流 230 V / 暂无数据' })).toBeDefined()
   const lower = page.root.findByProps({ className: 'dashboard-current-charge' })
-  expect(lower.findByProps({ ariaLabel: '剩余时间 1小时30分钟' })).toBeDefined()
-  expect(lower.findByProps({ ariaLabel: '已充入 暂无数据 kWh' })).toBeDefined()
+  expect(lower.findByProps({ ariaLabel: '剩余时间 1.5h' })).toBeDefined()
+  expect(lower.findByProps({ ariaLabel: '已充入 暂无数据' })).toBeDefined()
   expect(snapshotBadge().children.join('')).not.toContain('实时')
   const dismiss = hud.findAllByType('button').find(node => node.children.join('') === '关闭浮窗')!
   await act(async () => { dismiss.props.onClick({ stopPropagation() {} }) })
@@ -585,7 +692,7 @@ it('map render failure preserves location evidence and offers an actual retry wi
  const page = await mount(false)
  await act(async () => { page.root.findByType('map' as React.ElementType).props.onError() })
  expect(page.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
-  expect(visible()).toContain('31.2000, 121.5000')
+  expect(page.root.findAllByProps({ className: 'dashboard-info-value' }).some(node => node.children.join('') === '已获取位置 · 点击查看地图')).toBe(true)
  await act(async () => { page.root.findAllByType('button').find(node => node.children.join('') === '重试地图')!.props.onClick() })
  expect(page.root.findByType('map' as React.ElementType).props.showLocation).toBe(false)
 })
