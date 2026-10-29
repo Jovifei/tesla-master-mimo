@@ -108,6 +108,15 @@ class ArchiveHelperTest(unittest.TestCase):
         with patch.object(helper,'bridge_snapshot',return_value={'image':'synthetic:bridge','image_id':'sha256:'+'a'*64,'mounts_sha256':'changed'}),patch.object(helper,'request') as request:
             with self.assertRaises(helper.FlowError):helper.claim_and_install(self.statepath)
             request.assert_not_called()
+    def test_open_app_rejects_another_offline_target(self):
+        self.prepare();calls=[]
+        def run(args):
+            calls.append(args)
+            if args[-1] == 'devices': return 'List of devices attached\nONE\tdevice\nTWO\toffline'
+            return ''
+        with patch.object(helper, 'run', side_effect=run):
+            with self.assertRaises(helper.FlowError): helper.open_app(self.statepath, 'adb')
+        self.assertFalse(any('am' in call for call in calls))
     def test_pending_never_installs_or_acknowledges(self):
         self.prepare()
         with patch.object(helper,'request',return_value=(202,{'state':'pending'})) as request,patch.object(helper,'install_credential') as install:

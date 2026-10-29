@@ -280,11 +280,11 @@ def public_summary(state):
 
 def open_app(state_path, adb_path):
     state = read_json(state_path)
-    devices = [line.split()[0] for line in run([str(adb_path), 'devices']).splitlines()
-               if re.fullmatch(r'\S+\s+device', line.strip())]
-    if len(devices) != 1:
+    devices = [line.split()[:2] for line in run([str(adb_path), 'devices']).splitlines()
+               if re.fullmatch(r'\S+\s+(?:device|offline|unauthorized|unknown)', line.strip())]
+    if len(devices) != 1 or devices[0][1] != 'device':
         raise FlowError('single_authorized_device_required')
-    run([str(adb_path), '-s', devices[0], 'shell', 'am', 'start', '-a', 'android.intent.action.VIEW',
+    run([str(adb_path), '-s', devices[0][0], 'shell', 'am', 'start', '-a', 'android.intent.action.VIEW',
          '-d', public_summary(state)['app_link'], '-p', 'com.matelink'])
     return {'phase': 'waiting_for_owner_confirmation', 'verification_code': state['verification_code']}
 
