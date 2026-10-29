@@ -156,6 +156,9 @@ func ensureTelemetrySchema(ctx context.Context, pool *pgxpool.Pool) error {
 		return errors.New("telemetry schema requires postgres")
 	}
 	_, err := pool.Exec(ctx, telemetrySchema)
+	if err == nil {
+		_, err = pool.Exec(ctx, archiveEnrollmentSchema)
+	}
 	return err
 }
 

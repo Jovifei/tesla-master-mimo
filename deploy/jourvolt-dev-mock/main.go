@@ -467,6 +467,9 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.archiveBindingResource(w, r, "")
 		return
 	}
+	if a.archiveEnrollmentRoute(w, r) {
+		return
+	}
 	userID, ok := a.auth(w, r)
 	if !ok {
 		return
