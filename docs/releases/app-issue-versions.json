@@ -5593,11 +5593,11 @@
       "found_date": "2026-10-30",
       "found_version": "隔离 CI 提交 6af701868c8e6b08b95f8e5d2890286d7117fd76",
       "source_ref": "../RPT-2026-10-30-fleet-source-time.md",
-      "status": "CI_FAIL_UNDER_DIAGNOSIS",
-      "fix_version": null,
-      "change": "定位并修复自动重启及外层清理验证，保留原始失败和资源证据",
-      "verification": "GitHub 独立 Engine26/Python3.6.8 真实合成首轮前10项通过，第11项失败；内层22个已知资源确认清理，外层数据目录清理未证明；未部署",
-      "commit": null,
+      "status": "SECOND_CI_FAIL_UNDER_DIAGNOSIS",
+      "fix_version": "隔离 CI 提交 e99c27f8",
+      "change": "修复无端口空值和临时目录权限兼容缺口，第11项具体拒绝原因继续诊断",
+      "verification": "e99c27f8隔离CI前10项通过、第11项CAPTURE固定码拒绝；内层22项及外层数据目录清理均证明；具体原因未明，未部署",
+      "commit": "e99c27f899c698c5857b86dc0a9092b589346232",
       "history": [
         {
           "date": "2026-10-30",
@@ -5606,6 +5606,22 @@
           "detail": "前10项通过、第11项失败；内层已知资源清理通过，外层数据目录清理未证明；失败原因待诊断",
           "evidence": "../RPT-2026-10-30-fleet-source-time.md",
           "commit": "6af701868c8e6b08b95f8e5d2890286d7117fd76"
+        },
+        {
+          "date": "2026-10-30",
+          "version": "隔离 CI 提交 e99c27f8",
+          "action": "FIX_CANDIDATE_REVIEWED_CI_RUNNING",
+          "detail": "修复已确认的两处兼容缺口并增加固定诊断码；仅重新验证同一第一组；首轮实际唯一根因仍未证实",
+          "evidence": "../RPT-2026-10-30-fleet-source-time.md",
+          "commit": "e99c27f899c698c5857b86dc0a9092b589346232"
+        },
+        {
+          "date": "2026-10-30",
+          "version": "隔离 CI 提交 e99c27f8",
+          "action": "SECOND_REAL_CI_FAILURE",
+          "detail": "同一第一组前10项通过、第11项在CAPTURE阶段被拒；内层22项和外层数据目录清理确认，具体错误码仍不足",
+          "evidence": "../RPT-2026-10-30-fleet-source-time.md",
+          "commit": "e99c27f899c698c5857b86dc0a9092b589346232"
         }
       ]
     }
