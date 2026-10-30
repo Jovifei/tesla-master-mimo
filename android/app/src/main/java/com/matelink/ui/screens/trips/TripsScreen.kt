@@ -46,7 +46,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.matelink.ui.components.historyReadWarningMessageRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,15 +88,22 @@ fun TripsScreen(
     carId: Int,
     exteriorColor: String? = null,
     onNavigateBack: () -> Unit = {},
-    onNavigateToTripDetail: (tripStartDate: String) -> Unit = {},
+    onNavigateToTripDetail: (tripStartDate: String, savedTripId: Long?) -> Unit = { _, _ -> },
     onNavigateToCreateTrip: () -> Unit = {},
     viewModel: TripsViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val feedbackContext = LocalContext.current
     val isDarkTheme = isSystemInDarkTheme()
     val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
 
     LaunchedEffect(carId) { viewModel.setCarId(carId) }
+    LaunchedEffect(uiState.historySyncWarning) {
+        uiState.historySyncWarning?.let { warning ->
+            android.widget.Toast.makeText(feedbackContext,
+                feedbackContext.getString(historyReadWarningMessageRes(warning)), android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 
     // Reload trips when returning from a child screen — merges / edits in the trip detail
     // invalidate this screen's cached list. The VM ignores the first ON_RESUME to avoid
@@ -167,7 +175,7 @@ fun TripsScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = stringResource(R.string.trips_empty_title),
+                            text = stringResource(if (uiState.historySyncWarning != null) R.string.history_read_incomplete_title else R.string.trips_empty_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -175,7 +183,7 @@ fun TripsScreen(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = stringResource(R.string.trips_empty_intro),
+                            text = stringResource(uiState.historySyncWarning?.let(::historyReadWarningMessageRes) ?: R.string.trips_empty_intro),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -191,7 +199,7 @@ fun TripsScreen(
                         }
                         Spacer(modifier = Modifier.height(20.dp))
                         Text(
-                            text = stringResource(R.string.trips_empty_create_hint),
+                            text = stringResource(if (uiState.historySyncWarning != null) R.string.history_read_retry_hint else R.string.trips_empty_create_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -216,9 +224,10 @@ fun TripsScreen(
                         units = uiState.units,
                         palette = palette,
                         dcChargeIds = uiState.dcChargeIds,
+                        acChargeIds = uiState.acChargeIds,
                         onTripClick = { trip ->
                             viewModel.cacheTrip(trip)
-                            onNavigateToTripDetail(trip.startDate)
+                            onNavigateToTripDetail(trip.startDate, trip.savedTripId)
                         }
                     )
                 }
@@ -230,9 +239,9 @@ fun TripsScreen(
 @Composable
 private fun TripsContent(
     trips: List<Trip>,
-    totalDistance: Double,
-    totalDrivingMin: Int,
-    totalEnergyCharged: Double,
+    totalDistance: Double?,
+    totalDrivingMin: Int?,
+    totalEnergyCharged: Double?,
     availableYears: List<Int>,
     selectedYear: Int?,
     isCustomDateFilter: Boolean,
@@ -243,6 +252,7 @@ private fun TripsContent(
     units: Units?,
     palette: CarColorPalette,
     dcChargeIds: Set<Int>,
+    acChargeIds: Set<Int>,
     onTripClick: (Trip) -> Unit
 ) {
     val listState = rememberLazyListState()
@@ -276,6 +286,11 @@ private fun TripsContent(
         item {
             SummaryCard(
                 tripCount = trips.size,
+                driveRecords = trips.sumOf { it.expectedDriveCount },
+                chargeRecords = trips.sumOf { it.expectedChargeCount },
+                distanceSamples = trips.sumOf { it.distanceSampleCount },
+                durationSamples = trips.sumOf { it.durationSampleCount },
+                chargeSamples = trips.sumOf { it.chargeEnergySampleCount },
                 totalDistance = totalDistance,
                 totalDrivingMin = totalDrivingMin,
                 totalEnergyCharged = totalEnergyCharged,
@@ -311,6 +326,7 @@ private fun TripsContent(
                 units = units,
                 palette = palette,
                 dcChargeIds = dcChargeIds,
+                acChargeIds = acChargeIds,
                 onClick = { onTripClick(trip) }
             )
         }
@@ -333,9 +349,10 @@ private fun TripsContent(
 @Composable
 private fun SummaryCard(
     tripCount: Int,
-    totalDistance: Double,
-    totalDrivingMin: Int,
-    totalEnergyCharged: Double,
+    driveRecords: Int, chargeRecords: Int, distanceSamples: Int, durationSamples: Int, chargeSamples: Int,
+    totalDistance: Double?,
+    totalDrivingMin: Int?,
+    totalEnergyCharged: Double?,
     units: Units?,
     palette: CarColorPalette
 ) {
@@ -362,7 +379,7 @@ private fun SummaryCard(
                 SummaryItem(
                     icon = Icons.Filled.Speed,
                     label = stringResource(R.string.total_distance),
-                    value = UnitFormatter.formatDistanceKm(totalDistance, units, decimals = 0),
+                    value = (totalDistance?.let { UnitFormatter.formatDistanceKm(it, units, decimals = 0) } ?: "—") + if(distanceSamples < driveRecords) " · $distanceSamples/$driveRecords" else "",
                     palette = palette,
                     modifier = Modifier.weight(0.8f)
                 )
@@ -372,14 +389,14 @@ private fun SummaryCard(
                 SummaryItem(
                     icon = Icons.Filled.Schedule,
                     label = stringResource(R.string.trip_driving_time),
-                    value = formatDuration(LocalContext.current.resources, totalDrivingMin),
+                    value = (totalDrivingMin?.let { formatDuration(LocalContext.current.resources, it) } ?: "—") + if(durationSamples < driveRecords) " · $durationSamples/$driveRecords" else "",
                     palette = palette,
                     modifier = Modifier.weight(1.2f)
                 )
                 SummaryItem(
                     icon = Icons.Filled.ElectricBolt,
                     label = stringResource(R.string.trip_energy_charged),
-                    value = "%,.0f kWh".format(totalEnergyCharged),
+                    value = (totalEnergyCharged?.let { "%,.1f kWh".format(it) } ?: "—") + if(chargeSamples < chargeRecords) " · $chargeSamples/$chargeRecords" else "",
                     palette = palette,
                     modifier = Modifier.weight(0.8f)
                 )
@@ -429,12 +446,13 @@ private fun TripItem(
     units: Units?,
     palette: CarColorPalette,
     dcChargeIds: Set<Int>,
+    acChargeIds: Set<Int>,
     onClick: () -> Unit
 ) {
     // Segments memoized per trip — pure computation on the in-memory Trip, cheap enough for
     // every visible list row (LazyColumn composes ~10 at a time). Keys include dcChargeIds so
     // the strip recolors if the DC set ever changes.
-    val segments = remember(trip, dcChargeIds) { buildTimelineSegments(trip, dcChargeIds) }
+    val segments = remember(trip, dcChargeIds, acChargeIds) { buildTimelineSegments(trip, dcChargeIds, acChargeIds) }
     val chargeCount = trip.charges.size
 
     Card(
@@ -468,7 +486,7 @@ private fun TripItem(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = UnitFormatter.formatDistanceKm(trip.totalDistance, units, decimals = 0),
+                    text = trip.knownDistanceKm?.let { UnitFormatter.formatDistanceKm(it, units, decimals = 0) }?.let { if(trip.distanceSampleCount < trip.expectedDriveCount) "$it · ${trip.distanceSampleCount}/${trip.expectedDriveCount}" else it } ?: "—",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
                     color = palette.accent
@@ -524,7 +542,7 @@ private fun TripItem(
 internal fun combinedTripEnergyText(trip: Trip): String {
     val energy = trip.totalEnergyConsumed?.takeIf { it.isFinite() }
         ?: return stringResource(R.string.combined_trip_energy_unknown)
-    val complete = trip.energySampleCount == trip.drives.size
+    val complete = trip.energySampleCount == trip.expectedDriveCount
     return stringResource(
         if (complete) R.string.combined_trip_energy else R.string.combined_trip_energy_known,
         com.matelink.ui.components.formatTelemetryNumber(energy, 2)

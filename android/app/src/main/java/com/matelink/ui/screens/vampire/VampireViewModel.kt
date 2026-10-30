@@ -4,9 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.StandbyWindowData
 import com.matelink.data.repository.ApiResult
-import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.UnifiedHistoryRepository
+import com.matelink.data.repository.UnifiedHistory
+import com.matelink.data.repository.VerifiedHistoryReadContext
+import com.matelink.data.local.HistoryReadScope
+import com.matelink.data.local.VehicleContextRepository
+import kotlinx.coroutines.flow.Flow
 import com.matelink.domain.analytics.NoDataReason
 import com.matelink.domain.analytics.QualifiedStandbyWindow
 import com.matelink.domain.analytics.StandbyCause
@@ -16,6 +20,9 @@ import com.matelink.domain.analytics.buildLocalStandbyWindows
 import com.matelink.domain.analytics.qualifyStandbyWindow
 import com.matelink.domain.analytics.selectStandbyWindows
 import com.matelink.domain.analytics.summarizeStandbyWindows
+import com.matelink.domain.history.LatestHistoryLoad
+import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
+import com.matelink.util.parseIsoInstant
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.LocalDate
 import java.time.OffsetDateTime
@@ -23,7 +30,7 @@ import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 data class IdleDrainPeriod(
@@ -79,44 +86,117 @@ internal fun resolveStandbyFallback(
     else -> direct
 }
 
+/** Narrow ports for the page's actual history/direct-result orchestration. */
+internal interface VampirePageSource {
+    val scopeChanges: Flow<HistoryReadScope?>
+    suspend fun resolve(carId: Int): ApiResult<VerifiedHistoryReadContext>
+    suspend fun isCurrent(proof: VerifiedHistoryReadContext): Boolean
+    fun isCurrentNow(proof: VerifiedHistoryReadContext): Boolean
+    suspend fun standby(carId: Int): ApiResult<List<StandbyWindowData>>
+    suspend fun history(carId: Int): ApiResult<UnifiedHistory>
+}
+
 @HiltViewModel
-class VampireViewModel @Inject constructor(
-    private val repository: TeslamateRepository,
-    private val settingsRepository: SettingsRepository,
-    private val historyRepository: UnifiedHistoryRepository
+class VampireViewModel internal constructor(
+    private val source: VampirePageSource
 ) : ViewModel() {
+    @Inject constructor(
+        repository: TeslamateRepository,
+        historyRepository: UnifiedHistoryRepository,
+        contexts: VehicleContextRepository
+    ) : this(object : VampirePageSource {
+        override val scopeChanges get() = contexts.historyScopeChanges
+        override suspend fun resolve(carId: Int) = historyRepository.resolveContext(carId)
+        override suspend fun isCurrent(proof: VerifiedHistoryReadContext) = historyRepository.isContextCurrent(proof)
+        override fun isCurrentNow(proof: VerifiedHistoryReadContext) = contexts.isHistoryContextCurrentNow(proof.scope, proof.context)
+        override suspend fun standby(carId: Int) = repository.getStandbyWindows(carId)
+        override suspend fun history(carId: Int) = historyRepository.load(carId)
+    })
     private val _uiState = MutableStateFlow(VampireUiState())
     val uiState = _uiState.asStateFlow()
 
     private var allWindows: List<QualifiedStandbyWindow> = emptyList()
     private var customStart: LocalDate? = null
     private var customEnd: LocalDate? = null
+    private var carId: Int? = null
+    private var activeProof: VerifiedHistoryReadContext? = null
+    private val latestLoad = LatestHistoryLoad()
 
-    fun load() {
+    init {
         viewModelScope.launch {
-            val selectedWindow = _uiState.value.selectedWindow
-            _uiState.value = VampireUiState(isLoading = true, selectedWindow = selectedWindow)
+            source.scopeChanges.collect { next ->
+                val proof = activeProof ?: return@collect
+                if (next != proof.scope || !source.isCurrentNow(proof)) revokeProjection()
+            }
+        }
+    }
+
+    private fun revokeProjection() {
+        latestLoad.invalidate()
+        activeProof = null
+        allWindows = emptyList()
+        _uiState.value = VampireUiState(isLoading = false,
+            selectedWindow = _uiState.value.selectedWindow, error = HISTORY_IDENTITY_UNAVAILABLE)
+    }
+
+    fun load(carId: Int) {
+        this.carId = carId
+        activeProof = null
+        allWindows = emptyList()
+        _uiState.value = VampireUiState(isLoading = true, selectedWindow = _uiState.value.selectedWindow)
+        latestLoad.launch(viewModelScope) {
             try {
-                val carId = settingsRepository.currentCarId.first()
-                when (val response = loadStandbyWindows(carId)) {
+                val identity = source.resolve(carId)
+                ensureCurrent()
+                val proof = when (identity) {
+                    is ApiResult.Success -> identity.data
+                    is ApiResult.Error -> {
+                        _uiState.value = VampireUiState(isLoading = false,
+                            selectedWindow = _uiState.value.selectedWindow, error = identity.message,
+                            errorCode = identity.code, errorDetails = identity.details)
+                        return@launch
+                    }
+                }
+                suspend fun checkProof() {
+                    ensureCurrent()
+                    val current = source.isCurrent(proof)
+                    ensureCurrent()
+                    if (this@VampireViewModel.carId != carId || !current || !source.isCurrentNow(proof)) {
+                        revokeProjection()
+                        throw CancellationException("Standby history identity changed")
+                    }
+                }
+                checkProof()
+                activeProof = proof
+                when (val response = loadStandbyWindows(carId, proof, ::checkProof)) {
                     is ApiResult.Error -> _uiState.value = VampireUiState(
                         isLoading = false,
-                        selectedWindow = selectedWindow,
+                        selectedWindow = _uiState.value.selectedWindow,
                         error = response.message,
                         errorCode = response.code,
                         errorDetails = response.details
                     )
                     is ApiResult.Success -> {
+                        checkProof()
                         allWindows = response.data.mapNotNull(::toQualifiedWindow)
-                        recalculate(selectedWindow)
+                        recalculate(_uiState.value.selectedWindow)
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                ensureCurrent()
+                val proof = activeProof
+                val current = proof?.let { source.isCurrent(it) } != false
+                ensureCurrent()
+                if (!current || proof?.let { !source.isCurrentNow(it) } == true) {
+                    revokeProjection()
+                    return@launch
+                }
+                allWindows = emptyList()
                 _uiState.value = VampireUiState(
                     isLoading = false,
-                    selectedWindow = selectedWindow,
+                    selectedWindow = _uiState.value.selectedWindow,
                     error = e.message,
                     errorCode = null
                 )
@@ -124,14 +204,21 @@ class VampireViewModel @Inject constructor(
         }
     }
 
-    private suspend fun loadStandbyWindows(carId: Int): ApiResult<List<StandbyWindowData>> {
-        val direct = repository.getStandbyWindows(carId)
+    private suspend fun loadStandbyWindows(
+        carId: Int, proof: VerifiedHistoryReadContext, checkProof: suspend () -> Unit
+    ): ApiResult<List<StandbyWindowData>> {
+        val direct = if (proof.remoteAuthorized) source.standby(carId)
+            else proof.identityError ?: ApiResult.Error(HISTORY_IDENTITY_UNAVAILABLE)
+        checkProof()
         if (direct is ApiResult.Success && direct.data.isNotEmpty()) return direct
 
         val fallback: ApiResult<List<StandbyWindowData>> = when (val history =
-            historyRepository.load(remoteApiCarId = carId)
+            source.history(carId)
         ) {
             is ApiResult.Success -> {
+                checkProof()
+                if (history.data.context != proof.context || history.data.verifiedReadContext?.scope != proof.scope)
+                    return ApiResult.Error(HISTORY_IDENTITY_UNAVAILABLE)
                 val windows = buildLocalStandbyWindows(history.data.drives, history.data.charges)
                 ApiResult.Success(
                     windows,
@@ -143,6 +230,7 @@ class VampireViewModel @Inject constructor(
             }
             is ApiResult.Error -> history
         }
+        checkProof()
         return resolveStandbyFallback(direct, fallback)
     }
 
@@ -158,9 +246,13 @@ class VampireViewModel @Inject constructor(
         recalculate(StandbyRange.CUSTOM)
     }
 
-    fun refresh() = load()
+    fun refresh() { carId?.let(::load) }
 
     private fun recalculate(window: StandbyRange) {
+        if (activeProof?.let { !source.isCurrentNow(it) } == true) {
+            revokeProjection()
+            return
+        }
         val selected = selectStandbyWindows(
             windows = allWindows,
             range = window,
@@ -176,6 +268,7 @@ class VampireViewModel @Inject constructor(
             customEnd = customEnd
         )
         val periods = selected.filter { it.isEligible }.map(::toIdleDrainPeriod)
+            .sortedByDescending { parseIsoInstant(it.startDate) }
         _uiState.value = VampireUiState(
             isLoading = false,
             noDataReason = when {

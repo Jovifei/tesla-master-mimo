@@ -18,7 +18,8 @@ import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.SentryEvent
 import com.matelink.data.repository.SentryStateRepository
-import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.local.HistoryIdentityUnavailableException
+import kotlinx.coroutines.CancellationException
 import com.matelink.notification.ChargingNotificationManager
 import com.matelink.notification.SentryNotificationManager
 import com.matelink.service.ChargingMonitorService
@@ -38,13 +39,16 @@ import java.util.concurrent.TimeUnit
 class ChargingNotificationWorker @AssistedInject constructor(
     @Assisted private val appContext: Context,
     @Assisted workerParams: WorkerParameters,
-    private val teslamateRepository: TeslamateRepository,
     private val settingsDataStore: SettingsDataStore,
     private val chargingNotificationManager: ChargingNotificationManager,
     private val sentryStateRepository: SentryStateRepository,
     private val sentryNotificationManager: SentryNotificationManager,
     private val chargeSessionStateDataStore: ChargeSessionStateDataStore,
-    private val vehicleContextRepository: VehicleContextRepository
+    private val vehicleContextRepository: VehicleContextRepository,
+    private val connectionModes: com.matelink.data.local.ConnectionModeStore,
+    private val vehicleStatusStore: com.matelink.data.local.VehicleStatusStore,
+    private val selection: com.matelink.data.repository.SettingsRepository,
+    private val boundSource: BoundNotificationSource
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
@@ -61,7 +65,9 @@ class ChargingNotificationWorker @AssistedInject constructor(
          * 1. Self-rescheduling OneTimeWorkRequest for frequent checks (30s)
          * 2. PeriodicWorkRequest (15min) as reliable fallback when app is killed
          */
-        fun schedulePeriodicWork(context: Context) {
+        fun ensureScheduled(context: Context) = schedulePeriodicWork(context)
+
+        fun schedulePeriodicWork(context: Context, appendAfterCurrent: Boolean = false) {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
@@ -75,7 +81,7 @@ class ChargingNotificationWorker @AssistedInject constructor(
 
             WorkManager.getInstance(context).enqueueUniqueWork(
                 WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
+                if (appendAfterCurrent) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP,
                 oneTimeRequest
             )
 
@@ -129,140 +135,135 @@ class ChargingNotificationWorker @AssistedInject constructor(
 
         // Check if server is configured
         val settings = settingsDataStore.settings.first()
-        if (!settings.isConfigured) {
+        val plan = notificationReadPlan(connectionModes.mode.first(), settings.isConfigured)
+        if (plan == NotificationReadPlan.SAVED_CLOUD) {
+            try { consumeSavedCloudObservation() }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (_: Exception) { /* No qualified observation; retain state and wait for a real update. */ }
+            scheduleNextCheck()
+            return Result.success()
+        }
+        if (plan == NotificationReadPlan.UNCONFIGURED) {
             Log.d(TAG, "Server not configured, skipping check")
             scheduleNextCheck()
             return Result.success()
         }
 
         try {
-            // Get list of cars
-            val carsResult = teslamateRepository.getCars()
-            val cars = when (carsResult) {
-                is ApiResult.Success -> carsResult.data
-                is ApiResult.Error -> {
-                    Log.e(TAG, "Failed to fetch cars: ${carsResult.message}")
-                    scheduleNextCheck()
-                    return Result.retry()
-                }
+            val batch = boundSource.openSelfHosted()
+            for (vehicle in batch.vehicles()) {
+                batch.ensureCurrent(vehicle)
+                try { checkCarStatus(batch, vehicle) }
+                catch (e: CancellationException) { throw e }
+                catch (e: HistoryIdentityUnavailableException) { throw e }
+                catch (_: Exception) { Log.w(TAG, "event=notification_vehicle_read_failed") }
             }
-
-            if (cars.isEmpty()) {
-                Log.d(TAG, "No cars found")
-                scheduleNextCheck()
-                return Result.success()
-            }
-
-            Log.d(TAG, "Checking status for ${cars.size} cars")
-
-            // Check each car
-            for (car in cars) {
-                try {
-                    val vehicleContext = vehicleContextRepository.resolve(car)
-                    checkCarStatus(car.carId, vehicleContext.localHistoryCarId)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error checking car ${car.carId}", e)
-                }
-            }
-
-            Log.d(TAG, "Check complete")
             scheduleNextCheck()
             return Result.success()
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Unexpected error in worker", e)
+        } catch (e: CancellationException) { throw e }
+          catch (_: HistoryIdentityUnavailableException) {
+            // A route change invalidates this batch; the next scheduled run
+            // chooses the current route without waking Fleet from an old task.
+            scheduleNextCheck()
+            return Result.success()
+        } catch (_: Exception) {
+            Log.w(TAG, "event=notification_batch_unavailable")
             scheduleNextCheck()
             return Result.retry()
         }
     }
 
-    private suspend fun checkCarStatus(remoteApiCarId: Int, historyCarId: Int) {
-        // Get car info and status
-        val carsResult = teslamateRepository.getCars()
-        val car = when (carsResult) {
-            is ApiResult.Success -> carsResult.data.find { it.carId == remoteApiCarId }
-            is ApiResult.Error -> {
-                Log.e(TAG, "Failed to fetch car info: ${carsResult.message}")
-                return
-            }
-        }
-
-        if (car == null) {
-            Log.e(TAG, "Car $historyCarId not found")
-            return
-        }
-
-        val statusResult = teslamateRepository.getCarStatus(remoteApiCarId)
-        val statusData = when (statusResult) {
-            is ApiResult.Success -> statusResult.data
-            is ApiResult.Error -> {
-                Log.e(TAG, "Failed to fetch status for car $historyCarId: ${statusResult.message}")
-                return
-            }
-        }
-
-        val status = statusData.status
-
-        // Persist whether the active session is DC; this is the only moment we can
-        // tell (post-completion `charger_phases` is null regardless of charge type).
-        if (status.isCharging && status.isDcCharging) {
-            chargeSessionStateDataStore.setLastSessionDc(historyCarId, true)
+    private suspend fun checkCarStatus(batch: BoundNotificationSession, vehicle: BoundNotificationVehicle) {
+        val status = batch.status(vehicle)
+        val local = vehicle.context.localHistoryCarId
+        val car = vehicle.car
+        suspend fun guard() = batch.ensureCurrent(vehicle)
+        guard()
+        val phases = status.chargingDetails?.chargerPhases
+        if (status.isCharging && phases != null && phases in 0..3) {
+            chargeSessionStateDataStore.setLastSessionDc(local, phases == 0)
+            guard()
         } else if (status.pluggedIn == false) {
-            chargeSessionStateDataStore.clear(historyCarId)
+            chargeSessionStateDataStore.clear(local)
+            guard()
         }
-
-        val dcFinishedPluggedIn = status.isChargeCompletePluggedIn &&
-            chargeSessionStateDataStore.wasLastSessionDc(historyCarId)
-
-        // --- Charging ---
-        if (status.isCharging) {
-            Log.d(TAG, "Car $historyCarId is charging at ${status.batteryLevel}%")
-            try {
-                ChargingMonitorService.start(appContext)
-            } catch (e: Exception) {
-                // On Android 12+, can't start foreground service from background
-                // Fall back to showing notification directly (won't update in real-time)
-                Log.w(TAG, "Cannot start foreground service, showing notification directly: ${e.message}")
-                val liveChargeAvailable = teslamateRepository.isCurrentChargeAvailable(remoteApiCarId)
-                chargingNotificationManager.showChargingNotification(
-                    car, historyCarId, status, liveChargeAvailable,
-                    chronometerBaseMs = status.stateSinceEpochMs
-                )
+        val wasDc = chargeSessionStateDataStore.wasLastSessionDc(local)
+        guard()
+        val finishedDc = status.isChargeCompletePluggedIn && wasDc
+        if (status.isCharging || finishedDc) {
+            guard()
+            try { ChargingMonitorService.start(appContext) }
+            catch (_: Exception) {
+                guard()
+                val available = if (status.isCharging) batch.currentChargeAvailable(vehicle) else false
+                guard()
+                chargingNotificationManager.showChargingNotification(car, local, status, available,
+                    dcFinishedPluggedIn = finishedDc, chronometerBaseMs = status.stateSinceEpochMs)
             }
-        } else if (dcFinishedPluggedIn) {
-            // DC charge finished but cable still plugged — keep service alive
-            Log.d(TAG, "Car $historyCarId DC charge finished but still plugged in")
-            try {
-                ChargingMonitorService.start(appContext)
-            } catch (e: Exception) {
-                Log.w(TAG, "Cannot start foreground service for DC-finished state: ${e.message}")
-            }
-        } else {
-            Log.d(TAG, "Car $historyCarId is not charging, stopping monitor service")
+        } else if (status.pluggedIn == false || status.chargingState != null) {
+            guard()
             ChargingMonitorService.stop(appContext)
-            chargingNotificationManager.cancelNotification(historyCarId)
+            guard()
+            chargingNotificationManager.cancelNotification(local)
         }
-
-        // --- Sentry ---
-        val sentryMode = status.sentryMode ?: false
-        val isSentryAlerted = status.isSentryAlerted
-
-        when (val event = sentryStateRepository.processStatus(remoteApiCarId, sentryMode, isSentryAlerted, status.latitude, status.longitude, status.geofence)) {
-            is SentryEvent.AlertDetected -> {
-                Log.d(TAG, "Sentry alert #${event.count} for car $historyCarId (notify=${event.shouldNotify})")
-                sentryNotificationManager.showSentryAlert(
-                    carName = car.displayName,
-                    carId = historyCarId,
-                    eventCount = event.count,
-                    shouldAlert = event.shouldNotify
-                )
-                CarWidgetUpdateWorker.scheduleImmediateUpdate(appContext)
+        guard()
+        sentryStateRepository.consumeObservation(local, status, System.currentTimeMillis(),
+            ensureCurrent = ::guard) { event ->
+            guard()
+            when (event) {
+                is SentryEvent.AlertDetected -> {
+                    sentryNotificationManager.showSentryAlert(car.displayName, local, event.count, event.shouldNotify,
+                        remoteApiCarId = car.carId)
+                    guard()
+                    CarWidgetUpdateWorker.scheduleImmediateUpdate(appContext)
+                }
+                SentryEvent.SessionEnded -> sentryNotificationManager.cancelNotification(local)
+                null -> Unit
             }
-            is SentryEvent.SessionEnded -> {
-                Log.d(TAG, "Sentry session ended for car $historyCarId")
-                sentryNotificationManager.cancelNotification(historyCarId)
+        }
+    }
+
+    /** Cloud consumes only already saved, identity-qualified observations. */
+    private suspend fun consumeSavedCloudObservation() {
+        val scope = vehicleContextRepository.captureReadScope()
+        if (scope.source != com.matelink.data.local.HistoryConnectionSource.CLOUD) return
+        val remote = selection.currentCarId.first()
+        val vehicle = vehicleContextRepository.cachedContextForRemote(remote, scope) ?: return
+        val digest = vehicleContextRepository.cachedVerifiedStatusIdentityDigest(remote, scope, vehicle)
+        val receipt = vehicleStatusStore.getCachedReceipt(scope, vehicle)
+            ?: digest?.let { vehicleStatusStore.getCachedReceiptForVerifiedIdentity(scope, vehicle, it) } ?: return
+        val observed = com.matelink.util.parseIsoInstant(receipt.observedAt) ?: return
+        val now = java.time.Instant.now()
+        if (observed.isAfter(now.plusSeconds(5)) || observed.isBefore(now.minusSeconds(120)) ||
+            receipt.source !in setOf("fleet_api", "telemetry_mqtt", "live_mqtt")) return
+        suspend fun guard() {
+            if (!vehicleContextRepository.isHistoryContextCurrent(scope, vehicle))
+                throw HistoryIdentityUnavailableException()
+        }
+        val legacy = appContext.getSharedPreferences("cloud_notification_observations", Context.MODE_PRIVATE)
+        val key = "observed_${vehicle.localHistoryCarId}"
+        val status = receipt.status
+        val local = vehicle.localHistoryCarId
+        val car = com.matelink.data.api.models.CarData(remote, name = status.displayName)
+        sentryStateRepository.consumeObservation(local, status, observed.toEpochMilli(),
+            legacyWatermark = legacy.getLong(key, Long.MIN_VALUE), ensureCurrent = ::guard) { event ->
+            guard()
+            if (status.chargingState != null) {
+                if (status.isCharging) chargingNotificationManager.showChargingNotification(car, local,
+                    status, false, chronometerBaseMs = status.stateSinceEpochMs)
+                else if (status.pluggedIn == false) chargingNotificationManager.cancelNotification(local)
             }
-            null -> { /* no event */ }
+            guard()
+            when (event) {
+                is SentryEvent.AlertDetected -> sentryNotificationManager.showSentryAlert(
+                    car.displayName, local, event.count, event.shouldNotify, remoteApiCarId = remote)
+                SentryEvent.SessionEnded -> sentryNotificationManager.cancelNotification(local)
+                null -> Unit
+            }
+            guard()
+            // Preserve the legacy watermark for upgrades/rollback. The atomic
+            // DataStore observation remains authoritative for current consumers.
+            check(legacy.edit().putLong(key, observed.toEpochMilli()).commit())
         }
     }
 
@@ -270,6 +271,8 @@ class ChargingNotificationWorker @AssistedInject constructor(
      * Schedule the next check using self-rescheduling pattern.
      */
     private fun scheduleNextCheck() {
-        schedulePeriodicWork(appContext)
+        // Only the unique one-time pass appends a successor. Bootstrap/boot,
+        // immediate checks and the periodic safety net retain an existing chain.
+        schedulePeriodicWork(appContext, appendAfterCurrent = tags.contains(TAG))
     }
 }

@@ -38,7 +38,7 @@ fun AnnualReportScreen(
     carId: Int = 1,
     year: Int = java.time.Year.now().value,
     onBack: () -> Unit = {},
-    onNavigateToPDF: () -> Unit = {},
+    onNavigateToPDF: (Int) -> Unit = {},
     viewModel: AnnualReportViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -120,7 +120,7 @@ fun AnnualReportScreen(
                 // T-104: Generate PDF
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
-                    onClick = onNavigateToPDF,
+                    onClick = { onNavigateToPDF(uiState.year) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(stringResource(R.string.annual_report_generate_pdf))
@@ -216,9 +216,7 @@ private fun LegacyHonestAnnualSummarySection(
         )
         SummaryCard(
             title = stringResource(R.string.stats_avg_cost_kwh),
-            value = if (effectiveCost != null && qs.totalEnergyAddedKwh > 0) {
-                formatMoney(currencySymbol, effectiveCost / qs.totalEnergyAddedKwh, 3)
-            } else noData,
+            value = qs.avgCostPerKwh?.let { formatMoney(currencySymbol, it, 3) } ?: noData,
             modifier = Modifier.weight(1f)
         )
     }
@@ -254,7 +252,8 @@ private fun HonestAnnualSummarySection(
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SummaryCard(
             title = stringResource(R.string.total_distance),
-            value = if (hasDistance) String.format(Locale.getDefault(), "%,.0f km", qs.totalDistanceKm) else noData,
+            value = if (hasDistance) String.format(Locale.getDefault(), "%,.0f km", qs.totalDistanceKm) +
+                (if (driveDistanceSamples < qs.totalDrives) " · $driveDistanceSamples/${qs.totalDrives}" else "") else noData,
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
@@ -266,12 +265,13 @@ private fun HonestAnnualSummarySection(
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         SummaryCard(
             title = stringResource(R.string.stats_energy_used),
-            value = if (hasDrivingEnergy && qs.totalEnergyConsumedKwh != null) String.format(Locale.getDefault(), "%,.1f kWh", qs.totalEnergyConsumedKwh) else noData,
+            value = if (hasDrivingEnergy && qs.totalEnergyConsumedKwh != null) String.format(Locale.getDefault(), "%,.1f kWh", qs.totalEnergyConsumedKwh) +
+                (if (driveEnergySamples < qs.totalDrives) " · $driveEnergySamples/${qs.totalDrives}" else "") else noData,
             modifier = Modifier.weight(1f)
         )
         SummaryCard(
             title = stringResource(R.string.stats_avg_efficiency),
-            value = if (hasDistance && hasDrivingEnergy && (qs.avgEfficiencyWhKm ?: 0.0) > 0) String.format(Locale.getDefault(), "%.0f Wh/km", qs.avgEfficiencyWhKm) else noData,
+            value = if (hasDistance && hasDrivingEnergy && qs.avgEfficiencyWhKm?.isFinite() == true) String.format(Locale.getDefault(), "%.0f Wh/km", qs.avgEfficiencyWhKm) else noData,
             modifier = Modifier.weight(1f)
         )
     }
@@ -283,7 +283,8 @@ private fun HonestAnnualSummarySection(
         )
         SummaryCard(
             title = stringResource(R.string.energy_added),
-            value = if (hasChargeEnergy) String.format(Locale.getDefault(), "%,.1f kWh", qs.totalEnergyAddedKwh) else noData,
+            value = if (hasChargeEnergy) String.format(Locale.getDefault(), "%,.1f kWh", qs.totalEnergyAddedKwh) +
+                (if (chargeEnergySamples < qs.totalCharges) " · $chargeEnergySamples/${qs.totalCharges}" else "") else noData,
             modifier = Modifier.weight(1f)
         )
     }
@@ -295,9 +296,7 @@ private fun HonestAnnualSummarySection(
         )
         SummaryCard(
             title = stringResource(R.string.stats_avg_cost_kwh),
-            value = if (effectiveCost != null && hasChargeEnergy && qs.totalEnergyAddedKwh > 0) {
-                formatMoney(currencySymbol, effectiveCost / qs.totalEnergyAddedKwh, 3)
-            } else noData,
+            value = qs.avgCostPerKwh?.let { formatMoney(currencySymbol, it, 3) } ?: noData,
             modifier = Modifier.weight(1f)
         )
     }
@@ -502,20 +501,20 @@ private fun MonthlyTrendsSection(
     // Distance chart
     if (monthlyDrives.isNotEmpty()) {
         Text(stringResource(R.string.annual_report_distance_km), style = MaterialTheme.typography.labelMedium)
-        BarChart(
-            data = monthlyDrives.map { it.totalDistance.toFloat() },
-            labels = monthlyDrives.map { monthLabel(it.month) },
+        if (monthlyDrives.any { it.totalDistance != null }) BarChart(
+            data = (1..12).map { month -> monthlyDrives.firstOrNull { it.month == month }?.totalDistance?.toFloat() },
+            labels = (1..12).map { monthLabel(it) },
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.fillMaxWidth().height(160.dp)
-        )
+        ) else Text(stringResource(R.string.analysis_coverage_insufficient))
 
         Spacer(modifier = Modifier.height(12.dp))
 
         // Drive count line chart
         Text(stringResource(R.string.annual_report_drives_per_month), style = MaterialTheme.typography.labelMedium)
         LineChart(
-            data = monthlyDrives.map { it.driveCount.toFloat() },
-            labels = monthlyDrives.map { monthLabel(it.month) },
+            data = (1..12).map { month -> monthlyDrives.firstOrNull { it.month == month }?.driveCount?.toFloat() },
+            labels = (1..12).map { monthLabel(it) },
             color = MaterialTheme.colorScheme.tertiary,
             modifier = Modifier.fillMaxWidth().height(120.dp)
         )
@@ -525,35 +524,44 @@ private fun MonthlyTrendsSection(
     if (monthlyCharges.isNotEmpty()) {
         Spacer(modifier = Modifier.height(12.dp))
         Text(stringResource(R.string.annual_report_energy_added_kwh), style = MaterialTheme.typography.labelMedium)
-        BarChart(
-            data = monthlyCharges.map { it.totalEnergy.toFloat() },
-            labels = monthlyCharges.map { monthLabel(it.month) },
+        if (monthlyCharges.any { it.totalEnergy != null }) BarChart(
+            data = (1..12).map { month -> monthlyCharges.firstOrNull { it.month == month }?.totalEnergy?.toFloat() },
+            labels = (1..12).map { monthLabel(it) },
             color = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.fillMaxWidth().height(160.dp)
-        )
+        ) else Text(stringResource(R.string.analysis_coverage_insufficient))
     }
 }
 
 @Composable
 private fun BarChart(
-    data: List<Float>,
+    data: List<Float?>,
     labels: List<String>,
     color: Color,
     modifier: Modifier = Modifier
 ) {
-    val maxVal = data.maxOrNull()?.coerceAtLeast(1f) ?: 1f
+    val observed = data.filterNotNull()
+    val high = maxOf(0f, observed.maxOrNull() ?: 0f)
+    val low = minOf(0f, observed.minOrNull() ?: 0f)
+    val span = (high - low).coerceAtLeast(1f)
+    val zeroColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    val recoveryColor = MaterialTheme.colorScheme.tertiary
 
     Canvas(modifier = modifier) {
         val barWidth = size.width / (data.size * 2f)
         val chartHeight = size.height - 24f
+        val zeroY = if (high == 0f && low == 0f) chartHeight else chartHeight * high / span
+        drawLine(zeroColor, Offset(0f, zeroY), Offset(size.width, zeroY))
 
         data.forEachIndexed { index, value ->
-            val barHeight = (value / maxVal) * chartHeight
+            if (value == null) return@forEachIndexed
+            val barHeight = (kotlin.math.abs(value) / span) * chartHeight
             val x = index * (size.width / data.size) + barWidth / 2
-            val y = chartHeight - barHeight
+            val y = if (value >= 0f) zeroY - barHeight else zeroY
 
-            drawRoundRect(
-                color = color,
+            if (value == 0f) drawCircle(color, radius = 2.5f, center = Offset(x + barWidth / 2, zeroY))
+            else drawRoundRect(
+                color = if (value < 0f) recoveryColor else color,
                 topLeft = Offset(x, y),
                 size = Size(barWidth, barHeight),
                 cornerRadius = CornerRadius(4f, 4f)
@@ -580,27 +588,31 @@ private fun BarChart(
 
 @Composable
 private fun LineChart(
-    data: List<Float>,
+    data: List<Float?>,
     labels: List<String>,
     color: Color,
     modifier: Modifier = Modifier
 ) {
-    val maxVal = data.maxOrNull()?.coerceAtLeast(1f) ?: 1f
+    val maxVal = data.filterNotNull().maxOrNull()?.coerceAtLeast(1f) ?: 1f
 
     Canvas(modifier = modifier) {
         val chartHeight = size.height - 16f
         val stepX = size.width / (data.size - 1).coerceAtLeast(1)
 
         val path = Path()
+        var connected = false
         data.forEachIndexed { index, value ->
+            if (value == null) { connected = false; return@forEachIndexed }
             val x = index * stepX
             val y = chartHeight - (value / maxVal) * chartHeight
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            if (!connected) path.moveTo(x, y) else path.lineTo(x, y)
+            connected = true
         }
         drawPath(path, color = color, style = Stroke(width = 3f))
 
         // Dots
         data.forEachIndexed { index, value ->
+            if (value == null) return@forEachIndexed
             val x = index * stepX
             val y = chartHeight - (value / maxVal) * chartHeight
             drawCircle(color = color, radius = 5f, center = Offset(x, y))
@@ -656,14 +668,19 @@ private fun DrivingHabitsSection(stats: CarStats) {
             }
 
             // Efficiency rating
-            if ((qs.avgEfficiencyWhKm ?: 0.0) > 0) {
-                val rating = when {
-                    (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 150 -> stringResource(R.string.annual_report_excellent)
-                    (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 180 -> stringResource(R.string.annual_report_good)
-                    (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 220 -> stringResource(R.string.annual_report_average)
-                    else -> stringResource(R.string.annual_report_high)
+            qs.avgEfficiencyWhKm?.takeIf(Double::isFinite)?.let { efficiency ->
+                if (efficiency <= 0.0) {
+                    HabitRow(stringResource(R.string.stats_avg_efficiency),
+                        String.format(Locale.getDefault(), "%.0f Wh/km", efficiency))
+                } else {
+                    val rating = when {
+                        efficiency < 150 -> stringResource(R.string.annual_report_excellent)
+                        efficiency < 180 -> stringResource(R.string.annual_report_good)
+                        efficiency < 220 -> stringResource(R.string.annual_report_average)
+                        else -> stringResource(R.string.annual_report_high)
+                    }
+                    HabitRow(stringResource(R.string.annual_report_efficiency_rating), rating)
                 }
-                HabitRow(stringResource(R.string.annual_report_efficiency_rating), rating)
             }
 
             // Max speed

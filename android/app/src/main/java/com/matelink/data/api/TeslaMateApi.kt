@@ -6,6 +6,7 @@ import com.matelink.data.api.models.CarStatusResponse
 import com.matelink.data.api.models.ChargeDetailResponse
 import com.matelink.data.api.models.ChargesResponse
 import com.matelink.data.api.models.DataReadinessResponse
+import com.matelink.data.api.models.FleetTelemetryDiagnosticsResponse
 import com.matelink.data.api.models.DriveDetailResponse
 import com.matelink.data.api.models.DrivesResponse
 import com.matelink.data.api.models.GlobalSettingsResponse
@@ -32,6 +33,19 @@ import retrofit2.http.Query
 // iOS uses mixed leading "/" — ensure base URL ends with "/" for consistency.
 
 interface TeslamateApi {
+
+    @GET("api/v1/archive/enrollments/{handle}")
+    suspend fun getArchiveEnrollment(
+        @Path("handle") handle: String,
+        @retrofit2.http.Tag fence: ArchiveEnrollmentRequestFence
+    ): Response<com.matelink.data.api.models.ArchiveEnrollmentResponse>
+
+    @POST("api/v1/archive/enrollments/{handle}/decision")
+    suspend fun decideArchiveEnrollment(
+        @Path("handle") handle: String,
+        @Body decision: com.matelink.data.api.models.ArchiveEnrollmentDecision,
+        @retrofit2.http.Tag fence: ArchiveEnrollmentRequestFence
+    ): Response<com.matelink.data.api.models.ArchiveEnrollmentResponse>
 
     @GET("api/matelink/v1/cars/{carId}/history-context")
     suspend fun getHistoryContext(@Path("carId") carId: Int): Response<com.matelink.data.api.models.HistoryContextResponse>
@@ -120,6 +134,12 @@ interface TeslamateApi {
     suspend fun getDataReadiness(
         @Path("carId") carId: Int
     ): Response<DataReadinessResponse>
+
+    @GET("api/v1/cars/{carId}/telemetry/diagnostics")
+    suspend fun getTelemetryDiagnostics(
+        @Path("carId") carId: Int,
+        @retrofit2.http.Tag fence: ArchiveEnrollmentRequestFence? = null
+    ): Response<FleetTelemetryDiagnosticsResponse>
 
     @GET("api/v1/cars/{carId}/telemetry/pairing")
     suspend fun getTelemetryPairing(

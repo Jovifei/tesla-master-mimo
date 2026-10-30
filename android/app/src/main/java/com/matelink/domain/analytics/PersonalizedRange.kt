@@ -38,7 +38,10 @@ data class PersonalizedRangeEstimate(
     val distanceKm: Double,
     val confidencePercent: Int,
     val temperatureBand: RangeTemperatureBand?,
-    val speedBand: RangeSpeedBand?
+    val speedBand: RangeSpeedBand?,
+    /** Recent valid inputs before model gates; never evidence of an adopted model. */
+    val candidateSampleCount: Int = sampleCount,
+    val candidateDistanceKm: Double = distanceKm
 )
 
 private const val LOOKBACK_DAYS = 90L
@@ -109,8 +112,20 @@ fun estimatePersonalizedRange(
         distanceKm = efficiency?.validDistanceKm ?: 0.0,
         confidencePercent = efficiency?.confidencePercent() ?: 0,
         temperatureBand = temperatureBand,
-        speedBand = speedBand
+        speedBand = speedBand,
+        candidateSampleCount = globalEfficiency.sampleCount,
+        candidateDistanceKm = globalEfficiency.validDistanceKm
     )
+}
+
+/** Canonical analytics temperature must be bound to the same response's explicit unit. */
+fun canonicalTemperatureC(value: Double?, unit: String?): Double? {
+    val observed = value?.takeIf(Double::isFinite) ?: return null
+    return when (unit?.trim()?.uppercase()) {
+        "C" -> observed
+        "F" -> (observed - 32.0) * 5.0 / 9.0
+        else -> null
+    }?.takeIf(Double::isFinite)
 }
 
 fun Double?.temperatureBand(): RangeTemperatureBand? = this

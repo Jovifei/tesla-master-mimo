@@ -73,25 +73,25 @@ class TripDetector @Inject constructor() {
 
             when {
                 // drive → charge: max 15min gap
-                lastWasDrive && event is Event.Charge && gapMin <= MAX_DRIVE_TO_CHARGE_GAP_MIN -> {
+                lastWasDrive && event is Event.Charge && gapMin >= 0 && gapMin <= MAX_DRIVE_TO_CHARGE_GAP_MIN -> {
                     currentCharges.add(event.charge)
                     lastEventEnd = parseDateTime(event.endDate)
                     lastWasDrive = false
                 }
                 // charge → drive: max 3h gap
-                !lastWasDrive && event is Event.Drive && gapMin <= MAX_CHARGE_TO_DRIVE_GAP_MIN -> {
+                !lastWasDrive && event is Event.Drive && gapMin >= 0 && gapMin <= MAX_CHARGE_TO_DRIVE_GAP_MIN -> {
                     currentDrives.add(event.drive)
                     lastEventEnd = parseDateTime(event.endDate)
                     lastWasDrive = true
                 }
                 // drive → drive: max 30min gap (e.g. rest stop without charging)
-                lastWasDrive && event is Event.Drive && gapMin <= MAX_DRIVE_TO_DRIVE_GAP_MIN -> {
+                lastWasDrive && event is Event.Drive && gapMin >= 0 && gapMin <= MAX_DRIVE_TO_DRIVE_GAP_MIN -> {
                     currentDrives.add(event.drive)
                     lastEventEnd = parseDateTime(event.endDate)
                     lastWasDrive = true
                 }
                 // charge → charge: max 3h gap (charger hop at same location)
-                !lastWasDrive && event is Event.Charge && gapMin <= MAX_CHARGE_TO_DRIVE_GAP_MIN -> {
+                !lastWasDrive && event is Event.Charge && gapMin >= 0 && gapMin <= MAX_CHARGE_TO_DRIVE_GAP_MIN -> {
                     currentCharges.add(event.charge)
                     lastEventEnd = parseDateTime(event.endDate)
                     lastWasDrive = false
@@ -121,9 +121,10 @@ class TripDetector @Inject constructor() {
         trips: MutableList<Trip>
     ) {
         if (drives.size < 2 || charges.isEmpty()) return
-        val totalDistance = drives.sumOf { it.distance }
-        if (totalDistance < MIN_TRIP_DISTANCE_KM) return
-        TripAggregator.buildTrip(drives, charges)?.let { trips.add(it) }
+        val trip = TripAggregator.buildQualifiedTrip(drives, charges) ?: return
+        val distance = trip.knownDistanceKm ?: return
+        if (distance < MIN_TRIP_DISTANCE_KM) return
+        trips.add(trip)
     }
 
     private fun parseDateTime(dateStr: String): LocalDateTime? =

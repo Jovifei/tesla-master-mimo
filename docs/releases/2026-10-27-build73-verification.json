@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-27",
+  "candidate": "2.1.54/build73",
+  "evidence_level": "local source/fixture/Room/VM/notification verification; not device/provider acceptance",
+  "tests": {
+    "Debug": {
+      "tests": 1556,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "Release": {
+      "tests": 1556,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 8
+    }
+  },
+  "lint": {
+    "Debug": {
+      "Warning": 276,
+      "Information": 9
+    },
+    "Release": {
+      "Warning": 275,
+      "Information": 8
+    }
+  },
+  "android_test_source_compile": "PASS; not installed/executed",
+  "go": {
+    "backend_full_test": "PASS",
+    "backend_vet": "PASS",
+    "adapter_full_test": "PASS",
+    "adapter_vet": "PASS"
+  },
+  "layout_parameter_review": "PASS; no net changes to existing geometry/spacing/font/style parameters vs e53a2d01",
+  "release_build": {
+    "result": "PASS",
+    "r8": "PASS",
+    "wrapper_status": "PARTIAL solely because already-completed unit/lint checks were not repeated by the build wrapper",
+    "apk": {
+      "status": "PASS",
+      "apk_path": "E:\\project\\_worktrees\\matelink-release-data-audit-20261026\\android\\app\\build\\outputs\\apk\\release\\app-release.apk",
+      "package_name": "com.matelink",
+      "version_code": "73",
+      "version_name": "2.1.54",
+      "debuggable": false,
+      "signed": true,
+      "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
+      "sha256": "425072A9A5C46DD9F54901FEE07170A6FEAE3C1DA2C6BFE3A48214B68A726482",
+      "sdk_root": "C:\\Users\\Admin\\AppData\\Local\\Android\\Sdk",
+      "build_tools": "C:\\Users\\Admin\\AppData\\Local\\Android\\Sdk\\build-tools\\37.0.0",
+      "aapt2_exit_code": 0,
+      "apksigner_exit_code": 0,
+      "blockers": [],
+      "security": [
+        "Only public APK metadata and certificate fingerprints were read; no keystore material was accessed."
+      ]
+    },
+    "artifact_path": "E:\\Claude_allow\\Download\\matelink-app-release-fixes-20261027\\MateLink-2.1.54-build73-161d77ce.apk",
+    "compiled_commit_string_found": true
+  },
+  "code_commit": "161d77cea4d110aac93b52956644ab3ea5603733",
+  "release_configuration": {
+    "api_base_url": "https://api.teslalink.joviluma.com/",
+    "auth_host": "auth.teslalink.joviluma.com",
+    "public_info_base_url": "https://auth.teslalink.joviluma.com",
+    "cloud_login": true,
+    "origin": "inherited existing release artifact; explicit build arguments",
+    "signing": "existing external configuration, no secrets in source",
+    "map_key": "not present in inspected prior merged manifest; existing runtime/provider setup remains an external acceptance gate"
+  },
+  "obsidian": {
+    "checkpoint": "MEMORY_UPDATED",
+    "slots": 3,
+    "document_mirror": "MEMORY_UPDATED",
+    "copied_markdown": 28,
+    "skipped": 0,
+    "memory_id": "tesla-master-mimo"
+  },
+  "hub": {
+    "state": "UNSENT_REVISION_UNAVAILABLE",
+    "reason": "Connection refused10061; no automatic retry or sent claim"
+  },
+  "source_manifest_matches_after_build": true,
+  "source_manifest_mismatches": []
+}

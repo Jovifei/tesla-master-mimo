@@ -11,6 +11,7 @@ import com.matelink.data.local.dao.GeocodeCacheDao
 import com.matelink.data.local.dao.GeocodeProgressDao
 import com.matelink.data.local.dao.LegacyHistoryArchiveDao
 import com.matelink.data.local.dao.GeocodeQueueDao
+import com.matelink.data.local.dao.HistoryDetailDao
 import com.matelink.data.local.dao.SavedTripDao
 import com.matelink.data.local.dao.SentryAlertLogDao
 import com.matelink.data.local.dao.SyncStateDao
@@ -58,6 +59,12 @@ object DatabaseModule {
     @Singleton
     fun provideChargeSummaryDao(database: StatsDatabase): ChargeSummaryDao {
         return database.chargeSummaryDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideHistoryDetailDao(database: StatsDatabase): HistoryDetailDao {
+        return database.historyDetailDao()
     }
 
     @Provides

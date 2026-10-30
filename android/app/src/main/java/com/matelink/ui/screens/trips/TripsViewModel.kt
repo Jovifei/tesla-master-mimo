@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.dao.AggregateDao
 import com.matelink.data.local.VehicleContextRepository
+import com.matelink.data.local.HistoryReadScope
+import com.matelink.data.local.VehicleContext
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.UnifiedHistoryRepository
@@ -17,6 +19,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collect
 import com.matelink.util.parseIsoDate
 import java.time.LocalDate
 import javax.inject.Inject
@@ -24,9 +28,9 @@ import javax.inject.Inject
 data class TripsUiState(
     val isLoading: Boolean = true,
     val trips: List<Trip> = emptyList(),
-    val totalDistance: Double = 0.0,
-    val totalDrivingMin: Int = 0,
-    val totalEnergyCharged: Double = 0.0,
+    val totalDistance: Double? = null,
+    val totalDrivingMin: Int? = null,
+    val totalEnergyCharged: Double? = null,
     val availableYears: List<Int> = emptyList(),
     val selectedYear: Int? = null,
     val isCustomDateFilter: Boolean = false,
@@ -34,6 +38,7 @@ data class TripsUiState(
     val customEndDate: LocalDate? = null,
     val units: Units? = null,
     val dcChargeIds: Set<Int> = emptySet(),
+    val acChargeIds: Set<Int> = emptySet(),
     val historySyncWarning: String? = null
 )
 
@@ -55,16 +60,48 @@ class TripsViewModel @Inject constructor(
     private var hasBeenPaused = false
     private var loadJob: Job? = null
     private var loadGeneration = 0L
+    private var owner: Pair<HistoryReadScope, VehicleContext>? = null
+
+    init {
+        viewModelScope.launch {
+            vehicleContextRepository.historyScopeChanges.collect { scope ->
+                val proof = owner ?: return@collect
+                if (scope != proof.first ||
+                    !vehicleContextRepository.isHistoryContextCurrentNow(proof.first, proof.second)) {
+                    loadGeneration++
+                    loadJob?.cancel()
+                    owner = null
+                    allTrips = emptyList()
+                    _uiState.value = TripsUiState(isLoading = false,
+                        historySyncWarning = "history_identity_unavailable")
+                    if (scope != null) carId?.let { loadTrips(it); loadUnits(it) }
+                }
+            }
+        }
+    }
+
+    private fun current(token: Long, remote: Int, proof: Pair<HistoryReadScope, VehicleContext>): Boolean =
+        token == loadGeneration && carId == remote && proof.second.remoteApiCarId == remote &&
+            vehicleContextRepository.isHistoryContextCurrentNow(proof.first, proof.second)
 
     private val historyRefresher = TripsHistoryRefresher(
         refreshHistory = historyRepository::load,
         resolveCachedLocalId = vehicleContextRepository::localHistoryCarIdFor,
-        loadTrips = tripRepository::getTrips,
+        loadTrips = { local ->
+            val proof = owner
+            if (proof == null || proof.second.localHistoryCarId != local) emptyList()
+            else tripRepository.getTrips(local) {
+                owner == proof && current(loadGeneration, proof.second.remoteApiCarId, proof)
+            }
+        },
         loadDcChargeIds = { aggregateDao.getDcChargeIds(it).toSet() }
     )
 
     fun setCarId(id: Int) {
         if (carId == id) return
+        allTrips = emptyList()
+        owner = null
+        _uiState.value = TripsUiState()
         carId = id
         loadTrips(id)
         loadUnits(id)
@@ -109,9 +146,15 @@ class TripsViewModel @Inject constructor(
     }
 
     private fun loadUnits(carId: Int) {
+        val token = loadGeneration
         viewModelScope.launch {
+            val scope = try { vehicleContextRepository.captureReadScope() }
+                catch (e: CancellationException) { throw e }
+                catch (_: Exception) { return@launch }
             when (val result = repository.getCarStatus(carId)) {
-                is ApiResult.Success -> _uiState.update { it.copy(units = result.data.units) }
+                is ApiResult.Success -> if (token == loadGeneration && this@TripsViewModel.carId == carId &&
+                    runCatching { vehicleContextRepository.captureReadScope() == scope }.getOrDefault(false))
+                    _uiState.update { it.copy(units = result.data.units) }
                 is ApiResult.Error -> {}
             }
         }
@@ -122,8 +165,18 @@ class TripsViewModel @Inject constructor(
         val generation = ++loadGeneration
         loadJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = allTrips.isEmpty()) }
+            try {
+            val scope = vehicleContextRepository.captureReadScope()
+            val context = vehicleContextRepository.cachedContextForRemote(carId, scope)
+                ?: vehicleContextRepository.resolveRemote(carId)
+            val proof = scope to context
+            if (!current(generation, carId, proof)) return@launch
+            owner = proof
             val refreshed = historyRefresher.refresh(carId)
-            if (generation != loadGeneration || this@TripsViewModel.carId != carId) return@launch
+            val acIds = aggregateDao.getAcChargeIds(context.localHistoryCarId).toSet()
+            check(current(generation, carId, proof) && refreshed.localHistoryCarId == context.localHistoryCarId) {
+                "history_identity_unavailable"
+            }
             allTrips = refreshed.trips
 
             val years = allTrips.mapNotNull { parseYear(it.startDate) }
@@ -135,10 +188,20 @@ class TripsViewModel @Inject constructor(
                     isLoading = false,
                     availableYears = years,
                     dcChargeIds = refreshed.dcChargeIds,
+                    acChargeIds = acIds,
                     historySyncWarning = refreshed.historySyncWarning
                 )
             }
             applyFilter()
+            } catch (e: CancellationException) { throw e }
+              catch (_: Exception) {
+                if (generation == loadGeneration) {
+                    allTrips = emptyList()
+                    owner = null
+                    _uiState.value = TripsUiState(isLoading = false,
+                        historySyncWarning = "history_identity_unavailable")
+                }
+            }
         }
     }
 
@@ -158,9 +221,12 @@ class TripsViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 trips = filtered,
-                totalDistance = filtered.sumOf { t -> t.totalDistance },
-                totalDrivingMin = filtered.sumOf { t -> t.totalDrivingDurationMin },
-                totalEnergyCharged = filtered.sumOf { t -> t.totalEnergyCharged }
+                totalDistance = filtered.mapNotNull { t -> t.knownDistanceKm }.takeIf { v -> v.isNotEmpty() }
+                    ?.sum()?.takeIf(Double::isFinite),
+                totalDrivingMin = filtered.mapNotNull { t -> t.knownDrivingDurationMin }.takeIf { v -> v.isNotEmpty() }
+                    ?.sumOf { v -> v.toLong() }?.takeIf { v -> v <= Int.MAX_VALUE }?.toInt(),
+                totalEnergyCharged = filtered.mapNotNull { t -> t.knownChargeEnergyKwh }.takeIf { v -> v.isNotEmpty() }
+                    ?.sum()?.takeIf(Double::isFinite)
             )
         }
     }

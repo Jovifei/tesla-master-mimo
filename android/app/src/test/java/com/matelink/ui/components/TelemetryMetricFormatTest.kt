@@ -25,6 +25,21 @@ class TelemetryMetricFormatTest {
         assertEquals("2d 23h" to null, telemetryMetricParts("2d 23h"))
         assertEquals("暂无数据" to null, telemetryMetricParts("暂无数据"))
     }
+    @Test fun longCompoundUnitsStackBelowTheCompactValue() {
+        assertEquals(CompactUnitLine.BELOW, compactUnitLine("kWh/100km"))
+        assertEquals(CompactUnitLine.BELOW, compactUnitLine("kWh/100k"))
+    }
+    @Test fun shortUnitsStayInlineInTheCompactValueRow() {
+        assertEquals(CompactUnitLine.INLINE, compactUnitLine("km/h"))
+        assertEquals(CompactUnitLine.INLINE, compactUnitLine("kWh"))
+        assertEquals(CompactUnitLine.INLINE, compactUnitLine("分钟"))
+        assertEquals(CompactUnitLine.INLINE, compactUnitLine("kWh/100"))
+    }
+    @Test fun missingCompactUnitRendersNothing() {
+        assertEquals(CompactUnitLine.NONE, compactUnitLine(null))
+        assertEquals(CompactUnitLine.NONE, compactUnitLine(""))
+        assertEquals(CompactUnitLine.NONE, compactUnitLine(" "))
+    }
     private fun withLocale(action: () -> Unit) {
         val previous = Locale.getDefault()
         try { Locale.setDefault(Locale.US); action() } finally { Locale.setDefault(previous) }

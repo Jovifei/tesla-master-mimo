@@ -18,7 +18,14 @@ class HistoryRefreshIntegrationContractTest {
             assertTrue(source.contains("private val clock: Clock"))
             assertTrue(source.contains("refreshedHistoryWindow("))
             assertTrue(source.contains("latestLoad.launch(viewModelScope)"))
-            assertTrue(source.contains("val result = historyRepository.load(id, startDateStr, endDateStr)\n            ensureCurrent()"))
+            // Cold starts must resolve the localHistoryCarId mapping offline before
+            // reading the Room cache; the remote car id alone cannot hit those rows.
+            assertTrue(source.contains("cachedContextForRemote("))
+            // Behavior tests cover timeout and in-flight Room publication; do not
+            // require the timeout block to contain only the network call.
+            assertTrue(source.contains("val result = withTimeoutOrNull(HISTORY_LOAD_TIMEOUT_MS) {"))
+            assertTrue(source.contains("historyRepository.load(id, startDateStr, endDateStr)"))
+            assertTrue(source.contains("historyTimeoutMessage("))
             assertTrue(source.contains("HISTORY_IDENTITY_UNAVAILABLE"))
         }
     }
@@ -54,7 +61,10 @@ class HistoryRefreshIntegrationContractTest {
     }
     @Test fun dashboardFailureUsesObservedTimeRatherThanPromotingCache() {
         val source = source("ui/screens/dashboard/DashboardViewModel.kt")
-        assertTrue(source.contains("failedSnapshotFreshness(current.observedAt, current.status != null, clock.instant())"))
+        // Source formatting is irrelevant. The failure consumer must pass
+        // the historical observedAt to freshness, never relabel with now().
+        assertTrue(Regex("""failedSnapshotFreshness\(\s*(?:current|ui)\.observedAt,\s*(?:current|ui)\.status\s*!=\s*null,\s*clock\.instant\(\)""",
+            RegexOption.DOT_MATCHES_ALL).containsMatchIn(source))
         assertFalse(source.contains("snapshotFreshness = SnapshotFreshness.RECENT"))
     }
     @Test fun listAndDetailsShareVerifiedContextAndCostWriteGuard() {
@@ -66,8 +76,8 @@ class HistoryRefreshIntegrationContractTest {
             assertFalse(vm.contains("historyCarId ?: carId"))
             assertTrue(source("ui/screens/${kind}DetailScreen.kt").contains("HistoryReadNotices(localArchiveLinkPending, historySyncWarning)"))
         }
-        assertTrue(source("ui/screens/charges/ChargesViewModel.kt").contains("saveVerifiedHistoryChargeCost("))
-        assertTrue(source("ui/screens/charges/ChargeDetailViewModel.kt").contains("saveVerifiedHistoryChargeCost("))
+        assertTrue(source("ui/screens/charges/ChargesViewModel.kt").contains("chargeCostOverrideStore.saveBound("))
+        assertTrue(source("ui/screens/charges/ChargeDetailViewModel.kt").contains("chargeCostOverrideStore.saveBound("))
     }
     @Test fun currentConsumersShareOriginNamespaceAndPreserveLegacyMapping() {
         val disk = HistoryConsumerIdentityRecoveryTest.PreferenceDisk()

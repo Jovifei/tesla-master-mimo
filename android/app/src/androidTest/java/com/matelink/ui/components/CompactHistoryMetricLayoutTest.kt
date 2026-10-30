@@ -1,5 +1,6 @@
 package com.matelink.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -15,8 +16,10 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
@@ -63,6 +66,54 @@ class CompactHistoryMetricLayoutTest {
             val layouts = mutableListOf<TextLayoutResult>()
             node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
             layouts.forEach { assertFalse("summary $i clipped", it.hasVisualOverflow) }
+        }
+    }
+
+    @Test fun regularPhoneDoesNotClipEnglishUnknownDriveSummary() {
+        compose.setContent {
+            MateLinkTheme {
+                Box(Modifier.width(336.dp)) {
+                    CompactHistoryMetricStrip(
+                        listOf("Trips", "Distance", "Duration", "Max Speed").mapIndexed { i, label ->
+                            TelemetryMetricSpec(Icons.Default.Speed, label,
+                                listOf("2", "30.0", "55", "Not available")[i],
+                                MaterialTheme.colorScheme.primary,
+                                unit = listOf("trips", "km", "min", "km/h")[i])
+                        }, numberFontSize = 20.sp
+                    )
+                }
+            }
+        }
+        val row = compose.onNodeWithTag("history-metric-row").getUnclippedBoundsInRoot()
+        repeat(4) { i ->
+            val node = compose.onNodeWithTag("history-metric-value-$i", useUnmergedTree = true)
+            val bounds = node.getUnclippedBoundsInRoot()
+            assertTrue("drive summary $i is outside regular phone width: $bounds row=$row",
+                bounds.right.value <= row.right.value + 0.5f)
+        }
+    }
+
+    @Test fun regularPhoneDoesNotClipEnglishUnknownChargeSummary() {
+        compose.setContent {
+            MateLinkTheme {
+                Box(Modifier.width(336.dp)) {
+                    CompactHistoryMetricStrip(
+                        listOf("Sessions", "Energy", "Cost", "Avg/Charge").mapIndexed { i, label ->
+                            TelemetryMetricSpec(Icons.Default.Speed, label,
+                                listOf("1", "13", "Not available", "Not available")[i],
+                                MaterialTheme.colorScheme.primary,
+                                unit = listOf("trips", "kWh", "", "")[i])
+                        }, numberFontSize = 20.sp
+                    )
+                }
+            }
+        }
+        val row = compose.onNodeWithTag("history-metric-row").getUnclippedBoundsInRoot()
+        repeat(4) { i ->
+            val node = compose.onNodeWithTag("history-metric-value-$i", useUnmergedTree = true)
+            val bounds = node.getUnclippedBoundsInRoot()
+            assertTrue("charge summary $i is outside regular phone width: $bounds row=$row",
+                bounds.right.value <= row.right.value + 0.5f)
         }
     }
 
@@ -120,6 +171,37 @@ class CompactHistoryMetricLayoutTest {
             if (w == 288 && s == 1.6f) assertTrue("large text must have reachable horizontal overflow",
                 compose.onNodeWithTag("history-metric-row").fetchSemanticsNode()
                     .config[SemanticsProperties.HorizontalScrollAxisRange].maxValue() > 0f)
+        }
+    }
+
+    @Test fun chargeFeeCellOpensEditWithoutOpeningHistoryDetail() {
+        var edits = 0
+        var opens = 0
+        compose.setContent {
+            MateLinkTheme {
+                Box(Modifier.width(336.dp).clickable { opens++ }) {
+                    CompactHistoryMetricStrip(
+                        listOf("时长", "电量", "费用", "电池").mapIndexed { index, label ->
+                            TelemetryMetricSpec(Icons.Default.Speed, label,
+                                listOf("39", "24.02", "27.38", "56→97")[index],
+                                MaterialTheme.colorScheme.primary,
+                                unit = listOf("分钟", "kWh", "¥", "%")[index])
+                        },
+                        clickableMetricIndex = 2,
+                        onMetricClick = { edits++ },
+                        metricClickLabel = "修改总价"
+                    )
+                }
+            }
+        }
+        val fee = compose.onNodeWithContentDescription("费用: 27.38 ¥")
+        val bounds = fee.getUnclippedBoundsInRoot()
+        assertTrue((bounds.right - bounds.left).value >= 48f)
+        assertTrue((bounds.bottom - bounds.top).value >= 48f)
+        fee.performClick()
+        compose.runOnIdle {
+            assertEquals(1, edits)
+            assertEquals(0, opens)
         }
     }
 }

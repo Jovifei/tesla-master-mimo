@@ -18,3 +18,17 @@ fun telemetryMetricParts(display: String): Pair<String, String?> {
     val match = Regex("^([+\\-]?[\\p{Nd},.٫٬]+(?:[eE][+\\-]?\\p{Nd}+)?)\\s*(kWh/100km|Wh/km|Wh/mi|kWh|km/h|mph|km|mi|kW|bar|psi|°C|°F|%)$").matchEntire(display)
     return if (match == null) display to null else match.groupValues[1] to match.groupValues[2]
 }
+
+/** Compact metric cells measure their value row for a fixed column width; units
+ * at least this long (e.g. kWh/100km) cannot fit inline and stack below the
+ * value instead — matching CompactHistoryMetricStrip's value/unit layout. */
+const val COMPACT_INLINE_UNIT_MAX_CHARS = 8
+
+/** Where a compact metric cell renders its unit. */
+enum class CompactUnitLine { NONE, INLINE, BELOW }
+
+fun compactUnitLine(unit: String?): CompactUnitLine = when {
+    unit.isNullOrBlank() -> CompactUnitLine.NONE
+    unit.length >= COMPACT_INLINE_UNIT_MAX_CHARS -> CompactUnitLine.BELOW
+    else -> CompactUnitLine.INLINE
+}

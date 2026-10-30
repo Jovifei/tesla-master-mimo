@@ -1,5 +1,22 @@
 # MateLink Android 版本发布台账
 
+## 2026-10-27 显示验收续查候选（2.1.55 / build74）
+
+- 同一App分支保留build73，追加三项经RED复现的消费者修复：新授权失败/旧会话、首页电流显示、年度费用漏计；布局参数不改。
+- 当前为软件候选；[验收记录](releases/2026-10-27-display-acceptance.md)记录实际测试、打包、SHA和安装状态，三项发现/修复版本分别进入[87条问题账本](APP-ISSUE-VERSIONS.md)。
+- 代码63cdb8ee；Debug1566/0/0/0、Release1566/0/0/8，双lint0error，R8/assembleRelease和签名核验PASS。APK为MateLink-2.1.55-build74-63cdb8ee.apk，SHA256 AA2DDD82F008DCCB6F31C71634972DD8FD291A2177AFB4D8FF5BA59918F2ADC6；设备尚未安装验收。
+- 原始目录配置仍72，实际手机版本尚不能读取；本轮无ADB设备，未安装或清理用户数据，不因本地回归通过声称真实逐页验收完成。
+
+## 2026-10-27 App数据链路修复候选（2.1.54 / build73）
+
+- 发现基准为2.1.53/build72已审候选；本轮在E盘 `matelink-release-data-audit-20261026`、App分支 `codex/app-release-data-fixes-20261027` 实施，原候选基线提交 `e53a2d01`。
+- [逐问题版本台账](APP-ISSUE-VERSIONS.md)保存发现日期、版本、改法、验证与提交；[批次记录](releases/2026-10-27-app-data-fixes.md)及F1–F7分组记录对应来源→资格/计算→持久化→展示链。
+- 本轮只修数据、元信息、计算、并发及现有位置formatter/路由绑定；保持原页面参数排列、尺寸、字体、间距与既有颜色。
+- **代码提交**：`161d77cea4d110aac93b52956644ab3ea5603733`。Debug/Release各1556方法0fail/0error（Release8既有skip），双lint0error，AndroidTest源码编译、两个Go模块tests/vet和R8通过。
+- **签名候选**：`com.matelink` 73/2.1.54，debuggable=false，证书与既有包一致；APK SHA256 `425072A9A5C46DD9F54901FEE07170A6FEAE3C1DA2C6BFE3A48214B68A726482`。包内GIT_SHA=161d77ce，文件位于批准下载目录。安装、provider和生产验收分别保留待验。
+- 软件修复不等于真实历史补采；未曾采集的旧样本、未提供的来源实例/事件脉冲保持明确边界。本轮未安装手机或部署生产，Hub当前拒绝连接未成功上报。
+
+
 本文件记录 MateLink Android App 每次**正式包（release）**的版本更新与真机安装情况，倒序排列（最新在最上）。
 
 适用范围：Release 正式包为 `com.matelink`；Debug 固定为隔离包 `com.matelink.test.mock`，不得覆盖车主包。
@@ -7,6 +24,65 @@
 
 > 安全约定：本文件只记录构建配置的文件路径与公网地址，**不记录 keystore 口令**。
 > 签名配置文件位于仓库外（`E:\Claude_allow\matelink-release.properties`），不提交远端。
+
+---
+
+## [2.1.52 / build 71] — 2026-10-25 已同签覆盖安装，页面回归修复中
+
+- **实际安装源码**：PR #27 Draft/open 的 `af6fe089a57c95b3839dc304bb0385c3ba4e8e29`，tree `d400bc920bd6e05205022d40459da2ac4f965dea`，parent `24a1141ad1bcf7eb7a01ab8e7baafd0995ac68d2`。较早的 `84e3ca91` 是整合候选，不能当最终包。PR 此后若前进，新 SHA 是另一候选，不自动成为手机安装版。
+- **本版变化**：整合 build70 页面与数据底座；行程 SOC 回到右侧并移除历史“功率积分100%”徽标；同一驻车内逐次显示充电及各自 kWh/h，停车段仅在完整 SOC 边界证据下显示百分点/小时；电池、效率、费用走作用域 Room-first 消费。跨来源驻车/充电、Battery UID 缓存与 Cost 临时错误保留已补真实回归。
+- **同 SHA 验证**：[完整 Actions 40174354397](https://github.com/Jovifei/tesla-master-mimo/actions/runs/40174354397) 18/18 SUCCESS；Android Debug/Release 各 1271 项 0 fail/error，Release 8 项既有 skip，双 lint 0 error，R8 PASS；Go、隔离 PG18、race、TLS、Web、Mini 和源码审计成功。[API35 40174354371](https://github.com/Jovifei/tesla-master-mimo/actions/runs/40174354371) XML 80/0/0/2，三张 Compose 合成画面非黑且哈希不同。它们证明固定源码和隔离界面，不代替自然 Fleet。
+- **正式候选包与真机**：`com.matelink` 71/2.1.52，Release 不可调试；APK SHA256 `BB8DFBB30C8A2DE1721C74DA9942B81AF22D640CBF84355BFAC5AC378E8C6FF1`，与已安装包证书一致。保留数据的 `adb install -r` 成功，`firstInstallTime` 未变；启动进程存活，限定日志未见 FATAL/ANR/Room 迁移错误。未清除或导入用户历史。
+- **安装后发现的回归仍 OPEN/WIP**：同页充电卡有估算费用而摘要费用/单次均价缺失；日期按钮与摘要/图表/列表不同窗且滚动暗中扩窗；驻车六项遥测整块隐藏、起止历史 SOC 证据缺失与图标状态色回退；行程类型筛选入口丢失。根因、当前未提交修复及防复发测试见 [Bug 根因索引](BUG-REGISTER.md)。这些本轮修复未获新固定 SHA/同 SHA CI/签名装机，**不能用上述 af6 绿色结果为其背书**。
+- **发布门**：PR 仍 Draft，main 与生产未因本包变更。真实多账号 Fleet 首事件、自然行程/充电、逐字段历史采样及页面交互仍独立验收。逐提交记录见 [变更索引](CHANGE-INDEX.md)。
+
+---
+
+## [2.1.51 / build 70] — 2026-10-25 驻车详情重设计 + 冷启动缓存键修复（已覆盖安装并验证）
+
+- 起因：用户反馈驻车详情"暂无数据"过多、位置数据摆放不佳；并要求当轮解决已定位的缓存键问题。
+- **驻车详情页重设计**（`f810ace5` + `a0..` 徽标一致性）：分层卡片——①概要 Hero（大字地址 + 等宽时间轴 `2026-10-23 20:59 → 2026-10-23 23:18` + 共驻车时长 + 语义徽标 `⚡ 充电 +69%`/`耗电 −X%`，方向由显示的起止电量推导，与明细卡永不矛盾）；②起止电量三格（本地必有数据，零"暂无数据"）；③关联充电卡；④能耗与环境遥测卡——云端明细存在时 6 格（能耗/功率/车内温/车外温/覆盖率/采样数），不存在时**单行"云端明细待同步"提示替代满屏"暂无数据"**。全部文案双语入库。
+- **冷启动缓存键修复**（同 `f810ace5`）：`ChargesViewModel`/`DrivesViewModel` 缓存读空时经 `VehicleContextRepository.cachedContextForRemote` 离线解析 `localHistoryCarId` 换键重读，彻底消除弱网冷启动"0 记录+加载中"——此前 Room 行按负数作用域键持久化而冷启动只有远端 carId。源码审计合同新增 `cachedContextForRemote(` 断言。
+- 实测：杀进程冷启动 2 秒内充电页直接渲染缓存（67 次 / 920 kWh / 记录行，无加载态）；驻车详情新布局本地模式与云端增强模式（来源 teslamate_archive）均验证通过。
+- 测试：Debug/Release 各 1029 项全绿（8 skip）；lintRelease 通过。Release APK SHA-256：`4FFCE545D533B2BDA46693B44CCFFEA8F5C550DB72C827DB91306F4EF36DC987`。
+- 遗留待办：数据分析三页（电池健康/能耗/费用）Room 缓存化；PR #22 变基升版合并。
+
+---
+
+## [2.1.50 / build 69] — 2026-10-25 驻车详情本地优先修复（已覆盖安装并验证）
+
+- 起因：用户实测 build 68 反馈驻车详情页只有"暂无数据"。根因有二：① `ParkedDetailViewModel` 纯网络加载，无超时无缓存，弱网即空白；② 本地 Room 行按 `localHistoryCarId`（负数作用域键）持久化，冷启动无法离线解析该映射，按远端 carId 读取必空。
+- **驻车详情本地优先**（`f84af473`）：进入页面立即用相邻两条本地行程构造详情（位置/时间窗/时长/起止电量），云端 20s 超时增强（温度/功率/关联充电），失败保留本地数据 + "云端历史暂未同步成功"横幅 + 重试按钮；数据来源行如实标注"本机缓存（由相邻行程推得）"。
+- **drive-id 无歧义兜底读取**（`ea92d999`）：`DriveSummaryDao.getByDriveId` 跨 car 键按行程 ID 查询，恰一行才采用（多行歧义保持未知），解决冷启动映射缺失。
+- **充电段不冒充能耗**（`4d582938`）：驻车电量增量为正（充电）时，0.60kWh/% 平率估算不适用，"估算能耗"显示暂无数据；仅放电段估算。
+- 测试：Debug 1029 / Release 1029（8 skip）全绿；lintRelease 通过（Gradle 2GB 堆 GC 抖动，按既有经验以 4GB 堆构建）。新增 `ParkedDetailLocalFallbackTest` 3 项合同。
+- Release APK SHA-256：`CFD0DA0DC25041E048DE6F91214A0B107DF998AB9415860A2452D498F6152AA0`；证书谱系不变。
+- 真机：同签 `install -r` 成功，`firstInstallTime=2026-08-31 22:36:47` 保持；实测驻车详情（景兴路 20:59~23:18）本地秒渲染：+69% 电量变化、138 分钟、31%→100%，充电段估算能耗如实"暂无数据"，进程存活 0 崩溃。
+- 已定位待下轮：充电/行程列表冷启动缓存读键与 `localHistoryCarId` 不一致（`VehicleContextStore` 离线映射未接入 VM），弱网冷启动列表仍需网络；数据分析三页缓存化。
+
+---
+
+## [2.1.49 / build 68] — 2026-10-25 实机 UI 审计修复（已覆盖安装并验证）
+
+- 来源：2026-10-25 对 build 67 的实机 UI 审计（OnePlus 7 Pro `6e4fa92f`；证据存档于主仓库 `.zcode/ui-audit-20261024/`，含修改前后截图与控件树）。分支 `codex/ui-audit-fixes-20261025`，基于 main@`427de74e`；提交：`6eaeff87`、`41a5c1a3`、`34320288`、`bcfbe74e`。
+- **充电/行程页云端历史加载新增 20 秒超时**（`HISTORY_LOAD_TIMEOUT_MS`）：超时后保留已渲染的本地缓存并提示"云端同步超时，已显示本地缓存数据；下拉刷新可重试"；无缓存时才升级为页面错误，替代此前弱网下无限"加载中…"。实装于 `ChargesViewModel`/`DrivesViewModel`，放置决策共享 `domain/history/historyTimeoutMessage`（合同测试 3 项）。
+- **行程卡片能耗单位恢复完整 `kWh/100km`**（与详情页一致）；`TelemetryMetricStrip` 紧凑单元格对 ≥8 字符长单位改为数值下方独立一行（`compactUnitLine` 合同测试 3 项），不再为四列宽度截断单位。
+- **驻车卡片 SOC 区间统一**为 `UnitFormatter.formatSocRange` 的 `33% → 32%` 格式，与行程卡片一致。
+- **能耗来源徽标显示条件与指标数值对齐**：能量显示"暂无数据"的卡片不再出现"功率积分"等来源徽标。
+- **仪表盘车内/车外温度无数据占位**由 `--` 改为"等待车辆"，与数据就绪页词汇一致。
+- 测试：Debug 1026 项 0 失败；Release 1026 项 0 失败、8 项预期跳过；`lintDebug`/`lintRelease` 通过。同步更新源码审计合同（`HistoryRefreshIntegrationContractTest` 要求超时包装）与发布身份合同（build 68）。
+- Release APK SHA-256：`B78578577F78FE389016EC7482D957EF90DF448B38069C609EEBE1BE96FF42FE`；签名证书 SHA-256 `9ab144e824abf26a5941819abb06831288c36a8bfe622657e3dc9d88281fc774`（与历史包一致）。
+- 真机：同签名 `adb install -r` 成功；`versionCode=68`/`2.1.49`，`firstInstallTime=2026-08-31 22:36:47` 保持，`lastUpdateTime=2026-10-25 00:57:47`；启动后全程导航进程存活，crash buffer 0 条 FATAL/ANR。
+- 实机复验：充电页由"0 次充电+永久加载"恢复为完整真实数据（充电次数 67、充电量 920 kWh，与统计概览口径一致）；行程卡片完整单位/驻车 SOC 格式/徽标对齐逐项通过；温度卡在有数据时显示 25.1°C/25.0°C。
+- 遗留（非本版本范围）：弱网 TLS 间歇失败根因（2026-10-09 起）、双账号实机切换验收、64 条充电 967→920 历史差异对账、数据分析三页（电池健康/能耗/费用）缓存化改造。
+
+---
+
+## [2.1.13 – 2.1.48 / build 32–67] — 2026-09-10 至 2026-10-24 台账补录说明
+
+- 此区间的正式包未在本台账逐条记录，属台账欠账；各版本内容以 git 提交历史（main 分支）及对应阶段文档为准（如 build 67 见 `TECH-2026-10-23-history-loading-cache-pagination.md`）。
+- 期间里程碑：OOM 历史读取修复（build 38–41）、登录浏览器选择（build 29 后续）、每趟行程能耗与单位归一化（build 46–50 区间）、紧凑四列历史摘要（build 60–62）、即时缓存渲染与无限滚动（build 67 / v2.1.48，2026-10-24 合并 main 并真机安装）。
+- 自 build 68 起恢复逐版本记录；后续每次 release 构建必须在安装验证后回填本台账。
 
 ---
 

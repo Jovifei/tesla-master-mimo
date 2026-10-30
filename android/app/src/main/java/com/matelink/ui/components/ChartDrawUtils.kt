@@ -29,7 +29,10 @@ data class ChartData(
     val displayPoints: List<Float>,
     val minValue: Float,
     val maxValue: Float,
-    val range: Float
+    val range: Float,
+    val originalIndices: List<Int> = displayPoints.indices.toList(),
+    val xFractions: List<Float> = displayPoints.indices.map { it.toFloat() / (displayPoints.size - 1).coerceAtLeast(1) },
+    val gaps: Set<Int> = emptySet()
 )
 
 data class SelectedPoint(
@@ -42,7 +45,12 @@ data class DualChartData(
     val displayPoints: List<Float>,
     val minValue: Float,
     val maxValue: Float,
-    val range: Float
+    val range: Float,
+    val originalIndices: List<Int> = displayPoints.indices.toList(),
+    val xFractions: List<Float> = displayPoints.indices.map { it.toFloat() / (displayPoints.size - 1).coerceAtLeast(1) },
+    val gaps: Set<Int> = emptySet(),
+    val allPoints: List<Float> = displayPoints,
+    val allXFractions: List<Float> = xFractions
 )
 
 data class DualSelectedPoint(
@@ -66,32 +74,67 @@ data class AnnotationRange(
 // ── Data Preparation ────────────────────────────────────────────────────────
 
 fun prepareChartData(
+    data: List<Float>, fixedMinMax: Pair<Float, Float>?, convertValue: (Float) -> Float
+): ChartData = prepareChartData(data, fixedMinMax, convertValue, emptyList(), emptyList(), emptySet())
+
+fun prepareChartData(
     data: List<Float>,
     fixedMinMax: Pair<Float, Float>?,
-    convertValue: (Float) -> Float
+    convertValue: (Float) -> Float,
+    xFractions: List<Float>,
+    sourceIndices: List<Int>,
+    gaps: Set<Int>
 ): ChartData {
     val convertedData = data.map { convertValue(it) }
-    val displayPoints = if (convertedData.size > MAX_DISPLAY_POINTS) {
-        downsampleLTTB(convertedData, MAX_DISPLAY_POINTS)
-    } else {
-        convertedData
+    val xs = if (xFractions.isEmpty()) data.indices.map { it.toFloat() / (data.size - 1).coerceAtLeast(1) } else xFractions
+    val validX = xs.size == data.size && xs.all { it.isFinite() && it in 0f..1f } &&
+        xs.zipWithNext().all { (a, b) -> b > a }
+    val validIndices = if (validX)
+        convertedData.indices.filter { convertedData[it].isFinite() } else emptyList()
+    val finite = validIndices.map(convertedData::get)
+    val selected = downsampleChartIndices(finite, validIndices.map(xs::get), MAX_DISPLAY_POINTS).map(validIndices::get)
+    val fixed = fixedMinMax?.takeIf { it.first.isFinite() && it.second.isFinite() && it.second >= it.first }
+    val minValue = fixed?.first ?: finite.minOrNull() ?: 0f
+    val maxValue = fixed?.second ?: finite.maxOrNull() ?: 1f
+    val range = (maxValue.toDouble() - minValue).coerceIn(1.0, Float.MAX_VALUE.toDouble()).toFloat()
+    val displayGaps = selected.indices.filterTo(mutableSetOf()) { index ->
+        if (index == 0) false else (selected[index - 1] + 1..selected[index]).any {
+            it in gaps || !convertedData[it].isFinite()
+        }
     }
-    val minValue = fixedMinMax?.first ?: displayPoints.minOrNull() ?: 0f
-    val maxValue = fixedMinMax?.second ?: displayPoints.maxOrNull() ?: 1f
-    val range = (maxValue - minValue).coerceAtLeast(1f)
-    return ChartData(displayPoints, minValue, maxValue, range)
+    return ChartData(selected.map(convertedData::get), minValue, maxValue, range,
+        selected.map { sourceIndices.getOrNull(it) ?: it }, selected.map(xs::get), displayGaps)
 }
 
-fun prepareDualChartData(data: List<Float>): DualChartData {
-    val displayPoints = if (data.size > MAX_DISPLAY_POINTS) {
-        downsampleLTTB(data, MAX_DISPLAY_POINTS)
-    } else {
-        data
+fun prepareDualChartData(data: List<Float>, xFractions: List<Float> = emptyList(),
+    sourceIndices: List<Int> = emptyList(), gaps: Set<Int> = emptySet()): DualChartData {
+    val chart = prepareChartData(data, null, { it }, xFractions, sourceIndices, gaps)
+    val xs = if (xFractions.isEmpty()) data.indices.map { it.toFloat() / (data.size - 1).coerceAtLeast(1) } else xFractions
+    val valid = if (chart.displayPoints.isEmpty()) emptyList() else data.indices.filter { data[it].isFinite() }
+    return DualChartData(chart.displayPoints, chart.minValue, chart.maxValue, chart.range,
+        chart.originalIndices, chart.xFractions, chart.gaps, valid.map(data::get), valid.map(xs::get))
+}
+
+private fun downsampleChartIndices(data: List<Float>, xs: List<Float>, target: Int): List<Int> {
+    if (data.size <= target) return data.indices.toList()
+    val result = mutableListOf(0)
+    val bucket = (data.size - 2).toDouble() / (target - 2)
+    var previous = 0
+    repeat(target - 2) { i ->
+        val from = (i * bucket + 1).toInt()
+        val to = ((i + 1) * bucket + 1).toInt().coerceAtMost(data.lastIndex)
+        val nextEnd = ((i + 2) * bucket + 1).toInt().coerceAtMost(data.size)
+        val next = (to until nextEnd).toList().ifEmpty { listOf(data.lastIndex) }
+        val avgX = next.map { xs[it].toDouble() }.average()
+        val avgY = next.map { data[it].toDouble() }.average()
+        val chosen = (from until to).maxByOrNull { j ->
+            abs((xs[previous] - avgX) * (data[j] - data[previous]).toDouble() -
+                (xs[previous] - xs[j]).toDouble() * (avgY - data[previous]))
+        } ?: from
+        result += chosen
+        previous = chosen
     }
-    val minValue = displayPoints.minOrNull() ?: 0f
-    val maxValue = displayPoints.maxOrNull() ?: 1f
-    val range = (maxValue - minValue).coerceAtLeast(1f)
-    return DualChartData(displayPoints, minValue, maxValue, range)
+    return result + data.lastIndex
 }
 
 // ── LTTB Downsampling ───────────────────────────────────────────────────────
@@ -153,6 +196,33 @@ fun downsampleLTTB(data: List<Float>, targetPoints: Int): List<Float> {
 
 // ── Path Creation ───────────────────────────────────────────────────────────
 
+/** Each observed segment is closed separately; neither line nor fill bridges missing evidence. */
+fun createChartPaths(points: List<Float>, xs: List<Float>, gaps: Set<Int>, width: Float,
+    height: Float, minValue: Float, range: Float): Pair<Path, Path> {
+    val line = Path()
+    val fill = Path()
+    if (points.size < 2) return line to fill
+    val boundaries = (listOf(0) + gaps.filter { it in 1 until points.size }.sorted() + points.size)
+    boundaries.zipWithNext().forEach { (from, until) ->
+        if (until - from < 2) return@forEach
+        val values = points.subList(from, until)
+        val positions = xs.subList(from, until)
+        val segment = createSmoothPath(values, width, height, minValue, range, positions)
+        line.addPath(segment)
+        val area = Path().apply {
+            addPath(segment)
+            lineTo(positions.last() * width, height)
+            lineTo(positions.first() * width, height)
+            close()
+        }
+        fill.addPath(area)
+    }
+    return line to fill
+}
+
+fun nearestChartIndex(xFractions: List<Float>, fraction: Float): Int? = xFractions.indices
+    .minByOrNull { abs(xFractions[it] - fraction.coerceIn(0f, 1f)) }
+
 /**
  * Creates a smooth cubic Bezier path using monotone cubic (Fritsch-Carlson) interpolation.
  * Guarantees no overshoot — the curve never creates false peaks or valleys.
@@ -162,7 +232,8 @@ fun createSmoothPath(
     width: Float,
     height: Float,
     minValue: Float,
-    range: Float
+    range: Float,
+    xFractions: List<Float> = emptyList()
 ): Path {
     val path = Path()
     if (points.size < 2) return path
@@ -171,8 +242,8 @@ fun createSmoothPath(
     val stepX = width / (n - 1).coerceAtLeast(1)
 
     // Convert data to screen coordinates
-    val xs = FloatArray(n) { it * stepX }
-    val ys = FloatArray(n) { height * (1 - (points[it] - minValue) / range) }
+    val xs = FloatArray(n) { if (xFractions.size == n) xFractions[it] * width else it * stepX }
+    val ys = FloatArray(n) { height * (1.0 - (points[it].toDouble() - minValue) / range).toFloat() }
 
     path.moveTo(xs[0], ys[0])
 

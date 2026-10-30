@@ -71,6 +71,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.domain.analytics.BatteryTrendSource
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.CachedHistoryBanner
 import com.matelink.ui.components.TelemetryGauge
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.TelemetrySectionHeader
@@ -90,6 +91,9 @@ private val DetailCyan = Color(0xFF00BCD4)
 
 private fun formatRange(value: Double?, units: com.matelink.data.api.models.Units?, unavailable: String): String =
     value?.let { UnitFormatter.formatDistance(it, units) } ?: unavailable
+
+internal fun formatBatteryTrendRangeKm(value: Double, units: com.matelink.data.api.models.Units?): String =
+    UnitFormatter.formatDistanceKm(value, units)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -159,6 +163,7 @@ fun BatteryScreen(
                             units = uiState.units,
                             palette = palette,
                             healthAvailability = uiState.batteryHealthAvailability,
+                            showCachedNotice = uiState.isCachedStatus || uiState.isCachedTrend,
                             onCardClick = { viewModel.showDetail() }
                         )
                     } else {
@@ -205,6 +210,7 @@ private fun BatteryHealthContent(
     units: com.matelink.data.api.models.Units?,
     palette: CarColorPalette,
     healthAvailability: BatteryHealthAvailability,
+    showCachedNotice: Boolean,
     onCardClick: () -> Unit
 ) {
     Column(
@@ -214,6 +220,10 @@ private fun BatteryHealthContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (showCachedNotice) CachedHistoryBanner(
+            title = stringResource(R.string.metric_state_cached_title),
+            body = stringResource(R.string.battery_cached_scope_notice)
+        )
         if (healthAvailability != BatteryHealthAvailability.AVAILABLE) {
             BatteryHealthAvailabilityCard(healthAvailability)
         }
@@ -441,14 +451,14 @@ private fun BatteryTrendCard(
             trend.normalizedCurrentRangeKm?.let { currentRange ->
                 BatteryTrendValueRow(
                     label = currentLabel,
-                    value = UnitFormatter.formatDistance(currentRange, units),
+                    value = formatBatteryTrendRangeKm(currentRange, units),
                     palette = palette
                 )
             }
             trend.baselineRangeKm?.let { baselineRange ->
                 BatteryTrendValueRow(
                     label = baselineLabel,
-                    value = UnitFormatter.formatDistance(baselineRange, units),
+                    value = formatBatteryTrendRangeKm(baselineRange, units),
                     palette = palette
                 )
             }
@@ -1065,10 +1075,11 @@ private fun BatteryDetailScreen(
 @Composable
 private fun BatteryStatusCard(stats: BatteryStats) {
     var showTooltip by remember { mutableStateOf(false) }
-    val currentChargeTitle = stringResource(R.string.current_charge_title)
-    val currentChargeMessage = stringResource(R.string.current_charge_message)
-    val currentChargeLabel = stringResource(R.string.current_charge)
-    val usablePercentLabel = stringResource(R.string.usable_percent, stats.usableBatteryLevel)
+    val currentChargeTitle = stringResource(R.string.current_battery_level_title)
+    val currentChargeMessage = stringResource(R.string.current_battery_level_message)
+    val currentChargeLabel = stringResource(R.string.current_battery_level_title)
+    val usablePercentLabel = stats.usableBatteryLevel?.let { stringResource(R.string.usable_percent, it) }
+        ?: stringResource(R.string.usable_percent_unavailable)
     val infoLabel = stringResource(R.string.info)
     val gotItLabel = stringResource(R.string.got_it)
 

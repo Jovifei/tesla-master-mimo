@@ -18,6 +18,12 @@ internal class LatestHistoryLoad {
         job = scope.launch { request.block() }
     }
 
+    fun invalidate() {
+        generation++
+        job?.cancel()
+        job = null
+    }
+
     inner class Request internal constructor(private val expected: Long) {
         suspend fun ensureCurrent() {
             currentCoroutineContext().ensureActive()

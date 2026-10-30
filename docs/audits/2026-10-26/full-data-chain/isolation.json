@@ -1,0 +1,12 @@
+{
+  "source": "E:\\project\\tesla_master\\app_mimo",
+  "audit_root": "E:\\project\\_worktrees\\matelink-release-data-audit-20261026",
+  "files": 954,
+  "stable_copy": true,
+  "changes_since_original_audit_start": [
+    "android/app/src/test/java/com/matelink/ui/screens/drives/ParkedErrorPresentationTest.kt",
+    "android/app/src/main/java/com/matelink/ui/screens/charges/ChargesScreen.kt",
+    "android/app/src/main/java/com/matelink/ui/screens/drives/ParkedDetailScreen.kt"
+  ],
+  "git_command_scope": "set GIT_WORK_TREE to actual audit_root per process; do not change shared core.worktree"
+}

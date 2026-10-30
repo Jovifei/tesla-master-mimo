@@ -141,17 +141,17 @@ fun AnnualReportPDFScreen(
                             (coverage?.chargeEnergySampleCount ?: qs.totalCharges) > 0
                         Text(
                             "${stringResource(R.string.pdf_report_total_distance)} " +
-                                if (hasDistance) "${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km" else noData
+                                if (hasDistance) ("${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km" + reportCoverageSuffix(coverage?.driveDistanceSampleCount, qs.totalDrives)) else noData
                         )
                         Text("${stringResource(R.string.pdf_report_total_drives)} ${qs.totalDrives}")
                         Text(
                             "${stringResource(R.string.pdf_report_energy_used)} " +
-                                if (hasEnergy && qs.totalEnergyConsumedKwh != null) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh" else noData
+                                if (hasEnergy && qs.totalEnergyConsumedKwh != null) ("${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh" + reportCoverageSuffix(coverage?.driveEnergySampleCount, qs.totalDrives)) else noData
                         )
                         Text("${stringResource(R.string.pdf_report_charges_label)} ${qs.totalCharges}")
                         Text(
                             "${stringResource(R.string.pdf_report_avg_efficiency)} " +
-                                if (hasDistance && hasEnergy && (qs.avgEfficiencyWhKm ?: 0.0) > 0.0) {
+                                if (hasDistance && hasEnergy && qs.avgEfficiencyWhKm?.isFinite() == true) {
                                     "${String.format(java.util.Locale.US, "%.0f", qs.avgEfficiencyWhKm)} Wh/km"
                                 } else {
                                     noData
@@ -159,7 +159,7 @@ fun AnnualReportPDFScreen(
                         )
                         Text(
                             "${stringResource(R.string.pdf_report_energy_added_label)} " +
-                                if (hasChargeEnergy) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyAddedKwh)} kWh" else noData
+                                if (hasChargeEnergy) ("${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyAddedKwh)} kWh" + reportCoverageSuffix(coverage?.chargeEnergySampleCount, qs.totalCharges)) else noData
                         )
                     }
                 }
@@ -263,18 +263,26 @@ private class PdfBuilder(private val context: Context) {
         y += h
     }
 
-    fun barChart(values: List<Float>, labels: List<String>, chartH: Float = 100f) {
+    fun barChart(values: List<Float?>, labels: List<String>, chartH: Float = 100f) {
         if (y + chartH + 20 > PAGE_H - MARGIN) newPage()
-        val max = values.maxOrNull()?.coerceAtLeast(1f) ?: 1f
+        val observed = values.filterNotNull()
+        val high = maxOf(0f, observed.maxOrNull() ?: 0f)
+        val low = minOf(0f, observed.minOrNull() ?: 0f)
+        val span = (high - low).coerceAtLeast(1f)
         val barW = CONTENT_W / (values.size * 2f)
-        val baseY = y + chartH
+        val plotBottom = y + chartH
+        val zeroY = if (high == 0f && low == 0f) plotBottom else y + chartH * high / span
+        canvas.drawLine(MARGIN, zeroY, PAGE_W - MARGIN, zeroY, dividerPaint)
 
         values.forEachIndexed { i, v ->
-            val bh = (v / max) * chartH
+            if (v == null) return@forEachIndexed
+            val bh = kotlin.math.abs(v) / span * chartH
             val x = MARGIN + i * (CONTENT_W / values.size) + barW / 2
-            canvas.drawRect(x, baseY - bh, x + barW, baseY, barPaint)
+            if (v == 0f) canvas.drawCircle(x + barW / 2, zeroY, 2f, barPaint)
+            else canvas.drawRect(x, if (v > 0f) zeroY - bh else zeroY,
+                x + barW, if (v > 0f) zeroY else zeroY + bh, barPaint)
         }
-        y = baseY + 4
+        y = plotBottom + 4
 
         val labelPaint = Paint(smallPaint).apply { textSize = 9f }
         val step = CONTENT_W / values.size
@@ -313,20 +321,20 @@ private class PdfBuilder(private val context: Context) {
         text(context.getString(R.string.annual_report_summary), h2Paint, 28f)
         text(
             "${context.getString(R.string.pdf_report_total_distance)} " +
-                if (hasDistance) "${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km"
+                if (hasDistance) ("${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km" + reportCoverageSuffix(coverage?.driveDistanceSampleCount, qs.totalDrives))
                 else context.getString(R.string.analysis_no_records),
             bodyPaint
         )
         text("${context.getString(R.string.pdf_report_total_drives)} ${qs.totalDrives}", bodyPaint)
         text(
             "${context.getString(R.string.pdf_report_energy_used)} " +
-                if (hasEnergy && qs.totalEnergyConsumedKwh != null) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh"
+                if (hasEnergy && qs.totalEnergyConsumedKwh != null) ("${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh" + reportCoverageSuffix(coverage?.driveEnergySampleCount, qs.totalDrives))
                 else context.getString(R.string.analysis_no_records),
             bodyPaint
         )
         text(
             "${context.getString(R.string.pdf_report_avg_efficiency)} " +
-                if (hasDistance && hasEnergy && (qs.avgEfficiencyWhKm ?: 0.0) > 0.0) {
+                if (hasDistance && hasEnergy && qs.avgEfficiencyWhKm?.isFinite() == true) {
                     "${String.format(java.util.Locale.US, "%.0f", qs.avgEfficiencyWhKm)} Wh/km"
                 } else {
                     context.getString(R.string.analysis_no_records)
@@ -336,7 +344,7 @@ private class PdfBuilder(private val context: Context) {
         text("${context.getString(R.string.pdf_report_charges_label)} ${qs.totalCharges}", bodyPaint)
         text(
             "${context.getString(R.string.pdf_report_energy_added_label)} " +
-                if (hasChargeEnergy) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyAddedKwh)} kWh"
+                if (hasChargeEnergy) ("${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyAddedKwh)} kWh" + reportCoverageSuffix(coverage?.chargeEnergySampleCount, qs.totalCharges))
                 else context.getString(R.string.analysis_no_records),
             bodyPaint
         )
@@ -373,23 +381,28 @@ private class PdfBuilder(private val context: Context) {
 
         if (monthlyDrives.isNotEmpty()) {
             text(context.getString(R.string.pdf_report_distance_by_month), h3Paint, 22f)
-            val distanceByMonth = FloatArray(12)
-            monthlyDrives.forEach { if (it.month in 1..12) distanceByMonth[it.month - 1] = it.totalDistance.toFloat() }
-            barChart(distanceByMonth.toList(), months, 100f)
+            val distanceByMonth = MutableList<Float?>(12) { null }
+            monthlyDrives.forEach { if (it.month in 1..12) distanceByMonth[it.month - 1] = it.totalDistance?.toFloat() }
+            if (distanceByMonth.any { it != null }) barChart(distanceByMonth, months, 100f)
+            else text(context.getString(R.string.analysis_coverage_insufficient), bodyPaint)
             spacer(8f)
 
             text(context.getString(R.string.pdf_report_energy_consumed_by_month), h3Paint, 22f)
-            val energyByMonth = FloatArray(12)
-            monthlyDrives.forEach { if (it.month in 1..12) energyByMonth[it.month - 1] = it.totalEnergy.toFloat() }
-            barChart(energyByMonth.toList(), months, 100f)
+            val energyByMonth = MutableList<Float?>(12) { null }
+            monthlyDrives.forEach { if (it.month in 1..12) energyByMonth[it.month - 1] = it.totalEnergy?.toFloat() }
+            if (energyByMonth.any { it != null }) barChart(energyByMonth, months, 100f)
+            else text(context.getString(R.string.analysis_coverage_insufficient), bodyPaint)
             spacer(8f)
         }
 
         if (monthlyCharges.isNotEmpty()) {
             text(context.getString(R.string.pdf_report_energy_added_by_month), h3Paint, 22f)
-            val chargeEnergyByMonth = FloatArray(12)
-            monthlyCharges.forEach { if (it.month in 1..12) chargeEnergyByMonth[it.month - 1] = it.totalEnergy.toFloat() }
-            barChart(chargeEnergyByMonth.toList(), months, 100f)
+            val chargeEnergyByMonth = MutableList<Float?>(12) { null }
+            monthlyCharges.forEach {
+                if (it.month in 1..12) chargeEnergyByMonth[it.month - 1] = it.totalEnergy?.toFloat()
+            }
+            if (chargeEnergyByMonth.any { it != null }) barChart(chargeEnergyByMonth, months, 100f)
+            else text(context.getString(R.string.analysis_coverage_insufficient), bodyPaint)
         }
 
         if (monthlyDrives.isEmpty() && monthlyCharges.isEmpty()) {
@@ -402,14 +415,19 @@ private class PdfBuilder(private val context: Context) {
         qs.avgDriveMinutes?.let { text("${context.getString(R.string.pdf_report_avg_drive_duration)} ${String.format(java.util.Locale.US, "%.0f", it)} min", bodyPaint) }
         qs.totalDrivingDays?.let { text("${context.getString(R.string.pdf_report_driving_days)} $it", bodyPaint) }
         qs.maxSpeedKmh?.let { text("${context.getString(R.string.pdf_report_top_speed_label)} $it km/h", bodyPaint) }
-        if ((qs.avgEfficiencyWhKm ?: 0.0) > 0) {
-            val rating = when {
-                (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 150 -> context.getString(R.string.annual_report_excellent)
-                (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 180 -> context.getString(R.string.annual_report_good)
-                (qs.avgEfficiencyWhKm ?: Double.POSITIVE_INFINITY) < 220 -> context.getString(R.string.annual_report_average)
-                else -> context.getString(R.string.annual_report_high)
+        qs.avgEfficiencyWhKm?.takeIf(Double::isFinite)?.let { efficiency ->
+            if (efficiency <= 0.0) {
+                text("${context.getString(R.string.pdf_report_avg_efficiency)} " +
+                    "${String.format(java.util.Locale.US, "%.0f", efficiency)} Wh/km", bodyPaint)
+            } else {
+                val rating = when {
+                    efficiency < 150 -> context.getString(R.string.annual_report_excellent)
+                    efficiency < 180 -> context.getString(R.string.annual_report_good)
+                    efficiency < 220 -> context.getString(R.string.annual_report_average)
+                    else -> context.getString(R.string.annual_report_high)
+                }
+                text("${context.getString(R.string.pdf_report_efficiency_rating_label)} $rating", bodyPaint)
             }
-            text("${context.getString(R.string.pdf_report_efficiency_rating_label)} $rating", bodyPaint)
         }
 
         // Footer
@@ -419,10 +437,8 @@ private class PdfBuilder(private val context: Context) {
 
         doc.finishPage(currentPage)
 
-        // Save (clean up previous version first)
-        val fileName = "matelink_annual_report_${year}.pdf"
-        val file = File(context.cacheDir, fileName)
-        if (file.exists()) file.delete()
+        // Every published URI keeps the exact report it originally represented.
+        val file = File.createTempFile("matelink_annual_report_${year}_", ".pdf", context.cacheDir)
         try {
             FileOutputStream(file).use { doc.writeTo(it) }
         } finally {
@@ -443,3 +459,7 @@ fun generatePdf(
 ): String {
     return PdfBuilder(context).build(stats, year, monthlyDrives, monthlyCharges, currencySymbol)
 }
+
+/** Coverage belongs to the frozen cohort; the same suffix is used in preview and file. */
+internal fun reportCoverageSuffix(samples: Int?, records: Int): String =
+    if (samples != null && records > 0 && samples < records) " · $samples/$records" else ""

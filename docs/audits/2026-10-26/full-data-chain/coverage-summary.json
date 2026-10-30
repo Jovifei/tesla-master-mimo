@@ -1,0 +1,28 @@
+{
+  "registered_routes": 39,
+  "matrix_rows_by_report": {
+    "01-auth-home.md": 72,
+    "02-charging.md": 67,
+    "03-driving-parked.md": 47,
+    "04-analysis.md": 55,
+    "05-statistics.md": 102,
+    "06-trips-reports.md": 104,
+    "07-system.md": 56
+  },
+  "matrix_rows_total": 503,
+  "historical_removed_rows": 1,
+  "frozen_source_files": 954,
+  "source_drift": [],
+  "row_count_is_not_runtime_verified_metric_count": true,
+  "release_verdict": "NO_GO",
+  "kotlin_audit_conditions": {
+    "tests": 11,
+    "failures": 8,
+    "controls_pass": 3
+  },
+  "actual_dao_sql_conditions": {
+    "tests": 7,
+    "failures": 4,
+    "controls_pass": 3
+  }
+}

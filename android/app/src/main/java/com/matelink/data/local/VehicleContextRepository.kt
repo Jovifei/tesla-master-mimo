@@ -201,6 +201,16 @@ class VehicleContextRepository @Inject constructor(
         return VehicleContext(remoteApiCarId, stableIdentity, localId, scope.source, scope.serverIdentity)
     }
 
+    /** Only a previously UID-verified cloud binding may reopen a saved status offline. */
+    internal fun cachedVerifiedStatusIdentityDigest(
+        remoteApiCarId: Int, scope: HistoryReadScope, context: VehicleContext
+    ): String? {
+        if (scope.source != HistoryConnectionSource.CLOUD || context.remoteApiCarId != remoteApiCarId ||
+            !isHistoryContextCurrentNow(scope, context)) return null
+        return contextStore.findVerifiedOriginCloudIdentityDigest(scope.accountNamespace.orEmpty(),
+            scope.effectiveApiOrigin, remoteApiCarId, context.localHistoryCarId)
+    }
+
     /** All current history consumers share this namespace; unknown-origin legacy data stays unlinked. */
     internal fun resolveVerifiedHistoryCar(car: CarData, scope: HistoryReadScope): VehicleContext =
         if (scope.source == HistoryConnectionSource.CLOUD) {

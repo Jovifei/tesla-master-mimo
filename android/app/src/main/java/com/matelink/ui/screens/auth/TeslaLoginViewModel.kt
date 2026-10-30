@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.matelink.BuildConfig
 import com.matelink.data.api.models.TelemetryPairingStatus
 import com.matelink.data.api.validatedJourVoltApiBaseUrl
+import com.matelink.data.api.credentialHttpClientBuilder
 import com.matelink.data.local.ConnectionMode
 import com.matelink.data.local.ConnectionModeStore
 import com.matelink.data.local.JourVoltConsentStore
@@ -66,6 +67,12 @@ internal fun shouldSurfaceTeslaVirtualKey(pairing: TelemetryPairingStatus): Bool
     pairing.configSynced != true && pairing.status.equals("pairing_required", ignoreCase = true) &&
         !pairing.updatedAt.isNullOrBlank()
 
+private data class OnboardingSelectionIdentity(
+    val requestId: Long,
+    val scope: com.matelink.data.local.HistoryReadScope,
+    val loginEpoch: Long
+)
+
 @HiltViewModel
 class TeslaLoginViewModel @Inject constructor(
     private val moshi: Moshi,
@@ -77,6 +84,19 @@ class TeslaLoginViewModel @Inject constructor(
     private val onboardingStateStore: TeslaOnboardingStateStore,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
+    private var suppliedAuthApi: TeslaAuthApi? = null
+
+    /** Keeps credential I/O controllable for deterministic consumer race tests. */
+    internal constructor(
+        moshi: Moshi, sessionStore: JourVoltSessionStore, connectionModeStore: ConnectionModeStore,
+        consentStore: JourVoltConsentStore, teslamateRepository: TeslamateRepository,
+        settingsRepository: SettingsRepository, onboardingStateStore: TeslaOnboardingStateStore,
+        context: Context, authApi: TeslaAuthApi
+    ) : this(moshi, sessionStore, connectionModeStore, consentStore, teslamateRepository,
+        settingsRepository, onboardingStateStore, context) {
+        suppliedAuthApi = authApi
+    }
+
     private val _uiState = MutableStateFlow<TeslaLoginUiState>(TeslaLoginUiState.Idle)
     val uiState: StateFlow<TeslaLoginUiState> = _uiState.asStateFlow()
     private val _pendingAuthorizationUrl = MutableStateFlow<String?>(null)
@@ -116,6 +136,7 @@ class TeslaLoginViewModel @Inject constructor(
     private val automaticVehicleCheckGeneration = AtomicLong(0)
     private var automaticVehicleCheckTarget: Pair<String, Int>? = null
     private var automaticVehicleCheckAt = 0L
+    @Volatile private var onboardingIdentity: OnboardingSelectionIdentity? = null
 
     fun cancelAutomaticVehicleCheck() {
         automaticVehicleCheckGeneration.incrementAndGet()
@@ -124,7 +145,9 @@ class TeslaLoginViewModel @Inject constructor(
     }
 
     fun checkVehicleSetupAutomatically(carId: Int) {
-        val account = sessionStore.current()?.userId ?: return
+        val (session, loginEpoch) = sessionStore.loginIdentitySnapshot()
+        val account = session?.userId ?: return
+        val modeGeneration = connectionModeStore.currentIdentityGeneration()
         if (carId <= 0 || _reauthorizing.value || requestJob?.isActive == true) return
         val target = account to carId
         val now = android.os.SystemClock.elapsedRealtime()
@@ -136,7 +159,9 @@ class TeslaLoginViewModel @Inject constructor(
         val generation = automaticVehicleCheckGeneration.get()
         val requestId = requestGeneration.get()
         fun current() = generation == automaticVehicleCheckGeneration.get() &&
-            shouldPublishTeslaRequest(requestId, requestGeneration) && sessionStore.current()?.userId == account
+            shouldPublishTeslaRequest(requestId, requestGeneration) &&
+            sessionStore.loginIdentitySnapshot().let { it.first?.userId == account && it.second == loginEpoch } &&
+            connectionModeStore.currentIdentityGeneration() == modeGeneration
         automaticVehicleCheckJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val cars = (teslamateRepository.getCars() as? ApiResult.Success)?.data ?: return@launch
@@ -152,6 +177,30 @@ class TeslaLoginViewModel @Inject constructor(
         }
     }
     private val sessionCommitLock = ReentrantLock()
+
+    private fun onboardingRequestCurrent(requestId: Long): Boolean {
+        if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return false
+        val proof = onboardingIdentity?.takeIf { it.requestId == requestId } ?: return true
+        val (session, epoch) = sessionStore.loginIdentitySnapshot()
+        return session?.userId?.trim() == proof.scope.accountNamespace && epoch == proof.loginEpoch &&
+            connectionModeStore.currentIdentityGeneration() == proof.scope.modeGeneration
+    }
+
+    private suspend fun captureOnboardingSelectionScope(requestId: Long): com.matelink.data.local.HistoryReadScope? {
+        onboardingIdentity?.takeIf { it.requestId == requestId }?.let {
+            return it.scope.takeIf { onboardingRequestCurrent(requestId) }
+        }
+        val (mode, modeGeneration) = connectionModeStore.identitySnapshot()
+        val (session, loginEpoch) = sessionStore.loginIdentitySnapshot()
+        val account = session?.userId?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        if (mode != ConnectionMode.TESLA_CLOUD || !shouldPublishTeslaRequest(requestId, requestGeneration)) return null
+        val scope = com.matelink.data.local.HistoryReadScope(
+            com.matelink.data.local.HistoryConnectionSource.CLOUD, "cloud", account,
+            com.matelink.data.local.requireSelfHostedServerIdentity(BuildConfig.JOURVOLT_API_BASE_URL),
+            sessionStore.currentIdentityGeneration(), modeGeneration)
+        onboardingIdentity = OnboardingSelectionIdentity(requestId, scope, loginEpoch)
+        return scope.takeIf { onboardingRequestCurrent(requestId) }
+    }
 
     init {
         onboardingRestoreJob = viewModelScope.launch(Dispatchers.IO) {
@@ -271,20 +320,6 @@ class TeslaLoginViewModel @Inject constructor(
                 val response = authApi().exchange(TeslaAuthExchangeRequest(ticket))
                 val body = response.body()
                 if (!response.isSuccessful || body == null) {
-                    if (shouldTreatTeslaExchangeFailureAsSuccess(
-                            httpStatus = response.code(),
-                            hasSession = sessionStore.current() != null
-                        )
-                    ) {
-                        handledCallbackTicket = ticket
-                        callbackTicketInFlight = null
-                        _postLoginOnboarding.value = TeslaLoginOnboardingState.Checking
-                        _reauthorizing.value = false
-                        _uiState.value = TeslaLoginUiState.Idle
-                        _openDashboardAfterLogin.value = false
-                        runPostLoginOnboardingSafely(requestId)
-                        return@runCatching
-                    }
                     error(context.getString(teslaLoginErrorMessageRes(response.code())))
                 }
                 if (!shouldPublishTeslaRequest(requestId, requestGeneration)) {
@@ -357,7 +392,7 @@ class TeslaLoginViewModel @Inject constructor(
     }
 
     fun logout(onComplete: () -> Unit) {
-        val session = sessionStore.current()
+        val (session, loginGeneration) = sessionStore.loginIdentitySnapshot()
         _reauthorizing.value = false
         val requestId = invalidateCurrentRequest()
         requestJob?.cancel()
@@ -374,12 +409,14 @@ class TeslaLoginViewModel @Inject constructor(
                 }
             }
             if (!shouldPublishTeslaRequest(requestId, requestGeneration) ||
-                sessionStore.current() != session
+                !sessionStore.clearIfLoginCurrent(session, loginGeneration)
             ) return@launch
-            sessionStore.clear()
+            if (!shouldPublishTeslaRequest(requestId, requestGeneration) || sessionStore.current() != null) return@launch
             resetPostLoginOnboarding()
             _uiState.value = TeslaLoginUiState.Idle
-            withContext(Dispatchers.Main.immediate) { onComplete() }
+            withContext(Dispatchers.Main.immediate) {
+                if (shouldPublishTeslaRequest(requestId, requestGeneration) && sessionStore.current() == null) onComplete()
+            }
         }
     }
 
@@ -460,10 +497,13 @@ class TeslaLoginViewModel @Inject constructor(
         requestJob = viewModelScope.launch(Dispatchers.IO) {
             if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return@launch
             publishOnboardingChecking()
+            val scope = captureOnboardingSelectionScope(requestId) ?: return@launch
             val carsResult = teslamateRepository.getCars()
             val cars = (carsResult as? ApiResult.Success)?.data
-            val selectedCarId = settingsRepository.currentCarId.first()
-            val car = cars?.firstOrNull { it.carId == selectedCarId } ?: cars?.firstOrNull()
+            if (!onboardingRequestCurrent(requestId)) return@launch
+            val car = cars?.let { settingsRepository.selectVerifiedCurrentCar(scope, it) {
+                onboardingRequestCurrent(requestId)
+            } }
             if (car == null) {
                 publishBlocked("vehicle_not_found", requestId)
                 return@launch
@@ -511,6 +551,7 @@ class TeslaLoginViewModel @Inject constructor(
     }
 
     private fun authApi(): TeslaAuthApi {
+        suppliedAuthApi?.let { return it }
         val usesDebugMockBaseUrl = BuildConfig.JOURVOLT_MOCK_LOGIN
         val rawBaseUrl = if (usesDebugMockBaseUrl) {
             BuildConfig.JOURVOLT_MOCK_BASE_URL
@@ -522,11 +563,7 @@ class TeslaLoginViewModel @Inject constructor(
             allowLocalHttp = usesDebugMockBaseUrl
         )
             ?: error("JourVolt cloud API must be an HTTPS root URL")
-        return Retrofit.Builder()
-            .baseUrl(baseUrl)
-            .addConverterFactory(MoshiConverterFactory.create(moshi))
-            .build()
-            .create(TeslaAuthApi::class.java)
+        return createTeslaAuthApi(moshi, baseUrl)
     }
 
     private fun beginRequest(): Long = requestGeneration.incrementAndGet()
@@ -612,8 +649,9 @@ class TeslaLoginViewModel @Inject constructor(
     }
 
     private suspend fun runPostLoginOnboarding(requestId: Long) {
-        if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return
+        if (!onboardingRequestCurrent(requestId)) return
         publishOnboardingChecking()
+        val scope = captureOnboardingSelectionScope(requestId) ?: return
         val carsResult = teslamateRepository.getCars()
         val cars = when (carsResult) {
             is ApiResult.Success -> carsResult.data
@@ -626,9 +664,8 @@ class TeslaLoginViewModel @Inject constructor(
                 return
             }
         }
-        if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return
-        val selectedCarId = settingsRepository.currentCarId.first()
-        val car = cars.firstOrNull { it.carId == selectedCarId } ?: cars.firstOrNull()
+        if (!onboardingRequestCurrent(requestId)) return
+        val car = settingsRepository.selectVerifiedCurrentCar(scope, cars) { onboardingRequestCurrent(requestId) }
         if (car == null) {
             publishBlocked("vehicle_not_found", requestId)
             return
@@ -647,7 +684,8 @@ class TeslaLoginViewModel @Inject constructor(
     }
 
     private suspend fun retryTelemetryAfterPairing(requestId: Long, carId: Int) {
-        if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return
+        if (!onboardingRequestCurrent(requestId)) return
+        val scope = captureOnboardingSelectionScope(requestId) ?: return
         val carsResult = teslamateRepository.getCars()
         val cars = when (carsResult) {
             is ApiResult.Success -> carsResult.data
@@ -660,13 +698,16 @@ class TeslaLoginViewModel @Inject constructor(
                 return
             }
         }
-        if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return
-        if (cars.none { it.carId == carId }) {
+        if (!onboardingRequestCurrent(requestId)) return
+        val car = settingsRepository.selectVerifiedCurrentCar(scope, cars, preferredCarId = carId) {
+            onboardingRequestCurrent(requestId)
+        }
+        if (car?.carId != carId) {
             publishBlocked("vehicle_not_found", requestId)
             return
         }
         val configure = teslamateRepository.configureTelemetry(carId)
-        if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return
+        if (!onboardingRequestCurrent(requestId)) return
         when (configure) {
             is ApiResult.Error -> when {
                 isPermissionRequired(configure) -> {
@@ -694,19 +735,20 @@ class TeslaLoginViewModel @Inject constructor(
     }
 
     private suspend fun refreshPairingAfterReturn(requestId: Long, carId: Int) {
-        if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return
+        if (captureOnboardingSelectionScope(requestId) == null) return
+        if (!onboardingRequestCurrent(requestId)) return
         observePairingSetup(requestId, carId)
     }
 
     private suspend fun observePairingSetup(requestId: Long, carId: Int) {
         val result = observeAutomaticSetup(
             initial = teslamateRepository.getTelemetryPairingStatus(carId),
-            isCurrent = { shouldPublishTeslaRequest(requestId, requestGeneration) },
+            isCurrent = { onboardingRequestCurrent(requestId) },
             readNext = { teslamateRepository.getTelemetryPairingStatus(carId) },
             publish = { publishPairingResult(requestId, carId, it) }
         )
         // The backend continues recovery; users can use their existing history.
-        if (shouldPublishTeslaRequest(requestId, requestGeneration) && shouldObserveAutomaticSetup(result)) {
+        if (onboardingRequestCurrent(requestId) && shouldObserveAutomaticSetup(result)) {
             continueToDashboard()
         }
     }
@@ -717,7 +759,7 @@ class TeslaLoginViewModel @Inject constructor(
         result: ApiResult<com.matelink.data.api.models.TelemetryPairingStatus>,
         navigateWhenReady: Boolean = true
     ) {
-        if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return
+        if (!onboardingRequestCurrent(requestId)) return
         when (result) {
             is ApiResult.Success -> {
                 val pairing = result.data
@@ -762,7 +804,7 @@ class TeslaLoginViewModel @Inject constructor(
                 }
                 result.details.equals("billing_blocked", ignoreCase = true) -> publishBlocked(result.details, requestId)
                 result.details.equals("pairing_required", ignoreCase = true) -> {
-                    if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return
+                    if (!onboardingRequestCurrent(requestId)) return
                     _postLoginOnboarding.value = TeslaLoginOnboardingState.PairingRequired(carId, null)
                     persistOnboarding(TeslaOnboardingPhase.PAIRING_REQUIRED, carId, null)
                 }
@@ -788,7 +830,7 @@ class TeslaLoginViewModel @Inject constructor(
     }
 
     private fun publishPermissionRequired(carId: Int?, reason: String?, requestId: Long? = null) {
-        if (requestId != null && !shouldPublishTeslaRequest(requestId, requestGeneration)) return
+        if (requestId != null && !onboardingRequestCurrent(requestId)) return
         externalPairingReturnPending = false
         _teslaPairingFlowPending.value = false
         _postLoginOnboarding.value = TeslaLoginOnboardingState.PermissionRequired(carId, reason)
@@ -796,7 +838,7 @@ class TeslaLoginViewModel @Inject constructor(
     }
 
     private fun publishBlocked(reason: String?, requestId: Long? = null) {
-        if (requestId != null && !shouldPublishTeslaRequest(requestId, requestGeneration)) return
+        if (requestId != null && !onboardingRequestCurrent(requestId)) return
         externalPairingReturnPending = false
         _teslaPairingFlowPending.value = false
         _postLoginOnboarding.value = TeslaLoginOnboardingState.Blocked(reason)
@@ -804,16 +846,17 @@ class TeslaLoginViewModel @Inject constructor(
     }
 
     private fun proceedToDashboardIfCurrent(requestId: Long) {
-        if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return
+        if (!onboardingRequestCurrent(requestId)) return
         proceedToDashboard(pending = true)
     }
 
     private fun completeOnboardingIfCurrent(requestId: Long) {
-        if (!shouldPublishTeslaRequest(requestId, requestGeneration)) return
+        if (!onboardingRequestCurrent(requestId)) return
         proceedToDashboard(pending = false)
     }
 
     private fun proceedToDashboard(pending: Boolean) {
+        onboardingIdentity?.let { if (!onboardingRequestCurrent(it.requestId)) return }
         _postLoginOnboarding.value = if (pending) {
             TeslaLoginOnboardingState.Pending
         } else {
@@ -875,6 +918,7 @@ class TeslaLoginViewModel @Inject constructor(
     }
 
     private fun resetPostLoginOnboarding() {
+        onboardingIdentity = null
         onboardingRestoreJob?.cancel()
         _postLoginOnboarding.value = TeslaLoginOnboardingState.Idle
         _openDashboardAfterLogin.value = false
@@ -885,6 +929,13 @@ class TeslaLoginViewModel @Inject constructor(
     }
 
 }
+
+internal fun createTeslaAuthApi(moshi: Moshi, baseUrl: String): TeslaAuthApi = Retrofit.Builder()
+    .baseUrl(baseUrl)
+    .client(credentialHttpClientBuilder().build())
+    .addConverterFactory(MoshiConverterFactory.create(moshi))
+    .build()
+    .create(TeslaAuthApi::class.java)
 
 internal fun teslaLoginErrorMessageRes(code: Int): Int = when (code) {
     400 -> R.string.tesla_login_error_request
@@ -929,11 +980,6 @@ internal fun shouldIgnoreTeslaCallbackTicket(
     handledTicket = handledTicket,
     hasSession = false
 ) != TeslaCallbackReplayDecision.Process
-
-internal fun shouldTreatTeslaExchangeFailureAsSuccess(
-    httpStatus: Int,
-    hasSession: Boolean
-): Boolean = hasSession && httpStatus in setOf(401, 403)
 
 internal fun shouldPublishTeslaRequest(requestId: Long, currentRequestId: Long): Boolean =
     requestId == currentRequestId

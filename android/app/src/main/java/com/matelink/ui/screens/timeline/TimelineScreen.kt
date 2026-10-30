@@ -1,5 +1,8 @@
 package com.matelink.ui.screens.timeline
 
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
+import com.matelink.ui.components.historyReadErrorMessageRes
+import com.matelink.ui.components.showHistoryReadFailure
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,6 +33,9 @@ import com.matelink.ui.theme.SwissOutline
 import java.text.SimpleDateFormat
 import java.util.Locale
 
+internal fun timelineDurationText(raw: String?, minutes: Int?): String? = raw?.takeIf { it.isNotBlank() }
+    ?: minutes?.takeIf { it >= 0 }?.let { com.matelink.util.formatDurationCompact(it) }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimelineScreen(
@@ -39,11 +45,13 @@ fun TimelineScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val feedbackContext = androidx.compose.ui.platform.LocalContext.current
+    HistoryForegroundRefreshEffect { viewModel.refresh() }
     val listState = rememberLazyListState()
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let {
-            snackbarHostState.showSnackbar(it)
+            snackbarHostState.showHistoryReadFailure(feedbackContext, it, uiState.events.isNotEmpty()) { viewModel.refresh() }
         }
     }
 
@@ -76,7 +84,7 @@ fun TimelineScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = stringResource(R.string.timeline_empty),
+                    text = stringResource(uiState.error?.let(::historyReadErrorMessageRes) ?: R.string.timeline_empty),
                     style = MaterialTheme.typography.bodyLarge,
                     color = palette.onSurfaceVariant
                 )
@@ -181,7 +189,7 @@ private fun TimelineEventCard(event: TimelineEvent, palette: CarColorPalette) {
 
             // Time
             Text(
-                text = formatTime(event.timestamp),
+                text = event.time,
                 style = MaterialTheme.typography.bodySmall,
                 color = palette.onSurfaceVariant
             )
@@ -221,7 +229,7 @@ private fun DriveEventContent(event: TimelineEvent.DriveEvent, palette: CarColor
                 color = palette.onSurfaceVariant
             )
         }
-        event.durationStr?.let { dur ->
+        timelineDurationText(event.durationStr, event.durationMin)?.let { dur ->
             Text(
                 text = dur,
                 style = MaterialTheme.typography.bodySmall,
@@ -268,12 +276,12 @@ private fun ChargeEventContent(event: TimelineEvent.ChargeEvent, palette: CarCol
         }
         event.cost?.let { cost ->
             Text(
-                text = stringResource(R.string.timeline_cost_value, cost),
+                text = stringResource(R.string.timeline_cost_value, event.currencySymbol.orEmpty(), cost),
                 style = MaterialTheme.typography.bodySmall,
                 color = palette.onSurfaceVariant
             )
         }
-        event.durationStr?.let { dur ->
+        timelineDurationText(event.durationStr, event.durationMin)?.let { dur ->
             Text(
                 text = dur,
                 style = MaterialTheme.typography.bodySmall,
@@ -291,15 +299,5 @@ private fun formatDisplayDate(isoDate: String): String {
         date?.let { outputFormat.format(it) } ?: isoDate
     } catch (e: Exception) {
         isoDate
-    }
-}
-
-private fun formatTime(isoTimestamp: String): String {
-    return try {
-        if (isoTimestamp.length < 16) return ""
-        val timePart = isoTimestamp.substring(11, 16)
-        timePart
-    } catch (e: Exception) {
-        ""
     }
 }

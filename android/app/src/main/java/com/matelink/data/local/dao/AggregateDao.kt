@@ -11,6 +11,13 @@ import com.matelink.data.local.entity.DriveDetailAggregate
 @Dao
 interface AggregateDao {
 
+    /** Selected IDs already passed the caller's scoped, local-calendar cohort qualification. */
+    @Query("SELECT * FROM drive_detail_aggregates WHERE carId = :carId AND driveId IN (:driveIds) ORDER BY driveId")
+    suspend fun getDriveAggregatesForStats(carId: Int, driveIds: List<Int>): List<DriveDetailAggregate>
+
+    @Query("SELECT * FROM charge_detail_aggregates WHERE carId = :carId AND chargeId IN (:chargeIds) ORDER BY chargeId")
+    suspend fun getChargeAggregatesForStats(carId: Int, chargeIds: List<Int>): List<ChargeDetailAggregate>
+
     // === Drive Detail Aggregates ===
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -382,6 +389,10 @@ interface AggregateDao {
     @Query("SELECT a.chargeId FROM charge_detail_aggregates a JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId WHERE a.carId = :carId AND a.isFastCharger = 1 AND c.qualityState IN ('observed', 'derived')")
     suspend fun getDcChargeIds(carId: Int): List<Int>
 
+    /** Explicit AC phase evidence; absence of the old fast-charger flag is insufficient. */
+    @Query("SELECT a.chargeId FROM charge_detail_aggregates a JOIN charges_summary c ON a.carId = c.carId AND a.chargeId = c.chargeId WHERE a.carId = :carId AND a.chargerPhases BETWEEN 1 AND 3 AND a.isFastCharger = 0 AND c.qualityState IN ('observed', 'derived')")
+    suspend fun getAcChargeIds(carId: Int): List<Int>
+
     // Sum of energy added for AC charges (join with summary to get energyAdded)
     @Query("""
         SELECT COALESCE(SUM(c.energyAdded), 0.0) FROM charge_detail_aggregates a
@@ -499,6 +510,7 @@ interface AggregateDao {
         ) charge_stats ON drive_stats.countryCode = charge_stats.countryCode
         ORDER BY drive_stats.firstVisitDate ASC
     """)
+    @Deprecated("Use StatsRepository.getGeoSnapshot for scoped qualified local-calendar values")
     suspend fun getCountriesVisited(carId: Int): List<CountryVisitResult>
 
     @Query("""
@@ -533,6 +545,7 @@ interface AggregateDao {
         ) charge_stats ON drive_stats.countryCode = charge_stats.countryCode
         ORDER BY drive_stats.firstVisitDate ASC
     """)
+    @Deprecated("Use StatsRepository.getGeoSnapshot for scoped qualified local-calendar values")
     suspend fun getCountriesVisitedInRange(carId: Int, startDate: String, endDate: String): List<CountryVisitResult>
 
     // === Deep Stats: Regions Visited (within a country) ===
@@ -568,6 +581,7 @@ interface AggregateDao {
         ) charge_stats ON drive_stats.regionName = charge_stats.regionName
         ORDER BY drive_stats.firstVisitDate ASC
     """)
+    @Deprecated("Use StatsRepository.getGeoSnapshot for scoped qualified local-calendar values")
     suspend fun getRegionsVisited(carId: Int, countryCode: String): List<RegionVisitResult>
 
     @Query("""
@@ -602,6 +616,7 @@ interface AggregateDao {
         ) charge_stats ON drive_stats.regionName = charge_stats.regionName
         ORDER BY drive_stats.firstVisitDate ASC
     """)
+    @Deprecated("Use StatsRepository.getGeoSnapshot for scoped qualified local-calendar values")
     suspend fun getRegionsVisitedInRange(carId: Int, countryCode: String, startDate: String, endDate: String): List<RegionVisitResult>
 
     // Count unique regions in a country
@@ -806,6 +821,9 @@ interface AggregateDao {
         JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
         WHERE a.carId = :carId
         AND a.countryCode = :countryCode
+        AND c.qualityState IN ('observed', 'derived')
+        AND c.latitude BETWEEN -90.0 AND 90.0 AND c.longitude BETWEEN -180.0 AND 180.0
+        AND (c.latitude != 0.0 OR c.longitude != 0.0)
         AND c.latitude IS NOT NULL
         AND c.longitude IS NOT NULL
     """)
@@ -819,6 +837,9 @@ interface AggregateDao {
         JOIN charge_detail_aggregates a ON c.carId = a.carId AND c.chargeId = a.chargeId
         WHERE a.carId = :carId
         AND a.countryCode = :countryCode
+        AND c.qualityState IN ('observed', 'derived')
+        AND c.latitude BETWEEN -90.0 AND 90.0 AND c.longitude BETWEEN -180.0 AND 180.0
+        AND (c.latitude != 0.0 OR c.longitude != 0.0)
         AND c.latitude IS NOT NULL
         AND c.longitude IS NOT NULL
         AND c.startDate >= :startDate AND c.startDate < :endDate
@@ -840,6 +861,9 @@ interface AggregateDao {
         JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId
         AND a.startCountryCode = :countryCode
+        AND d.qualityState IN ('observed', 'derived')
+        AND a.startLatitude BETWEEN -90.0 AND 90.0 AND a.startLongitude BETWEEN -180.0 AND 180.0
+        AND (a.startLatitude != 0.0 OR a.startLongitude != 0.0)
         AND a.startLatitude IS NOT NULL
         AND a.startLongitude IS NOT NULL
         ORDER BY d.startDate DESC
@@ -854,6 +878,9 @@ interface AggregateDao {
         JOIN drives_summary d ON a.carId = d.carId AND a.driveId = d.driveId
         WHERE a.carId = :carId
         AND a.startCountryCode = :countryCode
+        AND d.qualityState IN ('observed', 'derived')
+        AND a.startLatitude BETWEEN -90.0 AND 90.0 AND a.startLongitude BETWEEN -180.0 AND 180.0
+        AND (a.startLatitude != 0.0 OR a.startLongitude != 0.0)
         AND a.startLatitude IS NOT NULL
         AND a.startLongitude IS NOT NULL
         AND d.startDate >= :startDate AND d.startDate < :endDate

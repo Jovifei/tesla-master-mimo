@@ -388,13 +388,17 @@ func applyPostgresSessionEvent(ctx context.Context, tx pgx.Tx, ref telemetryVehi
 		route, _ := json.Marshal(open.Route)
 		chargePoints, _ := json.Marshal(open.ChargePoints)
 		if previous == nil {
+			// Only new rows receive scoped IDs; loaded legacy sessions keep their identity.
+			open.ID = scopedSessionID("fleet_telemetry", ref.UserID, ref.VehicleID, open.Kind, open.StartAt.UTC().Format(time.RFC3339Nano))
 			energyStart := (*float64)(nil)
 			energyField := ""
 			if kind == "charge" {
 				energyStart, energyField = machine.chargeEnergyStart, machine.chargeEnergyField
 			}
 			qualityState, qualityReason := classifyTelemetrySession(*open)
-			if err := tx.QueryRow(ctx, `INSERT INTO jourvolt_telemetry_sessions(id, user_id, vehicle_id, kind, started_at, odometer_start, energy_added, route_json, charge_points_json, charge_energy_start, charge_energy_field, source, quality_state, quality_reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,'telemetry_mqtt',$12,$13) ON CONFLICT (id) DO UPDATE SET id=EXCLUDED.id RETURNING public_id`, open.ID, ref.UserID, ref.VehicleID, open.Kind, open.StartAt, open.OdometerStart, open.EnergyAdded, route, chargePoints, energyStart, energyField, qualityState, qualityReason).Scan(&open.PublicID); err != nil {
+			// A scoped replay may match a legacy/completed native row. Preserve its
+			// identity; a different scope's global ID conflict must fail the transaction.
+			if err := tx.QueryRow(ctx, `INSERT INTO jourvolt_telemetry_sessions(id, user_id, vehicle_id, kind, started_at, odometer_start, energy_added, route_json, charge_points_json, charge_energy_start, charge_energy_field, source, quality_state, quality_reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,'telemetry_mqtt',$12,$13) ON CONFLICT (user_id, vehicle_id, kind, started_at) WHERE source <> 'teslamate_archive' DO UPDATE SET id=jourvolt_telemetry_sessions.id WHERE jourvolt_telemetry_sessions.source=EXCLUDED.source RETURNING id, public_id`, open.ID, ref.UserID, ref.VehicleID, open.Kind, open.StartAt, open.OdometerStart, open.EnergyAdded, route, chargePoints, energyStart, energyField, qualityState, qualityReason).Scan(&open.ID, &open.PublicID); err != nil {
 				return err
 			}
 			continue
@@ -689,13 +693,17 @@ func (s *telemetryService) finalizeDuePostgres(ctx context.Context, now time.Tim
 	if err != nil {
 		return 0, err
 	}
+	return finalizeDuePostgresTx(ctx, tx, now, debounce)
+}
+
+func finalizeDuePostgresTx(ctx context.Context, tx pgx.Tx, now time.Time, debounce time.Duration) (int, error) {
 	defer tx.Rollback(ctx)
 	rows, err := tx.Query(ctx, `SELECT id, public_id, started_at, stop_candidate_at FROM jourvolt_telemetry_sessions WHERE kind='drive' AND ended_at IS NULL AND stop_candidate_at IS NOT NULL FOR UPDATE`)
 	if err != nil {
 		return 0, err
 	}
 	defer rows.Close()
-	completed := 0
+	due := make([]telemetrySession, 0)
 	for rows.Next() {
 		var session telemetrySession
 		var candidate time.Time
@@ -707,15 +715,20 @@ func (s *telemetryService) finalizeDuePostgres(ctx context.Context, now time.Tim
 		}
 		end := candidate.Add(debounce)
 		session.Kind, session.EndAt = "drive", &end
+		due = append(due, session)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	rows.Close()
+	completed := 0
+	for _, session := range due {
 		key := sessionCompletionKey(session)
-		tag, err := tx.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET ended_at=$1, stop_candidate_at=NULL, completion_key=$2 WHERE id=$3 AND ended_at IS NULL`, end, key, session.ID)
+		tag, err := tx.Exec(ctx, `UPDATE jourvolt_telemetry_sessions SET ended_at=$1, stop_candidate_at=NULL, completion_key=$2 WHERE id=$3 AND ended_at IS NULL`, *session.EndAt, key, session.ID)
 		if err != nil {
 			return 0, err
 		}
 		completed += int(tag.RowsAffected())
-	}
-	if err := rows.Err(); err != nil {
-		return 0, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, err

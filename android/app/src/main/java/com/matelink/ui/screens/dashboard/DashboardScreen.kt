@@ -180,7 +180,7 @@ fun DashboardScreen(
         return
     }
 
-    val carId = car?.carId ?: 1
+    val carId = car?.carId ?: uiState.requestedCarId ?: return
     val exteriorColor = car?.carExterior?.exteriorColor
     val heroProfile = remember(
         car?.carDetails?.model,
@@ -231,9 +231,7 @@ fun DashboardScreen(
             }
             Column(horizontalAlignment = Alignment.End) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val isAsleep = status.state?.equals("asleep", ignoreCase = true) == true ||
-                        uiState.errorKind == ApiErrorKind.SERVICE_UNAVAILABLE ||
-                        uiState.snapshotFreshness == SnapshotFreshness.RECENT
+                    val isAsleep = dashboardIsAsleep(status.state, uiState.errorKind, uiState.snapshotFreshness)
                     SnapshotBadge(uiState.snapshotFreshness, uiState.snapshotMixedSources, uiState.snapshotSource, isAsleep)
                     Spacer(modifier = Modifier.width(8.dp))
                     IconButton(onClick = refresh) {
@@ -613,14 +611,16 @@ fun DashboardScreen(
             val onTempClick: () -> Unit = { onNavigateToTemperatureTrend(carId, exteriorColor) }
             InfoCard(
                 stringResource(R.string.inside_temp),
-                status.insideTemp?.let { UnitFormatter.formatTemperature(it, uiState.units, 1) } ?: "--",
+                status.insideTemp?.let { UnitFormatter.formatTemperature(it, uiState.units, 1) }
+                    ?: stringResource(R.string.data_readiness_status_waiting_vehicle),
                 Modifier.weight(1f),
                 icon = Icons.Default.Thermostat,
                 onClick = onTempClick
             )
             InfoCard(
                 stringResource(R.string.outside_temp),
-                status.outsideTemp?.let { UnitFormatter.formatTemperature(it, uiState.units, 1) } ?: "--",
+                status.outsideTemp?.let { UnitFormatter.formatTemperature(it, uiState.units, 1) }
+                    ?: stringResource(R.string.data_readiness_status_waiting_vehicle),
                 Modifier.weight(1f),
                 icon = Icons.Default.Thermostat,
                 onClick = onTempClick
@@ -1018,7 +1018,7 @@ internal fun dashboardErrorBodyRes(kind: ApiErrorKind?): Int = when (kind) {
 }
 
 internal fun snapshotSourceKind(source: String?): SnapshotSourceKind = when (source) {
-    "live_mqtt", "fleet_api" -> SnapshotSourceKind.LIVE
+    "live_mqtt", "telemetry_mqtt", "fleet_api" -> SnapshotSourceKind.LIVE
     "mqtt_latest" -> SnapshotSourceKind.RECENT
     "database_latest", "teslamate_api" -> SnapshotSourceKind.HISTORY
     BuildConfig.JOURVOLT_MOCK_SOURCE -> if (BuildConfig.JOURVOLT_MOCK_LOGIN) {
@@ -1029,16 +1029,41 @@ internal fun snapshotSourceKind(source: String?): SnapshotSourceKind = when (sou
     else -> SnapshotSourceKind.UNAVAILABLE
 }
 
+internal fun dashboardHudSpeed(status: CarStatus, units: Units): String =
+    status.speed?.let { UnitFormatter.formatSpeed(it, units, 0) } ?: "--"
+
+internal fun dashboardHudChargeEnergy(status: CarStatus): String =
+    status.chargeEnergyAdded?.let { "%.1f kWh".format(Locale.ROOT, it) } ?: "--"
+
+internal fun dashboardHudVoltageCurrent(status: CarStatus): String? {
+    val voltage = status.chargerVoltage
+    val current = status.chargerActualCurrent
+    if (voltage == null && current == null) return null
+    return "${voltage?.toString() ?: "--"}V / ${current?.toString() ?: "--"}A"
+}
+
+@Suppress("UNUSED_PARAMETER")
+internal fun dashboardIsAsleep(state: String?, errorKind: ApiErrorKind?, freshness: SnapshotFreshness): Boolean =
+    state.equals("asleep", ignoreCase = true)
+
+internal fun dashboardSnapshotLabelRes(freshness: SnapshotFreshness, isAsleep: Boolean): Int =
+    if (isAsleep) R.string.snapshot_source_asleep else when (freshness) {
+        SnapshotFreshness.LIVE -> R.string.snapshot_source_live
+        SnapshotFreshness.HISTORY -> R.string.snapshot_source_history
+        SnapshotFreshness.RECENT -> R.string.snapshot_source_recent
+        SnapshotFreshness.UNAVAILABLE -> R.string.snapshot_source_unavailable
+    }
+
 @Composable
 private fun SnapshotBadge(freshness: SnapshotFreshness, mixedSources: Boolean, source: String?, isAsleep: Boolean = false) {
     val mockEvidence = source == BuildConfig.JOURVOLT_MOCK_SOURCE && BuildConfig.JOURVOLT_MOCK_LOGIN
     val (color, label) = when {
         mockEvidence && BuildConfig.DEBUG -> StatusWarning to stringResource(R.string.snapshot_source_mock)
-        isAsleep -> Color(0xFF607D8B) to stringResource(R.string.snapshot_source_asleep)
+        isAsleep -> Color(0xFF607D8B) to stringResource(dashboardSnapshotLabelRes(freshness, isAsleep))
         else -> when (freshness) {
             SnapshotFreshness.LIVE -> StatusSuccess to stringResource(R.string.snapshot_source_live)
             SnapshotFreshness.HISTORY -> StatusWarning to stringResource(R.string.snapshot_source_history)
-            SnapshotFreshness.RECENT -> Color(0xFF607D8B) to stringResource(R.string.snapshot_source_asleep)
+            SnapshotFreshness.RECENT -> Color(0xFF607D8B) to stringResource(dashboardSnapshotLabelRes(freshness, isAsleep))
             SnapshotFreshness.UNAVAILABLE -> SwissMuted to stringResource(R.string.snapshot_source_unavailable)
         }
     }
@@ -1225,7 +1250,7 @@ private fun ActiveDrivingHudCard(
             ) {
                 Column {
                     Text(
-                        text = UnitFormatter.formatSpeed(status.speed ?: 0.0, units, 0),
+                        text = dashboardHudSpeed(status, units),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -1359,9 +1384,8 @@ private fun ActiveChargingHudCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    val chargeEnergy = status.chargeEnergyAdded ?: 0.0
                     Text(
-                        text = "%.1f kWh".format(Locale.ROOT, chargeEnergy),
+                        text = dashboardHudChargeEnergy(status),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -1373,11 +1397,10 @@ private fun ActiveChargingHudCard(
                     )
                 }
 
-                status.chargerVoltage?.let { v ->
-                    val a = status.chargerActualCurrent ?: 0
+                dashboardHudVoltageCurrent(status)?.let { voltageCurrent ->
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "${v}V / ${a}A",
+                            text = voltageCurrent,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface

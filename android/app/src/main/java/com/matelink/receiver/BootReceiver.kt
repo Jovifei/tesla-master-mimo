@@ -25,7 +25,7 @@ class BootReceiver : BroadcastReceiver() {
             TpmsPressureWorker.schedulePeriodicWork(context)
 
             // Reschedule charging notification monitoring
-            ChargingNotificationWorker.schedulePeriodicWork(context)
+            ChargingNotificationWorker.ensureScheduled(context)
         }
     }
 }

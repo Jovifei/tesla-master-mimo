@@ -148,7 +148,7 @@ fun EfficiencyScreen(
                 )
                 StatCard(
                     modifier = Modifier.weight(1f),
-                    label = stringResource(R.string.efficiency_total_distance),
+                    label = stringResource(R.string.efficiency_paired_distance),
                     value = if (uiState.driveCount > 0) String.format(Locale.getDefault(), "%.1f km", uiState.totalDistanceKm)
                     else stringResource(R.string.analysis_no_records)
                 )
@@ -433,14 +433,29 @@ private fun EfficiencyTrendChart(points: List<EfficiencyTrendPoint>) {
     }
 }
 
+internal data class SignedEfficiencyScale(val minValue: Double, val maxValue: Double) {
+    fun yFraction(value: Double): Double = (maxValue - value) / (maxValue - minValue)
+}
+
+internal fun signedEfficiencyScale(values: List<Double>): SignedEfficiencyScale {
+    val finite = values.filter(Double::isFinite)
+    val min = minOf(0.0, finite.minOrNull() ?: 0.0)
+    val max = maxOf(0.0, finite.maxOrNull() ?: 0.0)
+    if (min == max) return SignedEfficiencyScale(-1.0, 1.0)
+    return SignedEfficiencyScale(if (min < 0.0) min * 1.1 else 0.0,
+        if (max > 0.0) max * 1.1 else 0.0)
+}
+
 @Composable
 private fun EfficiencyBarChart(
     data: List<Pair<String, Double>>,
     modifier: Modifier = Modifier
 ) {
-    val maxEfficiency = data.maxOfOrNull { it.second } ?: 1.0
+    val scale = remember(data) { signedEfficiencyScale(data.map { it.second }) }
     val barColor = MaterialTheme.colorScheme.primary
+    val recoveryColor = Color(0xFF10B981)
     val gridColor = MaterialTheme.colorScheme.outlineVariant
+    val zeroColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     Canvas(modifier = modifier) {
         val barCount = data.size
@@ -449,7 +464,7 @@ private fun EfficiencyBarChart(
         val barWidth = (size.width / barCount) * 0.6f
         val barSpacing = (size.width / barCount) * 0.4f
         val chartHeight = size.height - 24.dp.toPx() // Leave room for labels
-        val maxValue = maxEfficiency * 1.1 // 10% headroom
+        val zeroY = (scale.yFraction(0.0) * chartHeight).toFloat()
 
         // Draw grid lines
         for (i in 0..4) {
@@ -462,17 +477,29 @@ private fun EfficiencyBarChart(
             )
         }
 
-        // Draw bars
-        data.forEachIndexed { index, (speedLabel, efficiency) ->
-            val barHeight = (efficiency / maxValue * chartHeight).toFloat()
-            val x = index * (barWidth + barSpacing) + barSpacing / 2
-            val y = chartHeight - barHeight
+        drawLine(
+            color = zeroColor,
+            start = Offset(0f, zeroY),
+            end = Offset(size.width, zeroY),
+            strokeWidth = 1.dp.toPx()
+        )
 
-            drawRect(
-                color = barColor,
-                topLeft = Offset(x, y),
-                size = Size(barWidth, barHeight)
-            )
+        // Draw bars
+        data.forEachIndexed { index, (_, efficiency) ->
+            val valueY = (scale.yFraction(efficiency) * chartHeight).toFloat()
+            val top = minOf(valueY, zeroY)
+            val barHeight = kotlin.math.abs(valueY - zeroY)
+            val x = index * (barWidth + barSpacing) + barSpacing / 2
+
+            if (efficiency == 0.0) {
+                drawCircle(barColor, radius = 3.dp.toPx(), center = Offset(x + barWidth / 2, zeroY))
+            } else {
+                drawRect(
+                    color = if (efficiency < 0.0) recoveryColor else barColor,
+                    topLeft = Offset(x, top),
+                    size = Size(barWidth, barHeight)
+                )
+            }
         }
 
         // Draw speed labels below bars (native canvas text drawing omitted for compatibility)

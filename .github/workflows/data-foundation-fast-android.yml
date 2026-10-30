@@ -1,0 +1,76 @@
+name: Data foundation fast Android source regression
+on:
+  push:
+    branches: ['codex/apk-data-foundation-remote-20261024', 'codex/app-foundation-ui-integrate-20261025']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: data-foundation-fast-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  focused-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - name: Record fixed source and run actual Room/VM regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p fast-evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ | tee fast-evidence/source.txt
+          cd android
+          backup="$(mktemp)"
+          cp gradle.properties "$backup"
+          trap 'cp "$backup" gradle.properties; rm -f "$backup"' EXIT
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('gradle.properties')
+          forbidden=('systemProp.http.proxyHost','systemProp.http.proxyPort','systemProp.https.proxyHost','systemProp.https.proxyPort','systemProp.http.nonProxyHosts')
+          p.write_text('\n'.join(line for line in p.read_text().splitlines() if line.split('=',1)[0] not in forbidden)+'\n')
+          PY
+          export TZ=Asia/Shanghai
+          bash ./gradlew :app:testDebugUnitTest \
+            --tests '*VehicleStatusStoreScopeTest' \
+            --tests '*VehiclePhotoStoreScopeTest' \
+            --tests '*HistorySourceConflictArchiveRoomTest' \
+            --tests '*RawHistoryEvidencePersistenceTest' \
+            --tests '*DetailSyncResourceRecoveryTest' \
+            --tests '*HistoryRefreshIntegrationContractTest' \
+            --tests '*DataReadinessReviewContractTest' \
+            --tests '*ChargeSourceInstanceAdmissionTest' \
+            --tests '*HistoryDetailRoomIntegrationTest' \
+            --tests '*TemperatureRoomHistoryConsumerTest' \
+            --tests '*TemperatureTrendTruthTest' \
+            --tests '*DashboardStatusIdentityTest' \
+            --tests '*DashboardCarMetadataTest' \
+            --tests '*ScopeFirstEmissionInvalidationTest' \
+            --tests '*JourVoltSessionConcurrencyTest' \
+            --tests '*StatsReadScopeAndYearTest' \
+            --no-daemon --max-workers=1 \
+            -Dorg.gradle.jvmargs='-Xmx5g -XX:MaxMetaspaceSize=1g -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process \
+            2>&1 | tee ../fast-evidence/focused-gradle.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: data-foundation-focused-android
+          retention-days: 14
+          path: |
+            fast-evidence/
+            android/app/build/test-results/testDebugUnitTest/

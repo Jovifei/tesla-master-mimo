@@ -64,7 +64,10 @@ fun OptimizedLineChart(
     externalSelectedFraction: Float? = null,
     onXSelected: ((Float?) -> Unit)? = null,
     fractionToTimeLabel: ((Float) -> String)? = null,
-    annotationRanges: List<AnnotationRange> = emptyList()
+    annotationRanges: List<AnnotationRange> = emptyList(),
+    xFractions: List<Float> = emptyList(),
+    sourceIndices: List<Int> = emptyList(),
+    gaps: Set<Int> = emptySet()
 ) {
     if (data.size < 2) return
 
@@ -73,8 +76,8 @@ fun OptimizedLineChart(
     val tooltipBg = MaterialTheme.colorScheme.inverseSurface
     val tooltipFg = MaterialTheme.colorScheme.inverseOnSurface
 
-    val chartData = remember(data, fixedMinMax, convertValue) {
-        prepareChartData(data, fixedMinMax, convertValue)
+    val chartData = remember(data, fixedMinMax, convertValue, xFractions, sourceIndices, gaps) {
+        prepareChartData(data, fixedMinMax, convertValue, xFractions, sourceIndices, gaps)
     }
 
     // Pre-compute the smooth path and fill path
@@ -82,13 +85,13 @@ fun OptimizedLineChart(
     val chartHeightPx = with(density) { chartHeight.toPx() }
     var canvasWidthPx by remember { mutableStateOf(0f) }
 
-    val smoothPath = remember(chartData, canvasWidthPx) {
+    val paths = remember(chartData, canvasWidthPx) {
         if (canvasWidthPx <= 0f) return@remember null
-        createSmoothPath(chartData.displayPoints, canvasWidthPx, chartHeightPx, chartData.minValue, chartData.range)
+        createChartPaths(chartData.displayPoints, chartData.xFractions, chartData.gaps,
+            canvasWidthPx, chartHeightPx, chartData.minValue, chartData.range)
     }
-    val fillPath = remember(smoothPath, canvasWidthPx) {
-        smoothPath?.let { createFillPath(it, canvasWidthPx, chartHeightPx) }
-    }
+    val smoothPath = paths?.first
+    val fillPath = paths?.second
 
     // Entrance animation
     val animProgress = remember { Animatable(0f) }
@@ -97,7 +100,7 @@ fun OptimizedLineChart(
         animProgress.animateTo(1f, tween(800, easing = FastOutSlowInEasing))
     }
 
-    var selectedPoint by remember { mutableStateOf<SelectedPoint?>(null) }
+    var selectedPoint by remember(chartData) { mutableStateOf<SelectedPoint?>(null) }
     var isUserInteracting by remember { mutableStateOf(false) }
 
     val timeLabelHeightDp = if (timeLabels.isNotEmpty()) 20.dp else 0.dp
@@ -108,9 +111,8 @@ fun OptimizedLineChart(
         if (externalSelectedFraction == null || canvasWidthPx == 0f) return@remember null
         val points = chartData.displayPoints
         if (points.isEmpty()) return@remember null
-        val index = (externalSelectedFraction * (points.size - 1)).roundToInt().coerceIn(0, points.lastIndex)
-        val stepX = canvasWidthPx / (points.size - 1).coerceAtLeast(1)
-        val pointX = index * stepX
+        val index = nearestChartIndex(chartData.xFractions, externalSelectedFraction) ?: return@remember null
+        val pointX = chartData.xFractions[index] * canvasWidthPx
         val pointY = chartHeightPx * (1 - (points[index] - chartData.minValue) / chartData.range)
         SelectedPoint(index, points[index], Offset(pointX, pointY))
     }
@@ -139,10 +141,9 @@ fun OptimizedLineChart(
 
                     fun updateSelection(xOffset: Float) {
                         val width = size.width.toFloat()
-                        val stepX = width / (points.size - 1).coerceAtLeast(1)
-                        val index = ((xOffset / stepX).roundToInt()).coerceIn(0, points.lastIndex)
-                        val fraction = if (points.size > 1) index.toFloat() / (points.size - 1) else 0f
-                        val pointX = index * stepX
+                        val index = nearestChartIndex(chartData.xFractions, xOffset / width.coerceAtLeast(1f)) ?: return
+                        val fraction = chartData.xFractions[index]
+                        val pointX = fraction * width
                         val pointY = chartHeightPx * (1 - (points[index] - chartData.minValue) / chartData.range)
                         selectedPoint = SelectedPoint(index, points[index], Offset(pointX, pointY))
                         onXSelected?.invoke(fraction)
@@ -154,8 +155,7 @@ fun OptimizedLineChart(
                         isUserInteracting = true
 
                         val width = size.width.toFloat()
-                        val stepX = width / (points.size - 1).coerceAtLeast(1)
-                        val initialIndex = ((down.position.x / stepX).roundToInt()).coerceIn(0, points.lastIndex)
+                        val initialIndex = nearestChartIndex(chartData.xFractions, down.position.x / width.coerceAtLeast(1f))
                         val wasSelectedAtSameIndex = selectedPoint?.index == initialIndex
 
                         updateSelection(down.position.x)
@@ -221,7 +221,7 @@ fun OptimizedLineChart(
                 // Floating time chip
                 if (fractionToTimeLabel != null && timeLabelHeightPx > 0) {
                     val pts = chartData.displayPoints
-                    val fraction = if (pts.size > 1) point.index.toFloat() / (pts.size - 1) else 0f
+                    val fraction = chartData.xFractions.getOrElse(point.index) { 0f }
                     val timeStr = fractionToTimeLabel(fraction)
                     drawFloatingTimeChip(timeStr, point.position.x, color, chartHeightPx, timeLabelHeightPx, width)
                 }
@@ -235,7 +235,7 @@ fun OptimizedLineChart(
 
             val tooltipText = if (fractionToTimeLabel != null) {
                 val pts = chartData.displayPoints
-                val fraction = if (pts.size > 1) point.index.toFloat() / (pts.size - 1) else 0f
+                val fraction = chartData.xFractions.getOrElse(point.index) { 0f }
                 val timeStr = fractionToTimeLabel(fraction)
                 "$timeStr  \u2022  ${"%.1f".format(point.value)} $unit"
             } else {

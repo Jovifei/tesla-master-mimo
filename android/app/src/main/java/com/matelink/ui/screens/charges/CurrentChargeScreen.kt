@@ -39,7 +39,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -64,8 +64,12 @@ import com.matelink.data.api.models.ChargePoint
 import com.matelink.domain.telemetry.SnapshotFreshness
 import androidx.compose.ui.platform.LocalContext
 import com.matelink.ui.components.FullscreenDualAxisLineChart
+import com.matelink.ui.components.TimedChartSample
+import com.matelink.ui.components.projectTimedChartSeries
+import com.matelink.util.parseIsoInstant
 import com.matelink.ui.components.FullscreenLineChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.showHistoryReadFailure
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.TelemetrySectionHeader
 import com.matelink.util.formatDuration
@@ -84,7 +88,8 @@ fun CurrentChargeScreen(
     onNavigateBack: () -> Unit,
     viewModel: CurrentChargeViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(carId) {
@@ -93,8 +98,12 @@ fun CurrentChargeScreen(
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(error)
-            viewModel.clearError()
+            val hasContent = uiState.chargeDetail != null
+            val retried = snackbarHostState.showHistoryReadFailure(context, error, hasContent) {
+                viewModel.clearError()
+                viewModel.loadCurrentCharge(carId)
+            }
+            if (!retried && hasContent) viewModel.clearError()
         }
     }
 
@@ -172,6 +181,11 @@ fun CurrentChargeScreen(
             uiState.chargeDetail != null -> {
                 CurrentChargeContent(
                     detail = uiState.chargeDetail!!,
+                    instantPowerKw = uiState.instantPowerKw,
+                    currentAddedEnergyKwh = uiState.currentAddedEnergyKwh,
+                    isCachedDetail = uiState.isCachedDetail,
+                    observedAsOf = uiState.chargeDetail?.observedAt ?: uiState.snapshotObservedAt
+                        ?: uiState.chronologicalPoints.lastOrNull()?.date,
                     isDcCharge = uiState.isDcCharge,
                     isDcFinishedPluggedIn = uiState.isDcFinishedPluggedIn,
                     dcFinishedSince = uiState.dcFinishedSince,
@@ -248,6 +262,10 @@ private fun CurrentChargeContent(
     chargeCurrentRequestMax: Double?,
     scheduledChargingStartTime: String?,
     chronologicalPoints: List<ChargePoint>,
+    instantPowerKw: Double? = null,
+    currentAddedEnergyKwh: Double? = null,
+    isCachedDetail: Boolean = false,
+    observedAsOf: String? = null,
     modifier: Modifier = Modifier
 ) {
     val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
@@ -276,11 +294,16 @@ private fun CurrentChargeContent(
         // Header card
         CurrentChargeHeaderCard(
             detail = detail,
+            instantPowerKw = instantPowerKw,
+            currentAddedEnergyKwh = currentAddedEnergyKwh,
             isDcCharge = isDcCharge,
             accentColor = accentColor,
             timeToFullCharge = timeToFullCharge,
             chargeLimitSoc = chargeLimitSoc,
-            chronologicalPoints = chronologicalPoints
+            chronologicalPoints = chronologicalPoints,
+            elapsedEnd = detail.endDate?.takeIf { detail.isCharging != true }
+                ?: (if (isCachedDetail) observedAsOf else dcFinishedSince?.takeIf { isDcFinishedPluggedIn }),
+            elapsedRunning = !isCachedDetail && !isDcFinishedPluggedIn && detail.isCharging != false
         )
 
         // DC unplug warning banner
@@ -299,15 +322,22 @@ private fun CurrentChargeContent(
         )
 
         // Charts - always show cards, even with few data points
-        val timeLabels = extractChronoTimeLabels(chronologicalPoints, is24Hour)
-        val powers = chronologicalPoints.mapNotNull { it.chargerPower?.toFloat() }
-        val batteryLevels = chronologicalPoints.mapNotNull { it.batteryLevel?.toFloat() }
+        val observedTimes = chronologicalPoints.mapNotNull { parseIsoInstant(it.date)?.toEpochMilli() }
+        val chartStart = parseIsoInstant(detail.startDate)?.toEpochMilli() ?: observedTimes.minOrNull()
+        val chartEnd = parseIsoInstant(detail.endDate)?.toEpochMilli() ?: observedTimes.maxOrNull()
+        fun series(value: (ChargePoint) -> Double?) = projectTimedChartSeries(
+            chronologicalPoints.mapIndexed { index, point ->
+                TimedChartSample(parseIsoInstant(point.date)?.toEpochMilli(), value(point), index)
+            }, chartStart, chartEnd)
+        val powerSeries = series { it.chargerPowerValue?.takeIf { v -> v >= 0.0 } }
+        val socSeries = series { it.batteryLevel?.takeIf { v -> v in 0..100 }?.toDouble() }
+        val powers = powerSeries.values
+        val batteryLevels = socSeries.values
+        fun timeLabel(ms: Long?) = ms?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())
+            .format(java.time.format.DateTimeFormatter.ofPattern(if (is24Hour == true) "HH:mm" else "h:mm a", java.util.Locale.getDefault())) } ?: ""
+        val timeLabels = listOf(0f, .25f, .5f, .75f, 1f).map { timeLabel(powerSeries.axisTimestampAtFraction(it)) }
         val fractionToTimeLabel: (Float) -> String = { fraction ->
-            val pts = chronologicalPoints
-            val index = (fraction * pts.lastIndex).roundToInt().coerceIn(0, pts.lastIndex)
-            pts[index].date?.let { dateStr ->
-                parseIsoDateTime(dateStr)?.formatTime(java.util.Locale.getDefault(), is24Hour) ?: ""
-            } ?: ""
+            timeLabel(powerSeries.axisTimestampAtFraction(fraction))
         }
 
         // Power chart (always shown)
@@ -315,17 +345,18 @@ private fun CurrentChargeContent(
         LiveChartCard(
             title = powerProfileTitle,
             icon = Icons.Default.Bolt,
-            sampleCount = powers.size
+            sampleCount = powerSeries.validCount
         ) {
-            if (powers.size >= 2) {
-                var yMin = kotlin.math.floor(powers.min())
-                var yMax = kotlin.math.ceil(powers.max())
+            if (powerSeries.validCount >= 2) {
+                var yMin = kotlin.math.floor(powers.filter(Float::isFinite).min())
+                var yMax = kotlin.math.ceil(powers.filter(Float::isFinite).max())
                 if (yMin == yMax) {
                     yMin -= 1
                     yMax += 1
                 }
                 FullscreenLineChart(
                     data = powers,
+                    xFractions = powerSeries.xFractions, sourceIndices = powerSeries.sourceIndices, gaps = powerSeries.gaps,
                     color = accentColor,
                     unit = "kW",
                     fixedMinMax = Pair(yMin, yMax),
@@ -340,19 +371,24 @@ private fun CurrentChargeContent(
 
         // Voltage & Current combined chart (AC only)
         if (isDcCharge == false) {
-            val voltages = chronologicalPoints.mapNotNull { it.chargerVoltage?.toFloat() }
-            val currents = chronologicalPoints.mapNotNull { it.chargerCurrent?.toFloat() }
+            val voltageSeries = series { it.chargerVoltageValue?.takeIf { v -> v >= 0.0 } }
+            val currentSeries = series { it.chargerCurrentValue?.takeIf { v -> v >= 0.0 } }
+            val voltages = voltageSeries.values
+            val currents = currentSeries.values
 
             val vcTitle = stringResource(R.string.voltage_and_current_profile)
             LiveChartCard(
                 title = vcTitle,
                 icon = Icons.Default.ElectricalServices,
-                sampleCount = minOf(voltages.size, currents.size)
+                sampleCount = minOf(voltageSeries.validCount, currentSeries.validCount)
             ) {
-                if (voltages.size >= 2 && currents.size >= 2) {
+                if (voltageSeries.validCount >= 2 && currentSeries.validCount >= 2) {
                     FullscreenDualAxisLineChart(
                         dataLeft = voltages,
                         dataRight = currents,
+                        leftXFractions = voltageSeries.xFractions, rightXFractions = currentSeries.xFractions,
+                        leftSourceIndices = voltageSeries.sourceIndices, rightSourceIndices = currentSeries.sourceIndices,
+                        leftGaps = voltageSeries.gaps, rightGaps = currentSeries.gaps,
                         colorLeft = Color(0xFFFFA726),
                         colorRight = Color(0xFF42A5F5),
                         unitLeft = "V",
@@ -372,17 +408,18 @@ private fun CurrentChargeContent(
         LiveChartCard(
             title = batteryLevelTitle,
             icon = Icons.Default.BatteryChargingFull,
-            sampleCount = batteryLevels.size
+            sampleCount = socSeries.validCount
         ) {
-            if (batteryLevels.size >= 2) {
-                var yMin = (kotlin.math.floor(batteryLevels.min() / 10.0) * 10).toFloat()
-                var yMax = (kotlin.math.ceil(batteryLevels.max() / 10.0) * 10).toFloat()
+            if (socSeries.validCount >= 2) {
+                var yMin = (kotlin.math.floor(batteryLevels.filter(Float::isFinite).min() / 10.0) * 10).toFloat()
+                var yMax = (kotlin.math.ceil(batteryLevels.filter(Float::isFinite).max() / 10.0) * 10).toFloat()
                 if (yMin == yMax) {
                     yMin -= 1
                     yMax += 1
                 }
                 FullscreenLineChart(
                     data = batteryLevels,
+                    xFractions = socSeries.xFractions, sourceIndices = socSeries.sourceIndices, gaps = socSeries.gaps,
                     color = MaterialTheme.colorScheme.primary,
                     unit = "%",
                     fixedMinMax = Pair(yMin, yMax),
@@ -498,19 +535,22 @@ private fun CurrentChargeHeaderCard(
     accentColor: Color,
     timeToFullCharge: Double?,
     chargeLimitSoc: Int?,
-    chronologicalPoints: List<ChargePoint>
+    chronologicalPoints: List<ChargePoint>,
+    elapsedEnd: String? = null,
+    instantPowerKw: Double? = null,
+    currentAddedEnergyKwh: Double? = null,
+    elapsedRunning: Boolean = true
 ) {
     val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
     val unknownLabel = stringResource(R.string.unknown)
     val estimatedEndLabel = stringResource(R.string.current_charge_estimated_end)
     val elapsedLabel = stringResource(R.string.current_charge_elapsed)
 
-    // Get instant values from the latest data point
-    val latestPoint = chronologicalPoints.lastOrNull()
-    val instantPower = latestPoint?.chargerPower
+    // Historical curve points cannot stand in for a current power observation.
+    val instantPower = instantPowerKw?.let { "%.1f".format(it) }
 
-    val startLevel = detail.startBatteryLevel
-    val currentLevel = detail.currentOrEndBatteryLevel
+    val startLevel = detail.startBatteryLevel?.takeIf { it in 0..100 }
+    val currentLevel = detail.currentOrEndBatteryLevel?.takeIf { it in 0..100 }
     val targetLevel = chargeLimitSoc
 
     Card(
@@ -630,6 +670,8 @@ private fun CurrentChargeHeaderCard(
                         )
                         ElapsedTimeCounter(
                             startDate = detail.startDate,
+                            endDate = elapsedEnd,
+                            isRunning = elapsedRunning,
                             unknownLabel = unknownLabel
                         )
                     }
@@ -692,12 +734,11 @@ private fun CurrentChargeHeaderCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(horizontalAlignment = Alignment.End) {
                         val socAdded = if (currentLevel != null && startLevel != null) {
-                            "+%d%%".format(currentLevel - startLevel)
+                            "%+d%%".format(currentLevel - startLevel)
                         } else {
                             unknownLabel
                         }
-                        val kwhAdded = detail.chargeEnergyAdded
-                            ?.takeIf { it.isFinite() && it >= 0.0 }
+                        val kwhAdded = (currentAddedEnergyKwh ?: currentChargeEnergyKwh(detail))
                             ?.let { "%.2f kWh".format(it) }
                             ?: unknownLabel
                         Text(
@@ -807,7 +848,9 @@ private fun LiveSocProgressBar(
 private fun ElapsedTimeCounter(
     startDate: String?,
     unknownLabel: String,
-    textColor: Color? = null
+    textColor: Color? = null,
+    endDate: String? = null,
+    isRunning: Boolean = true
 ) {
     val startEpochMs = remember(startDate) {
         if (startDate == null) return@remember null
@@ -823,17 +866,20 @@ private fun ElapsedTimeCounter(
         }
     }
 
-    val elapsedMs = remember { mutableLongStateOf(0L) }
+    val endEpochMs = remember(endDate) { parseIsoInstant(endDate)?.toEpochMilli() }
+    val elapsedMs = remember(startEpochMs, endEpochMs) { mutableLongStateOf(0L) }
 
-    LaunchedEffect(startEpochMs) {
+    LaunchedEffect(startEpochMs, endEpochMs, isRunning) {
         if (startEpochMs == null) return@LaunchedEffect
+        if (!isRunning && endEpochMs == null) return@LaunchedEffect
         while (true) {
-            elapsedMs.longValue = System.currentTimeMillis() - startEpochMs
+            elapsedMs.longValue = ((endEpochMs ?: System.currentTimeMillis()) - startEpochMs).coerceAtLeast(0L)
+            if (endEpochMs != null) break
             delay(1000L)
         }
     }
 
-    val displayText = if (startEpochMs == null) {
+    val displayText = if (startEpochMs == null || (!isRunning && endEpochMs == null)) {
         unknownLabel
     } else {
         val totalSeconds = elapsedMs.longValue / 1000

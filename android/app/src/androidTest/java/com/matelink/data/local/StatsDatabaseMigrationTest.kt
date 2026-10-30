@@ -9,6 +9,14 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
+import com.matelink.data.api.models.DriveData
+import com.matelink.data.api.models.DriveOdometerDetails
+import com.matelink.data.api.models.DriveBatteryDetails
+import com.matelink.data.api.models.ChargeData
+import com.matelink.data.api.models.ChargeBatteryDetails
+import com.matelink.data.sync.toSyncSummary
+import com.matelink.data.repository.LegacyHistoryMigrationBlockReason
 import com.matelink.data.repository.LegacyHistoryMigrationRepository
 import org.junit.Rule
 import org.junit.Test
@@ -22,6 +30,58 @@ class StatsDatabaseMigrationTest {
         StatsDatabase::class.java.canonicalName,
         FrameworkSQLiteOpenHelperFactory()
     )
+
+    @Test fun migration21To22KeepsLegacyAmountPendingAndVersionsSeparateSessions() {
+        val name = "charge-cost-v21-to-v22"
+        helper.createDatabase(name, 21).apply {
+            execSQL("INSERT INTO charge_cost_overrides (carId, chargeId, manualTotalAmount) VALUES (-3, 7, 12.34)")
+            close()
+        }
+        val migrated = helper.runMigrationsAndValidate(name, 22, true, StatsDatabase.MIGRATION_21_22)
+        migrated.query("SELECT manualTotalAmount, sessionKey, currencyCode, startInstant, version FROM charge_cost_overrides WHERE carId = -3 AND chargeId = 7").use {
+            assertTrue(it.moveToFirst())
+            assertEquals(12.34, it.getDouble(0), 0.0)
+            assertEquals("legacy", it.getString(1))
+            assertTrue(it.isNull(2))
+            assertTrue(it.isNull(3))
+            assertEquals(0L, it.getLong(4))
+        }
+        migrated.close()
+
+        val room = Room.databaseBuilder(InstrumentationRegistry.getInstrumentation().targetContext,
+            StatsDatabase::class.java, name).addMigrations(*StatsDatabase.ALL_MIGRATIONS).build()
+        try {
+            kotlinx.coroutines.runBlocking {
+                val dao = room.chargeCostOverrideDao()
+                val first = com.matelink.data.local.entity.ChargeCostOverride(-3, 7, 0.0,
+                    sessionKey = "session:a", currencyCode = "CNY", sourceKind = "teslamate_archive",
+                    startInstant = "2026-10-20T10:00:00Z", endInstant = "2026-10-20T11:00:00Z")
+                val second = first.copy(sessionKey = "session:b", manualTotalAmount = 25.0,
+                    startInstant = "2026-10-21T10:00:00Z")
+                assertTrue(dao.saveIfVersion(first, 0L))
+                assertFalse(dao.saveIfVersion(first.copy(manualTotalAmount = 99.0), 0L))
+                assertTrue(dao.saveIfVersion(second, 0L))
+                assertTrue(dao.saveIfVersion(first.copy(deleted = true), 1L))
+                assertFalse(dao.saveIfVersion(first.copy(manualTotalAmount = 77.0), 1L))
+                assertEquals(3, dao.getRecordsForCharge(-3, 7).size)
+                assertEquals(0.0, dao.getRecord(-3, 7, "session:a")!!.manualTotalAmount, 0.0)
+                assertTrue(dao.getRecord(-3, 7, "session:a")!!.deleted)
+                assertEquals(2L, dao.getRecord(-3, 7, "session:a")!!.version)
+                assertEquals(25.0, dao.getRecord(-3, 7, "session:b")!!.manualTotalAmount, 0.0)
+            }
+        } finally { room.close() }
+        val reopened = Room.databaseBuilder(InstrumentationRegistry.getInstrumentation().targetContext,
+            StatsDatabase::class.java, name).addMigrations(*StatsDatabase.ALL_MIGRATIONS).build()
+        try {
+            kotlinx.coroutines.runBlocking {
+                val records = reopened.chargeCostOverrideDao().getRecordsForCharge(-3, 7)
+                assertEquals(3, records.size)
+                assertTrue(records.single { it.sessionKey == "session:a" }.deleted)
+                assertEquals(12.34, records.single { it.sessionKey == "legacy" }.manualTotalAmount, 0.0)
+                assertTrue(records.single { it.sessionKey == "legacy" }.currencyCode == null)
+            }
+        } finally { reopened.close() }
+    }
 
     @Test fun migration20To21RetainsAndQuarantinesLegacyTpmsWithoutDeleting() {
         val name="tpms-provenance-v20"
@@ -71,7 +131,7 @@ class StatsDatabaseMigrationTest {
     }
 
     @Test
-    fun migratingV17CreatesUnknownModelUpgradeMarkersButFreshV18DoesNot() {
+    fun migratingV17PreservesUnverifiedHistoryThroughV21AndLatestButFreshLatestHasNoMarkers() {
         val upgradedName = "legacy-v17-upgrade-marker"
         helper.createDatabase(upgradedName, 17).apply {
             execSQL(
@@ -121,12 +181,28 @@ class StatsDatabaseMigrationTest {
             upgraded.close()
         }
 
+        val intermediate = helper.runMigrationsAndValidate(upgradedName, 21, true,
+            StatsDatabase.MIGRATION_18_19, StatsDatabase.MIGRATION_19_20,
+            StatsDatabase.MIGRATION_20_21)
+        try {
+            intermediate.query("PRAGMA user_version").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(21, cursor.getInt(0))
+            }
+            intermediate.query("SELECT vehicleFingerprint FROM legacy_history_archives WHERE legacyCarId = 42")
+                .use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals("legacy-v17:car:42", cursor.getString(0))
+                }
+        } finally { intermediate.close() }
+
         val upgradedRoom = Room.databaseBuilder(
             InstrumentationRegistry.getInstrumentation().targetContext,
             StatsDatabase::class.java,
             upgradedName
         ).addMigrations(*StatsDatabase.ALL_MIGRATIONS).build()
         try {
+            assertUnverifiedLegacyRowsAtLatest(upgradedRoom, 42, 700, 701, 10.0, null)
             val repository = LegacyHistoryMigrationRepository(
                 database = upgradedRoom,
                 driveSummaryDao = upgradedRoom.driveSummaryDao(),
@@ -140,7 +216,7 @@ class StatsDatabaseMigrationTest {
                 repository.inspect(42, "3", fingerprint, 100.0)
             }
             assertEquals(
-                com.matelink.data.repository.LegacyHistoryMigrationBlockReason.ARCHIVE_MARKER_UNAVAILABLE,
+                LegacyHistoryMigrationBlockReason.NO_LEGACY_ROWS,
                 beforeBinding.reason
             )
             assertTrue(!beforeBinding.eligible)
@@ -150,7 +226,18 @@ class StatsDatabaseMigrationTest {
             val afterBinding = kotlinx.coroutines.runBlocking {
                 repository.inspect(42, "3", fingerprint, 100.0)
             }
-            assertTrue(afterBinding.eligible)
+            // Binding a vehicle identity is not proof that old scalar placeholders were API observations.
+            assertFalse(afterBinding.eligible)
+            assertEquals(LegacyHistoryMigrationBlockReason.NO_LEGACY_ROWS, afterBinding.reason)
+            val bound = kotlinx.coroutines.runBlocking { upgradedRoom.legacyHistoryArchiveDao().get(42) }!!
+            assertEquals("3", bound.vehicleModel)
+            assertEquals(fingerprint, bound.vehicleFingerprint)
+            assertEquals(com.matelink.data.local.entity.LegacyHistoryArchive.EXPLICIT_UPGRADE_ARCHIVE, bound.upgradeOrigin)
+            val blocked = kotlinx.coroutines.runBlocking { repository.migrate(42, -42, afterBinding) }
+            assertEquals(0, blocked.copiedRecordCount)
+            assertEquals(0, rawCount(upgradedRoom, "drives_summary", -42))
+            assertEquals(0, rawCount(upgradedRoom, "charges_summary", -42))
+            assertUnverifiedLegacyRowsAtLatest(upgradedRoom, 42, 700, 701, 10.0, null)
         } finally {
             upgradedRoom.close()
         }
@@ -160,6 +247,7 @@ class StatsDatabaseMigrationTest {
             StatsDatabase::class.java
         ).build()
         try {
+            assertLatestVersion(fresh)
             fresh.openHelper.writableDatabase.query("SELECT COUNT(*) FROM legacy_history_archives").use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals(0, cursor.getInt(0))
@@ -183,6 +271,7 @@ class StatsDatabaseMigrationTest {
     fun migratesLegacyV14IdentityHashToLatestWithoutChangingRows() {
         val databaseName = "legacy-v14-identity-hash"
         helper.createDatabase(databaseName, 14).apply {
+            seedLegacyV14Rows(this)
             execSQL("UPDATE room_master_table SET identity_hash = '442084c21fe8ce4522f3edacfbcc3884' WHERE id = 42")
             close()
         }
@@ -193,9 +282,16 @@ class StatsDatabaseMigrationTest {
             databaseName
         ).addMigrations(*StatsDatabase.ALL_MIGRATIONS).build()
         try {
+            assertUnverifiedLegacyRowsAtLatest(database, 7, 101, 501, 12.0, 3.0)
+            database.openHelper.writableDatabase.query(
+                "SELECT positionCount FROM drive_detail_aggregates WHERE carId = 7 AND driveId = 101"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(10, cursor.getInt(0))
+            }
             database.openHelper.writableDatabase.query("PRAGMA user_version").use { cursor ->
                 cursor.moveToFirst()
-                assertEquals(19, cursor.getInt(0))
+                assertEquals(23, cursor.getInt(0))
             }
             database.openHelper.writableDatabase.query(
                 "SELECT identity_hash FROM room_master_table WHERE id = 42"
@@ -441,7 +537,8 @@ class StatsDatabaseMigrationTest {
             databaseName
         ).addMigrations(*StatsDatabase.ALL_MIGRATIONS).build()
         try {
-            val fingerprint = "self-hosted:http://example.test:7"
+            assertUnverifiedLegacyRowsAtLatest(database, 7, 7, 8, 12.0, 3.0)
+            val fingerprint = "self-hosted:https://example.test:car:7"
             kotlinx.coroutines.runBlocking {
                 database.legacyHistoryArchiveDao().recordExplicitUpgradeOrigin(
                     com.matelink.data.local.entity.LegacyHistoryArchive(
@@ -461,9 +558,43 @@ class StatsDatabaseMigrationTest {
                 chargeCostOverrideDao = database.chargeCostOverrideDao(),
                 legacyHistoryArchiveDao = database.legacyHistoryArchiveDao()
             )
-            val eligibility = kotlinx.coroutines.runBlocking {
-                repository.inspect(7, "3", fingerprint, 100.0)
+            val unverified = kotlinx.coroutines.runBlocking { repository.inspect(7, "3", fingerprint, 100.0) }
+            assertFalse(unverified.eligible)
+            assertEquals(LegacyHistoryMigrationBlockReason.NO_LEGACY_ROWS, unverified.reason)
+            repeat(2) {
+                assertEquals(0, kotlinx.coroutines.runBlocking { repository.migrate(7, -1, unverified) }.copiedRecordCount)
             }
+            assertEquals(0, rawCount(database, "drives_summary", -1))
+            assertEquals(0, rawCount(database, "charges_summary", -1))
+            assertUnverifiedLegacyRowsAtLatest(database, 7, 7, 8, 12.0, 3.0)
+
+            // Simulate new, explicit API receipts for the same IDs. The schema/identity binding above
+            // must never manufacture these receipts or upgrade the old rows' quality on its own.
+            val verifiedDrive = DriveData(7, startDate = "2026-01-01T00:00:00Z",
+                endDate = "2026-01-01T01:00:00Z", startAddress = "A", endAddress = "B", durationMin = 60,
+                odometerDetails = DriveOdometerDetails(distance = 12.0), lengthUnit = "km",
+                speedMax = 80, speedAvg = 40.0, powerMax = 100, powerMin = -20,
+                batteryDetails = DriveBatteryDetails(70, 60), energyConsumedNet = 2.0,
+                source = "teslamate_archive", qualityState = "observed", qualityReason = "api").toSyncSummary(7)!!
+            val verifiedCharge = ChargeData(8, startDate = "2026-01-02T00:00:00Z",
+                endDate = "2026-01-02T01:00:00Z", durationMin = 60, address = "C", latitude = 1.0, longitude = 2.0,
+                chargeEnergyAdded = 20.0, cost = 3.0, odometer = 100.0,
+                batteryDetails = ChargeBatteryDetails(60, 80), source = "teslamate_archive",
+                qualityState = "observed", qualityReason = "api").toSyncSummary(7)!!
+            kotlinx.coroutines.runBlocking {
+                database.driveSummaryDao().upsert(verifiedDrive)
+                database.chargeSummaryDao().upsert(verifiedCharge)
+            }
+            val wrongFingerprint = kotlinx.coroutines.runBlocking { repository.inspect(7, "3", "different-vehicle", 100.0) }
+            assertEquals(LegacyHistoryMigrationBlockReason.FINGERPRINT_MISMATCH, wrongFingerprint.reason)
+            assertFalse(wrongFingerprint.eligible)
+            assertEquals(0, kotlinx.coroutines.runBlocking { repository.migrate(7, -1, wrongFingerprint) }.copiedRecordCount)
+            val rollback = kotlinx.coroutines.runBlocking { repository.inspect(7, "3", fingerprint, 99.0) }
+            assertFalse(rollback.eligible)
+            assertEquals(LegacyHistoryMigrationBlockReason.ODOMETER_ROLLBACK, rollback.reason)
+            assertEquals(0, rawCount(database, "drives_summary", -1))
+            assertEquals(0, rawCount(database, "charges_summary", -1))
+            val eligibility = kotlinx.coroutines.runBlocking { repository.inspect(7, "3", fingerprint, 100.0) }
             assertTrue(eligibility.eligible)
 
             val first = kotlinx.coroutines.runBlocking { repository.migrate(7, -1, eligibility) }
@@ -474,9 +605,90 @@ class StatsDatabaseMigrationTest {
             assertEquals(1, kotlinx.coroutines.runBlocking { database.driveSummaryDao().count(-1) })
             assertEquals(1, kotlinx.coroutines.runBlocking { database.chargeSummaryDao().count(7) })
             assertEquals(1, kotlinx.coroutines.runBlocking { database.chargeSummaryDao().count(-1) })
+            assertEquals(1, rawCount(database, "drives_summary", 7))
+            assertEquals(1, rawCount(database, "drives_summary", -1))
+            assertEquals(1, rawCount(database, "charges_summary", 7))
+            assertEquals(1, rawCount(database, "charges_summary", -1))
+            val sourceDrive = kotlinx.coroutines.runBlocking { database.driveSummaryDao().get(7, 7) }!!
+            val copiedDrive = kotlinx.coroutines.runBlocking { database.driveSummaryDao().get(-1, 7) }!!
+            val sourceCharge = kotlinx.coroutines.runBlocking { database.chargeSummaryDao().get(7, 8) }!!
+            val copiedCharge = kotlinx.coroutines.runBlocking { database.chargeSummaryDao().get(-1, 8) }!!
+            assertEquals(sourceDrive.copy(carId = -1), copiedDrive)
+            assertEquals(sourceCharge.copy(carId = -1), copiedCharge)
+            database.openHelper.writableDatabase.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
         } finally {
             database.close()
         }
+    }
+
+    private fun assertLatestVersion(database: StatsDatabase) {
+        database.openHelper.writableDatabase.query("PRAGMA user_version").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(23, cursor.getInt(0))
+        }
+    }
+
+    private fun rawCount(database: StatsDatabase, table: String, carId: Int): Int =
+        database.openHelper.writableDatabase.query("SELECT COUNT(*) FROM $table WHERE carId = ?", arrayOf(carId)).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            cursor.getInt(0)
+        }
+
+    private fun assertUnverifiedLegacyRowsAtLatest(database: StatsDatabase, car: Int, drive: Int,
+        charge: Int, distance: Double, cost: Double?) {
+        assertLatestVersion(database)
+        assertEquals(1, rawCount(database, "drives_summary", car))
+        assertEquals(1, rawCount(database, "charges_summary", car))
+        val db = database.openHelper.writableDatabase
+        db.query("SELECT startDate,endDate,distance,energyConsumed,energySource,apiEvidence,qualityState,qualityReason " +
+            "FROM drives_summary WHERE carId = ? AND driveId = ?", arrayOf(car, drive)).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("2026-01-01T00:00:00Z", cursor.getString(0))
+            assertEquals("2026-01-01T01:00:00Z", cursor.getString(1))
+            assertEquals(distance, cursor.getDouble(2), 0.0)
+            assertEquals(2.0, cursor.getDouble(3), 0.0)
+            assertEquals("api", cursor.getString(4))
+            assertTrue(cursor.isNull(5))
+            assertEquals("incomplete", cursor.getString(6))
+            assertEquals("missing_api_evidence", cursor.getString(7))
+        }
+        db.query("SELECT startDate,endDate,energyAdded,cost,odometer,apiEvidence,qualityState,qualityReason " +
+            "FROM charges_summary WHERE carId = ? AND chargeId = ?", arrayOf(car, charge)).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("2026-01-02T00:00:00Z", cursor.getString(0))
+            assertEquals("2026-01-02T01:00:00Z", cursor.getString(1))
+            assertEquals(20.0, cursor.getDouble(2), 0.0)
+            if (cost == null) assertTrue(cursor.isNull(3)) else assertEquals(cost, cursor.getDouble(3), 0.0)
+            assertEquals(100.0, cursor.getDouble(4), 0.0)
+            assertTrue(cursor.isNull(5))
+            assertEquals("incomplete", cursor.getString(6))
+            assertEquals("missing_api_evidence", cursor.getString(7))
+        }
+        db.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
+        // The v23 migration does not create raw points from legacy summary or aggregate rows.
+        db.query("SELECT COUNT(*) FROM history_detail_receipts").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+    }
+
+    private fun seedLegacyV14Rows(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            INSERT INTO drives_summary (driveId,carId,startDate,endDate,durationMin,startAddress,endAddress,
+                distance,speedMax,speedAvg,powerMax,powerMin,startBatteryLevel,endBatteryLevel,
+                outsideTempAvg,insideTempAvg,energyConsumed,efficiency,energySource,energyCoverageSeconds,energyCoverageRatio)
+            VALUES (101,7,'2026-01-01T00:00:00Z','2026-01-01T01:00:00Z',60,'A','B',12.0,80,40,100,-20,70,60,
+                NULL,NULL,2.0,166.0,'api',0,0.0)
+        """.trimIndent())
+        db.execSQL("""
+            INSERT INTO charges_summary (chargeId,carId,startDate,endDate,durationMin,address,latitude,longitude,
+                energyAdded,energyUsed,cost,startBatteryLevel,endBatteryLevel,outsideTempAvg,odometer)
+            VALUES (501,7,'2026-01-02T00:00:00Z','2026-01-02T01:00:00Z',60,'C',1.0,2.0,20.0,NULL,3.0,60,80,NULL,100.0)
+        """.trimIndent())
+        db.execSQL("""
+            INSERT INTO drive_detail_aggregates (driveId,carId,schemaVersion,computedAt,hasElevationData,climateOnPositions,positionCount)
+            VALUES (101,7,1,1000,0,0,10)
+        """.trimIndent())
     }
 
     private fun migrateLegacyV13(databaseName: String, includesEnergyColumns: Boolean) {
