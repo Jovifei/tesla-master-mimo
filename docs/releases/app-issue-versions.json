@@ -5639,10 +5639,10 @@
       "found_date": "2026-10-30",
       "found_version": "App 2.1.58 build77 / 自托管 TeslaMate 接口",
       "source_ref": "../RPT-2026-10-30-drive-points-visibility.md",
-      "status": "DEVICE_ROOT_CAUSE_CONFIRMED_FIX_IN_PROGRESS",
-      "fix_version": null,
-      "change": "仅对已验证自托管上下文且双方来源元数据均缺失的行程，按ID和精确窗口匹配；不伪造来源、不改布局",
-      "verification": "build78前台诊断确认摘要source为空、当前详情有多个点；本地接口list/detail来源字段均缺、窗口相同且详情1723点；修复未完成",
+      "status": "FIXED_DEVICE_VERIFIED",
+      "fix_version": "App 2.1.60 build79 / commit pending",
+      "change": "仅在已验证自托管上下文且双方来源元数据均缺失时，按原始列表凭据、服务器、车辆、ID和精确时间窗口建立 legacy drive 身份；不伪造来源、不放宽具名路径",
+      "verification": "Release 18项聚焦测试与离线重派生7项通过；build79签名保数据安装；真机显示3.7 km、87 km/h、功率采样均值1.5 kW、速度/功率/电量曲线，详情1723点",
       "commit": null,
       "history": [
         {
@@ -5660,6 +5660,14 @@
           "detail": "前台诊断确认摘要来源为空且详情有多个点；本地接口列表与详情均缺来源字段、时间一致；保数据安装，修复仍待完成",
           "evidence": "../RPT-2026-10-30-drive-points-visibility.md",
           "commit": "3857a3e4809e1a65b5f844c0f4117d274a92a892"
+        },
+        {
+          "date": "2026-10-30",
+          "version": "App 2.1.60 build79",
+          "action": "FIX_AND_DEVICE_VERIFY",
+          "detail": "自托管无来源协议兼容修复；Release聚焦与离线重派生回归通过；同签名adb install -r保数据安装；真机曲线、速度、功率、电量及1723点核验通过",
+          "evidence": "../RPT-2026-10-30-drive-points-visibility.md",
+          "commit": null
         }
       ]
     }

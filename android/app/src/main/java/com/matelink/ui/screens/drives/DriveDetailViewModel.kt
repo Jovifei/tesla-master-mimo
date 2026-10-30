@@ -205,8 +205,7 @@ class DriveDetailViewModel @Inject constructor(
                     var pointWriteFailed = false
                     val persisted = try {
                         persistVerifiedDriveDetail(statsDatabase, historyDetailStore,
-                            resolved.context, detail, proposedEnergy,
-                            onDiagnostic = { line -> android.util.Log.i("HistoryDetailDiag", line) }) { checkContext() }
+                            resolved.context, detail, proposedEnergy) { checkContext() }
                     } catch (_: HistoryDetailPointSaveRejected) {
                         pointWriteFailed = true
                         null
