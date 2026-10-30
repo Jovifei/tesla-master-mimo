@@ -2,7 +2,7 @@
 
 更新：2026-10-30。发现版本是审查/复现时的源码候选，不等于首次引入版本；提交、APK、安装与生产分别记录。完整逐次事件见[JSON账本](releases/app-issue-versions.json)。
 
-共 114 条：保留此前记录，10月29日恢复续作记录归档安全续期、Fleet 入站及后续数据风险。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`，`2.1.58 / build77` 已保数据安装并核验充电卡片；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
+共 115 条：保留此前记录，10月29日恢复续作记录归档安全续期、Fleet 入站及后续数据风险。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`，`2.1.58 / build77` 已保数据安装并核验充电卡片；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
 
 每条都有具体改法与回归；raw receipt/旧记录保留，source gates与发布门不混称已验收。
 
@@ -21,6 +21,7 @@
 | OCT29-ARCHIVE-EXPIRY-LIFECYCLE | 2026-10-29 / 线上 ab9a245c | 增加状态查询和到期提醒，续期仍由本人确认 | 本次已恢复；下一次固定期限到期风险仍开放 |
 | OCT29-SHORT-RECORD-LABEL | 2026-10-29 / App build75 | 仅修正开关及说明文字，保留布局和用户设置 | build76 定向测试、Release lint、保数据安装及设备显示通过 |
 | OCT30-CHARGE-COST-OVERLAP | 2026-10-30 / App build76 | 删除叠放的额外费用提示，保留费用点击与估算 `≈`，不改布局参数 | build77 33 项定向测试、Release lint、同签名安装及实机点击和布局验证通过 |
+| OCT30-API35-FIXTURE-CONTRACT | 2026-10-30 / PR #27 b702e658 | 修正设置加载等待、曲线时间样本、驻车 SOC 原始证据及合成来源，并检查旧温度不残留 | 独立 API 35 模拟器相关 11 项通过，远端完整 CI 待验证 |
 
 ## 2026-10-28 行程缺失与独立缺陷
 

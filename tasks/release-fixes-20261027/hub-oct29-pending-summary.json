@@ -6,19 +6,19 @@
   "branch": "codex/app-collection-recovery-20261029",
   "hub_revision": "not obtained: WinError 10061 connection refused; automatic retries stopped",
   "current": [
-    "App 2.1.58/build77 installed on device; 33 focused tests and release lint passed, charging card display and edit navigation verified",
-    "October 29 archive catch-up verified in source, cloud and phone; October 28 source gap has no recovered trip records",
-    "Fleet TCP 4443 rule approved and opened; real first telemetry received; source-time qualification risk still open",
-    "Archive status API candidate 3a3648fb passes isolated PostgreSQL tests, not deployed"
+    "App 2.1.58/build77 installed; charging card overlap and edit/detail actions verified",
+    "App recovery committed and pushed to codex/app-foundation-ui-integrate-20261025 at b702e658; PR 27 remains draft",
+    "API35 original 6 CI failures corrected in test fixtures and navigation; isolated emulator 11/11 passed, remote rerun pending",
+    "October 29 archive catch-up and Fleet first telemetry receipt verified; source-time qualification and recurring-expiry warnings remain open"
   ],
   "next": [
-    "Integrate verified App changes into App branch without disturbing existing worktrees",
-    "Complete identity-safe archive expiry reminder",
-    "Resolve Fleet source timestamp and legacy-cache qualification before release"
+    "Push reviewed API35 test repair and inspect new-head full CI",
+    "Complete identity-safe archive expiry warning",
+    "Resolve Fleet source timestamp and legacy-cache qualification before deployment"
   ],
   "blockers": [
-    "October 28 original trip and trajectory not present in checked sources",
-    "Fleet source-time guard candidate has unresolved review blockers and is not deployed",
+    "No October 28 trip/trajectory found in checked sources; exact Docker startup failure logs rotated",
+    "Fleet guard candidate has unresolved cross-layer review blockers",
     "Hub revision unavailable: WinError 10061; no automatic retries"
   ],
   "evidence": "docs/RPT-2026-10-29-fleet-archive-recovery.md"

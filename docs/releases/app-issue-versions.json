@@ -5346,7 +5346,7 @@
       "status": "OPEN_UNDER_INVESTIGATION",
       "fix_version": null,
       "change": "研究保留原始created_at/is_resend并防止重放与跨来源重复",
-      "verification": "官方Payload有原始时间，但MQTT逐字段格式不携带；新收到事件不可据接收时间断言实际行程",
+      "verification": "source-time guard及producer均仅隔离测试；独立复审发现Room旧缓存、回执容量、decoded时间和ACK等缺口，未部署",
       "commit": null,
       "history": [
         {
@@ -5354,6 +5354,14 @@
           "version": "线上ab9a245c",
           "action": "EVIDENCE_AND_RECOVERY",
           "detail": "官方Payload有原始时间，但MQTT逐字段格式不携带；新收到事件不可据接收时间断言实际行程",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-30",
+          "version": "线上ab9a245c / 隔离producer v0.9.4候选",
+          "action": "CANDIDATE_REVIEW_BLOCKED",
+          "detail": "source-time guard及producer均仅隔离测试；独立复审发现Room旧缓存、回执容量、decoded时间和ACK等缺口，未部署",
           "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
           "commit": null
         }
@@ -5417,7 +5425,7 @@
       "found_date": "2026-10-30",
       "found_version": "App 2.1.57 / build76",
       "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
-      "status": "DEVICE_VERIFIED_LOCAL_COMMIT",
+      "status": "DEVICE_VERIFIED_PUSHED_APP_BRANCH",
       "fix_version": "2.1.58 / build77",
       "change": "删除额外叠放提示行，保留费用单元格点击和估算≈；不改变布局参数",
       "verification": "33项定向测试和Release lint通过；同签名保数据安装；实机四栏不重叠、费用弹窗打开后取消、卡片其他位置进入详情",
@@ -5430,6 +5438,36 @@
           "detail": "33项定向测试、Release lint及真机显示/点击验证通过",
           "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
           "commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa"
+        },
+        {
+          "date": "2026-10-30",
+          "version": "2.1.58 / build77",
+          "action": "PUSHED_APP_BRANCH",
+          "detail": "已普通快进推送到PR #27的App集成分支；代码提交a760b13f，推送时远端头b702e658",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa"
+        }
+      ]
+    },
+    {
+      "id": "OCT30-API35-FIXTURE-CONTRACT",
+      "title": "API 35 检查中的设置页等待与行程证据测试契约过时",
+      "found_date": "2026-10-30",
+      "found_version": "PR 27 b702e658",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "LOCAL_EMULATOR_PASS_REMOTE_CI_PENDING",
+      "fix_version": "App branch test-only commit",
+      "change": "等待设置内容挂载；曲线补真实时间轴；驻车fixture保留来源并补原始SOC证据；验证缺失响应不保留旧温度",
+      "verification": "独立 API35 模拟器四类11项通过；新增旧温度负向单例通过；未改变产品源码或布局；远端CI待验",
+      "commit": "0840111347ba2d14fb0bcfd8524457414b1b323d",
+      "history": [
+        {
+          "date": "2026-10-30",
+          "version": "PR 27 b702e658",
+          "action": "CI_FAILURE_AND_LOCAL_REPRO",
+          "detail": "原CI 6项失败，修复后本地相关11项通过；远端同提交全量CI待验",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "0840111347ba2d14fb0bcfd8524457414b1b323d"
         }
       ]
     }
@@ -5446,7 +5484,9 @@
     "debuggable": false,
     "package": "com.matelink",
     "source_commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa",
-    "first_install_time_preserved": true
+    "first_install_time_preserved": true,
+    "integrated_branch": "codex/app-foundation-ui-integrate-20261025",
+    "integrated_head_at_push": "b702e658a7834319dc706d360c4576de4822bc9b"
   },
   "code_commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa",
   "previous_candidate": {
