@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "branch": "codex/app-collection-recovery-20261029",
-  "observation_note": "发现版本不等于首次引入版本；build75已安装测试，归档续绑和自然行程仍待实际验收",
+  "observation_note": "发现版本不等于首次引入版本；build77已安装并验证充电卡片；Fleet源时间与长期续期风险仍开放",
   "issues": [
     {
       "id": "H01",
@@ -4525,10 +4525,10 @@
       "found_date": "2026-10-28",
       "found_version": "2.1.55 / build74 实机",
       "source_ref": "../RPT-2026-10-28-missing-drives.md",
-      "status": "OPEN_SOURCE_GAP",
+      "status": "SOURCE_GAP_CONFIRMED_CURRENT_SOURCES_EMPTY",
       "fix_version": null,
       "change": "持续采集、核验 Fleet 首事件；不根据当前状态编造历史",
-      "verification": "TeslaMate 源库与云端均无三次行程；当前 Fleet awaiting_first_event",
+      "verification": "源库和云端均无10/28行程；Windows重启后采集到10/28 23:12才恢复，根因具体触发仍未知",
       "commit": null,
       "history": [
         {
@@ -4537,6 +4537,22 @@
           "action": "OBSERVED_AND_TRIAGED",
           "detail": "TeslaMate 源库与云端均无三次行程；当前 Fleet awaiting_first_event",
           "evidence": "../RPT-2026-10-28-missing-drives.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-29",
+          "version": "App2.1.56/build75 与线上ab9a245c",
+          "action": "DEVICE_AND_RUNTIME_REVIEW",
+          "detail": "源库和云端均无10/28行程；Windows重启后采集到10/28 23:12才恢复，根因具体触发仍未知",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-30",
+          "version": "TeslaMate原采集栈",
+          "action": "RUNTIME_LOG_REVIEW",
+          "detail": "电脑重启后Docker后端两次启动退出，10月28日23:12才恢复；具体退出原因的日志已轮换，未找到当天独立备份",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
           "commit": null
         }
       ]
@@ -4547,10 +4563,10 @@
       "found_date": "2026-10-28",
       "found_version": "服务端 2c8b7655",
       "source_ref": "../RPT-2026-10-28-missing-drives.md",
-      "status": "OPEN_BINDING_EXPIRED",
+      "status": "RESTORED_RECURRENCE_RISK_OPEN",
       "fix_version": null,
       "change": "安全地经用户确认重新建立同账号、车辆、来源受限绑定；保留原桥接断点",
-      "verification": "2026-10-28 22:05 过期，晚于反馈的三次行程，尚未重新绑定",
+      "verification": "本人确认后原来源桥成功追上传；10/29源与云端各5条，手机默认显示4条；固定30天仍会再次过期",
       "commit": null,
       "history": [
         {
@@ -4568,6 +4584,14 @@
           "detail": "现行桥真实403且游标不动；用户接受独立确认弹层，同scope设备授权后端ab9a245c经隔离PG验证，仍未续期或上传",
           "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
           "commit": "ab9a245c77658fd1adc051bb9218234a1ccc6182"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "App2.1.56/build75 与线上ab9a245c",
+          "action": "DEVICE_AND_RUNTIME_REVIEW",
+          "detail": "本人确认后原来源桥成功追上传；10/29源与云端各5条，手机默认显示4条；固定30天仍会再次过期",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
         }
       ]
     },
@@ -5001,10 +5025,10 @@
       "found_date": "2026-10-29",
       "found_version": "线上a2bac32c / App2.1.55 build74",
       "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
-      "status": "BACKEND_DEPLOYED_CLIENT_QA_PENDING",
+      "status": "PROVIDER_READ_AND_DEVICE_VERIFIED",
       "fix_version": null,
       "change": "增加独立owner认证只读诊断、限制官方origin/无刷新/无写；App复用原详情文案读取",
-      "verification": "服务端19项定向和全量Go/vet通过，独立审查修正空对象promotion及任意origin；线上350e1b7f健康，客户端回归进行中",
+      "verification": "手机官方只读诊断三项读取成功，配对及目标、字段、CA匹配；后续Fleet数据原始时间仍待处理",
       "commit": "350e1b7fb8add01405e8189dc27739544ec0cdb7",
       "history": [
         {
@@ -5014,6 +5038,14 @@
           "detail": "服务端19项定向和全量Go/vet通过，独立审查修正空对象promotion及任意origin；线上350e1b7f健康，客户端回归进行中",
           "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
           "commit": "350e1b7fb8add01405e8189dc27739544ec0cdb7"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "App2.1.56/build75 与线上ab9a245c",
+          "action": "DEVICE_AND_RUNTIME_REVIEW",
+          "detail": "手机官方只读诊断三项读取成功，配对及目标、字段、CA匹配；后续Fleet数据原始时间仍待处理",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
         }
       ]
     },
@@ -5045,10 +5077,10 @@
       "found_date": "2026-10-29",
       "found_version": "线上350e1b7f / App2.1.55 build74",
       "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
-      "status": "BACKEND_DEPLOYED_CLIENT_QA_PENDING",
+      "status": "DEVICE_AND_UPLOAD_VERIFIED_RENEWAL_MONITOR_PENDING",
       "fix_version": "线上服务端 ab9a245c；手机 App75 候选待完整验证安装",
       "change": "新增短期请求、本人确认弹层、受限credential幂等领取和本机单桥安全安装",
-      "verification": "合并后离线Go 409 PASS/103 SKIP、独立PG 8组22子例PASS；线上ready200/build匹配、未认证预览401、非法创建400；App及人工确认与自然上传待验",
+      "verification": "本人确认后原桥安装凭据，回执匹配且游标推进，云端同作用域5条，手机显示4条；长期提醒待完成",
       "commit": "ab9a245c77658fd1adc051bb9218234a1ccc6182",
       "history": [
         {
@@ -5082,6 +5114,14 @@
           "detail": "同签名保数据升级、启动及进程采样通过；本人批准和自然行程上传仍待验",
           "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
           "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "App2.1.56/build75 与线上ab9a245c",
+          "action": "DEVICE_AND_RUNTIME_REVIEW",
+          "detail": "本人确认后原桥安装凭据，回执匹配且游标推进，云端同作用域5条，手机显示4条；长期提醒待完成",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
         }
       ]
     },
@@ -5091,10 +5131,10 @@
       "found_date": "2026-10-29",
       "found_version": "App2.1.56 build75 候选 / 线上350e1b7f",
       "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
-      "status": "CODE_IN_PROGRESS",
+      "status": "READ_ONLY_DEVICE_VERIFIED",
       "fix_version": "线上服务端 ab9a245c；App75 候选待完整验证安装",
       "change": "复用已认证诊断的readiness_context，普通云端读取仅1次安全GET，不回退旧接口",
-      "verification": "只读存储bundle已部署；云端VM安全单GET回归6项通过，身份匹配与会话请求fence复核修正中",
+      "verification": "App75真机读取官方只读诊断，未唤醒或配置车辆",
       "commit": "90d9de00",
       "history": [
         {
@@ -5112,6 +5152,14 @@
           "detail": "只读存储bundle已部署；云端VM安全单GET回归6项通过，身份匹配与会话请求fence复核修正中",
           "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
           "commit": "ab9a245c77658fd1adc051bb9218234a1ccc6182"
+        },
+        {
+          "date": "2026-10-29",
+          "version": "App2.1.56/build75 与线上ab9a245c",
+          "action": "DEVICE_AND_RUNTIME_REVIEW",
+          "detail": "App75真机读取官方只读诊断，未唤醒或配置车辆",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
         }
       ]
     },
@@ -5266,23 +5314,141 @@
           "commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e"
         }
       ]
+    },
+    {
+      "id": "OCT29-FLEET-INGRESS-4443",
+      "title": "Fleet公网入站缺少TCP4443规则，车辆无法连接",
+      "found_date": "2026-10-29",
+      "found_version": "线上ab9a245c / 安全组原规则",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "RUNTIME_MITIGATED_REAL_RECEIPT",
+      "fix_version": null,
+      "change": "用户确认后仅开放IPv4 TCP 4443，保持接收端mTLS",
+      "verification": "双外网节点443成功、原4443超时；新规则后4443成功，真实首事件收到",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "线上ab9a245c / 安全组原规则",
+          "action": "EVIDENCE_AND_RECOVERY",
+          "detail": "双外网节点443成功、原4443超时；新规则后4443成功，真实首事件收到",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "OCT29-FLEET-SOURCE-TIMESTAMP",
+      "title": "Fleet MQTT字段缺少车辆原始时间，接收时间可能伪装成驾驶时间",
+      "found_date": "2026-10-29",
+      "found_version": "线上ab9a245c",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "OPEN_UNDER_INVESTIGATION",
+      "fix_version": null,
+      "change": "研究保留原始created_at/is_resend并防止重放与跨来源重复",
+      "verification": "官方Payload有原始时间，但MQTT逐字段格式不携带；新收到事件不可据接收时间断言实际行程",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "线上ab9a245c",
+          "action": "EVIDENCE_AND_RECOVERY",
+          "detail": "官方Payload有原始时间，但MQTT逐字段格式不携带；新收到事件不可据接收时间断言实际行程",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "OCT29-ARCHIVE-EXPIRY-LIFECYCLE",
+      "title": "30天归档凭据会再次到期，旧版无提前提醒或自动续期",
+      "found_date": "2026-10-29",
+      "found_version": "线上ab9a245c / App2.1.56 build75",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "CODE_IN_PROGRESS",
+      "fix_version": null,
+      "change": "新增同账号同车只读状态、到期提醒和本人确认续期引导；不扩大凭据权限",
+      "verification": "本次续期已验证；后续提醒方案和实现仍在进行",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "线上ab9a245c / App2.1.56 build75",
+          "action": "EVIDENCE_AND_RECOVERY",
+          "detail": "本次续期已验证；后续提醒方案和实现仍在进行",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "OCT29-SHORT-RECORD-LABEL",
+      "title": "短行程与短充电显示开关误写为简短值",
+      "found_date": "2026-10-29",
+      "found_version": "App2.1.56/build75",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "DEVICE_LABEL_VERIFIED",
+      "fix_version": "2.1.57 / build76",
+      "change": "只修正中英文现有标签和说明，不改变页面布局、过滤默认值或用户设置",
+      "verification": "首测因断言75失败；3c4b同步76后4项定向测试及Release lint通过；同签保数据安装，设置页文字实机可见",
+      "commit": "f702f55e34ea0511f38ddb7507e7eb52c9c8dbf1",
+      "history": [
+        {
+          "date": "2026-10-29",
+          "version": "App2.1.56/build75",
+          "action": "EVIDENCE_AND_RECOVERY",
+          "detail": "XML与diff通过；App2.1.57/build76定向和lint验证进行中",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "f702f55e34ea0511f38ddb7507e7eb52c9c8dbf1"
+        },
+        {
+          "date": "2026-10-30",
+          "version": "2.1.57 / build76",
+          "action": "DEVICE_VERIFIED",
+          "detail": "首测因断言75失败；3c4b同步76后4项定向测试及Release lint通过；同签保数据安装，设置页文字实机可见",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "3c4b2a51dd1f177291e1a0d12c7bccbc13eb59d0"
+        }
+      ]
+    },
+    {
+      "id": "OCT30-CHARGE-COST-OVERLAP",
+      "title": "充电历史卡片估算费用和修改总价提示叠压其他指标",
+      "found_date": "2026-10-30",
+      "found_version": "App 2.1.57 / build76",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "DEVICE_VERIFIED_LOCAL_COMMIT",
+      "fix_version": "2.1.58 / build77",
+      "change": "删除额外叠放提示行，保留费用单元格点击和估算≈；不改变布局参数",
+      "verification": "33项定向测试和Release lint通过；同签名保数据安装；实机四栏不重叠、费用弹窗打开后取消、卡片其他位置进入详情",
+      "commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa",
+      "history": [
+        {
+          "date": "2026-10-30",
+          "version": "2.1.58 / build77",
+          "action": "DEVICE_VERIFIED",
+          "detail": "33项定向测试、Release lint及真机显示/点击验证通过",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa"
+        }
+      ]
     }
   ],
   "baseline_checkpoint": "e53a2d01a54d55c554019fb861d69f3737d4b5bb",
-  "updated_date": "2026-10-29",
+  "updated_date": "2026-10-30",
   "candidate": {
-    "versionName": "2.1.56",
-    "versionCode": 75,
-    "installation": "INSTALLED_DEVICE_CONFIRMATION_PENDING",
-    "production": "API_DEPLOYED_APP_NOT_PUBLISHED",
-    "apk_sha256": "68F71F0802FE956D0C6FD4EC1EBD74C9553F9C1E2AB3077B7E04D047384154B0",
+    "versionName": "2.1.58",
+    "versionCode": 77,
+    "installation": "INSTALLED_DEVICE_CHARGE_CARD_VERIFIED",
+    "production": "API_ab9a245c_DEPLOYED_APP_NOT_PUBLISHED",
+    "apk_sha256": "B83E8C29915CDC4F9F850AFEB3699C262678D669DD4F29070843213924D5CF6F",
     "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
     "debuggable": false,
     "package": "com.matelink",
-    "source_commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e",
+    "source_commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa",
     "first_install_time_preserved": true
   },
-  "code_commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e",
+  "code_commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa",
   "previous_candidate": {
     "versionName": "2.1.54",
     "versionCode": 73,
@@ -5292,5 +5458,31 @@
     "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
     "debuggable": false,
     "package": "com.matelink"
-  }
+  },
+  "candidate_history": [
+    {
+      "versionName": "2.1.56",
+      "versionCode": 75,
+      "installation": "INSTALLED_DEVICE_CONFIRMATION_PENDING",
+      "production": "API_DEPLOYED_APP_NOT_PUBLISHED",
+      "apk_sha256": "68F71F0802FE956D0C6FD4EC1EBD74C9553F9C1E2AB3077B7E04D047384154B0",
+      "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
+      "debuggable": false,
+      "package": "com.matelink",
+      "source_commit": "26b7f6fee6919474a0d81ce11d91af1f1c30962e",
+      "first_install_time_preserved": true
+    },
+    {
+      "versionName": "2.1.57",
+      "versionCode": 76,
+      "installation": "INSTALLED_DEVICE_LABEL_VERIFIED",
+      "production": "API_ab9a245c_DEPLOYED_APP_NOT_PUBLISHED",
+      "apk_sha256": "9B9FCD7F4DD94FC90AA41DDA9D4920EF9C52E9F12DF47EBB22A7CF6BD16CFEE4",
+      "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
+      "debuggable": false,
+      "package": "com.matelink",
+      "source_commit": "3c4b2a51dd1f177291e1a0d12c7bccbc13eb59d0",
+      "first_install_time_preserved": true
+    }
+  ]
 }

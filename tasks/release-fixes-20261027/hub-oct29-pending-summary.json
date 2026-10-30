@@ -1,23 +1,24 @@
 {
   "kind": "local_pending_summary_not_a_hub_event",
-  "recorded_date": "2026-10-29",
+  "recorded_date": "2026-10-30",
   "project": "matelink",
   "worktree": "E:\\project\\_worktrees\\matelink-app-collection-recovery-20261029",
   "branch": "codex/app-collection-recovery-20261029",
   "hub_revision": "not obtained: WinError 10061 connection refused; automatic retries stopped",
   "current": [
-    "API ab9a245c deployed and health-checked; Fleet first event pending",
-    "App 26b7f6fe: Debug and Release 1705 tests each, zero failures; both lints zero errors; helper 74 synthetic tests passed",
-    "Signed 2.1.56/build75 installed with data-preserving upgrade; original first-install time preserved; owner confirmation dialog open"
+    "App 2.1.58/build77 installed on device; 33 focused tests and release lint passed, charging card display and edit navigation verified",
+    "October 29 archive catch-up verified in source, cloud and phone; October 28 source gap has no recovered trip records",
+    "Fleet TCP 4443 rule approved and opened; real first telemetry received; source-time qualification risk still open",
+    "Archive status API candidate 3a3648fb passes isolated PostgreSQL tests, not deployed"
   ],
   "next": [
-    "Wait for owner decision on phone",
-    "If approved, install scoped bridge credential and verify natural uploads and phone display",
-    "Inspect Fleet provider diagnostics without configuration changes"
+    "Integrate verified App changes into App branch without disturbing existing worktrees",
+    "Complete identity-safe archive expiry reminder",
+    "Resolve Fleet source timestamp and legacy-cache qualification before release"
   ],
   "blockers": [
-    "Archive credential remains expired until owner-approved enrollment",
-    "Fleet provider first-event evidence remains pending",
+    "October 28 original trip and trajectory not present in checked sources",
+    "Fleet source-time guard candidate has unresolved review blockers and is not deployed",
     "Hub revision unavailable: WinError 10061; no automatic retries"
   ],
   "evidence": "docs/RPT-2026-10-29-fleet-archive-recovery.md"

@@ -1,14 +1,14 @@
 # App问题与版本记录
 
-更新：2026-10-29。发现版本是审查/复现时的源码候选，不等于首次引入版本；提交、APK、安装与生产分别记录。完整逐次事件见[JSON账本](releases/app-issue-versions.json)。
+更新：2026-10-30。发现版本是审查/复现时的源码候选，不等于首次引入版本；提交、APK、安装与生产分别记录。完整逐次事件见[JSON账本](releases/app-issue-versions.json)。
 
-共 109 条：保留此前记录，10月29日恢复续作记录归档安全续期及云端诊断旁路；本人实际批准和自然事件仍待验。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`，候选 `2.1.56 / build75` 正在验证；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
+共 114 条：保留此前记录，10月29日恢复续作记录归档安全续期、Fleet 入站及后续数据风险。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`，`2.1.58 / build77` 已保数据安装并核验充电卡片；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
 
 每条都有具体改法与回归；raw receipt/旧记录保留，source gates与发布门不混称已验收。
 
 ## 2026-10-29 采集恢复续作
 
-[本轮恢复报告](RPT-2026-10-29-fleet-archive-recovery.md)记录真实运行变更。旧重复桥已停止并禁用自动重启，游标不变；基于线上a2bac的finalizer、只读诊断、readiness bundle与短期续绑协议合并为ab9a245c，API定向更新和公网健康核验通过。App75集成手机原有WIP、通过双变体测试并已保数据安装。Jovi已接受独立确认弹层，暂不方便本人操作；归档凭据尚未续期，自然上传和Fleet首事件未验收。
+[本轮恢复报告](RPT-2026-10-29-fleet-archive-recovery.md)记录真实运行变更。旧重复桥已停止；本人确认后原桥追上传 10 月 29 日行程，手机默认列表看到 4 条，另 1 条短记录按既有规则隐藏。本人批准开放单 TCP 4443 后已收到 Fleet 首个真实事件。10 月 28 日源数据缺失，30 天凭据再次到期和 Fleet 源时间处理仍是开放问题。
 
 | 问题 ID | 发现日期 / 版本 | 修复方向 | 验证状态 |
 | --- | --- | --- | --- |
@@ -16,21 +16,26 @@
 | OCT29-ENROLL-APP-LIFECYCLE | 2026-10-29 / build75 未发布候选 | 防止 Activity 重建自动重开旧确认，仍由本人决定 | 合成生命周期及双变体全量测试通过；真机待验 |
 | OCT29-ENROLL-RETRY-RECOVERY | 2026-10-29 / 未发布助手候选 | 中断重建和 ACK 丢响应时按持久配置、容器身份及运行状态恢复 | 74 项合成测试通过；生产续绑待验 |
 | OCT29-FLEET-ID-SCOPE | 2026-10-29 / build75 未发布候选 | 分别核验车辆摘要和 provider ID，以已验证同车映射关联；过期里程保持未知 | 定向及双变体全量测试通过；真机待验 |
+| OCT29-FLEET-INGRESS-4443 | 2026-10-29 / 线上 ab9a245c | 本人批准后仅开放 TCP 4443，保留接收端 mTLS | 外网复测可达，已收到真实首事件 |
+| OCT29-FLEET-SOURCE-TIMESTAMP | 2026-10-29 / 线上 ab9a245c | 恢复车辆原始时间与重放标记，防止接收时间伪装成实际行程时间 | 官方 MQTT 格式缺原始时间；正在研究完整修复 |
+| OCT29-ARCHIVE-EXPIRY-LIFECYCLE | 2026-10-29 / 线上 ab9a245c | 增加状态查询和到期提醒，续期仍由本人确认 | 本次已恢复；下一次固定期限到期风险仍开放 |
+| OCT29-SHORT-RECORD-LABEL | 2026-10-29 / App build75 | 仅修正开关及说明文字，保留布局和用户设置 | build76 定向测试、Release lint、保数据安装及设备显示通过 |
+| OCT30-CHARGE-COST-OVERLAP | 2026-10-30 / App build76 | 删除叠放的额外费用提示，保留费用点击与估算 `≈`，不改布局参数 | build77 33 项定向测试、Release lint、同签名安装及实机点击和布局验证通过 |
 
 ## 2026-10-28 行程缺失与独立缺陷
 
-发现版本和实际安装包不同于修复候选；本轮 App / 服务端修复已本地提交并通过全量源码测试；未安装或部署。细节、证据边界和后续见[当天行程排查报告](RPT-2026-10-28-missing-drives.md)。
+发现版本和实际安装包不同于修复候选；10 月 29 日后续已安装 App 并部署服务端。细节、证据边界和后续见[当天行程排查报告](RPT-2026-10-28-missing-drives.md)与[恢复报告](RPT-2026-10-29-fleet-archive-recovery.md)。
 
 | 问题 ID | 发现版本 | 当前状态 | 下一步 |
 | --- | --- | --- | --- |
 | OCT28-SOURCE-GAP | 2.1.55 / build74 实机 | 源记录缺失，开放 | 恢复可靠采集，核验自然新行程；不编造旧行程 |
-| OCT28-ARCHIVE-EXPIRY | 服务端 2c8b7655 | 绑定已过期 | 经确认安全重绑；不直接修改线上到期字段 |
+| OCT28-ARCHIVE-EXPIRY | 服务端 2c8b7655 | 本人确认后同作用域续期并追上传成功 | 补齐到期提醒；固定 30 天仍可能再次到期 |
 | OCT28-DRIVE-CHARGE-BLOCK / ROOM-NEW-DRIVES | build74 源码 | 本地提交 4e9d5cb4；全量测试通过 | 完成未来真实记录及设备验证 |
 | OCT28-NEW-IDENTITY / UID-REMAP / ADDRESS-COLLISION / TIMEOUT-MESSAGE | build74 基础上的本轮 WIP | 本地提交 4e9d5cb4；消费者回归通过 | 完成未来真实记录及设备验证 |
 | OCT28-ADDRESS-LATE | 本轮 WIP | 本地提交 4e9d5cb4；正反例通过 | 避免迟到反查覆盖后续 Room 地址 |
 | OCT28-REFRESH-STATE / TIMELINE-CAR | 本轮及继承的 App WIP | 本地提交 4e9d5cb4；消费者回归通过 | 保持刷新状态，并以真实车辆 proof 防止时间线串车 |
 | OCT29-TIMELINE-ROUTE | 继承源码 | 条件性路由风险，待运行复现 | 验证车辆发现迟到时 More 与时间线使用同一已验证车辆 |
-| OCT28-PG-FINALIZER | 服务端 2c8b7655 源码 | 本地提交 1d4fdb58，独立 PostgreSQL 集成测试通过，未部署 | 完成评审与后续部署验收；不是当天缺源的已证实原因 |
+| OCT28-PG-FINALIZER | 服务端 2c8b7655 源码 | 已包含在生产 ab9a245c，独立 PostgreSQL 集成测试通过 | 持续观察；不是当天缺源的已证实原因 |
 
 | 新增问题 | 发现日期 / 版本 | 状态 | 改法 / 验证记录 | 修复版本 / commit |
 |---|---|---|---|---|
