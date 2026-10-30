@@ -22,7 +22,7 @@ import uuid
 from verify_evidence import Rejected, load_diagnostics, load_verify, require
 
 HASHES = {
-    "engine26_candidate.py": "cc92315764af864990968fdd6d09be503701a48ad9c8ac2f50c3604692b7eac4",
+    "engine26_candidate.py": "af2266706383922fcd81a4f26d350e97f726874f8c110bb78eff277b7c25a4d0",
     "recovery_core36.py": "e0a70497875718db6d08d52a3dcd9609e31de15b1e3b25cc4b75d79af96a6300",
     "receipt_journal.py": "47c8a9644204d9927b07d74ae4808b1fce930196d178210ab8135f24fb858eba",
 }
