@@ -5632,6 +5632,28 @@
           "commit": "a876c30bf2d602eee218aeb7649fab24104c99c4"
         }
       ]
+    },
+    {
+      "id": "OCT30-DRIVE-DETAIL-POINTS",
+      "title": "真实行程采样点已到手机但曲线因摘要匹配失败未展示",
+      "found_date": "2026-10-30",
+      "found_version": "App 2.1.58 build77 / 线上 API ab9a245c",
+      "source_ref": "../RPT-2026-10-30-drive-points-visibility.md",
+      "status": "DEVICE_REPRODUCED_UNDER_DIAGNOSIS",
+      "fix_version": null,
+      "change": "定位并修复摘要与详情的同作用域身份匹配；保持隔离与原始证据，不改布局",
+      "verification": "源、云及手机详情响应各有1723点；手机详情提示会话不匹配，刷新后仍复现；具体匹配条件待诊断",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-10-30",
+          "version": "App 2.1.58 build77 / 线上 API ab9a245c",
+          "action": "DEVICE_REPRODUCED",
+          "detail": "真实曲线页空态，详情页会话匹配失败；源、云及手机详情响应均有1723点，刷新后仍复现",
+          "evidence": "../RPT-2026-10-30-drive-points-visibility.md",
+          "commit": null
+        }
+      ]
     }
   ],
   "baseline_checkpoint": "e53a2d01a54d55c554019fb861d69f3737d4b5bb",
