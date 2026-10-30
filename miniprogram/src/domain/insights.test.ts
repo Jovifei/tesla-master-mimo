@@ -4,6 +4,7 @@ import { driveEnergyReceipt, resolveDriveEnergy, resolveChargeEnergy } from './d
 import { aggregateDriveHistory } from './history'
 import { chargeCosts, insightDrive, makeManualTrip, manualTripKey, manualTripSummary, personalizedRange, ratedRangeComparisons, rangeInfluences, readManualTrips, removeManualTrip, writeManualTrip } from './insights'
 import { CACHE_BUDGET_BYTES } from '../services/cache_budget'
+import { chargeEstimatePrice, overlayChargeCosts } from '../services/charge_cost'
 
 const start = '2026-10-14T00:00:00Z', end = '2026-10-14T00:30:00Z', now = Date.parse('2026-10-15T00:00:00Z')
 function drive(id: string, distanceKm: number | null, value: number | null): Drive {
@@ -69,8 +70,77 @@ describe('actual evidence-backed insight calculations', () => {
     const range = personalizedRange(Array.from({ length: 10 }, (_, i) => drive(String(i), 30, 1e308)), { currentCapacityKwh: 60, source: 'teslamate', qualityState: 'observed', observedAt: start }, null, now)
     expect(range.rangeKm).toBeNull()
   })
+  it('calculates unit cost for DC charges using batteryInputKwh without requiring AC input', () => {
+    const dcCharge: Charge = {
+      id: 'dc-1', sessionId: null, startDate: start, endDate: end, cost: 20,
+      currencyCode: 'CNY', currency: 'CNY', source: 'telemetry_mqtt', qualityState: 'observed',
+      chargeMode: 'dc', address: 'Supercharger', durationMinutes: 30, startBatteryLevel: 20, endBatteryLevel: 80,
+      latitude: null, longitude: null, chargerPowerKw: null, qualityReason: null,
+      energyAddedKwh: 10, energyUsedKwh: null,
+      energy: resolveChargeEnergy({
+        source: 'telemetry_mqtt', start_date: start, end_date: end,
+        energy_contract: {
+          version: 1, charge_mode: 'dc', charge_mode_evidence: 'observed_boundary_modes_no_conflict',
+          battery_input: { value_kwh: 10, unit: 'kWh', source: 'telemetry_mqtt', quality: 'reported', method: 'session_counter_delta', measurement_point: 'battery_input', start_date: start, end_date: end, coverage_kind: 'endpoints', coverage_ratio: 1 },
+        },
+      }),
+    }
+    const result = chargeCosts([dcCharge])
+    expect(result.groups).toHaveLength(1)
+    expect(result.groups[0].cost).toBe(20)
+    expect(result.groups[0].energyKwh).toBe(10)
+    expect(result.groups[0].perKwh).toBe(2)
+  })
+  it('does not use stale charge energy after a contract explicitly withdraws it', () => {
+    const raw = { ...charge('withdrawn', 12, 'CNY', null), energyAddedKwh: 10 }
+    const result = chargeCosts([raw])
+    expect(result.groups[0]).toMatchObject({ cost: 12, energyKwh: null, perKwh: null })
+  })
 })
 describe('manual selected long trip persistence', () => {
+  it('keeps a qualified legacy charge and its currency through trip save and reopen', () => {
+    const storage = store()
+    const legacyEnergy = resolveChargeEnergy({ source: 'teslamate_archive', start_date: start, end_date: end, charge_energy_added: 10, charge_energy_used: 12 })
+    const legacy = { ...charge('legacy', 0, 'CNY'), source: 'teslamate_archive', currency: 'CNY', energy: legacyEnergy, energyAddedKwh: 10, energyUsedKwh: 12 }
+    const trip = makeManualTrip('legacy', '历史充电', [{ kind: 'drive', drive: drive('d', 10, 2) }, { kind: 'charge', charge: legacy }], start)!
+    expect(writeManualTrip(storage, scope, trip)).toBe(true)
+    const saved = readManualTrips(storage, scope)[0].legs.find(leg => leg.kind === 'charge')!
+    if (saved.kind !== 'charge') return expect.unreachable()
+    expect(saved.charge).toMatchObject({ currencyCode: 'CNY', energyAddedKwh: 10, energyUsedKwh: 12 })
+    const amount = overlayChargeCosts(storage, scope, [saved.charge], chargeEstimatePrice(storage, scope))[0]
+    expect(amount.cost).toBeCloseTo(11.4)
+    expect(amount.costProvenance).toBe('estimate')
+  })
+  it('does not revive a withdrawn energy contract while reconstructing a long trip', () => {
+    const unqualified = charge('unknown', 4, 'CNY', null)
+    const forged = { ...unqualified, energyAddedKwh: 10 }
+    const trip = makeManualTrip('unknown', '未知能量', [{ kind: 'drive', drive: drive('d', 10, 2) }, { kind: 'charge', charge: forged }], start)!
+    const saved = trip.legs.find(leg => leg.kind === 'charge')!
+    if (saved.kind !== 'charge') return expect.unreachable()
+    expect(saved.charge.energyAddedKwh).toBeNull()
+  })
+  it('preserves two selected source instances with the same public id through a save and reopen', () => {
+    const storage = store()
+    const first = { ...drive('1', 10, 2), sessionId: 'shared', sourceInstanceId: 'A', sourceVehicleId: 'car', sourceRecordId: 'record' }
+    const second = { ...first, sourceInstanceId: 'B' }
+    const trip = makeManualTrip('source-trip', '来源区分', [{ kind: 'drive', drive: first }, { kind: 'drive', drive: second }], start)!
+    expect(trip.legs).toHaveLength(2)
+    expect(writeManualTrip(storage, scope, trip)).toBe(true)
+    const reloaded = readManualTrips(storage, scope)[0]
+    expect(reloaded.legs).toHaveLength(2)
+    expect(reloaded.legs.map(leg => leg.kind === 'drive' ? [leg.drive.sourceInstanceId, leg.drive.sourceVehicleId, leg.drive.sourceRecordId] : null)).toEqual([['A', 'car', 'record'], ['B', 'car', 'record']])
+  })
+  it('does not collapse long but valid source identities when selecting a trip', () => {
+    const first = { ...drive('1', 10, 2), sessionId: 'shared', sourceInstanceId: `${'x'.repeat(300)}A`, sourceVehicleId: 'car', sourceRecordId: 'record' }
+    const second = { ...first, sourceInstanceId: `${'x'.repeat(300)}B` }
+    const trip = makeManualTrip('source-trip', '来源区分', [{ kind: 'drive', drive: first }, { kind: 'drive', drive: second }], start)!
+    expect(trip.legs).toHaveLength(2)
+    expect(writeManualTrip(store(), scope, trip)).toBe(true)
+  })
+  it('rejects a trip with an oversized source identity instead of silently dropping its identity', () => {
+    const first = { ...drive('1', 10, 2), sourceInstanceId: `${'x'.repeat(65 * 1024)}A` }
+    expect(makeManualTrip('source-trip', '来源区分', [{ kind: 'drive', drive: first }], start)).toBeNull()
+  })
   it('persists/rebuilds selected legs only, strips locations/credentials and recalculates proof without laundering unknown energy', () => {
     const storage = store(), raw = { ...drive('1', 10, 2), latitude: 42, startAddress: 'PRIVATE_ADDRESS', token: 'PRIVATE_TOKEN', vin: 'PRIVATE_VIN', positions: [{ latitude: 42 }] }
     const trip = makeManualTrip('trip1', '人工选择', [{ kind: 'drive', drive: raw }, { kind: 'drive', drive: drive('2', 10, null) }, { kind: 'charge', charge: charge('c', 0, 'EUR', 2) }], start)!

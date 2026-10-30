@@ -16,4 +16,4 @@ export type ParkedDetail = { olderDriveId: string | null; newerDriveId: string |
   startBatteryLevel: number | null; endBatteryLevel: number | null; batteryDelta: number | null;
   energyKwh: number | null; averagePowerW: number | null; peakPowerW: number | null;
   insideTempC: number | null; outsideTempC: number | null; sampleCount: number | null;
-  coverageSeconds: number | null; coverageRatio: number | null; linkedChargeId: string | null; source: string | null; energyReason: string | null }
+  coverageSeconds: number | null; coverageRatio: number | null; linkedChargeId: string | null; chargeSessionsComplete?: boolean | null; source: string | null; energyReason: string | null }

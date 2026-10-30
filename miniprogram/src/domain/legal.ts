@@ -107,3 +107,39 @@ export const legalDocuments: Record<LegalDocumentKind, LegalDocument> = {
 export function legalDocumentFor(value: string | undefined): LegalDocument {
   return value === 'privacy' ? legalDocuments.privacy : legalDocuments.terms
 }
+
+export const CONSENT_STORAGE_KEY = 'matelink.consent.v1'
+
+export type StoredConsent = {
+  termsVersion: string
+  privacyVersion: string
+  acceptedAtEpochMs: number
+}
+
+export function readStoredConsent(storage: { getStorageSync(key: string): unknown }): StoredConsent | null {
+  try {
+    const raw = storage.getStorageSync(CONSENT_STORAGE_KEY) as Partial<StoredConsent> | undefined
+    if (!raw || typeof raw !== 'object') return null
+    if (raw.termsVersion === JOURVOLT_TERMS_VERSION &&
+        raw.privacyVersion === JOURVOLT_PRIVACY_VERSION &&
+        typeof raw.acceptedAtEpochMs === 'number' && Number.isFinite(raw.acceptedAtEpochMs) &&
+        raw.acceptedAtEpochMs > 0) {
+      return {
+        termsVersion: raw.termsVersion,
+        privacyVersion: raw.privacyVersion,
+        acceptedAtEpochMs: raw.acceptedAtEpochMs,
+      }
+    }
+    return null
+  } catch { return null }
+}
+
+export function writeStoredConsent(storage: { setStorageSync(key: string, value: unknown): void }): void {
+  try {
+    storage.setStorageSync(CONSENT_STORAGE_KEY, {
+      termsVersion: JOURVOLT_TERMS_VERSION,
+      privacyVersion: JOURVOLT_PRIVACY_VERSION,
+      acceptedAtEpochMs: Date.now(),
+    })
+  } catch { /* storage quota or restricted */ }
+}

@@ -53,6 +53,122 @@ beforeEach(() => {
 afterEach(async () => { if (renderer) await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null; vi.unstubAllEnvs() })
 
 describe('advanced App entry pages through actual authenticated consumers', () => {
+  it('explains when ambiguous cached history is preserved but excluded from analysis', async () => {
+    const { normalizeDrive } = await import('../../services/api')
+    const { historyCacheKey, writeHistoryCache } = await import('../../services/history_cache')
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) }, getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }) }
+    const saved = { ...normalizeDrive(raw(1))!, identityAmbiguous: true }
+    expect(writeHistoryCache(storage, historyCacheKey('drives', 'analysis-user', 'analysis-car', 'https://api.example.test'), [saved])).toBe(true)
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars: [car] })
+      if (url.includes('/charges')) return respond({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } })
+      throw new Error('offline history')
+    })
+    const page = await mount('stats')
+    expect(JSON.stringify(page.toJSON())).toContain('来源身份未确认的历史记录已保留')
+    expect(page.root.findByProps({ ariaLabel: '行程次数 0 次' })).toBeDefined()
+  })
+  it('counts a charge with conflicting AC and fast-charger evidence as unknown mode', async () => {
+    const conflict = { charge_id: 4, source: 'fleet_telemetry', quality_state: 'observed', start_date: start, end_date: end,
+      charge_type: 'ac', fast_charger_present: true, cost: 12, currency: 'CNY',
+      energy_contract: { version: 1, charge_mode: 'ac', charge_mode_evidence: 'observed_boundary_modes_no_conflict' } }
+    const { normalizeCharge } = await import('../../services/api')
+    const { historyCacheKey, writeHistoryCache } = await import('../../services/history_cache')
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) }, getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }) }
+    expect(writeHistoryCache(storage, historyCacheKey('charges', 'analysis-user', 'analysis-car', 'https://api.example.test'), [normalizeCharge(conflict)!])).toBe(true)
+    const { fast_charger_present: _omittedFast, energy_contract: _omittedContract, ...sparseRefresh } = conflict
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars: [car] })
+      if (url.includes('/charges')) return respond({ charges: [sparseRefresh], meta: { page: 1, show: 20, total_pages: 1 } })
+      return respond({ drives: [], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('stats')
+    expect(page.root.findByProps({ ariaLabel: '模式未知 1 次' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: 'AC 0 次' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '已知费用 1/1 条 12 CNY' })).toBeDefined()
+  })
+  it('does not present a parked interval when the server detects a hidden intervening drive', async () => {
+    const source = { source: 'teslamate_archive', source_instance_id: 'archive-a', source_vehicle_id: 'vehicle-a' }
+    const older = { ...raw(1), ...source, start_date: '2026-10-14T00:00:00Z', end_date: '2026-10-14T00:10:00Z' }
+    const newer = { ...raw(2), ...source, start_date: '2026-10-14T02:00:00Z', end_date: '2026-10-14T02:10:00Z' }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars: [car] })
+      if (url.includes('/parked/1/2')) return { statusCode: 200, data: { data: null, error: 'parked_history_bounds_unavailable' }, header: {} }
+      if (url.includes('/charges')) return respond({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } })
+      return respond({ drives: [newer, older], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('timeline'); await flush()
+    expect(platform.request.mock.calls.some(([request]) => request.url.includes('/parked/1/2'))).toBe(true)
+    expect(page.root.findAllByProps({ className: 'timeline-event' }).some(node => node.findAllByType('text').some(text => text.children.join('') === '驻车窗口'))).toBe(false)
+  })
+  it('does not display direct parked details that contradict the complete drive boundaries', async () => {
+    const source = { source: 'teslamate_archive', source_instance_id: 'archive-a', source_vehicle_id: 'vehicle-a' }
+    const older = { ...raw(1), ...source, start_date: '2026-10-14T00:00:00Z', end_date: '2026-10-14T00:10:00Z' }
+    const newer = { ...raw(2), ...source, start_date: '2026-10-14T02:00:00Z', end_date: '2026-10-14T02:10:00Z' }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars: [car] })
+      if (url.includes('/parked/1/2')) return respond({ older_drive_id: 1, newer_drive_id: 2, source: 'teslamate_archive',
+        start_date: '2026-10-14T00:20:00Z', end_date: '2026-10-14T02:00:00Z', start_battery_level: 10, end_battery_level: 99, battery_delta: 89 })
+      if (url.includes('/charges')) return respond({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } })
+      return respond({ drives: [newer, older], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('parked', { olderId: '1', newerId: '2' }); await flush()
+    expect(page.root.findAllByProps({ ariaLabel: '电量变化 89%' })).toHaveLength(0)
+    expect(JSON.stringify(page.toJSON())).toContain('驻车边界未能核验')
+  })
+  it('excludes unknown dates from annual averages without losing their known total distance', async () => {
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars: [car] })
+      if (url.includes('/charges')) return respond({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } })
+      return respond({ drives: [{ ...raw(1), start_date: '2025-01-01T00:00:00Z', odometer_details: { odometer_distance: 10 } },
+        { ...raw(2), start_date: null, odometer_details: { odometer_distance: 90 } }], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('mileage')
+    expect(page.root.findByProps({ ariaLabel: '已知总里程 100 km' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '年均里程 10 km' })).toBeDefined()
+  })
+  it('excludes future records from the previous 90-day efficiency window', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-15T00:00:00Z'))
+    const futureStart = '2035-10-14T00:00:00Z', futureEnd = '2035-10-14T00:10:00Z', future = raw(2, 9)
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars: [car] })
+      if (url.includes('/charges')) return respond({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } })
+      return respond({ drives: [raw(1, 1), { ...future, start_date: futureStart, end_date: futureEnd, energy_contract: { ...future.energy_contract, net_energy: { ...future.energy_contract.net_energy, start_date: futureStart, end_date: futureEnd } } }], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('efficiency')
+    expect(page.root.findByProps({ ariaLabel: '近90天 10 kWh/100km' })).toBeDefined()
+    vi.restoreAllMocks()
+  })
+  it('does not replace current online history with a cached row from another source instance', async () => {
+    const { normalizeDrive } = await import('../../services/api')
+    const { historyCacheKey, writeHistoryCache } = await import('../../services/history_cache')
+    const old = normalizeDrive({ ...raw(1, 9), source_instance_id: 'archive-a', source_record_id: 'record-1', odometer_details: { odometer_distance: 99 } })!
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => platform.values.set(key, value), getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }) }
+    expect(writeHistoryCache(storage, historyCacheKey('drives', 'analysis-user', 'analysis-car', 'https://api.example.test'), [old])).toBe(true)
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars: [car] })
+      if (url.includes('/charges')) return respond({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } })
+      return respond({ drives: [{ ...raw(1, 1), source_instance_id: 'archive-b', source_record_id: 'record-1' }], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('stats')
+    expect(page.root.findByProps({ ariaLabel: '总距离 10 km' })).toBeDefined()
+    expect(page.root.findAllByProps({ ariaLabel: '总距离 99 km' })).toHaveLength(0)
+  })
+  it('does not infer parking when the online boundary time is missing even if an old cache has it', async () => {
+    const { normalizeDrive } = await import('../../services/api')
+    const { historyCacheKey, writeHistoryCache } = await import('../../services/history_cache')
+    const older = { ...raw(1), source_instance_id: 'archive-a', source_vehicle_id: '1', source_record_id: 'record-1' }
+    const newer = { ...raw(2), source_instance_id: 'archive-a', source_vehicle_id: '1', source_record_id: 'record-2', start_date: '2026-10-14T02:00:00Z', end_date: '2026-10-14T02:10:00Z' }
+    const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => platform.values.set(key, value), getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }) }
+    expect(writeHistoryCache(storage, historyCacheKey('drives', 'analysis-user', 'analysis-car', 'https://api.example.test'), [normalizeDrive(older)!])).toBe(true)
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars: [car] })
+      if (url.includes('/charges')) return respond({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } })
+      return respond({ drives: [newer, { ...older, end_date: null }], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('timeline')
+    expect(page.root.findAllByProps({ className: 'timeline-event' }).some(node => JSON.stringify(node).includes('驻车窗口'))).toBe(false)
+  })
   it('draws isolated genuine zero and signed observations as points without bridging unknown power gaps', async () => {
     platform.request.mockImplementation(async ({ url }: { url: string }) => {
       if (url.endsWith('/cars')) return respond({ cars: [car] })
@@ -90,7 +206,8 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     expect(curves[2].findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('230 V')
     expect(curves[3].findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('16 A')
     expect(curves[4].findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('10 °C')
-    expect(page.root.findByProps({ ariaLabel: '费用 暂无数据' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '费用 ≈3.42 CNY' })).toBeDefined()
+    expect(JSON.stringify(page.toJSON())).toContain('按默认电价估算')
     expect(JSON.stringify([...platform.values.values()])).not.toMatch(/charge_details|charger_actual_current|outside_temp/)
   })
 
@@ -226,21 +343,25 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     expect(page.root.findByProps({ ariaLabel: '充电次数 暂无数据' })).toBeDefined()
   })
   it('renders real adjacent parked evidence without capacity guesses and excludes a charging overlap from vampire totals', async () => {
-    const drives = [{ ...raw(1), start_date: '2026-10-14T00:00:00Z', end_date: '2026-10-14T00:10:00Z' },
-      { ...raw(2), start_date: '2026-10-14T02:00:00Z', end_date: '2026-10-14T02:10:00Z', battery_details: { start_battery_level: 78, end_battery_level: 77 } }]
+    const drives = [{ ...raw(1), source: 'teslamate_archive', source_instance_id: 'source-a', source_vehicle_id: 'vehicle-a', start_date: '2026-10-14T00:00:00Z', end_date: '2026-10-14T00:10:00Z' },
+      { ...raw(2), source: 'teslamate_archive', source_instance_id: 'source-a', source_vehicle_id: 'vehicle-a', start_date: '2026-10-14T02:00:00Z', end_date: '2026-10-14T02:10:00Z', battery_details: { start_battery_level: 78, end_battery_level: 77 } }]
     platform.request.mockImplementation(async ({ url }: { url: string }) => {
       if (url.endsWith('/cars')) return respond({ cars: [car] })
       if (url.includes('/parked/1/2')) return respond({ older_drive_id: 1, newer_drive_id: 2, start_date: '2026-10-14T00:10:00Z', end_date: '2026-10-14T02:00:00Z',
-        start_battery_level: 79, end_battery_level: 78, battery_delta: -1, source: 'database_latest', sample_count: 0, energy_kwh: 99 })
+        start_battery_level: 70, end_battery_level: 68, battery_delta: 99, source: 'teslamate_archive', sample_count: 0, energy_kwh: 99,
+        linked_charge: { charge_id: 3 }, charge_sessions_complete: true })
       if (url.includes('/standby')) return respond({ windows: [], meta: { availability: 'collecting', source: 'local_history' } })
       if (url.includes('/charges')) return respond({ charges: [{ charge_id: 3, source: 'teslamate_archive', start_date: '2026-10-14T01:00:00Z', end_date: '2026-10-14T01:30:00Z' }], meta: { page: 1, show: 20, total_pages: 1 } })
       return respond({ drives, meta: { page: 1, show: 20, total_pages: 1 } })
     })
     let page = await mount('parked', { olderId: '1', newerId: '2' })
-    expect(page.root.findByProps({ ariaLabel: '电量变化 -1%' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '电量变化 -2%' })).toBeDefined()
     expect(page.root.findByProps({ ariaLabel: '合格储能变化 暂无数据' })).toBeDefined()
     expect(JSON.stringify(page.toJSON())).toContain('与充电记录重叠')
     expect(JSON.stringify(page.toJSON())).not.toContain('99 kWh')
+    await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null
+    page = await mount('timeline'); await flush()
+    expect(page.root.findAllByType('text').some(node => node.children.join('').includes('SOC变化 -2 %'))).toBe(true)
     await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null
     page = await mount('vampire')
     expect(JSON.stringify(page.toJSON())).toContain('含充电重叠的窗口已排除损耗计算')
@@ -258,7 +379,8 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     const page = await mount('timeline', { chargeId: '9' })
     const detail = page.root.findByProps({ className: 'card analysis-charge-detail' })
     expect(detail.findByProps({ ariaLabel: '电池充入 9 kWh' })).toBeDefined()
-    expect(detail.findByProps({ ariaLabel: '费用 0 EUR' })).toBeDefined()
+    expect(detail.findByProps({ ariaLabel: '费用 暂无数据' })).toBeDefined()
+    expect(detail.findAllByType('text').map(node => node.children.join('')).join('')).toContain('原始上游账单 0 EUR')
     const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
     const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync() {} }
     const saved = readHistoryCache(storage, historyCacheKey('charges', 'analysis-user', 'analysis-car', 'https://api.example.test')) as { id: string }[]

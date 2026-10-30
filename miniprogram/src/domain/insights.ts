@@ -32,8 +32,9 @@ export function chargeCosts(charges: readonly Charge[]): { groups: CostGroup[]; 
     let energyKwh: number | null = null, pairedCost: number | null = null
     for (const row of known) {
       const energy = row.energy?.evidence ? resolveChargeEnergy({ source: row.source, start_date: row.startDate, end_date: row.endDate, energy_contract: row.energy.evidence }) : null
-      const input = energy?.inputEnergyKwh
-      if (input != null && input > 0) { energyKwh = (energyKwh ?? 0) + input; pairedCost = (pairedCost ?? 0) + row.cost! }
+      const battery = row.energy?.evidence ? energy?.batteryInputKwh :
+        row.source === 'teslamate_archive' && row.energy?.quality === 'reported' ? row.energy.batteryInputKwh : null
+      if (battery != null && battery > 0) { energyKwh = (energyKwh ?? 0) + battery; pairedCost = (pairedCost ?? 0) + row.cost! }
     }
     const monthRows = new Map<string, Charge[]>(), locations = new Map<string, Charge[]>()
     for (const row of known) {
@@ -43,12 +44,13 @@ export function chargeCosts(charges: readonly Charge[]): { groups: CostGroup[]; 
       if (row.address?.trim()) locations.set(row.address, [...(locations.get(row.address) ?? []), row])
     }
     const sum = (rows: Charge[]) => rows.length ? number(rows.reduce((total, row) => total + row.cost!, 0)) : null
+    const mode = (row: Charge) => row.chargeModeConflict != null && row.chargeModeConflict !== false ? null : row.chargeMode
     const cost = sum(known)
     energyKwh = number(energyKwh); pairedCost = number(pairedCost)
     return { currency, cost, known: known.length, total: rows.length, energyKwh, pairedCost,
       perKwh: energyKwh != null && energyKwh > 0 && pairedCost != null ? number(pairedCost / energyKwh) : null, average: cost != null ? number(cost / known.length) : null,
       months: [...monthRows].map(([month, values]) => ({ month, cost: sum(values), known: values.length,
-        ac: sum(values.filter(row => row.chargeMode === 'ac')), dc: sum(values.filter(row => row.chargeMode === 'dc')), unknownMode: sum(values.filter(row => row.chargeMode !== 'ac' && row.chargeMode !== 'dc')) })).sort((a, b) => a.month.localeCompare(b.month)),
+        ac: sum(values.filter(row => mode(row) === 'ac')), dc: sum(values.filter(row => mode(row) === 'dc')), unknownMode: sum(values.filter(row => mode(row) !== 'ac' && mode(row) !== 'dc')) })).sort((a, b) => a.month.localeCompare(b.month)),
       locations: [...locations].map(([address, values]) => ({ address, cost: sum(values), count: values.length })).sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0)).slice(0, 5) }
   }).sort((a, b) => a.currency.localeCompare(b.currency))
   return { groups, unknownCurrency, missingCost, total: rows.length }
@@ -113,24 +115,38 @@ function projectDrive(value: unknown): Drive | null {
   const receipt: DriveEnergyReceipt = driveEnergyReceipt({ drive_id: id, start_date: text(raw.startDate), end_date: text(raw.endDate), source: text(raw.source),
     odometer_details: { odometer_distance: number(raw.distanceKm, 0) }, energy_contract: { version: 1, net_energy: proof ?? null } }, 'km')
   return insightDrive({ id, sessionId: text(raw.sessionId, 256), startDate: text(raw.startDate), endDate: text(raw.endDate),
-    distanceKm: number(raw.distanceKm, 0), durationMinutes: number(raw.durationMinutes, 0), source: text(raw.source), qualityState: text(raw.qualityState), qualityReason: null,
+    distanceKm: number(raw.distanceKm, 0), durationMinutes: number(raw.durationMinutes, 0), source: text(raw.source),
+    sourceInstanceId: text(raw.sourceInstanceId, MANUAL_TRIP_MAX_BYTES), sourceVehicleId: text(raw.sourceVehicleId, MANUAL_TRIP_MAX_BYTES), sourceRecordId: text(raw.sourceRecordId, MANUAL_TRIP_MAX_BYTES), qualityState: text(raw.qualityState), qualityReason: null,
     startBatteryLevel: number(raw.startBatteryLevel, 0, 100), endBatteryLevel: number(raw.endBatteryLevel, 0, 100), energyConsumedKwh: null, energyReceipt: receipt } as Drive)
 }
 function projectCharge(value: unknown): Charge | null {
   const raw = record(value), id = text(raw.id, 256)
   if (!id || raw.qualityState === 'quarantined') return null
   const original = raw as unknown as Charge
-  const energy = resolveChargeEnergy({ source: text(raw.source), start_date: text(raw.startDate), end_date: text(raw.endDate), energy_contract: original.energy?.evidence ?? null })
+  const source = text(raw.source), legacyEnergy = source === 'teslamate_archive' && original.energy?.quality === 'reported' && original.energy.evidence == null
+  const modeConflict = raw.chargeModeConflict != null && raw.chargeModeConflict !== false
+  const resolvedEnergy = resolveChargeEnergy({ source, start_date: text(raw.startDate), end_date: text(raw.endDate), energy_contract: original.energy?.evidence ?? null,
+    ...(legacyEnergy ? { charge_energy_added: original.energy?.batteryInputKwh, charge_energy_used: original.energy?.inputEnergyKwh } : {}) })
+  const energy = modeConflict ? { ...resolvedEnergy, chargeMode: null } : resolvedEnergy
+  const suppliedCurrencies = [raw.currencyCode, raw.currency].filter(value => value != null).map(explicitCurrency)
+  const currency = suppliedCurrencies.some(value => value === null) || new Set(suppliedCurrencies).size > 1 ? null :
+    suppliedCurrencies[0] ?? (raw.currencyCode === null || raw.currency === null ? null : undefined)
   return { id, sessionId: text(raw.sessionId, 256), startDate: text(raw.startDate), endDate: text(raw.endDate), durationMinutes: number(raw.durationMinutes, 0),
-    source: text(raw.source), qualityState: text(raw.qualityState), qualityReason: null,
-    energyAddedKwh: energy.batteryInputKwh, energyUsedKwh: energy.inputEnergyKwh, energy, cost: number(raw.cost), currencyCode: explicitCurrency(raw.currencyCode ?? raw.currency), currency: null,
-    startBatteryLevel: number(raw.startBatteryLevel, 0, 100), endBatteryLevel: number(raw.endBatteryLevel, 0, 100), chargerPowerKw: number(raw.chargerPowerKw, 0), chargeMode: original.chargeMode === 'ac' || original.chargeMode === 'dc' ? original.chargeMode : null } as Charge
+    source: text(raw.source), sourceInstanceId: text(raw.sourceInstanceId, MANUAL_TRIP_MAX_BYTES), sourceVehicleId: text(raw.sourceVehicleId, MANUAL_TRIP_MAX_BYTES), sourceRecordId: text(raw.sourceRecordId, MANUAL_TRIP_MAX_BYTES), qualityState: text(raw.qualityState), qualityReason: null,
+    energyAddedKwh: energy.batteryInputKwh, energyUsedKwh: energy.inputEnergyKwh, energy, cost: number(raw.cost), currencyCode: currency, currency,
+    ...(raw.chargeModeConflict != null ? { chargeModeConflict: modeConflict } : {}),
+    startBatteryLevel: number(raw.startBatteryLevel, 0, 100), endBatteryLevel: number(raw.endBatteryLevel, 0, 100), chargerPowerKw: number(raw.chargerPowerKw, 0), chargeMode: !modeConflict && (original.chargeMode === 'ac' || original.chargeMode === 'dc') ? original.chargeMode : null } as Charge
 }
 export function makeManualTrip(id: string, name: string, legs: TripLeg[], createdAt = new Date().toISOString()): ManualTrip | null {
   if (!text(id, 256) || !text(name, 80) || !Number.isFinite(Date.parse(createdAt)) || !legs.length || legs.length > MANUAL_TRIP_MAX_LEGS) return null
   const selected: TripLeg[] = [], seen = new Set<string>()
   for (const leg of legs) {
     if (!leg || typeof leg !== 'object') continue
+    const raw = record(leg.kind === 'drive' ? leg.drive : leg.kind === 'charge' ? leg.charge : null)
+    for (const field of ['source', 'sourceInstanceId', 'sourceVehicleId', 'sourceRecordId']) {
+      const value = raw[field]
+      if (value != null && !(typeof value === 'string' && !value.trim()) && !text(value, field === 'source' ? 160 : MANUAL_TRIP_MAX_BYTES)) return null
+    }
     const projected = leg.kind === 'drive' ? projectDrive(leg.drive) : leg.kind === 'charge' ? projectCharge(leg.charge) : null
     if (!projected || !projected.startDate || !Number.isFinite(Date.parse(projected.startDate))) continue
     const item = (leg.kind === 'drive' ? { kind: 'drive', drive: projected } : { kind: 'charge', charge: projected }) as TripLeg

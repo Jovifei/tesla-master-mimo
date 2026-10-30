@@ -58,8 +58,8 @@ describe('advanced App analysis consumers', () => {
   })
 
   it('excludes charge-overlapping and cross-source gaps from standby, preserving SOC-only unknown energy', () => {
-    const older = drive('old', 1, 0, '2026-10-14T08:00:00+08:00')
-    const newer = { ...drive('new', 1, 0, '2026-10-14T10:00:00+08:00'), startBatteryLevel: 78 }
+    const older = { ...drive('old', 1, 0, '2026-10-14T08:00:00+08:00'), sourceInstanceId: 'archive-A', sourceVehicleId: 'car-A' }
+    const newer = { ...drive('new', 1, 0, '2026-10-14T10:00:00+08:00'), sourceInstanceId: 'archive-A', sourceVehicleId: 'car-A', startBatteryLevel: 78 }
     const window = buildParkedWindows([newer, older], [], true)[0]
     expect(window).toMatchObject({ olderId: 'old', newerId: 'new', minutes: 110, socDelta: -1, energyKwh: null, chargeOverlap: false, chargeCoverageComplete: true })
     const charge = { id: 'charge', startDate: '2026-10-14T09:00:00+08:00', endDate: '2026-10-14T09:30:00+08:00' } as Charge
@@ -75,5 +75,32 @@ describe('advanced App analysis consumers', () => {
     expect(distribution).toMatchObject({ count: 3, min: -5, median: 0, max: 20 })
     expect(efficiencySpeedGroups(rows)[0]).toMatchObject({ label: '30–80 km/h', known: 3, value: 5 })
     expect(efficiencySpeedGroups([{ ...rows[0], durationMinutes: null, speedMaxKmh: 999 }])).toEqual([])
+  })
+
+  it('does not generate a parked window bridging across a quarantined drive', () => {
+    const drives = [
+      drive('d1', 10, 2, '2026-10-14T08:00:00Z'),
+      { ...drive('d2', 10, 2, '2026-10-14T10:00:00Z'), qualityState: 'quarantined' },
+      drive('d3', 10, 2, '2026-10-14T12:00:00Z'),
+    ]
+    const windows = buildParkedWindows(drives, [], false)
+    expect(windows).toHaveLength(0)
+  })
+
+  it('does not infer parked adjacency from unidentified collectors or different source vehicles', () => {
+    const older = drive('old', 1, 0, '2026-10-14T08:00:00+08:00')
+    const newer = drive('new', 1, 0, '2026-10-14T10:00:00+08:00')
+    expect(buildParkedWindows([newer, older], [], true)).toEqual([])
+    expect(buildParkedWindows([
+      { ...newer, sourceInstanceId: 'archive-A', sourceVehicleId: 'car-B' },
+      { ...older, sourceInstanceId: 'archive-A', sourceVehicleId: 'car-A' },
+    ], [], true)).toEqual([])
+  })
+
+  it('does not guess adjacency when any drive has an unknown timeline position', () => {
+    const older = { ...drive('old', 1, 0, '2026-10-14T08:00:00+08:00'), sourceInstanceId: 'archive-A' }
+    const newer = { ...drive('new', 1, 0, '2026-10-14T10:00:00+08:00'), sourceInstanceId: 'archive-A' }
+    const unknown = { ...drive('middle', 1, 0), startDate: null, endDate: null, sourceInstanceId: 'archive-A' }
+    expect(buildParkedWindows([newer, unknown, older], [], true)).toEqual([])
   })
 })

@@ -169,4 +169,32 @@ describe('history merge', () => {
     ])
     expect(sorted.map(item => item.id)).toEqual(['new', 'old', 'unknown'])
   })
+
+  it('differentiates records from different source instances even if they share the same session ID', () => {
+    const itemA = { id: 'row-1', sessionId: 'same-session', source: 'collector_a', sourceInstanceId: 'inst-A', sourceRecordId: 'rec-1' }
+    const itemB = { id: 'row-1', sessionId: 'same-session', source: 'collector_b', sourceInstanceId: 'inst-B', sourceRecordId: 'rec-2' }
+    expect(historyRowKey(itemA)).not.toBe(historyRowKey(itemB))
+    const merged = mergeHistoryByKey([itemA], [itemB], historyRowKey)
+    expect(merged.items).toHaveLength(2)
+  })
+
+  it('does not join conflicting or one-sided source identities even with the same public id and session', () => {
+    const base = { id: '7', sessionId: 'same', source: 'teslamate_archive', sourceInstanceId: 'A', sourceVehicleId: 'car', sourceRecordId: 'record' }
+    for (const change of [{ source: 'fleet_api' }, { sourceInstanceId: 'B' }, { sourceVehicleId: 'other' }, { sourceRecordId: 'other' }, { sourceInstanceId: null }, { sourceRecordId: null }]) {
+      const incoming = { ...base, ...change }
+      expect(mergeHistoryByKey([base], [incoming], historyRowKey).items, JSON.stringify(change)).toHaveLength(2)
+    }
+    expect(mergeHistoryByKey([base], [{ ...base, id: 'new-public-id' }], historyRowKey).items).toHaveLength(1)
+    const legacy = { id: '7', sessionId: 'same', source: 'teslamate_archive' }
+    expect(mergeHistoryByKey([legacy], [{ ...legacy, id: 'new-public-id' }], historyRowKey).items).toHaveLength(1)
+    expect(mergeHistoryByKey([legacy], [base], historyRowKey).items).toHaveLength(2)
+  })
+
+  it('keeps delimiter-containing source identities distinct', () => {
+    const base = { id: '7', sessionId: 'same', source: 'teslamate_archive', sourceVehicleId: 'car' }
+    const a = { ...base, sourceInstanceId: 'a:rec:b', sourceRecordId: 'c' }
+    const b = { ...base, sourceInstanceId: 'a', sourceRecordId: 'b:rec:c' }
+    expect(historyRowKey(a)).not.toBe(historyRowKey(b))
+    expect(mergeHistoryByKey([a], [b], historyRowKey).items).toHaveLength(2)
+  })
 })

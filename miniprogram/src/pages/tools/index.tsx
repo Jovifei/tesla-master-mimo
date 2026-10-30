@@ -16,10 +16,11 @@ import { annualReport, historyCsv, historyJson, reportPdf } from '../../domain/r
 import { historyDateTime } from '../../domain/history_query'
 import { mapCoordinate } from '../../domain/map_coordinate'
 import { DEFAULT_TARIFF_PERIODS, parseTariffPeriods, validTariffPeriods, readTariff, tariffKey } from '../../domain/tariff'
-import { overlayChargeCosts } from '../../services/charge_cost'
-import { emptyHistoryQuery, filterHistory, normalizeHistoryQuery } from '../../domain/history_query'
-import { isHistoryQuarantined } from '../../domain/history'
+import { chargeEstimatePrice, overlayChargeCosts } from '../../services/charge_cost'
+import { emptyHistoryQuery, filterHistory, selectHistoryDate } from '../../domain/history_query'
+import { isHistoryQuarantined, sameHistoryIdentity } from '../../domain/history'
 import { buildParkedWindows } from '../../domain/analysis'
+import { createParkedProofVerifier, parkedProofKey } from '../../services/parked_proof'
 import TpmsSettingsPanel from '../../components/TpmsSettingsPanel'
 import './index.scss'
 
@@ -47,7 +48,7 @@ export default function ToolsPage() {
   }, [kind])
   const [car, setCar] = useState<Car | null>(null), [status, setStatus] = useState<CarStatus | null>(null)
   const [drives, setDrives] = useState<Drive[]>([]), [charges, setCharges] = useState<Charge[]>([])
-  const [updates, setUpdates] = useState<SoftwareUpdate[]>([]), [page, setPage] = useState(1)
+  const [updates, setUpdates] = useState<SoftwareUpdate[]>([]), [page, setPage] = useState(1), [updatesHasMore, setUpdatesHasMore] = useState(false)
   const [complete, setComplete] = useState(false), [loading, setLoading] = useState(false), [error, setError] = useState<string | null>(null)
   const [year, setYear] = useState(new Date().getFullYear()), [angle, setAngle] = useState(0)
   const [zoom, setZoom] = useState(1), [pan, setPan] = useState({ x: 0, y: 0 })
@@ -68,7 +69,7 @@ export default function ToolsPage() {
     let beforeScope: string | null = null
     try { beforeScope = scopeKey() } catch { /* An invalid origin cannot own the old display. */ }
     if (owner.current && owner.current !== beforeScope) setTariff(blankTariff())
-    if (nextPage === 1) { setStatus(null); setDrives([]); setCharges([]); setUpdates([]); setCar(null); setComplete(false); setHistoricPosition(null); setHistoricReason(null) }
+    if (nextPage === 1) { setStatus(null); setDrives([]); setCharges([]); setUpdates([]); setUpdatesHasMore(false); setCar(null); setComplete(false); setHistoricPosition(null); setHistoricReason(null) }
     setLoading(true)
     await ensureWechatSession()
     if (epoch.current !== operation) return
@@ -95,7 +96,7 @@ export default function ToolsPage() {
       if (kind === 'updates') {
         const result = await analysisApi.getUpdates(selected, nextPage, { isCurrent: valid })
         if (!valid()) return
-        setUpdates(result.items); setPage(nextPage)
+        setUpdates(result.items); setPage(nextPage); setUpdatesHasMore(result.hasMore)
       } else if (['location', 'temperature', 'tpms', 'tpmsSettings', 'sentry'].includes(kind)) {
         const result = await matelinkApi.getCarStatus(selected.id, selected)
         if (!valid()) return
@@ -114,13 +115,14 @@ export default function ToolsPage() {
   useDidHide(() => { pageVisible.current = false; invalidate() })
   useUnload(() => { pageVisible.current = false; invalidate() })
   const session = readAppSession(Taro)
-  const displayCharges = car && session?.userId ? overlayChargeCosts(Taro, { userId: session.userId, origin: getApiOrigin(), stableId: car.stableId }, charges) : charges
+  const costScope = car && session?.userId ? { userId: session.userId, origin: getApiOrigin(), stableId: car.stableId } : null
+  const displayCharges = costScope ? overlayChargeCosts(Taro, costScope, charges, chargeEstimatePrice(Taro, costScope)) : charges
   const report = annualReport(drives, displayCharges, year)
   const exportedDrives = exportType === 'charges' ? [] : filterHistory(drives, exportQuery), exportedCharges = exportType === 'drives' ? [] : filterHistory(displayCharges, exportQuery)
   const reportLines = [`MateLink ${year} 年度报告`, `时区：本机显示时区；${complete ? '当前响应已翻页完成' : '部分历史：最多500条/25页'}`,
     `行程 ${report.trips.length} 次；充电 ${report.sessions.length} 次`, `已知距离 ${report.drive.distance.value ?? '未知'} km（${report.drive.distance.known}/${report.drive.distance.total}）`,
     `已知净能量 ${report.drive.energy.value ?? '未知'} kWh（${report.drive.energy.known}/${report.drive.energy.total}）`, `配对平均能耗 ${report.drive.efficiency.value ?? '未知'} kWh/100km（${report.drive.efficiency.known}/${report.drive.efficiency.total}）`,
-    ...report.costs.map(cost => `已知费用 ${cost.value.toFixed(2)} ${cost.currency}（${cost.count}条）`), `本机手填费用 ${report.sessions.filter(row => (row as {costProvenance?:string}).costProvenance === 'manual').length} 条；不改服务端账单`]
+    ...report.costs.map(cost => `${report.sessions.some(row => (row as {costProvenance?:string}).costProvenance === 'estimate' && (row.currencyCode ?? row.currency) === cost.currency) ? '≈' : ''}已知费用 ${cost.value.toFixed(2)} ${cost.currency}（${cost.count}条）`), `本机手填费用 ${report.sessions.filter(row => (row as {costProvenance?:string}).costProvenance === 'manual').length} 条；估算 ${report.sessions.filter(row => (row as {costProvenance?:string}).costProvenance === 'estimate').length} 条；不改服务端账单`]
   const exportFile = async (pdf = false) => {
     try {
       if (loading || error || !car || owner.current !== scopeKey()) return
@@ -162,6 +164,7 @@ export default function ToolsPage() {
       if (drive) {
         const evidence = await analysisApi.getDriveEvidence(car, drive.id, { isCurrent: valid })
         if (!valid()) return
+        if (!evidence.drive || !sameHistoryIdentity(drive, evidence.drive)) { setHistoricReason('行程来源信息不一致，不能显示历史位置。'); return }
         const nearest = evidence.points.filter(point => mapCoordinate(point.latitude, point.longitude)).sort((a, b) => Math.abs(Date.parse(a.date) - at) - Math.abs(Date.parse(b.date) - at))[0]
         if (nearest) setHistoricPosition({ latitude: nearest.latitude!, longitude: nearest.longitude!, at: nearest.date, source: evidence.source, label: '最近已有的行程位置采样（非插值）' })
         else setHistoricReason('该行程未提供合格的位置采样，不能重建请求时刻的位置。')
@@ -169,14 +172,22 @@ export default function ToolsPage() {
         const evidence = await analysisApi.getChargeEvidence(car, charge.id, { isCurrent: valid })
         if (!valid()) return
         const point = evidence.charge
+        if (!point || !sameHistoryIdentity(charge, point)) { setHistoricReason('充电来源信息不一致，不能显示历史位置。'); return }
         if (point && mapCoordinate(point.latitude, point.longitude)) setHistoricPosition({ latitude: point.latitude!, longitude: point.longitude!, at: null, source: point.source, label: '充电记录的地点（未提供逐点位置时间）' })
         else setHistoricReason('该充电记录没有有效的地点坐标。')
       } else {
-        const parked = buildParkedWindows(drives, charges, complete).find(window => Date.parse(window.startDate) <= at && Date.parse(window.endDate) >= at)
+        const parked = complete ? buildParkedWindows(drives, charges, true).find(window => Date.parse(window.startDate) <= at && Date.parse(window.endDate) >= at) : undefined
         if (parked) {
+          const verifier = createParkedProofVerifier(car, valid), proofs = await verifier.verify([parked])
+          if (!valid()) return
+          const proof = proofs.has(parkedProofKey(parked)) ? verifier.get(parked) : null
+          if (!proof) { setHistoricReason('该驻车窗口尚未通过来源与相邻关系核验。'); return }
+          if (proof.linkedChargeId || proof.chargeSessionsComplete !== true) { setHistoricReason('该窗口含充电或充电覆盖未确认，不能推断该时刻的位置。'); return }
+          const older = drives.filter(row => row.id === parked.olderId)
+          if (older.length !== 1) { setHistoricReason('行程来源信息不一致，不能显示历史位置。'); return }
           const detail = await matelinkApi.getDriveDetail(car.id, parked.olderId, car)
           if (!valid()) return
-          if (detail && mapCoordinate(detail.endLatitude, detail.endLongitude)) setHistoricPosition({ latitude: detail.endLatitude!, longitude: detail.endLongitude!, at: detail.endDate, source: detail.source, label: '相邻行程间可用的起点位置报告（非请求时刻独立位置）' })
+          if (detail && sameHistoryIdentity(older[0], detail) && mapCoordinate(detail.endLatitude, detail.endLongitude)) setHistoricPosition({ latitude: detail.endLatitude!, longitude: detail.endLongitude!, at: detail.endDate, source: detail.source, label: '相邻行程间可用的起点位置报告（非请求时刻独立位置）' })
           else setHistoricReason('相邻行程之间缺少合格位置，不能推断驻车时刻位置。')
         } else setHistoricReason('当前已读历史没有覆盖该时刻的合格记录；不代表当时没有行程。')
       }
@@ -210,9 +221,9 @@ export default function ToolsPage() {
     {kind === 'tpms' ? <TpmsPanel snapshot={status?.tpms} report={status?.tpmsReport} history={car && session?.userId ? readTpmsCache(Taro, session.userId, getApiOrigin(), car.stableId) : null} /> : null}
     {kind === 'temperature' ? <View className="card"><View className="metric-grid"><MetricValue label="车内温度" value={status?.insideTemp} unit="°C" /><MetricValue label="车外温度" value={status?.outsideTemp} unit="°C" /></View><Text className="muted">当前接口未提供逐点温度历史与独立观测时间，不能以状态报告时间生成历史曲线。</Text></View> : null}
     {kind === 'sentry' ? <View className="card"><MetricValue label="当前哨兵状态" value={status?.sentryMode == null ? null : status.sentryMode ? '开启' : '关闭'} /><Text className="muted">当前状态不能还原告警事件。App 本机保存的哨兵历史未通过服务端共享，当前小程序没有已验证事件历史。</Text></View> : null}
-    {kind === 'updates' ? <View className="card">{updates.length ? updates.map(update => <View className="status" key={update.id}><Text>{update.version || '版本未提供'}</Text><Text>{historyDateTime(update.startDate)}</Text></View>) : <Text>当前页暂无已记录的软件更新</Text>}<Text className="muted">仅当前响应记录，不代表全部软件历史。</Text><View className="tools-actions">{page > 1 ? <Button onClick={() => { void load(page - 1) }}>上一页</Button> : null}{updates.length === 20 ? <Button onClick={() => { void load(page + 1) }}>下一页</Button> : null}</View></View> : null}
+    {kind === 'updates' ? <View className="card">{updates.length ? updates.map(update => <View className="status" key={update.id}><Text>{update.version || '版本未提供'}</Text><Text>{historyDateTime(update.startDate)}</Text></View>) : <Text>当前页暂无已记录的软件更新</Text>}<Text className="muted">仅当前响应记录，不代表全部软件历史。</Text><View className="tools-actions">{page > 1 ? <Button onClick={() => { void load(page - 1) }}>上一页</Button> : null}{updatesHasMore ? <Button onClick={() => { void load(page + 1) }}>下一页</Button> : null}</View></View> : null}
     {(kind === 'report' || kind === 'export') && car && !error && !loading ? <View className="card"><Text className="muted">{complete ? '当前历史响应翻页完成' : '部分历史覆盖 · 自动读取最多500条/25页'}；日期按本机显示时区分组。</Text>
-      {kind === 'report' ? <><Picker mode="date" fields="year" value={String(year)} onChange={event => setYear(Number(event.detail.value))}><View className="status"><Text>报告年份</Text><Text>{year} ⌄</Text></View></Picker><View className="metric-grid"><MetricValue label="行程次数" value={report.trips.length} unit="次" /><MetricValue label="充电次数" value={report.sessions.length} unit="次" /><MetricValue label="已知距离" value={report.drive.distance.value} unit="km" /><MetricValue label="配对平均能耗" value={report.drive.efficiency.value} unit="kWh/100km" negative={(report.drive.efficiency.value ?? 0) < 0} /></View><Text className="muted">配对覆盖 {report.drive.efficiency.known}/{report.drive.efficiency.total}；能量与距离独立计数。含本机手填费用 {report.sessions.filter(row => (row as { costProvenance?: string }).costProvenance === 'manual').length} 条，原始账单仍保留。</Text>{report.costs.map(cost => <MetricValue key={cost.currency} label={`${cost.count}条已知费用`} value={cost.value} unit={cost.currency} />)}<Button className="button" disabled={loading || Boolean(error) || !car} onClick={() => { void exportFile(true) }}>导出年度 PDF</Button></> : <><Text className="section-title">导出当前已读取历史</Text><View className="tools-actions"><Picker mode="selector" range={['CSV', 'JSON']} value={exportFormat === 'csv' ? 0 : 1} onChange={event => setExportFormat(Number(event.detail.value) === 1 ? 'json' : 'csv')}><Text>格式：{exportFormat.toUpperCase()} ⌄</Text></Picker><Picker mode="selector" range={['行程和充电', '仅行程', '仅充电']} value={['both', 'drives', 'charges'].indexOf(exportType)} onChange={event => setExportType((['both', 'drives', 'charges'] as const)[Number(event.detail.value)] || 'both')}><Text>内容：{({ both: '行程和充电', drives: '仅行程', charges: '仅充电' })[exportType]} ⌄</Text></Picker></View><View className="tools-actions"><Picker mode="date" value={exportQuery.startDate} onChange={event => setExportQuery(normalizeHistoryQuery({ ...exportQuery, startDate: event.detail.value }))}><Text>开始：{exportQuery.startDate || '不限'}</Text></Picker><Picker mode="date" value={exportQuery.endDate} onChange={event => setExportQuery(normalizeHistoryQuery({ ...exportQuery, endDate: event.detail.value }))}><Text>结束：{exportQuery.endDate || '不限'}</Text></Picker></View><Text className="muted">行程 {exportedDrives.length} 条 · 充电 {exportedCharges.length} 条。导出原始日期、已知指标、来源与质量；手填费用和原始账单分列，不含车辆身份、精确位置、轨迹或令牌。</Text><Button className="button" disabled={loading || Boolean(error) || !car} onClick={() => { void exportFile() }}>导出文件并分享</Button></>}
+      {kind === 'report' ? <><Picker mode="date" fields="year" value={String(year)} onChange={event => setYear(Number(event.detail.value))}><View className="status"><Text>报告年份</Text><Text>{year} ⌄</Text></View></Picker><View className="metric-grid"><MetricValue label="行程次数" value={report.trips.length} unit="次" /><MetricValue label="充电次数" value={report.sessions.length} unit="次" /><MetricValue label="已知距离" value={report.drive.distance.value} unit="km" /><MetricValue label="配对平均能耗" value={report.drive.efficiency.value} unit="kWh/100km" negative={(report.drive.efficiency.value ?? 0) < 0} /></View><Text className="muted">配对覆盖 {report.drive.efficiency.known}/{report.drive.efficiency.total}；能量与距离独立计数。含本机手填费用 {report.sessions.filter(row => (row as { costProvenance?: string }).costProvenance === 'manual').length} 条，估算 {report.sessions.filter(row => (row as { costProvenance?: string }).costProvenance === 'estimate').length} 条，原始账单仍保留。</Text>{report.costs.map(cost => <MetricValue key={cost.currency} label={`${cost.count}条已知费用`} value={report.sessions.some(row => (row as {costProvenance?:string}).costProvenance === 'estimate' && (row.currencyCode ?? row.currency) === cost.currency) ? `≈${cost.value.toFixed(2)}` : cost.value} unit={cost.currency} />)}<Button className="button" disabled={loading || Boolean(error) || !car} onClick={() => { void exportFile(true) }}>导出年度 PDF</Button></> : <><Text className="section-title">导出当前已读取历史</Text><View className="tools-actions"><Picker mode="selector" range={['CSV', 'JSON']} value={exportFormat === 'csv' ? 0 : 1} onChange={event => setExportFormat(Number(event.detail.value) === 1 ? 'json' : 'csv')}><Text>格式：{exportFormat.toUpperCase()} ⌄</Text></Picker><Picker mode="selector" range={['行程和充电', '仅行程', '仅充电']} value={['both', 'drives', 'charges'].indexOf(exportType)} onChange={event => setExportType((['both', 'drives', 'charges'] as const)[Number(event.detail.value)] || 'both')}><Text>内容：{({ both: '行程和充电', drives: '仅行程', charges: '仅充电' })[exportType]} ⌄</Text></Picker></View><View className="tools-actions"><Picker mode="date" value={exportQuery.startDate} onChange={event => setExportQuery(selectHistoryDate(exportQuery, 'startDate', event.detail.value))}><Text>开始：{exportQuery.startDate || '不限'}</Text></Picker><Picker mode="date" value={exportQuery.endDate} onChange={event => setExportQuery(selectHistoryDate(exportQuery, 'endDate', event.detail.value))}><Text>结束：{exportQuery.endDate || '不限'}</Text></Picker></View><Text className="muted">行程 {exportedDrives.length} 条 · 充电 {exportedCharges.length} 条。导出原始日期、已知指标、来源与质量；手填费用和原始账单分列，不含车辆身份、精确位置、轨迹或令牌。</Text><Button className="button" disabled={loading || Boolean(error) || !car} onClick={() => { void exportFile() }}>导出文件并分享</Button></>}
     </View> : null}
     {kind === 'countries' || kind === 'regions' ? <View className="card"><Text className="section-title">已读取的地点记录</Text><Text className="muted">缺少可信国家/行政区编码和已授权地理解析合同，不能从地点文字推断到访国家或地区；当前仅列已有历史地点，不代表完整足迹。</Text>{[...new Set(drives.flatMap(drive => [drive.startAddress, drive.endAddress]).filter(Boolean))].slice(0, 100).map(address => <View className="status" key={address!}><Text>{address}</Text></View>)}</View> : null}
     {kind === 'vehiclePreview' ? <View className="card"><View className="vehicle-wireframe-stage" onTouchStart={event => {

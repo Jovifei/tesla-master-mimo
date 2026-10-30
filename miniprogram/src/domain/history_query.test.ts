@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { emptyHistoryQuery, filterHistory, historyDateTime, historyDetailDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery } from './history_query'
+import {
+  defaultChargeHistoryQuery,
+  defaultDriveHistoryQuery,
+  emptyHistoryQuery,
+  filterHistory,
+  historyDateTime,
+  historyDetailDateTime,
+  historyEditorialDate,
+  normalizeHistoryQuery,
+  readHistoryQuery,
+  writeHistoryQuery,
+} from './history_query'
 
 describe('persisted local calendar history query', () => {
   it('formats charge and drive card dates like the App without changing stored instants', () => {
@@ -59,5 +70,29 @@ describe('persisted local calendar history query', () => {
     expect(filterHistory(rows, { ...emptyHistoryQuery(), minDistanceKm: 10, maxDistanceKm: 100 }).map(row => row.id)).toEqual([3, 4])
     expect(filterHistory(rows, { ...emptyHistoryQuery(), minDistanceKm: 100 }).map(row => row.id)).toEqual([5])
     expect(normalizeHistoryQuery({ ...emptyHistoryQuery(), minDistanceKm: 10, maxDistanceKm: 100 })).toEqual({ ...emptyHistoryQuery(), minDistanceKm: 10, maxDistanceKm: 100 })
+  })
+
+  it('generates Android-parity default query windows (last 7 days for drives, last 30 days for charges)', () => {
+    const fixedNow = new Date(2026, 9, 30, 15, 0, 0) // 2026-10-30
+    const driveQuery = defaultDriveHistoryQuery(fixedNow)
+    expect(driveQuery).toEqual({
+      startDate: '2026-10-24', // 7 days inclusive: 24, 25, 26, 27, 28, 29, 30
+      endDate: '2026-10-30',
+      minDistanceKm: 0,
+    })
+
+    const chargeQuery = defaultChargeHistoryQuery(fixedNow)
+    expect(chargeQuery).toEqual({
+      startDate: '2026-10-01', // 30 days inclusive: 30 - 29 = 1
+      endDate: '2026-10-30',
+      minDistanceKm: 0,
+    })
+  })
+
+  it('restores custom fallback query when storage is empty', () => {
+    const map = new Map<string, unknown>()
+    const storage = { getStorageSync: (key: string) => map.get(key) }
+    const fallback = { startDate: '2026-10-24', endDate: '2026-10-30', minDistanceKm: 0 }
+    expect(readHistoryQuery(storage, 'empty-scope', fallback)).toEqual(fallback)
   })
 })

@@ -30,7 +30,7 @@ beforeEach(() => {
     if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7', name: '合成车辆' }] })
     if (url.includes('/battery-health')) return response({ battery_health: health, meta: healthMeta })
     if (url.endsWith('/status')) return response({ status: { battery_details: { battery_level: 99, rated_battery_range: 123 }, driving_details: { speed: 60 }, climate_details: { outside_temp: 20 } }, units: { unit_of_length: 'km', unit_of_temperature: 'C' }, observed_at: start, source: 'telemetry_mqtt' })
-    if (url.includes('/charges/current')) return response({ charge: current })
+    if (url.includes('/charges/current')) return response({ car: { car_id: 7 }, charge: current })
     if (url.includes('/drives?')) return response({ drives, units: { unit_of_length: 'km', unit_of_temperature: 'C' }, meta: { page: 1, show: 20, total: drives.length, total_pages: 1 } })
     if (url.includes('/charges?')) return response({ charges, meta: { page: 1, show: 20, total: charges.length, total_pages: 1 } })
     throw new Error('unexpected synthetic route')
@@ -48,6 +48,17 @@ async function mount(kind: string) {
   return tree!
 }
 const shown = () => tree!.root.findAllByType('text').map(node => node.children.join('')).join('\n')
+it('normalizes the independently selected date interval before filtering costs', async () => {
+  await mount('cost')
+  const dates = tree!.root.findByProps({ className: 'history-filter-row' }).findAllByType('picker' as React.ElementType)
+  await act(async () => { dates[0].props.onChange({ detail: { value: '2026-10-16' } }) })
+  await act(async () => { dates[1].props.onChange({ detail: { value: '2026-10-13' } }) })
+  expect(shown()).toContain('暂无可合计的费用')
+  await act(async () => { dates[1].props.onChange({ detail: { value: '2026-10-16' } }) })
+  expect(shown()).toContain('EUR 费用')
+  expect(JSON.stringify(tree!.toJSON())).toContain('2026-10-13')
+  expect(JSON.stringify(tree!.toJSON())).toContain('2026-10-16')
+})
 it('hides the previous account metrics while a replacement account refresh is pending', async () => {
   await mount('battery')
   expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => String(node.props.ariaLabel).includes('123 km'))).toBe(true)
@@ -78,6 +89,22 @@ it('actual parsed charge histories render separate currencies and genuine zero w
   expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '费用合计 0 EUR')).toBe(true)
   expect(rendered).not.toContain('CNY')
   expect(rendered).toContain('数据读取完成')
+})
+it('warns about an ambiguous cached charge without counting it in offline cost coverage or totals', async () => {
+  const warning = '来源身份未确认的历史记录已保留，但未计入当前展示或统计'
+  await mount('cost')
+  expect(shown()).not.toContain(warning)
+  await act(async () => { platform.hide() })
+  const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
+  const key = historyCacheKey('charges', 'owner', 'uid7', 'https://api.example.test')
+  const cached = platform.values.get(key) as { items: Record<string, unknown>[] }
+  cached.items.push({ ...cached.items[0], id: 'ambiguous', sessionId: 'ambiguous', identityAmbiguous: true, identityAmbiguousReason: 'source_identity_incomplete', cost: 999, currency: 'EUR', currencyCode: 'EUR' })
+  platform.request.mockRejectedValue(new Error('offline'))
+  await act(async () => { platform.show(); await new Promise(resolve => setTimeout(resolve, 0)) })
+  expect(shown()).toContain(warning)
+  expect(shown()).toContain('充电 3 条')
+  expect(tree!.root.findByProps({ ariaLabel: '费用合计 0 EUR' })).toBeDefined()
+  expect(readHistoryCache<Record<string, unknown>>({ getStorageSync: (name: string) => platform.values.get(name), setStorageSync() {} }, key)).toHaveLength(4)
 })
 it('actual range proof and capacity response reach personalized range and rated endpoint consumers', async () => {
   drives = Array.from({ length: 5 }, (_, i) => rawDrive(i + 1, 4, 20))
@@ -140,6 +167,26 @@ it('reads actual current-charge endpoint with genuine zero power and routes to c
   expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '当前充电功率 0 kW')).toBe(true)
   await click('查看充电历史')
   expect(platform.switchTab).toHaveBeenCalledWith({ url: '/pages/charges/index' })
+})
+it('shows a live charging snapshot and rejects a stopped current session', async () => {
+  current = { charge_id: 7, source: 'fleet_api', quality_state: 'observed', quality_reason: 'live_provider_snapshot', start_date: start,
+    is_charging: true, charge_energy_added: 5, charger_power: 0, battery_details: { current_battery_level: 66 } }
+  await mount('currentCharge')
+  expect(tree!.root.findByProps({ ariaLabel: '电池充入 5 kWh' })).toBeDefined()
+  expect(tree!.root.findByProps({ ariaLabel: '当前电量 66%' })).toBeDefined()
+  expect(shown()).toContain('状态观测')
+  await act(async () => { platform.unload(); tree!.unmount() }); tree = null
+  current = { ...(current as object), is_charging: false }
+  await mount('currentCharge')
+  expect(shown()).toContain('当前没有服务端报告的充电记录')
+  expect(tree!.root.findAllByProps({ ariaLabel: '当前充电功率 0 kW' })).toHaveLength(0)
+})
+it('does not expose a quarantined current charging session', async () => {
+  current = { charge_id: 7, source: 'fleet_api', quality_state: 'quarantined', start_date: start,
+    is_charging: true, charge_energy_added: 5, charger_power: 2, battery_details: { current_battery_level: 66 } }
+  await mount('currentCharge')
+  expect(tree!.root.findAllByProps({ ariaLabel: '电池充入 5 kWh' })).toHaveLength(0)
+  expect(tree!.root.findAllByProps({ ariaLabel: '当前电量 66%' })).toHaveLength(0)
 })
 it('refuses a late range response after hide and account change, without rendering or persisting it', async () => {
   let finish: (value: unknown) => void = () => {}
@@ -210,4 +257,20 @@ it('shows manual price in selected trip previews/details while the saved leg ret
   const saved = readManualTrips(storage, { userId: 'owner', origin: 'https://api.example.test', stableId: 'uid7' })[0]
   const raw = saved.legs.find(leg => leg.kind === 'charge')
   expect(raw && raw.kind === 'charge' ? raw.charge : null).toMatchObject({ cost: 0, currencyCode: 'EUR' })
+})
+it('uses the newest loaded bill for a saved trip even when the date filter excludes that charge', async () => {
+  charges = [rawCharge(1, 5, 'USD')]
+  await mount('longTrips'); await click('创建长途行程')
+  await act(async () => { tree!.root.findByType('input' as React.ElementType).props.onInput({ detail: { value: '合成行程' } }) })
+  for (const prefix of ['选择 行驶', '选择 充电']) {
+    const leg = tree!.root.findAllByType('button').find(node => node.children.join('').startsWith(prefix))!
+    await act(async () => { leg.props.onClick() })
+  }
+  await click('保存本机长途行程')
+  expect(tree!.root.findByProps({ ariaLabel: '所选充电费用 5 USD' })).toBeDefined()
+  charges = [rawCharge(1, 12, 'USD')]
+  await click('刷新数据')
+  const dates = tree!.root.findByProps({ className: 'history-filter-row' }).findAllByType('picker' as React.ElementType)
+  await act(async () => { dates[0].props.onChange({ detail: { value: '2026-10-16' } }) })
+  expect(tree!.root.findByProps({ ariaLabel: '所选充电费用 12 USD' })).toBeDefined()
 })

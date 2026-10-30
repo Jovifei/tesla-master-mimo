@@ -5,7 +5,7 @@ function label(values: Record<string, string>, key: string | null | undefined, f
 }
 export function sourceLabel(source: string | null | undefined): string {
   return label({ teslamate: 'TeslaMate', teslamate_archive: 'TeslaMate 归档', telemetry_mqtt: '车辆遥测',
-    fleet_telemetry: 'Fleet', fleet_telemetry_native: 'Fleet', fleet_native: 'Fleet', api: 'API 报告', legacy_api: '历史 API 报告' }, source, '来源未标明')
+    fleet_api: 'Fleet API', fleet_telemetry: 'Fleet', fleet_telemetry_native: 'Fleet', fleet_native: 'Fleet', api: 'API 报告', legacy_api: '历史 API 报告' }, source, '来源未标明')
 }
 export function energyMethodLabel(method: string | null | undefined): string {
   return label({ api_reported_net: '服务端净能耗报告', drive_power_integral: '行驶功率积分估算',

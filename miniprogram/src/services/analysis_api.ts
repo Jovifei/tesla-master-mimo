@@ -51,7 +51,10 @@ function guard(car: Car, options: AnalysisOptions = {}): () => void {
 async function read(car: Car, path: string, options: AnalysisOptions = {}): Promise<Row> {
   const check = guard(car, options)
   try {
-    const data = body(await requestJson<Row>(path, { method: 'GET' }))
+    const response = await requestJson<Row>(path, { method: 'GET' })
+    const payload = body(response)
+    const outerMeta = row(response.meta)
+    const data = Object.keys(outerMeta).length ? { ...payload, meta: { ...outerMeta, ...row(payload.meta) } } : payload
     check(); assertVehicle(data, car.id, car); return data
   } catch (error) { check(); throw error }
 }
@@ -71,7 +74,8 @@ function qualifyParked(raw: Row, units: Row): ParkedDetail {
     energyKwh, averagePowerW: energyKwh === null ? null : num(energyKwh * 3_600_000 / seconds), peakPowerW: null,
     insideTempC: temperature(raw.inside_temp_average, unit(units, 'unit_of_temperature')), outsideTempC: temperature(raw.outside_temp_average, unit(units, 'unit_of_temperature')),
     sampleCount: num(raw.sample_count, 0), coverageSeconds: num(raw.coverage_seconds, 0), coverageRatio: num(raw.coverage_ratio, 0, 1),
-    linkedChargeId: id(row(raw.linked_charge).charge_id), source, energyReason: valid ? null : text(m.reason) ?? 'no_qualified_parked_energy' }
+    linkedChargeId: id(row(raw.linked_charge).charge_id), chargeSessionsComplete: typeof raw.charge_sessions_complete === 'boolean' ? raw.charge_sessions_complete : null,
+    source, energyReason: valid ? null : text(m.reason) ?? 'no_qualified_parked_energy' }
 }
 
 export const analysisApi = {
@@ -103,11 +107,15 @@ export const analysisApi = {
       healthPercentage: num(health.battery_health_percentage, 0) }, meta: meta(data) }
   },
 
-  async getUpdates(car: Car, page = 1, options: AnalysisOptions = {}): Promise<{ items: SoftwareUpdate[]; meta: AnalysisMeta }> {
+  async getUpdates(car: Car, page = 1, options: AnalysisOptions = {}): Promise<{ items: SoftwareUpdate[]; meta: AnalysisMeta; hasMore: boolean }> {
     if (!Number.isSafeInteger(page) || page < 1) failed()
     const data = await read(car, `/api/v1/cars/${car.id}/updates?page=${page}&show=20`, options)
     if (!Array.isArray(data.updates) || data.updates.length > 500) failed()
-    return { items: data.updates.map(value => { const update = row(value), key = id(update.update_id); assertVehicle(update, car.id, car); return key ? { id: key, version: text(update.version), startDate: text(update.start_date), endDate: text(update.end_date) } : null }).filter((value): value is SoftwareUpdate => value !== null), meta: meta(data) }
+    const pagination = row(data.meta), totalPages = num(pagination.total_pages, 0), total = num(pagination.total, 0)
+    const hasMore = typeof pagination.has_more === 'boolean' ? pagination.has_more :
+      totalPages !== null && Number.isSafeInteger(totalPages) ? page < totalPages :
+        total !== null && Number.isSafeInteger(total) ? page * 20 < total : data.updates.length >= 20
+    return { items: data.updates.map(value => { const update = row(value), key = id(update.update_id); assertVehicle(update, car.id, car); return key ? { id: key, version: text(update.version), startDate: text(update.start_date), endDate: text(update.end_date) } : null }).filter((value): value is SoftwareUpdate => value !== null), meta: meta(data), hasMore }
   },
 
   async getDriveEvidence(car: Car, driveId: string, options: AnalysisOptions = {}): Promise<DriveEvidence> {

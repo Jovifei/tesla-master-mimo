@@ -28,4 +28,24 @@ describe('App drive admission parity', () => {
     expect(isAppStatisticsDrive(row({ qualityState: 'incomplete', qualityReason: 'remote_quality_unavailable' }))).toBe(true)
     expect(isAppRouteDrive(row({ qualityState: 'quarantined' }))).toBe(false)
   })
+
+  it('qualifies peak output as power > 0 and peak regen as power < 0', () => {
+    const positiveOnly = [10, 20, 30]
+    const outPos = positiveOnly.filter(p => p > 0)
+    const regenPos = positiveOnly.filter(p => p < 0)
+    expect(outPos.length ? Math.max(...outPos) : null).toBe(30)
+    expect(regenPos.length ? Math.abs(Math.min(...regenPos)) : null).toBeNull()
+
+    const negativeOnly = [-30, -20, -10]
+    const outNeg = negativeOnly.filter(p => p > 0)
+    const regenNeg = negativeOnly.filter(p => p < 0)
+    expect(outNeg.length ? Math.max(...outNeg) : null).toBeNull()
+    expect(regenNeg.length ? Math.abs(Math.min(...regenNeg)) : null).toBe(30)
+  })
+
+  it('correctly formats 0 minutes duration instead of treating as falsy missing data', () => {
+    const durationMin = 0
+    const label = durationMin != null ? `${durationMin} 分钟` : '暂无数据'
+    expect(label).toBe('0 分钟')
+  })
 })

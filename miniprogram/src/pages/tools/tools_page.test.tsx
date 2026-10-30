@@ -34,6 +34,19 @@ async function mount(kind: string, extra: Record<string, string> = {}) {
 }
 const text = () => JSON.stringify(renderer?.toJSON())
 async function click(label: string) { const button = renderer!.root.findAllByType('button').find(node => node.children.join('') === label)!; expect(button).toBeDefined(); await act(async () => { await button.props.onClick(); await new Promise(resolve => setTimeout(resolve, 0)) }) }
+it('uses update pagination metadata even if a raw page includes an invalid item', async () => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'tools-car' }] })
+    if (url.includes('/updates?page=1')) return response({ updates: [...Array.from({ length: 19 }, (_, i) => ({ update_id: i + 1, version: `v${i + 1}` })), {}], meta: { page: 1, show: 20, total_pages: 2 } })
+    if (url.includes('/updates?page=2')) return response({ updates: [{ update_id: 21, version: 'v21' }], meta: { page: 2, show: 20, total_pages: 2 } })
+    throw new Error('unexpected route')
+  })
+  await mount('updates')
+  await click('下一页')
+  expect(text()).toContain('v21')
+  expect(renderer!.root.findAllByType('button').some(node => node.children.join('') === '上一页')).toBe(true)
+  expect(renderer!.root.findAllByType('button').some(node => node.children.join('') === '下一页')).toBe(false)
+})
 it('annual report uses actual parsed history and exports a local valid PDF, not a fake complete history', async () => {
   await mount('report')
   await act(async () => { renderer!.root.findByType('picker' as React.ElementType).props.onChange({ detail: { value: '2026' } }) })
@@ -74,4 +87,32 @@ it('a selected historical instant reads authorized route samples and never inven
   expect(text()).toContain('最近已有的行程位置采样（非插值）')
   expect(renderer!.root.findByType('map' as React.ElementType).props.latitude).toBeCloseTo(39.901403529849404, 8)
   expect(JSON.stringify([...platform.values.values()])).not.toContain('116.4')
+})
+it('does not infer a parked location if the server rejects the adjacent bounds', async () => {
+  const source = { source: 'teslamate_archive', source_instance_id: 'archive-a', source_vehicle_id: 'vehicle-a', quality_state: 'observed' }
+  const older = { ...source, drive_id: 1, start_date: start, end_date: end, odometer_details: { odometer_distance: 10 } }
+  const newer = { ...source, drive_id: 2, start_date: '2026-01-01T02:00:00Z', end_date: '2026-01-01T02:30:00Z', odometer_details: { odometer_distance: 10 } }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'tools-car' }] })
+    if (url.includes('/parked/1/2')) return { statusCode: 200, data: { data: null, error: 'parked_history_bounds_unavailable' }, header: {} }
+    if (url.endsWith('/drives/1')) return response({ drive: { ...older, end_latitude: 39.9, end_longitude: 116.4 } })
+    if (url.includes('/drives')) return response({ drives: [newer, older], meta: { page: 1, show: 20, total_pages: 1 } })
+    return response({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  await mount('whereWasI', { timestamp: '2026-01-01T01:15:00Z' })
+  await click('查询这个时刻')
+  expect(platform.request.mock.calls.some(([request]) => request.url.includes('/parked/1/2'))).toBe(true)
+  expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
+})
+it('does not display historical positions from a different source instance', async () => {
+  const row = { drive_id: 1, start_date: start, end_date: end, source: 'teslamate_archive', source_instance_id: 'a', source_vehicle_id: '1', source_record_id: 'd1', quality_state: 'observed', odometer_details: { odometer_distance: 10 } }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'tools-car' }] })
+    if (url.endsWith('/drives/1')) return response({ drive: { ...row, source_instance_id: 'b', drive_details: [{ date: start, latitude: 39.9, longitude: 116.4 }] } })
+    if (url.includes('/drives')) return response({ drives: [row], meta: { page: 1, show: 20, total_pages: 1 } })
+    return response({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  await mount('whereWasI', { timestamp: '2026-01-01T00:10:00Z' }); await click('查询这个时刻')
+  expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
+  expect(text()).toContain('来源信息不一致')
 })

@@ -41,6 +41,11 @@ it('rejects cached numeric car authority, forged response identity and malformed
   await expect(analysisApi.getUpdates(car)).resolves.toMatchObject({ items: [{ id: '1', version: '2026.38.1' }] })
   expect(platform.request.mock.calls[3][0].url).toBe('https://api.example.test/api/v1/cars/7/updates?page=1&show=20')
 })
+it('preserves outer pagination when the data body has separate availability metadata', async () => {
+  const { car, analysisApi } = await setup()
+  platform.request.mockResolvedValueOnce({ statusCode: 200, data: { data: { updates: [{ update_id: 1, version: 'v1' }], meta: { availability: 'available' } }, meta: { page: 1, total_pages: 2 } }, header: {} })
+  await expect(analysisApi.getUpdates(car)).resolves.toMatchObject({ hasMore: true, meta: { availability: 'available' } })
+})
 
 it('caps real history at 25 pages/500 rows and never claims a complete interval', async () => {
   const { car, analysisApi } = await setup()
@@ -112,6 +117,12 @@ it('ignores unqualified parked scalar energy, admits exact no-activity endpoints
   await expect(analysisApi.getParkedDetail(car, '1', '2')).resolves.toMatchObject({ detail: { energyKwh: -0.1, averagePowerW: -100 } })
   platform.request.mockResolvedValueOnce({ statusCode: 200, data: { data: null, error: 'parked_history_bounds_unavailable' }, header: {} })
   await expect(analysisApi.getParkedDetail(car, '1', '2')).resolves.toMatchObject({ detail: null, meta: { availability: 'unavailable', qualityReason: 'parked_history_bounds_unavailable' } })
+})
+it('preserves the server evidence of whether overlapping charge sessions are complete', async () => {
+  const { car, analysisApi } = await setup()
+  const parked = { older_drive_id: 1, newer_drive_id: 2, start_date: '2026-10-14T00:10:00Z', end_date: '2026-10-14T02:00:00Z', source: 'teslamate_archive', charge_sessions_complete: true }
+  platform.request.mockResolvedValueOnce(response(parked))
+  await expect(analysisApi.getParkedDetail(car, '1', '2')).resolves.toMatchObject({ detail: { chargeSessionsComplete: true } })
 })
 
 it('normalizes rated-range/average speed/temperature from the same actual drive response and cache reconstruction', async () => {

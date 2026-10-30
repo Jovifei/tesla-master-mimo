@@ -52,6 +52,104 @@ async function edit(amount: string, currency: string) {
   await act(async () => { const fields = tree!.root.findAllByType('input'); fields[0].props.onInput({ detail: { value: amount } }); fields[1].props.onInput({ detail: { value: currency } }) })
 }
 const shown = () => tree!.root.findAllByType('text').map(node => node.children.join('')).join('\n')
+it('warns only when an ambiguous cached charge is actually loaded and keeps it out of the list and totals', async () => {
+  const warning = '来源身份未确认的历史记录已保留，但未计入当前展示或统计'
+  await mount()
+  expect(shown()).not.toContain(warning)
+  await act(async () => { platform.hide() })
+  const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
+  const key = historyCacheKey('charges', 'owner', 'uid7', origin)
+  const cached = platform.values.get(key) as { items: Record<string, unknown>[] }
+  cached.items.push({ ...cached.items[0], id: 'ambiguous', sessionId: 'ambiguous', identityAmbiguous: true, identityAmbiguousReason: 'source_identity_incomplete', energyAddedKwh: 200 })
+  offline = true
+  await act(async () => { platform.show() }); await flush()
+  expect(shown()).toContain(warning)
+  expect(tree!.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
+  expect(tree!.root.findByProps({ ariaLabel: '充电次数 1 次' })).toBeDefined()
+  const storage = { getStorageSync: (name: string) => platform.values.get(name), setStorageSync() {} }
+  expect(readHistoryCache<Record<string, unknown>>(storage, key)).toHaveLength(2)
+})
+it('does not call an entirely ambiguous cache a set of short charges', async () => {
+  await mount()
+  await act(async () => { platform.hide() })
+  const { historyCacheKey } = await import('../../services/history_cache')
+  const cached = platform.values.get(historyCacheKey('charges', 'owner', 'uid7', origin)) as { items: Record<string, unknown>[] }
+  cached.items[0].identityAmbiguous = true
+  offline = true
+  await act(async () => { platform.show() }); await flush()
+  expect(shown()).toContain('来源身份未确认的历史记录已保留，但未计入当前展示或统计')
+  expect(shown()).not.toContain('当前记录均为短充')
+  expect(tree!.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+})
+it('applies the short-charge toggle to the same rows in the list, summary and chart', async () => {
+  const short = { ...charge, charge_id: 2, session_id: 'short', cost: 12, currency_code: 'CNY',
+    energy_contract: { ...charge.energy_contract, battery_input: metric(.05, 'battery_input'), ac_input: metric(.06, 'ac_charger_input') } }
+  const normal = { ...charge, cost: 12, currency_code: 'CNY' }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars')
+    ? response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] }) : url.endsWith('/current') ? response({ charge: null })
+      : response({ charges: [normal, short], meta: { page: 1, show: 20, total_pages: 1 } }))
+  await mount()
+  expect(tree!.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
+  expect(tree!.root.findByProps({ ariaLabel: '充电次数 1 次' })).toBeDefined()
+  expect(shown()).toContain('统计已返回的 1 条记录')
+  await click('显示短充')
+  expect(tree!.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
+  expect(tree!.root.findByProps({ ariaLabel: '充电次数 2 次' })).toBeDefined()
+  expect(shown()).toContain('统计已返回的 2 条记录')
+})
+it('does not render a stopped current charge while the poll is still pending', async () => {
+  let count = 0, release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return Promise.resolve(response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] }))
+    if (url.endsWith('/current')) return ++count === 1
+      ? Promise.resolve(response({ car: { car_id: 7 }, charge: { ...charge, is_charging: false } }))
+      : new Promise(resolve => { release = resolve })
+    if (url.endsWith('/snapshot')) return Promise.resolve(response({ status: { charging_details: { charging_state: 'Stopped' } } }))
+    return Promise.resolve(response({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } }))
+  })
+  await mount()
+  expect(shown()).not.toContain('正在充电')
+  if (release) { await act(async () => { release(response({ car: { car_id: 7 }, charge: null })) }); await flush() }
+})
+it('does not call a failed current-charge request an unmaterialized session', async () => {
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return Promise.resolve(response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] }))
+    if (url.endsWith('/current')) return Promise.reject(new Error('network unavailable'))
+    if (url.endsWith('/snapshot')) return Promise.resolve(response({ status: { charging_details: { charging_state: 'Charging' } } }))
+    return Promise.resolve(response({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } }))
+  })
+  await mount(); await flush()
+  expect(shown()).not.toContain('充电即将开始')
+  expect(shown()).toContain('网络暂时不可用')
+})
+it('renders a qualified live current-charge snapshot without inventing its start time', async () => {
+  const live = { charge_id: 7, source: 'fleet_api', quality_state: 'observed', quality_reason: 'live_provider_snapshot',
+    start_date: start, is_charging: true, charge_energy_added: 5, charger_power: 0, battery_details: { current_battery_level: 66 } }
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return Promise.resolve(response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] }))
+    if (url.endsWith('/current')) return Promise.resolve(response({ car: { car_id: 7 }, charge: live }))
+    if (url.endsWith('/snapshot')) return Promise.resolve(response({ status: { charging_details: { charging_state: 'Charging' } } }))
+    return Promise.resolve(response({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } }))
+  })
+  await mount(); await flush()
+  expect(tree!.root.findByProps({ ariaLabel: '已充入 5 kWh' })).toBeDefined()
+  expect(tree!.root.findByProps({ ariaLabel: '当前电量 66%' })).toBeDefined()
+  expect(shown()).toContain('状态观测')
+  expect(shown()).not.toContain('开始：2026-10-14')
+})
+it('does not display charge samples from a different source instance on the same public ID', async () => {
+  const list = { ...charge, source_instance_id: 'archive-a', source_record_id: 'record-1' }
+  const foreign = { ...list, source_instance_id: 'archive-b', charger_power: 999,
+    charge_details: [{ date: start, charger_details: { charger_power: 999 } }] }
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return Promise.resolve(response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] }))
+    if (url.endsWith('/current')) return Promise.resolve(response({ charge: null }))
+    if (url.endsWith('/charges/1')) return Promise.resolve(response({ charge: foreign }))
+    return Promise.resolve(response({ charges: [list], meta: { page: 1, show: 20, total_pages: 1 } }))
+  })
+  await mount(); await detail()
+  expect(shown()).not.toContain('999')
+})
 it('hides the previous account charge records while a replacement account refresh is pending', async () => {
   await mount()
   expect(tree!.root.findAllByProps({ className: 'history-record' }).length).toBeGreaterThan(0)
@@ -109,7 +207,43 @@ it.each(['missing-mode', 'dc-mode', 'uppercase-mode', 'mismatched-basis', 'blank
   await mount(); await detail()
   const panel = tree!.root.findByProps({ className: 'history-detail-overlay' })
   expect(panel.findByProps({ ariaLabel: '电池充入 8 kWh' })).toBeDefined()
-  expect(panel.findByProps({ ariaLabel: 'AC 输入 10 kWh' })).toBeDefined()
+  expect(panel.findByProps({ ariaLabel: `${reason === 'dc-mode' ? '输入电量（模式未确认）' : 'AC 输入'} 10 kWh` })).toBeDefined()
+  expect(panel.findByProps({ ariaLabel: 'AC输入效率 暂无数据' })).toBeDefined()
+})
+it('shows a normalized AC/fast-charge conflict as unknown without losing reported energy or bill', async () => {
+  const conflicting = { ...charge, fast_charger_present: true }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] })
+    if (url.endsWith('/current')) return response({ charge: null })
+    if (url.endsWith('/charges/1')) return response({ charge: conflicting })
+    return response({ charges: [conflicting], meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  await mount()
+  expect(tree!.root.findAllByProps({ className: 'history-charge-mode' })).toHaveLength(0)
+  await detail()
+  const panel = tree!.root.findByProps({ className: 'history-detail-overlay' })
+  expect(shown()).toContain('模式未确认')
+  expect(panel.findByProps({ ariaLabel: '电池充入 8 kWh' })).toBeDefined()
+  expect(panel.findByProps({ ariaLabel: '输入电量（模式未确认） 10 kWh' })).toBeDefined()
+  expect(panel.findByProps({ ariaLabel: '充电费用 0 EUR' })).toBeDefined()
+  expect(panel.findByProps({ ariaLabel: 'AC输入效率 暂无数据' })).toBeDefined()
+  expect(panel.findAllByProps({ className: 'section-title' }).map(node => node.children.join(''))).not.toContain('电压与电流')
+})
+it('treats a malformed conflict marker in the reopened offline cache as unknown mode', async () => {
+  await mount()
+  await act(async () => { platform.hide() })
+  const { historyCacheKey } = await import('../../services/history_cache')
+  const cached = platform.values.get(historyCacheKey('charges', 'owner', 'uid7', origin)) as { items: Record<string, unknown>[] }
+  expect(cached.items).toHaveLength(1)
+  cached.items[0].chargeModeConflict = 'true'
+  offline = true
+  await act(async () => { platform.show() }); await flush()
+  expect(tree!.root.findAllByProps({ className: 'history-charge-mode' })).toHaveLength(0)
+  await detail()
+  const panel = tree!.root.findByProps({ className: 'history-detail-overlay' })
+  expect(shown()).toContain('模式未确认')
+  expect(panel.findByProps({ ariaLabel: '输入电量（模式未确认） 10 kWh' })).toBeDefined()
+  expect(panel.findByProps({ ariaLabel: '充电费用 0 EUR' })).toBeDefined()
   expect(panel.findByProps({ ariaLabel: 'AC输入效率 暂无数据' })).toBeDefined()
 })
 it('preserves qualified zero battery input as zero percent efficiency', async () => {
@@ -169,6 +303,7 @@ it('does not expose manual cost editing to users, keeping read-only accounting d
 it('shows an App-style short address, marked default-price estimate and only returned-month chart data', async () => {
   const legacy = { ...charge, source: 'teslamate_archive', cost: null, currency_code: null, charge_type: null, energy_contract: null,
     charge_energy_added: 24.0175, address: '合成路, Test District, Test City', latitude: null, longitude: null, charge_details: [] }
+  Reflect.deleteProperty(legacy, 'currency_code')
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
     if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] })
     if (url.endsWith('/current')) return response({ charge: null })
@@ -187,7 +322,7 @@ it('shows an App-style short address, marked default-price estimate and only ret
   await click('费用')
   const chart = tree!.root.findByProps({ className: 'card charge-month-chart' })
   expect(chart.findAllByProps({ className: 'charge-chart-column' })).toHaveLength(1)
-  expect(chart.findByProps({ className: 'charge-chart-value' }).children.join('')).toBe('¥27.38')
+  expect(chart.findByProps({ className: 'charge-chart-value' }).children.join('')).toBe('≈¥27.38')
   expect(chart.findByProps({ className: 'muted' }).children.join('')).toContain('已返回的 1 条记录')
   await detail()
   const panel = tree!.root.findByProps({ className: 'history-detail-overlay' })
@@ -195,6 +330,14 @@ it('shows an App-style short address, marked default-price estimate and only ret
   expect(shown()).toContain('费用来源：按 App 默认 ¥1.14/kWh 与合格电池充入量估算')
   expect(panel.findAllByType('map' as React.ElementType)).toHaveLength(0)
   expect(panel.findAllByProps({ className: 'section-title' }).map(node => node.children.join(''))).not.toContain('电压与电流')
+})
+it('does not estimate a charge when its currency is explicitly unknown', async () => {
+  const unknownCurrency = { ...charge, source: 'teslamate_archive', cost: null, currency_code: null, energy_contract: null, charge_energy_added: 10 }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars')
+    ? response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] }) : url.endsWith('/current') ? response({ charge: null })
+      : response({ charges: [unknownCurrency], meta: { page: 1, show: 20, total_pages: 1 } }))
+  await mount()
+  expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 暂无数据' })).toBeDefined()
 })
 it('shows a map only for a valid online detail coordinate', async () => {
   const at = { ...charge, latitude: 31.2, longitude: 121.5 }
@@ -213,6 +356,7 @@ it('shows a map only for a valid online detail coordinate', async () => {
 it('keeps a missing CNY bill estimate separate from an actual foreign-currency zero in the summary', async () => {
   const legacy = { ...charge, charge_id: 1, session_id: 'legacy-1', source: 'teslamate_archive', cost: null, currency_code: null,
     energy_contract: null, charge_energy_added: 24.0175, charge_details: [] }
+  Reflect.deleteProperty(legacy, 'currency_code')
   const free = { ...charge, charge_id: 2, session_id: 'paid-2', cost: 0, currency_code: 'EUR' }
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
     if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] })
@@ -232,12 +376,13 @@ it('keeps a missing CNY bill estimate separate from an actual foreign-currency z
   expect(raw.find(row => row.cost === 0)).toBeDefined()
 })
 it.each([
-  { currency: 'CNY', defaultPrice: 0, card: '充电费用 ≈¥0.00', chart: '¥0.00', source: '已保存默认电价 ¥0/kWh' },
-  { currency: 'EUR', defaultPrice: 2, card: '充电费用 ≈20.00 EUR', chart: '20.00 EUR', source: '已保存默认电价 2 EUR/kWh' },
+  { currency: 'CNY', defaultPrice: 0, card: '充电费用 ≈¥0.00', chart: '≈¥0.00', source: '已保存默认电价 ¥0/kWh' },
+  { currency: 'EUR', defaultPrice: 2, card: '充电费用 ≈20.00 EUR', chart: '≈20.00 EUR', source: '已保存默认电价 2 EUR/kWh' },
 ])('uses scoped saved $currency default price $defaultPrice before the App fallback, without using TOU rates', async ({ currency, defaultPrice, card, chart, source }) => {
   const { tariffKey } = await import('../../domain/tariff')
   platform.values.set(tariffKey('owner', origin), { currency, defaultPrice, enabled: true, peak: 9, flat: 8, valley: 7, timeZone: 'Asia/Shanghai' })
   const legacy = { ...charge, source: 'teslamate_archive', cost: null, currency_code: null, energy_contract: null, charge_energy_added: 10, charge_details: [] }
+  Reflect.deleteProperty(legacy, 'currency_code')
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
     if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] })
     if (url.endsWith('/current')) return response({ charge: null })
@@ -262,6 +407,7 @@ it('does not adopt a default price saved by another account or origin', async ()
   platform.values.set(tariffKey('other', origin), wrong)
   platform.values.set(tariffKey('owner', 'https://elsewhere.example.test'), wrong)
   const legacy = { ...charge, source: 'teslamate_archive', cost: null, currency_code: null, energy_contract: null, charge_energy_added: 10, charge_details: [] }
+  Reflect.deleteProperty(legacy, 'currency_code')
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
     if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] })
     if (url.endsWith('/current')) return response({ charge: null })

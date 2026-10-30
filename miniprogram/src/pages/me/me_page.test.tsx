@@ -2,14 +2,14 @@ import React from 'react'
 import TestRenderer, { act, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-const platform = vi.hoisted(() => ({ request: vi.fn(), bindingRequest: vi.fn(), login: vi.fn(), modal: vi.fn(), values: new Map<string, unknown>(), failPreferenceWrite: false, failPreferenceRemove: false, toast: vi.fn(), navigate: vi.fn(), switchTab: vi.fn(), clipboard: vi.fn(),
+const platform = vi.hoisted(() => ({ request: vi.fn(), bindingRequest: vi.fn(), login: vi.fn(), modal: vi.fn(), values: new Map<string, unknown>(), failPreferenceWrite: false, failPreferenceRemove: false, failConsentWrite: false, failConsentRemove: false, toast: vi.fn(), navigate: vi.fn(), switchTab: vi.fn(), clipboard: vi.fn(),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Image: 'image', Button: 'button', Checkbox: 'checkbox', CheckboxGroup: 'checkboxgroup' }))
 vi.mock('@tarojs/taro', () => ({ default: {
   request: (options: { url: string }) => options.url.endsWith('/v1/auth/wechat/binding') ? platform.bindingRequest(options) : platform.request(options),
   login: platform.login, showModal: platform.modal, getStorageSync: (key: string) => platform.values.get(key),
-  setStorageSync: (key: string, value: unknown) => { if (key.startsWith('matelink.wechat.recovery.v1.') && platform.failPreferenceWrite) throw Error('storage failed'); platform.values.set(key, value) },
-  removeStorageSync: (key: string) => { if (key.startsWith('matelink.wechat.recovery.v1.') && platform.failPreferenceRemove) throw Error('storage failed'); platform.values.delete(key) }, showToast: platform.toast,
+  setStorageSync: (key: string, value: unknown) => { if ((key.startsWith('matelink.wechat.recovery.v1.') && platform.failPreferenceWrite) || (key === 'matelink.consent.v1' && platform.failConsentWrite)) throw Error('storage failed'); platform.values.set(key, value) },
+  removeStorageSync: (key: string) => { if ((key.startsWith('matelink.wechat.recovery.v1.') && platform.failPreferenceRemove) || (key === 'matelink.consent.v1' && platform.failConsentRemove)) throw Error('storage failed'); platform.values.delete(key) }, showToast: platform.toast,
   navigateTo: platform.navigate, switchTab: platform.switchTab, setClipboardData: platform.clipboard,
 }, useDidShow: (fn: () => void) => { platform.show = fn }, useDidHide: (fn: () => void) => { platform.hide = fn },
 useUnload: (fn: () => void) => { platform.unload = fn } }))
@@ -20,7 +20,7 @@ let renderer: ReactTestRenderer | null = null
 beforeEach(() => {
   vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test')
   platform.values.clear(); platform.request.mockReset(); platform.bindingRequest.mockReset().mockResolvedValue(respond(200, { bound: false, binding_version: '0' })); platform.login.mockReset(); platform.modal.mockReset(); platform.toast.mockReset(); platform.navigate.mockReset().mockResolvedValue({}); platform.switchTab.mockReset().mockResolvedValue({}); platform.clipboard.mockReset().mockResolvedValue({})
-  platform.failPreferenceWrite = false; platform.failPreferenceRemove = false
+  platform.failPreferenceWrite = false; platform.failPreferenceRemove = false; platform.failConsentWrite = false; platform.failConsentRemove = false
   platform.values.set(key, session('a'))
 })
 afterEach(async () => {
@@ -126,6 +126,27 @@ const button = (label: string) => renderer!.root.findAllByType('button').find(no
 async function consent() {
   await act(async () => { renderer!.root.findByType('checkboxgroup' as React.ElementType).props.onChange({ detail: { value: ['terms', 'privacy'] } }) })
 }
+it('does not infer current consent from an existing session or restore a withdrawn consent', async () => {
+  platform.values.set('matelink.consent.v1', { termsVersion: 'old', privacyVersion: 'old', acceptedAtEpochMs: Date.now() })
+  await mount()
+  const checked = () => renderer!.root.findAllByType('checkbox' as React.ElementType).map(node => node.props.checked)
+  expect(checked()).toEqual([false, false])
+  expect(button('重新授权 Tesla').props.disabled).toBe(true)
+  await consent()
+  expect(checked()).toEqual([true, true])
+  expect(button('重新授权 Tesla').props.disabled).toBe(false)
+  await act(async () => { renderer!.root.findByType('checkboxgroup' as React.ElementType).props.onChange({ detail: { value: ['terms'] } }) })
+  await act(async () => { platform.hide(); platform.show() }); await flush()
+  expect(checked()).toEqual([false, false])
+})
+it('keeps withdrawn consent unchecked and reports a storage failure when the prior record cannot be removed', async () => {
+  await mount(); await consent()
+  platform.failConsentWrite = true; platform.failConsentRemove = true
+  await act(async () => { renderer!.root.findByType('checkboxgroup' as React.ElementType).props.onChange({ detail: { value: ['terms'] } }) })
+  await act(async () => { platform.hide(); platform.show() }); await flush()
+  expect(renderer!.root.findAllByType('checkbox' as React.ElementType).map(node => node.props.checked)).toEqual([false, false])
+  expect(visible()).toContain('本机同意状态未能更新')
+})
 it('asks for confirmation before binding the current WeChat identity', async () => {
   platform.login.mockResolvedValue({ code: 'synthetic-code' })
   platform.modal.mockResolvedValueOnce({ confirm: false }).mockResolvedValueOnce({ confirm: true })
@@ -263,6 +284,7 @@ it('opens the Tesla authorization page after a same-account token refresh comple
     ? new Promise(resolve => { release = resolve })
     : Promise.resolve(respond(200, { authorization_url: 'https://auth.tesla.com/oauth2/v3/authorize?state=fixture', transaction_id: 'txn', client_proof: 'proof' })))
   await mount()
+  await consent()
   const refreshing = refreshSession()
   await act(async () => { button('重新授权 Tesla').props.onClick() })
   expect(platform.navigate).not.toHaveBeenCalled()

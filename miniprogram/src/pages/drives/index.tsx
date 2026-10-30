@@ -1,18 +1,20 @@
 import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
-import { useRef, useState } from 'react'
-import { historyRowKey, isHistoryQuarantined, pageCanContinue, sortHistoryByStartDate } from '../../domain/history'
-import { buildDriveHistoryItems, type DriveHistoryItem } from '../../domain/drive_history'
+import { useEffect, useRef, useState } from 'react'
+import { historyRowKey, isHistoryIdentityAmbiguous, isHistoryQuarantined, pageCanContinue, sameHistoryIdentity, sortHistoryByStartDate } from '../../domain/history'
+import { buildDriveHistoryItems, parkedAddressLabel, verifiedParkedPairs, type DriveHistoryItem } from '../../domain/drive_history'
+import { mapCoordinate } from '../../domain/map_coordinate'
 import { toChineseDisplayAddress } from '../../domain/address_display'
 import { getAppNavGeometry } from '../../services/nav_geometry'
 import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, reconcileHistoryCache, type HistoryInterval } from '../../domain/history_controller'
-import { emptyHistoryQuery, filterHistory, historyDateTime, historyDetailDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
+import { defaultDriveHistoryQuery, emptyHistoryQuery, filterHistory, historyDateTime, historyDetailDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
 import './index.scss'
 import { createRequestScopeGate } from '../../domain/request_scope'
 import { ApiError, ensureWechatSession, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { analysisApi } from '../../services/analysis_api'
 import type { ParkedDetail } from '../../services/analysis_types'
+import { createParkedProofVerifier, parkedProofKey, type ParkedCandidate } from '../../services/parked_proof'
 import { carSelectionStorageKey, type Car, type Drive, type HistoryPage, type HistoryPageMeta } from '../../services/types'
 import { readAppSession } from '../../services/session'
 import { useSessionRecoveryReload } from '../../services/use_session_recovery'
@@ -76,9 +78,6 @@ export default function DrivesPage() {
   // (temperatures, power, linked charge) fills in from the exact endpoint.
   const [parkedOpen, setParkedOpen] = useState<DriveHistoryItem | null>(null)
   const [parkedCloud, setParkedCloud] = useState<ParkedDetail | null>(null)
-  const [parkedCloudFailed, setParkedCloudFailed] = useState(false)
-  // A late cloud response must never overwrite a different parked card opened next.
-  const parkedRequestRef = useRef<string | null>(null)
   const detailContext = useRef<{ user: string; origin: string; uid: string; generation: number; row: Drive } | null>(null)
   const detailCacheBaseline = useRef<Map<string, string> | null>(null)
   const listScrollTop = useRef(0), detailScrollTop = useRef(0), pageVisible = useRef(false)
@@ -99,11 +98,16 @@ export default function DrivesPage() {
     return nativeTabBar(Boolean(row))
   }
   const [interval, setInterval] = useState<HistoryInterval<Drive> | null>(null)
+  const [parkingPairs, setParkingPairs] = useState<Set<string>>(() => new Set())
+  const [confirmedParking, setConfirmedParking] = useState<Set<string>>(() => new Set())
+  const [parkingProofEpoch, setParkingProofEpoch] = useState(0)
+  const parkingVerifier = useRef<ReturnType<typeof createParkedProofVerifier> | null>(null)
+  const parkingSource = useRef<Drive[]>([])
   const [notices, setNotices] = useState<ForegroundNotice[]>([])
   const notice = notices[0] ?? null
   const [noticeLimited, setNoticeLimited] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [query, setQueryState] = useState<HistoryQuery>(emptyHistoryQuery())
+  const [query, setQueryState] = useState<HistoryQuery>(defaultDriveHistoryQuery())
   const queryRef = useRef(query)
   const setQuery = (next: HistoryQuery) => { queryRef.current = next; setQueryState(next) }
   const [offline, setOffline] = useState(false)
@@ -133,16 +137,20 @@ export default function DrivesPage() {
     setMeta(null)
     void setSelected(null)
     setInterval(null)
+    setParkingPairs(new Set())
+    parkingSource.current = []
     setNotices([])
     setNoticeLimited(false)
     setCacheWarning(false)
     queryScopeRef.current = null
-    setQuery(emptyHistoryQuery())
+    setQuery(defaultDriveHistoryQuery())
   }
 
   const invalidatePage = () => {
     lifecycleEpoch.current += 1
     scopeGate.current.invalidate()
+    parkingVerifier.current = null
+    setConfirmedParking(new Set()); setParkingProofEpoch(value => value + 1)
     loadingMoreRef.current = false
     setLoading(false)
     setLoadingMore(false)
@@ -155,13 +163,15 @@ export default function DrivesPage() {
     if (!session?.userId) return
     const key = historyCacheKey('drives', session.userId, nextCar.stableId, getApiOrigin())
     queryScopeRef.current = key
-    setQuery(readHistoryQuery(Taro, key))
+    setQuery(readHistoryQuery(Taro, key, defaultDriveHistoryQuery()))
     const cached = sortHistoryByStartDate(readHistoryCache<Drive>(Taro, key))
     itemsRef.current = cached
     pagesRef.current = []
     pageRef.current = 0
     setItems(cached)
     setInterval({ items: cached, complete: false, receivedPages: 0, reason: 'cached' })
+    setParkingPairs(new Set())
+    parkingSource.current = []
     setMeta({ ...emptyMeta, availability: 'cached', source: 'local_history', hasMore: false })
   }
 
@@ -200,10 +210,12 @@ export default function DrivesPage() {
     }
     const cacheKey = historyCacheKey('drives', session.userId, nextCar.stableId, apiOrigin)
     queryScopeRef.current = cacheKey
-    setQuery(readHistoryQuery(Taro, cacheKey))
+    setQuery(readHistoryQuery(Taro, cacheKey, defaultDriveHistoryQuery()))
 
     if (!append) {
       setInterval(null)
+      setParkingPairs(new Set())
+      parkingSource.current = []
       setNotices([])
       setNoticeLimited(false)
       scopeGate.current.begin('interval')
@@ -249,23 +261,30 @@ export default function DrivesPage() {
       pagesRef.current = decision.state.pages
       pageRef.current = decision.state.page
       setItems(decision.state.items)
-      setInterval(snapshot => snapshot ? { ...snapshot, items: snapshot.items.map(row => decision.state.items.find(item => historyRowKey(item) === historyRowKey(row) || item.id === row.id) ?? row) } : snapshot)
+      setInterval(snapshot => snapshot ? { ...snapshot, items: snapshot.items.map(row => decision.state.items.find(item => sameHistoryIdentity(item, row)) ?? row) } : snapshot)
       const saved = writeHistoryCache(Taro, cacheKey, decision.state.items)
       setCacheWarning(!saved)
       setMeta({ ...result.meta, hasMore: decision.hasMore })
       setError(null)
       if (!append) {
-        const admittedRows = result.items.map(row => decision.state.items.find(item => historyRowKey(item) === historyRowKey(row) || item.id === row.id) ?? row)
+        const admittedRows = result.items.map(row => decision.state.items.find(item => sameHistoryIdentity(item, row)) ?? row)
         const notices = observeForegroundEvents(Taro, { origin: apiOrigin, userId: session.userId, stableId: nextCar.stableId }, 'drives', admittedRows)
         setNotices(notices)
         setNoticeLimited(inspectForegroundEvents(Taro, { origin: apiOrigin, userId: session.userId, stableId: nextCar.stableId }, 'drives').limited)
         const intervalTicket = scopeGate.current.begin('interval')
         const canonicalPage = { ...result, items: enrichHistoryInterval(result.items, decision.state.items) }
+        const rawItems = [...result.items]
         void collectHistoryInterval(canonicalPage, async page => {
           const response = await matelinkApi.getDrives(nextCar.id, page, PAGE_SIZE, nextCar)
+          rawItems.push(...response.items)
           return { ...response, items: enrichHistoryInterval(response.items, itemsRef.current) }
         }, intervalTicket.isCurrent).then(snapshot => {
-          if (snapshot && intervalTicket.isCurrent()) setInterval({ ...snapshot, items: snapshot.items.map(row => itemsRef.current.find(item => historyRowKey(item) === historyRowKey(row) || item.id === row.id) ?? row) })
+          if (snapshot && intervalTicket.isCurrent()) {
+            setInterval({ ...snapshot, items: snapshot.items.map(row => itemsRef.current.find(item => sameHistoryIdentity(item, row)) ?? row) })
+            const unique = new Set(rawItems.map(historyRowKey)).size === rawItems.length
+            parkingSource.current = snapshot.complete && unique ? rawItems : []
+            setParkingPairs(snapshot.complete && unique ? verifiedParkedPairs(rawItems) : new Set())
+          }
         })
       }
     } catch (reason) {
@@ -378,7 +397,7 @@ export default function DrivesPage() {
       itemsRef.current = state.items; pagesRef.current = state.pages
       setItems(state.items)
       setInterval(snapshot => snapshot ? { ...snapshot, items: replay({ pages: [], items: snapshot.items, page: 0 }).items } : snapshot)
-      return state.items.find(item => historyRowKey(item) === historyRowKey(context.row) || item.id === context.row.id)
+      return state.items.find(item => sameHistoryIdentity(item, context.row))
     }
     invalidatePage()
     const epoch = lifecycleEpoch.current
@@ -396,7 +415,7 @@ export default function DrivesPage() {
     } catch {
       if (epoch !== lifecycleEpoch.current) return
       if (!sameOwner()) { void setSelected(null); await load(); return }
-      verifiedCarRef.current = false; setOffline(true)
+      verifiedCarRef.current = false; setOffline(true); setParkingPairs(new Set())
       scopeGate.current.bind({ accountId: context.user, stableVehicleId: context.uid, apiOrigin: context.origin, sessionGeneration: context.generation })
       const row = reconcileCached()
       if (!row || isHistoryQuarantined(row)) { void setSelected(null); return }
@@ -445,27 +464,28 @@ export default function DrivesPage() {
     void loadHistory(car, true)
   }
 
-  const openParked = async (item: DriveHistoryItem & { kind: 'parked' }) => {
-    if (!car) return
-    const requestKey = item.key
-    parkedRequestRef.current = requestKey
-    setParkedOpen(item); setParkedCloud(null); setParkedCloudFailed(false)
-    try {
-      const result = await analysisApi.getParkedDetail(car, item.older.id, item.newer.id)
-      if (parkedRequestRef.current !== requestKey) return
-      setParkedCloud(result.detail)
-      setParkedCloudFailed(result.detail == null)
-    } catch {
-      if (parkedRequestRef.current !== requestKey) return
-      // Local facts stay on screen; cloud-only fields remain honestly missing.
-      setParkedCloudFailed(true)
-    }
+  const parkedCandidate = (item: DriveHistoryItem & { kind: 'parked' }): ParkedCandidate => ({ olderId: item.older.id,
+    newerId: item.newer.id, startDate: item.startDate, endDate: item.endDate, source: item.older.source! })
+  const parkedSoc = (item: DriveHistoryItem & { kind: 'parked' }): string | null => {
+    const proof = parkingVerifier.current?.get(parkedCandidate(item))
+    return proof?.startBatteryLevel != null && proof.endBatteryLevel != null ? `${proof.startBatteryLevel}% → ${proof.endBatteryLevel}%` : null
   }
-  const closeParked = () => { parkedRequestRef.current = null; setParkedOpen(null); setParkedCloud(null); setParkedCloudFailed(false) }
+  const parkedAddress = (item: DriveHistoryItem & { kind: 'parked' }): string | null => {
+    const detail = parkingVerifier.current?.get(parkedCandidate(item))
+    const older = parkingSource.current.find(row => sameHistoryIdentity(row, item.older) && row.endDate === item.startDate)
+    const newer = parkingSource.current.find(row => sameHistoryIdentity(row, item.newer) && row.startDate === item.endDate)
+    return detail?.address ?? parkedAddressLabel(older?.endAddress, newer?.startAddress)
+  }
+  const openParked = (item: DriveHistoryItem & { kind: 'parked' }) => {
+    const detail = parkingVerifier.current?.get(parkedCandidate(item))
+    if (!detail) return
+    setParkedOpen(item); setParkedCloud(detail)
+  }
+  const closeParked = () => { setParkedOpen(null); setParkedCloud(null) }
 
   const openDetail = async (item: Drive) => {
     if (!car) return
-    const canonical = itemsRef.current.find(row => historyRowKey(row) === historyRowKey(item) || row.id === item.id)
+    const canonical = itemsRef.current.find(row => sameHistoryIdentity(row, item))
     if (!canonical || canonical.id !== item.id || isHistoryQuarantined(canonical) || isHistoryQuarantined(item)) return
     let ticket: { isCurrent(): boolean }
     try { ticket = scopeGate.current.begin('detail') } catch { return }
@@ -473,7 +493,7 @@ export default function DrivesPage() {
     try {
       if (!verifiedCarRef.current || car.remoteVerified === false) return
       void analysisApi.getDriveEvidence(car, item.id, { isCurrent: ticket.isCurrent }).then(evidence => {
-        if (ticket.isCurrent()) setSelectedEvidence(evidence)
+        if (ticket.isCurrent() && evidence.drive && sameHistoryIdentity(canonical, evidence.drive)) setSelectedEvidence(evidence)
       }).catch(() => {})
       const detail = await matelinkApi.getDriveDetail(car.id, item.id, car)
       if (ticket.isCurrent() && detail) {
@@ -482,8 +502,8 @@ export default function DrivesPage() {
         itemsRef.current = state.items
         pagesRef.current = state.pages
         setItems(state.items)
-        setInterval(snapshot => snapshot ? { ...snapshot, items: snapshot.items.map(row => state.items.find(item => historyRowKey(item) === historyRowKey(row) || item.id === row.id) ?? row) } : snapshot)
-        const selectedRow = state.items.find(row => historyRowKey(row) === historyRowKey(detail) || row.id === detail.id)
+        setInterval(snapshot => snapshot ? { ...snapshot, items: snapshot.items.map(row => state.items.find(item => sameHistoryIdentity(item, row)) ?? row) } : snapshot)
+        const selectedRow = state.items.find(row => sameHistoryIdentity(row, detail))
         setSelected(selectedRow && !isHistoryQuarantined(selectedRow) ? selectedRow : null)
         const session = readAppSession(Taro)
         if (session?.userId) setCacheWarning(!writeHistoryCache(Taro, historyCacheKey('drives', session.userId, car.stableId, getApiOrigin()), state.items))
@@ -495,8 +515,27 @@ export default function DrivesPage() {
 
   const trustedItems = filterHistory(items.filter(isAppRouteDrive), emptyHistoryQuery())
   const visibleItems = filterHistory(trustedItems, query)
-  // App DrivesScreen builds list rows (drives + parking windows) from the visible set.
-  const historyItems = buildDriveHistoryItems(visibleItems)
+  // Derive parking only from a complete, unfiltered snapshot. Visible cards can
+  // include cache rows, but cached/partial history cannot prove adjacency.
+  const candidates = buildDriveHistoryItems(visibleItems, parkingPairs)
+  const parkedCandidates = candidates.flatMap(item => item.kind === 'parked' ? [parkedCandidate(item)] : [])
+  const parkedSignature = JSON.stringify(parkedCandidates.map(parkedProofKey))
+  useEffect(() => {
+    let cancelled = false
+    if (!car || offline || !pageVisible.current || parkedCandidates.length === 0) { setConfirmedParking(new Set()); return }
+    if (!parkingVerifier.current) {
+      try {
+        const ticket = scopeGate.current.begin('parked-proof')
+        parkingVerifier.current = createParkedProofVerifier(car, () => ticket.isCurrent() && pageVisible.current)
+      } catch { setConfirmedParking(new Set()); return }
+    }
+    const verifier = parkingVerifier.current
+    void verifier.verify(parkedCandidates, key => {
+      if (!cancelled && parkingVerifier.current === verifier) setConfirmedParking(previous => new Set([...previous, key]))
+    }).then(keys => { if (!cancelled && parkingVerifier.current === verifier) setConfirmedParking(keys) })
+    return () => { cancelled = true }
+  }, [car?.stableId, offline, parkedSignature, parkingProofEpoch])
+  const historyItems = candidates.filter(item => item.kind === 'drive' || confirmedParking.has(parkedProofKey(parkedCandidate(item))))
   const statisticsInterval = interval ? { ...interval, items: interval.items.filter(isAppStatisticsDrive) } : null
   const chartRows = statisticsInterval ? filterHistory(statisticsInterval.items, query) : []
   const navGeo = getAppNavGeometry()
@@ -510,13 +549,14 @@ export default function DrivesPage() {
           </Picker>
         ) : null}
         {cacheWarning ? <Text className="error">在线数据已读到，但未保存到本机。</Text> : null}
+        {items.some(isHistoryIdentityAmbiguous) ? <Text className="muted">来源身份未确认的历史记录已保留，但未计入当前展示或统计</Text> : null}
       </View>
 
       {car ? <View className="history-controls">
         <HistoryDateChips kind="drives" query={query} onChange={updateQuery} />
         <View className="history-distance-chips">
-          {[{ label: '全部', min: 0, max: undefined }, { label: '通勤 (< 50km)', min: 0, max: 50 },
-            { label: '短途 (50–200km)', min: 50, max: 200 }, { label: '长途 (200km+)', min: 200, max: undefined }].map(option =>
+          {[{ label: '全部', min: 0, max: undefined }, { label: '通勤 (< 10km)', min: 0, max: 10 },
+            { label: '短途 (10–100km)', min: 10, max: 100 }, { label: '长途 (100km+)', min: 100, max: undefined }].map(option =>
             <Button key={option.label} className={`history-chip ${query.minDistanceKm === option.min && query.maxDistanceKm === option.max ? 'history-chip-selected' : ''}`} onClick={() => updateQuery({ minDistanceKm: option.min, maxDistanceKm: option.max })}>{option.label}</Button>)}
         </View>
         <View className="history-actions-hidden">
@@ -531,7 +571,8 @@ export default function DrivesPage() {
       {notice ? <View className="card history-notice">
         <Text className="muted">前台发现一条新的已完成行程，仅本次打开时检查。</Text>
         <Button className="button" onClick={() => {
-          const row = itemsRef.current.find(item => item.id === notice.id && item.sessionId === notice.sessionId && item.source === notice.source)
+          const matches = itemsRef.current.filter(item => item.id === notice.id && item.sessionId === notice.sessionId && item.source === notice.source)
+          const row = matches.length === 1 ? matches[0] : null
           setNotices(current => current.slice(1))
           if (row) void openDetail(row)
         }}>查看新行程</Button>
@@ -559,11 +600,10 @@ export default function DrivesPage() {
             <View key={item.key} className="history-record history-parked" onClick={() => { void openParked(item) }}>
               <View className="parked-heading">
                 <View className="parked-icon"><VisualIcon name="vehicle" /></View>
-                <View className="parked-main"><Text className="parked-title">驻车于 {toChineseDisplayAddress(item.address) ?? '未知位置'}</Text>
+                <View className="parked-main"><Text className="parked-title">驻车于 {toChineseDisplayAddress(parkedAddress(item)) ?? '未知位置'}</Text>
                   <Text className="parked-date">{historyEditorialDate(item.startDate)}</Text></View>
                 <View className="parked-end"><Text className="parked-duration">{item.minutes >= 60 ? `${Math.floor(item.minutes / 60)}h ${item.minutes % 60}m` : `${item.minutes}m`}</Text>
-                  {item.older.endBatteryLevel != null && item.newer.startBatteryLevel != null
-                    ? <Text className="parked-soc">{item.older.endBatteryLevel}% → {item.newer.startBatteryLevel}%</Text> : null}</View>
+                  {parkedSoc(item) ? <Text className="parked-soc">{parkedSoc(item)}</Text> : null}</View>
               </View>
             </View>
           ) : (
@@ -608,19 +648,41 @@ export default function DrivesPage() {
           {/* 1. 路线地图 */}
           {(() => {
             const points = selectedEvidence?.points ?? []
-            const validPoints = points.filter(p => p.latitude != null && p.longitude != null).map(p => ({ latitude: p.latitude!, longitude: p.longitude! }))
-            const startMarker = validPoints.length > 0 ? { id: 1, latitude: validPoints[0].latitude, longitude: validPoints[0].longitude, title: '起点', iconPath: '/assets/tabs/route-selected.png', width: 24, height: 24 } : null
-            const endMarker = validPoints.length > 1 ? { id: 2, latitude: validPoints[validPoints.length - 1].latitude, longitude: validPoints[validPoints.length - 1].longitude, title: '终点', iconPath: '/assets/tabs/route-selected.png', width: 24, height: 24 } : null
+            const polylines: { points: { latitude: number; longitude: number }[]; color: string; width: number }[] = []
+            let currentSegment: { latitude: number; longitude: number }[] = []
+            const allValidPoints: { latitude: number; longitude: number }[] = []
+
+            for (const p of points) {
+              if (p.latitude != null && p.longitude != null && (p.latitude !== 0 || p.longitude !== 0) &&
+                  p.latitude >= -90 && p.latitude <= 90 && p.longitude >= -180 && p.longitude <= 180) {
+                const coord = mapCoordinate(p.latitude, p.longitude)
+                if (coord) {
+                  currentSegment.push(coord)
+                  allValidPoints.push(coord)
+                }
+              } else {
+                if (currentSegment.length >= 2) {
+                  polylines.push({ points: currentSegment, color: '#157a86', width: 4 })
+                }
+                currentSegment = []
+              }
+            }
+            if (currentSegment.length >= 2) {
+              polylines.push({ points: currentSegment, color: '#157a86', width: 4 })
+            }
+
+            const startMarker = allValidPoints.length > 0 ? { id: 1, latitude: allValidPoints[0].latitude, longitude: allValidPoints[0].longitude, title: '起点', iconPath: '/assets/tabs/route-selected.png', width: 24, height: 24 } : null
+            const endMarker = allValidPoints.length > 1 ? { id: 2, latitude: allValidPoints[allValidPoints.length - 1].latitude, longitude: allValidPoints[allValidPoints.length - 1].longitude, title: '终点', iconPath: '/assets/tabs/route-selected.png', width: 24, height: 24 } : null
             const markers = [startMarker, endMarker].filter((m): m is NonNullable<typeof m> => Boolean(m))
 
             return <View className="card drive-map-card">
               <Text className="drive-map-title">路线图</Text>
-              {validPoints.length >= 2 && !mapFailed ? (
-                <TaroMap id="drive-detail-map" className="drive-detail-map" latitude={validPoints[0].latitude} longitude={validPoints[0].longitude} scale={13} showLocation={false} markers={markers} polyline={[{ points: validPoints, color: '#157a86', width: 4 }]} onError={() => setMapFailed(true)} />
+              {allValidPoints.length >= 2 && !mapFailed ? (
+                <TaroMap id="drive-detail-map" className="drive-detail-map" latitude={allValidPoints[0].latitude} longitude={allValidPoints[0].longitude} scale={13} showLocation={false} markers={markers} polyline={polylines} onError={() => setMapFailed(true)} />
               ) : (
                 <View className="drive-map-insufficient">
                   <VisualIcon name="map" />
-                  <Text className="muted">路径点不足（{validPoints.length} 点），无法生成连续路线</Text>
+                  <Text className="muted">路径点不足（{allValidPoints.length} 点），无法生成连续路线</Text>
                 </View>
               )}
             </View>
@@ -646,7 +708,7 @@ export default function DrivesPage() {
             <View className="route-time-row">
               <View className="route-time-col"><Text className="time-label">开始时间</Text><Text className="time-val">{historyDetailDateTime(selected.startDate)}</Text></View>
               <View className="route-time-col"><Text className="time-label">结束时间</Text><Text className="time-val">{historyDetailDateTime(selected.endDate)}</Text></View>
-              <View className="route-time-col"><Text className="time-label">时长</Text><Text className="time-val">{duration(selected.durationMinutes).value ? `${duration(selected.durationMinutes).value} 分钟` : '暂无数据'}</Text></View>
+              <View className="route-time-col"><Text className="time-label">时长</Text><Text className="time-val">{selected.durationMinutes != null ? `${duration(selected.durationMinutes).value} 分钟` : '暂无数据'}</Text></View>
             </View>
           </View>
 
@@ -665,7 +727,7 @@ export default function DrivesPage() {
 
           {/* 4. 分组面板：速度 */}
           {(() => {
-            const avgDistSpeed = (selected.distanceKm && selected.durationMinutes && selected.durationMinutes > 0)
+            const avgDistSpeed = (selected.distanceKm != null && selected.durationMinutes != null && selected.durationMinutes > 0)
               ? Number((selected.distanceKm / (selected.durationMinutes / 60)).toFixed(0)) : null
             return <View className="section-card">
               <View className="section-card-header">
@@ -683,17 +745,19 @@ export default function DrivesPage() {
           {(() => {
             const points = selectedEvidence?.points ?? []
             const powers = points.map(p => p.powerKw).filter((p): p is number => p != null && Number.isFinite(p))
-            const maxPower = powers.length ? Math.max(...powers) : null
-            const minPower = powers.length ? Math.min(...powers) : null
+            const outputPowers = powers.filter(p => p > 0)
+            const regenPowers = powers.filter(p => p < 0)
+            const maxOutput = outputPowers.length ? Math.max(...outputPowers) : null
+            const maxRegen = regenPowers.length ? Math.abs(Math.min(...regenPowers)) : null
             const avgPower = powers.length ? Number((powers.reduce((a, b) => a + b, 0) / powers.length).toFixed(1)) : null
             return <View className="section-card">
               <View className="section-card-header">
                 <View className="section-card-title"><VisualIcon name="energy" /><Text>功率</Text></View>
               </View>
               <View className="telemetry-metric-strip">
-                <MetricValue label="峰值输出" value={maxPower} unit="kW" digits={0} />
-                <MetricValue label="峰值回收" value={minPower} unit="kW" digits={0} />
-                <MetricValue label="平均功率" value={avgPower} unit="kW" digits={1} />
+                <MetricValue label="峰值输出" value={maxOutput} unit="kW" digits={0} />
+                <MetricValue label="峰值回收" value={maxRegen} unit="kW" digits={0} />
+                <MetricValue label="平均功率 (样本)" value={avgPower} unit="kW" digits={1} />
               </View>
             </View>
           })()}
@@ -749,26 +813,26 @@ export default function DrivesPage() {
             // App build70 layered design: hero (address/time/duration/badge) →
             // battery boundaries → cloud detail that shows one honest pending
             // line instead of a wall of per-cell "no data".
-            const delta = parkedCloud?.batteryDelta ?? (parkedOpen.older.endBatteryLevel != null && parkedOpen.newer.startBatteryLevel != null
-              ? parkedOpen.newer.startBatteryLevel - parkedOpen.older.endBatteryLevel : null)
+            const startSoc = parkedCloud?.startBatteryLevel ?? null, endSoc = parkedCloud?.endBatteryLevel ?? null
+            const delta = startSoc != null && endSoc != null ? endSoc - startSoc : parkedCloud?.batteryDelta ?? null
             const duration = parkedOpen.minutes >= 60 ? `${Math.floor(parkedOpen.minutes / 60)}h ${parkedOpen.minutes % 60}m` : `${parkedOpen.minutes}m`
             const cloudDetail = parkedCloud != null && (parkedCloud.energyKwh != null || parkedCloud.averagePowerW != null ||
               parkedCloud.insideTempC != null || parkedCloud.outsideTempC != null || (parkedCloud.sampleCount ?? 0) > 0)
             return <>
               <View className="card parked-detail-summary">
-                <Text className="parked-detail-hero-title">驻车于 {toChineseDisplayAddress(parkedOpen.address) ?? '未知位置'}</Text>
+                <Text className="parked-detail-hero-title">驻车于 {toChineseDisplayAddress(parkedAddress(parkedOpen)) ?? '未知位置'}</Text>
                 <Text className="parked-detail-timeline">{historyDetailDateTime(parkedOpen.startDate)} → {historyDetailDateTime(parkedOpen.endDate)}</Text>
                 <Text className="parked-detail-note">共驻车 {duration}{delta != null ? ' ' : ''}{delta != null ? (delta > 0
-                  ? <Text className="parked-detail-badge charge">⚡ 充电 +{delta}%</Text>
-                  : <Text className="parked-detail-badge drain">耗电 −{Math.abs(delta)}%</Text>) : null}</Text>
+                  ? <Text className="parked-detail-badge charge">电量 +{delta}%</Text>
+                  : <Text className="parked-detail-badge drain">{delta === 0 ? '电量未变化' : `电量 −${Math.abs(delta)}%`}</Text>) : null}</Text>
               </View>
               <View className="section-card">
                 <View className="section-card-header">
                   <View className="section-card-title"><VisualIcon name="battery" /><Text>起止电量</Text></View>
                 </View>
                 <View className="telemetry-metric-strip">
-                  <MetricValue label="起始电量" value={parkedOpen.older.endBatteryLevel} unit="%" icon="battery" digits={0} />
-                  <MetricValue label="结束电量" value={parkedOpen.newer.startBatteryLevel} unit="%" icon="battery" digits={0} />
+                  <MetricValue label="起始电量" value={startSoc} unit="%" icon="battery" digits={0} />
+                  <MetricValue label="结束电量" value={endSoc} unit="%" icon="battery" digits={0} />
                   <MetricValue label="电量变化" value={delta} unit="%" icon="battery" digits={0} />
                 </View>
               </View>
@@ -781,11 +845,8 @@ export default function DrivesPage() {
                   <MetricValue label="平均功率" value={parkedCloud.averagePowerW} unit="W" icon="energy" digits={0} />
                   <MetricValue label="车内温度" value={parkedCloud.insideTempC} unit="°C" icon="cloud" digits={1} />
                   <MetricValue label="车外温度" value={parkedCloud.outsideTempC} unit="°C" icon="cloud" digits={1} />
-                </View> : <Text className="parked-detail-cloud-pending">{parkedCloudFailed
-                  ? '云端明细暂不可用；以上为本机相邻行程推得的驻车事实。'
-                  : '云端明细待同步：温度、功率与采样分析将在网络恢复后补全；可下拉重试。'}</Text>}
-                <Text className="muted" style={{ display: 'block', fontSize: '22rpx', marginTop: '12rpx' }}>{parkedCloud ? `数据来源：${sourceLabel(parkedCloud.source)}`
-                  : parkedCloudFailed ? '数据来源：本机相邻行程推得的驻车事实' : '正在读取云端驻车明细（温度、功率与关联充电）…'}</Text>
+                </View> : <Text className="parked-detail-cloud-pending">当前数据源未提供可验证的温度、功率或采样明细。</Text>}
+                <Text className="muted" style={{ display: 'block', fontSize: '22rpx', marginTop: '12rpx' }}>数据来源：{sourceLabel(parkedCloud?.source)}</Text>
               </View>
             </>
           })()}

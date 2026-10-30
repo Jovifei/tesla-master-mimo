@@ -454,6 +454,16 @@ it('uses the full charging HUD and lower three-column card without replacing mis
   expect(page.root.findAllByProps({ className: 'dashboard-hud dashboard-hud-charging' })).toHaveLength(0)
   expect(page.root.findByProps({ className: 'dashboard-hud-collapsed' })).toBeDefined()
 })
+it('shows a real zero charging current even when voltage is missing', async () => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return respond({ cars })
+    if (url.endsWith('/snapshot')) return respond({ source: 'fleet_api', status: { state: 'charging', charging_details: { charging_state: 'Charging', charger_voltage: null, charger_actual_current: 0 } } })
+    if (url.endsWith('/data-readiness')) return respond({ items: [] })
+    return respond({})
+  })
+  const page = await mount(false)
+  expect(page.root.findByProps({ ariaLabel: '充电电压电流 暂无数据 / 0 A' })).toBeDefined()
+})
 
 it.each(fixture.readiness_cases)('shared synthetic $id runs through the API normalizer and actual diagnostic component', async row => {
   vi.stubEnv('TARO_APP_API_BASE_URL', row.scope.origin)

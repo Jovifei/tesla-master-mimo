@@ -6,7 +6,7 @@ import { clearHistoryCachesForAccount } from './history_cache'
 import { clearCarsCacheForAccount, writeCarsCache } from './cars_cache'
 import { clearVehicleCachesForAccount } from './vehicle_cache'
 import { clearNewAccountCaches } from './account_cache_cleanup'
-import { driveDistanceKm, driveEnergyReceipt, resolveDriveEnergy, resolveChargeEnergy } from '../domain/drive_energy'
+import { driveDistanceKm, driveEnergyReceipt, resolveDriveEnergy, resolveChargeEnergy, sameEnergyInstant } from '../domain/drive_energy'
 import { MOCK_FIXTURE_ENABLED, mockRequest } from './mock_fixture'
 import type {
   ApiEnvelope,
@@ -175,6 +175,14 @@ function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
+/** The old and current source-record wire aliases may not disagree. */
+function sourceRecordIdentity(raw: { source_id?: unknown; source_record_id?: unknown; source_instance_id?: unknown; source_vehicle_id?: unknown }): { id: string | null; valid: boolean } {
+  const values = [raw.source_id, raw.source_record_id, raw.source_instance_id, raw.source_vehicle_id]
+  if (values.some(value => value != null && (typeof value !== 'string' || value.length > 256 || /[\u0000-\u001f\u007f]/.test(value)))) return { id: null, valid: false }
+  const [legacy, current] = values.slice(0, 2).map(stringValue)
+  return { id: current ?? legacy, valid: !legacy || !current || legacy === current }
+}
+
 function finite(value: unknown, min = -Infinity, max = Infinity): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : null
 }
@@ -185,8 +193,7 @@ function chargeCurrency(raw: RawCharge): string | null | undefined {
     .map(value => stringValue(value)?.toUpperCase())
   if (supplied.some(value => !value) || new Set(supplied).size > 1) return null
   const code = stringValue(raw.cost_currency ?? raw.currency_code ?? raw.currency)?.toUpperCase()
-  return code && ['CNY', 'USD', 'EUR', 'GBP', 'HKD', 'JPY', 'CAD', 'AUD', 'NZD', 'KRW', 'SGD', 'TWD', 'CHF',
-    'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'INR', 'THB', 'AED', 'BRL', 'MXN', 'ZAR'].includes(code) ? code : null
+  return code && /^[A-Z]{3}$/.test(code) ? code : null
 }
 function chargeMode(raw: RawCharge): 'ac' | 'dc' | null {
   const mode = stringValue(raw.charge_type)?.toLowerCase()
@@ -572,6 +579,8 @@ function responseTemperatureUnit(response: unknown): string | null | undefined {
 
 export function normalizeDrive(raw: RawDrive, car?: Car, distanceUnit?: string | null, temperatureUnit?: string | null): Drive | null {
   if (!isRecord(raw)) return null
+  const sourceRecord = sourceRecordIdentity(raw)
+  if (!sourceRecord.valid) return null
   const rawId = raw.drive_id ?? raw.session_id
   if ((typeof rawId !== 'string' && typeof rawId !== 'number') || String(rawId).trim() === '' ||
       (typeof rawId === 'number' && (!Number.isSafeInteger(rawId) || rawId <= 0))) return null
@@ -618,6 +627,9 @@ export function normalizeDrive(raw: RawDrive, car?: Car, distanceUnit?: string |
     endLatitude: finite(raw.end_latitude, -90, 90),
     endLongitude: finite(raw.end_longitude, -180, 180),
     source: raw.source ?? null,
+    sourceInstanceId: stringValue(raw.source_instance_id),
+    sourceVehicleId: stringValue(raw.source_vehicle_id),
+    sourceRecordId: sourceRecord.id,
     qualityState: raw.quality_state ?? null,
     qualityReason: raw.quality_reason ?? null,
   }
@@ -625,10 +637,15 @@ export function normalizeDrive(raw: RawDrive, car?: Car, distanceUnit?: string |
 
 export function normalizeCharge(raw: RawCharge): Charge | null {
   if (!isRecord(raw)) return null
+  const sourceRecord = sourceRecordIdentity(raw)
+  if (!sourceRecord.valid) return null
   const rawId = raw.charge_id ?? raw.session_id
   if ((typeof rawId !== 'string' && typeof rawId !== 'number') || String(rawId).trim() === '' ||
       (typeof rawId === 'number' && (!Number.isSafeInteger(rawId) || rawId <= 0))) return null
-  const energy = resolveChargeEnergy(raw)
+  const resolvedEnergy = resolveChargeEnergy(raw), reportedMode = stringValue(raw.charge_type)?.toLowerCase()
+  const modeConflict = raw.fast_charger_present === true && (reportedMode === 'ac' || resolvedEnergy.chargeMode === 'ac') ||
+    (reportedMode === 'ac' || reportedMode === 'dc') && resolvedEnergy.chargeMode != null && reportedMode !== resolvedEnergy.chargeMode
+  const energy = modeConflict ? { ...resolvedEnergy, chargeMode: null } : resolvedEnergy
   return {
     id: String(rawId),
     sessionId: stringValue(raw.session_id),
@@ -640,7 +657,8 @@ export function normalizeCharge(raw: RawCharge): Charge | null {
     energyUsedKwh: energy.inputEnergyKwh,
     energy,
     cost: finite(raw.cost, 0),
-    currency: chargeCurrency(raw), currencyCode: chargeCurrency(raw), chargeMode: energy.chargeMode ?? chargeMode(raw),
+    currency: chargeCurrency(raw), currencyCode: chargeCurrency(raw), chargeMode: modeConflict ? null : raw.energy_contract != null ? energy.chargeMode : chargeMode(raw),
+    ...(modeConflict || typeof raw.fast_charger_present === 'boolean' ? { chargeModeConflict: modeConflict } : {}),
     reportedChargeMode: typeof raw.charge_type === 'string' ? raw.charge_type : null,
     startBatteryLevel: finite(raw.battery_details?.start_battery_level, 0, 100),
     endBatteryLevel: finite(raw.battery_details?.end_battery_level, 0, 100),
@@ -648,6 +666,11 @@ export function normalizeCharge(raw: RawCharge): Charge | null {
     longitude: finite(raw.longitude, -180, 180),
     chargerPowerKw: finite(raw.charger_power, 0),
     source: raw.source ?? null,
+    sourceInstanceId: stringValue(raw.source_instance_id),
+    sourceVehicleId: stringValue(raw.source_vehicle_id),
+    sourceRecordId: sourceRecord.id,
+    currentBatteryLevel: finite(raw.battery_details?.current_battery_level ?? raw.current_battery_level, 0, 100),
+    isCharging: bool(raw.is_charging),
     qualityState: raw.quality_state ?? null,
     qualityReason: raw.quality_reason ?? null,
   }
@@ -668,7 +691,8 @@ function historyResult<T>(raw: unknown, key: 'drives' | 'charges', page: number,
   const mapped = rows.map(mapper).filter((item): item is T => item !== null)
   return {
     items: mapped,
-    meta: pageMeta(isRecord(record.meta) ? record.meta as PageMeta : undefined, page, show, mapped.length),
+    meta: { ...pageMeta(isRecord(record.meta) ? record.meta as PageMeta : undefined, page, show, rows.length),
+      ...(rows.length > mapped.length ? { discardedRows: rows.length - mapped.length } : {}) },
   }
 }
 
@@ -1275,9 +1299,39 @@ export const matelinkApi = {
 
   async getCurrentCharge(carId: number, car?: Car): Promise<Charge | null> {
     assertVehicle(null, carId, car)
-    const response = await requestJson<ApiEnvelope<{ charge?: RawCharge | null }> | { charge?: RawCharge | null }>(`/api/v1/cars/${carId}/charges/current`)
-    assertVehicle(unwrap(response), carId, car)
-    return detailResult(response, 'charge', value => { assertVehicle(value, carId, car); return value ? normalizeCharge(value as RawCharge) : null })
+    let response: ApiEnvelope<{ charge?: RawCharge | null; car?: unknown }> | { charge?: RawCharge | null; car?: unknown }
+    try {
+      response = await requestJson<ApiEnvelope<{ charge?: RawCharge | null; car?: unknown }> | { charge?: RawCharge | null; car?: unknown }>(`/api/v1/cars/${carId}/charges/current`)
+    } catch (error) {
+      // The legacy backend reports an empty current session as this HTTP 200 sentinel.
+      if (error instanceof ApiError && error.status === 200 && error.code === 'No active charging in progress.') return null
+      throw error
+    }
+    const unwrapped = unwrap(response)
+    if (!isRecord(unwrapped) || !Object.prototype.hasOwnProperty.call(unwrapped, 'charge') ||
+      (unwrapped.car != null && !isRecord(unwrapped.car))) throw new ApiError(errorMessages.invalid_api_response, { code: 'invalid_api_response' })
+    assertVehicle(unwrapped, carId, car)
+    if (isRecord(unwrapped.car)) {
+      assertVehicle(unwrapped.car, carId, car)
+    }
+    const value = unwrapped.charge
+    if (value === null) return null
+    if (!isRecord(value)) throw new ApiError(errorMessages.invalid_api_response, { code: 'invalid_api_response' })
+    assertVehicle(value, carId, car)
+    const raw = value as RawCharge, normalized = normalizeCharge(raw)
+    if (!normalized) throw new ApiError(errorMessages.invalid_api_response, { code: 'invalid_api_response' })
+    if (typeof normalized.qualityState === 'string' && normalized.qualityState.trim().toLowerCase() === 'quarantined')
+      throw new ApiError('当前充电记录暂不可用，请稍后重试', { code: 'history_unavailable' })
+    const snapshot = raw.quality_reason === 'live_provider_snapshot'
+    const identityProvided = (candidate: unknown) => isRecord(candidate) &&
+      (candidate.car_id != null || Boolean(car && (candidate.vehicle_uid != null || candidate.provider_vehicle_id != null)))
+    const verified = identityProvided(unwrapped) || identityProvided(unwrapped.car) || identityProvided(value)
+    const observedAt = sameEnergyInstant(raw.observed_at, raw.observed_at) && Date.parse(raw.observed_at!) > 0 ? raw.observed_at :
+      snapshot && sameEnergyInstant(raw.start_date, raw.start_date) && Date.parse(raw.start_date!) > 0 ? raw.start_date : null
+    return { ...normalized, startDate: snapshot ? null : normalized.startDate,
+      currentIsSnapshot: snapshot, currentObservedAt: observedAt,
+      currentEnergyAddedKwh: raw.is_charging === true ? finite(raw.charge_energy_added, 0) : null,
+      currentVehicleIdentityVerified: verified }
   },
 
   async validateInviteCode(code: string): Promise<{ valid: boolean; code?: string; remaining?: number; reason?: string }> {

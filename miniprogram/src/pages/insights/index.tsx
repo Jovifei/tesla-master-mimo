@@ -8,15 +8,15 @@ import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 import { readCarsCache } from '../../services/cars_cache'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 import { carSelectionStorageKey, type Car, type CarStatus, type Charge, type Drive } from '../../services/types'
-import { aggregateDriveHistory, historyRowKey, isHistoryQuarantined } from '../../domain/history'
+import { aggregateDriveHistory, historyRowKey, isHistoryIdentityAmbiguous, isHistoryQuarantined } from '../../domain/history'
 import { isAppChargeAnalysisEligible, isAppDriveAnalysisEligible } from '../../domain/app_history_projection'
-import { emptyHistoryQuery, filterHistory, historyDateTime, type HistoryQuery } from '../../domain/history_query'
+import { emptyHistoryQuery, filterHistory, historyDateTime, selectHistoryDate, type HistoryQuery } from '../../domain/history_query'
 import { chargeCosts, insightDrive, makeManualTrip, manualTripSummary, personalizedRange, ratedRangeComparisons, rangeInfluences, readManualTrips,
   removeManualTrip, tripLegKey, writeManualTrip, type CapacityEvidence, type ManualTrip, type TripLeg, type TripScope } from '../../domain/insights'
 import HistoryDateChips from '../../components/HistoryDateChips'
 import { estimateTariffCost, readTariff } from '../../domain/tariff'
-import { overlayChargeCosts, type CostedCharge } from '../../services/charge_cost'
-import MetricValue from '../../components/MetricValue'
+import { chargeEstimatePrice, overlayChargeCosts, type CostedCharge } from '../../services/charge_cost'
+import MetricValue, { displayNumber } from '../../components/MetricValue'
 import LoadingIndicator from '../../components/LoadingIndicator'
 import { sourceLabel } from '../../domain/data_labels'
 import './index.scss'
@@ -123,18 +123,30 @@ export default function InsightsPage() {
   const filteredDrives = filterHistory(drives, query).map(insightDrive), filteredCharges = filterHistory(charges, query)
   const activeSession = readAppSession(Taro)
   const costScope = activeSession?.userId && scope.current?.userId === activeSession.userId ? scope.current : null
-  const allCostCharges = [...filteredCharges, ...trips.flatMap(trip => trip.legs.flatMap(leg => leg.kind === 'charge' ? [leg.charge] : [])), ...(currentChargeRaw ? [currentChargeRaw] : [])]
+  const allCostCharges = [
+    ...trips.flatMap(trip => trip.legs.flatMap(leg => leg.kind === 'charge' ? [leg.charge] : [])),
+    ...charges,
+    ...(currentChargeRaw ? [currentChargeRaw] : []),
+  ]
   const costIdentity = (charge: Charge) => JSON.stringify([charge.source, historyRowKey(charge)])
-  const costByKey = new Map((costScope ? overlayChargeCosts(Taro, costScope, allCostCharges) : []).map(charge => [costIdentity(charge), charge]))
+  const costByKey = new Map((costScope ? overlayChargeCosts(Taro, costScope, allCostCharges, chargeEstimatePrice(Taro, costScope)) : []).map(charge => [costIdentity(charge), charge]))
   const displayCharge = (charge: Charge): Charge | CostedCharge => costByKey.get(costIdentity(charge)) ?? charge
-  const currentCharge = currentChargeRaw ? displayCharge(currentChargeRaw) : null
+  const currentCharge = currentChargeRaw && !isHistoryQuarantined(currentChargeRaw) && currentChargeRaw.isCharging !== false && currentChargeRaw.currentVehicleIdentityVerified !== false
+    ? (costScope ? overlayChargeCosts(Taro, costScope, [currentChargeRaw])[0] : currentChargeRaw) : null
   const selectedTrip = selectedTripRaw ? { ...selectedTripRaw, legs: selectedTripRaw.legs.map(leg => leg.kind === 'charge' ? { kind: 'charge' as const, charge: displayCharge(leg.charge) } : leg) } : null
   // App analytics excludes incomplete/unverified history; manual long trips retain their saved raw legs.
   const analysisDrives = drives.filter(isAppDriveAnalysisEligible)
   const displayedCosts = filteredCharges.filter(isAppChargeAnalysisEligible).map(displayCharge), costs = chargeCosts(displayedCosts)
   const manualCostCount = displayedCosts.filter(charge => 'costProvenance' in charge && charge.costProvenance === 'manual').length
+  const estimateIn = (currency: string, month?: string, address?: string) => displayedCosts.some(row => {
+    if (!('costProvenance' in row) || row.costProvenance !== 'estimate' || (row.currencyCode ?? row.currency) !== currency) return false
+    const date = row.startDate ? new Date(row.startDate) : null
+    const rowMonth = date && Number.isFinite(date.getTime()) ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : '日期未知'
+    return (!month || rowMonth === month) && (!address || row.address === address)
+  })
+  const costAmount = (value: number | null, estimated: boolean) => estimated && value != null ? `≈${displayNumber(value, 2)}` : value
   const tariff = activeSession?.userId && scope.current?.userId === activeSession.userId ? readTariff(Taro, activeSession.userId, scope.current.origin) : null
-  const estimatedCosts = tariff ? displayedCosts.filter(charge => charge.cost == null).flatMap(charge => {
+  const estimatedCosts = tariff ? displayedCosts.filter(charge => charge.cost == null || ('costProvenance' in charge && charge.costProvenance === 'estimate')).flatMap(charge => {
     const cost = estimateTariffCost(charge, tariff)
     return cost == null ? [] : [{ charge, cost }]
   }) : []
@@ -178,7 +190,7 @@ export default function InsightsPage() {
       <Text className="muted">{result.distance.total === 0 ? '暂无里程样本' : `里程覆盖 ${result.distance.known}/${result.distance.total}`} · {result.duration.total === 0 ? '无时长' : `时长覆盖 ${result.duration.known}/${result.duration.total}`}</Text>
       <Text className="muted">{result.driveCount} 段行驶 · {result.chargeCount} 次充电</Text>
       {view.legs.some(leg => leg.kind === 'charge' && 'costProvenance' in leg.charge && leg.charge.costProvenance === 'manual') ? <Text className="muted">包含本机手动费用，原服务端账单保留。</Text> : null}
-      {result.costs.groups.map(group => <MetricValue key={group.currency} label="所选充电费用" value={group.cost} unit={group.currency} />)}
+      {result.costs.groups.map(group => <MetricValue key={group.currency} label="所选充电费用" value={costAmount(group.cost, view.legs.some(leg => leg.kind === 'charge' && 'costProvenance' in leg.charge && leg.charge.costProvenance === 'estimate' && (leg.charge.currencyCode ?? leg.charge.currency) === group.currency))} unit={group.currency} />)}
       {result.costs.unknownCurrency ? <Text className="muted">{result.costs.unknownCurrency} 条费用币种未知，未并入合计</Text> : null}
     </View>
   }
@@ -191,11 +203,12 @@ export default function InsightsPage() {
     {loading ? <LoadingIndicator label="正在读取所选车辆数据…" compact /> : null}
     {error ? <Text className="error">{error}</Text> : null}
     {cacheWarning ? <Text className="muted">数据已读取，本机缓存预算不足，本次未全部保存；已有缓存保留。</Text> : null}
+    {drives.some(isHistoryIdentityAmbiguous) || charges.some(isHistoryIdentityAmbiguous) ? <Text className="muted">来源身份未确认的历史记录已保留，但未计入当前展示或统计</Text> : null}
     {!readAppSession(Taro)?.userId ? <Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>前往登录</Button> : null}
     {car && (kind === 'range' || kind === 'cost' || kind === 'longTrips') ? <View className="insight-filters">
       <HistoryDateChips kind={kind === 'cost' ? 'charges' : 'drives'} query={query} onChange={patch => { setQuery({ ...query, ...patch }); setLegPage(0) }} />
-      <View className="history-filter-row"><Picker mode="date" value={query.startDate} onChange={event => setQuery({ ...query, startDate: event.detail.value })}><View>开始：{query.startDate || '不限'}</View></Picker><Picker mode="date" value={query.endDate} onChange={event => setQuery({ ...query, endDate: event.detail.value })}><View>结束：{query.endDate || '不限'}</View></Picker></View>
-      {kind !== 'cost' ? coverage(driveCoverage, '行驶', drives.length) : null}{kind !== 'range' ? coverage(chargeCoverage, '充电', charges.length) : null}
+      <View className="history-filter-row"><Picker mode="date" value={query.startDate} onChange={event => setQuery(selectHistoryDate(query, 'startDate', event.detail.value))}><View>开始：{query.startDate || '不限'}</View></Picker><Picker mode="date" value={query.endDate} onChange={event => setQuery(selectHistoryDate(query, 'endDate', event.detail.value))}><View>结束：{query.endDate || '不限'}</View></Picker></View>
+      {kind !== 'cost' ? coverage(driveCoverage, '行驶', drives.filter(row => !isHistoryIdentityAmbiguous(row)).length) : null}{kind !== 'range' ? coverage(chargeCoverage, '充电', charges.filter(row => !isHistoryIdentityAmbiguous(row)).length) : null}
     </View> : null}
 
     {car && kind === 'battery' ? <>
@@ -226,11 +239,12 @@ export default function InsightsPage() {
       <Text className="muted">已加载 {costs.total} 次；缺费用 {costs.missingCost} 次；币种未知 {costs.unknownCurrency} 次。不同币种分别统计。</Text>
       {manualCostCount ? <Text className="muted">含 {manualCostCount} 条本机手动费用；这是本机展示金额，服务端原账单保留。</Text> : null}
       {costs.groups.map(group => <View className="card" key={group.currency}><Text className="section-title">{group.currency} 费用</Text><View className="metric-grid">
-        <MetricValue label="费用合计" value={group.cost} unit={group.currency} /><MetricValue label="单次平均费用" value={group.average} unit={group.currency} />
-        <MetricValue label="费用与输入电量配对" value={group.energyKwh} unit="kWh" /><MetricValue label="配对单位电量费用" value={group.perKwh} unit={`${group.currency}/kWh`} /></View>
-        <Text className="muted">费用已知 {group.known}/{group.total} 条；单位电量费用只用同次充电的费用与合格输入电量。</Text>
-        <Text className="section-title">月度费用</Text>{group.months.map(month => <View className="insight-table-row" key={month.month}><Text>{month.month}</Text><Text>{month.cost ?? '未知'} {group.currency}</Text><Text className="muted">AC {month.ac ?? '未知'} / DC {month.dc ?? '未知'} / 模式未知 {month.unknownMode ?? '无'} {group.currency}</Text></View>)}
-        <Text className="section-title">常用充电地点</Text>{group.locations.length ? group.locations.map(location => <View className="insight-table-row" key={location.address}><Text>{location.address}</Text><Text>{location.cost ?? '未知'} {group.currency} · {location.count} 次</Text></View>) : <Text className="muted">未提供地点报告</Text>}
+        <MetricValue label="费用合计" value={costAmount(group.cost, estimateIn(group.currency))} unit={group.currency} /><MetricValue label="单次平均费用" value={costAmount(group.average, estimateIn(group.currency))} unit={group.currency} />
+        <MetricValue label="费用与电池充入量配对" value={group.energyKwh} unit="kWh" /><MetricValue label="配对单位电量费用" value={costAmount(group.perKwh, estimateIn(group.currency))} unit={`${group.currency}/kWh`} /></View>
+        <Text className="muted">费用已知 {group.known}/{group.total} 条；单位电量费用只用同次充电的费用与合格电池充入量。</Text>
+        {estimateIn(group.currency) ? <Text className="muted">≈ 包含按默认电价估算的费用。</Text> : null}
+        <Text className="section-title">月度费用</Text>{group.months.map(month => <View className="insight-table-row" key={month.month}><Text>{month.month}</Text><Text>{costAmount(month.cost, estimateIn(group.currency, month.month)) ?? '未知'} {group.currency}</Text><Text className="muted">AC {costAmount(month.ac, estimateIn(group.currency, month.month)) ?? '未知'} / DC {costAmount(month.dc, estimateIn(group.currency, month.month)) ?? '未知'} / 模式未知 {costAmount(month.unknownMode, estimateIn(group.currency, month.month)) ?? '无'} {group.currency}</Text></View>)}
+        <Text className="section-title">常用充电地点</Text>{group.locations.length ? group.locations.map(location => <View className="insight-table-row" key={location.address}><Text>{location.address}</Text><Text>{costAmount(location.cost, estimateIn(group.currency, undefined, location.address)) ?? '未知'} {group.currency} · {location.count} 次</Text></View>) : <Text className="muted">未提供地点报告</Text>}
       </View>)}
     </> : null}
     {car && kind === 'cost' && tariff ? <View className="card"><Text className="section-title">自定义费率估算</Text><Text className="muted">只估算缺少实际账单的充电；按保存费率时的本机时区（{tariff.timeZone || '未记录'}）与均匀AC输入电量估算，不写回实际费用。</Text>
@@ -256,10 +270,10 @@ export default function InsightsPage() {
       </View> : null}
     </> : null}
     {car && kind === 'currentCharge' ? <View className="card"><Text className="section-title">正在充电</Text>{currentCharge ? <>
-      <Text className="muted">开始：{historyDateTime(currentCharge.startDate)} · {sourceLabel(currentCharge.source)}</Text>
-      <View className="metric-grid"><MetricValue label="电池充入" value={currentCharge.energyAddedKwh} unit="kWh" /><MetricValue label="当前充电功率" value={currentCharge.chargerPowerKw} unit="kW" /><MetricValue label="已持续" value={currentCharge.durationMinutes} unit="分钟" /><MetricValue label="当前费用" value={currentCharge.cost} unit={currentCharge.currencyCode || currentCharge.currency || '币种未知'} /></View>
+      <Text className="muted">{currentCharge.currentIsSnapshot ? '状态观测' : '开始'}：{historyDateTime(currentCharge.currentIsSnapshot ? currentCharge.currentObservedAt : currentCharge.startDate)} · {sourceLabel(currentCharge.source)}</Text>
+      <View className="metric-grid"><MetricValue label="电池充入" value={currentCharge.currentEnergyAddedKwh ?? currentCharge.energyAddedKwh} unit="kWh" /><MetricValue label="当前电量" value={currentCharge.currentBatteryLevel} unit="%" /><MetricValue label="当前充电功率" value={currentCharge.chargerPowerKw} unit="kW" /><MetricValue label="已持续" value={currentCharge.durationMinutes} unit="分钟" /><MetricValue label="当前费用" value={currentCharge.cost} unit={currentCharge.currencyCode || currentCharge.currency || '币种未知'} /></View>
       <Text className="muted">充电功率与累计电量分别展示；刷新时只读服务端报告。</Text>
       {'costProvenance' in currentCharge && currentCharge.costProvenance === 'manual' ? <Text className="muted">当前显示本机手动费用，服务端账单保留。</Text> : null}
-    </> : !loading ? <Text className="muted">当前没有服务端报告的充电记录，或车辆尚未提供该状态。</Text> : null}<Button className="button-secondary" onClick={() => Taro.switchTab({ url: '/pages/charges/index' })}>查看充电历史</Button></View> : null}
+    </> : !loading ? <Text className="muted">{currentChargeRaw && currentChargeRaw.isCharging !== false && currentChargeRaw.currentVehicleIdentityVerified === false ? '当前充电的车辆身份未确认，请刷新重试。' : '当前没有服务端报告的充电记录，或车辆尚未提供该状态。'}</Text> : null}<Button className="button-secondary" onClick={() => Taro.switchTab({ url: '/pages/charges/index' })}>查看充电历史</Button></View> : null}
   </View>
 }

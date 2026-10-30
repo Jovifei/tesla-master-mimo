@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, emptyHistoryControllerState, reconcileHistoryCache, type HistoryControllerState } from './history_controller'
+import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, emptyHistoryControllerState, enrichHistoryInterval, reconcileHistoryCache, type HistoryControllerState } from './history_controller'
 import type { Charge, Drive, HistoryPage } from '../services/types'
 import { driveEnergyReceipt, resolveDriveEnergy } from './drive_energy'
 
@@ -121,6 +121,93 @@ describe('history page controller', () => {
 })
 
 describe('canonical history detail consumption', () => {
+  it('does not graft old charge values into a corrected time window', () => {
+    const previous: Charge = { ...chargeRow(1), startDate: '2026-10-01T00:00:00Z', endDate: '2026-10-01T01:00:00Z',
+      address: 'old location', cost: 12, currency: 'CNY', startBatteryLevel: 20, endBatteryLevel: 80, energyAddedKwh: 10 }
+    const corrected: Charge = { ...previous, startDate: '2026-10-02T00:00:00Z', endDate: '2026-10-02T01:00:00Z',
+      address: null, cost: null, currency: null, startBatteryLevel: null, endBatteryLevel: null, energyAddedKwh: null }
+    const initial = acceptHistoryPage(emptyHistoryControllerState<Charge>(), page(1, [previous], false, 1), 1).state
+    const updated = acceptHistoryPage(initial, page(1, [corrected], false, 1), 1).state
+    expect(updated.items).toHaveLength(1)
+    expect(updated.items[0]).toMatchObject({ startDate: corrected.startDate, endDate: corrected.endDate,
+      address: null, cost: null, currency: null, startBatteryLevel: null, endBatteryLevel: null, energyAddedKwh: null })
+    expect(initial.items[0]).toMatchObject({ address: 'old location', cost: 12, energyAddedKwh: 10 })
+  })
+
+  it('does not graft old drive data into a corrected start boundary', () => {
+    const previous: Drive = { ...row(1), startDate: '2026-10-01T00:00:00Z', endDate: '2026-10-01T01:00:00Z',
+      startAddress: 'old start', endAddress: 'old end', distanceKm: 10, energyConsumedKwh: 2, startBatteryLevel: 80, endBatteryLevel: 70 }
+    const corrected: Drive = { ...previous, startDate: '2026-10-01T00:10:00Z', startAddress: null,
+      endAddress: null, distanceKm: null, energyConsumedKwh: null, startBatteryLevel: null, endBatteryLevel: null }
+    const state = acceptHistoryPage(emptyHistoryControllerState<Drive>(), page(1, [previous], false, 1), 1).state
+    const updated = acceptHistoryPage(state, page(1, [corrected], false, 1), 1).state
+    expect(updated.items[0]).toMatchObject({ startDate: corrected.startDate, startAddress: null, endAddress: null,
+      distanceKm: null, energyConsumedKwh: null, startBatteryLevel: null, endBatteryLevel: null })
+  })
+
+  it('retains qualified sparse details when time windows represent the same instant', () => {
+    const previous: Charge = { ...chargeRow(1), startDate: '2026-10-01T00:00:00Z', endDate: '2026-10-01T01:00:00Z', address: 'known location', cost: 12 }
+    const equalWindow: Charge = { ...previous, startDate: '2026-10-01T08:00:00+08:00', endDate: '2026-10-01T09:00:00+08:00', address: null, cost: null }
+    const initial = acceptHistoryPage(emptyHistoryControllerState<Charge>(), page(1, [previous], false, 1), 1).state
+    const updated = acceptHistoryPage(initial, page(1, [equalWindow], false, 1), 1).state
+    expect(updated.items[0]).toMatchObject({ startDate: equalWindow.startDate, address: 'known location', cost: 12 })
+  })
+
+  it('does not let missing timestamps or weaker quality alone replace a known cached window', () => {
+    const previous: Charge = { ...chargeRow(1), startDate: '2026-10-01T00:00:00Z', endDate: '2026-10-01T01:00:00Z', address: 'known location', cost: 12 }
+    const state = acceptHistoryPage(emptyHistoryControllerState<Charge>(), page(1, [previous], false, 1), 1).state
+    const sparse: Charge = { ...previous, startDate: null, endDate: null, address: null, cost: null }
+    const weaker: Charge = { ...previous, startDate: '2026-10-02T00:00:00Z', endDate: '2026-10-02T01:00:00Z', qualityState: 'derived', address: null, cost: null }
+    for (const update of [sparse, weaker]) {
+      expect(acceptHistoryPage(state, page(1, [update], false, 1), 1).state.items[0]).toMatchObject({ startDate: previous.startDate, endDate: previous.endDate, address: 'known location', cost: 12 })
+    }
+  })
+
+  it('preserves legacy unknown-quality cached windows when a refresh omits timestamps', () => {
+    const previous: Charge = { ...chargeRow(1), source: null, qualityState: null,
+      startDate: '2026-10-01T00:00:00Z', endDate: '2026-10-01T01:00:00Z', address: 'legacy location', cost: 12 }
+    const sparse: Charge = { ...previous, startDate: null, endDate: null, address: null, cost: null }
+    const state = acceptHistoryPage(emptyHistoryControllerState<Charge>(), page(1, [previous], false, 1), 1).state
+    expect(acceptHistoryPage(state, page(1, [sparse], false, 1), 1).state.items[0]).toMatchObject({
+      startDate: previous.startDate, endDate: previous.endDate, address: 'legacy location', cost: 12,
+    })
+  })
+
+  it('does not replace a record or accept detail from a different or missing source instance', () => {
+    const original: Drive = { ...row(1), source: 'teslamate_archive', sourceInstanceId: 'A', sourceVehicleId: 'car', sourceRecordId: 'rec' }
+    const foreign = { ...original, sourceInstanceId: 'B', startAddress: 'foreign' }
+    const unknown = { ...original, sourceInstanceId: null, startAddress: 'unverified' }
+    const state = acceptHistoryPage(emptyHistoryControllerState<Drive>(), page(1, [original], false, 1), 1).state
+    for (const detail of [foreign, unknown]) {
+      expect(acceptHistoryDetail(state, original, detail)).toBe(state)
+      expect(reconcileHistoryCache(state, [detail])).toBe(state)
+      expect(enrichHistoryInterval([original], [detail])[0]).toEqual(original)
+    }
+    const withBoth = acceptHistoryPage(emptyHistoryControllerState<Drive>(), page(1, [original, foreign], false, 1), 1).state
+    expect(withBoth.items).toHaveLength(2)
+    expect(withBoth.pages[0].items.map(item => item.sourceInstanceId)).toEqual(['A', 'B'])
+  })
+
+  it('continues pagination but reports incomplete coverage when a malformed record was discarded', async () => {
+    const first = page(1, [row(1)], true, 2)
+    const damaged = { ...first, meta: { ...first.meta, discardedRows: 1 } }
+    const requested: number[] = []
+    const result = await collectHistoryInterval(damaged, async n => { requested.push(n); return page(2, [row(2)], false, 2) }, () => true)
+    expect(requested).toEqual([2])
+    expect(result).toMatchObject({ complete: false, receivedPages: 2, reason: 'invalid_rows_discarded' })
+    expect(result?.items).toHaveLength(2)
+  })
+
+  it('continues past an entirely malformed full page without claiming complete coverage', async () => {
+    const first = page(1, [], true, 2)
+    const damaged = { ...first, meta: { ...first.meta, discardedRows: 20 } }
+    const requested: number[] = []
+    const result = await collectHistoryInterval(damaged, async n => { requested.push(n); return page(2, [row(2)], false, 2) }, () => true)
+    expect(requested).toEqual([2])
+    expect(result).toMatchObject({ complete: false, receivedPages: 2, reason: 'invalid_rows_discarded' })
+    expect(result?.items.map(item => item.id)).toEqual(['drive-2'])
+  })
+
   it('rejects a delayed charge detail after a newer same-window cost/energy correction', () => {
     const original = { ...chargeRow(1), energyAddedKwh: 2, energyUsedKwh: 3, cost: 4, currency: 'EUR' }
     const current = acceptHistoryPage(emptyHistoryControllerState<Charge>(), page(1, [original], true), 1).state

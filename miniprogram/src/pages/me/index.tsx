@@ -7,6 +7,7 @@ import { readAppSession, readPendingTeslaAuthorization, type AppSession } from '
 import { requestDataStatus } from '../../services/data_status_intent'
 import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
 import { getAppNavGeometry } from '../../services/nav_geometry'
+import { CONSENT_STORAGE_KEY, readStoredConsent, writeStoredConsent } from '../../domain/legal'
 import LoadingIndicator from '../../components/LoadingIndicator'
 import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 
@@ -30,9 +31,11 @@ function errorMessagesForStatus(status: string): string {
 
 export default function MePage() {
   const initialSession = readAppSession(Taro)
+  const initialConsent = readStoredConsent(Taro)
+  const hasConsent = initialConsent !== null
   const [session, setSession] = useState<AppSession | null>(initialSession)
-  const [termsAccepted, setTermsAccepted] = useState(Boolean(initialSession))
-  const [privacyAccepted, setPrivacyAccepted] = useState(Boolean(initialSession))
+  const [termsAccepted, setTermsAccepted] = useState(hasConsent)
+  const [privacyAccepted, setPrivacyAccepted] = useState(hasConsent)
   const [authorizationPending, setAuthorizationPending] = useState(false)
   const [loading, setLoading] = useState(false)
   const [restoring, setRestoring] = useState(false)
@@ -41,6 +44,7 @@ export default function MePage() {
   const operationEpoch = useRef(0)
   const bindingEpoch = useRef(0)
   const pageVisible = useRef(false)
+  const consentBlocked = useRef(false)
 
   const invalidatePage = () => {
     operationEpoch.current += 1
@@ -120,7 +124,8 @@ export default function MePage() {
       setSession(current)
       setRestoring(false)
       if (!current && getWechatRecoveryFailure()) setError(errorMessage(getWechatRecoveryFailure()))
-      if (current) { setTermsAccepted(true); setPrivacyAccepted(true) }
+      const consent = !consentBlocked.current && readStoredConsent(Taro) !== null
+      setTermsAccepted(consent); setPrivacyAccepted(consent)
       if (readPendingTeslaAuthorization(Taro)) void resumePendingAuthorization()
       else { setAuthorizationPending(false); void loadWechatBinding() }
     })
@@ -208,8 +213,21 @@ export default function MePage() {
   }
 
   const onConsentChange = (event: { detail: { value: string[] } }) => {
-    setTermsAccepted(event.detail.value.includes('terms'))
-    setPrivacyAccepted(event.detail.value.includes('privacy'))
+    const terms = event.detail.value.includes('terms')
+    const privacy = event.detail.value.includes('privacy')
+    setTermsAccepted(terms)
+    setPrivacyAccepted(privacy)
+    if (terms && privacy) {
+      writeStoredConsent(Taro)
+      consentBlocked.current = readStoredConsent(Taro) === null
+    } else {
+      consentBlocked.current = true
+      try { Taro.removeStorageSync(CONSENT_STORAGE_KEY) }
+      catch {
+        try { Taro.setStorageSync(CONSENT_STORAGE_KEY, null) }
+        catch { setError('本机同意状态未能更新，请检查微信存储。') }
+      }
+    }
   }
 
   const startTeslaAuthorization = async () => {
@@ -217,6 +235,7 @@ export default function MePage() {
       setError('请先勾选服务条款和隐私指引')
       return
     }
+    writeStoredConsent(Taro)
     setLoading(true)
     setError(null)
     const operation = ++operationEpoch.current
@@ -283,10 +302,11 @@ export default function MePage() {
     } finally {
       if (operation === operationEpoch.current) {
         const current = readAppSession(Taro)
+        const consent = !consentBlocked.current && readStoredConsent(Taro) !== null
         setSession(current)
         setWechatBound(null)
-        setTermsAccepted(Boolean(current))
-        setPrivacyAccepted(Boolean(current))
+        setTermsAccepted(consent)
+        setPrivacyAccepted(consent)
         setAuthorizationPending(Boolean(readPendingTeslaAuthorization(Taro)))
         setLoading(false)
       }
@@ -310,6 +330,7 @@ export default function MePage() {
     try {
       const result = await matelinkApi.deleteAccount()
       if (operation !== operationEpoch.current) return
+      try { Taro.removeStorageSync(CONSENT_STORAGE_KEY) } catch { /* best effort */ }
       setSession(null)
       setAuthorizationPending(false)
       setTermsAccepted(false)

@@ -4,7 +4,7 @@ import type { Charge } from '../services/types'
 /** App ChargeEnergyBinding.qualifiedAcEnergyBalance: two counters alone cannot establish efficiency. */
 export function qualifiedAcEnergyBalance(charge: Charge) {
   const proof = charge.energy?.evidence, input = proof?.ac_input, battery = proof?.battery_input
-  if (proof?.version !== 1 || charge.reportedChargeMode !== 'ac' || proof.charge_mode !== 'ac' ||
+  if ((charge.chargeModeConflict != null && charge.chargeModeConflict !== false) || proof?.version !== 1 || charge.reportedChargeMode !== 'ac' || proof.charge_mode !== 'ac' ||
     proof.charge_mode_evidence !== 'observed_boundary_modes_no_conflict' || !input || !battery ||
     input.method !== 'session_counter_delta' || battery.method !== 'session_counter_delta' ||
     input.measurement_point !== 'ac_charger_input' || battery.measurement_point !== 'battery_input' ||

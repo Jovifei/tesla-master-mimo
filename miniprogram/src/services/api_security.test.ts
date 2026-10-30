@@ -110,7 +110,7 @@ it('previous account fresh car proof cannot authorize the new account numeric ID
   expect(fake.request).toHaveBeenCalledTimes(1)
 })
 
-it('charge adapter preserves missing versus explicit unknown currency and never assumes AC', async () => {
+it('charge adapter preserves missing, structurally valid and conflicting currency reports without assuming AC', async () => {
   const { matelinkApi } = await import('./api')
   fake.request.mockResolvedValueOnce(response({ charges: [
     { charge_id: 1, cost: 0, charger_power: 0 },
@@ -120,7 +120,8 @@ it('charge adapter preserves missing versus explicit unknown currency and never 
   const result = await matelinkApi.getCharges(7)
   expect(result.items[0]).toMatchObject({ cost: 0, chargerPowerKw: 0, chargeMode: null })
   expect(result.items[0].currency).toBeUndefined()
-  expect(result.items[1].currency).toBeNull()
+  // Preserve a three-letter provider code without claiming its ISO assignment is verified.
+  expect(result.items[1].currency).toBe('ZZZ')
   expect(result.items[1].chargeMode).toBeNull()
   expect(result.items[2].currency).toBeNull()
 })

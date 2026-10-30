@@ -489,4 +489,145 @@ describe('MateLink API transport', () => {
       isPreconditioning: null, geofence: null, fieldSources: {},
     })
   })
+
+  it('preserves canonical source record identity in normalizeDrive and normalizeCharge', async () => {
+    const { api } = await modules()
+    const drive = api.normalizeDrive({
+      drive_id: 101,
+      start_date: '2026-10-14T00:00:00Z',
+      source: 'telemetry_mqtt',
+      source_instance_id: 'collector-inst-1',
+      source_vehicle_id: 'veh-100',
+      source_record_id: 'rec-555',
+    })
+    expect(drive).toMatchObject({
+      sourceInstanceId: 'collector-inst-1',
+      sourceVehicleId: 'veh-100',
+      sourceRecordId: 'rec-555',
+    })
+
+    const charge = api.normalizeCharge({
+      charge_id: 202,
+      start_date: '2026-10-14T00:00:00Z',
+      source: 'telemetry_mqtt',
+      source_instance_id: 'collector-inst-2',
+      source_vehicle_id: 'veh-200',
+      source_record_id: 'rec-777',
+      current_battery_level: 65,
+      is_charging: true,
+    })
+    expect(charge).toMatchObject({
+      sourceInstanceId: 'collector-inst-2',
+      sourceVehicleId: 'veh-200',
+      sourceRecordId: 'rec-777',
+      currentBatteryLevel: 65,
+      isCharging: true,
+    })
+  })
+
+  it('preserves AC/fast-charge conflicts through normalization, cache and sparse refresh without dropping the bill or battery input', async () => {
+    const { api } = await modules()
+    const { qualifiedAcEnergyBalance } = await import('../domain/charge_energy_balance')
+    const { historyRowKey, mergeHistoryByKey } = await import('../domain/history')
+    const { historyCacheKey, readHistoryCache, writeHistoryCache } = await import('./history_cache')
+    const start = '2026-10-01T00:00:00Z', end = '2026-10-01T01:00:00Z'
+    const metric = (value: number, point: string) => ({ value_kwh: value, unit: 'kWh', method: 'session_counter_delta', measurement_point: point,
+      source: 'teslamate_archive', quality: 'reported', start_date: start, end_date: end, observed_start_at: start, observed_end_at: end,
+      time_basis: 'source_sample_time', coverage_kind: 'endpoints', coverage_ratio: 1 })
+    const raw = { charge_id: 7, session_id: 'charge-7', source: 'teslamate_archive', source_instance_id: 'collector', source_vehicle_id: 'vehicle',
+      source_record_id: 'record', start_date: start, end_date: end, quality_state: 'observed', cost: 12, currency: 'CNY', charge_type: 'ac',
+      fast_charger_present: true, energy_contract: { version: 1, charge_mode: 'ac', charge_mode_evidence: 'observed_boundary_modes_no_conflict',
+        battery_input: metric(8, 'battery_input'), ac_input: metric(10, 'ac_charger_input') } }
+    const conflicting = api.normalizeCharge(raw)!
+    expect(conflicting).toMatchObject({ chargeModeConflict: true, chargeMode: null, cost: 12, energyAddedKwh: 8, energyUsedKwh: 10 })
+    expect(qualifiedAcEnergyBalance(conflicting)).toBeNull()
+    const key = historyCacheKey('charges', 'user', 'vehicle', 'https://api.example.test')
+    expect(writeHistoryCache(storageAdapter, key, [conflicting])).toBe(true)
+    const stored = readHistoryCache<typeof conflicting>(storageAdapter, key)[0]
+    expect(stored.chargeModeConflict).toBe(true)
+    expect(qualifiedAcEnergyBalance(stored)).toBeNull()
+    const { fast_charger_present: _, ...sparse } = raw
+    const weakRefresh = api.normalizeCharge(sparse)!
+    const merged = mergeHistoryByKey([stored], [weakRefresh], historyRowKey).items[0]
+    expect(merged.chargeModeConflict).toBe(true)
+    expect(qualifiedAcEnergyBalance(merged)).toBeNull()
+    const explicitClear = api.normalizeCharge({ ...raw, fast_charger_present: false })!
+    expect(explicitClear).toMatchObject({ chargeModeConflict: false, chargeMode: 'ac', cost: 12, energyAddedKwh: 8 })
+    expect(qualifiedAcEnergyBalance(explicitClear)?.efficiencyPercent).toBe(80)
+    const corrected = mergeHistoryByKey([stored], [explicitClear], historyRowKey).items[0]
+    expect(corrected.chargeModeConflict).toBe(false)
+    expect(qualifiedAcEnergyBalance(corrected)?.efficiencyPercent).toBe(80)
+    for (const candidate of [{ ...raw, charge_type: 'dc' }, { ...raw, charge_type: undefined }]) {
+      const opposite = api.normalizeCharge(candidate)!
+      expect(opposite).toMatchObject({ chargeModeConflict: true, chargeMode: null, cost: 12, energyAddedKwh: 8 })
+      expect(qualifiedAcEnergyBalance(opposite)).toBeNull()
+    }
+    const legacy = api.normalizeCharge(sparse)!
+    expect(legacy.chargeModeConflict).toBeUndefined()
+    expect(qualifiedAcEnergyBalance(legacy)?.efficiencyPercent).toBe(80)
+  })
+
+  it('does not terminate pagination when a single row in a full page is malformed', async () => {
+    const { api } = await modules()
+    const fullPageWithOneInvalid = Array.from({ length: 20 }, (_, i) => ({
+      drive_id: i === 0 ? null : i, // row 0 has no valid ID
+      start_date: '2026-10-14T00:00:00Z',
+    }))
+    mocks.request.mockResolvedValueOnce({
+      statusCode: 200,
+      data: {
+        data: {
+          drives: fullPageWithOneInvalid,
+          // meta has no total_pages
+        },
+      },
+      header: {},
+    })
+    const result = await api.matelinkApi.getDrives(11, 1, 20)
+    expect(result.items).toHaveLength(19)
+    // Because server returned 20 rows (show=20), hasMore must be true
+    expect(result.meta.hasMore).toBe(true)
+  })
+
+  it.each(['drives', 'charges'] as const)('rejects malformed collector/vehicle identities from %s without disguising them as missing', async kind => {
+    const { api } = await modules()
+    const invalid = [
+      { source_instance_id: 1 }, { source_vehicle_id: 2 }, { source_instance_id: 'bad\u0000id' },
+      { source_vehicle_id: 'bad\nid' }, { source_instance_id: [] }, { source_vehicle_id: {} },
+    ]
+    const valid = Array.from({ length: 14 }, (_, index) => index === 0 ? { source_instance_id: null, source_vehicle_id: null } :
+      index === 1 ? {} : { source_instance_id: `instance-${index}`, source_vehicle_id: 'vehicle' })
+    const rows = [...invalid, ...valid].map((item, index) => ({ ...item, [kind === 'drives' ? 'drive_id' : 'charge_id']: index + 1,
+      source: 'teslamate_archive', session_id: `session-${index}`, source_record_id: `record-${index}` }))
+    mocks.request.mockResolvedValueOnce({ statusCode: 200, data: { data: { [kind]: rows } }, header: {} })
+    const result = kind === 'drives' ? await api.matelinkApi.getDrives(11, 1, 20) : await api.matelinkApi.getCharges(11, 1, 20)
+    expect(result.items).toHaveLength(14)
+    expect(result.meta).toMatchObject({ hasMore: true, discardedRows: 6 })
+    expect(result.items[0]).toMatchObject({ sourceInstanceId: null, sourceVehicleId: null })
+    expect(result.items[2]).toMatchObject({ sourceInstanceId: 'instance-2', sourceVehicleId: 'vehicle' })
+  })
+
+  it('rejects getCurrentCharge when nested data.car.car_id does not match requested vehicle', async () => {
+    const { api } = await modules()
+    mocks.request.mockResolvedValueOnce({
+      statusCode: 200,
+      data: {
+        data: {
+          charge: { charge_id: 1, start_date: '2026-10-14T00:00:00Z' },
+          car: { car_id: 999 }, // Mismatched vehicle ID
+        },
+      },
+      header: {},
+    })
+    await expect(api.matelinkApi.getCurrentCharge(11)).rejects.toMatchObject({ code: 'vehicle_not_found' })
+  })
+
+  it.each(['quarantined', ' Quarantined '])('does not expose a live charge when its history quality is %s', async quality => {
+    const { api } = await modules()
+    mocks.request.mockResolvedValueOnce({ statusCode: 200, data: { data: { car: { car_id: 11 }, charge: {
+      charge_id: 1, source: 'fleet_api', quality_state: quality, is_charging: true,
+      charge_energy_added: 5, charger_power: 7, battery_details: { current_battery_level: 66 },
+    } } }, header: {} })
+    await expect(api.matelinkApi.getCurrentCharge(11)).rejects.toMatchObject({ code: 'history_unavailable' })
+  })
 })

@@ -1,5 +1,5 @@
 import type { Charge, Drive, HistoryPage } from '../services/types'
-import { mergeChargeEnergyRecord, mergeDriveEnergyRecord } from './drive_energy'
+import { mergeChargeEnergyRecord, mergeDriveEnergyRecord, sameEnergyInstant } from './drive_energy'
 
 export type HistoryLoadState = 'loading' | 'partial' | 'ready' | 'cached' | 'failed'
 export type HistoryMergeResult<T> = { items: T[]; retainedLocalCount: number; addedRemoteCount: number }
@@ -11,7 +11,15 @@ export type HistoryPagesMergeResult<T> = HistoryMergeResult<T> & {
   errorReason: string | null
 }
 
-type HistoryIdentity = { id: string; sessionId?: string | null; startDate?: string | null }
+type HistoryIdentity = {
+  id: string
+  sessionId?: string | null
+  startDate?: string | null
+  source?: string | null
+  sourceInstanceId?: string | null
+  sourceVehicleId?: string | null
+  sourceRecordId?: string | null
+}
 type Row = Record<string, unknown>
 const unverifiedSources = new Set(['local_import', 'snapshot_estimate', 'physical_model', 'inferred_soc_jump'])
 
@@ -22,8 +30,23 @@ export function historyScopeKey(userId: string | null, carId: number): string {
 // Only call within an account + stable vehicle + kind scope. Mutable dates are
 // not identities. Do not guess that equal times on two vehicles mean one trip.
 export function historyRowKey(item: HistoryIdentity): string {
-  const sessionId = item.sessionId?.trim()
-  return sessionId ? `session:${sessionId}` : `id:${String(item.id).trim()}`
+  const session = text(item.sessionId)
+  return JSON.stringify([text(item.source), text(item.sourceInstanceId), text(item.sourceVehicleId), text(item.sourceRecordId),
+    session ? 'session' : 'id', session || text(item.id)])
+}
+
+/** Compare only within the same account, API origin, stable vehicle and history kind. */
+export function sameHistoryIdentity(a: unknown, b: unknown): boolean {
+  const left = asRow(a), right = asRow(b)
+  if (!left || !right) return false
+  for (const field of ['source', 'sourceInstanceId', 'sourceVehicleId', 'sourceRecordId']) {
+    if ((left[field] != null && typeof left[field] !== 'string') || (right[field] != null && typeof right[field] !== 'string')) return false
+    if (text(left[field]) !== text(right[field])) return false
+  }
+  const ls = text(left.sessionId), rs = text(right.sessionId)
+  if (ls || rs) return Boolean(ls && rs && ls === rs)
+  const id = text(left.id)
+  return Boolean(id && id === text(right.id))
 }
 
 function timestamp(value: string | null | undefined): number {
@@ -55,9 +78,12 @@ function qualityRank(row: Row): number {
   }
 }
 function quarantined(row: Row): boolean { return text(row.qualityState).toLowerCase() === 'quarantined' }
+export function isHistoryIdentityAmbiguous(item: unknown): boolean {
+  return asRow(item)?.identityAmbiguous === true
+}
 export function isHistoryQuarantined(item: unknown): boolean {
   const row = asRow(item)
-  return Boolean(row && quarantined(row))
+  return Boolean(row && (quarantined(row) || isHistoryIdentityAmbiguous(row)))
 }
 function conservativeEvidence<T>(item: T): T {
   const row = asRow(item)
@@ -66,6 +92,16 @@ function conservativeEvidence<T>(item: T): T {
     return { ...row, qualityState: 'incomplete', qualityReason: 'unverified_source' } as T
   }
   return item
+}
+
+/** A missing or invalid endpoint is not evidence of a corrected window. */
+function changedWindow(a: Row, b: Row): boolean {
+  return ['startDate', 'endDate'].some(key =>
+    sameEnergyInstant(a[key], a[key]) && sameEnergyInstant(b[key], b[key]) && !sameEnergyInstant(a[key], b[key]))
+}
+
+function missingKnownEndpoint(previous: Row, incoming: Row): boolean {
+  return ['startDate', 'endDate'].some(key => sameEnergyInstant(previous[key], previous[key]) && !sameEnergyInstant(incoming[key], incoming[key]))
 }
 
 // Preserve a stronger record whole, rather than grafting unverified numbers onto
@@ -85,9 +121,12 @@ export function mergeHistoryEvidence<T>(local: T, incoming: T): T {
     const oldRank = qualityRank(old), nextRank = qualityRank(next)
     if (nextRank < oldRank) {
       merged = { ...old }
-    } else if (nextRank > oldRank || text(next.source) !== text(old.source) || next.qualityState !== old.qualityState) {
+    } else if (nextRank > oldRank || text(next.source) !== text(old.source) || next.qualityState !== old.qualityState || changedWindow(old, next)) {
       // Sources/grades cannot be relabelled by filling from a different record.
       merged = { ...next }
+    } else if (missingKnownEndpoint(old, next)) {
+      // A sparse response cannot invalidate a previously proven window.
+      merged = { ...old }
     } else {
       mergeFields = true
       merged = { ...old }
@@ -96,9 +135,9 @@ export function mergeHistoryEvidence<T>(local: T, incoming: T): T {
   } else {
     // Legacy records without trustworthy provenance stay legacy. Keep their
     // existing fields; this path must not launder an unverified quality flag.
-    mergeFields = true
+    mergeFields = !changedWindow(old, next) && !missingKnownEndpoint(old, next)
     merged = { ...old }
-    for (const [key, value] of Object.entries(next)) if (missing(merged[key])) merged[key] = value
+    if (mergeFields) for (const [key, value] of Object.entries(next)) if (missing(merged[key])) merged[key] = value
     if (old.qualityState === 'incomplete' || next.qualityState === 'incomplete' ||
         merged.qualityState === 'observed' || merged.qualityState === 'derived') {
       merged.qualityState = 'incomplete'
@@ -106,7 +145,20 @@ export function mergeHistoryEvidence<T>(local: T, incoming: T): T {
   }
   // A server-side public ID can change for the same canonical session. Details
   // must use the current incoming ID, even when cached evidence is stronger.
-  if (!missing(next.id)) merged.id = next.id
+  // A weaker response for a contradictory window cannot rename retained evidence.
+  const oldWindowRetained = changedWindow(old, next) && merged.startDate === old.startDate && merged.endDate === old.endDate
+  const unresolvedSource = (old.identityAmbiguous === true && old.identityAmbiguousReason !== 'conflicting_window') ||
+    (next.identityAmbiguous === true && next.identityAmbiguousReason !== 'conflicting_window')
+  const verifiedWindow = trusted(next) && qualityRank(next) >= qualityRank(old) &&
+    sameEnergyInstant(next.startDate, next.startDate) && sameEnergyInstant(next.endDate, next.endDate)
+  if (unresolvedSource || oldWindowRetained || (old.identityAmbiguous === true && !verifiedWindow) || next.identityAmbiguous === true) {
+    merged.identityAmbiguous = true
+    merged.identityAmbiguousReason = unresolvedSource ? 'source_identity_incomplete' : 'conflicting_window'
+  } else {
+    delete merged.identityAmbiguous
+    delete merged.identityAmbiguousReason
+  }
+  if (!missing(next.id) && !oldWindowRetained) merged.id = next.id
   if (!missing(next.sessionId)) merged.sessionId = next.sessionId
   const admitted = conservativeEvidence(merged as T)
   // Whole-record admission also owns its proof. Rejected or displaced records
@@ -121,25 +173,37 @@ export function mergeHistoryEvidence<T>(local: T, incoming: T): T {
   return admitted
 }
 
-function compatibleID(a: unknown, b: unknown): boolean {
-  const left = asRow(a), right = asRow(b)
-  if (!left || !right || missing(left.id) || missing(right.id) || String(left.id) !== String(right.id)) return false
-  const ls = text(left.sessionId), rs = text(right.sessionId)
-  return !ls || !rs || ls === rs
-}
-
 export function mergeHistoryByKey<T>(localItems: readonly T[], remoteItems: readonly T[], keyOf: (item: T) => string): HistoryMergeResult<T> {
   const merged: T[] = []
   const localKeys = new Set<string>()
   let addedRemoteCount = 0
   // Canonicalize existing local duplicates too. No approximate time-window match.
   const add = (item: T, remote: boolean) => {
-    const key = keyOf(item)
+    let incoming = item
+    const key = keyOf(incoming)
     if (!key) return
-    let index = merged.findIndex(row => keyOf(row) === key)
-    if (index < 0) index = merged.findIndex(row => compatibleID(row, item))
+    const index = merged.findIndex(row => sameHistoryIdentity(row, incoming) &&
+      (keyOf(row) === key || text(asRow(row)?.id) === text(asRow(incoming)?.id)))
     if (index < 0) {
-      merged.push(conservativeEvidence(item))
+      // Missing source fields cannot prove two equal public IDs/sessions are
+      // the same record. Retain both, but isolate the less specific evidence.
+      for (let i = 0; i < merged.length; i++) {
+        const old = asRow(merged[i]), next = asRow(incoming)
+        if (!old || !next) continue
+        const oldSession = text(old.sessionId), nextSession = text(next.sessionId)
+        if (oldSession && nextSession ? oldSession !== nextSession : !text(old.id) || text(old.id) !== text(next.id)) continue
+        let oldMissing = false, nextMissing = false, conflict = false
+        for (const field of ['source', 'sourceInstanceId', 'sourceVehicleId', 'sourceRecordId']) {
+          const a = text(old[field]), b = text(next[field])
+          if (a && b && a !== b) { conflict = true; break }
+          if (!a && b) oldMissing = true
+          if (a && !b) nextMissing = true
+        }
+        if (conflict || (!oldMissing && !nextMissing)) continue
+        if (oldMissing) merged[i] = { ...old, identityAmbiguous: true, identityAmbiguousReason: 'source_identity_incomplete' } as T
+        if (nextMissing) incoming = { ...next, identityAmbiguous: true, identityAmbiguousReason: 'source_identity_incomplete' } as T
+      }
+      merged.push(conservativeEvidence(incoming))
       if (remote) addedRemoteCount += 1
     } else merged[index] = mergeHistoryEvidence(merged[index], item)
   }
@@ -172,7 +236,7 @@ export function mergeHistoryPages<T>(localItems: readonly T[], pages: readonly H
       errorReason = 'repeated_page'
       return
     }
-    if (page.items.length === 0 && page.meta.hasMore) {
+    if (page.items.length === 0 && page.meta.hasMore && !(page.meta.discardedRows && page.meta.discardedRows > 0)) {
       validPrefix = false
       errorReason = 'empty_page_with_more'
       return

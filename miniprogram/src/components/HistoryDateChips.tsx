@@ -1,5 +1,5 @@
 import { Button, Picker, View } from '@tarojs/components'
-import type { HistoryQuery } from '../domain/history_query'
+import { selectHistoryDate, type HistoryQuery } from '../domain/history_query'
 
 function civil(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` }
 
@@ -30,10 +30,13 @@ export default function HistoryDateChips({ kind, query, onChange }: {
         {days == null ? '全部' : days === 0 ? '今天' : days === 365 ? '近1年' : `近${days}天`}
       </Button>
     })}
-    <Picker mode="date" value={query.startDate || endDate} onChange={event => onChange({ startDate: event.detail.value, endDate: query.endDate || event.detail.value })}>
+    <Picker mode="date" value={query.startDate || endDate} onChange={event => onChange(selectHistoryDate({ ...query, endDate: query.endDate || event.detail.value }, 'startDate', event.detail.value))}>
       <Button className={`history-chip history-chip-date ${isCustom ? 'history-chip-selected' : ''}`}>
         {customLabel}
       </Button>
+    </Picker>
+    <Picker mode="date" value={query.endDate || endDate} onChange={event => onChange(selectHistoryDate({ ...query, startDate: query.startDate || event.detail.value }, 'endDate', event.detail.value))}>
+      <Button className={`history-chip history-chip-date ${isCustom ? 'history-chip-selected' : ''}`}>选择结束日期</Button>
     </Picker>
   </View>
 }

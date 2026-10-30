@@ -1,0 +1,30 @@
+import { beforeEach, expect, it, vi } from 'vitest'
+const platform = vi.hoisted(() => ({ request: vi.fn() }))
+vi.mock('@tarojs/taro', () => ({ default: { request: platform.request, getStorageSync: () => undefined } }))
+beforeEach(() => { vi.resetModules(); platform.request.mockReset(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test') })
+
+it('normalizes either source record alias and refuses conflicting aliases for both history kinds', async () => {
+  const { normalizeDrive, normalizeCharge, matelinkApi } = await import('./api')
+  expect(normalizeDrive({ drive_id: 1, source_id: ' old ' })?.sourceRecordId).toBe('old')
+  expect(normalizeCharge({ charge_id: 1, source_record_id: ' new ' })?.sourceRecordId).toBe('new')
+  expect(normalizeDrive({ drive_id: 1, source_id: ' id ', source_record_id: 'id' })?.sourceRecordId).toBe('id')
+  expect(normalizeCharge({ charge_id: 1, source_id: '', source_record_id: 'id' })?.sourceRecordId).toBe('id')
+  expect(normalizeDrive({ drive_id: 1, source_id: 'old', source_record_id: 'new' })).toBeNull()
+  expect(normalizeCharge({ charge_id: 1, source_id: 'old', source_record_id: 'new' })).toBeNull()
+  expect(normalizeCharge({ charge_id: 1, source_id: 7 as unknown as string })).toBeNull()
+  expect(normalizeDrive({ drive_id: 1, source_id: '', source_record_id: null })?.sourceRecordId).toBeNull()
+  platform.request.mockResolvedValueOnce({ statusCode: 200, data: { data: { charges: [{ charge_id: 1, source_id: 'old', source_record_id: 'new' }] } }, header: {} })
+  const page = await matelinkApi.getCharges(7)
+  expect(page.items).toHaveLength(0)
+  expect(page.meta.discardedRows).toBe(1)
+})
+
+it('does not override an unqualified explicit mode contract with raw AC/DC hints', async () => {
+  const { normalizeCharge } = await import('./api')
+  expect(normalizeCharge({ charge_id: 1, charge_type: 'dc' })?.chargeMode).toBe('dc')
+  expect(normalizeCharge({ charge_id: 1, charge_type: 'ac', fast_charger_present: true })?.chargeMode).toBeNull()
+  expect(normalizeCharge({ charge_id: 1, charge_type: 'dc', energy_contract: null })?.chargeMode).toBe('dc')
+  expect(normalizeCharge({ charge_id: 1, charge_type: 'dc', fast_charger_present: true, energy_contract: { version: 1, charge_mode: 'unknown' } })?.chargeMode).toBeNull()
+  expect(normalizeCharge({ charge_id: 1, charge_type: 'dc', energy_contract: { version: 2, charge_mode: 'dc', charge_mode_evidence: 'observed_boundary_modes_no_conflict' } })?.chargeMode).toBeNull()
+  expect(normalizeCharge({ charge_id: 1, charge_type: 'ac', energy_contract: { version: 1, charge_mode: 'dc', charge_mode_evidence: 'observed_boundary_modes_no_conflict' } })).toMatchObject({ chargeMode: null, chargeModeConflict: true })
+})

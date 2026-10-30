@@ -1,5 +1,5 @@
 import type { HistoryPage } from '../services/types'
-import { historyRowKey, isHistoryQuarantined, mergeHistoryByKey, mergeHistoryPages, sortHistoryByStartDate } from './history'
+import { historyRowKey, isHistoryIdentityAmbiguous, isHistoryQuarantined, mergeHistoryByKey, mergeHistoryPages, sameHistoryIdentity, sortHistoryByStartDate } from './history'
 
 export type HistoryControllerItem = { id: string; sessionId?: string | null; startDate?: string | null }
 
@@ -41,17 +41,18 @@ export function acceptHistoryPage<T extends HistoryControllerItem>(
     }
   }
   const merged = mergeHistoryByKey(current.items, result.items, keyOf)
+  const ambiguous = merged.items.some(isHistoryIdentityAmbiguous)
   return {
     accepted: true,
-    state: { pages: canonicalHistoryPages(candidatePages, merged.items, keyOf), items: sortHistoryByStartDate(merged.items), page: result.meta.page },
+    state: { pages: canonicalHistoryPages(candidatePages, merged.items), items: sortHistoryByStartDate(merged.items), page: result.meta.page },
     hasMore: pageState.hasMore,
-    complete: pageState.complete,
-    errorReason: null,
+    complete: pageState.complete && !ambiguous,
+    errorReason: ambiguous ? 'ambiguous_history_identity' : null,
   }
 }
 
-function canonicalHistoryPages<T extends HistoryControllerItem>(pages: HistoryPage<T>[], items: T[], keyOf: (item: T) => string): HistoryPage<T>[] {
-  return pages.map(page => ({ ...page, items: page.items.map(row => items.find(item => keyOf(item) === keyOf(row) || item.id === row.id) ?? row) }))
+function canonicalHistoryPages<T extends HistoryControllerItem>(pages: HistoryPage<T>[], items: T[]): HistoryPage<T>[] {
+  return pages.map(page => ({ ...page, items: page.items.map(row => items.find(item => sameHistoryIdentity(item, row)) ?? row) }))
 }
 
 /** Reconcile current scoped cache evidence only into an existing snapshot's membership.
@@ -59,26 +60,25 @@ function canonicalHistoryPages<T extends HistoryControllerItem>(pages: HistoryPa
  */
 export function reconcileHistoryCache<T extends HistoryControllerItem>(current: HistoryControllerState<T>, cached: readonly T[],
   keyOf: (item: T) => string = historyRowKey): HistoryControllerState<T> {
-  const incoming = cached.filter(candidate => current.items.some(item => keyOf(item) === keyOf(candidate) ||
-    (item.id === candidate.id && (!item.sessionId || !candidate.sessionId || item.sessionId === candidate.sessionId))))
+  const incoming = cached.filter(candidate => current.items.some(item => sameHistoryIdentity(item, candidate)))
   if (!incoming.length) return current
   const items = sortHistoryByStartDate(mergeHistoryByKey(current.items, incoming, keyOf).items)
-  return { ...current, items, pages: canonicalHistoryPages(current.pages, items, keyOf) }
+  return { ...current, items, pages: canonicalHistoryPages(current.pages, items) }
 }
 
 /** Details use the current public request ID; stale IDs may never roll a canonical session backwards. */
 export function acceptHistoryDetail<T extends HistoryControllerItem>(current: HistoryControllerState<T>, requested: T, detail: T,
   keyOf: (item: T) => string = historyRowKey): HistoryControllerState<T> {
-  const row = current.items.find(item => keyOf(item) === keyOf(requested) || item.id === requested.id)
+  const row = current.items.find(item => sameHistoryIdentity(item, requested))
   if (!row || isHistoryQuarantined(row) || isHistoryQuarantined(requested) || row.id !== requested.id || detail.id !== requested.id ||
-      (row.sessionId && detail.sessionId && row.sessionId !== detail.sessionId)) return current
+      !sameHistoryIdentity(row, detail)) return current
   const latest = row as unknown as Record<string, unknown>, original = requested as unknown as Record<string, unknown>
   if (['source', 'qualityState', 'qualityReason', 'startDate', 'endDate', 'startBatteryLevel', 'endBatteryLevel', 'distanceKm',
     'durationMinutes', 'energyConsumedKwh', 'energyAddedKwh', 'energyUsedKwh', 'cost', 'currency', 'currencyCode',
     'speedMaxKmh', 'speedSampleCount', 'speedMetricsSource', 'speedUnit', 'energy'].some(key =>
       JSON.stringify(latest[key] ?? null) !== JSON.stringify(original[key] ?? null))) return current
   const items = sortHistoryByStartDate(mergeHistoryByKey(current.items, [detail], keyOf).items)
-  return { ...current, items, pages: canonicalHistoryPages(current.pages, items, keyOf) }
+  return { ...current, items, pages: canonicalHistoryPages(current.pages, items) }
 }
 
 export type HistoryInterval<T> = { items: T[]; complete: boolean; receivedPages: number; reason: string | null }
@@ -89,13 +89,19 @@ export async function collectHistoryInterval<T extends HistoryControllerItem>(
 ): Promise<HistoryInterval<T> | null> {
   let state = emptyHistoryControllerState<T>()
   let response = first
+  let discarded = false
   for (let page = 1; page <= 25; page += 1) {
     if (!isCurrent()) return null
     if (response.items.length > 20) return { items: state.items, complete: false, receivedPages: state.page, reason: 'page_size_exceeded' }
     const decision = acceptHistoryPage(state, response, page)
     if (!decision.accepted) return { items: state.items, complete: false, receivedPages: state.page, reason: decision.errorReason }
     state = decision.state
-    if (decision.complete) return { items: state.items, complete: true, receivedPages: page, reason: null }
+    discarded = discarded || (response.meta.discardedRows ?? 0) > 0
+    if (!decision.hasMore) {
+      const ambiguous = state.items.some(isHistoryIdentityAmbiguous)
+      return { items: state.items, complete: !discarded && !ambiguous, receivedPages: page,
+        reason: discarded ? 'invalid_rows_discarded' : ambiguous ? 'ambiguous_history_identity' : null }
+    }
     if (page === 25 || state.items.length >= 500) return { items: state.items, complete: false, receivedPages: page, reason: 'limit' }
     try { response = await fetchPage(page + 1) }
     catch { return isCurrent() ? { items: state.items, complete: false, receivedPages: state.page, reason: 'request_failed' } : null }
@@ -106,7 +112,7 @@ export async function collectHistoryInterval<T extends HistoryControllerItem>(
 /** Enrich only rows actually in this snapshot; cached records cannot expand its coverage. */
 export function enrichHistoryInterval<T extends HistoryControllerItem>(rows: readonly T[], canonical: readonly T[]): T[] {
   return rows.map(row => {
-    const old = canonical.find(item => historyRowKey(item) === historyRowKey(row) || item.id === row.id)
+    const old = canonical.find(item => sameHistoryIdentity(item, row))
     return old ? mergeHistoryByKey([old], [row], historyRowKey).items[0] : row
   })
 }

@@ -21,6 +21,10 @@ it('accepts equal offset instants and rejects local timestamps just like App Ins
   charge.energy!.evidence!.battery_input!.observed_start_at = '2026-10-14T00:00:00'
   expect(qualifiedAcEnergyBalance(charge)).toBeNull()
 })
+it('rejects an invalid persisted conflict flag rather than treating it as verified AC', () => {
+  const charge = { ...row(), chargeModeConflict: 'true' } as unknown as Charge
+  expect(qualifiedAcEnergyBalance(charge)).toBeNull()
+})
 it('never grafts a cached raw AC mode under a newly admitted proof without the provider mode', () => {
   const prior = row(), incoming = row(null)
   const result = mergeChargeEnergyRecord(prior, incoming, { ...incoming, reportedChargeMode: 'ac' })

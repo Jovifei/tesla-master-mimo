@@ -29,6 +29,8 @@ export type HistoryPageMeta = {
   qualityState: string | null
   qualityReason: string | null
   hasMore: boolean
+  /** Raw rows rejected by normalization; a nonzero count makes adjacency incomplete. */
+  discardedRows?: number
 }
 
 export type HistoryPage<T> = {
@@ -271,6 +273,9 @@ export type Drive = {
   endLatitude: number | null
   endLongitude: number | null
   source: string | null
+  sourceInstanceId?: string | null
+  sourceVehicleId?: string | null
+  sourceRecordId?: string | null
   qualityState: string | null
   qualityReason: string | null
   energy?: DriveEnergy
@@ -288,6 +293,10 @@ export type RawDrive = {
   outside_temp_avg?: number | null
   drive_id?: number | string | null
   session_id?: string | null
+  source_instance_id?: string | null
+  source_vehicle_id?: string | null
+  source_record_id?: string | null
+  source_id?: string | null
   start_date?: string | null
   end_date?: string | null
   start_address?: string | null
@@ -335,12 +344,24 @@ export type Charge = {
   longitude: number | null
   chargerPowerKw: number | null
   source: string | null
+  sourceInstanceId?: string | null
+  sourceVehicleId?: string | null
+  sourceRecordId?: string | null
+  currentBatteryLevel?: number | null
+  isCharging?: boolean | null
+  /** Live session readings are not qualified completed-history energy. */
+  currentEnergyAddedKwh?: number | null
+  currentObservedAt?: string | null
+  currentIsSnapshot?: boolean
+  currentVehicleIdentityVerified?: boolean
   qualityState: string | null
   qualityReason: string | null
   energy?: ChargeEnergy
   currency?: string | null
   currencyCode?: string | null
   chargeMode?: 'ac' | 'dc' | null
+  /** Conflicting upstream AC/DC evidence; must survive cache and block mode-derived metrics. */
+  chargeModeConflict?: boolean
   /** Exact provider charge_type, kept separate from the evidence-derived display mode. */
   reportedChargeMode?: string | null
 }
@@ -348,6 +369,13 @@ export type Charge = {
 export type RawCharge = {
   charge_id?: number | string | null
   session_id?: string | null
+  source_instance_id?: string | null
+  source_vehicle_id?: string | null
+  source_record_id?: string | null
+  source_id?: string | null
+  current_battery_level?: number | null
+  is_charging?: boolean | null
+  observed_at?: string | null
   start_date?: string | null
   end_date?: string | null
   address?: string | null
@@ -371,6 +399,7 @@ export type RawCharge = {
   battery_details?: {
     start_battery_level?: number | null
     end_battery_level?: number | null
+    current_battery_level?: number | null
   } | null
 }
 

@@ -625,3 +625,35 @@
 
 - 在同一页面挂载多组横向滚动筛选行（如日期筛选和距离筛选）时，必须为每组提供明确的 `testTag`，避免测试定位滚动容器时发生歧义。
 - Compose `LazyColumn` 仅将视口内的可见项组合进语义树；在异步数据从网络返回前执行静态次数的滑动重试会导致测试提前用尽次数而超时。长列表测试必须在 `waitUntil` 等待块内结合滚动与检查，直到异步项真实进入视口。
+## 2026-10-25 Jovi再次明确原目录与变更授权
+
+- 本项目后续默认在 `E:\project\tesla_master\app_mimo` 工作，不因隔离便利自行改用 C盘或其他 worktree。接续先查最近会话是否正在同目录回迁，避免并发切分支或覆盖。
+- Jovi当前要求代码修改前征询授权：先完成只读定位、列清实际文件与最小改法，再申请具体范围；不要用历史宽泛授权覆盖当前明确限制。
+- Obsidian/台账中的旧版WIP须与当前 Git、同SHA CI及设备版本核对，不能把已交付修复重新列为待修。
+## 2026-10-26 Jovi明确只续修逻辑、不改布局
+
+- 审核结束不等于实施完成；得到继续修改授权后直接完成代码与验证，不停在方案。
+- 本轮禁止改页面布局和参数排列：冻结现有Screen/资源哈希，只修数据和并发逻辑；他人已有页面dirty不回退、不认领为本轮修改。
+
+
+## 2026-10-29 Jovi: Mini work belongs in the E original directory
+
+- Keep Mini changes on their own branch in E:\project\tesla_master\app_mimo when authorized; preserve existing Android/iOS work. The older C and E download worktrees do not automatically update the original directory.
+- This repository has a misdirected shared core.worktree: explicitly bind both Git directory and actual worktree for Git commands and their subprocesses; verify the root and source identity before writing.
+- After tests, remove only the specific old directory Jovi identifies, after checking Git status, ignored local files and unique data; never equate a clean Git status with an empty directory.
+
+
+## 2026-10-29 C worktree cleanup identity
+
+- A user-supplied cleanup path may differ from the actual checkout path. Resolve both and obtain confirmation before treating the alternate path as authorized.
+- Git metadata may already be missing; compare old files with the current E-root content, preserve divergent versions and important ignored artifacts, and verify the recovery before deleting.
+
+
+## 2026-10-29 Jovi：只保留不可替代的备份
+
+- 已验证、可重新构建的依赖、测试报告和产物默认不做长期备份；优先保留无法替代的源码、配置和历史资料。临时完整隔离时清楚说明路径和可删除范围。
+
+
+## 2026-10-29 Jovi：一次明确授权即可
+
+- 用户对明确文件范围已授权后，不重复征询；如果自动审批仍拦截，应直接说明阻止来自系统、不是用户授权不足，并给出已准备好的精确清理位置。

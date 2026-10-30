@@ -3,6 +3,25 @@ import { isHistoryQuarantined } from './history'
 
 export type HistoryQuery = { startDate: string; endDate: string; minDistanceKm: number; maxDistanceKm?: number }
 export const emptyHistoryQuery = (): HistoryQuery => ({ startDate: '', endDate: '', minDistanceKm: 0 })
+
+function civilFromDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+/** Android parity: DrivesViewModel defaults to LAST_7_DAYS (7 days inclusive) */
+export function defaultDriveHistoryQuery(now = new Date()): HistoryQuery {
+  const endDate = civilFromDate(now)
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6)
+  return { startDate: civilFromDate(start), endDate, minDistanceKm: 0 }
+}
+
+/** Android parity: ChargesViewModel defaults to LAST_30_DAYS (30 days inclusive) */
+export function defaultChargeHistoryQuery(now = new Date()): HistoryQuery {
+  const endDate = civilFromDate(now)
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29)
+  return { startDate: civilFromDate(start), endDate, minDistanceKm: 0 }
+}
+
 function civilDate(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return ''
   const date = new Date(`${value}T00:00:00Z`)
@@ -16,8 +35,21 @@ export function normalizeHistoryQuery(value: unknown): HistoryQuery {
   const maxDistanceKm = typeof row.maxDistanceKm === 'number' && Number.isFinite(row.maxDistanceKm) && row.maxDistanceKm > minDistanceKm && row.maxDistanceKm <= 10000 ? row.maxDistanceKm : undefined
   return { startDate, endDate, minDistanceKm, ...(maxDistanceKm === undefined ? {} : { maxDistanceKm }) }
 }
-export function readHistoryQuery(storage: Pick<WechatStorage, 'getStorageSync'>, scope: string): HistoryQuery {
-  try { return normalizeHistoryQuery(storage.getStorageSync(`${scope}.query`)) } catch { return emptyHistoryQuery() }
+/** A newly chosen endpoint wins if it crosses the other endpoint. */
+export function selectHistoryDate(query: HistoryQuery, field: 'startDate' | 'endDate', value: string): HistoryQuery {
+  const next = { ...query, [field]: civilDate(value) }
+  if (next.startDate && next.endDate && next.startDate > next.endDate) {
+    if (field === 'startDate') next.endDate = next.startDate
+    else next.startDate = next.endDate
+  }
+  return normalizeHistoryQuery(next)
+}
+export function readHistoryQuery(storage: Pick<WechatStorage, 'getStorageSync'>, scope: string, fallback: HistoryQuery = emptyHistoryQuery()): HistoryQuery {
+  try {
+    const raw = storage.getStorageSync(`${scope}.query`)
+    if (raw === undefined || raw === null || raw === '') return fallback
+    return normalizeHistoryQuery(raw)
+  } catch { return fallback }
 }
 export function writeHistoryQuery(storage: Pick<WechatStorage, 'setStorageSync'>, scope: string, query: HistoryQuery): boolean {
   try { storage.setStorageSync(`${scope}.query`, normalizeHistoryQuery(query)); return true } catch { return false }

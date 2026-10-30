@@ -1,5 +1,5 @@
 import type { WechatStorage } from './session'
-import { historyRowKey, mergeHistoryByKey } from '../domain/history'
+import { historyRowKey, isHistoryQuarantined, mergeHistoryByKey } from '../domain/history'
 import { canStoreCache } from './cache_budget'
 
 export type HistoryKind = 'drives' | 'charges'
@@ -29,8 +29,8 @@ export function inspectHistoryCache(storage: Pick<WechatStorage, 'getStorageSync
       const rows = value.items.slice(0, HISTORY_CACHE_MAX_ROWS).filter((item): item is Record<string, unknown> =>
         Boolean(item && typeof item === 'object' && typeof (item as Record<string, unknown>).id === 'string' && String((item as Record<string, unknown>).id).trim()))
       evidence.rows += rows.length
-      evidence.qualified += rows.filter(row => row.qualityState === 'observed' || row.qualityState === 'derived').length
-      evidence.quarantined += rows.filter(row => row.qualityState === 'quarantined').length
+      evidence.qualified += rows.filter(row => !isHistoryQuarantined(row) && (row.qualityState === 'observed' || row.qualityState === 'derived')).length
+      evidence.quarantined += rows.filter(isHistoryQuarantined).length
       if (typeof value.savedAt === 'string' && Number.isFinite(Date.parse(value.savedAt)) &&
           (!evidence.savedAt || Date.parse(value.savedAt) > Date.parse(evidence.savedAt))) evidence.savedAt = value.savedAt
     } catch { /* An unreadable archive supplies no evidence. */ }
@@ -130,7 +130,24 @@ export function writeHistoryCache<T>(storage: Pick<WechatStorage, 'setStorageSyn
   if (key.includes('.anonymous.')) return false
   try {
     const savedAt = new Date().toISOString()
-    const cache: HistoryCache<T> = { schema: HISTORY_CACHE_SCHEMA, scope: key, items: boundedItems(key, items, savedAt), savedAt }
+    let retained = [...items]
+    if (storage.getStorageSync) {
+      const stored: unknown = storage.getStorageSync(key)
+      if (stored != null && stored !== '') {
+        if (typeof stored !== 'object' || Array.isArray(stored)) return false
+        const old = stored as Partial<HistoryCache<T>>
+        if (old.schema !== HISTORY_CACHE_SCHEMA || old.scope !== key || !Array.isArray(old.items) || old.items.length > HISTORY_CACHE_MAX_ROWS ||
+          historyUtf8Bytes(JSON.stringify(old)) > HISTORY_CACHE_MAX_BYTES) return false
+        retained = mergeHistoryByKey(old.items, retained, item => {
+          const row = item as T & { id?: string; sessionId?: string | null; startDate?: string | null }
+          return row && typeof row === 'object' && row.id ? historyRowKey({ ...row, id: row.id }) : JSON.stringify(row)
+        }).items
+      }
+    }
+    const cache: HistoryCache<T> = { schema: HISTORY_CACHE_SCHEMA, scope: key, items: boundedItems(key, retained, savedAt), savedAt }
+    // Never evict records whose identity is ambiguous during reconciliation.
+    const ambiguousCount = (rows: readonly T[]) => rows.filter(row => Boolean(row && typeof row === 'object' && (row as Record<string, unknown>).identityAmbiguous === true)).length
+    if (ambiguousCount(cache.items) < ambiguousCount(retained)) return false
     if (historyUtf8Bytes(JSON.stringify(cache)) > HISTORY_CACHE_MAX_BYTES) return false
     if (storage.getStorageInfoSync && !canStoreCache(storage, key, cache)) return false
     storage.setStorageSync(key, cache)

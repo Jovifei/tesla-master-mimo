@@ -1,6 +1,8 @@
 import type { Charge, Drive } from '../services/types'
 import { aggregateDriveHistory, isHistoryQuarantined, sortHistoryByStartDate } from './history'
 import { historyDateTime } from './history_query'
+import { sameParkedSource } from './drive_history'
+import { isAppDriveAnalysisEligible } from './app_history_projection'
 
 export type AnalysisKind = 'stats' | 'mileage' | 'efficiency' | 'timeline' | 'vampire' | 'curves' | 'parked' | 'chargeCurves'
 export const analysisTitles: Record<AnalysisKind, string> = { stats: '统计分析', mileage: '里程统计', efficiency: '能耗分析', timeline: '时间轴', vampire: '驻车损耗', curves: '行程曲线', parked: '驻车详情', chargeCurves: '充电曲线' }
@@ -33,19 +35,22 @@ export type ParkedWindow = { olderId: string; newerId: string; startDate: string
   startSoc: number | null; endSoc: number | null; socDelta: number | null; energyKwh: null; chargeOverlap: boolean; chargeCoverageComplete: boolean; address: string | null }
 function validSoc(value: number | null) { return value != null && Number.isFinite(value) && value >= 0 && value <= 100 ? value : null }
 export function buildParkedWindows(drives: readonly Drive[], charges: readonly Charge[], chargeCoverageComplete: boolean): ParkedWindow[] {
-  const ordered = sortHistoryByStartDate(drives.filter(row => !isHistoryQuarantined(row))).reverse()
+  // A row with an unknown position in the timeline may lie between any two drives.
+  if (drives.some(row => !Number.isFinite(Date.parse(row.startDate ?? '')) || !Number.isFinite(Date.parse(row.endDate ?? '')))) return []
+  const ordered = sortHistoryByStartDate(drives).reverse()
   const windows: ParkedWindow[] = []
   const chargeTimesComplete = chargeCoverageComplete && charges.every(charge => !isHistoryQuarantined(charge) &&
     Number.isFinite(Date.parse(charge.startDate ?? '')) && (charge.endDate == null || Number.isFinite(Date.parse(charge.endDate))))
   for (let index = 1; index < ordered.length; index++) {
     const older = ordered[index - 1], newer = ordered[index]
+    if (!isAppDriveAnalysisEligible(older) || !isAppDriveAnalysisEligible(newer)) continue
     const start = Date.parse(older.endDate ?? ''), end = Date.parse(newer.startDate ?? '')
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !older.source || older.source !== newer.source) continue
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !sameParkedSource(older, newer)) continue
     const chargeOverlap = charges.some(charge => !isHistoryQuarantined(charge) && Date.parse(charge.startDate ?? '') < end &&
       (charge.endDate == null || Date.parse(charge.endDate) > start))
     const startSoc = validSoc(older.endBatteryLevel), endSoc = validSoc(newer.startBatteryLevel)
     windows.push({ olderId: older.id, newerId: newer.id, startDate: older.endDate!, endDate: newer.startDate!, minutes: (end - start) / 60000,
-      source: older.source, startSoc, endSoc, socDelta: startSoc != null && endSoc != null ? endSoc - startSoc : null,
+      source: older.source!, startSoc, endSoc, socDelta: startSoc != null && endSoc != null ? endSoc - startSoc : null,
       energyKwh: null, chargeOverlap, chargeCoverageComplete: chargeTimesComplete, address: older.endAddress ?? newer.startAddress })
   }
   return windows.reverse()

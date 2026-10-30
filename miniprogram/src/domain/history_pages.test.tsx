@@ -2,6 +2,7 @@ import React from 'react'
 import TestRenderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Charge, Drive } from '../services/types'
+import { historyCacheKey } from '../services/history_cache'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -40,6 +41,9 @@ beforeEach(() => {
   platform.navigateTo.mockReset()
   platform.hideTabBar.mockReset(); platform.showTabBar.mockReset(); platform.pageScrollTo.mockReset()
   platform.values.set('matelink.wechat.session.v1', { apiOrigin: 'https://api.example.test', accessToken: 'synthetic-access', refreshToken: null, expiresAt: null, userId: 'user-a', linkRequired: false })
+  // These fixtures describe fixed October 14 history; keep the historical tests
+  // on an explicit all-time selection instead of depending on the wall clock.
+  for (const uid of ['uid7', 'uid8', 'fixture-vehicle']) platform.values.set(`${historyCacheKey('drives', 'user-a', uid, 'https://api.example.test')}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
 })
 afterEach(async () => {
   if (renderer) { await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null }
@@ -321,7 +325,7 @@ describe('history pages consume canonical data across layers', () => {
     expect(headerClasses.indexOf('history-controls')).toBeLessThan(headerClasses.indexOf('card history-interval'))
   })
 
-  it('keeps App charge list, summary and monthly chart on their separate quality and short-session projections', async () => {
+  it('applies short-session filtering to qualified summary and chart while retaining incomplete list records', async () => {
     const charge = (id: number, energy: number | null | undefined, quality = 'observed', reason?: string) => ({
       charge_id: id, session_id: `projection-${id}`, source: 'teslamate_archive', quality_state: quality,
       quality_reason: reason, start_date: start, end_date: end, cost: 0, currency: 'CNY',
@@ -338,10 +342,10 @@ describe('history pages consume canonical data across layers', () => {
     const page = await mount('charges')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(3)
     const interval = page.root.findByProps({ className: 'card history-interval' })
-    expect(interval.findByProps({ ariaLabel: '充电次数 5 次' })).toBeDefined()
-    expect(interval.findByProps({ ariaLabel: '能量 2.1 kWh' })).toBeDefined()
+    expect(interval.findByProps({ ariaLabel: '充电次数 2 次' })).toBeDefined()
+    expect(interval.findByProps({ ariaLabel: '能量 2 kWh' })).toBeDefined()
     await click(page, '次数')
-    expect(page.root.findAllByProps({ className: 'charge-chart-value' }).map(node => node.children.join(''))).toContain('5')
+    expect(page.root.findAllByProps({ className: 'charge-chart-value' }).map(node => node.children.join(''))).toContain('2')
     const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
     const key = historyCacheKey('charges', 'user-a', 'uid7', 'https://api.example.test')
     const stored = readHistoryCache<Charge>({ getStorageSync: (name: string) => platform.values.get(name), setStorageSync: (name: string, value: unknown) => { platform.values.set(name, value) } }, key)
@@ -965,6 +969,7 @@ describe('history pages consume canonical data across layers', () => {
     expect(JSON.stringify(page.toJSON())).toContain('2 EUR')
     expect(readHistoryCache<Charge>(storage, key)[0].energyAddedKwh).toBe(batteryKwh)
     await click(page, '‹ 返回')
+    if (batteryKwh === 0) await click(page, '显示短充')
     await click(page, '刷新')
     expect(JSON.stringify(page.toJSON())).toContain(`${batteryKwh} kWh`)
     expect(readHistoryCache<Charge>(storage, key)[0].energyAddedKwh).toBe(batteryKwh)
@@ -974,9 +979,9 @@ describe('history pages consume canonical data across layers', () => {
     expect(readHistoryCache<Charge>(storage, key)[0].energyAddedKwh).toBe(batteryKwh)
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
     page = await mount('charges')
+    if (batteryKwh === 0) await click(page, '显示短充')
     expect(JSON.stringify(page.toJSON())).toContain(`${batteryKwh} kWh`)
     expect(readHistoryCache<Charge>(storage, key)[0].energyAddedKwh).toBe(batteryKwh)
-    if (batteryKwh === 0) await click(page, '显示短充')
     detail = { ...charge, address: 'Genuine archived charge site', cost: 2, currency: 'EUR', energy_contract: { version: 1,
       battery_input: { value_kwh: null, unit: 'kWh', source: 'teslamate_archive', quality: 'unknown',
         start_date: start, end_date: end, reason: 'charging_detail_unavailable' } } }

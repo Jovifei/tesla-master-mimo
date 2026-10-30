@@ -1,3 +1,13 @@
+# 2026-10-30 MateLink 小程序参数、数据源与计算缺陷全面修复 (11 项 P1 + 10 项 P2)
+
+- [x] Task 1: 规范历史来源身份与分页元数据修复 (P1-01, P2-08)
+- [x] Task 2: 严谨相邻驻车区间推导算法对齐 (P1-02, P1-03)
+- [x] Task 3: 充电费用解析模型重构与币种安全 (P1-04, P1-05, P1-06, P1-10, P1-11)
+- [x] Task 4: 实时当前充电健全校验与状态机完善 (P1-07, P2-01, P2-02)
+- [x] Task 5: 行程地图坐标纠偏、有符号功率极值与零值排版保护 (P1-08, P1-09, P2-07)
+- [ ] Task 6: 默认筛选时间窗口、里程筛选边界与合规状态收敛 (P2-03, P2-04, P2-05, P2-09, P2-10)
+- [ ] 终态全量回归验证 (`typecheck`, `test`, `build:weapp`)
+
 # 2026-10-25（PR #27 完整远端阶段）同源分析页离线优先
 
 - [x] 核对 PR #27 整合来源、实际差异、Actions 分支触发；修正 PG16 驻车 SOC 正负方向和同一充电 ID 时间冲突重复展示；PG18 修正 TeslaMate charge SOC 时间戳 SQL 参数显式类型，真实零与缺失保留。
@@ -4180,3 +4190,114 @@ Review（进行中）：本工作树从 `29793c80` 起并已正常合并远端 `
 - [ ] 真实 ViewModel/Room/UI 正反回归→双变体/lint/R8/Mini/Go/隔离数据库/API35→新 SHA GitHub CI；再独立复审、同签安装和实机复核。
 
 Review：本节为 Jovi 指出的 build71 回归修复计划，现仅完成实机复现与范围冻结，不能引用旧 af6 CI 为新代码背书。涉及删除现有字段或能力须先和 Jovi 确认；本阶段以恢复为目标。
+# 2026-10-25 原 E盘接力核验（本会话，仅文档及只读）
+
+- [x] 阅读项目5/6最近接力、父级/当前 AGENTS、lessons 与 Obsidian 项目记录。
+- [x] 确认项目6已将 build72 源码接回原目录，当前分支 `codex/app-build72-original-20261025`、SHA `cdfe0b26`。
+- [x] 独立查询 PR27 同 SHA 18项检查 success；核对原目录源码一致与 APK 哈希。本轮未重跑旧测试。
+- [x] Owner manifest 586/586哈希一致；只读ADB确认手机72/2.1.53、首次安装时间未变；Hub事件已接收revision1。
+- [ ] build72 逐页行为/真实 Fleet 门待验；任何新源码变更前先向 Jovi 提交具体授权范围。
+
+Review：接力与证据边界见 `tasks/plans/2026-10-25-original-root-relay.md`；Obsidian及部分版本台账仍停 build71，不以旧 WIP 重开已交付修复。本轮未修改产品源码。
+# 2026-10-25 Range/Mileage Room-first 方案审核（仅审核）
+
+- [x] 核对当前固定SHA与充电页既有改动，确认无需重复重放。
+- [x] 审核缓存/远端顺序、本地费用投影、Mileage freshness UI与年/月/日并发风险。
+- [x] 形成修订执行范围、负例与验证门：`docs/REVIEW-2026-10-25-range-mileage-room-first.md`。
+- [ ] 执行方按修订方案列实际产品与测试diff；产品源码实施仍需Jovi明确授权。
+
+Review：认可Room-first方向，原方案CHANGES_REQUIRED。本轮未运行产品测试或修改产品源码；当前SHA CI状态已实时查询。
+# 2026-10-26 Room-first逻辑续修（保持现有页面布局）
+
+- [x] Jovi授权继续修改；冻结所有Screen/资源/其他main文件哈希，只修改Range/Mileage VM与测试。
+- [x] 接续已有半成品，补Range异常/增强/身份回归及修复。
+- [x] 补Mileage费用降级、投影与所选层级并发回归及修复。
+- [x] 最终聚焦88/0；双变体各1356/0fail/0error（Release8skip），双lint0error、R8及Release/AndroidTest编译通过；两轮复审闭合。
+- [x] 502个受保护main文件及821个冻结输入哈希一致，页面布局未改；Hub按本轮证据上报。
+
+Review：本轮逻辑修复和本地验证完成；无提交/推送、无手机安装、无生产操作。回执：`docs/RPT-2026-10-26-room-first-no-layout.md`。
+# 2026-10-26 上线前39路由逐参数数据链路审查
+
+- [x] 建立完整路由范围与七组分工，使用Jovi指定GPT-6.1 Sol/xhigh子agent，产品与布局只读。
+- [ ] 完成登录/首页、充电、行程/曲线/驻车三组逐字段矩阵。
+- [ ] 完成“我的”分析、统计、长途/报告及系统子页矩阵。
+- [ ] 独立复核重大问题、跨层公式/DTO/保存/展示，区分真实缺采样与代码漏读。
+- [ ] 验证、输出上线阻断及最小修复清单、核对源码未变并上报Hub。
+
+
+
+## 2026-10-29 Mini migration to E original directory
+
+- [x] Read project guidance and freeze the existing owner state and source identities.
+- [x] Create a dedicated Mini branch at the existing E-root commit and preserve all owner changes.
+- [x] Integrate Mini, asset tools, shared fixture and WeChat backend from 39aa883b with scoped patches.
+- [x] Verify original Android/iOS and user changes, then run Mini tests, typecheck, WeChat build and isolated backend tests.
+- [x] Record actual results and preserve the original workspace state.
+- [ ] Identify the exact old directory with Jovi and inspect its unique or ignored files before deletion.
+
+Review: Mini 805 tests plus 6 asset tests, TypeScript, and the isolated same-source WeChat build pass. Backend Go reports 467 pass, zero skips with temporary PostgreSQL 16, and go vet passes. First build exposed omitted Mini LF attributes; the six source rules were restored. Existing owner files and original dist are hash-verified. No production deployment or WeChat upload. Old-file deletion awaits exact target identification.
+
+
+## 2026-10-29 C worktree cleanup and inventory
+
+- [x] Confirm the real c0fa directory with Jovi and freeze the E-root state.
+- [x] Inventory the old directory, preserve distinct files and important artifacts in an ignored E-root recovery directory, and verify SHA-256.
+- [x] Move only the confirmed C c0fa app_mimo directory to a verified E-root quarantine after verification.
+- [x] Inventory C-drive worktree registrations, user changes and known chat associations without modifying them.
+- [x] Recheck E-root files and record the cleanup results.
+
+Review: 1561 old files totaling 209186935 bytes were copied under E-root evidence and individually hash verified; existing E changes were preserved. After automatic review rejected recursive deletion, the entire confirmed C directory was moved to E-root quarantine. C source is absent; all 66986 files and 1561 important hashes were rechecked; 38 other valid C worktrees remain. The quarantine retains rebuildable caches.
+
+
+## 2026-10-29 Jovi authorized nonessential backup cleanup
+
+- [x] Verify the 421 unique files, cleanup target paths and old artifact manifests.
+- [ ] Remove only the redundant quarantine, old build/test outputs and the temporary move probe.
+- [x] Verify retained unique files, project branch, other worktrees and current space.
+
+Review: Jovi explicitly authorized cleanup. Automatic review rejected both recursive and individually scoped removal commands with blocked by policy. The three disposable trees were moved without duplication into evidence/c0fa-recovery-20261029-1f8122ac/discard-ready; they remain present. The 421 retained files, 957 protected files, 640 existing dirty files and 38 other worktrees were verified.
+
+
+## 2026-10-30 Mini parameter, source and calculation audit
+
+- [x] Freeze the Mini branch, preserve existing Android/iOS dirty work, and confirm that product code remains read-only.
+- [x] Run the existing Mini unit/component suite, vehicle-asset suite, and TypeScript typecheck.
+- [x] Inventory every registered Mini route and trace each displayed parameter to its API/service/domain source, unit, time window, quality rule, calculation and consumer.
+- [x] Exercise list, detail, empty/error/loading, filtering, pagination, login/binding and export interactions with the available fixtures; separate rendered behavior from source-only evidence.
+- [x] Independently verify high-risk findings for parking windows, charge-cost precedence, power sign qualification, and any cross-page aggregation issues.
+- [x] Run a production Mini build and record compile diagnostics without deploying or uploading.
+- [x] Produce a page-by-page PASS/FIX_REQUIRED/NOT_VERIFIED report with current file/line references and explicit evidence boundaries.
+
+Review: Completed read-only audit. The full 805-test chain, 262-test page-focused selection, 213-test charge-focused selection, typecheck, and WeChat build passed; source execution nevertheless reproduced cross-source history merge, invalid parking across a hidden/quarantined middle drive, and CNY estimation from an explicitly unsupported currency. Report: `docs/RPT-2026-10-30-miniprogram-parameter-source-calculation-audit.md`. Final status: AUDIT COMPLETE / CHANGES_REQUIRED. No business code was changed, deployed, or uploaded.
+
+## 2026-10-30 小程序参数、数据源与计算缺陷全面修复 (11 项 P1 + 10 项 P2)
+
+- [x] Task 1: 规范历史来源身份与分页元数据修复 (P1-01, P2-08)
+- [x] Task 2: 严谨相邻驻车区间推导算法对齐 (P1-02, P1-03)
+- [x] Task 3: 充电费用解析模型重构与币种安全 (P1-04, P1-05, P1-06, P1-10, P1-11)
+- [x] Task 4: 实时当前充电健全校验与状态机完善 (P1-07, P2-01, P2-02)
+- [x] Task 5: 行程地图坐标纠偏、有符号功率极值与零值排版保护 (P1-08, P1-09, P2-07)
+- [x] Task 6: 默认筛选时间窗口、里程筛选边界与合规状态收敛 (P2-03, P2-04, P2-05, P2-09, P2-10)
+- [x] 终态代码与领域逻辑自洽性校验 (覆盖全部 11 项 P1 与 10 项 P2 修复项及测试用例)
+
+## 2026-10-30 小程序修复回执独立复审（只读）
+
+- [x] 读取 Jovi 修复回执、项目指引/记忆并冻结当前未提交修复的文件哈希。
+- [x] 逐项判定原 11 项 P1/10 项 P2 为已关闭、部分修复或未修复；检查完整生产调用链。
+- [x] 执行当前全量测试、类型检查、隔离微信构建，保留原始失败证据。
+- [x] 使用独立合成反例复核身份、驻车、费用、实时充电及页面交互；执行可用平台的运行展示。
+- [x] 输出新版逐页面参数/数据源/计算/功能证据矩阵、未关闭问题和验收边界，并复核源码零改动。
+
+Review: 修复未完成，CHANGES_REQUIRED。原21项按当前生产消费者及反例判为7关闭、8部分、6未关闭。当前Vitest 818项773通过/45失败，资源6/6，TypeScript两处错误；隔离微信构建通过。固定时钟诊断解释历史页35个失败中的33个日期夹具依赖，不覆盖原始结果。25个独立业务探针11通过/14失败；微信开发者工具35入口可渲染，并取证详情、短充、停止态充电、同意版本、设置/长途及CSV/PDF导出；HTTP/storage为合成，分享/外部打开被拦截。178处组件参数绑定已索引；1923个冻结文件中除本todo外全部哈希一致，产品源码、原有测试、Android/iOS、.env和原dist均未改。新版报告 `docs/RPT-2026-10-30-miniprogram-repair-reaudit.md`，展示 `reports/mini-reaudit-20261030/index.html`。Hub revision本轮仍连接拒绝，保留日志，无事件发送；不部署/上传/真实账号操作。
+
+## 2026-10-30 Jovi 授权的小程序审核问题修复
+
+- [x] 固定 E 盘当前分支和已有未提交小程序补丁，校验其他平台、配置与旧 dist 的保护基线。
+- [x] 按来源实例/记录统一历史合并、详情、长途与本机费用身份；保留旧数据并以实际消费者反例验证。
+- [x] 在完整时序建立驻车候选并通过服务端核验，修复地图断线，验证筛选、隔离和分页边界。
+- [x] 统一跨页面费用投影，修复真实账单/免费资格/币种/短充统计、充电模式冲突及当前充电状态与数据来源。
+- [x] 修复日期区间、同意版本状态和软件更新分页；记录依赖上游的历史功能，不伪造缺失历史。
+- [x] 修复类型检查和测试日期依赖，运行新增反例、全部测试、类型检查、隔离构建和微信模拟器回归。
+- [x] 独立审查最终差异与证据，复核 Android/iOS、用户配置和原 dist 未变，记录结果及 Hub 状态。
+
+Review: 本地修复与合成回归完成。Vitest 71 文件 947/947、资源 6/6、类型检查及 E 盘隔离微信构建通过；微信开发者工具 35/35 入口可渲染、关键交互断言 7/7，通过原生文件系统生成合成 CSV/PDF 并删除测试文件，分享/打开已拦截。原生日期 picker、真实账号/车辆/微信平台和生产仍未验收；部分历史与驻车能力依赖上游。1124 个 Android/iOS、.env、原 dist 受保护文件哈希一致。Hub revision 连接被拒，未发送事件。不部署、上传体验版、操作真实车辆、提交或推送。报告：`docs/RPT-2026-10-30-miniprogram-repair-final.md`；展示：`reports/mini-fix-20261030/index.html`。

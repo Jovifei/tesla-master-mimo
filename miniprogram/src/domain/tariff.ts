@@ -44,7 +44,7 @@ export function readTariff(storage: Pick<WechatStorage, 'getStorageSync'>, user:
 }
 /** Uniform input energy over an observed session is an explicit estimate, never an actual bill. */
 export function estimateTariffCost(charge: Charge, tariff: Tariff): number | null {
-  if (!charge.startDate || !charge.endDate || !charge.energy?.evidence || !tariff.timeZone || !/^[A-Z]{3}$/.test(tariff.currency) ||
+  if ((charge.chargeModeConflict != null && charge.chargeModeConflict !== false) || !charge.startDate || !charge.endDate || !charge.energy?.evidence || !tariff.timeZone || !/^[A-Z]{3}$/.test(tariff.currency) ||
     [tariff.peak, tariff.flat, tariff.valley].some(value => !Number.isFinite(value) || value < 0)) return null
   const energy = resolveChargeEnergy({ source: charge.source, start_date: charge.startDate, end_date: charge.endDate, energy_contract: charge.energy.evidence }).acInputKwh
   if (energy == null || !Number.isFinite(energy) || energy < 0) return null
