@@ -154,6 +154,8 @@ def validate_config(config, host):
                                         ["no-new-privileges=true"]), "unsupported_security_options")
     validate_bind_strings(host)
     bindings = host.get("PortBindings", {})
+    if bindings is None:
+        bindings = {}  # Engine26 inspect null means no published ports.
     require(isinstance(bindings, dict) and len(bindings) <= 1, "unsupported_port_binding_count")
     for port, items in bindings.items():
         require(re.fullmatch(r"[0-9]+/(?:tcp|udp)", port) is not None
@@ -351,6 +353,8 @@ def canonical_host(host):
     # OOM killing is not disabled; true remains unsupported and is never coerced.
     if result.get("OomKillDisable") is None:
         result["OomKillDisable"] = False
+    if "PortBindings" in result and result["PortBindings"] is None:
+        result["PortBindings"] = {}  # Normalize only explicit null, never other falsy types.
     return result
 
 

@@ -5,6 +5,7 @@ The outer daemon is infrastructure owned by this job's fresh GitHub VM.
 """
 import argparse
 from contextlib import contextmanager
+import errno
 import hashlib
 import json
 import os
@@ -18,11 +19,11 @@ import sys
 import time
 import uuid
 
-from verify_evidence import Rejected, load_verify, require
+from verify_evidence import Rejected, load_diagnostics, load_verify, require
 
 HASHES = {
-    "engine26_candidate.py": "cbc2bccce4dd40f11d19ace398849fb4a5608060c545e5f09bcb59d00c940023",
-    "recovery_core36.py": "d841e776a565c38645294d50be2d89d11fecde092b2d26eaf2388a79ec69b052",
+    "engine26_candidate.py": "cc92315764af864990968fdd6d09be503701a48ad9c8ac2f50c3604692b7eac4",
+    "recovery_core36.py": "e0a70497875718db6d08d52a3dcd9609e31de15b1e3b25cc4b75d79af96a6300",
     "receipt_journal.py": "47c8a9644204d9927b07d74ae4808b1fce930196d178210ab8135f24fb858eba",
 }
 REFS = {
@@ -55,32 +56,65 @@ def validate_export_metadata(meta):
 
 
 @contextmanager
-def trusted_directory(path):
+def trusted_directory(path, private=False):
     """Pin every root-owned directory component; never follow a symlink."""
     require(path.is_absolute() and all(p not in ("", ".", "..") for p in path.parts[1:]),
             "canonical_export_parent_required")
+    if private:
+        require(path.parent == Path('/root') and re.fullmatch(r'ml26-ci-[0-9]+-[0-9]+', path.name),
+                'DR_PARENT_SCOPE')
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
     chain = []
     def verify():
         for index, (name, fd, expected) in enumerate(chain):
             meta = os.fstat(fd)
-            require(identity(meta) == expected and stat.S_ISDIR(meta.st_mode) and meta.st_uid == 0 and
+            require(identity(meta)[:-1] == expected and stat.S_ISDIR(meta.st_mode) and meta.st_uid == 0 and
                     not meta.st_mode & 0o022, "export_directory_changed")
+            if private:
+                require(meta.st_gid == 0 and (index == 0 or stat.S_IMODE(meta.st_mode) == 0o700),
+                        'DR_PARENT_PRIVATE_ROOT')
             if index:
                 named = os.stat(name, dir_fd=chain[index-1][1], follow_symlinks=False)
-                require(identity(named) == expected, "export_directory_path_replaced")
+                require(identity(named)[:-1] == expected, "export_directory_path_replaced")
     try:
         fd = os.open("/", flags)
-        chain.append(("/", fd, identity(os.fstat(fd))))
+        chain.append(("/", fd, identity(os.fstat(fd))[:-1]))
         for name in path.parts[1:]:
             fd = os.open(name, flags, dir_fd=fd)
-            chain.append((name, fd, identity(os.fstat(fd))))
+            chain.append((name, fd, identity(os.fstat(fd))[:-1]))
         verify()
         yield type("BoundDirectory", (), {"fd": fd, "verify": staticmethod(verify)})()
         verify()
     finally:
         for _name, fd, _meta in reversed(chain):
             os.close(fd)
+
+
+def errno_category(error):
+    if isinstance(error, OSError):
+        if error.errno in (errno.EACCES, errno.EPERM):
+            return 'EACCES_EPERM'
+        return {errno.ENOENT:'ENOENT', errno.EIO:'EIO', errno.EBUSY:'EBUSY',
+                errno.ELOOP:'SYMLINK_OR_TYPE', errno.ENOTDIR:'SYMLINK_OR_TYPE',
+                errno.EROFS:'EROFS', errno.ENOSPC:'ENOSPC'}.get(error.errno,'OTHER_OSERROR')
+    return 'POLICY_REJECTED' if isinstance(error, Rejected) else 'INVALID_METADATA'
+
+
+def has_mount_below(target):
+    """Current host namespace only; no mount paths or raw mountinfo are exported."""
+    with open('/proc/self/mountinfo','rb') as stream:
+        data=stream.read(2*1024*1024+1)
+    require(len(data) <= 2*1024*1024 and bool(data), 'DR_MOUNTINFO_UNAVAILABLE')
+    base=target.as_posix()
+    for line in data.decode('utf-8',errors='strict').splitlines():
+        fields=line.split()
+        require(len(fields)>=10 and '-' in fields, 'DR_MOUNTINFO_INVALID')
+        mountpoint=fields[4]
+        mountpoint=re.sub(r'\\(040|011|012|134)',lambda match:chr(int(match[1],8)),mountpoint)
+        require(not re.search(r'\\[0-7]{3}',mountpoint) and mountpoint.startswith('/'), 'DR_MOUNTINFO_INVALID')
+        if mountpoint==base or mountpoint.startswith(base+'/'):
+            return True
+    return False
 
 
 def publish_export(dest, data):
@@ -483,6 +517,7 @@ class Runner:
         self.public("snapshot-copy.json", {"failed_allowlist_items": failures,
                     "source_modes_unchanged": True, "other_files_exported": False})
         require(not failures, "allowlist_evidence_incomplete")
+        self.public('failure-diagnostics.json',load_diagnostics(dest))
         self.state["acceptance"] = load_verify(dest)
         self.state["snapshot_sealed"] = True
         self.save_state()
@@ -573,23 +608,7 @@ class Runner:
             self.remove_container("probe", inner=True)
         self.remove_container("python")
         self.remove_container("dind")
-        data_root = self.state.get("data_root")
-        if data_root and not self.state["cleanup"].get("data_root"):
-            try:
-                require(not self.state.get("pending_create") and
-                        self.state["cleanup"].get("dind") == "removed_exact_receipt", "data_root_daemon_not_absent")
-                target = Path(data_root["path"])
-                meta = target.lstat()
-                require(target == self.root / "data" and target.resolve() == self.root.resolve() / "data" and
-                        stat.S_ISDIR(meta.st_mode) and not target.is_symlink() and meta.st_uid == 0 and
-                        stat.S_IMODE(meta.st_mode) == 0o700 and meta.st_dev == data_root["dev"] and
-                        meta.st_ino == data_root["ino"], "data_root_receipt_changed")
-                require(getattr(shutil.rmtree, "avoids_symlink_attacks", False), "safe_rmtree_required")
-                shutil.rmtree(target)  # Linux fd-based symlink-safe implementation only.
-                require(not target.exists(), "data_root_absence_unproved")
-                self.state["cleanup"]["data_root"] = "removed_exact_receipt"
-            except (Rejected, OSError, ValueError):
-                self.state["cleanup"]["data_root"] = "FAILED_OR_UNKNOWN_no_retry"
+        self.cleanup_data_root()
         clean = not self.state.get("pending_create") and all(x == "removed_exact_receipt" for x in self.state["cleanup"].values())
         success = (self.state.get("python_exit") == 0 and self.state.get("snapshot_sealed") is True and
                    not self.state.get("pending_create") and not self.state.get("failure") and clean and
@@ -597,8 +616,13 @@ class Runner:
                    all(k in self.state["cleanup"] for k in ("dind", "python", "probe", "data_root")))
         self.state["status"] = "EXPECTED_START_FAILURE_RECONCILED" if success else "BLOCKED"
         self.save_state()
-        self.public("cleanup.json", {"receipts": {k: self.state[k] for k in ("dind", "python", "probe", "data_root") if k in self.state},
+        receipts={k:self.state[k] for k in ('dind','python','probe') if k in self.state}
+        if self.state.get('data_root'):
+            receipts['data_root']={k:self.state['data_root'][k] for k in ('dev','ino')}
+            receipts['data_root']['scope']='exclusive_job_data'
+        self.public("cleanup.json", {"receipts": receipts,
                     "results": self.state["cleanup"], "pending_create": self.state.get("pending_create"),
+                    "details": self.state.get('cleanup_details',{}),
                     "all_known_cleanup_proven": clean, "vm_destruction_is_not_cleanup_proof": True})
         self.public("status.json", {"status": self.state["status"], "failure": self.state.get("failure"),
                     "actual_exit": self.state.get("python_exit"), "snapshot_sealed": self.state.get("snapshot_sealed", False),
@@ -608,6 +632,62 @@ class Runner:
         self.state["finalized"] = True
         self.save_state()
         return bool(success)
+
+    def cleanup_data_root(self):
+        receipt=self.state.get('data_root')
+        if not receipt or self.state['cleanup'].get('data_root'):
+            return
+        detail={'stage':'DR_RECEIPT_GATE','status':'IN_PROGRESS','errno_category':'NONE'}
+        self.state.setdefault('cleanup_details',{})['data_root']=detail
+        try:
+            self.remaining()
+            require(not self.state.get('pending_create') and
+                    self.state['cleanup'].get('dind')=='removed_exact_receipt', 'DR_DIND_NOT_ABSENT')
+            require(Path(receipt['path'])==self.root/'data', 'DR_PATH_SCOPE')
+            detail['stage']='DR_PARENT_TRUST'
+            with trusted_directory(self.root,private=True) as parent:
+                detail['stage']='DR_TARGET_OPEN'
+                fd=os.open('data',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=parent.fd)
+                try:
+                    detail['stage']='DR_TARGET_TYPE'
+                    meta=os.fstat(fd)
+                    require(stat.S_ISDIR(meta.st_mode),'DR_NOT_DIRECTORY')
+                    detail['stage']='DR_ROOT_OWNER'
+                    require(meta.st_uid==0 and meta.st_gid==0,'DR_NOT_ROOT_ROOT')
+                    detail['stage']='DR_MODE_ALLOWLIST'
+                    require(stat.S_IMODE(meta.st_mode) in (0o700,0o710),'DR_MODE_NOT_ALLOWED')
+                    detail['stage']='DR_RECEIPT_DEVINO'
+                    require(meta.st_dev==receipt['dev'] and meta.st_ino==receipt['ino'],'DR_IDENTITY_CHANGED')
+                    expected=identity(meta)
+                    detail['stage']='DR_NAMED_BINDING'
+                    require(identity(os.stat('data',dir_fd=parent.fd,follow_symlinks=False))==expected,
+                            'DR_NAMED_IDENTITY')
+                    detail['stage']='DR_MOUNT_GATE'
+                    require(not has_mount_below(self.root/'data'), 'DR_ACTIVE_MOUNT')
+                    parent.verify()
+                    self.remaining()
+                    require(identity(os.fstat(fd))==expected and
+                            identity(os.stat('data',dir_fd=parent.fd,follow_symlinks=False))==expected,
+                            'DR_IDENTITY_CHANGED')
+                    detail['stage']='DR_REMOVE_FD'
+                    require(getattr(shutil.rmtree,'avoids_symlink_attacks',False),'DR_SAFE_RMTREE_REQUIRED')
+                    shutil.rmtree('data',dir_fd=parent.fd)
+                    detail['stage']='DR_ABSENCE'
+                    try:
+                        os.stat('data',dir_fd=parent.fd,follow_symlinks=False)
+                    except FileNotFoundError:
+                        pass
+                    else:
+                        raise Rejected('DR_ABSENCE_UNPROVED')
+                    parent.verify()
+                finally:
+                    os.close(fd)
+            self.state['cleanup']['data_root']='removed_exact_receipt'
+            detail.update(stage='DR_COMPLETE',status='REMOVED',errno_category='NONE')
+        except (Rejected,OSError,ValueError,KeyError,TypeError) as error:
+            self.state['cleanup']['data_root']='FAILED_OR_UNKNOWN_no_retry'
+            detail.update(status='REFUSED_OR_FAILED',errno_category=errno_category(error))
+        self.save_state()
 
     def seal_manifest(self):
         rows = []

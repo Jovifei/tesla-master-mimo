@@ -48,6 +48,26 @@ def execution_case_order(port_conflict_order):
     return ordinary + [CASES[6] if port_conflict_order == "competitor-first" else CASES[7]]
 
 
+CASE_STAGES = frozenset(("CASE_BODY", "SOURCE_CREATE", "SOURCE_START", "CAPTURE", "PLAN_REGISTER", "SOURCE_REMOVE", "RECOVER", "CONCURRENT_CREATE"))
+CASE_FAILURE_CODES = {
+    "unsupported_port_binding_count": "PORT_BINDINGS_REJECTED",
+    "unsupported_port_binding": "PORT_BINDINGS_REJECTED",
+    "port_bindings_object_or_none_required": "PORT_BINDINGS_REJECTED",
+    "loopback_port_required": "LOOPBACK_PORT_REJECTED",
+    "fixed_host_port_required": "FIXED_PORT_REJECTED",
+    "unexpected_recovery_outcome": "RECOVERY_OUTCOME_REJECTED",
+    "receipt_store_required": "RECEIPT_STORE_REQUIRED",
+    "below_memory_policy": "MEMORY_ADMISSION_REFUSED",
+    "memavailable_unreadable": "MEMORY_ADMISSION_REFUSED"}
+RECOVERY_RESULT_CODES = {name: code for name, code in (
+    ("healthy", "HEALTHY"), ("resource_changed", "RESOURCE_CHANGED"),
+    ("plan_not_durable", "PLAN_NOT_DURABLE"), ("receipt_not_durable", "RECEIPT_NOT_DURABLE"),
+    ("create_outcome_unknown", "CREATE_OUTCOME_UNKNOWN"), ("created_identity_unconfirmed", "CREATED_IDENTITY_UNCONFIRMED"),
+    ("start_failed", "START_FAILED"), ("identity_mismatch", "IDENTITY_MISMATCH"),
+    ("health_timeout", "HEALTH_TIMEOUT"), ("unhealthy", "UNHEALTHY"),
+    ("operation_outcome_unknown", "OPERATION_OUTCOME_UNKNOWN"), ("name_occupied", "NAME_OCCUPIED"))}
+
+
 class Blocked(Exception):
     """Constant public reason only; daemon responses and private objects stay in memory."""
 
@@ -488,7 +508,10 @@ class GuardedEngine:
         need(set(endpoints) <= self.network_ids(), "only_own_endpoints_allowed")
         for endpoint in endpoints.values():
             need(set(endpoint) <= {"Aliases", "IPAMConfig"} and not endpoint.get("IPAMConfig"), "dynamic_endpoints_only")
-        bindings = host.get("PortBindings") or {}
+        bindings = host.get("PortBindings", {})
+        if bindings is None:
+            bindings = {}
+        need(isinstance(bindings, dict), "port_bindings_object_or_none_required")
         need(not bindings or set(bindings) == {"8080/tcp"}, "one_synthetic_port_only")
         if bindings:
             need(len(bindings["8080/tcp"]) == 1, "one_loopback_binding_only")
@@ -948,22 +971,51 @@ class LiveSuite:
     def session(self, body=None, hook=None, identity=(10001, 10001), target=None):
         body = body or self.profile()
         target = target or self.e.name("recovery")
+        self._set_case_stage("SOURCE_CREATE")
         source = self.e.create(target, body)
         if body["HostConfig"].get("Binds"):
+            self._set_case_stage("SOURCE_START")
             self.e.expect("POST", "/containers/" + source + "/start")
         engine = hook or Hook(self.e)
+        self._set_case_stage("CAPTURE")
         session = p.RecoverySession.capture(engine, source, target, generated_mac_attested=True,
                     expected_identity=identity, bind_metadata=self.probe, receipt_store=self.receipt_store)
+        self._set_case_stage("PLAN_REGISTER")
         self.e.permit_container(target, session._plan.body())
+        self._set_case_stage("SOURCE_REMOVE")
         self.e.remove(source)
         return session, engine, target
 
     def outcome(self, session, status="healthy", timeout=12):
+        self._set_case_stage("RECOVER")
         result = session.recover(health_timeout=timeout)
+        code = RECOVERY_RESULT_CODES.get(result.status, "OTHER_CORE_RESULT") if type(result.status) is str else "OTHER_CORE_RESULT"
+        self.e.journal.append("recovery_result", stage="RECOVER", code=code)
         need(result.status == status, "unexpected_recovery_outcome")
         if status == "healthy":
             need(result.successful_health_probes >= 3, "three_distinct_probes_required")
         return result
+
+    def _set_case_stage(self, stage):
+        need(stage in CASE_STAGES, "invalid_case_stage")
+        self._case_stage = stage
+        self.e.journal.append("case_stage", stage=stage)
+
+    def _record_case_failure(self, index, error):
+        stage = getattr(self, "_case_stage", "CASE_BODY")
+        stage = stage if stage in CASE_STAGES else "CASE_BODY"
+        if isinstance(error, (Blocked, p.RecoveryBlocked)):
+            reason = error.args[0] if len(error.args) == 1 and type(error.args[0]) is str else None
+            code = CASE_FAILURE_CODES.get(reason, "CONTRACT_REJECTED")
+        else:
+            code = "LOCAL_IO_FAILURE" if isinstance(error, OSError) else "UNEXPECTED_EXCEPTION"
+        fields = {"case_index": index, "stage": stage, "code": code}
+        try:
+            self.e.journal.append("case_failure", **fields)
+            fields["log_status"] = "PERSISTED"
+        except BaseException:
+            fields["log_status"] = "UNAVAILABLE"
+        print("Jovi, " + json.dumps({"case_failure": fields}, sort_keys=True), flush=True)
 
     def run_case(self, name, fn):
         index = len(self.results)
@@ -971,16 +1023,21 @@ class LiveSuite:
         terminal = index == len(self.case_order) - 1
         print("Jovi, [{}/{}] {}".format(index + 1, len(self.case_order), name), flush=True)
         started = time.monotonic()
-        fn()
-        closed = self.e.container_budget()["allocation_closed"]
-        need(not closed or terminal, "unexpected_early_allocation_closure")
-        if terminal:
-            need(closed and self._expected_start_failure_id is not None, "terminal_expected_start_failure_missing")
-        self.results.append({"case": name, "status": "pass", "elapsed_seconds": round(time.monotonic() - started, 3)})
-        fields = dict(self.results[-1], terminal=terminal, case_index=index + 1, total_cases=len(self.case_order))
-        if terminal:
-            fields["expected_start_failure_id"] = self._expected_start_failure_id
-        self.e.journal.append("case", **fields)
+        try:
+            self._set_case_stage("CASE_BODY")
+            fn()
+            closed = self.e.container_budget()["allocation_closed"]
+            need(not closed or terminal, "unexpected_early_allocation_closure")
+            if terminal:
+                need(closed and self._expected_start_failure_id is not None, "terminal_expected_start_failure_missing")
+            self.results.append({"case": name, "status": "pass", "elapsed_seconds": round(time.monotonic() - started, 3)})
+            fields = dict(self.results[-1], terminal=terminal, case_index=index + 1, total_cases=len(self.case_order))
+            if terminal:
+                fields["expected_start_failure_id"] = self._expected_start_failure_id
+            self.e.journal.append("case", **fields)
+        except BaseException as error:
+            self._record_case_failure(index + 1, error)
+            raise
 
     def reconcile_expected_start_failure(self, cleanup):
         """Evidence-only terminal reconciliation; original unknown/seal stay intact."""
@@ -1121,6 +1178,7 @@ class LiveSuite:
                     outputs.append(self.e.request("POST", "/containers/create?" + urllib.parse.urlencode({"name": target}), body))
                 except BaseException:
                     outputs.append((0, None))
+            self._set_case_stage("CONCURRENT_CREATE")
             threads = [threading.Thread(target=actor) for _ in range(2)]
             for t in threads:
                 t.start()
@@ -1136,6 +1194,7 @@ class LiveSuite:
             outputs = []
             def recover():
                 outputs.append(s.recover(health_timeout=12))
+            self._set_case_stage("RECOVER")
             threads = [threading.Thread(target=recover) for _ in range(2)]
             for t in threads:
                 t.start()

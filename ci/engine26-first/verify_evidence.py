@@ -9,6 +9,15 @@ CASES = ["rprivate-bind-named-user-port-two-networks", "wrong-uid-rejected",
          "concurrent-name-create", "same-session-concurrent-recover",
          "self-exit-unless-stopped-15s", "persistent-unhealthy-unless-stopped-15s",
          "port-competitor-first"]
+CASE_STAGES = frozenset(('CASE_BODY','SOURCE_CREATE','SOURCE_START','CAPTURE','PLAN_REGISTER',
+                         'SOURCE_REMOVE','RECOVER','CONCURRENT_CREATE'))
+FAILURE_CODES = frozenset(('PORT_BINDINGS_REJECTED','LOOPBACK_PORT_REJECTED','FIXED_PORT_REJECTED',
+                          'RECOVERY_OUTCOME_REJECTED','RECEIPT_STORE_REQUIRED','MEMORY_ADMISSION_REFUSED',
+                          'CONTRACT_REJECTED','LOCAL_IO_FAILURE','UNEXPECTED_EXCEPTION'))
+RECOVERY_CODES = frozenset(('HEALTHY','RESOURCE_CHANGED','PLAN_NOT_DURABLE','RECEIPT_NOT_DURABLE',
+                           'CREATE_OUTCOME_UNKNOWN','CREATED_IDENTITY_UNCONFIRMED','START_FAILED',
+                           'IDENTITY_MISMATCH','HEALTH_TIMEOUT','UNHEALTHY','OPERATION_OUTCOME_UNKNOWN',
+                           'NAME_OCCUPIED','OTHER_CORE_RESULT'))
 
 
 class Rejected(Exception):
@@ -20,7 +29,59 @@ def require(value, reason):
         raise Rejected(reason)
 
 
+def summarize_diagnostics(result, events):
+    """Fixed fields/codes only. BLOCKED diagnostics never constitute successful acceptance."""
+    require(result.get('result_status') in ('BLOCKED','EXPECTED_START_FAILURE_RECONCILED'),
+            'diagnostic_result_status_invalid')
+    cases=result.get('cases',[])
+    require(isinstance(cases,list) and len(cases)<=13 and
+            [x.get('case') for x in cases]==CASES[:len(cases)] and
+            all(x.get('status')=='pass' for x in cases),'diagnostic_case_prefix_invalid')
+    require([x.get('sequence') for x in events]==list(range(1,len(events)+1)),
+            'diagnostic_journal_sequence_invalid')
+    failures=[];latest_stage=None;latest_recovery=None
+    for event in events:
+        kind=event.get('event')
+        if kind=='case_stage':
+            require(set(event)=={'event','sequence','stage'} and type(event['stage']) is str and event['stage'] in CASE_STAGES,
+                    'diagnostic_stage_not_allowlisted')
+            latest_stage=event['stage']
+        elif kind=='recovery_result':
+            require(set(event)=={'event','sequence','stage','code'} and event['stage']=='RECOVER' and
+                    type(event['code']) is str and event['code'] in RECOVERY_CODES,'diagnostic_recovery_not_allowlisted')
+            latest_recovery=event['code']
+        elif kind=='case_failure':
+            require(set(event)=={'event','sequence','case_index','stage','code'} and
+                    type(event['case_index']) is int and 1<=event['case_index']<=13 and
+                    type(event['stage']) is str and event['stage'] in CASE_STAGES and
+                    type(event['code']) is str and event['code'] in FAILURE_CODES,
+                    'diagnostic_failure_not_allowlisted')
+            failures.append(event)
+    require(len(failures)<=1,'multiple_case_failures')
+    selected=None
+    if failures:
+        event=failures[0]
+        require(event['case_index']==len(cases)+1 and result['result_status']=='BLOCKED' and
+                result.get('error') is not None,'diagnostic_failure_result_mismatch')
+        passed=[x for x in events if x.get('event')=='case']
+        require([x.get('case') for x in passed]==CASES[:len(cases)] and
+                all(x.get('status')=='pass' for x in passed) and
+                (not passed or event['sequence']>passed[-1]['sequence']),
+                'diagnostic_failed_case_order_invalid')
+        selected={k:event[k] for k in ('case_index','stage','code')}
+        status='FAILED_WITH_FIXED_DIAGNOSTICS'
+    elif result['result_status']=='BLOCKED':
+        status='MISSING_CASE_FAILURE' if cases else 'PRECASE_OR_DIAGNOSTICS_UNAVAILABLE'
+    else:
+        status='NO_CASE_FAILURE'
+    return {'diagnostics_status':status,'result_status':result['result_status'],'passed_cases':len(cases),
+            'case_failure':selected,'latest_stage':latest_stage,'latest_recovery_code':latest_recovery,
+            'acceptance_granted':False}
+
+
 def verify(result, events):
+    diagnostic=summarize_diagnostics(result,events)
+    require(diagnostic['diagnostics_status']=='NO_CASE_FAILURE','case_failure_blocks_acceptance')
     require(result.get("error") is None and result.get("result_status") ==
             "EXPECTED_START_FAILURE_RECONCILED", "result_not_reconciled")
     require(result.get("port_conflict_order") == "competitor-first", "wrong_round")
@@ -86,9 +147,17 @@ def verify(result, events):
             "unknown_history_count": 1, "allocation_still_closed": True}
 
 
-def load_verify(directory):
+def read_evidence(directory):
     with open(directory / "result.json", encoding="utf-8") as stream:
         result = json.load(stream)
     with open(directory / "journal.jsonl", encoding="utf-8") as stream:
         events = [json.loads(line) for line in stream]
-    return verify(result, events)
+    return result,events
+
+
+def load_diagnostics(directory):
+    return summarize_diagnostics(*read_evidence(directory))
+
+
+def load_verify(directory):
+    return verify(*read_evidence(directory))
