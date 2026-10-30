@@ -131,7 +131,11 @@ WHERE user_id=$1 AND vehicle_id=$2 AND kind='drive' AND ended_at IS NOT NULL
 		t.Fatalf("at 20-second deadline: completed=%d err=%v", completed, err)
 	}
 	persistedID, persistedStart, persistedEnd, candidate, persistedKey := readSession(refA)
-	wantKey := sessionCompletionKey(telemetrySession{ID: sessionID("drive", start), Kind: "drive", StartAt: start, EndAt: &end})
+	var persistedSessionID string
+	if err := database.pool.QueryRow(ctx, `SELECT id FROM jourvolt_telemetry_sessions WHERE user_id=$1 AND vehicle_id=$2 AND public_id=$3`, userA, vehicleA, publicID).Scan(&persistedSessionID); err != nil {
+		t.Fatal(err)
+	}
+	wantKey := sessionCompletionKey(telemetrySession{ID: persistedSessionID, Kind: "drive", StartAt: start, EndAt: &end})
 	if persistedID != publicID || !persistedStart.Equal(start) || persistedEnd == nil || !persistedEnd.Equal(end) || candidate != nil || persistedKey == "" || persistedKey != wantKey {
 		t.Fatal("due finalizer did not persist the original drive ID, deadline and completion key")
 	}
