@@ -5510,6 +5510,36 @@
           "commit": "5681c6fe7950e5a4a7637e00f8d8a67365aed45e"
         }
       ]
+    },
+    {
+      "id": "OCT30-FLEET-SESSION-ID-SCOPE",
+      "title": "Fleet 原生行程标识未隔离账号与车辆，重复开始时间导致行程丢失",
+      "found_date": "2026-10-30",
+      "found_version": "线上 API ab9a245c 源码 / App 集成分支",
+      "source_ref": "../RPT-2026-10-30-fleet-source-time.md",
+      "status": "CODE_COMMITTED_LOCAL_POSTGRES_PASS_NOT_DEPLOYED",
+      "fix_version": "App 分支服务器源码 fe9f0685",
+      "change": "新建 session ID 增加账号与车辆作用域，跨作用域冲突失败；保留旧行程和已存标识",
+      "verification": "修复经独立复审；工作树隔离 PostgreSQL 全量444个通过事件（含子测试），0失败/跳过，Go vet通过；未部署",
+      "commit": "fe9f0685c3338ec49e952882d06cd36c6a507681",
+      "history": [
+        {
+          "date": "2026-10-30",
+          "version": "线上 API ab9a245c 源码 / App 集成分支",
+          "action": "ISOLATED_POSTGRES_REPRO",
+          "detail": "同 VIN 多账号、同账号多车等五类合成场景确认 ID 全局冲突及第二条未保存；修复验证中",
+          "evidence": "../RPT-2026-10-30-fleet-source-time.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-30",
+          "version": "App 分支服务器源码 fe9f0685",
+          "action": "LOCAL_FIX_INDEPENDENT_REVIEW_AND_PG_PASS",
+          "detail": "新标识包含账号/车辆；旧标识兼容，跨作用域冲突回滚。444个含子测试通过事件；尚未部署或恢复已丢记录",
+          "evidence": "../RPT-2026-10-30-fleet-source-time.md",
+          "commit": "fe9f0685c3338ec49e952882d06cd36c6a507681"
+        }
+      ]
     }
   ],
   "baseline_checkpoint": "e53a2d01a54d55c554019fb861d69f3737d4b5bb",
