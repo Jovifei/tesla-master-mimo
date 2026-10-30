@@ -69,6 +69,9 @@ class ParkedDetailFullUiQualificationTest {
                 composeRule.onAllNodesWithText("—")
                     .fetchSemanticsNodes().size >= 3
             }
+            // Partial telemetry must replace the prior full receipt, not retain its temperatures.
+            composeRule.onNodeWithText("21.8", substring = true).assertDoesNotExist()
+            composeRule.onNodeWithText("18.2", substring = true).assertDoesNotExist()
             composeRule.onNodeWithText(batteryTitle).assertExists()
             composeRule.onNodeWithText(cloudTitle).assertExists()
             assertSixTelemetryLabels(context)

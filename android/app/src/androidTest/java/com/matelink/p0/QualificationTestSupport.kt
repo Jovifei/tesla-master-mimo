@@ -138,7 +138,10 @@ internal fun ComposeTestRule.navigateToSettings(context: Context) {
     scrollMoreTo(context.getString(R.string.settings_title))
     onNodeWithText(context.getString(R.string.settings_title), useUnmergedTree = true)
         .performClick()
-    onNodeWithTag("advancedNetworkSection").performClick()
+    // The settings title is also visible while its DataStore-backed content loads.
+    waitForTag("advancedNetworkSection")
+    onNodeWithTag("advancedNetworkSection").performScrollTo().performClick()
+    waitForTag("serverAddressInput")
     onNodeWithTag("serverAddressInput").assertExists()
 }
 
