@@ -9,7 +9,7 @@
     "App 2.1.58/build77 installed; charging card overlap and edit/detail actions verified",
     "App recovery pushed to codex/app-foundation-ui-integrate-20261025; PR 27 remains draft",
     "At 5681c6fe7950e5a4a7637e00f8d8a67365aed45e all 18 remote checks passed; API35 original 6 failures were corrected and isolated emulator 11/11 passed",
-    "October 29 archive catch-up and Fleet first telemetry receipt verified; source-time qualification and recurring-expiry warnings remain open"
+    "October 29 archive catch-up and Fleet first telemetry receipt verified; helper fingerprint comparison was fixed locally; source-time qualification and recurring-expiry warnings remain open"
   ],
   "next": [
     "Complete and independently review identity-safe and readable archive expiry warning",

@@ -5540,6 +5540,36 @@
           "commit": "fe9f0685c3338ec49e952882d06cd36c6a507681"
         }
       ]
+    },
+    {
+      "id": "OCT30-ARCHIVE-CONFIRMATION-COMPARISON",
+      "title": "归档助手缺少来源指纹对照及完整比较状态校验",
+      "found_date": "2026-10-30",
+      "found_version": "续绑助手源码 / App 2.1.58 build77",
+      "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
+      "status": "CODE_COMMITTED_LOCAL_TESTED_NOT_DEPLOYED",
+      "fix_version": "App 分支助手源码 774694fb",
+      "change": "公开摘要显示已验证范围的来源指纹；校验状态、handle、确认码和时间，畸形输入固定错误且不暴露私有字段",
+      "verification": "独立复审；实际工作区94项无网络测试通过。仅证明保存的比较信息自洽，普通用户向导、真机续期及上传未验收",
+      "commit": "774694fb74fefb02d142b7c2b6c74f6cd2498309",
+      "history": [
+        {
+          "date": "2026-10-30",
+          "version": "续绑助手源码 / App 2.1.58 build77",
+          "action": "SOURCE_REVIEW",
+          "detail": "原摘要未展示可与 App 比对的来源指纹，现有测试未覆盖完整 wire 形状；不能据此断言线上不兼容",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-30",
+          "version": "App 分支助手源码 774694fb",
+          "action": "LOCAL_FIX_REVIEW_AND_TEST_PASS",
+          "detail": "独立复审及94项合成回归通过；领取、安装、ACK及本人批准流程保持不变，未部署",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "774694fb74fefb02d142b7c2b6c74f6cd2498309"
+        }
+      ]
     }
   ],
   "baseline_checkpoint": "e53a2d01a54d55c554019fb861d69f3737d4b5bb",
