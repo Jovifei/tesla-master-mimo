@@ -6,3 +6,6 @@ miniprogram/vehicle-assets/**/*.wxml text eol=lf
 miniprogram/vehicle-assets/**/*.wxss text eol=lf
 miniprogram/vehicle-assets.config.ts text eol=lf
 miniprogram/src/domain/vehicle_visual_manifest.ts text eol=lf
+ci/engine26-first/*.py -text
+ci/engine26-first/*.sh text eol=lf
+.github/workflows/engine26-first.yml text eol=lf

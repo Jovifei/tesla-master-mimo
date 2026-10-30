@@ -1,0 +1,46 @@
+name: Engine26 synthetic first round
+
+on:
+  push:
+    branches: [codex/app-fleet-engine26-ci-20261030]
+    paths:
+      - .github/workflows/engine26-first.yml
+      - ci/engine26-first/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine26-first-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  first:
+    if: github.ref == 'refs/heads/codex/app-fleet-engine26-ci-20261030' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: ci/engine26-first
+          sparse-checkout-cone-mode: false
+      - name: Exactly one competitor-first round
+        id: first_round
+        shell: bash
+        run: bash ci/engine26-first/run-first.sh
+      - name: Receipt-only finalizer (never starts a round)
+        if: always()
+        env:
+          ENGINE26_FIRST_OUTCOME: ${{ steps.first_round.outcome }}
+        shell: bash
+        run: bash ci/engine26-first/run-first.sh --cleanup-only
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: engine26-first-${{ github.run_id }}-${{ github.run_attempt }}
+          path: engine26-evidence/
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false
