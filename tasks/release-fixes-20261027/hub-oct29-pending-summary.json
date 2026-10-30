@@ -6,17 +6,17 @@
   "branch": "codex/app-collection-recovery-20261029",
   "hub_revision": "not obtained: WinError 10061 connection refused; automatic retries stopped",
   "current": [
-    "App 2.1.58/build77 installed; charging card overlap and edit/detail actions verified",
+    "App 2.1.59/build78 diagnostic installed preserving data; charging card fix was verified on build77",
     "App recovery pushed to codex/app-foundation-ui-integrate-20261025; PR 27 remains draft",
     "At 5681c6fe7950e5a4a7637e00f8d8a67365aed45e all 18 remote checks passed; API35 original 6 failures were corrected and isolated emulator 11/11 passed",
-    "October 29 archive catch-up and Fleet first telemetry receipt verified; helper fingerprint comparison was fixed locally; source-time qualification and recurring-expiry warnings remain open"
+    "October 29 archive catch-up and Fleet first telemetry receipt verified; October 28 inquiry stopped at Jovi's request; self-hosted legacy drive point identity failure confirmed on device"
   ],
   "next": [
-    "Complete and independently review identity-safe and readable archive expiry warning",
+    "Fix self-hosted legacy drive identity without inventing source or weakening scope, then retest on device",
     "Resolve Fleet source timestamp and legacy-cache qualification before deployment"
   ],
   "blockers": [
-    "No October 28 trip/trajectory found in checked sources; exact Docker startup failure logs rotated",
+    "Drive curve fix and real device acceptance are pending; current build78 is diagnostic only",
     "Fleet guard candidate has unresolved cross-layer review blockers; cross-scope session ID collision fixed and reviewed locally, production-based candidate beb92248 prepared but not deployed",
     "Project-specific passwordless login and rollback compatibility passed; isolated Engine26 diagnostic CI failed case 11 with API_NOT_ALLOWLISTED; known inner and outer resources were cleaned",
     "Hub revision unavailable: WinError 10061; no automatic retries"

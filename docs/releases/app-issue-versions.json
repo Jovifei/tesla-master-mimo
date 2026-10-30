@@ -5637,21 +5637,29 @@
       "id": "OCT30-DRIVE-DETAIL-POINTS",
       "title": "真实行程源和云端有采样但手机曲线因摘要匹配失败未展示",
       "found_date": "2026-10-30",
-      "found_version": "App 2.1.58 build77 / 线上 API ab9a245c",
+      "found_version": "App 2.1.58 build77 / 自托管 TeslaMate 接口",
       "source_ref": "../RPT-2026-10-30-drive-points-visibility.md",
-      "status": "DEVICE_REPRODUCED_UNDER_DIAGNOSIS",
+      "status": "DEVICE_ROOT_CAUSE_CONFIRMED_FIX_IN_PROGRESS",
       "fix_version": null,
-      "change": "定位并修复摘要与详情的同作用域身份匹配；保持隔离与原始证据，不改布局",
-      "verification": "源、云各有1723点；手机日志有同数详情响应，但缺少请求关联；详情提示会话不匹配且刷新后仍复现，具体匹配条件待诊断",
+      "change": "仅对已验证自托管上下文且双方来源元数据均缺失的行程，按ID和精确窗口匹配；不伪造来源、不改布局",
+      "verification": "build78前台诊断确认摘要source为空、当前详情有多个点；本地接口list/detail来源字段均缺、窗口相同且详情1723点；修复未完成",
       "commit": null,
       "history": [
         {
           "date": "2026-10-30",
-          "version": "App 2.1.58 build77 / 线上 API ab9a245c",
+          "version": "App 2.1.58 build77 / 自托管 TeslaMate 接口",
           "action": "DEVICE_REPRODUCED",
           "detail": "真实曲线页空态，详情页会话匹配失败；源和云各有1723点，手机日志有同数详情响应但尚未关联，刷新后仍复现",
           "evidence": "../RPT-2026-10-30-drive-points-visibility.md",
           "commit": null
+        },
+        {
+          "date": "2026-10-30",
+          "version": "App 2.1.59 build78 诊断版",
+          "action": "DEVICE_ROOT_CAUSE_CONFIRMED",
+          "detail": "前台诊断确认摘要来源为空且详情有多个点；本地接口列表与详情均缺来源字段、时间一致；保数据安装，修复仍待完成",
+          "evidence": "../RPT-2026-10-30-drive-points-visibility.md",
+          "commit": "3857a3e4809e1a65b5f844c0f4117d274a92a892"
         }
       ]
     }
