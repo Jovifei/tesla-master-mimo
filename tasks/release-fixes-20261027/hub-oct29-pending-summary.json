@@ -7,13 +7,12 @@
   "hub_revision": "not obtained: WinError 10061 connection refused; automatic retries stopped",
   "current": [
     "App 2.1.58/build77 installed; charging card overlap and edit/detail actions verified",
-    "App recovery committed and pushed to codex/app-foundation-ui-integrate-20261025 at b702e658; PR 27 remains draft",
-    "API35 original 6 CI failures corrected in test fixtures and navigation; isolated emulator 11/11 passed, remote rerun pending",
+    "App recovery pushed to codex/app-foundation-ui-integrate-20261025; PR 27 remains draft",
+    "At ee636a660c2a5047a2cc47a668526cd713662519 all 18 remote checks passed; API35 original 6 failures were corrected and isolated emulator 11/11 passed",
     "October 29 archive catch-up and Fleet first telemetry receipt verified; source-time qualification and recurring-expiry warnings remain open"
   ],
   "next": [
-    "Push reviewed API35 test repair and inspect new-head full CI",
-    "Complete identity-safe archive expiry warning",
+    "Complete and independently review identity-safe and readable archive expiry warning",
     "Resolve Fleet source timestamp and legacy-cache qualification before deployment"
   ],
   "blockers": [

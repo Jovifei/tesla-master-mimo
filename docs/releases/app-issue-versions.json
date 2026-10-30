@@ -5346,7 +5346,7 @@
       "status": "OPEN_UNDER_INVESTIGATION",
       "fix_version": null,
       "change": "研究保留原始created_at/is_resend并防止重放与跨来源重复",
-      "verification": "source-time guard及producer均仅隔离测试；独立复审发现Room旧缓存、回执容量、decoded时间和ACK等缺口，未部署",
+      "verification": "producer隔离候选已处理decoded配置、车辆身份冲突和DEBUG原始负载；Room旧缓存、持久ACK及端到端链路仍未解决，未部署",
       "commit": null,
       "history": [
         {
@@ -5363,6 +5363,14 @@
           "action": "CANDIDATE_REVIEW_BLOCKED",
           "detail": "source-time guard及producer均仅隔离测试；独立复审发现Room旧缓存、回执容量、decoded时间和ACK等缺口，未部署",
           "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-30",
+          "version": "线上ab9a245c / 隔离producer v0.9.4候选",
+          "action": "CANDIDATE_HARDENED_NOT_DEPLOYED",
+          "detail": "隔离候选合成回归与vet通过；streaming原生构建、后端持久ACK、Room资格与真实事件仍待验",
+          "evidence": "../RPT-2026-10-30-fleet-source-time.md",
           "commit": null
         }
       ]
@@ -5455,10 +5463,10 @@
       "found_date": "2026-10-30",
       "found_version": "PR 27 b702e658",
       "source_ref": "../RPT-2026-10-29-fleet-archive-recovery.md",
-      "status": "LOCAL_EMULATOR_PASS_REMOTE_CI_PENDING",
+      "status": "REMOTE_CI_PASS",
       "fix_version": "App branch test-only commit",
       "change": "等待设置内容挂载；曲线补真实时间轴；驻车fixture保留来源并补原始SOC证据；验证缺失响应不保留旧温度",
-      "verification": "独立 API35 模拟器四类11项通过；新增旧温度负向单例通过；未改变产品源码或布局；远端CI待验",
+      "verification": "独立 API35 模拟器相关11项及旧温度负向单例通过；远端 ee636a66 的18项检查全部通过；产品源码与布局未改变",
       "commit": "0840111347ba2d14fb0bcfd8524457414b1b323d",
       "history": [
         {
@@ -5468,6 +5476,14 @@
           "detail": "原CI 6项失败，修复后本地相关11项通过；远端同提交全量CI待验",
           "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
           "commit": "0840111347ba2d14fb0bcfd8524457414b1b323d"
+        },
+        {
+          "date": "2026-10-30",
+          "version": "PR 27 ee636a660c2a5047a2cc47a668526cd713662519",
+          "action": "REMOTE_CI_PASS",
+          "detail": "18项检查成功，包括Android构建与API35仪器测试；仅对应此提交",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "ee636a660c2a5047a2cc47a668526cd713662519"
         }
       ]
     }
@@ -5486,7 +5502,9 @@
     "source_commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa",
     "first_install_time_preserved": true,
     "integrated_branch": "codex/app-foundation-ui-integrate-20261025",
-    "integrated_head_at_push": "b702e658a7834319dc706d360c4576de4822bc9b"
+    "integrated_head_at_push": "b702e658a7834319dc706d360c4576de4822bc9b",
+    "ci_verified_head": "ee636a660c2a5047a2cc47a668526cd713662519",
+    "ci_checks_passed": 18
   },
   "code_commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa",
   "previous_candidate": {
