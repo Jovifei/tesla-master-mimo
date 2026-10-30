@@ -5520,7 +5520,7 @@
       "status": "CODE_COMMITTED_LOCAL_POSTGRES_PASS_NOT_DEPLOYED",
       "fix_version": "App 分支服务器源码 fe9f0685",
       "change": "新建 session ID 增加账号与车辆作用域，跨作用域冲突失败；保留旧行程和已存标识",
-      "verification": "修复经独立复审；工作树隔离 PostgreSQL 全量444个通过事件（含子测试），0失败/跳过，Go vet通过；未部署",
+      "verification": "App 源码与隔离 PostgreSQL 全量回归通过；基于当前线上 ab9a245c 的候选 beb92248 保留既有归档并通过隔离回归/健康检查；未部署",
       "commit": "fe9f0685c3338ec49e952882d06cd36c6a507681",
       "history": [
         {
@@ -5538,6 +5538,14 @@
           "detail": "新标识包含账号/车辆；旧标识兼容，跨作用域冲突回滚。444个含子测试通过事件；尚未部署或恢复已丢记录",
           "evidence": "../RPT-2026-10-30-fleet-source-time.md",
           "commit": "fe9f0685c3338ec49e952882d06cd36c6a507681"
+        },
+        {
+          "date": "2026-10-30",
+          "version": "生产基线 ab9a245c / 独立候选 beb92248",
+          "action": "PRODUCTION_CANDIDATE_PREPARED_NOT_DEPLOYED",
+          "detail": "线上只读 readyz 确认 ab9a245c；候选隔离回归568个通过事件并构建，隔离健康检查200。系统登录及回滚镜像仍待核验",
+          "evidence": "../RPT-2026-10-30-fleet-source-time.md",
+          "commit": "beb9224879c12b912fa8d6e4352c0b50ed178bc5"
         }
       ]
     },

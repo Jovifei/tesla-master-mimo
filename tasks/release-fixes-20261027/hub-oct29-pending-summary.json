@@ -17,7 +17,8 @@
   ],
   "blockers": [
     "No October 28 trip/trajectory found in checked sources; exact Docker startup failure logs rotated",
-    "Fleet guard candidate has unresolved cross-layer review blockers; cross-scope session ID collision fixed and reviewed locally, not deployed",
+    "Fleet guard candidate has unresolved cross-layer review blockers; cross-scope session ID collision fixed and reviewed locally, production-based candidate beb92248 prepared but not deployed",
+    "Server system login unavailable; actual rollout configuration and rollback image still need verification",
     "Hub revision unavailable: WinError 10061; no automatic retries"
   ],
   "evidence": "docs/RPT-2026-10-29-fleet-archive-recovery.md"
