@@ -6,7 +6,7 @@
   "branch": "codex/app-collection-recovery-20261029",
   "hub_revision": "not obtained: WinError 10061 connection refused; automatic retries stopped",
   "current": [
-    "App 2.1.60/build79 fix installed with adb install -r preserving data; self-hosted drive curves verified on device",
+    "App 2.1.60/build79 fix installed with adb install -r preserving data; self-hosted drive curves verified on device; fix commit 483e7c1f pushed to App branch",
     "App recovery pushed to codex/app-foundation-ui-integrate-20261025; PR 27 remains draft",
     "At 5681c6fe7950e5a4a7637e00f8d8a67365aed45e all 18 remote checks passed; API35 original 6 failures were corrected and isolated emulator 11/11 passed",
     "October 29 archive catch-up and Fleet first telemetry receipt verified; October 28 inquiry stopped at Jovi's request; self-hosted legacy drive point identity fixed and verified on device"
