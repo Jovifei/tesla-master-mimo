@@ -2,6 +2,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -21,7 +22,7 @@ class Opener:
 
 class ArchiveHelperTest(unittest.TestCase):
     def setUp(self):
-        root=Path(r'E:\Claude_allow\Download\matelink-fleet-recovery-20261029\helper-tests')
+        root=Path(os.environ.get('ARCHIVE_HELPER_TEST_ROOT', r'E:\Claude_allow\Download\matelink-fleet-recovery-20261029\helper-tests'))
         root.mkdir(parents=True,exist_ok=True)
         self.temp=tempfile.TemporaryDirectory(dir=root)
         self.root=Path(self.temp.name)
@@ -39,7 +40,7 @@ class ArchiveHelperTest(unittest.TestCase):
         self.composepath.write_text(json.dumps(self.compose))
         self.statepath=self.root/'request-private'/'state.json'
     def prepare(self):
-        data={'handle':'H'*24,'device_secret':'D'*43,'verification_code':'1234-5678','expires_at':'2099-01-01T00:00:00Z'}
+        data={'handle':'a'*64,'device_secret':'D'*43,'verification_code':'001234','expires_at':'2099-01-01T00:00:00Z'}
         with patch.object(helper,'request',return_value=(200,data)):
             return helper.prepare(self.composepath,self.statepath)
     def test_prepare_exposes_only_public_comparison_and_keeps_login_out(self):
@@ -47,7 +48,7 @@ class ArchiveHelperTest(unittest.TestCase):
         self.assertNotIn('D'*43,json.dumps(summary))
         self.assertNotIn('SYNTHETIC_OLD_ONLY',json.dumps(state))
         self.assertEqual(helper.scope_fingerprint(self.scope),state['scope_fingerprint'])
-        self.assertEqual('1234-5678',summary['verification_code'])
+        self.assertEqual('001234',summary['verification_code'])
     def test_existing_compose_parent_acl_is_not_modified(self):
         helper.write_private(self.composepath,b'{}')
         self.assertFalse(any(call.args[0]==self.composepath.parent for call in self.protect.call_args_list))
@@ -185,7 +186,7 @@ class ArchiveHelperTest(unittest.TestCase):
 
 class BridgePreflightTest(unittest.TestCase):
     def setUp(self):
-        root=Path(r'E:\Claude_allow\Download\matelink-fleet-recovery-20261029\helper-tests')
+        root=Path(os.environ.get('ARCHIVE_HELPER_TEST_ROOT', r'E:\Claude_allow\Download\matelink-fleet-recovery-20261029\helper-tests'))
         root.mkdir(parents=True,exist_ok=True)
         self.temp=tempfile.TemporaryDirectory(dir=root);self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name)

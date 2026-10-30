@@ -7,6 +7,7 @@ helpers and deployment automation must be coordinated outside this process.
 """
 import argparse
 import csv
+from datetime import datetime
 import hashlib
 import io
 import json
@@ -331,9 +332,10 @@ def prepare(compose_path, state_path):
     handle = data.get('handle', '')
     secret = data.get('device_secret', '')
     code = data.get('verification_code', '')
-    if not re.fullmatch(r'[A-Za-z0-9_-]{20,128}', handle) or not re.fullmatch(r'[A-Za-z0-9_-]{32,128}', secret):
+    if (not isinstance(handle, str) or not re.fullmatch(r'[0-9a-f]{64}', handle) or
+            not isinstance(secret, str) or not re.fullmatch(r'[A-Za-z0-9_-]{32,128}', secret)):
         raise FlowError('enrollment_proof_invalid')
-    if not re.fullmatch(r'[0-9 -]{6,16}', code):
+    if not isinstance(code, str) or not re.fullmatch(r'[0-9]{6}', code):
         raise FlowError('verification_code_invalid')
     state = {'handle': handle, 'device_secret': secret, 'verification_code': code,
              'expires_at': data.get('expires_at'), 'scope': scope,
@@ -341,13 +343,44 @@ def prepare(compose_path, state_path):
              'original_compose_sha256': digest(compose_path.read_bytes()), 'bridge_image': bridge['image'],
              'bridge_image_id': bridge['image_id'], 'bridge_mounts_sha256': bridge['mounts_sha256'],
              'bridge_runtime_sha256': bridge['runtime_sha256'], 'phase': 'pending'}
+    summary = public_summary(state)
     save_state(state_path, state)
-    return public_summary(state)
+    return summary
 
 def public_summary(state):
-    return {'phase': state['phase'], 'verification_code': state['verification_code'],
-            'expires_at': state.get('expires_at'),
-            'app_link': AUTH + '/archive/enroll?handle=' + urllib.parse.quote(state['handle'], safe='')}
+    # A matching digest does not make damaged persisted wire fields valid.
+    try:
+        if not isinstance(state, dict) or not isinstance(state['scope'], dict):
+            raise ValueError()
+        scope = state['scope']
+        vehicle = scope['vehicle_id']
+        if type(vehicle) is not int or not 1 <= vehicle <= 2147483647:
+            raise ValueError()
+        for key in ('source_instance_id', 'source_vehicle_id'):
+            if not isinstance(scope[key], str) or not re.fullmatch(r'[A-Za-z0-9._:-]{1,128}', scope[key]):
+                raise ValueError()
+        fingerprint = state['scope_fingerprint']
+        if (not isinstance(fingerprint, str) or not re.fullmatch(r'[0-9a-f]{16}', fingerprint) or
+                scope_fingerprint(scope) != fingerprint):
+            raise ValueError()
+        handle, code, expiry, phase = (state[key] for key in ('handle', 'verification_code', 'expires_at', 'phase'))
+        if (not isinstance(handle, str) or not re.fullmatch(r'[0-9a-f]{64}', handle) or
+                not isinstance(code, str) or not re.fullmatch(r'[0-9]{6}', code)):
+            raise ValueError()
+        if (not isinstance(expiry, str) or
+                not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z', expiry)):
+            raise ValueError()
+        datetime.strptime(expiry[:19], '%Y-%m-%dT%H:%M:%S')
+        if not isinstance(phase, str) or phase not in (
+                'pending', 'credential_replacement_pending', 'credential_installed_recreate_pending',
+                'installed_waiting_for_natural_upload'):
+            raise ValueError()
+    except (KeyError, TypeError, ValueError):
+        raise FlowError('comparison_scope_unverifiable') from None
+    return {'phase': phase, 'verification_code': code,
+            'expires_at': expiry,
+            'scope_fingerprint': fingerprint,
+            'app_link': AUTH + '/archive/enroll?handle=' + urllib.parse.quote(handle, safe='')}
 
 def open_app(state_path, adb_path):
     state = read_json(state_path)
