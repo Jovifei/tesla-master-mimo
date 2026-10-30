@@ -5346,7 +5346,7 @@
       "status": "OPEN_UNDER_INVESTIGATION",
       "fix_version": null,
       "change": "研究保留原始created_at/is_resend并防止重放与跨来源重复",
-      "verification": "producer隔离候选已处理decoded配置、车辆身份冲突和DEBUG原始负载；Room旧缓存、持久ACK及端到端链路仍未解决，未部署",
+      "verification": "隔离发送/解析候选通过合成合同及换算溢出回归；持久ACK、Room旧缓存和端到端链路仍未解决，未部署",
       "commit": null,
       "history": [
         {
@@ -5372,6 +5372,14 @@
           "detail": "隔离候选合成回归与vet通过；streaming原生构建、后端持久ACK、Room资格与真实事件仍待验",
           "evidence": "../RPT-2026-10-30-fleet-source-time.md",
           "commit": null
+        },
+        {
+          "date": "2026-10-30",
+          "version": "隔离 Fleet envelope 解析候选 / 官方 v0.9.4",
+          "action": "CANDIDATE_OVERFLOW_FIXED_NOT_RELEASED",
+          "detail": "独立复审发现单位换算后可为无穷大；候选增加最终有限值校验，16个溢出反例及20个有限对照通过；未接入消费者或生产",
+          "evidence": "../RPT-2026-10-30-fleet-source-time.md",
+          "commit": null
         }
       ]
     },
@@ -5384,7 +5392,7 @@
       "status": "CODE_IN_PROGRESS",
       "fix_version": null,
       "change": "新增同账号同车只读状态、到期提醒和本人确认续期引导；不扩大凭据权限",
-      "verification": "本次续期已验证；后续提醒方案和实现仍在进行",
+      "verification": "本次续期已验证；提醒候选双变体各84项通过并复审，但未集成，普通用户自助入口和下次到期风险仍开放",
       "commit": null,
       "history": [
         {
@@ -5392,6 +5400,14 @@
           "version": "线上ab9a245c / App2.1.56 build75",
           "action": "EVIDENCE_AND_RECOVERY",
           "detail": "本次续期已验证；后续提醒方案和实现仍在进行",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": null
+        },
+        {
+          "date": "2026-10-30",
+          "version": "隔离 App 到期提醒候选",
+          "action": "CANDIDATE_REVIEW_NOT_RELEASED",
+          "detail": "纠正助手入口与需关注数量文案；Debug/Release各84项通过。尚无普通用户可启动入口，未安装或部署",
           "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
           "commit": null
         }
@@ -5466,7 +5482,7 @@
       "status": "REMOTE_CI_PASS",
       "fix_version": "App branch test-only commit",
       "change": "等待设置内容挂载；曲线补真实时间轴；驻车fixture保留来源并补原始SOC证据；验证缺失响应不保留旧温度",
-      "verification": "独立 API35 模拟器相关11项及旧温度负向单例通过；远端 ee636a66 的18项检查全部通过；产品源码与布局未改变",
+      "verification": "独立 API35 模拟器相关11项及旧温度负向单例通过；远端 5681c6fe 的18项检查全部通过；产品源码与布局未改变",
       "commit": "0840111347ba2d14fb0bcfd8524457414b1b323d",
       "history": [
         {
@@ -5484,6 +5500,14 @@
           "detail": "18项检查成功，包括Android构建与API35仪器测试；仅对应此提交",
           "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
           "commit": "ee636a660c2a5047a2cc47a668526cd713662519"
+        },
+        {
+          "date": "2026-10-30",
+          "version": "PR 27 5681c6fe7950e5a4a7637e00f8d8a67365aed45e",
+          "action": "REMOTE_CI_PASS",
+          "detail": "仅文档提交的18项检查成功，包括Android构建与API35仪器测试；仅对应此提交",
+          "evidence": "../RPT-2026-10-29-fleet-archive-recovery.md",
+          "commit": "5681c6fe7950e5a4a7637e00f8d8a67365aed45e"
         }
       ]
     }
@@ -5503,7 +5527,7 @@
     "first_install_time_preserved": true,
     "integrated_branch": "codex/app-foundation-ui-integrate-20261025",
     "integrated_head_at_push": "b702e658a7834319dc706d360c4576de4822bc9b",
-    "ci_verified_head": "ee636a660c2a5047a2cc47a668526cd713662519",
+    "ci_verified_head": "5681c6fe7950e5a4a7637e00f8d8a67365aed45e",
     "ci_checks_passed": 18
   },
   "code_commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa",
