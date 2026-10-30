@@ -5593,11 +5593,11 @@
       "found_date": "2026-10-30",
       "found_version": "隔离 CI 提交 6af701868c8e6b08b95f8e5d2890286d7117fd76",
       "source_ref": "../RPT-2026-10-30-fleet-source-time.md",
-      "status": "SECOND_CI_FAIL_UNDER_DIAGNOSIS",
-      "fix_version": "隔离 CI 提交 e99c27f8",
-      "change": "修复无端口空值和临时目录权限兼容缺口，第11项具体拒绝原因继续诊断",
-      "verification": "e99c27f8隔离CI前10项通过、第11项CAPTURE固定码拒绝；内层22项及外层数据目录清理均证明；具体原因未明，未部署",
-      "commit": "e99c27f899c698c5857b86dc0a9092b589346232",
+      "status": "THIRD_CI_FAIL_UNDER_DIAGNOSIS",
+      "fix_version": "隔离诊断提交 a876c30b",
+      "change": "修复无端口空值和临时目录权限兼容缺口，新增固定诊断码；第11项被拒请求继续核对",
+      "verification": "a876c30b隔离CI前10项通过、第11项CAPTURE/API_NOT_ALLOWLISTED；内层22项及外层数据目录清理均证明；未部署",
+      "commit": "a876c30bf2d602eee218aeb7649fab24104c99c4",
       "history": [
         {
           "date": "2026-10-30",
@@ -5622,6 +5622,14 @@
           "detail": "同一第一组前10项通过、第11项在CAPTURE阶段被拒；内层22项和外层数据目录清理确认，具体错误码仍不足",
           "evidence": "../RPT-2026-10-30-fleet-source-time.md",
           "commit": "e99c27f899c698c5857b86dc0a9092b589346232"
+        },
+        {
+          "date": "2026-10-30",
+          "version": "隔离诊断提交 a876c30b",
+          "action": "THIRD_REAL_CI_FAILURE",
+          "detail": "前10项通过，第11项CAPTURE/API_NOT_ALLOWLISTED；内外已知资源清理确认，被拒请求仍待核对",
+          "evidence": "../RPT-2026-10-30-fleet-source-time.md",
+          "commit": "a876c30bf2d602eee218aeb7649fab24104c99c4"
         }
       ]
     }
