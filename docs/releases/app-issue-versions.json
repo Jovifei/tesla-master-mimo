@@ -5586,6 +5586,28 @@
           "commit": "774694fb74fefb02d142b7c2b6c74f6cd2498309"
         }
       ]
+    },
+    {
+      "id": "OCT30-ENGINE26-ISOLATED-CI",
+      "title": "隔离 Engine 26 自动重启用例失败且外层临时目录清理未证明",
+      "found_date": "2026-10-30",
+      "found_version": "隔离 CI 提交 6af701868c8e6b08b95f8e5d2890286d7117fd76",
+      "source_ref": "../RPT-2026-10-30-fleet-source-time.md",
+      "status": "CI_FAIL_UNDER_DIAGNOSIS",
+      "fix_version": null,
+      "change": "定位并修复自动重启及外层清理验证，保留原始失败和资源证据",
+      "verification": "GitHub 独立 Engine26/Python3.6.8 真实合成首轮前10项通过，第11项失败；内层22个已知资源确认清理，外层数据目录清理未证明；未部署",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-10-30",
+          "version": "隔离 CI 提交 6af70186",
+          "action": "FIRST_REAL_CI_FAILURE",
+          "detail": "前10项通过、第11项失败；内层已知资源清理通过，外层数据目录清理未证明；失败原因待诊断",
+          "evidence": "../RPT-2026-10-30-fleet-source-time.md",
+          "commit": "6af701868c8e6b08b95f8e5d2890286d7117fd76"
+        }
+      ]
     }
   ],
   "baseline_checkpoint": "e53a2d01a54d55c554019fb861d69f3737d4b5bb",
