@@ -24,7 +24,7 @@ import { sourceLabel } from '../../domain/data_labels'
 import './index.scss'
 
 type Kind = 'battery' | 'range' | 'cost' | 'longTrips' | 'currentCharge'
-const titles: Record<Kind, string> = { battery: '电池健康', range: '续航分析', cost: '费用分析', longTrips: '长途旅程', currentCharge: '正在充电' }
+const titles: Record<Kind, string> = { battery: '电池健康', range: '续航分析', cost: '费用分析', longTrips: '长途旅程', currentCharge: '当前充电' }
 type Health = { maxRangeKm: number | null; currentRangeKm: number | null; maxCapacityKwh: number | null; currentCapacityKwh: number | null; healthPercentage: number | null; ratedEfficiencyWhKm: number | null }
 type Evidence = { availability?: string | null; source?: string | null; qualityState?: string | null; qualityReason?: string | null; observedAt?: string | null }
 type Coverage = { complete: boolean; pages: number; reason: string | null }
@@ -230,8 +230,8 @@ export default function InsightsPage() {
         {range.capacityKwh == null ? <Text className="muted">缺少带来源与报告时间的可用容量，个性化续航保持未知。</Text> : null}
         <View className="metric-grid"><MetricValue label="配对平均能耗" value={range.efficiencyKwh100Km} unit="kWh/100km" /><MetricValue label="车辆额定续航读数" value={status?.ratedRange ?? null} unit="km" /></View>
       </View>
-      <View className="card"><SectionHeading icon="speed" title="额定续航偏差" /><MetricValue label="有效记录平均偏差" value={averageDeviation} unit="%" /><Text className="muted">逐段比较额定续航下降与实际里程；仅使用同时有两个端点及规范化公里数的记录，共 {comparisons.length} 段。</Text></View>
-      <View className="card"><SectionHeading icon="cloud" title="续航影响因素" /><View className="metric-grid"><MetricValue label="夏季偏差（6–8月）" value={influences.summer} unit="%" /><MetricValue label="冬季偏差（12–2月）" value={influences.winter} unit="%" /><MetricValue label="低速偏差（≤40km/h）" value={influences.lowSpeed} unit="%" /><MetricValue label="高速偏差（>40km/h）" value={influences.highSpeed} unit="%" /></View><Text className="muted">沿用 App 的已加载记录分组；这是相关观察，不能确定单一原因。</Text></View>
+      <View className="card"><SectionHeading icon="speed" title="额定续航消耗偏差" /><MetricValue label="有效记录平均偏差" value={averageDeviation} unit="%" /><Text className="muted">逐段比较额定续航下降与实际里程；仅使用同时有两个端点及规范化公里数的记录，共 {comparisons.length} 段。</Text></View>
+      <View className="card"><SectionHeading icon="cloud" title="偏差影响因素" /><View className="metric-grid"><MetricValue label="夏季偏差（6–8月）" value={influences.summer} unit="%" /><MetricValue label="冬季偏差（12–2月）" value={influences.winter} unit="%" /><MetricValue label="低速偏差（≤40km/h）" value={influences.lowSpeed} unit="%" /><MetricValue label="高速偏差（>40km/h）" value={influences.highSpeed} unit="%" /></View><Text className="muted">沿用 App 的已加载记录分组；这是相关观察，不能确定单一原因。</Text></View>
       {comparisons.slice(0, rangeShown).map(item => <View className="card" key={historyRowKey(item.drive)}><Text>{historyDateTime(item.drive.startDate)}</Text><View className="metric-grid"><MetricValue label="额定续航下降" value={item.ratedDropKm} unit="km" /><MetricValue label="实际里程" value={item.distanceKm} unit="km" /><MetricValue label="偏差" value={item.deviationPercent} unit="%" /></View></View>)}
       {comparisons.length > rangeShown ? <Button className="button-secondary" onClick={() => setRangeShown(rangeShown + 20)}>查看更多续航记录（{rangeShown}/{comparisons.length}）</Button> : null}
       {!comparisons.length ? <Text className="muted">已加载记录尚缺额定续航起止端点，不能从SOC或当前续航补算历史偏差。</Text> : null}
@@ -241,12 +241,12 @@ export default function InsightsPage() {
       <Text className="muted">已加载 {costs.total} 次；缺费用 {costs.missingCost} 次；币种未知 {costs.unknownCurrency} 次。不同币种分别统计。</Text>
       {manualCostCount ? <Text className="muted">含 {manualCostCount} 条本机手动费用；这是本机展示金额，服务端原账单保留。</Text> : null}
       {costs.groups.map(group => <View className="card" key={group.currency}><SectionHeading icon="money" title={`${group.currency} 费用`} /><View className="metric-grid">
-        <MetricValue label="费用合计" value={costAmount(group.cost, estimateIn(group.currency))} unit={group.currency} /><MetricValue label="单次平均费用" value={costAmount(group.average, estimateIn(group.currency))} unit={group.currency} />
-        <MetricValue label="费用与电池充入量配对" value={group.energyKwh} unit="kWh" /><MetricValue label="配对单位电量费用" value={costAmount(group.perKwh, estimateIn(group.currency))} unit={`${group.currency}/kWh`} /></View>
+        <MetricValue label="总费用" value={costAmount(group.cost, estimateIn(group.currency))} unit={group.currency} /><MetricValue label="平均每次" value={costAmount(group.average, estimateIn(group.currency))} unit={group.currency} />
+        <MetricValue label="配对电池充入量" value={group.energyKwh} unit="kWh" /><MetricValue label="平均每度" value={costAmount(group.perKwh, estimateIn(group.currency))} unit={`${group.currency}/kWh`} /></View>
         <Text className="muted">费用已知 {group.known}/{group.total} 条；单位电量费用只用同次充电的费用与合格电池充入量。</Text>
         {estimateIn(group.currency) ? <Text className="muted">≈ 包含按默认电价估算的费用。</Text> : null}
-        <Text className="section-title">月度费用</Text>{group.months.map(month => <View className="insight-table-row" key={month.month}><Text>{month.month}</Text><Text>{costAmount(month.cost, estimateIn(group.currency, month.month)) ?? '未知'} {group.currency}</Text><Text className="muted">AC {costAmount(month.ac, estimateIn(group.currency, month.month)) ?? '未知'} / DC {costAmount(month.dc, estimateIn(group.currency, month.month)) ?? '未知'} / 模式未知 {costAmount(month.unknownMode, estimateIn(group.currency, month.month)) ?? '无'} {group.currency}</Text></View>)}
-        <Text className="section-title">常用充电地点</Text>{group.locations.length ? group.locations.map(location => <View className="insight-table-row" key={location.address}><Text>{location.address}</Text><Text>{costAmount(location.cost, estimateIn(group.currency, undefined, location.address)) ?? '未知'} {group.currency} · {location.count} 次</Text></View>) : <Text className="muted">未提供地点报告</Text>}
+        <Text className="section-title">月度明细</Text>{group.months.map(month => <View className="insight-table-row" key={month.month}><Text>{month.month}</Text><Text>{costAmount(month.cost, estimateIn(group.currency, month.month)) ?? '未知'} {group.currency}</Text><Text className="muted">AC {costAmount(month.ac, estimateIn(group.currency, month.month)) ?? '未知'} / DC {costAmount(month.dc, estimateIn(group.currency, month.month)) ?? '未知'} / 模式未知 {costAmount(month.unknownMode, estimateIn(group.currency, month.month)) ?? '无'} {group.currency}</Text></View>)}
+        <Text className="section-title">热门充电地点</Text>{group.locations.length ? group.locations.map(location => <View className="insight-table-row" key={location.address}><Text>{location.address}</Text><Text>{costAmount(location.cost, estimateIn(group.currency, undefined, location.address)) ?? '未知'} {group.currency} · {location.count} 次</Text></View>) : <Text className="muted">未提供地点报告</Text>}
       </View>)}
     </> : null}
       {car && kind === 'cost' && tariff ? <View className="card"><SectionHeading icon="settings" title="自定义费率估算" /><Text className="muted">只估算缺少实际账单的充电；按保存费率时的本机时区（{tariff.timeZone || '未记录'}）与均匀AC输入电量估算，不写回实际费用。</Text>

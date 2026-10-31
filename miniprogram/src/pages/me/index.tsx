@@ -392,10 +392,7 @@ export default function MePage() {
         <VisualIcon name={item.icon} /><Text className="more-tile-label">{item.label}</Text>
       </Button>)}</View>
       <Text className="more-section-heading">报告与导出</Text>
-      <View className="more-grid">{[{ label: '年度报告', kind: 'report', icon: 'chart' as const }, { label: '导出数据', kind: 'export', icon: 'update' as const },
-        { label: '正在充电', kind: 'currentCharge', icon: 'energy' as const }, { label: '车辆预览', kind: 'vehiclePreview', icon: 'vehicle' as const }].map(item =>
-        <Button className="more-action more-tile" key={item.kind} onClick={() => Taro.navigateTo({ url: item.kind === 'currentCharge'
-          ? '/pages/insights/index?kind=currentCharge' : `/pages/tools/index?kind=${item.kind}` })}><VisualIcon name={item.icon} /><Text className="more-tile-label">{item.label}</Text></Button>)}</View>
+      <View className="more-grid">{[{ label: '年度报告', kind: 'report', icon: 'chart' as const }, { label: '导出数据', kind: 'export', icon: 'update' as const }].map(item => <Button className="more-action more-tile" key={item.kind} onClick={() => Taro.navigateTo({ url: `/pages/tools/index?kind=${item.kind}` })}><VisualIcon name={item.icon} /><Text className="more-tile-label">{item.label}</Text></Button>)}</View>
       <Text className="more-section-heading">系统</Text>
       <View className="more-system">{[
         { label: '数据状态', kind: 'dataStatus', icon: 'shield' as const },

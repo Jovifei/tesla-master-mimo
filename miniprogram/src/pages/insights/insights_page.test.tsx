@@ -86,7 +86,7 @@ it('actual parsed charge histories render separate currencies and genuine zero w
   await mount('cost')
   const rendered = shown()
   expect(rendered).toContain('EUR 费用'); expect(rendered).toContain('USD 费用'); expect(rendered).toContain('币种未知 1 次')
-  expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '费用合计 0 EUR')).toBe(true)
+  expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '总费用 0 EUR')).toBe(true)
   expect(rendered).not.toContain('CNY')
   expect(rendered).toContain('数据读取完成')
 })
@@ -103,7 +103,7 @@ it('warns about an ambiguous cached charge without counting it in offline cost c
   await act(async () => { platform.show(); await new Promise(resolve => setTimeout(resolve, 0)) })
   expect(shown()).toContain(warning)
   expect(shown()).toContain('充电 3 条')
-  expect(tree!.root.findByProps({ ariaLabel: '费用合计 0 EUR' })).toBeDefined()
+  expect(tree!.root.findByProps({ ariaLabel: '总费用 0 EUR' })).toBeDefined()
   expect(readHistoryCache<Record<string, unknown>>({ getStorageSync: (name: string) => platform.values.get(name), setStorageSync() {} }, key)).toHaveLength(4)
 })
 it('actual range proof and capacity response reach personalized range and rated endpoint consumers', async () => {
@@ -130,7 +130,7 @@ it('excludes incomplete history from App range and cost analysis while keeping s
 
   charges = [rawCharge(1, 0, 'EUR'), { ...rawCharge(2, 500, 'EUR'), quality_state: 'incomplete' }]
   await mount('cost')
-  expect(tree!.root.findByProps({ ariaLabel: '费用合计 0 EUR' })).toBeDefined()
+  expect(tree!.root.findByProps({ ariaLabel: '总费用 0 EUR' })).toBeDefined()
   expect(shown()).toContain('已加载 1 次')
   expect(shown()).toContain('充电 2 条')
   const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
@@ -205,7 +205,7 @@ it('keeps actual zero bills and labels the separate saved tariff estimate only f
   platform.values.set('matelink.tariff.v1.https%3A%2F%2Fapi%2Eexample%2Etest.owner', { currency: 'EUR', peak: 1, flat: 1, valley: 1, timeZone: 'Asia/Shanghai' })
   await mount('cost')
   expect(tree!.root.findAllByProps({ className: 'metric' }).filter(node => node.props.ariaLabel === '费率估算 2 EUR')).toHaveLength(1)
-  expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '费用合计 0 EUR')).toBe(true)
+  expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '总费用 0 EUR')).toBe(true)
   expect(shown()).toContain('不写回实际费用')
 })
 it('edits and explicitly deletes one saved manual trip while preserving original scoped drive history', async () => {
@@ -238,7 +238,7 @@ it('uses the same manual cost overlay in analysis while preserving the raw parse
   expect(writeChargeCostOverride(storage, { userId: 'owner', origin: 'https://api.example.test', stableId: 'uid7' }, normalizeCharge(charges[0])!, 7, 'USD', () => true)).toBe(true)
   await mount('cost')
   expect(shown()).toContain('含 1 条本机手动费用')
-  expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '费用合计 12 USD')).toBe(true)
+  expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '总费用 12 USD')).toBe(true)
   const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
   expect(readHistoryCache<{ cost: number; currencyCode: string }>(storage, historyCacheKey('charges', 'owner', 'uid7', 'https://api.example.test'))[0]).toMatchObject({ cost: 0, currencyCode: 'EUR' })
 })
