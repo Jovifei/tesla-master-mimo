@@ -115,6 +115,41 @@
     height: 400rpx;
     margin-top: 20rpx;
   }
+  .analysis-curve-route {
+    display: block;
+    font-size: 28rpx;
+    font-weight: 600;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  .analysis-curve-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12rpx;
+    margin: 16rpx 0;
+  }
+  .analysis-curve-kpi {
+    min-width: 0;
+    text-align: center;
+  }
+  .analysis-curve-kpi-label, .analysis-curve-kpi-value {
+    display: block;
+    overflow-wrap: anywhere;
+  }
+  .analysis-curve-kpi-label {
+    color: #6b7280;
+    font-size: 22rpx;
+  }
+  .analysis-curve-kpi-value {
+    margin-top: 6rpx;
+    font-size: 24rpx;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+  .analysis-curve-kpi-unit {
+    font-size: 20rpx;
+    font-weight: 400;
+  }
   .analysis-curve-expand {
     display: inline-block;
     margin: 0;

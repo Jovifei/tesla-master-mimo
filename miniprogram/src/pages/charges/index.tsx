@@ -3,9 +3,10 @@ import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/
 import { useRef, useState } from 'react'
 import { toChineseDisplayAddress } from '../../domain/address_display'
 import { getAppNavGeometry } from '../../services/nav_geometry'
+import { copy } from '../../i18n/copy'
 import { historyRowKey, isHistoryIdentityAmbiguous, isHistoryQuarantined, pageCanContinue, sameHistoryIdentity, sortHistoryByStartDate } from '../../domain/history'
 import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, reconcileHistoryCache, type HistoryInterval } from '../../domain/history_controller'
-import { defaultChargeHistoryQuery, emptyHistoryQuery, filterHistory, historyDateTime, historyDetailDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
+import { defaultChargeHistoryQuery, emptyHistoryQuery, filterHistory, historyDateTime, historyDetailDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, selectHistoryDate, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
 import './index.scss'
 import { createRequestScopeGate } from '../../domain/request_scope'
@@ -40,7 +41,7 @@ function errorMessage(reason: unknown): string {
   return '无法读取充电数据'
 }
 
-function battery(number: number | null): string { return number != null && Number.isFinite(number) && number >= 0 && number <= 100 ? `${number}%` : '暂无电量' }
+function battery(number: number | null): string { return number != null && Number.isFinite(number) && number >= 0 && number <= 100 ? `${number}%` : copy('common.noBattery') }
 
 function verifiedEnergy(charge: Charge) {
   return charge.energy?.evidence ? resolveChargeEnergy({ source: charge.source, start_date: charge.startDate,
@@ -53,7 +54,7 @@ function inputNumber(charge: Charge): number | null {
 }
 function modeLabel(charge: Charge): string {
   const mode = charge.chargeModeConflict != null && charge.chargeModeConflict !== false ? null : verifiedEnergy(charge)?.chargeMode ?? charge.chargeMode
-  return mode === 'ac' ? 'AC 充电' : mode === 'dc' ? 'DC 充电' : '模式未确认'
+  return mode === 'ac' ? copy('charges.ac') : mode === 'dc' ? copy('charges.dc') : copy('charges.modeUnknown')
 }
 function displayAddress(address: string | null): string {
   const original = address?.trim()
@@ -78,7 +79,7 @@ function oneDecimal(value: number | null): string | null {
 }
 
 function value(value: string | number | null | undefined): string {
-  return value == null || value === '' || (typeof value === 'number' && !Number.isFinite(value)) ? '暂无数据' : String(value)
+  return value == null || value === '' || (typeof value === 'number' && !Number.isFinite(value)) ? copy('common.noData') : String(value)
 }
 
 const emptyMeta: HistoryPageMeta = {
@@ -121,6 +122,9 @@ export default function ChargesPage() {
   }
   const [selectedEvidence, setSelectedEvidence] = useState<ChargeEvidence | null>(null)
   const [chartKind, setChartKind] = useState<'energy' | 'cost' | 'count'>('energy')
+  const [chargeTypeFilter, setChargeTypeFilter] = useState<'all' | 'ac' | 'dc'>('all')
+  const [costFilter, setCostFilter] = useState<'all' | 'has' | 'none'>('all')
+  const [selectedLocation, setSelectedLocation] = useState<string | null>(null)
   const [mapFailed, setMapFailed] = useState(false)
   const [, setCostVersion] = useState(0)
   const selectedRef = useRef(selected), carRef = useRef(car)
@@ -131,6 +135,7 @@ export default function ChargesPage() {
   const [noticeLimited, setNoticeLimited] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [query, setQueryState] = useState<HistoryQuery>(defaultChargeHistoryQuery())
+  const [filtersExpanded, setFiltersExpanded] = useState(false)
   const queryRef = useRef(query)
   const setQuery = (next: HistoryQuery) => { queryRef.current = next; setQueryState(next) }
   const [offline, setOffline] = useState(false)
@@ -574,14 +579,22 @@ export default function ChargesPage() {
   const costRows = (rows: readonly Charge[]): CostedCharge[] => costScope ? overlayChargeCosts(Taro, costScope, rows, chargeEstimatePrice(Taro, costScope)) : []
   const selectedView = selected ? costRows([selected])[0] : null
   const statisticsRows = (rows: readonly Charge[]) => costRows(appChargeListRows(appChargeStatisticsRows(rows), showShortCharges))
-  const intervalView = interval ? { ...interval, items: statisticsRows(interval.items) } : null
+  const matchesSecondaryFilters = (row: CostedCharge) => {
+    const mode = row.chargeModeConflict != null && row.chargeModeConflict !== false ? 'unknown' : row.energy?.chargeMode ?? row.chargeMode ?? 'unknown'
+    if (chargeTypeFilter !== 'all' && mode !== chargeTypeFilter) return false
+    if (costFilter === 'has' && row.cost == null) return false
+    if (costFilter === 'none' && row.cost != null) return false
+    return !selectedLocation || displayAddress(row.address) === selectedLocation
+  }
+  const intervalView = interval ? { ...interval, items: statisticsRows(interval.items).filter(matchesSecondaryFilters) } : null
   const costState = selectedView
   const acEfficiency = selected ? qualifiedAcEnergyBalance(selected)?.efficiencyPercent ?? null : null
   const trustedItems = costRows(appChargeListRows(filterHistory(items, emptyHistoryQuery()), showShortCharges))
-  const visibleItems = filterHistory(trustedItems, query)
-  const chartItems = filterHistory(intervalView?.items ?? statisticsRows(items), query)
+  const visibleItems = filterHistory(trustedItems.filter(matchesSecondaryFilters), query)
+  const chartItems = filterHistory((intervalView?.items ?? statisticsRows(items)).filter(matchesSecondaryFilters), query)
   const chartCurrencies = [...new Set(chartItems.filter(row => row.cost != null && Number.isFinite(row.cost) && row.cost >= 0).map(row => row.currencyCode ?? row.currency).filter((code): code is string => Boolean(code)))]
   const chartCurrency = chartCurrencies.length === 1 ? chartCurrencies[0] : null
+  const locationOptions = ['位置', ...new Set(items.map(item => displayAddress(item.address)).filter(value => value !== '位置未知'))]
   const months = new Map<string, { label: string; energy: number; energyKnown: number; cost: number; costKnown: number; costEstimated: boolean; count: number }>()
   for (const row of chartItems) {
     const date = row.startDate ? new Date(row.startDate) : null
@@ -608,7 +621,7 @@ export default function ChargesPage() {
   return (
     <View className="page history-page charges-page">
       <View className="history-page-header" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px` }}>
-        <Text className="title">充电历史</Text>
+        <Text className="title">{copy('charges.title')}</Text>
         {cars.length > 1 ? (
           <Picker mode="selector" range={cars.map(item => item.displayName || item.name || `车辆 ${item.stableId}`)} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}>
             <View className="status"><Text className="status-label">车辆</Text><Text className="status-value">{car?.displayName || '请选择车辆'}</Text></View>
@@ -619,17 +632,29 @@ export default function ChargesPage() {
       </View>
 
       {car ? <View className="history-controls">
-        <HistoryDateChips kind="charges" query={query} onChange={updateQuery} />
-        <Button className="button-secondary charge-short-toggle" onClick={() => setShowShortCharges(value => !value)}>{showShortCharges ? '隐藏短充' : '显示短充'}</Button>
-        <View className="history-actions-hidden">
-          <Picker mode="date" value={query.startDate} onChange={event => updateQuery({ startDate: event.detail.value })}><View>开始日期：{query.startDate || '不限'}</View></Picker>
-          <Picker mode="date" value={query.endDate} onChange={event => updateQuery({ endDate: event.detail.value })}><View>结束日期：{query.endDate || '不限'}</View></Picker>
-          <Button className="button" onClick={() => updateQuery(emptyHistoryQuery())}>清除筛选</Button>
-          <Button className="button" loading={loading} onClick={() => { void load() }}>刷新</Button>
+        <ScrollView scrollX className="history-filter-scroll"><HistoryDateChips kind="charges" query={query} onChange={updateQuery} /></ScrollView>
+        <View className="history-charge-filter-row">
+          <Picker mode="selector" range={['全部', 'AC', 'DC']} value={chargeTypeFilter === 'all' ? 0 : chargeTypeFilter === 'ac' ? 1 : 2} onChange={event => setChargeTypeFilter((['all', 'ac', 'dc'] as const)[Number(event.detail.value)] || 'all')}>
+            <Button className="history-filter-button"><VisualIcon name="energy" />{chargeTypeFilter === 'all' ? '全部' : chargeTypeFilter.toUpperCase()}</Button>
+          </Picker>
+          <Picker mode="selector" range={['全部', '有费用', '无费用']} value={costFilter === 'all' ? 0 : costFilter === 'has' ? 1 : 2} onChange={event => setCostFilter((['all', 'has', 'none'] as const)[Number(event.detail.value)] || 'all')}>
+            <Button className="history-filter-button"><VisualIcon name="money" />{costFilter === 'all' ? '全部' : costFilter === 'has' ? '有费用' : '无费用'}</Button>
+          </Picker>
+          <Picker mode="selector" range={locationOptions} value={Math.max(0, locationOptions.indexOf(selectedLocation || '位置'))} onChange={event => setSelectedLocation(Number(event.detail.value) === 0 ? null : locationOptions[Number(event.detail.value)] || null)}>
+            <Button className="history-filter-button"><VisualIcon name="map" />{selectedLocation || '位置'}</Button>
+          </Picker>
         </View>
-        {offline ? <Text className="muted">本机缓存 · 未验证在线车辆</Text> : null}
+        <Button className="button-secondary charge-short-toggle" onClick={() => setShowShortCharges(value => !value)}>{showShortCharges ? copy('charges.hideShort') : copy('charges.showShort')}</Button>
+        <Button className="history-chip history-more-toggle" onClick={() => setFiltersExpanded(value => !value)}>{filtersExpanded ? copy('history.collapseFilters') : copy('history.moreFilters')}</Button>
+        <View className={`history-actions${filtersExpanded ? '' : ' history-actions-hidden'}`}>
+          <Picker mode="date" value={query.startDate} onChange={event => updateQuery(selectHistoryDate(queryRef.current, 'startDate', event.detail.value))}><View>开始日期：{query.startDate || copy('common.unlimited')}</View></Picker>
+          <Picker mode="date" value={query.endDate} onChange={event => updateQuery(selectHistoryDate(queryRef.current, 'endDate', event.detail.value))}><View>结束日期：{query.endDate || copy('common.unlimited')}</View></Picker>
+          <Button className="button" onClick={() => updateQuery(emptyHistoryQuery())}>{copy('common.clearFilters')}</Button>
+          <Button className="button" loading={loading} onClick={() => { void load() }}>{copy('common.refresh')}</Button>
+        </View>
+        {offline ? <Text className="muted">{copy('history.localCache')}</Text> : null}
       </View> : null}
-      {items.some(isHistoryIdentityAmbiguous) ? <Text className="muted">来源身份未确认的历史记录已保留，但未计入当前展示或统计</Text> : null}
+      {items.some(isHistoryIdentityAmbiguous) ? <Text className="muted history-identity-note">来源身份未确认的历史记录已保留，但未计入当前展示或统计</Text> : null}
       {notice ? <View className="card history-notice">
         <Text className="muted">前台发现一条新的已完成充电，仅本次打开时检查。</Text>
         <Button className="button" onClick={() => {
@@ -679,13 +704,13 @@ export default function ChargesPage() {
         <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待特斯拉账号登录</Text><Text className="muted">请先在“更多”中登录特斯拉账号。</Text></View>
       ) : trustedItems.length === 0 && !loading ? (
         <View className="card empty-state"><VisualIcon name="energy" /><Text className="section-title">暂无可展示的充电记录</Text><Text className="muted">{items.some(item => !isHistoryQuarantined(item)) && !showShortCharges ? '当前记录均为短充；可选择“显示短充”查看。' : '当前没有可展示的充电记录，空响应不会生成示例数据。'}</Text>
-          {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
+          {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>{copy('common.loadMore')}</Button> : null}
         </View>
       ) : (
         <View className="history-list charge-history-list">
           <Text className="section-title charge-history-heading">充电历史</Text>
           {loading ? <LoadingIndicator label="正在读取充电记录…" compact /> : null}
-          {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的充电记录</Text> : null}
+          {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">{copy('history.noMatchedCharges')}</Text> : null}
           {visibleItems.map(item => (
             <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
               <View className="history-charge-heading">
@@ -696,13 +721,13 @@ export default function ChargesPage() {
                     <Text className="location-date">{historyEditorialDate(item.startDate, false)}</Text>
                   </View>
                 </View>
-                {modeLabel(item) !== '模式未确认' ? <Text className="history-charge-mode">{modeLabel(item)}</Text> : null}
+                <Text className={`history-charge-mode${modeLabel(item) === '模式未确认' ? ' history-charge-mode-unknown' : ''}`}>{modeLabel(item)}</Text>
               </View>
               <View className="history-record-metrics">
-                <MetricValue label="时长" value={item.durationMinutes != null && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0 ? item.durationMinutes : null} unit="m" icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
-                <MetricValue label="能量" value={oneDecimal(item.energyAddedKwh)} unit="kWh" icon="energy" />
-                <MetricValue label="充电费用" {...costLabel(item)} icon="account" />
-                <MetricValue label="电量" {...formatSocRangeMetric(item.startBatteryLevel, item.endBatteryLevel)} icon="battery" />
+                <MetricValue label={copy('history.duration')} value={item.durationMinutes != null && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0 ? item.durationMinutes : null} unit="m" icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
+                <MetricValue label={copy('history.energy')} value={oneDecimal(item.energyAddedKwh)} unit="kWh" icon="energy" />
+                <MetricValue label={copy('charges.cost')} {...costLabel(item)} icon="account" />
+                <MetricValue label={copy('history.soc')} {...formatSocRangeMetric(item.startBatteryLevel, item.endBatteryLevel)} icon="battery" />
               </View>
               {(item.costProvenance === 'estimate' || inputNumber(item) != null) ? (
                 <Text className="history-source">
@@ -714,7 +739,7 @@ export default function ChargesPage() {
               {'costProvenance' in item && item.costProvenance === 'manual' ? <Text className="metric-source">本机手动费用</Text> : null}
             </View>
           ))}
-          {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
+          {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>{copy('common.loadMore')}</Button> : null}
         </View>
       )}
 

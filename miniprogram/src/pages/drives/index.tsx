@@ -6,8 +6,9 @@ import { buildDriveHistoryItems, parkedAddressLabel, verifiedParkedPairs, type D
 import { mapCoordinate } from '../../domain/map_coordinate'
 import { toChineseDisplayAddress } from '../../domain/address_display'
 import { getAppNavGeometry } from '../../services/nav_geometry'
+import { copy } from '../../i18n/copy'
 import { acceptHistoryDetail, acceptHistoryPage, collectHistoryInterval, enrichHistoryInterval, reconcileHistoryCache, type HistoryInterval } from '../../domain/history_controller'
-import { defaultDriveHistoryQuery, emptyHistoryQuery, filterHistory, historyDateTime, historyDetailDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
+import { defaultDriveHistoryQuery, emptyHistoryQuery, filterHistory, historyDateTime, historyDetailDateTime, historyEditorialDate, normalizeHistoryQuery, readHistoryQuery, selectHistoryDate, writeHistoryQuery, type HistoryQuery } from '../../domain/history_query'
 import { readCarsCache } from '../../services/cars_cache'
 import './index.scss'
 import { createRequestScopeGate } from '../../domain/request_scope'
@@ -37,10 +38,10 @@ function errorMessage(reason: unknown): string {
   return '无法读取行程数据'
 }
 
-function battery(number: number | null): string { return number != null && Number.isFinite(number) && number >= 0 && number <= 100 ? `${number}%` : '暂无电量' }
+function battery(number: number | null): string { return number != null && Number.isFinite(number) && number >= 0 && number <= 100 ? `${number}%` : copy('common.noBattery') }
 
 function value(value: string | number | null | undefined): string {
-  return value == null || value === '' || (typeof value === 'number' && !Number.isFinite(value)) ? '暂无数据' : String(value)
+  return value == null || value === '' || (typeof value === 'number' && !Number.isFinite(value)) ? copy('common.noData') : String(value)
 }
 
 function energyValue(item: Drive): number | null {
@@ -51,7 +52,7 @@ function energyLabel(item: Drive): string {
   return item.energy?.quality === 'estimated' ? '估算' : item.energy?.quality === 'reported' ? '报告值' : '能耗缺失'
 }
 function metric(number: number | null | undefined, unit: string): string {
-  return number == null || !Number.isFinite(number) ? '暂无数据' : `${displayNumber(number)} ${unit}`
+  return number == null || !Number.isFinite(number) ? copy('common.noData') : `${displayNumber(number)} ${unit}`
 }
 function efficiency(item: Drive): number | null {
   const number = item.energy?.quality === 'unknown' ? null : item.energy?.efficiencyWhKm
@@ -108,6 +109,7 @@ export default function DrivesPage() {
   const [noticeLimited, setNoticeLimited] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [query, setQueryState] = useState<HistoryQuery>(defaultDriveHistoryQuery())
+  const [filtersExpanded, setFiltersExpanded] = useState(false)
   const queryRef = useRef(query)
   const setQuery = (next: HistoryQuery) => { queryRef.current = next; setQueryState(next) }
   const [offline, setOffline] = useState(false)
@@ -542,32 +544,33 @@ export default function DrivesPage() {
   return (
     <View className="page history-page drives-page">
       <View className="history-page-header" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px` }}>
-        <Text className="title">行程记录</Text>
+        <Text className="title">{copy('drives.title')}</Text>
         {cars.length > 1 ? (
           <Picker mode="selector" range={cars.map(item => item.displayName || item.name || `车辆 ${item.stableId}`)} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}>
             <View className="status"><Text className="status-label">车辆</Text><Text className="status-value">{car?.displayName || '请选择车辆'}</Text></View>
           </Picker>
         ) : null}
         {cacheWarning ? <Text className="error">在线数据已读到，但未保存到本机。</Text> : null}
-        {items.some(isHistoryIdentityAmbiguous) ? <Text className="muted">来源身份未确认的历史记录已保留，但未计入当前展示或统计</Text> : null}
       </View>
 
       {car ? <View className="history-controls">
-        <HistoryDateChips kind="drives" query={query} onChange={updateQuery} />
-        <View className="history-distance-chips">
-          {[{ label: '全部', min: 0, max: undefined }, { label: '通勤 (< 10km)', min: 0, max: 10 },
-            { label: '短途 (10–100km)', min: 10, max: 100 }, { label: '长途 (100km+)', min: 100, max: undefined }].map(option =>
+        <ScrollView scrollX className="history-filter-scroll"><HistoryDateChips kind="drives" query={query} onChange={updateQuery} /></ScrollView>
+        <ScrollView scrollX className="history-filter-scroll"><View className="history-distance-chips">
+          {[{ label: '全部', min: 0, max: undefined }, { label: '通勤 (< 50km)', min: 0, max: 50 },
+            { label: '短途 (50–200km)', min: 50, max: 200 }, { label: '长途 (200km+)', min: 200, max: undefined }].map(option =>
             <Button key={option.label} className={`history-chip ${query.minDistanceKm === option.min && query.maxDistanceKm === option.max ? 'history-chip-selected' : ''}`} onClick={() => updateQuery({ minDistanceKm: option.min, maxDistanceKm: option.max })}>{option.label}</Button>)}
-        </View>
-        <View className="history-actions-hidden">
-          <Picker mode="date" value={query.startDate} onChange={event => updateQuery({ startDate: event.detail.value })}><View>开始日期：{query.startDate || '不限'}</View></Picker>
-          <Picker mode="date" value={query.endDate} onChange={event => updateQuery({ endDate: event.detail.value })}><View>结束日期：{query.endDate || '不限'}</View></Picker>
+        </View></ScrollView>
+        <Button className="history-chip history-more-toggle" onClick={() => setFiltersExpanded(value => !value)}>{filtersExpanded ? copy('history.collapseFilters') : copy('history.moreFilters')}</Button>
+        <View className={`history-actions${filtersExpanded ? '' : ' history-actions-hidden'}`}>
+          <Picker mode="date" value={query.startDate} onChange={event => updateQuery(selectHistoryDate(queryRef.current, 'startDate', event.detail.value))}><View>开始日期：{query.startDate || copy('common.unlimited')}</View></Picker>
+          <Picker mode="date" value={query.endDate} onChange={event => updateQuery(selectHistoryDate(queryRef.current, 'endDate', event.detail.value))}><View>结束日期：{query.endDate || copy('common.unlimited')}</View></Picker>
           <Picker mode="selector" range={['全部里程', '至少 1 km', '至少 5 km', '至少 10 km']} value={Math.max(0, [0, 1, 5, 10].indexOf(query.minDistanceKm))} onChange={event => updateQuery({ minDistanceKm: [0, 1, 5, 10][Number(event.detail.value)] ?? 0, maxDistanceKm: undefined })}><View className="history-custom-distance">自定义最少里程：{query.minDistanceKm ? `至少 ${query.minDistanceKm} km` : '不限'}</View></Picker>
-          <Button className="button" onClick={() => updateQuery(emptyHistoryQuery())}>清除筛选</Button>
-          <Button className="button" loading={loading} onClick={() => { void load() }}>刷新</Button>
+          <Button className="button" onClick={() => updateQuery(emptyHistoryQuery())}>{copy('common.clearFilters')}</Button>
+          <Button className="button" loading={loading} onClick={() => { void load() }}>{copy('common.refresh')}</Button>
         </View>
-        {offline ? <Text className="muted">本机缓存 · 未验证在线车辆</Text> : null}
+        {offline ? <Text className="muted">{copy('history.localCache')}</Text> : null}
       </View> : null}
+      {items.some(isHistoryIdentityAmbiguous) ? <Text className="muted history-identity-note">来源身份未确认的历史记录已保留，但未计入当前展示或统计</Text> : null}
       {notice ? <View className="card history-notice">
         <Text className="muted">前台发现一条新的已完成行程，仅本次打开时检查。</Text>
         <Button className="button" onClick={() => {
@@ -589,13 +592,13 @@ export default function DrivesPage() {
         <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待特斯拉账号登录</Text><Text className="muted">请先在“更多”中建立会话。</Text></View>
       ) : trustedItems.length === 0 && !loading ? (
         <View className="card empty-state"><VisualIcon name="route" /><Text className="section-title">暂无可展示的行程</Text><Text className="muted">当前没有可展示的行程记录，空响应不会生成示例数据。</Text>
-          {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
+          {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>{copy('common.loadMore')}</Button> : null}
         </View>
       ) : (
         <View className="history-list">
           <Text className="section-title">行程历史</Text>
           {loading ? <LoadingIndicator label="正在读取行程…" compact /> : null}
-          {historyItems.length === 0 && visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">没有符合筛选的行程</Text> : null}
+          {historyItems.length === 0 && visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">{copy('history.noMatchedDrives')}</Text> : null}
           {historyItems.map(item => item.kind === 'parked' ? (
             <View key={item.key} className="history-record history-parked" onClick={() => { void openParked(item) }}>
               <View className="parked-heading">
@@ -625,14 +628,14 @@ export default function DrivesPage() {
                 </View>
               </View>
               <View className="history-record-metrics">
-                <MetricValue label="能量" value={efficiency(item.drive)} unit={efficiency(item.drive) != null ? "kWh/100km" : undefined} icon="energy" digits={1} negative={(efficiency(item.drive) ?? 0) < 0} />
-                <MetricValue label="距离" value={item.drive.distanceKm} unit="km" icon="distance" digits={1} />
-                <MetricValue label="最高速度" value={peakSpeedKmh(item.drive)} unit="km/h" icon="speed" digits={Number.isInteger(peakSpeedKmh(item.drive)) ? 0 : 1} />
-                <MetricValue label="时长" value={duration(item.drive.durationMinutes).value} unit={duration(item.drive.durationMinutes).unit} icon="clock" digits={Number.isInteger(item.drive.durationMinutes) ? 0 : 1} />
+                <MetricValue label={copy('history.energy')} value={efficiency(item.drive)} unit={efficiency(item.drive) != null ? "kWh/100km" : undefined} icon="energy" digits={1} negative={(efficiency(item.drive) ?? 0) < 0} />
+                <MetricValue label={copy('history.distance')} value={item.drive.distanceKm} unit="km" icon="distance" digits={1} />
+                <MetricValue label={copy('history.speed')} value={peakSpeedKmh(item.drive)} unit="km/h" icon="speed" digits={Number.isInteger(peakSpeedKmh(item.drive)) ? 0 : 1} />
+                <MetricValue label={copy('history.duration')} value={duration(item.drive.durationMinutes).value} unit={duration(item.drive.durationMinutes).unit} icon="clock" digits={Number.isInteger(item.drive.durationMinutes) ? 0 : 1} />
               </View>
             </View>
           ))}
-          {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>加载更多</Button> : null}
+          {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>{copy('common.loadMore')}</Button> : null}
         </View>
       )}
 

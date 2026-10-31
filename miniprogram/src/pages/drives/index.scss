@@ -1,3 +1,5 @@
+@use '../history-list-ui' as history-list;
+
 .history-page {
   .history-detail-overlay {
     z-index: 2000;
@@ -127,14 +129,20 @@
   }
   .history-record-evidence {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
+    gap: 10rpx;
     margin-top: 6rpx;
+    .history-source { order: -1; margin-right: auto; }
   }
   .history-soc {
-    font-size: 30rpx;
+    padding: 5rpx 14rpx;
+    border-radius: 999rpx;
+    background: #e4f2f2;
+    box-shadow: 0 2rpx 6rpx rgba(21, 122, 134, 0.1);
+    font-size: 28rpx;
     font-weight: 600;
-    color: #1f2937;
+    color: #12636c;
   }
   .history-source {
     display: inline-block;
@@ -182,14 +190,14 @@
     .line-connector {
       width: 3rpx;
       height: 32rpx;
-      background: linear-gradient(to bottom, #10b981, #64748b);
+      background: linear-gradient(to bottom, #10b981, #d7615b);
       margin: 2rpx 0;
     }
     .dot-end {
       width: 18rpx;
       height: 18rpx;
       border-radius: 50%;
-      background: #334155;
+      background: #d7615b;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -620,3 +628,5 @@
     &::after { border: none !important; }
   }
 }
+
+@include history-list.history-list-ui;

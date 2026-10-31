@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), params: { kind: 'report' } as Record<string, string>,
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void,
   write: vi.fn(), share: vi.fn(), open: vi.fn(), toast: vi.fn() }))
-vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Input: 'input', Picker: 'picker', Map: 'map', Slider: 'slider', Switch: 'switch' }))
+vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Input: 'input', Picker: 'picker', Map: 'map', Slider: 'slider', Switch: 'switch', Image: 'image' }))
 vi.mock('@tarojs/taro', () => ({ default: {
   request: platform.request, getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => platform.values.set(key, value),
   getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }), env: { USER_DATA_PATH: '/synthetic' },

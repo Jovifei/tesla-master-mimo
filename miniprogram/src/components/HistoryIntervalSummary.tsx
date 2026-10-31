@@ -6,6 +6,7 @@ import type { Charge, Drive } from '../services/types'
 import type { CostedCharge } from '../services/charge_cost'
 import MetricValue, { peakSpeedKmh } from './MetricValue'
 import LoadingIndicator from './LoadingIndicator'
+import { copy } from '../i18n/copy'
 
 export default function HistoryIntervalSummary({ interval, query, kind }: {
   interval: HistoryInterval<Drive> | HistoryInterval<Charge> | null
@@ -15,8 +16,8 @@ export default function HistoryIntervalSummary({ interval, query, kind }: {
   if (!interval) {
     return (
       <View className="card history-interval">
-        <Text className="section-title">摘要</Text>
-        <LoadingIndicator label="正在读取数据摘要…" compact />
+        <Text className="section-title">{copy('common.summary')}</Text>
+        <LoadingIndicator label={copy('common.loadingSummary')} compact />
       </View>
     )
   }
@@ -37,20 +38,20 @@ export default function HistoryIntervalSummary({ interval, query, kind }: {
     : `数据覆盖 · 费用 ${cost.known}/${charges.length} · 电量 ${battery!.known}/${battery!.total}`
   return (
     <View className="card history-interval">
-      <Text className="section-title">摘要</Text>
+      <Text className="section-title">{copy('common.summary')}</Text>
       <View className="history-summary-primary metric-grid">
         {drives ? (
           <>
             <MetricValue label="总行程数" value={rows.length} unit="次" icon="route" digits={0} />
-            <MetricValue label="总距离" value={drives.distance.value} unit="km" icon="distance" />
-            <MetricValue label="总时间" value={drives.duration.value} unit="分钟" icon="clock" />
-            <MetricValue label="最高速度" value={speeds.length ? Math.max(...speeds) : null} unit="km/h" icon="speed" />
+            <MetricValue label={copy('history.totalDistance')} value={drives.distance.value} unit="km" icon="distance" />
+            <MetricValue label={copy('history.totalTime')} value={drives.duration.value} unit="分钟" icon="clock" />
+            <MetricValue label={copy('history.speed')} value={speeds.length ? Math.max(...speeds) : null} unit="km/h" icon="speed" />
           </>
         ) : (
           <>
             <MetricValue label="充电次数" value={rows.length} unit="次" icon="energy" digits={0} />
-            <MetricValue label="能量" value={battery?.value} unit="kWh" icon="energy" />
-            <MetricValue label="费用" value={hasEstimateInTotal ? `≈${cost.value!.toFixed(2)}` : cost.value} unit={currency} icon="account" />
+            <MetricValue label={copy('history.energy')} value={battery?.value} unit="kWh" icon="energy" />
+            <MetricValue label={copy('history.cost')} value={hasEstimateInTotal ? `≈${cost.value!.toFixed(2)}` : cost.value} unit={currency} icon="account" />
             <MetricValue label="单次均价" value={cost.value != null && cost.known > 0 ? hasEstimateInTotal ? `≈${(cost.value / cost.known).toFixed(2)}` : cost.value / cost.known : null} unit={currency} icon="account" />
           </>
         )}

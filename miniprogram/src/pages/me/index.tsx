@@ -382,7 +382,7 @@ export default function MePage() {
         { label: '电池健康', icon: 'battery' as const, route: '/pages/insights/index?kind=battery' },
         { label: '里程统计', icon: 'distance' as const, route: '/pages/analysis/index?kind=mileage' },
         { label: '行程历史', icon: 'clock' as const, route: '/pages/drives/index' },
-        { label: '长途行程', icon: 'route' as const, route: '/pages/insights/index?kind=longTrips' },
+        { label: '长途旅程', icon: 'route' as const, route: '/pages/insights/index?kind=longTrips' },
         { label: '能耗', icon: 'chart' as const, route: '/pages/analysis/index?kind=efficiency' },
         { label: '费用分析', icon: 'money' as const, route: '/pages/insights/index?kind=cost' },
         { label: '续航分析', icon: 'route' as const, route: '/pages/insights/index?kind=range' },
@@ -392,7 +392,10 @@ export default function MePage() {
         <VisualIcon name={item.icon} /><Text className="more-tile-label">{item.label}</Text>
       </Button>)}</View>
       <Text className="more-section-heading">报告与导出</Text>
-      <View className="more-grid">{[{ label: '年度报告', kind: 'report', icon: 'chart' as const }, { label: '导出数据', kind: 'export', icon: 'update' as const }].map(item => <Button className="more-action more-tile" key={item.kind} onClick={() => Taro.navigateTo({ url: `/pages/tools/index?kind=${item.kind}` })}><VisualIcon name={item.icon} /><Text className="more-tile-label">{item.label}</Text></Button>)}</View>
+      <View className="more-grid">{[{ label: '年度报告', kind: 'report', icon: 'chart' as const }, { label: '导出数据', kind: 'export', icon: 'update' as const },
+        { label: '正在充电', kind: 'currentCharge', icon: 'energy' as const }, { label: '车辆预览', kind: 'vehiclePreview', icon: 'vehicle' as const }].map(item =>
+        <Button className="more-action more-tile" key={item.kind} onClick={() => Taro.navigateTo({ url: item.kind === 'currentCharge'
+          ? '/pages/insights/index?kind=currentCharge' : `/pages/tools/index?kind=${item.kind}` })}><VisualIcon name={item.icon} /><Text className="more-tile-label">{item.label}</Text></Button>)}</View>
       <Text className="more-section-heading">系统</Text>
       <View className="more-system">{[
         { label: '数据状态', kind: 'dataStatus', icon: 'shield' as const },

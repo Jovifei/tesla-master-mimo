@@ -5,7 +5,7 @@ import { sameParkedSource } from './drive_history'
 import { isAppDriveAnalysisEligible } from './app_history_projection'
 
 export type AnalysisKind = 'stats' | 'mileage' | 'efficiency' | 'timeline' | 'vampire' | 'curves' | 'parked' | 'chargeCurves'
-export const analysisTitles: Record<AnalysisKind, string> = { stats: '统计分析', mileage: '里程统计', efficiency: '能耗分析', timeline: '时间轴', vampire: '驻车损耗', curves: '行程曲线', parked: '驻车详情', chargeCurves: '充电曲线' }
+export const analysisTitles: Record<AnalysisKind, string> = { stats: '统计分析', mileage: '里程统计', efficiency: '能耗分析', timeline: '时间轴', vampire: '驻车损耗', curves: '行程曲线分析', parked: '驻车详情', chargeCurves: '充电曲线分析' }
 export function analysisKind(value: unknown): AnalysisKind { return typeof value === 'string' && Object.prototype.hasOwnProperty.call(analysisTitles, value) ? value as AnalysisKind : 'stats' }
 export function analysisDay(value: string | null | undefined): string | null { const shown = historyDateTime(value); return shown === '暂无日期' ? null : shown.slice(0, 10) }
 export function analysisGroups(rows: readonly Drive[], period: 'day' | 'month' | 'year') {

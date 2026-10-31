@@ -69,7 +69,7 @@ it('reports retained ambiguous legacy history without showing or counting it', a
   expect(view.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
   expect(view.root.findByProps({ ariaLabel: '总行程数 1 次' })).toBeDefined()
   expect(readHistoryCache<{ identityAmbiguous?: boolean }>(storage, key).some(row => row.identityAmbiguous === true)).toBe(true)
-  const longTrips = view.root.findAllByType('button').find(item => item.children.join('') === '长途 (100km+)')!
+  const longTrips = view.root.findAllByType('button').find(item => item.children.join('') === '长途 (200km+)')!
   await act(async () => { longTrips.props.onClick() }); await flush()
   expect(JSON.stringify(view.toJSON())).toContain('来源身份未确认的历史记录已保留，但未计入当前展示或统计')
 })
@@ -106,9 +106,9 @@ it('reuses a confirmed proof after filtering the candidate out and back into vie
     await act(async () => { button!.props.onClick() }); await flush()
   }
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(1)
-  await click('长途 (100km+)')
+  await click('长途 (200km+)')
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(0)
-  await click('通勤 (< 10km)')
+  await click('通勤 (< 50km)')
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(1)
   expect(platform.request.mock.calls.filter(([request]) => request.url.endsWith('/parked/1/3'))).toHaveLength(1)
 })

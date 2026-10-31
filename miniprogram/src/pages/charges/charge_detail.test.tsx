@@ -219,7 +219,7 @@ it('shows a normalized AC/fast-charge conflict as unknown without losing reporte
     return response({ charges: [conflicting], meta: { page: 1, show: 20, total_pages: 1 } })
   })
   await mount()
-  expect(tree!.root.findAllByProps({ className: 'history-charge-mode' })).toHaveLength(0)
+  expect(tree!.root.findByProps({ className: 'history-charge-mode history-charge-mode-unknown' }).children.join('')).toBe('模式未确认')
   await detail()
   const panel = tree!.root.findByProps({ className: 'history-detail-overlay' })
   expect(shown()).toContain('模式未确认')

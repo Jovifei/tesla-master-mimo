@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { ApiError, getApiSessionGeneration, isTrustedAuthorizationURL, matelinkApi } from '../../services/api'
 import { readAppSession, readPendingTeslaAuthorization } from '../../services/session'
 import LoadingIndicator from '../../components/LoadingIndicator'
+import SubpageHeader from '../../components/SubpageHeader'
 
 function errorMessage(reason: unknown): string {
   if (reason instanceof ApiError) {
@@ -142,14 +143,14 @@ export default function AuthPage() {
   }
 
   if (exchanging) {
-    return <View className="page"><View className="card"><Text className="section-title">正在完成授权</Text><LoadingIndicator label="正在完成当前特斯拉账号登录…" /></View></View>
+    return <View className="page subpage-page"><SubpageHeader title="Tesla 官方授权" subtitle="正在完成授权" /><View className="card"><Text className="section-title">正在完成授权</Text><LoadingIndicator label="正在完成当前特斯拉账号登录…" /></View></View>
   }
 
   if (error || !url || desktopSimulator) {
     return (
-      <View className="page">
+      <View className="page subpage-page">
+        <SubpageHeader title="Tesla 官方授权" subtitle="官方账号登录与授权" />
         <View className="card">
-          <Text className="section-title">Tesla 官方授权</Text>
           {error ? <Text className="error">{error}</Text> : !url ? <LoadingIndicator label="正在准备官方授权入口…" compact /> : null}
           {url ? <>
             <Text className="muted">{desktopSimulator

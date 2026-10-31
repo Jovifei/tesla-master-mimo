@@ -108,7 +108,7 @@
     background:var(--dashboard-surface);
     border:1rpx solid var(--dashboard-border);
     box-shadow:0 2rpx 6rpx #00000008;
-    border-radius:32rpx
+    border-radius:24rpx
   }
   .dashboard-hero {
     padding:26rpx 32rpx;
@@ -261,7 +261,7 @@
     border-radius:24rpx
   }
   .dashboard-chip-label {
-    font-size:22rpx;
+    font-size:24rpx;
     text-align:center
   }
   .dashboard-opening-alert {
@@ -475,7 +475,8 @@
   }
   .dashboard-current-charge {
     padding:24rpx;
-    margin-bottom:32rpx
+    margin-bottom:32rpx;
+    border-left:6rpx solid var(--dashboard-warning)
   }
   .dashboard-current-heading {
     justify-content:flex-start

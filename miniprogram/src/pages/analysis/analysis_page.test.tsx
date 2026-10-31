@@ -288,7 +288,7 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     expect(page.root.findAllByType('canvas' as React.ElementType)).toHaveLength(5)
     expect(platform.context.moveTo.mock.calls.length + platform.context.lineTo.mock.calls.length).toBeLessThanOrEqual(5 * 604)
     expect(page.root.findAllByProps({ className: 'muted analysis-plot-thinned' })).toHaveLength(5)
-    const power = page.root.findAllByProps({ className: 'card analysis-curve' }).find(node => node.findAllByType('text').some(text => text.children.join('') === '功率输出与回收'))!
+    const power = page.root.findAllByProps({ className: 'card analysis-curve' }).find(node => node.findAllByType('text').some(text => text.children.join('') === '功率曲线'))!
     const slider = power.findByType('slider' as React.ElementType)
     expect(slider.props.max).toBe(19999)
     await act(async () => { slider.props.onChange({ detail: { value: 19000 } }) })
@@ -311,7 +311,13 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     expect(page.root.findAllByType('canvas' as React.ElementType)).toHaveLength(5)
     expect(platform.context.draw).toHaveBeenCalledTimes(5)
     expect(platform.context.lineTo.mock.calls.length).toBeGreaterThanOrEqual(8)
-    const power = page.root.findAllByProps({ className: 'card analysis-curve' }).find(node => node.findAllByType('text').some(text => text.children.join('') === '功率输出与回收'))!
+    expect(page.root.findAllByProps({ className: 'card analysis-curve' }).map(node => node.findByProps({ className: 'section-title' }).children.join('')))
+      .toEqual(['速度曲线', '行程距离曲线 · 预估', '功率曲线', '电量', '海拔曲线'])
+    expect(page.root.findByProps({ ariaLabel: '距离 10 km' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '最大值 60 km/h' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '已用 1%' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '采样均值 0 kW' })).toBeDefined()
+    const power = page.root.findAllByProps({ className: 'card analysis-curve' }).find(node => node.findAllByType('text').some(text => text.children.join('') === '功率曲线'))!
     expect(power.findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('-5 kW')
     await act(async () => { power.findByType('slider' as React.ElementType).props.onChange({ detail: { value: 1 } }) })
     expect(power.findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('0 kW')

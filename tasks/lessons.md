@@ -657,3 +657,15 @@
 ## 2026-10-29 Jovi：一次明确授权即可
 
 - 用户对明确文件范围已授权后，不重复征询；如果自动审批仍拦截，应直接说明阻止来自系统、不是用户授权不足，并给出已准备好的精确清理位置。
+
+## 2026-10-31 Codex with ChatGPT 本地直连与 Git 身份核验
+
+- Codex with ChatGPT 通过只读连接直接读取当前本地工作区，GitHub 只承担 PR/CI；不要把仓库上传到 ChatGPT Project，也不要把 GitHub 桥接当成本地文件传输。
+- E 盘原始目录 `E:\project\tesla_master\app_mimo` 的共享 Git 元数据仍含指向其他 worktree 的 `core.worktree`。连接器的文件读取根目录可以正确，但普通 `git_status/git_diff` 可能混淆工作树；涉及分支、提交和 diff 时必须用显式 `--git-dir` + `--work-tree` 交叉核验。
+- `workspace_info` 的工程类型/脚本元信息不能单独证明连接目标；应与 `workspace`、`git_status`、顶层文件搜索和本地 `git rev-parse` 共同确认。连接器重启后先过 `doctor`，再复核工作区身份。
+
+## 2026-10-31 Mini 批量改动与误删恢复
+
+- Pattern：多个并行改动同时落盘时，出现了 Mini 测试、配置和工具页文件被误删；仅看最终测试通过不能发现测试文件缺失。
+- Prevention：每批改动后必须同时核对 Git 的 `D` 状态、入口配置、测试数量和关键文件存在性；误删必须先从当前分支的 Git 对象恢复，再继续工作，不能以“文件本来无用”为由跳过。
+- Prevention：提交前明确只暂存 Mini 路径，并复查 Android/iOS 原有脏文件未进入暂存区。

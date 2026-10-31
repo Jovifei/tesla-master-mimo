@@ -138,13 +138,13 @@ it('excludes incomplete history from App range and cost analysis while keeping s
   expect(cached).toHaveLength(2)
 })
 it('actual manual selection saves a scoped bounded trip and rebuilds detail offline without inventing energy for missing leg', async () => {
-  await mount('longTrips'); await click('创建长途行程')
+  await mount('longTrips'); await click('创建长途旅程')
   await act(async () => { tree!.root.findByType('input').props.onInput({ detail: { value: '合成手动长途' } }) })
   for (let i = 0; i < 2; i++) {
     const button = tree!.root.findAllByType('button').find(node => node.children.join('').startsWith('选择 行驶'))!
     await act(async () => { button.props.onClick() })
   }
-  await click('保存本机长途行程')
+  await click('保存本机长途旅程')
   expect(shown()).toContain('合成手动长途')
   expect(shown()).toContain('能耗配对 1/2')
   await click('查看原始行驶详情')
@@ -209,17 +209,17 @@ it('keeps actual zero bills and labels the separate saved tariff estimate only f
   expect(shown()).toContain('不写回实际费用')
 })
 it('edits and explicitly deletes one saved manual trip while preserving original scoped drive history', async () => {
-  await mount('longTrips'); await click('创建长途行程')
+  await mount('longTrips'); await click('创建长途旅程')
   await act(async () => { tree!.root.findByType('input').props.onInput({ detail: { value: '原名称' } }) })
   const leg = tree!.root.findAllByType('button').find(node => node.children.join('').startsWith('选择 行驶'))!
-  await act(async () => { leg.props.onClick() }); await click('保存本机长途行程'); await click('编辑长途行程')
+  await act(async () => { leg.props.onClick() }); await click('保存本机长途旅程'); await click('编辑长途旅程')
   await act(async () => { tree!.root.findByType('input').props.onInput({ detail: { value: '修改名称' } }) })
-  await click('保存本机长途行程')
+  await click('保存本机长途旅程')
   expect(shown()).toContain('修改名称')
   const historyBefore = [...platform.values.entries()].filter(([key]) => key.startsWith('matelink.history.'))
-  await click('删除本机长途行程')
-  expect(platform.modal).toHaveBeenCalledWith(expect.objectContaining({ title: '删除本机长途行程' }))
-  expect(shown()).toContain('尚无手动长途行程')
+  await click('删除本机长途旅程')
+  expect(platform.modal).toHaveBeenCalledWith(expect.objectContaining({ title: '删除本机长途旅程' }))
+  expect(shown()).toContain('尚无手动长途旅程')
   expect([...platform.values.entries()].filter(([key]) => key.startsWith('matelink.history.'))).toEqual(historyBefore)
 })
 it('clears previous account insight immediately before a delayed new account car lookup', async () => {
@@ -246,11 +246,11 @@ it('shows manual price in selected trip previews/details while the saved leg ret
   const { normalizeCharge } = await import('../../services/api'), { writeChargeCostOverride } = await import('../../services/charge_cost')
   const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) }, removeStorageSync: (key: string) => { platform.values.delete(key) }, getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }) }
   expect(writeChargeCostOverride(storage, { userId: 'owner', origin: 'https://api.example.test', stableId: 'uid7' }, normalizeCharge(charges[0])!, 7, 'USD', () => true)).toBe(true)
-  await mount('longTrips'); await click('创建长途行程')
+  await mount('longTrips'); await click('创建长途旅程')
   await act(async () => { tree!.root.findByType('input').props.onInput({ detail: { value: '手动价格组合' } }) })
   const drive = tree!.root.findAllByType('button').find(node => node.children.join('').startsWith('选择 行驶'))!, charge = tree!.root.findAllByType('button').find(node => node.children.join('').startsWith('选择 充电') && node.children.join('').includes('7 USD'))!
   expect(charge).toBeDefined()
-  await act(async () => { drive.props.onClick(); charge.props.onClick() }); await click('保存本机长途行程')
+  await act(async () => { drive.props.onClick(); charge.props.onClick() }); await click('保存本机长途旅程')
   expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '段费用 7 USD')).toBe(true)
   expect(shown()).toContain('包含本机手动费用')
   const { readManualTrips } = await import('../../domain/insights')
@@ -260,13 +260,13 @@ it('shows manual price in selected trip previews/details while the saved leg ret
 })
 it('uses the newest loaded bill for a saved trip even when the date filter excludes that charge', async () => {
   charges = [rawCharge(1, 5, 'USD')]
-  await mount('longTrips'); await click('创建长途行程')
+  await mount('longTrips'); await click('创建长途旅程')
   await act(async () => { tree!.root.findByType('input' as React.ElementType).props.onInput({ detail: { value: '合成行程' } }) })
   for (const prefix of ['选择 行驶', '选择 充电']) {
     const leg = tree!.root.findAllByType('button').find(node => node.children.join('').startsWith(prefix))!
     await act(async () => { leg.props.onClick() })
   }
-  await click('保存本机长途行程')
+  await click('保存本机长途旅程')
   expect(tree!.root.findByProps({ ariaLabel: '所选充电费用 5 USD' })).toBeDefined()
   charges = [rawCharge(1, 12, 'USD')]
   await click('刷新数据')

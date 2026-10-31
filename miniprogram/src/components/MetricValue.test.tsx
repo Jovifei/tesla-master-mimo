@@ -47,6 +47,18 @@ it('loaded date groups retain zero and partial known distances without inventing
   expect(loadedDriveGroups([{ ...row, distanceKm: null, speedSampleCount: null }])[0]).toMatchObject({ distance: null, speed: 0 })
   expect(peakSpeedKmh({ ...row, speedMetricsSource: 'unknown' })).toBe(0)
 })
+it('groups drive chart samples by day, Monday-based week and month without dropping duration', () => {
+  const row = { startDate: '2026-10-14T00:00:00Z', distanceKm: 3, durationMinutes: 12,
+    speedMaxKmh: 60, speedSampleCount: 1, speedMetricsSource: 'observed_route_samples', speedUnit: 'km/h' } as Drive
+  const rows = [row, { ...row, startDate: '2026-10-15T00:00:00Z', distanceKm: 4, durationMinutes: 18 },
+    { ...row, startDate: '2026-11-01T00:00:00Z', distanceKm: 5, durationMinutes: 20 }]
+  expect(loadedDriveGroups(rows, 'day').map(group => [group.label, group.count, group.distance, group.duration]))
+    .toEqual([['10-14', 1, 3, 12], ['10-15', 1, 4, 18], ['11-01', 1, 5, 20]])
+  expect(loadedDriveGroups(rows, 'week').map(group => [group.label, group.count, group.distance, group.duration]))
+    .toEqual([['10/12–10/18', 2, 7, 30], ['10/26–11/01', 1, 5, 20]])
+  expect(loadedDriveGroups(rows, 'month').map(group => [group.label, group.count, group.distance, group.duration]))
+    .toEqual([['10月', 2, 7, 30], ['11月', 1, 5, 20]])
+})
 it('uses one-decimal presentation without converting tiny non-zero energy into zero', () => {
   for (const [value, expected] of [[16.46, '16.5'], [0, '0'], [-0.00001, '-0.00001']] as const) {
     const tree = renderer.create(<MetricValue label="平均能耗" value={value} unit="kWh/100km" digits={1} />)
@@ -57,13 +69,18 @@ it('uses one-decimal presentation without converting tiny non-zero energy into z
 })
 
 it('puts the selected unit on each actual chart value, including genuine zero', () => {
-  const tree = renderer.create(<LoadedDriveChart items={[{ startDate: '2026-10-14T00:00:00Z', distanceKm: 0 } as Drive]} />)
+  const tree = renderer.create(<LoadedDriveChart items={[{ startDate: '2026-10-14T00:00:00Z', distanceKm: 0, durationMinutes: 0 } as Drive]} />)
   expect(tree.root.findByProps({ className: 'chart-value' }).children.join('')).toBe('1 次')
   renderer.act(() => { tree.root.findByType('picker' as React.ElementType).props.onChange({ detail: { value: 1 } }) })
   expect(tree.root.findByProps({ className: 'chart-value' }).children.join('')).toBe('0 km')
   renderer.act(() => { tree.root.findByType('picker' as React.ElementType).props.onChange({ detail: { value: 2 } }) })
   expect(tree.root.findByProps({ className: 'chart-value' }).children.join('')).toBe('暂无数据')
   expect(tree.root.findAllByProps({ className: 'chart-bar' })).toHaveLength(0)
+  const pageDots = tree.root.findAll(node => typeof node.props.className === 'string' && node.props.className.startsWith('chart-page-dot'))
+  renderer.act(() => { pageDots[3].props.onClick() })
+  expect(tree.root.findByProps({ className: 'chart-value' }).children.join('')).toBe('0 分钟')
+  renderer.act(() => { tree.root.findAllByProps({ className: 'chart-period-tab' })[1].props.onClick() })
+  expect(tree.root.findByProps({ className: 'section-title' }).children.join('')).toBe('行程时间/月')
   tree.unmount()
 })
 

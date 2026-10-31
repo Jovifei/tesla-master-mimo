@@ -74,6 +74,27 @@ async function click(record: ReactTestRenderer, text: string) {
 /** Actual pages -> actual API adapter -> fake Taro transport -> actual controllers/scoped storage.
  * No controller, API, energy projection or React page is mocked. */
 describe('history pages consume canonical data across layers', () => {
+  it.each(['drives', 'charges'] as const)('exposes and preserves the $kind advanced filters when expanded and collapsed', async kind => {
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars })
+      if (url.endsWith('/current')) return respond({ charge: null })
+      return respond({ [kind]: kind === 'drives' ? [summary] : [{ charge_id: 1, source: 'teslamate_archive', quality_state: 'observed', start_date: start, end_date: end, charge_energy_added: 2 }], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount(kind)
+    expect(page.root.findByProps({ className: 'history-actions history-actions-hidden' })).toBeDefined()
+    await click(page, '更多筛选')
+    const controls = page.root.findByProps({ className: 'history-actions' })
+    const dates = controls.findAllByType('picker' as React.ElementType).filter(node => node.props.mode === 'date')
+    await act(async () => { dates[0].props.onChange({ detail: { value: '2026-10-30' } }) })
+    await act(async () => { dates[1].props.onChange({ detail: { value: '2026-10-29' } }) })
+    expect(dates.map(node => node.props.value)).toEqual(['2026-10-29', '2026-10-29'])
+    await click(page, '收起筛选')
+    expect(page.root.findByProps({ className: 'history-actions history-actions-hidden' })).toBeDefined()
+    await click(page, '更多筛选')
+    expect(page.root.findByProps({ className: 'history-actions' }).findAllByType('picker' as React.ElementType).filter(node => node.props.mode === 'date').map(node => node.props.value)).toEqual(['2026-10-29', '2026-10-29'])
+    await click(page, '清除筛选')
+    expect(page.root.findByProps({ className: 'history-actions' }).findAllByType('picker' as React.ElementType).filter(node => node.props.mode === 'date').map(node => node.props.value)).toEqual(['', ''])
+  })
   it.each((['drives', 'charges'] as const).flatMap(kind => (['unchanged', 'otherRow', 'missing'] as const).map(cacheChange => ({ kind, cacheChange }))))('keeps current $kind public ID after quota failure with $cacheChange old disk evidence', async ({ kind, cacheChange }) => {
     let phase: 'old' | 'current' | 'otherOnly' = 'old'
     const record = (id: number, canonical = true) => kind === 'drives' ? { ...reported, drive_id: id, session_id: canonical ? 'selected-canonical' : `orphan-${id}`, energy_contract: { version: 1, net_energy: { ...reported.energy_contract.net_energy, value_kwh: 2 } } }
