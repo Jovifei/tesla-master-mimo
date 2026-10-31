@@ -11,6 +11,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
@@ -394,11 +396,12 @@ fun DrawScope.drawAnimatedLine(
     width: Float,
     progress: Float
 ) {
+    val strokeStyle = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
     if (progress >= 1f) {
-        drawPath(path, color = color, style = Stroke(width = 2.5f))
+        drawPath(path, color = color, style = strokeStyle)
     } else {
         clipRect(right = width * progress) {
-            drawPath(path, color = color, style = Stroke(width = 2.5f))
+            drawPath(path, color = color, style = strokeStyle)
         }
     }
 }

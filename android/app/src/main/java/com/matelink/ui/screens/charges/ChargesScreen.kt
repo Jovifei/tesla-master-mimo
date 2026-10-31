@@ -789,9 +789,11 @@ private fun ChargeItem(
     val end = charge.endBatteryLevel
 
     val isFree = effectiveCost.source == ChargeCostSource.FREE
+    val displayCost = effectiveCost.cost ?: pendingBoundAmount?.second ?: pendingLegacyAmount
+    val isPendingManual = effectiveCost.cost == null && (pendingBoundAmount != null || pendingLegacyAmount != null)
     val costText = when {
         isFree -> freeLabel
-        effectiveCost.cost != null -> (if (effectiveCost.source == ChargeCostSource.ESTIMATE) "≈" else "") + "$currencySymbol%.2f".format(effectiveCost.cost)
+        displayCost != null -> (if (effectiveCost.source == ChargeCostSource.ESTIMATE) "≈" else "") + "$currencySymbol%.2f".format(displayCost)
         else -> notAvailableLabel
     }
     val is24Hour = true
@@ -867,9 +869,13 @@ private fun ChargeItem(
                         TelemetryMetricSpec(
                             icon = Icons.Default.Paid,
                             label = stringResource(R.string.trip_charge_cost),
-                            value = if (effectiveCost.cost != null && !isFree) costText.replace(currencySymbol, "") else costText,
-                            unit = if (effectiveCost.cost != null && !isFree) currencySymbol else null,
-                            tint = if (isFree) palette.acColor else Color(0xFF22C55E)
+                            value = when {
+                                displayCost != null && !isFree -> (if (effectiveCost.source == ChargeCostSource.ESTIMATE) "≈" else "") + "%.2f".format(displayCost)
+                                isFree -> freeLabel
+                                else -> "待录入"
+                            },
+                            unit = if (displayCost != null && !isFree) currencySymbol else null,
+                            tint = if (isFree) palette.acColor else if (isPendingManual) Color(0xFFF59E0B) else Color(0xFF22C55E)
                         ),
                         TelemetryMetricSpec(
                             icon = Icons.Default.BatteryStd,

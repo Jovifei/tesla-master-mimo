@@ -383,17 +383,14 @@ class ChargeDetailViewModel @Inject constructor(
                         null
                     }
                     checkContext()
-                    if (persisted == null && !pointWriteFailed) {
-                        _uiState.update { it.copy(isLoading = false,
-                            historySyncWarning = "history_detail_waiting_for_summary", error = null) }
-                        return@launch
-                    }
                     val receipt = persisted?.receipt
-                    val detailWarning = if (pointWriteFailed) "history_detail_points_missing" else when {
+                    val detailWarning = when {
+                        pointWriteFailed -> "history_detail_points_missing"
+                        persisted == null -> "history_detail_waiting_for_summary"
                         receipt == null -> "history_detail_points_missing"
                         receipt.sourceInstanceVerified != true ||
-                            receipt?.sourceIdVerified != true -> "history_detail_source_unverified"
-                        receipt?.providerTotalVerified != true -> "history_detail_total_unverified"
+                            receipt.sourceIdVerified != true -> "history_detail_source_unverified"
+                        receipt.providerTotalVerified != true -> "history_detail_total_unverified"
                         else -> null
                     }
                     val stats = ChargeStatsCalculator.calculateStats(detail)

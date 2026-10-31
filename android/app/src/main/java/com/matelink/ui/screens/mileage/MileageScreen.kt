@@ -24,6 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Paid
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.outlined.AllInclusive
 import androidx.compose.material.icons.outlined.Info
@@ -391,7 +393,7 @@ private fun YearRow(
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f),horizontalAlignment = Alignment.End) {
+                Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = CustomIcons.Road,
@@ -407,7 +409,8 @@ private fun YearRow(
                                 units,
                                 0
                             ),
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
@@ -425,7 +428,7 @@ private fun YearRow(
                         )
                     }
                 }
-                Column(modifier = Modifier.weight(1f),horizontalAlignment = Alignment.End) {
+                Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Filled.DirectionsCar,
@@ -435,15 +438,23 @@ private fun YearRow(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "%,d".format(yearData.driveCount),
+                            text = "%,d 次行程".format(yearData.driveCount),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Paid,
+                            contentDescription = null,
+                            tint = Color(0xFF22C55E),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = formatOptionalCost(yearData.totalEnergyCost, currencySymbol),
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (yearData.totalEnergyCost != null) Color(0xFF22C55E) else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -922,7 +933,7 @@ private fun MonthSummaryCard(
 // ============================================================================
 
 private fun formatOptionalCost(cost: Double?, currencySymbol: String): String =
-    cost?.let { "%,.2f %s".format(it, currencySymbol) } ?: "—"
+    cost?.let { "%,.2f %s".format(it, currencySymbol) } ?: "暂无费用"
 
 private fun formatObservedDistance(
     value: Double,
@@ -945,10 +956,16 @@ internal fun formatMileageDayRowBattery(value: Double, sampleCount: Int): String
 @Composable
 private fun formatKnownEfficiency(evidence: MileageEvidence): String =
     if (evidence.recordCount > 0) {
-        (evidence.efficiencyWhKm?.let(::formatTelemetryEfficiency) ?: UNKNOWN_METRIC) + "\n" + stringResource(
+        evidence.efficiencyWhKm?.let(::formatTelemetryEfficiency) ?: UNKNOWN_METRIC
+    } else UNKNOWN_METRIC
+
+@Composable
+private fun formatKnownEfficiencyCoverage(evidence: MileageEvidence): String =
+    if (evidence.recordCount > 0) {
+        stringResource(
             R.string.mileage_known_energy_coverage, evidence.efficiencySampleCount,
             evidence.recordCount, evidence.estimatedEnergySampleCount)
-    } else UNKNOWN_METRIC
+    } else ""
 
 @Composable
 private fun SummaryRow(
@@ -1046,7 +1063,8 @@ private fun SummaryRow(
                 label = stringResource(R.string.stats_avg_efficiency),
                 iconColor = iconColor,
                 valueColor = valueColor,
-                labelColor = labelColor
+                labelColor = labelColor,
+                detail = formatKnownEfficiencyCoverage(evidence).takeIf { it.isNotBlank() }
             )
             SummaryItem(
                 icon = Icons.Filled.AttachMoney,
@@ -1075,7 +1093,8 @@ private fun SummaryItem(
     label: String,
     iconColor: Color = ChartBlue,
     valueColor: Color = MaterialTheme.colorScheme.onSurface,
-    labelColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
+    labelColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    detail: String? = null
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(
@@ -1096,6 +1115,15 @@ private fun SummaryItem(
             style = MaterialTheme.typography.labelSmall,
             color = labelColor
         )
+        if (!detail.isNullOrBlank()) {
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = androidx.compose.ui.unit.TextUnit(10f, androidx.compose.ui.unit.TextUnitType.Sp)),
+                color = labelColor.copy(alpha = 0.8f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 

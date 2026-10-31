@@ -450,7 +450,7 @@ internal fun computeBatteryStats(state: BatteryUiState): BatteryStats? {
         rangeAt100 = rangeAt100,
         batteryTrend = state.batteryTrend,
         batteryLevelObserved = batteryLevelObserved,
-        estimatedRangeObserved = status?.estBatteryRangeKm,
+        estimatedRangeObserved = status?.estBatteryRangeKm?.takeIf { it > 0.0 },
         ratedRangeObserved = status?.ratedBatteryRangeKm,
         idealRangeObserved = status?.idealBatteryRangeKm
     )

@@ -191,23 +191,27 @@ private fun renderMapContent(handle: AmapMapHandle): Boolean {
             )
         }
 
-        when {
-            cameraPoints.size >= 2 -> {
-                val builder = LatLngBounds.Builder()
-                cameraPoints.forEach { builder.include(LatLng(it.first, it.second)) }
-                map.animateCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 72))
-            }
-            cameraPoints.size == 1 -> {
-                val point = cameraPoints.first()
-                map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(point.first, point.second), content.zoom))
-            }
-            content.center != null -> {
-                map.moveCamera(
-                    CameraUpdateFactory.newLatLngZoom(
-                        LatLng(content.center.first, content.center.second),
-                        content.zoom
-                    )
-                )
+        // Move immediately to initial point so camera never defaults to Beijing Tiananmen
+        val firstPoint = cameraPoints.firstOrNull() ?: content.center
+        if (firstPoint != null) {
+            map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(firstPoint.first, firstPoint.second), content.zoom))
+        }
+
+        if (cameraPoints.size >= 2) {
+            val builder = LatLngBounds.Builder()
+            cameraPoints.forEach { builder.include(LatLng(it.first, it.second)) }
+            val bounds = builder.build()
+            val view = handle.view
+            if (view != null && view.width > 0 && view.height > 0) {
+                try {
+                    map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 72))
+                } catch (_: Exception) {}
+            } else {
+                view?.post {
+                    try {
+                        handle.map?.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 72))
+                    } catch (_: Exception) {}
+                }
             }
         }
         handle.renderedContent = content

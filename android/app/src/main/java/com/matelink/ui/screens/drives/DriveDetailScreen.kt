@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -222,8 +223,13 @@ private fun DriveDetailContent(
         // Map showing the route
         DriveMapCard(positions = detail.positions.orEmpty(), routeColor = routeColor, startDate = detail.startDate, endDate = detail.endDate)
 
-        // Route header card
-        RouteHeaderCard(detail = detail)
+        // Unified trip card with Route, Times, Metrics, and "详细曲线 ->" button
+        UnifiedTripCard(
+            detail = detail,
+            stats = stats,
+            units = units,
+            onNavigateToDriveCurves = onNavigateToDriveCurves
+        )
 
         // Part-of-trip banner: link to the containing saved trip + detach action
         if (containingTrip != null) {
@@ -240,7 +246,6 @@ private fun DriveDetailContent(
             val notAvailableLabel = stringResource(R.string.not_available)
             val energySourceLabel = stringResource(R.string.energy_source)
             val energyCoverageLabel = stringResource(R.string.energy_coverage)
-            val curvesActionLabel = stringResource(R.string.drive_curves_action)
             val speedAverageLabel = remember(detail) { driveDetailSpeedAverageLabel(detail) }
             val powerAverageLabel = remember(detail) { driveDetailPowerAverageLabel(detail) }
             val reportedSampleSpeedCount = if (detail.speedMax?.takeIf { detail.hasKnownLengthUnit && it >= 0 } != null)
@@ -248,25 +253,6 @@ private fun DriveDetailContent(
             val speedMaximumLabel = stringResource(driveDetailSpeedMaximumLabel(detail)) +
                 if (driveDetailSpeedMaximumLabel(detail) == R.string.drive_detail_sample_maximum && reportedSampleSpeedCount != null)
                     " ($reportedSampleSpeedCount)" else ""
-
-            // 1. 行程面板 (Distance & Duration section)
-            StatsSectionCard(
-                title = stringResource(R.string.trip),
-                icon = CustomIcons.SteeringWheel,
-                actionText = curvesActionLabel,
-                onActionClick = onNavigateToDriveCurves,
-                stats = listOf(
-                    StatItem(stringResource(R.string.distance), s.distance?.let { visualTripNumber(it) } ?: notAvailableLabel, UnitFormatter.getDistanceUnit(units)),
-                    StatItem(stringResource(R.string.duration), s.durationMin?.let { "%,d".format(it) } ?: notAvailableLabel, stringResource(R.string.visual_trip_duration_unit)),
-                    StatItem(
-                        stringResource(R.string.efficiency),
-                        s.energy.efficiencyWhKm?.let { visualTripNumber(it / 10.0) }
-                            ?: notAvailableLabel,
-                        unit = "kWh/100km",
-                        recovered = (s.energy.efficiencyWhKm ?: 0.0) < 0.0
-                    )
-                )
-            )
 
             // 2. 速度面板 (Speed section)
             StatsSectionCard(
@@ -396,8 +382,16 @@ private fun DriveDetailContent(
 }
 
 @Composable
-private fun RouteHeaderCard(detail: DriveDetail) {
+private fun UnifiedTripCard(
+    detail: DriveDetail,
+    stats: DriveDetailStats?,
+    units: Units?,
+    onNavigateToDriveCurves: () -> Unit
+) {
     val is24Hour = true
+    val notAvailableLabel = stringResource(R.string.not_available)
+    val curvesActionLabel = stringResource(R.string.drive_curves_action)
+
     TelemetryPanel(
         modifier = Modifier.fillMaxWidth(),
         accent = MaterialTheme.colorScheme.primary
@@ -406,10 +400,40 @@ private fun RouteHeaderCard(detail: DriveDetail) {
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            TelemetrySectionHeader(
-                icon = CustomIcons.SteeringWheel,
-                title = stringResource(R.string.trip)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TelemetrySectionHeader(
+                    icon = CustomIcons.SteeringWheel,
+                    title = stringResource(R.string.trip)
+                )
+                Surface(
+                    onClick = onNavigateToDriveCurves,
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = curvesActionLabel,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
 
             val unknownLocation = stringResource(R.string.unknown_location)
             val defaultStart = detail.startAddress?.takeIf { it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" }?.toChineseDisplayAddress()
@@ -441,9 +465,47 @@ private fun RouteHeaderCard(detail: DriveDetail) {
                     label = stringResource(R.string.duration),
                     value = detail.durationMin?.takeIf { it >= 0 }?.let { formatDuration(LocalContext.current.resources, it) }
                         ?: detail.durationStr?.takeIf { it.isNotBlank() }
-                        ?: stringResource(R.string.not_available),
+                        ?: notAvailableLabel,
                     modifier = Modifier.weight(0.8f)
                 )
+            }
+
+            if (stats != null) {
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                )
+                val statItems = listOf(
+                    StatItem(
+                        stringResource(R.string.distance),
+                        stats.distance?.let { visualTripNumber(it) } ?: notAvailableLabel,
+                        UnitFormatter.getDistanceUnit(units)
+                    ),
+                    StatItem(
+                        stringResource(R.string.duration),
+                        stats.durationMin?.let { "%,d".format(it) } ?: notAvailableLabel,
+                        stringResource(R.string.visual_trip_duration_unit)
+                    ),
+                    StatItem(
+                        stringResource(R.string.efficiency),
+                        stats.energy.efficiencyWhKm?.let { visualTripNumber(it / 10.0) } ?: notAvailableLabel,
+                        unit = "kWh/100km",
+                        recovered = (stats.energy.efficiencyWhKm ?: 0.0) < 0.0
+                    )
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    statItems.forEach { item ->
+                        StatItemView(
+                            label = item.label,
+                            value = item.value,
+                            unit = item.unit,
+                            recovered = item.recovered,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
         }
     }

@@ -211,47 +211,54 @@ fun DashboardScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = car?.displayName ?: "My Tesla",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                vehicleProfileSubtitle(heroProfile, car?.carDetails?.trimBadging)?.let { subtitle ->
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+            Text(
+                text = car?.displayName ?: "My Tesla",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = refresh, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = stringResource(R.string.refresh),
+                        modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = refreshRotation.value }
                     )
                 }
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val isAsleep = dashboardIsAsleep(status.state, uiState.errorKind, uiState.snapshotFreshness)
-                    SnapshotBadge(uiState.snapshotFreshness, uiState.snapshotMixedSources, uiState.snapshotSource, isAsleep)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(onClick = refresh) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = stringResource(R.string.refresh),
-                            modifier = Modifier.graphicsLayer { rotationZ = refreshRotation.value }
-                        )
-                    }
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, stringResource(R.string.settings_title))
-                    }
+                IconButton(onClick = onNavigateToSettings) {
+                    Icon(Icons.Default.Settings, stringResource(R.string.settings_title), modifier = Modifier.size(20.dp))
                 }
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            vehicleProfileSubtitle(heroProfile, car?.carDetails?.trimBadging)?.let { subtitle ->
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp)
+                )
+            } ?: Spacer(modifier = Modifier.weight(1f))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val isAsleep = dashboardIsAsleep(status.state, uiState.errorKind, uiState.snapshotFreshness)
+                SnapshotBadge(uiState.snapshotFreshness, uiState.snapshotMixedSources, uiState.snapshotSource, isAsleep)
                 uiState.observedAt?.takeIf { it.isNotBlank() }?.let {
                     formatSnapshotTime(it)?.let { formatted ->
                         Text(
                             text = formatted,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(end = 6.dp)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

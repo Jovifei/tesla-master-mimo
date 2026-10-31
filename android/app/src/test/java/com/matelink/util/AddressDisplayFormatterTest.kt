@@ -12,6 +12,11 @@ class AddressDisplayFormatterTest {
     }
 
     @Test
+    fun translatesEnglishPoiAndDistrict() {
+        assertEquals("全家便利店 余杭区", "FamilyMart, Yuhang District".toChineseDisplayAddress())
+    }
+
+    @Test
     fun keepsNonChineseAddressesReadable() {
         assertEquals("San Jose, CA", "San Jose, CA".toChineseDisplayAddress())
     }

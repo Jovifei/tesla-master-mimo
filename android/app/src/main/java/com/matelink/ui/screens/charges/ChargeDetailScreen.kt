@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.ElectricalServices
 import androidx.compose.material.icons.filled.EnergySavingsLeaf
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Power
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
@@ -203,19 +205,28 @@ internal fun ChargeDetailContent(
     val freeLabel = stringResource(R.string.charge_free)
     val actualLabel = stringResource(R.string.charge_cost_actual)
     val manualLabel = stringResource(R.string.charge_cost_manual)
-    val costText = formatChargeDetailCostText(
-        state = costPresentation.state,
-        cost = costPresentation.cost,
-        currencySymbol = currencySymbol,
-        freeLabel = freeLabel,
-        unavailableLabel = unavailableLabel
-    )
-    val costSourceText = when (costPresentation.state) {
-        ChargeDetailCostState.ESTIMATE -> stringResource(R.string.charge_cost_estimate)
-        ChargeDetailCostState.ACTUAL -> actualLabel
-        ChargeDetailCostState.MANUAL -> manualLabel
-        ChargeDetailCostState.FREE -> freeLabel
-        ChargeDetailCostState.UNAVAILABLE -> unavailableLabel
+    val displayCost = costPresentation.cost
+        ?: pendingBoundAmount?.second
+        ?: manualTotalAmount
+        ?: sourceUnconfirmedAmount
+    val isPendingVerification = costPresentation.cost == null && (pendingBoundAmount != null || manualTotalAmount != null)
+    val costText = when {
+        costPresentation.state == ChargeDetailCostState.FREE -> freeLabel
+        displayCost != null -> (if (costPresentation.state == ChargeDetailCostState.ESTIMATE) "≈" else "") +
+            "$currencySymbol%.2f".format(displayCost)
+        else -> unavailableLabel
+    }
+    val costSourceText = when {
+        costPresentation.cost != null -> when (costPresentation.state) {
+            ChargeDetailCostState.ESTIMATE -> stringResource(R.string.charge_cost_estimate)
+            ChargeDetailCostState.ACTUAL -> actualLabel
+            ChargeDetailCostState.MANUAL -> manualLabel
+            ChargeDetailCostState.FREE -> freeLabel
+            ChargeDetailCostState.UNAVAILABLE -> unavailableLabel
+        }
+        isPendingVerification -> manualLabel + "(待核实)"
+        sourceUnconfirmedAmount != null -> stringResource(R.string.charge_cost_source_identity_unverified)
+        else -> unavailableLabel
     }
     val scrollState = rememberScrollState()
     var showPriceDialog by remember { mutableStateOf(false) }
@@ -520,29 +531,65 @@ private fun LocationHeaderCard(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Location
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = locationLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+            // Location with duration chip on the right
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f, fill = false),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.primary
                     )
-                    Text(
-                        text = detail.address.toChineseDisplayAddress() ?: unknownLocationLabel,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = locationLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                        Text(
+                            text = detail.address.toChineseDisplayAddress() ?: unknownLocationLabel,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                val durationText = detail.durationMin?.let(::formatDurationCompact)
+                    ?: detail.durationStr?.takeIf { it.isNotBlank() }
+                if (durationText != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Timer,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = durationText,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 }
             }
 
@@ -553,7 +600,7 @@ private fun LocationHeaderCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 CompactHeaderValue(
                     startedLabel,
@@ -564,13 +611,6 @@ private fun LocationHeaderCard(
                     endedLabel,
                     formatDateTime(detail.endDate, unknownLabel, is24Hour),
                     Modifier.weight(1f)
-                )
-                CompactHeaderValue(
-                    stringResource(R.string.duration),
-                    detail.durationMin?.let(::formatDurationCompact)
-                        ?: detail.durationStr?.takeIf { it.isNotBlank() }
-                        ?: unknownLabel,
-                    Modifier.weight(0.8f)
                 )
             }
 
