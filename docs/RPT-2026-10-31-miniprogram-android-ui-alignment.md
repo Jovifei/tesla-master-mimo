@@ -36,7 +36,7 @@
 | 工具 | 设置、分时电价、位置、温度、胎压、胎压设置、哨兵、更新、导出、年度报告、到访国家/地区、当时在哪里、关于、车辆预览 | 统一顶栏；设置拆为账号、显示与车辆、提醒与权限三组；数据页增加图标标题和操作层级 |
 | 账号与法律 | Tesla 授权、服务条款、隐私指引 | 统一返回顶栏；保留官方授权、WebView 和完整法律正文 |
 
-“更多”新增“正在充电”和“车辆预览”入口；所有“长途行程”文案统一为 Android App 使用的“长途旅程”。
+“更多”保持 Android App 的三组结构（数据分析、报告与导出、系统），没有新增 App 中不存在的入口；仪表盘的“正在充电”卡片改为进入当前充电详情，对应 App 的当前充电页。所有“长途行程”文案统一为 Android App 使用的“长途旅程”。
 
 ## 参数、来源与计算边界
 
@@ -74,6 +74,16 @@
 - 项目记录仍显示服务端微信 AppSecret/私有配置与 Tesla 授权回流是外部平台条件；在这些条件完成前，不宣称真实微信快捷登录或 Tesla 授权回流通过。
 - 当前 Windows 主机没有连接 iOS 设备，iOS 真机预览为 `NOT_VERIFIED`。
 - 微信 CLI 上传仅证明代码包进入后台版本；体验版或正式发布仍需以微信后台实际状态为准。
+
+## 手机端真机复核补充修正
+
+真实数据核对改用手机截图，桌面开发者工具只作为构建可运行性证据。
+
+- 手机上的 Android App 为 2.1.60（build 79）。本轮复核时 App 首页显示“未登录云端 / 服务端没有返回可用的车辆列表”，因此 App 参考沿用同日登录态下抓取的截图 `reports/final-verification-20261031/android-app-*.png`，并用手机当前截图记录该登录态差异。
+- 撤回“更多”页新增的“正在充电 / 车辆预览”入口：App 的 `MoreScreen.kt` 在“报告与导出”里只有年度报告与导出数据。当前充电改为从仪表盘“正在充电”卡片进入，对应 App 的 `onNavigateToCurrentCharge`。
+- 页面标题与分区文案改用 App 的实际字符串：`stats_title` 统计、`mileage_title` 里程、`timeline_title` 时间线、`vampire_title` 待机能耗、`current_charge_title` 当前充电、`tpms_trend_title` 胎压趋势、`tariff_title` 分时电价配置、`export_title` 导出数据、`countries_visited_title` 已到访国家、`regions_visited_title` 已到访地区、`where_was_i_screen_title` 我曾在哪里、`software_title` 软件、`vehicle_3d_title` 3D 车辆、`about` 关于；费用分区用 `cost_total` 总费用、`cost_average_session` 平均每次、`cost_average_kwh` 平均每度、`cost_monthly_breakdown` 月度明细、`cost_top_locations` 热门充电地点；续航分区用 `range_accuracy_title` 额定续航消耗偏差、`range_influences_title` 偏差影响因素；能耗分区用 `efficiency_windows_title` 时间区间、`efficiency_by_speed_title` 分速能耗、`efficiency_personal_history_title` 个人历史区间；待机能耗分区用 `vampire_recent_title` 近期待机时段、`vampire_how_title` 工作原理。
+- 有意保留的差异：“AC / DC 充电”和“温度与能耗”两个分区没有改成 App 的“交流/直流比例”“极端温度”，因为小程序这两块展示的是按模式统计的会话数与电量、以及按外温分组的配对能耗，用 App 的标题会描述错内容。
+- 尚未实现、需要 Jovi 决定：App 行程与充电列表右上的排序控件（行程按能耗、充电按费用）和“第 N / 共 M 项”位置计数。这是交互能力，不是文案；本次没有擅自新增。
 
 ## 审核判定
 
