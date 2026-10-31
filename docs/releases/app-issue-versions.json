@@ -4,6 +4,28 @@
   "observation_note": "发现版本不等于首次引入版本；build77已安装并验证充电卡片；Fleet源时间与长期续期风险仍开放",
   "issues": [
     {
+      "id": "OCT31-CI-RELEASE-CONTRACT",
+      "title": "设置页发版版本契约未随 build79 更新，导致双变体 CI 失败",
+      "found_date": "2026-10-31",
+      "found_version": "App 2.1.60 build79 / 883f1722e281fb0e06a98bb5d9b29ee97fba42dd",
+      "source_ref": "../RPT-2026-10-31-pr27-android-ci.md",
+      "status": "FIXED_LOCAL_UNIT_TESTED",
+      "fix_version": "App 2.1.60 build79 / PR #27 版本测试修正",
+      "change": "仅更新 SettingsExperienceContractTest 两处过期版本预期，保留 BuildConfig、双语言和实际界面调用断言；页面布局及生产逻辑不变",
+      "verification": "完整远端 XML 证实双变体唯一失败为 expected77/actual79；本地 Debug/Release 各11项定向、各1712项全量单测0失败0错误，Release保留8项既有skip；lint、签名构建和最终同SHA CI见报告",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-10-31",
+          "version": "App 2.1.60 build79",
+          "action": "CI_FAILURE_REPRODUCED_AND_UNIT_VERIFIED",
+          "detail": "核对完整Actions artifact与固定SHA；纠正把android-summary成功当android成功的报告错误，最小同步版本测试并完成双变体定向及全量单测",
+          "evidence": "../RPT-2026-10-31-pr27-android-ci.md",
+          "commit": null
+        }
+      ]
+    },
+    {
       "id": "H01",
       "title": "H01 — P1：实际首车没有写回全局selected car，导致新账号/多车首页与所有主导航仍请求旧ID",
       "found_date": "2026-10-26（27日复现/复核）",
