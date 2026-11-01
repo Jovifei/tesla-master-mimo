@@ -2,9 +2,15 @@
 
 更新：2026-10-31。发现版本是审查/复现时的源码候选，不等于首次引入版本；提交、APK、安装与生产分别记录。完整逐次事件见[JSON账本](releases/app-issue-versions.json)。
 
-共 120 条：保留此前记录，新增 build79 的 CI 版本契约问题。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
+共 121 条：保留此前记录，新增 build79 的数据源与刷新问题。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
 
 每条都有具体改法与回归；raw receipt/旧记录保留，source gates与发布门不混称已验收。
+
+## 2026-11-01 数据源与刷新
+
+| 问题 ID | 发现日期 / 版本 | 根因与修复 | 验证 |
+| --- | --- | --- | --- |
+| NOV01-SYNC-SOURCE-STALE | 2026-11-01 / 2.1.60 build79 | Tesla 会话仍有效，但持久来源仍是不可达的 `http://192.168.0.104:18080`；切到 MateLink 云端后首页和 10 月 31 日充电/行程恢复。手动刷新同时改为 REPLACE，避免 RETRY 中的旧 Worker 吞掉刷新请求；网络错误文案提示确认数据源。不改页面布局或手机数据 | 真机首页、10 月 31 日四段充电和行程均已显示；定向测试、双变体、lint、保数据安装见[记录](RPT-2026-11-01-self-hosted-source-refresh-recovery.md) |
 
 ## 2026-10-31 Android CI
 

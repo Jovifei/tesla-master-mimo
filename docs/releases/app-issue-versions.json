@@ -4,6 +4,28 @@
   "observation_note": "发现版本不等于首次引入版本；build77已安装并验证充电卡片；Fleet源时间与长期续期风险仍开放",
   "issues": [
     {
+      "id": "NOV01-SYNC-SOURCE-STALE",
+      "title": "首页与充电同步仍使用不可达的自托管来源，且手动刷新不会替换 RETRY 中的 Worker",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.60 build79",
+      "source_ref": "../RPT-2026-11-01-self-hosted-source-refresh-recovery.md",
+      "status": "FIXED_LOCAL_UNIT_TESTED",
+      "fix_version": "App 2.1.60 build79 follow-up",
+      "change": "手动刷新改用 ExistingWorkPolicy.REPLACE；网络错误文案提示确认当前数据源；不改页面布局、会话、Room 或车辆配置",
+      "verification": "真机确认会话未丢失，192.168.0.104 不可达；切到 MateLink 云端后首页、10 月 31 日四段充电及行程恢复。定向测试与双变体验证按报告回填",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-11-01",
+          "version": "App 2.1.60 build79",
+          "action": "DEVICE_ROOT_CAUSE_CONFIRMED_AND_FIXED",
+          "detail": "读取高级网络显示自托管地址；手机网络与公网对照确认仅该私网源不可达；使用 App 内切换云端验证真实数据恢复",
+          "evidence": "../RPT-2026-11-01-self-hosted-source-refresh-recovery.md",
+          "commit": null
+        }
+      ]
+    },
+    {
       "id": "OCT31-CI-RELEASE-CONTRACT",
       "title": "设置页发版版本契约未随 build79 更新，导致双变体 CI 失败",
       "found_date": "2026-10-31",

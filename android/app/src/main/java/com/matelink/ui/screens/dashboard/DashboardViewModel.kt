@@ -594,7 +594,7 @@ class DashboardViewModel @Inject constructor(
 
         WorkManager.getInstance(context).enqueueUniqueWork(
             DataSyncWorker.WORK_NAME,
-            ExistingWorkPolicy.KEEP,
+            ExistingWorkPolicy.REPLACE,
             request
         )
     }

@@ -181,7 +181,7 @@
     <string name="dashboard_error_service_title">Vehicle service unavailable</string>
     <string name="dashboard_error_service_body">The vehicle service is temporarily unavailable. Refresh later; no live value is being invented.</string>
     <string name="dashboard_error_network_title">Cannot reach vehicle service</string>
-    <string name="dashboard_error_network_body">Check the network connection and refresh. Any value still shown is the last confirmed snapshot.</string>
+    <string name="dashboard_error_network_body">The selected data source is unreachable. Check the network; cloud accounts should confirm the source in Settings, then refresh. Shown values remain the last confirmed snapshot.</string>
     <string name="dashboard_error_generic_title">Live status unavailable</string>
     <string name="dashboard_error_generic_body">Live vehicle status could not be loaded. Refresh to try again.</string>
     <string name="dashboard_partial_status_body">MateLink can read this vehicle from TeslaMate. Battery, location, lock, climate, and TPMS cards need the live status endpoint to return a snapshot.</string>

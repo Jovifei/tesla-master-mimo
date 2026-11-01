@@ -181,7 +181,7 @@
     <string name="dashboard_error_service_title">车辆服务暂不可用</string>
     <string name="dashboard_error_service_body">车辆服务暂时无法访问。请稍后刷新；当前不会生成虚假的实时数值。</string>
     <string name="dashboard_error_network_title">无法连接车辆服务</string>
-    <string name="dashboard_error_network_body">请检查网络后刷新。页面仍显示的内容只代表最后一次确认的快照。</string>
+    <string name="dashboard_error_network_body">当前数据源无法访问。请检查网络；云端账号请在设置确认数据源后刷新。显示内容仅代表最后确认的快照。</string>
     <string name="dashboard_error_generic_title">实时状态不可用</string>
     <string name="dashboard_error_generic_body">暂时无法加载实时车辆状态，请刷新重试。</string>
     <string name="dashboard_partial_status_body">MateLink 已能从 TeslaMate 读取这辆车。电量、位置、锁车、空调和胎压卡片需要实时状态接口返回快照。</string>
