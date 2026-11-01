@@ -23,10 +23,11 @@ const batteryTrendMaxBatch = 50
 const batteryTrendMaxObservation = 16 << 10
 
 var (
-	errBatteryTrendInvalid     = errors.New("battery_trend_invalid")
-	errBatteryTrendConflict    = errors.New("battery_trend_conflict")
-	batteryTrendBatchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,128}$`)
-	batteryTrendHashPattern    = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	errBatteryTrendInvalid        = errors.New("battery_trend_invalid")
+	errBatteryTrendConflict       = errors.New("battery_trend_conflict")
+	errBatteryTrendArchivePending = errors.New("battery_trend_archive_pending")
+	batteryTrendBatchIDPattern    = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,128}$`)
+	batteryTrendHashPattern       = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 // The order and null fields are the versioned hash contract shared with the bridge.
@@ -260,6 +261,11 @@ func (a *app) batteryTrendArchiveImport(w http.ResponseWriter, r *http.Request) 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	inserted, unchanged, err := storeBatteryTrendBatch(ctx, a.store, binding, request, archiveBindingTokenHash(r.Header.Get(archiveBindingHeader)))
+	if errors.Is(err, errBatteryTrendArchivePending) {
+		w.Header().Set("Retry-After", "60")
+		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": errBatteryTrendArchivePending.Error()})
+		return
+	}
 	if errors.Is(err, errBatteryTrendConflict) {
 		a.json(w, http.StatusConflict, map[string]string{"error": errBatteryTrendConflict.Error()})
 		return
@@ -312,6 +318,12 @@ func requireBatteryTrendBindingNotExpired(ctx context.Context, tx pgx.Tx, expire
 	return nil
 }
 
+const batteryTrendArchiveConflictQuery = `SELECT
+EXISTS(SELECT 1 FROM jourvolt_telemetry_sessions WHERE id=$1)
+OR EXISTS(SELECT 1 FROM jourvolt_telemetry_sessions WHERE user_id=$2 AND vehicle_id=$3 AND kind='drive' AND source='teslamate_archive' AND source_instance_id=$4 AND source_vehicle_id=$5 AND source_record_id=$6)
+OR EXISTS(SELECT 1 FROM jourvolt_telemetry_sessions WHERE user_id=$2 AND vehicle_id=$3 AND kind='drive' AND source<>'teslamate_archive' AND source_instance_id=$4 AND source_vehicle_id=$5 AND source_record_id=$6)
+OR EXISTS(SELECT 1 FROM jourvolt_telemetry_sessions WHERE user_id=$2 AND vehicle_id=$3 AND kind='drive' AND source IS NULL AND source_instance_id=$4 AND source_vehicle_id=$5 AND source_record_id=$6)`
+
 func lockBatteryTrendArchiveSession(ctx context.Context, tx pgx.Tx, binding archiveBinding, observation batteryTrendObservation) error {
 	start, _ := batteryTrendTimestamp(observation.StartedAt)
 	end, _ := batteryTrendTimestamp(observation.EndedAt)
@@ -319,12 +331,20 @@ func lockBatteryTrendArchiveSession(ctx context.Context, tx pgx.Tx, binding arch
 	var matched string
 	err := tx.QueryRow(ctx, `SELECT id FROM jourvolt_telemetry_sessions WHERE id=$1 AND user_id=$2 AND vehicle_id=$3 AND kind='drive' AND source='teslamate_archive' AND quality_state <> 'quarantined' AND source_instance_id=$4 AND source_vehicle_id=$5 AND source_record_id=$6 AND started_at=$7 AND ended_at=$8 FOR SHARE`, id, binding.UserID, binding.VehicleID, binding.SourceInstanceID, binding.SourceVehicleID, observation.SourceRecordID, start, end).Scan(&matched)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return errBatteryTrendConflict
+		var conflict bool
+		err = tx.QueryRow(ctx, batteryTrendArchiveConflictQuery, id, binding.UserID, binding.VehicleID, binding.SourceInstanceID, binding.SourceVehicleID, observation.SourceRecordID).Scan(&conflict)
+		if err != nil {
+			return err
+		}
+		if conflict {
+			return errBatteryTrendConflict
+		}
+		return errBatteryTrendArchivePending
 	}
 	return err
 }
 
-func requireStoredBatteryTrendEvidence(ctx context.Context, tx pgx.Tx, binding archiveBinding, observation batteryTrendObservation, encoded []byte, hash string) error {
+func storedBatteryTrendEvidenceMatches(ctx context.Context, tx pgx.Tx, binding archiveBinding, observation batteryTrendObservation, encoded []byte, hash string) (bool, error) {
 	start, _ := batteryTrendTimestamp(observation.StartedAt)
 	end, _ := batteryTrendTimestamp(observation.EndedAt)
 	var storedStart, storedEnd time.Time
@@ -332,12 +352,23 @@ func requireStoredBatteryTrendEvidence(ctx context.Context, tx pgx.Tx, binding a
 	var storedHash string
 	err := tx.QueryRow(ctx, `SELECT started_at,ended_at,CASE WHEN octet_length(payload_json)<=$6 THEN payload_json END,payload_sha256 FROM jourvolt_battery_trend_evidence WHERE user_id=$1 AND vehicle_id=$2 AND source_instance_id=$3 AND source_vehicle_id=$4 AND source_record_id=$5 FOR SHARE`, binding.UserID, binding.VehicleID, binding.SourceInstanceID, binding.SourceVehicleID, observation.SourceRecordID, batteryTrendMaxObservation).Scan(&storedStart, &storedEnd, &storedPayload, &storedHash)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return errBatteryTrendConflict
+		return false, nil
 	}
+	if err != nil {
+		return false, err
+	}
+	if !storedStart.Equal(start) || !storedEnd.Equal(end) || storedPayload == nil || *storedPayload != string(encoded) || storedHash != hash {
+		return true, errBatteryTrendConflict
+	}
+	return true, nil
+}
+
+func requireStoredBatteryTrendEvidence(ctx context.Context, tx pgx.Tx, binding archiveBinding, observation batteryTrendObservation, encoded []byte, hash string) error {
+	found, err := storedBatteryTrendEvidenceMatches(ctx, tx, binding, observation, encoded, hash)
 	if err != nil {
 		return err
 	}
-	if !storedStart.Equal(start) || !storedEnd.Equal(end) || storedPayload == nil || *storedPayload != string(encoded) || storedHash != hash {
+	if !found {
 		return errBatteryTrendConflict
 	}
 	return nil
@@ -354,16 +385,17 @@ func storeBatteryTrendBatch(ctx context.Context, store *store, binding archiveBi
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, lock); err != nil {
 		return 0, 0, err
 	}
-	expires, err := lockBatteryTrendBinding(ctx, tx, binding, tokenHash)
+	var owner int
+	err = tx.QueryRow(ctx, `SELECT id FROM jourvolt_vehicles WHERE id=$1 AND user_id=$2 FOR SHARE`, binding.VehicleID, binding.UserID).Scan(&owner)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, 0, errArchiveBindingScopeMismatch
+	}
 	if err != nil {
 		return 0, 0, err
 	}
-	var ownerValid bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM jourvolt_vehicles WHERE id=$1 AND user_id=$2)`, binding.VehicleID, binding.UserID).Scan(&ownerValid); err != nil {
+	expires, err := lockBatteryTrendBinding(ctx, tx, binding, tokenHash)
+	if err != nil {
 		return 0, 0, err
-	}
-	if !ownerValid {
-		return 0, 0, errArchiveBindingScopeMismatch
 	}
 	var existingHash string
 	var inserted, unchanged int
@@ -376,6 +408,9 @@ func storeBatteryTrendBatch(ctx context.Context, store *store, binding archiveBi
 		// and its exact canonical evidence remain present and unchanged.
 		for _, observation := range request.Observations {
 			if err = lockBatteryTrendArchiveSession(ctx, tx, binding, observation); err != nil {
+				if errors.Is(err, errBatteryTrendArchivePending) {
+					return 0, 0, errBatteryTrendConflict
+				}
 				return 0, 0, err
 			}
 			encoded, encodeErr := json.Marshal(observation)
@@ -395,20 +430,51 @@ func storeBatteryTrendBatch(ctx context.Context, store *store, binding archiveBi
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return 0, 0, err
 	}
+	type preparedObservation struct {
+		observation batteryTrendObservation
+		encoded     []byte
+		hash        string
+		exists      bool
+	}
+	prepared := make([]preparedObservation, 0, len(request.Observations))
+	missing := false
 	for _, observation := range request.Observations {
-		start, _ := batteryTrendTimestamp(observation.StartedAt)
-		end, _ := batteryTrendTimestamp(observation.EndedAt)
-		if err = lockBatteryTrendArchiveSession(ctx, tx, binding, observation); err != nil {
+		err = lockBatteryTrendArchiveSession(ctx, tx, binding, observation)
+		sessionMissing := errors.Is(err, errBatteryTrendArchivePending)
+		if sessionMissing {
+			missing = true
+		} else if err != nil {
 			return 0, 0, err
 		}
 		encoded, err := json.Marshal(observation)
 		if err != nil {
 			return 0, 0, err
 		}
-		hash, err := batteryTrendDigest(observation)
+		sum := sha256.Sum256(encoded)
+		hash := hex.EncodeToString(sum[:])
+		exists, err := storedBatteryTrendEvidenceMatches(ctx, tx, binding, observation, encoded, hash)
 		if err != nil {
 			return 0, 0, err
 		}
+		if sessionMissing && exists {
+			return 0, 0, errBatteryTrendConflict
+		}
+		prepared = append(prepared, preparedObservation{observation: observation, encoded: encoded, hash: hash, exists: exists})
+	}
+	if missing {
+		if err = requireBatteryTrendBindingNotExpired(ctx, tx, expires); err != nil {
+			return 0, 0, err
+		}
+		return 0, 0, errBatteryTrendArchivePending
+	}
+	for _, item := range prepared {
+		observation, encoded, hash := item.observation, item.encoded, item.hash
+		if item.exists {
+			unchanged++
+			continue
+		}
+		start, _ := batteryTrendTimestamp(observation.StartedAt)
+		end, _ := batteryTrendTimestamp(observation.EndedAt)
 		result, err := tx.Exec(ctx, `INSERT INTO jourvolt_battery_trend_evidence(user_id,vehicle_id,source_instance_id,source_vehicle_id,source_record_id,started_at,ended_at,payload_json,payload_sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(user_id,vehicle_id,source_instance_id,source_vehicle_id,source_record_id) DO NOTHING`, binding.UserID, binding.VehicleID, binding.SourceInstanceID, binding.SourceVehicleID, observation.SourceRecordID, start, end, string(encoded), hash)
 		if err != nil {
 			return 0, 0, err
