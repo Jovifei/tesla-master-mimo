@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.json.JSONObject
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,19 +35,37 @@ class ChargeCostOverrideStore @Inject constructor(
         migrationMutex.withLock {
             if (legacyMigrationChecked) return
             if (!settingsDataStore.chargeTotalOverridesMigrated.first()) {
-                val legacy = settingsDataStore.chargeTotalOverrides.first()
-                val parsed = legacy.mapNotNull { (key, amount) ->
-                    val ids = key.split(':', limit = 2)
-                    val carId = ids.getOrNull(0)?.toIntOrNull()
-                    val chargeId = ids.getOrNull(1)?.toIntOrNull()
-                    if (carId == null || chargeId == null || !amount.isFinite() || amount < 0.0) {
-                        null
-                    } else {
-                        ChargeCostOverride(carId, chargeId, amount)
+                val raw = settingsDataStore.legacyChargeTotalOverridesJson.first()
+                val legacy = try { JSONObject(raw ?: "{}") } catch (_: Exception) {
+                    android.util.Log.w("ChargeCostOverrideStore", "Legacy charge costs could not be read; original retained")
+                    return@withLock
+                }
+                var complete = true
+                val parsed = buildList {
+                    val keys = legacy.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        val ids = key.split(':', limit = 2)
+                        val carId = ids.getOrNull(0)?.toIntOrNull()
+                        val chargeId = ids.getOrNull(1)?.toIntOrNull()
+                        val amount = legacy.optDouble(key, Double.NaN)
+                        if (carId == null || chargeId == null || !amount.isFinite() || amount < 0.0) {
+                            complete = false
+                        } else add(ChargeCostOverride(carId, chargeId, amount))
                     }
                 }
                 if (parsed.isNotEmpty()) dao.insertLegacyIfAbsent(parsed)
-                settingsDataStore.markChargeTotalOverridesMigrated()
+                // INSERT OR IGNORE may encounter a different existing amount: retain the original.
+                if (complete) complete = parsed.all { record ->
+                    dao.getRecord(record.carId, record.chargeId, record.sessionKey)?.let {
+                        !it.deleted && it.manualTotalAmount == record.manualTotalAmount
+                    } == true
+                }
+                if (!complete) {
+                    android.util.Log.w("ChargeCostOverrideStore", "Legacy charge costs incomplete; original retained")
+                    return@withLock
+                }
+                if (!settingsDataStore.markChargeTotalOverridesMigrated(raw)) return@withLock
             }
             legacyMigrationChecked = true
         }

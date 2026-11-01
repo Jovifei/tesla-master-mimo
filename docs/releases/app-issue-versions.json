@@ -1,8 +1,203 @@
 {
   "schema_version": 1,
   "branch": "codex/app-collection-recovery-20261029",
-  "observation_note": "发现版本不等于首次引入版本；build77已安装并验证充电卡片；Fleet源时间与长期续期风险仍开放",
+  "observation_note": "发现版本不等于首次引入版本；build77 安装及 CI 属历史记录，当前手机为 build81，未发布的 build82 工作树候选单元测试和 lint 已完成，模拟器、签名、生产发布、真实补传及手机验收仍在进行；Fleet 源时间与长期续期风险仍开放",
   "issues": [
+    {
+      "id": "NOV01-BATTERY-ARCHIVE-EVIDENCE",
+      "title": "云端缺失生成电池趋势所需的归档证据",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.62 build81 / production API 403aa6c",
+      "source_ref": "../RPT-2026-11-01-battery-trend-retention.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App build82 / independent cloud evidence candidate",
+      "change": "按完整来源绑定与时间窗追加独立趋势证据，保留原桥游标、历史和用户费用",
+      "verification": "真机样本不足；真实来源旧 110 条与云端同身份同时间窗 110 条只读匹配；服务候选 8d3da22 的 PG16 合成回归 671 项/子项，App 分支服务 PG16 568 项/子项，各自桥 73 项通过及 1 项跳过；候选未部署、未回填，模拟器、签名包和手机验收仍在进行",
+      "commit": null,
+      "history": [{"date":"2026-11-01","version":"build81 / API 403aa6c","action":"SOURCE_SAMPLES_CONFIRMED","detail":"源端 110 条样本保留，云接口缺额定续航与可验证温标","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null}]
+    },
+    {
+      "id": "NOV01-RESYNC-HISTORY-RETENTION",
+      "title": "重新同步先删除历史摘要与聚合",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.62 build81 source review",
+      "source_ref": "../RPT-2026-11-01-battery-trend-retention.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.63 build82 candidate",
+      "change": "保留本地历史、聚合与详情，重置进度后重新检查并补同步",
+      "verification": "相关 Room/VM 定向及最终候选双变体全量单元测试通过；未证实用户触发原操作，模拟器和手机验收待完成",
+      "commit": null,
+      "history": [{"date":"2026-11-01","version":"build81","action":"SOURCE_REVIEW_FOUND","detail":"重新同步旧路径先删除摘要与聚合","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null}]
+    },
+    {
+      "id": "NOV01-LEGACY-COST-RETENTION",
+      "title": "异常旧手工电费迁移可能删除原文",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.62 build81 source review",
+      "source_ref": "../RPT-2026-11-01-battery-trend-retention.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.63 build82 candidate",
+      "change": "保留原 JSON；合法项幂等迁移，异常或冲突不标记完成",
+      "verification": "真实 DataStore/Room 合成定向及最终候选双变体全量单元测试通过；未证实用户发生该问题，模拟器和手机验收待完成",
+      "commit": null,
+      "history": [{"date":"2026-11-01","version":"build81","action":"SOURCE_REVIEW_FOUND","detail":"损坏或部分无效 JSON 曾可能被过滤后删除","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null}]
+    },
+    {
+      "id": "NOV01-BATTERY-TREND-RETENTION",
+      "title": "稀疏电池趋势可能覆盖已有可用趋势",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.62 build81 source review",
+      "source_ref": "../RPT-2026-11-01-battery-trend-retention.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.63 build82 candidate",
+      "change": "同验证身份保留较完整缓存并标缓存，身份映射变化时清除旧页面状态",
+      "verification": "电池证据及页面候选定向 46 项、合成数据库迁移仪器 14 项及最终候选双变体全量单测通过；模拟器、部署、源样本回填及手机验收待完成",
+      "commit": null,
+      "history": [{"date":"2026-11-01","version":"build81","action":"SOURCE_REVIEW_FOUND","detail":"成功但不足样本可能覆盖先前可用趋势","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null}]
+    },
+    {
+      "id": "NOV01-DRIVE-SPARSE-RECEIPT",
+      "title": "同记录多次稀疏响应可能丢失原始趋势证据",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.62 build81 source review",
+      "source_ref": "../RPT-2026-11-01-battery-trend-retention.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.63 build82 未发布工作树候选",
+      "change": "同身份同时间窗保留真实原回执及可验证单位，防止稀疏更新擦除无关证据；行程与充电冷归档各限 64 MiB，满额时该类别整批回滚、保留旧记录并警告；不同 ID 缺乏可信映射时可并列",
+      "verification": "真实 Room 合成复现，候选已修；数据保护早期定向 112 项通过，随后全量中 Fleet 无合同分析列 1 项失败已修、相关定向 116 项通过；最终候选双变体各 1857 项 0 失败（Release 8 项既有跳过），手机验收待完成",
+      "commit": null,
+      "history": [{"date":"2026-11-01","version":"build81","action":"SOURCE_REVIEW_FOUND","detail":"同一会话连续稀疏响应可能使旧 SOC/续航/温度不可再读","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null},{"date":"2026-11-01","version":"2.1.63 build82 未发布工作树候选","action":"CANDIDATE_TARGETED_TESTS","detail":"真实 Room 合成复现；候选保护原回执与单位，数据保护定向此前 1 项失败，修复后 112 项通过；当时完整及手机验收待完成","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null},{"date":"2026-11-02","version":"2.1.63 build82 未发布工作树候选","action":"CANDIDATE_FULL_TESTS","detail":"全量中 Fleet 无合同分析列失败后修复，相关定向 116 项通过；Debug/Release 各 1857 项 0 失败、Release 既有 8 项跳过，lint 双变体 0 错误；模拟器及手机验收仍在进行","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null}]
+    },
+    {
+      "id": "NOV01-DRIVE-ENERGY-SHARED-BUDGET",
+      "title": "同一刷新内多个行程能耗补全任务可能超过逻辑请求预算",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.63 build82 未发布工作树候选",
+      "source_ref": "../RPT-2026-11-01-android-module-boundaries.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.63 build82 工作树候选",
+      "change": "同一刷新代的补全任务共享 20 次逻辑详情调用预算，错误时停止后续请求，保留身份和缓存校验",
+      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成；20 次不限制底层 HTTP 自动重试，不声称 build81 真机故障",
+      "commit": null,
+      "history": [{"date":"2026-11-01","version":"build82 未发布工作树候选","action":"CANDIDATE_LOGICAL_BUDGET_REVIEW","detail":"早期每任务单独计数可能在同一次刷新内累计超限；改用刷新代共享预算及错误停止","evidence":"../RPT-2026-11-01-android-module-boundaries.md","commit":null}]
+    },
+    {
+      "id": "NOV01-DRIVE-ENERGY-CACHE-REVISIT",
+      "title": "已尝试行程后来获得本地详情仍被候选跳过",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.63 build82 未发布工作树候选",
+      "source_ref": "../RPT-2026-11-01-android-module-boundaries.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.63 build82 工作树候选",
+      "change": "先读取并验证同身份本地详情，保留尝试标记以限制重复远端请求",
+      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成；未在 build81 真机复现",
+      "commit": null,
+      "history": [{"date":"2026-11-01","version":"build82 未发布工作树候选","action":"CANDIDATE_LOCAL_CACHE_SKIP_REVIEW","detail":"先检查尝试标记会遮住后续获得的本地点；调整为先校验本地详情再判断远端尝试","evidence":"../RPT-2026-11-01-android-module-boundaries.md","commit":null}]
+    },
+    {
+      "id": "NOV01-DRIVE-GEOCODE-PHYSICAL-LIMIT",
+      "title": "高德同步阻塞时行程地点补全可能占用物理请求",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.63 build82 未发布工作树候选",
+      "source_ref": "../RPT-2026-11-01-android-module-boundaries.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.63 build82 工作树候选",
+      "change": "行程自动反查限两个物理调用，满槽等待一次释放事件后重试；底层调用真正结束才释放许可",
+      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成；多等待者竞争、自身超时不自动重试及同目标最多两次重复调用等限制开放，不声称 build81 真机故障",
+      "commit": null,
+      "history": [{"date":"2026-11-01","version":"build82 未发布工作树候选","action":"CANDIDATE_GEOCODE_BLOCKING_REVIEW","detail":"高德同步调用不能靠协程超时强制中断；候选加入行程反查两槽和单次释放事件重试","evidence":"../RPT-2026-11-01-android-module-boundaries.md","commit":null}]
+    },
+    {
+      "id": "NOV01-DRIVE-AUTO-POINT-BUDGET",
+      "title": "行程自动补全候选可能占用充电曲线共享缓存预算",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.63 build82 未发布工作树候选",
+      "source_ref": "../RPT-2026-11-01-drive-data-regression.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.63 build82 工作树候选",
+      "change": "自动补全只写已验证身份及完整功率窗口的能耗摘要，不自动写入行程曲线或改变充电详情缓存",
+      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成；不是已上线或真机复现的问题",
+      "commit": null,
+      "history": [{"date":"2026-11-01","version":"build82 未发布工作树候选","action":"CANDIDATE_CACHE_BUDGET_RISK_AND_FIX","detail":"早期自动详情候选可能占用共享曲线预算；改为仅写经校验的能耗摘要，保留真实用户曲线","evidence":"../RPT-2026-11-01-drive-data-regression.md","commit":null}]
+    },
+    {
+      "id": "NOV01-DRIVE-ENRICH-CHARGE-WAIT",
+      "title": "行程自动补全候选等待无关充电历史",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.63 build82 未发布工作树候选",
+      "source_ref": "../RPT-2026-11-01-android-module-boundaries.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.63 build82 工作树候选",
+      "change": "在当前身份与回执仍有效时按已验证的 Room 行程结果独立触发有界补全，不等待充电历史结束",
+      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成",
+      "commit": null,
+      "history": [{"date":"2026-11-01","version":"build82 未发布工作树候选","action":"CANDIDATE_CROSS_PAGE_WAIT_FOUND","detail":"行程已可读取时无关充电请求可能阻塞自动补全；候选改为经身份校验的独立触发","evidence":"../RPT-2026-11-01-android-module-boundaries.md","commit":null}]
+    },
+    {
+      "id": "NOV01-COST-PARTIAL-ESTIMATE",
+      "title": "Fleet 部分观测费用未进入成本分析估算",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.62 build81 对应源码 / 61535c94 能力扩展",
+      "source_ref": "../RPT-2026-11-01-android-module-boundaries.md",
+      "status": "OPEN_UNDER_INVESTIGATION",
+      "fix_version": null,
+      "change": "待分开呈现完整记录估算与已采集部分估算，继续区分手工金额、账单、完整电量及币种",
+      "verification": "仅源码推导：成本汇总旧有完整电量门槛跳过部分观测估价；未在用户手机复现，未修复",
+      "commit": null,
+      "history": [{"date":"2026-11-01","version":"build81 对应源码","action":"SOURCE_REVIEW_PARTIAL_COST_GAP","detail":"充电列表可显示部分观测估价，而成本汇总因完整电量门槛跳过；不将部分区间当成整场账单","evidence":"../RPT-2026-11-01-android-module-boundaries.md","commit":null}]
+    },
+    {
+      "id": "NOV01-SELF-HOSTED-MANUAL-COST",
+      "title": "自托管无来源旧记录的手工费用不能成为确认金额",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.62 build81 对应源码 / 原资格判断 2815e41f",
+      "source_ref": "../RPT-2026-11-01-android-module-boundaries.md",
+      "status": "OPEN_UNDER_INVESTIGATION",
+      "fix_version": null,
+      "change": "待基于已验证自托管来源、车辆和会话绑定手工费用；不得直接放行所有空来源或清除已有记录",
+      "verification": "仅源码推导：保存可写入空来源而资格投影拒绝确认；现用户场景未真机复现，未修复",
+      "commit": null,
+      "history": [{"date":"2026-11-01","version":"build81 对应源码","action":"SOURCE_REVIEW_SELF_HOSTED_MANUAL_GAP","detail":"空来源旧记录允许保存金额但被判来源未核实；该资格规则来自较早提交 2815e41f","evidence":"../RPT-2026-11-01-android-module-boundaries.md","commit":null}]
+    },
+    {
+      "id": "NOV01-DRIVE-FLEET-LOCATION",
+      "title": "Fleet 行程列表忽略大写坐标字段",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.62 build81 / production API 403aa6c",
+      "source_ref": "../RPT-2026-11-01-drive-data-regression.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "API d9a6ca8 candidate / App candidate",
+      "change": "列表兼容可信同点坐标大小写及时间窗，App 合并仅选择完整坐标对",
+      "verification": "隔离测试进行中；真实手机验收待完成",
+      "commit": "d9a6ca8fbc9309383ed2062368b986c6be97f9be",
+      "history": [{"date":"2026-11-01","version":"build81 / API 403aa6c","action":"FLEET_COORDINATE_CASE_MISMATCH_FOUND","detail":"近期 Fleet 轨迹有成对大写坐标，列表旧查询只读小写","evidence":"../RPT-2026-11-01-drive-data-regression.md","commit":null}]
+    },
+    {
+      "id": "NOV01-DRIVE-ENERGY-ENRICH",
+      "title": "行程列表能耗依赖手动打开详情后才补全",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.62 build81",
+      "source_ref": "../RPT-2026-11-01-drive-data-regression.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App candidate",
+      "change": "有界自动读取同身份可信详情并在完整证据下计算估算值；不足时继续显示未知",
+      "verification": "真实归档详情积分及返回列表复现；11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成",
+      "commit": null,
+      "history": [{"date":"2026-11-01","version":"build81","action":"MANUAL_DETAIL_REQUIRED_FOUND","detail":"列表横杠，打开详情并返回后出现可核验的功率积分估算","evidence":"../RPT-2026-11-01-drive-data-regression.md","commit":null}]
+    },
+    {
+      "id": "NOV01-DRIVE-MIXED-DUP",
+      "title": "不同来源的相近行程可能并列显示",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.62 build81 / production API 403aa6c",
+      "source_ref": "../RPT-2026-11-01-drive-data-regression.md",
+      "status": "OPEN_UNDER_INVESTIGATION",
+      "fix_version": null,
+      "change": "仅在身份与记录对应关系有充分证据时处理，不按同一分钟盲目合并",
+      "verification": "真机已看到相近时间记录，是否同一行程尚未证实",
+      "commit": null,
+      "history": [{"date":"2026-11-01","version":"build81 / API 403aa6c","action":"MIXED_SOURCE_NEAR_DUPLICATE_FOUND","detail":"保留两条记录直至来源对应关系得到证明","evidence":"../RPT-2026-11-01-drive-data-regression.md","commit":null}]
+    },
     {
       "id": "NOV01-CHARGE-REFRESH-FEEDBACK",
       "title": "充电缓存发布时刷新状态提前结束且超时文案分类错误",
@@ -84,9 +279,9 @@
       "found_version": "App 2.1.60 build79",
       "source_ref": "../RPT-2026-11-01-charge-energy-filters.md",
       "status": "IN_PROGRESS",
-      "fix_version": "App 2.1.61 build80 installed / App 2.1.62 build81 candidate",
+      "fix_version": "App 2.1.61 build80 installed / App 2.1.62 build81 installed",
       "change": "保留既有 10/100 km 筛选边界，修正中英文标签并标明英里约数",
-      "verification": "边界单测和设备验证待完成",
+      "verification": "边界单测通过，build80/81 已保数据安装；边界真机逐项核验情况未记录，build82 完整验证仍在进行",
       "commit": null,
       "history": [
         {
@@ -94,6 +289,14 @@
           "version": "App 2.1.60 build79",
           "action": "LABEL_BOUNDARY_MISMATCH_FOUND",
           "detail": "页面曾显示 50/200 km，但实际筛选按 10/100 km 计算",
+          "evidence": "../RPT-2026-11-01-charge-energy-filters.md",
+          "commit": null
+        },
+        {
+          "date": "2026-11-01",
+          "version": "App 2.1.61 build80 / 2.1.62 build81",
+          "action": "BOUNDARY_TEST_AND_DEVICE_INSTALL",
+          "detail": "边界单测通过，两个版本保数据安装；边界真机逐项核验情况未记录",
           "evidence": "../RPT-2026-11-01-charge-energy-filters.md",
           "commit": null
         }
@@ -106,9 +309,9 @@
       "found_version": "App 2.1.60 build79",
       "source_ref": "../RPT-2026-11-01-charge-energy-filters.md",
       "status": "IN_PROGRESS",
-      "fix_version": "App 2.1.61 build80 installed / App 2.1.62 build81 candidate",
+      "fix_version": "App 2.1.61 build80 installed / App 2.1.62 build81 installed",
       "change": "仅在非授权型暂时失败且已验证账号、车辆及来源不变时读取历史快照；不使用缓存授权写入或反向地理编码",
-      "verification": "范围、身份和过期响应的自动回归及设备验证待完成",
+      "verification": "离线缓存自动回归通过，build80/81 真机在线首页显示正常；真机断网缓存验证未完成，build82 完整验证仍在进行",
       "commit": null,
       "history": [
         {
@@ -116,6 +319,14 @@
           "version": "App 2.1.60 build79",
           "action": "OFFLINE_CACHE_PATH_REPAIRED",
           "detail": "检查失败路径及已验证车辆别名缓存，保持授权失败和身份切换拒绝旧快照",
+          "evidence": "../RPT-2026-11-01-charge-energy-filters.md",
+          "commit": null
+        },
+        {
+          "date": "2026-11-01",
+          "version": "App 2.1.61 build80 / 2.1.62 build81",
+          "action": "ONLINE_DEVICE_AND_OFFLINE_AUTOMATED_CHECK",
+          "detail": "两个版本真机在线首页正常，离线缓存自动回归通过；真机断网缓存未验",
           "evidence": "../RPT-2026-11-01-charge-energy-filters.md",
           "commit": null
         }
@@ -128,9 +339,9 @@
       "found_version": "App 2.1.60 build79 / production API ab9a245c",
       "source_ref": "../RPT-2026-11-01-charge-energy-filters.md",
       "status": "IN_PROGRESS",
-      "fix_version": "App 2.1.61 build80 installed / App 2.1.62 build81 candidate / production API 2548097",
+      "fix_version": "App 2.1.61 build80 installed / App 2.1.62 build81 installed / API 2548097 deployed then 403aa6c",
       "change": "完整会话值保持未知；验证来源和时窗后独立显示已记录区间的电量及近似费用，手动金额优先",
-      "verification": "隔离 PostgreSQL/Go 全量通过；生产 API 健康；build80 真机部分电量、预估费用及曲线已见，build81 待验收",
+      "verification": "隔离 PostgreSQL/Go 全量通过；API 2548097 后更新为 403aa6c；build80 真机已见部分电量、预估费用及曲线，build81 真机复核了部分电量展示；build82 完整验证仍在进行",
       "commit": null,
       "history": [
         {
@@ -138,6 +349,14 @@
           "version": "App 2.1.60 build79",
           "action": "PARTIAL_COUNTER_ROOT_CAUSE_REVIEWED",
           "detail": "撤回将部分观测当完整实测的候选，保留完整会话与采样区间的区别",
+          "evidence": "../RPT-2026-11-01-charge-energy-filters.md",
+          "commit": null
+        },
+        {
+          "date": "2026-11-01",
+          "version": "App 2.1.61 build80 / 2.1.62 build81 / API 2548097 then 403aa6c",
+          "action": "PARTIAL_OBSERVATION_DEVICE_RECHECK",
+          "detail": "build80 真机可见部分电量、估算费用和曲线；build81 复核部分电量展示，真实记录不等于完整会话采样",
           "evidence": "../RPT-2026-11-01-charge-energy-filters.md",
           "commit": null
         }
@@ -150,9 +369,9 @@
       "found_version": "App 2.1.60 build79",
       "source_ref": "../RPT-2026-11-01-charge-energy-filters.md",
       "status": "IN_PROGRESS",
-      "fix_version": "App 2.1.61 build80 installed / App 2.1.62 build81 candidate",
+      "fix_version": "App 2.1.61 build80 installed / App 2.1.62 build81 installed",
       "change": "日期下拉移至摘要，保留全部时间；说明改为确认一次，地点显示复用中文格式化并保证坐标成对",
-      "verification": "坐标合并及充电相关定向测试通过；完整测试与设备验收待完成",
+      "verification": "旧候选坐标及充电定向测试通过；build81 真机确认默认日期、全部时间及提示精简，地点缺源仍可未知；build82 完整验证仍在进行",
       "commit": null,
       "history": [
         {
@@ -160,6 +379,14 @@
           "version": "App 2.1.60 build79",
           "action": "FILTER_AND_LOCATION_REPAIR_IN_PROGRESS",
           "detail": "保留原始筛选键和真实同步警告，不推测缺失的历史地点",
+          "evidence": "../RPT-2026-11-01-charge-energy-filters.md",
+          "commit": null
+        },
+        {
+          "date": "2026-11-01",
+          "version": "App 2.1.62 build81",
+          "action": "HISTORY_FILTER_DEVICE_RECHECK",
+          "detail": "真机确认默认日期、全部时间和提示精简；历史地点缺少坐标时仍可显示未知",
           "evidence": "../RPT-2026-11-01-charge-energy-filters.md",
           "commit": null
         }
@@ -5879,24 +6106,45 @@
     }
   ],
   "baseline_checkpoint": "e53a2d01a54d55c554019fb861d69f3737d4b5bb",
-  "updated_date": "2026-10-30",
+  "updated_date": "2026-11-02",
   "candidate": {
-    "versionName": "2.1.58",
-    "versionCode": 77,
-    "installation": "INSTALLED_DEVICE_CHARGE_CARD_VERIFIED",
-    "production": "API_ab9a245c_DEPLOYED_APP_NOT_PUBLISHED",
-    "apk_sha256": "B83E8C29915CDC4F9F850AFEB3699C262678D669DD4F29070843213924D5CF6F",
+    "versionName": "2.1.63",
+    "versionCode": 82,
+    "installation": "FINAL_SIGNED_APK_AND_DEVICE_ACCEPTANCE_IN_PROGRESS",
+    "production": "CURRENT_APP_CANDIDATE_NOT_PUBLISHED",
+    "apk_sha256": null,
+    "certificate_sha256": null,
+    "debuggable": null,
+    "package": "com.matelink",
+    "source_commit": null,
+    "source_worktree_head": "b762521a2c47a57321aab26dced4643bbfb286fb",
+    "source_worktree_dirty": true,
+    "first_install_time_preserved": null,
+    "integrated_branch": null,
+    "integrated_head_at_push": null,
+    "ci_verified_head": null,
+    "ci_checks_passed": null,
+    "verification": "2026-11-02 最终工作树候选 Debug/Release 各 1857 项、0 失败（Release 8 项既有跳过）；lint 两变体 0 错误，警告 333/314；此前全量 Fleet 无合同能耗列 1 项失败已修、相关定向 116 项通过；模拟器、签名包、生产发布、真实补传及手机验收仍在进行；不继承旧 SHA 的 CI 结果"
+  },
+  "installed_app": {
+    "versionName": "2.1.62",
+    "versionCode": 81,
+    "installation": "INSTALLED_WITH_ADB_INSTALL_R",
+    "apk_sha256": "D890B0FDC2AD98260AB9D4EA6E5AA4187F5242B969B399266684456E0723FA41",
     "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
     "debuggable": false,
     "package": "com.matelink",
-    "source_commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa",
+    "source_commit": "debf63138dd4fce78a923942b75f53eb3911be12",
     "first_install_time_preserved": true,
-    "integrated_branch": "codex/app-foundation-ui-integrate-20261025",
-    "integrated_head_at_push": "b702e658a7834319dc706d360c4576de4822bc9b",
-    "ci_verified_head": "5681c6fe7950e5a4a7637e00f8d8a67365aed45e",
-    "ci_checks_passed": 18
+    "evidence": "../RPT-2026-11-01-charge-energy-filters.md"
   },
-  "code_commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa",
+  "production_api": {
+    "build_sha": "403aa6cfba6143b4835565231d6a0e502a8c52e6",
+    "status": "DEPLOYED",
+    "evidence": "../RPT-2026-11-01-charge-energy-filters.md"
+  },
+  "code_commit": null,
+  "historical_code_commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa",
   "previous_candidate": {
     "versionName": "2.1.54",
     "versionCode": 73,
@@ -5931,6 +6179,23 @@
       "package": "com.matelink",
       "source_commit": "3c4b2a51dd1f177291e1a0d12c7bccbc13eb59d0",
       "first_install_time_preserved": true
+    },
+    {
+      "versionName": "2.1.58",
+      "versionCode": 77,
+      "installation": "INSTALLED_DEVICE_CHARGE_CARD_VERIFIED",
+      "production": "API_ab9a245c_DEPLOYED_APP_NOT_PUBLISHED",
+      "apk_sha256": "B83E8C29915CDC4F9F850AFEB3699C262678D669DD4F29070843213924D5CF6F",
+      "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
+      "debuggable": false,
+      "package": "com.matelink",
+      "source_commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa",
+      "first_install_time_preserved": true,
+      "integrated_branch": "codex/app-foundation-ui-integrate-20261025",
+      "integrated_head_at_push": "b702e658a7834319dc706d360c4576de4822bc9b",
+      "ci_verified_head": "5681c6fe7950e5a4a7637e00f8d8a67365aed45e",
+      "ci_checks_passed": 18,
+      "history_note": "2026-10-30 历史候选及旧 SHA CI 证据，不代表当前候选"
     }
   ]
 }

@@ -17,6 +17,7 @@ import com.matelink.data.model.Instance
 import com.matelink.data.repository.*
 import com.matelink.data.sync.HistoryMemoryPreferences
 import com.matelink.data.sync.HistoryResourceFixture
+import com.matelink.data.sync.CarSyncResult
 import com.matelink.data.sync.toAggregate
 import com.matelink.data.sync.toSyncSummary
 import com.matelink.notification.SentryNotificationManager
@@ -25,7 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -110,7 +111,9 @@ class ExternalReviewSettingsScopeTest {
         val overrides: List<ChargeCostOverride>,
         val archive: LegacyHistoryArchive,
         val pointIdentities: List<HistoryDetailIdentity>,
-        val pointDetail: ChargeDetail
+        val pointDetail: ChargeDetail,
+        val drivePointIdentities: List<HistoryDetailIdentity>,
+        val drivePointDetail: DriveDetail
     )
 
     private suspend fun seed(f: HistoryResourceFixture): Seeded {
@@ -128,7 +131,9 @@ class ExternalReviewSettingsScopeTest {
         val chargeData = ChargeData(22, startDate = start, endDate = end, chargeEnergyAdded = 2.0,
             source = "teslamate_archive", sourceInstanceId = "archive-fixture", qualityState = "observed")
         val driveDetail = DriveDetail(11, startDate = start, endDate = end,
-            source = "teslamate_archive", sourceInstanceId = "archive-fixture", positions = emptyList())
+            source = "teslamate_archive", sourceInstanceId = "archive-fixture",
+            positions = listOf(DrivePosition(date = start, speed = 15.0, power = 5.0),
+                DrivePosition(date = end, speed = 23.0, power = 8.0)))
         val chargeDetail = ChargeDetail(22, startDate = start, endDate = end,
             source = "teslamate_archive", sourceInstanceId = "archive-fixture", chargeEnergyAdded = 2.0,
             chargePoints = listOf(ChargePoint(date = start, chargeEnergyAdded = 0.0),
@@ -170,8 +175,14 @@ class ExternalReviewSettingsScopeTest {
                 assertTrue(pointStore.saveCharge(identity, chargeDetail) is HistoryDetailWriteResult.Stored)
             }
         }
+        val drivePointIdentities = listOf(current, otherOrigin).map { vehicle ->
+            HistoryDetailIdentity.create(vehicle, HistoryDetailIdentity.DRIVE, 11,
+                "teslamate_archive", "archive-fixture", start, end).also { identity ->
+                assertTrue(pointStore.saveDrive(identity, driveDetail) is HistoryDetailWriteResult.Stored)
+            }
+        }
         return Seeded(current, drives, charges, driveAggregates, chargeAggregates, syncStates,
-            trips, fingerprints, overrides, archive, pointIdentities, chargeDetail)
+            trips, fingerprints, overrides, archive, pointIdentities, chargeDetail, drivePointIdentities, driveDetail)
     }
 
     private suspend fun assertProtectedRows(f: HistoryResourceFixture, seeded: Seeded) {
@@ -188,16 +199,35 @@ class ExternalReviewSettingsScopeTest {
             assertEquals("Original point receipts must survive cache and instance actions", seeded.pointDetail, points.detail)
             assertEquals(2, points.receipt?.pointCount)
         }
+        for (identity in seeded.drivePointIdentities) {
+            val points = HistoryDetailRepository(f.db.historyDetailDao()).readDrive(identity)
+            assertEquals("Original drive curves must survive resync", seeded.drivePointDetail, points.detail)
+            assertEquals(2, points.receipt?.pointCount)
+        }
     }
 
-    private suspend fun assertCachedRows(f: HistoryResourceFixture, seeded: Seeded, ids: Collection<Int>) {
+    private suspend fun assertCachedHistoryRows(f: HistoryResourceFixture, seeded: Seeded, ids: Collection<Int>) {
         for (id in ids) {
             assertEquals(seeded.drives.getValue(id), f.db.driveSummaryDao().get(id, 11))
             assertEquals(seeded.charges.getValue(id), f.db.chargeSummaryDao().get(id, 22))
             assertEquals(seeded.driveAggregates.getValue(id), f.db.aggregateDao().getDriveAggregate(id, 11))
             assertEquals(seeded.chargeAggregates.getValue(id), f.db.aggregateDao().getChargeAggregate(id, 22))
+        }
+    }
+
+    private suspend fun assertCachedRows(f: HistoryResourceFixture, seeded: Seeded, ids: Collection<Int>) {
+        assertCachedHistoryRows(f, seeded, ids)
+        for (id in ids) {
             assertEquals(seeded.syncStates.getValue(id), f.db.syncStateDao().get(id))
         }
+    }
+
+    private suspend fun assertResetState(f: HistoryResourceFixture, seeded: Seeded) {
+        val local = seeded.current.localHistoryCarId
+        assertEquals(seeded.syncStates.getValue(local).copy(
+            summariesSynced = false, detailsSynced = false, lastDriveDetailId = 0, lastChargeDetailId = 0,
+            drivesProcessed = 0, chargesProcessed = 0, totalDrivesToProcess = 0, totalChargesToProcess = 0),
+            f.db.syncStateDao().get(local))
     }
 
     private fun settingsVm(f: HistoryResourceFixture) = SettingsViewModel(f.context, f.settings, f.modes,
@@ -219,14 +249,11 @@ class ExternalReviewSettingsScopeTest {
                 (it.successMessage != null || it.error != null) } }
             assertNull(result.error)
             assertNotNull(result.successMessage)
-            assertNull("Remote car 7 must reset its verified negative local key", f.db.driveSummaryDao().get(seeded.current.localHistoryCarId, 11))
-            assertNull(f.db.chargeSummaryDao().get(seeded.current.localHistoryCarId, 22))
-            assertNull(f.db.aggregateDao().getDriveAggregate(seeded.current.localHistoryCarId, 11))
-            assertNull(f.db.aggregateDao().getChargeAggregate(seeded.current.localHistoryCarId, 22))
-            assertFalse(requireNotNull(f.db.syncStateDao().get(seeded.current.localHistoryCarId)).summariesSynced)
+            assertCachedHistoryRows(f, seeded, seeded.drives.keys)
+            assertResetState(f, seeded)
             assertCachedRows(f, seeded, seeded.drives.keys - seeded.current.localHistoryCarId)
             assertProtectedRows(f, seeded)
-        } finally { vm.viewModelScope.cancel(); f.close(); Dispatchers.resetMain() }
+        } finally { vm.viewModelScope.coroutineContext[Job]?.cancelAndJoin(); f.close(); Dispatchers.resetMain() }
     }
 
     @Test fun scopedFullResetRetainsTripReferencesManualEditsArchivesAndOriginalPoints() = runBlocking(Dispatchers.IO) {
@@ -234,13 +261,115 @@ class ExternalReviewSettingsScopeTest {
         try {
             val seeded = seed(f)
             f.syncManager.fullResetSync(seeded.current.localHistoryCarId)
-            assertNull(f.db.driveSummaryDao().get(seeded.current.localHistoryCarId, 11))
-            assertNull(f.db.chargeSummaryDao().get(seeded.current.localHistoryCarId, 22))
-            assertNull(f.db.aggregateDao().getDriveAggregate(seeded.current.localHistoryCarId, 11))
-            assertNull(f.db.aggregateDao().getChargeAggregate(seeded.current.localHistoryCarId, 22))
+            assertCachedHistoryRows(f, seeded, seeded.drives.keys)
+            assertResetState(f, seeded)
             assertCachedRows(f, seeded, seeded.drives.keys - seeded.current.localHistoryCarId)
             assertProtectedRows(f, seeded)
         } finally { f.close() }
+    }
+
+    private enum class ResyncSource { FAILURE, EMPTY, PARTIAL }
+
+    private suspend fun assertResyncPreservesHistory(source: ResyncSource) {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val f = fixture("resync-preserves-${source.name.lowercase()}")
+        val seeded = seed(f)
+        manager(f)
+        val vm = settingsVm(f)
+        try {
+            withTimeout(10_000) { vm.uiState.first { !it.isLoading } }
+            vm.forceResync()
+            val result = withTimeout(10_000) { vm.uiState.first { !it.isResyncing &&
+                (it.successMessage != null || it.error != null) } }
+            assertNull(result.error)
+            assertNotNull(result.successMessage)
+            assertCachedHistoryRows(f, seeded, seeded.drives.keys)
+            assertResetState(f, seeded)
+            assertProtectedRows(f, seeded)
+
+            val partialRows = (1000..1049).joinToString(",") { id ->
+                """{"drive_id":$id,"start_date":"$start","end_date":"$end","source":"teslamate_archive"}"""
+            }
+            f.calls.clear()
+            f.status = { path ->
+                if (source == ResyncSource.FAILURE && (path.endsWith("/drives") || path.endsWith("/charges"))) 503
+                else 200
+            }
+            f.detailResponse = { path -> when {
+                path.endsWith("/cars") -> """{"data":{"cars":[{"car_id":7,"vehicle_uid":"synthetic-vehicle-7"}]}}"""
+                source == ResyncSource.PARTIAL && path.endsWith("/drives") -> """{"data":{"drives":[$partialRows]}}"""
+                else -> null
+            } }
+            val sync = f.repo.syncCar(7, summariesOnly = true)
+            if (source == ResyncSource.EMPTY) assertTrue(sync is CarSyncResult.Deferred)
+            else assertTrue("Failed or repeated partial source must not report completion", sync is CarSyncResult.Failed)
+            assertTrue(f.calls.any { it.endsWith("/cars/7/drives") })
+            assertTrue(f.calls.any { it.endsWith("/cars/7/charges") })
+            if (source == ResyncSource.PARTIAL) {
+                assertTrue(f.calls.count { it.endsWith("/cars/7/drives") } >= 2)
+                assertNotNull(f.db.driveSummaryDao().get(seeded.current.localHistoryCarId, 1000))
+            }
+            assertCachedHistoryRows(f, seeded, seeded.drives.keys)
+            assertCachedRows(f, seeded, seeded.drives.keys - seeded.current.localHistoryCarId)
+            assertProtectedRows(f, seeded)
+
+            vm.viewModelScope.coroutineContext[Job]?.cancelAndJoin()
+            f.reopen()
+            assertCachedHistoryRows(f, seeded, seeded.drives.keys)
+            assertCachedRows(f, seeded, seeded.drives.keys - seeded.current.localHistoryCarId)
+            assertProtectedRows(f, seeded)
+        } finally {
+            vm.viewModelScope.coroutineContext[Job]?.cancelAndJoin()
+            f.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun forceResyncKeepsHistoryWhenSourceFails() = runBlocking(Dispatchers.IO) {
+        assertResyncPreservesHistory(ResyncSource.FAILURE)
+    }
+
+    @Test fun forceResyncKeepsHistoryWhenSourceIsEmpty() = runBlocking(Dispatchers.IO) {
+        assertResyncPreservesHistory(ResyncSource.EMPTY)
+    }
+
+    @Test fun forceResyncKeepsHistoryWhenSourceIsPartial() = runBlocking(Dispatchers.IO) {
+        assertResyncPreservesHistory(ResyncSource.PARTIAL)
+    }
+
+    @Test fun fullResetCreatesMissingProgressWithoutDiscardingHistory() = runBlocking(Dispatchers.IO) {
+        val f = fixture("resync-missing-state")
+        try {
+            val seeded = seed(f)
+            val local = seeded.current.localHistoryCarId
+            f.db.syncStateDao().delete(local)
+            f.syncManager.fullResetSync(local)
+            assertEquals(SyncState(carId = local), f.db.syncStateDao().get(local))
+            assertCachedHistoryRows(f, seeded, seeded.drives.keys)
+            assertCachedRows(f, seeded, seeded.drives.keys - local)
+            assertProtectedRows(f, seeded)
+        } finally { f.close() }
+    }
+
+    @Test fun forceResyncDiscoveryFailureKeepsHistoryAndProgress() = runBlocking(Dispatchers.IO) {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val f = fixture("resync-discovery-failure")
+        val seeded = seed(f)
+        manager(f)
+        val vm = settingsVm(f)
+        try {
+            withTimeout(10_000) { vm.uiState.first { !it.isLoading } }
+            f.status = { path -> if (path.endsWith("/cars")) 503 else 200 }
+            vm.forceResync()
+            val result = withTimeout(10_000) { vm.uiState.first { !it.isResyncing && it.error != null } }
+            assertNull(result.successMessage)
+            assertCachedRows(f, seeded, seeded.drives.keys)
+            assertProtectedRows(f, seeded)
+        } finally {
+            vm.viewModelScope.coroutineContext[Job]?.cancelAndJoin()
+            f.close()
+            Dispatchers.resetMain()
+        }
     }
 
     @Test fun scopeChangeDuringCarDiscoveryCannotResetAnyNamespaceOrReportSuccess() = runBlocking(Dispatchers.IO) {
@@ -262,7 +391,7 @@ class ExternalReviewSettingsScopeTest {
             assertCachedRows(f, seeded, seeded.drives.keys)
             assertProtectedRows(f, seeded)
             assertNull("A stale discovery result must not start resync for another source", result.successMessage)
-        } finally { vm.viewModelScope.cancel(); f.close(); Dispatchers.resetMain() }
+        } finally { vm.viewModelScope.coroutineContext[Job]?.cancelAndJoin(); f.close(); Dispatchers.resetMain() }
     }
 
     private suspend fun assertInstanceActionPreservesAllRows(deleteCurrent: Boolean) {
@@ -297,7 +426,7 @@ class ExternalReviewSettingsScopeTest {
             assertCachedRows(f, seeded, seeded.drives.keys)
             assertProtectedRows(f, seeded)
         } finally {
-            vm.viewModelScope.cancel()
+            vm.viewModelScope.coroutineContext[Job]?.cancelAndJoin()
             instances.removeInstance(first.id)
             instances.removeInstance(second.id)
             f.close()

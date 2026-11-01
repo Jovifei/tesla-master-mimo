@@ -96,7 +96,13 @@ suspend fun persistVerifiedDriveDetail(
         }
     } catch (e: HistoryDetailPointSaveRejected) {
         rejectedIdentity?.let { identity ->
-            try { pointStore.recordFailure(identity, e.reason) }
+            try {
+                database.withTransaction {
+                    ensureCurrent()
+                    pointStore.recordFailure(identity, e.reason)
+                    ensureCurrent()
+                }
+            }
             catch (cancel: CancellationException) { throw cancel }
             catch (_: Exception) { /* The prior receipt is still intact. */ }
         }

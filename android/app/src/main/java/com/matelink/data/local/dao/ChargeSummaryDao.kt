@@ -7,6 +7,7 @@ import androidx.room.Transaction
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import com.matelink.data.local.HistorySourceReceiptArchive
+import com.matelink.data.local.HistorySourceArchiveException
 import com.matelink.data.local.entity.HistoryDetailReceipt
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.data.repository.mergeStoredCharge
@@ -58,7 +59,7 @@ interface ChargeSummaryDao {
     @Query("SELECT COUNT(*) FROM history_detail_receipts WHERE receiptId = :receiptId")
     suspend fun archiveExists(receiptId: String): Int
 
-    @Query("SELECT COALESCE(SUM(encodedByteCount), 0) FROM history_detail_receipts WHERE state='archived_source_conflict'")
+    @Query("SELECT COALESCE(SUM(encodedByteCount), 0) FROM history_detail_receipts WHERE state='archived_source_conflict' AND kind='archived_charge_source'")
     suspend fun archiveUsedBytes(): Long
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
@@ -68,10 +69,8 @@ interface ChargeSummaryDao {
         if (archiveExists(receipt.receiptId) > 0) return
         val maxBytes = 64L * 1024 * 1024
         val used = archiveUsedBytes()
-        check(receipt.encodedByteCount >= 0L && used <= maxBytes &&
-            receipt.encodedByteCount <= maxBytes - used) {
-            "history_conflict_archive_budget_exceeded"
-        }
+        if (receipt.encodedByteCount < 0L || used < 0L || used > maxBytes || receipt.encodedByteCount > maxBytes - used)
+            throw HistorySourceArchiveException("history_conflict_archive_budget_exceeded")
         insertConflictArchive(receipt)
     }
 

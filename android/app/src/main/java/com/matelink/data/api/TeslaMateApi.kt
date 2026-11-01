@@ -26,6 +26,7 @@ import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.POST
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 // The readiness probe is included for onboarding/connection checks.
 // Note: neither platform uses /api/healthz (available on server but unused).
@@ -129,6 +130,16 @@ interface TeslamateApi {
     suspend fun getBatteryHealth(
         @Path("carId") carId: Int
     ): Response<BatteryHealthResponse>
+
+    @Streaming
+    @GET("api/v1/cars/{carId}/battery-trend/evidence")
+    suspend fun getBatteryTrendEvidence(
+        @Path("carId") carId: Int,
+        @Query("cursor") cursor: String? = null,
+        @Query("snapshot_max_seq") snapshotMaxSeq: Long? = null,
+        @Query("limit") limit: Int = 50,
+        @retrofit2.http.Tag fence: ArchiveEnrollmentRequestFence
+    ): Response<okhttp3.ResponseBody>
 
     @GET("api/v1/cars/{carId}/data-readiness")
     suspend fun getDataReadiness(

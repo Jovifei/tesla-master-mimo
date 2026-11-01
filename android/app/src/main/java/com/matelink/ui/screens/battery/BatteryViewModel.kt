@@ -9,9 +9,12 @@ import com.matelink.data.api.models.DataReadinessItem
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.Units
 import com.matelink.data.repository.ApiResult
+import com.matelink.data.repository.BatteryTrendEvidenceRepository
+import com.matelink.data.repository.BATTERY_EVIDENCE_SOURCE_CONFLICT
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.local.HistoryReadScope
 import com.matelink.data.local.HistoryConnectionSource
+import com.matelink.data.local.HistoryIdentityUnavailableException
 import com.matelink.data.local.VehicleContext
 import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.local.VehicleStatusStore
@@ -19,6 +22,7 @@ import com.matelink.domain.analytics.HistoryFreshness
 import com.matelink.domain.analytics.AnalysisHistoryRepository
 import com.matelink.domain.analytics.BatteryTrendEstimate
 import com.matelink.domain.analytics.BatteryTrendSample
+import com.matelink.domain.analytics.BatteryTrendSource
 import com.matelink.domain.analytics.estimateBatteryTrend
 import com.matelink.domain.analytics.qualifiedBatteryTrendSample
 import com.matelink.util.parseIsoDateTime
@@ -38,6 +42,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 enum class BatteryChargeWarning {
     NONE,
@@ -151,6 +156,21 @@ internal fun BatteryUiState.withHealthStatus(
     error = (healthResult as? ApiResult.Error)?.message
 )
 
+/** An incomplete refresh cannot replace a usable trend for the same verified vehicle. */
+internal fun BatteryUiState.withRetainedTrend(
+    candidate: BatteryTrendEstimate?, candidateIsCached: Boolean
+): BatteryUiState {
+    val previous = batteryTrend
+    if (previous != null && (candidate == null ||
+            (candidate.source == BatteryTrendSource.UNAVAILABLE && previous.source != BatteryTrendSource.UNAVAILABLE) ||
+            previous.sampleCount > candidate.sampleCount ||
+            (previous.sampleCount == candidate.sampleCount && previous.coverageDays > candidate.coverageDays))) {
+        return copy(isCachedTrend = true)
+    }
+    return if (candidate != null) copy(batteryTrend = candidate, isCachedTrend = candidateIsCached)
+    else copy(isCachedTrend = previous != null || isCachedTrend)
+}
+
 // Computed battery statistics
 data class BatteryStats(
     val currentCapacity: Double,
@@ -203,7 +223,8 @@ class BatteryViewModel @Inject constructor(
     private val historyRepository: AnalysisHistoryRepository,
 
     private val vehicleContextRepository: VehicleContextRepository,
-    private val vehicleStatusStore: VehicleStatusStore
+    private val vehicleStatusStore: VehicleStatusStore,
+    private val evidenceRepository: BatteryTrendEvidenceRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BatteryUiState())
@@ -212,6 +233,9 @@ class BatteryViewModel @Inject constructor(
     private var carId: Int? = null
     private var identityJob: Job? = null
     private var activeScope: HistoryReadScope? = null
+    private var activeVehicle: VehicleContext? = null
+    private val evidencePublicationLock = Any()
+    private var evidenceTrend: Pair<Int, BatteryTrendEstimate>? = null
     private var identityEpoch = 0L
     private val loader = ScopedUiLoader(viewModelScope)
 
@@ -226,7 +250,10 @@ class BatteryViewModel @Inject constructor(
     }
 
     fun setCarId(id: Int, efficiency: Double? = null) {
-        if (carId != id) {
+        val scope = activeScope
+        val vehicle = activeVehicle
+        if (carId != id || (scope != null && vehicle != null &&
+                !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle))) {
             activate(id, efficiency)
         }
     }
@@ -237,6 +264,8 @@ class BatteryViewModel @Inject constructor(
         identityJob?.cancel()
         loader.invalidate()
         activeScope = null
+        activeVehicle = null
+        synchronized(evidencePublicationLock) { evidenceTrend = null }
         _uiState.value = BatteryUiState(ratedEfficiency = efficiency?.takeIf { it.isFinite() && it > 0.0 })
         identityJob = viewModelScope.launch {
             try {
@@ -274,6 +303,11 @@ class BatteryViewModel @Inject constructor(
     }
 
     private fun loadBatteryData(id: Int, scope: HistoryReadScope) {
+        if (activeVehicle?.let { !vehicleContextRepository.isHistoryContextCurrentNow(scope, it) } == true) {
+            activeVehicle = null
+            synchronized(evidencePublicationLock) { evidenceTrend = null }
+            _uiState.value = BatteryUiState(isRefreshing = _uiState.value.isRefreshing)
+        }
         val wasRefreshing = _uiState.value.isRefreshing
         if (!wasRefreshing) {
             _uiState.update { it.copy(isLoading = true) }
@@ -282,29 +316,121 @@ class BatteryViewModel @Inject constructor(
         loader.load(
             proof = { { carId == id && activeScope == scope && vehicleContextRepository.captureReadScope() == scope } },
             fetch = { request -> coroutineScope {
-                val cachedContext = vehicleContextRepository.cachedContextForRemote(id, scope)
-                if (cachedContext != null &&
-                    vehicleContextRepository.isHistoryContextCurrentNow(scope, cachedContext)) {
-                    val digest = if (scope.source == HistoryConnectionSource.CLOUD)
-                        vehicleContextRepository.cachedVerifiedStatusIdentityDigest(id, scope, cachedContext)
-                    else null
-                    val savedReceipt = readCachedBatteryReceipt(scope, cachedContext, digest, vehicleStatusStore)
+                val context = vehicleContextRepository.cachedContextForRemote(id, scope)
+                    ?: vehicleContextRepository.resolveRemote(id)
+                suspend fun requireVehicle() {
                     request.requireCurrent()
-                    if (!vehicleContextRepository.isHistoryContextCurrentNow(scope, cachedContext))
+                    if (!vehicleContextRepository.isHistoryContextCurrentNow(scope, context)) {
+                        if (carId == id && activeScope == scope) activate(id, null)
                         throw CancellationException("Battery history identity changed")
-                    if (savedReceipt != null) _uiState.update {
-                        it.copy(isLoading = false, carStatus = savedReceipt.displayStatus,
-                            units = savedReceipt.units, isCachedStatus = true)
+                    }
+                }
+                fun isBoundNow(): Boolean = carId == id && activeScope == scope &&
+                    vehicleContextRepository.isHistoryContextCurrentNow(scope, context)
+                fun requireSnapshot(snapshot: com.matelink.domain.analytics.AnalysisHistorySnapshot?) {
+                    if (snapshot == null) return
+                    val vehicle = snapshot.context ?: throw HistoryIdentityUnavailableException()
+                    if (vehicle.remoteApiCarId != id || vehicle.localHistoryCarId != context.localHistoryCarId ||
+                        !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle))
+                        throw HistoryIdentityUnavailableException()
+                }
+                requireVehicle()
+                if (activeVehicle?.let { it.localHistoryCarId != context.localHistoryCarId ||
+                        it.remoteApiCarId != context.remoteApiCarId } == true) {
+                    synchronized(evidencePublicationLock) { evidenceTrend = null }
+                    _uiState.value = BatteryUiState(isRefreshing = _uiState.value.isRefreshing)
+                }
+                activeVehicle = context
+                val digest = if (scope.source == HistoryConnectionSource.CLOUD)
+                    vehicleContextRepository.cachedVerifiedStatusIdentityDigest(id, scope, context)
+                else null
+                val savedReceipt = readCachedBatteryReceipt(scope, context, digest, vehicleStatusStore)
+                requireVehicle()
+                if (savedReceipt != null) _uiState.update {
+                    it.copy(isLoading = false, carStatus = savedReceipt.displayStatus,
+                        units = savedReceipt.units, isCachedStatus = true)
+                }
+                val evidencePriority = AtomicBoolean(false)
+                val evidenceUnavailable = AtomicBoolean(false)
+                if (scope.source == HistoryConnectionSource.CLOUD && evidenceRepository != null) {
+                    val cachedResult = try { evidenceRepository.loadCached(scope, context) }
+                        catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+                    requireVehicle()
+                    val cachedEvidence = (cachedResult as? ApiResult.Success)?.data
+                    if ((cachedResult as? ApiResult.Error)?.details == BATTERY_EVIDENCE_SOURCE_CONFLICT) {
+                        synchronized(evidencePublicationLock) {
+                            if (!isBoundNow()) return@synchronized
+                            evidencePriority.set(true)
+                            val retained = evidenceTrend?.takeIf { it.first == context.localHistoryCarId }?.second
+                            _uiState.update { state ->
+                                state.copy(batteryTrend = retained, isCachedTrend = retained != null)
+                            }
+                        }
+                    }
+                    if (cachedEvidence != null) {
+                        val trend = estimateBatteryTrend(cachedEvidence.samples)
+                        requireVehicle()
+                        synchronized(evidencePublicationLock) {
+                            if (!isBoundNow()) return@synchronized
+                            evidencePriority.set(trend.source != BatteryTrendSource.UNAVAILABLE)
+                            _uiState.update { it.copy(isLoading = false).withRetainedTrend(trend, candidateIsCached = true) }
+                            evidenceTrend = context.localHistoryCarId to trend
+                        }
+                    }
+                    launch {
+                        try {
+                            val result = evidenceRepository.refresh(scope, context)
+                            requireVehicle()
+                            if ((result as? ApiResult.Error)?.details == BATTERY_EVIDENCE_SOURCE_CONFLICT) {
+                                synchronized(evidencePublicationLock) {
+                                    if (!isBoundNow()) return@synchronized
+                                    evidencePriority.set(true)
+                                    val retained = evidenceTrend?.takeIf { it.first == context.localHistoryCarId }?.second
+                                    _uiState.update { state ->
+                                        state.copy(batteryTrend = retained, isCachedTrend = retained != null)
+                                    }
+                                }
+                            }
+                            val evidence = (result as? ApiResult.Success)?.data
+                            if (result is ApiResult.Error || evidence == null) {
+                                synchronized(evidencePublicationLock) {
+                                    if (!isBoundNow()) return@synchronized
+                                    evidenceUnavailable.set(true)
+                                    if (!evidencePriority.get()) _uiState.update {
+                                        if (it.batteryTrend != null) it.copy(isCachedTrend = true) else it
+                                    }
+                                }
+                            }
+                            if (evidence != null) {
+                                val trend = estimateBatteryTrend(evidence.samples)
+                                requireVehicle()
+                                synchronized(evidencePublicationLock) {
+                                    if (!isBoundNow()) return@synchronized
+                                    if (trend.source != BatteryTrendSource.UNAVAILABLE) evidencePriority.set(true)
+                                    else evidenceUnavailable.set(true)
+                                    _uiState.update {
+                                        it.copy(isLoading = false).withRetainedTrend(trend, evidence.isCached)
+                                    }
+                                    evidenceTrend = context.localHistoryCarId to trend
+                                }
+                            }
+                        } catch (e: CancellationException) { throw e } catch (_: Exception) { }
                     }
                 }
                 val cachedHistory = try { historyRepository.loadCached(id) }
                     catch (e: CancellationException) { throw e }
                     catch (_: Exception) { null }
-                request.requireCurrent()
-                val cachedTrend = (cachedHistory as? ApiResult.Success)?.data?.drives
-                    ?.mapNotNull { it.toBatteryTrendSample() }?.let(::estimateBatteryTrend)
-                if (cachedTrend != null) _uiState.update {
-                    it.copy(isLoading = false, batteryTrend = cachedTrend, isCachedTrend = true)
+                requireVehicle()
+                val cachedSnapshot = (cachedHistory as? ApiResult.Success)?.data
+                requireSnapshot(cachedSnapshot)
+                val cachedTrend = cachedSnapshot?.drives
+                    ?.batteryTrendSamples(scope.source == HistoryConnectionSource.CLOUD)?.let(::estimateBatteryTrend)
+                requireVehicle()
+                synchronized(evidencePublicationLock) {
+                    if (!isBoundNow()) return@synchronized
+                    if (cachedTrend != null && !evidencePriority.get()) _uiState.update {
+                        it.copy(isLoading = false).withRetainedTrend(cachedTrend, candidateIsCached = true)
+                    }
                 }
                 // Readiness is optional and must not delay health/status rendering.
                 val readinessDeferred = async {
@@ -318,7 +444,9 @@ class BatteryViewModel @Inject constructor(
                 }
 
                 val healthResult = repository.getBatteryHealth(id)
+                requireVehicle()
                 val statusResult = repository.getCarStatus(id)
+                requireVehicle()
                 val historyResult = try {
                     historyRepository.load(id)
                 } catch (e: CancellationException) {
@@ -326,31 +454,38 @@ class BatteryViewModel @Inject constructor(
                 } catch (_: Exception) {
                     null
                 }
-                val batteryTrend = (historyResult as? ApiResult.Success)
-                    ?.data
-                    ?.drives
-                    ?.mapNotNull { it.toBatteryTrendSample() }
+                requireVehicle()
+                val historySnapshot = (historyResult as? ApiResult.Success)?.data
+                requireSnapshot(historySnapshot)
+                val batteryTrend = historySnapshot?.drives
+                    ?.batteryTrendSamples(scope.source == HistoryConnectionSource.CLOUD)
                     ?.let(::estimateBatteryTrend)
 
-                request.requireCurrent()
+                requireVehicle()
                 val latestStatus = (statusResult as? ApiResult.Success)?.data?.status
                 val latestUnits = (statusResult as? ApiResult.Success)?.data?.units
-                val historyFresh = (historyResult as? ApiResult.Success)?.data
-                    ?.freshness == HistoryFreshness.FRESH
-                _uiState.update { previous ->
-                    previous.withHealthStatus(healthResult,
-                        latestStatus ?: previous.carStatus,
-                        latestUnits ?: previous.units, batteryTrend).copy(
-                        isCachedStatus = latestStatus == null && previous.isCachedStatus,
-                        isCachedTrend = if (batteryTrend != null) !historyFresh
-                            else previous.isCachedTrend
-                    )
+                val historyFresh = historySnapshot?.freshness == HistoryFreshness.FRESH
+                synchronized(evidencePublicationLock) {
+                    if (!isBoundNow()) return@synchronized
+                    _uiState.update { previous ->
+                        val status = previous.withHealthStatus(healthResult,
+                            latestStatus ?: previous.carStatus, latestUnits ?: previous.units, null)
+                        (if (evidencePriority.get()) status else
+                            status.withRetainedTrend(batteryTrend, !historyFresh || evidenceUnavailable.get()))
+                            .copy(isCachedStatus = latestStatus == null && previous.carStatus != null)
+                    }
                 }
 
                 val readinessResult = readinessDeferred.await()
+                requireVehicle()
                 Pair(healthResult, (readinessResult as? ApiResult.Success)?.data)
             } },
-            onSuccess = { (healthResult, readiness) ->
+            onSuccess = success@{ (healthResult, readiness) ->
+                val vehicle = activeVehicle
+                if (vehicle == null || !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) {
+                    if (carId == id && activeScope == scope) activate(id, null)
+                    return@success
+                }
                 _uiState.update {
                     it.copy(
                         dataReadiness = readiness,
@@ -358,7 +493,12 @@ class BatteryViewModel @Inject constructor(
                     )
                 }
             },
-            onFailure = { error ->
+            onFailure = failure@{ error ->
+                val vehicle = activeVehicle
+                if (vehicle != null && !vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)) {
+                    if (carId == id && activeScope == scope) activate(id, null)
+                    return@failure
+                }
                 _uiState.update {
                     it.copy(
                         isLoading = false,
@@ -461,4 +601,19 @@ internal fun DriveData.toBatteryTrendSample(): BatteryTrendSample? {
         startBatteryLevel?.toDouble(), startRatedRangeKm, outsideTempC)
         ?: qualifiedBatteryTrendSample(parseIsoDateTime(endDate)?.toLocalDate(),
             endBatteryLevel?.toDouble(), endRatedRangeKm, outsideTempC)
+}
+
+/** Cloud fallback is accepted only when every usable sample has one proven source instance. */
+private fun List<DriveData>.batteryTrendSamples(cloud: Boolean): List<BatteryTrendSample>? {
+    val usable = mapNotNull { drive -> drive.toBatteryTrendSample()?.let { drive to it } }
+    if (cloud && usable.isNotEmpty()) {
+        val sources = usable.map { (drive, _) ->
+            val source = drive.source?.takeIf { it in setOf("teslamate_archive", "telemetry_mqtt", "fleet_api") }
+            val instance = drive.sourceInstanceId?.takeIf { it.isNotBlank() }
+            if (source == null || instance == null || drive.sourceRecordIdentity.conflicted) return null
+            source to instance
+        }
+        if (sources.distinct().size != 1) return null
+    }
+    return usable.map { it.second }
 }

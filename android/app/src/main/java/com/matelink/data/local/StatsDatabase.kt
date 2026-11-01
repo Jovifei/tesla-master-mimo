@@ -5,6 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.matelink.data.local.dao.AggregateDao
+import com.matelink.data.local.dao.BatteryTrendEvidenceDao
 import com.matelink.data.local.dao.ChargeCostOverrideDao
 import com.matelink.data.local.dao.ChargeSummaryDao
 import com.matelink.data.local.dao.DriveSummaryDao
@@ -20,6 +21,7 @@ import com.matelink.data.local.dao.TripCountryCacheDao
 import com.matelink.data.local.dao.TripRouteCacheDao
 import com.matelink.data.local.dao.TpmsPressureSampleDao
 import com.matelink.data.local.entity.ChargeDetailAggregate
+import com.matelink.data.local.entity.BatteryTrendEvidence
 import com.matelink.data.local.entity.ChargeCostOverride
 import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.DriveDetailAggregate
@@ -71,9 +73,10 @@ import com.matelink.data.local.entity.TpmsPressureSample
         TpmsPressureSample::class,
         LegacyHistoryArchive::class,
         HistoryDetailReceipt::class,
-        HistoryDetailChunk::class
+        HistoryDetailChunk::class,
+        BatteryTrendEvidence::class
     ],
-    version = 23,
+    version = 24,
     exportSchema = true
 )
 abstract class StatsDatabase : RoomDatabase() {
@@ -93,6 +96,7 @@ abstract class StatsDatabase : RoomDatabase() {
     abstract fun tpmsPressureSampleDao(): TpmsPressureSampleDao
     abstract fun legacyHistoryArchiveDao(): LegacyHistoryArchiveDao
     abstract fun historyDetailDao(): HistoryDetailDao
+    abstract fun batteryTrendEvidenceDao(): BatteryTrendEvidenceDao
 
     companion object {
         const val DATABASE_NAME = "matelink_stats.db"
@@ -540,6 +544,21 @@ abstract class StatsDatabase : RoomDatabase() {
             }
         }
 
+        /** Add a separate evidence store without modifying history or user-entered data. */
+        val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS battery_trend_evidence (
+                        scopeFingerprint TEXT NOT NULL, localHistoryCarId INTEGER NOT NULL,
+                        sourceInstanceId TEXT NOT NULL, sourceVehicleId TEXT NOT NULL,
+                        sourceRecordId TEXT NOT NULL, payloadSha256 TEXT NOT NULL,
+                        observationJson TEXT NOT NULL,
+                        PRIMARY KEY(scopeFingerprint, localHistoryCarId, sourceInstanceId, sourceVehicleId, sourceRecordId)
+                    )
+                """.trimIndent())
+            }
+        }
+
         val MIGRATION_19_20 = object : Migration(19, 20) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `drives_summary` ADD COLUMN `qualityState` TEXT NOT NULL DEFAULT 'incomplete'")
@@ -873,7 +892,7 @@ abstract class StatsDatabase : RoomDatabase() {
             MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
             MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
             MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-            MIGRATION_21_22, MIGRATION_22_23
+            MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24
         )
     }
 }

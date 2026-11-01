@@ -40,6 +40,8 @@ import com.matelink.di.TeslamateApiFactory
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -252,6 +254,8 @@ class TeslamateRepository @Inject constructor(
 
     // Cache: true = endpoint exists (API 1.24+), false = 404 (older API)
     private val currentChargeApiAvailable = mutableMapOf<Int, Boolean>()
+    private val batteryEvidenceAdapter = com.squareup.moshi.Moshi.Builder().build()
+        .adapter(com.matelink.data.api.models.BatteryTrendEvidenceResponse::class.java)
 
     /**
      * Check whether the current charge endpoint is available for the given car.
@@ -696,6 +700,40 @@ class TeslamateRepository @Inject constructor(
             }
         }
     }
+
+    /** This evidence endpoint exists only for the authenticated cloud source. */
+    suspend fun getBatteryTrendEvidence(
+        carId: Int, cursor: String?, snapshotMaxSeq: Long?,
+        fence: com.matelink.data.api.ArchiveEnrollmentRequestFence
+    ): ApiResult<com.matelink.data.api.models.BatteryTrendEvidencePage> =
+        executeWithFallback(requiredCloudMode = true) { api ->
+            val response = api.getBatteryTrendEvidence(carId, cursor, snapshotMaxSeq, 50, fence)
+            if (!response.isSuccessful) {
+                response.errorBody()?.close()
+                ApiResult.Error("Battery trend evidence unavailable", response.code())
+            }
+            else {
+                val body = response.body()
+                val page = body?.use {
+                    withContext(Dispatchers.IO) {
+                        val maximum = 1024L * 1024L
+                        if (it.contentLength() > maximum) null else {
+                            val source = it.source()
+                            source.timeout().deadline(20L, java.util.concurrent.TimeUnit.SECONDS)
+                            val buffer = okio.Buffer()
+                            while (buffer.size <= maximum) {
+                                val read = source.read(buffer, minOf(8192L, maximum + 1L - buffer.size))
+                                if (read == -1L) break
+                            }
+                            if (buffer.size > maximum) null else
+                                runCatching { batteryEvidenceAdapter.fromJson(buffer.readUtf8())?.data }.getOrNull()
+                        }
+                    }
+                }
+                page?.let { ApiResult.Success(it) }
+                    ?: ApiResult.Error("Battery trend evidence response invalid", kind = ApiErrorKind.INVALID_RESPONSE)
+            }
+        }
 
     override suspend fun getDataReadiness(carId: Int): ApiResult<DataReadiness> {
         if (isMockMode()) return ApiResult.Success(compatibilityDataReadiness(carId))

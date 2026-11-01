@@ -28,7 +28,8 @@ interface HistoryDetailDao {
     @Query("SELECT * FROM history_detail_chunks WHERE receiptId = :receiptId ORDER BY chunkIndex ASC")
     suspend fun chunks(receiptId: String): List<HistoryDetailChunk>
 
-    @Query("SELECT COALESCE(SUM(encodedByteCount), 0) FROM history_detail_receipts WHERE state != 'failed'")
+    /** Cold source receipts have a separate bound and must not consume curve storage. */
+    @Query("SELECT COALESCE(SUM(encodedByteCount), 0) FROM history_detail_receipts WHERE state != 'failed' AND NOT (state = 'archived_source_conflict' AND kind IN ('archived_drive_source', 'archived_charge_source'))")
     suspend fun storedByteCount(): Long
 
     @Insert

@@ -16,22 +16,41 @@ class HistoryRefreshIntegrationContractTest {
         for (kind in listOf("drives/Drives", "charges/Charges")) {
             val source = source("ui/screens/${kind}ViewModel.kt")
             assertTrue(source.contains("private val clock: Clock"))
-            assertTrue(source.contains("refreshedHistoryWindow("))
+            val refreshMethod = if (kind.startsWith("drives")) "refreshForForeground" else "refresh"
+            val refresh = source.substringAfter("fun $refreshMethod() {").substringBefore("\n    fun ")
+            assertTrue(Regex("refreshedHistoryWindow\\([\\s\\S]{0,240}\\bclock\\s*\\)").containsMatchIn(refresh))
+            if (kind.startsWith("drives")) {
+                val manual = source.substringAfter("fun refresh() {").substringBefore("\n    fun ")
+                assertTrue(manual.contains("attemptedEnergy.clear()"))
+                assertTrue(manual.contains("refreshForForeground()"))
+                assertFalse(refresh.contains("attemptedEnergy.clear()"))
+            }
             assertTrue(source.contains("latestLoad.launch(viewModelScope)"))
             // Cold starts must resolve the localHistoryCarId mapping offline before
             // reading the Room cache; the remote car id alone cannot hit those rows.
             assertTrue(source.contains("cachedContextForRemote("))
-            // Behavior tests cover timeout and in-flight Room publication; do not
-            // require the timeout block to contain only the network call.
-            assertTrue(source.contains("val result = withTimeoutOrNull(HISTORY_LOAD_TIMEOUT_MS) {"))
-            assertTrue(source.contains("historyRepository.load(id, startDateStr, endDateStr)"))
+            assertTrue(source.contains("private const val HISTORY_LOAD_TIMEOUT_MS = 20_000L"))
+            val request = source.substringAfter("withTimeoutOrNull(HISTORY_LOAD_TIMEOUT_MS) {", "")
+                .substringBefore("if (result == null)")
+            assertTrue(request.contains("historyRepository.load(id, startDateStr, endDateStr)"))
+            assertTrue(request.contains("ensureCurrent()"))
+            if (kind.startsWith("charges")) {
+                assertTrue(Regex("catch \\(e: CancellationException\\)\\s*\\{\\s*throw e\\s*}")
+                    .containsMatchIn(request))
+            }
+            assertTrue(source.contains("val requestZone = clock.zone"))
+            assertTrue(source.contains("LocalDayBoundaries.startOfDay(it, requestZone)"))
+            assertTrue(source.contains("LocalDayBoundaries.endOfDay(it, requestZone)"))
             assertTrue(source.contains("historyTimeoutMessage("))
+            assertTrue(source.contains("timeoutText = \"history_sync_timeout\""))
             assertTrue(source.contains("HISTORY_IDENTITY_UNAVAILABLE"))
         }
     }
     @Test fun historyScreensWireSingleForegroundReturnEffect() {
-        for (kind in listOf("drives/Drives", "charges/Charges")) {
-            assertTrue(source("ui/screens/${kind}Screen.kt").contains("HistoryForegroundRefreshEffect { viewModel.refresh() }"))
+        for ((kind, foregroundMethod) in listOf("drives/Drives" to "refreshForForeground", "charges/Charges" to "refresh")) {
+            val screen = source("ui/screens/${kind}Screen.kt")
+            assertTrue(screen.contains("HistoryForegroundRefreshEffect { viewModel.$foregroundMethod() }"))
+            assertTrue(screen.contains("onRefresh = { viewModel.refresh() }"))
         }
         val effect = source("ui/components/HistoryForegroundRefreshEffect.kt")
         assertTrue(effect.contains("ON_STOP -> gate.onStop()"))

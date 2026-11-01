@@ -52,11 +52,15 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.derivedStateOf
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import com.matelink.ui.components.HistoryArchiveNotice
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -128,7 +132,18 @@ fun DrivesScreen(
     )
 
     // Initialize ViewModel with carId (only loads data on first call)
-    HistoryForegroundRefreshEffect { viewModel.refresh() }
+    HistoryForegroundRefreshEffect { viewModel.refreshForForeground() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) viewModel.pauseEnrichment()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.pauseEnrichment()
+        }
+    }
     LaunchedEffect(carId) {
         viewModel.setCarId(carId)
     }
@@ -675,7 +690,6 @@ private fun DriveItem(
     val endCity = formattedEnd ?: unknown
 
     val energyPres = drive.historyEnergy(metrics)
-    val efficiency = energyPres.efficiencyWhKm
     val start = drive.startBatteryLevel
     val end = drive.endBatteryLevel
 
@@ -731,10 +745,7 @@ private fun DriveItem(
                         TelemetryMetricSpec(
                             icon = Icons.Default.Bolt,
                             label = stringResource(R.string.energy),
-                            value = efficiency
-                                ?.takeIf(Double::isFinite)
-                                ?.let { visualTripNumber(it / 10.0) }
-                                ?: stringResource(R.string.not_available),
+                            value = driveHistoryEfficiencyText(energyPres) ?: stringResource(R.string.not_available),
                             tint = Color(0xFF10B981),
                             unit = "kWh/100km",
                             valueFontSize = 16.sp
@@ -1072,6 +1083,12 @@ internal fun DrivesChartPage(
 }
 
 /** Display-only precision: a nonzero observation must not look like a true zero. */
+internal fun driveHistoryEfficiencyText(energy: DriveDetailEnergyPresentation): String? =
+    energy.efficiencyWhKm?.takeIf(Double::isFinite)?.let {
+        val value = visualTripNumber(it / 10.0)
+        if (energy.isEstimated) "≈$value" else value
+    }
+
 internal fun visualTripNumber(value: Double, decimals: Int = 1): String {
     return com.matelink.ui.components.formatTelemetryNumber(value, decimals)
 }

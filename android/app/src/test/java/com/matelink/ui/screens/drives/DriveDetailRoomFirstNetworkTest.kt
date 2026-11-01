@@ -16,7 +16,8 @@ import java.lang.reflect.Proxy
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -76,7 +77,7 @@ class DriveDetailRoomFirstNetworkTest {
             assertEquals("cached A", failedRefresh.driveDetail?.startAddress)
         } finally {
             gate.complete(Unit)
-            vm?.viewModelScope?.cancel()
+            vm?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
             fixture.close()
             Dispatchers.resetMain()
         }

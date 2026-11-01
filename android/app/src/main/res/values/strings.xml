@@ -1224,11 +1224,11 @@
 <string name="settings_release_notes_body" formatted="false">• Improved weak-network startup: saved history can appear automatically before refresh completes.\n• Corrected charging costs, drive energy, temperature units and chart timing. Time-of-use prices provide estimated costs and never replace a known bill.\n• Unknown values, real zero and sampled data stay distinct; missing history is not invented.\n• Account and vehicle changes isolate old data; alerts are deduplicated from real observations.\n• Summary, report-year and export consistency are corrected while existing page layouts are retained.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>
-    <string name="settings_resync_dialog_text_delete">This will delete all local data.</string>
-    <string name="settings_resync_dialog_text_prefix">Resync will</string>
-    <string name="settings_resync_dialog_text_suffix">and re-download from server.</string>
+    <string name="settings_resync_dialog_text_delete">keep existing data</string>
+    <string name="settings_resync_dialog_text_prefix">Resync will\u0020</string>
+    <string name="settings_resync_dialog_text_suffix">\u0020and check the server for missing history.</string>
     <string name="settings_resync_dialog_title">Resync Data</string>
-    <string name="settings_resync_hint">Force full data resync</string>
+    <string name="settings_resync_hint">Recheck history and keep existing data</string>
     <string name="settings_resyncing">Resyncing…</string>
     <string name="settings_save">Save</string>
     <string name="settings_secondary_server">Secondary API</string>
@@ -1525,7 +1525,7 @@
 
     <!-- ViewModel errors -->
     <string name="error_save_settings">Failed to save settings</string>
-    <string name="resync_started">Full resync started. All cached data cleared. Check the Stats screen for progress.</string>
+    <string name="resync_started">History resync started. Existing data will be kept.</string>
     <string name="error_resync">Failed to start resync: %1$s</string>
     <string name="debug_tpms_simulated">Simulated TPMS warning for %1$s</string>
     <string name="debug_sentry_simulated">Simulated sentry event #%1$d</string>

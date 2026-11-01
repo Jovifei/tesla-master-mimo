@@ -50,4 +50,20 @@ class LatestHistoryLoadTest {
         runCurrent()
         assertEquals(1, updates)
     }
+
+    @Test fun identityInvalidationRejectsLateResultWithoutStartingAnotherLoad() = runTest {
+        val loader = LatestHistoryLoad()
+        val release = CompletableDeferred<Unit>()
+        var published = false
+        loader.launch(this) {
+            withContext(NonCancellable) { release.await() }
+            ensureCurrent()
+            published = true
+        }
+        runCurrent()
+        loader.invalidate()
+        release.complete(Unit)
+        runCurrent()
+        assertFalse(published)
+    }
 }

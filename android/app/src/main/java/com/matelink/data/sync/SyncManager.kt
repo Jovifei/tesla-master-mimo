@@ -212,22 +212,10 @@ class SyncManager @Inject constructor(
         updateOverallStatus()
     }
 
-    /**
-     * Full reset for a car: deletes ALL cached data (drives, charges, aggregates)
-     * and resets sync state. This forces a complete resync from the API.
-     */
+    /** Recheck history without removing saved summaries, details, or aggregates. */
     suspend fun fullResetSync(carId: Int) {
-        // Delete all cached data
-        driveSummaryDao.deleteAllForCar(carId)
-        chargeSummaryDao.deleteAllForCar(carId)
-        aggregateDao.deleteDriveAggregatesForCar(carId)
-        aggregateDao.deleteChargeAggregatesForCar(carId)
-
-        // Reset sync state
-        syncStateDao.resetForResync(carId)
-
-        updateProgress(carId, SyncPhase.IDLE, 0, 0)
-        updateOverallStatus()
+        getOrCreateSyncState(carId)
+        resetSync(carId)
     }
 
     private fun updateProgress(

@@ -15,6 +15,7 @@ import com.matelink.data.repository.ChineseLocationAvailability
 import com.matelink.data.sync.HistoryResourceFixture
 import com.matelink.data.sync.toSyncSummary
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
+import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.ui.components.historyReadWarningMessageRes
 import com.matelink.di.TeslamateApiFactory
 import com.squareup.moshi.Moshi
@@ -22,6 +23,8 @@ import java.io.File
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -36,6 +39,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -581,7 +585,7 @@ class Oct28LiveRoomDriveConsumerTest {
             assertEquals(corrected.startAddress, displayed.drives.single().startAddress)
             assertEquals(corrected.endAddress, displayed.drives.single().endAddress)
             gate.complete(Unit)
-            awaitInitialLoad(page)
+            awaitAddressEnrichment(page)
             val afterOldLookup = page.uiState.value.drives.single()
             assertEquals("an older same-session start lookup must not overwrite the Room correction",
                 corrected.startAddress, afterOldLookup.startAddress)
@@ -602,7 +606,7 @@ class Oct28LiveRoomDriveConsumerTest {
             assertNull(pending.startAddress)
             assertNull(pending.endAddress)
             gate.complete(Unit)
-            awaitInitialLoad(page)
+            awaitAddressEnrichment(page)
             val filled = page.uiState.value.drives.single()
             assertEquals(remote.source, filled.source)
             assertEquals(remote.sourceInstanceId, filled.sourceInstanceId)
@@ -613,8 +617,271 @@ class Oct28LiveRoomDriveConsumerTest {
         }
     }
 
+    @Test
+    @Config(shadows = [Oct28GatedAmapReverseShadow::class])
+    fun lateAddressCannotCrossVehicle() = runBlocking {
+        withGatedGeocoding("oct28-geocode-car-switch.db") { fixture, page, _, remote, gate ->
+            val previous = currentAddressJob(page)
+            val otherCar = fixture.localId(2)
+            fixture.db.driveSummaryDao().upsert(remote.copy(sourceInstanceId = "vehicle-B",
+                startAddress = "车辆B起点", endAddress = "车辆B终点").toSyncSummary(otherCar)!!)
+            fixture.detailResponse = { path -> if (path.endsWith("/drives")) """{"data":{"drives":[]}}""" else null }
+            page.setCarId(2)
+            gate.complete(Unit)
+            withTimeout(10_000) { previous.join() }
+            val current = withTimeout(10_000) { page.uiState.first { it.drives.singleOrNull()?.startAddress == "车辆B起点" } }
+            assertEquals("车辆B终点", current.drives.single().endAddress)
+        }
+    }
+
+    @Test
+    @Config(shadows = [Oct28GatedAmapReverseShadow::class])
+    fun lateAddressCannotCrossAccount() = runBlocking {
+        withGatedGeocoding("oct28-geocode-account-switch.db", cloud = true) { fixture, page, localCarId, remote, gate ->
+            val previous = currentAddressJob(page)
+            fixture.detailResponse = { path -> when {
+                path.endsWith("/history-context") -> """{"data":{"capability_version":1,"car_id":1,"vehicle_uid":"synthetic-vehicle-1"}}"""
+                path.endsWith("/drives") -> """{"data":{"drives":[]}}"""
+                else -> null
+            } }
+            fixture.sessions.save("new-access", "new-refresh", 3600, "another-account")
+            gate.complete(Unit)
+            withTimeout(10_000) { previous.join() }
+            withTimeout(10_000) { page.uiState.first { it.drives.none { drive -> drive.driveId == remote.driveId } } }
+            assertNull(fixture.db.driveSummaryDao().get(localCarId, remote.driveId)!!.toAnalysisDriveData().startAddress)
+        }
+    }
+
+    @Test
+    @Config(shadows = [Oct28GatedAmapReverseShadow::class])
+    fun sharedLocationPublishesAllMatchingDrivesWithoutReplacingCorrection() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val fixture = HistoryResourceFixture(File(temp.root, "oct28-shared-location.db"))
+        val entered = CompletableDeferred<Unit>()
+        val gate = CompletableDeferred<Unit>()
+        val chargeGate = CompletableDeferred<Unit>()
+        var page: DrivesViewModel? = null
+        try {
+            fixture.initialize()
+            val local = fixture.localId(1)
+            val base = Instant.parse("2026-10-28T00:00:00Z")
+            val drives = (1..3).map { id ->
+                val start = base.plusSeconds(id * 120L)
+                drive(id, "2026-10-28", 8, 2.0).copy(startDate = start.toString(),
+                    endDate = start.plusSeconds(60).toString(), startAddress = null,
+                    endAddress = "已有终点", startLatitude = 31.2, startLongitude = 121.4)
+            }
+            fixture.db.driveSummaryDao().upsertAll(drives.map { it.toSyncSummary(local)!! })
+            fixture.onRequest = { path -> if (path.endsWith("/cars/1/charges")) chargeGate.await() }
+            Oct28GatedAmapReverseShadow.lookup = { _, _ ->
+                entered.complete(Unit)
+                gate.await()
+                ChineseLocation("共享地点", "CN", "China", "Synthetic", "Synthetic")
+            }
+            val vm = createPage(fixture)
+            page = vm
+            vm.setCarId(1)
+            withTimeout(10_000) { entered.await() }
+            fixture.db.driveSummaryDao().upsert(drives[2].copy(startAddress = "用户修正地点").toSyncSummary(local)!!)
+            withTimeout(10_000) {
+                vm.uiState.first { state -> state.drives.firstOrNull { it.driveId == 3 }?.startAddress == "用户修正地点" }
+            }
+            gate.complete(Unit)
+            val state = withTimeout(10_000) {
+                vm.uiState.first { state -> state.drives.firstOrNull { it.driveId == 1 }?.startAddress == "共享地点" &&
+                    state.drives.firstOrNull { it.driveId == 2 }?.startAddress == "共享地点" &&
+                    state.drives.firstOrNull { it.driveId == 3 }?.startAddress == "用户修正地点" }
+            }
+            assertEquals("用户修正地点", state.drives.first { it.driveId == 3 }.startAddress)
+        } finally {
+            gate.complete(Unit)
+            chargeGate.complete(Unit)
+            page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
+            Oct28GatedAmapReverseShadow.lookup = { _, _ -> null }
+            fixture.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    @Config(shadows = [Oct28GatedAmapReverseShadow::class])
+    fun currentPageAutomaticallyResolvesBeyondFirstTenWithoutRepeating() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val fixture = HistoryResourceFixture(File(temp.root, "oct28-geocode-next-batch.db"))
+        var page: DrivesViewModel? = null
+        try {
+            fixture.initialize()
+            val local = fixture.localId(1)
+            val base = Instant.parse("2026-10-28T00:00:00Z")
+            val drives = (1..12).map { id ->
+                val start = base.plusSeconds(id * 120L)
+                drive(id, "2026-10-28", 8, 2.0).copy(startDate = start.toString(),
+                    endDate = start.plusSeconds(60).toString(), startAddress = null,
+                    endAddress = "已有终点", startLatitude = 31.0 + id / 100.0, startLongitude = 121.0)
+            }
+            fixture.db.driveSummaryDao().upsertAll(drives.map { it.toSyncSummary(local)!! })
+            var lookups = 0
+            Oct28GatedAmapReverseShadow.lookup = { _, _ ->
+                lookups++
+                ChineseLocation("地点$lookups", "CN", "China", "Synthetic", "Synthetic")
+            }
+            val vm = createPage(fixture)
+            page = vm
+            vm.setCarId(1)
+            awaitInitialLoad(vm)
+            awaitAddressEnrichment(vm)
+            assertEquals(12, lookups)
+            val expected = drives.map { it.driveId }.toSet()
+            val initial = withTimeoutOrNull(10_000) {
+                vm.uiState.first { state -> state.drives.filter { !it.startAddress.isNullOrBlank() }.map { it.driveId }.toSet() == expected }
+            } ?: vm.uiState.value
+            assertEquals("Every original drive must publish its address after automatic batches", expected,
+                initial.drives.filter { !it.startAddress.isNullOrBlank() }.map { it.driveId }.toSet())
+            vm.refreshForForeground()
+            awaitInitialLoad(vm)
+            awaitAddressEnrichment(vm)
+            assertEquals(12, lookups)
+            val refreshed = withTimeoutOrNull(10_000) {
+                vm.uiState.first { state -> state.drives.filter { !it.startAddress.isNullOrBlank() }.map { it.driveId }.toSet() == expected }
+            } ?: vm.uiState.value
+            assertEquals("Every original drive must retain its address after refresh", expected,
+                refreshed.drives.filter { !it.startAddress.isNullOrBlank() }.map { it.driveId }.toSet())
+            Unit
+        } finally {
+            page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
+            Oct28GatedAmapReverseShadow.lookup = { _, _ -> null }
+            fixture.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    @Config(shadows = [Oct28GatedAmapReverseShadow::class])
+    fun cachedAddressCannotCrossCarWhileChargeReadIsPending() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val fixture = HistoryResourceFixture(File(temp.root, "oct28-cache-address-car-switch.db"))
+        val chargeEntered = CompletableDeferred<Unit>()
+        val chargeRelease = CompletableDeferred<Unit>()
+        val addressEntered = CompletableDeferred<Unit>()
+        val addressRelease = CompletableDeferred<Unit>()
+        var page: DrivesViewModel? = null
+        try {
+            fixture.initialize()
+            val original = drive(BASE_ID, "2026-10-28", 8, 2.0).copy(startAddress = null,
+                endAddress = "A终点", startLatitude = 31.2, startLongitude = 121.4)
+            val replacement = original.copy(sourceInstanceId = "vehicle-B", startAddress = "车辆B起点", endAddress = "车辆B终点")
+            fixture.db.driveSummaryDao().upsert(original.toSyncSummary(fixture.localId(1))!!)
+            fixture.db.driveSummaryDao().upsert(replacement.toSyncSummary(fixture.localId(2))!!)
+            fixture.onRequest = { path ->
+                if (path.endsWith("/cars/1/charges")) { chargeEntered.complete(Unit); chargeRelease.await() }
+            }
+            Oct28GatedAmapReverseShadow.lookup = { _, _ ->
+                addressEntered.complete(Unit)
+                addressRelease.await()
+                ChineseLocation("车辆A旧起点", "CN", "China", "Synthetic", "Synthetic")
+            }
+            val vm = createPage(fixture)
+            page = vm
+            vm.setCarId(1)
+            withTimeout(10_000) { addressEntered.await(); chargeEntered.await() }
+            val previous = currentAddressJob(vm)
+            vm.setCarId(2)
+            addressRelease.complete(Unit)
+            chargeRelease.complete(Unit)
+            withTimeout(10_000) { previous.join() }
+            val state = withTimeout(10_000) { vm.uiState.first { it.drives.singleOrNull()?.startAddress == "车辆B起点" } }
+            assertEquals("车辆B终点", state.drives.single().endAddress)
+        } finally {
+            addressRelease.complete(Unit)
+            chargeRelease.complete(Unit)
+            page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
+            Oct28GatedAmapReverseShadow.lookup = { _, _ -> null }
+            fixture.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    @Config(shadows = [Oct28GatedAmapReverseShadow::class])
+    fun newCarAutomaticallyResolvesAfterAnOldBlockedLookupReleases() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val fixture = HistoryResourceFixture(File(temp.root, "oct28-geocode-release-event.db"))
+        val firstEntered = CompletableDeferred<Unit>()
+        val secondEntered = CompletableDeferred<Unit>()
+        val newEntered = CompletableDeferred<Unit>()
+        val firstRelease = CountDownLatch(1)
+        val secondRelease = CountDownLatch(1)
+        val historyRelease = CompletableDeferred<Unit>()
+        val oldCalls = AtomicInteger()
+        val physical = AtomicInteger()
+        val peak = AtomicInteger()
+        var page: DrivesViewModel? = null
+        try {
+            fixture.initialize()
+            val old = drive(10, "2026-10-28", 8, 2.0).copy(startAddress = null,
+                endAddress = "旧车终点", startLatitude = 31.2, startLongitude = 121.4)
+            val newer = drive(20, "2026-10-28", 9, 2.0).copy(sourceInstanceId = "vehicle-B",
+                startAddress = null, endAddress = "新车终点", startLatitude = 32.2, startLongitude = 121.4)
+            fixture.db.driveSummaryDao().upsert(old.toSyncSummary(fixture.localId(1))!!)
+            fixture.db.driveSummaryDao().upsert(newer.toSyncSummary(fixture.localId(2))!!)
+            fixture.onRequest = { path -> if (path.endsWith("/cars/1/drives")) historyRelease.await() }
+            Oct28GatedAmapReverseShadow.lookup = { latitude, _ ->
+                val running = physical.incrementAndGet()
+                peak.updateAndGet { maxOf(it, running) }
+                try {
+                    if (latitude == 31.2) {
+                        when (oldCalls.incrementAndGet()) {
+                            1 -> withContext(Dispatchers.IO) { firstEntered.complete(Unit); firstRelease.await() }
+                            else -> withContext(Dispatchers.IO) { secondEntered.complete(Unit); secondRelease.await() }
+                        }
+                        ChineseLocation("旧车地点", "CN", "China", "Synthetic", "Synthetic")
+                    } else {
+                        newEntered.complete(Unit)
+                        ChineseLocation("新车地点", "CN", "China", "Synthetic", "Synthetic")
+                    }
+                } finally { physical.decrementAndGet() }
+            }
+            val vm = createPage(fixture)
+            page = vm
+            vm.setCarId(1)
+            withTimeout(10_000) { firstEntered.await() }
+            val previous = currentAddressJob(vm)
+            vm.pauseEnrichment()
+            withTimeout(2_000) { previous.join() }
+            vm.refreshForForeground()
+            withTimeout(10_000) { secondEntered.await() }
+            assertEquals(2, physical.get())
+
+            vm.setCarId(2)
+            withTimeout(10_000) { vm.uiState.first { state -> state.drives.any { it.driveId == 20 } } }
+            awaitInitialLoad(vm)
+            val pending = currentAddressJob(vm)
+            assertTrue(pending.isActive)
+            assertFalse(newEntered.isCompleted)
+            firstRelease.countDown()
+            val result = withTimeout(10_000) {
+                vm.uiState.first { state -> state.drives.singleOrNull()?.let {
+                    it.driveId == 20 && it.startAddress == "新车地点"
+                } == true }
+            }
+            assertEquals("新车终点", result.drives.single().endAddress)
+            assertTrue(newEntered.isCompleted)
+            assertTrue("Physical geocoder calls must remain bounded", peak.get() <= 2)
+        } finally {
+            firstRelease.countDown()
+            secondRelease.countDown()
+            historyRelease.complete(Unit)
+            page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
+            withTimeout(10_000) { while (physical.get() != 0) delay(10) }
+            Oct28GatedAmapReverseShadow.lookup = { _, _ -> null }
+            fixture.close()
+            Dispatchers.resetMain()
+        }
+    }
+
     private suspend fun withGatedGeocoding(
         databaseName: String,
+        cloud: Boolean = false,
         body: suspend (HistoryResourceFixture, DrivesViewModel, Int, DriveData, CompletableDeferred<Unit>) -> Unit
     ) {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -623,13 +890,17 @@ class Oct28LiveRoomDriveConsumerTest {
         val gate = CompletableDeferred<Unit>()
         var page: DrivesViewModel? = null
         try {
-            fixture.initialize()
+            fixture.initialize(cloud = cloud)
             val localCarId = fixture.localId(1)
             val remote = drive(BASE_ID, "2026-10-28", 8, 2.0).copy(
                 startAddress = null, endAddress = null,
                 startLatitude = 31.2, startLongitude = 121.4, endLatitude = 31.3, endLongitude = 121.5)
             fixture.db.driveSummaryDao().upsertAll(listOf(requireNotNull(remote.toSyncSummary(localCarId))))
-            fixture.detailResponse = { path -> if (path.endsWith("/drives")) driveResponse(remote) else null }
+            fixture.detailResponse = { path -> when {
+                path.endsWith("/history-context") -> """{"data":{"capability_version":1,"car_id":1,"vehicle_uid":"synthetic-vehicle-1"}}"""
+                path.endsWith("/drives") -> driveResponse(remote)
+                else -> null
+            } }
             Oct28GatedAmapReverseShadow.lookup = { latitude, longitude ->
                 val isStart = latitude == remote.startLatitude && longitude == remote.startLongitude
                 if (isStart) { entered.complete(Unit); gate.await() }
@@ -672,6 +943,16 @@ class Oct28LiveRoomDriveConsumerTest {
             while (loadJob.get(loader) == null) delay(10)
             (loadJob.get(loader) as Job).join()
         }
+    }
+
+    private suspend fun awaitAddressEnrichment(page: DrivesViewModel) {
+        currentAddressJob(page).let { withTimeout(10_000) { it.join() } }
+    }
+
+    private suspend fun currentAddressJob(page: DrivesViewModel): Job = withTimeout(10_000) {
+        val field = DrivesViewModel::class.java.getDeclaredField("addressEnrichment").apply { isAccessible = true }
+        while (field.get(page) == null) delay(10)
+        field.get(page) as Job
     }
 
     private fun driveResponse(drive: DriveData): String {

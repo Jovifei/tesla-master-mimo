@@ -137,6 +137,7 @@ internal class Oct28IndependentHistoryFixture(database: File) {
     val chargeEntered = CompletableDeferred<Unit>()
     val chargeCancelled = CompletableDeferred<Unit>()
     var holdCharges = true
+    var chargeFailure: ApiResult.Error? = null
     var identityError: ApiResult.Error? = null
     var afterDriveResponse: suspend () -> Unit = {}
     var driveCalls = 0
@@ -210,7 +211,7 @@ internal class Oct28IndependentHistoryFixture(database: File) {
             if (holdCharges) {
                 try { awaitCancellation() }
                 finally { chargeCancelled.complete(Unit) }
-            } else ApiResult.Success(listOf(newCharge))
+            } else chargeFailure ?: ApiResult.Success(listOf(newCharge))
         },
         persistDrives = { resources.db.driveSummaryDao().upsertPreservingEvidence(it) },
         persistCharges = { resources.db.chargeSummaryDao().upsertPreservingEvidence(it) }
