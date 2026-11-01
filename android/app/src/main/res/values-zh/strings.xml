@@ -31,10 +31,10 @@
     <string name="history_detail_waiting_for_summary">该详情暂时无法与已保存的同一会话匹配，请刷新历史列表后重试。</string>
     <string name="history_detail_points_missing">详情采样点未能保存，离线时曲线可能不可用。</string>
     <string name="history_detail_cache_corrupt">本机详情点未通过完整性校验，当前仅显示摘要，不绘制曲线。</string>
-    <string name="history_detail_source_unverified">已保存本次收到的详情点，但来源实例或来源记录 ID 未核实，服务端总点数也未知。</string>
-    <string name="history_detail_total_unverified">已保存本次收到的详情点；服务端未提供总点数，完整覆盖尚未核实。</string>
-    <string name="history_detail_cached_source_unverified">离线显示本机保存的详情点；来源实例或记录 ID 与服务端完整覆盖尚未核实。</string>
-    <string name="history_detail_cached_total_unverified">离线显示本机保存的详情点；服务端完整覆盖尚未核实。</string>
+    <string name="history_detail_source_unverified">详情数据待核实</string>
+    <string name="history_detail_total_unverified">详情可能不完整</string>
+    <string name="history_detail_cached_source_unverified">显示缓存，详情数据待核实</string>
+    <string name="history_detail_cached_total_unverified">显示缓存，详情可能不完整</string>
     <string name="energy_source_api_reported">接口报告值</string>
     <string name="energy_source_energy_remaining_delta">剩余电量端点差</string>
     <string name="energy_source_soc_estimate">容量估算</string>
@@ -359,6 +359,7 @@
     <string name="loading">加载中…</string>
     <string name="loading_more_history">正在加载更多历史记录…</string>
     <string name="history_choose_date">选日期</string>
+    <string name="history_chart_partial_data">部分记录缺少数据</string>
     <string name="history_last_week">近 1 周</string>
     <string name="history_last_month">近 1 个月</string>
     <string name="history_last_three_months">近 3 个月</string>

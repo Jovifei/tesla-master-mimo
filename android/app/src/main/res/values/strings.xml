@@ -31,10 +31,10 @@
     <string name="history_detail_waiting_for_summary">This detail cannot be matched to a saved session yet. Refresh the history list and try again.</string>
     <string name="history_detail_points_missing">Detail points could not be saved. The chart may be unavailable offline.</string>
     <string name="history_detail_cache_corrupt">Saved detail points failed the integrity check. Showing the summary without a chart.</string>
-    <string name="history_detail_source_unverified">Received detail points are saved, but their source instance or record ID is unverified; the provider total is also unknown.</string>
-    <string name="history_detail_total_unverified">Received detail points are saved. The provider has not supplied a total count to verify full coverage.</string>
-    <string name="history_detail_cached_source_unverified">Showing saved detail points offline. Their source instance or record ID and full provider coverage remain unverified.</string>
-    <string name="history_detail_cached_total_unverified">Showing saved detail points offline. Full provider coverage remains unverified.</string>
+    <string name="history_detail_source_unverified">Details need verification</string>
+    <string name="history_detail_total_unverified">Details may be incomplete</string>
+    <string name="history_detail_cached_source_unverified">Showing cached details; verification pending</string>
+    <string name="history_detail_cached_total_unverified">Showing cached details; they may be incomplete</string>
     <string name="energy_source_api_reported">API reported</string>
     <string name="energy_source_energy_remaining_delta">Remaining Energy Delta</string>
     <string name="energy_source_soc_estimate">Capacity Estimate</string>
@@ -359,6 +359,7 @@
     <string name="loading">Loading…</string>
     <string name="loading_more_history">Loading more history…</string>
     <string name="history_choose_date">Choose date</string>
+    <string name="history_chart_partial_data">Some records have missing data</string>
     <string name="history_last_week">Last week</string>
     <string name="history_last_month">Last month</string>
     <string name="history_last_three_months">Last 3 months</string>

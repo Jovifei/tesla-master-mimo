@@ -4,10 +4,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -31,6 +34,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -185,6 +189,7 @@ class ChargeSingleObservationTest {
     }
 
     @Test fun partialEstimatedUnitCostUsesOnlyTheObservedEnergy() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val start = "2026-10-20T10:00:00Z"
         val end = "2026-10-20T11:00:00Z"
         val detail = ChargeDetail(7, startDate = start, endDate = end, source = "telemetry_mqtt",
@@ -194,6 +199,8 @@ class ChargeSingleObservationTest {
                 startDate = start, endDate = end, observedStartAt = "2026-10-20T10:05:00Z",
                 observedEndAt = "2026-10-20T10:55:00Z", timeBasis = "collector_received_at",
                 coverageKind = "endpoints", coverageRatio = 5.0 / 6.0, coveredEnergyKwh = 10.0)))
+        assertNull(ChargeStatsCalculator.calculateStats(detail).energyAdded)
+        assertNull(ChargeStatsCalculator.calculateStats(detail).efficiency)
         compose.setContent {
             MateLinkTheme {
                 ChargeDetailContent(localArchiveLinkPending = false, historySyncWarning = null,
@@ -204,7 +211,36 @@ class ChargeSingleObservationTest {
                     onRemoveFromTrip = {}, onSaveManualTotal = {})
             }
         }
+        compose.onAllNodesWithText(context.getString(R.string.charge_partial_energy), useUnmergedTree = true)
+            .assertCountEquals(2)
+        compose.onAllNodesWithText("≈10.00 kWh", useUnmergedTree = true).assertCountEquals(2)
         compose.onNodeWithText("≈¥1.500").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun completeAndMissingEnergyDoNotBecomePartialEstimates() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val detail = mutableStateOf(ChargeDetail(7, startDate = "2026-10-20T10:00:00Z",
+            endDate = "2026-10-20T11:00:00Z", chargeEnergyAdded = 12.0))
+        compose.setContent {
+            MateLinkTheme {
+                ChargeDetailContent(localArchiveLinkPending = false, historySyncWarning = null,
+                    detail = detail.value, stats = ChargeStatsCalculator.calculateStats(detail.value),
+                    costPresentation = ChargeDetailCostPresentation(null, ChargeDetailCostState.UNAVAILABLE),
+                    units = null, currencySymbol = "¥", isDcCharge = null, manualTotalAmount = null,
+                    containingTrip = null, onNavigateToTripDetail = {}, onRemoveFromTrip = {}, onSaveManualTotal = {})
+            }
+        }
+        compose.onAllNodesWithText("12.00 kWh", useUnmergedTree = true).assertCountEquals(2)
+        compose.onAllNodesWithText(context.getString(R.string.charge_partial_energy), useUnmergedTree = true)
+            .assertCountEquals(0)
+
+        compose.runOnIdle { detail.value = detail.value.copy(chargeEnergyAdded = null) }
+        compose.onAllNodesWithText("12.00 kWh", useUnmergedTree = true).assertCountEquals(0)
+        compose.onAllNodesWithText(context.getString(R.string.charge_partial_energy), useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onNodeWithText(context.getString(R.string.energy_added), useUnmergedTree = true)
+            .performScrollTo().assertIsDisplayed()
+        assertNull(ChargeStatsCalculator.calculateStats(detail.value).energyAdded)
     }
 
     @Test fun verifiedManualAmountBeatsPendingCandidateOnCard() {

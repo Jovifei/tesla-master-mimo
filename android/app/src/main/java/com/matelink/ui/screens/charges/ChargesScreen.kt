@@ -613,7 +613,7 @@ private fun getChargeTypeFilterLabel(filter: ChargeTypeFilter): String {
 }
 
 @Composable
-private fun SummaryCard(
+internal fun SummaryCard(
     summary: ChargesSummary, currencySymbol: String, palette: CarColorPalette,
     selectedDateFilter: DateFilter, customStartDate: LocalDate?, customEndDate: LocalDate?,
     onDateFilterSelected: (DateFilter) -> Unit, onCustomRangeSelected: (LocalDate, LocalDate) -> Unit
@@ -662,7 +662,7 @@ private fun SummaryCard(
                                     energy < 10 -> "%.1f kWh".format(energy)
                                     else -> "%.1f kWh".format(energy)
                                 }
-                                if (summary.partialEnergyCount > 0) "≈$value" else value
+                                if (summary.partialEnergyCount > 0 || summary.energyCoverage < summary.totalCharges) "≈$value" else value
                             } ?: stringResource(R.string.not_available),
                             palette.acColor,
                             valueFontSize = 18.sp
@@ -676,7 +676,7 @@ private fun SummaryCard(
                                     cost < 1000 -> "$currencySymbol%.1f".format(cost)
                                     else -> "$currencySymbol%.0f".format(cost)
                                 }
-                                if (summary.estimatedCostCount > 0) "≈$value" else value
+                                if (summary.estimatedCostCount > 0 || summary.costCoverage < summary.totalCharges) "≈$value" else value
                             } ?: stringResource(R.string.not_available),
                             Color(0xFF22C55E),
                             valueFontSize = 18.sp
@@ -686,7 +686,7 @@ private fun SummaryCard(
                             stringResource(R.string.summary_avg_charge_compact),
                             summary.avgCostPerCharge?.let { cost ->
                                 val value = "$currencySymbol%.2f".format(cost)
-                                if (summary.estimatedCostCount > 0) "≈$value" else value
+                                if (summary.estimatedCostCount > 0 || summary.costCoverage < summary.totalCharges) "≈$value" else value
                             } ?: stringResource(R.string.not_available),
                             palette.dcColor,
                             valueFontSize = 18.sp
@@ -695,18 +695,6 @@ private fun SummaryCard(
                     modifier = Modifier.padding(vertical = 4.dp),
                     adaptive = false,
                     maxColumns = 4
-                )
-            }
-            if (summary.totalCharges > 0) {
-                Text(
-                    text = "${stringResource(R.string.stats_analysis_cost_coverage)} " +
-                        "${summary.costCoverage}/${summary.totalCharges}" +
-                        " · ${stringResource(R.string.energy_coverage)} ${summary.energyCoverage}/${summary.totalCharges}" +
-                        (if (summary.estimatedCostCount > 0)
-                            " · ${stringResource(R.string.cost_estimate_coverage, summary.estimatedCostCount)}"
-                        else ""),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

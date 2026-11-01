@@ -578,7 +578,7 @@ private fun DistanceFilterDropdown(
 }
 
 @Composable
-private fun SummaryCard(
+internal fun SummaryCard(
     summary: DrivesSummary, units: Units?, palette: CarColorPalette,
     selectedDateFilter: DriveDateFilter, customStartDate: LocalDate?, customEndDate: LocalDate?,
     selectedDistanceFilter: DriveDistanceFilter, onDateFilterSelected: (DriveDateFilter) -> Unit,
@@ -622,7 +622,10 @@ private fun SummaryCard(
                         TelemetryMetricSpec(
                             CustomIcons.SteeringWheel,
                             stringResource(R.string.total_distance),
-                            summary.totalDistanceKm?.let { visualTripNumber(UnitFormatter.distanceKmDisplayValue(it, units)) } ?: unavailable,
+                            summary.totalDistanceKm?.let {
+                                (if (summary.distanceSampleCount < summary.totalDrives) "≈" else "") +
+                                    visualTripNumber(UnitFormatter.distanceKmDisplayValue(it, units))
+                            } ?: unavailable,
                             Color(0xFF059669),
                             unit = UnitFormatter.getDistanceUnit(units),
                             valueFontSize = 18.sp
@@ -630,7 +633,9 @@ private fun SummaryCard(
                         TelemetryMetricSpec(
                             Icons.Default.Timer,
                             stringResource(R.string.total_time),
-                            summary.totalDurationMin?.let { "%,d".format(it) } ?: unavailable,
+                            summary.totalDurationMin?.let {
+                                (if (summary.durationSampleCount < summary.totalDrives) "≈" else "") + "%,d".format(it)
+                            } ?: unavailable,
                             Color(0xFFD97706),
                             unit = stringResource(R.string.visual_trip_duration_unit),
                             valueFontSize = 18.sp
@@ -647,18 +652,6 @@ private fun SummaryCard(
                     modifier = Modifier.padding(vertical = 4.dp),
                     adaptive = false,
                     maxColumns = 4
-                )
-            }
-            if (hasSummary && (summary.distanceSampleCount < summary.totalDrives ||
-                    summary.durationSampleCount < summary.totalDrives)) {
-                Text(
-                    text = "${stringResource(R.string.stats_analysis_data_coverage)} · " +
-                        "${stringResource(R.string.total_distance)}: " +
-                        stringResource(R.string.stats_analysis_coverage_records, summary.distanceSampleCount, summary.totalDrives) +
-                        " · ${stringResource(R.string.total_time)}: " +
-                        stringResource(R.string.stats_analysis_coverage_records, summary.durationSampleCount, summary.totalDrives),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.onSurfaceVariant
                 )
             }
             DistanceFilterDropdown(selectedDistanceFilter, units, palette, onDistanceFilterSelected)
@@ -856,7 +849,7 @@ private fun ParkedItem(
 /**
  * Chart type enum for the swipeable pager
  */
-private enum class DrivesChartType {
+internal enum class DrivesChartType {
     COUNT, TIME, DISTANCE, TOP_SPEED
 }
 
@@ -925,7 +918,7 @@ private fun DrivesChartsPager(
  * Individual chart page showing Count, Time, or Distance data
  */
 @Composable
-private fun DrivesChartPage(
+internal fun DrivesChartPage(
     chartData: List<DriveChartData>,
     granularity: DriveChartGranularity,
     chartType: DrivesChartType,
@@ -937,7 +930,6 @@ private fun DrivesChartPage(
     val speedUnit = if (isImperial) "mph" else "km/h"
     val durationUnit = stringResource(R.string.visual_trip_duration_unit)
     val countUnit = stringResource(R.string.visual_trip_count_unit)
-    val resources = LocalContext.current.resources
 
     val (title, icon) = when (chartType) {
         DrivesChartType.COUNT -> when (granularity) {
@@ -991,24 +983,18 @@ private fun DrivesChartPage(
             }
             DrivesChartType.TIME -> chartData.mapNotNull { data ->
                 val duration = data.totalDurationMin ?: return@mapNotNull null
-                val coverage = if (data.durationSampleCount < data.count)
-                    " · ${resources.getString(R.string.stats_analysis_coverage_records, data.durationSampleCount, data.count)} $countUnit"
-                    else ""
                 BarChartData(
                     label = data.label,
                     value = duration.toDouble(),
-                    displayValue = "$duration $durationUnit$coverage"
+                    displayValue = "$duration $durationUnit"
                 )
             }
             DrivesChartType.DISTANCE -> chartData.mapNotNull { data ->
                 val distance = data.totalDistance?.let { UnitFormatter.distanceKmDisplayValue(it, units) } ?: return@mapNotNull null
-                val coverage = if (data.distanceSampleCount < data.count)
-                    " · ${resources.getString(R.string.stats_analysis_coverage_records, data.distanceSampleCount, data.count)} $countUnit"
-                    else ""
                 BarChartData(
                     label = data.label,
                     value = distance,
-                    displayValue = "${visualTripNumber(distance)} $distanceUnit$coverage"
+                    displayValue = "${visualTripNumber(distance)} $distanceUnit"
                 )
             }
             DrivesChartType.TOP_SPEED -> chartData.mapNotNull { data ->
@@ -1052,16 +1038,14 @@ private fun DrivesChartPage(
             modifier = Modifier.padding(bottom = 6.dp)
         )
 
-        val sampleCount = when (chartType) {
-            DrivesChartType.TIME -> chartData.sumOf { it.durationSampleCount }
-            DrivesChartType.DISTANCE -> chartData.sumOf { it.distanceSampleCount }
-            else -> null
+        val missingData = when (chartType) {
+            DrivesChartType.TIME -> chartData.any { it.durationSampleCount < it.count }
+            DrivesChartType.DISTANCE -> chartData.any { it.distanceSampleCount < it.count }
+            else -> false
         }
-        val recordCount = chartData.sumOf { it.count }
-        if (sampleCount != null && sampleCount < recordCount) {
+        if (missingData) {
             Text(
-                text = "${stringResource(R.string.stats_analysis_data_coverage)} · " +
-                    stringResource(R.string.stats_analysis_coverage_records, sampleCount, recordCount) + " $countUnit",
+                text = stringResource(R.string.history_chart_partial_data),
                 style = MaterialTheme.typography.bodySmall,
                 color = palette.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 6.dp)

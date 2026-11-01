@@ -310,13 +310,16 @@ internal fun ChargeDetailContent(
             val currentAvgLabel = stringResource(R.string.current_avg)
             val totalLabel = stringResource(R.string.total)
             val perKwhLabel = stringResource(R.string.per_kwh)
+            val partialEnergy = if (s.energyAdded == null) detail.partialBatteryInputKwh else null
 
             // Energy section
             StatsSectionCard(
                 title = energyLabel,
                 icon = Icons.Default.EnergySavingsLeaf,
                 stats = listOf(
-                    StatItem(addedLabel, s.energyAdded?.let { "%.2f kWh".format(it) } ?: unavailableLabel),
+                    StatItem(if (partialEnergy != null) stringResource(R.string.charge_partial_energy) else addedLabel,
+                        s.energyAdded?.let { "%.2f kWh".format(it) }
+                            ?: partialEnergy?.let { "≈%.2f kWh".format(it) } ?: unavailableLabel),
                     StatItem(usedLabel, s.energyUsed?.let { "%.2f kWh".format(it) } ?: unavailableLabel),
                     StatItem(efficiencyLabel, s.efficiency?.let { "%.1f%%".format(it) } ?: unavailableLabel)
                 )
