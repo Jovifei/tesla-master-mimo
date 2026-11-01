@@ -55,6 +55,31 @@ func decodeHistoryJSONContext(ctx context.Context, data []byte, target any) erro
 	return ctx.Err()
 }
 
+func decodeFleetChargePoints(ctx context.Context, data []byte) ([]telemetryChargePoint, error) {
+	var points []struct {
+		telemetryChargePoint
+		ObservedAt json.RawMessage
+	}
+	if err := decodeHistoryJSONContext(ctx, data, &points); err != nil {
+		return nil, err
+	}
+	result := make([]telemetryChargePoint, 0, len(points))
+	for index, point := range points {
+		if index%256 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
+		var observedAt time.Time
+		if len(point.ObservedAt) != 0 {
+			_ = json.Unmarshal(point.ObservedAt, &observedAt)
+		}
+		point.telemetryChargePoint.ObservedAt = observedAt
+		result = append(result, point.telemetryChargePoint)
+	}
+	return result, nil
+}
+
 func boundedHistoryContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -163,7 +188,7 @@ LEFT JOIN LATERAL (
            MAX(ordinality) FILTER (WHERE level BETWEEN 0 AND 100) AS last_position,
            MAX(speed) AS speed_max, AVG(speed) AS speed_avg, COUNT(speed) AS speed_count,
            AVG(inside_temp) AS inside_temp_avg, AVG(outside_temp) AS outside_temp_avg,
-           MIN(ordinality) FILTER (WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+		   MIN(ordinality) FILTER (WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND location_time_valid
                                     AND (latitude <> 0 OR longitude <> 0)) AS charge_location_position
     FROM (
         SELECT ordinality,
@@ -172,7 +197,16 @@ LEFT JOIN LATERAL (
           CASE WHEN jsonb_typeof(inside_temp)='number' THEN CASE WHEN (inside_temp::text)::numeric BETWEEN -1e308 AND 1e308 THEN (inside_temp::text)::double precision END END AS inside_temp,
           CASE WHEN jsonb_typeof(outside_temp)='number' THEN CASE WHEN (outside_temp::text)::numeric BETWEEN -1e308 AND 1e308 THEN (outside_temp::text)::double precision END END AS outside_temp,
           CASE WHEN jsonb_typeof(latitude)='number' THEN CASE WHEN (latitude::text)::numeric BETWEEN -90 AND 90 THEN (latitude::text)::double precision END END AS latitude,
-          CASE WHEN jsonb_typeof(longitude)='number' THEN CASE WHEN (longitude::text)::numeric BETWEEN -180 AND 180 THEN (longitude::text)::double precision END END AS longitude
+		  CASE WHEN jsonb_typeof(longitude)='number' THEN CASE WHEN (longitude::text)::numeric BETWEEN -180 AND 180 THEN (longitude::text)::double precision END END AS longitude,
+		  -- PostgreSQL timestamps have microsecond precision; retain the remaining nanoseconds for the end boundary.
+		  CASE WHEN s.kind <> 'charge' OR s.source <> 'telemetry_mqtt' THEN true ELSE
+		    jsonb_path_match_tz(
+		      to_jsonb(point_time[1] || '.' || rpad(left(COALESCE(substring(point_time[2] from 2),''),6),6,'0') ||
+		        CASE WHEN point_time[3]='Z' THEN '+00:00' ELSE point_time[3] END),
+		      '$.datetime() >= $start.datetime() && ($.datetime() < $end.datetime() || ($.datetime() == $end.datetime() && $remainder == 0))',
+		      jsonb_build_object('start',s.started_at,'end',s.ended_at,
+		        'remainder',substring(rpad(COALESCE(substring(point_time[2] from 2),''),9,'0') from 7 for 3)::integer), true)
+		  END AS location_time_valid
         FROM (
           SELECT point.ordinality,
             CASE WHEN s.kind='charge' THEN COALESCE(NULLIF(point.value->'BatteryLevel','null'::jsonb),point.value->'battery_level')
@@ -181,7 +215,10 @@ LEFT JOIN LATERAL (
             CASE WHEN s.kind='drive' THEN COALESCE(NULLIF(point.value->'climate_info'->'inside_temp','null'::jsonb),NULLIF(point.value->'inside_temp','null'::jsonb),point.value->'InsideTemp') END AS inside_temp,
             COALESCE(NULLIF(point.value->'climate_info'->'outside_temp','null'::jsonb),NULLIF(point.value->'outside_temp','null'::jsonb),point.value->'OutsideTemp') AS outside_temp,
             CASE WHEN s.kind='charge' THEN COALESCE(NULLIF(point.value->'Latitude','null'::jsonb),point.value->'latitude') END AS latitude,
-            CASE WHEN s.kind='charge' THEN COALESCE(NULLIF(point.value->'Longitude','null'::jsonb),point.value->'longitude') END AS longitude
+			CASE WHEN s.kind='charge' THEN COALESCE(NULLIF(point.value->'Longitude','null'::jsonb),point.value->'longitude') END AS longitude,
+			CASE WHEN s.kind='charge' AND s.source='telemetry_mqtt' THEN
+			  regexp_match(COALESCE(point.value->>'ObservedAt',point.value->>'observedAt',point.value->>'observedat'),
+			    '^([0-9]{4}-[0-9]{2}-[0-9]{2}T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9])([.][0-9]{1,9})?(Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$') END AS point_time
           FROM jsonb_array_elements(CASE WHEN s.kind='charge' AND jsonb_typeof(s.charge_points_json)='array' THEN s.charge_points_json WHEN s.kind<>'charge' AND jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)
             WITH ORDINALITY AS point(value, ordinality)
         ) raw
@@ -340,7 +377,12 @@ WHERE user_id=$1 AND vehicle_id=$2 AND kind=$3 AND public_id=$4
 	} else if err := decodeHistoryJSONContext(ctx, routeJSON, &session.Route); err != nil {
 		return telemetrySession{}, false, err
 	}
-	if err := decodeHistoryJSONContext(ctx, chargePointsJSON, &session.ChargePoints); err != nil {
+	if session.Source == "telemetry_mqtt" && kind == "charge" {
+		session.ChargePoints, err = decodeFleetChargePoints(ctx, chargePointsJSON)
+	} else {
+		err = decodeHistoryJSONContext(ctx, chargePointsJSON, &session.ChargePoints)
+	}
+	if err != nil {
 		return telemetrySession{}, false, err
 	}
 	return session, true, ctx.Err()

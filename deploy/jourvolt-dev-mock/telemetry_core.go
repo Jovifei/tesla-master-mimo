@@ -580,7 +580,7 @@ func (m *telemetrySessionMachine) apply(event telemetrySessionEvent) {
 			nil,
 			m.recentObservation(m.lastHeading, m.lastHeadingAt, event.ObservedAt)); ok && m.drive != nil {
 			m.drive.Route = append(m.drive.Route, point)
-		} else if point, ok := routePointFromLocation(event); ok && m.charge != nil {
+		} else if point, ok := routePointFromLocation(event); ok && m.charge != nil && !event.ObservedAt.Before(m.charge.StartAt) {
 			latitude, longitude := point.Latitude, point.Longitude
 			m.appendChargePoint(telemetryChargePoint{ObservedAt: event.ObservedAt, Latitude: &latitude, Longitude: &longitude})
 		}
