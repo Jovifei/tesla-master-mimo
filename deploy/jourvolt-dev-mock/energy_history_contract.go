@@ -153,6 +153,7 @@ func completedSessionEnergyContract(session telemetrySession) map[string]any {
 
 func publishChargeEnergyContract(result map[string]any, contract map[string]any) {
     if contract == nil { return }
+    normalizePartialBatteryCoverage(result, contract)
     result["energy_contract"] = contract
     // A covered subset is diagnostic, never the entire finished session.
     result["charge_energy_added"], result["charge_energy_used"] = nil, nil
@@ -171,4 +172,53 @@ func publishChargeEnergyContract(result map[string]any, contract map[string]any)
     } else {
         delete(result, "charge_type")
     }
+}
+
+// A partial counter is a measured subset, never a whole-session measurement.
+// Bind its evidence to the authenticated result's own database-time window.
+func normalizePartialBatteryCoverage(result, contract map[string]any) {
+    metric, ok := contract["battery_input"].(map[string]any)
+    if !ok || metric["quality"] != "unknown" || metric["reason"] != "partial_counter_window" {
+        return
+    }
+    covered, coveredOK := metric["covered_energy_kwh"].(float64)
+    fullValue := metric["value_kwh"]
+    metric["value_kwh"] = nil
+    metric["coverage_ratio"] = nil
+    metric["covered_energy_kwh"] = nil
+    versionOK := contract["version"] == 1 || contract["version"] == float64(1)
+    if !versionOK || result["source"] != "telemetry_mqtt" ||
+        metric["source"] != "telemetry_mqtt" || metric["source_field"] != "DCChargingEnergyIn" ||
+        metric["unit"] != "kWh" || metric["method"] != "session_counter_delta" ||
+        metric["measurement_point"] != "battery_input" || metric["coverage_kind"] != "endpoints" ||
+        metric["time_basis"] != "collector_received_at" || fullValue != nil ||
+        !coveredOK || !isFiniteChargeCounterDelta(covered) {
+        return
+    }
+    parseTime := func(value any) (time.Time, bool) {
+        raw, ok := value.(string)
+        if !ok { return time.Time{}, false }
+        parsed, err := time.Parse(time.RFC3339Nano, raw)
+        return parsed, err == nil
+    }
+    resultStart, ok1 := parseTime(result["start_date"])
+    resultEnd, ok2 := parseTime(result["end_date"])
+    metricStart, ok3 := parseTime(metric["start_date"])
+    metricEnd, ok4 := parseTime(metric["end_date"])
+    observedStart, ok5 := parseTime(metric["observed_start_at"])
+    observedEnd, ok6 := parseTime(metric["observed_end_at"])
+    if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 ||
+        !resultEnd.After(resultStart) || !metricEnd.After(metricStart) ||
+        !resultStart.Truncate(time.Microsecond).Equal(metricStart.Truncate(time.Microsecond)) ||
+        !resultEnd.Truncate(time.Microsecond).Equal(metricEnd.Truncate(time.Microsecond)) ||
+        !observedEnd.After(observedStart) || observedStart.Before(metricStart) || observedEnd.After(metricEnd) ||
+        observedStart.Before(resultStart) || observedEnd.After(resultEnd) {
+        return
+    }
+    coverage := observedEnd.Sub(observedStart).Seconds()
+    ratio := coverage / metricEnd.Sub(metricStart).Seconds()
+    if math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio <= 0 || ratio >= 1 { return }
+    metric["start_date"], metric["end_date"] = result["start_date"], result["end_date"]
+    metric["covered_energy_kwh"] = covered
+    metric["coverage_seconds"], metric["coverage_ratio"] = coverage, ratio
 }
