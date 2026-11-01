@@ -291,7 +291,20 @@ func importChargePoints(points []historyImportChargePoint, start time.Time) []te
 }
 
 // importHistory persists locally-collected history into the cloud store.
+type archiveImportGuard struct {
+	binding   archiveBinding
+	tokenHash string
+}
+
 func (s *telemetryService) importHistory(ctx context.Context, userID string, vehicleID int, request historyImportRequest) (historyImportResult, error) {
+	return s.importHistoryWithGuard(ctx, userID, vehicleID, request, nil)
+}
+
+func (s *telemetryService) importBoundHistory(ctx context.Context, guard archiveImportGuard, request historyImportRequest) (historyImportResult, error) {
+	return s.importHistoryWithGuard(ctx, guard.binding.UserID, guard.binding.VehicleID, request, &guard)
+}
+
+func (s *telemetryService) importHistoryWithGuard(ctx context.Context, userID string, vehicleID int, request historyImportRequest, guard *archiveImportGuard) (historyImportResult, error) {
 	if s == nil {
 		return historyImportResult{}, errors.New("telemetry_not_configured")
 	}
@@ -312,13 +325,113 @@ func (s *telemetryService) importHistory(ctx context.Context, userID string, veh
 		charges = append(charges, session)
 	}
 	if s.memory != nil {
-		s.memory.importSessions(userID, vehicleID, drives, charges)
+		if guard != nil {
+			if err := s.memory.importBoundSessions(ctx, *guard, drives, charges); err != nil {
+				return historyImportResult{}, err
+			}
+		} else {
+			s.memory.importSessions(userID, vehicleID, drives, charges)
+		}
 		return historyImportResult{ImportedDrives: len(drives), ImportedCharges: len(charges)}, nil
 	}
-	return s.importHistoryPostgres(ctx, userID, vehicleID, drives, charges)
+	return s.importHistoryPostgres(ctx, userID, vehicleID, drives, charges, guard)
 }
 
-func (s *telemetryService) importHistoryPostgres(ctx context.Context, userID string, vehicleID int, drives, charges []telemetrySession) (historyImportResult, error) {
+func archiveImportBindingError(current, expected archiveBinding) error {
+	if current.UserID != expected.UserID || current.VehicleID != expected.VehicleID ||
+		current.SourceType != expected.SourceType || current.SourceInstanceID != expected.SourceInstanceID ||
+		current.SourceVehicleID != expected.SourceVehicleID {
+		return errArchiveBindingScopeMismatch
+	}
+	if current.RevokedAt != nil {
+		return errArchiveBindingRevoked
+	}
+	return nil
+}
+
+// The staged store owns separate maps; importSessions copies the selected vehicle's
+// slice before changing it, and leaves all other vehicles untouched.
+func (s *telemetryMemoryStore) importBoundSessions(ctx context.Context, guard archiveImportGuard, drives, charges []telemetrySession) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	current, ok := s.archiveBindings[guard.tokenHash]
+	if !ok {
+		return errArchiveBindingInvalid
+	}
+	if err := archiveImportBindingError(current, guard.binding); err != nil {
+		return err
+	}
+	if !current.ExpiresAt.After(time.Now().UTC()) {
+		return errArchiveBindingExpired
+	}
+	key := telemetryKey{UserID: current.UserID, VehicleID: current.VehicleID}
+	staged := &telemetryMemoryStore{
+		completed:    map[telemetryKey][]telemetrySession{key: s.completed[key]},
+		startedAt:    make(map[telemetryKey]time.Time, 1),
+		nextPublicID: s.nextPublicID,
+	}
+	if started, exists := s.startedAt[key]; exists {
+		staged.startedAt[key] = started
+	}
+	staged.importSessions(current.UserID, current.VehicleID, drives, charges)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !current.ExpiresAt.After(time.Now().UTC()) {
+		return errArchiveBindingExpired
+	}
+	s.completed[key] = staged.completed[key]
+	if started, exists := staged.startedAt[key]; exists {
+		s.startedAt[key] = started
+	}
+	s.nextPublicID = staged.nextPublicID
+	return nil
+}
+
+func lockArchiveImportBinding(ctx context.Context, tx pgx.Tx, guard archiveImportGuard) (time.Time, error) {
+	var vehicleID int
+	err := tx.QueryRow(ctx, `SELECT id FROM jourvolt_vehicles WHERE id=$1 AND user_id=$2 FOR SHARE`,
+		guard.binding.VehicleID, guard.binding.UserID).Scan(&vehicleID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, errArchiveBindingScopeMismatch
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	var current archiveBinding
+	err = tx.QueryRow(ctx, `SELECT user_id,vehicle_id,source_instance_id,source_vehicle_id,expires_at,revoked_at FROM jourvolt_history_archive_bindings WHERE token_hash=$1 FOR SHARE`, guard.tokenHash).
+		Scan(&current.UserID, &current.VehicleID, &current.SourceInstanceID, &current.SourceVehicleID, &current.ExpiresAt, &current.RevokedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, errArchiveBindingInvalid
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	current.SourceType = "teslamate"
+	if err = archiveImportBindingError(current, guard.binding); err != nil {
+		return time.Time{}, err
+	}
+	if err = requireArchiveImportNotExpired(ctx, tx, current.ExpiresAt); err != nil {
+		return time.Time{}, err
+	}
+	return current.ExpiresAt, nil
+}
+
+func requireArchiveImportNotExpired(ctx context.Context, tx pgx.Tx, expires time.Time) error {
+	var valid bool
+	if err := tx.QueryRow(ctx, `SELECT $1::timestamptz > clock_timestamp()`, expires).Scan(&valid); err != nil {
+		return err
+	}
+	if !valid {
+		return errArchiveBindingExpired
+	}
+	return nil
+}
+
+func (s *telemetryService) importHistoryPostgres(ctx context.Context, userID string, vehicleID int, drives, charges []telemetrySession, guard *archiveImportGuard) (historyImportResult, error) {
 	if s.store == nil || s.store.pool == nil {
 		return historyImportResult{}, errors.New("telemetry_not_configured")
 	}
@@ -326,7 +439,24 @@ func (s *telemetryService) importHistoryPostgres(ctx context.Context, userID str
 	if err != nil {
 		return historyImportResult{}, err
 	}
-	defer tx.Rollback(ctx)
+	if guard == nil {
+		defer tx.Rollback(ctx)
+	} else {
+		defer func() {
+			rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = tx.Rollback(rollbackCtx)
+		}()
+	}
+	var expires time.Time
+	if guard != nil {
+		if _, err = tx.Exec(ctx, `SET LOCAL lock_timeout = '5s'`); err != nil {
+			return historyImportResult{}, err
+		}
+		if expires, err = lockArchiveImportBinding(ctx, tx, *guard); err != nil {
+			return historyImportResult{}, err
+		}
+	}
 	importedDrives := 0
 	for _, session := range drives {
 		if err := upsertImportedSessionPostgres(ctx, tx, userID, vehicleID, session); err != nil {
@@ -340,6 +470,11 @@ func (s *telemetryService) importHistoryPostgres(ctx context.Context, userID str
 			return historyImportResult{}, err
 		}
 		importedCharges++
+	}
+	if guard != nil {
+		if err = requireArchiveImportNotExpired(ctx, tx, expires); err != nil {
+			return historyImportResult{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return historyImportResult{}, err

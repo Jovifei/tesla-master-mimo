@@ -987,8 +987,8 @@ func TestBatteryTrendPostgresIdempotentScopedAndNonDestructive(t *testing.T) {
 	batch.BatchID = "atomic-conflict"
 	batch.Observations = []batteryTrendObservation{second, missing}
 	batch.PayloadSHA256, _ = batteryTrendDigest(batch.payload())
-	if _, _, err := storeBatteryTrendBatch(ctx, db, binding, batch, tokenHash); !errors.Is(err, errBatteryTrendConflict) {
-		t.Fatalf("missing identity: %v", err)
+	if _, _, err := storeBatteryTrendBatch(ctx, db, binding, batch, tokenHash); !errors.Is(err, errBatteryTrendArchivePending) {
+		t.Fatalf("unarchived source was not marked pending: %v", err)
 	}
 	var count int
 	if err := db.pool.QueryRow(ctx, `SELECT count(*) FROM jourvolt_battery_trend_evidence WHERE user_id=$1 AND vehicle_id=$2`, user, car).Scan(&count); err != nil || count != 1 {
