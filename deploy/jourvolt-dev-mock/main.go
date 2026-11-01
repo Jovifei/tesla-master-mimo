@@ -463,6 +463,10 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.deleteAccount(w, r)
 		return
 	}
+	if batteryTrendImportPath(r.URL.Path) {
+		a.batteryTrendArchiveImport(w, r)
+		return
+	}
 	if archiveImportPath(r.URL.Path) {
 		a.archiveBindingResource(w, r, "")
 		return
@@ -729,6 +733,15 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 	// and configure vehicles on its cache-miss path.
 	if len(parts) >= 3 && parts[1] == "telemetry" && parts[2] == "diagnostics" {
 		a.fleetTelemetryDiagnostics(w, r, userID, carID, parts)
+		return
+	}
+	if len(parts) >= 2 && parts[1] == "battery-trend" {
+		canonical := "/api/v1/cars/" + strconv.Itoa(carID) + "/battery-trend/evidence"
+		if r.Method != http.MethodGet || carID <= 0 || carID > 1<<31-1 || len(parts) != 3 || parts[2] != "evidence" || r.URL.Path != canonical || r.URL.EscapedPath() != canonical {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		a.batteryTrendEvidenceList(w, r, userID, carID)
 		return
 	}
 	if !a.requireVehicle(w, r, userID, carID) {
