@@ -197,13 +197,18 @@ jobs:
           python3 -m unittest discover -s deploy/teslamate-home-docker/qualification -p 'test_*.py' -v 2>&1 | tee evidence/upstream-qualification-tests.log
           (cd deploy/teslamate-home-docker/adapter && go test ./... -count=1) 2>&1 | tee evidence/upstream-adapter-tests.log
           (cd deploy/teslamate-home-docker/archive-bridge && go test ./... -count=1) 2>&1 | tee evidence/upstream-bridge-tests.log
+          (cd deploy/teslamate-home-docker/archive-bridge && go test -race -v -count=1 -run '^TestExistingBridge.*Pending503' ./cmd/battery-trend) 2>&1 | tee evidence/upstream-bridge-race.log
+          grep -Fq -- '--- PASS: TestExistingBridgeRetriesArchivePending503WithoutAdvancing' evidence/upstream-bridge-race.log
+          grep -Fq -- '--- PASS: TestExistingBridgeRestartsPending503FromFrozenState' evidence/upstream-bridge-race.log
       - name: Race regression for history and energy queries
         working-directory: deploy/jourvolt-dev-mock
         env:
           JOURVOLT_RUN_LEGACY_MEMORY_BENCH: '0'
         run: |
           set -euo pipefail
-          go test -race -count=1 -run 'Test(Independent|Energy|BoundedHistory|ChargeEnergy|Parked|CompactTelemetry|NativeShadow|History(Sample|Energy|Summary|MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL|ReadBudget|ResourceAdmission|HeavyBudget|Import|Archive|DecodeAdmission)|ArchiveImport|Telemetry(PostgresCompactBootstrap|PostgresCompactAdmissionReference|History|PostgresNativeIdentity|PostgresIdleDriveFinalization|PostgresNativeShadow))' ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-race.log"
+          go test -race -v -count=1 -run 'Test(Independent|Energy|BatteryTrend|BoundedHistory|ChargeEnergy|Parked|CompactTelemetry|NativeShadow|History(Sample|Energy|Summary|MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL|ReadBudget|ResourceAdmission|HeavyBudget|Import|Archive|DecodeAdmission)|ArchiveImport|Telemetry(PostgresCompactBootstrap|PostgresCompactAdmissionReference|History|PostgresNativeIdentity|PostgresIdleDriveFinalization|PostgresNativeShadow))' ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-race.log"
+          grep -Fq -- '--- PASS: TestBatteryTrendPendingLocksVehicleBeforeRecheckingBinding' "$GITHUB_WORKSPACE/evidence/go-race.log"
+          grep -Fq -- '--- PASS: TestArchiveImportBindingChangesDuringBodyPostgres' "$GITHUB_WORKSPACE/evidence/go-race.log"
       - name: Verify mandatory PostgreSQL evidence
         run: |
           python3 - <<'PY'

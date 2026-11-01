@@ -4,6 +4,72 @@
   "observation_note": "发现版本不等于首次引入版本；build77 安装及 CI 属历史记录；build82 已同签覆盖安装并完成指定页面抽查，生产 API 8d3da22 已部署且当前车辆首轮趋势回填完成；build83 已同签名覆盖安装并完成指定真机页面抽查，未代表全部页面或历史均已验收；充电疑似重复导入仍未修复；独立桥重启凭据、源后补回扫及费用跨页口径仍开放",
   "issues": [
     {
+      "id": "NOV02-ARCHIVE-REVOCATION-RACE",
+      "title": "普通归档请求通过初次认证后仍可能在撤权后写入",
+      "found_date": "2026-11-02",
+      "found_version": "生产 API 8d3da22；隔离环境复现",
+      "source_ref": "../RPT-2026-11-02-archive-revocation-race.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "候选 API b11bae0；尚未部署",
+      "change": "在同一事务或互斥区内重验绑定并保护提交；普通本地导入保持原路径。",
+      "verification": "独立合成 PG16 与内存 RED→GREEN；最终组合 716 项及子项通过，race 与生产部署待验证；没有证据表明生产曾发生。",
+      "commit": "37955cf09994fc223406d6a48431dd080733454e",
+      "history": [
+        {
+          "date": "2026-11-02",
+          "version": "API 8d3da22 / 候选 b11bae0",
+          "action": "REPRODUCED_AND_LOCAL_FIX",
+          "detail": "撤权竞态仅在隔离环境复现，候选受控锁序并重验授权；不改变旧用户费用和历史。",
+          "evidence": "../RPT-2026-11-02-archive-revocation-race.md",
+          "commit": "37955cf09994fc223406d6a48431dd080733454e"
+        }
+      ]
+    },
+    {
+      "id": "NOV02-BATTERY-ARCHIVE-PENDING",
+      "title": "趋势先于主归档到达时被永久冲突阻断",
+      "found_date": "2026-11-02",
+      "found_version": "生产 API 8d3da22 / 独立趋势桥",
+      "source_ref": "../RPT-2026-11-02-battery-trend-pending.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "候选 API b11bae0；尚未部署",
+      "change": "对已鉴权的新批次严格确认无对应归档且整批无冲突时返回可重试状态；真实冲突仍阻断，待发送数据和游标不变。",
+      "verification": "最终组合服务端 716、桥 59 项及子项通过；Linux race、生产部署与未来真实行程验收待完成。",
+      "commit": "37955cf09994fc223406d6a48431dd080733454e",
+      "history": [
+        {
+          "date": "2026-11-02",
+          "version": "API 8d3da22 / 候选 b11bae0",
+          "action": "LOCAL_FIX_AND_TEST",
+          "detail": "既有桥已能按 503 重试，候选无需更改桥生产代码；重启监督和历史后补回扫仍未解决。",
+          "evidence": "../RPT-2026-11-02-battery-trend-pending.md",
+          "commit": "37955cf09994fc223406d6a48431dd080733454e"
+        }
+      ]
+    },
+    {
+      "id": "NOV02-CI-POSTGRES-OPTIN",
+      "title": "CI 的隔离 PostgreSQL 测试被跳过导致证据门禁失败",
+      "found_date": "2026-11-02",
+      "found_version": "App 分支 cf9b488",
+      "source_ref": "../RPT-2026-11-02-ci-postgres-opt-in.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 分支 eab3af4",
+      "change": "仅为 CI 临时库启用隔离开关并使用指定测试库名前缀，保留安全检查和禁止跳过门禁。",
+      "verification": "合成 PG16 全量 568 项无失败或跳过；远端 eab3af4 verify 已通过，完整分支最终检查仍需确认。",
+      "commit": "eab3af4deeddce49fc36746b38210bb261511252",
+      "history": [
+        {
+          "date": "2026-11-02",
+          "version": "App 分支 cf9b488 / eab3af4",
+          "action": "CI_CONFIG_FIX",
+          "detail": "22 项安全测试原因缺少 opt-in 而跳过；CI 临时服务库名、健康检查、URL 和开关已对齐。",
+          "evidence": "../RPT-2026-11-02-ci-postgres-opt-in.md",
+          "commit": "eab3af4deeddce49fc36746b38210bb261511252"
+        }
+      ]
+    },
+    {
       "id": "NOV02-CHARGE-UNLINKED-IMPORT",
       "title": "疑似重复导入的充电记录出现空数据卡",
       "found_date": "2026-11-02",
