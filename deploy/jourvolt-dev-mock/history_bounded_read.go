@@ -28,6 +28,8 @@ type boundedHistoryPageRow struct {
 	Metrics           historySampleMetrics
 	ChargeLatitude    *float64
 	ChargeLongitude   *float64
+	DriveStartPoint   *telemetryRoutePoint
+	DriveEndPoint     *telemetryRoutePoint
     EnergyContract map[string]any
 	Sequence          int
 }
@@ -143,6 +145,46 @@ func historySOCAtPosition(position string) string {
 	return "(CASE WHEN s.kind='charge' THEN COALESCE(NULLIF((" + point + ")->'BatteryLevel','null'::jsonb),(" + point + ")->'battery_level') WHEN s.source='teslamate_archive' THEN (" + point + ")->'battery_level' ELSE (" + point + ")->'BatteryLevel' END #>> '{}')::integer"
 }
 
+// position is an internal SQL expression, never request input.
+func historyFleetDriveEndpoint(position string) string {
+	point := "(s.route_json->(" + position + "))"
+	timestamp := "COALESCE(" + point + "->>'ObservedAt'," + point + "->>'observedAt'," + point + "->>'observedat')"
+	coordinate := func(key, bound string) string {
+		value := "(" + point + "->'" + key + "')"
+		number := "(" + value + "::text)::numeric"
+		return "CASE WHEN jsonb_typeof(" + value + ")='number' THEN CASE WHEN " + number + " BETWEEN -" + bound + " AND " + bound + " AND (" + number + "=0 OR abs(" + number + ")>=1e-308) THEN (" + value + "::text)::double precision END END"
+	}
+	return "CASE WHEN s.kind='drive' AND s.source='telemetry_mqtt' THEN jsonb_build_object(" +
+		"'time',CASE WHEN length(" + timestamp + ")<=40 THEN " + timestamp + " END," +
+		"'upper_lat'," + coordinate("Latitude", "90") + ",'upper_lon'," + coordinate("Longitude", "180") + "," +
+		"'lower_lat'," + coordinate("latitude", "90") + ",'lower_lon'," + coordinate("longitude", "180") + ") END"
+}
+
+func decodeFleetDriveEndpoint(data []byte, session telemetrySession) *telemetryRoutePoint {
+	var value struct {
+		Time      string   `json:"time"`
+		UpperLat  *float64 `json:"upper_lat"`
+		UpperLon  *float64 `json:"upper_lon"`
+		LowerLat  *float64 `json:"lower_lat"`
+		LowerLon  *float64 `json:"lower_lon"`
+	}
+	if len(data) == 0 || json.Unmarshal(data, &value) != nil || session.StartAt.IsZero() || session.EndAt == nil {
+		return nil
+	}
+	observedAt, err := time.Parse(time.RFC3339Nano, value.Time)
+	if err != nil || observedAt.IsZero() || observedAt.Before(session.StartAt) || observedAt.After(*session.EndAt) || session.EndAt.Before(session.StartAt) {
+		return nil
+	}
+	latitude, longitude := value.UpperLat, value.UpperLon
+	if !validFleetCoordinates(latitude, longitude) {
+		latitude, longitude = value.LowerLat, value.LowerLon
+	}
+	if !validFleetCoordinates(latitude, longitude) {
+		return nil
+	}
+	return &telemetryRoutePoint{ObservedAt: observedAt, Latitude: *latitude, Longitude: *longitude}
+}
+
 func (s *telemetryService) historyPagePostgresBounded(ctx context.Context, userID string, vehicleID int, kind string, start, end time.Time, limit, offset int) ([]boundedHistoryPageRow, error) {
 	if s == nil || s.store == nil || s.store.pool == nil || limit <= 0 {
 		return []boundedHistoryPageRow{}, nil
@@ -166,10 +208,12 @@ SELECT s.id, s.public_id, s.started_at, s.ended_at, s.odometer_start, s.odometer
        s.source, s.quality_state, s.quality_reason,
        COALESCE(s.source_instance_id,''), COALESCE(s.source_vehicle_id,''), COALESCE(s.source_record_id,''),
        s.start_address, s.end_address, s.address, s.cost,
-       NULLIF(s.route_json->0->>'latitude','')::double precision,
-       NULLIF(s.route_json->0->>'longitude','')::double precision,
-       NULLIF(s.route_json->(jsonb_array_length(CASE WHEN jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)-1)->>'latitude','')::double precision,
-       NULLIF(s.route_json->(jsonb_array_length(CASE WHEN jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)-1)->>'longitude','')::double precision,
+       CASE WHEN s.kind='drive' AND s.source='telemetry_mqtt' THEN NULL ELSE NULLIF(s.route_json->0->>'latitude','')::double precision END,
+       CASE WHEN s.kind='drive' AND s.source='telemetry_mqtt' THEN NULL ELSE NULLIF(s.route_json->0->>'longitude','')::double precision END,
+       CASE WHEN s.kind='drive' AND s.source='telemetry_mqtt' THEN NULL ELSE NULLIF(s.route_json->(jsonb_array_length(CASE WHEN jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)-1)->>'latitude','')::double precision END,
+       CASE WHEN s.kind='drive' AND s.source='telemetry_mqtt' THEN NULL ELSE NULLIF(s.route_json->(jsonb_array_length(CASE WHEN jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)-1)->>'longitude','')::double precision END,
+       `+historyFleetDriveEndpoint("0")+`,
+       `+historyFleetDriveEndpoint("jsonb_array_length(CASE WHEN jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)-1")+`,
        `+historySOCAtPosition("observed.first_position")+`,
        `+historySOCAtPosition("observed.last_position")+`,
        observed.speed_max, observed.speed_avg, observed.speed_count,
@@ -238,6 +282,7 @@ ORDER BY p.started_at DESC, p.public_id DESC
 		}
 		var row boundedHistoryPageRow
         var contractJSON []byte
+		var driveStartJSON, driveEndJSON []byte
 		var startLatitude, startLongitude, endLatitude, endLongitude *float64
 		if err := rows.Scan(
 			&row.Session.ID, &row.Session.PublicID, &row.Session.StartAt, &row.Session.EndAt,
@@ -246,6 +291,7 @@ ORDER BY p.started_at DESC, p.public_id DESC
 			&row.Session.SourceInstanceID, &row.Session.SourceVehicleID, &row.Session.SourceRecordID,
 			&row.Session.StartAddress, &row.Session.EndAddress, &row.Session.Address, &row.Session.Cost,
 			&startLatitude, &startLongitude, &endLatitude, &endLongitude,
+			&driveStartJSON, &driveEndJSON,
 			&row.StartBatteryLevel, &row.EndBatteryLevel,
 			&row.Metrics.SpeedMax, &row.Metrics.SpeedAvg, &row.Metrics.SpeedCount,
 			&row.Metrics.InsideTempAvg, &row.Metrics.OutsideTempAvg,
@@ -257,12 +303,27 @@ ORDER BY p.started_at DESC, p.public_id DESC
         if len(contractJSON)>0 && string(contractJSON)!="null" {
             if err:=json.Unmarshal(contractJSON,&row.EnergyContract); err!=nil {return nil,err}
         }
-		if startLatitude != nil && startLongitude != nil {
+		if kind == "drive" && row.Session.Source == "telemetry_mqtt" {
+			row.DriveStartPoint = decodeFleetDriveEndpoint(driveStartJSON, row.Session)
+			row.DriveEndPoint = decodeFleetDriveEndpoint(driveEndJSON, row.Session)
+			if row.DriveStartPoint != nil && row.DriveEndPoint != nil &&
+				(row.DriveStartPoint.ObservedAt.After(row.DriveEndPoint.ObservedAt) ||
+					(row.DriveStartPoint.ObservedAt.Equal(row.DriveEndPoint.ObservedAt) &&
+						(row.DriveStartPoint.Latitude != row.DriveEndPoint.Latitude || row.DriveStartPoint.Longitude != row.DriveEndPoint.Longitude))) {
+				row.DriveStartPoint, row.DriveEndPoint = nil, nil
+			}
+			if row.DriveStartPoint != nil {
+				row.Session.Route = append(row.Session.Route, *row.DriveStartPoint)
+			}
+			if row.DriveEndPoint != nil {
+				row.Session.Route = append(row.Session.Route, *row.DriveEndPoint)
+			}
+		} else if startLatitude != nil && startLongitude != nil {
 			row.Session.Route = append(row.Session.Route, telemetryRoutePoint{
 				ObservedAt: row.Session.StartAt, Latitude: *startLatitude, Longitude: *startLongitude,
 			})
 		}
-		if endLatitude != nil && endLongitude != nil {
+		if !(kind == "drive" && row.Session.Source == "telemetry_mqtt") && endLatitude != nil && endLongitude != nil {
 			observedAt := row.Session.StartAt
 			if row.Session.EndAt != nil {
 				observedAt = *row.Session.EndAt
@@ -497,6 +558,15 @@ func (s *telemetryService) historyPageContext(ctx context.Context, userID string
 			return nil, nil, 0, resolvedShow, err
 		}
 		item := historySessionMap(row.Session, kind, row.Sequence)
+		if kind == "drive" && row.Session.Source == "telemetry_mqtt" {
+			item["start_latitude"], item["start_longitude"], item["end_latitude"], item["end_longitude"] = nil, nil, nil, nil
+			if row.DriveStartPoint != nil {
+				item["start_latitude"], item["start_longitude"] = row.DriveStartPoint.Latitude, row.DriveStartPoint.Longitude
+			}
+			if row.DriveEndPoint != nil {
+				item["end_latitude"], item["end_longitude"] = row.DriveEndPoint.Latitude, row.DriveEndPoint.Longitude
+			}
+		}
         if kind == "charge" && validFleetCoordinates(row.ChargeLatitude, row.ChargeLongitude) {
             item["latitude"], item["longitude"] = *row.ChargeLatitude, *row.ChargeLongitude
         }
