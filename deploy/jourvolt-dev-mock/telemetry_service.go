@@ -1260,6 +1260,17 @@ func telemetryReadinessItem(status string) dataReadinessItem {
 	return item
 }
 
+func chargeLocationWithinSession(session telemetrySession, point telemetryChargePoint) bool {
+	if !validFleetCoordinates(point.Latitude, point.Longitude) {
+		return false
+	}
+	if session.Source != "telemetry_mqtt" {
+		return true
+	}
+	return !session.StartAt.IsZero() && !point.ObservedAt.IsZero() && !point.ObservedAt.Before(session.StartAt) &&
+		(session.EndAt == nil || (!session.EndAt.Before(session.StartAt) && !point.ObservedAt.After(*session.EndAt)))
+}
+
 func historySessionMap(session telemetrySession, kind string, index int) map[string]any {
 	end := session.EndAt
 	source := session.Source
@@ -1360,7 +1371,11 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		var lastPower *float64
 		var firstLatitude, firstLongitude *float64
 		for _, point := range session.ChargePoints {
-			item := map[string]any{"date": point.ObservedAt.UTC().Format(time.RFC3339Nano)}
+			var date any = point.ObservedAt.UTC().Format(time.RFC3339Nano)
+			if session.Source == "telemetry_mqtt" && point.ObservedAt.IsZero() {
+				date = nil
+			}
+			item := map[string]any{"date": date}
 			if level := observedRouteBatteryLevel(point.BatteryLevel); level != nil {
 				item["battery_level"] = *level
 				if firstBattery == nil {
@@ -1378,7 +1393,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 				item["charger_details"] = map[string]any{"charger_power": point.ChargerPower}
 				lastPower = cloneFloat(point.ChargerPower)
 			}
-			if validFleetCoordinates(point.Latitude, point.Longitude) {
+			if chargeLocationWithinSession(session, point) {
 				item["latitude"], item["longitude"] = point.Latitude, point.Longitude
 				if firstLatitude == nil {
 					firstLatitude, firstLongitude = cloneFloat(point.Latitude), cloneFloat(point.Longitude)
