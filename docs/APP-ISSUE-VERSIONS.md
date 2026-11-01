@@ -2,31 +2,33 @@
 
 更新：2026-11-02。发现版本是审查/复现时的源码候选，不等于首次引入版本；提交、APK、安装与生产分别记录。完整逐次事件见[JSON账本](releases/app-issue-versions.json)。
 
-共 145 条：保留此前记录，新增电池趋势、用户数据保留与候选行程补全问题。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
+共 147 条：保留此前记录，新增电池趋势、用户数据保留与候选行程补全问题。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
 
 每条记录修复方向及实际验证状态，尚未修复或未回归的项目明确保留；raw receipt/旧记录保留，source gates与发布门不混称已验收。
 
-11 月 2 日未发布 build82 工作树候选：Debug / Release 各 1857 项测试、0 失败（Release 8 项既有跳过）；lint 均 0 错误，Debug 333、Release 314 条警告。此前全量测试中 Fleet 无合同能耗分析列曾有 1 项失败，候选修正后相关定向 116 项通过。最终候选模拟器、签名包、生产发布、真实补传及手机验收仍在进行；下表中 11 月 1 日的 55 项与其他定向数字保留为当时的测试记录，不代表最终版本已发布。
+11 月 2 日 build82：Debug / Release 各 1857 项测试、0 失败（Release 8 项既有跳过）；lint 均 0 错误，Debug 333、Release 314 条警告。此前全量测试中 Fleet 无合同能耗分析列曾有 1 项失败，修正后相关定向 116 项通过。API `8d3da22` 已部署，当前车辆独立桥首轮 478 条 / 10 批完成；build82 已同签覆盖安装并完成指定页面抽查。build83 已同签名保数据覆盖安装，双变体全量、lint、模拟器及指定真机页面抽查通过；其他页面、重复记录和长期桥问题仍开放；旧版测试、线上发布与真机抽查的范围不能混同。
 
 ## 2026-11-01 数据源与刷新
 
 | 问题 ID | 发现日期 / 版本 | 根因与修复 | 验证 |
 | --- | --- | --- | --- |
-| NOV01-BATTERY-ARCHIVE-EVIDENCE | 2026-11-01 / App build81、API 403aa6c | 云端归档没有提供行程额定续航及合格温标；独立趋势证据链和回填候选未部署 | 旧 110 条与云归档同身份及时窗只读匹配；服务候选 `8d3da22` 的 PG16 671 项/子项、App 分支服务 568 项/子项及各自桥 73 项通过 / 1 项跳过均为合成验证，未回填、未手机验收，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
-| NOV01-RESYNC-HISTORY-RETENTION | 2026-11-01 / App build81 源码审查 | 设置重新同步原先先删除历史摘要和聚合；候选改为保留记录并重新检查 | 相关真实 Room/VM 定向和当前候选双变体全量单测通过；未证实用户触发过原操作，真机验收待完成，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
+| NOV02-BATTERY-UNSUPPORTED-MSG | 2026-11-02 / App 2.1.63 build82 | 明确标记 unsupported 的空容量被误报为网络失败；2.1.64 / build83 提交 `7bd9ecf136f1e4f92d17f1cfa54cf7710d467893` 区分未提供实测容量与真实网络错误 | 72 项定向、双变体各 1862 项单测、双 lint 和模拟器 36 项通过；build83 真机此次显示“当前数据源未提供实测电池容量”，未见错误连接提示，范围仅限本次抽查，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
+| NOV02-CHARGE-UNLINKED-IMPORT | 2026-11-02 / App 2.1.63 build82 | 同分钟出现空卡与 11.1 kWh 卡；云端 local_import 与 archive 尚无可验证来源映射 | 未修复；build82 手机及源、云只读核查，不能仅凭时间或能量合并，也不能丢弃手工费用；见[记录](RPT-2026-11-02-charge-import-duplicates.md) |
+| NOV01-BATTERY-ARCHIVE-EVIDENCE | 2026-11-01 / App build81、API 403aa6c | 云端归档没有提供行程额定续航及合格温标；独立趋势证据链已按绑定作用域部署并首轮回填 | 生产 `8d3da22` 已部署；478 条 / 10 批，SQL 112 合格含旧 110；build82 手机显示 112 样本和曲线。长期重启与源后补回扫仍开放，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
+| NOV01-RESYNC-HISTORY-RETENTION | 2026-11-01 / App build81 源码审查 | 设置重新同步原先先删除历史摘要和聚合；候选改为保留记录并重新检查 | 相关真实 Room/VM 定向和 build82 双变体全量单测通过；未证实用户触发过原操作，真机验收待完成，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
 | NOV01-LEGACY-COST-RETENTION | 2026-11-01 / App build81 源码审查 | 旧手工总价迁移遇异常可能删除原 JSON；候选保留原文并安全重试 | 真实 DataStore/Room 合成回归通过，未证实用户发生该问题，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
-| NOV01-BATTERY-TREND-RETENTION | 2026-11-01 / App build81 源码审查 | 同身份空/不足趋势可能替换已有曲线；候选按验证身份保留缓存并隔离切车 | 电池证据及页面定向 46 项和本候选双变体全量单元测试通过；未部署、回填和真机待验，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
-| NOV01-DRIVE-SPARSE-RECEIPT | 2026-11-01 / App build81 源码审查 | 同会话连续稀疏响应可能丢失旧 SOC/续航/温度原始证据；build82 候选保留原回执和单位 | IN_PROGRESS：真实 Room 合成复现后候选已修；早期定向 112 项、后续含 Fleet 修复定向 116 项及本候选双变体全量单测通过；真机待验，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
-| NOV01-DRIVE-ENERGY-SHARED-BUDGET | 2026-11-01 / 2.1.63 build82 未发布候选 | 早期候选仅限制单个行程补全任务，同一刷新多个任务可能累计超过 20 次逻辑详情调用；当前候选按刷新代共享预算并在失败时停止后续请求 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成；20 次仅为逻辑调用上限 |
-| NOV01-DRIVE-ENERGY-CACHE-REVISIT | 2026-11-01 / 2.1.63 build82 未发布候选 | 早期候选先查尝试标记，可能跳过之后才保存的同身份本地详情；当前候选先检查经过验证的本地点，再用尝试标记限制远端请求 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成，未在 build81 真机复现 |
-| NOV01-DRIVE-GEOCODE-PHYSICAL-LIMIT | 2026-11-01 / 2.1.63 build82 未发布候选 | 高德同步反查可能不响应取消；当前候选限制行程自动反查最多两个物理调用，满槽后等待一次释放事件再试 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成；[已知极端边界](RPT-2026-11-01-android-module-boundaries.md)仍开放 |
-| NOV01-DRIVE-AUTO-POINT-BUDGET | 2026-11-01 / 2.1.63 build82 未发布候选 | 自动读取行程详情的早期候选会写入共享明细缓存，可能占用充电曲线的缓存预算；当前候选只写经身份和完整功率窗口校验的能耗摘要，不自动写行程曲线 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成；不是已上线或真机复现的问题 |
-| NOV01-DRIVE-ENRICH-CHARGE-WAIT | 2026-11-01 / 2.1.63 build82 未发布候选 | 早期候选在充电历史完成前未用已验证行程启动补全；当前候选按已验证 Room 行程变化独立触发并保留身份栅栏 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成 |
+| NOV01-BATTERY-TREND-RETENTION | 2026-11-01 / App build81 源码审查 | 同身份空/不足趋势可能替换已有曲线；build82 按验证身份保留缓存并隔离切车 | 46 项定向及 build82 双变体全量单测通过；真实样本与曲线已手机抽查，空/不足样本及切车等其他场景仍待验证，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
+| NOV01-DRIVE-SPARSE-RECEIPT | 2026-11-01 / App build81 源码审查 | 同会话连续稀疏响应可能丢失旧 SOC/续航/温度原始证据；build82 候选保留原回执和单位 | IN_PROGRESS：真实 Room 合成复现后候选已修；早期定向 112 项、后续含 Fleet 修复定向 116 项及 build82 双变体全量单测通过；真机待验，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
+| NOV01-DRIVE-ENERGY-SHARED-BUDGET | 2026-11-01 / 2.1.63 build82 未发布候选 | 早期候选仅限制单个行程补全任务，同一刷新多个任务可能累计超过 20 次逻辑详情调用；当前候选按刷新代共享预算并在失败时停止后续请求 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验；20 次仅为逻辑调用上限 |
+| NOV01-DRIVE-ENERGY-CACHE-REVISIT | 2026-11-01 / 2.1.63 build82 未发布候选 | 早期候选先查尝试标记，可能跳过之后才保存的同身份本地详情；当前候选先检查经过验证的本地点，再用尝试标记限制远端请求 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验，未在 build81 真机复现 |
+| NOV01-DRIVE-GEOCODE-PHYSICAL-LIMIT | 2026-11-01 / 2.1.63 build82 未发布候选 | 高德同步反查可能不响应取消；当前候选限制行程自动反查最多两个物理调用，满槽后等待一次释放事件再试 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验；[已知极端边界](RPT-2026-11-01-android-module-boundaries.md)仍开放 |
+| NOV01-DRIVE-AUTO-POINT-BUDGET | 2026-11-01 / 2.1.63 build82 未发布候选 | 自动读取行程详情的早期候选会写入共享明细缓存，可能占用充电曲线的缓存预算；当前候选只写经身份和完整功率窗口校验的能耗摘要，不自动写行程曲线 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验；不是已上线或真机复现的问题 |
+| NOV01-DRIVE-ENRICH-CHARGE-WAIT | 2026-11-01 / 2.1.63 build82 未发布候选 | 早期候选在充电历史完成前未用已验证行程启动补全；当前候选按已验证 Room 行程变化独立触发并保留身份栅栏 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验 |
 | NOV01-COST-PARTIAL-ESTIMATE | 2026-11-01 / 2.1.62 build81 对应源码 | 充电页可基于 Fleet 部分观测显示估价，成本页汇总仍要求完整电量而跳过该估价；需单独标注已采集部分，不得混作整场或正式账单 | 开放未修；源码证据，未在用户手机确认，见[审查](RPT-2026-11-01-android-module-boundaries.md) |
 | NOV01-SELF-HOSTED-MANUAL-COST | 2026-11-01 / 2.1.62 build81 对应源码 | 兼容的自托管旧记录可能缺少 source，手工费用可保存但被判为来源未核实；需依已验证来源和会话隔离修复，不放行所有空来源 | 开放未修；源码证据，判断早于本轮，当前用户场景未真机复现，见[审查](RPT-2026-11-01-android-module-boundaries.md) |
 | NOV01-DRIVE-FLEET-LOCATION | 2026-11-01 / App build81、API 403aa6c | Fleet 轨迹坐标为大写字段，列表查询只读小写；App 合并还需避免跨响应逐轴拼坐标 | 服务端与 App 候选测试中，真机待验收；见[记录](RPT-2026-11-01-drive-data-regression.md) |
-| NOV01-DRIVE-ENERGY-ENRICH | 2026-11-01 / App build81 | 归档列表缺少能耗摘要，打开详情后才由完整功率样本估算并写回 | 原问题真机复现；11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成；无功率不编造 |
-| NOV01-DRIVE-MIXED-DUP | 2026-11-01 / App build81、API 403aa6c | Fleet 与归档存在相近时间的记录；仅凭时间不能证明为同一行程 | 保留原记录，不盲目删除或合并；待验证身份和时窗，见[记录](RPT-2026-11-01-drive-data-regression.md) |
+| NOV01-DRIVE-ENERGY-ENRICH | 2026-11-01 / App build81 | 归档列表缺少能耗摘要，打开详情后才由完整功率样本估算并写回 | 原问题真机复现；11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验；无功率不编造 |
+| NOV01-DRIVE-MIXED-DUP | 2026-11-01 / App build81、API 403aa6c | Fleet 与归档存在相近时间的记录；仅凭时间不能证明为同一行程 | build83 手机 11 月 1 日 22:03 两卡数值与云端两类记录分别相符，但未读取手机卡 ID，无法证明一一映射或同一行程；保留原记录、不自动合并，见[记录](RPT-2026-11-01-drive-data-regression.md) |
 | NOV01-CHARGE-REFRESH-FEEDBACK | 2026-11-01 / 2.1.62 build81 | 充电缓存发布会提前结束刷新状态，超时正文也被误作错误键；build82 候选修正状态与提示 | 代码修正及回归进行中，见[记录](RPT-2026-11-01-charge-energy-filters.md) |
 | NOV01-ONBOARDING-PENDING | 2026-11-01 / 2.1.62 build81 | 已登录账号的接入状态仍为待处理时，重启会再次进入自动接入页；继续进入无需重新登录。简单跳过可能隐藏真实授权失败，待设计安全引导 | 真机两次覆盖安装复现；未改登录路由，见[记录](RPT-2026-11-01-charge-energy-filters.md) |
 | NOV01-FLEET-LOCATION-WINDOW | 2026-11-01 / API 2548097 | Fleet 位置事件可能迟到并落入错误充电会话；API 403aa6c 按同会话起止时间校验，归档原有规则保持 | 隔离测试与生产健康核验通过；真实迟到样本待验证，见[记录](RPT-2026-11-01-charge-energy-filters.md) |

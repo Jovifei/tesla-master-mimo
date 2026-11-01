@@ -1,8 +1,43 @@
 {
   "schema_version": 1,
   "branch": "codex/app-collection-recovery-20261029",
-  "observation_note": "发现版本不等于首次引入版本；build77 安装及 CI 属历史记录，当前手机为 build81，未发布的 build82 工作树候选单元测试和 lint 已完成，模拟器、签名、生产发布、真实补传及手机验收仍在进行；Fleet 源时间与长期续期风险仍开放",
+  "observation_note": "发现版本不等于首次引入版本；build77 安装及 CI 属历史记录；build82 已同签覆盖安装并完成指定页面抽查，生产 API 8d3da22 已部署且当前车辆首轮趋势回填完成；build83 已同签名覆盖安装并完成指定真机页面抽查，未代表全部页面或历史均已验收；充电疑似重复导入仍未修复；独立桥重启凭据、源后补回扫及费用跨页口径仍开放",
   "issues": [
+    {
+      "id": "NOV02-CHARGE-UNLINKED-IMPORT",
+      "title": "疑似重复导入的充电记录出现空数据卡",
+      "found_date": "2026-11-02",
+      "found_version": "App 2.1.63 build82",
+      "source_ref": "../RPT-2026-11-02-charge-import-duplicates.md",
+      "status": "OPEN_UNDER_INVESTIGATION",
+      "fix_version": null,
+      "change": "待以账号、车辆、来源及原始记录凭据核验 local_import 与 archive 的对应；不得仅因时间或电量接近自动合并、删除或迁移费用。",
+      "verification": "build82 真机同分钟出现空卡与 11.1 kWh 卡；源和云只读核查发现相近记录，但未取得手机卡原始 ID/回执与来源的直接映射。问题未修复，保留原始数据及费用。",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-11-02",
+          "version": "App 2.1.63 build82 / API 8d3da22",
+          "action": "DEVICE_SYMPTOM_AND_SOURCE_REVIEW",
+          "detail": "空卡与 11.1 kWh 卡已真机复现，云端 local_import 与 archive 无直接来源映射；未修复，不按相近时间盲目合并。",
+          "evidence": "../RPT-2026-11-02-charge-import-duplicates.md",
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "NOV02-BATTERY-UNSUPPORTED-MSG",
+      "title": "明确不支持的空容量被误报为网络失败",
+      "found_date": "2026-11-02",
+      "found_version": "App 2.1.63 build82",
+      "source_ref": "../RPT-2026-11-01-battery-trend-retention.md",
+      "status": "FIXED_DEVICE_VERIFIED",
+      "fix_version": "App 2.1.64 build83，指定页面真机抽查通过",
+      "change": "区分明确 unsupported 的空容量与真实网络失败，保留已有电池趋势和数据来源隔离",
+      "verification": "build83 提交 7bd9ecf136f1e4f92d17f1cfa54cf7710d467893：72 项定向通过；Debug/Release 各 1862 项无失败，Release 8 项既有跳过；双 lint 0 错误、333/314 警告；模拟器界面及迁移 36 项通过。build83 真机此次显示未提供实测容量且未见连接错误提示；仅限本次观察。",
+      "commit": "7bd9ecf136f1e4f92d17f1cfa54cf7710d467893",
+      "history": [{"date":"2026-11-02","version":"2.1.63 build82 / 2.1.64 build83 候选","action":"UNSUPPORTED_MESSAGE_CANDIDATE_FIX","detail":"build82 对明确 unsupported 的空容量提示网络失败；build83 候选修复并通过 72 项定向，全量及手机验收待完成","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null},{"date":"2026-11-02","version":"2.1.64 build83","action":"COMMITTED_LOCAL_FULL_GATE_AND_EMULATOR","detail":"Debug/Release 各 1862 项无失败，Release 8 项既有跳过；双 lint 0 错误、333/314 警告；模拟器界面与迁移 36 项通过。签名构建和手机验收仍在进行。","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":"7bd9ecf136f1e4f92d17f1cfa54cf7710d467893"},{"date":"2026-11-02","version":"App 2.1.64 build83","action":"SIGNED_INSTALL_AND_DEVICE_SAMPLE","detail":"同签名覆盖安装；电池页 112 样本及趋势可见，unsupported 显示未提供实测容量，此次未见连接错误提示；其他场景仍需验证。","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":"7bd9ecf136f1e4f92d17f1cfa54cf7710d467893"}]
+    },
     {
       "id": "NOV01-BATTERY-ARCHIVE-EVIDENCE",
       "title": "云端缺失生成电池趋势所需的归档证据",
@@ -10,11 +45,11 @@
       "found_version": "App 2.1.62 build81 / production API 403aa6c",
       "source_ref": "../RPT-2026-11-01-battery-trend-retention.md",
       "status": "IN_PROGRESS",
-      "fix_version": "App build82 / independent cloud evidence candidate",
+      "fix_version": "App 2.1.63 build82 / production API 8d3da22 / independent bridge",
       "change": "按完整来源绑定与时间窗追加独立趋势证据，保留原桥游标、历史和用户费用",
-      "verification": "真机样本不足；真实来源旧 110 条与云端同身份同时间窗 110 条只读匹配；服务候选 8d3da22 的 PG16 合成回归 671 项/子项，App 分支服务 PG16 568 项/子项，各自桥 73 项通过及 1 项跳过；候选未部署、未回填，模拟器、签名包和手机验收仍在进行",
+      "verification": "生产 API 8d3da22 已部署，readiness 正常、未授权 401、其他 15 容器不变；独立只读桥首轮 478 条/10 批，SQL 112 条合格含旧 110；build82 手机上显示 112 样本与曲线。桥 restart=no 需安全重新注入凭据、源后补未回扫；其他数据未逐条验收",
       "commit": null,
-      "history": [{"date":"2026-11-01","version":"build81 / API 403aa6c","action":"SOURCE_SAMPLES_CONFIRMED","detail":"源端 110 条样本保留，云接口缺额定续航与可验证温标","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null}]
+      "history": [{"date":"2026-11-01","version":"build81 / API 403aa6c","action":"SOURCE_SAMPLES_CONFIRMED","detail":"源端 110 条样本保留，云接口缺额定续航与可验证温标","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null},{"date":"2026-11-02","version":"build82 / API 8d3da22","action":"CURRENT_VEHICLE_FIRST_BACKFILL_AND_PHONE_CHECK","detail":"生产 API 已部署；独立只读桥首轮 478 条/10 批，SQL 112 条合格含旧 110，手机显示 112 样本与曲线；桥重启和源后补等限制仍开放","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":"8d3da22eeffbe251b031b561d34da2323c16cf69"}]
     },
     {
       "id": "NOV01-RESYNC-HISTORY-RETENTION",
@@ -25,7 +60,7 @@
       "status": "IN_PROGRESS",
       "fix_version": "App 2.1.63 build82 candidate",
       "change": "保留本地历史、聚合与详情，重置进度后重新检查并补同步",
-      "verification": "相关 Room/VM 定向及最终候选双变体全量单元测试通过；未证实用户触发原操作，模拟器和手机验收待完成",
+      "verification": "相关 Room/VM 定向及 build82 双变体全量单元测试通过；未证实用户触发原操作，模拟器和手机验收待完成",
       "commit": null,
       "history": [{"date":"2026-11-01","version":"build81","action":"SOURCE_REVIEW_FOUND","detail":"重新同步旧路径先删除摘要与聚合","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null}]
     },
@@ -38,7 +73,7 @@
       "status": "IN_PROGRESS",
       "fix_version": "App 2.1.63 build82 candidate",
       "change": "保留原 JSON；合法项幂等迁移，异常或冲突不标记完成",
-      "verification": "真实 DataStore/Room 合成定向及最终候选双变体全量单元测试通过；未证实用户发生该问题，模拟器和手机验收待完成",
+      "verification": "真实 DataStore/Room 合成定向及 build82 双变体全量单元测试通过；未证实用户发生该问题，模拟器和手机验收待完成",
       "commit": null,
       "history": [{"date":"2026-11-01","version":"build81","action":"SOURCE_REVIEW_FOUND","detail":"损坏或部分无效 JSON 曾可能被过滤后删除","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null}]
     },
@@ -51,7 +86,7 @@
       "status": "IN_PROGRESS",
       "fix_version": "App 2.1.63 build82 candidate",
       "change": "同验证身份保留较完整缓存并标缓存，身份映射变化时清除旧页面状态",
-      "verification": "电池证据及页面候选定向 46 项、合成数据库迁移仪器 14 项及最终候选双变体全量单测通过；模拟器、部署、源样本回填及手机验收待完成",
+      "verification": "build82 电池证据及页面定向 46 项、合成数据库迁移仪器 14 项及双变体全量单测通过；已真实补传并在手机显示 112 样本和曲线，空/不足样本及切车等其他场景仍待验证",
       "commit": null,
       "history": [{"date":"2026-11-01","version":"build81","action":"SOURCE_REVIEW_FOUND","detail":"成功但不足样本可能覆盖先前可用趋势","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null}]
     },
@@ -64,7 +99,7 @@
       "status": "IN_PROGRESS",
       "fix_version": "App 2.1.63 build82 未发布工作树候选",
       "change": "同身份同时间窗保留真实原回执及可验证单位，防止稀疏更新擦除无关证据；行程与充电冷归档各限 64 MiB，满额时该类别整批回滚、保留旧记录并警告；不同 ID 缺乏可信映射时可并列",
-      "verification": "真实 Room 合成复现，候选已修；数据保护早期定向 112 项通过，随后全量中 Fleet 无合同分析列 1 项失败已修、相关定向 116 项通过；最终候选双变体各 1857 项 0 失败（Release 8 项既有跳过），手机验收待完成",
+      "verification": "真实 Room 合成复现，候选已修；数据保护早期定向 112 项通过，随后全量中 Fleet 无合同分析列 1 项失败已修、相关定向 116 项通过；build82 双变体各 1857 项 0 失败（Release 8 项既有跳过），手机验收待完成",
       "commit": null,
       "history": [{"date":"2026-11-01","version":"build81","action":"SOURCE_REVIEW_FOUND","detail":"同一会话连续稀疏响应可能使旧 SOC/续航/温度不可再读","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null},{"date":"2026-11-01","version":"2.1.63 build82 未发布工作树候选","action":"CANDIDATE_TARGETED_TESTS","detail":"真实 Room 合成复现；候选保护原回执与单位，数据保护定向此前 1 项失败，修复后 112 项通过；当时完整及手机验收待完成","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null},{"date":"2026-11-02","version":"2.1.63 build82 未发布工作树候选","action":"CANDIDATE_FULL_TESTS","detail":"全量中 Fleet 无合同分析列失败后修复，相关定向 116 项通过；Debug/Release 各 1857 项 0 失败、Release 既有 8 项跳过，lint 双变体 0 错误；模拟器及手机验收仍在进行","evidence":"../RPT-2026-11-01-battery-trend-retention.md","commit":null}]
     },
@@ -77,7 +112,7 @@
       "status": "IN_PROGRESS",
       "fix_version": "App 2.1.63 build82 工作树候选",
       "change": "同一刷新代的补全任务共享 20 次逻辑详情调用预算，错误时停止后续请求，保留身份和缓存校验",
-      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成；20 次不限制底层 HTTP 自动重试，不声称 build81 真机故障",
+      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验；20 次不限制底层 HTTP 自动重试，不声称 build81 真机故障",
       "commit": null,
       "history": [{"date":"2026-11-01","version":"build82 未发布工作树候选","action":"CANDIDATE_LOGICAL_BUDGET_REVIEW","detail":"早期每任务单独计数可能在同一次刷新内累计超限；改用刷新代共享预算及错误停止","evidence":"../RPT-2026-11-01-android-module-boundaries.md","commit":null}]
     },
@@ -90,7 +125,7 @@
       "status": "IN_PROGRESS",
       "fix_version": "App 2.1.63 build82 工作树候选",
       "change": "先读取并验证同身份本地详情，保留尝试标记以限制重复远端请求",
-      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成；未在 build81 真机复现",
+      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验；未在 build81 真机复现",
       "commit": null,
       "history": [{"date":"2026-11-01","version":"build82 未发布工作树候选","action":"CANDIDATE_LOCAL_CACHE_SKIP_REVIEW","detail":"先检查尝试标记会遮住后续获得的本地点；调整为先校验本地详情再判断远端尝试","evidence":"../RPT-2026-11-01-android-module-boundaries.md","commit":null}]
     },
@@ -103,7 +138,7 @@
       "status": "IN_PROGRESS",
       "fix_version": "App 2.1.63 build82 工作树候选",
       "change": "行程自动反查限两个物理调用，满槽等待一次释放事件后重试；底层调用真正结束才释放许可",
-      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成；多等待者竞争、自身超时不自动重试及同目标最多两次重复调用等限制开放，不声称 build81 真机故障",
+      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验；多等待者竞争、自身超时不自动重试及同目标最多两次重复调用等限制开放，不声称 build81 真机故障",
       "commit": null,
       "history": [{"date":"2026-11-01","version":"build82 未发布工作树候选","action":"CANDIDATE_GEOCODE_BLOCKING_REVIEW","detail":"高德同步调用不能靠协程超时强制中断；候选加入行程反查两槽和单次释放事件重试","evidence":"../RPT-2026-11-01-android-module-boundaries.md","commit":null}]
     },
@@ -116,7 +151,7 @@
       "status": "IN_PROGRESS",
       "fix_version": "App 2.1.63 build82 工作树候选",
       "change": "自动补全只写已验证身份及完整功率窗口的能耗摘要，不自动写入行程曲线或改变充电详情缓存",
-      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成；不是已上线或真机复现的问题",
+      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验；不是已上线或真机复现的问题",
       "commit": null,
       "history": [{"date":"2026-11-01","version":"build82 未发布工作树候选","action":"CANDIDATE_CACHE_BUDGET_RISK_AND_FIX","detail":"早期自动详情候选可能占用共享曲线预算；改为仅写经校验的能耗摘要，保留真实用户曲线","evidence":"../RPT-2026-11-01-drive-data-regression.md","commit":null}]
     },
@@ -129,7 +164,7 @@
       "status": "IN_PROGRESS",
       "fix_version": "App 2.1.63 build82 工作树候选",
       "change": "在当前身份与回执仍有效时按已验证的 Room 行程结果独立触发有界补全，不等待充电历史结束",
-      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成",
+      "verification": "11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验",
       "commit": null,
       "history": [{"date":"2026-11-01","version":"build82 未发布工作树候选","action":"CANDIDATE_CROSS_PAGE_WAIT_FOUND","detail":"行程已可读取时无关充电请求可能阻塞自动补全；候选改为经身份校验的独立触发","evidence":"../RPT-2026-11-01-android-module-boundaries.md","commit":null}]
     },
@@ -181,7 +216,7 @@
       "status": "IN_PROGRESS",
       "fix_version": "App candidate",
       "change": "有界自动读取同身份可信详情并在完整证据下计算估算值；不足时继续显示未知",
-      "verification": "真实归档详情积分及返回列表复现；11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日当前候选双变体全量单测和 lint 已通过，手机及服务端发布待完成",
+      "verification": "真实归档详情积分及返回列表复现；11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验",
       "commit": null,
       "history": [{"date":"2026-11-01","version":"build81","action":"MANUAL_DETAIL_REQUIRED_FOUND","detail":"列表横杠，打开详情并返回后出现可核验的功率积分估算","evidence":"../RPT-2026-11-01-drive-data-regression.md","commit":null}]
     },
@@ -194,9 +229,9 @@
       "status": "OPEN_UNDER_INVESTIGATION",
       "fix_version": null,
       "change": "仅在身份与记录对应关系有充分证据时处理，不按同一分钟盲目合并",
-      "verification": "真机已看到相近时间记录，是否同一行程尚未证实",
+      "verification": "build83 真机 11 月 1 日 22:03 两卡与 Fleet/归档只读数值分别相符，但未读取手机卡 ID，不能认定精确映射或同一行程；无功率点的 Fleet 能耗不造值。",
       "commit": null,
-      "history": [{"date":"2026-11-01","version":"build81 / API 403aa6c","action":"MIXED_SOURCE_NEAR_DUPLICATE_FOUND","detail":"保留两条记录直至来源对应关系得到证明","evidence":"../RPT-2026-11-01-drive-data-regression.md","commit":null}]
+      "history": [{"date":"2026-11-01","version":"build81 / API 403aa6c","action":"MIXED_SOURCE_NEAR_DUPLICATE_FOUND","detail":"保留两条记录直至来源对应关系得到证明","evidence":"../RPT-2026-11-01-drive-data-regression.md","commit":null},{"date":"2026-11-02","version":"App 2.1.64 build83 / API 8d3da22","action":"DEVICE_AND_SOURCE_NUMBERS_COMPARED_ID_UNPROVEN","detail":"相近两卡与 Fleet/归档只读数值分别相符；未验证手机卡 ID 与源记录对应，不自动合并。","evidence":"../RPT-2026-11-01-drive-data-regression.md","commit":null}]
     },
     {
       "id": "NOV01-CHARGE-REFRESH-FEEDBACK",
@@ -6108,42 +6143,73 @@
   "baseline_checkpoint": "e53a2d01a54d55c554019fb861d69f3737d4b5bb",
   "updated_date": "2026-11-02",
   "candidate": {
-    "versionName": "2.1.63",
-    "versionCode": 82,
-    "installation": "FINAL_SIGNED_APK_AND_DEVICE_ACCEPTANCE_IN_PROGRESS",
+    "versionName": "2.1.64",
+    "versionCode": 83,
+    "installation": "INSTALLED_WITH_ADB_INSTALL_R",
     "production": "CURRENT_APP_CANDIDATE_NOT_PUBLISHED",
-    "apk_sha256": null,
-    "certificate_sha256": null,
-    "debuggable": null,
+    "apk_sha256": "292A88CBD7C71ADA9EE2D280118A1E7E4B9B1B9F2BF44DF22997FFD269988FF8",
+    "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
+    "debuggable": false,
     "package": "com.matelink",
-    "source_commit": null,
-    "source_worktree_head": "b762521a2c47a57321aab26dced4643bbfb286fb",
+    "source_commit": "7bd9ecf136f1e4f92d17f1cfa54cf7710d467893",
+    "source_worktree_head": "7bd9ecf136f1e4f92d17f1cfa54cf7710d467893",
     "source_worktree_dirty": true,
-    "first_install_time_preserved": null,
+    "first_install_time_preserved": true,
     "integrated_branch": null,
     "integrated_head_at_push": null,
     "ci_verified_head": null,
     "ci_checks_passed": null,
-    "verification": "2026-11-02 最终工作树候选 Debug/Release 各 1857 项、0 失败（Release 8 项既有跳过）；lint 两变体 0 错误，警告 333/314；此前全量 Fleet 无合同能耗列 1 项失败已修、相关定向 116 项通过；模拟器、签名包、生产发布、真实补传及手机验收仍在进行；不继承旧 SHA 的 CI 结果"
+    "verification": "2026-11-02 build83 提交 7bd9ecf136f1e4f92d17f1cfa54cf7710d467893：隔离验证树 84 个变更 Android 路径统一换行后一致；72 项定向，Debug/Release 各 1862 项无失败（Release 8 项既有跳过），lint 0 错误、333/314 警告，模拟器 36 项通过；同签名 install -r 后首页、电池及指定充电/行程真机抽查通过，不代表全部页面、历史或远端 CI 通过。"
   },
   "installed_app": {
-    "versionName": "2.1.62",
-    "versionCode": 81,
+    "versionName": "2.1.64",
+    "versionCode": 83,
     "installation": "INSTALLED_WITH_ADB_INSTALL_R",
-    "apk_sha256": "D890B0FDC2AD98260AB9D4EA6E5AA4187F5242B969B399266684456E0723FA41",
+    "apk_sha256": "292A88CBD7C71ADA9EE2D280118A1E7E4B9B1B9F2BF44DF22997FFD269988FF8",
     "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
     "debuggable": false,
     "package": "com.matelink",
-    "source_commit": "debf63138dd4fce78a923942b75f53eb3911be12",
+    "source_commit": "7bd9ecf136f1e4f92d17f1cfa54cf7710d467893",
     "first_install_time_preserved": true,
-    "evidence": "../RPT-2026-11-01-charge-energy-filters.md"
+    "first_install_time_before": "2026-08-31 22:36:47",
+    "first_install_time_after": "2026-08-31 22:36:47",
+    "evidence": "../RPT-2026-11-01-battery-trend-retention.md",
+    "verification_scope": "首页、电池、指定充电与行程真机抽查；不代表全部页面或所有历史验收。"
   },
+  "installed_app_history": [
+    {
+      "versionName": "2.1.63",
+      "versionCode": 82,
+      "installation": "INSTALLED_WITH_ADB_INSTALL_R",
+      "apk_sha256": "2C96DE7F6AEE2CB5A0F12E4C5CFBE51E8D1F1E576742AF113633EFBA55AB2DC8",
+      "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
+      "debuggable": false,
+      "package": "com.matelink",
+      "source_commit": "9f917cdc486eebb3e50a6623eb09490ce742a1c4",
+      "first_install_time_preserved": true,
+      "evidence": "../RPT-2026-11-01-battery-trend-retention.md",
+      "history_note": "build82 的历史同签名安装与页面抽样；2026-11-02 已由 build83 覆盖安装。"
+    },
+    {
+      "versionName": "2.1.62",
+      "versionCode": 81,
+      "installation": "INSTALLED_WITH_ADB_INSTALL_R",
+      "apk_sha256": "D890B0FDC2AD98260AB9D4EA6E5AA4187F5242B969B399266684456E0723FA41",
+      "certificate_sha256": "9AB144E824ABF26A5941819ABB06831288C36A8BFE622657E3DC9D88281FC774",
+      "debuggable": false,
+      "package": "com.matelink",
+      "source_commit": "debf63138dd4fce78a923942b75f53eb3911be12",
+      "first_install_time_preserved": true,
+      "evidence": "../RPT-2026-11-01-charge-energy-filters.md"
+    }
+  ],
   "production_api": {
-    "build_sha": "403aa6cfba6143b4835565231d6a0e502a8c52e6",
+    "build_sha": "8d3da22eeffbe251b031b561d34da2323c16cf69",
     "status": "DEPLOYED",
-    "evidence": "../RPT-2026-11-01-charge-energy-filters.md"
+    "evidence": "../RPT-2026-11-01-battery-trend-retention.md"
   },
-  "code_commit": null,
+  "production_api_history": [{"build_sha":"403aa6cfba6143b4835565231d6a0e502a8c52e6","status":"DEPLOYED","evidence":"../RPT-2026-11-01-charge-energy-filters.md","history_note":"2026-11-02 更新前历史生产版本"}],
+  "code_commit": "7bd9ecf136f1e4f92d17f1cfa54cf7710d467893",
   "historical_code_commit": "a760b13f4e8a1eecd49f67576fee34912b5d3cfa",
   "previous_candidate": {
     "versionName": "2.1.54",
@@ -6156,6 +6222,26 @@
     "package": "com.matelink"
   },
   "candidate_history": [
+    {
+      "versionName": "2.1.63",
+      "versionCode": 82,
+      "installation": "FINAL_SIGNED_APK_AND_DEVICE_ACCEPTANCE_IN_PROGRESS",
+      "production": "CURRENT_APP_CANDIDATE_NOT_PUBLISHED",
+      "apk_sha256": null,
+      "certificate_sha256": null,
+      "debuggable": null,
+      "package": "com.matelink",
+      "source_commit": null,
+      "source_worktree_head": "b762521a2c47a57321aab26dced4643bbfb286fb",
+      "source_worktree_dirty": true,
+      "first_install_time_preserved": null,
+      "integrated_branch": null,
+      "integrated_head_at_push": null,
+      "ci_verified_head": null,
+      "ci_checks_passed": null,
+      "verification": "2026-11-02 最终工作树候选 Debug/Release 各 1857 项、0 失败（Release 8 项既有跳过）；lint 两变体 0 错误，警告 333/314；此前全量 Fleet 无合同能耗列 1 项失败已修、相关定向 116 项通过；模拟器、签名包、生产发布、真实补传及手机验收仍在进行；不继承旧 SHA 的 CI 结果",
+      "history_note": "2026-11-02 部署前快照；该版之后已签名安装并完成指定实机抽查，见 installed_app"
+    },
     {
       "versionName": "2.1.56",
       "versionCode": 75,
