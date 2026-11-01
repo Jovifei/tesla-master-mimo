@@ -895,6 +895,7 @@
     <string name="external_action_unavailable">没有可用应用打开此链接。</string>
     <string name="charge_cost_actual">实际记录</string>
     <string name="charge_cost_manual">人工总价</string>
+    <string name="charge_cost_pending_short">待核实</string>
     <string name="edit_charge_cost">修改总价</string>
     <string name="charge_total_amount">本次充电总价</string>
     <string name="charge_cost_legacy_pending">旧手工金额 %1$.2f 的币种和会话未确认。请按当前币种重新输入并保存，以绑定本次充电。</string>
@@ -1102,8 +1103,8 @@
     <string name="max_speed">最高速度</string>
     <string name="maximum">最大值</string>
     <string name="mileage_avg_month">平均/月</string>
-    <string name="mileage_avg_year">平均/年</string>
-    <string name="mileage_avg_year_message">年平均行驶距离</string>
+    <string name="mileage_avg_year">年化里程</string>
+    <string name="mileage_avg_year_message">按首条有效行程至今的时间跨度年化，不代表某个自然年度的实际里程。</string>
     <string name="mileage_avg_year_title">年平均</string>
     <string name="mileage_by_day">按天</string>
     <string name="mileage_by_month">按月</string>

@@ -899,6 +899,7 @@
     <string name="external_action_unavailable">No app is available to open this link.</string>
     <string name="charge_cost_actual">Actual record</string>
     <string name="charge_cost_manual">Manual total</string>
+    <string name="charge_cost_pending_short">Pending verification</string>
     <string name="edit_charge_cost">Modify total amount</string>
     <string name="charge_total_amount">Session total</string>
     <string name="charge_cost_legacy_pending">Previous manual amount %1$.2f has unconfirmed currency and session. Enter and save a value to bind this charge in the selected currency.</string>
@@ -1111,8 +1112,8 @@
     <string name="max_speed">Max Speed</string>
     <string name="maximum">Maximum</string>
     <string name="mileage_avg_month">Avg/Month</string>
-    <string name="mileage_avg_year">Avg/Year</string>
-    <string name="mileage_avg_year_message">Average distance per year</string>
+    <string name="mileage_avg_year">Annualized distance</string>
+    <string name="mileage_avg_year_message">Annualized from the first valid drive to today; it is not a calendar-year total.</string>
     <string name="mileage_avg_year_title">Average Per Year</string>
     <string name="mileage_by_day">By Day</string>
     <string name="mileage_by_month">By Month</string>

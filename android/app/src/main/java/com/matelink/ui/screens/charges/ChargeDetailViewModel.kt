@@ -33,6 +33,7 @@ import com.matelink.domain.analytics.EffectiveChargeCostInput
 import com.matelink.domain.analytics.EffectiveChargeCostResolver
 import com.matelink.domain.analytics.EffectiveChargeCost
 import com.matelink.domain.analytics.findChargeCostOverride
+import com.matelink.domain.analytics.findPendingChargeCostOverride
 import com.matelink.domain.analytics.findOtherCurrencyChargeCostOverride
 import com.matelink.domain.analytics.projectEffectiveChargeCost
 import com.matelink.domain.analytics.toCostChargeData
@@ -215,6 +216,7 @@ class ChargeDetailViewModel @Inject constructor(
         val charge = detail.toCostChargeData()
         val records = chargeCostOverrideStore.getRecordsForCharge(localCarId, detail.chargeId)
         val bound = findChargeCostOverride(records, localCarId, charge, currencyCode)
+        val pending = findPendingChargeCostOverride(records, localCarId, charge, currencyCode)
         val other = findOtherCurrencyChargeCostOverride(records, localCarId, charge, currencyCode)
         val legacy = records.firstOrNull { it.sessionKey == "legacy" && !it.deleted }
         val effective = projectEffectiveChargeCost(charge, localCarId, bound, currencyCode,
@@ -225,7 +227,7 @@ class ChargeDetailViewModel @Inject constructor(
             manualTotal = bound?.manualTotalAmount?.takeIf { !bound.deleted && effective.source == ChargeCostSource.MANUAL },
             version = bound?.version ?: 0L,
             pendingLegacy = legacy?.manualTotalAmount,
-            pendingBound = bound?.takeIf { !it.deleted && effective.source != ChargeCostSource.MANUAL }
+            pendingBound = pending?.takeIf { effective.source != ChargeCostSource.MANUAL }
                 ?.let { it.currencyCode to it.manualTotalAmount },
             otherCurrency = other?.currencyCode?.let { it to other.manualTotalAmount },
             sourceUnconfirmed = detail.cost?.takeIf { it.isFinite() && it >= 0.0 &&

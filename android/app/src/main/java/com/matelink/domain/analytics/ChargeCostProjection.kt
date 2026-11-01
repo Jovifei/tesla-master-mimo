@@ -39,6 +39,25 @@ fun findChargeCostOverride(
     else candidates.singleOrNull { it.currencyCode?.trim()?.uppercase(Locale.ROOT) == currency }
 }
 
+/**
+ * Finds one saved amount for the same local car and numeric charge when the
+ * current response cannot prove the exact session identity. The caller may
+ * show it as pending/unbound evidence, but must not count it as qualified cost.
+ */
+fun findPendingChargeCostOverride(
+    records: List<ChargeCostOverride>, localHistoryCarId: Int, charge: ChargeData,
+    selectedCurrencyCode: String
+): ChargeCostOverride? {
+    if (charge.sourceRecordIdentity.conflicted) return null
+    val currency = selectedCurrencyCode.trim().uppercase(Locale.ROOT)
+    val candidates = records.filter {
+        it.carId == localHistoryCarId && it.chargeId == charge.chargeId &&
+            !it.deleted && it.currencyCode?.trim()?.uppercase(Locale.ROOT) == currency
+    }
+    return findChargeCostOverride(records, localHistoryCarId, charge, selectedCurrencyCode)
+        ?: candidates.singleOrNull()
+}
+
 /** A saved amount in another currency is visible as evidence, never silently converted. */
 fun findOtherCurrencyChargeCostOverride(
     records: List<ChargeCostOverride>, localHistoryCarId: Int, charge: ChargeData,

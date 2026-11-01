@@ -1158,6 +1158,8 @@ private fun vehicleStateLabel(state: String): String = when (state.lowercase()) 
     "charging" -> stringResource(R.string.state_charging)
     "asleep", "suspended" -> stringResource(R.string.state_asleep)
     "offline" -> stringResource(R.string.state_offline)
+    "unavailable" -> stringResource(R.string.snapshot_source_unavailable)
+    "unknown" -> stringResource(R.string.status_unknown)
     else -> state
 }
 

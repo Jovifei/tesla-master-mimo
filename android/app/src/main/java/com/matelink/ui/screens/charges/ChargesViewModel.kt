@@ -22,6 +22,7 @@ import com.matelink.domain.LocalDayBoundaries
 import com.matelink.domain.analytics.ChargeCostSource
 import com.matelink.domain.analytics.EffectiveChargeCost
 import com.matelink.domain.analytics.findChargeCostOverride
+import com.matelink.domain.analytics.findPendingChargeCostOverride
 import com.matelink.domain.analytics.findOtherCurrencyChargeCostOverride
 import com.matelink.domain.analytics.projectEffectiveChargeCost
 import com.matelink.domain.analytics.observedCostSumOrNull
@@ -711,7 +712,7 @@ class ChargesViewModel @Inject constructor(
         } ?: emptyMap()
         val pendingBound = historyCarId?.let { id ->
             allCharges.mapNotNull { charge ->
-                val record = findChargeCostOverride(allCostRecords, id, charge, state.currencyCode)
+                val record = findPendingChargeCostOverride(allCostRecords, id, charge, state.currencyCode)
                 if (record == null || record.deleted ||
                     projections[charge.chargeId]?.source == ChargeCostSource.MANUAL) null
                 else charge.chargeId to (record.currencyCode to record.manualTotalAmount)

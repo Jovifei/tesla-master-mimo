@@ -794,6 +794,7 @@ private fun ChargeItem(
     val costText = when {
         isFree -> freeLabel
         displayCost != null -> (if (effectiveCost.source == ChargeCostSource.ESTIMATE) "≈" else "") + "$currencySymbol%.2f".format(displayCost)
+        isPendingManual -> stringResource(R.string.charge_cost_pending_short)
         else -> notAvailableLabel
     }
     val is24Hour = true
