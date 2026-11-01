@@ -2,22 +2,36 @@ package com.matelink.ui.screens.battery
 
 import android.app.Application
 import androidx.lifecycle.viewModelScope
+import com.matelink.data.api.models.BatteryHealth
 import com.matelink.data.api.models.CarData
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.DriveBatteryDetails
 import com.matelink.data.api.models.DriveData
+import com.matelink.data.api.models.DriveOdometerDetails
 import com.matelink.data.api.models.DriveRange
 import com.matelink.data.local.ConnectionMode
 import com.matelink.data.local.VehicleStatusStore
+import com.matelink.data.repository.ApiErrorKind
+import com.matelink.data.repository.ApiResult
+import com.matelink.data.repository.CarStatusWithUnits
 import com.matelink.data.repository.SettingsRepository
 import com.matelink.data.api.TeslamateApi
 import com.matelink.data.repository.UnifiedHistoryRepository
 import com.matelink.data.sync.HistoryResourceFixture
 import com.matelink.data.sync.toSyncSummary
 import com.matelink.domain.analytics.AnalysisHistoryRepository
+import com.matelink.domain.analytics.AnalysisHistorySnapshot
+import com.matelink.domain.analytics.HistoryCoverage
+import com.matelink.domain.analytics.PersonalizedRangeSource
+import com.matelink.ui.screens.drives.capacityMetadata
+import com.matelink.ui.screens.range.RangePageIdentity
+import com.matelink.ui.screens.range.RangePageSource
+import com.matelink.ui.screens.range.RangeViewModel
 import com.matelink.domain.analytics.BatteryTrendSource
 import com.squareup.moshi.Moshi
 import java.io.File
+import java.net.ConnectException
+import java.time.LocalDate
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -27,6 +41,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -356,6 +371,187 @@ class BatteryRoomRetentionConsumerTest {
         } finally {
             page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
             f.close(); Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun retrofitHealthDistinguishesExplicitAbsenceFromMalformedAndRealFailures() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val api = ApiValues()
+        val f = fixture("health-contract", api)
+        try {
+            val body = AtomicReference("")
+            f.detailResponse = { path ->
+                if (path.endsWith("/battery-health")) body.get() else response(path, api)
+            }
+
+            for (availability in listOf("unsupported", "collecting")) {
+                body.set("""{"data":{"battery_health":null,"meta":{"availability":"$availability","source":"fleet_api"}}}""")
+                val result = f.apiRepo.getBatteryHealth(1) as ApiResult.Success
+                assertEquals(availability, result.metadata?.availability)
+                assertEquals("fleet_api", result.metadata?.source)
+                assertNull(result.data.currentCapacity)
+                assertNull(result.data.maxCapacity)
+            }
+
+            for (invalid in listOf(
+                """{"data":{"battery_health":null}}""",
+                """{"data":{"battery_health":null,"meta":{"availability":"available"}}}""",
+                """{"data":{"battery_health":null,"meta":{"availability":"unknown"}}}"""
+            )) {
+                body.set(invalid)
+                assertTrue(f.apiRepo.getBatteryHealth(1) is ApiResult.Error)
+            }
+
+            body.set("""{"data":{"battery_health":{"max_capacity":75,"current_capacity":0},"meta":{"availability":"available"}}}""")
+            val observedZero = f.apiRepo.getBatteryHealth(1) as ApiResult.Success
+            assertEquals(0.0, observedZero.data.currentCapacity!!, 0.0)
+            body.set("""{"data":{"battery_health":{"max_capacity":75,"current_capacity":70},"meta":{"availability":"available"}}}""")
+            val measured = f.apiRepo.getBatteryHealth(1) as ApiResult.Success
+            assertEquals(70.0, measured.data.currentCapacity!!, 0.0)
+
+            for ((code, expected) in listOf(401 to ApiErrorKind.AUTH_REQUIRED, 500 to ApiErrorKind.SERVICE_UNAVAILABLE)) {
+                f.status = { path -> if (path.endsWith("/battery-health")) code else 200 }
+                val failure = f.apiRepo.getBatteryHealth(1) as ApiResult.Error
+                assertEquals(code, failure.code)
+                assertEquals(expected, failure.kind)
+            }
+            f.status = { 200 }
+            f.onRequest = { path -> if (path.endsWith("/battery-health")) throw ConnectException("synthetic offline") }
+            assertEquals(ApiErrorKind.NETWORK, (f.apiRepo.getBatteryHealth(1) as ApiResult.Error).kind)
+        } finally {
+            f.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun declaredAbsentHealthKeepsRealBatteryTrendAndHasNoError() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        try {
+            for ((availability, expected) in listOf(
+                "unsupported" to BatteryHealthAvailability.UNSUPPORTED,
+                "collecting" to BatteryHealthAvailability.COLLECTING
+            )) {
+                val api = ApiValues()
+                val f = fixture("health-vm-$availability", api)
+                var vm: BatteryViewModel? = null
+                try {
+                    f.detailResponse = { path ->
+                        if (path.endsWith("/battery-health"))
+                            """{"data":{"battery_health":null,"meta":{"availability":"$availability","source":"fleet_api"}}}"""
+                        else response(path, api)
+                    }
+                    seedTrend(f)
+                    val page = page(f); vm = page
+                    page.setCarId(1)
+                    val state = withTimeout(20_000) { page.uiState.first {
+                        !it.isLoading && it.carStatus != null && it.batteryTrend?.sampleCount == 12 &&
+                            it.batteryHealthAvailability == expected
+                    } }
+                    assertNull(state.error)
+                    assertNull(state.batteryHealth?.currentCapacity)
+                    assertNull(state.batteryHealth?.maxCapacity)
+                    assertFalse(page.computeStats()!!.hasCapacityEstimate)
+                    assertEquals(12, state.batteryTrend!!.sampleCount)
+                } finally {
+                    vm?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
+                    f.close()
+                }
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun realBatteryVmKeepsTransportFailuresVisibleEvenWhenReadinessSaysUnsupported() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        try {
+            for ((label, code) in listOf("auth" to 401, "server" to 500, "network" to 0)) {
+                val api = ApiValues()
+                val f = fixture("health-failure-$label", api)
+                var vm: BatteryViewModel? = null
+                try {
+                    f.detailResponse = { path -> when {
+                        path.endsWith("/data-readiness") ->
+                            """{"data":{"items":[{"key":"battery_health","status":"unsupported","source":"fleet_api"}]}}"""
+                        else -> response(path, api)
+                    } }
+                    f.status = { path -> if (code != 0 && path.endsWith("/battery-health")) code else 200 }
+                    if (code == 0) f.onRequest = { path ->
+                        if (path.endsWith("/battery-health")) throw ConnectException("synthetic offline")
+                    }
+                    val page = page(f); vm = page
+                    page.setCarId(1)
+                    val state = withTimeout(20_000) { page.uiState.first {
+                        !it.isLoading && it.dataReadiness != null && it.error != null
+                    } }
+                    assertEquals(BatteryHealthAvailability.UNSUPPORTED, state.batteryHealthAvailability)
+                    assertNotNull(state.error)
+                } finally {
+                    vm?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
+                    f.close()
+                }
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun absentHealthCannotBecomeRangeOrDriveCapacity() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val api = ApiValues()
+        val f = fixture("health-consumers", api)
+        var vm: RangeViewModel? = null
+        try {
+            val healthBody = AtomicReference(
+                """{"data":{"battery_health":null,"meta":{"availability":"unsupported","source":"fleet_api"}}}"""
+            )
+            f.detailResponse = { path ->
+                if (path.endsWith("/battery-health")) healthBody.get() else response(path, api)
+            }
+            val health = f.apiRepo.getBatteryHealth(1) as ApiResult.Success
+            val unified = UnifiedHistoryRepository(f.apiRepo, f.vehicleContexts,
+                f.db.driveSummaryDao(), f.db.chargeSummaryDao())
+            val proof = (unified.resolveContext(1) as ApiResult.Success).data
+            val car = CarData(1, vehicleUid = api.uid.get())
+            assertNull(proof.capacityMetadata(ApiResult.Success(listOf(car)), health)!!.reportedCapacity)
+
+            val drives = (1..10).map { id ->
+                val date = LocalDate.now().minusDays(id.toLong()).toString()
+                DriveData(id, startDate = date, endDate = date,
+                    odometerDetails = DriveOdometerDetails(distance = 40.0),
+                    rangeRated = DriveRange(100.0, 55.0), energyConsumedNet = 8.0,
+                    lengthUnit = "km", source = "teslamate_archive", qualityState = "observed")
+            }
+            val snapshot = AnalysisHistorySnapshot(drives, emptyList(), Instant.now(),
+                HistoryCoverage(drives.size, 0), context = proof.context)
+            val healthObserved = CompletableDeferred<Unit>()
+            val source = object : RangePageSource {
+                override val scopeChanges = emptyFlow<Unit>()
+                override suspend fun identity(carId: Int) = RangePageIdentity(proof.context) { true }
+                override suspend fun history(carId: Int) = ApiResult.Success(snapshot)
+                override suspend fun health(carId: Int): ApiResult<BatteryHealth> {
+                    val result = f.apiRepo.getBatteryHealth(carId)
+                    healthObserved.complete(Unit)
+                    return result
+                }
+                override suspend fun status(carId: Int): ApiResult<CarStatusWithUnits> =
+                    ApiResult.Error("synthetic status unavailable")
+            }
+            val page = RangeViewModel(source); vm = page
+            page.setCarId(1)
+            withTimeout(20_000) { healthObserved.await() }
+            val absent = withTimeout(20_000) { page.uiState.first { it.personalizedRange?.sampleCount == 10 } }
+            assertEquals(PersonalizedRangeSource.GLOBAL, absent.personalizedRange!!.source)
+            assertNull(absent.personalizedRange!!.rangeKm)
+
+            healthBody.set("""{"data":{"battery_health":{"max_capacity":75,"current_capacity":60},"meta":{"availability":"available"}}}""")
+            page.refresh()
+            val measured = withTimeout(20_000) { page.uiState.first { it.personalizedRange?.rangeKm != null } }
+            assertEquals(300.0, measured.personalizedRange!!.rangeKm!!, 0.001)
+        } finally {
+            vm?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
+            f.close()
+            Dispatchers.resetMain()
         }
     }
 }

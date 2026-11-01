@@ -687,8 +687,12 @@ class TeslamateRepository @Inject constructor(
                 if (response.isSuccessful) {
                     val body = response.body()?.data
                     val health = body?.batteryHealth
+                    val metadata = body?.meta?.toApiResponseMetadata()
                     if (health != null) {
-                        ApiResult.Success(health, body?.meta?.toApiResponseMetadata())
+                        ApiResult.Success(health, metadata)
+                    } else if (metadata?.availability.equals("unsupported", ignoreCase = true) ||
+                        metadata?.availability.equals("collecting", ignoreCase = true)) {
+                        ApiResult.Success(BatteryHealth(), metadata)
                     } else {
                         ApiResult.Error("Battery health unavailable")
                     }

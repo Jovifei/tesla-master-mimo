@@ -214,7 +214,7 @@
     <string name="battery_charge_summary">Current %1$d%% · charge target %2$d%%</string>
     <string name="battery_open_tesla_app">Open Tesla App to adjust</string>
     <string name="battery_health_collecting">Battery health data is still being collected.</string>
-    <string name="battery_health_unsupported">Battery health is not supported by this data source.</string>
+    <string name="battery_health_unsupported">Measured battery capacity is not provided by this data source.</string>
     <string name="battery_health_load_error">Battery health could not be loaded. Check the connection and try again.</string>
     <string name="vehicle">Vehicle</string>
     <string name="lock">Lock</string>

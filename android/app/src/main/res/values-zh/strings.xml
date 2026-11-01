@@ -214,7 +214,7 @@
     <string name="battery_charge_summary">当前 %1$d%% · 充电目标 %2$d%%</string>
     <string name="battery_open_tesla_app">前往 Tesla App 调整</string>
     <string name="battery_health_collecting">电池健康数据仍在收集中。</string>
-    <string name="battery_health_unsupported">当前数据源不支持电池健康数据。</string>
+    <string name="battery_health_unsupported">当前数据源未提供实测电池容量。</string>
     <string name="battery_health_load_error">电池健康数据加载失败，请检查连接后重试。</string>
     <string name="vehicle">车辆</string>
     <string name="lock">锁</string>
