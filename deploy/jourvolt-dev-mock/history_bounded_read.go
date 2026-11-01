@@ -26,6 +26,8 @@ type boundedHistoryPageRow struct {
 	StartBatteryLevel *int
 	EndBatteryLevel   *int
 	Metrics           historySampleMetrics
+	ChargeLatitude    *float64
+	ChargeLongitude   *float64
     EnergyContract map[string]any
 	Sequence          int
 }
@@ -147,6 +149,10 @@ SELECT s.id, s.public_id, s.started_at, s.ended_at, s.odometer_start, s.odometer
        `+historySOCAtPosition("observed.last_position")+`,
        observed.speed_max, observed.speed_avg, observed.speed_count,
        observed.inside_temp_avg, observed.outside_temp_avg,
+       (COALESCE(NULLIF(s.charge_points_json->((observed.charge_location_position-1)::integer)->'Latitude','null'::jsonb),
+                 s.charge_points_json->((observed.charge_location_position-1)::integer)->'latitude') #>> '{}')::double precision,
+       (COALESCE(NULLIF(s.charge_points_json->((observed.charge_location_position-1)::integer)->'Longitude','null'::jsonb),
+                 s.charge_points_json->((observed.charge_location_position-1)::integer)->'longitude') #>> '{}')::double precision,
        CASE WHEN s.kind='charge' AND s.source='telemetry_mqtt' AND jsonb_array_length(CASE WHEN jsonb_typeof(s.charge_points_json)='array' THEN s.charge_points_json ELSE '[]'::jsonb END)>0
             THEN s.charge_points_json->-1->'EnergyContract' ELSE NULL END,
        p.sequence
@@ -156,20 +162,26 @@ LEFT JOIN LATERAL (
     SELECT MIN(ordinality) FILTER (WHERE level BETWEEN 0 AND 100) AS first_position,
            MAX(ordinality) FILTER (WHERE level BETWEEN 0 AND 100) AS last_position,
            MAX(speed) AS speed_max, AVG(speed) AS speed_avg, COUNT(speed) AS speed_count,
-           AVG(inside_temp) AS inside_temp_avg, AVG(outside_temp) AS outside_temp_avg
+           AVG(inside_temp) AS inside_temp_avg, AVG(outside_temp) AS outside_temp_avg,
+           MIN(ordinality) FILTER (WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+                                    AND (latitude <> 0 OR longitude <> 0)) AS charge_location_position
     FROM (
         SELECT ordinality,
           CASE WHEN jsonb_typeof(soc)='number' AND soc::text ~ '^[0-9]{1,3}$' THEN (soc::text)::integer END AS level,
           CASE WHEN jsonb_typeof(speed)='number' THEN CASE WHEN (speed::text)::numeric BETWEEN 0 AND 2147483647 THEN (speed::text)::double precision END END AS speed,
           CASE WHEN jsonb_typeof(inside_temp)='number' THEN CASE WHEN (inside_temp::text)::numeric BETWEEN -1e308 AND 1e308 THEN (inside_temp::text)::double precision END END AS inside_temp,
-          CASE WHEN jsonb_typeof(outside_temp)='number' THEN CASE WHEN (outside_temp::text)::numeric BETWEEN -1e308 AND 1e308 THEN (outside_temp::text)::double precision END END AS outside_temp
+          CASE WHEN jsonb_typeof(outside_temp)='number' THEN CASE WHEN (outside_temp::text)::numeric BETWEEN -1e308 AND 1e308 THEN (outside_temp::text)::double precision END END AS outside_temp,
+          CASE WHEN jsonb_typeof(latitude)='number' THEN CASE WHEN (latitude::text)::numeric BETWEEN -90 AND 90 THEN (latitude::text)::double precision END END AS latitude,
+          CASE WHEN jsonb_typeof(longitude)='number' THEN CASE WHEN (longitude::text)::numeric BETWEEN -180 AND 180 THEN (longitude::text)::double precision END END AS longitude
         FROM (
           SELECT point.ordinality,
             CASE WHEN s.kind='charge' THEN COALESCE(NULLIF(point.value->'BatteryLevel','null'::jsonb),point.value->'battery_level')
                  WHEN s.source='teslamate_archive' THEN point.value->'battery_level' ELSE point.value->'BatteryLevel' END AS soc,
             CASE WHEN s.kind='drive' THEN CASE WHEN s.source='teslamate_archive' THEN point.value->'speed' ELSE point.value->'Speed' END END AS speed,
             CASE WHEN s.kind='drive' THEN COALESCE(NULLIF(point.value->'climate_info'->'inside_temp','null'::jsonb),NULLIF(point.value->'inside_temp','null'::jsonb),point.value->'InsideTemp') END AS inside_temp,
-            COALESCE(NULLIF(point.value->'climate_info'->'outside_temp','null'::jsonb),NULLIF(point.value->'outside_temp','null'::jsonb),point.value->'OutsideTemp') AS outside_temp
+            COALESCE(NULLIF(point.value->'climate_info'->'outside_temp','null'::jsonb),NULLIF(point.value->'outside_temp','null'::jsonb),point.value->'OutsideTemp') AS outside_temp,
+            CASE WHEN s.kind='charge' THEN COALESCE(NULLIF(point.value->'Latitude','null'::jsonb),point.value->'latitude') END AS latitude,
+            CASE WHEN s.kind='charge' THEN COALESCE(NULLIF(point.value->'Longitude','null'::jsonb),point.value->'longitude') END AS longitude
           FROM jsonb_array_elements(CASE WHEN s.kind='charge' AND jsonb_typeof(s.charge_points_json)='array' THEN s.charge_points_json WHEN s.kind<>'charge' AND jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)
             WITH ORDINALITY AS point(value, ordinality)
         ) raw
@@ -199,7 +211,8 @@ ORDER BY p.started_at DESC, p.public_id DESC
 			&startLatitude, &startLongitude, &endLatitude, &endLongitude,
 			&row.StartBatteryLevel, &row.EndBatteryLevel,
 			&row.Metrics.SpeedMax, &row.Metrics.SpeedAvg, &row.Metrics.SpeedCount,
-			&row.Metrics.InsideTempAvg, &row.Metrics.OutsideTempAvg, &contractJSON, &row.Sequence,
+			&row.Metrics.InsideTempAvg, &row.Metrics.OutsideTempAvg,
+			&row.ChargeLatitude, &row.ChargeLongitude, &contractJSON, &row.Sequence,
 		); err != nil {
 			return nil, err
 		}
@@ -442,6 +455,9 @@ func (s *telemetryService) historyPageContext(ctx context.Context, userID string
 			return nil, nil, 0, resolvedShow, err
 		}
 		item := historySessionMap(row.Session, kind, row.Sequence)
+        if kind == "charge" && validFleetCoordinates(row.ChargeLatitude, row.ChargeLongitude) {
+            item["latitude"], item["longitude"] = *row.ChargeLatitude, *row.ChargeLongitude
+        }
         if kind=="charge" && row.Session.Source=="telemetry_mqtt" && row.EnergyContract!=nil {
             publishChargeEnergyContract(item,row.EnergyContract)
         }

@@ -1378,7 +1378,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 				item["charger_details"] = map[string]any{"charger_power": point.ChargerPower}
 				lastPower = cloneFloat(point.ChargerPower)
 			}
-			if point.Latitude != nil && point.Longitude != nil {
+			if validFleetCoordinates(point.Latitude, point.Longitude) {
 				item["latitude"], item["longitude"] = point.Latitude, point.Longitude
 				if firstLatitude == nil {
 					firstLatitude, firstLongitude = cloneFloat(point.Latitude), cloneFloat(point.Longitude)
