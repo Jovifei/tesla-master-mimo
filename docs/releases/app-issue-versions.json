@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "branch": "codex/app-collection-recovery-20261029",
-  "observation_note": "发现版本不等于首次引入版本；build77 安装及 CI 属历史记录；build82 已同签覆盖安装并完成指定页面抽查，生产 API 8d3da22 已部署且当前车辆首轮趋势回填完成；build83 已同签名覆盖安装并完成指定真机页面抽查，未代表全部页面或历史均已验收；充电疑似重复导入仍未修复；独立桥重启凭据、源后补回扫及费用跨页口径仍开放",
+  "observation_note": "发现版本不等于首次引入版本；build77 安装及 CI 属历史记录；build82 已同签覆盖安装并完成指定页面抽查，生产 API 8d3da22 已部署且当前车辆首轮趋势回填完成；build83 已同签名覆盖安装并完成指定真机页面抽查，未代表全部页面或历史均已验收；充电疑似重复导入仍未修复；独立桥重启凭据、源后补回扫及费用跨页口径仍开放；生产候选 b11bae0 的 Linux 合成 race 已过，App cherry-pick 37955cf 仅七个相关文件一致，App 提交 067607f 的 18 项远端检查已全部通过；生产未部署，离线发布 gate 有硬阻断",
   "issues": [
     {
       "id": "NOV02-ARCHIVE-REVOCATION-RACE",
@@ -12,7 +12,7 @@
       "status": "IN_PROGRESS",
       "fix_version": "候选 API b11bae0；尚未部署",
       "change": "在同一事务或互斥区内重验绑定并保护提交；普通本地导入保持原路径。",
-      "verification": "独立合成 PG16 与内存 RED→GREEN；最终组合 716 项及子项通过，race 与生产部署待验证；没有证据表明生产曾发生。",
+      "verification": "独立合成 PG16 与内存 RED→GREEN；最终组合 716 项及子项通过；生产候选 b11bae0 Linux race 服务端 118 项及子项、桥 2 项通过，0 fail/skip/race；生产未部署、发布 gate 阻断；没有证据表明生产曾发生。 合成 PG16 实测真实 8d→b11→8d 回滚读取通过；非生产回滚或手机费用验收。",
       "commit": "37955cf09994fc223406d6a48431dd080733454e",
       "history": [
         {
@@ -22,6 +22,14 @@
           "detail": "撤权竞态仅在隔离环境复现，候选受控锁序并重验授权；不改变旧用户费用和历史。",
           "evidence": "../RPT-2026-11-02-archive-revocation-race.md",
           "commit": "37955cf09994fc223406d6a48431dd080733454e"
+        },
+        {
+          "date": "2026-11-02",
+          "version": "生产基线候选 b11bae0 / App cherry-pick 37955cf",
+          "action": "PRODUCTION_CANDIDATE_LINUX_RACE",
+          "detail": "生产候选独立合成 PG16/network-none：服务端 118 项及子项、桥 2 项通过，0 失败/跳过/数据竞争；180 文件与日志哈希见 race-result.json。仅七个相关文件与 App cherry-pick 一致，其他服务端文件不同；生产未部署，离线发布 gate 有硬阻断。",
+          "evidence": "../RPT-2026-11-02-archive-revocation-race.md",
+          "commit": "b11bae080f8554691b28688e196e24766ccb48a6"
         }
       ]
     },
@@ -34,7 +42,7 @@
       "status": "IN_PROGRESS",
       "fix_version": "候选 API b11bae0；尚未部署",
       "change": "对已鉴权的新批次严格确认无对应归档且整批无冲突时返回可重试状态；真实冲突仍阻断，待发送数据和游标不变。",
-      "verification": "最终组合服务端 716、桥 59 项及子项通过；Linux race、生产部署与未来真实行程验收待完成。",
+      "verification": "最终组合服务端 716、桥 59 项及子项通过；生产候选 b11bae0 Linux race 服务端 118 项及子项、桥 2 项通过，0 fail/skip/race；生产未部署、发布 gate 阻断，未来真实行程验收待完成。 合成 PG16 实测真实 8d→b11→8d 回滚读取通过；非生产回滚或手机费用验收。",
       "commit": "37955cf09994fc223406d6a48431dd080733454e",
       "history": [
         {
@@ -44,6 +52,14 @@
           "detail": "既有桥已能按 503 重试，候选无需更改桥生产代码；重启监督和历史后补回扫仍未解决。",
           "evidence": "../RPT-2026-11-02-battery-trend-pending.md",
           "commit": "37955cf09994fc223406d6a48431dd080733454e"
+        },
+        {
+          "date": "2026-11-02",
+          "version": "生产基线候选 b11bae0 / App cherry-pick 37955cf",
+          "action": "PRODUCTION_CANDIDATE_LINUX_RACE",
+          "detail": "生产候选独立合成 PG16/network-none：服务端 118 项及子项、桥 2 项通过，0 失败/跳过/数据竞争；180 文件与日志哈希见 race-result.json。仅七个相关文件与 App cherry-pick 一致，其他服务端文件不同；生产未部署，离线发布 gate 有硬阻断。",
+          "evidence": "../RPT-2026-11-02-battery-trend-pending.md",
+          "commit": "b11bae080f8554691b28688e196e24766ccb48a6"
         }
       ]
     },
@@ -6218,7 +6234,7 @@
     "debuggable": false,
     "package": "com.matelink",
     "source_commit": "7bd9ecf136f1e4f92d17f1cfa54cf7710d467893",
-    "source_worktree_head": "7bd9ecf136f1e4f92d17f1cfa54cf7710d467893",
+    "source_worktree_head": "067607f225b06698ded501bed25998b5f66ecc38",
     "source_worktree_dirty": true,
     "first_install_time_preserved": true,
     "integrated_branch": null,

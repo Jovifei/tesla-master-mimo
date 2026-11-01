@@ -8,12 +8,16 @@
 
 11 月 2 日 build82：Debug / Release 各 1857 项测试、0 失败（Release 8 项既有跳过）；lint 均 0 错误，Debug 333、Release 314 条警告。此前全量测试中 Fleet 无合同能耗分析列曾有 1 项失败，修正后相关定向 116 项通过。API `8d3da22` 已部署，当前车辆独立桥首轮 478 条 / 10 批完成；build82 已同签覆盖安装并完成指定页面抽查。build83 已同签名保数据覆盖安装，双变体全量、lint、模拟器及指定真机页面抽查通过；其他页面、重复记录和长期桥问题仍开放；旧版测试、线上发布与真机抽查的范围不能混同。
 
+2026-11-02：生产候选 `b11bae080f8554691b28688e196e24766ccb48a6` 的 Linux 合成 PG16/network-none 定向 race 为服务端 118 项及子项、桥 2 项通过，均无失败、跳过或数据竞争；180 个相关模块文件及日志哈希证据见 `E:\Claude_allow\Download\matelink-race-b11-20261102-d72a91c4\race-result.json`。App 分支 cherry-pick `37955cf09994fc223406d6a48431dd080733454e` 的七个相关文件与生产候选一致，但其他服务端文件不同，不能将整个服务端等同。截至本次记录 App 提交 `067607f225b06698ded501bed25998b5f66ecc38` 的 18 项远端检查已全部通过；生产 API 仍为 `8d3da22`、候选未部署，离线发布 gate 有硬阻断。
+
+2026-11-02：真实 8d→b11→8d API 二进制在独立合成 PostgreSQL 16 上的回滚兼容测试通过；这不是生产回滚，也未验证手机 Room 手工费用。详见[归档授权记录](RPT-2026-11-02-archive-revocation-race.md)。
+
 ## 2026-11-01 数据源与刷新
 
 | 问题 ID | 发现日期 / 版本 | 根因与修复 | 验证 |
 | --- | --- | --- | --- |
-| NOV02-ARCHIVE-REVOCATION-RACE | 2026-11-02 / 生产 API 8d3da22（仅隔离复现） | 同事务重验并锁定归档授权，撤权先完成时不写入；候选尚未部署 | 最终合成 PG16 全量服务端 716 项通过；race 和线上待验证，见[记录](RPT-2026-11-02-archive-revocation-race.md) |
-| NOV02-BATTERY-ARCHIVE-PENDING | 2026-11-02 / 生产 API 8d3da22 | 仅缺少对应归档且整批无冲突时允许旧桥重试；真实冲突继续拦截 | 最终合成 PG16 服务端 716 项、桥 59 项通过；race 与线上待验证，见[记录](RPT-2026-11-02-battery-trend-pending.md) |
+| NOV02-ARCHIVE-REVOCATION-RACE | 2026-11-02 / 生产 API 8d3da22（仅隔离复现） | 同事务重验并锁定归档授权，撤权先完成时不写入；候选尚未部署 | 最终合成 PG16 服务端 716 项；生产候选 Linux race 服务端 118 项及子项通过；线上未部署、发布 gate 阻断，见[记录](RPT-2026-11-02-archive-revocation-race.md) |
+| NOV02-BATTERY-ARCHIVE-PENDING | 2026-11-02 / 生产 API 8d3da22 | 仅缺少对应归档且整批无冲突时允许旧桥重试；真实冲突继续拦截 | 最终合成 PG16 服务端 716 项、桥 59 项；生产候选 Linux race 服务端 118 项及子项、桥 2 项通过；线上未部署、发布 gate 阻断，见[记录](RPT-2026-11-02-battery-trend-pending.md) |
 | NOV02-CI-POSTGRES-OPTIN | 2026-11-02 / App 分支 cf9b488 | 临时库启用隔离开关并对齐专用库名前缀，不降低测试门禁 | 本地 568 项通过、远端 eab3af4 verify 通过；最新分支完整检查待确认，见[记录](RPT-2026-11-02-ci-postgres-opt-in.md) |
 | NOV02-BATTERY-UNSUPPORTED-MSG | 2026-11-02 / App 2.1.63 build82 | 明确标记 unsupported 的空容量被误报为网络失败；2.1.64 / build83 提交 `7bd9ecf136f1e4f92d17f1cfa54cf7710d467893` 区分未提供实测容量与真实网络错误 | 72 项定向、双变体各 1862 项单测、双 lint 和模拟器 36 项通过；build83 真机此次显示“当前数据源未提供实测电池容量”，未见错误连接提示，范围仅限本次抽查，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
 | NOV02-CHARGE-UNLINKED-IMPORT | 2026-11-02 / App 2.1.63 build82 | 同分钟出现空卡与 11.1 kWh 卡；云端 local_import 与 archive 尚无可验证来源映射 | 未修复；build82 手机及源、云只读核查，不能仅凭时间或能量合并，也不能丢弃手工费用；见[记录](RPT-2026-11-02-charge-import-duplicates.md) |
