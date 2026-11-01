@@ -148,6 +148,43 @@ internal fun dashboardStatusMayPublish(
     vehicleCurrent && requestedCarId == selectedCarId && vehicle.remoteApiCarId == requestedCarId &&
     requestGeneration == currentGeneration
 
+internal fun dashboardMayReadOfflineCache(
+    cars: ApiResult<*>, adapter: ApiResult<*>, status: ApiResult<*>?
+): Boolean {
+    val failure = cars as? ApiResult.Error ?: return false
+    if (failure.kind !in setOf(ApiErrorKind.NETWORK, ApiErrorKind.SERVICE_UNAVAILABLE, ApiErrorKind.RATE_LIMITED)) return false
+    if (failure.code != null && failure.code in 400..499 && failure.code != 429) return false
+    if (adapter is ApiResult.Error && (adapter.kind == ApiErrorKind.AUTH_REQUIRED ||
+            (adapter.code != null && adapter.code in 400..499 && adapter.code != 429))) return false
+    return status !is ApiResult.Error || (status.kind != ApiErrorKind.AUTH_REQUIRED &&
+        (status.code == null || status.code !in 400..499 || status.code == 429))
+}
+
+/** Cached mapping and UID digest are historical read proof, not permission to write live data. */
+internal suspend fun readDashboardOfflineReceipt(
+    scope: com.matelink.data.local.HistoryReadScope,
+    carId: Int,
+    contexts: com.matelink.data.local.VehicleContextRepository,
+    statusStore: com.matelink.data.local.VehicleStatusStore,
+    isCurrent: suspend (com.matelink.data.local.VehicleContext) -> Boolean
+): Pair<com.matelink.data.local.VehicleContext, com.matelink.data.local.CachedVehicleStatusReceipt>? {
+    if (scope.source != com.matelink.data.local.HistoryConnectionSource.CLOUD) return null
+    val vehicle = contexts.cachedContextForRemote(carId, scope) ?: return null
+    if (!isCurrent(vehicle)) return null
+    val digest = contexts.cachedVerifiedStatusIdentityDigest(carId, scope, vehicle) ?: return null
+    val receipt = statusStore.getCachedReceiptForVerifiedIdentity(scope, vehicle, digest) ?: return null
+    if (!isCurrent(vehicle)) return null
+    return vehicle to receipt
+}
+
+/** Historical motion and charging states must not reopen a live HUD. */
+internal fun dashboardHistoricalStatus(status: CarStatus): CarStatus = status.copy(
+    state = null,
+    stateSince = null,
+    drivingDetails = status.drivingDetails?.copy(speed = null, shiftState = null, power = null),
+    chargingDetails = status.chargingDetails?.copy(chargingState = null)
+)
+
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -340,8 +377,15 @@ class DashboardViewModel @Inject constructor(
                     car.takeIf { carsResult is ApiResult.Success })
                 val cacheVerified = cacheContext != null &&
                     statusIdentityCurrent(tpmsScope, cacheContext, effectiveCarId, generation)
-                val cachedReceipt = if (cacheVerified) vehicleStatusStore.getCachedReceipt(tpmsScope!!, cacheContext!!) else null
-                val cachedStatus = cachedReceipt?.displayStatus
+                val offlineCache = if (!cacheVerified && liveStatus == null && tpmsScope != null &&
+                    dashboardMayReadOfflineCache(carsResult, adapterResult, statusResult)) {
+                    readDashboardOfflineReceipt(tpmsScope, effectiveCarId, vehicleContextRepository, vehicleStatusStore) {
+                        statusIdentityCurrent(tpmsScope, it, effectiveCarId, generation)
+                    }
+                } else null
+                val cachedReceipt = if (cacheVerified) vehicleStatusStore.getCachedReceipt(tpmsScope!!, cacheContext!!)
+                    else offlineCache?.second
+                val cachedStatus = cachedReceipt?.displayStatus?.let(::dashboardHistoricalStatus)
                 val units = when {
                     adapterResult is ApiResult.Success -> adapterResult.data.units
                     statusResult is ApiResult.Success -> statusResult.data.units
@@ -380,7 +424,9 @@ class DashboardViewModel @Inject constructor(
                     loadCachedAddress(liveStatus, effectiveCarId) else null
                 if (!liveScopeCurrent(tpmsScope, effectiveCarId, generation) ||
                     (cacheContext != null &&
-                     !statusIdentityCurrent(tpmsScope, cacheContext, effectiveCarId, generation)))
+                     !statusIdentityCurrent(tpmsScope, cacheContext, effectiveCarId, generation)) ||
+                    (offlineCache != null &&
+                     !statusIdentityCurrent(tpmsScope, offlineCache.first, effectiveCarId, generation)))
                     return@launch
                 activePhotoProof = if (cacheVerified) tpmsScope!! to cacheContext!! else null
                 _uiState.value = DashboardUiState(

@@ -54,6 +54,7 @@ data class ChargeData(
     val odometerKm: Double? get() = chargeDistanceKm(odometer, lengthUnit)
     val hasKnownLengthUnit: Boolean get() = knownChargeLengthUnit(lengthUnit)
     val batteryInputKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate, "battery_input", source)
+    val partialBatteryInputKwh: Double? get() = if (sourceRecordIdentity.conflicted || source != "telemetry_mqtt" || energyContract?.version != 1) null else energyContract.batteryInput?.partialBatteryInputForWindow(startDate, endDate)
     val inputEnergyKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate, "ac_charger_input", source)
 }
 
@@ -144,6 +145,7 @@ data class ChargeDetail(
     val odometerKm: Double? get() = chargeDistanceKm(odometer, lengthUnit)
     val hasKnownLengthUnit: Boolean get() = knownChargeLengthUnit(lengthUnit)
     val batteryInputKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else qualifiedChargeValue(energyContract, energyContract?.batteryInput, chargeEnergyAdded, startDate, endDate, "battery_input", source)
+    val partialBatteryInputKwh: Double? get() = if (sourceRecordIdentity.conflicted || source != "telemetry_mqtt" || energyContract?.version != 1) null else energyContract.batteryInput?.partialBatteryInputForWindow(startDate, endDate)
     val inputEnergyKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else qualifiedChargeValue(energyContract, energyContract?.acInput, chargeEnergyUsed, startDate, endDate, "ac_charger_input", source)
 }
 

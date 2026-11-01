@@ -68,6 +68,7 @@ data class DriveDetailUiState(
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val localArchiveLinkPending: Boolean = false,
+    val historyNoticeLocalCarId: Int? = null,
     val historySyncWarning: String? = null,
     val error: String? = null,
     val driveDetail: DriveDetail? = null,
@@ -182,7 +183,8 @@ class DriveDetailViewModel @Inject constructor(
                 if (cachedProof != null && (cachedProof.scope != resolved.scope || cachedProof.context != resolved.context))
                     _uiState.value = DriveDetailUiState()
                 historyProof = resolved
-                _uiState.update { it.copy(localArchiveLinkPending = resolved.localArchiveLinkPending) }
+                _uiState.update { it.copy(localArchiveLinkPending = resolved.localArchiveLinkPending,
+                    historyNoticeLocalCarId = resolved.context.localHistoryCarId) }
                 val remote = if (resolved.remoteAuthorized) withTimeoutOrNull(20_000L) { repository.getDriveDetail(carId, driveId) }
                     ?: ApiResult.Error("history_sync_timeout", 408)
                     else resolved.identityError ?: historyIdentityUnavailableError()

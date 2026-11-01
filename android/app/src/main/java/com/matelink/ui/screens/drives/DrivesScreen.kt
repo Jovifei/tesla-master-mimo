@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
@@ -28,7 +27,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.LocalParking
@@ -38,9 +37,9 @@ import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -55,6 +54,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
+import com.matelink.ui.components.HistoryArchiveNotice
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
@@ -82,6 +82,7 @@ import com.matelink.domain.model.UnitFormatter
 import com.matelink.data.api.models.drivePresentationUnits
 import com.matelink.ui.components.BarChartData
 import com.matelink.ui.components.DateRangePickerDialog
+import com.matelink.ui.components.HistoryDateFilterMenu
 import com.matelink.ui.components.CompactHistoryMetricStrip
 import com.matelink.ui.components.InteractiveBarChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
@@ -151,9 +152,12 @@ fun DrivesScreen(
         }
     }
 
-    LaunchedEffect(uiState.historySyncWarning, uiState.localArchiveLinkPending) {
+    HistoryArchiveNotice(uiState.localArchiveLinkPending, uiState.historyNoticeLocalCarId)
+    LaunchedEffect(uiState.historySyncWarning, uiState.localArchiveLinkPending, uiState.historyNoticeLocalCarId) {
         val messages = listOfNotNull(
-            R.string.history_archive_link_pending.takeIf { uiState.localArchiveLinkPending },
+            R.string.history_archive_link_pending.takeIf {
+                uiState.localArchiveLinkPending && uiState.historyNoticeLocalCarId?.let { it < 0 } != true
+            },
             uiState.historySyncWarning?.let(::historyReadWarningMessageRes)
         ).map(feedbackContext::getString)
         if (messages.isNotEmpty()) snackbarHostState.showSnackbar(messages.joinToString("\n"))
@@ -256,9 +260,8 @@ private fun DrivesContent(
     val historyItems = remember(historySequence, drives, parkedPairs) {
         selectVisibleDriveHistoryItems(historySequence, drives, parkedPairs)
     }
-    // Header items in render order: date chips, distance chips, summary,
-    // charts (conditional), history header. Adjust if items are added.
-    val headerCount = 4 + (if (chartData.isNotEmpty()) 1 else 0)
+    // Summary, optional chart, then history heading precede the records.
+    val headerCount = 2 + (if (chartData.isNotEmpty()) 1 else 0)
 
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
@@ -270,22 +273,15 @@ private fun DrivesContent(
 
 
         item {
-            DateFilterChips(
-                selectedFilter = selectedDateFilter,
-                customStartDate = customStartDate,
-                customEndDate = customEndDate,
-                palette = palette,
-                onFilterSelected = onDateFilterSelected,
-                onCustomRangeSelected = onCustomRangeSelected
+            SummaryCard(
+                summary = summary, units = units, palette = palette,
+                selectedDateFilter = selectedDateFilter,
+                customStartDate = customStartDate, customEndDate = customEndDate,
+                selectedDistanceFilter = selectedDistanceFilter,
+                onDateFilterSelected = onDateFilterSelected,
+                onCustomRangeSelected = onCustomRangeSelected,
+                onDistanceFilterSelected = onDistanceFilterSelected
             )
-        }
-
-        item {
-            DistanceFilterChips(selectedDistanceFilter, units, palette, onDistanceFilterSelected)
-        }
-
-        item {
-            SummaryCard(summary = summary, units = units, palette = palette)
         }
 
         // Drives charts (daily/weekly/monthly based on date range) - swipeable
@@ -508,56 +504,27 @@ private fun parseOffsetDateTime(value: String): OffsetDateTime? =
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DateFilterChips(
+private fun DateFilterDropdown(
     selectedFilter: DriveDateFilter,
     customStartDate: LocalDate?,
     customEndDate: LocalDate?,
-    palette: CarColorPalette,
     onFilterSelected: (DriveDateFilter) -> Unit,
     onCustomRangeSelected: (LocalDate, LocalDate) -> Unit
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
-
-    LazyRow(
-        modifier = Modifier.testTag("drive_date_filters"),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        val orderedFilters = listOf(
-            DriveDateFilter.LAST_7_DAYS,
-            DriveDateFilter.LAST_30_DAYS,
-            DriveDateFilter.ALL_TIME,
-            DriveDateFilter.TODAY
-        )
-        items(orderedFilters) { filter ->
-            FilterChip(
-                selected = filter == selectedFilter,
-                onClick = { onFilterSelected(filter) },
-                label = { Text(stringResource(filter.labelRes)) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = palette.surface,
-                    selectedLabelColor = palette.onSurface
-                )
-            )
-        }
-        item {
-            val label = if (selectedFilter == DriveDateFilter.CUSTOM && customStartDate != null && customEndDate != null) {
-                "${formatShortDate(customStartDate)} – ${formatShortDate(customEndDate)}"
-            } else {
-                stringResource(R.string.history_choose_date)
-            }
-            FilterChip(
-                selected = selectedFilter == DriveDateFilter.CUSTOM,
-                onClick = { showDatePicker = true },
-                label = { Text(label) },
-                leadingIcon = { Icon(Icons.Default.DateRange, contentDescription = null,
-                    modifier = Modifier.size(16.dp)) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = palette.surface,
-                    selectedLabelColor = palette.onSurface
-                )
-            )
-        }
-    }
+    val filters = listOf(DriveDateFilter.LAST_7_DAYS, DriveDateFilter.LAST_30_DAYS,
+        DriveDateFilter.LAST_90_DAYS, DriveDateFilter.LAST_YEAR,
+        DriveDateFilter.ALL_TIME, DriveDateFilter.TODAY)
+    val labels = listOf(stringResource(R.string.history_last_week),
+        stringResource(R.string.history_last_month), stringResource(R.string.history_last_three_months),
+        stringResource(R.string.history_last_year), stringResource(R.string.filter_all_time),
+        stringResource(R.string.filter_today))
+    val index = filters.indexOf(selectedFilter)
+    val label = if (selectedFilter == DriveDateFilter.CUSTOM && customStartDate != null && customEndDate != null)
+        "${formatShortDate(customStartDate)} – ${formatShortDate(customEndDate)}"
+    else labels.getOrNull(index) ?: stringResource(R.string.history_choose_date)
+    HistoryDateFilterMenu(label, labels, index, "drive_date_filters",
+        onSelect = { onFilterSelected(filters[it]) }, onChooseDates = { showDatePicker = true })
 
     if (showDatePicker) {
         DateRangePickerDialog(
@@ -585,32 +552,39 @@ private fun getDistanceFilterLabel(filter: DriveDistanceFilter, units: Units?): 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DistanceFilterChips(
+private fun DistanceFilterDropdown(
     selectedFilter: DriveDistanceFilter,
     units: Units?,
     palette: CarColorPalette,
     onFilterSelected: (DriveDistanceFilter) -> Unit
 ) {
-    LazyRow(
-        modifier = Modifier.testTag("drive_distance_filters"),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(DriveDistanceFilter.entries.toList()) { filter ->
-            FilterChip(
-                selected = filter == selectedFilter,
-                onClick = { onFilterSelected(filter) },
-                label = { Text(getDistanceFilterLabel(filter, units)) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = palette.surface,
-                    selectedLabelColor = palette.onSurface
-                )
-            )
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { expanded = true }, modifier = Modifier.testTag("drive_distance_filters"),
+            contentPadding = PaddingValues(horizontal = 8.dp)) {
+            Text(if (selectedFilter == DriveDistanceFilter.ALL) stringResource(R.string.history_drive_type)
+                else getDistanceFilterLabel(selectedFilter, units), color = palette.onSurfaceVariant)
+            Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = palette.onSurfaceVariant)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DriveDistanceFilter.entries.forEach { filter ->
+                DropdownMenuItem(text = { Text(getDistanceFilterLabel(filter, units)) }, onClick = {
+                    expanded = false
+                    onFilterSelected(filter)
+                })
+            }
         }
     }
 }
 
 @Composable
-private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColorPalette) {
+private fun SummaryCard(
+    summary: DrivesSummary, units: Units?, palette: CarColorPalette,
+    selectedDateFilter: DriveDateFilter, customStartDate: LocalDate?, customEndDate: LocalDate?,
+    selectedDistanceFilter: DriveDistanceFilter, onDateFilterSelected: (DriveDateFilter) -> Unit,
+    onCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
+    onDistanceFilterSelected: (DriveDistanceFilter) -> Unit
+) {
     val hasSummary = summary.totalDrives > 0
     val unavailable = stringResource(R.string.not_available)
     Card(
@@ -623,12 +597,13 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = stringResource(R.string.summary),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = palette.onSurface
-            )
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(text = stringResource(R.string.summary), style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold, color = palette.onSurface)
+                DateFilterDropdown(selectedDateFilter, customStartDate, customEndDate,
+                    onDateFilterSelected, onCustomRangeSelected)
+            }
 
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -642,7 +617,7 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                             if (hasSummary) "%,d".format(summary.totalDrives) else unavailable,
                             Color(0xFF0284C7),
                             unit = stringResource(R.string.visual_trip_count_unit),
-                            valueFontSize = 16.sp
+                            valueFontSize = 18.sp
                         ),
                         TelemetryMetricSpec(
                             CustomIcons.SteeringWheel,
@@ -650,7 +625,7 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                             summary.totalDistanceKm?.let { visualTripNumber(UnitFormatter.distanceKmDisplayValue(it, units)) } ?: unavailable,
                             Color(0xFF059669),
                             unit = UnitFormatter.getDistanceUnit(units),
-                            valueFontSize = 16.sp
+                            valueFontSize = 18.sp
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Timer,
@@ -658,7 +633,7 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                             summary.totalDurationMin?.let { "%,d".format(it) } ?: unavailable,
                             Color(0xFFD97706),
                             unit = stringResource(R.string.visual_trip_duration_unit),
-                            valueFontSize = 16.sp
+                            valueFontSize = 18.sp
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Speed,
@@ -666,7 +641,7 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                             summary.maxSpeedKmh?.takeIf { it >= 0 }?.let { visualTripNumber(UnitFormatter.speedKmhDisplayValue(it.toDouble(), units), 0) } ?: unavailable,
                             Color(0xFF6366F1),
                             unit = UnitFormatter.getSpeedUnit(units),
-                            valueFontSize = 16.sp
+                            valueFontSize = 18.sp
                         )
                     ),
                     modifier = Modifier.padding(vertical = 4.dp),
@@ -686,6 +661,7 @@ private fun SummaryCard(summary: DrivesSummary, units: Units?, palette: CarColor
                     color = palette.onSurfaceVariant
                 )
             }
+            DistanceFilterDropdown(selectedDistanceFilter, units, palette, onDistanceFilterSelected)
         }
     }
 }

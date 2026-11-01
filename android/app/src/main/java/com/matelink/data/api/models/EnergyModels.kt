@@ -2,7 +2,10 @@ package com.matelink.data.api.models
 
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
+import java.time.Duration
 import java.time.Instant
+import java.time.temporal.ChronoUnit
+import kotlin.math.abs
 
 /** Versioned, additive contract. Values do not acquire measurement status merely by crossing an API. */
 @JsonClass(generateAdapter = true)
@@ -70,6 +73,33 @@ data class EnergyMetric(
 
     private fun fullCoverage() = coverageRatio?.takeIf(Double::isFinite)?.let { it >= 1.0 - 1e-9 && it <= 1.0 } == true
     private fun validPowerCoverage() = coverageRatio?.takeIf(Double::isFinite)?.let { it >= 0.85 && it <= 1.0 + 1e-6 } == true
+
+    /** Returns observed battery input only for its proven subwindow, never as a full-session reading. */
+    internal fun partialBatteryInputForWindow(start: String?, end: String?): Double? {
+        if (unit != "kWh" || method != "session_counter_delta" ||
+            measurementPoint != "battery_input" || source != "telemetry_mqtt" ||
+            sourceField != "DCChargingEnergyIn" || quality != "unknown" ||
+            reason != "partial_counter_window" || valueKwh != null ||
+            coverageKind != "endpoints" || timeBasis != "collector_received_at") return null
+        val sessionStart = energyInstant(start) ?: return null
+        val sessionEnd = energyInstant(end) ?: return null
+        val metricStart = energyInstant(startDate) ?: return null
+        val metricEnd = energyInstant(endDate) ?: return null
+        if (!sessionEnd.isAfter(sessionStart) ||
+            metricStart.truncatedTo(ChronoUnit.MICROS) != sessionStart.truncatedTo(ChronoUnit.MICROS) ||
+            metricEnd.truncatedTo(ChronoUnit.MICROS) != sessionEnd.truncatedTo(ChronoUnit.MICROS)) return null
+        val first = energyInstant(observedStartAt) ?: return null
+        val last = energyInstant(observedEndAt) ?: return null
+        if (first.isBefore(sessionStart) || last.isAfter(sessionEnd) || !last.isAfter(first)) return null
+        val observed = Duration.between(first, last)
+        val session = Duration.between(sessionStart, sessionEnd)
+        fun Duration.secondsWithFraction() = seconds.toDouble() + nano / 1e9
+        val actualRatio = observed.secondsWithFraction() / session.secondsWithFraction()
+        val declaredRatio = coverageRatio?.takeIf { it.isFinite() && it > 0 && it < 1 }
+            ?: if (coverageRatio == null) actualRatio else return null
+        if (!actualRatio.isFinite() || abs(actualRatio - declaredRatio) > 1e-6) return null
+        return coveredEnergyKwh?.takeIf { it.isFinite() && it >= 0.0 }
+    }
 
     private fun validCapacityEstimate(value: Double): Boolean {
         val capacity = capacityKwh?.takeIf { it.isFinite() && it > 0.0 } ?: return false

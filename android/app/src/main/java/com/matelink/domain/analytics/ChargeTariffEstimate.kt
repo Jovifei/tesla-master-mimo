@@ -13,10 +13,13 @@ data class ChargeTariffEstimate(val amount: Double?, val reason: String)
 /** App-local tariff estimate; a known provider/manual bill always has priority. */
 internal fun estimateChargeTariff(charge: ChargeData, settings: AppSettings,
     zone: ZoneId = ZoneId.systemDefault()): ChargeTariffEstimate {
+    val partial = charge.partialBatteryInputKwh
+    val energy = charge.batteryInputKwh ?: partial
     if (!settings.tariffEnabled) return ChargeTariffEstimate(
-        manualChargeAmount(settings.defaultChargePrice, charge.batteryInputKwh), "estimate")
+        manualChargeAmount(settings.defaultChargePrice, energy),
+        if (charge.batteryInputKwh == null && partial != null) "estimate_partial_counter" else "estimate")
     fun unavailable() = ChargeTariffEstimate(null, "tariff_coverage_unavailable")
-    val energy = charge.batteryInputKwh?.takeIf { it.isFinite() && it >= 0.0 } ?: return unavailable()
+    val validEnergy = energy?.takeIf { it.isFinite() && it >= 0.0 } ?: return unavailable()
     val rates = arrayOfNulls<Double>(24)
     val bands = listOf(settings.tariffPeakRanges to settings.tariffPeakPrice,
         settings.tariffFlatRanges to settings.tariffFlatPrice,
@@ -36,10 +39,11 @@ internal fun estimateChargeTariff(charge: ChargeData, settings: AppSettings,
         }
     }
     if (rates.any { it == null }) return unavailable()
-    val start = chargeCostInstant(charge.startDate)
-    val end = chargeCostInstant(charge.endDate)
+    val partialMetric = charge.energyContract?.batteryInput?.takeIf { charge.batteryInputKwh == null && partial != null }
+    val start = chargeCostInstant(partialMetric?.observedStartAt ?: charge.startDate)
+    val end = chargeCostInstant(partialMetric?.observedEndAt ?: charge.endDate)
     if (start == null || end == null || !end.isAfter(start) || Duration.between(start, end) > Duration.ofDays(31))
-        return ChargeTariffEstimate(manualChargeAmount(settings.defaultChargePrice, energy),
+        return ChargeTariffEstimate(manualChargeAmount(settings.defaultChargePrice, validEnergy),
             "tariff_window_unavailable_default_rate")
     // Only session total energy is known: uniform charging power over elapsed
     // time is an explicit estimate, not a measured hourly bill or grid input.
@@ -54,8 +58,8 @@ internal fun estimateChargeTariff(charge: ChargeData, settings: AppSettings,
         cursor = next
     }
     val elapsedSeconds = Duration.between(start, end).toNanos() / 1e9
-    val cost = (energy * weightedSeconds / elapsedSeconds).takeIf { it.isFinite() && it >= 0.0 }
-    return ChargeTariffEstimate(cost, "tariff_time_weighted_app_zone")
+    val cost = (validEnergy * weightedSeconds / elapsedSeconds).takeIf { it.isFinite() && it >= 0.0 }
+    return ChargeTariffEstimate(cost, if (partialMetric != null) "estimate_partial_counter" else "tariff_time_weighted_app_zone")
 }
 
 private val hourRangesAdapter = Moshi.Builder().build().adapter<List<List<Int>>>(

@@ -52,6 +52,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import com.matelink.ui.components.HistoryReadNotices
+import com.matelink.ui.components.HistoryArchiveNotice
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
@@ -79,6 +80,7 @@ import kotlin.math.roundToInt
 import com.matelink.R
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.Units
+import com.matelink.data.model.Currency
 import com.matelink.domain.model.UnitFormatter
 import com.matelink.ui.components.FullscreenLineChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
@@ -131,6 +133,8 @@ fun ChargeDetailScreen(
         }
     }
 
+    HistoryArchiveNotice(uiState.localArchiveLinkPending, uiState.historyNoticeLocalCarId)
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -155,7 +159,8 @@ fun ChargeDetailScreen(
         } else {
             uiState.chargeDetail?.let { detail ->
                 ChargeDetailContent(
-                    localArchiveLinkPending = uiState.localArchiveLinkPending,
+                    localArchiveLinkPending = uiState.localArchiveLinkPending &&
+                        uiState.historyNoticeLocalCarId?.let { it < 0 } != true,
                     historySyncWarning = uiState.historySyncWarning,
                     detail = detail,
                     stats = uiState.stats,
@@ -205,18 +210,19 @@ internal fun ChargeDetailContent(
     val freeLabel = stringResource(R.string.charge_free)
     val actualLabel = stringResource(R.string.charge_cost_actual)
     val manualLabel = stringResource(R.string.charge_cost_manual)
-    val displayCost = costPresentation.cost
-        ?: pendingBoundAmount?.second
-        ?: manualTotalAmount
-        ?: sourceUnconfirmedAmount
-    val isPendingVerification = costPresentation.cost == null && (pendingBoundAmount != null || manualTotalAmount != null)
+    val pending = pendingChargeAmountForDisplay(
+        costPresentation.state == ChargeDetailCostState.MANUAL && costPresentation.cost != null,
+        pendingBoundAmount, pendingLegacyAmount)
+    val effectiveCostText = formatChargeDetailCostText(costPresentation.state, costPresentation.cost,
+        currencySymbol, freeLabel, unavailableLabel)
     val costText = when {
-        costPresentation.state == ChargeDetailCostState.FREE -> freeLabel
-        displayCost != null -> (if (costPresentation.state == ChargeDetailCostState.ESTIMATE) "≈" else "") +
-            "$currencySymbol%.2f".format(displayCost)
+        pending != null -> "${pending.currencySymbol.orEmpty()}%.2f".format(pending.amount)
+        costPresentation.cost != null || costPresentation.state == ChargeDetailCostState.FREE -> effectiveCostText
+        sourceUnconfirmedAmount != null -> "%.2f".format(sourceUnconfirmedAmount)
         else -> unavailableLabel
     }
     val costSourceText = when {
+        pending != null -> stringResource(R.string.charge_cost_pending_short)
         costPresentation.cost != null -> when (costPresentation.state) {
             ChargeDetailCostState.ESTIMATE -> stringResource(R.string.charge_cost_estimate)
             ChargeDetailCostState.ACTUAL -> actualLabel
@@ -224,10 +230,19 @@ internal fun ChargeDetailContent(
             ChargeDetailCostState.FREE -> freeLabel
             ChargeDetailCostState.UNAVAILABLE -> unavailableLabel
         }
-        isPendingVerification -> manualLabel + "(待核实)"
-        sourceUnconfirmedAmount != null -> stringResource(R.string.charge_cost_source_identity_unverified)
+        sourceUnconfirmedAmount != null -> stringResource(R.string.charge_cost_currency_pending_short)
         else -> unavailableLabel
     }
+    val secondaryCostText = if (pending != null && costPresentation.cost != null) {
+        when (costPresentation.state) {
+            ChargeDetailCostState.ESTIMATE -> "${stringResource(R.string.charge_cost_estimate)} $effectiveCostText"
+            ChargeDetailCostState.ACTUAL -> "$actualLabel $effectiveCostText"
+            ChargeDetailCostState.FREE -> freeLabel
+            else -> null
+        }
+    } else null
+    val currencyNoticeText = if (pending != null && pending.currencySymbol == null)
+        stringResource(R.string.charge_cost_currency_pending_short) else null
     val scrollState = rememberScrollState()
     var showPriceDialog by remember { mutableStateOf(false) }
     val series = remember(detail) { ChargeStatsCalculator.project(detail) }
@@ -246,6 +261,8 @@ internal fun ChargeDetailContent(
             isDcCharge = isDcCharge,
             costText = costText,
             costSourceText = costSourceText,
+            secondaryCostText = secondaryCostText,
+            currencyNoticeText = currencyNoticeText,
             onEditPrice = { showPriceDialog = true }
         )
 
@@ -419,18 +436,21 @@ internal fun ChargeDetailContent(
             }
 
             // Cost section
-            val validEnergyKwh = detail.batteryInputKwh?.takeIf { it.isFinite() && it > 0.0 }
-            val costPerKwh = if (costPresentation.cost != null && validEnergyKwh != null) {
-                "$currencySymbol%.3f".format(costPresentation.cost / validEnergyKwh)
-            } else {
-                unavailableLabel
-            }
+            val rate = chargeUnitCost(costPresentation, detail.batteryInputKwh, detail.partialBatteryInputKwh)
+            val costPerKwh = rate?.let {
+                (if (it.estimated) "≈" else "") + "$currencySymbol%.3f".format(it.amount)
+            } ?: unavailableLabel
             StatsSectionCard(
                 title = costLabel,
                 icon = Icons.Default.Paid,
                 stats = listOf(
-                    StatItem(totalLabel, costText),
-                    StatItem(costLabel, costSourceText),
+                    StatItem(when {
+                        pending != null -> stringResource(R.string.charge_cost_pending_short)
+                        costPresentation.cost == null && sourceUnconfirmedAmount != null ->
+                            stringResource(R.string.charge_cost_currency_pending_short)
+                        else -> totalLabel
+                    }, costText),
+                    StatItem(costLabel, secondaryCostText ?: costSourceText),
                     StatItem(perKwhLabel, costPerKwh)
                 )
             )
@@ -441,16 +461,6 @@ internal fun ChargeDetailContent(
         if (costPresentation.state == ChargeDetailCostState.MANUAL &&
             costPresentation.qualificationReason == "instance_unverified") {
             Text(stringResource(R.string.charge_cost_instance_unverified),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        pendingLegacyAmount?.let { amount ->
-            Text(stringResource(R.string.charge_cost_saved_unconfirmed, amount),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        pendingBoundAmount?.let { (code, amount) ->
-            Text(stringResource(R.string.charge_cost_saved_unbound, code ?: "?", amount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -513,6 +523,8 @@ private fun LocationHeaderCard(
     isDcCharge: Boolean?,
     costText: String,
     costSourceText: String,
+    secondaryCostText: String?,
+    currencyNoticeText: String?,
     onEditPrice: () -> Unit
 ) {
     val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
@@ -624,9 +636,10 @@ private fun LocationHeaderCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val energy = detail.batteryInputKwh
+                val partialEnergy = detail.partialBatteryInputKwh
+                val energy = detail.batteryInputKwh ?: partialEnergy
                 if (energy != null) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.Power,
                             contentDescription = null,
@@ -636,13 +649,15 @@ private fun LocationHeaderCard(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = energyAddedLabel,
+                                text = if (detail.batteryInputKwh == null && partialEnergy != null)
+                                    stringResource(R.string.charge_partial_energy) else energyAddedLabel,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                             )
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "%.2f kWh".format(energy),
+                                    text = (if (detail.batteryInputKwh == null && partialEnergy != null) "≈" else "") +
+                                        "%.2f kWh".format(energy),
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF4CAF50)
@@ -657,22 +672,28 @@ private fun LocationHeaderCard(
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    modifier = Modifier.weight(1f).sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                         .clickable(onClickLabel = stringResource(R.string.edit_charge_cost),
                             role = Role.Button, onClick = onEditPrice)
                 ) {
-                    Column(horizontalAlignment = Alignment.End) {
+                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                         Text(
                             text = costSourceText,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = costText,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
+                        currencyNoticeText?.let { Text(it, style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        secondaryCostText?.let { Text(it, style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(
@@ -1227,6 +1248,36 @@ private fun formatObservationTime(at: Instant, is24Hour: Boolean): String =
 
 private fun formatDateTime(dateStr: String?, unknownLabel: String = "Unknown", is24Hour: Boolean? = null): String {
     return formatMonthDayTime(dateStr, is24Hour = is24Hour) ?: unknownLabel
+}
+
+internal data class PendingChargeAmount(val amount: Double, val currencySymbol: String?)
+
+internal fun pendingChargeAmountForDisplay(
+    hasVerifiedManual: Boolean, bound: Pair<String?, Double>?, legacy: Double?
+): PendingChargeAmount? {
+    if (hasVerifiedManual) return null
+    if (bound != null && bound.second.isFinite() && bound.second >= 0.0) {
+        val symbol = Currency.entries.firstOrNull { it.code.equals(bound.first?.trim(), ignoreCase = true) }?.symbol
+        return PendingChargeAmount(bound.second, symbol)
+    }
+    return legacy?.takeIf { it.isFinite() && it >= 0.0 }?.let { PendingChargeAmount(it, null) }
+}
+
+internal data class ChargeUnitCost(val amount: Double, val estimated: Boolean)
+
+internal fun chargeUnitCost(
+    cost: ChargeDetailCostPresentation, fullEnergy: Double?, partialEnergy: Double?
+): ChargeUnitCost? {
+    val total = cost.cost?.takeIf { it.isFinite() && it >= 0.0 } ?: return null
+    if (cost.state == ChargeDetailCostState.UNAVAILABLE) return null
+    val energy = if (fullEnergy != null) fullEnergy.takeIf { it.isFinite() && it > 0.0 }
+        else partialEnergy?.takeIf {
+            cost.state == ChargeDetailCostState.ESTIMATE && cost.qualificationReason == "estimate_partial_counter" &&
+                it.isFinite() && it > 0.0
+        }
+    energy ?: return null
+    val value = (total / energy).takeIf(Double::isFinite) ?: return null
+    return ChargeUnitCost(value, cost.state == ChargeDetailCostState.ESTIMATE)
 }
 
 /**

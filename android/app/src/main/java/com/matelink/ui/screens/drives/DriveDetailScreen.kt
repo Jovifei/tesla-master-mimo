@@ -49,6 +49,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import com.matelink.ui.components.HistoryReadNotices
+import com.matelink.ui.components.HistoryArchiveNotice
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -128,6 +129,8 @@ fun DriveDetailScreen(
         }
     }
 
+    HistoryArchiveNotice(uiState.localArchiveLinkPending, uiState.historyNoticeLocalCarId)
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -163,7 +166,8 @@ fun DriveDetailScreen(
         } else {
             uiState.driveDetail?.let { detail ->
                 DriveDetailContent(
-                    localArchiveLinkPending = uiState.localArchiveLinkPending,
+                    localArchiveLinkPending = uiState.localArchiveLinkPending &&
+                        uiState.historyNoticeLocalCarId?.let { it < 0 } != true,
                     historySyncWarning = uiState.historySyncWarning,
                     detail = detail,
                     stats = uiState.stats,

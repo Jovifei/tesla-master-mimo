@@ -3,9 +3,16 @@ package com.matelink.ui.components
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.matelink.R
@@ -25,4 +32,31 @@ internal fun HistoryReadNotices(localArchiveLinkPending: Boolean, historySyncWar
                     MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+@Composable
+internal fun HistoryArchiveNotice(pending: Boolean, localCarId: Int?): Boolean {
+    if (!pending || localCarId == null || localCarId >= 0) return false
+    return HistoryOnceNotice("archive_v1_$localCarId", R.string.history_archive_link_pending)
+}
+
+@Composable
+internal fun HistoryOnceNotice(key: String, message: Int, enabled: Boolean = true): Boolean {
+    val context = LocalContext.current
+    val prefs = remember(context) { context.getSharedPreferences("history_notice_acknowledgements", 0) }
+    var acknowledged by remember(prefs, key) { mutableStateOf(prefs.getBoolean(key, false)) }
+    val visible = enabled && !acknowledged
+    if (visible) {
+        AlertDialog(
+            onDismissRequest = {},
+            text = { Text(stringResource(message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    prefs.edit().putBoolean(key, true).apply()
+                    acknowledged = true
+                }) { Text(stringResource(R.string.got_it)) }
+            }
+        )
+    }
+    return visible
 }

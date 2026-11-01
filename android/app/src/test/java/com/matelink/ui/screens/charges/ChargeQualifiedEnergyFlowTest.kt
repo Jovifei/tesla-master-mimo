@@ -94,7 +94,7 @@ class ChargeQualifiedEnergyFlowTest {
 
     @Test fun actualChargeCardUsesQualifiedBatteryInputNotRawScalar() {
         val screen = File("src/main/java/com/matelink/ui/screens/charges/ChargesScreen.kt").readText()
-        assertTrue(screen.contains("presentChargeEnergy(charge.batteryInputKwh)"))
+        assertTrue(screen.contains("presentChargeEnergy(charge.batteryInputKwh ?: charge.partialBatteryInputKwh)"))
         assertFalse(screen.contains("presentChargeEnergy(charge.chargeEnergyAdded)"))
     }
 }

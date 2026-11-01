@@ -25,6 +25,7 @@ import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.SavedTripLeg
 import com.matelink.data.model.Currency
 import com.matelink.data.repository.ApiResult
+import com.matelink.data.repository.GeocodingRepository
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.domain.LegRef
 import com.matelink.domain.TripRepository
@@ -51,12 +52,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import javax.inject.Inject
 
 data class ChargeDetailUiState(
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val localArchiveLinkPending: Boolean = false,
+    val historyNoticeLocalCarId: Int? = null,
     val historySyncWarning: String? = null,
     val error: String? = null,
     val chargeDetail: ChargeDetail? = null,
@@ -170,7 +173,8 @@ class ChargeDetailViewModel @Inject constructor(
     private val chargeSummaryDao: ChargeSummaryDao,
     private val statsDatabase: StatsDatabase,
     private val historyDetailStore: HistoryDetailRepository,
-    private val vehicleContexts: com.matelink.data.local.VehicleContextRepository? = null
+    private val vehicleContexts: com.matelink.data.local.VehicleContextRepository? = null,
+    private val geocodingRepository: GeocodingRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChargeDetailUiState())
@@ -183,6 +187,11 @@ class ChargeDetailViewModel @Inject constructor(
     private var historyCarId: Int? = null
     private var defaultChargePrice = 1.14
     private var tariffSettings: com.matelink.data.local.AppSettings? = null
+    private var addressGeneration = 0L
+    private var addressJob: Job? = null
+    internal var addressLookup: suspend (Double, Double) -> String? = { latitude, longitude ->
+        geocodingRepository?.reverseGeocode(latitude, longitude)
+    }
 
     init {
         viewModelScope.launch {
@@ -190,6 +199,7 @@ class ChargeDetailViewModel @Inject constructor(
                 val proof = historyProof ?: return@collect
                 if (scope == proof.scope && historyRepository.isContextCurrent(proof)) return@collect
                 latestLoad.invalidate()
+                invalidateAddressLookup()
                 historyProof = null
                 historyCarId = null
                 _uiState.value = ChargeDetailUiState(isLoading = false, error = "history_identity_unavailable")
@@ -294,10 +304,12 @@ class ChargeDetailViewModel @Inject constructor(
             manualTotalAmount = cost.manualTotal, manualVersion = cost.version, pendingLegacyAmount = cost.pendingLegacy,
             pendingBoundAmount = cost.pendingBound, otherCurrencyAmount = cost.otherCurrency,
             sourceUnconfirmedAmount = cost.sourceUnconfirmed, error = null) }
+        requestChargeAddress(proof, detail)
         return true
     }
 
     fun loadChargeDetail(carId: Int, chargeId: Int) {
+        invalidateAddressLookup()
         this.carId = carId
         this.chargeId = chargeId
         historyProof = null
@@ -342,7 +354,8 @@ class ChargeDetailViewModel @Inject constructor(
                     currency.code.equals(settings.currencyCode, ignoreCase = true)
                 }?.symbol ?: "?",
                 currencyCode = settings.currencyCode) }
-            _uiState.update { it.copy(localArchiveLinkPending = resolved.localArchiveLinkPending) }
+            _uiState.update { it.copy(localArchiveLinkPending = resolved.localArchiveLinkPending,
+                historyNoticeLocalCarId = resolved.context.localHistoryCarId) }
             val containing = tripRepository.findTripContaining(localHistoryCarId, SavedTripLeg.TYPE_CHARGE, chargeId)
             checkContext()
             _uiState.update { it.copy(containingTrip = containing) }
@@ -424,6 +437,7 @@ class ChargeDetailViewModel @Inject constructor(
                             error = null
                         )
                     }
+                    requestChargeAddress(resolved, detail)
                 }
                 is ApiResult.Error -> {
                     _uiState.update { it.copy(historySyncWarning = "history_cached") }
@@ -477,6 +491,7 @@ class ChargeDetailViewModel @Inject constructor(
                                 error = null
                             )
                         }
+                        requestChargeAddress(resolved, localDetail)
                     } else {
                         _uiState.update {
                             it.copy(
@@ -492,6 +507,32 @@ class ChargeDetailViewModel @Inject constructor(
 
     fun clearError() {
         _uiState.update { it.copy(error = null) }
+    }
+
+    private fun invalidateAddressLookup() {
+        addressGeneration++
+        addressJob?.cancel()
+        addressJob = null
+    }
+
+    private fun requestChargeAddress(proof: VerifiedHistoryReadContext, detail: ChargeDetail) {
+        invalidateAddressLookup()
+        if (!detail.address.needsChineseChargeAddress()) return
+        val key = detail.addressKey() ?: return
+        val generation = addressGeneration
+        addressJob = viewModelScope.launch {
+            val address = try {
+                withTimeoutOrNull(5_000L) { addressLookup(key.latitude, key.longitude) }
+            } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+            val chinese = address.usableChineseChargeAddress() ?: return@launch
+            if (!historyRepository.isContextCurrent(proof) || generation != addressGeneration ||
+                historyProof !== proof || carId != proof.context.remoteApiCarId || chargeId != key.chargeId) return@launch
+            _uiState.update { state ->
+                val current = state.chargeDetail
+                if (current == null || current.addressKey() != key || !current.address.needsChineseChargeAddress()) state
+                else state.copy(chargeDetail = current.copy(address = chinese))
+            }
+        }
     }
 
     fun saveManualTotalAmount(totalAmount: Double?) {
@@ -599,6 +640,10 @@ internal fun cachedChargeDetail(localSummary: com.matelink.data.local.entity.Cha
                             energyContract = cached.energyContract
                         )
 }
+
+private fun ChargeDetail.addressKey(): ChargeAddressKey? = chargeAddressKey(
+    toCostChargeData().copy(latitude = latitude, longitude = longitude, qualityState = qualityState)
+)
 
 internal fun chooseChargeCoordinates(detail: ChargeDetail, local: ChargeSummary?): Pair<Double, Double>? {
     if (detail.sourceRecordIdentity.conflicted) return null

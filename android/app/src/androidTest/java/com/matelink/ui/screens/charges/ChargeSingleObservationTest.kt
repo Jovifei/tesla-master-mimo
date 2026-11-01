@@ -1,19 +1,31 @@
 package com.matelink.ui.screens.charges
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.matelink.R
 import com.matelink.data.api.models.ChargeDetail
+import com.matelink.data.api.models.ChargeData
+import com.matelink.data.api.models.EnergyContract
+import com.matelink.data.api.models.EnergyMetric
 import com.matelink.data.api.models.ChargePoint
 import com.matelink.data.api.models.ChargerDetails
 import com.matelink.ui.theme.MateLinkTheme
+import com.matelink.ui.theme.telemetryPalette
+import com.matelink.domain.analytics.ChargeCostSource
+import com.matelink.domain.analytics.EffectiveChargeCost
 import com.matelink.util.formatTime
 import java.time.Instant
 import java.time.ZoneId
@@ -114,9 +126,102 @@ class ChargeSingleObservationTest {
                 )
             }
         }
-        compose.onNodeWithText(context.getString(R.string.charge_cost_saved_unconfirmed, 12.34))
-            .performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.charge_cost_currency_pending_short), useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onNodeWithText("12.34", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("¥12.34", useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithText(context.getString(R.string.charge_cost_source_unconfirmed, 8.0))
             .performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun pendingAmountAndEstimateRemainVisibleAndEditableInDetail() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        compose.setContent {
+            MateLinkTheme {
+                ChargeDetailContent(
+                    localArchiveLinkPending = false, historySyncWarning = null,
+                    detail = ChargeDetail(7, startDate = "2026-10-20T10:00:00Z",
+                        endDate = "2026-10-20T11:00:00Z"),
+                    stats = null, costPresentation = ChargeDetailCostPresentation(15.0, ChargeDetailCostState.ESTIMATE),
+                    units = null, currencySymbol = "¥", isDcCharge = null, manualTotalAmount = null,
+                    pendingBoundAmount = "CNY" to 23.0,
+                    containingTrip = null, onNavigateToTripDetail = {}, onRemoveFromTrip = {}, onSaveManualTotal = {}
+                )
+            }
+        }
+        compose.onNodeWithText(context.getString(R.string.charge_cost_pending_short), useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("¥23.00", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.charge_cost_estimate) + " ≈¥15.00", useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onNodeWithText("¥23.00").performClick()
+        compose.onNodeWithText(context.getString(R.string.charge_cost_saved_unbound, "CNY", 23.0))
+            .assertIsDisplayed()
+    }
+
+    @Test fun narrowChargeCardShowsPendingAndEstimateWithoutMetricOverlap() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val label = context.getString(R.string.charge_cost_pending_short)
+        var edited = false
+        compose.setContent {
+            MateLinkTheme {
+                Box(Modifier.width(320.dp)) {
+                    ChargeItem(ChargeData(7), isDcCharge = null, currencySymbol = "¥",
+                        effectiveCost = EffectiveChargeCost(15.0, ChargeCostSource.ESTIMATE),
+                        pendingLegacyAmount = null, pendingBoundAmount = "CNY" to 23.0,
+                        otherCurrencyAmount = null, palette = telemetryPalette(),
+                        onEditCost = { edited = true }, onClick = {})
+                }
+            }
+        }
+        compose.onNodeWithText(label, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("23.00", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.charge_cost_estimate) + " ≈¥15.00", useUnmergedTree = true)
+            .assertIsDisplayed()
+        val bounds = (0..3).map { compose.onNodeWithTag("history-metric-value-$it", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot() }
+        bounds.zipWithNext().forEach { (left, right) -> assertTrue(left.right <= right.left) }
+        compose.onNodeWithContentDescription("$label: 23.00 ¥").performClick()
+        compose.runOnIdle { assertTrue(edited) }
+    }
+
+    @Test fun partialEstimatedUnitCostUsesOnlyTheObservedEnergy() {
+        val start = "2026-10-20T10:00:00Z"
+        val end = "2026-10-20T11:00:00Z"
+        val detail = ChargeDetail(7, startDate = start, endDate = end, source = "telemetry_mqtt",
+            energyContract = EnergyContract(batteryInput = EnergyMetric(
+                method = "session_counter_delta", measurementPoint = "battery_input", source = "telemetry_mqtt",
+                sourceField = "DCChargingEnergyIn", quality = "unknown", reason = "partial_counter_window",
+                startDate = start, endDate = end, observedStartAt = "2026-10-20T10:05:00Z",
+                observedEndAt = "2026-10-20T10:55:00Z", timeBasis = "collector_received_at",
+                coverageKind = "endpoints", coverageRatio = 5.0 / 6.0, coveredEnergyKwh = 10.0)))
+        compose.setContent {
+            MateLinkTheme {
+                ChargeDetailContent(localArchiveLinkPending = false, historySyncWarning = null,
+                    detail = detail, stats = ChargeStatsCalculator.calculateStats(detail),
+                    costPresentation = ChargeDetailCostPresentation(15.0, ChargeDetailCostState.ESTIMATE,
+                        "estimate_partial_counter"), units = null, currencySymbol = "¥", isDcCharge = null,
+                    manualTotalAmount = null, containingTrip = null, onNavigateToTripDetail = {},
+                    onRemoveFromTrip = {}, onSaveManualTotal = {})
+            }
+        }
+        compose.onNodeWithText("≈¥1.500").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun verifiedManualAmountBeatsPendingCandidateOnCard() {
+        val pendingLabel = InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(R.string.charge_cost_pending_short)
+        compose.setContent {
+            MateLinkTheme {
+                Box(Modifier.width(320.dp)) {
+                    ChargeItem(ChargeData(7), isDcCharge = null, currencySymbol = "¥",
+                        effectiveCost = EffectiveChargeCost(23.0, ChargeCostSource.MANUAL),
+                        pendingLegacyAmount = 31.0, pendingBoundAmount = "CNY" to 31.0,
+                        otherCurrencyAmount = null, palette = telemetryPalette(), onEditCost = {}, onClick = {})
+                }
+            }
+        }
+        compose.onNodeWithText("23.00", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(pendingLabel, useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText("31.00", useUnmergedTree = true).assertDoesNotExist()
     }
 }

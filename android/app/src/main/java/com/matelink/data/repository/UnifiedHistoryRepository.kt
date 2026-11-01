@@ -28,6 +28,7 @@ import com.matelink.domain.analytics.withSafeHistoryDisplay
 import com.matelink.domain.analytics.sameChargeSourceInstance
 import com.matelink.domain.analytics.withQualifiedEnergy
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
+import com.matelink.domain.telemetry.usableVehicleCoordinates
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -503,6 +504,9 @@ private fun ChargeData.mergeWith(cached: ChargeData?): ChargeData = cached?.let 
     if (!sameSession(it)) return this
     if (hasTrustedHistoryEvidence(it.qualityState, it.source) && !hasTrustedHistoryEvidence(qualityState, source)) return it.copy(chargeId = chargeId)
     if (hasTrustedHistoryEvidence(qualityState, source) && !hasTrustedHistoryEvidence(it.qualityState, it.source)) return this
+    val coordinates = usableVehicleCoordinates(latitude, longitude)
+        ?: usableVehicleCoordinates(it.latitude, it.longitude)
+    val rawCoordinates = if (latitude != null || longitude != null) latitude to longitude else it.latitude to it.longitude
     copy(
         startDate = startDate ?: it.startDate,
         endDate = endDate ?: it.endDate,
@@ -519,8 +523,8 @@ private fun ChargeData.mergeWith(cached: ChargeData?): ChargeData = cached?.let 
         rangeRated = if (sameLengthUnit) rangeRated.mergeWith(it.rangeRated) else rangeRated,
         outsideTempAvg = outsideTempAvg ?: it.outsideTempAvg.takeIf { sameTemperatureUnit },
         odometer = odometer ?: it.odometer.takeIf { sameLengthUnit },
-        latitude = latitude ?: it.latitude,
-        longitude = longitude ?: it.longitude,
+        latitude = coordinates?.first ?: rawCoordinates.first,
+        longitude = coordinates?.second ?: rawCoordinates.second,
         source = source ?: it.source,
         qualityState = qualityState ?: it.qualityState,
         qualityReason = qualityReason ?: it.qualityReason

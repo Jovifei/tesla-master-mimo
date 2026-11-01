@@ -132,11 +132,13 @@ fun projectEffectiveChargeCost(
     if (freeSupercharging && isDcCharge && sessionFreeVerified) {
         return EffectiveChargeCost(0.0, ChargeCostSource.FREE, currency, "verified_session_free")
     }
+    val partialEnergy = charge.partialBatteryInputKwh
     val estimated = (if (tariffEstimate != null) tariffEstimate.amount else
-        manualChargeAmount(defaultPricePerKwh, charge.batteryInputKwh))
+        manualChargeAmount(defaultPricePerKwh, charge.batteryInputKwh ?: partialEnergy))
         ?.takeIf(Double::isFinite)
     if (estimated != null) return EffectiveChargeCost(estimated, ChargeCostSource.ESTIMATE,
-        currency, tariffEstimate?.reason ?: "estimate")
+        currency, if (charge.batteryInputKwh == null && partialEnergy != null)
+            "estimate_partial_counter" else tariffEstimate?.reason ?: "estimate")
     return unavailable(if (charge.cost == 0.0) "provider_zero_unverified" else "price_unavailable")
 }
 

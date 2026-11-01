@@ -1,8 +1,8 @@
 # App问题与版本记录
 
-更新：2026-10-31。发现版本是审查/复现时的源码候选，不等于首次引入版本；提交、APK、安装与生产分别记录。完整逐次事件见[JSON账本](releases/app-issue-versions.json)。
+更新：2026-11-01。发现版本是审查/复现时的源码候选，不等于首次引入版本；提交、APK、安装与生产分别记录。完整逐次事件见[JSON账本](releases/app-issue-versions.json)。
 
-共 121 条：保留此前记录，新增 build79 的数据源与刷新问题。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
+共 126 条：保留此前记录，新增 build79 的数据源、充电、首页缓存、历史页与服务器问题。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
 
 每条都有具体改法与回归；raw receipt/旧记录保留，source gates与发布门不混称已验收。
 
@@ -10,7 +10,12 @@
 
 | 问题 ID | 发现日期 / 版本 | 根因与修复 | 验证 |
 | --- | --- | --- | --- |
+| NOV01-SERVER-RESOURCE | 2026-11-01 / API ab9a245c | 历史 OOM；网络管理、时间同步和日志服务失败；磁盘约 82%。已恢复原有服务，不清理其他项目数据；内存及磁盘容量风险仍开放 | 网卡已连接、NTP 已同步、日志探针通过，API 本机和真实公网地址检查正常；见[记录](RPT-2026-11-01-charge-energy-filters.md) |
+| NOV01-DRIVE-FILTER-LABEL | 2026-11-01 / 2.1.60 build79 | 行程距离筛选文字与实际 10/100 km 边界不一致；保留原筛选行为并修正文案，英里边界标为约数 | App 2.1.61/build80 候选；边界回归与设备验证待完成，见[记录](RPT-2026-11-01-charge-energy-filters.md) |
 | NOV01-SYNC-SOURCE-STALE | 2026-11-01 / 2.1.60 build79 | Tesla 会话仍有效，但持久来源仍是不可达的 `http://192.168.0.104:18080`；切到 MateLink 云端后首页和 10 月 31 日充电/行程恢复。手动刷新同时改为 REPLACE，避免 RETRY 中的旧 Worker 吞掉刷新请求；网络错误文案提示确认数据源。不改页面布局或手机数据 | 真机首页、10 月 31 日四段充电和行程均已显示；定向测试、双变体、lint、保数据安装见[记录](RPT-2026-11-01-self-hosted-source-refresh-recovery.md) |
+| NOV01-CHARGE-PARTIAL | 2026-11-01 / 2.1.60 build79 | 完整会话电量未知时，保留已验证的部分计数器观测并明确标注近似；预估费用和手动金额分别保留 | App 2.1.61/build80 与生产基线服务端候选进行中；详见[记录](RPT-2026-11-01-charge-energy-filters.md) |
+| NOV01-HISTORY-FILTERS | 2026-11-01 / 2.1.60 build79 | 日期选择移至摘要，精简常驻提示；修复地点菜单中文显示与坐标成对合并 | 定向回归通过，完整测试与设备验收进行中；详见[记录](RPT-2026-11-01-charge-energy-filters.md) |
+| NOV01-DASH-CLOUD-CACHE | 2026-11-01 / 2.1.60 build79 | 云端车辆列表暂不可达时，首页原逻辑没有读取此前已验证的车辆快照；候选仅在身份仍匹配且非授权错误时回显历史状态，不用缓存授权写入或定位 | App 2.1.61/build80 候选；回归和设备验证进行中，详见[记录](RPT-2026-11-01-charge-energy-filters.md) |
 
 ## 2026-10-31 Android CI
 

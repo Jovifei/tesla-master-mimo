@@ -7,6 +7,8 @@ import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.ChargePoint
 import com.matelink.data.api.models.ChargerDetails
+import com.matelink.data.api.models.EnergyContract
+import com.matelink.data.api.models.EnergyMetric
 import com.matelink.data.sync.toAggregate
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runCurrent
@@ -48,6 +50,82 @@ import java.time.ZoneId
 @Config(application = Application::class, sdk = [28])
 class ChargesRoomCostConsumerTest {
     @get:Rule val temp = TemporaryFolder()
+
+    @Test fun unverifiedManualAmountStaysVisibleButDoesNotReplaceTheEstimatedSummary() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val f = HistoryResourceFixture(File(temp.root, "pending-manual-estimate.db"))
+        f.initialize(cloud = true)
+        f.settings.saveCurrency("CNY")
+        f.settings.saveDefaultChargePrice(1.5)
+        f.settings.saveTariffConfig(false, 1.0, 0.7, 0.3, "[[10,14],[18,20]]", "[[7,9],[15,17],[21,22]]", "[[23,23],[0,6]]")
+        val local = f.localId(1)
+        val charge = ChargeData(902, startDate = "2026-10-20T10:00:00Z", endDate = "2026-10-20T11:00:00Z",
+            source = "teslamate_archive", sourceInstanceId = "archive-A", chargeEnergyAdded = 10.0,
+            qualityState = "observed", qualityReason = "api")
+        f.db.chargeSummaryDao().upsert(requireNotNull(charge.toSyncSummary(local)))
+        val saved = charge.copy(endDate = "2026-10-20T11:05:00Z")
+        assertTrue(ChargeCostOverrideStore(f.db.chargeCostOverrideDao(), f.settings)
+            .saveBound(local, saved, 23.0, "CNY", 0L))
+        f.status = { 503 }
+        val vm = viewModel(f)
+        try {
+            vm.setCarId(1)
+            awaitCharges(vm, listOf(902))
+            for (attempt in 0 until 100) {
+                advanceUntilIdle()
+                if (vm.uiState.value.pendingBoundAmounts[902] == ("CNY" to 23.0)) break
+                Thread.sleep(20)
+            }
+            val state = vm.uiState.value
+            assertEquals("CNY" to 23.0, state.pendingBoundAmounts[902])
+            assertEquals(ChargeCostSource.ESTIMATE, state.effectiveCosts.getValue(902).source)
+            assertEquals(15.0, state.effectiveCosts.getValue(902).cost!!, 0.0)
+            assertEquals(15.0, state.summary.totalCost!!, 0.0)
+            assertEquals(15.0, state.chartData.sumOf { it.totalCost }, 0.0)
+        } finally { vm.viewModelScope.cancel(); advanceUntilIdle(); f.close(); Dispatchers.resetMain() }
+    }
+
+    @Test fun partialCounterSurvivesRoomReopenAndManualCostOverridesItsEstimate() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val f = HistoryResourceFixture(File(temp.root, "partial-charge-room.db"))
+        f.initialize(cloud = true)
+        f.settings.saveCurrency("CNY")
+        f.settings.saveDefaultChargePrice(1.5)
+        f.settings.saveTariffConfig(false, 1.0, 0.7, 0.3, "[[10,14],[18,20]]", "[[7,9],[15,17],[21,22]]", "[[23,23],[0,6]]")
+        val local = f.localId(1)
+        val start = "2026-10-20T10:00:00Z"
+        val end = "2026-10-20T11:00:00Z"
+        val charge = ChargeData(901, startDate = start, endDate = end, source = "telemetry_mqtt",
+            qualityState = "incomplete", qualityReason = "partial_or_missing_charge_counter",
+            energyContract = EnergyContract(batteryInput = EnergyMetric(
+                method = "session_counter_delta", measurementPoint = "battery_input",
+                source = "telemetry_mqtt", sourceField = "DCChargingEnergyIn",
+                quality = "unknown", reason = "partial_counter_window", startDate = start, endDate = end,
+                observedStartAt = "2026-10-20T10:05:00Z", observedEndAt = "2026-10-20T10:55:00Z",
+                timeBasis = "collector_received_at", coverageKind = "endpoints",
+                coverageRatio = 5.0 / 6.0, coveredEnergyKwh = 10.0)))
+        f.db.chargeSummaryDao().upsert(requireNotNull(charge.toSyncSummary(local)))
+        f.status = { 503 }
+        val vm = viewModel(f)
+        try {
+            vm.setCarId(1)
+            awaitCharges(vm, listOf(901))
+            assertEquals(10.0, vm.uiState.value.charges.single().partialBatteryInputKwh!!, 0.0)
+            assertEquals(1, vm.uiState.value.summary.partialEnergyCount)
+            assertEquals(10.0, vm.uiState.value.summary.totalEnergyAdded!!, 0.0)
+            assertEquals(15.0, vm.uiState.value.effectiveCosts.getValue(901).cost!!, 0.0)
+            assertEquals(1, vm.uiState.value.chartData.sumOf { it.partialEnergyCount })
+            val overrides = ChargeCostOverrideStore(f.db.chargeCostOverrideDao(), f.settings)
+            assertTrue(overrides.saveBound(local, charge, 23.0, "CNY", 0L))
+            for (attempt in 0 until 100) {
+                advanceUntilIdle()
+                if (vm.uiState.value.effectiveCosts[901]?.source == ChargeCostSource.MANUAL) break
+                Thread.sleep(20)
+            }
+            assertEquals(ChargeCostSource.MANUAL, vm.uiState.value.effectiveCosts.getValue(901).source)
+            assertEquals(23.0, vm.uiState.value.effectiveCosts.getValue(901).cost!!, 0.0)
+        } finally { vm.viewModelScope.cancel(); advanceUntilIdle(); f.close(); Dispatchers.resetMain() }
+    }
 
     @Test fun visibleListSummaryAndChartShareShortSessionPolicyAndKnownEnergyCoverage() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))

@@ -4,6 +4,116 @@
   "observation_note": "发现版本不等于首次引入版本；build77已安装并验证充电卡片；Fleet源时间与长期续期风险仍开放",
   "issues": [
     {
+      "id": "NOV01-SERVER-RESOURCE",
+      "title": "服务器历史 OOM、服务失败与磁盘占用偏高",
+      "found_date": "2026-11-01",
+      "found_version": "production API ab9a245c",
+      "source_ref": "../RPT-2026-11-01-charge-energy-filters.md",
+      "status": "RUNTIME_MITIGATION_VERIFIED",
+      "fix_version": "2026-11-01 runtime service recovery",
+      "change": "恢复原有网络管理、时间同步和日志服务；不清理其他项目数据；OOM 和磁盘容量风险继续跟踪",
+      "verification": "网卡 connected、NTP synchronized、日志探针成功；本机及真实公网地址健康检查通过",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-11-01",
+          "version": "production API ab9a245c",
+          "action": "SERVICES_RECOVERED_RESOURCE_RISK_OPEN",
+          "detail": "内核记录历史全局 OOM；磁盘约 82%，未执行删除或扩容",
+          "evidence": "../RPT-2026-11-01-charge-energy-filters.md",
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "NOV01-DRIVE-FILTER-LABEL",
+      "title": "行程距离筛选文字与实际边界不一致",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.60 build79",
+      "source_ref": "../RPT-2026-11-01-charge-energy-filters.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.61 build80 candidate",
+      "change": "保留既有 10/100 km 筛选边界，修正中英文标签并标明英里约数",
+      "verification": "边界单测和设备验证待完成",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-11-01",
+          "version": "App 2.1.60 build79",
+          "action": "LABEL_BOUNDARY_MISMATCH_FOUND",
+          "detail": "页面曾显示 50/200 km，但实际筛选按 10/100 km 计算",
+          "evidence": "../RPT-2026-11-01-charge-energy-filters.md",
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "NOV01-DASH-CLOUD-CACHE",
+      "title": "云端车辆列表暂时不可达时首页未回显同车已验证的历史快照",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.60 build79",
+      "source_ref": "../RPT-2026-11-01-charge-energy-filters.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.61 build80 candidate",
+      "change": "仅在非授权型暂时失败且已验证账号、车辆及来源不变时读取历史快照；不使用缓存授权写入或反向地理编码",
+      "verification": "范围、身份和过期响应的自动回归及设备验证待完成",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-11-01",
+          "version": "App 2.1.60 build79",
+          "action": "OFFLINE_CACHE_PATH_REPAIRED",
+          "detail": "检查失败路径及已验证车辆别名缓存，保持授权失败和身份切换拒绝旧快照",
+          "evidence": "../RPT-2026-11-01-charge-energy-filters.md",
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "NOV01-CHARGE-PARTIAL",
+      "title": "充电能量缺少完整窗口时无法展示已观测部分或估算费用",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.60 build79 / production API ab9a245c",
+      "source_ref": "../RPT-2026-11-01-charge-energy-filters.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.61 build80 candidate / production API 2548097",
+      "change": "完整会话值保持未知；验证来源和时窗后独立显示已记录区间的电量及近似费用，手动金额优先",
+      "verification": "隔离 PostgreSQL/Go 全量通过；生产 API 健康及 Fleet readiness 通过；手机验收待完成",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-11-01",
+          "version": "App 2.1.60 build79",
+          "action": "PARTIAL_COUNTER_ROOT_CAUSE_REVIEWED",
+          "detail": "撤回将部分观测当完整实测的候选，保留完整会话与采样区间的区别",
+          "evidence": "../RPT-2026-11-01-charge-energy-filters.md",
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "NOV01-HISTORY-FILTERS",
+      "title": "历史页筛选与提示占用过多空间，地点菜单显示原文且坐标可能混接",
+      "found_date": "2026-11-01",
+      "found_version": "App 2.1.60 build79",
+      "source_ref": "../RPT-2026-11-01-charge-energy-filters.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.61 build80 candidate",
+      "change": "日期下拉移至摘要，保留全部时间；说明改为确认一次，地点显示复用中文格式化并保证坐标成对",
+      "verification": "坐标合并及充电相关定向测试通过；完整测试与设备验收待完成",
+      "commit": null,
+      "history": [
+        {
+          "date": "2026-11-01",
+          "version": "App 2.1.60 build79",
+          "action": "FILTER_AND_LOCATION_REPAIR_IN_PROGRESS",
+          "detail": "保留原始筛选键和真实同步警告，不推测缺失的历史地点",
+          "evidence": "../RPT-2026-11-01-charge-energy-filters.md",
+          "commit": null
+        }
+      ]
+    },
+    {
       "id": "NOV01-SYNC-SOURCE-STALE",
       "title": "首页与充电同步仍使用不可达的自托管来源，且手动刷新不会替换 RETRY 中的 Worker",
       "found_date": "2026-11-01",
