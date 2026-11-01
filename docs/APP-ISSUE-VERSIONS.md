@@ -2,7 +2,7 @@
 
 更新：2026-11-01。发现版本是审查/复现时的源码候选，不等于首次引入版本；提交、APK、安装与生产分别记录。完整逐次事件见[JSON账本](releases/app-issue-versions.json)。
 
-共 126 条：保留此前记录，新增 build79 的数据源、充电、首页缓存、历史页与服务器问题。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
+共 130 条：保留此前记录，新增 build79 的数据源、充电、首页缓存、历史页与服务器问题。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
 
 每条都有具体改法与回归；raw receipt/旧记录保留，source gates与发布门不混称已验收。
 
@@ -10,6 +10,10 @@
 
 | 问题 ID | 发现日期 / 版本 | 根因与修复 | 验证 |
 | --- | --- | --- | --- |
+| NOV01-CHARGE-REFRESH-FEEDBACK | 2026-11-01 / 2.1.62 build81 | 充电缓存发布会提前结束刷新状态，超时正文也被误作错误键；build82 候选修正状态与提示 | 代码修正及回归进行中，见[记录](RPT-2026-11-01-charge-energy-filters.md) |
+| NOV01-ONBOARDING-PENDING | 2026-11-01 / 2.1.62 build81 | 已登录账号的接入状态仍为待处理时，重启会再次进入自动接入页；继续进入无需重新登录。简单跳过可能隐藏真实授权失败，待设计安全引导 | 真机两次覆盖安装复现；未改登录路由，见[记录](RPT-2026-11-01-charge-energy-filters.md) |
+| NOV01-FLEET-LOCATION-WINDOW | 2026-11-01 / API 2548097 | Fleet 位置事件可能迟到并落入错误充电会话；API 403aa6c 按同会话起止时间校验，归档原有规则保持 | 隔离测试与生产健康核验通过；真实迟到样本待验证，见[记录](RPT-2026-11-01-charge-energy-filters.md) |
+| NOV01-FLEET-LOCATION-MISSING | 2026-11-01 / API 2548097 | 会话开启前的位置不会用于初始化充电位置，静止时不一定有新的 Location 事件；10 月 31 日原始事件是否到达仍未证实 | 不使用当前车位猜历史；后续评估同车时间边界及 Tesla 定期重发支持，见[记录](RPT-2026-11-01-charge-energy-filters.md) |
 | NOV01-SERVER-RESOURCE | 2026-11-01 / API ab9a245c | 历史 OOM；网络管理、时间同步和日志服务失败；磁盘约 82%。已恢复原有服务，不清理其他项目数据；内存及磁盘容量风险仍开放 | 网卡已连接、NTP 已同步、日志探针通过，API 本机和真实公网地址检查正常；见[记录](RPT-2026-11-01-charge-energy-filters.md) |
 | NOV01-DRIVE-FILTER-LABEL | 2026-11-01 / 2.1.60 build79 | 行程距离筛选文字与实际 10/100 km 边界不一致；保留原筛选行为并修正文案，英里边界标为约数 | build80 已装机，边界自动回归通过；build81 追加页面精简，见[记录](RPT-2026-11-01-charge-energy-filters.md) |
 | NOV01-SYNC-SOURCE-STALE | 2026-11-01 / 2.1.60 build79 | Tesla 会话仍有效，但持久来源仍是不可达的 `http://192.168.0.104:18080`；切到 MateLink 云端后首页和 10 月 31 日充电/行程恢复。手动刷新同时改为 REPLACE，避免 RETRY 中的旧 Worker 吞掉刷新请求；网络错误文案提示确认数据源。不改页面布局或手机数据 | 真机首页、10 月 31 日四段充电和行程均已显示；定向测试、双变体、lint、保数据安装见[记录](RPT-2026-11-01-self-hosted-source-refresh-recovery.md) |

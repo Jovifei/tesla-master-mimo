@@ -328,7 +328,7 @@ class ChargesViewModel @Inject constructor(
                 allCharges = emptyList()
                 allCostRecords = emptyList()
                 val state = _uiState.value
-                _uiState.value = state.copy(isLoading = true, charges = emptyList(),
+                _uiState.value = state.copy(isLoading = true, isRefreshing = false, charges = emptyList(),
                     summary = ChargesSummary(), chartData = emptyList(),
                     availableLocations = emptyList(), locationLabels = emptyMap(),
                     dcChargeIds = emptySet(), acChargeIds = emptySet(), processedChargeIds = emptySet(),
@@ -370,7 +370,7 @@ class ChargesViewModel @Inject constructor(
                         teslamateBaseUrl = settings.teslamateBaseUrl
                     )
                 }
-                if (allCharges.isNotEmpty() && !_uiState.value.isLoading && !_uiState.value.isRefreshing) {
+                if (allCharges.isNotEmpty() && !_uiState.value.isLoading) {
                     applyFiltersAndUpdateState()
                 }
             }
@@ -386,7 +386,7 @@ class ChargesViewModel @Inject constructor(
             latestLoad.invalidate()
             allCharges = emptyList()
             allCostRecords = emptyList()
-            _uiState.update { it.copy(charges = emptyList(), freeSupercharging = false, priceOverrides = emptyMap(), effectiveCosts = emptyMap(), pendingLegacyAmounts = emptyMap(), pendingBoundAmounts = emptyMap(), otherCurrencyAmounts = emptyMap(), chartData = emptyList(), summary = ChargesSummary(), dcChargeIds = emptySet(), acChargeIds = emptySet(), processedChargeIds = emptySet(), availableLocations = emptyList(), locationLabels = emptyMap(), error = null, historySyncWarning = null, localArchiveLinkPending = false, historyNoticeLocalCarId = null) }
+            _uiState.update { it.copy(isRefreshing = false, charges = emptyList(), freeSupercharging = false, priceOverrides = emptyMap(), effectiveCosts = emptyMap(), pendingLegacyAmounts = emptyMap(), pendingBoundAmounts = emptyMap(), otherCurrencyAmounts = emptyMap(), chartData = emptyList(), summary = ChargesSummary(), dcChargeIds = emptySet(), acChargeIds = emptySet(), processedChargeIds = emptySet(), availableLocations = emptyList(), locationLabels = emptyMap(), error = null, historySyncWarning = null, localArchiveLinkPending = false, historyNoticeLocalCarId = null) }
             loadCarSettings(id)
             // Apply restored (or default) filter on first load. CUSTOM needs the
             // explicit date pair — setDateFilter is a no-op for CUSTOM.
@@ -643,8 +643,14 @@ class ChargesViewModel @Inject constructor(
             val startDateStr = startDate?.let { LocalDayBoundaries.startOfDay(it, requestZone) }
             val endDateStr = endDate?.let { LocalDayBoundaries.endOfDay(it, requestZone) }
 
-            val result = withTimeoutOrNull(HISTORY_LOAD_TIMEOUT_MS) {
-                historyRepository.load(id, startDateStr, endDateStr)
+            val result = try {
+                withTimeoutOrNull(HISTORY_LOAD_TIMEOUT_MS) {
+                    historyRepository.load(id, startDateStr, endDateStr)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                ApiResult.Error("history_remote_unavailable")
             }
             ensureCurrent()
             if (result == null) {
@@ -652,7 +658,7 @@ class ChargesViewModel @Inject constructor(
                 // a stale-data warning; only an empty cache escalates to a blocking error.
                 val placement = historyTimeoutMessage(
                     hasCache = _uiState.value.charges.isNotEmpty(),
-                    timeoutText = appContext.getString(R.string.history_sync_timeout),
+                    timeoutText = "history_sync_timeout",
                     currentWarning = _uiState.value.historySyncWarning
                 )
                 _uiState.update {
@@ -706,6 +712,7 @@ class ChargesViewModel @Inject constructor(
                             historyNoticeLocalCarId = result.data.context.localHistoryCarId,
                             canLoadMore = state.selectedFilter != DateFilter.ALL_TIME,
                             isLoading = false,
+                            isRefreshing = false,
                             isFilterLoading = false,
                             isLoadingMore = false
                         )
@@ -729,7 +736,8 @@ class ChargesViewModel @Inject constructor(
                             isRefreshing = false,
                             isFilterLoading = false,
                             isLoadingMore = false,
-                            error = if (_uiState.value.charges.isEmpty()) result.message else null
+                            error = if (it.charges.isEmpty()) result.message else null,
+                            historySyncWarning = if (it.charges.isNotEmpty()) "history_cached" else null
                         )
                     }
                 }
@@ -873,7 +881,6 @@ class ChargesViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 isLoading = if (preserveLoading) it.isLoading else false,
-                isRefreshing = if (preserveLoading) it.isRefreshing else false,
                 isFilterLoading = if (preserveLoading) it.isFilterLoading else false,
                 charges = displayChargesFiltered.sortedByDescending { it.startDate }
                     .map { charge -> charge.copy(address = displayAddress(charge)) },
