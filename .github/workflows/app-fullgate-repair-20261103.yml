@@ -1,0 +1,109 @@
+name: App full-gate corrective consumers
+on:
+  push:
+    branches: [codex/app-foundation-ui-integrate-20261025]
+    paths:
+      - tools/remote-review/app-fullgate-20261103.py
+      - .github/workflows/app-fullgate-repair-20261103.yml
+permissions:
+  contents: write
+concurrency:
+  group: app-fullgate-repair-20261103
+  cancel-in-progress: false
+jobs:
+  repair-and-verify:
+    if: github.repository == 'Jovifei/tesla-master-mimo' && github.ref == 'refs/heads/codex/app-foundation-ui-integrate-20261025'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BASE_SHA: 8721b721fcf3307b809a14c2126122e4b5d9d574
+      TARGET_BRANCH: codex/app-foundation-ui-integrate-20261025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Apply exact consumer correction to authorized source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "$TARGET_BRANCH"
+          git merge-base --is-ancestor "$BASE_SHA" HEAD
+          git diff --name-only "$BASE_SHA" HEAD > /tmp/bootstrap-paths
+          python3 - <<'PY'
+          from pathlib import Path
+          allowed={'tools/remote-review/app-fullgate-20261103.py','.github/workflows/app-fullgate-repair-20261103.yml'}
+          assert set(Path('/tmp/bootstrap-paths').read_text().splitlines()) <= allowed
+          PY
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          python3 tools/remote-review/app-fullgate-20261103.py
+          git diff --check
+          git add android docs/REVIEW-20261103-FULL-GATE-CORRECTIONS.md
+          mkdir -p correction-evidence
+          git diff --cached --binary > correction-evidence/source.patch
+          git diff --cached --name-only > correction-evidence/paths.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          paths=Path('correction-evidence/paths.txt').read_text().splitlines()
+          assert len(paths)==9
+          assert all(p.startswith('android/') or p=='docs/REVIEW-20261103-FULL-GATE-CORRECTIONS.md' for p in paths)
+          PY
+          git write-tree > correction-evidence/TESTED_TREE.txt
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Real Debug and Release failing-consumer and cancellation regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd android
+          backup="$(mktemp)"; cp gradle.properties "$backup"
+          trap 'cp "$backup" gradle.properties; rm -f "$backup"' EXIT
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('gradle.properties')
+          keys={'systemProp.http.proxyHost','systemProp.http.proxyPort','systemProp.https.proxyHost','systemProp.https.proxyPort','systemProp.http.nonProxyHosts'}
+          p.write_text('\n'.join(s for s in p.read_text().splitlines() if s.split('=',1)[0] not in keys)+'\n')
+          PY
+          export TZ=Asia/Shanghai
+          tests=(--tests '*Oct28*' --tests '*ChargeHistoryNoticeIdentityTest' --tests '*SettingsExperienceContractTest' --tests '*LatestHistoryLoadTest' --tests '*HistoryFamilyReadTest' --tests '*AnalysisCloudPublicationRoomTest' --tests '*CostRoomFirstViewModelTest')
+          bash ./gradlew :app:testDebugUnitTest "${tests[@]}" :app:testReleaseUnitTest "${tests[@]}" :app:assembleDebugAndroidTest \
+            --no-daemon --max-workers=1 \
+            -Dorg.gradle.jvmargs='-Xmx5g -XX:MaxMetaspaceSize=1g -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process \
+            > ../correction-evidence/gradle.log 2>&1
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as E
+          for variant in ['Debug','Release']:
+              suites=[E.parse(p).getroot() for p in Path('app/build/test-results/test'+variant+'UnitTest').glob('TEST-*.xml')]
+              counts={k:sum(int(s.attrib.get(k,0)) for s in suites) for k in ['tests','failures','errors','skipped']}
+              print(variant,counts)
+              assert counts['tests']>=40 and counts['failures']==counts['errors']==0
+          PY
+      - name: Normal source push after both variants pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          git diff --exit-code
+          test "$(git write-tree)" = "$(cat correction-evidence/TESTED_TREE.txt)"
+          git -c user.name='MateLink remote implementation' -c user.email='matelink-remote@users.noreply.github.com' commit -m 'fix(android): preserve reentrant request ownership and validate independent history consumers'
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+          git rev-parse HEAD HEAD^{tree} HEAD^ > correction-evidence/SOURCE_HEAD.txt
+          git archive --format=zip HEAD > correction-evidence/source.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-fullgate-correction
+          retention-days: 14
+          path: |
+            correction-evidence/
+            android/app/build/test-results/testDebugUnitTest/
+            android/app/build/test-results/testReleaseUnitTest/
