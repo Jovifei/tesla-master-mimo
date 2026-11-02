@@ -8,6 +8,7 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.EnergyMetric
 import com.matelink.data.api.models.EnergyContract
 import com.matelink.data.api.models.driveEnergySource
+import com.matelink.data.api.models.legacyScalarEnergyAllowed
 import com.matelink.domain.analytics.DriveEnergyResolver
 import com.matelink.domain.analytics.DriveEnergySource
 import com.matelink.domain.analytics.toAnalysisDriveData
@@ -209,12 +210,15 @@ internal fun DriveData.historyEnergy(
             evidence.driveEnergySource(), evidence?.coverageSeconds?.toLong(),
             evidence?.coverageRatio, evidence)
     }
-    // Rejected scoped proof and explicit unknown are not permission to invent SOC energy.
-    if ((metrics != null && matching == null) || energyContract != null || evidence != null) {
+    val isUnmeasuredServerDrive = evidence?.quality == "unknown" &&
+        (evidence?.reason == "no_verified_driving_net_energy" ||
+         energyContract?.netEnergy?.reason == "no_verified_driving_net_energy")
+    // Rejected scoped proof and explicit unknown (other than unmeasured fleet telemetry) are not permission to invent SOC energy.
+    if (((metrics != null && matching == null) || energyContract != null || evidence != null) && !isUnmeasuredServerDrive) {
         return presentDriveDetailEnergy(null, null, null, null, null, evidence)
     }
     val resolved = DriveEnergyResolver.resolve(
-        apiEnergyKwh = null,
+        apiEnergyKwh = energyConsumedNet?.takeIf { it.isFinite() && (legacyScalarEnergyAllowed(source) || source == "telemetry_mqtt" || source == "fleet_api") },
         distanceKm = distanceKm,
         samples = emptyList(),
         durationSeconds = durationMin?.toLong()?.times(60),

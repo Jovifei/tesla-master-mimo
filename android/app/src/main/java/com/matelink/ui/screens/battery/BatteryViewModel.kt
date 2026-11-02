@@ -607,13 +607,12 @@ internal fun DriveData.toBatteryTrendSample(): BatteryTrendSample? {
 private fun List<DriveData>.batteryTrendSamples(cloud: Boolean): List<BatteryTrendSample>? {
     val usable = mapNotNull { drive -> drive.toBatteryTrendSample()?.let { drive to it } }
     if (cloud && usable.isNotEmpty()) {
-        val sources = usable.map { (drive, _) ->
-            val source = drive.source?.takeIf { it in setOf("teslamate_archive", "telemetry_mqtt", "fleet_api") }
-            val instance = drive.sourceInstanceId?.takeIf { it.isNotBlank() }
-            if (source == null || instance == null || drive.sourceRecordIdentity.conflicted) return null
-            source to instance
+        val nonConflicted = usable.filter { (drive, _) ->
+            val source = drive.source
+            !drive.sourceRecordIdentity.conflicted &&
+                (source == null || source in setOf("teslamate_archive", "telemetry_mqtt", "fleet_api"))
         }
-        if (sources.distinct().size != 1) return null
+        if (nonConflicted.isNotEmpty()) return nonConflicted.map { it.second }
     }
     return usable.map { it.second }
 }

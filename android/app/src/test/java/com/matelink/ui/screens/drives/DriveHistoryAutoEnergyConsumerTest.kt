@@ -7,6 +7,7 @@ import com.matelink.data.api.OpenMeteoApi
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.ChargePoint
 import com.matelink.data.api.models.DriveData
+import com.matelink.data.api.models.DriveBatteryDetails
 import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.api.models.DriveOdometerDetails
 import com.matelink.data.api.models.DrivePosition
@@ -556,6 +557,36 @@ class DriveHistoryAutoEnergyConsumerTest {
             assertEquals(1, calls.size)
             assertFalse(calls.single().endsWith("/drives/4"))
             assertNull(f.db.driveSummaryDao().get(car, 4)!!.toAnalysisDriveData().netEnergyKwh)
+        } finally {
+            page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
+            f.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun fleetSocEndpointsPublishTheSameLabeledEstimateWithoutNetwork() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val f = HistoryResourceFixture(File(temp.root, "fleet-summary-soc.db"))
+        var page: DrivesViewModel? = null
+        try {
+            f.initialize()
+            val car = f.localId(1)
+            val fleet = drive(66, "telemetry_mqtt").copy(
+                sourceInstanceId = "fleet-a", sourceId = "record-66",
+                odometerDetails = DriveOdometerDetails(distance = 10.0),
+                batteryDetails = DriveBatteryDetails(startBatteryLevel = 80, endBatteryLevel = 70))
+            f.db.driveSummaryDao().upsert(fleet.toSyncSummary(car)!!)
+            val vm = createPage(f)
+            page = vm
+            vm.setCarId(1)
+            awaitLatestHistoryLoad(vm)
+            currentEnergyJob(vm).join()
+            val repaired = requireNotNull(f.db.driveSummaryDao().get(car, 66)).toAnalysisDriveData()
+            assertEquals(6.0, repaired.netEnergyKwh!!, 1e-9)
+            assertEquals(600.0, repaired.efficiencyWhKm!!, 1e-9)
+            assertEquals("estimated", repaired.energyContract!!.netEnergy!!.quality)
+            assertEquals("soc_capacity_estimate", repaired.energyContract.netEnergy.method)
+            assertTrue(f.calls.none { it.endsWith("/drives/66") })
         } finally {
             page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
             f.close()

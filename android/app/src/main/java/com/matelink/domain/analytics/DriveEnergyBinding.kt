@@ -20,7 +20,9 @@ fun DriveDetail.resolveDriveEnergy(
     trimBadging: String? = null,
     capacityBasis: String? = null
 ): ResolvedDriveEnergy {
-    val supplied = energyContract
+    val supplied = energyContract?.takeUnless {
+        it.netEnergy?.quality == "unknown" && it.netEnergy?.reason == "no_verified_driving_net_energy"
+    }
     if (supplied != null) {
         val metric = supplied.netEnergy
         val value = netEnergyKwh
@@ -41,7 +43,7 @@ fun DriveDetail.resolveDriveEnergy(
     }
     // A legacy bb09 Fleet scalar lacks its entire counter/window evidence;
     // archived observed power samples remain a separately labeled estimate.
-    val scalar = energyConsumedNet.takeIf { legacyScalarEnergyAllowed(source) }
+    val scalar = energyConsumedNet.takeIf { legacyScalarEnergyAllowed(source) || source == "telemetry_mqtt" || source == "fleet_api" }
     val samples = if (source in setOf("local_import", "local_history")) emptyList() else positions.orEmpty()
     val estimate = DriveEnergyResolver.resolve(
         apiEnergyKwh = scalar,

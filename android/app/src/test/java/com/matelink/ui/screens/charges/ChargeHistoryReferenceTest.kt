@@ -1,8 +1,12 @@
 package com.matelink.ui.screens.charges
 
 import com.matelink.data.api.models.ChargeData
+import com.matelink.data.api.models.ChargeDetail
+import com.matelink.data.api.models.EnergyContract
+import com.matelink.data.api.models.EnergyMetric
 import com.matelink.data.sync.toSyncSummary
 import com.matelink.domain.analytics.toAnalysisChargeData
+import com.matelink.domain.analytics.withDetailEvidence
 import com.matelink.domain.analytics.ChargeCostSource
 import com.matelink.domain.analytics.EffectiveChargeCost
 import com.matelink.domain.analytics.ChargeTariffEstimate
@@ -23,6 +27,18 @@ class ChargeHistoryReferenceTest {
         assertNull(shown.batteryInputKwh)
         assertFalse(chargeEligibleForSummary(shown))
         assertEquals(11.1, importedChargeReferenceEnergy(row, shown, -17)!!, 0.0)
+    }
+
+    @Test fun detailSyncWithoutAUsableContractKeepsTheOriginalValueAsReference() {
+        val row = imported().toSyncSummary(-17)!!
+        val merged = row.withDetailEvidence(ChargeDetail(chargeId = 25,
+            startDate = start, endDate = end, source = "local_import",
+            qualityState = "incomplete", qualityReason = "local_import_summary_only",
+            chargePoints = emptyList()))
+        val shown = merged.toAnalysisChargeData()
+        assertEquals(11.1, importedChargeReferenceEnergy(merged, shown, -17)!!, 0.0)
+        assertNull(shown.batteryInputKwh)
+        assertFalse(chargeEligibleForSummary(shown))
     }
 
     @Test fun referenceRequiresTheSameCarRecordSourceAndExactWindow() {
@@ -56,5 +72,9 @@ class ChargeHistoryReferenceTest {
         val row = imported().toSyncSummary(-17)!!
         assertNull(importedChargeReferenceEnergy(row.copy(apiEvidence = null), row.toAnalysisChargeData(), -17))
         assertNull(importedChargeReferenceEnergy(row.copy(qualityState = "quarantined"), row.toAnalysisChargeData(), -17))
+        val explicitUnknown = imported().copy(energyContract = EnergyContract(batteryInput = EnergyMetric(
+            quality = "unknown", reason = "source_revoked"))).toSyncSummary(-17)!!
+        assertNull(importedChargeReferenceEnergy(explicitUnknown,
+            explicitUnknown.toAnalysisChargeData(), -17))
     }
 }

@@ -1,6 +1,8 @@
 package com.matelink.ui.screens.charges
 
 import com.matelink.data.api.models.ChargeData
+import com.matelink.data.api.models.EnergyContract
+import com.matelink.data.api.models.EnergyMetric
 import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.domain.analytics.chargeCostInstant
@@ -17,7 +19,7 @@ internal fun importedChargeReferenceEnergy(row: ChargeSummary, displayed: Charge
     if (raw.chargeId != row.chargeId || raw.source != "local_import" || displayed.source != raw.source ||
         raw.qualityState != "incomplete" || displayed.qualityState != "incomplete" ||
         raw.qualityReason != row.qualityReason || displayed.qualityReason != row.qualityReason ||
-        raw.energyContract != null || displayed.energyContract != null ||
+        raw.energyContract != null || !displayed.energyContract.isMissingDetailProjection() ||
         raw.sourceRecordIdentity.conflicted || displayed.sourceRecordIdentity.conflicted ||
         raw.sourceRecordIdentity.value != displayed.sourceRecordIdentity.value ||
         raw.sourceInstanceId.orEmpty().trim() != displayed.sourceInstanceId.orEmpty().trim()) return null
@@ -27,6 +29,11 @@ internal fun importedChargeReferenceEnergy(row: ChargeSummary, displayed: Charge
         start != chargeCostInstant(displayed.startDate) || end != chargeCostInstant(displayed.endDate)) return null
     return raw.chargeEnergyAdded?.takeIf { it.isFinite() && it > 0.0 }
 }
+
+/** The local mapper adds this only when detail had no usable contract for an exact list receipt. */
+private fun EnergyContract?.isMissingDetailProjection(): Boolean =
+    this == null || this == EnergyContract(batteryInput = EnergyMetric(
+        quality = "unknown", reason = "local_charge_detail_scope_or_window_mismatch"))
 
 internal fun importedChargeReferenceEstimate(
     referenceEnergy: Double?, unitPrice: Double?, costsReady: Boolean,

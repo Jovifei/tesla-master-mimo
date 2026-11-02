@@ -2,7 +2,7 @@
 
 更新：2026-11-02。发现版本是审查/复现时的源码候选，不等于首次引入版本；提交、APK、安装与生产分别记录。完整逐次事件见[JSON账本](releases/app-issue-versions.json)。
 
-共 152 条：保留此前记录，新增电池趋势、用户数据保留与候选行程补全问题。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
+共 153 条：保留此前记录，新增电池趋势、用户数据保留与候选行程补全问题。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
 
 每条记录修复方向及实际验证状态，尚未修复或未回归的项目明确保留；raw receipt/旧记录保留，source gates与发布门不混称已验收。
 
@@ -16,13 +16,16 @@
 
 | 问题 ID | 发现日期 / 版本 | 根因与修复 | 验证 |
 | --- | --- | --- | --- |
+| NOV02-DRIVE-ENERGY-UNMEASURED | 2026-11-02 / App 2.1.65 build84 | Fleet 遥测行程返回 no_verified_driving_net_energy，客户端此前直接硬阻断拒绝 SOC / 功率估算，列表及详情显示“暂不可用”横杠；2.1.67 / build87 识别无硬件计数流并回退功率积分与 SOC 容量估算 | 61 项定向测试通过，build87 真机实测近一周行程能耗（如 ≈16.5、≈13.5 kWh/100km）恢复计算与展示 |
+| NOV02-BATTERY-TREND-SOURCES-FILTER | 2026-11-02 / App 2.1.64 build83 | batteryTrendSamples 要求 sources.distinct().size == 1，当归档与实时行程共存时所有样本被丢弃返回 null，页面提示“有效样本不足”；2.1.67 / build87 移除该过度限制，只过滤冲突记录 | build87 真机实测恢复 114 个有效样本与完整 07-09 至 11-02 趋势曲线 |
+| NOV02-ENROLLMENT-SESSION-EXPIRY | 2026-11-02 / 候选服务 bfe60d5 合成复现 | 手机 session 在归档确认事务中到期仍可能被批准；候选在提交前重新校验同一锁定 session，到期回滚 | 隔离 PG16 复现后修复；Linux race 37 项及子项通过，未证明生产发生，也未部署；见[记录](RPT-2026-11-02-enrollment-session-expiry.md) |
 | NOV02-TREND-RESTART | 2026-11-02 / 独立趋势桥 8d3da22 | 原桥以一次性标准输入领取凭据，重启后无法自动重连；早期候选增加私有 socket 和独立状态，但旧状态缺可信账号归属，换授权时有串号风险 | `aae2f6af` 的隔离容器测试未覆盖该风险，禁止部署；正在补全入口停发与双账号测试，见[记录](RPT-2026-11-02-archive-restart-candidate.md) |
 | NOV02-COST-TOMBSTONE-REAPPEARS | 2026-11-02 / build83 源码审查 | 精确删除标记存在时旧手工费用可能重新显示；build84 候选在列表及详情按同车、记录和币种抑制旧展示，不删除原记录 | 双变体各 1879 项及隔离模拟器 34 项通过；用户反馈已修改的价格仍保留；build84 尚未安装，见[记录](RPT-2026-11-02-charge-import-duplicates.md) |
 | NOV02-ARCHIVE-REVOCATION-RACE | 2026-11-02 / 生产 API 8d3da22（仅隔离复现） | 同事务重验并锁定归档授权，撤权先完成时不写入；候选尚未部署 | 最终合成 PG16 服务端 716 项；生产候选 Linux race 服务端 118 项及子项通过；线上未部署、发布 gate 阻断，见[记录](RPT-2026-11-02-archive-revocation-race.md) |
 | NOV02-BATTERY-ARCHIVE-PENDING | 2026-11-02 / 生产 API 8d3da22 | 仅缺少对应归档且整批无冲突时允许旧桥重试；真实冲突继续拦截 | 最终合成 PG16 服务端 716 项、桥 59 项；生产候选 Linux race 服务端 118 项及子项、桥 2 项通过；线上未部署、发布 gate 阻断，见[记录](RPT-2026-11-02-battery-trend-pending.md) |
 | NOV02-CI-POSTGRES-OPTIN | 2026-11-02 / App 分支 cf9b488 | 临时库启用隔离开关并对齐专用库名前缀，不降低测试门禁 | 本地 568 项通过、远端 eab3af4 verify 通过；最新分支完整检查待确认，见[记录](RPT-2026-11-02-ci-postgres-opt-in.md) |
 | NOV02-BATTERY-UNSUPPORTED-MSG | 2026-11-02 / App 2.1.63 build82 | 明确标记 unsupported 的空容量被误报为网络失败；2.1.64 / build83 提交 `7bd9ecf136f1e4f92d17f1cfa54cf7710d467893` 区分未提供实测容量与真实网络错误 | 72 项定向、双变体各 1862 项单测、双 lint 和模拟器 36 项通过；build83 真机此次显示“当前数据源未提供实测电池容量”，未见错误连接提示，范围仅限本次抽查，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
-| NOV02-CHARGE-UNLINKED-IMPORT | 2026-11-02 / App 2.1.63 build82 | 候选防止 archive 记录重复回传；对同记录原始值只展示带标识的参考电量/费用，不自动合并或计入正式统计 | build83 手机复现；9 组云公开 ID 派生关联仅为线索；双变体各 1879 项、双 lint 和模拟器 34 项通过；build84 真机待验，详情冷开仍保守未知；见[记录](RPT-2026-11-02-charge-import-duplicates.md) |
+| NOV02-CHARGE-UNLINKED-IMPORT | 2026-11-02 / App 2.1.63 build82 | 候选防止 archive 记录重复回传；尝试对同记录原始值展示参考电量/费用，不自动合并或计入正式统计 | build84 双变体各 1879 项、双 lint 和模拟器 34 项通过，**真机仍空卡**；build85 脱敏诊断确认原始电量存在，被详情合成 unknown 拦截，修复进行中；见[记录](RPT-2026-11-02-charge-import-duplicates.md) |
 | NOV01-BATTERY-ARCHIVE-EVIDENCE | 2026-11-01 / App build81、API 403aa6c | 云端归档没有提供行程额定续航及合格温标；独立趋势证据链已按绑定作用域部署并首轮回填 | 生产 `8d3da22` 已部署；478 条 / 10 批，SQL 112 合格含旧 110；build82 手机显示 112 样本和曲线。长期重启与源后补回扫仍开放，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
 | NOV01-RESYNC-HISTORY-RETENTION | 2026-11-01 / App build81 源码审查 | 设置重新同步原先先删除历史摘要和聚合；候选改为保留记录并重新检查 | 相关真实 Room/VM 定向和 build82 双变体全量单测通过；未证实用户触发过原操作，真机验收待完成，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
 | NOV01-LEGACY-COST-RETENTION | 2026-11-01 / App build81 源码审查 | 旧手工总价迁移遇异常可能删除原 JSON；候选保留原文并安全重试 | 真实 DataStore/Room 合成回归通过，未证实用户发生该问题，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
