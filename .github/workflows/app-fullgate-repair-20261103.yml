@@ -3,7 +3,7 @@ on:
   push:
     branches: [codex/app-foundation-ui-integrate-20261025]
     paths:
-      - tools/remote-review/app-fullgate-20261103.py
+      - tools/remote-review/app-fullgate-20261103*.py
       - .github/workflows/app-fullgate-repair-20261103.yml
 permissions:
   contents: write
@@ -32,11 +32,12 @@ jobs:
           git diff --name-only "$BASE_SHA" HEAD > /tmp/bootstrap-paths
           python3 - <<'PY'
           from pathlib import Path
-          allowed={'tools/remote-review/app-fullgate-20261103.py','.github/workflows/app-fullgate-repair-20261103.yml'}
+          allowed={'tools/remote-review/app-fullgate-20261103.py','tools/remote-review/app-fullgate-20261103-calendar.py','.github/workflows/app-fullgate-repair-20261103.yml'}
           assert set(Path('/tmp/bootstrap-paths').read_text().splitlines()) <= allowed
           PY
           test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$GITHUB_SHA"
           python3 tools/remote-review/app-fullgate-20261103.py
+          python3 tools/remote-review/app-fullgate-20261103-calendar.py
           git diff --check
           git add android docs/REVIEW-20261103-FULL-GATE-CORRECTIONS.md
           mkdir -p correction-evidence
@@ -45,7 +46,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           paths=Path('correction-evidence/paths.txt').read_text().splitlines()
-          assert len(paths)==9
+          assert len(paths)==10
           assert all(p.startswith('android/') or p=='docs/REVIEW-20261103-FULL-GATE-CORRECTIONS.md' for p in paths)
           PY
           git write-tree > correction-evidence/TESTED_TREE.txt
@@ -72,7 +73,7 @@ jobs:
           p.write_text('\n'.join(s for s in p.read_text().splitlines() if s.split('=',1)[0] not in keys)+'\n')
           PY
           export TZ=Asia/Shanghai
-          tests=(--tests '*Oct28*' --tests '*ChargeHistoryNoticeIdentityTest' --tests '*SettingsExperienceContractTest' --tests '*LatestHistoryLoadTest' --tests '*HistoryFamilyReadTest' --tests '*AnalysisCloudPublicationRoomTest' --tests '*CostRoomFirstViewModelTest')
+          tests=(--tests '*Oct28*' --tests '*ChargeHistoryNoticeIdentityTest' --tests '*ChargesRoomCostConsumerTest' --tests '*SettingsExperienceContractTest' --tests '*LatestHistoryLoadTest' --tests '*HistoryFamilyReadTest' --tests '*AnalysisCloudPublicationRoomTest' --tests '*CostRoomFirstViewModelTest')
           bash ./gradlew :app:testDebugUnitTest "${tests[@]}" :app:testReleaseUnitTest "${tests[@]}" :app:assembleDebugAndroidTest \
             --no-daemon --max-workers=1 \
             -Dorg.gradle.jvmargs='-Xmx5g -XX:MaxMetaspaceSize=1g -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
