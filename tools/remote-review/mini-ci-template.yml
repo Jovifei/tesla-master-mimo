@@ -1,0 +1,67 @@
+name: Mini local calendar and retained-data regression
+on:
+  push:
+    branches: [codex/miniprogram-e-migration-20261029]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mini-review-timezones-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  local-contracts:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: miniprogram
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            miniprogram/package-lock.json
+            miniprogram/test-tooling/package-lock.json
+      - name: Install locked tooling and record exact source
+        run: |
+          mkdir -p evidence/timezones
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/timezones/source.txt
+          npm ci --ignore-scripts --no-fund
+          npm ci --prefix test-tooling --ignore-scripts --no-fund
+      - name: Actual calendar cost storage and session consumers in four local timezones
+        shell: bash
+        run: |
+          set -euo pipefail
+          for zone in UTC Asia/Shanghai Asia/Tokyo America/Los_Angeles; do
+            name="${zone//\//_}"
+            TZ="$zone" node test-tooling/node_modules/vitest/vitest.mjs run --config test-tooling/vitest.config.mts \
+              src/domain/history_query.test.ts src/domain/partial_charge_cost.test.ts \
+              src/pages/wechat_startup.test.tsx src/pages/charge_cost_consistency.test.tsx \
+              src/services/cache_budget.test.ts \
+              --reporter=default --reporter=junit --outputFile.junit="evidence/timezones/$name.xml" \
+              2>&1 | tee "evidence/timezones/$name.log"
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as E
+          files=list(Path('evidence/timezones').glob('*.xml'))
+          assert len(files)==4
+          for file in files:
+              root=E.parse(file).getroot()
+              cases=root.findall('.//testcase')
+              assert len(cases)>15
+              assert not root.findall('.//failure') and not root.findall('.//error')
+              print(file.name, 'real_cases', len(cases))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mini-local-calendar-retention
+          retention-days: 14
+          path: miniprogram/evidence/timezones/
