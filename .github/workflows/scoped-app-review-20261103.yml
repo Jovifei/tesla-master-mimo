@@ -41,6 +41,15 @@ jobs:
           test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$GITHUB_SHA"
           python3 tools/remote-review/app-20261103.py
           python3 tools/remote-review/app-20261103-tests.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/androidTest/java/com/matelink/ui/screens/cost/PartialCostSummaryAndroidTest.kt')
+          s=p.read_text()
+          # assertDoesNotExist is a SemanticsNodeInteraction member, not an imported extension.
+          old='import androidx.compose.ui.test.assertDoesNotExist\n'
+          assert s.count(old)==1
+          p.write_text(s.replace(old,''))
+          PY
           git diff --check
           git add android docs/REMOTE-AUDIT-APP-20261103.md
           mkdir -p review-evidence
