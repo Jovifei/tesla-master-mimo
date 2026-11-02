@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -15,9 +16,58 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/matelink/teslamate-archive-bridge/internal/credentialsocket"
 )
 
 const maxCredentialInputBytes = 16 << 10
+
+func loadSocketConfig(ctx context.Context, getenv func(string) (string, bool)) (config, error) {
+	if _, ok := getenv("DATABASE_URL"); ok {
+		return config{}, credentialsocket.ErrRejected
+	}
+	if _, ok := getenv("ARCHIVE_TOKEN"); ok {
+		return config{}, credentialsocket.ErrRejected
+	}
+	path, ok := getenv("BATTERY_TREND_CREDENTIAL_SOCKET")
+	if !ok || path == "" {
+		return config{}, credentialsocket.ErrRejected
+	}
+	original, ok := getenv("STATE_FILE")
+	if !ok || !filepath.IsAbs(original) {
+		return config{}, credentialsocket.ErrRejected
+	}
+	if _, err := os.Stat(original); errors.Is(err, os.ErrNotExist) {
+		return config{}, credentialsocket.ErrUnavailable
+	} else if err != nil {
+		return config{}, credentialsocket.ErrRejected
+	}
+	credentials, err := credentialsocket.Fetch(ctx, path)
+	if err != nil {
+		return config{}, err
+	}
+	for name, expected := range map[string]string{
+		"ARCHIVE_URL": strings.TrimRight(credentials.ArchiveURL, "/"), "ARCHIVE_VEHICLE_ID": credentials.VehicleID,
+		"ARCHIVE_SOURCE_INSTANCE_ID": credentials.SourceInstanceID, "ARCHIVE_SOURCE_VEHICLE_ID": credentials.SourceVehicleID,
+	} {
+		value, exists := getenv(name)
+		if name == "ARCHIVE_URL" {
+			value = strings.TrimRight(value, "/")
+		}
+		if !exists || value == "" || value != expected {
+			return config{}, credentialsocket.ErrRejected
+		}
+	}
+	return loadConfig(func(name string) (string, bool) {
+		switch name {
+		case "DATABASE_URL":
+			return credentials.DatabaseURL, true
+		case "ARCHIVE_TOKEN":
+			return credentials.ArchiveToken, true
+		default:
+			return getenv(name)
+		}
+	})
+}
 
 // Stdin credentials stay in memory and never become environment variables or arguments.
 func loadRunConfig(args []string, input io.Reader, getenv func(string) (string, bool)) (config, error) {

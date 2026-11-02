@@ -1,0 +1,41 @@
+# Opt-in override. Pre-create and verify the existing trend state volume before use.
+services:
+  matelink-archive-bridge:
+    environment:
+      - BATTERY_TREND_CREDENTIAL_SOCKET=/run/matelink-battery-credentials/credentials.sock
+    volumes:
+      - battery-credentials:/run/matelink-battery-credentials
+
+  matelink-battery-trend:
+    profiles: ["archive"]
+    build:
+      context: ./archive-bridge
+      dockerfile: cmd/battery-trend/Dockerfile
+    restart: always
+    command: ["--credentials-socket"]
+    environment:
+      - ARCHIVE_URL=${ARCHIVE_URL}
+      - ARCHIVE_VEHICLE_ID=${ARCHIVE_VEHICLE_ID}
+      - ARCHIVE_SOURCE_INSTANCE_ID=${ARCHIVE_SOURCE_INSTANCE_ID}
+      - ARCHIVE_SOURCE_VEHICLE_ID=${ARCHIVE_SOURCE_VEHICLE_ID}
+      - STATE_FILE=/original/state.json
+      - BATTERY_TREND_STATE_FILE=/var/lib/matelink-battery-trend/state.json
+      - BATTERY_TREND_CREDENTIAL_SOCKET=/run/matelink-battery-credentials/credentials.sock
+      - BATTERY_TREND_SOURCE_TIMEZONE=${BATTERY_TREND_SOURCE_TIMEZONE:?verify source timestamps are UTC}
+    volumes:
+      - type: bind
+        source: ${ARCHIVE_STATE_DIR:-./archive-state}
+        target: /original
+        read_only: true
+        bind:
+          create_host_path: false
+      - battery-trend-state:/var/lib/matelink-battery-trend
+      - battery-credentials:/run/matelink-battery-credentials:ro
+    depends_on:
+      - matelink-archive-bridge
+
+volumes:
+  battery-credentials:
+  battery-trend-state:
+    external: true
+    name: ${BATTERY_TREND_STATE_VOLUME:?existing trend state volume must be identified}
