@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -116,6 +117,8 @@ data class CostUiState(
     val totalCost: Double? = null,
     val totalEnergy: Double? = null,
     val estimatedCost: Double? = null,
+    val partialEstimatedCost: Double? = null,
+    val partialEstimatedCoverage: Int = 0,
     val totalCharges: Int = 0,
     val costCoverage: Int = 0,
     val energyCoverage: Int = 0,
@@ -158,6 +161,21 @@ class CostViewModel @Inject constructor(
     private var customEnd: LocalDate? = null
 
     init {
+        // Room user edits invalidate projections, not network history or authentication.
+        viewModelScope.launch {
+            chargeCostOverrideStore.observeAllRecords().catch { error ->
+                if (error is CancellationException) throw error
+            }.collect { records ->
+                val scope = activeScope
+                val context = activeContext
+                if (scope != null && context != null) {
+                    if (vehicleContexts.isHistoryContextCurrentNow(scope, context)) {
+                        manualRecords = records
+                        recalculate(_uiState.value.selectedWindow)
+                    } else publishIdentityUnavailable(_uiState.value.selectedWindow)
+                }
+            }
+        }
         viewModelScope.launch {
             vehicleContexts.historyScopeChanges.collect { scope ->
                 val id = currentCarId ?: return@collect
@@ -202,7 +220,7 @@ class CostViewModel @Inject constructor(
                 val currencySymbol = Currency.entries.firstOrNull {
                     it.code.equals(settings.currencyCode, ignoreCase = true)
                 }?.symbol ?: "?"
-                val records = chargeCostOverrideStore.getAllRecords()
+                chargeCostOverrideStore.ensureLegacyMigrated()
                 checkScope()
                 suspend fun publish(snapshot: com.matelink.domain.analytics.AnalysisHistorySnapshot) {
                     checkScope()
@@ -217,6 +235,7 @@ class CostViewModel @Inject constructor(
                     val dcIds = try { aggregateDao.getDcChargeIds(scopedCarId).toSet() }
                         catch (e: CancellationException) { throw e }
                         catch (_: Exception) { emptySet() }
+                    val records = chargeCostOverrideStore.getAllRecords()
                     checkScope()
                     if (!vehicleContexts.isHistoryContextCurrent(scope, publishedContext))
                         throw HistoryIdentityUnavailableException()
@@ -242,14 +261,14 @@ class CostViewModel @Inject constructor(
                 }
                 // Prefer already saved receipts when provider pages are slow/offline.
                 // Cost and tariff are still resolved by the same scoped resolver.
-                val saved = try { historyRepository.loadCached(carId) }
+                val saved = try { historyRepository.loadCachedCharges(carId) }
                     catch (e: CancellationException) { throw e }
                     catch (_: Exception) { null }
                 if (saved is ApiResult.Success) {
                     publish(saved.data)
                     cachedPublished = true
                 }
-                when (val result = historyRepository.load(carId)) {
+                when (val result = historyRepository.loadCharges(carId)) {
                     is ApiResult.Success -> publish(result.data)
                     is ApiResult.Error -> {
                         checkScope()
@@ -363,6 +382,8 @@ class CostViewModel @Inject constructor(
             totalCost = totals.knownTotal,
             totalEnergy = totals.qualifiedBatteryTotal,
             estimatedCost = totals.estimatedTotal,
+            partialEstimatedCost = totals.partialEstimatedTotal,
+            partialEstimatedCoverage = totals.partialEstimatedCount,
             totalCharges = selected.size,
             costCoverage = totals.pricedCount,
             energyCoverage = totals.energyCount,

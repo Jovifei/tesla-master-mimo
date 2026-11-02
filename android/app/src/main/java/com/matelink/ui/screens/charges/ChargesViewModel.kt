@@ -645,7 +645,7 @@ class ChargesViewModel @Inject constructor(
 
             val result = try {
                 withTimeoutOrNull(HISTORY_LOAD_TIMEOUT_MS) {
-                    historyRepository.load(id, startDateStr, endDateStr)
+                    historyRepository.loadCharges(id, startDateStr, endDateStr)
                 }
             } catch (e: CancellationException) {
                 throw e

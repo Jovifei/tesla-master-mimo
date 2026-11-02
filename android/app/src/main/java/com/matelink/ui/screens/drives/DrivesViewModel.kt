@@ -648,7 +648,7 @@ class DrivesViewModel @Inject constructor(
             }
 
             val result = withTimeoutOrNull(HISTORY_LOAD_TIMEOUT_MS) {
-                historyRepository.load(id, startDateStr, endDateStr) { proof ->
+                historyRepository.loadDrives(id, startDateStr, endDateStr) { proof ->
                     ensureCurrent()
                     if (generation != observationGeneration || this@DrivesViewModel.carId != id ||
                         !historyRepository.isContextCurrent(proof))

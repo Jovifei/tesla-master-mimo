@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="parked_detail_title">驻车详情</string>
+    <string name="cost_partial_observation_estimate">已采集部分估算</string>
+    <string name="cost_partial_observation_coverage">%1$d 次充电的已采集部分；不是整次账单，不计入完整电量或账单均价。</string>
+</resources>

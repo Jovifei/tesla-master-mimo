@@ -4,6 +4,8 @@ import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.UnifiedHistoryRepository
+import com.matelink.data.repository.HistoryFamilies
+import com.matelink.data.repository.UnifiedHistory
 import com.matelink.data.local.VehicleContext
 import com.matelink.data.local.VehicleContextRepository
 import com.matelink.data.local.HistoryIdentityUnavailableException
@@ -44,7 +46,10 @@ internal fun buildPersistedHistorySnapshot(
 ): AnalysisHistorySnapshot? {
     if (drives.isEmpty() && charges.isEmpty()) return null
     val eligibleDrives = drives.map { it.toAnalysisDriveData() }.filter { isAnalysisEligible(it.qualityState, it.qualityReason) }
-    val eligibleCharges = charges.map { it.toAnalysisChargeData() }.filter { isAnalysisEligible(it.qualityState, it.qualityReason) }
+    val eligibleCharges = charges.map { it.toAnalysisChargeData() }.filter {
+        isAnalysisEligible(it.qualityState, it.qualityReason) ||
+            (!it.qualityState.equals("quarantined", ignoreCase = true) && it.partialBatteryInputKwh != null)
+    }
     return AnalysisHistorySnapshot(
         drives = eligibleDrives,
         charges = eligibleCharges,
@@ -86,9 +91,22 @@ class AnalysisHistoryRepository @Inject constructor(
     suspend fun loadCached(carId: Int): ApiResult<AnalysisHistorySnapshot> =
         project(carId, historyRepository.loadCached(carId))
 
+    internal suspend fun loadDrives(carId: Int): ApiResult<AnalysisHistorySnapshot> =
+        project(carId, historyRepository.loadDrives(carId), HistoryFamilies.DRIVES)
+
+    internal suspend fun loadCharges(carId: Int): ApiResult<AnalysisHistorySnapshot> =
+        project(carId, historyRepository.loadCharges(carId), HistoryFamilies.CHARGES)
+
+    internal suspend fun loadCachedDrives(carId: Int): ApiResult<AnalysisHistorySnapshot> =
+        project(carId, historyRepository.loadCached(carId, HistoryFamilies.DRIVES), HistoryFamilies.DRIVES)
+
+    internal suspend fun loadCachedCharges(carId: Int): ApiResult<AnalysisHistorySnapshot> =
+        project(carId, historyRepository.loadCached(carId, HistoryFamilies.CHARGES), HistoryFamilies.CHARGES)
+
     private suspend fun project(
         carId: Int,
-        result: ApiResult<com.matelink.data.repository.UnifiedHistory>
+        result: ApiResult<UnifiedHistory>,
+        families: HistoryFamilies = HistoryFamilies.ALL
     ): ApiResult<AnalysisHistorySnapshot> {
         currentCoroutineContext().ensureActive()
         return when (result) {
@@ -99,7 +117,10 @@ class AnalysisHistoryRepository @Inject constructor(
                     !vehicleContexts.isHistoryContextCurrentNow(proof.scope, proof.context))
                     return com.matelink.data.repository.historyIdentityUnavailableError()
                 val eligibleDrives = history.drives.filter { isAnalysisEligible(it.qualityState, it.qualityReason) }
-                val eligibleCharges = history.charges.filter { isAnalysisEligible(it.qualityState, it.qualityReason) }
+                val eligibleCharges = history.charges.filter {
+                    isAnalysisEligible(it.qualityState, it.qualityReason) ||
+                        (!it.qualityState.equals("quarantined", ignoreCase = true) && it.partialBatteryInputKwh != null)
+                }
                 val snapshot = AnalysisHistorySnapshot(
                     drives = eligibleDrives,
                     charges = eligibleCharges,
@@ -112,12 +133,9 @@ class AnalysisHistoryRepository @Inject constructor(
                             chargeCount = eligibleCharges.size
                         )
                     ),
-                    freshness = if (history.drivesFromRemote && history.chargesFromRemote) {
-                        HistoryFreshness.FRESH
-                    } else {
-                        HistoryFreshness.STALE
-                    },
-                    staleReason = if (history.drivesFromRemote && history.chargesFromRemote) null else "remote unavailable",
+                    freshness = history.analysisFreshness(families),
+                    staleReason = if (history.analysisFreshness(families) == HistoryFreshness.FRESH)
+                        null else "retained local evidence or refresh unavailable",
                     context = history.context
                 )
                 currentCoroutineContext().ensureActive()
@@ -129,4 +147,11 @@ class AnalysisHistoryRepository @Inject constructor(
             is ApiResult.Error -> result
         }
     }
+}
+
+/** Request success and receipt coverage are separate; absence never deletes the archive. */
+internal fun UnifiedHistory.analysisFreshness(families: HistoryFamilies): HistoryFreshness {
+    val drivesCurrent = !families.drives || (drivesFromRemote && !drivesIncludeCachedEvidence)
+    val chargesCurrent = !families.charges || (chargesFromRemote && !chargesIncludeCachedEvidence)
+    return if (drivesCurrent && chargesCurrent) HistoryFreshness.FRESH else HistoryFreshness.STALE
 }

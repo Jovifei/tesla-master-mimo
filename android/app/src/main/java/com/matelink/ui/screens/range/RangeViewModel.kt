@@ -102,8 +102,8 @@ class RangeViewModel internal constructor(private val source: RangePageSource) :
                 ?: throw HistoryIdentityUnavailableException()
             return RangePageIdentity(context) { vehicleContexts.isHistoryContextCurrentNow(scope, context) }
         }
-        override suspend fun history(carId: Int) = historyRepository.load(carId)
-        override suspend fun loadCached(carId: Int) = historyRepository.loadCached(carId)
+        override suspend fun history(carId: Int) = historyRepository.loadDrives(carId)
+        override suspend fun loadCached(carId: Int) = historyRepository.loadCachedDrives(carId)
         override suspend fun health(carId: Int) = teslamateRepository.getBatteryHealth(carId)
         override suspend fun status(carId: Int) = teslamateRepository.getCarStatus(carId)
     })
