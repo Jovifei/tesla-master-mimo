@@ -45,10 +45,15 @@ jobs:
           from pathlib import Path
           p=Path('android/app/src/androidTest/java/com/matelink/ui/screens/cost/PartialCostSummaryAndroidTest.kt')
           s=p.read_text()
-          # assertDoesNotExist is a SemanticsNodeInteraction member, not an imported extension.
           old='import androidx.compose.ui.test.assertDoesNotExist\n'
           assert s.count(old)==1
           p.write_text(s.replace(old,''))
+          # The fixture expects 10kWh x 1.5 default price; default tariff is enabled.
+          # Select that path explicitly, retaining the real 15.0 consumer assertion.
+          p=Path('android/app/src/test/java/com/matelink/ui/screens/cost/CostRoomFirstViewModelTest.kt')
+          s=p.read_text(); old='        f.settings.saveDefaultChargePrice(1.5)'
+          assert s.count(old)==1
+          p.write_text(s.replace(old,old+'\n        f.settings.saveTariffConfig(false, 1.5, 1.5, 1.5, "", "", "")'))
           PY
           git diff --check
           git add android docs/REMOTE-AUDIT-APP-20261103.md
