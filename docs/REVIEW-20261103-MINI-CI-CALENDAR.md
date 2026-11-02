@@ -1,0 +1,7 @@
+# Mini full-repository compatibility gate — calendar assertion correction
+
+Mini `637f989685444fba5ec5c5fb7e43a94e33329fb5` passed all 966 Mini tests, six native/resource tests, typecheck, WeChat production build and four timezone/retention runs. Full repository Actions run `41493043330` nevertheless failed one inherited Android Debug test: `ChargesRoomCostConsumerTest.changingFromRecentToAnOldDayReadsScopedRoomAgainWithoutNetwork`. Release had no failures; both variants executed 1298 tests, with eight established Release skips.
+
+The test selected the last seven days ending October 25, 2026, then expanded the start backward by 30 days. The expanded range correctly includes the September 20 fixture. The old assertion expected only the October 24 record and could accidentally return while the previous list was still visible. It now waits for `isLoadingMore=false`, requires both exact IDs 71/72, count two and the exact aggregate 5.70, and retains the earlier separate-date/currency/Room-reopen checks.
+
+Only the inherited regression test and this evidence note change in this follow-up. No Android application code, Mini business code, backend, credentials, storage schema, history or device state is replaced. The App branch receives the same corrected test semantics independently, not a copy of this branch's older application code. The subsequent final SHA must pass the complete repository workflow and the permanent four-timezone workflow before final receipt.
